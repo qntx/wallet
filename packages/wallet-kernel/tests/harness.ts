@@ -127,6 +127,8 @@ export function createHarness(opts?: {
   store?: RecordStore;
   /** Wrap the kernel's store view (e.g. `nonEchoing` so own commits do not self-notify). */
   wrapStore?: ((store: RecordStore) => RecordStore) | undefined;
+  /** Injected crypto backends (default: a spark loader that always fails). */
+  backends?: KernelPlatform["backends"];
 }): Harness {
   let now = opts?.start ?? 1_700_000_000_000; // wall clock — persisted timestamps only
   let elapsed = 0; // monotonic clock — session deadlines and timers
@@ -193,6 +195,12 @@ export function createHarness(opts?: {
       maxSessionMs: opts?.maxSessionMs ?? 12 * 3_600_000,
       maxScryptLogN: 20,
       activity: opts?.activity ?? "presence",
+    },
+    backends: opts?.backends ?? {
+      spark: async () => {
+        await Promise.resolve();
+        throw new Error("no spark backend in this harness");
+      },
     },
   };
   startKernel(platform, port);

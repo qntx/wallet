@@ -127,6 +127,13 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
       maxScryptLogN: 20,
       activity: "request",
     },
+    // No spark.wasm in the bare-Hermes smoke — the backend must never load here anyway.
+    backends: {
+      spark: async () => {
+        await Promise.resolve();
+        throw new Error("no spark backend in hermes smoke");
+      },
+    },
   };
   startKernel(platform, port);
 

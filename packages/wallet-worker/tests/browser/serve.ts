@@ -6,13 +6,14 @@
  * the built dist, and `new URL("kernel.worker.js", import.meta.url)` must resolve against the
  * emitted bundle.
  */
-import { mkdtempSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { build, createServer, preview } from "vite";
 
-const CSP = "default-src 'self'; script-src 'self'; worker-src 'self'; connect-src 'self'";
+const CSP =
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'";
 const root = new URL("page", import.meta.url).pathname;
 const production = process.argv[2] === "build";
 
@@ -24,6 +25,15 @@ if (production) {
     build: { outDir },
     logLevel: "warn",
   });
+  // vite emits kernel.worker.js as an asset next to the page bundle; the worker fetches
+  // ./spark.wasm relative to its own URL, so the wasm must sit beside the emitted worker.
+  const wasmSource = new URL("../../dist/spark.wasm", import.meta.url);
+  for (const dir of [outDir, join(outDir, "assets")]) {
+    if (existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+      copyFileSync(wasmSource, join(dir, "spark.wasm"));
+    }
+  }
   const server = await preview({
     configFile: false,
     root,

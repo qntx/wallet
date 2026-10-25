@@ -22,6 +22,12 @@ export type QntxApi = {
   ) => Promise<
     EvalResult<{ readonly words: ReadonlyArray<string>; readonly quiz: ReadonlyArray<number> }>
   >;
+  readonly importMnemonic: (mnemonic: string, password: string) => Promise<EvalResult<WalletInfo>>;
+  readonly sparkIdentity: (
+    walletId: string,
+    groupIndex: number,
+    network: string,
+  ) => Promise<EvalResult<{ readonly identity: string }>>;
   readonly confirm: (answers: ReadonlyArray<string>) => Promise<EvalResult<WalletInfo>>;
   readonly lock: () => Promise<EvalResult>;
   readonly reset: () => Promise<EvalResult>;

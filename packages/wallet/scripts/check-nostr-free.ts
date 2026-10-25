@@ -1,13 +1,21 @@
 /**
- * Package check: the root entry (and every non-nostr subpath) must not pull @qntx/nostr at runtime
- * — the nostr module is the only chunk allowed to import it. Walks each entry's transitive relative
- * imports and fails if any reachable file references @qntx/nostr.
+ * Package check: the root entry (and every non-module subpath) must not pull a protocol library at
+ * runtime — @qntx/nostr may only appear in the nostr chunk, @qntx/spark only in the spark chunk
+ * (and the spark entry uses it type-only, so it must not appear at all). Walks each entry's
+ * transitive relative imports and fails if any reachable file references a banned specifier.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dist = join(import.meta.dirname, "..", "dist");
-const entries = ["index.mjs", "host.mjs", "protocol.mjs", "types.mjs"];
+const entries = ["index.mjs", "host.mjs", "protocol.mjs", "spark.mjs", "types.mjs"];
+// Module entries whose chunk may legitimately reference their library. The spark entry's imports
+// are type-only (erased in dist), so it gets no exemption — a runtime @qntx/spark reference
+// anywhere is a bug.
+const moduleChunks: Readonly<Record<string, string>> = {
+  "nostr.mjs": "@qntx/nostr",
+};
+const banned = ["@qntx/nostr", "@qntx/spark"];
 const visited = new Set<string>();
 const offenders: string[] = [];
 
@@ -17,8 +25,11 @@ const visit = (file: string): void => {
   }
   visited.add(file);
   const source = readFileSync(join(dist, file), "utf8");
-  if (source.includes("@qntx/nostr")) {
-    offenders.push(file);
+  const allowed = moduleChunks[file];
+  for (const specifier of banned) {
+    if (specifier !== allowed && source.includes(specifier)) {
+      offenders.push(`${file} (${specifier})`);
+    }
   }
   for (const match of source.matchAll(/from\s+["'](\.[^"']+)["']/g)) {
     const [, spec] = match;
@@ -33,14 +44,14 @@ for (const entry of entries) {
 }
 // Every dist chunk is reachable from some entry; unknown leftovers get checked too.
 for (const file of readdirSync(dist)) {
-  if (file.endsWith(".mjs") && !visited.has(file) && file !== "nostr.mjs") {
+  if (file.endsWith(".mjs") && !visited.has(file)) {
     visit(file);
   }
 }
 
 if (offenders.length > 0) {
-  console.error(`@qntx/nostr reachable from non-nostr entries: ${offenders.join(", ")}`);
+  console.error(`protocol library reachable from a foreign entry: ${offenders.join(", ")}`);
   process.exitCode = 1;
 } else {
-  console.log(`check-nostr-free: ${visited.size} files clean`);
+  console.log(`check-module-free: ${visited.size} files clean`);
 }

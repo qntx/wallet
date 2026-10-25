@@ -23,6 +23,7 @@ import type { CommitOptions, Handler, KernelContext } from "./commands/context.t
 import { CORE_HANDLERS } from "./commands/index.ts";
 import { KernelError } from "./errors.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
+import { createSparkModule } from "./modules/spark/index.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
 import { wipe } from "./secret/secret.ts";
 import { Session } from "./session/session.ts";
@@ -92,10 +93,12 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
   // VaultHooks entry in ctx.modules and its status section; there is no registry — future modules
   // add a line here and a section in status.ts's composition.
   const nostr = createNostrModule();
+  const spark = createSparkModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
     ...CORE_HANDLERS,
     ...nostr.handlers,
+    ...spark.handlers,
   } satisfies { [M in MethodName]: Handler<M> };
 
   let dirty = false; // a commit happened since the last status event
@@ -252,7 +255,7 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
-    modules: [nostr.vault],
+    modules: [nostr.vault, spark.vault],
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {

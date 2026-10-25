@@ -42,6 +42,11 @@
       "import": "./dist/nostr.mjs",
       "default": "./dist/nostr.mjs"
     },
+    "./spark": {
+      "types": "./dist/spark.d.mts",
+      "import": "./dist/spark.mjs",
+      "default": "./dist/spark.mjs"
+    },
     "./protocol": {
       "types": "./dist/protocol.d.mts",
       "import": "./dist/protocol.mjs",
@@ -73,6 +78,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@qntx/nostr": "0.14.0",
+    "@qntx/spark": "0.1.1",
     "@qntx/tsconfig": "1.0.1",
     "@types/node": "26.6.4",
     "publint": "0.3.25",
@@ -80,10 +86,14 @@
     "vite-plus": "1.0.0"
   },
   "peerDependencies": {
-    "@qntx/nostr": "^0.14.0"
+    "@qntx/nostr": "^0.14.0",
+    "@qntx/spark": "^0.1.1"
   },
   "peerDependenciesMeta": {
     "@qntx/nostr": {
+      "optional": true
+    },
+    "@qntx/spark": {
       "optional": true
     }
   },

@@ -1,4 +1,5 @@
 import type { UnsignedEvent } from "@qntx/nostr";
+import { bytesToHex } from "@noble/hashes/utils.js";
 import { WalletError } from "@qntx/wallet";
 import type { MnemonicDraft, NostrKeyRef, Wallet, WalletOptions } from "@qntx/wallet";
 /**
@@ -9,6 +10,7 @@ import type { MnemonicDraft, NostrKeyRef, Wallet, WalletOptions } from "@qntx/wa
  */
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 import { nostr } from "@qntx/wallet/nostr";
+import { spark } from "@qntx/wallet/spark";
 
 const stats = { spawned: 0, terminated: 0 };
 const NativeWorker = Worker;
@@ -202,8 +204,27 @@ const api = {
   async unlockPasskey(): Promise<unknown> {
     return attempt(async () => current().vault.unlock({ kind: "passkey" }));
   },
+  async importMnemonic(mnemonic: string, password: string): Promise<unknown> {
+    return attempt(async () =>
+      current().wallets.importMnemonic({
+        mnemonic,
+        factor: { kind: "password", password },
+      }),
+    );
+  },
   async deriveKey(walletId: string, groupIndex: number): Promise<unknown> {
     return attempt(async () => nostr(current()).deriveKey(walletId, groupIndex));
+  },
+  async sparkIdentity(walletId: string, groupIndex: number, network: string): Promise<unknown> {
+    return attempt(async () => {
+      const ref = {
+        walletId,
+        groupIndex,
+        network: network === "mainnet" ? ("mainnet" as const) : ("regtest" as const),
+      };
+      const identity = await spark(current()).signer(ref).identityPublicKey();
+      return { identity: bytesToHex(identity) };
+    });
   },
   async sign(ref: NostrKeyRef, event: UnsignedEvent): Promise<unknown> {
     return attempt(async () => nostr(current()).signer(ref).signEvent(event));

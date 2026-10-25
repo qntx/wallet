@@ -7,11 +7,12 @@ const config: UserConfig = defineConfig({
       index: "src/index.ts",
       host: "src/host.ts",
       nostr: "src/nostr/index.ts",
+      spark: "src/spark/index.ts",
       protocol: "src/protocol/index.ts",
       types: "src/types.ts",
     },
     deps: {
-      neverBundle: ["@qntx/nostr"],
+      neverBundle: ["@qntx/nostr", "@qntx/spark"],
     },
     dts: {
       generator: "tsgo",

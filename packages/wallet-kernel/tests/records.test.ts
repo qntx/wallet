@@ -83,6 +83,12 @@ describe("vault meta vector", () => {
       pbkdf2: subtlePbkdf2,
       store: createMemoryStore(),
       policy: { idleMs: 0, maxSessionMs: 0, maxScryptLogN: 20, activity: "presence" },
+      backends: {
+        spark: async () => {
+          await Promise.resolve();
+          throw new Error("no spark backend");
+        },
+      },
     };
     const factor: StoredFactor = {
       kind: "password",

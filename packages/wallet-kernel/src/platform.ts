@@ -2,6 +2,7 @@
  * Platform capabilities injected by the host packages. The kernel holds no ambient singletons and
  * imports no platform APIs; every capability arrives through these types.
  */
+import type { SparkCrypto } from "@qntx/spark/crypto";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import type { RecordStore } from "./vault/store.ts";
@@ -50,6 +51,16 @@ export type KernelPlatform = {
   readonly pbkdf2: Pbkdf2;
   readonly store: RecordStore;
   readonly policy: KernelPolicy;
+  /**
+   * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
+   * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
+   * nostr-only session never loads it. Each call must return a backend the kernel keeps until a
+   * WasmPoisonedError drops it; load failures reject (the kernel reports `unavailable`, a host's
+   * own KernelError passes through — e.g. `integrity` on a hash mismatch).
+   */
+  readonly backends: {
+    readonly spark: () => Promise<SparkCrypto>;
+  };
 };
 
 /**

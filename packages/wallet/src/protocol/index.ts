@@ -20,6 +20,8 @@ import {
 import type { MethodSpec } from "./core.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { NOSTR_METHODS, nostrStatus } from "./nostr.ts";
+// oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
+import { SPARK_METHODS } from "./spark.ts";
 import { arr, literal, nullValue, obj, opt, union } from "./validate.ts";
 import type { Validator } from "./validate.ts";
 
@@ -157,7 +159,8 @@ const statusPayload: Validator<StatusPayload> = obj({
 export const METHODS: {
   readonly status: MethodSpec<NullValue, StatusPayload>;
 } & typeof CORE_METHODS &
-  typeof NOSTR_METHODS = {
+  typeof NOSTR_METHODS &
+  typeof SPARK_METHODS = {
   status: {
     session: false,
     presence: false,
@@ -166,13 +169,16 @@ export const METHODS: {
   },
   ...CORE_METHODS,
   ...NOSTR_METHODS,
+  ...SPARK_METHODS,
 };
 
 // A method name must live in exactly one table: an overlap violates the never constraint.
 type AssertNever<T extends never> = T;
-export type MethodTablesDisjoint = AssertNever<
-  keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS
->;
+export type MethodTablesDisjoint = [
+  AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>,
+  AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>,
+];
 
 export type MethodName = keyof typeof METHODS;
 export type ParamsOf<M extends MethodName> = ReturnType<(typeof METHODS)[M]["params"]>;
@@ -200,7 +206,7 @@ export const kernelEvent: Validator<KernelEvent> = union(
 export const responseError: Validator<{ code: WalletErrorCode; retryAt?: number | undefined }> =
   errorPayload;
 
-export { CORE_METHODS, NOSTR_METHODS, walletErrorCode };
+export { CORE_METHODS, NOSTR_METHODS, SPARK_METHODS, walletErrorCode };
 export type { MethodSpec } from "./core.ts";
 export type { CreatedResult, Factor } from "./core.ts";
 export type {
@@ -212,6 +218,28 @@ export type {
   UnsignedEventInput,
   UnwrapResult,
 } from "./nostr.ts";
+export type {
+  FrostAggregateJob,
+  FrostSignJob,
+  HtlcTimeoutSignRequest,
+  IdentityStatement,
+  OperatorCommitment,
+  PrepareClaimRequest,
+  PreparedClaim,
+  PreparedLightningReceive,
+  PreparedTransfer,
+  PreparedTransferLeaf,
+  PrepareTransferRequest,
+  SigningCommitment,
+  SigningTarget,
+  SparkAccountRef,
+  SparkKey,
+  SparkLeafKey,
+  SparkNetwork,
+  StaticDepositClaimRequest,
+  StaticDepositClaimResult,
+  StaticDepositClaimStatement,
+} from "./spark.ts";
 export {
   ValidationError,
   arr,
@@ -222,6 +250,7 @@ export {
   nullValue,
   obj,
   opt,
+  record,
   str,
   union,
   validate,
