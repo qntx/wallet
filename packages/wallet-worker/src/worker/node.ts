@@ -3,6 +3,7 @@
  * are wired here: subtle PBKDF2, the store RPC over the transferred MessagePort, timers through
  * platform.setTimer, policy from workerData. The kernel itself stays platform-neutral.
  */
+import { readFile } from "node:fs/promises";
 import { parentPort, workerData } from "node:worker_threads";
 import type { MessagePort } from "node:worker_threads";
 
@@ -10,6 +11,7 @@ import { startKernel } from "@qntx/wallet-kernel";
 import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
 
 import { MAX_SESSION_MS, idleMsOf, isNodeWorkerData } from "../shared.ts";
+import { loadSparkBackend } from "./spark.ts";
 import { createStoreClient } from "./store-client.ts";
 import { subtlePbkdf2 } from "./subtle.ts";
 
@@ -67,6 +69,13 @@ const platform: KernelPlatform = {
     maxSessionMs: MAX_SESSION_MS,
     maxScryptLogN: 20,
     activity: "request",
+  },
+  backends: {
+    spark: async () =>
+      loadSparkBackend(async () => {
+        const bytes = await readFile(new URL("spark.wasm", import.meta.url));
+        return new Uint8Array(bytes);
+      }),
   },
 };
 

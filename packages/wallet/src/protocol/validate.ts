@@ -148,6 +148,43 @@ export function obj<S extends Shape>(shape: S): Validator<ShapeResult<S>> {
   };
 }
 
+const FORBIDDEN_RECORD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * A `Record<K, V>` wire value: plain objects only, every key checked by `key`, every value by
+ * `value`, at most `max` entries. Prototype-polluting keys are rejected outright — a validated
+ * record must be safe to copy key-by-key.
+ */
+export function record<K extends string, V>(
+  key: Validator<K>,
+  value: Validator<V>,
+  max: number,
+): Validator<Record<K, V>> {
+  return (input) => {
+    if (
+      typeof input !== "object" ||
+      input === null ||
+      Array.isArray(input) ||
+      input instanceof Uint8Array ||
+      Object.getPrototypeOf(input) !== Object.prototype
+    ) {
+      fail();
+    }
+    const out: Record<string, V> = {};
+    const entries = Object.entries(input);
+    if (entries.length > max) {
+      fail();
+    }
+    for (const [name, item] of entries) {
+      if (FORBIDDEN_RECORD_KEYS.has(name)) {
+        fail();
+      }
+      out[key(name)] = value(item);
+    }
+    return out;
+  };
+}
+
 /** Tries each branch in order; the first match wins. */
 export function union<Vs extends ReadonlyArray<Validator<unknown>>>(
   ...branches: Vs

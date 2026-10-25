@@ -9,6 +9,7 @@ import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
 
 import { MAX_SESSION_MS, idleMsOf, isBrowserWorkerInit } from "../shared.ts";
 import { createIndexedDbStore } from "./indexeddb.ts";
+import { loadSparkBackend } from "./spark.ts";
 import { subtlePbkdf2 } from "./subtle.ts";
 
 const onInit = (event: MessageEvent<unknown>): void => {
@@ -38,6 +39,16 @@ const onInit = (event: MessageEvent<unknown>): void => {
       maxSessionMs: MAX_SESSION_MS,
       maxScryptLogN: 18,
       activity: "presence",
+    },
+    backends: {
+      spark: async () =>
+        loadSparkBackend(async () => {
+          const response = await fetch(new URL("spark.wasm", import.meta.url));
+          if (!response.ok) {
+            throw new Error(`spark.wasm fetch failed (HTTP ${response.status})`);
+          }
+          return new Uint8Array(await response.arrayBuffer());
+        }),
     },
   };
 

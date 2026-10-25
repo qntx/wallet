@@ -296,4 +296,33 @@ test.describe("web host", () => {
     const result = await page.evaluate(async () => qntx.createPasskey());
     expect(result).toEqual({ ok: false, code: "cancelled" });
   });
+
+  test("spark: the worker fetches spark.wasm, verifies it and returns the identity key", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.evaluate(async () => qntx.create());
+    // The public test mnemonic — the vector value is computed by the real signer (regtest group 0).
+    const imported = await page.evaluate(
+      async (args) => qntx.importMnemonic(args.mnemonic, args.password),
+      {
+        mnemonic:
+          "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        password: PASSWORD,
+      },
+    );
+    if (!imported.ok) {
+      throw new Error(`importMnemonic failed: ${imported.code}`);
+    }
+    const identity = await page.evaluate(
+      async (walletId) => qntx.sparkIdentity(walletId, 0, "regtest"),
+      imported.value.walletId,
+    );
+    if (!identity.ok) {
+      throw new Error(`sparkIdentity failed: ${identity.code}`);
+    }
+    expect(identity.value.identity).toBe(
+      "02698b27ac308b275671b3ca25436346469d04a5bba578ae39feba1d65897a6abc",
+    );
+  });
 });

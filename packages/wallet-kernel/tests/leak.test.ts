@@ -165,6 +165,45 @@ describe("leak check", () => {
       ),
     );
 
+    // The spark.* methods run their full derivation chain (entropy → seed → accountKey) in this
+    // harness before the injected backend fails — no derived material may appear on the wire.
+    const sparkAccount = {
+      walletId: passkeyVector.vector.walletId,
+      groupIndex: 0,
+      network: "mainnet" as const,
+    };
+    await h.call("spark.identityPublicKey", { account: sparkAccount }, session);
+    await h.call(
+      "spark.signIdentity",
+      {
+        account: sparkAccount,
+        statement: { kind: "spark-invoice", invoice: new Uint8Array(24) },
+      },
+      session,
+    );
+    await h.call(
+      "spark.prepareTransfer",
+      {
+        account: sparkAccount,
+        request: {
+          transferId: "3f7b2e1c-1a2b-4c3d-8e4f-000000000002",
+          leaves: [
+            {
+              leafId: "3f7b2e1c-1a2b-4c3d-8e4f-000000000001",
+              key: { type: "leaf", leafId: "3f7b2e1c-1a2b-4c3d-8e4f-000000000001" },
+              receiverIdentityPublicKey: new Uint8Array(33),
+            },
+          ],
+        },
+      },
+      session,
+    );
+    await h.call(
+      "spark.identityPublicKey",
+      { account: { ...sparkAccount, walletId: "ffffffffffffffff" } },
+      session,
+    );
+
     // Lock is host-side: the respawned kernel over the same store is a fresh enclave.
     const h2 = createHarness({ seed: 43, store: h.store });
     await h2.settle();

@@ -31,10 +31,24 @@ const FACTOR_ID = "11223344556677889900aabbccddeeff";
 const PRF = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
 const CREATED_AT = 1767225600000;
 const EVENT_TIME = 1767225600;
-
 const hexOf = (text: string): string =>
   Array.from(new TextEncoder().encode(text), (b) => b.toString(16).padStart(2, "0")).join("");
 const $b = (hex: string): { $bytes: string } => ({ $bytes: hex });
+
+const OPERATOR = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111";
+const COMPRESSED = $b(`02${"ab".repeat(32)}`);
+const BYTES32 = $b("cd".repeat(32));
+const SIG64 = $b(`${"ef".repeat(32)}${"01".repeat(32)}`);
+const TXID = $b("fe".repeat(32));
+const LEAF_ID = "3f7b2e1c-1a2b-4c3d-8e4f-000000000001";
+const TRANSFER_ID = "3f7b2e1c-1a2b-4c3d-8e4f-000000000002";
+const SPARK_ACCOUNT = { walletId: WALLET_ID, groupIndex: 0, network: "regtest" };
+const sparkCommitment = { hiding: COMPRESSED, binding: COMPRESSED };
+const sparkTarget = {
+  transaction: $b(`02000000${"00".repeat(24)}`),
+  inputIndex: 0,
+  prevouts: [{ script: $b(`5120${"ab".repeat(32)}`), amount: 1_000 }],
+};
 
 const passwordFactor = { kind: "password", password: $b(hexOf("correct horse battery staple")) };
 const passkeyFactor = {
@@ -286,6 +300,219 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
       params: { publicKey: PUBLIC_KEY, events: [signedEvent] },
     },
   },
+  {
+    name: "spark.identityPublicKey",
+    message: {
+      v: 1,
+      id: 30,
+      method: "spark.identityPublicKey",
+      session: SESSION,
+      params: { account: SPARK_ACCOUNT },
+    },
+  },
+  {
+    name: "spark.publicKeys",
+    message: {
+      v: 1,
+      id: 31,
+      method: "spark.publicKeys",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        keys: [
+          { type: "leaf", leafId: LEAF_ID },
+          { type: "static-deposit", index: 0 },
+        ],
+      },
+    },
+  },
+  {
+    name: "spark.receivedPublicKeys",
+    message: {
+      v: 1,
+      id: 32,
+      method: "spark.receivedPublicKeys",
+      session: SESSION,
+      params: { account: SPARK_ACCOUNT, ciphertexts: [$b("ab".repeat(96))] },
+    },
+  },
+  {
+    name: "spark.newCommitments",
+    message: {
+      v: 1,
+      id: 33,
+      method: "spark.newCommitments",
+      session: SESSION,
+      params: { account: SPARK_ACCOUNT, count: 2 },
+    },
+  },
+  {
+    name: "spark.signFrost",
+    message: {
+      v: 1,
+      id: 34,
+      method: "spark.signFrost",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        jobs: [
+          {
+            key: { type: "leaf", leafId: LEAF_ID },
+            target: sparkTarget,
+            verifyingKey: COMPRESSED,
+            commitment: sparkCommitment,
+            operatorCommitments: [{ identifier: OPERATOR, commitment: sparkCommitment }],
+          },
+        ],
+      },
+    },
+  },
+  {
+    name: "spark.aggregateFrost",
+    message: {
+      v: 1,
+      id: 35,
+      method: "spark.aggregateFrost",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        jobs: [
+          {
+            key: { type: "static-deposit", index: 1 },
+            target: sparkTarget,
+            verifyingKey: COMPRESSED,
+            commitment: sparkCommitment,
+            signatureShare: BYTES32,
+            operators: [
+              {
+                identifier: OPERATOR,
+                commitment: sparkCommitment,
+                signatureShare: BYTES32,
+                publicKey: COMPRESSED,
+              },
+            ],
+          },
+        ],
+      },
+    },
+  },
+  {
+    name: "spark.signIdentity",
+    message: {
+      v: 1,
+      id: 36,
+      method: "spark.signIdentity",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        statement: { kind: "so-challenge", challenge: $b("01".repeat(48)) },
+      },
+    },
+  },
+  {
+    name: "spark.signKeySpend",
+    message: {
+      v: 1,
+      id: 37,
+      method: "spark.signKeySpend",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        key: { type: "received", ciphertext: $b("ab".repeat(96)) },
+        target: sparkTarget,
+      },
+    },
+  },
+  {
+    name: "spark.signHtlcTimeout",
+    message: {
+      v: 1,
+      id: 38,
+      method: "spark.signHtlcTimeout",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        request: {
+          transaction: $b(`02000000${"00".repeat(24)}`),
+          inputIndex: 0,
+          prevoutAmountSats: 1_000,
+          paymentHash: BYTES32,
+          hashLockPublicKey: COMPRESSED,
+        },
+      },
+    },
+  },
+  {
+    name: "spark.prepareTransfer",
+    message: {
+      v: 1,
+      id: 39,
+      method: "spark.prepareTransfer",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        request: {
+          transferId: TRANSFER_ID,
+          leaves: [
+            {
+              leafId: LEAF_ID,
+              key: { type: "leaf", leafId: LEAF_ID },
+              receiverIdentityPublicKey: COMPRESSED,
+            },
+          ],
+        },
+      },
+    },
+  },
+  {
+    name: "spark.prepareClaim",
+    message: {
+      v: 1,
+      id: 40,
+      method: "spark.prepareClaim",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        request: {
+          transferId: TRANSFER_ID,
+          leaves: [{ leafId: LEAF_ID, secretCipher: $b("ab".repeat(96)) }],
+        },
+      },
+    },
+  },
+  {
+    name: "spark.prepareLightningReceive",
+    message: {
+      v: 1,
+      id: 41,
+      method: "spark.prepareLightningReceive",
+      session: SESSION,
+      params: { account: SPARK_ACCOUNT },
+    },
+  },
+  {
+    name: "spark.claimStaticDeposit",
+    message: {
+      v: 1,
+      id: 42,
+      method: "spark.claimStaticDeposit",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        request: {
+          index: 0,
+          statement: {
+            kind: "static-deposit-claim",
+            network: "regtest",
+            txid: TXID,
+            vout: 0,
+            creditAmountSats: 100_000,
+            sspSignature: SIG64,
+          },
+        },
+      },
+    },
+  },
 ];
 
 const accept = [
@@ -356,6 +583,56 @@ const accept = [
     name: "response-ok-nostr.nip44Encrypt",
     check: "response:nostr.nip44Encrypt",
     message: { v: 1, id: 21, ok: "ciphertext?iv=1" },
+  },
+  {
+    name: "response-ok-spark.identityPublicKey",
+    check: "response:spark.identityPublicKey",
+    message: { v: 1, id: 30, ok: COMPRESSED },
+  },
+  {
+    name: "response-ok-spark.newCommitments",
+    check: "response:spark.newCommitments",
+    message: { v: 1, id: 33, ok: [sparkCommitment, sparkCommitment] },
+  },
+  {
+    name: "response-ok-spark.prepareLightningReceive",
+    check: "response:spark.prepareLightningReceive",
+    message: {
+      v: 1,
+      id: 41,
+      ok: {
+        paymentHash: BYTES32,
+        operatorPackages: { [OPERATOR]: $b("ab".repeat(96)) },
+      },
+    },
+  },
+  {
+    name: "response-ok-spark.prepareTransfer",
+    check: "response:spark.prepareTransfer",
+    message: {
+      v: 1,
+      id: 39,
+      ok: {
+        operatorPackages: { [OPERATOR]: $b("ab".repeat(96)) },
+        leaves: [
+          {
+            leafId: LEAF_ID,
+            newPublicKey: COMPRESSED,
+            secretCipher: $b("ab".repeat(96)),
+            signature: SIG64,
+          },
+        ],
+      },
+    },
+  },
+  {
+    name: "response-ok-spark.claimStaticDeposit",
+    check: "response:spark.claimStaticDeposit",
+    message: {
+      v: 1,
+      id: 42,
+      ok: { encryptedSecretKey: $b("ab".repeat(96)), signature: SIG64 },
+    },
   },
   {
     name: "response-err-wrong-password",
@@ -469,6 +746,71 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
       session: SESSION,
       params: { purpose: "a-purpose-name-that-is-way-too-long" },
     },
+  },
+  {
+    name: "params-spark-batch-over-cap",
+    check: "request",
+    message: {
+      v: 1,
+      id: 31,
+      method: "spark.publicKeys",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        keys: Array.from({ length: 65 }, () => ({ type: "leaf", leafId: LEAF_ID })),
+      },
+    },
+  },
+  {
+    name: "params-spark-count-out-of-range",
+    check: "request",
+    message: {
+      v: 1,
+      id: 33,
+      method: "spark.newCommitments",
+      session: SESSION,
+      params: { account: SPARK_ACCOUNT, count: 65 },
+    },
+  },
+  {
+    name: "params-spark-bad-identifier",
+    check: "request",
+    message: {
+      v: 1,
+      id: 34,
+      method: "spark.signFrost",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        jobs: [
+          {
+            key: { type: "leaf", leafId: LEAF_ID },
+            target: sparkTarget,
+            verifyingKey: COMPRESSED,
+            commitment: sparkCommitment,
+            operatorCommitments: [{ identifier: "not-hex", commitment: sparkCommitment }],
+          },
+        ],
+      },
+    },
+  },
+  {
+    name: "params-spark-extra-field",
+    check: "request",
+    message: {
+      v: 1,
+      id: 30,
+      method: "spark.identityPublicKey",
+      session: SESSION,
+      params: { account: SPARK_ACCOUNT, extra: 1 },
+    },
+  },
+  {
+    name: "response-spark-record-proto-key",
+    check: "response:spark.prepareLightningReceive",
+    message: JSON.parse(
+      `{"v":1,"id":41,"ok":{"paymentHash":${JSON.stringify(BYTES32)},"operatorPackages":{"__proto__":{"$bytes":"abcd"}}}}`,
+    ) as unknown,
   },
   {
     name: "params-session-wrong-type",

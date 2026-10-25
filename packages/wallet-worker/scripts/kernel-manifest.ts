@@ -11,6 +11,9 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { SPARK_WASM_INTEGRITY } from "@qntx/spark-wasm/browser";
+import { SPARK_ABI_VERSION } from "@qntx/spark/crypto";
+
 import { VAULT_FORMAT } from "../../wallet-kernel/src/vault/store.ts";
 import { PROTOCOL_VERSION } from "../../wallet/src/protocol/index.ts";
 
@@ -22,6 +25,13 @@ export type KernelManifest = {
     readonly version: string;
     readonly integrity: string;
   }>;
+  /** Host-injected crypto backends: ABI pin and the artifact hash the loader verifies. */
+  readonly backends: {
+    readonly spark: {
+      readonly abiVersion: number;
+      readonly wasmIntegrity: string;
+    };
+  };
   readonly bundles: ReadonlyArray<{ readonly file: string; readonly sha256: string }>;
 };
 
@@ -66,13 +76,24 @@ const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
  */
 export function kernelManifest(input: {
   readonly dependencies: Readonly<Record<string, string>>;
+  /** Host-side backend packages (e.g. `@qntx/spark-wasm`); same exact-pin and integrity rules. */
+  readonly backendDependencies: Readonly<Record<string, string>>;
+  readonly backends: {
+    readonly spark: {
+      readonly abiVersion: number;
+      readonly wasmIntegrity: string;
+    };
+  };
   readonly lockPackages: Readonly<Record<string, unknown>>;
   readonly bundles: ReadonlyArray<{ readonly file: string; readonly bytes: Uint8Array }>;
   readonly protocol: number;
   readonly vaultFormat: number;
 }): KernelManifest {
   const libraries: Array<{ name: string; version: string; integrity: string }> = [];
-  const entries = Object.entries(input.dependencies).toSorted(([a], [b]) => a.localeCompare(b));
+  const entries = [
+    ...Object.entries(input.dependencies),
+    ...Object.entries(input.backendDependencies),
+  ].toSorted(([a], [b]) => a.localeCompare(b));
   for (const [name, spec] of entries) {
     if (!EXACT_VERSION.test(spec)) {
       throw new Error(`${name}: kernel dependencies must be exact versions, got "${spec}"`);
@@ -98,6 +119,7 @@ export function kernelManifest(input: {
   return {
     protocol: input.protocol,
     vaultFormat: input.vaultFormat,
+    backends: input.backends,
     libraries,
     bundles: input.bundles.map(({ file, bytes }) => ({
       file,
@@ -112,8 +134,14 @@ if (import.meta.main) {
   const kernelPkg: unknown = JSON.parse(
     readFileSync(join(root, "packages/wallet-kernel/package.json"), "utf8"),
   );
+  const workerPkg: unknown = JSON.parse(
+    readFileSync(join(root, "packages/wallet-worker/package.json"), "utf8"),
+  );
+  const workerDevDeps = stringMap(isRecord(workerPkg) ? workerPkg["devDependencies"] : undefined);
   const manifest = kernelManifest({
     dependencies: stringMap(isRecord(kernelPkg) ? kernelPkg["dependencies"] : undefined),
+    backendDependencies: { "@qntx/spark-wasm": workerDevDeps["@qntx/spark-wasm"] ?? "" },
+    backends: { spark: { abiVersion: SPARK_ABI_VERSION, wasmIntegrity: SPARK_WASM_INTEGRITY } },
     lockPackages: lockPackages(parseLockfile(readFileSync(join(root, "bun.lock"), "utf8"))),
     bundles: ["kernel.worker.js", "kernel.node.js"].map((file) => ({
       file,

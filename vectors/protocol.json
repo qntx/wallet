@@ -397,6 +397,424 @@
       }
     },
     {
+      "name": "request-spark.identityPublicKey",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 30,
+        "method": "spark.identityPublicKey",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.publicKeys",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 31,
+        "method": "spark.publicKeys",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "keys": [
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "static-deposit",
+              "index": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "request-spark.receivedPublicKeys",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 32,
+        "method": "spark.receivedPublicKeys",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "ciphertexts": [
+            {
+              "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "request-spark.newCommitments",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 33,
+        "method": "spark.newCommitments",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "count": 2
+        }
+      }
+    },
+    {
+      "name": "request-spark.signFrost",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 34,
+        "method": "spark.signFrost",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "jobs": [
+            {
+              "key": {
+                "type": "leaf",
+                "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+              },
+              "target": {
+                "transaction": {
+                  "$bytes": "02000000000000000000000000000000000000000000000000000000"
+                },
+                "inputIndex": 0,
+                "prevouts": [
+                  {
+                    "script": {
+                      "$bytes": "5120abababababababababababababababababababababababababababababababab"
+                    },
+                    "amount": 1000
+                  }
+                ]
+              },
+              "verifyingKey": {
+                "$bytes": "02abababababababababababababababababababababababababababababababab"
+              },
+              "commitment": {
+                "hiding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                },
+                "binding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                }
+              },
+              "operatorCommitments": [
+                {
+                  "identifier": "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111",
+                  "commitment": {
+                    "hiding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    },
+                    "binding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "request-spark.aggregateFrost",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 35,
+        "method": "spark.aggregateFrost",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "jobs": [
+            {
+              "key": {
+                "type": "static-deposit",
+                "index": 1
+              },
+              "target": {
+                "transaction": {
+                  "$bytes": "02000000000000000000000000000000000000000000000000000000"
+                },
+                "inputIndex": 0,
+                "prevouts": [
+                  {
+                    "script": {
+                      "$bytes": "5120abababababababababababababababababababababababababababababababab"
+                    },
+                    "amount": 1000
+                  }
+                ]
+              },
+              "verifyingKey": {
+                "$bytes": "02abababababababababababababababababababababababababababababababab"
+              },
+              "commitment": {
+                "hiding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                },
+                "binding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                }
+              },
+              "signatureShare": {
+                "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+              },
+              "operators": [
+                {
+                  "identifier": "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111",
+                  "commitment": {
+                    "hiding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    },
+                    "binding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    }
+                  },
+                  "signatureShare": {
+                    "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+                  },
+                  "publicKey": {
+                    "$bytes": "02abababababababababababababababababababababababababababababababab"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "request-spark.signIdentity",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 36,
+        "method": "spark.signIdentity",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "statement": {
+            "kind": "so-challenge",
+            "challenge": {
+              "$bytes": "010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.signKeySpend",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 37,
+        "method": "spark.signKeySpend",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "key": {
+            "type": "received",
+            "ciphertext": {
+              "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+            }
+          },
+          "target": {
+            "transaction": {
+              "$bytes": "02000000000000000000000000000000000000000000000000000000"
+            },
+            "inputIndex": 0,
+            "prevouts": [
+              {
+                "script": {
+                  "$bytes": "5120abababababababababababababababababababababababababababababababab"
+                },
+                "amount": 1000
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.signHtlcTimeout",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 38,
+        "method": "spark.signHtlcTimeout",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "request": {
+            "transaction": {
+              "$bytes": "02000000000000000000000000000000000000000000000000000000"
+            },
+            "inputIndex": 0,
+            "prevoutAmountSats": 1000,
+            "paymentHash": {
+              "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            },
+            "hashLockPublicKey": {
+              "$bytes": "02abababababababababababababababababababababababababababababababab"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.prepareTransfer",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 39,
+        "method": "spark.prepareTransfer",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "request": {
+            "transferId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000002",
+            "leaves": [
+              {
+                "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001",
+                "key": {
+                  "type": "leaf",
+                  "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+                },
+                "receiverIdentityPublicKey": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.prepareClaim",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 40,
+        "method": "spark.prepareClaim",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "request": {
+            "transferId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000002",
+            "leaves": [
+              {
+                "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001",
+                "secretCipher": {
+                  "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.prepareLightningReceive",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 41,
+        "method": "spark.prepareLightningReceive",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-spark.claimStaticDeposit",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 42,
+        "method": "spark.claimStaticDeposit",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "request": {
+            "index": 0,
+            "statement": {
+              "kind": "static-deposit-claim",
+              "network": "regtest",
+              "txid": {
+                "$bytes": "fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
+              },
+              "vout": 0,
+              "creditAmountSats": 100000,
+              "sspSignature": {
+                "$bytes": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef0101010101010101010101010101010101010101010101010101010101010101"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "response-ok-status",
       "check": "response:status",
       "message": {
@@ -578,6 +996,106 @@
         "v": 1,
         "id": 21,
         "ok": "ciphertext?iv=1"
+      }
+    },
+    {
+      "name": "response-ok-spark.identityPublicKey",
+      "check": "response:spark.identityPublicKey",
+      "message": {
+        "v": 1,
+        "id": 30,
+        "ok": {
+          "$bytes": "02abababababababababababababababababababababababababababababababab"
+        }
+      }
+    },
+    {
+      "name": "response-ok-spark.newCommitments",
+      "check": "response:spark.newCommitments",
+      "message": {
+        "v": 1,
+        "id": 33,
+        "ok": [
+          {
+            "hiding": {
+              "$bytes": "02abababababababababababababababababababababababababababababababab"
+            },
+            "binding": {
+              "$bytes": "02abababababababababababababababababababababababababababababababab"
+            }
+          },
+          {
+            "hiding": {
+              "$bytes": "02abababababababababababababababababababababababababababababababab"
+            },
+            "binding": {
+              "$bytes": "02abababababababababababababababababababababababababababababababab"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "response-ok-spark.prepareLightningReceive",
+      "check": "response:spark.prepareLightningReceive",
+      "message": {
+        "v": 1,
+        "id": 41,
+        "ok": {
+          "paymentHash": {
+            "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "operatorPackages": {
+            "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111": {
+              "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "response-ok-spark.prepareTransfer",
+      "check": "response:spark.prepareTransfer",
+      "message": {
+        "v": 1,
+        "id": 39,
+        "ok": {
+          "operatorPackages": {
+            "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111": {
+              "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+            }
+          },
+          "leaves": [
+            {
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001",
+              "newPublicKey": {
+                "$bytes": "02abababababababababababababababababababababababababababababababab"
+              },
+              "secretCipher": {
+                "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+              },
+              "signature": {
+                "$bytes": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef0101010101010101010101010101010101010101010101010101010101010101"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "response-ok-spark.claimStaticDeposit",
+      "check": "response:spark.claimStaticDeposit",
+      "message": {
+        "v": 1,
+        "id": 42,
+        "ok": {
+          "encryptedSecretKey": {
+            "$bytes": "abababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababab"
+          },
+          "signature": {
+            "$bytes": "efefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefef0101010101010101010101010101010101010101010101010101010101010101"
+          }
+        }
       }
     },
     {
@@ -816,6 +1334,402 @@
         "session": "00112233445566778899aabbccddeeff",
         "params": {
           "purpose": "a-purpose-name-that-is-way-too-long"
+        }
+      }
+    },
+    {
+      "name": "params-spark-batch-over-cap",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 31,
+        "method": "spark.publicKeys",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "keys": [
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            },
+            {
+              "type": "leaf",
+              "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "params-spark-count-out-of-range",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 33,
+        "method": "spark.newCommitments",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "count": 65
+        }
+      }
+    },
+    {
+      "name": "params-spark-bad-identifier",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 34,
+        "method": "spark.signFrost",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "jobs": [
+            {
+              "key": {
+                "type": "leaf",
+                "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+              },
+              "target": {
+                "transaction": {
+                  "$bytes": "02000000000000000000000000000000000000000000000000000000"
+                },
+                "inputIndex": 0,
+                "prevouts": [
+                  {
+                    "script": {
+                      "$bytes": "5120abababababababababababababababababababababababababababababababab"
+                    },
+                    "amount": 1000
+                  }
+                ]
+              },
+              "verifyingKey": {
+                "$bytes": "02abababababababababababababababababababababababababababababababab"
+              },
+              "commitment": {
+                "hiding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                },
+                "binding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                }
+              },
+              "operatorCommitments": [
+                {
+                  "identifier": "not-hex",
+                  "commitment": {
+                    "hiding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    },
+                    "binding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "params-spark-extra-field",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 30,
+        "method": "spark.identityPublicKey",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "extra": 1
+        }
+      }
+    },
+    {
+      "name": "response-spark-record-proto-key",
+      "check": "response:spark.prepareLightningReceive",
+      "message": {
+        "v": 1,
+        "id": 41,
+        "ok": {
+          "paymentHash": {
+            "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          },
+          "operatorPackages": {
+            "__proto__": {
+              "$bytes": "abcd"
+            }
+          }
         }
       }
     },
