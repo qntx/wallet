@@ -2,8 +2,8 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EngineStoreError } from "../../src/errors.ts";
-import { createIndexedDbEngineStore } from "../../src/idb/indexeddb.ts";
-import { contract } from "../contract.ts";
+import { openIndexedDbEngineStore } from "../../src/idb/indexeddb.ts";
+import { contract, nulContract } from "../contract.ts";
 import { corruptByte, rawGet, rawPut } from "./raw.ts";
 
 const DATA_KEY = new Uint8Array(32).fill(7);
@@ -13,10 +13,8 @@ function useFakeIdb(): void {
   Object.assign(globalThis, { indexedDB: new IDBFactory() });
 }
 
-async function open(key = DATA_KEY) {
-  const s = createIndexedDbEngineStore({ name: "t", dataKey: key, random });
-  await s.ready;
-  return s;
+function open(key = DATA_KEY) {
+  return openIndexedDbEngineStore({ name: "t", dataKey: key, random });
 }
 
 describe("indexeddb EngineStore", () => {
@@ -66,6 +64,11 @@ describe("indexeddb EngineStore", () => {
       (e) => (e as EngineStoreError).code === "integrity",
     );
     await s2.close();
+  });
+
+  it("rejects NUL in collection names and keys", async () => {
+    useFakeIdb();
+    await nulContract(open);
   });
 
   it("use after close throws closed", async () => {

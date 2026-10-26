@@ -8,6 +8,7 @@
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 
 import { EngineStoreError } from "../errors.ts";
+import { checkName } from "../store/guard.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 
 export type Random = (length: number) => Uint8Array;
@@ -49,36 +50,37 @@ async function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
-export function createIndexedDbEngineStore(
+export function openIndexedDbEngineStore(
   options: IndexedDbEngineStoreOptions,
-): EngineStore & { readonly ready: Promise<void> } {
+): Promise<EngineStore> {
   const key = new Uint8Array(options.dataKey);
-  let closed = false;
-  let db: IDBDatabase | undefined;
-
-  const ready = new Promise<void>((resolve, reject) => {
+  return new Promise<EngineStore>((resolveOpen, rejectOpen) => {
     const open = indexedDB.open(options.name, 1);
     open.addEventListener("upgradeneeded", () => {
       open.result.createObjectStore(STORE);
     });
     open.addEventListener("success", () => {
-      db = open.result;
-      resolve();
+      resolveOpen(makeStore(open.result, key, options.random));
     });
     open.addEventListener("error", () => {
-      reject(new Error("indexeddb open failed", { cause: open.error }));
+      key.fill(0);
+      rejectOpen(new Error("indexeddb open failed", { cause: open.error }));
     });
   });
+}
+
+function makeStore(db: IDBDatabase, key: Uint8Array, random: Random): EngineStore {
+  let closed = false;
 
   const guard = (): IDBDatabase => {
-    if (closed || db === undefined) {
+    if (closed) {
       throw new EngineStoreError("closed", "engine store is closed");
     }
     return db;
   };
 
   const seal = (collection: string, recordKey: string, bytes: Uint8Array): Uint8Array => {
-    const nonce = options.random(24);
+    const nonce = random(24);
     const ciphertext = xchacha20poly1305(key, nonce, aad(collection, recordKey)).encrypt(bytes);
     const record = new Uint8Array(24 + ciphertext.length);
     record.set(nonce, 0);
@@ -102,6 +104,7 @@ export function createIndexedDbEngineStore(
   const make = (name: string): EngineCollection => ({
     get: async (recordKey) => {
       const database = guard();
+      checkName("key", recordKey);
       const tx = database.transaction(STORE, "readonly");
       const raw = tx.objectStore(STORE).get(id(name, recordKey));
       // oxlint-disable-next-line typescript/no-unsafe-argument -- IDB get() is any-typed by spec
@@ -110,12 +113,14 @@ export function createIndexedDbEngineStore(
     },
     put: async (recordKey, bytes) => {
       const database = guard();
+      checkName("key", recordKey);
       const tx = database.transaction(STORE, "readwrite");
       tx.objectStore(STORE).put(seal(name, recordKey, bytes), id(name, recordKey));
       await done(tx);
     },
     delete: async (recordKey) => {
       const database = guard();
+      checkName("key", recordKey);
       const tx = database.transaction(STORE, "readwrite");
       tx.objectStore(STORE).delete(id(name, recordKey));
       await done(tx);
@@ -133,12 +138,13 @@ export function createIndexedDbEngineStore(
   });
 
   return {
-    ready,
-    collection: make,
+    collection: (name) => {
+      checkName("collection", name);
+      return make(name);
+    },
     close: async () => {
       closed = true;
-      db?.close();
-      db = undefined;
+      db.close();
       key.fill(0);
       await Promise.resolve();
     },
