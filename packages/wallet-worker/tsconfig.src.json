@@ -5,5 +5,5 @@
     "lib": ["es2022"]
   },
   "include": ["src"],
-  "exclude": ["src/browser", "src/worker/browser.ts", "src/worker/indexeddb.ts"]
+  "exclude": ["src/browser", "src/worker/worker.ts", "src/worker/indexeddb.ts"]
 }
