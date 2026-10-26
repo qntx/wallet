@@ -1,7 +1,8 @@
 /**
  * Composition root: wires the Wallet's lock state to the SparkController's lifecycle. Unlocked →
  * open the EngineStore and start every declared account; locked → abort event loops, close every
- * client, close the store and reset account state. Subscribes, never polls.
+ * client, close the store and reset account state. Transitions are serialized on one promise chain,
+ * so an unlock→lock flip can never overlap a still-opening store.
  */
 import { createSparkClient } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
@@ -14,13 +15,13 @@ import type { EngineStore } from "./store/port.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
-  /** Test seam — defaults to the wallet's real spark proxy. */
-  readonly sparkApis?: SparkControllerOptions["spark"];
   readonly fetch: typeof globalThis.fetch;
   readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
   readonly logger: EngineLogger;
   readonly openStore: () => Promise<EngineStore>;
+  /** Test seam — defaults to the wallet's real spark proxy. */
+  readonly sparkApis?: SparkControllerOptions["spark"];
 };
 
 export type WalletEngine = {
@@ -38,21 +39,31 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     createClient: ({ ref, store, signer, fetch }) =>
       createSparkClient({
         network: ref.network,
-        // The signer port is structural — the wallet proxy satisfies it.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
-        signer: signer as Parameters<typeof createSparkClient>[0]["signer"],
+        signer,
         store,
         fetch,
       }),
   });
 
+  // The transition chain: every status change queues behind the previous one, so a late lock
+  // always observes the snapshot left by a settled unlock (and vice versa).
+  let chain: Promise<void> = Promise.resolve();
   let store: EngineStore | undefined;
   let started = false;
-  const onStatus = async (): Promise<void> => {
+
+  const transition = async (): Promise<void> => {
     const unlocked = options.wallet.getSnapshot().vault === "unlocked";
     if (unlocked && !started) {
       started = true;
-      store = await options.openStore();
+      try {
+        store = await options.openStore();
+      } catch (error) {
+        // No store, no clients — reset so the next status event retries cleanly.
+        started = false;
+        store = undefined;
+        options.logger.warn("engine store failed to open", error);
+        return;
+      }
       controller.setStore(store);
       await controller.init();
     } else if (!unlocked && started) {
@@ -64,9 +75,19 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await s?.close();
     }
   };
-  const unsubscribe = options.wallet.subscribe(() => {
-    void onStatus();
-  });
-  void onStatus();
+
+  const schedule = (): void => {
+    const previous = chain;
+    chain = (async () => {
+      try {
+        await previous;
+        await transition();
+      } catch (error) {
+        options.logger.warn("engine lock transition failed", error);
+      }
+    })();
+  };
+  const unsubscribe = options.wallet.subscribe(schedule);
+  schedule();
   return { spark: controller, unsubscribe };
 }

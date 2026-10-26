@@ -2,6 +2,7 @@ import { decodeSparkAddress, encodeSparkAddress, uuidv7 } from "@qntx/spark";
 import type { SparkClient } from "@qntx/spark";
 import type { UnlockFactor } from "@qntx/wallet";
 import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
+import type { SparkSigner } from "@qntx/wallet/spark";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -22,7 +23,7 @@ export type SparkControllerState = {
 };
 
 type SparkApis = {
-  readonly signer: (ref: SparkAccountRef) => unknown;
+  readonly signer: (ref: SparkAccountRef) => SparkSigner;
   readonly approve: (params: {
     account: SparkAccountRef;
     intent: SparkApproveIntent;
@@ -33,7 +34,7 @@ type SparkApis = {
 export type SparkClientFactory = (options: {
   readonly ref: SparkAccountRef;
   readonly store: ReturnType<typeof sparkStore>;
-  readonly signer: unknown;
+  readonly signer: SparkSigner;
   readonly fetch: typeof globalThis.fetch;
 }) => SparkClient;
 
@@ -70,7 +71,9 @@ export class SparkController extends Controller<SparkControllerState> {
   }
 
   addAccount(ref: SparkAccountRef): void {
-    this.accounts.set(key(ref), ref);
+    const k = key(ref);
+    this.accounts.set(k, ref);
+    this.patch(k, { status: "locked" });
     if (this.engineStore !== undefined) {
       void this.startAccount(ref);
     }

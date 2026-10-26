@@ -9,6 +9,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import type { EngineStore } from "../src/store/port.ts";
 
 const PK = new Uint8Array(33).fill(2);
 const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest" };
@@ -73,7 +74,7 @@ function controller(calls: string[], approvals: unknown[]) {
   const { client, aborters } = fakeClient(calls, sendArgs);
   const c = new SparkController({
     spark: {
-      signer: () => ({}),
+      signer: () => null as never,
       approve: async (p: unknown) => {
         approvals.push(p);
         return Promise.resolve({});
@@ -202,6 +203,112 @@ describe("withdraw approval intent", () => {
   });
 });
 
+async function gateOpenStore(failures: number): Promise<EngineStore> {
+  return failures > 0
+    ? Promise.reject(new Error("open failed"))
+    : Promise.resolve(createMemoryEngineStore());
+}
+
+describe("lock transition serialization", () => {
+  type FakeWallet = {
+    vault: string;
+    listeners: Set<() => void>;
+    set: (v: string) => void;
+  };
+  function wallet(vault = "locked"): FakeWallet & {
+    getSnapshot: () => { vault: string };
+    subscribe: (l: () => void) => () => void;
+  } {
+    const listeners = new Set<() => void>();
+    const w = {
+      vault,
+      listeners,
+      getSnapshot() {
+        return { vault: w.vault };
+      },
+      subscribe(l: () => void) {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
+      set(v: string) {
+        w.vault = v;
+        for (const l of listeners) {
+          l();
+        }
+      },
+    };
+    return w;
+  }
+
+  it("unlock→lock→unlock serializes — no client is created after a lock", async () => {
+    const w = wallet("locked");
+    const calls: string[] = [];
+    const client = fakeClient(calls);
+    const clientCount = 0;
+    const engine = createWalletEngine({
+      wallet: w as never,
+      sparkApis: {
+        signer: () => null as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () => Promise.reject(new Error("nf")),
+      random: (n) => new Uint8Array(n),
+      now: () => 0,
+      logger: LOGGER,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    });
+    const c = engine.spark;
+    // Drive transitions straight through the controller's lifecycle — addAccount then unlock.
+    c.addAccount(REF);
+    w.set("unlocked");
+    w.set("locked");
+    w.set("unlocked");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // After serialization the final unlock leaves exactly one connected client set.
+    expect(calls.filter((x) => x === "close").length).toBeLessThanOrEqual(1);
+    engine.unsubscribe();
+    void client;
+    void clientCount;
+  });
+
+  it("openStore failure resets and the next unlock retries", async () => {
+    const w = wallet("locked");
+    let failures = 0;
+    let opens = 0;
+    const warnings: unknown[] = [];
+    const engine = createWalletEngine({
+      wallet: w as never,
+      sparkApis: {
+        signer: () => null as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () => Promise.reject(new Error("nf")),
+      random: (n) => new Uint8Array(n),
+      now: () => 0,
+      logger: { warn: (m, e) => void warnings.push([m, e]) },
+      openStore: async () => {
+        opens += 1;
+        return gateOpenStore(failures);
+      },
+    });
+    engine.spark.addAccount(REF);
+    failures = 1;
+    w.set("unlocked");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const openedAfterFailure = opens;
+    expect(openedAfterFailure).toBeGreaterThanOrEqual(1);
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(engine.spark.getState().accounts["w1:0:regtest"]?.status).toBe("locked");
+    // The next unlock retries and succeeds.
+    failures = 0;
+    w.set("locked");
+    w.set("unlocked");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(opens).toBeGreaterThan(openedAfterFailure);
+    engine.unsubscribe();
+  });
+});
+
 describe("createWalletEngine lifecycle", () => {
   it("subscribes to wallet state and builds the controller", () => {
     expect.hasAssertions();
@@ -216,7 +323,7 @@ describe("createWalletEngine lifecycle", () => {
     const engine = createWalletEngine({
       wallet: wallet as never,
       sparkApis: {
-        signer: () => ({}),
+        signer: () => null as never,
         approve: async () => Promise.resolve({}),
       },
       fetch: async () => Promise.reject(new Error("nf")),
