@@ -143,13 +143,9 @@ const action = (id: string, label: string, run: () => Promise<unknown>): void =>
 };
 
 action("createInvoice", "invoice", async () => {
-  const result = await engine.spark.createInvoice(ref(), {
+  const { invoice } = await engine.spark.createInvoice(ref(), {
     amountSats: Number(input("invoiceAmount").value),
   });
-  const invoice =
-    typeof result === "object" && result !== null && "invoice" in result
-      ? String(result.invoice)
-      : "";
   input("invoice").value = invoice;
   return invoice.slice(0, 40);
 });

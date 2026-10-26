@@ -14,9 +14,9 @@
   ],
   "type": "module",
   "scripts": {
-    "lint": "vp run @qntx/wallet#build && vp check && bun scripts/check-version.ts",
-    "typecheck": "vp run -r typecheck && tsc --noEmit",
-    "test": "vp run -r test",
+    "lint": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp check && bun scripts/check-version.ts",
+    "typecheck": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp run -r typecheck && tsc --noEmit",
+    "test": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp run -r test",
     "test:coverage": "vp run -r test:coverage",
     "test:browser": "vp run @qntx/wallet-worker#test:browser",
     "check:pkg": "vp run @qntx/wallet#check:pkg && vp run @qntx/wallet-worker#check:pkg",
