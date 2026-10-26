@@ -8,7 +8,7 @@
  * Run from the package root: bun scripts/kernel-manifest.ts
  */
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { SPARK_WASM_INTEGRITY } from "@qntx/spark-wasm/browser";
@@ -143,10 +143,13 @@ if (import.meta.main) {
     backendDependencies: { "@qntx/spark-wasm": workerDevDeps["@qntx/spark-wasm"] ?? "" },
     backends: { spark: { abiVersion: SPARK_ABI_VERSION, wasmIntegrity: SPARK_WASM_INTEGRITY } },
     lockPackages: lockPackages(parseLockfile(readFileSync(join(root, "bun.lock"), "utf8"))),
-    bundles: ["kernel.worker.js", "kernel.node.js"].map((file) => ({
-      file,
-      bytes: readFileSync(join(packageDir, "dist", file)),
-    })),
+    bundles: readdirSync(join(packageDir, "dist"))
+      .filter((file) => file.startsWith("kernel.") || file.endsWith(".js"))
+      .filter((file) => file.endsWith(".js"))
+      .map((file) => ({
+        file,
+        bytes: readFileSync(join(packageDir, "dist", file)),
+      })),
     protocol: PROTOCOL_VERSION,
     vaultFormat: VAULT_FORMAT,
   });

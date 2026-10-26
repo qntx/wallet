@@ -4,7 +4,7 @@
  * public keys, lock/delete semantics must hold, and a tampered wasm must fail integrity while nostr
  * keeps working.
  */
-import { copyFile, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -33,6 +33,17 @@ import { spark } from "@qntx/wallet/spark";
 import { createNodeWallet, createSoftwarePasskey } from "../src/node/index.ts";
 
 const KERNEL_URL = new URL("../dist/kernel.node.js", import.meta.url);
+const DIST_DIR = new URL("../dist", import.meta.url);
+
+/** Stages the kernel entry plus its code-split chunks into `dir` (splitting emits shared chunks
+ * the entry statically imports). */
+async function stageKernel(dir: string): Promise<void> {
+  for (const file of await readdir(DIST_DIR)) {
+    if (file.endsWith(".js")) {
+      await copyFile(new URL(`../dist/${file}`, import.meta.url), join(dir, file));
+    }
+  }
+}
 const WASM_PATH = join(
   import.meta.dirname,
   "..",
@@ -303,7 +314,7 @@ describe("spark enclave on the node host", () => {
 
   it("a tampered spark.wasm fails integrity while nostr still works", async () => {
     const dir = await mkdtemp(join(tmpdir(), "wallet-spark-test-"));
-    await copyFile(new URL("../dist/kernel.node.js", import.meta.url), join(dir, "kernel.node.js"));
+    await stageKernel(dir);
     const wasm = new Uint8Array(await readFile(WASM_PATH));
     corruptByte(wasm, 10);
     await writeFile(join(dir, "spark.wasm"), wasm);
@@ -328,7 +339,7 @@ describe("spark enclave on the node host", () => {
     // The worker entry reads ./spark.wasm beside kernel.node.js only when backends.spark is
     // called — a kernel bundle shipped without the wasm file must serve nostr fine.
     const dir = await mkdtemp(join(tmpdir(), "wallet-spark-none-"));
-    await copyFile(new URL("../dist/kernel.node.js", import.meta.url), join(dir, "kernel.node.js"));
+    await stageKernel(dir);
     const wallet = await nodeWallet(new URL(`file://${join(dir, "kernel.node.js")}`));
     const created = await wallet.wallets.importMnemonic({
       mnemonic: ACCOUNTS.mnemonic,
