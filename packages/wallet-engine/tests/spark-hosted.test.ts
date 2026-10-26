@@ -124,16 +124,18 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
       engine.spark.addAccount(refA);
       engine.spark.addAccount(refB);
 
-      // A direct client call without approval fails inside the enclave.
       const clientA = createSparkClient({
         network: "regtest",
         signer: spark(wallet).signer(refA),
         fetch: globalThis.fetch,
         store: createMemorySparkStore(),
       });
-      await expect(
-        clientA.transfers.send({ receiver: funderIdentity, amountSats: 100 }),
-      ).rejects.toThrow(/approval/);
+      const clientB = createSparkClient({
+        network: "regtest",
+        signer: spark(wallet).signer(refB),
+        fetch: globalThis.fetch,
+        store: createMemorySparkStore(),
+      });
 
       try {
         // Funder → B: the engine's events() loop claims and updates the balance.
@@ -141,6 +143,11 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
         await funder.transfers.send({ receiver: identityB, amountSats: 1000 });
         const balanceB = await waitForBalance(engine, keyB, 1000, Date.now() + DEADLINE_MS);
         expect(balanceB).toBeGreaterThanOrEqual(1000);
+
+        // A direct client call without approval fails inside the enclave.
+        await expect(
+          clientB.transfers.send({ receiver: funderIdentity, amountSats: 100 }),
+        ).rejects.toThrow(/approval/);
 
         // B pays a Lightning invoice created by A — the engine approves before the client.
         const createdInvoice = await clientA.lightning.createInvoice({ amountSats: 300 });
@@ -157,12 +164,17 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
           await sparkStore(createMemoryEngineStore(backing).collection(colName)).exitChains(),
         );
 
-        // Lock clears state; unlock restores it.
+        // Lock clears state; unlock restores B's real balance (funded minus the paid
+        // invoice and its fee — the controller state can lag events, so compare with the
+        // client-reported truth, not the cached state).
         await wallet.vault.lock();
         expect(engine.spark.getState().accounts[keyB]?.status).toBe("locked");
         await wallet.vault.unlock({ kind: "password", password: PASSWORD });
-        const restored = await waitForBalance(engine, keyB, 1000, Date.now() + DEADLINE_MS);
-        expect(restored).toBeGreaterThanOrEqual(1000);
+        const restored = await waitForBalance(engine, keyB, 1, Date.now() + DEADLINE_MS);
+        const realBalance = await clientB.balance();
+        expect(restored).toBeGreaterThan(0);
+        expect(restored).toBeLessThan(balanceB);
+        expect(restored).toBe(realBalance);
       } finally {
         try {
           await sweepEngine(engine, refB, funderIdentity, keyB);
