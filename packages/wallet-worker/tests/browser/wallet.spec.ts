@@ -56,6 +56,16 @@ async function terminated(page: Page): Promise<number> {
   return page.evaluate(() => qntx.stats.terminated);
 }
 
+/**
+ * Spark payloads: the spark SDK chunk, the spark-wasm loader chunk, and the wasm itself. Shared
+ * non-spark chunks load eagerly with the entry — that is expected.
+ */
+function isSparkPayload(url: string): boolean {
+  return (
+    url.includes("spark.wasm") || /signer-[^/]*\.js/.test(url) || /browser-[^/]*\.js/.test(url)
+  );
+}
+
 test.describe("web host", () => {
   test("passkey wallet: create, lock terminates the worker, unlock, sign @webauthn", async ({
     context,
@@ -317,10 +327,6 @@ test.describe("web host", () => {
     if (!imported.ok) {
       throw new Error(`importMnemonic failed: ${imported.code}`);
     }
-    // Spark payloads: the spark SDK chunk, the spark-wasm loader chunk, and the wasm itself.
-    // Shared non-spark chunks load eagerly with the entry — that is expected.
-    const isSparkPayload = (url: string) =>
-      /spark\.wasm/.test(url) || /signer-[^/]*\.js/.test(url) || /browser-[^/]*\.js/.test(url);
     expect(requests.filter(isSparkPayload)).toStrictEqual([]);
     const identity = await page.evaluate(
       async (walletId) => qntx.sparkIdentity(walletId, 0, "regtest"),
@@ -330,7 +336,7 @@ test.describe("web host", () => {
       throw new Error(`sparkIdentity failed: ${identity.code}`);
     }
     const sparkPayloads = requests.filter(isSparkPayload);
-    expect(sparkPayloads.some((u) => /spark\.wasm/.test(u))).toBe(true);
+    expect(sparkPayloads.some((u) => u.includes("spark.wasm"))).toBe(true);
     expect(sparkPayloads.some((u) => /signer-[^/]*\.js/.test(u))).toBe(true);
   });
 

@@ -40,11 +40,13 @@ const DIST_DIR = new URL("../dist", import.meta.url);
  * entry statically imports).
  */
 async function stageKernel(dir: string): Promise<void> {
-  for (const file of await readdir(DIST_DIR)) {
-    if (file.endsWith(".js")) {
-      await copyFile(new URL(`../dist/${file}`, import.meta.url), join(dir, file));
-    }
-  }
+  const entries = await readdir(DIST_DIR);
+  const files = entries.filter((file) => file.endsWith(".js"));
+  await Promise.all(
+    files.map(async (file) =>
+      copyFile(new URL(`../dist/${file}`, import.meta.url), join(dir, file)),
+    ),
+  );
 }
 const WASM_PATH = join(
   import.meta.dirname,

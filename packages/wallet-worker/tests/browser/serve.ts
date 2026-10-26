@@ -56,7 +56,9 @@ if (production) {
   const server = await createServer({
     configFile: false,
     root,
-    optimizeDeps: { exclude: ["@qntx/wallet-worker"] },
+    // No runtime dependency discovery: a late discovery makes vite re-optimize and reload the
+    // page mid-test ("execution context was destroyed"). Every page dependency is plain ESM.
+    optimizeDeps: { noDiscovery: true, exclude: ["@qntx/wallet-worker"] },
     server: {
       // localhost, not 127.0.0.1 — WebAuthn rejects IP literals as rpId ("invalid domain").
       host: "localhost",

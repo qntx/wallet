@@ -187,12 +187,16 @@ export function createSparkModule(): SparkModule {
 
   /** The memoized runtime chunk; a failed load is not cached, so the next spark call retries. */
   const sparkRuntime = async (): Promise<SparkRuntime> => {
-    runtimePromise ??= loadSparkRuntime().catch((error: unknown) => {
-      runtimePromise = undefined;
-      throw error instanceof KernelError
-        ? error
-        : new KernelError("unavailable", "spark runtime failed to load");
-    });
+    runtimePromise ??= (async () => {
+      try {
+        return await loadSparkRuntime();
+      } catch (error) {
+        runtimePromise = undefined;
+        throw error instanceof KernelError
+          ? error
+          : new KernelError("unavailable", "spark runtime failed to load");
+      }
+    })();
     return runtimePromise;
   };
 
