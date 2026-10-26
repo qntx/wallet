@@ -15,7 +15,7 @@ const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest"
 const VERIFY = { kind: "password", password: new Uint8Array([1]) } as never;
 const LOGGER: EngineLogger = { warn: () => {} };
 
-function fakeClient(calls: string[]) {
+function fakeClient(calls: string[], sendArgs: unknown[] = []) {
   const aborters: Array<{ aborted: boolean }> = [];
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
@@ -27,6 +27,7 @@ function fakeClient(calls: string[]) {
       },
       send: async (o: unknown) => {
         calls.push("send");
+        sendArgs.push(o);
         return Promise.resolve(o);
       },
     },
@@ -64,11 +65,12 @@ function fakeClient(calls: string[]) {
       calls.push("close");
     },
   };
-  return { client: client as unknown as SparkClient, aborters };
+  return { client: client as unknown as SparkClient, aborters, sendArgs };
 }
 
 function controller(calls: string[], approvals: unknown[]) {
-  const { client, aborters } = fakeClient(calls);
+  const sendArgs: unknown[] = [];
+  const { client, aborters } = fakeClient(calls, sendArgs);
   const c = new SparkController({
     spark: {
       signer: () => ({}),
@@ -83,14 +85,14 @@ function controller(calls: string[], approvals: unknown[]) {
     logger: LOGGER,
     createClient: () => client,
   });
-  return { c, client, aborters };
+  return { c, client, aborters, sendArgs };
 }
 
 describe("SparkController", () => {
   it("init starts the account, send approves first, lockAll resets", async () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
-    const { c, aborters } = controller(calls, approvals);
+    const { c, aborters, sendArgs } = controller(calls, approvals);
     const store = createMemoryEngineStore();
     c.addAccount(REF);
     c.setStore(store);
@@ -100,6 +102,10 @@ describe("SparkController", () => {
     expect(approvals).toHaveLength(1);
     expect(calls.filter((x) => x === "claimPending").length).toBeGreaterThan(0);
     expect(calls.at(-1)).toBe("send");
+    // transferId is a UUIDv7 minted from the injected random+now.
+    expect((sendArgs[0] as { transferId?: string }).transferId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     const state = c.getState().accounts["w1:0:regtest"];
     expect(state?.status).toBe("ready");
     expect(state?.balanceSats).toBe(42);
