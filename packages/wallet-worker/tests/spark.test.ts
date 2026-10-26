@@ -35,8 +35,10 @@ import { createNodeWallet, createSoftwarePasskey } from "../src/node/index.ts";
 const KERNEL_URL = new URL("../dist/kernel.node.js", import.meta.url);
 const DIST_DIR = new URL("../dist", import.meta.url);
 
-/** Stages the kernel entry plus its code-split chunks into `dir` (splitting emits shared chunks
- * the entry statically imports). */
+/**
+ * Stages the kernel entry plus its code-split chunks into `dir` (splitting emits shared chunks the
+ * entry statically imports).
+ */
 async function stageKernel(dir: string): Promise<void> {
   for (const file of await readdir(DIST_DIR)) {
     if (file.endsWith(".js")) {
