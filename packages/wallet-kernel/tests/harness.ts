@@ -1,3 +1,4 @@
+import { nobleBackend } from "@qntx/nostr";
 import type { KernelEvent, ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
@@ -201,6 +202,7 @@ export function createHarness(opts?: {
         await Promise.resolve();
         throw new Error("no spark backend in this harness");
       },
+      nostr: nobleBackend,
     },
   };
   startKernel(platform, port);

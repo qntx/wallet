@@ -65,7 +65,7 @@ export async function unwrapGiftWraps(
   const results: UnwrapResult[] = [];
   for (const event of params.events) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- batch results are produced in order, one wrap at a time
-    results.push(await unwrapGiftWrap(pool, params.publicKey, event));
+    results.push(await unwrapGiftWrap(pool, params.publicKey, event, ctx.platform.backends.nostr));
   }
   return { results };
 }

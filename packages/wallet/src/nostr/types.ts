@@ -22,9 +22,7 @@ export type NostrUnwrapResult = { readonly ok: Rumor } | { readonly err: WalletE
 
 /** A proxy NostrSigner: the kernel key is resolved per call, so it survives lock/unlock cycles. */
 export type WalletSigner = {
-  readonly unwrapGiftWraps: (
-    events: ReadonlyArray<Event>,
-  ) => Promise<ReadonlyArray<NostrUnwrapResult>>;
+  readonly unwrapGiftWraps: (events: ReadonlyArray<Event>) => Promise<ReadonlyArray<Rumor | Error>>;
 } & NostrSigner;
 
 export type NostrImportKeyInput =

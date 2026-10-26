@@ -6,6 +6,7 @@
  */
 import { signedMatchesUnsigned, verifyEvent } from "@qntx/nostr";
 import type { UnsignedEvent } from "@qntx/nostr";
+import type { Rumor } from "@qntx/nostr/nips/nip59";
 
 import { integrity } from "../channel.ts";
 import type { WalletInternals } from "../internal.ts";
@@ -13,7 +14,7 @@ import { MAX_BATCH } from "../protocol/core.ts";
 import type { UnsignedEventInput } from "../protocol/index.ts";
 import { WalletError } from "../types.ts";
 import type { NostrKeyInfo, NostrKeyRef } from "../types.ts";
-import type { NostrUnwrapResult, WalletSigner } from "./types.ts";
+import type { WalletSigner } from "./types.ts";
 
 /** Resolves a public ref to its stored key record; missing refs are `not-found`. */
 export function keyInfoOf(internals: WalletInternals, ref: NostrKeyRef): NostrKeyInfo {
@@ -102,12 +103,12 @@ export function proxySigner(ref: NostrKeyRef, internals: WalletInternals): Walle
         peer,
         text: payload,
       }),
-    unwrapGiftWraps: async (events): Promise<ReadonlyArray<NostrUnwrapResult>> => {
+    unwrapGiftWraps: async (events) => {
       if (events.length === 0) {
         return [];
       }
       const publicKey = resolvePublicKey();
-      const results: NostrUnwrapResult[] = [];
+      const results: Array<Rumor | Error> = [];
       // The wire caps one batch at MAX_BATCH; chunk sequentially and concatenate in order —
       // other requests can interleave between chunks.
       for (let start = 0; start < events.length; start += MAX_BATCH) {
@@ -116,7 +117,9 @@ export function proxySigner(ref: NostrKeyRef, internals: WalletInternals): Walle
           publicKey,
           events: events.slice(start, start + MAX_BATCH),
         });
-        results.push(...batch.results);
+        for (const r of batch.results) {
+          results.push("ok" in r ? r.ok : new Error(r.err));
+        }
       }
       return results;
     },

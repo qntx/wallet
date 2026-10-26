@@ -7,6 +7,7 @@ import { readFile } from "node:fs/promises";
 import { parentPort, workerData } from "node:worker_threads";
 import type { MessagePort } from "node:worker_threads";
 
+import { nobleBackend } from "@qntx/nostr";
 import { startKernel } from "@qntx/wallet-kernel";
 import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
 
@@ -71,6 +72,7 @@ const platform: KernelPlatform = {
     activity: "request",
   },
   backends: {
+    nostr: nobleBackend,
     spark: async () =>
       loadSparkBackend(async () => {
         const bytes = await readFile(new URL("spark.wasm", import.meta.url));

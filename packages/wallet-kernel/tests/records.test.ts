@@ -1,6 +1,8 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import { nobleBackend } from "@qntx/nostr";
+
 import { encodeNostrKeyHeader, parseNostrKeyHeader } from "../src/modules/nostr/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import {
@@ -88,6 +90,7 @@ describe("vault meta vector", () => {
           await Promise.resolve();
           throw new Error("no spark backend");
         },
+        nostr: nobleBackend,
       },
     };
     const factor: StoredFactor = {

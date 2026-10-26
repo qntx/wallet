@@ -92,7 +92,7 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
   // The module composition is explicit and static: the nostr module owns its handler table, its
   // VaultHooks entry in ctx.modules and its status section; there is no registry — future modules
   // add a line here and a section in status.ts's composition.
-  const nostr = createNostrModule();
+  const nostr = createNostrModule(platform.backends.nostr);
   const spark = createSparkModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
