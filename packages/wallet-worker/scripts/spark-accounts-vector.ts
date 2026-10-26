@@ -1,9 +1,9 @@
 /// <reference types="node" />
 /**
  * Regenerates vectors/spark-accounts.json: identity public keys the enclave must produce for
- * account groups 0 and 1 on mainnet and regtest under the public test mnemonic. Values come from
- * a real local signer — `createSparkSigner(sparkAccountKey(seed, network, account))` on the
- * shipped spark.wasm — so the vector pins the exact derivation chain the kernel runs.
+ * account groups 0 and 1 on mainnet and regtest under the public test mnemonic. Values come from a
+ * real local signer — `createSparkSigner(sparkAccountKey(seed, network, account))` on the shipped
+ * spark.wasm — so the vector pins the exact derivation chain the kernel runs.
  *
  * Run from packages/wallet-worker: bun scripts/spark-accounts-vector.ts
  */
@@ -14,9 +14,9 @@ import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha512 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
+import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 import { createSparkSigner, sparkAccountKey } from "@qntx/spark/signer";
 import type { SparkNetwork } from "@qntx/spark/signer";
-import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 
 // The public BIP-39 test mnemonic. Test only — never fund.
 const MNEMONIC =
@@ -46,6 +46,7 @@ for (const network of ["mainnet", "regtest"] as const) {
     const account = network === "mainnet" ? groupIndex + 1 : groupIndex;
     const accountKey = sparkAccountKey(seed, network, account);
     const signer = createSparkSigner({ crypto, accountKey, network, random });
+    // oxlint-disable-next-line eslint/no-await-in-loop -- one signer at a time: it is disposed before the next is created
     const identity = await signer.identityPublicKey();
     signer.dispose();
     accountKey.fill(0);

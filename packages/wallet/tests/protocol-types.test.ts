@@ -1,6 +1,7 @@
 /**
  * Type-level contract: the wire shapes declared in src/protocol must stay structurally compatible
  * with the libraries the kernel and proxy speak — @qntx/nostr's Event/UnsignedEvent/Rumor and
+ *
  * @qntx/spark/signer's job/statement/request types — so values cross the channel without
  * conversion. The protocol files themselves never import either package.
  */
@@ -56,13 +57,13 @@ import type {
 type Extends<A, B> = A extends B ? true : false;
 type Assert<T extends true> = T;
 /**
- * Exact structural equality — catches every field-level drift between the protocol's declared
- * wire shapes and the library types (a missing optional like `adaptorPublicKey` slips through
- * mutual assignability but not this).
+ * Exact structural equality — catches every field-level drift between the protocol's declared wire
+ * shapes and the library types (a missing optional like `adaptorPublicKey` slips through mutual
+ * assignability but not this).
  */
 type Equal<A, B> =
+  // oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- the <T> wrapper probes identity, not assignability
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
-type Same<A, B> = Assert<Equal<A, B>>;
 
 // Mutually assignable: the protocol shapes are the nostr shapes, field for field.
 export type SignedIsEvent = Assert<Extends<SignedEvent, Event>>;
@@ -74,30 +75,36 @@ export type Nip59IsRumor = Assert<Extends<Nip59Rumor, Rumor>>;
 export type UnsignedIsInput = Assert<Extends<UnsignedEvent, UnsignedEventInput>>;
 
 // The spark wire shapes are the @qntx/spark/signer shapes — exactly.
-export type NetworkIsSpark = Same<SparkNetwork, SparkNet>;
-export type LeafKeyIsSpark = Same<WireSparkLeafKey, SparkLeafKey>;
-export type KeyIsSpark = Same<WireSparkKey, SparkKey>;
-export type CommitmentIsSpark = Same<SigningCommitment, SparkSigningCommitment>;
-export type OperatorCommitmentIsSpark = Same<OperatorCommitment, SparkOperatorCommitment>;
-export type TargetIsSpark = Same<SigningTarget, SparkSigningTarget>;
-export type SignJobIsSpark = Same<FrostSignJob, SparkFrostSignJob>;
-export type AggregateJobIsSpark = Same<FrostAggregateJob, SparkFrostAggregateJob>;
-export type StatementIsSpark = Same<IdentityStatement, SparkIdentityStatement>;
-export type TransferRequestIsSpark = Same<PrepareTransferRequest, SparkPrepareTransferRequest>;
-export type TransferLeafIsSpark = Same<PreparedTransferLeaf, SparkPreparedTransferLeaf>;
-export type TransferIsSpark = Same<PreparedTransfer, SparkPreparedTransfer>;
-export type ClaimRequestIsSpark = Same<PrepareClaimRequest, SparkPrepareClaimRequest>;
-export type ClaimIsSpark = Same<PreparedClaim, SparkPreparedClaim>;
-export type LightningReceiveIsSpark = Same<
-  PreparedLightningReceive,
-  SparkPreparedLightningReceive
+export type NetworkIsSpark = Assert<Equal<SparkNetwork, SparkNet>>;
+export type LeafKeyIsSpark = Assert<Equal<WireSparkLeafKey, SparkLeafKey>>;
+export type KeyIsSpark = Assert<Equal<WireSparkKey, SparkKey>>;
+export type CommitmentIsSpark = Assert<Equal<SigningCommitment, SparkSigningCommitment>>;
+export type OperatorCommitmentIsSpark = Assert<Equal<OperatorCommitment, SparkOperatorCommitment>>;
+export type TargetIsSpark = Assert<Equal<SigningTarget, SparkSigningTarget>>;
+export type SignJobIsSpark = Assert<Equal<FrostSignJob, SparkFrostSignJob>>;
+export type AggregateJobIsSpark = Assert<Equal<FrostAggregateJob, SparkFrostAggregateJob>>;
+export type StatementIsSpark = Assert<Equal<IdentityStatement, SparkIdentityStatement>>;
+export type TransferRequestIsSpark = Assert<
+  Equal<PrepareTransferRequest, SparkPrepareTransferRequest>
 >;
-export type HtlcIsSpark = Same<HtlcTimeoutSignRequest, SparkHtlcTimeoutSignRequest>;
-export type DepositClaimIsSpark = Same<StaticDepositClaimRequest, SparkStaticDepositClaimRequest>;
+export type TransferLeafIsSpark = Assert<Equal<PreparedTransferLeaf, SparkPreparedTransferLeaf>>;
+
+export type TransferIsSpark = Assert<Equal<PreparedTransfer, SparkPreparedTransfer>>;
+export type ClaimRequestIsSpark = Assert<Equal<PrepareClaimRequest, SparkPrepareClaimRequest>>;
+export type ClaimIsSpark = Assert<Equal<PreparedClaim, SparkPreparedClaim>>;
+export type LightningReceiveIsSpark = Assert<
+  Equal<PreparedLightningReceive, SparkPreparedLightningReceive>
+>;
+export type HtlcIsSpark = Assert<Equal<HtlcTimeoutSignRequest, SparkHtlcTimeoutSignRequest>>;
+export type DepositClaimIsSpark = Assert<
+  Equal<StaticDepositClaimRequest, SparkStaticDepositClaimRequest>
+>;
 // The statement inside a claim request is the same variant in both worlds.
-export type ClaimStatementIsSpark = Same<
-  StaticDepositClaimStatement,
-  Extract<SparkIdentityStatement, { readonly kind: "static-deposit-claim" }>
+export type ClaimStatementIsSpark = Assert<
+  Equal<
+    StaticDepositClaimStatement,
+    Extract<SparkIdentityStatement, { readonly kind: "static-deposit-claim" }>
+  >
 >;
 // The account ref is a protocol-side shape: a plain object the host attaches to every call.
 export type AccountRefShape = Assert<

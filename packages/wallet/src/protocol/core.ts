@@ -81,6 +81,7 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("unsupported"),
   literal("unavailable"),
   literal("integrity"),
+  literal("approval-required"),
   literal("crashed"),
 );
 

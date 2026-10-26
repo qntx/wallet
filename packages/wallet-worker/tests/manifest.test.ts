@@ -98,7 +98,7 @@ describe("kernel manifest", () => {
     expect(() =>
       kernelManifest({
         dependencies: kernelPkg.dependencies,
-        backendDependencies: { "@qntx/spark-wasm": "^0.1.1" },
+        backendDependencies: { "@qntx/spark-wasm": "^0.2.0" },
         backends,
         lockPackages,
         bundles,

@@ -68,6 +68,7 @@ export type WalletErrorCode =
   | "unsupported"
   | "unavailable"
   | "integrity"
+  | "approval-required"
   | "crashed";
 
 /**

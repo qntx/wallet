@@ -220,6 +220,8 @@ export type {
 } from "./nostr.ts";
 export type {
   FrostAggregateJob,
+  SparkApprovalSummary,
+  SparkApproveIntent,
   FrostSignJob,
   HtlcTimeoutSignRequest,
   IdentityStatement,

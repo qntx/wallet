@@ -1,5 +1,6 @@
-import type { UnsignedEvent } from "@qntx/nostr";
 import { bytesToHex } from "@noble/hashes/utils.js";
+
+import type { UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { MnemonicDraft, NostrKeyRef, Wallet, WalletOptions } from "@qntx/wallet";
 /**

@@ -246,7 +246,7 @@ describe("record validator", () => {
     for (const bad of ["__proto__", "constructor", "prototype"]) {
       const input = JSON.parse(`{"aaaa":null,"${bad}":{"$skip":true}}`) as Record<string, unknown>;
       input["aaaa"] = new Uint8Array(4);
-      expect(fails(v, input), bad).toBe(true);
+      expect(fails(v, input)).toBe(true);
     }
   });
 
@@ -274,7 +274,7 @@ describe("spark method validators", () => {
   const target = {
     transaction: new Uint8Array(32),
     inputIndex: 0,
-    prevouts: [{ script: new Uint8Array(34), amount: 1_000 }],
+    prevouts: [{ script: new Uint8Array(34), amount: 1000 }],
   };
   const signJob = {
     key: { type: "leaf", leafId },
@@ -289,9 +289,7 @@ describe("spark method validators", () => {
     verifyingKey: compressed,
     commitment,
     signatureShare: bytes32,
-    operators: [
-      { identifier, commitment, signatureShare: bytes32, publicKey: compressed },
-    ],
+    operators: [{ identifier, commitment, signatureShare: bytes32, publicKey: compressed }],
   };
 
   it("accepts valid params for all 13 spark methods", () => {
@@ -317,7 +315,7 @@ describe("spark method validators", () => {
           request: {
             transaction: new Uint8Array(32),
             inputIndex: 0,
-            prevoutAmountSats: 1_000,
+            prevoutAmountSats: 1000,
             paymentHash: bytes32,
             hashLockPublicKey: compressed,
           },
@@ -366,24 +364,20 @@ describe("spark method validators", () => {
       ],
     ];
     for (const [method, params] of cases) {
-      expect(
-        () => METHODS[method].params(params as never),
-        `params ${method}`,
-      ).not.toThrow();
+      expect(() => METHODS[method].params(params as never)).not.toThrow();
     }
   });
 
-  it("every spark method is session-gated and non-presence", () => {
-    for (const [name, spec] of Object.entries(METHODS)) {
-      if (name.startsWith("spark.")) {
-        expect(spec.session, name).toBe(true);
-        expect(spec.presence, name).toBe(false);
-      }
+  it("every spark method is session-gated; only approve is presence-bearing", () => {
+    for (const name of Object.keys(METHODS).filter((n) => n.startsWith("spark."))) {
+      const spec = METHODS[name as keyof typeof METHODS];
+      expect(spec.session).toBe(true);
+      expect(spec.presence).toBe(name === "spark.approve");
     }
   });
 
   it("rejects malformed account refs", () => {
-    const params = METHODS["spark.identityPublicKey"].params;
+    const { params } = METHODS["spark.identityPublicKey"];
     expect(fails(params, { account: { ...account, network: "signet" } })).toBe(true);
     expect(fails(params, { account: { ...account, walletId: "xyz" } })).toBe(true);
     expect(fails(params, { account: { ...account, groupIndex: -1 } })).toBe(true);
@@ -391,9 +385,7 @@ describe("spark method validators", () => {
   });
 
   it("rejects wrong byte lengths and extra fields", () => {
-    expect(
-      fails(METHODS["spark.identityPublicKey"].params, { account, extra: 1 }),
-    ).toBe(true);
+    expect(fails(METHODS["spark.identityPublicKey"].params, { account, extra: 1 })).toBe(true);
     expect(
       fails(METHODS["spark.publicKeys"].params, {
         account,
@@ -423,6 +415,24 @@ describe("spark method validators", () => {
 
   it("caps list params at MAX_BATCH and counts at 1..64", () => {
     const keys = Array.from({ length: 65 }, () => ({ type: "leaf", leafId }));
+
+    const approveParams = METHODS["spark.approve"].params;
+    const verify = { kind: "password", password: new Uint8Array(10) };
+    const tokenIntent = (amount: string) => ({
+      account,
+      intent: {
+        kind: "token",
+        tokenIdentifier: bytes32,
+        receivers: [{ ownerPublicKey: compressed, amount }],
+      },
+      verify,
+    });
+    for (const amount of ["0", "1", "340282366920938463463374607431768211455"]) {
+      expect(fails(approveParams, tokenIntent(amount))).toBe(false);
+    }
+    for (const amount of ["01", "0abc", "x12", "", "340282366920938463463374607431768211456"]) {
+      expect(fails(approveParams, tokenIntent(amount))).toBe(true);
+    }
     expect(fails(METHODS["spark.publicKeys"].params, { account, keys })).toBe(true);
     expect(
       fails(METHODS["spark.receivedPublicKeys"].params, {
@@ -432,9 +442,7 @@ describe("spark method validators", () => {
     ).toBe(true);
     expect(fails(METHODS["spark.newCommitments"].params, { account, count: 0 })).toBe(true);
     expect(fails(METHODS["spark.newCommitments"].params, { account, count: 65 })).toBe(true);
-    expect(
-      fails(METHODS["spark.newCommitments"].params, { account, count: 1.5 }),
-    ).toBe(true);
+    expect(fails(METHODS["spark.newCommitments"].params, { account, count: 1.5 })).toBe(true);
     expect(
       fails(METHODS["spark.signFrost"].params, {
         account,
@@ -446,9 +454,7 @@ describe("spark method validators", () => {
   it("caps transfer/claim leaves at 256 and rejects empty leaf lists", () => {
     const leaf = { leafId, key: { type: "leaf", leafId }, receiverIdentityPublicKey: compressed };
     const request = { transferId: leafId, leaves: Array.from({ length: 256 }, () => leaf) };
-    expect(
-      () => METHODS["spark.prepareTransfer"].params({ account, request } as never),
-    ).not.toThrow();
+    expect(() => METHODS["spark.prepareTransfer"].params({ account, request })).not.toThrow();
     expect(
       fails(METHODS["spark.prepareTransfer"].params, {
         account,
@@ -479,7 +485,7 @@ describe("spark method validators", () => {
         creditAmountSats: 50_000,
         sspSignature: bytes64,
       },
-      { kind: "static-deposit-refund", network: "regtest", ...base, amount: 5_000 },
+      { kind: "static-deposit-refund", network: "regtest", ...base, amount: 5000 },
       { kind: "watchtower-recovery", network: "regtest", leafId, target },
       { kind: "spark-invoice", invoice: new Uint8Array(24) },
       { kind: "token-transaction", partialTransaction: new Uint8Array(24) },
@@ -500,19 +506,32 @@ describe("spark method validators", () => {
       },
     ];
     for (const statement of good) {
-      expect(() => spec({ account, statement } as never), JSON.stringify(statement)).not.toThrow();
+      expect(() => spec({ account, statement })).not.toThrow();
     }
     expect(fails(spec, { account, statement: { kind: "unknown" } })).toBe(true);
     expect(
       fails(spec, {
         account,
-        statement: { kind: "lightning-address", action: "unregister", domain: "a.b", username: "UPPER", timestamp: 1 },
+        statement: {
+          kind: "lightning-address",
+          action: "unregister",
+          domain: "a.b",
+          username: "UPPER",
+          timestamp: 1,
+        },
       }),
     ).toBe(true);
     expect(
       fails(spec, {
         account,
-        statement: { kind: "static-deposit-claim", network: "signet", txid: bytes32, vout: 0, creditAmountSats: 1, sspSignature: bytes64 },
+        statement: {
+          kind: "static-deposit-claim",
+          network: "signet",
+          txid: bytes32,
+          vout: 0,
+          creditAmountSats: 1,
+          sspSignature: bytes64,
+        },
       }),
     ).toBe(true);
   });
@@ -525,14 +544,20 @@ describe("spark method validators", () => {
     };
     expect(receive(ok)).toStrictEqual(ok);
     expect(fails(receive, { ...ok, paymentHash: new Uint8Array(31) })).toBe(true);
-    expect(fails(receive, { paymentHash: bytes32, operatorPackages: { BAD: new Uint8Array(1) } })).toBe(true);
-    const proto = JSON.parse(
-      `{"paymentHash":null,"operatorPackages":{"__proto__":{}}}`,
-    ) as Record<string, unknown>;
+    expect(
+      fails(receive, { paymentHash: bytes32, operatorPackages: { BAD: new Uint8Array(1) } }),
+    ).toBe(true);
+    const proto = JSON.parse(`{"paymentHash":null,"operatorPackages":{"__proto__":{}}}`) as Record<
+      string,
+      unknown
+    >;
     proto["paymentHash"] = bytes32;
     expect(fails(receive, proto)).toBe(true);
     const tooMany = Object.fromEntries(
-      Array.from({ length: 17 }, (_, i) => [identifier.slice(0, 60) + String(i).padStart(4, "0"), new Uint8Array(1)]),
+      Array.from({ length: 17 }, (_, i) => [
+        identifier.slice(0, 60) + String(i).padStart(4, "0"),
+        new Uint8Array(1),
+      ]),
     );
     expect(fails(receive, { paymentHash: bytes32, operatorPackages: tooMany })).toBe(true);
   });
