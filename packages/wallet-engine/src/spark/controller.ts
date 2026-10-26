@@ -1,5 +1,11 @@
 import { decodeSparkAddress, encodeSparkAddress, uuidv7 } from "@qntx/spark";
-import type { SparkClient } from "@qntx/spark";
+import type {
+  CooperativeExitResult,
+  LightningInvoice,
+  LightningPayment,
+  SparkClient,
+  SparkTransfer,
+} from "@qntx/spark";
 import type { UnlockFactor } from "@qntx/wallet";
 import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
 import type { SparkSigner } from "@qntx/wallet/spark";
@@ -223,10 +229,14 @@ export class SparkController extends Controller<SparkControllerState> {
       amountSats: number;
       verify: UnlockFactor;
     },
-  ): Promise<unknown> {
+  ): Promise<SparkTransfer> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
-      const identity = decodeSparkAddress(params.receiver).identityPublicKey;
+      const receiver = decodeSparkAddress(params.receiver);
+      if (receiver.network !== ref.network) {
+        throw new SparkControllerError("rejected", "receiver address is on a different network");
+      }
+      const identity = receiver.identityPublicKey;
       await this.options.spark.approve({
         account: ref,
         intent: {
@@ -251,7 +261,7 @@ export class SparkController extends Controller<SparkControllerState> {
       maxFeeSats: number;
       verify: UnlockFactor;
     },
-  ): Promise<unknown> {
+  ): Promise<LightningPayment> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
       await this.options.spark.approve({
@@ -276,7 +286,7 @@ export class SparkController extends Controller<SparkControllerState> {
   async createInvoice(
     ref: SparkAccountRef,
     params: { amountSats: number; memo?: string },
-  ): Promise<unknown> {
+  ): Promise<LightningInvoice> {
     return this.guarded(async () =>
       this.clientFor(ref).lightning.createInvoice({
         amountSats: params.amountSats,
@@ -305,7 +315,7 @@ export class SparkController extends Controller<SparkControllerState> {
       maxFeeSats?: number;
       verify: UnlockFactor;
     },
-  ): Promise<unknown> {
+  ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
       const exitAmount = params.amountSats ?? (await client.balance());

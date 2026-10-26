@@ -130,6 +130,25 @@ describe("SparkExitChain codec", () => {
   });
 });
 
+describe("send network check", () => {
+  it("rejects a receiver address on a different network before approving", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = controller(calls, approvals);
+    const store = createMemoryEngineStore();
+    c.addAccount(REF);
+    c.setStore(store);
+    await c.init();
+    // PK on mainnet — ref is regtest.
+    const wrongNet = encodeSparkAddress({ network: "mainnet", identityPublicKey: PK });
+    await expect(
+      c.send(REF, { receiver: wrongNet, amountSats: 10, verify: VERIFY }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
+    expect(approvals).toHaveLength(0);
+    await c.destroy();
+  });
+});
+
 describe("withdraw approval intent", () => {
   const approval = (approvals: unknown[]) => approvals[0] as { intent: unknown };
 
