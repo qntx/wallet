@@ -1,7 +1,7 @@
 import { bech32 } from "@scure/base";
 
-import { Keys, KeysSigner } from "@qntx/nostr";
-import type { Event, UnsignedEvent } from "@qntx/nostr";
+import { createEventVerifier, Keys, KeysSigner } from "@qntx/nostr";
+import type { Event, NostrBackend, UnsignedEvent } from "@qntx/nostr";
 import { Bech32MaxSize, decode as nip19Decode, nsecEncode } from "@qntx/nostr/nips/nip19";
 import {
   decrypt as nip49Decrypt,
@@ -24,6 +24,11 @@ import { decodeUtf8Secret, wipe } from "../../secret/secret.ts";
  */
 export class SignerPool {
   private readonly signers = new Map<string, KeysSigner>();
+  private readonly backend: NostrBackend;
+
+  constructor(backend: NostrBackend) {
+    this.backend = backend;
+  }
 
   /**
    * Takes ownership of `secretKey` and wipes it after the signer is constructed. A same-key replace
@@ -31,7 +36,9 @@ export class SignerPool {
    */
   add(secretKey: Uint8Array): string {
     try {
-      const signer = new KeysSigner(Keys.fromSecretKey(secretKey));
+      const signer = new KeysSigner(Keys.fromSecretKey(secretKey, this.backend), {
+        backend: this.backend,
+      });
       const { publicKey } = signer.keys;
       this.signers.get(publicKey)?.dispose();
       this.signers.set(publicKey, signer);
@@ -66,11 +73,14 @@ export class SignerPool {
 }
 
 /** A fresh valid secp256k1 scalar from the platform RNG (retries on the ~2^-128 invalid draws). */
-export function generateSecretKey(random: KernelPlatform["random"]): Uint8Array {
+export function generateSecretKey(
+  random: KernelPlatform["random"],
+  backend: NostrBackend,
+): Uint8Array {
   for (;;) {
     const candidate = random(32);
     try {
-      Keys.fromSecretKey(candidate);
+      Keys.fromSecretKey(candidate, backend);
       return candidate;
     } catch {
       wipe(candidate);
@@ -189,12 +199,15 @@ export async function unwrapGiftWrap(
   pool: SignerPool,
   publicKey: string,
   event: Event,
+  backend: NostrBackend,
 ): Promise<UnwrapResult> {
   if (!isGiftWrapKind(event.kind)) {
     return { err: "invalid-input" };
   }
   try {
-    const rumor: Rumor = await nip59Unwrap(pool.get(publicKey), event);
+    const rumor: Rumor = await nip59Unwrap(pool.get(publicKey), event, {
+      verify: createEventVerifier(backend),
+    });
     return { ok: rumor };
   } catch (error) {
     const err: WalletErrorCode = error instanceof KernelError ? error.code : "integrity";

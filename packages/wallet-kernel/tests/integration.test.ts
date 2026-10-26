@@ -2,8 +2,8 @@ import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64urlnopad, bech32 } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
-import { Keys, KeysSigner, npubEncode, verifyEvent } from "@qntx/nostr";
-import type { Event } from "@qntx/nostr";
+import { Keys, KeysSigner, nobleBackend, npubEncode, verifyEvent } from "@qntx/nostr";
+import type { NostrBackend, Event } from "@qntx/nostr";
 import { decode as nip19Decode } from "@qntx/nostr/nips/nip19";
 import { decrypt as nip49Decrypt } from "@qntx/nostr/nips/nip49";
 import { createRumor, wrap as nip59Wrap } from "@qntx/nostr/nips/nip59";
@@ -2476,5 +2476,61 @@ describe("ncryptsec import hardening", () => {
     expect(errCode(await importNcryptsec(h, session, NIP49_NCRYPTSEC, "nope"))).toBe(
       "wrong-password",
     );
+  });
+});
+
+describe("backend routing (WD-054)", () => {
+  it("keys/sign/ECDH/verify route through platform.backends.nostr", async () => {
+    const counts = { publicKey: 0, sign: 0, verifySerialized: 0, ecdhX: 0 };
+    const counting = new Proxy(nobleBackend, {
+      get: (target, key: keyof NostrBackend) => {
+        const fn = target[key];
+        return (...args: unknown[]) => {
+          counts[key] += 1;
+          return (fn as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      },
+    });
+    const h = createHarness({
+      backends: {
+        nostr: counting,
+        spark: async () => {
+          await Promise.resolve();
+          throw new Error("no spark");
+        },
+      },
+    });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const imported = ok(
+      await h.call(
+        "nostr.importKey",
+        { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
+        session,
+      ),
+    );
+    const publicKey = strField(field(imported, "key"), "publicKey");
+    expect(counts.publicKey).toBeGreaterThan(0);
+    ok(
+      await h.call(
+        "nostr.signEvent",
+        { publicKey, event: { kind: 1, created_at: 1, tags: [], content: "x" } },
+        session,
+      ),
+    );
+    expect(counts.sign).toBeGreaterThan(0);
+    ok(await h.call("nostr.nip44Encrypt", { publicKey, peer: publicKey, text: "hi" }, session));
+    expect(counts.ecdhX).toBeGreaterThan(0);
+    const wrapSigner = new KeysSigner(Keys.generate());
+    const rumor = createRumor(await wrapSigner.getPublicKey(), {
+      kind: 1,
+      created_at: 1,
+      tags: [],
+      content: "dm",
+    });
+    const wrap = await nip59Wrap(wrapSigner, publicKey, rumor);
+    await h.call("nostr.unwrapGiftWraps", { publicKey, events: [wrap] }, session);
+    expect(counts.verifySerialized).toBeGreaterThan(0);
+    wrapSigner.dispose();
   });
 });

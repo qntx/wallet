@@ -1,10 +1,11 @@
+import type { SparkCrypto } from "@qntx/spark/crypto";
+import type { ProtocolValue } from "@qntx/wallet/protocol";
+
 /**
  * Platform capabilities injected by the host packages. The kernel holds no ambient singletons and
  * imports no platform APIs; every capability arrives through these types.
  */
-import type { SparkCrypto } from "@qntx/spark/crypto";
-import type { ProtocolValue } from "@qntx/wallet/protocol";
-
+import type { NostrBackend } from "./modules/nostr/backend.ts";
 import type { RecordStore } from "./vault/store.ts";
 
 /** Returns `length` cryptographically random bytes. */
@@ -60,6 +61,12 @@ export type KernelPlatform = {
    */
   readonly backends: {
     readonly spark: () => Promise<SparkCrypto>;
+    /**
+     * The nostr signing/verification/ECDH backend (WD-054). Required: the host wires noble or
+     * native explicitly so no path silently falls back to the JS implementation. `Keys`/
+     * `KeysSigner`/`createEventVerifier` get this object.
+     */
+    readonly nostr: NostrBackend;
   };
 };
 

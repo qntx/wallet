@@ -13,7 +13,7 @@ import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { verifyEvent } from "@qntx/nostr";
+import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
 import { createMemoryStore, startKernel } from "@qntx/wallet-kernel";
 import type { KernelPlatform, Pbkdf2, Port, Random } from "@qntx/wallet-kernel";
@@ -133,6 +133,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
         await Promise.resolve();
         throw new Error("no spark backend in hermes smoke");
       },
+      nostr: nobleBackend,
     },
   };
   startKernel(platform, port);

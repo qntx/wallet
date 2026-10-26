@@ -1,3 +1,4 @@
+import { nobleBackend } from "@qntx/nostr";
 /**
  * The browser kernel worker, bundled to dist/kernel.worker.js by `bun build`. All platform
  * capabilities are wired here: subtle PBKDF2, the IndexedDB vault store, timers through
@@ -41,6 +42,7 @@ const onInit = (event: MessageEvent<unknown>): void => {
       activity: "presence",
     },
     backends: {
+      nostr: nobleBackend,
       spark: async () =>
         loadSparkBackend(async () => {
           const response = await fetch(new URL("spark.wasm", import.meta.url));

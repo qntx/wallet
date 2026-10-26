@@ -4,6 +4,7 @@
  * claim/forget, lock dispose, wallet-delete ops) without the core knowing what a nostr key is;
  * `status` produces the module's snapshot section, called from status.ts.
  */
+import type { NostrBackend } from "@qntx/nostr";
 import type { MethodName, NOSTR_METHODS } from "@qntx/wallet/protocol";
 import type { NostrKeyInfo } from "@qntx/wallet/types";
 
@@ -29,8 +30,8 @@ export type NostrModule = {
   };
 };
 
-export function createNostrModule(): NostrModule {
-  const pool = new SignerPool();
+export function createNostrModule(backend: NostrBackend): NostrModule {
+  const pool = new SignerPool(backend);
 
   const vault: VaultHooks = {
     ownsRecord: (kind) => kind === NOSTR_KEY_KIND,

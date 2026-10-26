@@ -106,7 +106,7 @@ export async function generateKey(
   params: { factor?: Factor },
   requestSession: string | undefined,
 ): Promise<{ key: NostrKeyInfo; session: string }> {
-  const secretKey = generateSecretKey(ctx.platform.random);
+  const secretKey = generateSecretKey(ctx.platform.random, ctx.platform.backends.nostr);
   try {
     return await addKey(ctx, secretKey, "generated", false, params.factor, requestSession);
   } finally {
@@ -119,7 +119,7 @@ export async function createNip46ClientKey(
   requestSession: string | undefined,
 ): Promise<NostrKeyInfo> {
   const { dek } = ctx.session.require(requestSession);
-  const secretKey = generateSecretKey(ctx.platform.random);
+  const secretKey = generateSecretKey(ctx.platform.random, ctx.platform.backends.nostr);
   try {
     const publicKey = getPublicKey(secretKey);
     ensureNewKey(ctx, publicKey);

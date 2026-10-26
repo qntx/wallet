@@ -945,14 +945,12 @@ describe("unwrapGiftWraps chunking", () => {
     // Concatenated in order: result i answers request event i.
     expect(results).toStrictEqual(
       Array.from({ length: 130 }, (_, i) => ({
-        ok: {
-          id: i.toString(16).padStart(64, "0"),
-          pubkey: PUBLIC_KEY,
-          kind: 1,
-          created_at: 1,
-          tags: [],
-          content: "rumor",
-        },
+        id: i.toString(16).padStart(64, "0"),
+        pubkey: PUBLIC_KEY,
+        kind: 1,
+        created_at: 1,
+        tags: [],
+        content: "rumor",
       })),
     );
   });
