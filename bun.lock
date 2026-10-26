@@ -31,7 +31,7 @@
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@qntx/nostr": "0.15.0",
-        "@qntx/spark": "0.2.0",
+        "@qntx/spark": "0.2.1",
         "@qntx/tsconfig": "1.0.1",
         "@types/node": "26.6.4",
         "publint": "0.3.25",
@@ -57,14 +57,14 @@
       },
       "devDependencies": {
         "@noble/hashes": "^2.0.1",
-        "@qntx/spark": "0.2.0",
-        "@qntx/spark-wasm": "0.2.0",
+        "@qntx/spark": "0.2.1",
+        "@qntx/spark-wasm": "0.2.1",
         "@qntx/wallet": "0.2.0",
         "@qntx/wallet-worker": "0.2.0",
         "fake-indexeddb": "6.2.6",
       },
       "peerDependencies": {
-        "@qntx/spark": "0.2.0",
+        "@qntx/spark": "0.2.1",
         "@qntx/wallet": "0.2.0",
       },
     },
@@ -76,7 +76,7 @@
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@qntx/nostr": "0.15.0",
-        "@qntx/spark": "0.2.0",
+        "@qntx/spark": "0.2.1",
         "@qntx/wallet": "0.2.0",
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
@@ -98,8 +98,8 @@
         "@noble/hashes": "2.4.0",
         "@playwright/test": "1.63.0",
         "@qntx/nostr": "0.15.0",
-        "@qntx/spark": "0.2.0",
-        "@qntx/spark-wasm": "0.2.0",
+        "@qntx/spark": "0.2.1",
+        "@qntx/spark-wasm": "0.2.1",
         "@qntx/tsconfig": "1.0.1",
         "@qntx/wallet": "0.2.0",
         "@qntx/wallet-kernel": "0.2.0",
@@ -271,9 +271,9 @@
 
     "@qntx/oxlint": ["@qntx/oxlint@1.1.1", "", { "peerDependencies": { "oxlint": "^1.82.0", "oxlint-tsgolint": ">=7.0.2001" }, "optionalPeers": ["oxlint", "oxlint-tsgolint"] }, "sha512-zvn9BENK1Ly1GmxwVYEDZJOCm7koW2Cji3l+M1i19gLpcTqmatvtWBEtBRNc6rPxfVRNz0mhc+6z76iTKuNFqw=="],
 
-    "@qntx/spark": ["@qntx/spark@0.2.0", "", { "dependencies": { "@bufbuild/protobuf": "^2.16.0", "@connectrpc/connect": "^2.2.0", "@connectrpc/connect-web": "^2.2.0", "@noble/ciphers": "2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0", "@scure/bip32": "^2.4.0", "@scure/btc-signer": "^2.4.1" } }, "sha512-Y4ZMD7Ekva1dl3hZRgVp2Xju9cxDcwTdq1ddTdyGjby/Dw384+2rMI2cKNX2ewRMVtsAmdmMqtLH/OAZoqgPfA=="],
+    "@qntx/spark": ["@qntx/spark@0.2.1", "", { "dependencies": { "@bufbuild/protobuf": "^2.16.0", "@connectrpc/connect": "^2.2.0", "@connectrpc/connect-web": "^2.2.0", "@noble/ciphers": "2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0", "@scure/bip32": "^2.4.0", "@scure/btc-signer": "^2.4.1" } }, "sha512-D7XL+oinURX690z3eRPzosviW4oZPrV3V0aebKbH/FvMCi9dBFP9iHb0Da7I1LTSMnLtS55gFrn6k9Qc0ZP7lw=="],
 
-    "@qntx/spark-wasm": ["@qntx/spark-wasm@0.2.0", "", { "peerDependencies": { "@qntx/spark": "^0.2.0" } }, "sha512-1PKJsXAmwNUUq2GOFtbl8OUShwfDhdObbAGzPmIDaIw+q4+UQemIA26PEav3uiMQARwLyyGlovPpYGsbyTQjWg=="],
+    "@qntx/spark-wasm": ["@qntx/spark-wasm@0.2.1", "", { "peerDependencies": { "@qntx/spark": "^0.2.0" } }, "sha512-UZlIYnuOdT4FYaH7+kJC34Z+P/bR7gZf+GEyiZT2E/gmv3Z6ojBSnX4annOIZZFtMdLHRUqAWPDRte7mKYdaEg=="],
 
     "@qntx/tsconfig": ["@qntx/tsconfig@1.0.1", "", {}, "sha512-ONEFojcKeCateUga4lJO7tf0KUTLuz5DrPGuzf1zgoo9mQVJx7gHjWElj32tGNiCWE5lblO+9EJ28cvb/81PDQ=="],
 

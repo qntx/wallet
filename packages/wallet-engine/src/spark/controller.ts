@@ -1,4 +1,4 @@
-import { decodeSparkAddress, encodeSparkAddress } from "@qntx/spark";
+import { decodeSparkAddress, encodeSparkAddress, uuidv7 } from "@qntx/spark";
 import type { SparkClient } from "@qntx/spark";
 import type { UnlockFactor } from "@qntx/wallet";
 import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
@@ -48,9 +48,9 @@ export type SparkControllerOptions = {
 
 const key = (ref: SparkAccountRef): string => `${ref.walletId}:${ref.groupIndex}:${ref.network}`;
 
-/** TransferId: idempotency key only — hex-random is fine; uuidv7 isn't exported by @qntx/spark. */
-const transferId = (random: (n: number) => Uint8Array): string =>
-  [...random(16)].map((b) => b.toString(16).padStart(2, "0")).join("");
+/** TransferId: the client and SO expect a UUIDv7 — mint it from the injected clock+random. */
+const transferId = (random: (n: number) => Uint8Array, now: () => number): string =>
+  uuidv7(random, now);
 
 export class SparkController extends Controller<SparkControllerState> {
   private readonly options: SparkControllerOptions;
@@ -235,7 +235,7 @@ export class SparkController extends Controller<SparkControllerState> {
       return client.transfers.send({
         receiver: params.receiver,
         amountSats: params.amountSats,
-        transferId: transferId(this.options.random),
+        transferId: transferId(this.options.random, this.options.now),
       });
     });
   }
@@ -265,7 +265,7 @@ export class SparkController extends Controller<SparkControllerState> {
         invoice: params.invoice,
         maxFeeSats: params.maxFeeSats,
         ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
-        transferId: transferId(this.options.random),
+        transferId: transferId(this.options.random, this.options.now),
       });
     });
   }
@@ -338,7 +338,7 @@ export class SparkController extends Controller<SparkControllerState> {
         speed: params.speed,
         maxFeeSats: fee,
         amountSats: exitAmount,
-        transferId: transferId(this.options.random),
+        transferId: transferId(this.options.random, this.options.now),
       });
     });
   }
