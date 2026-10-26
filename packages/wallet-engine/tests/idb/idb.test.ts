@@ -13,7 +13,7 @@ function useFakeIdb(): void {
   Object.assign(globalThis, { indexedDB: new IDBFactory() });
 }
 
-function open(key = DATA_KEY) {
+async function open(key = DATA_KEY) {
   return openIndexedDbEngineStore({ name: "t", dataKey: key, random });
 }
 
@@ -67,6 +67,7 @@ describe("indexeddb EngineStore", () => {
   });
 
   it("rejects NUL in collection names and keys", async () => {
+    expect.hasAssertions();
     useFakeIdb();
     await nulContract(open);
   });

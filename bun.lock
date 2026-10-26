@@ -52,6 +52,7 @@
       "version": "0.2.0",
       "dependencies": {
         "@noble/ciphers": "^2.4.0",
+        "@scure/base": "^2.4.0",
         "zustand": "^5.0.15",
       },
       "devDependencies": {
@@ -60,6 +61,10 @@
         "fake-indexeddb": "6.2.6",
         "typescript": "7.0.2",
         "vite-plus": "1.0.0",
+      },
+      "peerDependencies": {
+        "@qntx/spark": "^0.2.0",
+        "@qntx/wallet": "^0.2.0",
       },
     },
     "packages/wallet-kernel": {
