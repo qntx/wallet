@@ -47,7 +47,7 @@ const sparkCommitment = { hiding: COMPRESSED, binding: COMPRESSED };
 const sparkTarget = {
   transaction: $b(`02000000${"00".repeat(24)}`),
   inputIndex: 0,
-  prevouts: [{ script: $b(`5120${"ab".repeat(32)}`), amount: 1_000 }],
+  prevouts: [{ script: $b(`5120${"ab".repeat(32)}`), amount: 1000 }],
 };
 
 const passwordFactor = { kind: "password", password: $b(hexOf("correct horse battery staple")) };
@@ -435,7 +435,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
         request: {
           transaction: $b(`02000000${"00".repeat(24)}`),
           inputIndex: 0,
-          prevoutAmountSats: 1_000,
+          prevoutAmountSats: 1000,
           paymentHash: BYTES32,
           hashLockPublicKey: COMPRESSED,
         },
