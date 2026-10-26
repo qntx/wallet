@@ -6,9 +6,8 @@
   "scripts": {
     "build": "vp build",
     "typecheck": "tsc --noEmit",
-    "test": "playwright test --config tests/playwright.config.ts",
     "dev": "vp dev",
-    "test:e2e": "playwright test --config tests/playwright.config.ts"
+    "test:browser": "playwright test --config tests/playwright.config.ts"
   },
   "dependencies": {
     "@qntx/wallet": "0.2.0",

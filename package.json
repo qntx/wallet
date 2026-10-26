@@ -18,7 +18,7 @@
     "typecheck": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r typecheck && tsc --noEmit",
     "test": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test",
     "test:coverage": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test:coverage",
-    "test:browser": "vp run @qntx/wallet-worker#test:browser",
+    "test:browser": "vp run @qntx/wallet#build && vp run @qntx/wallet-engine#build && vp run @qntx/wallet-worker#build && vp run @qntx/playground#build && vp run @qntx/wallet-worker#test:browser && vp run @qntx/playground#test:browser",
     "check:pkg": "vp run @qntx/wallet#check:pkg && vp run @qntx/wallet-worker#check:pkg",
     "smoke:hermes": "bun run --cwd packages/wallet-worker smoke:hermes",
     "harness:bundles": "bun scripts/harness-bundles.ts",
