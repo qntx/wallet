@@ -6,7 +6,7 @@
   // project the type-aware lint service assigns those files to.
   "exclude": [
     "src/browser",
-    "src/worker/browser.ts",
+    "src/worker/worker.ts",
     "src/worker/indexeddb.ts",
     "tests/browser/page"
   ]
