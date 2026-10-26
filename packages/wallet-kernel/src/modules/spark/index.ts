@@ -23,7 +23,7 @@ import { openRecord, verifyFactor } from "../../vault/vault.ts";
  * loaded on first use only, so a nostr-only session never touches wasm; a WasmPoisonedError drops
  * the instance and every signer built on it, and the next call reloads.
  */
-import { sparkRuntime } from "./runtime.ts";
+import { loadSparkRuntime } from "./runtime.ts";
 import type { SparkRuntime } from "./runtime.ts";
 
 export type SparkModule = {
@@ -183,6 +183,18 @@ export function createSparkModule(): SparkModule {
   const signers = new Map<string, SparkSigner>();
   const approvals = new Map<string, Approval[]>();
   let backendPromise: Promise<SparkCrypto> | undefined;
+  let runtimePromise: Promise<SparkRuntime> | undefined;
+
+  /** The memoized runtime chunk; a failed load is not cached, so the next spark call retries. */
+  const sparkRuntime = async (): Promise<SparkRuntime> => {
+    runtimePromise ??= loadSparkRuntime().catch((error: unknown) => {
+      runtimePromise = undefined;
+      throw error instanceof KernelError
+        ? error
+        : new KernelError("unavailable", "spark runtime failed to load");
+    });
+    return runtimePromise;
+  };
 
   const liveApprovals = (ctx: KernelContext, key: string): Approval[] => {
     const now = ctx.platform.elapsed();
