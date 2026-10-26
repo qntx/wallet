@@ -27,7 +27,10 @@ const visit = (file: string): void => {
   const source = readFileSync(join(dist, file), "utf8");
   const allowed = moduleChunks[file];
   for (const specifier of banned) {
-    if (specifier !== allowed && source.includes(specifier)) {
+    // Import specifiers only (static `from "…"`, dynamic `import("…")`, side-effect `import "…"`):
+    // doc comments that name a library are not a runtime dependency.
+    const imported = new RegExp(`(?:from|import)\\s*\\(?\\s*["']${specifier}(?:/[^"']*)?["']`);
+    if (specifier !== allowed && imported.test(source)) {
       offenders.push(`${file} (${specifier})`);
     }
   }
