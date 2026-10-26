@@ -3,8 +3,10 @@ import { checkName } from "./guard.ts";
 import type { EngineCollection, EngineStore } from "./port.ts";
 
 /** In-memory EngineStore: the Node/test implementation — same contract, no durability. */
-export function createMemoryEngineStore(): EngineStore {
-  const collections = new Map<string, Map<string, Uint8Array>>();
+export function createMemoryEngineStore(backing?: {
+  readonly collections?: Map<string, Map<string, Uint8Array>>;
+}): EngineStore {
+  const collections = backing?.collections ?? new Map<string, Map<string, Uint8Array>>();
   let closed = false;
   const guard = (): void => {
     if (closed) {
