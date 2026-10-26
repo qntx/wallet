@@ -71,6 +71,9 @@ export class SparkController extends Controller<SparkControllerState> {
 
   addAccount(ref: SparkAccountRef): void {
     this.accounts.set(key(ref), ref);
+    if (this.engineStore !== undefined) {
+      void this.startAccount(ref);
+    }
   }
 
   removeAccount(ref: SparkAccountRef): void {
@@ -285,6 +288,11 @@ export class SparkController extends Controller<SparkControllerState> {
     return state?.sparkAddress;
   }
 
+  /**
+   * Cooperative exit to an L1 address. The client exits `amountSats` of leaves and the payout is
+   * `amountSats - fee`, so the approval intent carries the PAYOUT: `amountSats: exit - fee` and
+   * `maxFeeSats: fee` — the kernel matches the exit output against the intent, not the leaf total.
+   */
   async withdraw(
     ref: SparkAccountRef,
     params: {
@@ -297,23 +305,30 @@ export class SparkController extends Controller<SparkControllerState> {
   ): Promise<unknown> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
-      const amountSats = params.amountSats ?? (await client.balance());
+      const exitAmount = params.amountSats ?? (await client.balance());
       const quote = await client.withdrawals.quoteCooperativeExit({
         address: params.address,
-        amountSats,
+        amountSats: exitAmount,
       });
-      const quoteFee =
+      const fee =
         quote.fees[
           params.speed === "FAST" ? "fast" : params.speed === "MEDIUM" ? "medium" : "slow"
         ];
-      const fee =
-        params.maxFeeSats === undefined ? quoteFee : Math.min(params.maxFeeSats, quoteFee);
+      if (params.maxFeeSats !== undefined && params.maxFeeSats < fee) {
+        throw new SparkControllerError("rejected", "maxFeeSats below the quoted fee");
+      }
+      if (fee >= exitAmount) {
+        throw new SparkControllerError(
+          "insufficient-funds",
+          "exit fee meets or exceeds the amount",
+        );
+      }
       await this.options.spark.approve({
         account: ref,
         intent: {
           kind: "exit",
           address: params.address,
-          amountSats,
+          amountSats: exitAmount - fee,
           maxFeeSats: fee,
         },
         verify: params.verify,
@@ -322,7 +337,7 @@ export class SparkController extends Controller<SparkControllerState> {
         address: params.address,
         speed: params.speed,
         maxFeeSats: fee,
-        amountSats,
+        amountSats: exitAmount,
         transferId: transferId(this.options.random),
       });
     });

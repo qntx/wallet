@@ -123,6 +123,79 @@ describe("SparkExitChain codec", () => {
   });
 });
 
+describe("withdraw approval intent", () => {
+  const approval = (approvals: unknown[]) => approvals[0] as { intent: unknown };
+
+  async function setup(calls: string[], approvals: unknown[]) {
+    const { c, client } = controller(calls, approvals);
+    const store = createMemoryEngineStore();
+    c.addAccount(REF);
+    c.setStore(store);
+    await c.init();
+    return { c, client };
+  }
+
+  it("explicit amount: payout intent is exit - quoted fee", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await c.withdraw(REF, { address: "bc1q…", amountSats: 1000, speed: "FAST", verify: VERIFY });
+    // fast fee = 5, payout = 995
+    expect(approval(approvals).intent).toStrictEqual({
+      kind: "exit",
+      address: "bc1q…",
+      amountSats: 995,
+      maxFeeSats: 5,
+    });
+    expect(calls.at(-1)).toBe("exit");
+    await c.destroy();
+  });
+
+  it("whole-balance: defaults amount to the balance minus fee", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await c.withdraw(REF, { address: "bc1q…", speed: "SLOW", verify: VERIFY });
+    // balance 42, slow fee 1, payout 41
+    expect(approval(approvals).intent).toStrictEqual({
+      kind: "exit",
+      address: "bc1q…",
+      amountSats: 41,
+      maxFeeSats: 1,
+    });
+    await c.destroy();
+  });
+
+  it("rejects a caller cap below the quote without approving", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await expect(
+      c.withdraw(REF, {
+        address: "bc1q…",
+        amountSats: 1000,
+        speed: "FAST",
+        maxFeeSats: 2,
+        verify: VERIFY,
+      }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("exit");
+    await c.destroy();
+  });
+
+  it("rejects a fee at or above the exit amount", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await expect(
+      c.withdraw(REF, { address: "bc1q…", amountSats: 5, speed: "FAST", verify: VERIFY }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
+    expect(approvals).toHaveLength(0);
+    await c.destroy();
+  });
+});
+
 describe("createWalletEngine lifecycle", () => {
   it("subscribes to wallet state and builds the controller", () => {
     expect.hasAssertions();
