@@ -7,14 +7,27 @@
  * emitted bundle.
  */
 import { copyFileSync, existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { build, createServer, preview } from "vite";
 
+const require = createRequire(import.meta.url);
+
 const CSP =
   "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'";
 const root = new URL("page", import.meta.url).pathname;
+const distDir = new URL("../../dist", import.meta.url).pathname;
+// spark.wasm may be absent from dist/ after a cached (output-restoring) build — restore it from
+// @qntx/spark-wasm before serving, the same package copy-spark-wasm.ts reads.
+{
+  const out = join(distDir, "spark.wasm");
+  if (!existsSync(out)) {
+    const wasmPkg = join(require.resolve("@qntx/spark-wasm/package.json"), "..");
+    copyFileSync(join(wasmPkg, "dist", "spark.wasm"), out);
+  }
+}
 const production = process.argv[2] === "build";
 
 if (production) {
@@ -27,14 +40,21 @@ if (production) {
   });
   // vite emits kernel.worker.js as an asset next to the page bundle; the worker fetches
   // ./spark.wasm relative to its own URL, so the wasm must sit beside the emitted worker.
-  const distDir = new URL("../../dist", import.meta.url).pathname;
   // Same-origin chunks: the code-split spark runtime and spark.wasm are fetched relative to the
   // emitted worker asset, so every dist/ payload file must sit beside it.
-  const payloads = ["spark.wasm", ...readdirSync(distDir).filter((f) => f.endsWith(".js"))];
+  // spark.wasm may be absent from dist/ after a cached (output-restoring) build — source it
+  // from @qntx/spark-wasm, the same package copy-spark-wasm.ts reads.
+  const wasmPkg = join(require.resolve("@qntx/spark-wasm/package.json"), "..");
+  const payloads: Array<[string, string]> = [
+    [join(wasmPkg, "dist", "spark.wasm"), "spark.wasm"],
+    ...readdirSync(distDir)
+      .filter((f) => f.endsWith(".js"))
+      .map((f): [string, string] => [join(distDir, f), f]),
+  ];
   for (const dir of [outDir, join(outDir, "assets")]) {
     if (existsSync(dir)) {
-      for (const file of payloads) {
-        copyFileSync(join(distDir, file), join(dir, file));
+      for (const [src, name] of payloads) {
+        copyFileSync(src, join(dir, name));
       }
     }
   }

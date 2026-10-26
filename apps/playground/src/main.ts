@@ -25,6 +25,12 @@ const button = (id: string): HTMLButtonElement => {
   }
   return found;
 };
+const errText = (e: unknown): string => {
+  if (e instanceof Error && "category" in e) {
+    return String((e as { category: unknown }).category);
+  }
+  return String(e);
+};
 const say = (msg: string, err = false): void => {
   el("status").textContent = msg;
   el("status").className = err ? "err" : "ok";
@@ -40,6 +46,9 @@ const wallet = await createWebWallet({
     vaultSalt: "qntx/vault",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
+}).catch((error: unknown) => {
+  el("error").textContent = `wallet init failed: ${String(error)}`;
+  throw error instanceof Error ? error : new Error(String(error));
 });
 
 const engine = createWalletEngine({
@@ -122,7 +131,7 @@ button("addAccount").addEventListener("click", () => {
     if (state !== "ready" && state !== "error") {
       setTimeout(tick, 500);
     } else if (state === "error") {
-      say(`account error: ${String(s?.errorCategory)}`, true);
+      say(`account error: ${errText(s?.errorCategory)}`, true);
     }
   };
   tick();
