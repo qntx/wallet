@@ -3,7 +3,7 @@
   "compilerOptions": {
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": [],
-    "outDir": "../../node_modules/.cache/wallet-engine-idb"
+    "outDir": "../../.cache/wallet-engine-idb"
   },
   "include": ["src/idb/indexeddb.ts", "src/errors.ts", "src/store"]
 }

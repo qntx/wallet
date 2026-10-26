@@ -39,14 +39,17 @@ const DIST_DIR = new URL("../dist", import.meta.url);
  * Stages the kernel entry plus its code-split chunks into `dir` (splitting emits shared chunks the
  * entry statically imports).
  */
-async function stageKernel(dir: string): Promise<void> {
+async function stageKernel(dir: string, wasm = true): Promise<void> {
   const entries = await readdir(DIST_DIR);
   const files = entries.filter((file) => file.endsWith(".js"));
-  await Promise.all(
-    files.map(async (file) =>
+  // spark.wasm ships inside @qntx/spark-wasm and may be absent from dist/ after a cached
+  // (output-restoring) workspace build — stage it from the package itself.
+  await Promise.all([
+    ...files.map(async (file) =>
       copyFile(new URL(`../dist/${file}`, import.meta.url), join(dir, file)),
     ),
-  );
+    ...(wasm ? [copyFile(WASM_PATH, join(dir, "spark.wasm"))] : []),
+  ]);
 }
 const WASM_PATH = join(
   import.meta.dirname,
@@ -343,7 +346,7 @@ describe("spark enclave on the node host", () => {
     // The worker entry reads ./spark.wasm beside kernel.node.js only when backends.spark is
     // called — a kernel bundle shipped without the wasm file must serve nostr fine.
     const dir = await mkdtemp(join(tmpdir(), "wallet-spark-none-"));
-    await stageKernel(dir);
+    await stageKernel(dir, false);
     const wallet = await nodeWallet(new URL(`file://${join(dir, "kernel.node.js")}`));
     const created = await wallet.wallets.importMnemonic({
       mnemonic: ACCOUNTS.mnemonic,
