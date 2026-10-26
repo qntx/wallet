@@ -50,21 +50,21 @@ async function done(tx: IDBTransaction): Promise<void> {
   });
 }
 
-export function openIndexedDbEngineStore(
+export async function openIndexedDbEngineStore(
   options: IndexedDbEngineStoreOptions,
 ): Promise<EngineStore> {
   const key = new Uint8Array(options.dataKey);
-  return new Promise<EngineStore>((resolveOpen, rejectOpen) => {
+  return new Promise<EngineStore>((resolve, reject) => {
     const open = indexedDB.open(options.name, 1);
     open.addEventListener("upgradeneeded", () => {
       open.result.createObjectStore(STORE);
     });
     open.addEventListener("success", () => {
-      resolveOpen(makeStore(open.result, key, options.random));
+      resolve(makeStore(open.result, key, options.random));
     });
     open.addEventListener("error", () => {
       key.fill(0);
-      rejectOpen(new Error("indexeddb open failed", { cause: open.error }));
+      reject(new Error("indexeddb open failed", { cause: open.error }));
     });
   });
 }

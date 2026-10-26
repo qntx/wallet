@@ -11,6 +11,7 @@ describe("memory EngineStore", () => {
   });
 
   it("rejects NUL in collection names and keys", async () => {
+    expect.hasAssertions();
     await nulContract(() => createMemoryEngineStore());
   });
 
