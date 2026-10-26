@@ -1,23 +1,7 @@
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { Address, NETWORK, OutScript, TEST_NETWORK } from "@scure/btc-signer";
 
 import type { SparkCrypto } from "@qntx/spark/crypto";
-/**
- * The spark module: the SparkSigner pool and every spark.* command. The module keeps no records —
- * signers are derived lazily per walletId/groupIndex/network from the wallet's entropy record and
- * live only while unlocked. The SparkCrypto backend is injected by the host (backends.spark) and
- * loaded on first use only, so a nostr-only session never touches wasm; a WasmPoisonedError drops
- * the instance and every signer built on it, and the next call reloads.
- */
-import {
-  createSparkSigner,
-  decodeBolt11,
-  EPHEMERAL_ANCHOR_SCRIPT,
-  lightningSendHtlcScript,
-  sparkAccountKey,
-  sparkNetworkConfig,
-} from "@qntx/spark/signer";
 import type { SparkOutflow, SparkSigner } from "@qntx/spark/signer";
 import type {
   MethodName,
@@ -32,6 +16,15 @@ import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
 import { seedFromEntropy } from "../../seed/seed.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
+/**
+ * The spark module: the SparkSigner pool and every spark.* command. The module keeps no records —
+ * signers are derived lazily per walletId/groupIndex/network from the wallet's entropy record and
+ * live only while unlocked. The SparkCrypto backend is injected by the host (backends.spark) and
+ * loaded on first use only, so a nostr-only session never touches wasm; a WasmPoisonedError drops
+ * the instance and every signer built on it, and the next call reloads.
+ */
+import { sparkRuntime } from "./runtime.ts";
+import type { SparkRuntime } from "./runtime.ts";
 
 export type SparkModule = {
   readonly vault: VaultHooks;
@@ -45,20 +38,24 @@ const poolKey = (account: SparkAccountRef): string =>
 const approvalRequired = (): KernelError =>
   new KernelError("approval-required", "this outflow needs a matching approval");
 
-const btcNet = (network: SparkAccountRef["network"]) =>
-  network === "mainnet" ? NETWORK : { ...TEST_NETWORK, bech32: "bcrt" };
+const btcNet = (rt: SparkRuntime, network: SparkAccountRef["network"]) =>
+  network === "mainnet" ? rt.NETWORK : { ...rt.TEST_NETWORK, bech32: "bcrt" };
 
 /**
  * `addressToScript` accepts either network — an approval must bind the destination to the account's
  * own network, so decode under `network`'s parameters and reject other prefixes.
  */
-const addressScriptFor = (network: SparkAccountRef["network"], address: string): Uint8Array => {
+const addressScriptFor = (
+  rt: SparkRuntime,
+  network: SparkAccountRef["network"],
+  address: string,
+): Uint8Array => {
   try {
-    const net = Address(btcNet(network));
-    const decoded = OutScript.encode(net.decode(address));
+    const net = rt.Address(btcNet(rt, network));
+    const decoded = rt.OutScript.encode(net.decode(address));
     // `decode` accepts any prefix — re-encode under the account's network so a mainnet
     // `bc1…` string fails a regtest account and vice versa.
-    if (net.encode(OutScript.decode(decoded)).toLowerCase() !== address.toLowerCase()) {
+    if (net.encode(rt.OutScript.decode(decoded)).toLowerCase() !== address.toLowerCase()) {
       throw new KernelError("invalid-input", "address: wrong network");
     }
     return decoded;
@@ -98,6 +95,7 @@ type Approval = {
  * `addressToScript` and `decodeBolt11` both reject malformed input — mapped to `invalid-input`.
  */
 const decodeIntent = (
+  rt: SparkRuntime,
   account: SparkAccountRef,
   intent: SparkApproveIntent,
 ): { summary: SparkApprovalSummary; decoded: DecodedIntent } => {
@@ -116,7 +114,7 @@ const decodeIntent = (
       };
       break;
     case "lightning": {
-      const invoice = decodeBolt11(intent.invoice);
+      const invoice = rt.decodeBolt11(intent.invoice);
       if (invoice.amountMsat === undefined) {
         if (intent.amountSats === undefined) {
           throw new KernelError("invalid-input", "zero-amount invoice requires amountSats");
@@ -155,13 +153,13 @@ const decodeIntent = (
           amountSats: intent.amountSats,
           maxFeeSats: intent.maxFeeSats,
         },
-        decoded: { addressScript: addressScriptFor(account.network, intent.address) },
+        decoded: { addressScript: addressScriptFor(rt, account.network, intent.address) },
       };
       break;
     case "onchain":
       result = {
         summary: { kind: "onchain", address: intent.address, maxFeeSats: intent.maxFeeSats },
-        decoded: { addressScript: addressScriptFor(account.network, intent.address) },
+        decoded: { addressScript: addressScriptFor(rt, account.network, intent.address) },
       };
       break;
     case "token":
@@ -286,9 +284,10 @@ export function createSparkModule(): SparkModule {
     const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
     wipe(entropy);
     let accountKey: Uint8Array;
+    const rt = await sparkRuntime();
     try {
       // Upstream defaults: mainnet accounts start at 1, regtest at 0.
-      accountKey = sparkAccountKey(
+      accountKey = rt.sparkAccountKey(
         seed,
         account.network,
         account.network === "mainnet" ? account.groupIndex + 1 : account.groupIndex,
@@ -300,7 +299,7 @@ export function createSparkModule(): SparkModule {
     }
     const crypto = await backend(ctx);
     try {
-      const signer = createSparkSigner({
+      const signer = rt.createSparkSigner({
         crypto,
         accountKey,
         network: account.network,
@@ -326,6 +325,7 @@ export function createSparkModule(): SparkModule {
     account: SparkAccountRef,
     outflow: SparkOutflow,
   ): Promise<void> => {
+    const rt = await sparkRuntime();
     if (outflow.kind === "swap") {
       return;
     }
@@ -354,9 +354,9 @@ export function createSparkModule(): SparkModule {
         if (signer === undefined || paymentHash === undefined || budget === undefined) {
           continue;
         }
-        const expected = lightningSendHtlcScript({
+        const expected = rt.lightningSendHtlcScript({
           paymentHash,
-          sspIdentityPublicKey: sparkNetworkConfig(account.network).ssp.identityPublicKey,
+          sspIdentityPublicKey: rt.sparkNetworkConfig(account.network).ssp.identityPublicKey,
           // oxlint-disable-next-line eslint/no-await-in-loop -- candidates short-circuit in order
           identityPublicKey: await signer.identityPublicKey(),
         });
@@ -410,7 +410,7 @@ export function createSparkModule(): SparkModule {
         }
         const every = outflow.outputs.every(
           (output) =>
-            equalBytes(output.script, EPHEMERAL_ANCHOR_SCRIPT) ||
+            equalBytes(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) ||
             equalBytes(output.script, addressScript),
         );
         if (!every) {
@@ -530,7 +530,11 @@ export function createSparkModule(): SparkModule {
       if (live.length >= APPROVAL_MAX_PER_ACCOUNT) {
         throw new KernelError("invalid-input", "approval cap reached for this account");
       }
-      const { summary, decoded } = decodeIntent(params.account, params.intent);
+      const { summary, decoded } = decodeIntent(
+        await sparkRuntime(),
+        params.account,
+        params.intent,
+      );
       live.push({
         intent: params.intent,
         deadline: ctx.platform.elapsed() + APPROVAL_TTL_MS,

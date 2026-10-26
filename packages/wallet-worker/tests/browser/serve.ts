@@ -6,7 +6,7 @@
  * the built dist, and `new URL("kernel.worker.js", import.meta.url)` must resolve against the
  * emitted bundle.
  */
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -27,11 +27,15 @@ if (production) {
   });
   // vite emits kernel.worker.js as an asset next to the page bundle; the worker fetches
   // ./spark.wasm relative to its own URL, so the wasm must sit beside the emitted worker.
-  const wasmSource = new URL("../../dist/spark.wasm", import.meta.url);
+  const distDir = new URL("../../dist", import.meta.url).pathname;
+  // Same-origin chunks: the code-split spark runtime and spark.wasm are fetched relative to the
+  // emitted worker asset, so every dist/ payload file must sit beside it.
+  const payloads = ["spark.wasm", ...readdirSync(distDir).filter((f) => f.endsWith(".js"))];
   for (const dir of [outDir, join(outDir, "assets")]) {
     if (existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-      copyFileSync(wasmSource, join(dir, "spark.wasm"));
+      for (const file of payloads) {
+        copyFileSync(join(distDir, file), join(dir, file));
+      }
     }
   }
   const server = await preview({

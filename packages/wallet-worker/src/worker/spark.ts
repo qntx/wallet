@@ -8,11 +8,12 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { base64 } from "@scure/base";
 
-import { loadSparkWasm, SPARK_WASM_INTEGRITY } from "@qntx/spark-wasm/browser";
 import type { SparkCrypto } from "@qntx/spark/crypto";
 import { KernelError } from "@qntx/wallet-kernel";
 
 export async function loadSparkBackend(readWasm: () => Promise<Uint8Array>): Promise<SparkCrypto> {
+  // Dynamic: spark-wasm stays out of the initial kernel bundle and loads with the first spark call.
+  const { loadSparkWasm, SPARK_WASM_INTEGRITY } = await import("@qntx/spark-wasm/browser");
   const bytes = await readWasm();
   const integrity = `sha256-${base64.encode(sha256(bytes))}`;
   if (integrity !== SPARK_WASM_INTEGRITY) {
