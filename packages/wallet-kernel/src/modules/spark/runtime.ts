@@ -28,26 +28,22 @@ export type SparkRuntime = {
   readonly TEST_NETWORK: typeof TEST_NETWORK;
 };
 
-let promise: Promise<SparkRuntime> | undefined;
-
-export async function sparkRuntime(): Promise<SparkRuntime> {
-  promise ??= (async (): Promise<SparkRuntime> => {
-    const [signer, btc] = await Promise.all([
-      import("@qntx/spark/signer"),
-      import("@scure/btc-signer"),
-    ]);
-    return {
-      createSparkSigner: signer.createSparkSigner,
-      decodeBolt11: signer.decodeBolt11,
-      EPHEMERAL_ANCHOR_SCRIPT: signer.EPHEMERAL_ANCHOR_SCRIPT,
-      lightningSendHtlcScript: signer.lightningSendHtlcScript,
-      sparkAccountKey: signer.sparkAccountKey,
-      sparkNetworkConfig: signer.sparkNetworkConfig,
-      Address: btc.Address,
-      NETWORK: btc.NETWORK,
-      OutScript: btc.OutScript,
-      TEST_NETWORK: btc.TEST_NETWORK,
-    };
-  })();
-  return promise;
+/** Loads the runtime chunk; the spark module memoizes it per kernel and retries after a failure. */
+export async function loadSparkRuntime(): Promise<SparkRuntime> {
+  const [signer, btc] = await Promise.all([
+    import("@qntx/spark/signer"),
+    import("@scure/btc-signer"),
+  ]);
+  return {
+    createSparkSigner: signer.createSparkSigner,
+    decodeBolt11: signer.decodeBolt11,
+    EPHEMERAL_ANCHOR_SCRIPT: signer.EPHEMERAL_ANCHOR_SCRIPT,
+    lightningSendHtlcScript: signer.lightningSendHtlcScript,
+    sparkAccountKey: signer.sparkAccountKey,
+    sparkNetworkConfig: signer.sparkNetworkConfig,
+    Address: btc.Address,
+    NETWORK: btc.NETWORK,
+    OutScript: btc.OutScript,
+    TEST_NETWORK: btc.TEST_NETWORK,
+  };
 }
