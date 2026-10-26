@@ -7,7 +7,7 @@ export default defineConfig({
   webServer: {
     command: "bun tests/serve.ts",
     url: "http://localhost:5417",
-    reuseExistingServer: process.env.CI === undefined,
+    reuseExistingServer: false,
     cwd: new URL("..", import.meta.url).pathname,
   },
 });
