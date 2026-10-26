@@ -16,9 +16,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "vp run @qntx/wallet#build && vp test",
-    "test:coverage": "vp run @qntx/wallet#build && vp test --coverage",
-    "typecheck": "vp run @qntx/wallet#build && tsc --noEmit && tsc --noEmit -p tsconfig.src.json"
+    "test": "vp test",
+    "test:coverage": "vp test --coverage",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json"
   },
   "dependencies": {
     "@noble/ciphers": "2.4.0",

@@ -46,11 +46,11 @@
   },
   "scripts": {
     "build": "vp run @qntx/wallet#build && vp pack && bun build --target node --splitting --outdir dist --entry-naming \"kernel.[name].js\" src/worker/node.ts && bun build --target browser --splitting --outdir dist --entry-naming \"kernel.[name].js\" src/worker/worker.ts && bun scripts/copy-spark-wasm.ts && bun scripts/kernel-manifest.ts",
-    "test": "vp run @qntx/wallet#build && bun build --target node --splitting --outdir dist --entry-naming \"kernel.[name].js\" src/worker/node.ts && bun scripts/copy-spark-wasm.ts && vp test",
-    "test:coverage": "vp run @qntx/wallet#build && bun build --target node --splitting --outdir dist --entry-naming \"kernel.[name].js\" src/worker/node.ts && bun scripts/copy-spark-wasm.ts && vp test --coverage",
+    "test": "vp test",
+    "test:coverage": "vp test --coverage",
     "test:browser": "bun run build && playwright test --config tests/browser/playwright.config.ts",
     "smoke:hermes": "vp run @qntx/wallet#build && bun scripts/hermes-smoke.ts",
-    "typecheck": "vp run @qntx/wallet#build && tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/browser/tsconfig.json && tsc --noEmit -p src/worker/tsconfig.json && tsc --noEmit -p tests/browser/page/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/browser/tsconfig.json && tsc --noEmit -p src/worker/tsconfig.json && tsc --noEmit -p tests/browser/page/tsconfig.json",
     "check:pkg": "bun run build && publint && attw --pack . --profile esm-only",
     "pack:local": "bun run build && bun pm pack"
   },

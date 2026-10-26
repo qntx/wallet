@@ -38,3 +38,6 @@ Local gate before a pull request:
 ```bash
 bun run lint && bun run typecheck && bun run test
 ```
+
+The root scripts build consumed workspace packages first; per-package scripts must stay
+build-free — never nest `vp run …#build` inside a package's own lint/typecheck/test script.
