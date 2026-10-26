@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>qntx spark playground</title>
+    <style>
+      body {
+        font-family: ui-monospace, monospace;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      section {
+        border: 1px solid #999;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+      }
+      button {
+        margin: 0.2rem 0.4rem 0.2rem 0;
+      }
+      input {
+        width: 100%;
+        margin: 0.2rem 0;
+      }
+      #status {
+        white-space: pre-wrap;
+      }
+      .ok {
+        color: #080;
+      }
+      .err {
+        color: #b00;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>spark playground (regtest)</h1>
+    <section id="vault">
+      <h2>vault</h2>
+      <input id="mnemonic" placeholder="mnemonic words (leave empty to generate)" />
+      <button id="create">create wallet</button>
+      <input
+        id="password"
+        type="password"
+        placeholder="password factor"
+        value="correct horse battery staple"
+      />
+      <button id="unlock">unlock</button>
+      <button id="lock">lock</button>
+      <div id="vaultState">locked</div>
+    </section>
+    <section id="account">
+      <h2>spark account</h2>
+      <button id="addAccount" disabled>add regtest account</button>
+      <div id="accountState">—</div>
+      <div id="balance">—</div>
+      <input id="sparkAddr" readonly placeholder="spark address" />
+    </section>
+    <section id="actions">
+      <h2>actions</h2>
+      <input id="invoiceAmount" type="number" placeholder="amount sats" />
+      <button id="createInvoice" disabled>create invoice</button>
+      <input id="invoice" placeholder="bolt11 invoice / spark address" />
+      <button id="payInvoice" disabled>pay invoice</button>
+      <button id="send" disabled>send to spark address</button>
+    </section>
+    <section id="withdraw">
+      <h2>withdraw</h2>
+      <input id="l1addr" placeholder="bc1rt… destination" />
+      <input id="withdrawAmount" type="number" placeholder="amount sats (blank = all)" />
+      <button id="withdrawBtn" disabled>withdraw (MEDIUM)</button>
+    </section>
+    <section><div id="status">—</div></section>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
