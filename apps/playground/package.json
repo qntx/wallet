@@ -1,0 +1,23 @@
+{
+  "name": "@qntx/playground",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "playwright test --config tests/playwright.config.ts",
+    "dev": "vite",
+    "test:e2e": "playwright test --config tests/playwright.config.ts"
+  },
+  "dependencies": {
+    "@qntx/wallet": "0.2.0",
+    "@qntx/wallet-engine": "0.2.0",
+    "@qntx/wallet-worker": "0.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "typescript": "7.0.2",
+    "vite": "8.1.3"
+  }
+}

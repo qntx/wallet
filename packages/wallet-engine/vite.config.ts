@@ -2,16 +2,21 @@ import { defineConfig } from "vite-plus";
 import type { UserConfig } from "vite-plus";
 
 const config: UserConfig = defineConfig({
-  pack: {
-    entry: {
-      index: "src/index.ts",
-      idb: "src/idb/indexeddb.ts",
+  // Two programs: the platform-neutral entry and the DOM-scoped IndexedDB entry.
+  pack: [
+    {
+      entry: { index: "src/index.ts" },
+      tsconfig: "tsconfig.src.json",
+      dts: { generator: "tsgo" },
+      sourcemap: true,
     },
-    dts: {
-      generator: "tsgo",
+    {
+      entry: { idb: "src/idb/indexeddb.ts" },
+      tsconfig: "tsconfig.idb.json",
+      dts: { generator: "tsgo" },
+      sourcemap: true,
     },
-    sourcemap: true,
-  },
+  ],
   test: {
     include: ["tests/**/*.test.ts"],
     coverage: { provider: "v8", reporter: ["text", "text-summary"], include: ["src/**/*.ts"] },

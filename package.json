@@ -9,7 +9,8 @@
     "url": "git+https://github.com/qntx/wallet.git"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "apps/playground"
   ],
   "type": "module",
   "scripts": {
