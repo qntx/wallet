@@ -209,9 +209,36 @@ const config: UserConfig = defineConfig({
       },
       ...kernelLayerOverrides,
       {
-        // The memory store implements the async RecordStore contract
-        // synchronously; the async signature stays without an await.
-        files: ["packages/wallet-kernel/src/vault/memory.ts"],
+        // The engine never reaches the kernel enclave or a crypto backend — host packages
+        // inject backends; the signer surface is types-only at the protocol layer.
+        files: ["packages/wallet-engine/src/**"],
+        rules: {
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: platformNeutralImports.paths,
+              patterns: [
+                ...platformNeutralImports.patterns,
+                {
+                  group: ["@qntx/wallet-kernel", "@qntx/*-wasm", "@qntx/*-native"],
+                  message: "the engine receives backends through injected ports",
+                },
+                {
+                  group: ["@qntx/spark/signer"],
+                  message: "@qntx/spark/signer is types-only for the engine",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        // The memory stores implement async store contracts synchronously; the async
+        // signature stays without an await.
+        files: [
+          "packages/wallet-kernel/src/vault/memory.ts",
+          "packages/wallet-engine/src/store/memory.ts",
+        ],
         rules: {
           "typescript/require-await": "off",
         },

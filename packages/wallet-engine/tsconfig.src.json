@@ -1,0 +1,10 @@
+{
+  // Same es2022 platform-neutral floor as the kernel; the IndexedDB file is DOM code with its
+  // own nested program under src/idb.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["es2022"]
+  },
+  "include": ["src"],
+  "exclude": ["src/idb", "tests/idb"]
+}
