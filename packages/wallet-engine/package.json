@@ -1,0 +1,62 @@
+{
+  "name": "@qntx/wallet-engine",
+  "version": "0.2.0",
+  "description": "qntx/wallet engine primitives: controllers, events and encrypted engine storage",
+  "license": "MIT OR Apache-2.0",
+  "author": "QuantX <x@qntx.org>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/qntx/wallet.git",
+    "directory": "packages/wallet-engine"
+  },
+  "files": [
+    "dist",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json",
+    "./idb": {
+      "types": "./dist/idb.d.mts",
+      "import": "./dist/idb.mjs",
+      "default": "./dist/idb.mjs"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json",
+    "check:pkg": "bun run build && publint && attw --pack . --profile esm-only"
+  },
+  "dependencies": {
+    "@noble/ciphers": "2.4.0",
+    "zustand": "5.0.15"
+  },
+  "devDependencies": {
+    "@qntx/tsconfig": "1.0.1",
+    "@types/node": "26.6.4",
+    "fake-indexeddb": "6.2.6",
+    "typescript": "7.0.2",
+    "vite-plus": "1.0.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.0",
+      "onFail": "ignore"
+    }
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

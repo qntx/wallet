@@ -1,0 +1,10 @@
+{
+  // DOM code — the only file that may touch the browser `indexedDB` global; checked without
+  // Node types. The nested tsconfig also makes the type-aware lint project service assign it here.
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["indexeddb.ts", "../../tests/idb"]
+}
