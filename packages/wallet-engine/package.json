@@ -39,8 +39,8 @@
     "check:pkg": "bun run build && publint && attw --pack . --profile esm-only"
   },
   "dependencies": {
-    "@noble/ciphers": "2.4.0",
-    "zustand": "5.0.15"
+    "@noble/ciphers": "^2.4.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@qntx/tsconfig": "1.0.1",
