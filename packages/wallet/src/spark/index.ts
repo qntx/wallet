@@ -15,6 +15,12 @@ export type { SparkAccountRef, SparkApi, SparkSigner } from "./types.ts";
 function createSparkApi(internals: WalletInternals): SparkApi {
   return {
     signer: (ref) => proxySigner(ref, internals),
+    approve: async (params) =>
+      internals.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const verify = await internals.resolveFactor(params.verify, transfer);
+        return internals.call("spark.approve", { ...params, verify });
+      }),
   };
 }
 

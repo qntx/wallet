@@ -6,9 +6,18 @@
  */
 import type { SparkSigner } from "@qntx/spark/signer";
 
-import type { SparkAccountRef } from "../protocol/index.ts";
+import type {
+  SparkAccountRef,
+  SparkApprovalSummary,
+  SparkApproveIntent,
+} from "../protocol/index.ts";
+import type { UnlockFactor } from "../types.ts";
 
-export type { SparkAccountRef } from "../protocol/index.ts";
+export type {
+  SparkAccountRef,
+  SparkApprovalSummary,
+  SparkApproveIntent,
+} from "../protocol/index.ts";
 export type { SparkSigner } from "@qntx/spark/signer";
 
 export type SparkApi = {
@@ -18,4 +27,16 @@ export type SparkApi = {
    * same wallet.
    */
   readonly signer: (ref: SparkAccountRef) => SparkSigner;
+  /**
+   * Register a 60-second outflow approval for an account. `verify` re-verifies the session's factor
+   * (same as `exportMnemonic`); the kernel returns its own decode of the intent — the
+   * receivers/amounts or invoice payment hash and amount it will match future signatures against —
+   * never host-provided text. `verify` is the same re-verification factor as `exportMnemonic`
+   * (Web/Node: passkey or password).
+   */
+  readonly approve: (params: {
+    readonly account: SparkAccountRef;
+    readonly intent: SparkApproveIntent;
+    readonly verify: UnlockFactor;
+  }) => Promise<SparkApprovalSummary>;
 };

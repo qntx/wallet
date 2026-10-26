@@ -1,9 +1,9 @@
 /**
  * Input projection for the proxy signer: every request value is rebuilt from its declared wire
  * fields only — callers (e.g. SparkClient) hand us library objects that may carry extra keys
- * (protobuf-es `$typeName`, branding), and the kernel's strict obj() validators reject any key
- * not in the shape. Unknown `kind`/`type` discriminants fail `invalid-input` here, before any
- * request is posted.
+ * (protobuf-es `$typeName`, branding), and the kernel's strict obj() validators reject any key not
+ * in the shape. Unknown `kind`/`type` discriminants fail `invalid-input` here, before any request
+ * is posted.
  */
 import type {
   FrostAggregateJob,
@@ -26,8 +26,7 @@ function bad(what: string): never {
   throw new WalletError("invalid-input", `spark: unexpected ${what}`);
 }
 
-const u8 = (v: Uint8Array, what: string): Uint8Array =>
-  v instanceof Uint8Array ? v : bad(what);
+const u8 = (v: Uint8Array, what: string): Uint8Array => (v instanceof Uint8Array ? v : bad(what));
 const s = (v: string, what: string): string => (typeof v === "string" ? v : bad(what));
 const n = (v: number, what: string): number => (typeof v === "number" ? v : bad(what));
 
@@ -38,7 +37,7 @@ export function leafKey(key: SparkLeafKey): SparkLeafKey {
   if (key.type === "static-deposit") {
     return { type: "static-deposit", index: n(key.index, "index") };
   }
-  bad("leaf key type");
+  return bad("leaf key type");
 }
 
 export function sparkKey(key: SparkKey): SparkKey {
@@ -49,7 +48,10 @@ export function sparkKey(key: SparkKey): SparkKey {
 }
 
 export function commitment(c: SigningCommitment): SigningCommitment {
-  return { hiding: u8(c.hiding, "commitment.hiding"), binding: u8(c.binding, "commitment.binding") };
+  return {
+    hiding: u8(c.hiding, "commitment.hiding"),
+    binding: u8(c.binding, "commitment.binding"),
+  };
 }
 
 function operatorCommitment(c: OperatorCommitment): OperatorCommitment {
@@ -77,6 +79,14 @@ export function frostSignJob(job: FrostSignJob): FrostSignJob {
     ...(job.adaptorPublicKey === undefined
       ? {}
       : { adaptorPublicKey: u8(job.adaptorPublicKey, "adaptorPublicKey") }),
+    ...(job.exit === undefined
+      ? {}
+      : {
+          exit: {
+            connectorTx: u8(job.exit.connectorTx, "exit.connectorTx"),
+            exitTx: u8(job.exit.exitTx, "exit.exitTx"),
+          },
+        }),
   };
 }
 
@@ -113,78 +123,80 @@ function depositClaimStatement(
 }
 
 export function identityStatement(statement: IdentityStatement): IdentityStatement {
-  switch (statement.kind) {
-    case "so-challenge":
-      return { kind: "so-challenge", challenge: u8(statement.challenge, "challenge") };
-    case "ssp-challenge":
-      return {
-        kind: "ssp-challenge",
-        protectedChallenge: s(statement.protectedChallenge, "protectedChallenge"),
-      };
-    case "transfer-package":
-    case "claim-package":
-      return {
-        kind: statement.kind,
-        transferId: s(statement.transferId, "transferId"),
-        package: u8(statement.package, "package"),
-      };
-    case "static-deposit-claim":
-      return depositClaimStatement(statement);
-    case "static-deposit-refund":
-      return {
-        kind: "static-deposit-refund",
-        network: statement.network,
-        txid: u8(statement.txid, "txid"),
-        vout: n(statement.vout, "vout"),
-        amount: n(statement.amount, "amount"),
-        target: signingTarget(statement.target),
-      };
-    case "watchtower-recovery":
-      return {
-        kind: "watchtower-recovery",
-        network: statement.network,
-        leafId: s(statement.leafId, "leafId"),
-        target: signingTarget(statement.target),
-      };
-    case "spark-invoice":
-      return { kind: "spark-invoice", invoice: u8(statement.invoice, "invoice") };
-    case "token-transaction":
-      return {
-        kind: "token-transaction",
-        partialTransaction: u8(statement.partialTransaction, "partialTransaction"),
-      };
-    case "lightning-address":
-      return statement.action === "register"
-        ? {
-            kind: "lightning-address",
-            action: "register",
-            domain: s(statement.domain, "domain"),
-            username: s(statement.username, "username"),
-            description: s(statement.description, "description"),
-            timestamp: n(statement.timestamp, "timestamp"),
-          }
-        : {
-            kind: "lightning-address",
-            action: "unregister",
-            domain: s(statement.domain, "domain"),
-            username: s(statement.username, "username"),
-            timestamp: n(statement.timestamp, "timestamp"),
-          };
-    default:
-      bad("statement kind");
+  const { kind } = statement;
+  if (kind === "so-challenge") {
+    return { kind: "so-challenge", challenge: u8(statement.challenge, "challenge") };
   }
+  if (kind === "ssp-challenge") {
+    return {
+      kind: "ssp-challenge",
+      protectedChallenge: s(statement.protectedChallenge, "protectedChallenge"),
+    };
+  }
+  if (kind === "transfer-package" || kind === "claim-package") {
+    return {
+      kind,
+      transferId: s(statement.transferId, "transferId"),
+      package: u8(statement.package, "package"),
+    };
+  }
+  if (kind === "static-deposit-claim") {
+    return depositClaimStatement(statement);
+  }
+  if (kind === "static-deposit-refund") {
+    return {
+      kind: "static-deposit-refund",
+      network: statement.network,
+      txid: u8(statement.txid, "txid"),
+      vout: n(statement.vout, "vout"),
+      amount: n(statement.amount, "amount"),
+      target: signingTarget(statement.target),
+    };
+  }
+  if (kind === "watchtower-recovery") {
+    return {
+      kind: "watchtower-recovery",
+      network: statement.network,
+      leafId: s(statement.leafId, "leafId"),
+      target: signingTarget(statement.target),
+    };
+  }
+  if (kind === "spark-invoice") {
+    return { kind: "spark-invoice", invoice: u8(statement.invoice, "invoice") };
+  }
+  if (kind === "token-transaction") {
+    return {
+      kind: "token-transaction",
+      partialTransaction: u8(statement.partialTransaction, "partialTransaction"),
+    };
+  }
+  if (kind === "lightning-address") {
+    return statement.action === "register"
+      ? {
+          kind: "lightning-address",
+          action: "register",
+          domain: s(statement.domain, "domain"),
+          username: s(statement.username, "username"),
+          description: s(statement.description, "description"),
+          timestamp: n(statement.timestamp, "timestamp"),
+        }
+      : {
+          kind: "lightning-address",
+          action: "unregister",
+          domain: s(statement.domain, "domain"),
+          username: s(statement.username, "username"),
+          timestamp: n(statement.timestamp, "timestamp"),
+        };
+  }
+  return bad("statement kind");
 }
-
 export function prepareTransferRequest(req: PrepareTransferRequest): PrepareTransferRequest {
   return {
     transferId: s(req.transferId, "transferId"),
     leaves: req.leaves.map((leaf) => ({
       leafId: s(leaf.leafId, "leafId"),
       key: leafKey(leaf.key),
-      receiverIdentityPublicKey: u8(
-        leaf.receiverIdentityPublicKey,
-        "receiverIdentityPublicKey",
-      ),
+      receiverIdentityPublicKey: u8(leaf.receiverIdentityPublicKey, "receiverIdentityPublicKey"),
     })),
   };
 }

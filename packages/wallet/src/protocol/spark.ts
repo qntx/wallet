@@ -8,10 +8,22 @@
  * presence-bearing (signer work must not hold a session open). List params are capped at MAX_BATCH;
  * the leaf lists of prepareTransfer/prepareClaim are capped at the signer's own 256.
  */
-import { groupIndex, MAX_BATCH, safeTime, walletId } from "./core.ts";
+import { factor, groupIndex, MAX_BATCH, safeTime, walletId } from "./core.ts";
+import type { Factor } from "./core.ts";
 import type { MethodSpec } from "./index.ts";
 import type { Validator } from "./validate.ts";
-import { arr, bytes, int, literal, obj, opt, record, str, union } from "./validate.ts";
+import {
+  arr,
+  bytes,
+  int,
+  literal,
+  obj,
+  opt,
+  record,
+  str,
+  union,
+  ValidationError,
+} from "./validate.ts";
 
 /** The Spark network the account's signer runs on — identical to @qntx/spark's SparkNetwork. */
 export type SparkNetwork = "mainnet" | "regtest";
@@ -45,8 +57,8 @@ export type SigningTarget = {
   readonly transaction: Uint8Array;
   readonly inputIndex: number;
   readonly prevouts: ReadonlyArray<{
-    readonly script: Uint8Array;
-    readonly amount: number;
+    script: Uint8Array;
+    amount: number;
   }>;
 };
 
@@ -57,6 +69,11 @@ export type FrostSignJob = {
   readonly commitment: SigningCommitment;
   readonly operatorCommitments: ReadonlyArray<OperatorCommitment>;
   readonly adaptorPublicKey?: Uint8Array;
+  /** Connector-refund proof pair — see `FrostSignJob.exit` in @qntx/spark/signer. */
+  readonly exit?: {
+    readonly connectorTx: Uint8Array;
+    readonly exitTx: Uint8Array;
+  };
 };
 
 export type FrostAggregateJob = {
@@ -369,6 +386,156 @@ const staticDepositClaimResult: Validator<StaticDepositClaimResult> = obj({
   signature: bytes(64, 128),
 });
 
+/**
+ * The intent a `spark.approve` registers — kernel-decoded before the host ever displays it. `token`
+ * receivers' amounts are canonical decimal strings in the u128 range.
+ */
+export type SparkApproveIntent =
+  | {
+      readonly kind: "transfer";
+      readonly receivers: ReadonlyArray<{
+        readonly identityPublicKey: Uint8Array;
+        readonly amountSats: number;
+      }>;
+    }
+  | {
+      readonly kind: "lightning";
+      readonly invoice: string;
+      readonly amountSats?: number;
+      readonly maxFeeSats: number;
+    }
+  | {
+      readonly kind: "exit";
+      readonly address: string;
+      readonly amountSats: number;
+      readonly maxFeeSats: number;
+    }
+  | {
+      readonly kind: "onchain";
+      readonly address: string;
+      readonly maxFeeSats: number;
+    }
+  | {
+      readonly kind: "token";
+      readonly tokenIdentifier: Uint8Array;
+      readonly receivers: ReadonlyArray<{
+        readonly ownerPublicKey: Uint8Array;
+        readonly amount: string;
+      }>;
+    };
+
+/**
+ * What `spark.approve` returns: the kernel's own decode of the intent — receivers and amounts, the
+ * invoice's payment hash and amount, or the exit/onchain destination — never host-provided text.
+ */
+export type SparkApprovalSummary =
+  | {
+      readonly kind: "transfer";
+      readonly receivers: ReadonlyArray<{
+        readonly identityPublicKey: Uint8Array;
+        readonly amountSats: number;
+      }>;
+    }
+  | {
+      readonly kind: "lightning";
+      readonly paymentHash: Uint8Array;
+      readonly invoiceAmountSats?: number;
+      readonly maxFeeSats: number;
+    }
+  | {
+      readonly kind: "exit";
+      readonly address: string;
+      readonly amountSats: number;
+      readonly maxFeeSats: number;
+    }
+  | {
+      readonly kind: "onchain";
+      readonly address: string;
+      readonly maxFeeSats: number;
+    }
+  | {
+      readonly kind: "token";
+      readonly tokenIdentifier: Uint8Array;
+      readonly receivers: ReadonlyArray<{
+        readonly ownerPublicKey: Uint8Array;
+        readonly amount: string;
+      }>;
+    };
+
+// sats amounts are bounded by the protocol's safe-integer contract; u128 token amounts
+// travel as canonical decimal strings.
+const satsAmount = (): Validator<number> => int(0, Number.MAX_SAFE_INTEGER);
+const U128_MAX = 340282366920938463463374607431768211455n;
+// Canonical decimal u128: "0" or no leading zeros, at most 2^128 − 1.
+const decimalU128: Validator<string> = (value) => {
+  if (
+    typeof value !== "string" ||
+    value.length > 39 ||
+    !/^(?:0|[1-9][0-9]*)$/.test(value) ||
+    BigInt(value) > U128_MAX
+  ) {
+    throw new ValidationError();
+  }
+  return value;
+};
+const approveIntent: Validator<SparkApproveIntent> = union(
+  obj({
+    kind: literal("transfer"),
+    receivers: arr(obj({ identityPublicKey: bytes(33), amountSats: satsAmount() }), 256, 1),
+  }),
+  obj({
+    kind: literal("lightning"),
+    invoice: str(4096),
+    amountSats: opt(satsAmount()),
+    maxFeeSats: satsAmount(),
+  }),
+  obj({
+    kind: literal("exit"),
+    address: str(128),
+    amountSats: satsAmount(),
+    maxFeeSats: satsAmount(),
+  }),
+  obj({
+    kind: literal("onchain"),
+    address: str(128),
+    maxFeeSats: satsAmount(),
+  }),
+  obj({
+    kind: literal("token"),
+    tokenIdentifier: bytes(32),
+    receivers: arr(obj({ ownerPublicKey: bytes(33), amount: decimalU128 }), 256, 1),
+  }),
+);
+
+const approvalSummary: Validator<SparkApprovalSummary> = union(
+  obj({
+    kind: literal("transfer"),
+    receivers: arr(obj({ identityPublicKey: bytes(33), amountSats: satsAmount() }), 256, 1),
+  }),
+  obj({
+    kind: literal("lightning"),
+    paymentHash: bytes(32),
+    invoiceAmountSats: opt(satsAmount()),
+    maxFeeSats: satsAmount(),
+  }),
+  obj({
+    kind: literal("exit"),
+    address: str(128),
+    amountSats: satsAmount(),
+    maxFeeSats: satsAmount(),
+  }),
+  obj({
+    kind: literal("onchain"),
+    address: str(128),
+    maxFeeSats: satsAmount(),
+  }),
+  obj({
+    kind: literal("token"),
+    tokenIdentifier: bytes(32),
+    receivers: arr(obj({ ownerPublicKey: bytes(33), amount: decimalU128 }), 256, 1),
+  }),
+);
+
 export const SPARK_METHODS: {
   readonly "spark.identityPublicKey": MethodSpec<{ readonly account: SparkAccountRef }, Uint8Array>;
   readonly "spark.publicKeys": MethodSpec<
@@ -422,6 +589,14 @@ export const SPARK_METHODS: {
   readonly "spark.claimStaticDeposit": MethodSpec<
     { readonly account: SparkAccountRef; readonly request: StaticDepositClaimRequest },
     StaticDepositClaimResult
+  >;
+  readonly "spark.approve": MethodSpec<
+    {
+      readonly account: SparkAccountRef;
+      readonly intent: SparkApproveIntent;
+      readonly verify: Factor;
+    },
+    SparkApprovalSummary
   >;
 } = {
   "spark.identityPublicKey": {
@@ -501,5 +676,11 @@ export const SPARK_METHODS: {
     presence: false,
     params: obj({ account, request: staticDepositClaimRequest }),
     result: staticDepositClaimResult,
+  },
+  "spark.approve": {
+    session: true,
+    presence: true,
+    params: obj({ account, intent: approveIntent, verify: factor }),
+    result: approvalSummary,
   },
 };
