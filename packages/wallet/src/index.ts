@@ -4,9 +4,12 @@
  * Kernel internals are never re-exported here — host packages use the "./host" subpath, and the
  * Nostr API lives in the "./nostr" subpath (nostr(wallet)).
  */
+export { parseBackupHeader } from "./backup.ts";
+export type { BackupHeader, BackupHeaderWallet } from "./backup.ts";
 export {
   WalletError,
   type AutoLockPolicy,
+  type BackupApi,
   type DataKeyApi,
   type DerivedNostrKey,
   type ExportedSecret,

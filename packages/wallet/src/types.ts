@@ -137,6 +137,8 @@ export type PasskeyConfig = {
   readonly rpName: string;
   readonly walletSalt: string;
   readonly vaultSalt: string;
+  /** PRF salt for the cloud-backup factor — a third, distinct permanent label. */
+  readonly backupSalt: string;
 };
 
 export type AutoLockPolicy =
@@ -204,11 +206,29 @@ export type DataKeyApi = {
   readonly get: (purpose: string) => Promise<Uint8Array>;
 };
 
+/**
+ * Cloud-backup entry points: `create` returns the sealed envelope JSON (secrets never leave the
+ * kernel); `restore` merges an envelope into the vault. Factor inputs reuse `UnlockFactor` —
+ * passkey assertions evaluate the PRF over `backupSalt`.
+ */
+export type BackupApi = {
+  readonly create: (options: {
+    readonly verify: UnlockFactor;
+    readonly factors: ReadonlyArray<UnlockFactor>;
+  }) => Promise<string>;
+  readonly restore: (options: {
+    readonly envelope: string;
+    readonly backupFactor: UnlockFactor;
+    readonly factor?: InitialFactor;
+  }) => Promise<ReadonlyArray<WalletInfo>>;
+};
+
 export type Wallet = {
   readonly getSnapshot: () => WalletSnapshot;
   readonly subscribe: (listener: () => void) => () => void;
   readonly vault: VaultApi;
   readonly wallets: WalletsApi;
   readonly dataKeys: DataKeyApi;
+  readonly backup: BackupApi;
   readonly destroy: () => Promise<void>;
 };

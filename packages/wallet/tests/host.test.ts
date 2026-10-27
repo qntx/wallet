@@ -36,6 +36,7 @@ const PASSKEY = {
   rpId: "qntx.test",
   rpName: "qntx",
   walletSalt: "qntx/wallet",
+  backupSalt: "qntx/backup",
   vaultSalt: "qntx/vault",
 };
 

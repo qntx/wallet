@@ -17,6 +17,7 @@ import {
   walletSaltBytes,
   wireBytes,
   wireSecretText,
+  resolveBackupFactor,
 } from "./factors.ts";
 import type { FactorSource, PasskeyCeremony } from "./factors.ts";
 import { registerInternals } from "./internal.ts";
@@ -24,6 +25,7 @@ import type { Factor } from "./protocol/index.ts";
 import { SingleUseSecret } from "./secret.ts";
 import { WalletError } from "./types.ts";
 import type {
+  BackupApi,
   DataKeyApi,
   ExportedSecret,
   FactorInfo,
@@ -482,6 +484,53 @@ export class KernelWallet implements Wallet {
       this.channel.call("dataKeys.get", { purpose }),
   };
 
+  readonly backup: BackupApi = {
+    create: async (options: {
+      readonly verify: UnlockFactor;
+      readonly factors: ReadonlyArray<UnlockFactor>;
+    }): Promise<string> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const wireVerify = await resolveFactor(this.factorSource, options.verify, transfer);
+        const wireFactors = await Promise.all(
+          options.factors.map(async (factor) =>
+            resolveBackupFactor(this.factorSource, factor, transfer),
+          ),
+        );
+        const result = await this.channel.call(
+          "backup.create",
+          { verify: wireVerify, factors: wireFactors },
+          transfer,
+        );
+        return result.envelope;
+      }),
+    restore: async (options: {
+      readonly envelope: string;
+      readonly backupFactor: UnlockFactor;
+      readonly factor?: InitialFactor;
+    }): Promise<ReadonlyArray<WalletInfo>> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const backupFactor = await resolveBackupFactor(
+          this.factorSource,
+          options.backupFactor,
+          transfer,
+        );
+        const factor = await this.createFactorParam(options.factor, transfer);
+        const result = await this.channel.call(
+          "backup.restore",
+          {
+            envelope: options.envelope,
+            backupFactor,
+            ...(factor === undefined ? {} : { factor }),
+          },
+          transfer,
+        );
+        this.sessionOf(result);
+        return result.wallets;
+      }),
+  };
+
   // oxlint-disable-next-line typescript/require-await -- the interface's Promise is resolved synchronously
   async destroy(): Promise<void> {
     if (this.destroyed) {
@@ -501,13 +550,16 @@ export class KernelWallet implements Wallet {
  * credentials later.
  */
 function checkPasskeyConfig(passkey: PasskeyConfig): void {
-  const { rpId, rpName, walletSalt, vaultSalt } = passkey;
+  const { rpId, rpName, walletSalt, vaultSalt, backupSalt } = passkey;
   if (
     rpId.length === 0 ||
     rpName.length === 0 ||
     walletSalt.length === 0 ||
     vaultSalt.length === 0 ||
-    walletSalt === vaultSalt
+    backupSalt.length === 0 ||
+    walletSalt === vaultSalt ||
+    backupSalt === vaultSalt ||
+    backupSalt === walletSalt
   ) {
     throw new WalletError(
       "invalid-input",

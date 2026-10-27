@@ -44,6 +44,7 @@ const wallet = await createWebWallet({
     rpName: "qntx playground",
     walletSalt: "qntx/wallet",
     vaultSalt: "qntx/vault",
+    backupSalt: "qntx/backup",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
 }).catch((error: unknown) => {
