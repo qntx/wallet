@@ -6,9 +6,12 @@
  */
 import { createSparkClient } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
+import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
 import type { EngineLogger } from "./events.ts";
+import { zap as runZap } from "./payments/zap.ts";
+import type { ZapParams, ZapResult } from "./payments/zap.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import type { EngineStore } from "./store/port.ts";
@@ -26,6 +29,7 @@ export type EngineOptions = {
 
 export type WalletEngine = {
   readonly spark: SparkController;
+  readonly zap: (params: ZapParams) => Promise<ZapResult>;
   readonly unsubscribe: () => void;
 };
 
@@ -89,5 +93,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   };
   const unsubscribe = options.wallet.subscribe(schedule);
   schedule();
-  return { spark: controller, unsubscribe };
+  return {
+    spark: controller,
+    zap: async (params) =>
+      runZap(params, {
+        fetch: options.fetch,
+        nostr: (ref) => nostr(options.wallet).signer(ref),
+        spark: controller,
+      }),
+    unsubscribe,
+  };
 }

@@ -6,6 +6,7 @@ import type {
   SparkClient,
   SparkTransfer,
 } from "@qntx/spark";
+import { registerLightningAddress, unregisterLightningAddress } from "@qntx/spark/lnurl";
 import type { UnlockFactor } from "@qntx/wallet";
 import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
 import type { SparkSigner } from "@qntx/wallet/spark";
@@ -251,6 +252,34 @@ export class SparkController extends Controller<SparkControllerState> {
         transferId: transferId(this.options.random, this.options.now),
       });
     });
+  }
+
+  async registerLightningAddress(
+    ref: SparkAccountRef,
+    params: { serverUrl: string; domain: string; username: string; description: string },
+  ): Promise<{ lnurl: string; lightningAddress: string }> {
+    const signer = this.options.spark.signer(ref);
+    try {
+      return await registerLightningAddress({ ...params, fetch: this.options.fetch, signer });
+    } catch (error) {
+      throw error instanceof SparkControllerError
+        ? error
+        : new SparkControllerError("internal", "registration failed");
+    }
+  }
+
+  async unregisterLightningAddress(
+    ref: SparkAccountRef,
+    params: { serverUrl: string; domain: string; username: string },
+  ): Promise<void> {
+    const signer = this.options.spark.signer(ref);
+    try {
+      await unregisterLightningAddress({ ...params, fetch: this.options.fetch, signer });
+    } catch (error) {
+      throw error instanceof SparkControllerError
+        ? error
+        : new SparkControllerError("internal", "unregistration failed");
+    }
   }
 
   async payInvoice(

@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
+    "@qntx/nostr": "0.15.0",
     "@scure/base": "^2.4.0",
     "zustand": "^5.0.15"
   },
