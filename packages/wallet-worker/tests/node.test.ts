@@ -24,6 +24,7 @@ const PASSKEY_CONFIG = {
   rpId: "qntx.test",
   rpName: "qntx",
   walletSalt: "qntx/wallet",
+  backupSalt: "qntx/backup",
   vaultSalt: "qntx/vault",
 };
 const PASSWORD = "correct horse battery staple";

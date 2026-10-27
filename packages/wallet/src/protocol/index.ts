@@ -208,7 +208,14 @@ export const responseError: Validator<{ code: WalletErrorCode; retryAt?: number 
 
 export { CORE_METHODS, NOSTR_METHODS, SPARK_METHODS, walletErrorCode };
 export type { MethodSpec } from "./core.ts";
-export type { CreatedResult, Factor } from "./core.ts";
+export { backupEnvelope, backupEnvelopeText, backupHeader } from "./backup.ts";
+export type { BackupFactor, CreatedResult, Factor } from "./core.ts";
+export type {
+  BackupEnvelopeFactor,
+  BackupEnvelopeWire,
+  BackupHeaderWallet,
+  BackupHeaderWire,
+} from "./backup.ts";
 export type {
   KeyResult,
   NostrExportFormat,

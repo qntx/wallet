@@ -33,6 +33,7 @@ const OPTIONS: WalletOptions = {
     rpId: "localhost",
     rpName: "localhost",
     walletSalt: "qntx/wallet",
+    backupSalt: "qntx/backup",
     vaultSalt: "qntx/vault",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
@@ -229,6 +230,23 @@ const api = {
   },
   async sign(ref: NostrKeyRef, event: UnsignedEvent): Promise<unknown> {
     return attempt(async () => nostr(current()).signer(ref).signEvent(event));
+  },
+  async backupCreate(): Promise<unknown> {
+    return attempt(async () =>
+      current().backup.create({
+        verify: { kind: "passkey" },
+        factors: [{ kind: "passkey" }, { kind: "password", password: "backup-test-password" }],
+      }),
+    );
+  },
+  async backupRestore(envelope: string): Promise<unknown> {
+    return attempt(async () =>
+      current().backup.restore({
+        envelope,
+        backupFactor: { kind: "password", password: "backup-test-password" },
+        factor: { kind: "password", password: "restored-vault-password" },
+      }),
+    );
   },
   tamperBackup,
   tamperSealed,

@@ -5,7 +5,7 @@
  */
 import { base64urlnopad } from "@scure/base";
 
-import type { Factor } from "./protocol/index.ts";
+import type { Factor, BackupFactor } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
 import type { FactorInfo, InitialFactor, PasskeyConfig, UnlockFactor } from "./types.ts";
 
@@ -55,6 +55,34 @@ export function vaultSaltBytes(source: FactorSource): Uint8Array {
 
 export function walletSaltBytes(source: FactorSource): Uint8Array {
   return new TextEncoder().encode(source.passkey.walletSalt);
+}
+
+export function backupSaltBytes(source: FactorSource): Uint8Array {
+  return new TextEncoder().encode(source.passkey.backupSalt);
+}
+
+/**
+ * Resolves a public `UnlockFactor` to wire backup-factor material: the passkey ceremony evaluates
+ * the PRF over `backupSalt` (purpose `0x02`), producing `prfBackup` instead of the vault `prf`.
+ */
+export async function resolveBackupFactor(
+  source: FactorSource,
+  factor: UnlockFactor,
+  transfer: ArrayBuffer[],
+): Promise<BackupFactor> {
+  if (factor.kind === "password") {
+    return { kind: "password", password: wireSecretText(factor.password, transfer) };
+  }
+  const ceremony = requireCeremony(source);
+  const result = await ceremony.assert({
+    credentialIds: passkeyCredentialIds(source),
+    salts: { first: backupSaltBytes(source) },
+  });
+  return {
+    kind: "passkey",
+    credentialId: wireBytes(result.credentialId, transfer),
+    prfBackup: wireBytes(result.first, transfer, true),
+  };
 }
 
 /** Passkey credential ids of the current vault factors, for `assert`'s allowCredentials. */

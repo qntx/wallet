@@ -226,6 +226,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
           rpId: "qntx.test",
           rpName: "qntx",
           walletSalt: "qntx/wallet",
+          backupSalt: "qntx/backup",
           vaultSalt: "qntx/vault",
         },
         autoLock: { platform: "web", idleMinutes: 15 },

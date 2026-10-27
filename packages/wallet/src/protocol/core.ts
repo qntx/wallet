@@ -47,6 +47,23 @@ export const factor: Validator<Factor> = union(
   obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prf: bytes(32) }),
 );
 
+/**
+ * A backup-envelope factor: same shapes as `Factor`, except the passkey arm carries `prfBackup` —
+ * the PRF evaluated over `backupSalt`, not the vault or wallet salt.
+ */
+export type BackupFactor =
+  | { readonly kind: "password"; readonly password: Uint8Array }
+  | {
+      readonly kind: "passkey";
+      readonly credentialId: Uint8Array;
+      readonly prfBackup: Uint8Array;
+    };
+
+export const backupFactor: Validator<BackupFactor> = union(
+  obj({ kind: literal("password"), password: bytes(1, 1024) }),
+  obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prfBackup: bytes(32) }),
+);
+
 export const factorInfo: Validator<FactorInfo> = union(
   obj({ kind: literal("hardware") }),
   obj({
@@ -137,6 +154,21 @@ export const CORE_METHODS: {
     CreatedResult
   >;
   readonly "wallet.discardMnemonic": MethodSpec<{ readonly draft: string }, NullValue>;
+  readonly "backup.create": MethodSpec<
+    {
+      readonly verify: Factor;
+      readonly factors: ReadonlyArray<BackupFactor>;
+    },
+    { readonly envelope: string }
+  >;
+  readonly "backup.restore": MethodSpec<
+    {
+      readonly envelope: string;
+      readonly backupFactor: BackupFactor;
+      readonly factor?: Factor;
+    },
+    { readonly wallets: ReadonlyArray<WalletInfo>; readonly session: string }
+  >;
   readonly "wallet.importMnemonic": MethodSpec<
     { readonly mnemonic: Uint8Array; readonly factor?: Factor },
     CreatedResult
@@ -219,6 +251,18 @@ export const CORE_METHODS: {
     presence: false,
     params: obj({ draft: draftId }),
     result: nullValue,
+  },
+  "backup.create": {
+    session: true,
+    presence: true,
+    params: obj({ verify: factor, factors: arr(backupFactor, 5, 1) }),
+    result: obj({ envelope: str(4_000_000) }),
+  },
+  "backup.restore": {
+    session: false,
+    presence: true,
+    params: obj({ envelope: str(4_000_000), backupFactor, factor: opt(factor) }),
+    result: obj({ wallets: arr(walletInfo, 1000), session: sessionId }),
   },
   "wallet.importMnemonic": {
     session: false,
