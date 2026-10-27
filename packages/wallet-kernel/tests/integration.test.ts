@@ -1143,6 +1143,41 @@ describe("session expiry and rate limiting", () => {
   });
 });
 
+it("a re-unlock on the same vault keeps the session and its max-session deadline", async () => {
+  const h = createHarness({ maxSessionMs: 120_000, idleMs: 3_600_000 });
+  await h.settle();
+  const { session, walletId } = await createPasskeyWallet(h); // session A, opened at t=0
+  h.advance(60_000); // halfway through the absolute lifetime
+
+  const again = ok(await h.call("vault.unlock", { factor: passkeyFactor() }));
+  expect(strField(again, "session")).toBe(session); // no rotation — same session A
+  const publicKey = await deriveKey(h, session, walletId); // requests on A still work
+  expect(publicKey).toMatch(/^[0-9a-f]{64}$/);
+
+  // The second unlock did not reset the clock: the max measured from the first still applies.
+  h.advance(61_000); // t=121s > 120s max
+  expect(errCode(await h.call("nostr.deriveKey", { walletId, groupIndex: 0 }, session))).toBe(
+    "locked",
+  );
+  expect(lockReasons(h.events)).toContain("expired");
+});
+
+it("a re-unlock with a wrong factor fails and leaves the live session valid", async () => {
+  const h = createHarness();
+  await h.settle();
+  const { session, walletId } = await createPasskeyWallet(h);
+  const bad = {
+    kind: "passkey" as const,
+    credentialId: CREDENTIAL_ID,
+    prf: new Uint8Array(PRF_VAULT.length).fill(0xff),
+  };
+  expect(errCode(await h.call("vault.unlock", { factor: bad }))).not.toBe("");
+  // Session A is untouched — a sessioned request still succeeds.
+  const publicKey = await deriveKey(h, session, walletId);
+  expect(publicKey).toMatch(/^[0-9a-f]{64}$/);
+  expect(lastStatus(h).vault).toBe("unlocked");
+});
+
 describe("presence activity", () => {
   it("signing traffic does not extend the idle deadline", async () => {
     const h = createHarness({ idleMs: 60_000 });

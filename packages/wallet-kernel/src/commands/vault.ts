@@ -23,6 +23,12 @@ export async function unlockVault(
     throw new KernelError("unsupported", "the vault needs a newer build");
   }
   const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor, ctx.commit);
+  // Already unlocked on the same vault key: keep the live session — rotating it would orphan
+  // every in-flight request the engine issued against the current id.
+  if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
+    dek.wipe();
+    return { session: ctx.session.current().id };
+  }
   return { session: openSession(ctx, dek, keyId) };
 }
 
