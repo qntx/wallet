@@ -312,7 +312,7 @@ export function discardMnemonic(ctx: KernelContext, params: { draft: string }): 
   return null;
 }
 
-function mnemonicWords(entropy: Uint8Array): EntropyHeader["words"] {
+export function mnemonicWords(entropy: Uint8Array): EntropyHeader["words"] {
   const words = (entropy.length / 4) * 3;
   if (words !== 12 && words !== 15 && words !== 18 && words !== 21 && words !== 24) {
     throw new KernelError("integrity", "invalid entropy length");
