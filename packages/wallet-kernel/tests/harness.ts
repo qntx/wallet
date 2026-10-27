@@ -130,10 +130,14 @@ export function createHarness(opts?: {
   wrapStore?: ((store: RecordStore) => RecordStore) | undefined;
   /** Injected crypto backends (default: a spark loader that always fails). */
   backends?: KernelPlatform["backends"];
+  /** Overrides the seeded stream entirely — vector tests replay recorded draws. */
+  random?: Random;
 }): Harness {
   let now = opts?.start ?? 1_700_000_000_000; // wall clock — persisted timestamps only
   let elapsed = 0; // monotonic clock — session deadlines and timers
-  const { random, draws } = seededRandom(opts?.seed ?? 1);
+  const seeded = seededRandom(opts?.seed ?? 1);
+  const random = opts?.random ?? seeded.random;
+  const { draws } = seeded;
   const inner = opts?.store ?? createMemoryStore();
   const store = opts?.wrapStore === undefined ? inner : opts.wrapStore(inner);
   const posted: ProtocolValue[] = [];

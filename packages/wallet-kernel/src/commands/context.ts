@@ -3,7 +3,7 @@ import type { MethodName, ParamsOf, ResultOf } from "@qntx/wallet/protocol";
 import type { KernelPlatform } from "../platform.ts";
 import type { Secret } from "../secret/secret.ts";
 import type { Session } from "../session/session.ts";
-import type { StoreOp, VaultImage } from "../vault/store.ts";
+import type { StoreOp, StoredRecord, VaultImage } from "../vault/store.ts";
 import type { OpenedRecord } from "../vault/vault.ts";
 
 /**
@@ -31,6 +31,23 @@ export type VaultHooks = {
    * bookkeeping is needed here.
    */
   readonly walletDeleteOps: (image: VaultImage, walletId: string) => ReadonlyArray<StoreOp>;
+  /**
+   * Imported (non-derived) secret plaintexts this module contributes to a backup payload — one
+   * 32-byte secret per record. Derived records are rebuilt from wallet entropy and never appear.
+   * Command code never opens module records; the module does.
+   */
+  readonly backupSecrets: (image: VaultImage, dek: Secret) => ReadonlyArray<Uint8Array>;
+  /**
+   * The stored records a restored set of secrets becomes — ids already in `image` are skipped. Runs
+   * inside the restore transaction's record build, before the single commit.
+   */
+  readonly backupRecords: (
+    platform: KernelPlatform,
+    image: VaultImage,
+    dek: Secret,
+    secrets: ReadonlyArray<Uint8Array>,
+    now: number,
+  ) => ReadonlyArray<StoredRecord>;
 };
 
 /** Vault health, recomputed on every load; only ok serves the full method set. */

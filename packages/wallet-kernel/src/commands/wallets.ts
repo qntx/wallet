@@ -53,7 +53,7 @@ type WalletMaterial = {
 };
 
 /** Entropy → master → walletId. `entropy` is not consumed. */
-async function walletMaterial(
+export async function walletMaterial(
   platform: KernelPlatform,
   entropy: Uint8Array,
   origin: EntropyHeader["origin"],
@@ -67,7 +67,7 @@ async function walletMaterial(
   }
 }
 
-function walletInfoOf(
+export function walletInfoOf(
   material: WalletMaterial,
   backup: WalletInfo["backup"],
   createdAt: number,
@@ -82,7 +82,7 @@ function walletInfoOf(
 }
 
 /** The entropy record for a new wallet, sealed under `dek`. Consumes nothing. */
-function walletRecord(
+export function walletRecord(
   ctx: KernelContext,
   dek: Secret,
   material: WalletMaterial,
