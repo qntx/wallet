@@ -85,6 +85,11 @@ if (production) {
       port: 4174,
       strictPort: true,
       headers: { "Content-Security-Policy": CSP },
+      // No file watching: an fs change (another test task writing dist/ or a cached build
+      // restore) would broadcast a full page reload and destroy the page's execution context
+      // mid-test.
+      watch: null,
+      hmr: false,
     },
     logLevel: "warn",
   });
