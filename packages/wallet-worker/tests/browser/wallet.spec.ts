@@ -124,6 +124,47 @@ test.describe("web host", () => {
     expect(verifyEvent(signed.value)).toBe(true);
   });
 
+  test("backup: create with a passkey factor, restore into a fresh vault @webauthn", async ({
+    context,
+    page,
+  }) => {
+    await virtualAuthenticator(context, page);
+    await page.goto("/");
+    const connected = await page.evaluate(async () => qntx.create());
+    expect(connected.ok).toBe(true);
+
+    const created = await page.evaluate(async () => qntx.createPasskey());
+    if (!created.ok) {
+      throw new Error(`createWithPasskey failed: ${created.code}`);
+    }
+
+    // create seals the envelope: the assert ceremony supplies PRF(backupSalt) for the
+    // passkey backup factor and PRF(vaultSalt) to re-verify.
+    const backup = await page.evaluate(async () => qntx.backupCreate());
+    if (!backup.ok) {
+      throw new Error(`backup.create failed: ${backup.code}`);
+    }
+    const envelope = backup.value;
+    expect(envelope.length).toBeGreaterThan(0);
+
+    const reset = await page.evaluate(async () => qntx.reset());
+    expect(reset.ok).toBe(true);
+    let snap = await snapshot(page);
+    expect(snap.vault).toBe("uninitialized");
+    expect(snap.wallets).toHaveLength(0);
+
+    // restore unwraps the BEK with the password backup factor and establishes the vault.
+    const restored = await page.evaluate(async (env) => qntx.backupRestore(env), envelope);
+    if (!restored.ok) {
+      throw new Error(`backup.restore failed: ${restored.code}`);
+    }
+    expect(restored.value[0]?.walletId).toBe(created.value.walletId);
+
+    snap = await snapshot(page);
+    expect(snap.vault).toBe("unlocked");
+    expect(snap.wallets[0]?.walletId).toBe(created.value.walletId);
+  });
+
   test("password vault: mnemonic ceremony, reload, unlock with password", async ({ page }) => {
     await page.goto("/");
     await page.evaluate(async () => qntx.create());
