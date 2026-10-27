@@ -1,5 +1,6 @@
 import type { CORE_METHODS, MethodName } from "@qntx/wallet/protocol";
 
+import * as backupCommands from "./backup.ts";
 import type { Handler } from "./context.ts";
 import * as secretsCommands from "./secrets.ts";
 import * as vaultCommands from "./vault.ts";
@@ -30,6 +31,10 @@ export const CORE_HANDLERS: {
     walletCommands.createMnemonic(ctx, params, session),
   "wallet.confirmMnemonic": async (ctx, params) => walletCommands.confirmMnemonic(ctx, params),
   "wallet.discardMnemonic": (ctx, params) => walletCommands.discardMnemonic(ctx, params),
+  "backup.create": async (ctx, params, session) =>
+    backupCommands.createBackup(ctx, params, session),
+  "backup.restore": async (ctx, params, session) =>
+    backupCommands.restoreBackup(ctx, params, session),
   "wallet.importMnemonic": async (ctx, params, session) =>
     walletCommands.importMnemonic(ctx, params, session),
   "wallet.delete": async (ctx, params, session) =>

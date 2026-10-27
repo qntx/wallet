@@ -5,6 +5,7 @@
  * `status` produces the module's snapshot section, called from status.ts.
  */
 import type { NostrBackend } from "@qntx/nostr";
+import { getPublicKey } from "@qntx/nostr";
 import type { MethodName, NOSTR_METHODS } from "@qntx/wallet/protocol";
 import type { NostrKeyInfo } from "@qntx/wallet/types";
 
@@ -12,10 +13,16 @@ import type { Handler, VaultHooks } from "../../commands/context.ts";
 import { KernelError } from "../../errors.ts";
 import type { StoreOp, StoredRecord } from "../../vault/store.ts";
 import type { OpenedRecord } from "../../vault/vault.ts";
+import { openRecord, sealRecord } from "../../vault/vault.ts";
 import * as keys from "./keys.ts";
 import * as ops from "./ops.ts";
 import { SignerPool } from "./pool.ts";
-import { NOSTR_KEY_KIND, nostrStatus, parseNostrKeyHeader } from "./record.ts";
+import {
+  encodeNostrKeyHeader,
+  NOSTR_KEY_KIND,
+  nostrStatus,
+  parseNostrKeyHeader,
+} from "./record.ts";
 
 export type NostrModule = {
   readonly vault: VaultHooks;
@@ -81,6 +88,49 @@ export function createNostrModule(backend: NostrBackend): NostrModule {
         }
       }
       return ops;
+    },
+
+    backupSecrets: (image, dek) => {
+      const secrets: Uint8Array[] = [];
+      for (const record of image.records) {
+        if (record.kind !== NOSTR_KEY_KIND) {
+          continue;
+        }
+        const header = parseNostrKeyHeader(record.header);
+        if (header.origin === "derived" || header.origin === "nip46-client") {
+          continue;
+        }
+        secrets.push(openRecord(dek, record));
+      }
+      return secrets;
+    },
+
+    backupRecords: (platform, image, dek, secrets, now) => {
+      const records: StoredRecord[] = [];
+      for (const secretKey of secrets) {
+        const publicKey = getPublicKey(secretKey);
+        if (image.records.some((r) => r.kind === NOSTR_KEY_KIND && r.id === publicKey)) {
+          continue;
+        }
+        // Restored standalone keys carry `nsec`: the payload is a bare secret and the
+        // vault only records that it was imported, not which import path produced it.
+        records.push(
+          sealRecord(
+            platform,
+            dek,
+            NOSTR_KEY_KIND,
+            publicKey,
+            encodeNostrKeyHeader({
+              publicKey,
+              origin: "nsec",
+              backedUp: true,
+              createdAt: now,
+            }),
+            secretKey,
+          ),
+        );
+      }
+      return records;
     },
   };
 
