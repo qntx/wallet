@@ -80,10 +80,10 @@
     "@qntx/nostr": "0.15.0",
     "@qntx/spark": "0.2.1",
     "@qntx/tsconfig": "1.0.1",
-    "@types/node": "26.6.4",
+    "@types/node": "26.6.5",
     "publint": "0.3.25",
     "typescript": "7.0.2",
-    "vite-plus": "1.0.0"
+    "vite-plus": "1.3.0"
   },
   "peerDependencies": {
     "@qntx/nostr": "^0.15.0",
