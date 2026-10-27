@@ -9,6 +9,7 @@
  * the test builds one from the settled zapRequest and runs validateZapReceipt. Do not run
  * 04:30–05:30 UTC — the nightly regtest workflow spends from the same seed.
  */
+import { appendFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -38,6 +39,10 @@ const VERIFY = { kind: "password", password: PASSWORD } as never;
 const DEADLINE_MS = 5 * 60_000;
 const DOMAIN = "example.com";
 
+function warnText(_m: string, e: unknown): string {
+  return e instanceof Error ? `${e.name}:${e.message}` : String(e ?? "");
+}
+
 function hostedSeed(): Uint8Array {
   const hex = process.env["SPARK_HOSTED_SEED"]?.trim();
   if (hex === undefined || !/^[0-9a-f]{128}$/i.test(hex)) {
@@ -50,15 +55,6 @@ type Engine = ReturnType<typeof createWalletEngine>;
 
 const sleep = async (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Polls an async `done` until truthy or the deadline passes; returns whether it fired. */
-async function pollAsync(done: () => Promise<boolean>, deadline: number): Promise<boolean> {
-  if ((await done()) || Date.now() > deadline) {
-    return done();
-  }
-  await sleep(3000);
-  return pollAsync(done, deadline);
-}
 
 /** Polls `done` until truthy or the deadline passes; returns whether it fired. */
 async function poll(done: () => boolean, deadline: number, intervalMs = 3000): Promise<boolean> {
@@ -248,7 +244,14 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
         fetch: serverFetch(server),
         random,
         now: () => Date.now(),
-        logger: { warn: () => {} },
+        logger: {
+          warn: (m, e) => {
+            appendFileSync(
+              "/tmp/zap-engine-warns.log",
+              `${Date.now()} WARN ${m} ${warnText(m, e)}\n`,
+            );
+          },
+        },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
       });
       const refA = { walletId: created.walletId, groupIndex: 0, network: "regtest" } as never;
@@ -299,21 +302,11 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
         // The server settles once the SSP verifies the preimage; A sees the credit.
         const settled = await pollSettled(server, deadline);
         expect(settled).toHaveLength(1);
-        const clientA = createSparkClient({
-          network: "regtest",
-          signer: spark(wallet).signer(refA),
-          fetch: globalThis.fetch,
-          store: createMemorySparkStore(),
-        });
-        // A receives: the settled invoice arrives as a claimable transfer on A's identity.
-        // (The controller's events() stream does not surface an "incoming" event for
-        // lightning-settled transfers — known gap — so the receipt assertion reads the
-        // account's real client rather than controller state.)
-        const clientBalance = async (): Promise<boolean> => {
-          await clientA.transfers.claimPending();
-          return (await clientA.balance()) > 0;
-        };
-        await expect(pollAsync(clientBalance, deadline)).resolves.toBe(true);
+        // A receives: the engine's event loop claims the lightning-settled transfer by id
+        // and refreshes account state — no side client, no manual claim.
+        await expect(
+          poll(() => balanceOf(engine, accountKey(created.walletId, 0)) >= 700, deadline),
+        ).resolves.toBe(true);
 
         // The server does not publish a 9735 itself — build one from the settled zapRequest and
         // run it through validateZapReceipt.
