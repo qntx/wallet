@@ -1,4 +1,4 @@
-import { decodeSparkAddress, encodeSparkAddress, uuidv7 } from "@qntx/spark";
+import { decodeSparkAddress, encodeSparkAddress, SparkInputError, uuidv7 } from "@qntx/spark";
 import type {
   CooperativeExitResult,
   LightningInvoice,
@@ -60,6 +60,37 @@ const key = (ref: SparkAccountRef): string => `${ref.walletId}:${ref.groupIndex}
 const transferId = (random: (n: number) => Uint8Array, now: () => number): string =>
   uuidv7(random, now);
 
+/** Catch-up sync for one pass: claim every pending transfer, then read balance and identity. */
+async function resync(
+  client: SparkClient,
+  log: (transferId: string, error: unknown) => void,
+): Promise<{ balance: number; identity: Uint8Array }> {
+  const { failures } = await client.transfers.claimPending();
+  for (const failure of failures) {
+    log(failure.transferId, failure.error);
+  }
+  const [balance, identity] = await Promise.all([client.balance(), client.identityPublicKey()]);
+  return { balance, identity };
+}
+
+/** Abortable backoff — resolves early when the signal aborts; removes its listener. */
+async function eventsBackoff(failures: number, signal: AbortSignal): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(
+      () => {
+        signal.removeEventListener("abort", onAbort);
+        resolve();
+      },
+      Math.min(2 ** failures, 30) * 1000,
+    );
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 export class SparkController extends Controller<SparkControllerState> {
   private readonly options: SparkControllerOptions;
   private engineStore: EngineStore | undefined;
@@ -82,7 +113,7 @@ export class SparkController extends Controller<SparkControllerState> {
     this.accounts.set(k, ref);
     this.patch(k, { status: "locked" });
     if (this.engineStore !== undefined) {
-      void this.startAccount(ref);
+      this.startAccount(ref);
     }
   }
 
@@ -94,9 +125,9 @@ export class SparkController extends Controller<SparkControllerState> {
 
   async init(): Promise<void> {
     for (const ref of this.accounts.values()) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- accounts start sequentially in order
-      await this.startAccount(ref);
+      this.startAccount(ref);
     }
+    await Promise.resolve();
   }
 
   async destroy(): Promise<void> {
@@ -140,7 +171,7 @@ export class SparkController extends Controller<SparkControllerState> {
     );
   }
 
-  private async startAccount(ref: SparkAccountRef): Promise<void> {
+  private startAccount(ref: SparkAccountRef): void {
     const k = key(ref);
     if (this.engineStore === undefined || this.clients.has(k)) {
       return;
@@ -155,46 +186,109 @@ export class SparkController extends Controller<SparkControllerState> {
         fetch: this.options.fetch,
       });
       this.clients.set(k, client);
-      await client.transfers.claimPending();
-      const [balance, identity] = await Promise.all([client.balance(), client.identityPublicKey()]);
-      const sparkAddress = encodeSparkAddress({
-        network: ref.network,
-        identityPublicKey: identity,
-      });
-      this.patch(k, {
-        status: "ready",
-        balanceSats: balance,
-        identityPublicKey: [...identity].map((b) => b.toString(16).padStart(2, "0")).join(""),
-        sparkAddress,
-      });
       const abort = new AbortController();
       this.aborts.set(k, abort);
-      this.runEvents(k, client, abort.signal);
+      // The initial sync lives in the event loop's catch-up pass: a transient failure at
+      // account start retries through the loop's backoff instead of leaving the account dead
+      // in "error".
+      this.runEvents(k, client, abort.signal, ref.network);
     } catch (error) {
       this.patch(k, { status: "error", errorCategory: categorize(error) });
       this.options.logger.warn("spark account failed to start", error);
     }
   }
 
-  private runEvents(k: string, client: SparkClient, signal: AbortSignal): void {
+  private runEvents(
+    k: string,
+    client: SparkClient,
+    signal: AbortSignal,
+    network: SparkAccountRef["network"],
+  ): void {
+    // Every pass resyncs before streaming: the catch-up claim retries anything a previous
+    // pass failed on and covers events missed while disconnected — a failed claim is never
+    // lost, only deferred one pass. Any throw or a clean stream end backs off (exponential,
+    // abortable) and starts a new pass.
     const loop = async (): Promise<void> => {
-      try {
-        for await (const event of client.events(signal)) {
-          if (event.type === "transfer") {
-            if (event.direction === "incoming") {
-              await client.transfers.claimPending();
+      let failures = 0;
+      while (!signal.aborted) {
+        try {
+          // Catch-up: claim pending transfers and refresh the balance snapshot. Per-transfer
+          // failures are logged, not fatal — one poisoned transfer must not fail the pass.
+          // oxlint-disable-next-line no-await-in-loop -- catch-up sync must precede streaming
+          const { balance, identity } = await resync(client, (transferId, error) => {
+            this.options.logger.warn(
+              `spark catch-up claim failed for ${transferId} (${categorize(error)})`,
+            );
+          });
+          this.patch(k, {
+            balanceSats: balance,
+            status: "ready",
+            identityPublicKey: [...identity].map((b) => b.toString(16).padStart(2, "0")).join(""),
+            sparkAddress: encodeSparkAddress({
+              network,
+              identityPublicKey: identity,
+            }),
+          });
+          const iterator = client.events(signal)[Symbol.asyncIterator]();
+          let open = true;
+          while (open) {
+            // oxlint-disable-next-line no-await-in-loop -- events arrive in stream order
+            const item = await iterator.next();
+            if (item.done === true) {
+              open = false;
+            } else {
+              const event = item.value;
+              if (event.type === "transfer") {
+                try {
+                  // oxlint-disable-next-line no-await-in-loop -- claims are ordered per event
+                  await this.handleTransfer(client, event, signal, k);
+                  failures = 0;
+                } catch (error) {
+                  // A terminal status (expired, returned…) is not a stream failure — log the
+                  // transfer and keep consuming the stream.
+                  if (!(error instanceof SparkInputError)) {
+                    throw error;
+                  }
+                  this.options.logger.warn(
+                    `spark claim of ${event.transferId} rejected (${categorize(error)})`,
+                  );
+                  failures = 0;
+                }
+              }
             }
-            const balance = await client.balance();
-            this.patch(k, { balanceSats: balance });
           }
+          // A clean end is abnormal for a permanent stream — back off like a failure.
+          failures += 1;
+          this.options.logger.warn("spark event stream ended — resubscribing");
+        } catch (error) {
+          if (signal.aborted) {
+            return;
+          }
+          failures += 1;
+          if (failures === 1) {
+            this.patch(k, { status: "error", errorCategory: categorize(error) });
+          }
+          this.options.logger.warn("spark event stream failed — resubscribing", error);
         }
-      } catch (error) {
-        if (!signal.aborted) {
-          this.patch(k, { status: "error", errorCategory: categorize(error) });
-        }
+        // oxlint-disable-next-line no-await-in-loop -- the backoff bounds resubscribe pace
+        await eventsBackoff(failures, signal);
       }
     };
     void loop();
+  }
+
+  private async handleTransfer(
+    client: SparkClient,
+    event: { readonly direction: "incoming" | "outgoing"; readonly transferId: string },
+    signal: AbortSignal,
+    k: string,
+  ): Promise<void> {
+    if (event.direction === "incoming") {
+      // claim(id) re-queries until the transfer turns claimable — it owns the protocol-level
+      // wait for the SSP's claimable window, so no extra delay or pending-list scan here.
+      await client.transfers.claim(event.transferId, { signal });
+    }
+    this.patch(k, { balanceSats: await client.balance() });
   }
 
   private patch(k: string, delta: Partial<SparkAccountState>): void {

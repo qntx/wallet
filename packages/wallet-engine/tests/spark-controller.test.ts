@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { encodeSparkAddress } from "@qntx/spark";
-import type { SparkClient, SparkExitChain } from "@qntx/spark";
+import { encodeSparkAddress, SparkInputError, SparkRequestError } from "@qntx/spark";
+import type { SparkClient, SparkEvent, SparkExitChain } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { createWalletEngine } from "../src/engine.ts";
@@ -16,15 +16,42 @@ const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest"
 const VERIFY = { kind: "password", password: new Uint8Array([1]) } as never;
 const LOGGER: EngineLogger = { warn: () => {} };
 
-function fakeClient(calls: string[], sendArgs: unknown[] = []) {
+function warnText(m: string, e: unknown): string {
+  return `${m} ${e instanceof Error ? e.message : String(e ?? "")}`;
+}
+
+type FakeClaimOptions = {
+  readonly claimErrors?: Error[];
+  readonly claimPendingFailures?: Array<{ transferId: string; error: unknown }>;
+  readonly streams?: ReadonlyArray<() => AsyncGenerator<SparkEvent>>;
+};
+
+function fakeClient(
+  calls: string[],
+  sendArgs: unknown[] = [],
+  claimArgs: Array<{ id: string; signal: unknown }> = [],
+  opts: FakeClaimOptions = {},
+) {
   const aborters: Array<{ aborted: boolean }> = [];
+  const claimErrors = [...(opts.claimErrors ?? [])];
+  const claimPendingFailures = [...(opts.claimPendingFailures ?? [])];
+  let streamCalls = 0;
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
     balance: async () => Promise.resolve(42),
     transfers: {
       claimPending: async () => {
         calls.push("claimPending");
-        return Promise.resolve({});
+        return Promise.resolve({ leaves: [], failures: [...claimPendingFailures] });
+      },
+      claim: async (id: unknown, claimOpts: unknown) => {
+        calls.push(`claim:${String(id)}`);
+        claimArgs.push({ id: String(id), signal: claimOpts });
+        const error = claimErrors.shift();
+        if (error !== undefined) {
+          return Promise.reject(error);
+        }
+        return Promise.resolve([]);
       },
       send: async (o: unknown) => {
         calls.push("send");
@@ -52,15 +79,20 @@ function fakeClient(calls: string[], sendArgs: unknown[] = []) {
       signal?.addEventListener("abort", () => {
         rec.aborted = true;
       });
-      return (function* () {
-        yield {
-          type: "transfer",
-          direction: "incoming",
-          transferId: "t",
-          senderIdentityPublicKey: PK,
-          receiverIdentityPublicKey: PK,
-        };
-      })();
+      const streams = opts.streams ?? [
+        async function* () {
+          yield await Promise.resolve({
+            type: "transfer",
+            direction: "incoming",
+            transferId: "t",
+            senderIdentityPublicKey: PK,
+            receiverIdentityPublicKey: PK,
+          });
+        },
+      ];
+      const gen = streams[Math.min(streamCalls, streams.length - 1)];
+      streamCalls += 1;
+      return gen!();
     },
     close: () => {
       calls.push("close");
@@ -102,7 +134,7 @@ describe("SparkController", () => {
     await c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
     expect(approvals).toHaveLength(1);
     expect(calls.filter((x) => x === "claimPending").length).toBeGreaterThan(0);
-    expect(calls.at(-1)).toBe("send");
+    expect(calls).toContain("send");
     // transferId is a UUIDv7 minted from the injected random+now.
     expect((sendArgs[0] as { transferId?: string }).transferId).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
@@ -173,7 +205,7 @@ describe("withdraw approval intent", () => {
       amountSats: 995,
       maxFeeSats: 5,
     });
-    expect(calls.at(-1)).toBe("exit");
+    expect(calls).toContain("exit");
     await c.destroy();
   });
 
@@ -227,6 +259,216 @@ async function gateOpenStore(failures: number): Promise<EngineStore> {
     ? Promise.reject(new Error("open failed"))
     : Promise.resolve(createMemoryEngineStore());
 }
+
+function flakyClient(calls: string[], sendArgs: unknown[], aborters: Array<{ aborted: boolean }>) {
+  let claimCalls = 0;
+  let streamCalls = 0;
+  const client = {
+    identityPublicKey: async () => Promise.resolve(PK),
+    balance: async () => Promise.resolve(42),
+    transfers: {
+      claimPending: async () => {
+        calls.push("claimPending");
+        const outcomes = [
+          async () => Promise.resolve({ leaves: [], failures: [] }),
+          // A poisoned pending transfer is logged, not fatal.
+          async () =>
+            Promise.resolve({
+              leaves: [],
+              failures: [{ transferId: "t-poison", error: new Error("claim raced") }],
+            }),
+          async () => Promise.reject(new Error("claim query down")),
+          async () => Promise.resolve({ leaves: [], failures: [] }),
+        ];
+        claimCalls += 1;
+        return outcomes[Math.min(claimCalls - 1, outcomes.length - 1)]!();
+      },
+      claim: async (id: unknown, _opts: unknown) => {
+        calls.push(`claim:${String(id)}`);
+        return Promise.resolve([]);
+      },
+      send: async (o: unknown) => {
+        calls.push("send");
+        sendArgs.push(o);
+        return Promise.resolve(o);
+      },
+    },
+    lightning: {
+      createInvoice: async (o: unknown) => Promise.resolve(o),
+      pay: async (o: unknown) => Promise.resolve(o),
+    },
+    withdrawals: {
+      quoteCooperativeExit: async () => Promise.resolve({ fees: { fast: 5, medium: 3, slow: 1 } }),
+      cooperativeExit: async (o: unknown) => Promise.resolve(o),
+    },
+    events: (signal?: AbortSignal) => {
+      const rec = { aborted: false };
+      aborters.push(rec);
+      signal?.addEventListener("abort", () => {
+        rec.aborted = true;
+      });
+      const gens: Array<() => AsyncGenerator<SparkEvent>> = [
+        async function* () {
+          yield await Promise.reject(new Error("stream dropped"));
+        },
+        async function* () {
+          yield await Promise.reject(new Error("stream dropped again"));
+        },
+        async function* () {
+          await Promise.resolve();
+          yield {
+            type: "transfer",
+            direction: "incoming",
+            transferId: "t",
+            senderIdentityPublicKey: PK,
+            receiverIdentityPublicKey: PK,
+          };
+        },
+      ];
+      const gen = gens[Math.min(streamCalls, gens.length - 1)];
+      streamCalls += 1;
+      return gen!();
+    },
+    close: () => {
+      calls.push("close");
+    },
+  };
+  return client as unknown as SparkClient;
+}
+
+describe("event stream resilience", () => {
+  it("survives a claimPending failure and a dead stream — keeps refreshing balance", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const sendArgs: unknown[] = [];
+    const aborters: Array<{ aborted: boolean }> = [];
+    const warns: string[] = [];
+    const client = flakyClient(calls, sendArgs, aborters);
+    const c = new SparkController({
+      spark: {
+        signer: () => null as never,
+        approve: async (p: unknown) => {
+          approvals.push(p);
+          return Promise.resolve({});
+        },
+      },
+      fetch: async () => Promise.reject(new Error("no fetch")),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => 0,
+      logger: { warn: (m, e) => warns.push(warnText(m, e)) },
+      createClient: () => client,
+    });
+    const store = createMemoryEngineStore();
+    c.addAccount(REF);
+    c.setStore(store);
+    await c.init();
+    // Wait until the loop has died on the first stream, resubscribed, and recovered —
+    // pass-2's catch-up fails (claim query down), pass-3 resyncs and the incoming event's
+    // claim(id) refreshes the balance.
+    await vi.waitFor(() => {
+      expect(aborters.length).toBeGreaterThan(1);
+      expect(calls).toContain("claim:t");
+    }, 20_000);
+    const state = c.getState().accounts["w1:0:regtest"];
+    expect(state?.balanceSats).toBe(42);
+    expect(state?.status).toBe("ready");
+    // The event's transfer id went to claim(), with the loop's abort signal.
+    expect(calls).toContain("claim:t");
+    // claimPending ran per pass: ok, a logged failure entry, a thrown failure retried next pass.
+    expect(calls.filter((x) => x === "claimPending").length).toBeGreaterThan(1);
+    // The poisoned catch-up entry was logged, not fatal.
+    expect(warns.some((m) => m.includes("t-poison"))).toBe(true);
+    expect(warns.some((m) => m.includes("claim query down"))).toBe(true);
+  }, 30_000);
+});
+
+describe("event claims", () => {
+  function controllerWith(client: SparkClient, warns: string[]) {
+    const calls: string[] = [];
+    const c = new SparkController({
+      spark: {
+        signer: () => null as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () => Promise.reject(new Error("no fetch")),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => 0,
+      logger: { warn: (m, e) => warns.push(warnText(m, e)) },
+      createClient: () => client,
+    });
+    c.addAccount(REF);
+    c.setStore(createMemoryEngineStore());
+    return { c, calls };
+  }
+
+  const transfer = (id: string): SparkEvent => ({
+    type: "transfer",
+    direction: "incoming",
+    transferId: id,
+    senderIdentityPublicKey: PK,
+    receiverIdentityPublicKey: PK,
+  });
+
+  it("claims the event's transfer id with the loop's signal, then patches balance", async () => {
+    const warns: string[] = [];
+    const calls: string[] = [];
+    const claimArgs: Array<{ id: string; signal: unknown }> = [];
+    const { client } = fakeClient(calls, [], claimArgs);
+    const { c } = controllerWith(client, warns);
+    await c.init();
+    await vi.waitFor(() => {
+      expect(claimArgs.length).toBeGreaterThan(0);
+    }, 8000);
+    expect(claimArgs[0]?.id).toBe("t");
+    expect(claimArgs[0]?.signal).toMatchObject({ signal: expect.anything() });
+    expect(c.getState().accounts["w1:0:regtest"]?.balanceSats).toBe(42);
+    await c.lockAll();
+  }, 15_000);
+
+  it("a terminal-status claim error logs and keeps the stream alive", async () => {
+    const warns: string[] = [];
+    const calls: string[] = [];
+    const claimArgs: Array<{ id: string; signal: unknown }> = [];
+    const { client } = fakeClient(calls, [], claimArgs, {
+      claimErrors: [new SparkInputError("claim: transfer t status EXPIRED is not claimable")],
+      streams: [
+        async function* () {
+          yield await Promise.resolve(transfer("t-expired"));
+          yield await Promise.resolve(transfer("t-ok"));
+        },
+      ],
+    });
+    const { c } = controllerWith(client, warns);
+    await c.init();
+    await vi.waitFor(() => {
+      expect(calls).toContain("claim:t-ok");
+    }, 8000);
+    expect(warns.some((m) => m.includes("t-expired"))).toBe(true);
+    expect(c.getState().accounts["w1:0:regtest"]?.status).toBe("ready");
+    await c.lockAll();
+  }, 15_000);
+
+  it("a transient claim error drops the pass; catch-up retries next pass", async () => {
+    const warns: string[] = [];
+    const calls: string[] = [];
+    const claimArgs: Array<{ id: string; signal: unknown }> = [];
+    const { client, aborters } = fakeClient(calls, [], claimArgs, {
+      claimErrors: [
+        new SparkRequestError("claim: transfer t did not become claimable", {
+          code: "deadline_exceeded",
+        }),
+      ],
+    });
+    const { c } = controllerWith(client, warns);
+    await c.init();
+    await vi.waitFor(() => {
+      expect(aborters.length).toBeGreaterThan(1);
+    }, 12_000);
+    // Next pass's catch-up ran claimPending again after the failed pass.
+    expect(calls.filter((x) => x === "claimPending").length).toBeGreaterThan(1);
+    await c.lockAll();
+  }, 15_000);
+});
 
 describe("lock transition serialization", () => {
   type FakeWallet = {

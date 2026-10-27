@@ -46,7 +46,7 @@
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@qntx/nostr": "0.15.0",
-        "@qntx/spark": "0.2.1",
+        "@qntx/spark": "0.3.0",
         "@qntx/tsconfig": "1.0.1",
         "@types/node": "26.6.4",
         "publint": "0.3.25",
@@ -73,14 +73,14 @@
       },
       "devDependencies": {
         "@noble/hashes": "^2.0.1",
-        "@qntx/spark": "0.2.1",
-        "@qntx/spark-wasm": "0.2.1",
+        "@qntx/spark": "0.3.0",
+        "@qntx/spark-wasm": "0.3.0",
         "@qntx/wallet": "0.2.0",
         "@qntx/wallet-worker": "0.2.0",
         "fake-indexeddb": "6.2.6",
       },
       "peerDependencies": {
-        "@qntx/spark": "0.2.1",
+        "@qntx/spark": "0.3.0",
         "@qntx/wallet": "0.2.0",
       },
     },
@@ -92,7 +92,7 @@
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@qntx/nostr": "0.15.0",
-        "@qntx/spark": "0.2.1",
+        "@qntx/spark": "0.3.0",
         "@qntx/wallet": "0.2.0",
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
@@ -114,8 +114,8 @@
         "@noble/hashes": "2.4.0",
         "@playwright/test": "1.63.0",
         "@qntx/nostr": "0.15.0",
-        "@qntx/spark": "0.2.1",
-        "@qntx/spark-wasm": "0.2.1",
+        "@qntx/spark": "0.3.0",
+        "@qntx/spark-wasm": "0.3.0",
         "@qntx/tsconfig": "1.0.1",
         "@qntx/wallet": "0.2.0",
         "@qntx/wallet-kernel": "0.2.0",
@@ -289,9 +289,9 @@
 
     "@qntx/playground": ["@qntx/playground@workspace:apps/playground"],
 
-    "@qntx/spark": ["@qntx/spark@0.2.1", "", { "dependencies": { "@bufbuild/protobuf": "^2.16.0", "@connectrpc/connect": "^2.2.0", "@connectrpc/connect-web": "^2.2.0", "@noble/ciphers": "2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0", "@scure/bip32": "^2.4.0", "@scure/btc-signer": "^2.4.1" } }, "sha512-D7XL+oinURX690z3eRPzosviW4oZPrV3V0aebKbH/FvMCi9dBFP9iHb0Da7I1LTSMnLtS55gFrn6k9Qc0ZP7lw=="],
+    "@qntx/spark": ["@qntx/spark@0.3.0", "", { "dependencies": { "@bufbuild/protobuf": "^2.16.0", "@connectrpc/connect": "^2.2.0", "@connectrpc/connect-web": "^2.2.0", "@noble/ciphers": "2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0", "@scure/bip32": "^2.4.0", "@scure/btc-signer": "^2.4.1" } }, "sha512-gu1RWmYAqcR+PxE/xGzVQllUzfbyrzEwxvGaQyVcLehV+M6qbfyVcOw2W/opMBOsQuCdMt1TlCXWXtUSl4e/uA=="],
 
-    "@qntx/spark-wasm": ["@qntx/spark-wasm@0.2.1", "", { "peerDependencies": { "@qntx/spark": "^0.2.0" } }, "sha512-UZlIYnuOdT4FYaH7+kJC34Z+P/bR7gZf+GEyiZT2E/gmv3Z6ojBSnX4annOIZZFtMdLHRUqAWPDRte7mKYdaEg=="],
+    "@qntx/spark-wasm": ["@qntx/spark-wasm@0.3.0", "", { "peerDependencies": { "@qntx/spark": "^0.3.0" } }, "sha512-+i7NTus+k+KljVqDTHEun9cADgVvGr5T6TTm41xx/a/M4G5TFQdD+5uhPlb5qo8UvEInSzjzEkfFd/iqhXM+Dg=="],
 
     "@qntx/tsconfig": ["@qntx/tsconfig@1.0.1", "", {}, "sha512-ONEFojcKeCateUga4lJO7tf0KUTLuz5DrPGuzf1zgoo9mQVJx7gHjWElj32tGNiCWE5lblO+9EJ28cvb/81PDQ=="],
 
