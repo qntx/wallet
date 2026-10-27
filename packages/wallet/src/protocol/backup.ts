@@ -57,7 +57,7 @@ export const backupEnvelope: Validator<BackupEnvelopeWire> = obj({
 export type BackupHeaderWallet = {
   readonly walletId: string;
   readonly origin: "mnemonic" | "passkey";
-  readonly words: number;
+  readonly words: 12 | 15 | 18 | 21 | 24;
 };
 
 export type BackupHeaderWire = {
@@ -71,7 +71,7 @@ export const backupHeader: Validator<BackupHeaderWire> = obj({
     obj({
       walletId: str(128),
       origin: union(literal("mnemonic"), literal("passkey")),
-      words: int(1, 24),
+      words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
     }),
     1000,
   ),

@@ -59,6 +59,18 @@ function strField(value: ProtocolValue, key: string): string {
   return v;
 }
 
+function mustFind<T extends { readonly kind: string; readonly id: string }>(
+  records: ReadonlyArray<T>,
+  kind: string,
+  id: string,
+): T {
+  const record = records.find((r) => r.kind === kind && r.id === id);
+  if (record === undefined) {
+    throw new Error(`missing ${kind} record ${id}`);
+  }
+  return record;
+}
+
 function at(values: ReadonlyArray<ProtocolValue>, index: number): ProtocolValue {
   const v = values[index];
   if (v === undefined) {
@@ -218,6 +230,36 @@ describe("backup.restore", () => {
 
     const status = field(ok(await b.call("status", undefined, newSession)), "vault");
     expect(status).toBe("unlocked");
+  });
+
+  it("restores an 18-word imported wallet with words:18 in its record", async () => {
+    const a = createHarness({ seed: 71 });
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(
+          "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon agent",
+        ),
+        factor: vaultPasskeyFactor(),
+      }),
+    );
+    const session = strField(created, "session");
+    const walletId = strField(field(created, "wallet"), "walletId");
+    const envelope = await createBackupEnvelope(a, session, [backupPassword()]);
+
+    const b = createHarness({ seed: 72 });
+    await b.settle();
+    const res = ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(strField(at(arrField(res, "wallets"), 0), "walletId")).toBe(walletId);
+    const image = await b.store.load();
+    const entropyRecord = mustFind(image.records, "entropy", walletId);
+    expect(field(JSON.parse(entropyRecord.header) as ProtocolValue, "words")).toBe(18);
   });
 
   it("marks a restored mnemonic wallet backup:none — the words were never shown here", async () => {

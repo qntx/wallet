@@ -30,7 +30,14 @@ import { parseEntropyHeader } from "../vault/headers.ts";
 import type { StoredRecord } from "../vault/store.ts";
 import { openRecord, verifyFactor } from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
-import { commitRecords, gate, walletInfoOf, walletMaterial, walletRecord } from "./wallets.ts";
+import {
+  commitRecords,
+  gate,
+  mnemonicWords,
+  walletInfoOf,
+  walletMaterial,
+  walletRecord,
+} from "./wallets.ts";
 
 const PASSWORD_ITERATIONS = 600_000;
 
@@ -391,42 +398,52 @@ export async function restoreBackup(
     const gated = gate(ctx, params.factor, requestSession);
     const records: StoredRecord[] = [];
     const restored: WalletInfo[] = [];
+    let committed = false;
     try {
-      const now = ctx.platform.now();
-      for (const [index, wallet] of decoded.wallets.entries()) {
-        const expected = header.wallets[index];
-        if (expected === undefined) {
-          throw new KernelError("integrity", "backup: wallet count mismatch");
+      try {
+        const now = ctx.platform.now();
+        for (const [index, wallet] of decoded.wallets.entries()) {
+          const expected = header.wallets[index];
+          if (expected === undefined) {
+            throw new KernelError("integrity", "backup: wallet count mismatch");
+          }
+          const words = mnemonicWords(wallet.entropy);
+          if (words !== expected.words) {
+            throw new KernelError("integrity", "backup: entropy length does not match header");
+          }
+          // oxlint-disable-next-line no-await-in-loop -- wallets re-derive serially; order matches the header
+          const material = await walletMaterial(ctx.platform, wallet.entropy, wallet.origin, words);
+          if (material.walletId !== expected.walletId || material.origin !== expected.origin) {
+            throw new KernelError("integrity", "backup: derived walletId does not match header");
+          }
+          if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) {
+            continue; // already in the vault
+          }
+          // `backup` says how the user could recover without the vault: a passkey-origin wallet
+          // still derives from the synced credential; a mnemonic-origin one must be re-marked
+          // `none` because this device never saw the written words — the backup layer's own
+          // state tracks that a cloud copy exists.
+          const backup = material.origin === "passkey" ? "passkey" : "none";
+          const record = walletRecord(ctx, gated.dek, material, backup, now);
+          records.push(record);
+          restored.push(walletInfoOf(material, backup, now));
         }
-        // oxlint-disable-next-line no-await-in-loop -- wallets re-derive serially; order matches the header
-        const material = await walletMaterial(
-          ctx.platform,
-          wallet.entropy,
-          wallet.origin,
-          expected.words === 24 ? 24 : 12,
-        );
-        if (material.walletId !== expected.walletId || material.origin !== expected.origin) {
-          throw new KernelError("integrity", "backup: derived walletId does not match header");
+        for (const module of ctx.modules) {
+          records.push(
+            ...module.backupRecords(ctx.platform, ctx.image, gated.dek, decoded.nostrSecrets, now),
+          );
         }
-        if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) {
-          continue; // already in the vault
+        const session = await commitRecords(ctx, gated, params.factor, records);
+        committed = true;
+        return { wallets: restored, session };
+      } catch (error) {
+        // gate() minted a DEK nothing owns yet; commitRecords wipes it only past its own
+        // commit and takes ownership on success — a failure in between leaks it here.
+        if (!committed && gated.uninitialized) {
+          gated.dek.wipe();
         }
-        // `backup` says how the user could recover without the vault: a passkey-origin wallet
-        // still derives from the synced credential; a mnemonic-origin one must be re-marked
-        // `none` because this device never saw the written words — the backup layer's own
-        // state tracks that a cloud copy exists.
-        const backup = material.origin === "passkey" ? "passkey" : "none";
-        const record = walletRecord(ctx, gated.dek, material, backup, now);
-        records.push(record);
-        restored.push(walletInfoOf(material, backup, now));
+        throw error;
       }
-      for (const module of ctx.modules) {
-        records.push(
-          ...module.backupRecords(ctx.platform, ctx.image, gated.dek, decoded.nostrSecrets, now),
-        );
-      }
-      const session = await commitRecords(ctx, gated, params.factor, records);
-      return { wallets: restored, session };
     } finally {
       plaintext.fill(0);
       for (const wallet of decoded.wallets) {
