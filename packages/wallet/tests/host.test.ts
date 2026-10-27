@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { getPublicKey, KeysSigner } from "@qntx/nostr";
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 
+import { Channel } from "../src/channel.ts";
 import type { MainPort, SetTimer } from "../src/channel.ts";
 import { PASSKEY_PURPOSE_VAULT, PASSKEY_PURPOSE_WALLET } from "../src/factors.ts";
 import type { PasskeyCeremony, PrfResult } from "../src/factors.ts";
@@ -63,6 +64,12 @@ class FakeKernel {
   constructor(status: StatusPayload) {
     this.status = status;
     this.handlers.set("status", () => ({ ok: this.status }));
+    // Real-kernel flow: the unlock response carries the session the deferred status waits for.
+    this.handlers.set("vault.unlock", () => {
+      this.status = { ...this.status, vault: "unlocked" };
+      this.pushStatus();
+      return { ok: { session: "0a".repeat(16) } };
+    });
   }
 
   attach(port: ScriptedPort): void {
@@ -224,7 +231,9 @@ async function connectFake(
   kernel: FakeKernel;
   spawned: ScriptedPort[];
 }> {
-  const kernel = new FakeKernel(status);
+  const kernel = new FakeKernel(
+    status.vault === "unlocked" ? { ...status, vault: "locked" } : status,
+  );
   const spawned: ScriptedPort[] = [];
   const wallet = await connectKernel({
     spawn: () => {
@@ -238,6 +247,11 @@ async function connectFake(
     setTimer,
     ...(presence === undefined ? {} : { presence }),
   });
+  if (status.vault === "unlocked") {
+    // The fixture models an already-unlocked kernel — drive a real unlock so the host installs
+    // the session and the deferred status event reaches subscribers, like a live kernel.
+    await wallet.vault.unlock({ kind: "password", password: "long enough password" });
+  }
   return { wallet, kernel, spawned };
 }
 
@@ -247,6 +261,62 @@ function walletError(error: unknown): WalletError {
   }
   return error;
 }
+
+describe("channel status ordering", () => {
+  it("holds an unlocked status until the session is installed", async () => {
+    const kernel = new FakeKernel(unlockedStatus());
+    const statuses: StatusPayload[] = [];
+    const channel = new Channel(
+      () => {
+        const port = new ScriptedPort(kernel);
+        kernel.attach(port);
+        return port;
+      },
+      {
+        onStatus: (s) => {
+          statuses.push(s);
+        },
+        onLocked: () => {},
+        onCrashed: () => {},
+      },
+      setTimeout as unknown as SetTimer,
+    );
+    await channel.start();
+    // The attach status says unlocked but no session exists — subscribers must not see it.
+    expect(statuses).toHaveLength(0);
+    channel.session = "0a".repeat(16);
+    channel.flushStatus();
+    expect(statuses.map((s) => s.vault)).toStrictEqual(["unlocked"]);
+    channel.destroy();
+  });
+
+  it("delivers an unlocked status at once when the session is already installed", async () => {
+    const kernel = new FakeKernel({ ...unlockedStatus(), vault: "locked" });
+    const statuses: StatusPayload[] = [];
+    const channel = new Channel(
+      () => {
+        const port = new ScriptedPort(kernel);
+        kernel.attach(port);
+        return port;
+      },
+      {
+        onStatus: (s) => {
+          statuses.push(s);
+        },
+        onLocked: () => {},
+        onCrashed: () => {},
+      },
+      setTimeout as unknown as SetTimer,
+    );
+    await channel.start();
+    // Response-first order: the session is installed before the status event arrives.
+    channel.session = "0a".repeat(16);
+    kernel.status = { ...kernel.status, vault: "unlocked" };
+    kernel.pushStatus();
+    expect(statuses.map((s) => s.vault)).toStrictEqual(["locked", "unlocked"]);
+    channel.destroy();
+  });
+});
 
 describe("response validation", () => {
   it("rejects an invalid ok payload with integrity and breaks the wallet", async () => {
@@ -841,7 +911,7 @@ describe("presence activity", () => {
     const timers = new FakeTimers();
     let activity: (() => void) | undefined;
     const { wallet, kernel } = await connectFake(
-      unlockedStatus(),
+      { ...unlockedStatus(), vault: "locked" },
       timers.setTimer,
       (onActivity) => {
         activity = onActivity;
@@ -880,7 +950,7 @@ describe("presence activity", () => {
     let activity: (() => void) | undefined;
     let unsubscribed = false;
     const { wallet, kernel } = await connectFake(
-      unlockedStatus(),
+      { ...unlockedStatus(), vault: "locked" },
       timers.setTimer,
       (onActivity) => {
         activity = onActivity;

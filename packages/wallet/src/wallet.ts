@@ -288,6 +288,7 @@ export class KernelWallet implements Wallet {
 
   private sessionOf(result: { readonly session: string }): void {
     this.channel.session = result.session;
+    this.channel.flushStatus();
   }
 
   readonly vault: VaultApi = {
