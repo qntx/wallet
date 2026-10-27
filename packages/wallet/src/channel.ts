@@ -72,6 +72,8 @@ export class Channel {
   private destroyed = false;
   /** Terminal state: the kernel peer proved untrustworthy; every later call fails with it. */
   private broken: WalletError | undefined;
+  /** An unlocked status held back until the session it belongs to is installed. */
+  private deferredStatus: StatusPayload | undefined;
   /** Whether the current port has delivered its first valid status event. */
   private portReady = false;
   private readyPromise: Promise<void>;
@@ -116,6 +118,7 @@ export class Channel {
     this.port?.terminate();
     this.port = undefined;
     this.session = undefined;
+    this.deferredStatus = undefined;
     this.watchdog?.cancel();
     this.watchdog = undefined;
     this.portReady = false;
@@ -154,6 +157,7 @@ export class Channel {
       return;
     }
     this.session = undefined;
+    this.deferredStatus = undefined;
     if (!this.portReady) {
       // Death before the first valid status means the runtime never ran honestly (worker
       // blocked by CSP, a script that fails to load, protocol skew): no respawn — a fresh
@@ -178,6 +182,7 @@ export class Channel {
       return;
     }
     this.session = undefined;
+    this.deferredStatus = undefined;
     this.failPending(new WalletError("locked", "the vault locked"));
     this.handlers.onLocked("user");
     this.respawn();
@@ -235,6 +240,7 @@ export class Channel {
   private breakChannel(error: WalletError): void {
     this.broken = error;
     this.session = undefined;
+    this.deferredStatus = undefined;
     this.failPending(error);
     this.rejectReady?.(error);
     this.unlisten?.();
@@ -283,13 +289,21 @@ export class Channel {
       if (event.event === "status") {
         if (event.status.vault !== "unlocked") {
           this.session = undefined;
+          this.deferredStatus = undefined;
+          this.handlers.onStatus(event.status);
+        } else if (this.session === undefined) {
+          // The unlock/create response has not delivered the session yet — subscribers must
+          // never see "unlocked" while requests would go out sessionless.
+          this.deferredStatus = event.status;
+        } else {
+          this.handlers.onStatus(event.status);
         }
         this.portReady = true;
-        this.handlers.onStatus(event.status);
         this.resolveReady?.();
       } else {
         // A locked event destroys the enclave: drop the session, tear down the port, respawn.
         this.session = undefined;
+        this.deferredStatus = undefined;
         this.handlers.onLocked(event.reason);
         this.failPending(new WalletError("locked", "the vault locked"));
         this.respawn();
@@ -399,6 +413,15 @@ export class Channel {
     return result as ResultOf<M>;
   }
 
+  /** Fires the deferred unlocked status, if any, once the session is installed. */
+  flushStatus(): void {
+    const status = this.deferredStatus;
+    if (status !== undefined && this.session !== undefined) {
+      this.deferredStatus = undefined;
+      this.handlers.onStatus(status);
+    }
+  }
+
   /** Terminates the port without respawn; later calls fail "locked". */
   destroy(): void {
     if (this.destroyed) {
@@ -410,6 +433,7 @@ export class Channel {
     this.port?.terminate();
     this.port = undefined;
     this.session = undefined;
+    this.deferredStatus = undefined;
     this.rejectReady?.(new WalletError("locked", "wallet is destroyed"));
     this.failPending(new WalletError("locked", "wallet is destroyed"));
   }
