@@ -33,5 +33,6 @@ Pod::Spec.new do |s|
   s.dependency 'React-callinvoker'
   s.dependency 'React-hermes'
   s.dependency 'hermes-engine'
+  s.dependency 'WalletNative'
   install_modules_dependencies(s)
 end

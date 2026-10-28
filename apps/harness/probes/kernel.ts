@@ -10,7 +10,7 @@ import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
-import { verifyEvent } from "@qntx/nostr";
+import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
 import { createMemoryStore, startKernel } from "../../../packages/wallet-kernel/src/index.ts";
 import type {
@@ -97,6 +97,11 @@ function boot(pbkdf2: Pbkdf2): Kernel {
     pbkdf2,
     store,
     policy: { idleMs: 15 * 60_000, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18 },
+    backends: {
+      nostr: nobleBackend,
+      // The probe never reaches a spark call — a missing backend must fail loudly.
+      spark: () => Promise.reject(new Error("spark backend unavailable in probe")),
+    },
   };
   startKernel(platform, port);
 

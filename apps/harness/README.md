@@ -1,7 +1,7 @@
 # V1 Harness
 
 Expo/React Native harness app that runs the V1 gate measurements for the isolated
-Hermes kernel runtime (`modules/v1-probe`). It bundles the wallet kernel and a set
+Hermes kernel runtime (`modules/v1-probe` (probe entry) + `packages/wallet-native` (kernel runtime)). It bundles the wallet kernel and a set
 of probe scripts into `cpp/generated/probes.hpp`, drives them from a Nitro
 `HybridObject` (`V1Probe`), and prints one `V1_RESULT` JSON line per measurement —
 with provenance (commit, build config, OS/device, Nitro version + patch hash,
@@ -63,7 +63,7 @@ JSON record per line (see `results/` for jsonl captures).
 The kernel runtime is also exercised directly on macOS (no device/simulator):
 
 ```bash
-bun run harness:runtime-test   # repo root
+bun run native:host-test        # repo root
 ```
 
 Builds ASan/UBSan, TSan and -O2 variants of `tests/host/RuntimeHostTest.cpp`

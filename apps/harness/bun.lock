@@ -5,8 +5,10 @@
     "": {
       "name": "@qntx/wallet-harness",
       "dependencies": {
-        "@qntx/nostr-native": "0.14.0",
+        "@qntx/nostr": "0.15.1",
+        "@qntx/nostr-native": "0.15.1",
         "@qntx/v1-probe": "file:./modules/v1-probe",
+        "@qntx/wallet-native": "file:../../packages/wallet-native",
         "expo": "58.0.12",
         "react": "19.3.0",
         "react-native": "0.88.0",
@@ -268,11 +270,13 @@
 
     "@oxc-project/types": ["@oxc-project/types@0.141.0", "", {}, "sha512-S4as7z0j0xQkXcJlyY5ehntwK8/wRkQb9Cyqw+J/N2rkWGQGK0SxD6X6DhQTc7qsxVTBxXbxZtBJh3mr3PtIzQ=="],
 
-    "@qntx/nostr": ["@qntx/nostr@0.14.0", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-3QrIyBLWa0+KLlnyLhxr09jExUp4UXIJ5gvQprB7FaGBFpL27qM5jE35SmHT/5YVk0G1FYX4k0tiOGVEOUYeWw=="],
+    "@qntx/nostr": ["@qntx/nostr@0.15.1", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-hm0W70HgB3rkd3jclrKUfgt51r4+o2wDIlwC+r3Gdwf5QvxoAoAtDRO4zhf8cU/UweEVbicuscbMkzMVi0kE5w=="],
 
-    "@qntx/nostr-native": ["@qntx/nostr-native@0.14.0", "", { "peerDependencies": { "@qntx/nostr": "^0.14.0", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-/8HVJwVeCS93XOQ0X13D8xu0yBVTV/0u1GDaTy3vPexVEEQxunjfVaWhfaB6clDo+CLoLDlRJjjxuma7pGElqA=="],
+    "@qntx/nostr-native": ["@qntx/nostr-native@0.15.1", "", { "peerDependencies": { "@qntx/nostr": "^0.15.1", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-VkBx2LhlsfAr3VBLcKGxeHn5yR7yxwlI+V6I6F1KYK/xRWiIKttqPL0fe6l9sdG2ujBnzaslO0UM1xbMSXBVVA=="],
 
     "@qntx/v1-probe": ["@qntx/v1-probe@file:modules/v1-probe", { "devDependencies": { "nitrogen": "0.37.1", "react-native-nitro-modules": "0.37.1" }, "peerDependencies": { "react": "*", "react-native": "*", "react-native-nitro-modules": "*" } }],
+
+    "@qntx/wallet-native": ["@qntx/wallet-native@file:../../packages/wallet-native", {}],
 
     "@react-native/asset-utils": ["@react-native/asset-utils@0.88.0", "", {}, "sha512-Bj1DxQt5f4OrjdlgSVkZT37Z3hx5hUIN5AUDSqL/e99vgtTcqj5vnm067epZL1EF/QiqsniZO8Q1GSkItOakDg=="],
 

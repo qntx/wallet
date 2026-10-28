@@ -1,0 +1,9 @@
+{
+  "name": "@qntx/wallet-native",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Native kernel runtime (Hermes jsi host) for the qntx wallet — Nitro bridge and JS entry land in W2",
+  "license": "MIT OR Apache-2.0",
+  "author": "QuantX <x@qntx.org>",
+  "type": "module"
+}
