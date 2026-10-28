@@ -13,8 +13,37 @@ The E0 hardening series (#91–#108): the vault is fail-closed, cryptographicall
 race-safe across tabs, and resistant to storage tampering, factor misuse, session expiry,
 request abuse and cross-host stale state.
 
+The E1 series (#3–#10): the Spark signer runs inside the enclave behind per-outflow approvals,
+the Nostr backend is injected, cloud backup keeps a vault-sealed encryption key, and the
+@qntx/wallet-engine package lands (controllers, Spark, Lightning zaps, BackupController) —
+engine is in this repository but not yet published to npm.
+
 ### Added
 
+- `@qntx/wallet/spark`: `spark(wallet)` returns a proxy Spark interface — `signer(ref)` gives a
+  per account-group/network `SparkSigner` whose signatures happen inside the enclave over the
+  injected `spark.wasm` (ABI version checked at kernel start, hash recorded in
+  `dist/kernel.manifest.json`). The Spark runtime loads on first use, so a Nostr-only session
+  never fetches it and the initial kernel is smaller (#3, #4).
+- `spark(wallet).approve({ account, intent, verify })` registers a 60-second single-account
+  outflow approval: `verify` re-verifies the session factor as in `exportMnemonic`, the kernel
+  decodes the intent itself, and spends without a matching live approval fail
+  `approval-required`. Approvals clear on lock (#3).
+- Cloud backup: `wallet.backup.enable({ verify, factors })` retains a 32-byte BEK sealed as the
+  vault `backup-key` record, `wallet.backup.update()` rewrites the XChaCha20-Poly1305 envelope
+  with one fresh payload nonce and no factor ceremony, `wallet.backup.disable()` deletes the
+  key, and `wallet.backup.restore({ envelope, backupFactor, factor? })` merges into the vault —
+  adopting the BEK only while the restore establishes it. `parseBackupHeader(envelope)` exposes
+  the public header, `BackupInfo`/`WalletSnapshot.backup` the key summary, and fixed vectors pin
+  the enable record, factor entries and update envelopes byte-for-byte (#9, #10).
+- `@qntx/nostr` 0.15 `NostrBackend` injection: the host supplies the backend (Wasm or native) —
+  the kernel never loads signing implementations itself (#4).
+- `@qntx/wallet-engine` (not yet published to npm): controllers with Zustand stores, an
+  encrypted `EngineStore`, `SparkController` (Spark accounts, sends, Lightning receives,
+  cooperative exit), `BackupController` over an injected `CloudStore`, and LNURL zap payment
+  wiring plus the web playground under `apps/playground` (#5, #8).
+- Tooling: the root scripts build consumed workspace packages once — per-package lint/typecheck/
+  test scripts are build-free; the playground's Playwright spec joins the browser suite.
 - `WalletSnapshot.vault` reports `unsupported` (written by a newer build — update the app) and `unavailable` (transient store failure — retry) alongside `corrupted`; `lockReason` reports `invalidated` when another tab's factor change rotated the vault DEK. New `WalletError` codes: `wrong-passkey`, `conflict`, `unsupported`, `unavailable` (#92, #93).
 - `NostrKeyInfo.backedUp` on standalone keys (nsec/ncryptsec/generated): imported keys report `true`, generated keys `false`, and a successful `nostr.exportKey` re-seals the record with `backedUp: true` (#102).
 - `@qntx/wallet/host`: `PASSKEY_PURPOSE_WALLET`/`PASSKEY_PURPOSE_VAULT` and `PrfResult.userHandle`; the WebAuthn ceremony returns the assertion's `userHandle` (#95, #101).
@@ -27,6 +56,10 @@ request abuse and cross-host stale state.
 
 ### Changed
 
+- **BREAKING:** `PasskeyConfig` gains a required `backupSalt` — passkey backup factors run the
+  WebAuthn ceremony with `prf` over it, distinct from `vaultSalt`/`walletSalt` (#9).
+- `@qntx/wallet` peer dependencies: `@qntx/nostr` `^0.15.0` and `@qntx/spark` `^0.3.0`, both
+  optional (the kernel pins them exactly at `0.15.0` and `0.3.0`) (#3, #4).
 - **BREAKING:** the vault store is format 2 — atomic revision-guarded commits, authenticated public headers and factor wrap v2 (each factor header carries an X25519 `publicKey`). Vaults written by older builds report `unsupported` (#92, #93, #100).
 - **BREAKING:** `wallet.vault.lock()` resolves immediately on the host and terminates the worker — it no longer waits on the kernel queue; kernel calls time out instead of hanging (#97).
 - **BREAKING:** `restoreWithPasskey` rejects assertions whose `userHandle` is missing or not wallet-purpose (`wrong-passkey`); `connectKernel` validates `PasskeyConfig` — non-empty `rpId`/`rpName`, distinct salts — synchronously before spawning (#95, #101).
@@ -42,6 +75,9 @@ request abuse and cross-host stale state.
 
 ### Fixed
 
+- `wallet.vault.unlock` holds the `unlocked` status until the session is actually installed,
+  and re-unlocking with the same `keyId` reuses the live session instead of minting and
+  invalidating a new one (#8).
 - Password unlock is rate-limited inside the kernel: five counted failures arm a 30 s/60 s/300 s backoff, a `rate-limited` error carries `retryAt`, retries during backoff do not push the deadline, and passkey unlocks are never gated by password backoff (#91, #99).
 - Vault-health classification no longer conflates corruption with transient I/O failure or newer-build data; a corrupted vault invalidates the live session immediately (#93, #94).
 - Concurrent commits from two tabs resolve to exactly one writer — `expect-revision` guards make the loser a `conflict`, so a factor can never be lost (#92).
