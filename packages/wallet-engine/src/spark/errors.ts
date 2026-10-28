@@ -9,8 +9,8 @@ export type SparkErrorCategory =
 export class SparkControllerError extends Error {
   readonly category: SparkErrorCategory;
 
-  constructor(category: SparkErrorCategory, message: string) {
-    super(message);
+  constructor(category: SparkErrorCategory, message: string, cause?: unknown) {
+    super(message, { cause });
     this.name = "SparkControllerError";
     this.category = category;
   }

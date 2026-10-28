@@ -5,6 +5,7 @@
  * so an unlock→lock flip can never overlap a still-opening store.
  */
 import { createSparkClient } from "@qntx/spark";
+import type { SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
@@ -12,6 +13,11 @@ import { spark } from "@qntx/wallet/spark";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import type { EngineLogger } from "./events.ts";
+import { parsePayment } from "./payments/parse.ts";
+import type { PaymentParse } from "./payments/parse.ts";
+import { pay as runPay } from "./payments/pay.ts";
+import type { PayParams } from "./payments/pay.ts";
+import { resolvePayment } from "./payments/resolve.ts";
 import { zap as runZap } from "./payments/zap.ts";
 import type { ZapParams, ZapResult } from "./payments/zap.ts";
 import { SparkController } from "./spark/controller.ts";
@@ -35,6 +41,11 @@ export type WalletEngine = {
   readonly spark: SparkController;
   readonly backup: BackupController;
   readonly zap: (params: ZapParams) => Promise<ZapResult>;
+  readonly payments: {
+    readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
+    readonly resolve: (input: string, network: SparkNetwork) => Promise<PaymentParse>;
+    readonly pay: (params: PayParams) => Promise<unknown>;
+  };
   readonly unsubscribe: () => void;
 };
 
@@ -129,6 +140,13 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         nostr: (ref) => nostr(options.wallet).signer(ref),
         spark: controller,
       }),
+    payments: {
+      parse: (input, network) => parsePayment(input, { network, now: options.now() }),
+      resolve: async (input, network) =>
+        resolvePayment(input, { network, now: options.now(), fetch: options.fetch }),
+      pay: async (params) =>
+        runPay({ spark: controller, fetch: options.fetch, now: options.now }, params),
+    },
     unsubscribe,
   };
 }

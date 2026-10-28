@@ -17,7 +17,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 import {
-  addressToScript,
+  bitcoinAddressScript,
   createSparkSigner,
   EPHEMERAL_ANCHOR_SCRIPT,
   sparkAccountKey,
@@ -536,10 +536,16 @@ describe("spark approvals (E1-b)", () => {
 
     // No approval → approval-required, no signature produced.
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(WalletError);
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(/approval/);
 
     // Wrong verify registers nothing.
@@ -551,13 +557,19 @@ describe("spark approvals (E1-b)", () => {
       }),
     ).rejects.toThrow(WalletError);
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(/approval/);
 
     // Approval for a different address does not match.
     await approve({ kind: "onchain", address: otherAddress, maxFeeSats: 200 });
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(/approval/);
 
     // Fee above maxFeeSats rejects (input 1000 − output 900 = 100 > 50).
@@ -567,7 +579,10 @@ describe("spark approvals (E1-b)", () => {
       verify: { kind: "password", password: PASSWORD },
     });
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(/approval/);
 
     // Matching approval → signs; the summary is kernel-decoded.
@@ -579,13 +594,16 @@ describe("spark approvals (E1-b)", () => {
     expect(summary).toStrictEqual({ kind: "onchain", address, maxFeeSats: 200 });
     const sig = await signer.signKeySpend(
       leafKey,
-      onchainTarget(addressToScript(address), 900, 1000),
+      onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
     );
     expect(sig).toHaveLength(64);
 
     // Single-use: the approval is consumed on first match.
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(/approval/);
   });
 
@@ -602,6 +620,18 @@ describe("spark approvals (E1-b)", () => {
         intent: {
           kind: "onchain",
           address: "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+          maxFeeSats: 100,
+        },
+        verify: { kind: "password", password: PASSWORD },
+      }),
+    ).rejects.toThrow(/invalid-input/);
+    // Base58 version bytes are checked too — mainnet P2PKH under regtest → invalid-input.
+    await expect(
+      spark(wallet).approve({
+        account: regtestAccount(created.walletId),
+        intent: {
+          kind: "onchain",
+          address: "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
           maxFeeSats: 100,
         },
         verify: { kind: "password", password: PASSWORD },
@@ -701,7 +731,10 @@ describe("spark approvals (E1-b)", () => {
     const signer = spark(wallet).signer(account);
     const leafKey = { type: "leaf" as const, leafId: "3f7b2e1c-1a2b-4c3d-8e4f-0000000000c3" };
     await expect(
-      signer.signKeySpend(leafKey, onchainTarget(addressToScript(address), 900, 1000)),
+      signer.signKeySpend(
+        leafKey,
+        onchainTarget(bitcoinAddressScript(address, "regtest"), 900, 1000),
+      ),
     ).rejects.toThrow(/approval/);
   });
 });
