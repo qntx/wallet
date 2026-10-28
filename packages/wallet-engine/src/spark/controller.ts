@@ -1,4 +1,11 @@
-import { decodeSparkAddress, encodeSparkAddress, SparkInputError, uuidv7 } from "@qntx/spark";
+import {
+  bitcoinAddressScript,
+  decodeSparkAddress,
+  encodeSparkAddress,
+  parseSparkInvoice,
+  SparkInputError,
+  uuidv7,
+} from "@qntx/spark";
 import type {
   CooperativeExitResult,
   LightningInvoice,
@@ -381,7 +388,7 @@ export class SparkController extends Controller<SparkControllerState> {
       if (error instanceof SparkControllerError) {
         throw error;
       }
-      throw new SparkControllerError(categorize(error), "spark action failed");
+      throw new SparkControllerError(categorize(error), "spark action failed", error);
     }
   }
 
@@ -512,6 +519,71 @@ export class SparkController extends Controller<SparkControllerState> {
     });
   }
 
+  /**
+   * Pays a Spark invoice address. The approval intent mirrors `send`: receiver identity and amount
+   * come from the parsed invoice (the supplied `amountSats` fills an open invoice). Then
+   * `client.invoices.pay` executes it.
+   */
+  async paySparkInvoice(
+    ref: SparkAccountRef,
+    params: { invoice: string; amountSats?: number; verify: UnlockFactor },
+  ): Promise<SparkTransfer> {
+    return this.guarded(async () => {
+      const client = this.clientFor(ref);
+      const parsed = parseSparkInvoice(params.invoice, {
+        network: ref.network,
+        now: this.options.now(),
+      });
+      const invoicePayment = parsed.fields.payment;
+      if (invoicePayment !== undefined && invoicePayment.type !== "sats") {
+        throw new SparkControllerError(
+          "rejected",
+          "spark invoice: only sats invoices are supported",
+        );
+      }
+      if (
+        invoicePayment?.type === "sats" &&
+        invoicePayment.amount !== undefined &&
+        params.amountSats !== undefined &&
+        params.amountSats !== invoicePayment.amount
+      ) {
+        throw new SparkControllerError(
+          "rejected",
+          "spark invoice: amountSats conflicts with the invoice amount",
+        );
+      }
+      const amountSats =
+        invoicePayment?.type === "sats" && invoicePayment.amount !== undefined
+          ? invoicePayment.amount
+          : params.amountSats;
+      if (amountSats === undefined) {
+        throw new SparkControllerError(
+          "rejected",
+          "spark invoice: amountless invoice requires amountSats",
+        );
+      }
+      await this.options.spark.approve({
+        account: ref,
+        intent: {
+          kind: "transfer",
+          receivers: [{ identityPublicKey: parsed.receiverIdentityPublicKey, amountSats }],
+        },
+        verify: params.verify,
+      });
+      const result = await client.invoices.pay(params.invoice, {
+        amount: amountSats,
+        transferId: transferId(this.options.random, this.options.now),
+      });
+      void this.refreshRecent(key(ref), client);
+      // invoices.pay returns a string for token invoices — unreachable after the pre-approval
+      // sats check above, kept as the internal guard.
+      if (typeof result === "string") {
+        throw new SparkControllerError("internal", "unexpected token invoice result");
+      }
+      return result;
+    });
+  }
+
   async createInvoice(
     ref: SparkAccountRef,
     params: { amountSats: number; memo?: string },
@@ -547,6 +619,11 @@ export class SparkController extends Controller<SparkControllerState> {
   ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
+      try {
+        bitcoinAddressScript(params.address, ref.network);
+      } catch {
+        throw new SparkControllerError("rejected", "withdrawal address is not on this network");
+      }
       const exitAmount = params.amountSats ?? (await client.balance());
       const quote = await client.withdrawals.quoteCooperativeExit({
         address: params.address,

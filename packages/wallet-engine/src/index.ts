@@ -22,6 +22,10 @@ export type {
   SparkControllerState,
 } from "./spark/controller.ts";
 export { SparkControllerError } from "./spark/errors.ts";
+export { PaymentError } from "./payments/errors.ts";
+export { parsePayment, resolvePayment } from "./payments/index.ts";
+export type { PayResult } from "./payments/index.ts";
+export type { PaymentOption, PaymentParse, PaymentRequest } from "./payments/parse.ts";
 export type { SparkErrorCategory } from "./spark/errors.ts";
 export { sparkStore } from "./spark/store.ts";
 export type { PaymentNote, SparkActivity } from "./spark/notes.ts";

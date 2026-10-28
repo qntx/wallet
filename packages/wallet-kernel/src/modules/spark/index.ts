@@ -39,9 +39,9 @@ const approvalRequired = (): KernelError =>
   new KernelError("approval-required", "this outflow needs a matching approval");
 
 /**
- * An approval must bind the destination to the account's own network, so decode under
- * `network`'s parameters only: `bitcoinAddressScript` rejects an address that decodes under the
- * other network rather than retargeting it.
+ * An approval must bind the destination to the account's own network, so decode under `network`'s
+ * parameters only: `bitcoinAddressScript` rejects an address that decodes under the other network
+ * rather than retargeting it.
  */
 const addressScriptFor = (
   rt: SparkRuntime,
@@ -83,7 +83,8 @@ type Approval = {
 
 /**
  * Kernel-decodes an approve intent into the returned summary plus the matching material.
- * `bitcoinAddressScript` and `decodeBolt11` both reject malformed input — mapped to `invalid-input`.
+ * `bitcoinAddressScript` and `decodeBolt11` both reject malformed input — mapped to
+ * `invalid-input`.
  */
 const decodeIntent = (
   rt: SparkRuntime,

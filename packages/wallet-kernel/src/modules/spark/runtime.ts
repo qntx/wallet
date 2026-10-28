@@ -1,7 +1,7 @@
 /**
  * Lazy Spark SDK runtime: the only kernel file that value-imports `@qntx/spark`. It loads behind
- * one memoized `import()` so a nostr-only session never downloads or parses it; the Web/Node
- * kernel builds code-split this module into its own chunk next to the entry.
+ * one memoized `import()` so a nostr-only session never downloads or parses it; the Web/Node kernel
+ * builds code-split this module into its own chunk next to the entry.
  */
 import type {
   bitcoinAddressScript,

@@ -227,11 +227,16 @@ describe("withdraw approval intent", () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
-    await c.withdraw(REF, { address: "bc1q…", amountSats: 1000, speed: "FAST", verify: VERIFY });
+    await c.withdraw(REF, {
+      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+      amountSats: 1000,
+      speed: "FAST",
+      verify: VERIFY,
+    });
     // fast fee = 5, payout = 995
     expect(approval(approvals).intent).toStrictEqual({
       kind: "exit",
-      address: "bc1q…",
+      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
       amountSats: 995,
       maxFeeSats: 5,
     });
@@ -243,11 +248,15 @@ describe("withdraw approval intent", () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
-    await c.withdraw(REF, { address: "bc1q…", speed: "SLOW", verify: VERIFY });
+    await c.withdraw(REF, {
+      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+      speed: "SLOW",
+      verify: VERIFY,
+    });
     // balance 42, slow fee 1, payout 41
     expect(approval(approvals).intent).toStrictEqual({
       kind: "exit",
-      address: "bc1q…",
+      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
       amountSats: 41,
       maxFeeSats: 1,
     });
@@ -260,7 +269,7 @@ describe("withdraw approval intent", () => {
     const { c } = await setup(calls, approvals);
     await expect(
       c.withdraw(REF, {
-        address: "bc1q…",
+        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
         amountSats: 1000,
         speed: "FAST",
         maxFeeSats: 2,
@@ -277,7 +286,12 @@ describe("withdraw approval intent", () => {
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
     await expect(
-      c.withdraw(REF, { address: "bc1q…", amountSats: 5, speed: "FAST", verify: VERIFY }),
+      c.withdraw(REF, {
+        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+        amountSats: 5,
+        speed: "FAST",
+        verify: VERIFY,
+      }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
     expect(approvals).toHaveLength(0);
     await c.destroy();
@@ -850,5 +864,58 @@ describe("history and notes", () => {
     const recent = c.getState().accounts[K]?.recent;
     expect(recent?.some((p) => p.id === "t-stale")).toBe(false);
     expect(recent?.some((p) => p.id === "t-new")).toBe(true);
+  });
+});
+
+describe("paySparkInvoice pre-approval checks", () => {
+  const INVOICE_ID = "01936f00-0000-7000-8000-000000000001";
+
+  async function setup(calls: string[], approvals: unknown[]) {
+    const { c, client } = controller(calls, approvals);
+    const store = createMemoryEngineStore();
+    c.addAccount(REF);
+    c.setStore(store);
+    await c.init();
+    return { c, client };
+  }
+
+  it("rejects a token invoice before any approval call", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    const tokenInvoice = encodeSparkAddress({
+      network: "regtest",
+      identityPublicKey: PK,
+      invoice: {
+        version: 1,
+        id: INVOICE_ID,
+        payment: { type: "tokens", amount: new Uint8Array([0, 1]) },
+      },
+    });
+    await expect(c.paySparkInvoice(REF, { invoice: tokenInvoice, verify: VERIFY })).rejects.toThrow(
+      /only sats invoices are supported/,
+    );
+    expect(approvals).toHaveLength(0);
+    await c.destroy();
+  });
+
+  it("rejects a caller amount conflicting with a fixed invoice amount", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    const fixedInvoice = encodeSparkAddress({
+      network: "regtest",
+      identityPublicKey: PK,
+      invoice: {
+        version: 1,
+        id: INVOICE_ID,
+        payment: { type: "sats", amount: 500 },
+      },
+    });
+    await expect(
+      c.paySparkInvoice(REF, { invoice: fixedInvoice, amountSats: 999, verify: VERIFY }),
+    ).rejects.toThrow(/conflicts with the invoice amount/);
+    expect(approvals).toHaveLength(0);
+    await c.destroy();
   });
 });
