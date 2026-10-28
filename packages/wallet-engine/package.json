@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet-engine",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "qntx/wallet engine primitives: controllers, events and encrypted engine storage",
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
@@ -48,13 +48,13 @@
     "@noble/hashes": "^2.0.1",
     "@qntx/spark": "0.3.0",
     "@qntx/spark-wasm": "0.3.0",
-    "@qntx/wallet": "0.2.0",
-    "@qntx/wallet-worker": "0.2.0",
+    "@qntx/wallet": "0.3.0",
+    "@qntx/wallet-worker": "0.3.0",
     "fake-indexeddb": "6.2.6"
   },
   "peerDependencies": {
     "@qntx/spark": "0.3.0",
-    "@qntx/wallet": "0.2.0"
+    "@qntx/wallet": "0.3.0"
   },
   "devEngines": {
     "packageManager": {
