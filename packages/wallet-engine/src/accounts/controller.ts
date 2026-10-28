@@ -3,6 +3,7 @@ import type { Wallet } from "@qntx/wallet";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import type { MetaDoc, MetaDocGroup } from "../meta/doc.ts";
 import type { SparkController } from "../spark/controller.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 import { AccountTreeError } from "./errors.ts";
@@ -12,11 +13,19 @@ export type AccountGroup = {
   readonly index: number;
   readonly name?: string;
   readonly hidden: boolean;
+  /** A social identity (64 lowercase hex) bound to this group; one identity binds one group. */
+  readonly boundPubkey?: string;
+  /** Last local modification time (ms); reconcile-created entries start at 0. */
+  readonly updatedAt: number;
 };
 
 export type AccountTreeState = {
   readonly status: "locked" | "ready";
-  readonly wallets: ReadonlyArray<{ readonly walletId: string; readonly name?: string }>;
+  readonly wallets: ReadonlyArray<{
+    readonly walletId: string;
+    readonly name?: string;
+    readonly updatedAt: number;
+  }>;
   readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>>;
   // oxlint-disable-next-line typescript/no-restricted-types -- spec shape: no wallets → null
   readonly selected: { readonly walletId: string; readonly groupIndex: number } | null;
@@ -32,7 +41,9 @@ export type AccountTreeControllerOptions = {
 };
 
 type PersistedTree = {
-  readonly wallets: Readonly<Record<string, { readonly name?: string }>>;
+  readonly wallets: Readonly<
+    Record<string, { readonly name?: string; readonly updatedAt: number }>
+  >;
   readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>>;
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: selected may be null
   readonly selected: { readonly walletId: string; readonly groupIndex: number } | null;
@@ -42,6 +53,12 @@ type PersistedTree = {
 const EMPTY_TREE: PersistedTree = { wallets: {}, groups: {}, selected: null, totals: {} };
 
 const TOTAL_KEY = (walletId: string, index: number): string => `${walletId}:${index}`;
+
+const withoutBinding = (g: AccountGroup): AccountGroup => {
+  const { boundPubkey: _removed, ...rest } = g;
+  void _removed;
+  return rest;
+};
 
 const NAME_MAX = 24;
 const TOTALS_DEBOUNCE_MS = 1000;
@@ -65,10 +82,19 @@ function validateName(v: unknown): string | undefined {
   return name.length > 0 && name.length <= NAME_MAX ? name : undefined;
 }
 
-const KNOWN_GROUP_KEYS = new Set(["walletId", "index", "name", "hidden"]);
+const KNOWN_GROUP_KEYS = new Set([
+  "walletId",
+  "index",
+  "name",
+  "hidden",
+  "boundPubkey",
+  "updatedAt",
+]);
 const KNOWN_TOP_KEYS = new Set(["wallets", "groups", "selected", "totals"]);
-const KNOWN_WALLET_KEYS = new Set(["name"]);
+const KNOWN_WALLET_KEYS = new Set(["name", "updatedAt"]);
 const KNOWN_SELECTED_KEYS = new Set(["walletId", "groupIndex"]);
+
+const PUBKEY_RE = /^[0-9a-f]{64}$/;
 
 /** Strict decode — any malformed shape or unknown key returns `undefined`. */
 function decodeTree(bytes: Uint8Array): PersistedTree | undefined {
@@ -90,7 +116,7 @@ function decodeTree(bytes: Uint8Array): PersistedTree | undefined {
     if (!isPlainObject(rawWallets) || !isPlainObject(rawGroups) || !isPlainObject(rawTotals)) {
       return undefined;
     }
-    const wallets: Record<string, { name?: string }> = {};
+    const wallets: Record<string, { name?: string; updatedAt: number }> = {};
     for (const [walletId, w] of Object.entries(rawWallets)) {
       if (!isPlainObject(w) || walletId.length === 0) {
         return undefined;
@@ -104,7 +130,11 @@ function decodeTree(bytes: Uint8Array): PersistedTree | undefined {
       if (w["name"] !== undefined && name === undefined) {
         return undefined;
       }
-      wallets[walletId] = name === undefined ? {} : { name };
+      const { updatedAt } = w;
+      if (!isNonNegativeInt(updatedAt)) {
+        return undefined;
+      }
+      wallets[walletId] = { updatedAt, ...(name === undefined ? {} : { name }) };
     }
     const groups: Record<string, AccountGroup[]> = {};
     for (const [walletId, arr] of Object.entries(rawGroups)) {
@@ -134,11 +164,24 @@ function decodeTree(bytes: Uint8Array): PersistedTree | undefined {
         if (item["name"] !== undefined && name === undefined) {
           return undefined;
         }
+        const { updatedAt } = item;
+        if (!isNonNegativeInt(updatedAt)) {
+          return undefined;
+        }
+        const { boundPubkey } = item;
+        if (
+          boundPubkey !== undefined &&
+          (typeof boundPubkey !== "string" || !PUBKEY_RE.test(boundPubkey))
+        ) {
+          return undefined;
+        }
         list.push({
           walletId,
           index,
           hidden: item["hidden"],
+          updatedAt,
           ...(name === undefined ? {} : { name }),
+          ...(boundPubkey === undefined ? {} : { boundPubkey }),
         });
       }
       list.sort((a, b) => a.index - b.index);
@@ -257,15 +300,16 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     const live = snapshot.wallets.map((w) => w.walletId);
     const liveSet = new Set(live);
     const state = this.getState();
-    const namesById = new Map(state.wallets.map((w) => [w.walletId, w.name]));
+    const entriesById = new Map(state.wallets.map((w) => [w.walletId, w]));
     const wallets = live.map((walletId) => {
-      const name = namesById.get(walletId);
-      return name === undefined ? { walletId } : { walletId, name };
+      const existing = entriesById.get(walletId);
+      return existing ?? { walletId, updatedAt: 0 };
     });
     const groups: Record<string, ReadonlyArray<AccountGroup>> = {};
     for (const walletId of live) {
       const existing = state.groups[walletId] ?? [];
-      groups[walletId] = existing.length > 0 ? existing : [{ walletId, index: 0, hidden: false }];
+      groups[walletId] =
+        existing.length > 0 ? existing : [{ walletId, index: 0, hidden: false, updatedAt: 0 }];
     }
     const totals: Record<string, number> = {};
     for (const [k, v] of Object.entries(state.totals)) {
@@ -296,7 +340,8 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     for (const g of groups) {
       index = Math.max(index, g.index + 1);
     }
-    this.mutateGroups(walletId, (list) => [...list, { walletId, index, hidden: false }]);
+    const updatedAt = this.options.now();
+    this.mutateGroups(walletId, (list) => [...list, { walletId, index, hidden: false, updatedAt }]);
     return index;
   }
 
@@ -305,10 +350,11 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     this.mutateGroups(walletId, (list) => {
       const have = new Set(list.map((g) => g.index));
       const added: AccountGroup[] = [];
+      const updatedAt = this.options.now();
       for (const i of indices) {
         if (Number.isSafeInteger(i) && i >= 0 && !have.has(i)) {
           have.add(i);
-          added.push({ walletId, index: i, hidden: false });
+          added.push({ walletId, index: i, hidden: false, updatedAt });
         }
       }
       return [...list, ...added].sort((a, b) => a.index - b.index);
@@ -318,9 +364,12 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   renameWallet(walletId: string, name: string): void {
     this.mustWallet(walletId);
     const trimmed = this.checkedName(name);
+    const updatedAt = this.options.now();
     this.update((s) => ({
       ...s,
-      wallets: s.wallets.map((w) => (w.walletId === walletId ? { walletId, name: trimmed } : w)),
+      wallets: s.wallets.map((w) =>
+        w.walletId === walletId ? { walletId, name: trimmed, updatedAt } : w,
+      ),
     }));
     this.persist();
   }
@@ -328,8 +377,9 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   renameGroup(walletId: string, index: number, name: string): void {
     this.mustGroup(walletId, index);
     const trimmed = this.checkedName(name);
+    const updatedAt = this.options.now();
     this.mutateGroups(walletId, (list) =>
-      list.map((g) => (g.index === index ? { ...g, name: trimmed } : g)),
+      list.map((g) => (g.index === index ? { ...g, name: trimmed, updatedAt } : g)),
     );
   }
 
@@ -342,8 +392,9 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     if (hidden && visible.length === 0) {
       throw new AccountTreeError("rejected", "cannot hide every account group");
     }
+    const updatedAt = this.options.now();
     this.mutateGroups(walletId, (list) =>
-      list.map((g) => (g.index === index ? { ...g, hidden } : g)),
+      list.map((g) => (g.index === index ? { ...g, hidden, updatedAt } : g)),
     );
     const sel = state.selected;
     if (sel !== null && sel.walletId === walletId && sel.groupIndex === index && hidden) {
@@ -366,6 +417,201 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     this.update((s) => ({ ...s, selected: { walletId, groupIndex: index } }));
     this.persist();
     this.driveSpark(this.getState().selected);
+  }
+
+  /**
+   * Binds a social identity to one group. The identity is unique across the whole tree — every
+   * group in every wallet carrying it loses the binding (each entry re-stamped).
+   */
+  bind(walletId: string, index: number, pubkey: string): void {
+    this.mustGroup(walletId, index);
+    if (!PUBKEY_RE.test(pubkey)) {
+      throw new AccountTreeError("invalid-input", "boundPubkey must be 64 lowercase hex");
+    }
+    const updatedAt = this.options.now();
+    this.update((s) => ({
+      ...s,
+      groups: Object.fromEntries(
+        Object.entries(s.groups).map(([wid, list]) => [
+          wid,
+          list.map((g) => {
+            if (wid === walletId && g.index === index) {
+              return { ...g, boundPubkey: pubkey, updatedAt };
+            }
+            if (g.boundPubkey === pubkey) {
+              return { ...withoutBinding(g), updatedAt };
+            }
+            return g;
+          }),
+        ]),
+      ),
+    }));
+    this.persist();
+  }
+
+  unbind(walletId: string, index: number): void {
+    this.mustGroup(walletId, index);
+    const updatedAt = this.options.now();
+    this.mutateGroups(walletId, (list) =>
+      list.map((g) => (g.index === index ? { ...withoutBinding(g), updatedAt } : g)),
+    );
+  }
+
+  /**
+   * Which group currently holds a pubkey — merges can leave the same identity on groups in two
+   * wallets; the newest `updatedAt` wins, ties resolve by snapshot wallet order then lower index.
+   */
+  bindingOf(pubkey: string): { walletId: string; groupIndex: number } | undefined {
+    const s = this.getState();
+    let best:
+      | { walletId: string; groupIndex: number; updatedAt: number; walletPos: number }
+      | undefined;
+    let walletPos = -1;
+    for (const w of s.wallets) {
+      walletPos += 1;
+      for (const g of s.groups[w.walletId] ?? []) {
+        if (g.boundPubkey !== pubkey) {
+          continue;
+        }
+        if (
+          best === undefined ||
+          g.updatedAt > best.updatedAt ||
+          (g.updatedAt === best.updatedAt &&
+            (walletPos < best.walletPos ||
+              (walletPos === best.walletPos && g.index < best.groupIndex)))
+        ) {
+          best = { walletId: w.walletId, groupIndex: g.index, updatedAt: g.updatedAt, walletPos };
+        }
+      }
+    }
+    return best === undefined
+      ? undefined
+      : { walletId: best.walletId, groupIndex: best.groupIndex };
+  }
+
+  /** The wallet's metadata document — every group, hidden included. */
+  exportMeta(walletId: string): MetaDoc {
+    this.mustWallet(walletId);
+    const s = this.getState();
+    const w = s.wallets.find((x) => x.walletId === walletId);
+    const wallet: MetaDoc["wallet"] = {
+      updatedAt: w?.updatedAt ?? 0,
+      ...(w?.name === undefined ? {} : { name: w.name }),
+    };
+    const groups: MetaDocGroup[] = [];
+    for (const g of s.groups[walletId] ?? []) {
+      groups.push({
+        index: g.index,
+        hidden: g.hidden,
+        updatedAt: g.updatedAt,
+        ...(g.name === undefined ? {} : { name: g.name }),
+        ...(g.boundPubkey === undefined ? {} : { boundPubkey: g.boundPubkey }),
+      });
+    }
+    return { v: 1, wallet, groups };
+  }
+
+  /**
+   * Entry-level last-writer-wins merge: a newer remote `updatedAt` replaces the local entry, a tie
+   * keeps local; remote-only groups are added. `selected`/hidden rules are re-validated — if the
+   * merge hides the selected group it is re-selected, and a merge may never leave every group
+   * hidden (the selected one stays visible and is re-stamped so the fix propagates).
+   */
+  mergeMeta(walletId: string, doc: MetaDoc): { changed: boolean; localNewer: boolean } {
+    this.mustWallet(walletId);
+    let changed = false;
+    let localNewer = false;
+    const s = this.getState();
+    const localWallet = s.wallets.find((w) => w.walletId === walletId);
+    const walletUpdatedAt = localWallet?.updatedAt ?? 0;
+    let wallet = localWallet ?? { walletId, updatedAt: 0 };
+    if (doc.wallet.updatedAt > walletUpdatedAt) {
+      wallet = {
+        walletId,
+        updatedAt: doc.wallet.updatedAt,
+        ...(doc.wallet.name === undefined ? {} : { name: doc.wallet.name }),
+      };
+      changed = true;
+    } else if (walletUpdatedAt > doc.wallet.updatedAt) {
+      localNewer = true;
+    }
+    const localByIndex = new Map((s.groups[walletId] ?? []).map((g) => [g.index, g]));
+    const groups = [...(s.groups[walletId] ?? [])];
+    for (const remote of doc.groups) {
+      const local = localByIndex.get(remote.index);
+      if (local === undefined) {
+        groups.push({
+          walletId,
+          index: remote.index,
+          hidden: remote.hidden,
+          updatedAt: remote.updatedAt,
+          ...(remote.name === undefined ? {} : { name: remote.name }),
+          ...(remote.boundPubkey === undefined ? {} : { boundPubkey: remote.boundPubkey }),
+        });
+        changed = true;
+        continue;
+      }
+      if (remote.updatedAt > local.updatedAt) {
+        const replaced: AccountGroup = {
+          walletId,
+          index: remote.index,
+          hidden: remote.hidden,
+          updatedAt: remote.updatedAt,
+          ...(remote.name === undefined ? {} : { name: remote.name }),
+          ...(remote.boundPubkey === undefined ? {} : { boundPubkey: remote.boundPubkey }),
+        };
+        const at = groups.findIndex((g) => g.index === remote.index);
+        groups[at] = replaced;
+        changed = true;
+      } else if (local.updatedAt > remote.updatedAt) {
+        localNewer = true;
+      }
+    }
+    for (const g of groups) {
+      if (!doc.groups.some((r) => r.index === g.index) && g.updatedAt > 0) {
+        localNewer = true;
+      }
+    }
+    groups.sort((a, b) => a.index - b.index);
+    // Re-validate selection: merge may have hidden the selected group or every group.
+    const walletOrder = s.wallets.map((w) => w.walletId);
+    let selected = this.validSelection(
+      { ...s.groups, [walletId]: groups },
+      walletOrder,
+      s.selected,
+    );
+    const visible = groups.some((g) => !g.hidden);
+    if (!visible && groups.length > 0) {
+      // A merge must never hide every group — keep the selected (or first) one visible and
+      // stamp it so the local correction wins the next merge too.
+      const keep = selected ?? { walletId, groupIndex: groups[0]?.index ?? 0 };
+      const now = this.options.now();
+      for (const [i, g] of groups.entries()) {
+        if (g.index === keep.groupIndex) {
+          groups[i] = { ...g, hidden: false, updatedAt: now };
+        }
+      }
+      selected = keep;
+      changed = true;
+      localNewer = true;
+    }
+    if (
+      selected?.walletId !== s.selected?.walletId ||
+      selected?.groupIndex !== s.selected?.groupIndex
+    ) {
+      changed = true;
+    }
+    if (changed) {
+      this.update((st) => ({
+        ...st,
+        wallets: st.wallets.map((w) => (w.walletId === walletId ? wallet : w)),
+        groups: { ...st.groups, [walletId]: groups },
+        selected,
+      }));
+      this.persist();
+      this.driveSpark(selected);
+    }
+    return { changed, localNewer };
   }
 
   /** Sequential inspect from 0 upward; index 0 always included; stop after 2 consecutive unused. */
@@ -567,7 +813,10 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         const s = this.getState();
         const tree: PersistedTree = {
           wallets: Object.fromEntries(
-            s.wallets.map((w) => [w.walletId, w.name === undefined ? {} : { name: w.name }]),
+            s.wallets.map((w) => [
+              w.walletId,
+              { updatedAt: w.updatedAt, ...(w.name === undefined ? {} : { name: w.name }) },
+            ]),
           ),
           groups: s.groups,
           selected: s.selected,
@@ -601,12 +850,16 @@ export class AccountTreeController extends Controller<AccountTreeState> {
 }
 
 function persistedToState(tree: PersistedTree): Omit<AccountTreeState, "status"> {
-  const wallets: Array<{ readonly walletId: string; readonly name?: string }> = [];
+  const wallets: Array<{
+    readonly walletId: string;
+    readonly name?: string;
+    readonly updatedAt: number;
+  }> = [];
   for (const [walletId, w] of Object.entries(tree.wallets)) {
     if (w.name === undefined) {
-      wallets.push({ walletId });
+      wallets.push({ walletId, updatedAt: w.updatedAt });
     } else {
-      wallets.push({ walletId, name: w.name });
+      wallets.push({ walletId, name: w.name, updatedAt: w.updatedAt });
     }
   }
   return {

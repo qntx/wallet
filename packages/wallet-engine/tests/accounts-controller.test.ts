@@ -7,6 +7,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
+import type { AccountGroup } from "../src/accounts/controller.ts";
 import { AccountTreeError } from "../src/accounts/errors.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -51,6 +52,14 @@ function stallingStore(inner: EngineStore): { store: EngineStore; release: () =>
   };
   return { store, release: () => release() };
 }
+
+const updatedAtOf = (g: { readonly updatedAt: number } | undefined): number =>
+  g === undefined ? 0 : g.updatedAt;
+
+const groupsOf = (
+  s: { readonly groups: Readonly<Record<string, ReadonlyArray<AccountGroup>>> },
+  w: string,
+): ReadonlyArray<AccountGroup> => s.groups[w] ?? [];
 
 const indicesOf = (groups: ReadonlyArray<{ readonly index: number }> | undefined): number[] => {
   const out: number[] = [];
@@ -131,6 +140,12 @@ async function rig(opts: { inspects?: Rig["inspects"] } = {}): Promise<Rig> {
   return { wallet, spark, accounts, store, setAccountsCalls, inspects };
 }
 
+async function secondWallet(wallet: Wallet): Promise<WalletInfo> {
+  return wallet.wallets.importMnemonic({
+    mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
+  });
+}
+
 async function vaultWithMnemonic(wallet: Wallet): Promise<WalletInfo> {
   const draft = await wallet.wallets.createMnemonic({
     words: 12,
@@ -141,6 +156,190 @@ async function vaultWithMnemonic(wallet: Wallet): Promise<WalletInfo> {
 }
 
 describe("AccountTreeController", () => {
+  it("bind moves a pubkey between groups; unbind clears; bad hex rejected", async () => {
+    const r = await rig();
+    const created = await vaultWithMnemonic(r.wallet);
+    await r.wallet.vault.unlock(VERIFY);
+    await r.accounts.init();
+    const w = created.walletId;
+    const pk = "a".repeat(64);
+    r.accounts.addGroup(w);
+    r.accounts.bind(w, 0, pk);
+    expect(r.accounts.getState().groups[w]?.[0]?.boundPubkey).toBe(pk);
+    // Rebinding the same identity elsewhere unbinds the first group.
+    r.accounts.bind(w, 1, pk);
+    const groups = groupsOf(r.accounts.getState(), w);
+    expect(groups[0]?.boundPubkey).toBeUndefined();
+    expect(groups[1]?.boundPubkey).toBe(pk);
+    // A different pubkey on the same group replaces the previous binding.
+    const pk2 = "b".repeat(64);
+    r.accounts.bind(w, 1, pk2);
+    expect(r.accounts.getState().groups[w]?.[1]?.boundPubkey).toBe(pk2);
+    r.accounts.unbind(w, 1);
+    expect(r.accounts.getState().groups[w]?.[1]?.boundPubkey).toBeUndefined();
+    expect(() => r.accounts.bind(w, 0, "nothex")).toThrow(/64 lowercase hex/);
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  });
+
+  it("bind is unique across wallets — rebinding clears the other wallet's group", async () => {
+    const r = await rig();
+    const first = await vaultWithMnemonic(r.wallet);
+    const second = await secondWallet(r.wallet);
+    await r.wallet.vault.unlock(VERIFY);
+    await r.accounts.init();
+    const pk = "a".repeat(64);
+    r.accounts.bind(first.walletId, 0, pk);
+    r.accounts.bind(second.walletId, 0, pk);
+    expect(r.accounts.getState().groups[first.walletId]?.[0]?.boundPubkey).toBeUndefined();
+    expect(r.accounts.getState().groups[second.walletId]?.[0]?.boundPubkey).toBe(pk);
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  });
+
+  it("bindingOf resolves a merge-produced duplicate by newest updatedAt", async () => {
+    const r = await rig();
+    const first = await vaultWithMnemonic(r.wallet);
+    const second = await secondWallet(r.wallet);
+    await r.wallet.vault.unlock(VERIFY);
+    await r.accounts.init();
+    const pk = "a".repeat(64);
+    r.accounts.bind(first.walletId, 0, pk);
+    const localStamp = updatedAtOf(groupsOf(r.accounts.getState(), first.walletId)[0]);
+    // A remote doc for the second wallet carries the same pubkey with a newer stamp.
+    const doc = {
+      v: 1 as const,
+      wallet: { updatedAt: 0 },
+      groups: [{ index: 0, hidden: false, boundPubkey: pk, updatedAt: localStamp + 1 }],
+    };
+    r.accounts.mergeMeta(second.walletId, doc);
+    expect(r.accounts.bindingOf(pk)).toStrictEqual({
+      walletId: second.walletId,
+      groupIndex: 0,
+    });
+    // An older remote stamp loses — the local binding keeps ownership.
+    const stale = {
+      v: 1 as const,
+      wallet: { updatedAt: 0 },
+      groups: [{ index: 0, hidden: false, boundPubkey: pk, updatedAt: localStamp - 1 }],
+    };
+    r.accounts.mergeMeta(second.walletId, stale);
+    expect(r.accounts.bindingOf(pk)).toStrictEqual({
+      walletId: second.walletId,
+      groupIndex: 0,
+    });
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  });
+
+  it("updatedAt stamps every local change; reconcile-created group 0 is 0", async () => {
+    let t = 1000;
+    const wallet = await createNodeWallet({
+      passkey: PASSKEY_CONFIG,
+      autoLock: { platform: "web", idleMinutes: 15 },
+      authenticator: createSoftwarePasskey(randomBytes(32)),
+      kernelUrl: KERNEL_URL,
+    });
+    const spark = new SparkController({
+      spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
+      fetch: async () => Promise.reject(new Error("no fetch")),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => t,
+      logger: LOGGER,
+      createClient: () => ({ close: () => {} }) as unknown as never,
+    });
+    const accounts = new AccountTreeController({
+      wallet,
+      spark,
+      sparkNetwork: NETWORK,
+      logger: LOGGER,
+      now: () => t,
+    });
+    accounts.setStore(createMemoryEngineStore());
+    const created = await vaultWithMnemonic(wallet);
+    await wallet.vault.unlock(VERIFY);
+    t = 5000;
+    await accounts.init();
+    const w = created.walletId;
+    expect(accounts.getState().groups[w]?.[0]?.updatedAt).toBe(0);
+    expect(accounts.getState().wallets[0]?.updatedAt).toBe(0);
+    t = 9000;
+    accounts.renameGroup(w, 0, "named");
+    expect(accounts.getState().groups[w]?.[0]?.updatedAt).toBe(9000);
+    t = 9500;
+    accounts.addGroup(w);
+    accounts.setHidden(w, 1, true);
+    expect(accounts.getState().groups[w]?.[1]?.updatedAt).toBe(9500);
+    t = 10_000;
+    accounts.renameWallet(w, "mine");
+    expect(accounts.getState().wallets[0]?.updatedAt).toBe(10_000);
+    t = 11_000;
+    accounts.bind(w, 0, "a".repeat(64));
+    expect(accounts.getState().groups[w]?.[0]?.updatedAt).toBe(11_000);
+    await accounts.destroy();
+    await wallet.destroy();
+  });
+
+  it("mergeMeta: remote newer wins, tie keeps local, remote-only groups added", async () => {
+    const r = await rig();
+    const created = await vaultWithMnemonic(r.wallet);
+    await r.wallet.vault.unlock(VERIFY);
+    await r.accounts.init();
+    const w = created.walletId;
+    r.accounts.renameGroup(w, 0, "local");
+    const localStamp = updatedAtOf(groupsOf(r.accounts.getState(), w)[0]);
+    const doc = {
+      v: 1 as const,
+      wallet: { name: "remote", updatedAt: localStamp + 100 },
+      groups: [
+        { index: 0, name: "remote-won", hidden: false, updatedAt: localStamp + 50 },
+        { index: 3, name: "remote-new", hidden: true, updatedAt: 10 },
+      ],
+    };
+    const m = r.accounts.mergeMeta(w, doc);
+    expect(m.changed).toBe(true);
+    const s = r.accounts.getState();
+    expect(s.wallets[0]?.name).toBe("remote");
+    expect(s.groups[w]?.[0]?.name).toBe("remote-won");
+    expect(s.groups[w]?.[1]?.index).toBe(3);
+    expect(s.groups[w]?.[1]?.hidden).toBe(true);
+    // Tie → local stays.
+    const doc2 = {
+      v: 1 as const,
+      wallet: { updatedAt: localStamp + 100 },
+      groups: [
+        { index: 0, name: "ignored", hidden: false, updatedAt: localStamp + 50 },
+        { index: 3, name: "tie-remote", hidden: false, updatedAt: 10 },
+      ],
+    };
+    const m2 = r.accounts.mergeMeta(w, doc2);
+    expect(r.accounts.getState().groups[w]?.[1]?.name).toBe("remote-new");
+    expect(m2.localNewer).toBe(false);
+    // Older remote loses → localNewer.
+    const stale = { v: 1 as const, wallet: { updatedAt: 1 }, groups: [] };
+    expect(r.accounts.mergeMeta(w, stale).localNewer).toBe(true);
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  });
+
+  it("mergeMeta never leaves every group hidden — unhides and stamps one", async () => {
+    const r = await rig();
+    const created = await vaultWithMnemonic(r.wallet);
+    await r.wallet.vault.unlock(VERIFY);
+    await r.accounts.init();
+    const w = created.walletId;
+    const doc = {
+      v: 1 as const,
+      wallet: { updatedAt: Date.now() + 60_000 },
+      groups: [{ index: 0, hidden: true, updatedAt: Date.now() + 60_000 }],
+    };
+    r.accounts.mergeMeta(w, doc);
+    expect(r.accounts.getState().groups[w]?.[0]?.hidden).toBe(false);
+    expect(r.accounts.getState().selected?.groupIndex).toBe(0);
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  });
+
   it("auto-creates group 0 for a new wallet and selects it", async () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);
@@ -149,7 +348,7 @@ describe("AccountTreeController", () => {
     const s = r.accounts.getState();
     expect(s.status).toBe("ready");
     expect(s.groups[created.walletId]).toStrictEqual([
-      { walletId: created.walletId, index: 0, hidden: false },
+      { walletId: created.walletId, index: 0, hidden: false, updatedAt: 0 },
     ]);
     expect(s.selected).toStrictEqual({ walletId: created.walletId, groupIndex: 0 });
     expect(r.setAccountsCalls.at(-1)).toStrictEqual([ref(created.walletId, 0)]);
@@ -291,7 +490,7 @@ describe("AccountTreeController", () => {
     // Strict decode rejected it; reconcile then built group 0 from the snapshot.
     expect(warned).toBe(true);
     expect(accounts.getState().groups[created.walletId]).toStrictEqual([
-      { walletId: created.walletId, index: 0, hidden: false },
+      { walletId: created.walletId, index: 0, hidden: false, updatedAt: 0 },
     ]);
     await accounts.destroy();
     await r.wallet.destroy();

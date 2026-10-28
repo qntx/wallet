@@ -25,6 +25,15 @@ export { SparkControllerError } from "./spark/errors.ts";
 export { AccountTreeError } from "./accounts/errors.ts";
 export { AccountTreeController } from "./accounts/controller.ts";
 export type { AccountGroup, AccountTreeState } from "./accounts/controller.ts";
+export { MetaSyncController } from "./meta/controller.ts";
+export type {
+  MetaSyncConfig,
+  MetaSyncRelayPort,
+  MetaSyncState,
+  MetaSyncWalletStatus,
+} from "./meta/controller.ts";
+export { MetaSyncError } from "./meta/errors.ts";
+export type { MetaDoc, MetaDocGroup, MetaDocWallet } from "./meta/doc.ts";
 export { PaymentError } from "./payments/errors.ts";
 export { parsePayment, resolvePayment } from "./payments/index.ts";
 export type { PayResult } from "./payments/index.ts";
