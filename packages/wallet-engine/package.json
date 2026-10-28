@@ -40,12 +40,12 @@
   },
   "dependencies": {
     "@noble/ciphers": "^2.4.0",
-    "@qntx/nostr": "0.15.0",
     "@scure/base": "^2.4.0",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@noble/hashes": "^2.0.1",
+    "@qntx/nostr": "0.15.1",
     "@qntx/spark": "0.5.0",
     "@qntx/spark-wasm": "0.5.0",
     "@qntx/wallet": "0.3.0",
@@ -53,6 +53,7 @@
     "fake-indexeddb": "6.2.6"
   },
   "peerDependencies": {
+    "@qntx/nostr": "^0.15.0",
     "@qntx/spark": "^0.5.0",
     "@qntx/wallet": "0.3.0"
   },
