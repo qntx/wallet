@@ -1,10 +1,11 @@
 import { PROTOCOL_VERSION } from "@qntx/wallet/protocol";
+import type { BackupInfo, NullValue } from "@qntx/wallet/protocol";
 import type { FactorInfo, NostrKeyInfo, StatusPayload, WalletInfo } from "@qntx/wallet/types";
 
 import type { KernelContext, VaultHooks } from "./commands/context.ts";
 import { KernelError } from "./errors.ts";
 import type { NostrModule } from "./modules/nostr/index.ts";
-import { parseDataKeyHeader, parseEntropyHeader } from "./vault/headers.ts";
+import { parseBackupKeyHeader, parseDataKeyHeader, parseEntropyHeader } from "./vault/headers.ts";
 import type { StoredRecord, VaultImage } from "./vault/store.ts";
 import { VAULT_FORMAT } from "./vault/store.ts";
 import { factorInfo, walletInfo } from "./vault/vault.ts";
@@ -57,10 +58,12 @@ export function statusContents(
   factors: FactorInfo[];
   wallets: WalletInfo[];
   keys: ReadonlyArray<NostrKeyInfo>;
+  backup: BackupInfo | NullValue;
   health: ImageHealth;
 } {
   const factors: FactorInfo[] = [];
   const wallets: WalletInfo[] = [];
+  let backup: BackupInfo | NullValue = null;
   const owned: StoredRecord[] = [];
   const meta = metaHealth(image);
   let corrupted = meta === "corrupted";
@@ -86,6 +89,18 @@ export function statusContents(
         wallets.push(walletInfo(parseEntropyHeader(record.header)));
       } else if (record.kind === "data-key") {
         parseDataKeyHeader(record.header);
+      } else if (record.kind === "backup-key") {
+        // The backup key is a single fixed record — a stray id is malformed.
+        if (record.id === "default") {
+          const header = parseBackupKeyHeader(record.header);
+          backup = {
+            id: header.id,
+            factors: header.factors.map((f) => f.kind),
+            createdAt: header.createdAt,
+          };
+        } else {
+          corrupted = true;
+        }
       } else if (modules.some((module) => module.ownsRecord(record.kind))) {
         owned.push(record);
       } else {
@@ -101,18 +116,20 @@ export function statusContents(
     factors,
     wallets,
     keys: section.keys,
+    backup,
     health: unsupported ? "unsupported" : corrupted ? "corrupted" : "ok",
   };
 }
 
 /** The `status` payload for the current session + image; shared by `status` and `postStatus`. */
 export function statusPayload(ctx: KernelContext, nostr: NostrModule): StatusPayload {
-  const { factors, wallets, keys } = statusContents(ctx.image, ctx.modules, nostr);
+  const { factors, wallets, keys, backup } = statusContents(ctx.image, ctx.modules, nostr);
   return {
     protocol: PROTOCOL_VERSION,
     vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
     factors,
     wallets,
     nostr: { keys },
+    backup,
   };
 }

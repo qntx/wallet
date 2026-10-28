@@ -1,6 +1,7 @@
-// Integration coverage for the cloud-backup envelope (design/backup.mdx): create seals secrets
-// under a fresh BEK wrapped per factor; restore unwraps with a backup factor, verifies the
-// authenticated header and merges records in one commit.
+// Integration coverage for cloud backup (design/backup.mdx): enable retains a sealed BEK as the
+// backup-key record; update rewrites the cloud envelope under it in one nonce draw; restore
+// unwraps with a backup factor and merges — adopting the envelope's BEK only while establishing
+// the vault.
 
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
@@ -12,6 +13,12 @@ import type { WalletErrorCode } from "@qntx/wallet/types";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
+
+const NSEC = (
+  loadVectors("nip06.json") as {
+    vectors: Array<{ readonly nsec: string; readonly publicKey: string }>;
+  }
+).vectors[0] ?? { nsec: "", publicKey: "" };
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("11".repeat(32));
@@ -170,11 +177,17 @@ async function createBackupEnvelope(
   session: string,
   factors: ReadonlyArray<unknown>,
 ): Promise<string> {
-  const res = ok(await h.call("backup.create", { verify: verifyPasskey(), factors }, session));
+  await h.call("backup.enable", { verify: verifyPasskey(), factors }, session);
+  const res = ok(await h.call("backup.update", null, session));
   return strField(res, "envelope");
 }
 
-describe("backup.create", () => {
+async function statusBackup(h: Harness, session?: string): Promise<ProtocolValue> {
+  const status = ok(await h.call("status", undefined, session));
+  return field(status, "backup");
+}
+
+describe("backup.enable", () => {
   it("requires a valid verify factor", async () => {
     const h = createHarness();
     await h.settle();
@@ -185,7 +198,7 @@ describe("backup.create", () => {
       prf: hexToBytes("99".repeat(32)),
     };
     expect(
-      errCode(await h.call("backup.create", { verify: bad, factors: [backupPasskeyF()] }, session)),
+      errCode(await h.call("backup.enable", { verify: bad, factors: [backupPasskeyF()] }, session)),
     ).toBe("wrong-passkey");
   });
 
@@ -197,7 +210,7 @@ describe("backup.create", () => {
     expect(
       errCode(
         await h.call(
-          "backup.create",
+          "backup.enable",
           { verify: verifyPasskey(), factors: [backupPassword()] },
           "00".repeat(16),
         ),
@@ -426,7 +439,10 @@ type BackupVector = {
   };
   readonly draws: ReadonlyArray<{ readonly length: number; readonly bytes: string }>;
   readonly walletId: string;
-  readonly envelope: string;
+  readonly id: string;
+  readonly backupKeyHeader: string;
+  readonly enable: { readonly factors: ReadonlyArray<Record<string, unknown>> };
+  readonly envelopes: ReadonlyArray<string>;
 };
 
 function makeReplay(
@@ -449,7 +465,7 @@ function makeReplay(
 describe("backup vector", () => {
   const vector = loadVectors("backup.json") as BackupVector;
 
-  it("rebuilds the envelope byte for byte from recorded draws, then restores", async () => {
+  it("reproduces enable's record and both update envelopes byte for byte", async () => {
     const replay = makeReplay(vector.draws);
     const { inputs } = vector;
     const credentialId = hexToBytes(inputs.credentialIdHex);
@@ -473,9 +489,9 @@ describe("backup vector", () => {
     const session = strField(res, "session");
     expect(strField(field(res, "wallet"), "walletId")).toBe(vector.walletId);
 
-    const created = ok(
+    ok(
       await h.call(
-        "backup.create",
+        "backup.enable",
         {
           verify: {
             kind: "passkey",
@@ -494,13 +510,26 @@ describe("backup vector", () => {
         session,
       ),
     );
-    expect(strField(created, "envelope")).toBe(vector.envelope);
+
+    // The retained key's public header is the vector text verbatim.
+    const image = await h.store.load();
+    const keyRecord = mustFind(image.records, "backup-key", "default");
+    expect(keyRecord.header).toBe(vector.backupKeyHeader);
+    const backup = await statusBackup(h, session);
+    expect(strField(backup, "id")).toBe(vector.id);
+
+    for (const expected of vector.envelopes) {
+      // Sequential by design: each update consumes exactly one recorded nonce draw.
+      // oxlint-disable-next-line eslint/no-await-in-loop
+      const updated = ok(await h.call("backup.update", null, session));
+      expect(strField(updated, "envelope")).toBe(expected);
+    }
 
     const b = createHarness({ seed: 99 });
     await b.settle();
     const restored = ok(
       await b.call("backup.restore", {
-        envelope: vector.envelope,
+        envelope: vector.envelopes[0],
         backupFactor: {
           kind: "passkey",
           credentialId,
@@ -515,5 +544,198 @@ describe("backup vector", () => {
     );
     const wallets = arrField(restored, "wallets");
     expect(strField(at(wallets, 0), "walletId")).toBe(vector.walletId);
+    // Restoring into a fresh vault adopts the envelope's backup key.
+    expect(strField(await statusBackup(b), "id")).toBe(vector.id);
+  });
+});
+
+describe("backup enable/update/disable", () => {
+  it("re-enable rotates the BEK and the public id", async () => {
+    const h = createHarness({ seed: 81 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    await createBackupEnvelope(h, session, [backupPassword()]);
+    const first = strField(await statusBackup(h, session), "id");
+
+    ok(
+      await h.call(
+        "backup.enable",
+        { verify: verifyPasskey(), factors: [backupPassword()] },
+        session,
+      ),
+    );
+    const second = strField(await statusBackup(h, session), "id");
+    expect(second).not.toBe(first);
+    // The new BEK's envelope restores with the same backup factor.
+    const res = ok(await h.call("backup.update", null, session));
+    const b = createHarness({ seed: 82 });
+    await b.settle();
+    const restored = ok(
+      await b.call("backup.restore", {
+        envelope: strField(res, "envelope"),
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(arrField(restored, "wallets")).toHaveLength(1);
+  });
+
+  it("update without enable is not-found", async () => {
+    const h = createHarness({ seed: 83 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    expect(errCode(await h.call("backup.update", null, session))).toBe("not-found");
+  });
+
+  it("update picks up a new wallet and an imported key and the envelope restores", async () => {
+    const a = createHarness({ seed: 84 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    await createBackupEnvelope(a, session, [backupPassword()]);
+    // Add a mnemonic wallet + a standalone nostr key, then update again.
+    ok(
+      await a.call(
+        "wallet.importMnemonic",
+        {
+          mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        },
+        session,
+      ),
+    );
+    const nsecRes = ok(
+      await a.call(
+        "nostr.importKey",
+        { input: { kind: "nsec", nsec: utf8ToBytes(NSEC.nsec) } },
+        session,
+      ),
+    );
+    const keyId = strField(field(nsecRes, "key"), "publicKey");
+    const updated = ok(await a.call("backup.update", null, session));
+    const envelope = strField(updated, "envelope");
+    const parsed = JSON.parse(envelope) as { header: string };
+    const header = JSON.parse(parsed.header) as {
+      wallets: Array<Record<string, unknown>>;
+      importedNostrKeyCount: number;
+    };
+    expect(header.wallets).toHaveLength(2);
+    expect(header.importedNostrKeyCount).toBe(1);
+
+    const b = createHarness({ seed: 85 });
+    await b.settle();
+    const restored = ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(arrField(restored, "wallets")).toHaveLength(2);
+    const keys = arrField(field(ok(await b.call("status")), "nostr"), "keys");
+    expect(strField(at(keys, 0), "publicKey")).toBe(keyId);
+  });
+
+  it("merge restore never adopts the envelope's backup key", async () => {
+    const a = createHarness({ seed: 86 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, session, [backupPassword()]);
+    const aId = strField(await statusBackup(a, session), "id");
+
+    // Merge into a vault with backup enabled: it keeps its own backup key.
+    const b = createHarness({ seed: 87 });
+    await b.settle();
+    const { session: bSession } = await createPasskeyWallet(b);
+    await createBackupEnvelope(b, bSession, [backupPassword()]);
+    const bId = strField(await statusBackup(b, bSession), "id");
+    ok(await b.call("backup.restore", { envelope, backupFactor: backupPassword() }, bSession));
+    expect(strField(await statusBackup(b, bSession), "id")).toBe(bId);
+    expect(bId).not.toBe(aId);
+
+    // Merge into a vault without backup: it stays off.
+    const c = createHarness({ seed: 88 });
+    await c.settle();
+    const { session: cSession } = await createPasskeyWallet(c);
+    ok(await c.call("backup.restore", { envelope, backupFactor: backupPassword() }, cSession));
+    await expect(statusBackup(c, cSession)).resolves.toBeNull();
+  });
+
+  it("disable is idempotent and update then fails", async () => {
+    const h = createHarness({ seed: 89 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    await createBackupEnvelope(h, session, [backupPassword()]);
+    ok(await h.call("backup.disable", null, session));
+    await expect(statusBackup(h, session)).resolves.toBeNull();
+    ok(await h.call("backup.disable", null, session)); // second disable succeeds
+    expect(errCode(await h.call("backup.update", null, session))).toBe("not-found");
+  });
+
+  it("update still works after a vault-factor rotation", async () => {
+    const h = createHarness({ seed: 91 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    await createBackupEnvelope(h, session, [backupPassword()]);
+    // Rotate the DEK: add a second vault factor — every record re-seals.
+    ok(
+      await h.call(
+        "vault.addFactor",
+        {
+          verify: verifyPasskey(),
+          factor: { kind: "password", password: new Uint8Array(utf8ToBytes("rotated password!")) },
+        },
+        session,
+      ),
+    );
+    const res = ok(await h.call("backup.update", null, session));
+    const b = createHarness({ seed: 92 });
+    await b.settle();
+    const restored = ok(
+      await b.call("backup.restore", {
+        envelope: strField(res, "envelope"),
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(arrField(restored, "wallets")).toHaveLength(1);
+  });
+
+  it("a backup-key record with a stray id corrupts the image", async () => {
+    const h = createHarness({ seed: 95 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    await createBackupEnvelope(h, session, [backupPassword()]);
+    const image = await h.store.load();
+    const record = mustFind(image.records, "backup-key", "default");
+    await h.store.commit([{ op: "put-record", record: { ...record, id: "stray" } }]);
+    const status = await h.call("status", undefined, session);
+    expect(field(ok(status), "vault")).toBe("corrupted");
+  });
+
+  it("a locked snapshot still reports the backup id; a tampered header corrupts", async () => {
+    const h = createHarness({ seed: 93 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    await createBackupEnvelope(h, session, [backupPassword()]);
+    const id = strField(await statusBackup(h, session), "id");
+    await h.call("vault.lock", null, session);
+    const locked = await statusBackup(h);
+    expect(strField(locked, "id")).toBe(id);
+
+    // Tamper the backup-key header → corrupted image.
+    const h2 = createHarness({ seed: 94 });
+    await h2.settle();
+    const { session: s2 } = await createPasskeyWallet(h2);
+    await createBackupEnvelope(h2, s2, [backupPassword()]);
+    const { store } = h2;
+    const image = await store.load();
+    const record = mustFind(image.records, "backup-key", "default");
+    await store.commit([
+      {
+        op: "put-record",
+        record: { ...record, header: JSON.stringify({ id: "zz" }) },
+      },
+    ]);
+    const status = await h2.call("status", undefined, s2);
+    expect(field(ok(status), "vault")).toBe("corrupted");
   });
 });

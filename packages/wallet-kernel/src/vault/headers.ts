@@ -1,3 +1,6 @@
+import { backupEnvelopeFactor, validate } from "@qntx/wallet/protocol";
+import type { BackupEnvelopeFactor } from "@qntx/wallet/protocol";
+
 import { KernelError } from "../errors.ts";
 import {
   asBase64url,
@@ -39,12 +42,27 @@ export type PasskeyFactorHeader = {
   readonly createdAt: number;
 };
 
-export type CoreHeader = EntropyHeader | DataKeyHeader | PasswordFactorHeader | PasskeyFactorHeader;
+export type BackupKeyHeader = {
+  /** 32 lowercase hex — HKDF over the BEK; never the BEK itself. */
+  readonly id: string;
+  readonly factors: ReadonlyArray<BackupEnvelopeFactor>;
+  readonly createdAt: number;
+};
+
+export type CoreHeader =
+  | EntropyHeader
+  | DataKeyHeader
+  | PasswordFactorHeader
+  | PasskeyFactorHeader
+  | BackupKeyHeader;
 
 const PURPOSE_PATTERN = /^[a-z0-9-]{1,32}$/;
 const PASSWORD_ITERATIONS = 600000;
 
 export function encodeHeader(header: CoreHeader): string {
+  if ("id" in header) {
+    return JSON.stringify({ id: header.id, factors: header.factors, createdAt: header.createdAt });
+  }
   if ("credentialId" in header) {
     return JSON.stringify({
       credentialId: header.credentialId,
@@ -139,4 +157,28 @@ export function parsePasskeyFactorHeader(text: string): PasskeyFactorHeader {
     publicKey: asBase64url(object["publicKey"], 32, 32),
     createdAt: asCreatedAt(object["createdAt"]),
   };
+}
+
+export function parseBackupKeyHeader(text: string): BackupKeyHeader {
+  const object = headerObject(text);
+  expectKeys(object, ["id", "factors", "createdAt"]);
+  const { id } = object;
+  if (typeof id !== "string" || !/^[0-9a-f]{32}$/.test(id)) {
+    throw headerFailure();
+  }
+  const raw = object["factors"];
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 5) {
+    throw headerFailure();
+  }
+  const factors = raw.map((entry) => {
+    const factor = validate(backupEnvelopeFactor, entry);
+    if (factor === undefined) {
+      throw headerFailure();
+    }
+    return factor;
+  });
+  if (factors.filter((f) => f.kind === "password").length > 1) {
+    throw headerFailure();
+  }
+  return { id, factors, createdAt: asCreatedAt(object["createdAt"]) };
 }

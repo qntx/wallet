@@ -862,6 +862,13 @@
                 "createdAt": 1767225600000
               }
             ]
+          },
+          "backup": {
+            "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "factors": [
+              "password"
+            ],
+            "createdAt": 1
           }
         }
       }
@@ -1169,6 +1176,13 @@
                 "createdAt": 1767225600000
               }
             ]
+          },
+          "backup": {
+            "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "factors": [
+              "password"
+            ],
+            "createdAt": 1
           }
         }
       }

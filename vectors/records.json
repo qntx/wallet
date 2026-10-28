@@ -134,6 +134,28 @@
       "text": "{\"credentialId\":\"3q2-78r-\",\"publicKey\":\"JqRYFT66Kmogg041szL7sSC6lKDj6VPKh-5HsP3DbAE\",\"createdAt\":1767225600000}"
     },
     {
+      "name": "backup-key",
+      "kind": "backup-key",
+      "input": {
+        "id": "23df0b4731653063ad34952b8470c452",
+        "factors": [
+          {
+            "kind": "password",
+            "iterations": 600000,
+            "salt": "EhISEhISEhISEhISEhISEg",
+            "sealedBek": "ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1"
+          },
+          {
+            "kind": "passkey",
+            "credentialId": "YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs",
+            "sealedBek": "ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1"
+          }
+        ],
+        "createdAt": 1767225600000
+      },
+      "text": "{\"id\":\"23df0b4731653063ad34952b8470c452\",\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1\"}],\"createdAt\":1767225600000}"
+    },
+    {
       "name": "meta",
       "kind": "meta",
       "input": {

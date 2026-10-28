@@ -78,12 +78,19 @@ const derivedKey = {
   origin: "derived",
   createdAt: CREATED_AT,
 };
+const backupInfo = {
+  id: "b".repeat(32),
+  factors: ["password"],
+  createdAt: 1,
+};
+
 const statusUnlocked = {
   protocol: 1,
   vault: "unlocked",
   factors: [passwordFactorInfo],
   wallets: [walletInfo],
   nostr: { keys: [standaloneKey, derivedKey] },
+  backup: backupInfo,
 };
 const signedEvent = {
   id: "e".repeat(64),

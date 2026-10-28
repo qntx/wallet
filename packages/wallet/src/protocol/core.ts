@@ -154,13 +154,15 @@ export const CORE_METHODS: {
     CreatedResult
   >;
   readonly "wallet.discardMnemonic": MethodSpec<{ readonly draft: string }, NullValue>;
-  readonly "backup.create": MethodSpec<
+  readonly "backup.enable": MethodSpec<
     {
       readonly verify: Factor;
       readonly factors: ReadonlyArray<BackupFactor>;
     },
-    { readonly envelope: string }
+    NullValue
   >;
+  readonly "backup.update": MethodSpec<NullValue, { readonly envelope: string }>;
+  readonly "backup.disable": MethodSpec<NullValue, NullValue>;
   readonly "backup.restore": MethodSpec<
     {
       readonly envelope: string;
@@ -252,11 +254,23 @@ export const CORE_METHODS: {
     params: obj({ draft: draftId }),
     result: nullValue,
   },
-  "backup.create": {
+  "backup.enable": {
     session: true,
     presence: true,
     params: obj({ verify: factor, factors: arr(backupFactor, 5, 1) }),
+    result: nullValue,
+  },
+  "backup.update": {
+    session: true,
+    presence: false,
+    params: nullValue,
     result: obj({ envelope: str(4_000_000) }),
+  },
+  "backup.disable": {
+    session: true,
+    presence: true,
+    params: nullValue,
+    result: nullValue,
   },
   "backup.restore": {
     session: false,

@@ -231,13 +231,16 @@ const api = {
   async sign(ref: NostrKeyRef, event: UnsignedEvent): Promise<unknown> {
     return attempt(async () => nostr(current()).signer(ref).signEvent(event));
   },
-  async backupCreate(): Promise<unknown> {
+  async backupEnable(): Promise<unknown> {
     return attempt(async () =>
-      current().backup.create({
+      current().backup.enable({
         verify: { kind: "passkey" },
         factors: [{ kind: "passkey" }, { kind: "password", password: "backup-test-password" }],
       }),
     );
+  },
+  async backupUpdate(): Promise<unknown> {
+    return attempt(async () => current().backup.update());
   },
   async backupRestore(envelope: string): Promise<unknown> {
     return attempt(async () =>
