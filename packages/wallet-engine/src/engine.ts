@@ -14,6 +14,8 @@ import { AccountTreeController } from "./accounts/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import type { EngineLogger } from "./events.ts";
+import { MetaSyncController } from "./meta/controller.ts";
+import type { MetaSyncConfig } from "./meta/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
 import { pay as runPay } from "./payments/pay.ts";
@@ -36,6 +38,8 @@ export type EngineOptions = {
   readonly openStore: () => Promise<EngineStore>;
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
+  /** Kind-30078 wallet-metadata sync; absent → every wallet reports `unavailable`. */
+  readonly metaSync?: MetaSyncConfig;
   /** Test seam — defaults to the wallet's real spark proxy. */
   readonly sparkApis?: SparkControllerOptions["spark"];
 };
@@ -43,6 +47,7 @@ export type EngineOptions = {
 export type WalletEngine = {
   readonly spark: SparkController;
   readonly accounts: AccountTreeController;
+  readonly metaSync: MetaSyncController;
   readonly backup: BackupController;
   readonly zap: (params: ZapParams) => Promise<ZapResult>;
   readonly payments: {
@@ -84,6 +89,15 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     now: options.now,
   });
 
+  const metaSync = new MetaSyncController({
+    wallet: options.wallet,
+    accounts,
+    nostr: { signer: (ref) => nostr(options.wallet).signer(ref) },
+    metaSync: options.metaSync,
+    logger: options.logger,
+    now: options.now,
+  });
+
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
   let chain: Promise<void> = Promise.resolve();
@@ -110,9 +124,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       // Load + reconcile + drive the selected account through spark.setAccounts.
       await accounts.init();
       await controller.init();
+      // Pull → merge → maybe publish for every wallet with a group-0 identity.
+      await metaSync.init();
     } else if (!unlocked && started) {
       started = false;
-      // Lock: tree → locked, spark.setAccounts([]) stops the live client, totals flush first.
+      // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
+      await metaSync.lock();
       await accounts.lock();
       await controller.lockAll();
       controller.setStore(undefined);
@@ -128,6 +145,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     if (options.wallet.getSnapshot().vault === "unlocked") {
       backup.trigger();
       accounts.reconcile();
+      metaSync.reconcile();
     } else {
       backup.lock();
     }
@@ -152,6 +170,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   return {
     spark: controller,
     accounts,
+    metaSync,
     backup,
     zap: async (params) =>
       runZap(params, {
