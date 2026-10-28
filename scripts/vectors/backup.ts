@@ -1,7 +1,7 @@
 /// <reference types="node" />
 /**
- * Regenerates vectors/backup.json with fixed byte constants — no kernel imports. The backup
- * envelope is composed here from the documented layout:
+ * Regenerates vectors/backup.json with fixed byte constants — no kernel imports. Layout
+ * (design/backup.mdx + wallet-spark.mdx E1-d-3b):
  *
  * Payload = version(0x01) ‖ walletEntry…, walletEntry = 0x01 ‖ origin(1) ‖ len(1) ‖ entropy
  * sealed(X) = 0x01 ‖ nonce(24) ‖ XChaCha20-Poly1305(key, nonce, aad).encrypt(plaintext) aad = 0x01
@@ -9,17 +9,23 @@
  * "qntx-wallet/backup/v1/payload/" + hex(SHA-256(headerText)) factor.context =
  * "qntx-wallet/backup/v1/factor/" + kind password KEK = PBKDF2-HMAC-SHA256(NFKC(password), salt16,
  * 600000, 32) passkey KEK = HKDF-SHA256(prfBackup, salt=credentialId,
- * info="qntx-wallet/kek/backup/v1") passkey wallet : entropy = prfWallet[0..16), origin byte 0x02
+ * info="qntx-wallet/kek/backup/v1") backup-key id = hex(HKDF-SHA256(BEK, salt=empty,
+ * info="qntx-wallet/backup/v1/id", 16)) backup-key header text = {"id","factors","createdAt"} in
+ * that key order passkey wallet : entropy = prfWallet[0..16), origin byte 0x02
  *
- * The kernel-side test replays `draws` through the injected random source and must reproduce
- * `envelope` byte for byte — draws the kernel makes outside backup.create are fixed filler. Run
- * from the repo root: bun scripts/vectors/backup.ts
+ * `backup.enable` draws deterministically: BEK, every password salt in factor order, every
+ * sealedBek nonce in factor order — no draw follows an await — then the `backup-key` record's seal
+ * nonce. `backup.update` draws exactly once: the payload seal nonce. The kernel-side test replays
+ * `draws` through the injected random source; the enable-time factors and id plus each update
+ * envelope must match byte for byte.
+ *
+ * Run from the repo root: bun scripts/vectors/backup.ts
  */
 import { writeFileSync } from "node:fs";
 
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
-import { pbkdf2, pbkdf2 as pbkdf2_512 } from "@noble/hashes/pbkdf2.js";
+import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
@@ -28,7 +34,7 @@ import { entropyToMnemonic } from "@scure/bip39";
 import { wordlist } from "@scure/bip39/wordlists/english.js";
 
 const CREDENTIAL_ID = utf8ToBytes("backup-vector-credential");
-const PRF_VAULT = hexToBytes("01".repeat(32));
+const PRF_VAULT = hexToBytes("11".repeat(32));
 const PRF_WALLET = hexToBytes("22".repeat(32));
 const PRF_BACKUP = hexToBytes("33".repeat(32));
 const PASSWORD = "backup vector password";
@@ -38,7 +44,7 @@ const START = 1_700_000_000_000;
 // the same independent derivation as vectors/wallet-id.json.
 function walletIdOfEntropy(entropy: Uint8Array): string {
   const mnemonic = entropyToMnemonic(entropy, wordlist);
-  const seed = pbkdf2_512(
+  const seed = pbkdf2(
     sha512,
     new TextEncoder().encode(mnemonic.normalize("NFKD")),
     new TextEncoder().encode("mnemonic".normalize("NFKD")),
@@ -54,24 +60,34 @@ function walletIdOfEntropy(entropy: Uint8Array): string {
 }
 
 /**
- * Every `platform.random` call the kernel makes while a test runs `wallet.createWithPasskey` +
- * `backup.create`, in order: DEK, factor-wrap and record-seal nonces, session ids, then the backup
- * draws — BEK, payload nonce, password salt, password sealedBek nonce, passkey sealedBek nonce.
+ * Every `platform.random` call the kernel makes through `wallet.createWithPasskey`,
+ * `backup.enable`, and two `backup.update` calls, in order. The wallet-create draws are fixed
+ * filler; the backup draws below drive every byte the assertions pin.
  */
-const DRAWS = [
-  "01".repeat(32), // vault DEK
-  "02".repeat(24), // vault factor wrap nonce
-  "03".repeat(16), // session id
-  "04".repeat(32), // nostr data key DEK
-  "05".repeat(24), // entropy record seal nonce
-  "06".repeat(16), // nostr record id
-  "07".repeat(16), // session id (second)
-  "11".repeat(32), // backup: BEK
-  "12".repeat(24), // backup: payload nonce
-  "13".repeat(16), // backup: password salt
-  "14".repeat(24), // backup: password sealedBek nonce
-  "15".repeat(24), // backup: passkey sealedBek nonce
+const DRAWS: ReadonlyArray<readonly [string, string]> = [
+  ["01".repeat(32), "vault DEK"],
+  ["02".repeat(24), "vault factor wrap nonce"],
+  ["03".repeat(16), "session id"],
+  ["04".repeat(32), "nostr data-key DEK"],
+  ["05".repeat(24), "entropy record seal nonce"],
+  ["06".repeat(16), "nostr record id"],
+  ["07".repeat(16), "session id (second)"],
+  ["11".repeat(32), "enable: BEK"],
+  ["12".repeat(16), "enable: password salt"],
+  ["13".repeat(24), "enable: password sealedBek nonce"],
+  ["14".repeat(24), "enable: passkey sealedBek nonce"],
+  ["15".repeat(24), "enable: backup-key record seal nonce"],
+  ["16".repeat(24), "update #1: payload nonce"],
+  ["17".repeat(24), "update #2: payload nonce"],
 ];
+
+function draw(index: number): Uint8Array {
+  const entry = DRAWS[index];
+  if (entry === undefined) {
+    throw new Error(`draw ${index} missing`);
+  }
+  return hexToBytes(entry[0]);
+}
 
 function aad(context: string, header: string): Uint8Array {
   const c = utf8ToBytes(context);
@@ -84,7 +100,12 @@ function aad(context: string, header: string): Uint8Array {
   return out;
 }
 
-function seal(key: Uint8Array, nonce: Uint8Array, context: string, plaintext: Uint8Array) {
+function seal(
+  key: Uint8Array,
+  nonce: Uint8Array,
+  context: string,
+  plaintext: Uint8Array,
+): Uint8Array {
   return concatBytes(
     new Uint8Array([0x01]),
     nonce,
@@ -94,34 +115,16 @@ function seal(key: Uint8Array, nonce: Uint8Array, context: string, plaintext: Ui
 
 const entropy = PRF_WALLET.slice(0, 16);
 const walletId = walletIdOfEntropy(entropy);
-const header = JSON.stringify({
-  wallets: [{ walletId, origin: "passkey", words: 12 }],
-  importedNostrKeyCount: 0,
-  importedChainKeyCount: 0,
-});
-
-function draw(index: number): Uint8Array {
-  const bytes = DRAWS[index];
-  if (bytes === undefined) {
-    throw new Error(`draw ${index} missing`);
-  }
-  return hexToBytes(bytes);
-}
 
 const bek = draw(7);
-const payloadNonce = draw(8);
-const passwordSalt = draw(9);
-// backup.create draws deterministically: BEK, payload nonce, password salts in factor order,
-// then sealedBek nonces in factor order — no draw follows an await.
-const passwordNonce = draw(10);
-const passkeyNonce = draw(11);
+const passwordSalt = draw(8);
+const passwordNonce = draw(9);
+const passkeyNonce = draw(10);
+const payloadNonce1 = draw(12);
+const payloadNonce2 = draw(13);
 
-const payload = concatBytes(new Uint8Array([0x01, 0x01, 0x02, 16]), entropy);
-const sealedPayload = seal(
-  bek,
-  payloadNonce,
-  `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}`,
-  payload,
+const id = bytesToHex(
+  hkdf(sha256, bek, new Uint8Array(0), utf8ToBytes("qntx-wallet/backup/v1/id"), 16),
 );
 
 const passwordKek = pbkdf2(
@@ -136,7 +139,6 @@ const passwordSealedBek = seal(
   "qntx-wallet/backup/v1/factor/password",
   bek,
 );
-
 const passkeyKek = hkdf(
   sha256,
   PRF_BACKUP,
@@ -151,31 +153,47 @@ const passkeySealedBek = seal(
   bek,
 );
 
-const envelope = JSON.stringify({
-  version: 1,
-  createdAt: START,
-  header,
-  factors: [
-    {
-      kind: "password",
-      iterations: 600_000,
-      salt: base64urlnopad.encode(passwordSalt),
-      sealedBek: base64urlnopad.encode(passwordSealedBek),
-    },
-    {
-      kind: "passkey",
-      credentialId: base64urlnopad.encode(CREDENTIAL_ID),
-      sealedBek: base64urlnopad.encode(passkeySealedBek),
-    },
-  ],
-  payload: base64urlnopad.encode(sealedPayload),
+const factors = [
+  {
+    kind: "password",
+    iterations: 600_000,
+    salt: base64urlnopad.encode(passwordSalt),
+    sealedBek: base64urlnopad.encode(passwordSealedBek),
+  },
+  {
+    kind: "passkey",
+    credentialId: base64urlnopad.encode(CREDENTIAL_ID),
+    sealedBek: base64urlnopad.encode(passkeySealedBek),
+  },
+];
+
+const backupKeyHeader = JSON.stringify({ id, factors, createdAt: START });
+
+const header = JSON.stringify({
+  wallets: [{ walletId, origin: "passkey", words: 12 }],
+  importedNostrKeyCount: 0,
+  importedChainKeyCount: 0,
 });
+const payload = concatBytes(new Uint8Array([0x01, 0x01, 0x02, 16]), entropy);
+const payloadContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}`;
+
+const envelopeOf = (nonce: Uint8Array): string =>
+  JSON.stringify({
+    version: 1,
+    createdAt: START,
+    header,
+    factors,
+    payload: base64urlnopad.encode(seal(bek, nonce, payloadContext, payload)),
+  });
+
+const envelopes = [envelopeOf(payloadNonce1), envelopeOf(payloadNonce2)];
 
 const vector = {
   comment:
-    "Fixed-input backup-envelope vector generated by scripts/vectors/backup.ts (independent of " +
-    "the kernel). `draws` replay through the kernel's injected random source; the rebuilt " +
-    "envelope must equal `envelope` byte for byte.",
+    "Fixed-input backup vector generated by scripts/vectors/backup.ts (independent of the " +
+    "kernel). `draws` replay through the kernel's injected random source; the enable-time " +
+    "backup-key id/factors and both update envelopes must match byte for byte — the second " +
+    "envelope differs only in the payload nonce, proving the factor entries are copied verbatim.",
   inputs: {
     credentialIdHex: bytesToHex(CREDENTIAL_ID),
     prfVault: bytesToHex(PRF_VAULT),
@@ -184,27 +202,15 @@ const vector = {
     password: PASSWORD,
     start: START,
   },
-  draws: DRAWS.map((bytes, i) => ({
-    length: hexToBytes(bytes).length,
-    bytes,
-    site: [
-      "vault DEK",
-      "vault factor wrap nonce",
-      "session id",
-      "nostr data-key DEK",
-      "entropy record seal nonce",
-      "nostr record id",
-      "session id (unlock)",
-      "backup BEK",
-      "backup payload nonce",
-      "backup password salt",
-      "backup password sealedBek nonce",
-      "backup passkey sealedBek nonce",
-    ][i],
-  })),
+  draws: DRAWS.map(([bytes, site]) => ({ length: hexToBytes(bytes).length, bytes, site })),
   walletId,
-  envelope,
+  id,
+  backupKeyHeader,
+  enable: { factors },
+  envelopes,
 };
 
 writeFileSync("vectors/backup.json", `${JSON.stringify(vector, null, 2)}\n`);
-console.log(`vectors/backup.json: envelope ${envelope.length} chars, ${DRAWS.length} draws`);
+console.log(
+  `vectors/backup.json: id ${id}, envelopes ${envelopes.map((e) => e.length).join("/")} chars, ${DRAWS.length} draws`,
+);

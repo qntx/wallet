@@ -6,6 +6,7 @@
  */
 export { parseBackupHeader } from "./backup.ts";
 export type { BackupHeader, BackupHeaderWallet } from "./backup.ts";
+export type { BackupInfo } from "./types.ts";
 export {
   WalletError,
   type AutoLockPolicy,

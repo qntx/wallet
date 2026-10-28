@@ -95,6 +95,15 @@ export type StatusPayload = {
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;
   readonly nostr: { readonly keys: ReadonlyArray<NostrKeyInfo> };
+  // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
+  readonly backup: BackupInfo | null;
+};
+
+/** Public summary of a retained backup key — factors are the unwrap paths, never secrets. */
+export type BackupInfo = {
+  readonly id: string; // 32 lowercase hex, derived from the BEK
+  readonly factors: ReadonlyArray<"passkey" | "password">;
+  readonly createdAt: number;
 };
 
 /** One error class for the whole API; `code` carries the distinction. Messages never echo input. */
@@ -157,6 +166,9 @@ export type WalletSnapshot = {
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;
   readonly nostr: { readonly keys: ReadonlyArray<NostrKeyInfo> };
+  /** The retained backup key's public id, or null when cloud backup is off. */
+  // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
+  readonly backup: BackupInfo | null;
 };
 
 /** A one-shot secret buffer: `read` detaches the bytes to the caller, `wipe` zeroes them. */
@@ -207,15 +219,18 @@ export type DataKeyApi = {
 };
 
 /**
- * Cloud-backup entry points: `create` returns the sealed envelope JSON (secrets never leave the
- * kernel); `restore` merges an envelope into the vault. Factor inputs reuse `UnlockFactor` —
+ * Cloud-backup entry points. `enable` re-verifies and retains a fresh BEK in the vault; `update`
+ * rewrites the sealed envelope JSON with the retained BEK (no factor ceremony, so an auto-sync can
+ * run silently); `restore` merges an envelope into the vault. Factor inputs reuse `UnlockFactor` —
  * passkey assertions evaluate the PRF over `backupSalt`.
  */
 export type BackupApi = {
-  readonly create: (options: {
+  readonly enable: (options: {
     readonly verify: UnlockFactor;
     readonly factors: ReadonlyArray<UnlockFactor>;
-  }) => Promise<string>;
+  }) => Promise<void>;
+  readonly update: () => Promise<string>;
+  readonly disable: () => Promise<void>;
   readonly restore: (options: {
     readonly envelope: string;
     readonly backupFactor: UnlockFactor;

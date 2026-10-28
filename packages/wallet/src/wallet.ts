@@ -120,6 +120,7 @@ export class KernelWallet implements Wallet {
       factors: [],
       wallets: [],
       nostr: { keys: [] },
+      backup: null,
     };
     this.channel = new Channel(
       options.spawn,
@@ -219,6 +220,7 @@ export class KernelWallet implements Wallet {
       factors: status === undefined ? [] : status.factors,
       wallets: status === undefined ? [] : status.wallets,
       nostr: { keys: status === undefined ? [] : status.nostr.keys },
+      backup: status === undefined ? null : status.backup,
     };
     const current = this.snapshotValue;
     if (
@@ -227,7 +229,8 @@ export class KernelWallet implements Wallet {
       current.verifying === next.verifying &&
       deepEqual(current.factors, next.factors) &&
       deepEqual(current.wallets, next.wallets) &&
-      deepEqual(current.nostr, next.nostr)
+      deepEqual(current.nostr, next.nostr) &&
+      deepEqual(current.backup, next.backup)
     ) {
       return;
     }
@@ -485,10 +488,10 @@ export class KernelWallet implements Wallet {
   };
 
   readonly backup: BackupApi = {
-    create: async (options: {
+    enable: async (options: {
       readonly verify: UnlockFactor;
       readonly factors: ReadonlyArray<UnlockFactor>;
-    }): Promise<string> =>
+    }): Promise<void> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
         const wireVerify = await resolveFactor(this.factorSource, options.verify, transfer);
@@ -497,13 +500,19 @@ export class KernelWallet implements Wallet {
             resolveBackupFactor(this.factorSource, factor, transfer),
           ),
         );
-        const result = await this.channel.call(
-          "backup.create",
+        await this.channel.call(
+          "backup.enable",
           { verify: wireVerify, factors: wireFactors },
           transfer,
         );
-        return result.envelope;
       }),
+    update: async (): Promise<string> => {
+      const result = await this.channel.call("backup.update", null);
+      return result.envelope;
+    },
+    disable: async (): Promise<void> => {
+      await this.channel.call("backup.disable", null);
+    },
     restore: async (options: {
       readonly envelope: string;
       readonly backupFactor: UnlockFactor;

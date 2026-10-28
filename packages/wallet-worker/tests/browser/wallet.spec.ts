@@ -124,7 +124,7 @@ test.describe("web host", () => {
     expect(verifyEvent(signed.value)).toBe(true);
   });
 
-  test("backup: create with a passkey factor, restore into a fresh vault @webauthn", async ({
+  test("backup: enable, update, restore into a fresh vault @webauthn", async ({
     context,
     page,
   }) => {
@@ -138,11 +138,15 @@ test.describe("web host", () => {
       throw new Error(`createWithPasskey failed: ${created.code}`);
     }
 
-    // create seals the envelope: the assert ceremony supplies PRF(backupSalt) for the
-    // passkey backup factor and PRF(vaultSalt) to re-verify.
-    const backup = await page.evaluate(async () => qntx.backupCreate());
+    // enable retains the BEK: the assert ceremony supplies PRF(backupSalt) for the
+    // passkey backup factor and PRF(vaultSalt) to re-verify; update seals the envelope.
+    const enabled = await page.evaluate(async () => qntx.backupEnable());
+    if (!enabled.ok) {
+      throw new Error(`backup.enable failed: ${enabled.code}`);
+    }
+    const backup = await page.evaluate(async () => qntx.backupUpdate());
     if (!backup.ok) {
-      throw new Error(`backup.create failed: ${backup.code}`);
+      throw new Error(`backup.update failed: ${backup.code}`);
     }
     const envelope = backup.value;
     expect(envelope.length).toBeGreaterThan(0);

@@ -8,7 +8,7 @@
  * validator composes the core sections with each module's status section.
  */
 import type { LockReason, StatusPayload, WalletErrorCode } from "../types.ts";
-// oxlint-disable-next-line unicorn/prefer-export-from -- the tables are composed locally AND re-exported
+import { backupInfo } from "./backup.ts";
 import {
   CORE_METHODS,
   factorInfo,
@@ -151,6 +151,7 @@ const statusPayload: Validator<StatusPayload> = obj({
   factors: arr(factorInfo, MAX_SNAPSHOT_ITEMS),
   wallets: arr(walletInfo, MAX_SNAPSHOT_ITEMS),
   nostr: nostrStatus,
+  backup: union(backupInfo, nullValue),
 });
 
 // The explicit annotation is the composition contract: a key missing from either table fails
@@ -206,15 +207,23 @@ export const kernelEvent: Validator<KernelEvent> = union(
 export const responseError: Validator<{ code: WalletErrorCode; retryAt?: number | undefined }> =
   errorPayload;
 
-export { CORE_METHODS, NOSTR_METHODS, SPARK_METHODS, walletErrorCode };
+export { NOSTR_METHODS, SPARK_METHODS };
+export { CORE_METHODS, walletErrorCode } from "./core.ts";
 export type { MethodSpec } from "./core.ts";
-export { backupEnvelope, backupEnvelopeText, backupHeader } from "./backup.ts";
+export {
+  backupEnvelope,
+  backupEnvelopeFactor,
+  backupEnvelopeText,
+  backupHeader,
+  backupInfo,
+} from "./backup.ts";
 export type { BackupFactor, CreatedResult, Factor } from "./core.ts";
 export type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,
   BackupHeaderWallet,
   BackupHeaderWire,
+  BackupInfo,
 } from "./backup.ts";
 export type {
   KeyResult,

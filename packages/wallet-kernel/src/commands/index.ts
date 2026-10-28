@@ -31,8 +31,11 @@ export const CORE_HANDLERS: {
     walletCommands.createMnemonic(ctx, params, session),
   "wallet.confirmMnemonic": async (ctx, params) => walletCommands.confirmMnemonic(ctx, params),
   "wallet.discardMnemonic": (ctx, params) => walletCommands.discardMnemonic(ctx, params),
-  "backup.create": async (ctx, params, session) =>
-    backupCommands.createBackup(ctx, params, session),
+  "backup.enable": async (ctx, params, session) =>
+    backupCommands.enableBackup(ctx, params, session),
+  "backup.update": (ctx, params, session) => backupCommands.updateBackup(ctx, params, session),
+  "backup.disable": async (ctx, params, session) =>
+    backupCommands.disableBackup(ctx, params, session),
   "backup.restore": async (ctx, params, session) =>
     backupCommands.restoreBackup(ctx, params, session),
   "wallet.importMnemonic": async (ctx, params, session) =>

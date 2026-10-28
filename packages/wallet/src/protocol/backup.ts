@@ -4,6 +4,7 @@
  * Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
  * the JSON.
  */
+import { safeTime } from "./core.ts";
 import type { Validator } from "./validate.ts";
 import { arr, int, literal, obj, str, union } from "./validate.ts";
 
@@ -30,27 +31,26 @@ export type BackupEnvelopeWire = {
   readonly payload: string;
 };
 
+/** One public factor entry — shared by the envelope and the retained `backup-key` header. */
+export const backupEnvelopeFactor: Validator<BackupEnvelopeFactor> = union(
+  obj({
+    kind: literal("passkey"),
+    credentialId: str(MAX_FACTOR_CHARS),
+    sealedBek: str(MAX_FACTOR_CHARS),
+  }),
+  obj({
+    kind: literal("password"),
+    iterations: literal(600_000),
+    salt: str(128),
+    sealedBek: str(MAX_FACTOR_CHARS),
+  }),
+);
+
 export const backupEnvelope: Validator<BackupEnvelopeWire> = obj({
   version: literal(1),
   createdAt: int(0, Number.MAX_SAFE_INTEGER),
   header: str(MAX_STRING_BYTES),
-  factors: arr(
-    union(
-      obj({
-        kind: literal("passkey"),
-        credentialId: str(MAX_FACTOR_CHARS),
-        sealedBek: str(MAX_FACTOR_CHARS),
-      }),
-      obj({
-        kind: literal("password"),
-        iterations: literal(600_000),
-        salt: str(128),
-        sealedBek: str(MAX_FACTOR_CHARS),
-      }),
-    ),
-    5,
-    1,
-  ),
+  factors: arr(backupEnvelopeFactor, 5, 1),
   payload: str(MAX_PAYLOAD_CHARS),
 });
 
@@ -79,5 +79,18 @@ export const backupHeader: Validator<BackupHeaderWire> = obj({
   importedChainKeyCount: int(0, 10_000),
 });
 
-/** The whole-envelope text bound — `backup.create` results and `backup.restore` params use it. */
+/** The whole-envelope text bound — `backup.update` results and `backup.restore` params use it. */
 export const backupEnvelopeText: Validator<string> = str(MAX_ENVELOPE_CHARS);
+
+/** The status/snapshot summary of a retained backup key — public data only. */
+export type BackupInfo = {
+  readonly id: string; // 32 lowercase hex, HKDF over the BEK
+  readonly factors: ReadonlyArray<"passkey" | "password">;
+  readonly createdAt: number;
+};
+
+export const backupInfo: Validator<BackupInfo> = obj({
+  id: str(32, /^[0-9a-f]{32}$/),
+  factors: arr(union(literal("passkey"), literal("password")), 5, 1),
+  createdAt: safeTime,
+});

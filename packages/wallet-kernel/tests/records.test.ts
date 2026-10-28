@@ -7,6 +7,7 @@ import { encodeNostrKeyHeader, parseNostrKeyHeader } from "../src/modules/nostr/
 import type { KernelPlatform } from "../src/platform.ts";
 import {
   encodeHeader,
+  parseBackupKeyHeader,
   parseDataKeyHeader,
   parseEntropyHeader,
   parsePasskeyFactorHeader,
@@ -50,6 +51,12 @@ describe("record and factor header vectors", () => {
 
   it.each(byKind("factor-password"))("$name encodes and parses byte-for-byte", (vector) => {
     const parsed = parsePasswordFactorHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeHeader(parsed)).toBe(vector.text);
+  });
+
+  it.each(byKind("backup-key"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseBackupKeyHeader(vector.text);
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeHeader(parsed)).toBe(vector.text);
   });

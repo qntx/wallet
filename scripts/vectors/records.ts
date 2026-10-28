@@ -13,6 +13,7 @@
  * - Nostr nip46-client: publicKey, origin, createdAt (never carries backedUp)
  * - Password factor: salt, iterations, publicKey, createdAt
  * - Passkey factor: credentialId, publicKey, createdAt
+ * - Backup key: id, factors, createdAt
  * - Vault meta: format, revision, keyId, failedAttempts, lastFailureAt
  *
  * Run from the repo root: bun scripts/vectors/records.ts
@@ -71,6 +72,12 @@ function textOf(kind: string, input: Input): string {
       return JSON.stringify({
         credentialId: i["credentialId"],
         publicKey: i["publicKey"],
+        createdAt: i["createdAt"],
+      });
+    case "backup-key":
+      return JSON.stringify({
+        id: i["id"],
+        factors: i["factors"],
         createdAt: i["createdAt"],
       });
     case "meta":
@@ -178,6 +185,27 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       credentialId: "3q2-78r-",
       publicKey: "JqRYFT66Kmogg041szL7sSC6lKDj6VPKh-5HsP3DbAE",
       createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "backup-key",
+    kind: "backup-key",
+    input: {
+      id: "23df0b4731653063ad34952b8470c452",
+      factors: [
+        {
+          kind: "password",
+          iterations: 600000,
+          salt: "EhISEhISEhISEhISEhISEg",
+          sealedBek: "ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1",
+        },
+        {
+          kind: "passkey",
+          credentialId: "YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs",
+          sealedBek: "ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1",
+        },
+      ],
+      createdAt: 1767225600000,
     },
   },
   {

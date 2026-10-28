@@ -1,7 +1,11 @@
-// Cloud-backup envelope (design/backup.mdx, E1-d-3): one version-1 envelope per vault. The
-// plaintext payload is compact binary secrets only — per wallet `origin(1) ‖ len(1) ‖ entropy`,
-// per imported Nostr key `secretKey(32)`, per chain key `family(1) ‖ secretKey(32)`. The BEK is a
-// fresh 32-byte random; payload and per-factor sealedBek ride the vault envelope v1 seal.
+// Cloud backup (design/backup.mdx, E1-d-3): a 32-byte BEK is retained in the vault as the
+// `backup-key` record, so `backup.update` rewrites the cloud envelope without a fresh factor
+// ceremony. `backup.enable` still re-verifies and wraps the new BEK under each backup factor;
+// `backup.restore` adopts the envelope's BEK only when the restore establishes the vault — a
+// forged envelope must never hijack an existing vault's future backups. The payload is compact
+// binary secrets only — per wallet `origin(1) ‖ len(1) ‖ entropy`, per imported Nostr key
+// `secretKey(32)`, per chain key `family(1) ‖ secretKey(32)` — sealed under the BEK with the
+// vault envelope v1 format; each sealedBek rides the same seal under the factor's KEK.
 
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
@@ -16,19 +20,22 @@ import {
 import type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,
+  BackupFactor,
   BackupHeaderWallet,
   BackupHeaderWire,
   Factor,
+  NullValue,
 } from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
 import type { KernelPlatform } from "../platform.ts";
+import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
 import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
-import { parseEntropyHeader } from "../vault/headers.ts";
+import { encodeHeader, parseBackupKeyHeader, parseEntropyHeader } from "../vault/headers.ts";
 import type { StoredRecord } from "../vault/store.ts";
-import { openRecord, verifyFactor } from "../vault/vault.ts";
+import { openRecord, sealRecord, verifyFactor } from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
 import {
   commitRecords,
@@ -51,6 +58,9 @@ const ORIGIN_NAME: ReadonlyArray<"passkey" | "mnemonic" | undefined> = [
   "mnemonic",
   "passkey",
 ];
+
+const BACKUP_KEY_KIND = "backup-key";
+const BACKUP_KEY_ID = "default";
 
 const b64 = {
   enc: (b: Uint8Array): string => base64urlnopad.encode(b),
@@ -184,30 +194,20 @@ function decodePayload(bytes: Uint8Array): {
   return { wallets, nostrSecrets };
 }
 
-export type BackupFactor =
-  | { readonly kind: "password"; readonly password: Uint8Array }
-  | {
-      readonly kind: "passkey";
-      readonly credentialId: Uint8Array;
-      readonly prfBackup: Uint8Array;
-    };
+/** The vault's public backup header plus the payload plaintexts — caller wipes via wipeContents. */
+type BackupContents = {
+  readonly wallets: ReadonlyArray<BackupHeaderWallet & { readonly entropy: Uint8Array }>;
+  readonly nostrSecrets: ReadonlyArray<Uint8Array>;
+  readonly header: string;
+};
 
-export async function createBackup(
-  ctx: KernelContext,
-  params: {
-    verify: Factor;
-    factors: ReadonlyArray<BackupFactor>;
-  },
-  requestSession: string | undefined,
-): Promise<{ envelope: string }> {
-  const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
-
-  // Wallet entropies + imported nostr secrets out of the sealed records.
+function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
   const wallets: Array<BackupHeaderWallet & { entropy: Uint8Array }> = [];
-  const nostrSecrets: Uint8Array[] = [];
-  for (const record of ctx.image.records) {
-    if (record.kind === "entropy") {
+  try {
+    for (const record of ctx.image.records) {
+      if (record.kind !== "entropy") {
+        continue;
+      }
       const header = parseEntropyHeader(record.header);
       const plaintext = openRecord(dek, record);
       try {
@@ -222,102 +222,207 @@ export async function createBackup(
         throw error;
       }
     }
+    const nostrSecrets = ctx.modules.flatMap((module) => module.backupSecrets(ctx.image, dek));
+    const header = JSON.stringify({
+      wallets: wallets.map(({ walletId, origin, words }) => ({ walletId, origin, words })),
+      importedNostrKeyCount: nostrSecrets.length,
+      importedChainKeyCount: 0,
+    } satisfies BackupHeaderWire);
+    return { wallets, nostrSecrets, header };
+  } catch (error) {
+    for (const wallet of wallets) {
+      wallet.entropy.fill(0);
+    }
+    throw error;
   }
-  const moduleSecrets = ctx.modules.flatMap((module) => module.backupSecrets(ctx.image, dek));
-  nostrSecrets.push(...moduleSecrets);
+}
 
-  const headerData: BackupHeaderWire = {
-    wallets: wallets.map(({ walletId, origin, words }) => ({ walletId, origin, words })),
-    importedNostrKeyCount: nostrSecrets.length,
-    importedChainKeyCount: 0,
-  };
-  const header = JSON.stringify(headerData);
-  const bek = ctx.platform.random(32);
-  if (bek.length !== 32) {
-    throw new KernelError("integrity", "random source returned a wrong-length BEK");
+function wipeContents(contents: BackupContents): void {
+  for (const wallet of contents.wallets) {
+    wallet.entropy.fill(0);
   }
-  const payloadPlaintext = encodePayload(wallets, nostrSecrets);
-  const sealedPayload = seal(
-    bek,
-    payloadPlaintext,
-    payloadContext(header),
-    "",
-    ctx.platform.random,
+  for (const secretKey of contents.nostrSecrets) {
+    secretKey.fill(0);
+  }
+}
+
+/**
+ * Seals the BEK under every backup factor. Deterministic draw order: every password salt in
+ * factor-array order, then every sealedBek nonce in factor-array order — no random draw follows an
+ * await, so async scheduling (pbkdf2 suspending) can never reorder it.
+ */
+async function sealBackupFactors(
+  platform: KernelPlatform,
+  bek: Uint8Array,
+  backupFactors: ReadonlyArray<BackupFactor>,
+): Promise<BackupEnvelopeFactor[]> {
+  const salts = backupFactors.map((factor) =>
+    factor.kind === "password" ? platform.random(16) : undefined,
   );
-  try {
-    // Deterministic draw order: BEK, the payload seal nonce, every password salt in
-    // factor-array order, then every sealedBek nonce in factor-array order. No random draw
-    // follows an await, so async scheduling (pbkdf2 suspending) can never reorder it.
-    const salts = params.factors.map((factor) =>
-      factor.kind === "password" ? ctx.platform.random(16) : undefined,
-    );
-    const keks = await Promise.all(
-      params.factors.map(async (factor, index) => {
-        if (factor.kind === "passkey") {
-          return hkdf(
-            sha256,
-            factor.prfBackup,
-            factor.credentialId,
-            utf8ToBytes("qntx-wallet/kek/backup/v1"),
-            32,
-          );
-        }
-        assertPasswordPolicy(factor.password);
-        const salt = salts[index];
-        if (salt === undefined) {
-          throw new KernelError("integrity", "backup: missing password salt");
-        }
-        return passwordKek(factor.password, salt, ctx.platform.pbkdf2);
-      }),
-    );
-    const factors = params.factors.map((factor, index): BackupEnvelopeFactor => {
-      const kek = keks[index];
-      if (kek === undefined) {
-        throw new KernelError("integrity", "backup: missing factor key");
-      }
-      let sealedBek: Uint8Array;
-      try {
-        sealedBek = seal(kek, bek, factorContextOf(factor.kind), "", ctx.platform.random);
-      } finally {
-        kek.fill(0);
-      }
+  const keks = await Promise.all(
+    backupFactors.map(async (factor, index) => {
       if (factor.kind === "passkey") {
-        return {
-          kind: "passkey" as const,
-          credentialId: b64.enc(factor.credentialId),
-          sealedBek: b64.enc(sealedBek),
-        };
+        return hkdf(
+          sha256,
+          factor.prfBackup,
+          factor.credentialId,
+          utf8ToBytes("qntx-wallet/kek/backup/v1"),
+          32,
+        );
       }
+      assertPasswordPolicy(factor.password);
       const salt = salts[index];
       if (salt === undefined) {
         throw new KernelError("integrity", "backup: missing password salt");
       }
+      return passwordKek(factor.password, salt, platform.pbkdf2);
+    }),
+  );
+  return backupFactors.map((factor, index): BackupEnvelopeFactor => {
+    const kek = keks[index];
+    if (kek === undefined) {
+      throw new KernelError("integrity", "backup: missing factor key");
+    }
+    let sealedBek: Uint8Array;
+    try {
+      sealedBek = seal(kek, bek, factorContextOf(factor.kind), "", platform.random);
+    } finally {
+      kek.fill(0);
+    }
+    if (factor.kind === "passkey") {
       return {
-        kind: "password" as const,
-        iterations: PASSWORD_ITERATIONS,
-        salt: b64.enc(salt),
+        kind: "passkey" as const,
+        credentialId: b64.enc(factor.credentialId),
         sealedBek: b64.enc(sealedBek),
       };
-    });
-    const envelope: BackupEnvelopeWire = {
-      version: 1,
-      createdAt: ctx.platform.now(),
-      header,
-      factors,
-      payload: b64.enc(sealedPayload),
+    }
+    const salt = salts[index];
+    if (salt === undefined) {
+      throw new KernelError("integrity", "backup: missing password salt");
+    }
+    return {
+      kind: "password" as const,
+      iterations: PASSWORD_ITERATIONS,
+      salt: b64.enc(salt),
+      sealedBek: b64.enc(sealedBek),
     };
-    return { envelope: JSON.stringify(envelope) };
+  });
+}
+
+/** The backup record's public id: HKDF over the BEK — a verifier can never reach the BEK from it. */
+function backupKeyIdOf(bek: Uint8Array): string {
+  const id = hkdf(sha256, bek, new Uint8Array(0), utf8ToBytes("qntx-wallet/backup/v1/id"), 16);
+  return bytesToHex(id);
+}
+
+function backupKeyRecord(
+  ctx: KernelContext,
+  dek: Secret,
+  bek: Uint8Array,
+  factors: ReadonlyArray<BackupEnvelopeFactor>,
+): StoredRecord {
+  const header = encodeHeader({
+    id: backupKeyIdOf(bek),
+    factors,
+    createdAt: ctx.platform.now(),
+  });
+  return sealRecord(ctx.platform, dek, BACKUP_KEY_KIND, BACKUP_KEY_ID, header, bek);
+}
+
+/**
+ * Enables cloud backup: re-verify, mint a fresh BEK and retain it sealed in the `backup-key`
+ * record. Re-enabling replaces the record — a new BEK (and id) so stale envelopes and leaked old
+ * factors can never unwrap future backups.
+ */
+export async function enableBackup(
+  ctx: KernelContext,
+  params: {
+    verify: Factor;
+    factors: ReadonlyArray<BackupFactor>;
+  },
+  requestSession: string | undefined,
+): Promise<NullValue> {
+  const { dek } = ctx.session.require(requestSession);
+  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  const bek = ctx.platform.random(32);
+  if (bek.length !== 32) {
+    throw new KernelError("integrity", "random source returned a wrong-length BEK");
+  }
+  try {
+    const factors = await sealBackupFactors(ctx.platform, bek, params.factors);
+    const record = backupKeyRecord(ctx, dek, bek, factors);
+    // put-record replaces an existing backup-key row.
+    await ctx.commit([{ op: "put-record", record }]);
+    return null;
   } finally {
     bek.fill(0);
-    payloadPlaintext.fill(0);
-    sealedPayload.fill(0);
-    for (const w of wallets) {
-      w.entropy.fill(0);
-    }
-    for (const s of nostrSecrets) {
-      s.fill(0);
-    }
   }
+}
+
+/**
+ * Rewrites the cloud envelope under the retained BEK: one fresh payload nonce, factor entries
+ * copied verbatim from the backup-key header. No factor input — the envelope can only ever be
+ * opened by the factors chosen at enable time.
+ */
+export function updateBackup(
+  ctx: KernelContext,
+  _params: NullValue,
+  requestSession: string | undefined,
+): { envelope: string } {
+  const { dek } = ctx.session.require(requestSession);
+  const record = ctx.image.records.find(
+    (r) => r.kind === BACKUP_KEY_KIND && r.id === BACKUP_KEY_ID,
+  );
+  if (record === undefined) {
+    throw new KernelError("not-found", "backup is not enabled");
+  }
+  const keyHeader = parseBackupKeyHeader(record.header);
+  const bek = openRecord(dek, record);
+  const contents = collectContents(ctx, dek);
+  try {
+    const plaintext = encodePayload(contents.wallets, contents.nostrSecrets);
+    // Exactly one random draw in the whole command: the payload seal nonce.
+    const sealedPayload = seal(
+      bek,
+      plaintext,
+      payloadContext(contents.header),
+      "",
+      ctx.platform.random,
+    );
+    try {
+      const envelope: BackupEnvelopeWire = {
+        version: 1,
+        createdAt: ctx.platform.now(),
+        header: contents.header,
+        factors: keyHeader.factors,
+        payload: b64.enc(sealedPayload),
+      };
+      return { envelope: JSON.stringify(envelope) };
+    } finally {
+      sealedPayload.fill(0);
+      plaintext.fill(0);
+    }
+  } finally {
+    bek.fill(0);
+    wipeContents(contents);
+  }
+}
+
+/** Deletes the retained BEK; a missing record still succeeds. */
+export async function disableBackup(
+  ctx: KernelContext,
+  _params: NullValue,
+  requestSession: string | undefined,
+): Promise<NullValue> {
+  ctx.session.require(requestSession);
+  const record = ctx.image.records.find(
+    (r) => r.kind === BACKUP_KEY_KIND && r.id === BACKUP_KEY_ID,
+  );
+  if (record === undefined) {
+    return null;
+  }
+  await ctx.commit([{ op: "delete-record", kind: BACKUP_KEY_KIND, id: BACKUP_KEY_ID }]);
+  return null;
 }
 
 /** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
@@ -432,6 +537,12 @@ export async function restoreBackup(
           records.push(
             ...module.backupRecords(ctx.platform, ctx.image, gated.dek, decoded.nostrSecrets, now),
           );
+        }
+        if (gated.uninitialized) {
+          // Adoption — only while the vault is being established, inside the same atomic
+          // commit: a forged envelope merging into an existing vault can never hijack its
+          // future backups.
+          records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
         }
         const session = await commitRecords(ctx, gated, params.factor, records);
         committed = true;
