@@ -41,16 +41,6 @@ function hostedSeed(): Uint8Array {
 
 type Engine = ReturnType<typeof createWalletEngine>;
 
-/** Polls the controller state until the account reports `status` or the deadline. */
-async function waitForStatus(engine: Engine, key: string, status: string, deadline: number) {
-  const current = engine.spark.getState().accounts[key]?.status;
-  if (current === status || Date.now() > deadline) {
-    return current;
-  }
-  await new Promise((resolve) => setTimeout(resolve, 3000));
-  return waitForStatus(engine, key, status, deadline);
-}
-
 /** Polls the controller state until the account's balance reaches `min` or the deadline. */
 async function waitForBalance(engine: Engine, key: string, min: number, deadline: number) {
   const balance = engine.spark.getState().accounts[key]?.balanceSats ?? 0;
@@ -59,6 +49,24 @@ async function waitForBalance(engine: Engine, key: string, min: number, deadline
   }
   await new Promise((resolve) => setTimeout(resolve, 3000));
   return waitForBalance(engine, key, min, deadline);
+}
+
+/** Waits until the account tree reconciled and drove its first setAccounts. */
+async function waitForTreeReady(engine: Engine, deadline: number): Promise<void> {
+  if (engine.accounts.getState().status === "ready" || Date.now() > deadline) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  return waitForTreeReady(engine, deadline);
+}
+
+/** Waits until the account entry is dropped (declarative setAccounts([]) on lock). */
+async function waitForAbsent(engine: Engine, key: string, deadline: number): Promise<void> {
+  if (engine.spark.getState().accounts[key] === undefined || Date.now() > deadline) {
+    return;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  return waitForAbsent(engine, key, deadline);
 }
 
 /** Sweeps leftovers back to the funder through the approval path; best-effort. */
@@ -123,6 +131,7 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
       const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
       const engine = createWalletEngine({
         wallet,
+        sparkNetwork: "regtest",
         fetch: globalThis.fetch,
         random,
         now: () => Date.now(),
@@ -132,8 +141,10 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
       const refA = { walletId: created.walletId, groupIndex: 0, network: "regtest" } as never;
       const refB = { walletId: created.walletId, groupIndex: 1, network: "regtest" } as never;
       const keyB = `${created.walletId}:1:regtest`;
-      engine.spark.addAccount(refA);
-      engine.spark.addAccount(refB);
+      // The account tree drives setAccounts([selected]) on unlock reconcile — wait for that
+      // drive to land before declaring both accounts, or the reconcile would drop refB.
+      await waitForTreeReady(engine, Date.now() + 30_000);
+      engine.spark.setAccounts([refA, refB]);
 
       const clientA = createSparkClient({
         network: "regtest",
@@ -182,15 +193,34 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
         // invoice and its fee — the controller state can lag events, so compare with the
         // client-reported truth, not the cached state).
         await wallet.vault.lock();
-        // The controller observes the lock on the snapshot stream — it lands asynchronously.
-        const locked = await waitForStatus(engine, keyB, "locked", Date.now() + 30_000);
-        expect(locked).toBe("locked");
+        // Declarative lock: setAccounts([]) drops every account entry — keyB disappears.
+        await waitForAbsent(engine, keyB, Date.now() + 30_000);
+        expect(engine.spark.getState().accounts[keyB]).toBeUndefined();
         await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+        // The tree drives only the selected group on unlock; group 1 must be adopted into the
+        // tree (it was declared manually, never via addGroups) before it can be selected.
+        await waitForTreeReady(engine, Date.now() + 30_000);
+        engine.accounts.addGroups(created.walletId, [1]);
+        engine.accounts.select(created.walletId, 1);
         const restored = await waitForBalance(engine, keyB, 1, Date.now() + DEADLINE_MS);
         const realBalance = await clientB.balance();
         expect(restored).toBeGreaterThan(0);
         expect(restored).toBeLessThan(balanceB);
         expect(restored).toBe(realBalance);
+
+        // E1-g: discovery walks indices from 0 — 0 (A's invoice) and 1 (B's activity) are used,
+        // so the stop rule yields [0, 1]. refreshTotals fills the other visible groups — group 0
+        // is not selected so it counts as "other".
+        const discovered = await engine.accounts.discoverSpark(created.walletId);
+        expect(discovered).toStrictEqual([0, 1]);
+        await engine.accounts.refreshTotals();
+        expect(engine.accounts.getState().totals[`${created.walletId}:1`]).toBe(realBalance);
+
+        // Group 1 is selected (drove setAccounts above) — group 0's client stays closed.
+        expect(engine.accounts.getState().selected?.groupIndex).toBe(1);
+        expect(engine.spark.getState().accounts[`${created.walletId}:0:regtest`]).toBeUndefined();
+        expect(engine.spark.getState().accounts[keyB]?.balanceSats).toBe(realBalance);
+        expect(engine.spark.getState().accounts[keyB]?.recent?.length).toBeGreaterThan(0);
       } finally {
         try {
           await sweepEngine(engine, refB, funderIdentity, keyB);

@@ -121,19 +121,27 @@ export class SparkController extends Controller<SparkControllerState> {
     this.engineStore = store;
   }
 
-  addAccount(ref: SparkAccountRef): void {
-    const k = key(ref);
-    this.accounts.set(k, ref);
-    this.patch(k, { status: "locked" });
-    if (this.engineStore !== undefined) {
-      this.startAccount(ref);
+  /**
+   * Declarative account set: refs not yet tracked are patched `locked` and started when the store
+   * is open; tracked refs no longer listed are stopped and dropped; running refs stay untouched.
+   */
+  setAccounts(refs: ReadonlyArray<SparkAccountRef>): void {
+    const wanted = new Map(refs.map((ref) => [key(ref), ref]));
+    for (const k of this.accounts.keys()) {
+      if (!wanted.has(k)) {
+        this.accounts.delete(k);
+        this.stopAccount(k);
+      }
     }
-  }
-
-  removeAccount(ref: SparkAccountRef): void {
-    const k = key(ref);
-    this.accounts.delete(k);
-    this.stopAccount(k);
+    for (const [k, ref] of wanted) {
+      if (!this.accounts.has(k)) {
+        this.accounts.set(k, ref);
+        this.patch(k, { status: "locked" });
+      }
+      if (this.engineStore !== undefined && !this.clients.has(k)) {
+        this.startAccount(ref);
+      }
+    }
   }
 
   async init(): Promise<void> {
@@ -390,6 +398,43 @@ export class SparkController extends Controller<SparkControllerState> {
       }
       throw new SparkControllerError(categorize(error), "spark action failed", error);
     }
+  }
+
+  /**
+   * One-off balance + activity probe for an account that may not be running: builds a temporary
+   * client through the same factory on the account's own exit-chain collection (nothing diverges —
+   * `balance()`/`transfers.history` never write it), reads, and closes it in `finally`.
+   */
+  async inspect(ref: SparkAccountRef): Promise<{ balanceSats: number; used: boolean }> {
+    return this.guarded(async () => {
+      if (this.engineStore === undefined) {
+        throw new SparkControllerError("internal", "engine store is not open");
+      }
+      const k = key(ref);
+      const running = this.clients.get(k);
+      if (running !== undefined) {
+        const [balance, page] = await Promise.all([
+          running.balance(),
+          running.transfers.history({ limit: 1 }),
+        ]);
+        return { balanceSats: balance, used: balance > 0 || page.payments.length > 0 };
+      }
+      const client = this.options.createClient({
+        ref,
+        store: sparkStore(this.engineStore.collection(`spark-exit-chains:${k}`)),
+        signer: this.options.spark.signer(ref),
+        fetch: this.options.fetch,
+      });
+      try {
+        const [balance, page] = await Promise.all([
+          client.balance(),
+          client.transfers.history({ limit: 1 }),
+        ]);
+        return { balanceSats: balance, used: balance > 0 || page.payments.length > 0 };
+      } finally {
+        client.close();
+      }
+    });
   }
 
   /** History for one account: a client page merged with locally written notes by id. */

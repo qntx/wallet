@@ -18,6 +18,14 @@ const input = (id: string): HTMLInputElement => {
   }
   return found;
 };
+const pickerEl = (): HTMLSelectElement => {
+  const found = document.querySelector<HTMLSelectElement>("#groupPicker");
+  if (found === null) {
+    throw new Error("missing #groupPicker");
+  }
+  return found;
+};
+
 const button = (id: string): HTMLButtonElement => {
   const found = document.querySelector<HTMLButtonElement>(`#${id}`);
   if (found === null) {
@@ -54,6 +62,7 @@ const wallet = await createWebWallet({
 
 const engine = createWalletEngine({
   wallet,
+  sparkNetwork: "regtest",
   fetch: globalThis.fetch.bind(globalThis),
   random,
   now: () => Date.now(),
@@ -67,8 +76,32 @@ const engine = createWalletEngine({
 });
 
 let walletId = "";
-const ref = (): SparkAccountRef => ({ walletId, groupIndex: 0, network: "regtest" });
-const key = () => `${walletId}:0:regtest`;
+const ref = (): SparkAccountRef => {
+  const sel = engine.accounts.getState().selected;
+  return { walletId, groupIndex: sel?.groupIndex ?? 0, network: "regtest" };
+};
+const key = () => `${walletId}:${ref().groupIndex}:regtest`;
+
+/** Rebuilds the group picker from the account tree and marks the selected group. */
+const renderGroups = (): void => {
+  const tree = engine.accounts.getState();
+  const picker = pickerEl();
+  picker.innerHTML = "";
+  for (const w of tree.wallets) {
+    for (const g of tree.groups[w.walletId] ?? []) {
+      if (!g.hidden) {
+        const opt = document.createElement("option");
+        opt.value = `${g.index}`;
+        opt.textContent = g.name ?? `account ${g.index + 1}`;
+        opt.selected = tree.selected !== null && tree.selected.groupIndex === g.index;
+        picker.append(opt);
+      }
+    }
+  }
+};
+engine.accounts.store.subscribe(() => {
+  renderGroups();
+});
 const enable = (ids: string[], on: boolean): void => {
   for (const id of ids) {
     button(id).disabled = !on;
@@ -103,7 +136,8 @@ button("unlock").addEventListener("click", () => {
     try {
       await wallet.vault.unlock(verify());
       say("unlocked");
-      enable(["addAccount"], true);
+      renderGroups();
+      enable(["addGroup", "groupPicker"], true);
     } catch (error) {
       say(`unlock failed: ${String(error)}`, true);
     }
@@ -118,24 +152,38 @@ button("lock").addEventListener("click", () => {
   })();
 });
 
-button("addAccount").addEventListener("click", () => {
-  engine.spark.addAccount(ref());
-  const tick = (): void => {
-    const s = engine.spark.getState().accounts[key()];
-    const state = s?.status ?? "…";
-    el("accountState").textContent = state;
-    if (s?.sparkAddress !== undefined) {
-      input("sparkAddr").value = s.sparkAddress;
-      el("balance").textContent = `${s.balanceSats ?? 0} sats`;
-      enable(["createInvoice", "payInvoice", "send", "withdrawBtn"], true);
-    }
-    if (state !== "ready" && state !== "error") {
-      setTimeout(tick, 500);
-    } else if (state === "error") {
-      say(`account error: ${errText(s?.errorCategory)}`, true);
-    }
-  };
+button("addGroup").addEventListener("click", () => {
+  engine.accounts.addGroup(walletId);
+  renderGroups();
+});
+
+button("groupPicker").addEventListener("change", () => {
+  const index = Number(pickerEl().value);
+  engine.accounts.select(walletId, index);
+});
+
+// The engine drives spark.setAccounts on selection; this watch just renders the live account.
+const tick = (): void => {
+  const s = engine.spark.getState().accounts[key()];
+  // With no live Spark account the line shows the tree status — "locked" after lock.
+  const state = s?.status ?? engine.accounts.getState().status;
+  el("accountState").textContent = state;
+  if (s?.sparkAddress !== undefined) {
+    input("sparkAddr").value = s.sparkAddress;
+    el("balance").textContent = `${s.balanceSats ?? 0} sats`;
+    enable(["createInvoice", "payInvoice", "send", "withdrawBtn"], true);
+  }
+  if (state !== "ready" && state !== "error") {
+    setTimeout(tick, 500);
+  } else if (state === "error") {
+    say(`account error: ${errText(s?.errorCategory)}`, true);
+  }
+};
+const watchAccount = (): void => {
   tick();
+};
+engine.accounts.store.subscribe(() => {
+  watchAccount();
 });
 
 const action = (id: string, label: string, run: () => Promise<unknown>): void => {

@@ -22,6 +22,9 @@ export type {
   SparkControllerState,
 } from "./spark/controller.ts";
 export { SparkControllerError } from "./spark/errors.ts";
+export { AccountTreeError } from "./accounts/errors.ts";
+export { AccountTreeController } from "./accounts/controller.ts";
+export type { AccountGroup, AccountTreeState } from "./accounts/controller.ts";
 export { PaymentError } from "./payments/errors.ts";
 export { parsePayment, resolvePayment } from "./payments/index.ts";
 export type { PayResult } from "./payments/index.ts";
