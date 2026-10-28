@@ -42,5 +42,11 @@ export type { SparkErrorCategory } from "./spark/errors.ts";
 export { sparkStore } from "./spark/store.ts";
 export type { PaymentNote, SparkActivity } from "./spark/notes.ts";
 export { decodeExitChain, encodeExitChain } from "./spark/exit-chain-codec.ts";
-export { zap } from "./payments/zap.ts";
-export type { ZapOptions, ZapParams, ZapResult } from "./payments/zap.ts";
+export { payZap, prepareZap } from "./payments/zap.ts";
+export type {
+  PayZapOptions,
+  PrepareZapContext,
+  PrepareZapParams,
+  PreparedZap,
+  ZapRecipient,
+} from "./payments/zap.ts";

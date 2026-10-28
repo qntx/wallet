@@ -5,9 +5,10 @@
  * so an unlock→lock flip can never overlap a still-opening store.
  */
 import { createSparkClient } from "@qntx/spark";
-import type { SparkNetwork } from "@qntx/spark";
+import type { LightningPayment, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
+import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
@@ -21,8 +22,8 @@ import type { PaymentParse } from "./payments/parse.ts";
 import { pay as runPay } from "./payments/pay.ts";
 import type { PayParams } from "./payments/pay.ts";
 import { resolvePayment } from "./payments/resolve.ts";
-import { zap as runZap } from "./payments/zap.ts";
-import type { ZapParams, ZapResult } from "./payments/zap.ts";
+import { payZap, prepareZap } from "./payments/zap.ts";
+import type { PrepareZapParams, PreparedZap, PayZapOptions } from "./payments/zap.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import type { EngineStore } from "./store/port.ts";
@@ -49,7 +50,14 @@ export type WalletEngine = {
   readonly accounts: AccountTreeController;
   readonly metaSync: MetaSyncController;
   readonly backup: BackupController;
-  readonly zap: (params: ZapParams) => Promise<ZapResult>;
+  readonly zaps: {
+    readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
+    readonly pay: (
+      account: SparkAccountRef,
+      prepared: PreparedZap,
+      options: Omit<PayZapOptions, "now">,
+    ) => Promise<LightningPayment>;
+  };
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
     readonly resolve: (input: string, network: SparkNetwork) => Promise<PaymentParse>;
@@ -172,12 +180,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     accounts,
     metaSync,
     backup,
-    zap: async (params) =>
-      runZap(params, {
-        fetch: options.fetch,
-        nostr: (ref) => nostr(options.wallet).signer(ref),
-        spark: controller,
-      }),
+    zaps: {
+      prepare: async (params) => prepareZap(params, { fetch: options.fetch, now: options.now }),
+      pay: async (account, prepared, payOptions) =>
+        payZap(controller, account, prepared, { ...payOptions, now: options.now }),
+    },
     payments: {
       parse: (input, network) => parsePayment(input, { network, now: options.now() }),
       resolve: async (input, network) =>
