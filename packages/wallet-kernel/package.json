@@ -25,12 +25,11 @@
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
     "@qntx/nostr": "0.15.0",
-    "@qntx/spark": "0.4.0",
+    "@qntx/spark": "0.5.0",
     "@qntx/wallet": "0.3.0",
     "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
-    "@scure/bip39": "2.4.0",
-    "@scure/btc-signer": "2.4.1"
+    "@scure/bip39": "2.4.0"
   },
   "devDependencies": {
     "@qntx/tsconfig": "1.0.1",
