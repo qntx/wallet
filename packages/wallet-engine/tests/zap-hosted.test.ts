@@ -13,17 +13,12 @@ import { appendFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { bytesToHex, hexToBytes, randomBytes } from "@noble/hashes/utils.js";
+import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { Keys, finalizeEvent } from "@qntx/nostr";
+import { Keys, KeysSigner, finalizeEvent } from "@qntx/nostr";
 import { validateZapReceipt } from "@qntx/nostr/nips/nip57";
-import {
-  createMemorySparkStore,
-  createSparkClient,
-  decodeBolt11,
-  encodeSparkAddress,
-} from "@qntx/spark";
+import { createMemorySparkStore, createSparkClient, encodeSparkAddress } from "@qntx/spark";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 import {
   createLightningAddressServer,
@@ -317,18 +312,19 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
         ).resolves.toBe(true);
 
         const aKey = await nostr(wallet).deriveKey(created.walletId, 0);
-        const bKey = await nostr(wallet).deriveKey(created.walletId, 1);
         const aNostrPub = await nostr(wallet).signer(aKey.ref).getPublicKey();
-        const zap = await engine.zap({
-          account: refB,
-          nostrKey: bKey.ref,
+        // E1-i: an external KeysSigner signs the 9734 — the wallet's nostr key is not required.
+        const zapSigner = new KeysSigner(Keys.generate());
+        const prepared = await engine.zaps.prepare({
+          signer: zapSigner,
           recipient: { pubkey: aNostrPub, lightning: `${username}@${DOMAIN}` },
           amountSats: 700,
           relays: ["wss://nostr.example.com"],
-          maxFeeSats: 50,
-          verify: VERIFY,
+          network: "regtest",
         });
-        expect(zap.payment.amountSats).toBe(700);
+        expect(prepared.receiptPubkey).toBe(receiptPubkey);
+        const zap = await engine.zaps.pay(refB, prepared, { maxFeeSats: 50, verify: VERIFY });
+        expect(zap.amountSats).toBe(700);
 
         // The server settles once the SSP verifies the preimage; A sees the credit.
         const settled = await pollSettled(server, deadline);
@@ -350,7 +346,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
             tags: [
               ["p", requestEvent.tags.find((x) => x[0] === "p")![1]!],
               ["P", requestEvent.pubkey],
-              ["bolt11", zap.invoice],
+              ["bolt11", prepared.invoice],
               ["description", zapRequestJson],
               ["amount", "700000"],
               ["preimage", String(settled[0]!.preimageHex)],
@@ -359,7 +355,9 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
           },
           receiptKeys,
         );
-        expect(validateZapReceipt(receipt, { nostrPubkey: zap.receiptPubkey }).valid).toBe(true);
+        expect(validateZapReceipt(receipt, { nostrPubkey: prepared.receiptPubkey }).valid).toBe(
+          true,
+        );
 
         // E1-e-2: the sender's history first entry is the completed lightning send carrying
         // the zap note; the receiver's carries the matching payment hash.
@@ -370,13 +368,50 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
           recipientPubkey: aNostrPub,
           lightning: `${username}@${DOMAIN}`,
         });
-        const wantHash = bytesToHex(decodeBolt11(zap.invoice).paymentHash);
+        const wantHash = prepared.paymentHash;
         const { items: receiverHistory } = await engine.spark.history(refA, { limit: 5 });
         const receiveEntry = receiverHistory.find(
           // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find predicate
           (p) => p.details?.kind === "lightning" && p.details.paymentHash === wantHash,
         );
         expect(receiveEntry).toMatchObject({ direction: "receive", method: "lightning" });
+
+        // "Pay externally": a prepared zap's invoice is a plain bolt11 — the hosted funder's
+        // own seed-signed client pays it, proving prepare and pay are separable. (A
+        // spark(wallet).signer client cannot: kernel sign commands require an approved intent.)
+        const prepared2 = await engine.zaps.prepare({
+          signer: new KeysSigner(Keys.generate()),
+          recipient: { pubkey: aNostrPub, lightning: `${username}@${DOMAIN}` },
+          amountSats: 400,
+          relays: ["wss://nostr.example.com"],
+          network: "regtest",
+        });
+        await funder.lightning.pay({ invoice: prepared2.invoice, maxFeeSats: 50 });
+        const settled2 = await pollSettled(server, deadline);
+        expect(settled2).toHaveLength(1);
+        const request2 = JSON.parse(String(settled2[0]!.zapRequest)) as {
+          pubkey: string;
+          tags: string[][];
+        };
+        const receipt2 = finalizeEvent(
+          {
+            kind: 9735,
+            created_at: Math.floor(Date.now() / 1000),
+            tags: [
+              ["p", request2.tags.find((x) => x[0] === "p")![1]!],
+              ["P", request2.pubkey],
+              ["bolt11", prepared2.invoice],
+              ["description", String(settled2[0]!.zapRequest)],
+              ["amount", "400000"],
+              ["preimage", String(settled2[0]!.preimageHex)],
+            ],
+            content: "",
+          },
+          receiptKeys,
+        );
+        expect(validateZapReceipt(receipt2, { nostrPubkey: prepared2.receiptPubkey }).valid).toBe(
+          true,
+        );
       } finally {
         await sweep(engine, refA, funderIdentity, accountKey(created.walletId, 0));
         await sweep(engine, refB, funderIdentity, accountKey(created.walletId, 1));
