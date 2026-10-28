@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 /// <reference types="node" />
 /**
  * Build and run the kernel-runtime host test suite
- * (apps/harness/modules/v1-probe/tests/host/RuntimeHostTest.cpp) against the Hermes macOS slice
- * from the harness app's Pods.
+ * (packages/wallet-native/tests/host/RuntimeHostTest.cpp) against the Hermes macOS slice from the
+ * harness app's Pods.
  *
  * Three binaries: ASan+UBSan+float-cast-overflow (-O1), TSan (-O1) and plain -O2. Every case runs
  * in a fresh process; footprint/timing cases run only on the plain -O2 binary.
@@ -35,7 +35,7 @@ declare const Bun: {
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const harness = resolve(root, "apps/harness");
-const moduleDir = resolve(harness, "modules/v1-probe");
+const moduleDir = resolve(root, "packages/wallet-native");
 const cppDir = resolve(moduleDir, "cpp");
 const buildDir = resolve(moduleDir, "tests/host/build");
 const destroot = resolve(harness, "ios/Pods/hermes-engine/destroot");
@@ -90,6 +90,9 @@ const cxxFlags = [
   resolve(destroot, "include"),
   "-I",
   cppDir,
+  // probes.hpp stays with the probe module — the host test embeds the same scripts.
+  "-I",
+  resolve(harness, "modules/v1-probe/cpp"),
 ];
 const linkFlags = ["-F", frameworksDir, "-framework", "hermesvm", `-Wl,-rpath,${frameworksDir}`];
 

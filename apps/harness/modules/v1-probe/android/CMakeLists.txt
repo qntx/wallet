@@ -11,6 +11,12 @@ file(GLOB_RECURSE shared_files CONFIGURE_DEPENDS RELATIVE ${CMAKE_SOURCE_DIR}
 
 add_library(${PACKAGE_NAME} SHARED ${shared_files})
 
+# Kernel runtime lives in @qntx/wallet-native (file: dep → node_modules symlink).
+add_subdirectory(
+        ${CMAKE_SOURCE_DIR}/../../../node_modules/@qntx/wallet-native/android
+        wallet-native-build
+)
+
 # Add Nitrogen specs :)
 include(${CMAKE_SOURCE_DIR}/../nitrogen/generated/android/V1Probe+autolinking.cmake)
 
@@ -26,6 +32,7 @@ find_library(LOG_LIB log)
 
 target_link_libraries(
         ${PACKAGE_NAME}
+        wallet-native
         ${LOG_LIB}
         android
 )
