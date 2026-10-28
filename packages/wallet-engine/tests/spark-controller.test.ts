@@ -8,6 +8,8 @@ import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
+import { encodePaymentNote } from "../src/spark/notes.ts";
+import type { PaymentNote } from "../src/spark/notes.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 
@@ -20,10 +22,27 @@ function warnText(m: string, e: unknown): string {
   return `${m} ${e instanceof Error ? e.message : String(e ?? "")}`;
 }
 
+/** Polls until a read satisfies the predicate — the event loop's resync is fire-and-forget. */
+async function until<T>(read: () => T, want: (v: T) => boolean, ms = 5000): Promise<T> {
+  const deadline = Date.now() + ms;
+  let value = read();
+  while (!want(value)) {
+    if (Date.now() > deadline) {
+      throw new Error(`until() timed out on ${JSON.stringify(value)}`);
+    }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- polling is the point
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    value = read();
+  }
+  return value;
+}
+
 type FakeClaimOptions = {
   readonly claimErrors?: Error[];
   readonly claimPendingFailures?: Array<{ transferId: string; error: unknown }>;
   readonly streams?: ReadonlyArray<() => AsyncGenerator<SparkEvent>>;
+  /** `transfers.history` pages returned in order — a rejected promise exercises the warn path. */
+  readonly historyPages?: ReadonlyArray<unknown>;
 };
 
 function fakeClient(
@@ -35,6 +54,8 @@ function fakeClient(
   const aborters: Array<{ aborted: boolean }> = [];
   const claimErrors = [...(opts.claimErrors ?? [])];
   const claimPendingFailures = [...(opts.claimPendingFailures ?? [])];
+  const historyPages = [...(opts.historyPages ?? [])];
+  let lastPage: unknown;
   let streamCalls = 0;
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
@@ -57,6 +78,15 @@ function fakeClient(
         calls.push("send");
         sendArgs.push(o);
         return Promise.resolve(o);
+      },
+      history: async () => {
+        calls.push("history");
+        const page = historyPages.shift() ?? lastPage ?? { payments: [], nextOffset: undefined };
+        if (page instanceof Error) {
+          return Promise.reject(page);
+        }
+        lastPage = page;
+        return Promise.resolve(page);
       },
     },
     lightning: {
@@ -263,6 +293,8 @@ async function gateOpenStore(failures: number): Promise<EngineStore> {
 function flakyClient(calls: string[], sendArgs: unknown[], aborters: Array<{ aborted: boolean }>) {
   let claimCalls = 0;
   let streamCalls = 0;
+  const historyPages: unknown[] = [];
+  let lastPage: unknown;
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
     balance: async () => Promise.resolve(42),
@@ -291,6 +323,15 @@ function flakyClient(calls: string[], sendArgs: unknown[], aborters: Array<{ abo
         calls.push("send");
         sendArgs.push(o);
         return Promise.resolve(o);
+      },
+      history: async () => {
+        calls.push("history");
+        const page = historyPages.shift() ?? lastPage ?? { payments: [], nextOffset: undefined };
+        if (page instanceof Error) {
+          return Promise.reject(page);
+        }
+        lastPage = page;
+        return Promise.resolve(page);
       },
     },
     lightning: {
@@ -596,5 +637,218 @@ describe("createWalletEngine lifecycle", () => {
     expect(listeners.size).toBe(1);
     expect(engine.spark.getState().accounts).toStrictEqual({});
     engine.unsubscribe();
+  });
+});
+
+describe("history and notes", () => {
+  const K = "w1:0:regtest";
+  const NOTE: PaymentNote = {
+    kind: "zap",
+    recipientPubkey: "ab".repeat(32),
+    lightning: "alice@wallet.test",
+  };
+  const parseNote = (record: unknown) =>
+    record === undefined
+      ? undefined
+      : (JSON.parse(new TextDecoder().decode(record as Uint8Array)) as unknown);
+  const PAYMENT = {
+    id: "t1",
+    direction: "send",
+    status: "completed",
+    method: "lightning",
+    amountSats: 100,
+    feeSats: 5,
+    createdAt: 1,
+    details: undefined,
+  };
+
+  async function started(payments: unknown[] = [{ payments: [PAYMENT], nextOffset: undefined }]) {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const sendArgs: unknown[] = [];
+    const { client } = fakeClient(calls, sendArgs, [], { historyPages: payments });
+    const store = createMemoryEngineStore();
+    const warns: string[] = [];
+    const c = new SparkController({
+      spark: {
+        signer: () => null as never,
+        approve: async (p: unknown) => {
+          approvals.push(p);
+          return Promise.resolve({});
+        },
+      },
+      fetch: async () => Promise.reject(new Error("no fetch")),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => 0,
+      logger: { warn: (m, e) => warns.push(warnText(m, e)) },
+      createClient: () => client,
+    });
+    c.addAccount(REF);
+    c.setStore(store);
+    await c.init();
+    await until(
+      () => c.getState().accounts[K]?.recent,
+      (v) => v !== undefined,
+    );
+    return { c, calls, store, warns, approvals, setStore: (s: EngineStore) => c.setStore(s) };
+  }
+
+  it("populates recent at init and merges notes into history", async () => {
+    const { c, store } = await started();
+    const col = store.collection(`spark-notes:${K}`);
+    await col.put("t1", encodePaymentNote(NOTE));
+    await col.put("t2", new TextEncoder().encode(JSON.stringify(NOTE)));
+    const { items } = await c.history(REF, { limit: 10 });
+    expect(items[0]).toMatchObject({ id: "t1", note: NOTE });
+    expect(c.getState().accounts[K]?.recent).toHaveLength(1);
+  });
+
+  it("a note with unknown keys is rejected", async () => {
+    const extra = {
+      ...(JSON.parse(new TextDecoder().decode(encodePaymentNote(NOTE))) as object),
+      extra: "field",
+    };
+    const { c, store, warns } = await started();
+    await store
+      .collection(`spark-notes:${K}`)
+      .put("t1", new TextEncoder().encode(JSON.stringify(extra)));
+    const { items } = await c.history(REF);
+    expect(items[0]).not.toMatchObject({ note: expect.anything() });
+    expect(warns.some((w) => w.includes("malformed"))).toBe(true);
+  });
+
+  it("a malformed note record is ignored and warned", async () => {
+    const { c, store, warns } = await started();
+    await store.collection(`spark-notes:${K}`).put("t1", new Uint8Array([1, 2, 3]));
+    const { items } = await c.history(REF);
+    expect(items[0]).not.toMatchObject({ note: expect.anything() });
+    expect(warns.some((w) => w.includes("malformed"))).toBe(true);
+  });
+
+  it("refreshes recent after send and refresh failures keep the previous page", async () => {
+    const { c, calls } = await started();
+    expect(c.getState().accounts[K]?.recent?.[0]).toMatchObject({ id: "t1" });
+    const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    expect(calls).toContain("send");
+    // The refresh is fire-and-forget — it runs after send returns.
+    await until(
+      () => calls.filter((x) => x === "history").length,
+      (n) => n >= 2,
+    );
+    expect(c.getState().accounts[K]?.status).toBe("ready");
+    expect(c.getState().accounts[K]?.recent).toHaveLength(1);
+  });
+
+  it("a failed refresh keeps the previous recent and leaves status ready", async () => {
+    const { c } = await started([
+      { payments: [PAYMENT], nextOffset: undefined },
+      new Error("down"),
+    ]);
+    expect(c.getState().accounts[K]?.recent).toHaveLength(1);
+    const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    // The failing refresh lands after send returns — status and the previous page survive.
+    await until(
+      () => c.getState().accounts[K]?.recent,
+      (v) => v !== undefined,
+    );
+    const state = c.getState().accounts[K];
+    expect(state?.status).toBe("ready");
+    expect(state?.recent).toHaveLength(1);
+  });
+
+  it("payInvoice writes the note under the transfer id", async () => {
+    const { c, store } = await started();
+    const payment = (await c.payInvoice(REF, {
+      invoice: "lnbcrt1",
+      maxFeeSats: 5,
+      verify: VERIFY,
+      note: NOTE,
+    })) as { transferId: string };
+    const record = await store.collection(`spark-notes:${K}`).get(payment.transferId);
+    expect(parseNote(record)).toStrictEqual(NOTE);
+  });
+
+  it("a failing note write still resolves the payment", async () => {
+    const { c, store, warns } = await started();
+    const wrapped: EngineStore = {
+      ...store,
+      collection: (name: string) => {
+        const col = store.collection(name);
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- collection routing
+        if (name.startsWith("spark-notes:")) {
+          return { ...col, put: async () => Promise.reject(new Error("write failed")) };
+        }
+        return col;
+      },
+    };
+    const col = store.collection(`spark-notes:${K}`);
+    c.setStore(wrapped);
+    const payment = (await c.payInvoice(REF, {
+      invoice: "lnbcrt1",
+      maxFeeSats: 5,
+      verify: VERIFY,
+      note: NOTE,
+    })) as { transferId: string };
+    expect(payment.transferId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(warns.some((w) => w.includes("note write failed"))).toBe(true);
+    await expect(col.get(payment.transferId)).resolves.toBeUndefined();
+  });
+
+  it("a slower older refresh never overwrites a newer one", async () => {
+    // The init resync's refresh parks inside a gated history call; a concurrent send's refresh
+    // (newer seq) lands first. When the gate opens the stale page must be dropped.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = () => resolve();
+    });
+    const calls: string[] = [];
+    const { client } = fakeClient(calls, [], [], {
+      historyPages: [
+        { payments: [{ ...PAYMENT, id: "t-stale" }], nextOffset: undefined },
+        { payments: [{ ...PAYMENT, id: "t-new" }], nextOffset: undefined },
+      ],
+    });
+    let call = 0;
+    const realHistory = client.transfers.history.bind(client.transfers);
+    const gated = {
+      ...client,
+      transfers: {
+        ...client.transfers,
+        history: async () => {
+          call += 1;
+          const page = realHistory();
+          // oxlint-disable-next-line vitest/no-conditional-in-test -- gate the first call only
+          if (call === 1) {
+            await gate;
+          }
+          return page;
+        },
+      },
+    } as SparkClient;
+    const c = new SparkController({
+      spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
+      fetch: async () => Promise.reject(new Error("x")),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => 0,
+      logger: LOGGER,
+      createClient: () => gated,
+    });
+    c.addAccount(REF);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+    const sendPromise = c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    // The send's refresh (seq 2) lands while the init refresh (seq 1) is still gated.
+    await until(
+      () => c.getState().accounts[K]?.recent,
+      (v) => v?.[0]?.id === "t-new",
+    );
+    release();
+    await sendPromise;
+    const recent = c.getState().accounts[K]?.recent;
+    expect(recent?.some((p) => p.id === "t-stale")).toBe(false);
+    expect(recent?.some((p) => p.id === "t-new")).toBe(true);
   });
 });
