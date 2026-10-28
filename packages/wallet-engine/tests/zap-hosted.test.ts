@@ -13,12 +13,17 @@ import { appendFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, randomBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { Keys, finalizeEvent } from "@qntx/nostr";
 import { validateZapReceipt } from "@qntx/nostr/nips/nip57";
-import { createMemorySparkStore, createSparkClient, encodeSparkAddress } from "@qntx/spark";
+import {
+  createMemorySparkStore,
+  createSparkClient,
+  decodeBolt11,
+  encodeSparkAddress,
+} from "@qntx/spark";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 import {
   createLightningAddressServer,
@@ -28,9 +33,11 @@ import type { LightningAddressResult, LightningAddressServer } from "@qntx/spark
 import { createSparkSigner, sparkAccountKey } from "@qntx/spark/signer";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { nostr } from "@qntx/wallet/nostr";
+import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
+import type { WalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
@@ -63,6 +70,24 @@ async function poll(done: () => boolean, deadline: number, intervalMs = 3000): P
   }
   await sleep(intervalMs);
   return poll(done, deadline, intervalMs);
+}
+
+/** Polls `history` until the first entry is a completed lightning send or the deadline passes. */
+async function pollHistory(
+  engine: WalletEngine,
+  ref: SparkAccountRef,
+  deadline: number,
+): Promise<{ readonly note?: unknown } | undefined> {
+  const { items } = await engine.spark.history(ref, { limit: 5 });
+  const [top] = items;
+  if (top !== undefined && top.method === "lightning" && top.status === "completed") {
+    return top;
+  }
+  if (Date.now() > deadline) {
+    return top;
+  }
+  await sleep(3000);
+  return pollHistory(engine, ref, deadline);
 }
 
 /** Polls `server.settlePending` until an invoice settles or the deadline passes. */
@@ -330,6 +355,23 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
           receiptKeys,
         );
         expect(validateZapReceipt(receipt, { nostrPubkey: zap.receiptPubkey }).valid).toBe(true);
+
+        // E1-e-2: the sender's history first entry is the completed lightning send carrying
+        // the zap note; the receiver's carries the matching payment hash.
+        const senderHistory = await pollHistory(engine, refB, deadline);
+        expect(senderHistory).toMatchObject({ direction: "send", method: "lightning" });
+        expect(senderHistory?.note).toMatchObject({
+          kind: "zap",
+          recipientPubkey: aNostrPub,
+          lightning: `${username}@${DOMAIN}`,
+        });
+        const wantHash = bytesToHex(decodeBolt11(zap.invoice).paymentHash);
+        const { items: receiverHistory } = await engine.spark.history(refA, { limit: 5 });
+        const receiveEntry = receiverHistory.find(
+          // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find predicate
+          (p) => p.details?.kind === "lightning" && p.details.paymentHash === wantHash,
+        );
+        expect(receiveEntry).toMatchObject({ direction: "receive", method: "lightning" });
       } finally {
         await sweep(engine, refA, funderIdentity, accountKey(created.walletId, 0));
         await sweep(engine, refB, funderIdentity, accountKey(created.walletId, 1));

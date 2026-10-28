@@ -93,6 +93,14 @@ export async function zap(params: ZapParams, options: ZapOptions): Promise<ZapRe
       zapRequest: JSON.stringify(zapRequest),
     });
     const payment = await options.spark.payInvoice(params.account, {
+      note: {
+        kind: "zap",
+        recipientPubkey:
+          "event" in params.recipient ? params.recipient.event.pubkey : params.recipient.pubkey,
+        ...("event" in params.recipient ? { eventId: params.recipient.event.id } : {}),
+        ...(params.comment === undefined ? {} : { comment: params.comment }),
+        lightning: params.recipient.lightning,
+      },
       invoice,
       maxFeeSats: params.maxFeeSats,
       verify: params.verify,

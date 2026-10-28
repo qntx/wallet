@@ -41,6 +41,16 @@ function hostedSeed(): Uint8Array {
 
 type Engine = ReturnType<typeof createWalletEngine>;
 
+/** Polls the controller state until the account reports `status` or the deadline. */
+async function waitForStatus(engine: Engine, key: string, status: string, deadline: number) {
+  const current = engine.spark.getState().accounts[key]?.status;
+  if (current === status || Date.now() > deadline) {
+    return current;
+  }
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  return waitForStatus(engine, key, status, deadline);
+}
+
 /** Polls the controller state until the account's balance reaches `min` or the deadline. */
 async function waitForBalance(engine: Engine, key: string, min: number, deadline: number) {
   const balance = engine.spark.getState().accounts[key]?.balanceSats ?? 0;
@@ -150,6 +160,9 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
           clientB.transfers.send({ receiver: funderIdentity, amountSats: 100 }),
         ).rejects.toThrow(/approval/);
 
+        // E1-e-2: the funding receive populated the first history page.
+        expect(engine.spark.getState().accounts[keyB]?.recent?.length).toBeGreaterThan(0);
+
         // B pays a Lightning invoice created by A — the engine approves before the client.
         const createdInvoice = await clientA.lightning.createInvoice({ amountSats: 300 });
         await engine.spark.payInvoice(refB, {
@@ -169,7 +182,9 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
         // invoice and its fee — the controller state can lag events, so compare with the
         // client-reported truth, not the cached state).
         await wallet.vault.lock();
-        expect(engine.spark.getState().accounts[keyB]?.status).toBe("locked");
+        // The controller observes the lock on the snapshot stream — it lands asynchronously.
+        const locked = await waitForStatus(engine, keyB, "locked", Date.now() + 30_000);
+        expect(locked).toBe("locked");
         await wallet.vault.unlock({ kind: "password", password: PASSWORD });
         const restored = await waitForBalance(engine, keyB, 1, Date.now() + DEADLINE_MS);
         const realBalance = await clientB.balance();

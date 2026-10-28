@@ -4,6 +4,7 @@ import type {
   LightningInvoice,
   LightningPayment,
   SparkClient,
+  SparkPayment,
   SparkTransfer,
 } from "@qntx/spark";
 import { registerLightningAddress, unregisterLightningAddress } from "@qntx/spark/lnurl";
@@ -13,8 +14,10 @@ import type { SparkSigner } from "@qntx/wallet/spark";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
-import type { EngineStore } from "../store/port.ts";
+import type { EngineStore, EngineCollection } from "../store/port.ts";
 import { categorize, SparkControllerError } from "./errors.ts";
+import { encodePaymentNote, parsePaymentNote } from "./notes.ts";
+import type { PaymentNote, SparkActivity } from "./notes.ts";
 import { sparkStore } from "./store.ts";
 
 export type SparkAccountState = {
@@ -23,6 +26,8 @@ export type SparkAccountState = {
   readonly identityPublicKey?: string;
   readonly sparkAddress?: string;
   readonly errorCategory?: string;
+  /** First history page (20 entries, newest first), refreshed alongside the balance. */
+  readonly recent?: ReadonlyArray<SparkActivity>;
 };
 
 export type SparkControllerState = {
@@ -96,6 +101,7 @@ export class SparkController extends Controller<SparkControllerState> {
   private engineStore: EngineStore | undefined;
   private readonly accounts = new Map<string, SparkAccountRef>();
   private readonly clients = new Map<string, SparkClient>();
+  private readonly recentSeq = new Map<string, number>();
   private readonly aborts = new Map<string, AbortController>();
 
   constructor(options: SparkControllerOptions) {
@@ -220,6 +226,9 @@ export class SparkController extends Controller<SparkControllerState> {
               `spark catch-up claim failed for ${transferId} (${categorize(error)})`,
             );
           });
+          if (signal.aborted) {
+            return;
+          }
           this.patch(k, {
             balanceSats: balance,
             status: "ready",
@@ -229,6 +238,7 @@ export class SparkController extends Controller<SparkControllerState> {
               identityPublicKey: identity,
             }),
           });
+          void this.refreshRecent(k, client);
           const iterator = client.events(signal)[Symbol.asyncIterator]();
           let open = true;
           while (open) {
@@ -289,6 +299,64 @@ export class SparkController extends Controller<SparkControllerState> {
       await client.transfers.claim(event.transferId, { signal });
     }
     this.patch(k, { balanceSats: await client.balance() });
+    void this.refreshRecent(k, client);
+  }
+
+  private notesCollection(k: string): EngineCollection | undefined {
+    return this.engineStore?.collection(`spark-notes:${k}`);
+  }
+
+  /** Attach locally written notes to a history page; malformed records warn and drop. */
+  private async withNotes(
+    k: string,
+    payments: ReadonlyArray<SparkPayment>,
+  ): Promise<ReadonlyArray<SparkActivity>> {
+    const col = this.notesCollection(k);
+    if (col === undefined) {
+      return payments;
+    }
+    return Promise.all(
+      payments.map(async (payment): Promise<SparkActivity> => {
+        const bytes = await col.get(payment.id);
+        if (bytes === undefined) {
+          return payment;
+        }
+        let note: PaymentNote | undefined;
+        try {
+          note = parsePaymentNote(JSON.parse(new TextDecoder().decode(bytes)));
+        } catch {
+          note = undefined;
+        }
+        if (note === undefined) {
+          this.options.logger.warn(
+            `spark note record for ${payment.id} ignored: malformed`,
+            new Error("malformed payment note"),
+          );
+          return payment;
+        }
+        return { ...payment, note };
+      }),
+    );
+  }
+
+  /**
+   * Refill `recent` from the first history page. A failure keeps the previous page — it never
+   * touches `status`/`errorCategory`. A per-account sequence keeps a slower older refresh from
+   * overwriting a newer one.
+   */
+  private async refreshRecent(k: string, client: SparkClient): Promise<void> {
+    const seq = (this.recentSeq.get(k) ?? 0) + 1;
+    this.recentSeq.set(k, seq);
+    try {
+      const { payments } = await client.transfers.history({ limit: 20 });
+      const items = await this.withNotes(k, payments);
+      // A stale seq or a closed client (lockAll cleared the map) must not write.
+      if (this.recentSeq.get(k) === seq && this.clients.get(k) === client) {
+        this.patch(k, { recent: items });
+      }
+    } catch (error) {
+      this.options.logger.warn(`spark recent refresh failed for ${k}`, error);
+    }
   }
 
   private patch(k: string, delta: Partial<SparkAccountState>): void {
@@ -317,6 +385,27 @@ export class SparkController extends Controller<SparkControllerState> {
     }
   }
 
+  /** History for one account: a client page merged with locally written notes by id. */
+  async history(
+    ref: SparkAccountRef,
+    options?: {
+      readonly limit?: number;
+      readonly offset?: number;
+    },
+  ): Promise<{
+    readonly items: ReadonlyArray<SparkActivity>;
+    readonly nextOffset: number | undefined;
+  }> {
+    return this.guarded(async () => {
+      const client = this.clientFor(ref);
+      const { payments, nextOffset } = await client.transfers.history({
+        ...(options?.limit === undefined ? {} : { limit: options.limit }),
+        ...(options?.offset === undefined ? {} : { offset: options.offset }),
+      });
+      return { items: await this.withNotes(key(ref), payments), nextOffset };
+    });
+  }
+
   async send(
     ref: SparkAccountRef,
     params: {
@@ -340,11 +429,13 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      return client.transfers.send({
+      const transfer = await client.transfers.send({
         receiver: params.receiver,
         amountSats: params.amountSats,
         transferId: transferId(this.options.random, this.options.now),
       });
+      void this.refreshRecent(key(ref), client);
+      return transfer;
     });
   }
 
@@ -383,6 +474,8 @@ export class SparkController extends Controller<SparkControllerState> {
       amountSats?: number;
       maxFeeSats: number;
       verify: UnlockFactor;
+      /** Local annotation written under the payment's transfer id after it succeeds. */
+      note?: PaymentNote;
     },
   ): Promise<LightningPayment> {
     return this.guarded(async () => {
@@ -397,12 +490,25 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      return client.lightning.pay({
+      const payment = await client.lightning.pay({
         invoice: params.invoice,
         maxFeeSats: params.maxFeeSats,
         ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
         transferId: transferId(this.options.random, this.options.now),
       });
+      if (params.note !== undefined) {
+        try {
+          await this.notesCollection(key(ref))?.put(
+            payment.transferId,
+            encodePaymentNote(params.note),
+          );
+        } catch (error) {
+          // The payment already succeeded — a lost annotation is a warning, not a failure.
+          this.options.logger.warn("spark note write failed", error);
+        }
+      }
+      void this.refreshRecent(key(ref), client);
+      return payment;
     });
   }
 
@@ -469,13 +575,15 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
-      return client.withdrawals.cooperativeExit({
+      const exit = await client.withdrawals.cooperativeExit({
         address: params.address,
         speed: params.speed,
         maxFeeSats: fee,
         amountSats: exitAmount,
         transferId: transferId(this.options.random, this.options.now),
       });
+      void this.refreshRecent(key(ref), client);
+      return exit;
     });
   }
 }

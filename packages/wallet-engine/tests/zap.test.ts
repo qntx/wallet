@@ -1,8 +1,11 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, test } from "vite-plus/test";
 
 import { zap } from "../src/payments/zap.ts";
 import type { ZapOptions, ZapParams } from "../src/payments/zap.ts";
 import type { SparkController } from "../src/spark/controller.ts";
+import { encodeTestBolt11 } from "./support/bolt11.ts";
 
 const PAY_BODY = {
   tag: "payRequest",
@@ -143,6 +146,78 @@ describe("zap", () => {
     expect(tags.get("e")).toStrictEqual(["ff".repeat(32)]);
     expect(tags.get("k")).toStrictEqual(["1"]);
     expect(tags.get("amount")).toStrictEqual(["10000000"]);
+  });
+
+  test("payInvoice carries the zap note — pubkey and event recipients", async () => {
+    // requestInvoice demands the invoice's description hash equal sha256(zapRequest): capture
+    // the signed 9734 the fake service sees, then feed an invoice carrying its hash.
+    const invoiceFor = async (params_: ZapParams): Promise<string> => {
+      const captured: string[] = [];
+      const capFetch = (async (input: unknown) => {
+        const url = new URL(String(input));
+        const nostr = url.searchParams.get("nostr");
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- capture, not a branch
+        if (nostr !== null) {
+          captured.push(nostr);
+        }
+        return Promise.resolve(
+          // oxlint-disable-next-line vitest/no-conditional-in-test -- route the fake response
+          Response.json(url.pathname.endsWith("/cb") ? {} : PAY_BODY),
+        );
+      }) as typeof fetch;
+      await expect(
+        zap(params_, { fetch: capFetch, nostr: () => fakeNostr() as never, spark: fakeSpark }),
+      ).rejects.toThrow("zap");
+      return encodeTestBolt11({
+        network: "regtest",
+        amountMsat: 10_000_000n,
+        paymentHash: new Uint8Array(32).fill(1),
+        paymentSecret: new Uint8Array(32).fill(2),
+        secretKey: new Uint8Array(32).fill(3),
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- the capture must exist
+        descriptionHash: sha256(utf8ToBytes(captured[0] ?? "")),
+      });
+    };
+
+    approved.length = 0;
+    const pubkeyPr = await invoiceFor(params({ comment: "hi" }));
+    await zap(params({ comment: "hi" }), options(PAY_BODY, { pr: pubkeyPr }));
+    expect(approved[0]).toMatchObject({
+      invoice: pubkeyPr,
+      note: {
+        kind: "zap",
+        recipientPubkey: "ee".repeat(32),
+        comment: "hi",
+        lightning: "alice@svc.test",
+      },
+    });
+    expect((approved[0] as { note?: { eventId?: string } }).note).not.toMatchObject({
+      eventId: expect.anything(),
+    });
+
+    approved.length = 0;
+    const zapped = {
+      id: "ff".repeat(32),
+      pubkey: "11".repeat(32),
+      kind: 1,
+      created_at: 1,
+      tags: [],
+      content: "hi",
+      sig: "22".repeat(64),
+    };
+    const eventParams = params({ recipient: { lightning: "alice@svc.test", event: zapped } });
+    const eventPr = await invoiceFor(eventParams);
+    await zap(eventParams, options(PAY_BODY, { pr: eventPr }));
+    // The note's recipient is the zapped event's author and id, not a profile pubkey.
+    expect(approved[0]).toMatchObject({
+      note: {
+        kind: "zap",
+        recipientPubkey: "11".repeat(32),
+        eventId: "ff".repeat(32),
+        lightning: "alice@svc.test",
+      },
+    });
+    approved.length = 0;
   });
 
   test("amountSats must be a positive safe integer — before any fetch or approve", async () => {
