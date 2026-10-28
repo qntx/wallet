@@ -55,7 +55,7 @@
       },
       "peerDependencies": {
         "@qntx/nostr": "^0.15.0",
-        "@qntx/spark": "^0.2.0",
+        "@qntx/spark": "^0.3.0",
       },
       "optionalPeers": [
         "@qntx/nostr",

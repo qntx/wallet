@@ -10,9 +10,9 @@
     "test:browser": "playwright test --config tests/playwright.config.ts"
   },
   "dependencies": {
-    "@qntx/wallet": "0.2.0",
-    "@qntx/wallet-engine": "0.2.0",
-    "@qntx/wallet-worker": "0.2.0"
+    "@qntx/wallet": "workspace:*",
+    "@qntx/wallet-engine": "workspace:*",
+    "@qntx/wallet-worker": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
