@@ -8,6 +8,12 @@ export type { EngineCollection, EngineStore } from "./store/port.ts";
 export { createMemoryEngineStore } from "./store/memory.ts";
 export { createWalletEngine } from "./engine.ts";
 export type { EngineOptions, WalletEngine } from "./engine.ts";
+export { BackupController } from "./backup/controller.ts";
+export type { BackupControllerState } from "./backup/controller.ts";
+export { BackupControllerError } from "./backup/errors.ts";
+export type { BackupErrorCategory } from "./backup/errors.ts";
+export { createMemoryCloudStore } from "./backup/memory.ts";
+export type { CloudStore } from "./backup/port.ts";
 export { SparkController } from "./spark/controller.ts";
 export type {
   SparkAccountState,

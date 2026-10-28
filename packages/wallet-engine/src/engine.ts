@@ -9,6 +9,8 @@ import type { Wallet } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
+import { BackupController } from "./backup/controller.ts";
+import type { CloudStore } from "./backup/port.ts";
 import type { EngineLogger } from "./events.ts";
 import { zap as runZap } from "./payments/zap.ts";
 import type { ZapParams, ZapResult } from "./payments/zap.ts";
@@ -23,17 +25,27 @@ export type EngineOptions = {
   readonly now: () => number;
   readonly logger: EngineLogger;
   readonly openStore: () => Promise<EngineStore>;
+  /** Cloud file transport for the backup controller; absent → `unavailable`. */
+  readonly cloud?: CloudStore;
   /** Test seam — defaults to the wallet's real spark proxy. */
   readonly sparkApis?: SparkControllerOptions["spark"];
 };
 
 export type WalletEngine = {
   readonly spark: SparkController;
+  readonly backup: BackupController;
   readonly zap: (params: ZapParams) => Promise<ZapResult>;
   readonly unsubscribe: () => void;
 };
 
 export function createWalletEngine(options: EngineOptions): WalletEngine {
+  const backup = new BackupController({
+    wallet: options.wallet,
+    cloud: options.cloud,
+    now: options.now,
+    logger: options.logger,
+  });
+
   const controller = new SparkController({
     spark: options.sparkApis ?? spark(options.wallet),
     fetch: options.fetch,
@@ -69,6 +81,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         return;
       }
       controller.setStore(store);
+      backup.setStore(store);
+      backup.trigger(); // reconcile — never awaited on the transition chain
       await controller.init();
     } else if (!unlocked && started) {
       started = false;
@@ -77,6 +91,16 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       const s = store;
       store = undefined;
       await s?.close();
+    }
+  };
+
+  const snapshotListener = (): void => {
+    // Every snapshot change while unlocked nudges the reconcile; the lock transition is
+    // handled inside transition() and bumps the backup generation.
+    if (options.wallet.getSnapshot().vault === "unlocked") {
+      backup.trigger();
+    } else {
+      backup.lock();
     }
   };
 
@@ -91,10 +115,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
     })();
   };
-  const unsubscribe = options.wallet.subscribe(schedule);
+  const unsubscribe = options.wallet.subscribe(() => {
+    schedule();
+    snapshotListener();
+  });
   schedule();
   return {
     spark: controller,
+    backup,
     zap: async (params) =>
       runZap(params, {
         fetch: options.fetch,
