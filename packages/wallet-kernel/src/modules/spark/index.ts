@@ -38,12 +38,10 @@ const poolKey = (account: SparkAccountRef): string =>
 const approvalRequired = (): KernelError =>
   new KernelError("approval-required", "this outflow needs a matching approval");
 
-const btcNet = (rt: SparkRuntime, network: SparkAccountRef["network"]) =>
-  network === "mainnet" ? rt.NETWORK : { ...rt.TEST_NETWORK, bech32: "bcrt" };
-
 /**
- * `addressToScript` accepts either network — an approval must bind the destination to the account's
- * own network, so decode under `network`'s parameters and reject other prefixes.
+ * An approval must bind the destination to the account's own network, so decode under
+ * `network`'s parameters only: `bitcoinAddressScript` rejects an address that decodes under the
+ * other network rather than retargeting it.
  */
 const addressScriptFor = (
   rt: SparkRuntime,
@@ -51,14 +49,7 @@ const addressScriptFor = (
   address: string,
 ): Uint8Array => {
   try {
-    const net = rt.Address(btcNet(rt, network));
-    const decoded = rt.OutScript.encode(net.decode(address));
-    // `decode` accepts any prefix — re-encode under the account's network so a mainnet
-    // `bc1…` string fails a regtest account and vice versa.
-    if (net.encode(rt.OutScript.decode(decoded)).toLowerCase() !== address.toLowerCase()) {
-      throw new KernelError("invalid-input", "address: wrong network");
-    }
-    return decoded;
+    return rt.bitcoinAddressScript(address, network);
   } catch (error) {
     if (error instanceof KernelError) {
       throw error;
@@ -92,7 +83,7 @@ type Approval = {
 
 /**
  * Kernel-decodes an approve intent into the returned summary plus the matching material.
- * `addressToScript` and `decodeBolt11` both reject malformed input — mapped to `invalid-input`.
+ * `bitcoinAddressScript` and `decodeBolt11` both reject malformed input — mapped to `invalid-input`.
  */
 const decodeIntent = (
   rt: SparkRuntime,
