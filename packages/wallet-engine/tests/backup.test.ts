@@ -121,6 +121,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
   const storeBacking = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
     wallet,
+    sparkNetwork: "regtest",
     fetch: async () => Promise.reject(new Error("offline")),
     random: (n) => randomBytes(n),
     now: () => Date.now(),
@@ -307,6 +308,7 @@ describe("BackupController", () => {
       });
       const engine2 = createWalletEngine({
         wallet: wallet2,
+        sparkNetwork: "regtest",
         fetch: async () => Promise.reject(new Error("offline")),
         random: (n) => randomBytes(n),
         now: () => Date.now(),
@@ -400,6 +402,7 @@ describe("BackupController", () => {
       });
       const engine2 = createWalletEngine({
         wallet: wallet2,
+        sparkNetwork: "regtest",
         fetch: async () => Promise.reject(new Error("offline")),
         random: (n) => randomBytes(n),
         now: () => Date.now(),
@@ -520,6 +523,7 @@ describe("BackupController", () => {
       const corruptRead = corruptFirstRead(inner2);
       const engine2 = createWalletEngine({
         wallet: wallet2,
+        sparkNetwork: "regtest",
         fetch: async () => Promise.reject(new Error("offline")),
         random: (n) => randomBytes(n),
         now: () => Date.now(),

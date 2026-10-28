@@ -157,7 +157,7 @@ describe("SparkController", () => {
     const approvals: unknown[] = [];
     const { c, aborters, sendArgs } = controller(calls, approvals);
     const store = createMemoryEngineStore();
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(store);
     await c.init();
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
@@ -198,7 +198,7 @@ describe("send network check", () => {
     const approvals: unknown[] = [];
     const { c } = controller(calls, approvals);
     const store = createMemoryEngineStore();
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(store);
     await c.init();
     // PK on mainnet — ref is regtest.
@@ -217,7 +217,7 @@ describe("withdraw approval intent", () => {
   async function setup(calls: string[], approvals: unknown[]) {
     const { c, client } = controller(calls, approvals);
     const store = createMemoryEngineStore();
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(store);
     await c.init();
     return { c, client };
@@ -414,7 +414,7 @@ describe("event stream resilience", () => {
       createClient: () => client,
     });
     const store = createMemoryEngineStore();
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(store);
     await c.init();
     // Wait until the loop has died on the first stream, resubscribed, and recovered —
@@ -451,7 +451,7 @@ describe("event claims", () => {
       logger: { warn: (m, e) => warns.push(warnText(m, e)) },
       createClient: () => client,
     });
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(createMemoryEngineStore());
     return { c, calls };
   }
@@ -563,6 +563,7 @@ describe("lock transition serialization", () => {
     const clientCount = 0;
     const engine = createWalletEngine({
       wallet: w as never,
+      sparkNetwork: "regtest",
       sparkApis: {
         signer: () => null as never,
         approve: async () => Promise.resolve({}),
@@ -575,7 +576,7 @@ describe("lock transition serialization", () => {
     });
     const c = engine.spark;
     // Drive transitions straight through the controller's lifecycle — addAccount then unlock.
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     w.set("unlocked");
     w.set("locked");
     w.set("unlocked");
@@ -594,6 +595,7 @@ describe("lock transition serialization", () => {
     const warnings: unknown[] = [];
     const engine = createWalletEngine({
       wallet: w as never,
+      sparkNetwork: "regtest",
       sparkApis: {
         signer: () => null as never,
         approve: async () => Promise.resolve({}),
@@ -607,7 +609,7 @@ describe("lock transition serialization", () => {
         return gateOpenStore(failures);
       },
     });
-    engine.spark.addAccount(REF);
+    engine.spark.setAccounts([REF]);
     failures = 1;
     w.set("unlocked");
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -638,6 +640,7 @@ describe("createWalletEngine lifecycle", () => {
     };
     const engine = createWalletEngine({
       wallet: wallet as never,
+      sparkNetwork: "regtest",
       sparkApis: {
         signer: () => null as never,
         approve: async () => Promise.resolve({}),
@@ -697,7 +700,7 @@ describe("history and notes", () => {
       logger: { warn: (m, e) => warns.push(warnText(m, e)) },
       createClient: () => client,
     });
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(store);
     await c.init();
     await until(
@@ -849,7 +852,7 @@ describe("history and notes", () => {
       logger: LOGGER,
       createClient: () => gated,
     });
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(createMemoryEngineStore());
     await c.init();
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
@@ -873,7 +876,7 @@ describe("paySparkInvoice pre-approval checks", () => {
   async function setup(calls: string[], approvals: unknown[]) {
     const { c, client } = controller(calls, approvals);
     const store = createMemoryEngineStore();
-    c.addAccount(REF);
+    c.setAccounts([REF]);
     c.setStore(store);
     await c.init();
     return { c, client };

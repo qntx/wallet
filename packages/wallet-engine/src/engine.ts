@@ -10,6 +10,7 @@ import type { Wallet } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
+import { AccountTreeController } from "./accounts/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import type { EngineLogger } from "./events.ts";
@@ -26,6 +27,8 @@ import type { EngineStore } from "./store/port.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
+  /** Every Spark account the engine touches lives on this network. */
+  readonly sparkNetwork: SparkNetwork;
   readonly fetch: typeof globalThis.fetch;
   readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
@@ -39,6 +42,7 @@ export type EngineOptions = {
 
 export type WalletEngine = {
   readonly spark: SparkController;
+  readonly accounts: AccountTreeController;
   readonly backup: BackupController;
   readonly zap: (params: ZapParams) => Promise<ZapResult>;
   readonly payments: {
@@ -72,6 +76,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }),
   });
 
+  const accounts = new AccountTreeController({
+    wallet: options.wallet,
+    spark: controller,
+    sparkNetwork: options.sparkNetwork,
+    logger: options.logger,
+    now: options.now,
+  });
+
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
   let chain: Promise<void> = Promise.resolve();
@@ -93,10 +105,15 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
       controller.setStore(store);
       backup.setStore(store);
+      accounts.setStore(store);
       backup.trigger(); // reconcile — never awaited on the transition chain
+      // Load + reconcile + drive the selected account through spark.setAccounts.
+      await accounts.init();
       await controller.init();
     } else if (!unlocked && started) {
       started = false;
+      // Lock: tree → locked, spark.setAccounts([]) stops the live client, totals flush first.
+      await accounts.lock();
       await controller.lockAll();
       controller.setStore(undefined);
       const s = store;
@@ -110,6 +127,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     // handled inside transition() and bumps the backup generation.
     if (options.wallet.getSnapshot().vault === "unlocked") {
       backup.trigger();
+      accounts.reconcile();
     } else {
       backup.lock();
     }
@@ -133,6 +151,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   schedule();
   return {
     spark: controller,
+    accounts,
     backup,
     zap: async (params) =>
       runZap(params, {

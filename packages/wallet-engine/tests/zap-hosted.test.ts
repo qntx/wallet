@@ -267,6 +267,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
 
       const engine = createWalletEngine({
         wallet,
+        sparkNetwork: "regtest",
         fetch: serverFetch(server),
         random,
         now: () => Date.now(),
@@ -282,9 +283,13 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
       });
       const refA = { walletId: created.walletId, groupIndex: 0, network: "regtest" } as never;
       const refB = { walletId: created.walletId, groupIndex: 1, network: "regtest" } as never;
-      engine.spark.addAccount(refA);
-      engine.spark.addAccount(refB);
       await wallet.vault.unlock(VERIFY);
+      // Let the account tree's unlock reconcile drive setAccounts([selected]) first, then
+      // declare both accounts — otherwise the drive would drop refB.
+      await expect(
+        poll(() => engine.accounts.getState().status === "ready", Date.now() + 30_000),
+      ).resolves.toBe(true);
+      engine.spark.setAccounts([refA, refB]);
 
       const deadline = Date.now() + DEADLINE_MS;
       const username = `zap${Date.now().toString(36)}`;
