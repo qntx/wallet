@@ -636,13 +636,13 @@ void installKernelGlobals(
       rt,
       "write",
       hostFn(rt, "file.write", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
-        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
-          throw jsi::JSError(rt, "__qntx.file.write expects an ArrayBuffer");
+        if (count < 1) {
+          throw jsi::JSError(rt, "__qntx.file.write expects an ArrayBuffer or TypedArray");
         }
-        auto buffer = args[0].asObject(rt).getArrayBuffer(rt);
-        const auto* data = buffer.data(rt);
+        const auto view =
+            byteViewFromValue(rt, args[0], "__qntx.file.write", *state->intrinsics);
         kernelFileWrite(
-            state->vaultDirectory, std::vector<uint8_t>(data, data + buffer.size(rt)));
+            state->vaultDirectory, std::vector<uint8_t>(view.data, view.data + view.size));
         return jsi::Value::undefined();
       }));
   intrinsics->freeze.call(rt, jsi::Value(rt, file));

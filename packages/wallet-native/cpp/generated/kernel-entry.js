@@ -31886,7 +31886,7 @@ zoo`.split("\n"));
 		let image;
 		function readImage() {
 			const bytes = file.read();
-			if (bytes === void 0) return EMPTY;
+			if (bytes === null) return EMPTY;
 			const decoded = assertVaultImage(decodeFrame(bytes));
 			return _objectSpread2(_objectSpread2({}, decoded), {}, { meta: decoded.meta === null ? void 0 : decoded.meta });
 		}

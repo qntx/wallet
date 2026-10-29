@@ -118,7 +118,7 @@ function platform(store: ReturnType<typeof createMemoryStore>): KernelPlatform {
 // An in-memory __qntx.file: the byte holder outlives a crashed kernel so persistence across
 // rebuild is exercised end to end — identical to the native file primitive's guarantee. Each
 // test gets its own holder; the crash test shares one across both boots.
-const fileStore = (bytes: { value: Uint8Array | undefined }) =>
+const fileStore = (bytes: { value: Uint8Array | null }) =>
   createFileStore({
     read: () => bytes.value,
     write: (b) => {
@@ -143,7 +143,7 @@ describe("createNativeWallet", () => {
   it("mnemonic ceremony, import, unlock, nostr sign, lock, crash and rebuild", async () => {
     // Vault A covers the mnemonic-create ceremony; vault B covers import — both
     // methods are one-shot vault initializers.
-    const bytes = { value: undefined as Uint8Array | undefined };
+    const bytes = { value: null as Uint8Array | null };
     const hostA = boot(fileStore(bytes));
     const walletA = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: hostA });
     const draft = await walletA.wallets.createMnemonic({
@@ -153,7 +153,7 @@ describe("createNativeWallet", () => {
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
     await draft.confirm(draft.quiz.map((i) => words[i]!));
 
-    const bytesB = { value: undefined as Uint8Array | undefined };
+    const bytesB = { value: null as Uint8Array | null };
     const host = boot(fileStore(bytesB));
     const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host });
     const imported = await wallet.wallets.importMnemonic({

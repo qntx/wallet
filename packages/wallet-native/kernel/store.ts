@@ -16,7 +16,7 @@ import { decodeFrame, encodeFrame } from "../src/cbor.ts";
 /** The `__qntx.file` primitive the native host injects into the kernel runtime. */
 export type KernelFile = {
   /** Whole-file bytes, or null when the file does not exist. */
-  readonly read: () => Uint8Array | undefined;
+  readonly read: () => Uint8Array | null;
   /** Atomic whole-file replace (temp + fsync + rename, fsync of the directory). */
   readonly write: (bytes: Uint8Array) => void;
 };
@@ -29,7 +29,7 @@ export function createFileStore(file: KernelFile): RecordStore {
 
   function readImage(): VaultImage {
     const bytes = file.read();
-    if (bytes === undefined) {
+    if (bytes === null) {
       return EMPTY;
     }
     // Strict CBOR first (a malformed file throws CborError), then the same structural validation
