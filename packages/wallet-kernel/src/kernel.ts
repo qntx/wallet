@@ -415,7 +415,7 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
       // locked inside the handler (timeout, invalidation): touch() is a no-op then.
       if (
         ctx.session.unlocked &&
-        (METHODS[method].presence || platform.policy.activity === "request")
+        (METHODS[method].presence || platform.policy.idle?.activity === "request")
       ) {
         ctx.session.touch();
       }

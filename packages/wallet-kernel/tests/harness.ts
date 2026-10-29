@@ -124,6 +124,8 @@ export function createHarness(opts?: {
   maxSessionMs?: number;
   /** KernelPolicy.activity; defaults to "presence" (the browser policy). */
   activity?: "presence" | "request";
+  /** Omit the idle policy entirely (the native policy — no foreground idle lock). */
+  noIdle?: boolean;
   /** Share one store between harnesses (the raw store — each kernel still gets its own view). */
   store?: RecordStore;
   /** Wrap the kernel's store view (e.g. `nonEchoing` so own commits do not self-notify). */
@@ -196,10 +198,12 @@ export function createHarness(opts?: {
     pbkdf2: subtlePbkdf2,
     store,
     policy: {
-      idleMs: opts?.idleMs ?? 15 * 60_000,
       maxSessionMs: opts?.maxSessionMs ?? 12 * 3_600_000,
       maxScryptLogN: 20,
-      activity: opts?.activity ?? "presence",
+      idle:
+        opts?.noIdle === true
+          ? undefined
+          : { ms: opts?.idleMs ?? 15 * 60_000, activity: opts?.activity ?? "presence" },
     },
     backends: opts?.backends ?? {
       spark: async () => {

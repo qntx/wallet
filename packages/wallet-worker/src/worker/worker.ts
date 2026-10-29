@@ -36,10 +36,9 @@ const onInit = (event: MessageEvent<unknown>): void => {
     // the fixed maximum, and the scrypt ceiling for this platform. Only presence-bearing
     // methods refresh the idle timer — request traffic does not keep a session alive.
     policy: {
-      idleMs: idleMsOf(data.idleMinutes),
+      idle: { ms: idleMsOf(data.idleMinutes), activity: "presence" },
       maxSessionMs: MAX_SESSION_MS,
       maxScryptLogN: 18,
-      activity: "presence",
     },
     backends: {
       nostr: nobleBackend,

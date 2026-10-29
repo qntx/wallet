@@ -47,7 +47,9 @@ const platform: KernelPlatform = {
       });
     }),
   store: createFileStore(__qntx.file),
-  policy: { idleMs: 60_000, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18, activity: "request" },
+  // No foreground idle lock on native — the host locks on backgrounding after
+  // autoLock.backgroundSeconds (W7); the session still ends at 24 h.
+  policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },
   backends: {
     nostr: nobleBackend,
     // W4 brings the native spark backend; until then spark.* answers `unavailable`.
