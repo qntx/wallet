@@ -1,4 +1,4 @@
-package com.margelo.nitro.v1probe;
+package com.margelo.nitro.qntxwallet;
 
 import java.security.GeneralSecurityException;
 import java.util.Arrays;

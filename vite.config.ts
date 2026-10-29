@@ -157,6 +157,8 @@ const config: UserConfig = defineConfig({
       ".vite-hooks/**",
       "vectors/**",
       "packages/wallet-native/cpp/generated/**",
+      // Nitrogen spec files require method signatures and are machine-consumed.
+      "**/*.nitro.ts",
       // apps/harness is a standalone Expo project with its own toolchain and
       // RN types; it is deliberately outside the root lint/typecheck gates.
       "apps/harness/**",

@@ -54,6 +54,9 @@ class KernelRuntime final : public std::enable_shared_from_this<KernelRuntime> {
     std::function<void(facebook::jsi::Runtime&)> beforeEvaluate;
     std::function<void(std::vector<uint8_t>)> onPost;
     std::function<void(std::string)> onError;
+    // Fired when post() exceeds the inbound frame queue cap (64) — a transport
+    // violation the host maps to an `integrity` exit, not a kernel crash.
+    std::function<void()> onIntegrity;
   };
 
   static std::shared_ptr<KernelRuntime> start(

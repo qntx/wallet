@@ -64,8 +64,14 @@ struct KernelGlobalsState {
   std::shared_ptr<KernelIntrinsics> intrinsics;
 
   // Kernel-side handler for bytes delivered by KernelRuntime::post; installed
-  // by the script through __qntx.setMessageHandler. Kernel thread only.
+  // by the script through __qntx.setMessageHandler or __qntx.frames.onMessage.
+  // Kernel thread only.
   std::optional<facebook::jsi::Function> messageHandler;
+
+  // Kernel-side handler the host calls when it refuses an inbound frame on
+  // integrity grounds (oversize, queue full); installed through
+  // __qntx.frames.onIntegrityViolation. Kernel thread only.
+  std::optional<facebook::jsi::Function> integrityHandler;
 };
 
 // Installs the kernel's capabilities on a fresh runtime:

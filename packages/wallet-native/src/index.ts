@@ -10,12 +10,16 @@ import { connectKernel } from "@qntx/wallet/host";
 
 import { spawnFromHost } from "./host.ts";
 import type { KernelHostLike } from "./host.ts";
+import type { KernelHost } from "./specs/kernel-host.nitro.ts";
 
 export type NativeWalletOptions = {
   readonly passkey: PasskeyConfig;
   readonly autoLock: AutoLockPolicy;
-  /** The Nitro `KernelHost` hybrid object (or a like-shaped fake for tests). */
-  readonly host: KernelHostLike;
+  /**
+   * The Nitro `KernelHost` hybrid object (or a like-shaped fake for tests). Defaults to
+   * `NitroModules.createHybridObject("KernelHost")` — the only Nitro-registered object.
+   */
+  readonly host?: KernelHostLike;
   readonly ceremony?: PasskeyCeremony;
 };
 
@@ -26,8 +30,14 @@ const setTimer: SetTimer = (delayMs, fn) => {
   };
 };
 
+async function defaultHost(): Promise<KernelHostLike> {
+  const { NitroModules } = await import("react-native-nitro-modules");
+  return NitroModules.createHybridObject<KernelHost>("KernelHost");
+}
+
 export async function createNativeWallet(options: NativeWalletOptions): Promise<Wallet> {
-  const { autoLock, host } = options;
+  const { autoLock } = options;
+  const host = options.host ?? (await defaultHost());
   if (autoLock.platform !== "native") {
     throw new WalletError(
       "invalid-input",

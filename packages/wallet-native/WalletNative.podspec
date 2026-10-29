@@ -15,8 +15,13 @@ Pod::Spec.new do |s|
   # Swift pods (V1Probe's Nitrogen bridge) depend on this — a module map is required.
   s.static_framework = true
 
-  s.source_files        = "cpp/runtime/**/*.{h,hpp,c,cpp}"
-  s.public_header_files = "cpp/runtime/**/*.hpp"
+  s.source_files = [
+    "cpp/runtime/**/*.{h,hpp,c,cpp,mm}",
+    "cpp/host/**/*.{h,hpp,c,cpp,mm}",
+    "cpp/platform/**/*.{h,hpp,c,cpp,mm}",
+    "cpp/generated/**/*.{h,hpp,c,cpp}",
+  ]
+  s.public_header_files = "cpp/**/*.hpp"
   s.header_mappings_dir = "cpp"
 
   s.pod_target_xcconfig = {
@@ -32,5 +37,8 @@ Pod::Spec.new do |s|
   s.dependency 'React-callinvoker'
   s.dependency 'React-hermes'
   s.dependency 'hermes-engine'
+
+  load 'nitrogen/generated/ios/WalletNative+autolinking.rb'
+  add_nitrogen_files(s)
   install_modules_dependencies(s)
 end

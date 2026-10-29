@@ -1,0 +1,70 @@
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+  dependencies {
+    classpath "com.android.tools.build:gradle:9.2.1"
+  }
+}
+
+def reactNativeArchitectures() {
+  def value = rootProject.getProperties().get("reactNativeArchitectures")
+  return value ? value.split(",") : ["x86", "x86_64", "armeabi-v7a", "arm64-v8a"]
+}
+
+def isNewArchitectureEnabled() {
+  return rootProject.hasProperty("newArchEnabled") && rootProject.getProperty("newArchEnabled") == "true"
+}
+
+apply plugin: "com.android.library"
+apply plugin: 'org.jetbrains.kotlin.android'
+apply from: '../nitrogen/generated/android/WalletNative+autolinking.gradle'
+
+if (isNewArchitectureEnabled()) {
+  apply plugin: "com.facebook.react"
+}
+
+def getExtOrDefault(name) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : project.properties["WalletNative_" + name]
+}
+
+def getExtOrIntegerDefault(name) {
+  return rootProject.ext.has(name) ? rootProject.ext.get(name) : (project.properties["WalletNative_" + name]).toInteger()
+}
+
+android {
+  namespace = "com.margelo.nitro.qntxwallet"
+
+  ndkVersion = getExtOrDefault("ndkVersion")
+  compileSdkVersion = getExtOrIntegerDefault("compileSdkVersion")
+
+  defaultConfig {
+    minSdkVersion = getExtOrIntegerDefault("minSdkVersion")
+    targetSdkVersion = getExtOrIntegerDefault("targetSdkVersion")
+
+    consumerProguardFiles "consumer-rules.pro"
+
+    externalNativeBuild {
+      cmake {
+        cppFlags "-frtti -fexceptions -Wall -Wextra -fstack-protector-all"
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        abiFilters (*reactNativeArchitectures())
+        buildTypes {
+          debug {
+            cppFlags "-O1 -g"
+          }
+          release {
+            cppFlags "-O2"
+          }
+        }
+      }
+    }
+  }
+
+  externalNativeBuild {
+    cmake {
+      path = file("CMakeLists.txt")
+    }
+  }
+}

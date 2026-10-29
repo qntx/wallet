@@ -21,14 +21,17 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "codegen": "nitrogen"
   },
   "dependencies": {
     "cborg": "6.1.4"
   },
   "devDependencies": {
     "@qntx/nostr": "0.15.0",
-    "@qntx/tsconfig": "1.0.1"
+    "@qntx/tsconfig": "1.0.1",
+    "nitrogen": "0.37.1",
+    "react-native-nitro-modules": "0.37.1"
   },
   "peerDependencies": {
     "@qntx/wallet": "0.4.0"

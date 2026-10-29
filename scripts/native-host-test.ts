@@ -81,6 +81,8 @@ const runtimeSources = [
   resolve(cppDir, "runtime/KernelRuntime.cpp"),
   resolve(cppDir, "runtime/KernelGlobals.cpp"),
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
+  resolve(cppDir, "host/KernelFile.cpp"),
+  resolve(cppDir, "host/KernelSha256.cpp"),
 ];
 const cxxFlags = [
   "-std=c++20",

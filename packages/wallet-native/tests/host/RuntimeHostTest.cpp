@@ -3,6 +3,8 @@
 // bytecode variants. PBKDF2 reference values arrive via env vars
 // V1_PBKDF2_SHA256_1 / V1_PBKDF2_SHA256_80000 / V1_PBKDF2_SHA512_UTF8.
 #include "runtime/KernelRuntime.hpp"
+#include "host/KernelFile.hpp"
+#include "host/KernelSha256.hpp"
 
 #if __has_include("generated/probes.hpp")
 #include "generated/probes.hpp"
@@ -15,6 +17,13 @@
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <cstdlib>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <unistd.h>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -565,6 +574,101 @@ __send(JSON.stringify({
   return g_failures;
 }
 
+// ── W2b: file primitive, queue cap, sha256 ─────────────────────────────────
+
+int sha256Vectors() {
+  // RFC 4231-adjacent well-known digests.
+  const std::string abc = qntx::kernelSha256Hex(
+      reinterpret_cast<const uint8_t*>("abc"), 3);
+  CHECK(
+      abc == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+      "sha256: abc digest mismatch");
+  const std::string empty = qntx::kernelSha256Hex(nullptr, 0);
+  CHECK(
+      empty == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "sha256: empty digest mismatch");
+  // A multi-block input past one 64-byte block.
+  std::vector<uint8_t> big(100000, 0x61);
+  const auto digest = qntx::kernelSha256(big.data(), big.size());
+  CHECK(digest.size() == 32, "sha256: digest size");
+  return g_failures;
+}
+
+static std::string makeTempDir() {
+  const std::string dir = "/tmp/qntx-file-test-" + std::to_string(::getpid());
+  if (::mkdir(dir.c_str(), 0700) != 0) {
+    CHECK(false, "file-test: mkdir failed");
+    return "";
+  }
+  return dir;
+}
+
+int filePrimitive() {
+  const std::string dir = makeTempDir();
+  if (dir.empty()) {
+    return g_failures;
+  }
+  qntx::setKernelFileDirectory(dir);
+
+  // Missing file -> null, never an exception.
+  CHECK(!qntx::kernelFileRead().has_value(), "file: missing must read null");
+
+  // Zero-length write -> reads back empty (not null).
+  qntx::kernelFileWrite({});
+  const auto empty = qntx::kernelFileRead();
+  CHECK(empty.has_value() && empty->empty(), "file: zero-length write");
+
+  // Normal write -> atomic replace reads new bytes.
+  const std::vector<uint8_t> first = {1, 2, 3};
+  const std::vector<uint8_t> second = {9, 8, 7, 6, 5};
+  qntx::kernelFileWrite(first);
+  CHECK(qntx::kernelFileRead() == first, "file: first write");
+  qntx::kernelFileWrite(second);
+  CHECK(qntx::kernelFileRead() == second, "file: atomic replace");
+
+  // Simulated crash mid-write: a stale .tmp never shadows the committed file.
+  const std::string tmpPath = dir + "/vault.cbor.tmp";
+  {
+    FILE* f = std::fopen(tmpPath.c_str(), "wb");
+    CHECK(f != nullptr, "file: open stale tmp");
+    std::fputs("partial-garbage", f);
+    std::fclose(f);
+  }
+  CHECK(qntx::kernelFileRead() == second, "file: crash mid-write preserves old file");
+
+  qntx::setKernelFileDirectory("");
+  return g_failures;
+}
+
+int queueCap() {
+  Mailbox box;
+  bool integrity = false;
+  auto hooks = hooksFor(box);
+  hooks.onIntegrity = [&] {
+    std::lock_guard<std::mutex> lock(box.m);
+    integrity = true;
+    box.cv.notify_all();
+  };
+  auto rt = KernelRuntime::start(
+      sourceScript(
+          std::string(kSendHelper) +
+          // The kernel never reads messages — the queue must fill and refuse.
+          "__send(\"ready\");"),
+      std::move(hooks));
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
+  std::vector<uint8_t> frame(16, 0x61);
+  for (int i = 0; i < 70; i++) {
+    rt->post(frame);
+  }
+  {
+    std::unique_lock<std::mutex> lock(box.m);
+    box.cv.wait_for(lock, std::chrono::seconds(10), [&] { return integrity; });
+    CHECK(integrity, "queue-cap: 65+ frames did not fire integrity");
+  }
+  rt->destroy();
+  return g_failures;
+}
+
 int globalInventory(KernelProfile profile) {
   Mailbox box;
   auto rt = KernelRuntime::start(
@@ -944,6 +1048,9 @@ int main(int argc, char** argv) {
        [](const char*) { return kernelProbe(false, KernelProfile::hardened); }},
       {"kernel-probe-bytecode-hardened",
        [](const char*) { return kernelProbe(true, KernelProfile::hardened); }},
+      {"sha256-vectors", [](const char*) { return sha256Vectors(); }},
+      {"file-primitive", [](const char*) { return filePrimitive(); }},
+      {"queue-cap", [](const char*) { return queueCap(); }},
       {"measure-timers-standard",
        [](const char*) { return measureTimers(KernelProfile::standard); }},
       {"measure-timers-hardened",

@@ -7,6 +7,9 @@ set(CMAKE_CXX_STANDARD 20)
 
 file(GLOB_RECURSE runtime_files CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/runtime/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/host/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../nitrogen/generated/shared/c++/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../nitrogen/generated/android/*.cpp"
 )
 
 add_library(${PACKAGE_NAME} STATIC ${runtime_files})
