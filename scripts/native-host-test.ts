@@ -75,6 +75,23 @@ const hermesc = (() => {
 
 mkdirSync(buildDir, { recursive: true });
 
+// Exercise the shipped compile script — the same one the app's native build
+// runs — to produce kernel.hpp for RuntimeHostTest's kernel-bytecode case.
+{
+  const proc = Bun.spawnSync(
+    [
+      "node",
+      resolve(harness, "node_modules/@qntx/wallet-native/scripts/compile-kernel.mjs"),
+      resolve(buildDir, "qntx-kernel"),
+      resolve(harness, "node_modules/react-native"),
+    ],
+    { stdout: "inherit", stderr: "inherit" },
+  );
+  if (proc.exitCode !== 0) {
+    throw new Error("compile-kernel.mjs failed");
+  }
+}
+
 const runtimeSources = [
   resolve(moduleDir, "tests/host/RuntimeHostTest.cpp"),
   resolve(cppDir, "runtime/KernelBuffer.cpp"),
@@ -82,7 +99,6 @@ const runtimeSources = [
   resolve(cppDir, "runtime/KernelGlobals.cpp"),
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
-  resolve(cppDir, "host/KernelSha256.cpp"),
 ];
 const cxxFlags = [
   "-std=c++20",
@@ -95,6 +111,9 @@ const cxxFlags = [
   // probes.hpp stays with the probe module — the host test embeds the same scripts.
   "-I",
   resolve(harness, "modules/v1-probe/cpp"),
+  // kernel.hpp produced by compile-kernel.mjs above.
+  "-I",
+  resolve(buildDir, "qntx-kernel"),
 ];
 const linkFlags = ["-F", frameworksDir, "-framework", "hermesvm", `-Wl,-rpath,${frameworksDir}`];
 

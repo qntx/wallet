@@ -19,7 +19,6 @@ Pod::Spec.new do |s|
     "cpp/runtime/**/*.{h,hpp,c,cpp,mm}",
     "cpp/host/**/*.{h,hpp,c,cpp,mm}",
     "cpp/platform/**/*.{h,hpp,c,cpp,mm}",
-    "cpp/generated/**/*.{h,hpp,c,cpp}",
   ]
   s.public_header_files = "cpp/**/*.hpp"
   s.header_mappings_dir = "cpp"
@@ -30,7 +29,31 @@ Pod::Spec.new do |s|
     "HEADER_SEARCH_PATHS" => [
       '"$(PODS_TARGET_SRCROOT)/cpp"',
       '"$(PODS_ROOT)/hermes-engine/destroot/include"',
+      '"$(DERIVED_FILE_DIR)/qntx-kernel"',
     ].join(' '),
+  }
+
+  # Compile the shipped kernel-entry.js to bytecode with the app's own hermesc —
+  # Hermes only loads its own bytecode version, so precompiled hbc cannot ship.
+  # kernel.hpp lands in DERIVED_FILE_DIR/qntx-kernel (a header search path).
+  s.script_phase = {
+    :name => "Compile Kernel Bytecode",
+    :script => <<~SH,
+      if [ -z "$REACT_NATIVE_PATH" ]; then
+        echo "REACT_NATIVE_PATH is not set"
+        exit 1
+      fi
+      . "$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh"
+      "$NODE_BINARY" "$PODS_TARGET_SRCROOT/scripts/compile-kernel.mjs" \
+        "$DERIVED_FILE_DIR/qntx-kernel" "$REACT_NATIVE_PATH"
+    SH
+    :execution_position => :before_compile,
+    :input_files => [
+      "$(PODS_TARGET_SRCROOT)/kernel/generated/kernel-entry.js",
+      "$(PODS_TARGET_SRCROOT)/kernel/generated/kernel.manifest.json",
+      "$(PODS_TARGET_SRCROOT)/scripts/compile-kernel.mjs",
+    ],
+    :output_files => ["$(DERIVED_FILE_DIR)/qntx-kernel/kernel.hpp"],
   }
 
   s.dependency 'React-jsi'

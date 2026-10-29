@@ -17,8 +17,32 @@ target_include_directories(${PACKAGE_NAME} PUBLIC
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/host"
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/platform"
-     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/generated"
+     "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel"
 )
+
+# Compile the shipped kernel bundle to bytecode with the app's own hermesc —
+# Hermes only loads its own bytecode version, so precompiled hbc cannot ship.
+# The app's react-native root is passed explicitly (-DQNTX_REACT_NATIVE_PATH)
+# so the script resolves the app's own hermesc version.
+find_program(NODE_EXECUTABLE node REQUIRED)
+if(NOT QNTX_REACT_NATIVE_PATH)
+  message(FATAL_ERROR "QNTX_REACT_NATIVE_PATH is not set — the consuming app must pass -DQNTX_REACT_NATIVE_PATH=<react-native dir>")
+endif()
+set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel/kernel.hpp")
+add_custom_command(
+     OUTPUT ${KERNEL_HEADER}
+     COMMAND ${NODE_EXECUTABLE}
+             "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/compile-kernel.mjs"
+             "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel"
+             "${QNTX_REACT_NATIVE_PATH}"
+     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/generated/kernel-entry.js"
+             "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/generated/kernel.manifest.json"
+             "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/compile-kernel.mjs"
+     COMMENT "Compiling the kernel bytecode (hermesc)"
+     VERBATIM
+)
+add_custom_target(qntx-kernel-bytecode DEPENDS ${KERNEL_HEADER})
+add_dependencies(${PACKAGE_NAME} qntx-kernel-bytecode)
 
 # Adds the nitrogen-generated sources, the BUILDING_..._GENERATED_CMAKE_PROJECT
 # define they require, and the fbjni/ReactAndroid/NitroModules prefab links.

@@ -6,7 +6,15 @@
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
   "files": [
-    "dist"
+    "dist",
+    "cpp",
+    "ios",
+    "android",
+    "kernel/generated",
+    "nitrogen",
+    "scripts",
+    "react-native.config.js",
+    "WalletNative.podspec"
   ],
   "type": "module",
   "main": "dist/index.mjs",
