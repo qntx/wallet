@@ -40,24 +40,22 @@ const full = image(meta(3), withRecord.records, [
 ]);
 
 const cases = [
-  { name: "empty", expect: "ok", frame: Buffer.from(encode(empty as never)).toString("hex") },
+  { name: "empty", expect: "ok", frame: Buffer.from(encode(empty)).toString("hex") },
   {
     name: "initialized",
     expect: "ok",
-    frame: Buffer.from(encode(initialized as never)).toString("hex"),
+    frame: Buffer.from(encode(initialized)).toString("hex"),
   },
-  { name: "record", expect: "ok", frame: Buffer.from(encode(withRecord as never)).toString("hex") },
+  { name: "record", expect: "ok", frame: Buffer.from(encode(withRecord)).toString("hex") },
   {
     name: "record-factor",
     expect: "ok",
-    frame: Buffer.from(encode(full as never)).toString("hex"),
+    frame: Buffer.from(encode(full)).toString("hex"),
   },
   {
     name: "truncated",
     expect: "reject",
-    frame: Buffer.from(encode(full as never))
-      .subarray(0, 7)
-      .toString("hex"),
+    frame: Buffer.from(encode(full)).subarray(0, 7).toString("hex"),
   },
   { name: "garbage", expect: "reject", frame: "ff6100" },
   { name: "indefinite", expect: "reject", frame: "9f01ff" },
