@@ -97,10 +97,13 @@ const runtimeSources = [
   resolve(cppDir, "runtime/KernelBuffer.cpp"),
   resolve(cppDir, "runtime/KernelRuntime.cpp"),
   resolve(cppDir, "runtime/KernelGlobals.cpp"),
+  resolve(cppDir, "runtime/KernelJs.cpp"),
+  resolve(cppDir, "runtime/KernelBackends.cpp"),
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
   resolve(cppDir, "host/Lifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
+  resolve(moduleDir, "tests/host/HostQntxSpark.cpp"),
 ];
 const cxxFlags = [
   "-std=c++20",
@@ -110,6 +113,14 @@ const cxxFlags = [
   resolve(destroot, "include"),
   "-I",
   cppDir,
+  // qntx_spark.h from the published @qntx/spark-native package.
+  "-I",
+  resolve(
+    dirname(
+      createRequire(resolve(moduleDir, "package.json")).resolve("@qntx/spark-native/package.json"),
+    ),
+    "include",
+  ),
   // probes.hpp stays with the probe module — the host test embeds the same scripts.
   "-I",
   resolve(harness, "modules/v1-probe/cpp"),

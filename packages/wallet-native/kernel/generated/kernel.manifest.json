@@ -1,6 +1,11 @@
 {
   "protocol": 1,
   "vaultFormat": 2,
+  "backends": {
+    "spark": {
+      "abiVersion": 1
+    }
+  },
   "libraries": [
     {
       "name": "@noble/ciphers",
@@ -28,6 +33,11 @@
       "integrity": "sha512-nRJzrACUqRkKPwZP676dtYHXLWDTb2AzhVKLzN8PLlrcF7IEDYjQvlAMV0USC22vcQh1EqtWPvLGG6X/dCQ4Pw=="
     },
     {
+      "name": "@qntx/spark-native",
+      "version": "0.5.0",
+      "integrity": "sha512-Vc8LxHc4OFpR64MnnsKHJt0AV3NtHalVjzYB+CbHr3dYtZK1RDZPiHYzokKZM0XP6Ji+iyvAYQ384k4BCn74lQ=="
+    },
+    {
       "name": "@scure/base",
       "version": "2.4.0",
       "integrity": "sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg=="
@@ -46,7 +56,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "707f26bb5538240db7676a6761d640fa86329bd27d15e89649a1df8a89c18884"
+      "sha256": "38df2d6ea830b28364490af0c921b606c1853a9b320855c8229def468a35a345"
     }
   ]
 }

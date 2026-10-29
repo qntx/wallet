@@ -26977,6 +26977,11 @@ zoo`.split("\n"));
 		HOST_LABEL$1 = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/u;
 	}));
 	//#endregion
+	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/crypto.mjs
+	var init_crypto = __esmMin((() => {
+		init_errors_5xLkExNL();
+	}));
+	//#endregion
 	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/signer.mjs
 	var signer_exports = /* @__PURE__ */ __exportAll({
 		EPHEMERAL_ANCHOR_SCRIPT: () => EPHEMERAL_ANCHOR_SCRIPT,
@@ -29259,6 +29264,33 @@ zoo`.split("\n"));
 			enqueue(async () => handle(message));
 		});
 		enqueue(reloadAndPost);
+	}
+	//#endregion
+	//#region packages/wallet-native/kernel/spark.ts
+	init_crypto();
+	function call(invoke) {
+		try {
+			return invoke();
+		} catch (error) {
+			if (error instanceof Error) {
+				var _exec;
+				const code = (_exec = /^qntx_spark:(\d+)$/.exec(error.message)) === null || _exec === void 0 ? void 0 : _exec[1];
+				if (code !== void 0) throw new SparkCryptoError(Number(code));
+			}
+			throw error;
+		}
+	}
+	function bindNativeSpark(raw) {
+		if (raw.abiVersion !== 1) throw new KernelError("integrity", `spark-native ABI version ${raw.abiVersion} does not match SPARK_ABI_VERSION 1`);
+		return {
+			abiVersion: raw.abiVersion,
+			frostCommit: (hedge, random) => call(() => raw.frostCommit(hedge, random)),
+			frostSign: (request) => call(() => raw.frostSign(request)),
+			frostAggregate: (request) => call(() => raw.frostAggregate(request)),
+			eciesEncrypt: (publicKey, plaintext, random) => call(() => raw.eciesEncrypt(publicKey, plaintext, random)),
+			eciesDecrypt: (privateKey, ciphertext) => call(() => raw.eciesDecrypt(privateKey, ciphertext)),
+			splitSecretWithProofs: (secret, threshold, shares, random) => call(() => raw.splitSecretWithProofs(secret, threshold, shares, random))
+		};
 	}
 	//#endregion
 	//#region packages/wallet-kernel/src/vault/memory.ts
@@ -31965,7 +31997,7 @@ zoo`.split("\n"));
 		},
 		backends: {
 			nostr: nobleBackend,
-			spark: () => Promise.reject(/* @__PURE__ */ new Error("spark backend not available on this host"))
+			spark: async () => bindNativeSpark(__qntx.backends.spark)
 		}
 	}, createKernelPort(__qntx.frames));
 	//#endregion
