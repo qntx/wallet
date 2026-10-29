@@ -13,8 +13,6 @@ import { join } from "node:path";
 import { SPARK_WASM_INTEGRITY } from "@qntx/spark-wasm/browser";
 import { SPARK_ABI_VERSION } from "@qntx/spark/crypto";
 
-import { VAULT_FORMAT } from "../../wallet-kernel/src/vault/store.ts";
-import { PROTOCOL_VERSION } from "../../wallet/src/protocol/index.ts";
 import {
   isRecord,
   lockPackages,
@@ -23,8 +21,10 @@ import {
   parseLockfile,
   stringMap,
 } from "../../../scripts/kernel-manifest.ts";
+import { VAULT_FORMAT } from "../../wallet-kernel/src/vault/store.ts";
+import { PROTOCOL_VERSION } from "../../wallet/src/protocol/index.ts";
 
-export { parseLockfile };
+export { parseLockfile } from "../../../scripts/kernel-manifest.ts";
 
 export type KernelManifest = {
   readonly protocol: number;

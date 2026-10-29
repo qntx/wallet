@@ -1,21 +1,19 @@
 /**
- * Build the kernel runtime payload for `@qntx/wallet-native`: bundle
- * `kernel/kernel-entry.ts` into one classic script with the repo's pinned bundler
- * (rolldown via vite-plus — deterministic across machines, unlike `bun build`
- * whose output varies by bun version) and emit `kernel/generated/kernel-entry.js`
- * plus `kernel/generated/kernel.manifest.json`.
+ * Build the kernel runtime payload for `@qntx/wallet-native`: bundle `kernel/kernel-entry.ts` into
+ * one classic script with the repo's pinned bundler (rolldown via vite-plus — deterministic across
+ * machines, unlike `bun build` whose output varies by bun version) and emit
+ * `kernel/generated/kernel-entry.js` plus `kernel/generated/kernel.manifest.json`.
  *
- * Bytecode is deliberately NOT compiled here: hermesc output is not reproducible
- * across machines and Hermes only loads its own bytecode version, so the
- * consuming app compiles the committed JS with its own hermesc at build time
- * (`packages/wallet-native/scripts/compile-kernel.mjs`). The runtime SHA-256
- * check was removed with the runtime integrity story — the manifest SHA pins
- * the bundle, and `KernelRuntime` still verifies the bytecode magic/version.
+ * Bytecode is deliberately NOT compiled here: hermesc output is not reproducible across machines
+ * and Hermes only loads its own bytecode version, so the consuming app compiles the committed JS
+ * with its own hermesc at build time (`packages/wallet-native/scripts/compile-kernel.mjs`). The
+ * runtime SHA-256 check was removed with the runtime integrity story — the manifest SHA pins the
+ * bundle, and `KernelRuntime` still verifies the bytecode magic/version.
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { build } from "vite";
 
@@ -75,9 +73,7 @@ const manifest = {
   vaultFormat: VAULT_FORMAT,
   libraries: manifestLibraries({
     dependencies: stringMap(isRecord(kernelPkg) ? kernelPkg["dependencies"] : undefined),
-    lockPackages: lockPackages(
-      parseLockfile(readFileSync(resolve(root, "bun.lock"), "utf8")),
-    ),
+    lockPackages: lockPackages(parseLockfile(readFileSync(resolve(root, "bun.lock"), "utf8"))),
   }),
   bundles: manifestBundles([{ file: "kernel-entry.js", bytes }]),
 };

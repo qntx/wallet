@@ -1,13 +1,12 @@
 #!/usr/bin/env node
 /**
- * Compile the shipped kernel bundle to Hermes bytecode with the consuming app's
- * own hermesc, resolved through its installed react-native → hermes-compiler.
- * Hermes only loads its own bytecode version, so the bytecode is compiled at
- * the app's native build time, never shipped.
+ * Compile the shipped kernel bundle to Hermes bytecode with the consuming app's own hermesc,
+ * resolved through its installed react-native → hermes-compiler. Hermes only loads its own bytecode
+ * version, so the bytecode is compiled at the app's native build time, never shipped.
  *
- * Usage: node compile-kernel.mjs <outDir>
- * Emits <outDir>/kernel.hpp (KERNEL_BYTECODE / KERNEL_BYTECODE_SIZE), rewritten
- * only when the content changes so incremental builds do not recompile C++.
+ * Usage: node compile-kernel.mjs <outDir> Emits <outDir>/kernel.hpp (KERNEL_BYTECODE /
+ * KERNEL_BYTECODE_SIZE), rewritten only when the content changes so incremental builds do not
+ * recompile C++.
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -16,7 +15,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const outDirArg = process.argv[2];
+const { 2: outDirArg } = process.argv;
 if (outDirArg === undefined || outDirArg === "") {
   console.error("usage: node compile-kernel.mjs <outDir>");
   process.exit(2);
@@ -29,10 +28,19 @@ const manifestPath = resolve(generated, "kernel.manifest.json");
 
 // The manifest's bundle SHA is the contract: a tampered or stale bundle must
 // fail the native build instead of shipping a kernel nobody recorded.
-const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-const declared = Array.isArray(manifest.bundles)
-  ? manifest.bundles.find((b) => b.file === "kernel-entry.js")?.sha256
-  : undefined;
+/**
+ * @param {unknown} value
+ * @returns {value is { bundles?: { file: string; sha256: string }[] }}
+ */
+function isManifest(value) {
+  return typeof value === "object" && value !== null && "bundles" in value;
+}
+const parsed = /** @type {unknown} */ (JSON.parse(readFileSync(manifestPath, "utf8")));
+if (!isManifest(parsed)) {
+  console.error("kernel.manifest.json: expected an object with a bundles field");
+  process.exit(1);
+}
+const declared = parsed.bundles?.find((b) => b.file === "kernel-entry.js")?.sha256;
 const actual = createHash("sha256").update(readFileSync(entry)).digest("hex");
 if (typeof declared !== "string" || declared !== actual) {
   console.error(
@@ -65,13 +73,13 @@ const hermesc = resolve(
 mkdirSync(outDir, { recursive: true });
 const tmpHbc = resolve(outDir, ".kernel.hbc");
 try {
-  execFileSync(
-    hermesc,
-    ["-O", "-emit-async-break-check", "-emit-binary", "-out", tmpHbc, entry],
-    { stdio: ["ignore", "pipe", "inherit"] },
-  );
+  execFileSync(hermesc, ["-O", "-emit-async-break-check", "-emit-binary", "-out", tmpHbc, entry], {
+    stdio: ["ignore", "pipe", "inherit"],
+  });
 } catch (error) {
-  console.error(`hermesc failed on ${entry}: ${error.message}`);
+  console.error(
+    `hermesc failed on ${entry}: ${error instanceof Error ? error.message : String(error)}`,
+  );
   process.exit(1);
 }
 const bytes = readFileSync(tmpHbc);

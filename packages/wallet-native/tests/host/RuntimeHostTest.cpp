@@ -584,12 +584,13 @@ int kernelBytecode() {
       {qntx::KERNEL_BYTECODE, qntx::KERNEL_BYTECODE + qntx::KERNEL_BYTECODE_SIZE});
   auto rt = KernelRuntime::start(script, hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(180)) == 1,
-      "kernel-bytecode: expected kernel-ready post");
+      "kernel-bytecode: expected the kernel's first frame");
   {
     std::lock_guard<std::mutex> lock(box.m);
-    CHECK(!box.posts.empty() &&
-              box.posts[0].find("\"kernel-ready\"") != std::string::npos,
-        "kernel-bytecode: first post was not kernel-ready");
+    // The kernel speaks CBOR; its first frame is the status event, whose
+    // "event"/"status" keys appear verbatim inside the frame bytes.
+    CHECK(!box.posts.empty() && box.posts[0].find("status") != std::string::npos,
+        "kernel-bytecode: first post was not the kernel's status frame");
   }
   CHECK(box.errors.empty(), "kernel-bytecode: unexpected onError");
   rt->destroy();

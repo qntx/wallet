@@ -26,3 +26,6 @@ packages/wallet-worker/.hermes-smoke.iife.js
 # Android CMake/Gradle build outputs
 **/.cxx/
 **/android/build/
+
+# Generated kernel bundle — committed but never formatted
+packages/wallet-native/kernel/generated/

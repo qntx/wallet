@@ -1,12 +1,16 @@
 /// <reference types="node" />
 /**
- * Shared kernel-manifest pieces: bun.lock parsing and the exact-pin library/bundle
- * resolution used by both the wallet-worker manifest script and
- * `scripts/build-kernel.ts`. Callers assemble their own manifest shape on top.
+ * Shared kernel-manifest pieces: bun.lock parsing and the exact-pin library/bundle resolution used
+ * by both the wallet-worker manifest script and `scripts/build-kernel.ts`. Callers assemble their
+ * own manifest shape on top.
  */
 import { createHash } from "node:crypto";
 
-export type ManifestLibrary = { readonly name: string; readonly version: string; readonly integrity: string };
+export type ManifestLibrary = {
+  readonly name: string;
+  readonly version: string;
+  readonly integrity: string;
+};
 export type ManifestBundle = { readonly file: string; readonly sha256: string };
 
 /**
