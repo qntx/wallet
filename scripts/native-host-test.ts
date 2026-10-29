@@ -100,10 +100,10 @@ const runtimeSources = [
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
   resolve(cppDir, "host/Lifecycle.cpp"),
+  resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
 ];
 const cxxFlags = [
   "-std=c++20",
-  "-DQNTX_HOST_TEST",
   "-Wall",
   "-Wextra",
   "-I",
@@ -161,7 +161,7 @@ const busyloopJs = resolve(buildDir, "busyloop.js");
 const busyloopHbc = resolve(buildDir, "busyloop.hbc");
 writeFileSync(
   busyloopJs,
-  "function __send(s){var b=new Uint8Array(s.length);for(var i=0;i<s.length;i++){b[i]=s.charCodeAt(i)&0xff;}__qntx.post(b.buffer);}" +
+  "function __send(s){var b=new Uint8Array(s.length);for(var i=0;i<s.length;i++){b[i]=s.charCodeAt(i)&0xff;}__qntx.frames.post(b.buffer);}" +
     '__send("ready");var t=Date.now();while(Date.now()-t<3000){}',
 );
 {

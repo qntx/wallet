@@ -1,20 +1,8 @@
 #include "Lifecycle.hpp"
 
-#if defined(QNTX_HOST_TEST) || (!defined(__APPLE__) && !defined(__ANDROID__))
-#include <chrono>
-#endif
+
 
 namespace qntx {
-
-#if defined(QNTX_HOST_TEST) || (!defined(__APPLE__) && !defined(__ANDROID__))
-// Host-test fallback: the dispatcher's clock is always injected in tests, so
-// this definition only satisfies the linker.
-int64_t sleepInclusiveMonotonicMs() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now().time_since_epoch())
-      .count();
-}
-#endif
 
 KernelLifecycleDispatcher& KernelLifecycleDispatcher::shared() {
   static KernelLifecycleDispatcher dispatcher;
@@ -69,11 +57,11 @@ void KernelLifecycleDispatcher::onForeground() {
       if (!host) {
         continue;
       }
-      if (entry.backgroundAtMs != 0 &&
-          backgroundExpired(entry.backgroundAtMs, now, entry.seconds)) {
+      if (entry.backgroundAtMs.has_value() &&
+          backgroundExpired(*entry.backgroundAtMs, now, entry.seconds)) {
         expired.push_back(host);
       }
-      entry.backgroundAtMs = 0;
+      entry.backgroundAtMs.reset();
     }
   }
   for (const auto& host : expired) {

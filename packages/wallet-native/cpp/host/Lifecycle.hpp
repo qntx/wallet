@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <mutex>
 #include <vector>
 
@@ -56,7 +57,7 @@ class KernelLifecycleDispatcher {
   struct Entry {
     std::weak_ptr<LifecycleLockTarget> host;
     int seconds;
-    int64_t backgroundAtMs = 0;
+    std::optional<int64_t> backgroundAtMs;
   };
   std::mutex mutex_;
   std::vector<Entry> entries_;
