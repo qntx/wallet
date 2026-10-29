@@ -8,8 +8,7 @@
     "prebuild": "expo prebuild --clean",
     "ios": "expo run:ios",
     "android": "expo run:android",
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "postinstall": "rm -rf node_modules/@qntx/wallet-native/node_modules"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@qntx/nostr": "0.15.1",
@@ -30,5 +29,8 @@
   },
   "patchedDependencies": {
     "react-native-nitro-modules@0.37.1": "patches/react-native-nitro-modules@0.37.1.patch"
+  },
+  "overrides": {
+    "@qntx/wallet": "file:../../packages/wallet"
   }
 }
