@@ -265,4 +265,80 @@ export async function main(): Promise<void> {
     (m) => typeof m === "object" && m !== null && !Array.isArray(m) && "event" in m,
   );
   assert(statusEvents.length > 0, "kernel posted status events");
+
+  // 8. The native kernel entry runs on the same bare runtime: __qntx is what the native host
+  // injects (deterministic random, fake clock, sync pbkdf2 callback, in-memory file, a capture
+  // port). Importing the entry starts the kernel — its first store.load() and status frame
+  // exercise the file-backed RecordStore, so any global outside the Hermes set (e.g.
+  // structuredClone) fails this smoke instead of an RN build.
+  const postedFrames: ArrayBuffer[] = [];
+  const fileBytes = { value: undefined as Uint8Array | undefined };
+  const __qntxFile = {
+    read: (): Uint8Array | undefined => fileBytes.value,
+    write: (b: Uint8Array): void => {
+      fileBytes.value = b;
+    },
+  };
+  (globalThis as Record<string, unknown>)["__qntx"] = {
+    random,
+    now: () => 1_700_000_000_000,
+    elapsed: () => 0,
+    setTimer: (_ms: number, _fn: () => void) => () => undefined,
+    pbkdf2: (
+      hash: string,
+      password: Uint8Array,
+      salt: Uint8Array,
+      iterations: number,
+      length: number,
+      callback: (result: Uint8Array | undefined, error: string | undefined) => void,
+    ) => {
+      // The injected __qntx.pbkdf2 is callback-shaped by design — an async bridge back to a
+      // promise is exactly what the native side delivers, so the promise rules are waived here.
+      const fn = hash === "sha512" ? sha512 : sha256;
+      void (async () => {
+        try {
+          callback(
+            await pbkdf2Async(fn, password, salt, { c: iterations, dkLen: length }),
+            undefined,
+          );
+        } catch (error) {
+          callback(undefined, String(error));
+        }
+      })();
+    },
+    file: __qntxFile,
+    frames: {
+      post: (frame: ArrayBuffer) => {
+        postedFrames.push(frame);
+      },
+      onMessage: () => undefined,
+    },
+  };
+  await import("../../../wallet-native/kernel/kernel-entry.ts");
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve);
+  });
+  assert(postedFrames.length > 0, "native kernel entry posted its first frame");
+
+  // The kernel loads its store lazily, so exercise the file store directly — this is the
+  // guard for globals outside the Hermes set (e.g. structuredClone): load commits the clone
+  // path and a real commit exercises encode + write + watch.
+  const { createFileStore } = await import("../../../wallet-native/kernel/store.ts");
+  const fs = createFileStore(__qntxFile);
+  const loaded = await fs.load();
+  assert(loaded.meta === undefined && loaded.records.length === 0, "file store initial load");
+  await fs.commit([
+    {
+      op: "init",
+      meta: {
+        format: 2,
+        revision: 1,
+        keyId: "0123456789abcdef0123456789abcdef",
+        failedAttempts: 0,
+        lastFailureAt: 0,
+      },
+    },
+  ]);
+  const reloaded = await createFileStore(__qntxFile).load();
+  assert(reloaded.meta?.revision === 1, "file store reload across rebuild");
 }
