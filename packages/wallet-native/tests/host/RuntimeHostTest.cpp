@@ -1128,6 +1128,12 @@ int main(int argc, char** argv) {
   };
   const auto found = cases.find(testCase);
   if (found == cases.end()) {
+    if (testCase == "--list") {
+      for (const auto& [name, _] : cases) {
+        std::printf("%s\n", name.c_str());
+      }
+      return 0;
+    }
     std::fprintf(stderr, "unknown case: %s\n", testCase.c_str());
     return 2;
   }

@@ -169,38 +169,16 @@ const vectorEnv: Record<string, string> = {
   ).toString("hex"),
 };
 
-const functionalCases = [
-  "destroy-before-evaluate",
-  "destroy-concurrent",
-  "destroy-kdf-inflight",
-  "forged-views",
-  "numeric-validation",
-  "random-bounds",
-  "getrandomvalues",
-  "crash-sync-source",
-  "crash-sync-bytecode",
-  "crash-promise-source",
-  "crash-promise-bytecode",
-  "eval-disabled-standard",
-  "eval-disabled-hardened",
-  "global-descriptors",
-  "global-inventory-standard",
-  "global-inventory-hardened",
-  "textdecoder",
-  "pbkdf2-vectors",
-  "kdf-queue-full",
-  "elapsed-monotonic",
-  "kernel-probe-source-standard",
-  "kernel-probe-bytecode-standard",
-  "kernel-probe-source-hardened",
-  "kernel-probe-bytecode-hardened",
-];
-// Footprint and wall-clock assertions are meaningless under sanitizers.
+// Footprint and wall-clock assertions are meaningless under sanitizers — these cases run only on
+// the plain -O2 binary. Every other case listed by `<binary> --list` runs on all three binaries, so
+// a case added to the C++ map can never drift out of the suite.
 const plainOnlyCases = [
   "destroy-busyloop-source",
   "destroy-busyloop-bytecode",
   "timers-cancel",
   "timers-fired",
+  "measure-timers-standard",
+  "measure-timers-hardened",
 ];
 
 let passed = 0;
@@ -236,6 +214,27 @@ const runCase = (
   }
 };
 
+const o2Binary = resolve(buildDir, "RuntimeHostTest-o2");
+const listProc = Bun.spawnSync([o2Binary, "--list"], {
+  stdout: "pipe",
+  stderr: "pipe",
+  env: process.env,
+});
+const listedCases = listProc.stdout
+  .toString()
+  .split("\n")
+  .map((name) => name.trim())
+  .filter((name) => name.length > 0);
+if (listProc.exitCode !== 0 || listedCases.length === 0) {
+  throw new Error("RuntimeHostTest --list produced no cases");
+}
+for (const testCase of plainOnlyCases) {
+  if (!listedCases.includes(testCase)) {
+    throw new Error(`plainOnlyCases entry not registered in RuntimeHostTest: ${testCase}`);
+  }
+}
+const functionalCases = listedCases.filter((name) => !plainOnlyCases.includes(name));
+
 for (const variant of variants) {
   const binary = resolve(buildDir, `RuntimeHostTest-${variant.name}`);
   console.log(`== ${variant.name} ==`);
@@ -245,9 +244,6 @@ for (const variant of variants) {
   if (variant.name === "o2") {
     for (const testCase of plainOnlyCases) {
       runCase(binary, testCase, variant.env, testCase.endsWith("bytecode") ? [busyloopHbc] : []);
-    }
-    for (const testCase of ["measure-timers-standard", "measure-timers-hardened"]) {
-      runCase(binary, testCase, variant.env);
     }
   }
 }
