@@ -6,11 +6,12 @@
  * `SMOKE_RESULT <name> <ok|fail> <detail>` lines on the console, which Metro/
  * logcat forward like the V1 result lines.
  */
+import { AppState } from "react-native";
 import { NitroModules } from "react-native-nitro-modules";
 
 import { report } from "@qntx/v1-probe";
 import { verifyEvent } from "@qntx/nostr";
-import type { AutoLockPolicy, PasskeyConfig } from "@qntx/wallet";
+import type { AutoLockPolicy, PasskeyConfig, Wallet, WalletSnapshot } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
 import type { KernelHostLike } from "@qntx/wallet-native";
@@ -23,7 +24,8 @@ const PASSKEY: PasskeyConfig = {
   vaultSalt: "vault",
   backupSalt: "backup",
 };
-const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 60 };
+// W7: the native host locks the enclave the moment the app backgrounds.
+const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 0 };
 const PASSWORD = "smoke-password-1";
 const WRONG = "smoke-password-2";
 
@@ -106,4 +108,41 @@ export async function smokeUnlock(): Promise<void> {
     pubkey: key.publicKey,
   });
   result("persisted-sign", verifyEvent(event), `wallet=${walletId} pubkey=${key.publicKey}`);
+
+  // W7: armed at backgroundSeconds=0 — backgrounding locks the enclave at the
+  // platform layer; foreground must reveal vault=locked with the real reason.
+  result("background-armed", true, "");
+  const snapshot = await waitBackgroundLock(wallet);
+  result(
+    "background-lock",
+    snapshot.vault === "locked" && snapshot.lockReason === "background",
+    `vault=${snapshot.vault} reason=${String(snapshot.lockReason)}`,
+  );
 }
+
+/** Waits for the driver to send the app to background and back; resolves the
+ *  snapshot once AppState returns to "active" (or the current snapshot when
+ *  the lock has already landed). Fails after 120 s. */
+const waitBackgroundLock = async (wallet: Wallet): Promise<WalletSnapshot> => {
+  const deadline = Date.now() + 120_000;
+  let sawBackground = false;
+  while (Date.now() < deadline) {
+    const state = AppState.currentState;
+    if (state === "background" || state === "inactive") {
+      sawBackground = true;
+    }
+    const snapshot = wallet.getSnapshot();
+    if (
+      sawBackground &&
+      state === "active" &&
+      snapshot.vault === "locked" &&
+      snapshot.lockReason === "background"
+    ) {
+      return snapshot;
+    }
+    await new Promise((resolve) => {
+      setTimeout(resolve, 250);
+    });
+  }
+  return wallet.getSnapshot();
+};
