@@ -103,6 +103,7 @@ const runtimeSources = [
 ];
 const cxxFlags = [
   "-std=c++20",
+  "-DQNTX_HOST_TEST",
   "-Wall",
   "-Wextra",
   "-I",

@@ -4,6 +4,7 @@
 // V1_PBKDF2_SHA256_1 / V1_PBKDF2_SHA256_80000 / V1_PBKDF2_SHA512_UTF8.
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
+#include "host/Lifecycle.hpp"
 #include "kernel.hpp"
 
 #if __has_include("generated/probes.hpp")
@@ -586,7 +587,7 @@ int lifecycleBoundaries() {
       "lifecycle: exactly at the deadline must lock");
   CHECK(qntx::backgroundExpired(1000, 1000 + 60001, 60),
       "lifecycle: just past the deadline must lock");
-  CHECK(qntx::backgroundExpired(0, 899999, 900),
+  CHECK(!qntx::backgroundExpired(0, 899999, 900),
       "lifecycle: just before a 900s deadline must not lock");
   CHECK(qntx::backgroundExpired(0, 900000, 900),
       "lifecycle: 900s deadline edge");

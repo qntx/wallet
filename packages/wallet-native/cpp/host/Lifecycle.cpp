@@ -1,12 +1,12 @@
 #include "Lifecycle.hpp"
 
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if defined(QNTX_HOST_TEST) || (!defined(__APPLE__) && !defined(__ANDROID__))
 #include <chrono>
 #endif
 
 namespace qntx {
 
-#if !defined(__APPLE__) && !defined(__ANDROID__)
+#if defined(QNTX_HOST_TEST) || (!defined(__APPLE__) && !defined(__ANDROID__))
 // Host-test fallback: the dispatcher's clock is always injected in tests, so
 // this definition only satisfies the linker.
 int64_t sleepInclusiveMonotonicMs() {
