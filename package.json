@@ -25,7 +25,8 @@
     "native:host-test": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && bun scripts/native-host-test.ts",
     "release": "bumpp",
     "prepare": "vp config",
-    "test:consumer": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && vp run @qntx/wallet-worker#test:consumer"
+    "test:consumer": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && vp run @qntx/wallet-worker#test:consumer",
+    "native:kernel": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && bun scripts/build-kernel.ts"
   },
   "devDependencies": {
     "@noble/ciphers": "2.4.0",
