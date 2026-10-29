@@ -61,6 +61,12 @@ android {
             "-DQNTX_REACT_NATIVE_PATH=" + providers.exec {
                 workingDir = rootProject.projectDir
                 commandLine "node", "-p", "require('path').dirname(require.resolve('react-native/package.json'))"
+            }.standardOutput.asText.get().trim(),
+            // The app's @qntx/spark-native dir (header + per-ABI libqntx_spark.so),
+            // resolved the same way.
+            "-DQNTX_SPARK_NATIVE_PATH=" + providers.exec {
+                workingDir = rootProject.projectDir
+                commandLine "node", "-p", "require('path').dirname(require.resolve('@qntx/spark-native/package.json'))"
             }.standardOutput.asText.get().trim()
         abiFilters (*reactNativeArchitectures())
         buildTypes {
@@ -99,7 +105,9 @@ android {
       "**/libreactnativejni.so",
       "**/libturbomodulejsijni.so",
       "**/libreact_nativemodule_core.so",
-      "**/libjscexecutor.so"
+      "**/libjscexecutor.so",
+      // Linked, not bundled — @qntx/spark-native packages it from its jniLibs.
+      "**/libqntx_spark.so"
     ]
   }
 

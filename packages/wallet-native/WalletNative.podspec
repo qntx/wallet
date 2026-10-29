@@ -56,6 +56,9 @@ Pod::Spec.new do |s|
     :output_files => ["$(DERIVED_FILE_DIR)/qntx-kernel/kernel.hpp"],
   }
 
+  # The kernel's backends.spark binds the qs_* C ABI; the prebuilt
+  # QntxSpark.xcframework ships inside the SparkNative pod.
+  s.dependency 'SparkNative'
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'React-hermes'
