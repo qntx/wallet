@@ -56,6 +56,16 @@ bun run harness:bundles
 `expo prebuild` regenerates the gitignored `ios/` and `android/` dirs; run
 `pod install` inside `ios/` afterwards.
 
+The harness installs `@qntx/wallet-native` and `@qntx/wallet` as `file:` copies
+and bundles their `dist/`. After changing either package, rebuild it and refresh
+the copies before building the app — otherwise the app runs the previous JS
+against the new native code:
+
+```bash
+bun run --cwd packages/wallet build && bun run --cwd packages/wallet-native build   # repo root
+cd apps/harness && rm -rf node_modules/@qntx/wallet node_modules/@qntx/wallet-native && bun install
+```
+
 ## Running
 
 Build the app normally (`expo run:ios` / `expo run:android`, or xcodebuild /
