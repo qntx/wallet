@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet` and `packages/wallet-worker` via npm trusted publishing / OIDC). `@qntx/wallet-kernel` is private and only bundled into the host packages.
 
-## [Unreleased]
+## [0.3.1] - 2026-10-29
 
 ### Fixed
 

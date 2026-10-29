@@ -58,11 +58,13 @@ async function terminated(page: Page): Promise<number> {
 
 /**
  * Spark payloads: the spark SDK chunk, the spark-wasm loader chunk, and the wasm itself. Shared
- * non-spark chunks load eagerly with the entry — that is expected.
+ * non-spark chunks load eagerly with the entry — that is expected. Consumer bundlers keep the
+ * bun-emitted chunk basenames and append their own hash (signer-_-h.js, browser-_-h.js), and rename
+ * spark.wasm to spark-*-h.wasm — match on those stable prefixes, not a full filename.
  */
 function isSparkPayload(url: string): boolean {
   return (
-    url.includes("spark.wasm") || /signer-[^/]*\.js/.test(url) || /browser-[^/]*\.js/.test(url)
+    /spark[^/]*\.wasm/.test(url) || /signer-[^/]*\.js/.test(url) || /browser-[^/]*\.js/.test(url)
   );
 }
 
@@ -381,7 +383,7 @@ test.describe("web host", () => {
       throw new Error(`sparkIdentity failed: ${identity.code}`);
     }
     const sparkPayloads = requests.filter(isSparkPayload);
-    expect(sparkPayloads.some((u) => u.includes("spark.wasm"))).toBe(true);
+    expect(sparkPayloads.some((u) => /spark[^/]*\.wasm/.test(u))).toBe(true);
     expect(sparkPayloads.some((u) => /signer-[^/]*\.js/.test(u))).toBe(true);
   });
 
