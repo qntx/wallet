@@ -17,6 +17,7 @@
         "@types/node": "26.6.5",
         "@vitest/coverage-v8": "5.0.5",
         "bumpp": "12.3.0",
+        "cborg": "6.1.4",
         "typescript": "7.0.2",
         "vite": "npm:@voidzero-dev/vite-plus-core@1.3.0",
         "vite-plus": "1.3.0",
@@ -108,7 +109,18 @@
     },
     "packages/wallet-native": {
       "name": "@qntx/wallet-native",
-      "version": "0.0.0",
+      "version": "0.3.0",
+      "dependencies": {
+        "cborg": "6.1.4",
+      },
+      "devDependencies": {
+        "@qntx/nostr": "0.15.0",
+        "@qntx/tsconfig": "1.0.1",
+        "@qntx/wallet": "0.3.0",
+      },
+      "peerDependencies": {
+        "@qntx/wallet": "0.3.0",
+      },
     },
     "packages/wallet-worker": {
       "name": "@qntx/wallet-worker",
@@ -458,6 +470,8 @@
     "bumpp": ["bumpp@12.3.0", "", { "dependencies": { "args-tokenizer": "^0.3.0", "cac": "^7.0.0", "jsonc-parser": "^3.3.1", "package-manager-detector": "^1.8.0", "tinyexec": "^1.3.0", "tinyglobby": "^0.2.17", "unconfig": "^7.5.0", "verkit": "^0.4.0", "yaml": "^2.9.0" }, "bin": { "bumpp": "bin/bumpp.mjs" } }, "sha512-YgW09sgbIGQmAD/Jk7FEGP0tm0PeDz+Zgk+IAk+MOHhb/98pj/l3CgkxSjd7C1O99JPxTNwS+bPOTNaHuNh6lQ=="],
 
     "cac": ["cac@7.1.0", "", {}, "sha512-LMDU/U2yA4IPIY8KT0NsNPWEYZvAMkbgyspxJ6btJaYV+WMDOHAZCmB0lsTObiHaRS1V/ztKAl7+TSkTqXyeoA=="],
+
+    "cborg": ["cborg@6.1.4", "", { "bin": { "cborg": "lib/bin.js" } }, "sha512-JqjDDfTuED2qUvy570NGQUXqfzC34H++AHJIZnLAmiAdHNqHJKbtzox5yViRz5rc0gM9OPSX7n7Sh+BNU263Xw=="],
 
     "chai": ["chai@6.3.0", "", {}, "sha512-XWAtwJ6OHO+tj0EKCs0Y2UamnyOxseZWltU4x2U2wh8g4AigdjwvtUjvLP2tqkA/avxHEtzxNaqGq/YGNwckKg=="],
 

@@ -14,6 +14,7 @@ it for funds.**
 | `factor-wrap.json` | KEK → factor public key; fixed DEK/eph/nonce → factor wrap v2 `sealed` (`0x02 ‖ ephPk ‖ binding ‖ envelope`) | `bun scripts/vectors/factor-wrap.ts` — uses noble directly, no kernel imports |
 | `records.json`     | Exact public-header texts (entropy, data-key, nostr-key all origins, both factors) and the vault meta object | `bun scripts/vectors/records.ts` — `JSON.stringify` in the documented key order, no kernel imports |
 | `protocol.json`    | PROTOCOL_VERSION 1 request envelopes, ok/err responses and events (`{"$bytes": hex}` marks Uint8Array), plus near-miss rejects | `bun scripts/vectors/protocol.ts` — wire shapes spelled out literally, no `@qntx/wallet` imports |
+| `native-frames.json`  | Kernel-channel CBOR frames: accepted values and rejected encodings | `bun scripts/vectors/native-frames.ts` — raw cborg, no package imports |
 | `spark-accounts.json` | Spark identity public keys for account groups 0/1 on mainnet/regtest under the public test mnemonic | `bun scripts/spark-accounts-vector.ts` from `packages/wallet-worker` — real `createSparkSigner` on the shipped spark.wasm |
 
 ## factor vectors
