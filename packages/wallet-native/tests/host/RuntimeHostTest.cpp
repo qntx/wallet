@@ -638,6 +638,74 @@ int filePrimitive() {
   return g_failures;
 }
 
+// The __qntx.file JS contract, exercised inside the real runtime: null on a
+// missing file (not undefined — the kernel's file store keys on null), writes
+// accept a TypedArray view (a subarray with non-zero byteOffset persists
+// exactly those bytes), non-byte inputs throw, and a second runtime on the
+// same directory reads the persisted bytes back.
+int fileContract() {
+  const std::string dir = makeTempDir();
+  if (dir.empty()) {
+    return g_failures;
+  }
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var out = [];
+out.push("read:" + (__qntx.file.read() === null ? "null" : "not-null"));
+var view = new Uint8Array([9, 1, 2, 3, 4, 8]).subarray(1, 5);
+__qntx.file.write(view);
+var back = __qntx.file.read();
+out.push("back:" + (back === null ? "null" : Array.from(back).join(",")));
+try {
+  __qntx.file.write({ length: 4 });
+  out.push("object:no-throw");
+} catch (e) {
+  out.push("object:threw");
+}
+try {
+  __qntx.file.write("bytes");
+  out.push("string:no-throw");
+} catch (e) {
+  out.push("string:threw");
+}
+__send(out.join("|"));
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), dir);
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: no report");
+    rt->destroy();
+  }
+  std::string report;
+  {
+    std::lock_guard<std::mutex> lock(box.m);
+    if (!box.posts.empty()) {
+      report = box.posts[0];
+    }
+  }
+  CHECK(report.find("read:null") != std::string::npos, "file-contract: missing file must read null");
+  CHECK(report.find("back:1,2,3,4") != std::string::npos,
+      "file-contract: subarray bytes must persist exactly");
+  CHECK(report.find("object:threw") != std::string::npos, "file-contract: plain object must throw");
+  CHECK(report.find("string:threw") != std::string::npos, "file-contract: string must throw");
+
+  Mailbox box2;
+  const std::string js2 = std::string(kSendHelper) + R"JS(
+var back = __qntx.file.read();
+__send(back === null ? "r:null" : "r:" + Array.from(back).join(","));
+)JS";
+  {
+    auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), dir);
+    CHECK(box2.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: reload no report");
+    rt2->destroy();
+  }
+  {
+    std::lock_guard<std::mutex> lock(box2.m);
+    CHECK(!box2.posts.empty() && box2.posts[0] == "r:1,2,3,4",
+        "file-contract: second runtime must read persisted bytes");
+  }
+  return g_failures;
+}
+
 int queueCap() {
   Mailbox box;
   bool integrity = false;
@@ -1051,6 +1119,7 @@ int main(int argc, char** argv) {
        [](const char*) { return kernelProbe(true, KernelProfile::hardened); }},
       {"sha256-vectors", [](const char*) { return sha256Vectors(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
+      {"file-contract", [](const char*) { return fileContract(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},
       {"measure-timers-standard",
        [](const char*) { return measureTimers(KernelProfile::standard); }},
