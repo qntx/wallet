@@ -16,13 +16,23 @@ HybridKernelHost::~HybridKernelHost() {
   }
 }
 
-void HybridKernelHost::start() {
+void HybridKernelHost::start(double backgroundLockSeconds) {
+  const int seconds = static_cast<int>(backgroundLockSeconds);
+  if (backgroundLockSeconds != seconds ||
+      (seconds != 0 && seconds != 60 && seconds != 300 && seconds != 900)) {
+    throw std::runtime_error("backgroundLockSeconds must be one of 0, 60, 300, 900");
+  }
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (runtime_ || exited_) {
       return;
     }
   }
+  // The platform observer installs once; this host registers its deadline so
+  // the dispatcher can stamp or lock it on background/foreground transitions.
+  qntx::installLifecycleObserver();
+  qntx::KernelLifecycleDispatcher::shared().registerHost(
+      std::dynamic_pointer_cast<HybridKernelHost>(shared_from_this()), seconds);
   // Resolved once here: a platform failure rejects start() for the JS caller
   // instead of surfacing later as a store error inside the kernel.
   const std::string vaultDirectory = qntx::platformVaultDirectory();
@@ -117,6 +127,7 @@ void HybridKernelHost::exit(KernelExitReason reason) {
   if (runtime) {
     runtime->destroy();
   }
+  qntx::KernelLifecycleDispatcher::shared().unregister(this);
   if (listener) {
     listener(reason);
   }

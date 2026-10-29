@@ -7,10 +7,11 @@ import type { HybridObject } from "react-native-nitro-modules";
  * after `lock`, `crashed` after a kernel fault, `integrity` after a transport or hash violation.
  * `lock` destroys the runtime. It exposes no script loading and no global-object access.
  */
-export type KernelExitReason = "locked" | "crashed" | "integrity";
+export type KernelExitReason = "locked" | "crashed" | "integrity" | "background";
 
 export interface KernelHost extends HybridObject<{ ios: "c++"; android: "c++" }> {
-  start(): void;
+  /** 0/60/300/900 — after this long in the background the host locks the enclave itself. */
+  start(backgroundLockSeconds: number): void;
   post(frame: ArrayBuffer): void;
   onMessage(listener: (frame: ArrayBuffer) => void): void;
   onExit(listener: (reason: KernelExitReason) => void): void;

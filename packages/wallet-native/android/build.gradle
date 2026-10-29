@@ -4,6 +4,7 @@ buildscript {
     mavenCentral()
   }
   dependencies {
+
     classpath "com.android.tools.build:gradle:9.2.1"
   }
 }
@@ -145,6 +146,10 @@ dependencies {
 
   // NitroModules core (provides the react-native-nitro-modules prefab + HybridObject runtime)
   implementation project(":react-native-nitro-modules")
+
+  // ProcessLifecycleOwner for the background lock (W7) — the version the app
+  // already resolves for androidx.lifecycle.
+  implementation "androidx.lifecycle:lifecycle-process:2.6.2"
 }
 
 repositories {
