@@ -14491,7 +14491,7 @@ zoo`.split("\n"));
 		};
 	}
 	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/errors-5xLkExNL.mjs
+	//#region node_modules/.bun/@qntx+spark@0.5.1/node_modules/@qntx/spark/dist/errors-5xLkExNL.mjs
 	var SparkError, SparkCryptoError, SparkInputError;
 	var init_errors_5xLkExNL = __esmMin((() => {
 		init_defineProperty();
@@ -25643,7 +25643,7 @@ zoo`.split("\n"));
 		init_guard();
 	}));
 	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/token-C3vqRH-k.mjs
+	//#region node_modules/.bun/@qntx+spark@0.5.1/node_modules/@qntx/spark/dist/token-C3vqRH-k.mjs
 	/**
 	* Static network parameters for `network`. Each call builds a fresh config — fresh `Uint8Array`
 	* keys — so callers can never corrupt shared module state. Throws {@link SparkInputError} on an
@@ -26602,7 +26602,7 @@ zoo`.split("\n"));
 		]);
 	}));
 	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/bolt11-rfxnyLcb.mjs
+	//#region node_modules/.bun/@qntx+spark@0.5.1/node_modules/@qntx/spark/dist/bolt11-rfxnyLcb.mjs
 	function fail$1(message) {
 		throw new SparkInputError(`invoice: ${message}`);
 	}
@@ -26902,7 +26902,7 @@ zoo`.split("\n"));
 		UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 	}));
 	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/lightning-address-CZrb8x4p.mjs
+	//#region node_modules/.bun/@qntx+spark@0.5.1/node_modules/@qntx/spark/dist/lightning-address-CZrb8x4p.mjs
 	function fail(message) {
 		throw new SparkInputError(`lightning address: ${message}`);
 	}
@@ -26977,12 +26977,12 @@ zoo`.split("\n"));
 		HOST_LABEL$1 = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/u;
 	}));
 	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/crypto.mjs
+	//#region node_modules/.bun/@qntx+spark@0.5.1/node_modules/@qntx/spark/dist/crypto.mjs
 	var init_crypto = __esmMin((() => {
 		init_errors_5xLkExNL();
 	}));
 	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.0/node_modules/@qntx/spark/dist/signer.mjs
+	//#region node_modules/.bun/@qntx+spark@0.5.1/node_modules/@qntx/spark/dist/signer.mjs
 	var signer_exports = /* @__PURE__ */ __exportAll({
 		EPHEMERAL_ANCHOR_SCRIPT: () => EPHEMERAL_ANCHOR_SCRIPT,
 		bitcoinAddressScript: () => bitcoinAddressScript,

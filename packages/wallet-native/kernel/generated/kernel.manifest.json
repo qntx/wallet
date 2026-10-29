@@ -29,13 +29,13 @@
     },
     {
       "name": "@qntx/spark",
-      "version": "0.5.0",
-      "integrity": "sha512-nRJzrACUqRkKPwZP676dtYHXLWDTb2AzhVKLzN8PLlrcF7IEDYjQvlAMV0USC22vcQh1EqtWPvLGG6X/dCQ4Pw=="
+      "version": "0.5.1",
+      "integrity": "sha512-5Zx2J1i0R/yGRXiK6+Pg80TGKRLCpN5zxeXxBAXGERSrthwsDSCSky5kJOxau7O+zpyup5dwoa9fOZstKaoGvA=="
     },
     {
       "name": "@qntx/spark-native",
-      "version": "0.5.0",
-      "integrity": "sha512-Vc8LxHc4OFpR64MnnsKHJt0AV3NtHalVjzYB+CbHr3dYtZK1RDZPiHYzokKZM0XP6Ji+iyvAYQ384k4BCn74lQ=="
+      "version": "0.5.1",
+      "integrity": "sha512-saOcOM9I8BBSOI0QRfY76SQvjym1WsNoOCJLvyDFWClCKwI0vnfZ3QxBjmb+iyVgboHib90aobKrY2a69fes3w=="
     },
     {
       "name": "@scure/base",
@@ -56,7 +56,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "38df2d6ea830b28364490af0c921b606c1853a9b320855c8229def468a35a345"
+      "sha256": "bbb37cc4b6dc64648eb2dc28baa02554e11110d298854ce556b3baca1e3e62d5"
     }
   ]
 }

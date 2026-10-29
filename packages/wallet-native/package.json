@@ -37,14 +37,14 @@
   },
   "devDependencies": {
     "@qntx/nostr": "0.15.0",
-    "@qntx/spark": "0.5.0",
-    "@qntx/spark-native": "0.5.0",
+    "@qntx/spark": "0.5.1",
+    "@qntx/spark-native": "0.5.1",
     "@qntx/tsconfig": "1.0.1",
     "nitrogen": "0.37.1",
     "react-native-nitro-modules": "0.37.1"
   },
   "peerDependencies": {
-    "@qntx/spark-native": "0.5.0",
+    "@qntx/spark-native": "0.5.1",
     "@qntx/wallet": "0.4.0",
     "react-native-nitro-modules": "*"
   }
