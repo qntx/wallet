@@ -156,6 +156,7 @@ const config: UserConfig = defineConfig({
       "target/**",
       ".vite-hooks/**",
       "vectors/**",
+      "packages/wallet-native/cpp/generated/**",
       // apps/harness is a standalone Expo project with its own toolchain and
       // RN types; it is deliberately outside the root lint/typecheck gates.
       "apps/harness/**",
@@ -385,6 +386,8 @@ const config: UserConfig = defineConfig({
       "**/*.toml",
       // Generated vectors stay byte-frozen.
       "vectors/**",
+      // Generated kernel payloads stay byte-frozen.
+      "packages/wallet-native/cpp/generated/**",
       // Standalone Expo app (own toolchain), see the lint ignore above.
       "apps/harness/**",
     ],
