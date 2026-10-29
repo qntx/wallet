@@ -112,11 +112,11 @@ export async function smokeUnlock(): Promise<void> {
   // W7: armed at backgroundSeconds=0 — backgrounding locks the enclave at the
   // platform layer; foreground must reveal vault=locked with the real reason.
   result("background-armed", true, "");
-  const snapshot = await waitBackgroundLock(wallet);
+  const bg = await waitBackgroundLock(wallet);
   result(
     "background-lock",
-    snapshot.vault === "locked" && snapshot.lockReason === "background",
-    `vault=${snapshot.vault} reason=${String(snapshot.lockReason)}`,
+    bg.vault === "locked" && bg.lockReason === "background",
+    `vault=${bg.vault} reason=${String(bg.lockReason)}`,
   );
 }
 

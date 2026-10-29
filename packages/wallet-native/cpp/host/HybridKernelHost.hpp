@@ -6,7 +6,7 @@
 #include <memory>
 #include <mutex>
 
-#include "Lifecycle.hpp"
+#include "host/Lifecycle.hpp"
 
 #include "../runtime/KernelRuntime.hpp"
 
