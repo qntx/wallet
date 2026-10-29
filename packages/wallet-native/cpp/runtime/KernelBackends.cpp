@@ -2,18 +2,11 @@
 
 #include "KernelJs.hpp"
 
-// qntx_spark.h is generated with cbindgen language = "C" — no extern "C"
-// guard of its own — so C++ consumers must wrap the include or they'd emit
-// references under the wrong (mangled) names. iOS takes the vendored
-// QntxSpark.framework's public header; Android and the host test put the
-// package's include/ directory on -I instead.
-extern "C" {
-#if __has_include(<QntxSpark/qntx_spark.h>)
-#include <QntxSpark/qntx_spark.h>
-#else
+// qntx_spark.h carries its own extern "C" guard since 0.5.1. Every build
+// resolves the bare include through a search path: iOS via the SparkNative
+// pod's headers (added by the WalletNative podspec), Android and the host
+// test via the package's include/ directory.
 #include "qntx_spark.h"
-#endif
-}
 
 #include <string>
 

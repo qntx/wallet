@@ -29,6 +29,7 @@ Pod::Spec.new do |s|
     "HEADER_SEARCH_PATHS" => [
       '"$(PODS_TARGET_SRCROOT)/cpp"',
       '"$(PODS_ROOT)/hermes-engine/destroot/include"',
+      '"$(PODS_ROOT)/Headers/Private/SparkNative"',
       '"$(DERIVED_FILE_DIR)/qntx-kernel"',
     ].join(' '),
   }

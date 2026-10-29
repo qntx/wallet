@@ -54,13 +54,13 @@ set(QNTX_SPARK_LIBDIR "${QNTX_SPARK_NATIVE_PATH}/android/src/main/jniLibs/${ANDR
 if(NOT EXISTS "${QNTX_SPARK_LIBDIR}/libqntx_spark.so")
   message(FATAL_ERROR "libqntx_spark.so for ${ANDROID_ABI} not found in ${QNTX_SPARK_LIBDIR}")
 endif()
-# The prebuilt .so carries no SONAME, so linking it by file path would record
-# that absolute path in DT_NEEDED and fail to load at runtime. Link by name
-# instead — the loader then resolves libqntx_spark.so from the packaged
-# jniLibs. PUBLIC: this target's link libraries are transitive (plain
-# signature), so add_subdirectory consumers see -lqntx_spark too and need
-# the directory to resolve it.
-target_link_directories(${PACKAGE_NAME} PUBLIC ${QNTX_SPARK_LIBDIR})
+# The .so carries SONAME since 0.5.1, so the path link records the soname in
+# DT_NEEDED — the loader resolves it from the packaged jniLibs. GLOBAL: this
+# target's link libraries are transitive (plain signature), so
+# add_subdirectory consumers (v1-probe) see and link the same imported target.
+add_library(qntx_spark SHARED IMPORTED GLOBAL)
+set_target_properties(qntx_spark PROPERTIES
+     IMPORTED_LOCATION "${QNTX_SPARK_LIBDIR}/libqntx_spark.so")
 target_include_directories(${PACKAGE_NAME} PRIVATE "${QNTX_SPARK_NATIVE_PATH}/include")
 
 # Adds the nitrogen-generated sources, the BUILDING_..._GENERATED_CMAKE_PROJECT
