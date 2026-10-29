@@ -652,8 +652,9 @@ int queueCap() {
   auto rt = KernelRuntime::start(
       sourceScript(
           std::string(kSendHelper) +
-          // The kernel never reads messages — the queue must fill and refuse.
-          "__send(\"ready\");"),
+          // Keep the kernel thread busy after ready so the 70 inbound frames pile
+          // up in the queue instead of draining instantly.
+          "__send(\"ready\"); var t = Date.now(); while (Date.now() - t < 5000) {}"),
       std::move(hooks));
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
   std::vector<uint8_t> frame(16, 0x61);
