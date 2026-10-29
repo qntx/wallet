@@ -55,14 +55,20 @@ export async function createWebWallet(options: WalletOptions): Promise<Wallet> {
   }
   // The page sends only the idle choice; the worker owns the maximum session duration.
   const init: BrowserWorkerInit = { t: "init", idleMinutes: autoLock.idleMinutes };
-  const kernelUrl = new URL("kernel.worker.js", import.meta.url);
   const ceremony = createWebAuthnPasskey({
     id: options.passkey.rpId,
     name: options.passkey.rpName,
   });
 
   const spawn = (): MainPort => {
-    const worker = new Worker(kernelUrl, { type: "module", name: "qntx-wallet" });
+    // Keep this exact `new Worker(new URL("…", import.meta.url))` shape: bundlers (Vite,
+    // webpack, Parcel, esbuild-based tools) recognize only this literal form as a worker entry and
+    // bundle the kernel with its chunks and spark.wasm. A precomputed URL is copied as one opaque
+    // asset, and the worker then dies loading its first chunk.
+    const worker = new Worker(new URL("kernel.worker.js", import.meta.url), {
+      type: "module",
+      name: "qntx-wallet",
+    });
     // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage takes a transfer list, not an origin
     worker.postMessage(init); // the kernel validates it strictly before startKernel
     return {
