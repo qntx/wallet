@@ -38,9 +38,15 @@ Pod::Spec.new do |s|
   # kernel.hpp lands in DERIVED_FILE_DIR/qntx-kernel (a header search path).
   s.script_phase = {
     :name => "Compile Kernel Bytecode",
-    :script => ". \"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"
-" +
-               '"$NODE_BINARY" "$PODS_TARGET_SRCROOT/scripts/compile-kernel.mjs" "$DERIVED_FILE_DIR/qntx-kernel"',
+    :script => <<~SH,
+      if [ -z "$REACT_NATIVE_PATH" ]; then
+        echo "REACT_NATIVE_PATH is not set"
+        exit 1
+      fi
+      . "$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh"
+      "$NODE_BINARY" "$PODS_TARGET_SRCROOT/scripts/compile-kernel.mjs" \
+        "$DERIVED_FILE_DIR/qntx-kernel" "$REACT_NATIVE_PATH"
+    SH
     :execution_position => :before_compile,
     :input_files => [
       "$(PODS_TARGET_SRCROOT)/kernel/generated/kernel-entry.js",

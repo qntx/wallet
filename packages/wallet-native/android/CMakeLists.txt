@@ -22,8 +22,8 @@ target_include_directories(${PACKAGE_NAME} PUBLIC
 
 # Compile the shipped kernel bundle to bytecode with the app's own hermesc —
 # Hermes only loads its own bytecode version, so precompiled hbc cannot ship.
-# The script resolves react-native from the package dir upward, matching
-# whatever Hermes runtime the consuming app links.
+# The app's react-native root is passed explicitly (-DQNTX_REACT_NATIVE_PATH)
+# so the script resolves the app's own hermesc version.
 find_program(NODE_EXECUTABLE node REQUIRED)
 if(NOT QNTX_REACT_NATIVE_PATH)
   message(FATAL_ERROR "QNTX_REACT_NATIVE_PATH is not set — the consuming app must pass -DQNTX_REACT_NATIVE_PATH=<react-native dir>")

@@ -26,13 +26,13 @@ if (isNewArchitectureEnabled()) {
 
 // The consuming app's react-native dir, resolved via node from the app project
 // — a library cannot reach it by walking up from its own tree.
-def qntxRnOut = new ByteArrayOutputStream()
-rootProject.exec {
-    workingDir rootProject.projectDir
+def qntxReactNativeDir = providers.exec {
+    workingDir = rootProject.projectDir
     commandLine "node", "-p", "require('path').dirname(require.resolve('react-native/package.json'))"
-    standardOutput = qntxRnOut
+}.standardOutput.asText.get().trim()
+if (qntxReactNativeDir.isEmpty()) {
+    throw new GradleException("could not resolve react-native from ${rootProject.projectDir}")
 }
-def qntxReactNativeDir = qntxRnOut.toString().trim()
 }
 
 def getExtOrDefault(name) {
