@@ -6,6 +6,8 @@ import type { HybridObject } from "react-native-nitro-modules";
 
 import { closeKernel, openKernel, report, runProbe, sendToKernel } from "@qntx/v1-probe";
 
+import { smokeCreate, smokePhase, smokeUnlock } from "./social-smoke.ts";
+
 type ProbeResult = {
   probe: string;
   mode: string;
@@ -260,6 +262,23 @@ export const App = (): React.JSX.Element => {
   useEffect(() => {
     let cancelled = false;
     const run = async (): Promise<void> => {
+      // EXPO_PUBLIC_V1_PROBES=1 selects the V1 measurement suite; the default is the
+      // social smoke (create on first boot, unlock on relaunch — see README).
+      if (process.env.EXPO_PUBLIC_V1_PROBES !== "1") {
+        try {
+          const phase = await smokePhase();
+          if (phase === "create") {
+            await smokeCreate();
+          } else {
+            await smokeUnlock();
+          }
+          report("smoke-done", "release", true, "{}");
+        } catch (e) {
+          report("smoke-run-fail", "release", false, e instanceof Error ? e.message : String(e));
+        }
+        setDone(true);
+        return;
+      }
       report("selftest", "source", true, "{}");
       for (const [probe, mode] of PROBES) {
         if (cancelled) {

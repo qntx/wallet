@@ -1,5 +1,18 @@
 # V1 Harness
 
+## Social smoke (default on launch)
+
+The app now boots into the W2b social smoke through `createNativeWallet` (Nitro
+`KernelHost` → real kernel + file-backed vault): first launch creates a 12-word
+mnemonic vault with the quiz ceremony, Nostr-signs and verifies an event, then
+locks; **relaunch the app** and it unlocks the persisted vault with the password
+and rejects a wrong one. Each step prints a machine-readable `SMOKE_RESULT
+<name> <ok|fail> <detail>` line to the console (Metro / logcat), ending with
+`SMOKE_RESULT done ok`.
+
+Run the V1 probe suite instead with `EXPO_PUBLIC_V1_PROBES=1` at bundle time.
+
+
 Expo/React Native harness app that runs the V1 gate measurements for the isolated
 Hermes kernel runtime (`modules/v1-probe` (probe entry) + `packages/wallet-native` (kernel runtime)). It bundles the wallet kernel and a set
 of probe scripts into `cpp/generated/probes.hpp`, drives them from a Nitro
