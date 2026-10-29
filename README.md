@@ -8,6 +8,7 @@ Self-custodial wallet SDK for TypeScript: an isolated secret enclave (Web Worker
 
 - [`@qntx/wallet`](packages/wallet) — the host-facing API: `Wallet`, the immutable snapshot, `WalletError`, the wire protocol and the `@qntx/wallet/nostr` subpath.
 - [`@qntx/wallet-worker`](packages/wallet-worker) — Web and Node hosts that spawn the kernel, persist the vault and run the passkey ceremony. `dist/kernel.manifest.json` records the protocol version, vault format, pinned library versions and bundle SHA-256.
+- [`@qntx/wallet-engine`](packages/wallet-engine) — app-side controllers over a `Wallet`: account tree, Spark payments and per-operation approvals, zaps, metadata sync and cloud backup.
 - `@qntx/wallet-kernel` — the private enclave, bundled by the host packages, never published.
 
 ## Security model

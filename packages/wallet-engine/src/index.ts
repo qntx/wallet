@@ -36,7 +36,7 @@ export { MetaSyncError } from "./meta/errors.ts";
 export type { MetaDoc, MetaDocGroup, MetaDocWallet } from "./meta/doc.ts";
 export { PaymentError } from "./payments/errors.ts";
 export { parsePayment, resolvePayment } from "./payments/index.ts";
-export type { PayResult } from "./payments/index.ts";
+export type { PayParams, PayResult } from "./payments/index.ts";
 export type { PaymentOption, PaymentParse, PaymentRequest } from "./payments/parse.ts";
 export type { SparkErrorCategory } from "./spark/errors.ts";
 export { sparkStore } from "./spark/store.ts";

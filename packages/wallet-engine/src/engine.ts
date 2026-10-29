@@ -20,7 +20,7 @@ import type { MetaSyncConfig } from "./meta/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
 import { pay as runPay } from "./payments/pay.ts";
-import type { PayParams } from "./payments/pay.ts";
+import type { PayParams, PayResult } from "./payments/pay.ts";
 import { resolvePayment } from "./payments/resolve.ts";
 import { payZap, prepareZap } from "./payments/zap.ts";
 import type { PrepareZapParams, PreparedZap, PayZapOptions } from "./payments/zap.ts";
@@ -61,7 +61,7 @@ export type WalletEngine = {
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
     readonly resolve: (input: string, network: SparkNetwork) => Promise<PaymentParse>;
-    readonly pay: (params: PayParams) => Promise<unknown>;
+    readonly pay: (params: PayParams) => Promise<PayResult>;
   };
   readonly unsubscribe: () => void;
 };

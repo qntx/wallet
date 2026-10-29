@@ -5,9 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet` and `packages/wallet-worker` via npm trusted publishing / OIDC). `@qntx/wallet-kernel` is private and only bundled into the host packages.
+A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/wallet-worker` and `packages/wallet-engine` via npm trusted publishing / OIDC). `@qntx/wallet-kernel` is private and only bundled into the host packages.
 
 ## [Unreleased]
+
+### Changed
+
+- `@qntx/wallet-engine` is published to npm with the other packages: 0.4.0 was the first
+  release, and every `vX.Y.Z` tag now publishes it through trusted publishing.
 
 ## [0.4.0] - 2026-10-29
 
