@@ -133,7 +133,7 @@ function __send(s) {
   for (var i = 0; i < s.length; i++) {
     b[i] = s.charCodeAt(i) & 0xff;
   }
-  __qntx.post(b.buffer);
+  __qntx.frames.post(b.buffer);
 }
 )JS";
 
@@ -576,6 +576,81 @@ __send(JSON.stringify({
 
 // ── W2b/W3: file primitive, queue cap, kernel bytecode, __qntx inventory ────
 
+// ── W7: background-lock lifecycle ──────────────────────────────────────────
+
+int lifecycleBoundaries() {
+  // backgroundExpired(bgAt, now, seconds): expired once now >= bgAt + seconds.
+  CHECK(!qntx::backgroundExpired(1000, 1000 + 59999, 60),
+      "lifecycle: just before expiry must not lock");
+  CHECK(qntx::backgroundExpired(1000, 1000 + 60000, 60),
+      "lifecycle: exactly at the deadline must lock");
+  CHECK(qntx::backgroundExpired(1000, 1000 + 60001, 60),
+      "lifecycle: just past the deadline must lock");
+  CHECK(qntx::backgroundExpired(0, 899999, 900),
+      "lifecycle: just before a 900s deadline must not lock");
+  CHECK(qntx::backgroundExpired(0, 900000, 900),
+      "lifecycle: 900s deadline edge");
+  return g_failures;
+}
+
+namespace {
+
+class FakeLockTarget : public qntx::LifecycleLockTarget {
+ public:
+  int locks = 0;
+  void lockForBackground() override { locks++; }
+};
+
+} // namespace
+
+int lifecycleDispatcher() {
+  auto& dispatcher = qntx::KernelLifecycleDispatcher::shared();
+  int64_t now = 100000;
+  dispatcher.setClock([&now] { return now; });
+
+  const auto zero = std::make_shared<FakeLockTarget>();
+  const auto sixty = std::make_shared<FakeLockTarget>();
+  const auto nine = std::make_shared<FakeLockTarget>();
+  dispatcher.registerHost(zero, 0);
+  dispatcher.registerHost(sixty, 60);
+  dispatcher.registerHost(nine, 900);
+
+  // seconds==0 locks the moment the app backgrounds; the others stamp.
+  dispatcher.onBackground();
+  CHECK(zero->locks == 1, "lifecycle: seconds==0 did not lock on background");
+  CHECK(sixty->locks == 0 && nine->locks == 0,
+      "lifecycle: nonzero hosts locked too early");
+
+  // Foreground before the deadline: nobody else locks.
+  now += 59000;
+  dispatcher.onForeground();
+  CHECK(sixty->locks == 0, "lifecycle: 60s host locked before its deadline");
+
+  // Background again, sit past 60s: only the 60s host expires.
+  dispatcher.onBackground();
+  now += 61000;
+  dispatcher.onForeground();
+  CHECK(sixty->locks == 1, "lifecycle: 60s host did not lock on expiry");
+  CHECK(nine->locks == 0, "lifecycle: 900s host locked too early");
+
+  // An expired weak_ptr and an unregistered host are skipped.
+  {
+    const auto gone = std::make_shared<FakeLockTarget>();
+    dispatcher.registerHost(gone, 60);
+    dispatcher.unregister(gone.get());
+  }
+  dispatcher.onBackground();
+  now += 61000;
+  dispatcher.onForeground();
+  CHECK(g_failures == 0, "lifecycle: stale registrations fired");
+
+  dispatcher.unregister(zero.get());
+  dispatcher.unregister(sixty.get());
+  dispatcher.unregister(nine.get());
+  dispatcher.setClock(qntx::sleepInclusiveMonotonicMs);
+  return g_failures;
+}
+
 // The shipped compile-kernel.mjs produces this header during the host-test
 // build — running its KERNEL_BYTECODE end-to-end proves the shipped artifact.
 int kernelBytecode() {
@@ -619,8 +694,8 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "elapsed,file,frames,now,pbkdf2,post,random,setMessageHandler,"
-                "setTimer|frozen=true|objectsFrozen=true",
+                "elapsed,file,frames,now,pbkdf2,random,setTimer"
+                "|frozen=true|objectsFrozen=true",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
   return g_failures;
 }
@@ -1148,6 +1223,10 @@ int main(int argc, char** argv) {
        [](const char*) { return kernelProbe(false, KernelProfile::hardened); }},
       {"kernel-probe-bytecode-hardened",
        [](const char*) { return kernelProbe(true, KernelProfile::hardened); }},
+      {"lifecycle-boundaries",
+       [](const char*) { return lifecycleBoundaries(); }},
+      {"lifecycle-dispatcher",
+       [](const char*) { return lifecycleDispatcher(); }},
       {"kernel-bytecode", [](const char*) { return kernelBytecode(); }},
       {"qntx-globals", [](const char*) { return qntxGlobals(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},

@@ -3,8 +3,11 @@ declare const __qntx: {
   readonly now: () => number;
   readonly elapsed: () => number;
   readonly setTimer: (delayMs: number, fn: () => void) => () => void;
-  readonly post: (message: ArrayBuffer) => void;
-  readonly setMessageHandler: (fn: (message: ArrayBuffer) => void) => void;
+  readonly frames: {
+    readonly post: (message: ArrayBuffer) => void;
+    readonly onMessage: (fn: (message: ArrayBuffer) => void) => void;
+    readonly onIntegrityViolation: (fn: () => void) => void;
+  };
   readonly pbkdf2: (
     hash: "sha256" | "sha512",
     password: Uint8Array,
