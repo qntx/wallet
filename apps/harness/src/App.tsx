@@ -267,6 +267,7 @@ export const App = (): React.JSX.Element => {
       if (process.env.EXPO_PUBLIC_V1_PROBES !== "1") {
         try {
           const phase = await smokePhase();
+          report("smoke-phase", "release", true, phase);
           if (phase === "create") {
             await smokeCreate();
           } else {

@@ -11,6 +11,7 @@ import { NitroModules } from "react-native-nitro-modules";
 import { report } from "@qntx/v1-probe";
 import { verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, PasskeyConfig } from "@qntx/wallet";
+import { WalletError } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
 import { createNativeWallet } from "@qntx/wallet-native";
 
@@ -60,24 +61,44 @@ export async function smokeCreate(): Promise<void> {
     content: "w2b social smoke",
     pubkey: key.publicKey,
   });
-  result("create-sign", verifyEvent(event), `wallet=${walletId}`);
+  result("create-sign", verifyEvent(event), `wallet=${walletId} pubkey=${key.publicKey}`);
   await wallet.vault.lock();
   result("lock", wallet.getSnapshot().vault === "locked", "");
 }
 
 /** Relaunch: the persisted vault must unlock with the password and reject a wrong one. */
 export async function smokeUnlock(): Promise<void> {
-  const wrong = createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
-  const walletWrong = await wrong;
+  const walletWrong = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
   let wrongRejected = false;
   try {
     await walletWrong.vault.unlock({ kind: "password", password: WRONG });
-  } catch {
-    wrongRejected = true;
+  } catch (error) {
+    wrongRejected = error instanceof WalletError && error.code === "wrong-password";
   }
   result("unlock-wrong", wrongRejected, "");
 
   const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
   await wallet.vault.unlock({ kind: "password", password: PASSWORD });
-  result("unlock-persisted", wallet.getSnapshot().vault === "unlocked", "");
+  const snapshot = wallet.getSnapshot();
+  const walletId = snapshot.wallets[0]?.walletId;
+  result(
+    "unlock-persisted",
+    snapshot.vault === "unlocked" && walletId !== undefined,
+    `wallets=${snapshot.wallets.length}`,
+  );
+  if (walletId === undefined) {
+    return;
+  }
+  // The persisted key must still sign: same wallet, same index 0 derivation as
+  // the create run — compare pubkeys across the two launches' result lines.
+  const api = nostr(wallet);
+  const key = await api.deriveKey(walletId, 0);
+  const event = await api.signer(key.ref).signEvent({
+    kind: 1,
+    created_at: Math.floor(Date.now() / 1000),
+    tags: [],
+    content: "w2b social smoke relaunch",
+    pubkey: key.publicKey,
+  });
+  result("persisted-sign", verifyEvent(event), `wallet=${walletId} pubkey=${key.publicKey}`);
 }
