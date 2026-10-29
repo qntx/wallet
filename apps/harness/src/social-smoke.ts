@@ -29,8 +29,9 @@ const WRONG = "smoke-password-2";
 
 const result = (name: string, ok: boolean, detail: string): void => {
   // The native V1 report channel reaches stderr (iOS) and logcat (Android) on
-  // Release builds — a bare console.log would not.
-  report(`smoke-${name}`, "release", ok, detail);
+  // Release builds — a bare console.log would not. detail goes into the
+  // "result" field raw, so stringify strings to keep the line valid JSON.
+  report(`smoke-${name}`, "release", ok, JSON.stringify(detail));
 };
 
 const host = (): KernelHostLike =>
