@@ -48,7 +48,13 @@ android {
     externalNativeBuild {
       cmake {
         cppFlags "-frtti -fexceptions -Wall -Wextra -fstack-protector-all"
-        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        // v1-probe pulls wallet-native's CMake in via add_subdirectory, so it
+        // must provide the app's react-native dir for compile-kernel.mjs too.
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+            "-DQNTX_REACT_NATIVE_PATH=" + providers.exec {
+                workingDir = rootProject.projectDir
+                commandLine "node", "-p", "require('path').dirname(require.resolve('react-native/package.json'))"
+            }.standardOutput.asText.get().trim()
         abiFilters (*reactNativeArchitectures())
         buildTypes {
           debug {
