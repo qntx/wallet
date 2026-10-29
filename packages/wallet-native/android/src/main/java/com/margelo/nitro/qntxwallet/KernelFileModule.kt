@@ -12,6 +12,7 @@ object KernelFileModule {
   @JvmStatic
   external fun setVaultDirectory(path: String)
 
+  @JvmStatic
   fun init(context: Context) {
     val dir = File(context.noBackupFilesDir, "qntx-wallet")
     dir.mkdirs()

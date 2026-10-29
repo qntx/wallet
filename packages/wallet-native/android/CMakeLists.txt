@@ -13,7 +13,12 @@ file(GLOB_RECURSE runtime_files CONFIGURE_DEPENDS
 )
 
 add_library(${PACKAGE_NAME} SHARED ${runtime_files})
-target_include_directories(${PACKAGE_NAME} PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/../cpp")
+target_include_directories(${PACKAGE_NAME} PUBLIC
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/host"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/platform"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/generated"
+)
 
 # Adds the nitrogen-generated sources, the BUILDING_..._GENERATED_CMAKE_PROJECT
 # define they require, and the fbjni/ReactAndroid/NitroModules prefab links.
@@ -24,11 +29,11 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/../nitrogen/generated/android/WalletNative+a
 # minor comes from the ReactAndroid prefab config.
 find_package(hermes-engine REQUIRED CONFIG)
 
-# The runtime compiled inside the probe target carried ReactAndroid's Folly flag
-# set (see ReactAndroid/cmake-utils/folly-flags.cmake); replicate it so the
-# fbjni/folly headers compile identically.
-include("${CMAKE_SOURCE_DIR}/../../../node_modules/react-native/ReactAndroid/cmake-utils/folly-flags.cmake")
-target_compile_definitions(${PACKAGE_NAME} PRIVATE ${folly_FLAGS} -DRN_SERIALIZABLE_STATE)
+# The generated autolinking.cmake already defines the FOLLY flags this module
+# needs; the runtime only adds RN_SERIALIZABLE_STATE. (folly-flags.cmake itself
+# is only reachable relative to the consuming app's node_modules, which this
+# module cannot assume when it is built standalone.)
+target_compile_definitions(${PACKAGE_NAME} PRIVATE -DRN_SERIALIZABLE_STATE)
 
 find_library(LOG_LIB log)
 

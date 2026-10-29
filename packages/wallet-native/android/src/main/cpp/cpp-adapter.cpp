@@ -17,6 +17,7 @@ Java_com_margelo_nitro_qntxwallet_KernelFileModule_setVaultDirectory(
 }
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
+  qntx::kernelFileDirectorySetJavaVm(vm);
   return facebook::jni::initialize(vm, []() {
     margelo::nitro::qntxwallet::registerAllNatives();
     qntx::kernelPbkdf2OnLoad(

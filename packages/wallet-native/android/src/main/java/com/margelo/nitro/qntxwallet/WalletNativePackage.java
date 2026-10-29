@@ -27,8 +27,11 @@ public class WalletNativePackage extends BaseReactPackage {
     WalletNativeOnLoad.initializeNative();
   }
 
-  public WalletNativePackage(ReactApplicationContext reactContext) {
-    // Vault directory hook: <noBackupFilesDir>/qntx-wallet — needs a Context.
+  @Override
+  public java.util.List<NativeModule> createNativeModules(ReactApplicationContext reactContext) {
+    // Vault directory hook: <noBackupFilesDir>/qntx-wallet — needs a Context,
+    // which only exists once ReactContext creation hands it over.
     KernelFileModule.init(reactContext);
+    return super.createNativeModules(reactContext);
   }
 }
