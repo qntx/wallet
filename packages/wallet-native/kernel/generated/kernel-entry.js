@@ -28816,7 +28816,8 @@ zoo`.split("\n"));
 			if (state.status !== "unlocked") return;
 			const now = this.platform.elapsed();
 			if (now - state.unlockedAt > this.platform.policy.maxSessionMs) return "expired";
-			if (now - state.lastActivityAt > this.platform.policy.idleMs) return "idle";
+			const { idle } = this.platform.policy;
+			if (idle !== void 0 && now - state.lastActivityAt > idle.ms) return "idle";
 		}
 		/**
 		* Stamps user activity: the idle deadline moves forward and the timer re-arms. The max-session
@@ -28889,7 +28890,8 @@ zoo`.split("\n"));
 		schedule() {
 			if (this.state.status !== "unlocked") return;
 			const now = this.platform.elapsed();
-			const deadline = Math.min(this.state.unlockedAt + this.platform.policy.maxSessionMs, this.state.lastActivityAt + this.platform.policy.idleMs);
+			const { idle } = this.platform.policy;
+			const deadline = Math.min(this.state.unlockedAt + this.platform.policy.maxSessionMs, idle === void 0 ? Number.POSITIVE_INFINITY : this.state.lastActivityAt + idle.ms);
 			const delay = Math.max(0, deadline - now);
 			if (this.cancelTimer !== void 0) this.cancelTimer();
 			this.cancelTimer = this.platform.setTimer(delay, () => {
@@ -29195,6 +29197,7 @@ zoo`.split("\n"));
 		const respond = async (raw) => {
 			let id = 0;
 			try {
+				var _platform$policy$idle;
 				if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new KernelError("integrity", "malformed request");
 				if (Object.getPrototypeOf(raw) !== Object.prototype) throw new KernelError("integrity", "malformed request");
 				const request = raw;
@@ -29217,7 +29220,7 @@ zoo`.split("\n"));
 					if (ctx.health === "unavailable") throw new KernelError("unavailable", "the vault store is unavailable");
 				}
 				const result = await dispatch(method, params, typeof sessionField === "string" ? sessionField : void 0);
-				if (ctx.session.unlocked && (METHODS[method].presence || platform.policy.activity === "request")) ctx.session.touch();
+				if (ctx.session.unlocked && (METHODS[method].presence || ((_platform$policy$idle = platform.policy.idle) === null || _platform$policy$idle === void 0 ? void 0 : _platform$policy$idle.activity) === "request")) ctx.session.touch();
 				return {
 					v: 1,
 					id,
@@ -31957,10 +31960,8 @@ zoo`.split("\n"));
 		}),
 		store: createFileStore(__qntx.file),
 		policy: {
-			idleMs: 6e4,
-			maxSessionMs: 432e5,
-			maxScryptLogN: 18,
-			activity: "request"
+			maxSessionMs: 864e5,
+			maxScryptLogN: 18
 		},
 		backends: {
 			nostr: nobleBackend,
