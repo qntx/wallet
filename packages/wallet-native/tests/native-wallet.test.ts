@@ -6,8 +6,9 @@ import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, PasskeyConfig } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
 
-import { startKernel, createMemoryStore } from "../../wallet-kernel/src/index.ts";
-import type { KernelPlatform } from "../../wallet-kernel/src/index.ts";
+import { startKernel } from "../../wallet-kernel/src/index.ts";
+import type { KernelPlatform, createMemoryStore } from "../../wallet-kernel/src/index.ts";
+import { createFileStore } from "../kernel/store.ts";
 import { createKernelPort } from "../kernel/transport.ts";
 import type { KernelFramePipe } from "../kernel/transport.ts";
 import { FRAME_MAX_BYTES } from "../src/cbor.ts";
@@ -114,6 +115,17 @@ function platform(store: ReturnType<typeof createMemoryStore>): KernelPlatform {
   };
 }
 
+// An in-memory __qntx.file: the byte holder outlives a crashed kernel so persistence across
+// rebuild is exercised end to end — identical to the native file primitive's guarantee. Each
+// test gets its own holder; the crash test shares one across both boots.
+const fileStore = (bytes: { value: Uint8Array | undefined }) =>
+  createFileStore({
+    read: () => bytes.value,
+    write: (b) => {
+      bytes.value = b;
+    },
+  });
+
 const boot = (store: ReturnType<typeof createMemoryStore>) => {
   const { host, pipe } = makePipe();
   startKernel(platform(store), createKernelPort(pipe));
@@ -131,7 +143,8 @@ describe("createNativeWallet", () => {
   it("mnemonic ceremony, import, unlock, nostr sign, lock, crash and rebuild", async () => {
     // Vault A covers the mnemonic-create ceremony; vault B covers import — both
     // methods are one-shot vault initializers.
-    const hostA = boot(createMemoryStore());
+    const bytes = { value: undefined as Uint8Array | undefined };
+    const hostA = boot(fileStore(bytes));
     const walletA = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: hostA });
     const draft = await walletA.wallets.createMnemonic({
       words: 12,
@@ -140,8 +153,8 @@ describe("createNativeWallet", () => {
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
     await draft.confirm(draft.quiz.map((i) => words[i]!));
 
-    const store = createMemoryStore();
-    const host = boot(store);
+    const bytesB = { value: undefined as Uint8Array | undefined };
+    const host = boot(fileStore(bytesB));
     const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host });
     const imported = await wallet.wallets.importMnemonic({
       mnemonic: words.join(" "),
@@ -163,7 +176,7 @@ describe("createNativeWallet", () => {
     await wallet.vault.lock();
 
     // Simulated host crash: the runtime dies; a fresh host+kernel on the same store recovers.
-    const host2 = boot(store);
+    const host2 = boot(fileStore(bytesB));
     const wallet2 = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host2 });
     await wallet2.vault.unlock({ kind: "password", password: PASSWORD });
     expect(wallet2.getSnapshot().vault).toBe("unlocked");

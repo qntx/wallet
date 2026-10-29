@@ -9,7 +9,7 @@ export { KernelError } from "./errors.ts";
 export type { KernelErrorCode } from "./errors.ts";
 export { startKernel } from "./kernel.ts";
 export type { KernelPlatform, KernelPolicy, Pbkdf2, Port, Random } from "./platform.ts";
-export { createMemoryStore } from "./vault/memory.ts";
+export { applyStoreOps, cloneImage, createMemoryStore } from "./vault/memory.ts";
 export { isRecordKind, VAULT_FORMAT } from "./vault/store.ts";
 export type {
   RecordStore,
@@ -19,3 +19,4 @@ export type {
   VaultImage,
   VaultMeta,
 } from "./vault/store.ts";
+export { assertVaultImage } from "./vault/validate.ts";
