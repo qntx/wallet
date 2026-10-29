@@ -49,11 +49,16 @@ android {
       cmake {
         cppFlags "-frtti -fexceptions -Wall -Wextra -fstack-protector-all"
         // v1-probe pulls wallet-native's CMake in via add_subdirectory, so it
-        // must provide the app's react-native dir for compile-kernel.mjs too.
+        // must provide the app's react-native dir for compile-kernel.mjs and
+        // the app's @qntx/spark-native dir for the qs_* link too.
         arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
             "-DQNTX_REACT_NATIVE_PATH=" + providers.exec {
                 workingDir = rootProject.projectDir
                 commandLine "node", "-p", "require('path').dirname(require.resolve('react-native/package.json'))"
+            }.standardOutput.asText.get().trim(),
+            "-DQNTX_SPARK_NATIVE_PATH=" + providers.exec {
+                workingDir = rootProject.projectDir
+                commandLine "node", "-p", "require('path').dirname(require.resolve('@qntx/spark-native/package.json'))"
             }.standardOutput.asText.get().trim()
         abiFilters (*reactNativeArchitectures())
         buildTypes {

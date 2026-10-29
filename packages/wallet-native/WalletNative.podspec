@@ -29,6 +29,7 @@ Pod::Spec.new do |s|
     "HEADER_SEARCH_PATHS" => [
       '"$(PODS_TARGET_SRCROOT)/cpp"',
       '"$(PODS_ROOT)/hermes-engine/destroot/include"',
+      '"$(PODS_ROOT)/Headers/Private/SparkNative"',
       '"$(DERIVED_FILE_DIR)/qntx-kernel"',
     ].join(' '),
   }
@@ -56,6 +57,9 @@ Pod::Spec.new do |s|
     :output_files => ["$(DERIVED_FILE_DIR)/qntx-kernel/kernel.hpp"],
   }
 
+  # The kernel's backends.spark binds the qs_* C ABI; the prebuilt
+  # QntxSpark.xcframework ships inside the SparkNative pod.
+  s.dependency 'SparkNative'
   s.dependency 'React-jsi'
   s.dependency 'React-callinvoker'
   s.dependency 'React-hermes'

@@ -9,10 +9,20 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Added
+
+- `@qntx/wallet-native` injects the native Spark backend into the kernel: the host binds
+  `@qntx/spark-native`'s `qs_*` C ABI as frozen `__qntx.backends.spark`, and
+  `spark(wallet).signer(ref)` works on iOS and Android with the manifest's
+  `backends.spark.abiVersion` integrity check.
+
 ### Changed
 
 - `@qntx/wallet-engine` is published to npm with the other packages: 0.4.0 was the first
   release, and every `vX.Y.Z` tag now publishes it through trusted publishing.
+- `@qntx/spark`, `@qntx/spark-wasm` and `@qntx/spark-native` are pinned at 0.5.1 — the
+  release that fixes the native C++ linkage (`extern "C"` header guard), the Android
+  `DT_SONAME`, and the broken prefab publishing (qntx/spark#105).
 
 ## [0.4.0] - 2026-10-29
 

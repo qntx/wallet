@@ -14,6 +14,7 @@ import { verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, PasskeyConfig, Wallet, WalletSnapshot } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
+import { spark } from "@qntx/wallet/spark";
 import type { KernelHostLike } from "@qntx/wallet-native";
 import { createNativeWallet } from "@qntx/wallet-native";
 
@@ -108,6 +109,21 @@ export async function smokeUnlock(): Promise<void> {
     pubkey: key.publicKey,
   });
   result("persisted-sign", verifyEvent(event), `wallet=${walletId} pubkey=${key.publicKey}`);
+
+  // W4a: newCommitments drives crypto.frostCommit through the native qs_*
+  // bridge — the backend answers without any network access.
+  const commitments = await spark(wallet)
+    .signer({ walletId, groupIndex: 0, network: "regtest" })
+    .newCommitments(1);
+  const commitment = commitments[0];
+  result(
+    "spark-backend",
+    commitments.length === 1 &&
+      commitment !== undefined &&
+      commitment.hiding.length === 33 &&
+      commitment.binding.length === 33,
+    `commitments=${commitments.length}`,
+  );
 
   // W7: armed at backgroundSeconds=0 — backgrounding locks the enclave at the
   // platform layer; foreground must reveal vault=locked with the real reason.

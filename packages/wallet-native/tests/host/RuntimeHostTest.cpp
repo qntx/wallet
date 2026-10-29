@@ -5,6 +5,7 @@
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
 #include "host/Lifecycle.hpp"
+#include "HostQntxSpark.hpp"
 #include "kernel.hpp"
 
 #if __has_include("generated/probes.hpp")
@@ -691,7 +692,9 @@ var objectsFrozen = names.every(function (n) {
   var member = __qntx[n];
   return typeof member !== "object" || member === null || Object.isFrozen(member);
 });
-__send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen);
+var spark = __qntx.backends.spark;
+__send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen +
+  "|sparkFrozen=" + Object.isFrozen(spark) + "|sparkAbi=" + typeof spark.abiVersion);
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
@@ -701,9 +704,75 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "elapsed,file,frames,now,pbkdf2,random,setTimer"
-                "|frozen=true|objectsFrozen=true",
+                "backends,elapsed,file,frames,now,pbkdf2,random,setTimer"
+                "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
+  return g_failures;
+}
+
+// The qs_* bridge: views pass bytes (respecting byteOffset), nonzero codes
+// throw `qntx_spark:<code>`, integer args are validated as doubles before the
+// cast, and every emitted output is freed through qs_free exactly once — the
+// fake's tracker asserts the last invariant across success and error paths.
+int backendsSpark() {
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var r = [];
+function hx(u8) {
+  var s = "";
+  for (var i = 0; i < u8.length; i++) {
+    var h = u8[i].toString(16);
+    s += h.length < 2 ? "0" + h : h;
+  }
+  return s;
+}
+function eq(name, got, want) {
+  r.push(name + "=" + (got === want ? "ok" : JSON.stringify(got)));
+}
+function catches(name, fn, needle) {
+  try {
+    fn();
+    r.push(name + "=nothrow");
+  } catch (e) {
+    var m = e && e.message ? String(e.message) : "";
+    r.push(name + "=" + (m.indexOf(needle) >= 0 ? "ok" : m));
+  }
+}
+var spark = __qntx.backends.spark;
+var buf = new Uint8Array([0, 0, 0, 9, 8, 7, 0, 0]);
+eq("view", hx(spark.frostSign(new Uint8Array(buf.buffer, 3, 3))), "090807");
+eq("commit", hx(spark.frostCommit(new Uint8Array([1, 2]), new Uint8Array([3, 4]))), "01020304");
+eq("agg", hx(spark.frostAggregate(new Uint8Array([5, 6]))), "0506");
+eq("enc", hx(spark.eciesEncrypt(new Uint8Array([0]), new Uint8Array([0xAA]), new Uint8Array([0]))), "aa");
+eq("dec", hx(spark.eciesDecrypt(new Uint8Array([0]), new Uint8Array([0xBB, 0xCC]))), "bbcc");
+eq("split", hx(spark.splitSecretWithProofs(new Uint8Array([0x11]), 2, 3, new Uint8Array([0x22]))), "11");
+catches("err", function () { spark.frostSign(new Uint8Array([0xFF, 1])); }, "qntx_spark:4");
+catches("freedErr", function () { spark.frostCommit(new Uint8Array([0xEE]), new Uint8Array([1])); }, "qntx_spark:5");
+var s32 = new Uint8Array(32);
+catches("frac", function () { spark.splitSecretWithProofs(s32, 2.5, 3, s32); }, "out of range");
+catches("neg", function () { spark.splitSecretWithProofs(s32, -1, 3, s32); }, "out of range");
+catches("nan", function () { spark.splitSecretWithProofs(s32, NaN, 3, s32); }, "finite number");
+catches("big", function () { spark.splitSecretWithProofs(s32, 4294967296, 3, s32); }, "out of range");
+catches("nonint", function () { spark.splitSecretWithProofs(s32, "2", 3, s32); }, "finite number");
+__send(r.join(" "));
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-spark: no report");
+    rt->destroy();
+  }
+  {
+    std::lock_guard<std::mutex> lock(box.m);
+    CHECK(box.posts.size() == 1 &&
+              box.posts[0] ==
+                  "view=ok commit=ok agg=ok enc=ok dec=ok split=ok err=ok "
+                  "freedErr=ok frac=ok neg=ok nan=ok big=ok nonint=ok",
+        "backends-spark: bridge behaviour drifted");
+  }
+  CHECK(qntxTestSpark::badFrees() == 0, "backends-spark: qs_free saw an unknown pointer or length");
+  CHECK(qntxTestSpark::goodFrees() == 7, "backends-spark: expected one free per emitted output");
+  CHECK(qntxTestSpark::outstandingAllocs() == 0,
+      "backends-spark: an emitted buffer leaked (never reached qs_free)");
   return g_failures;
 }
 
@@ -1236,6 +1305,7 @@ int main(int argc, char** argv) {
        [](const char*) { return lifecycleDispatcher(); }},
       {"kernel-bytecode", [](const char*) { return kernelBytecode(); }},
       {"qntx-globals", [](const char*) { return qntxGlobals(); }},
+      {"backends-spark", [](const char*) { return backendsSpark(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
       {"file-contract", [](const char*) { return fileContract(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},

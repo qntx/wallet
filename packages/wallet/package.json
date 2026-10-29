@@ -78,7 +78,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@qntx/nostr": "0.15.0",
-    "@qntx/spark": "0.5.0",
+    "@qntx/spark": "0.5.1",
     "@qntx/tsconfig": "1.0.1",
     "@types/node": "26.6.5",
     "publint": "0.3.25",

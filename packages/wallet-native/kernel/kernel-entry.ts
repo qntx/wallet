@@ -1,12 +1,15 @@
 /**
  * Kernel entry: the script compiled to bytecode and embedded in the runtime. Builds the platform
- * from the injected `__qntx` object and starts the kernel on the frame transport. `backends.spark`
- * rejects until W4 (native Spark backend); `backends.nostr` is noble.
+ * from the injected `__qntx` object and starts the kernel on the frame transport. `backends.nostr`
+ * is noble; `backends.spark` binds the host's native qs_* bridge (ABI pinned by
+ * SPARK_ABI_VERSION).
  */
 import { nobleBackend } from "@qntx/nostr";
 
 import { startKernel } from "../../wallet-kernel/src/kernel.ts";
 import type { KernelPlatform } from "../../wallet-kernel/src/platform.ts";
+import { bindNativeSpark } from "./spark.ts";
+import type { KernelSparkNative } from "./spark.ts";
 import { createFileStore } from "./store.ts";
 import type { KernelFile } from "./store.ts";
 import { createKernelPort } from "./transport.ts";
@@ -27,6 +30,7 @@ export type KernelGlobals = {
   ) => void;
   readonly file: KernelFile;
   readonly frames: KernelFramePipe;
+  readonly backends: { readonly spark: KernelSparkNative };
 };
 
 declare const __qntx: KernelGlobals;
@@ -52,9 +56,8 @@ const platform: KernelPlatform = {
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },
   backends: {
     nostr: nobleBackend,
-    // W4 brings the native spark backend; until then spark.* answers `unavailable`.
-    // oxlint-disable-next-line typescript/promise-function-async -- a pure rejection needs no async body
-    spark: () => Promise.reject(new Error("spark backend not available on this host")),
+    // oxlint-disable-next-line typescript/require-await -- errors must reject, not throw synchronously
+    spark: async () => bindNativeSpark(__qntx.backends.spark),
   },
 };
 

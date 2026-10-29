@@ -12,8 +12,9 @@
  */
 import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { build } from "vite";
 
@@ -64,15 +65,33 @@ console.log(
 
 // Manifest: the exact-pinned registry libraries the kernel package inlines
 // (workspace sources are bundled source, not libraries — same rule as the
-// wallet-worker manifest), plus the bundle's SHA-256.
+// wallet-worker manifest), the injected backends' ABI pins, plus the bundle's
+// SHA-256. `@qntx/spark` resolves through the kernel package — the ABI version
+// recorded is the one the bundle was built against.
 const kernelPkg: unknown = JSON.parse(
   readFileSync(resolve(root, "packages/wallet-kernel/package.json"), "utf8"),
 );
+const nativePkg: unknown = JSON.parse(
+  readFileSync(resolve(root, "packages/wallet-native/package.json"), "utf8"),
+);
+const nativeDevDeps = stringMap(isRecord(nativePkg) ? nativePkg["devDependencies"] : undefined);
+const sparkRequire = createRequire(resolve(root, "packages/wallet-kernel/package.json"));
+const sparkCrypto: unknown = await import(
+  pathToFileURL(sparkRequire.resolve("@qntx/spark/crypto")).href
+);
+const isSparkCrypto = (value: unknown): value is { SPARK_ABI_VERSION: number } =>
+  isRecord(value) && typeof value["SPARK_ABI_VERSION"] === "number";
+if (!isSparkCrypto(sparkCrypto)) {
+  throw new TypeError("@qntx/spark/crypto: SPARK_ABI_VERSION missing");
+}
+const { SPARK_ABI_VERSION } = sparkCrypto;
 const manifest = {
   protocol: PROTOCOL_VERSION,
   vaultFormat: VAULT_FORMAT,
+  backends: { spark: { abiVersion: SPARK_ABI_VERSION } },
   libraries: manifestLibraries({
     dependencies: stringMap(isRecord(kernelPkg) ? kernelPkg["dependencies"] : undefined),
+    backendDependencies: { "@qntx/spark-native": nativeDevDeps["@qntx/spark-native"] ?? "" },
     lockPackages: lockPackages(parseLockfile(readFileSync(resolve(root, "bun.lock"), "utf8"))),
   }),
   bundles: manifestBundles([{ file: "kernel-entry.js", bytes }]),
