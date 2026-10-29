@@ -23,6 +23,16 @@ apply from: '../nitrogen/generated/android/WalletNative+autolinking.gradle'
 
 if (isNewArchitectureEnabled()) {
   apply plugin: "com.facebook.react"
+
+// The consuming app's react-native dir, resolved via node from the app project
+// — a library cannot reach it by walking up from its own tree.
+def qntxRnOut = new ByteArrayOutputStream()
+rootProject.exec {
+    workingDir rootProject.projectDir
+    commandLine "node", "-p", "require('path').dirname(require.resolve('react-native/package.json'))"
+    standardOutput = qntxRnOut
+}
+def qntxReactNativeDir = qntxRnOut.toString().trim()
 }
 
 def getExtOrDefault(name) {
@@ -48,7 +58,11 @@ android {
     externalNativeBuild {
       cmake {
         cppFlags "-frtti -fexceptions -Wall -Wextra -fstack-protector-all"
-        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON"
+        // The consuming app's react-native root — resolved through node module
+        // resolution from the app project (as RN's own settings.gradle does);
+        // compile-kernel.mjs then resolves hermesc through it.
+        arguments "-DANDROID_STL=c++_shared", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+            "-DQNTX_REACT_NATIVE_PATH=" + qntxReactNativeDir
         abiFilters (*reactNativeArchitectures())
         buildTypes {
           debug {

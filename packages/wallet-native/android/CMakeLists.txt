@@ -25,12 +25,16 @@ target_include_directories(${PACKAGE_NAME} PUBLIC
 # The script resolves react-native from the package dir upward, matching
 # whatever Hermes runtime the consuming app links.
 find_program(NODE_EXECUTABLE node REQUIRED)
+if(NOT QNTX_REACT_NATIVE_PATH)
+  message(FATAL_ERROR "QNTX_REACT_NATIVE_PATH is not set — the consuming app must pass -DQNTX_REACT_NATIVE_PATH=<react-native dir>")
+endif()
 set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel/kernel.hpp")
 add_custom_command(
      OUTPUT ${KERNEL_HEADER}
      COMMAND ${NODE_EXECUTABLE}
              "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/compile-kernel.mjs"
              "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel"
+             "${QNTX_REACT_NATIVE_PATH}"
      DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/generated/kernel-entry.js"
              "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/generated/kernel.manifest.json"
              "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/compile-kernel.mjs"

@@ -36,10 +36,10 @@ Pod::Spec.new do |s|
   # Compile the shipped kernel-entry.js to bytecode with the app's own hermesc —
   # Hermes only loads its own bytecode version, so precompiled hbc cannot ship.
   # kernel.hpp lands in DERIVED_FILE_DIR/qntx-kernel (a header search path).
-  react_native_dir = File.dirname(`node --print "require.resolve('react-native/package.json')"`.strip)
   s.script_phase = {
     :name => "Compile Kernel Bytecode",
-    :script => ". \"#{File.join(react_native_dir, 'scripts/xcode/with-environment.sh')}\"\n" +
+    :script => ". \"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"
+" +
                '"$NODE_BINARY" "$PODS_TARGET_SRCROOT/scripts/compile-kernel.mjs" "$DERIVED_FILE_DIR/qntx-kernel"',
     :execution_position => :before_compile,
     :input_files => [

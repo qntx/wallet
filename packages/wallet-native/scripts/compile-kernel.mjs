@@ -15,9 +15,14 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const { 2: outDirArg } = process.argv;
-if (outDirArg === undefined || outDirArg === "") {
-  console.error("usage: node compile-kernel.mjs <outDir>");
+const { 2: outDirArg, 3: reactNativeDir } = process.argv;
+if (
+  outDirArg === undefined ||
+  outDirArg === "" ||
+  reactNativeDir === undefined ||
+  reactNativeDir === ""
+) {
+  console.error("usage: node compile-kernel.mjs <outDir> <reactNativeDir>");
   process.exit(2);
 }
 const outDir = resolve(outDirArg);
@@ -53,8 +58,10 @@ if (typeof declared !== "string" || declared !== actual) {
 
 // Resolve through the app's own react-native so the hermesc version matches the
 // Hermes runtime the app links — the entire reason bytecode is compiled here.
-const requireFromPackage = createRequire(resolve(packageDir, "package.json"));
-const rnPkg = requireFromPackage.resolve("react-native/package.json");
+// The app's react-native root is passed explicitly by the build system — a
+// package has no reliable way to resolve it from its own tree (the package may
+// be built from its source dir via :path or a file: install).
+const rnPkg = resolve(reactNativeDir, "package.json");
 const requireFromRn = createRequire(rnPkg);
 const hermesPkg = requireFromRn.resolve("hermes-compiler/package.json");
 const platformDir =
