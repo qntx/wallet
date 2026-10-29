@@ -159,11 +159,8 @@ try {
     })();
   });
   await page.goto(`http://localhost:${PORT}/`);
-  const result: unknown = await page.evaluate("globalThis.qntx.run()");
-  if (!isRecord(result)) {
-    fail(`page returned ${JSON.stringify(result)}`);
-  }
-  const record = result;
+  const result = await page.evaluate("globalThis.qntx.run()");
+  const record = isRecord(result) ? result : fail(`page returned ${JSON.stringify(result)}`);
   // Give the response-listener microtasks a beat to land before asserting on captured types.
   await page.waitForTimeout(500);
   const badMime = requests.filter(
