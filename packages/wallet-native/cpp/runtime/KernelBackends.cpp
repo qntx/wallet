@@ -4,9 +4,15 @@
 
 // qntx_spark.h is generated with cbindgen language = "C" — no extern "C"
 // guard of its own — so C++ consumers must wrap the include or they'd emit
-// references under the wrong (mangled) names.
+// references under the wrong (mangled) names. iOS takes the vendored
+// QntxSpark.framework's public header; Android and the host test put the
+// package's include/ directory on -I instead.
 extern "C" {
+#if __has_include(<QntxSpark/qntx_spark.h>)
+#include <QntxSpark/qntx_spark.h>
+#else
 #include "qntx_spark.h"
+#endif
 }
 
 #include <string>

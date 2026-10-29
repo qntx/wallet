@@ -7,6 +7,12 @@
 
 #include "HostQntxSpark.hpp"
 
+// Compile against the real header so a signature drift in qntx_spark.h fails
+// here — C symbols carry no signature, so a stale fake would link silently.
+extern "C" {
+#include "qntx_spark.h"
+}
+
 #include <cstdlib>
 #include <cstring>
 #include <map>
