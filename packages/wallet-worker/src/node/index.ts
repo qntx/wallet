@@ -63,7 +63,7 @@ export async function createNodeWallet(options: NodeWalletOptions): Promise<Wall
       },
       onExit: (handler) => {
         const listener = () => {
-          handler();
+          handler("crashed");
         };
         worker.once("exit", listener);
         return () => {

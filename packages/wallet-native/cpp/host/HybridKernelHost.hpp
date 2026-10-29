@@ -6,6 +6,8 @@
 #include <memory>
 #include <mutex>
 
+#include "host/Lifecycle.hpp"
+
 #include "../runtime/KernelRuntime.hpp"
 
 namespace margelo::nitro::qntxwallet {
@@ -15,12 +17,15 @@ namespace margelo::nitro::qntxwallet {
 // 1 MiB frame cap (the inbound queue cap lives inside KernelRuntime::post and
 // reports through the same integrity exit); `lock` destroys the runtime. Exit
 // reasons reach JS through the `onExit` listener, at most once.
-class HybridKernelHost final : public HybridKernelHostSpec {
+class HybridKernelHost final : public HybridKernelHostSpec,
+                               public qntx::LifecycleLockTarget {
  public:
   HybridKernelHost() : HybridObject(TAG) {}
   ~HybridKernelHost() override;
 
-  void start() override;
+  void start(double backgroundLockSeconds) override;
+  // The platform's lifecycle dispatcher locks through here (main thread).
+  void lockForBackground() override { exit(KernelExitReason::BACKGROUND); }
   void post(const std::shared_ptr<ArrayBuffer>& frame) override;
   void onMessage(const std::function<void(const std::shared_ptr<ArrayBuffer>&)>& listener)
       override;

@@ -3,36 +3,36 @@
  * — encode/decode happens here and in the kernel entry — so a malformed inbound frame can never
  * reach the message domain: the port exits `integrity` and the host runtime is destroyed.
  */
-import type { MainPort } from "@qntx/wallet/host";
+import type { MainPort, PortExit } from "@qntx/wallet/host";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { decodeFrame, encodeFrame } from "./cbor.ts";
 
-export type KernelExitReason = "locked" | "crashed" | "integrity";
+export type KernelExitReason = "locked" | "crashed" | "integrity" | "background";
 
 /**
  * Structural mirror of the Nitro `KernelHost` spec (W2b registers the real hybrid object; tests
  * drive the same shape over an in-memory frame pipe).
  */
 export type KernelHostLike = {
-  readonly start: () => void;
+  readonly start: (backgroundLockSeconds: number) => void;
   readonly post: (frame: ArrayBuffer) => void;
   readonly onMessage: (cb: (frame: ArrayBuffer) => void) => void;
   readonly onExit: (cb: (reason: KernelExitReason) => void) => void;
   readonly lock: () => void;
 };
 
-export function spawnFromHost(host: KernelHostLike): MainPort {
-  const exitHandlers = new Set<() => void>();
+export function spawnFromHost(host: KernelHostLike, backgroundLockSeconds: number): MainPort {
+  const exitHandlers = new Set<(reason: PortExit) => void>();
   let exited = false;
 
-  const exit = (): void => {
+  const exit = (reason: PortExit): void => {
     if (exited) {
       return;
     }
     exited = true;
     for (const handler of exitHandlers) {
-      handler();
+      handler(reason);
     }
     host.lock();
   };
@@ -42,14 +42,16 @@ export function spawnFromHost(host: KernelHostLike): MainPort {
     try {
       message = decodeFrame(frame);
     } catch {
-      exit();
+      exit("crashed");
       return;
     }
     dispatch(message);
   });
 
-  host.onExit(() => {
-    exit();
+  // The platform locked the enclave in the background — report it honestly so
+  // the channel takes the lock path, not the crash path.
+  host.onExit((reason) => {
+    exit(reason === "background" ? "background" : "crashed");
   });
 
   const messageHandlers = new Set<(message: unknown) => void>();
@@ -59,7 +61,7 @@ export function spawnFromHost(host: KernelHostLike): MainPort {
     }
   };
 
-  host.start();
+  host.start(backgroundLockSeconds);
 
   return {
     post: (message, transfer) => {
@@ -85,7 +87,7 @@ export function spawnFromHost(host: KernelHostLike): MainPort {
       };
     },
     terminate: () => {
-      exit();
+      exit("crashed");
     },
   };
 }

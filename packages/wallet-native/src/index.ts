@@ -47,7 +47,7 @@ export async function createNativeWallet(options: NativeWalletOptions): Promise<
   // The native host owns the auto-lock signal: the platform layer calls host.lock() on
   // background expiry — the kernel never sees a presence source here.
   return connectKernel({
-    spawn: () => spawnFromHost(host),
+    spawn: () => spawnFromHost(host, autoLock.backgroundSeconds),
     passkey: options.passkey,
     ceremony: options.ceremony,
     setTimer,

@@ -48,7 +48,7 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     },
   };
   const host = {
-    start: () => {},
+    start: (_seconds: number) => {},
     post: (frame) => {
       kernelCb?.(frame);
     },
@@ -103,10 +103,9 @@ function platform(store: ReturnType<typeof createMemoryStore>): KernelPlatform {
       }),
     store,
     policy: {
-      idleMs: 15 * 60_000,
       maxSessionMs: 12 * 3_600_000,
       maxScryptLogN: 18,
-      activity: "request",
+      idle: { ms: 15 * 60_000, activity: "request" },
     },
     backends: {
       nostr: nobleBackend,
@@ -186,7 +185,7 @@ describe("createNativeWallet", () => {
 describe("frame discipline", () => {
   it("oversized inbound frame exits the port and locks the host", () => {
     const { host } = makePipe();
-    const port = spawnFromHost(host);
+    const port = spawnFromHost(host, 0);
     let exited = false;
     port.onExit(() => {
       exited = true;
@@ -198,7 +197,7 @@ describe("frame discipline", () => {
 
   it("garbage inbound frame exits the port and locks the host", () => {
     const { host } = makePipe();
-    const port = spawnFromHost(host);
+    const port = spawnFromHost(host, 0);
     let exited = false;
     port.onExit(() => {
       exited = true;
@@ -210,7 +209,7 @@ describe("frame discipline", () => {
 
   it("post zero-fills the transfer buffers", () => {
     const { host } = makePipe();
-    const port = spawnFromHost(host);
+    const port = spawnFromHost(host, 0);
     const secret = new Uint8Array([1, 2, 3, 4]).buffer;
     port.post({ id: 1 }, [secret]);
     expect(new Uint8Array(secret)).toStrictEqual(new Uint8Array(4));

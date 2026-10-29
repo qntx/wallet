@@ -127,7 +127,8 @@ export class Session {
     if (now - state.unlockedAt > this.platform.policy.maxSessionMs) {
       return "expired";
     }
-    if (now - state.lastActivityAt > this.platform.policy.idleMs) {
+    const { idle } = this.platform.policy;
+    if (idle !== undefined && now - state.lastActivityAt > idle.ms) {
       return "idle";
     }
     return undefined;
@@ -226,9 +227,10 @@ export class Session {
       return;
     }
     const now = this.platform.elapsed();
+    const { idle } = this.platform.policy;
     const deadline = Math.min(
       this.state.unlockedAt + this.platform.policy.maxSessionMs,
-      this.state.lastActivityAt + this.platform.policy.idleMs,
+      idle === undefined ? Number.POSITIVE_INFINITY : this.state.lastActivityAt + idle.ms,
     );
     const delay = Math.max(0, deadline - now);
     if (this.cancelTimer !== undefined) {

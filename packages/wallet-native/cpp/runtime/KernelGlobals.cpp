@@ -553,30 +553,6 @@ void installKernelGlobals(
 
   installPbkdf2(rt, qntx, state);
 
-  qntx.setProperty(
-      rt,
-      "post",
-      hostFn(rt, "post", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
-        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
-          throw jsi::JSError(rt, "__qntx.post expects an ArrayBuffer");
-        }
-        auto buffer = args[0].asObject(rt).getArrayBuffer(rt);
-        const auto* data = buffer.data(rt);
-        state->postToHost(std::vector<uint8_t>(data, data + buffer.size(rt)));
-        return jsi::Value::undefined();
-      }));
-
-  qntx.setProperty(
-      rt,
-      "setMessageHandler",
-      hostFn(rt, "setMessageHandler", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
-        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
-          throw jsi::JSError(rt, "__qntx.setMessageHandler expects a function");
-        }
-        state->messageHandler = args[0].asObject(rt).asFunction(rt);
-        return jsi::Value::undefined();
-      }));
-
   // __qntx.frames — the W2b injection-table shape over the same plumbing:
   // post, onMessage, and onIntegrityViolation (the host fires that handler
   // when it refuses a frame on integrity grounds).
@@ -616,7 +592,7 @@ void installKernelGlobals(
   intrinsics->freeze.call(rt, jsi::Value(rt, frames));
   qntx.setProperty(rt, "frames", jsi::Value(std::move(frames)));
 
-  // __qntx.file — one opaque file image: read() -> Uint8Array | null,
+  // __qntx.file — one opaque file image: read() -> Uint8Array | undefined,
   // write(bytes) atomically replaces. The C++ primitive owns durability
   // (temp + fsync + rename + dir fsync); failures throw so the file store
   // rejects instead of silently degrading.

@@ -32,6 +32,7 @@ namespace margelo::nitro::qntxwallet {
     LOCKED      SWIFT_NAME(locked) = 0,
     CRASHED      SWIFT_NAME(crashed) = 1,
     INTEGRITY      SWIFT_NAME(integrity) = 2,
+    BACKGROUND      SWIFT_NAME(background) = 3,
   } CLOSED_ENUM;
 
 } // namespace margelo::nitro::qntxwallet
@@ -47,6 +48,7 @@ namespace margelo::nitro {
         case hashString("locked"): return margelo::nitro::qntxwallet::KernelExitReason::LOCKED;
         case hashString("crashed"): return margelo::nitro::qntxwallet::KernelExitReason::CRASHED;
         case hashString("integrity"): return margelo::nitro::qntxwallet::KernelExitReason::INTEGRITY;
+        case hashString("background"): return margelo::nitro::qntxwallet::KernelExitReason::BACKGROUND;
         default: [[unlikely]]
           throw std::invalid_argument("Cannot convert \"" + unionValue + "\" to enum KernelExitReason - invalid value!");
       }
@@ -56,6 +58,7 @@ namespace margelo::nitro {
         case margelo::nitro::qntxwallet::KernelExitReason::LOCKED: return JSIConverter<std::string>::toJSI(runtime, "locked");
         case margelo::nitro::qntxwallet::KernelExitReason::CRASHED: return JSIConverter<std::string>::toJSI(runtime, "crashed");
         case margelo::nitro::qntxwallet::KernelExitReason::INTEGRITY: return JSIConverter<std::string>::toJSI(runtime, "integrity");
+        case margelo::nitro::qntxwallet::KernelExitReason::BACKGROUND: return JSIConverter<std::string>::toJSI(runtime, "background");
         default: [[unlikely]]
           throw std::invalid_argument("Cannot convert KernelExitReason to JS - invalid value: "
                                     + std::to_string(static_cast<int>(arg)) + "!");
@@ -70,6 +73,7 @@ namespace margelo::nitro {
         case hashString("locked"):
         case hashString("crashed"):
         case hashString("integrity"):
+        case hashString("background"):
           return true;
         default:
           return false;

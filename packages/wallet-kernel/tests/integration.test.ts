@@ -1017,6 +1017,22 @@ describe("factors, lock, reset", () => {
     expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("locked");
   });
 
+  it("no idle policy: stays unlocked past any idle window and expires at max session", async () => {
+    const h = createHarness({ noIdle: true, maxSessionMs: 3_600_000 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    // Past every web/node idle window — still unlocked, requests still succeed.
+    h.advance(1_800_000);
+    await h.settle();
+    expect(lastStatus(h).vault).toBe("unlocked");
+    expect(ok(await h.call("status", null, session))).toBeDefined();
+    // The session ends only at the max-session deadline.
+    h.advance(1_800_001);
+    await h.settle();
+    expect(lastStatus(h).vault).toBe("locked");
+    expect(lockReasons(h.events)).toContain("expired");
+  });
+
   it("a respawned kernel starts locked and rejects a stale session id", async () => {
     const h = createHarness();
     await h.settle();

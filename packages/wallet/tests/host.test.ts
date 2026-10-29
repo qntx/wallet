@@ -5,7 +5,7 @@ import { getPublicKey, KeysSigner } from "@qntx/nostr";
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 
 import { Channel } from "../src/channel.ts";
-import type { MainPort, SetTimer } from "../src/channel.ts";
+import type { MainPort, PortExit, SetTimer } from "../src/channel.ts";
 import { PASSKEY_PURPOSE_VAULT, PASSKEY_PURPOSE_WALLET } from "../src/factors.ts";
 import type { PasskeyCeremony, PrfResult } from "../src/factors.ts";
 import { nostr } from "../src/nostr/index.ts";
@@ -120,7 +120,7 @@ class ScriptedPort implements MainPort {
   dead = false;
   private readonly kernel: FakeKernel;
   private handler: ((message: unknown) => void) | undefined;
-  private exitHandler: (() => void) | undefined;
+  private exitHandler: ((reason: PortExit) => void) | undefined;
 
   constructor(kernel: FakeKernel) {
     this.kernel = kernel;
@@ -140,7 +140,7 @@ class ScriptedPort implements MainPort {
     };
   }
 
-  onExit(handler: () => void): () => void {
+  onExit(handler: (reason: PortExit) => void): () => void {
     this.exitHandler = handler;
     return () => {
       this.exitHandler = undefined;
@@ -150,7 +150,7 @@ class ScriptedPort implements MainPort {
   terminate(): void {
     this.dead = true;
     this.kernel.detach(this);
-    this.exitHandler?.();
+    this.exitHandler?.("crashed");
   }
 
   send(message: unknown): void {
@@ -159,9 +159,18 @@ class ScriptedPort implements MainPort {
 
   /** A crash: exits without terminate having been called. */
   crash(): void {
+    this.die("crashed");
+  }
+
+  /** A host-side platform lock (native background expiry): still the port's one exit. */
+  background(): void {
+    this.die("background");
+  }
+
+  private die(reason: PortExit): void {
     this.dead = true;
     this.kernel.detach(this);
-    this.exitHandler?.();
+    this.exitHandler?.(reason);
   }
 }
 
@@ -415,6 +424,44 @@ describe("port lifecycle", () => {
     expect(wallet.getSnapshot().vault).toBe("locked");
     expect(wallet.getSnapshot().lockReason).toBe("crashed");
     expect(spawned.at(0)?.dead).toBe(true);
+  });
+
+  it("a background exit takes the lock path: locked code, background reason, respawn", async () => {
+    const { wallet, kernel, spawned } = await connectFake(unlockedStatus());
+    kernel.status = { ...kernel.status, vault: "locked" }; // the host locked — a fresh kernel reloads locked
+    kernel.handlers.set("dataKeys.get", async () => new Promise<Reply>(() => undefined)); // never resolves
+    const pending = wallet.dataKeys.get("notes");
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve);
+    }); // let the request reach the kernel
+    spawned.at(0)?.background();
+    await expect(pending).rejects.toSatisfy((e) => walletError(e).code === "locked");
+    expect(spawned).toHaveLength(2);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve);
+    });
+    expect(wallet.getSnapshot().vault).toBe("locked");
+    expect(wallet.getSnapshot().lockReason).toBe("background");
+  });
+
+  it("a background exit before the first status still rejects with integrity", async () => {
+    const kernel = new FakeKernel(unlockedStatus());
+    const spawned: ScriptedPort[] = [];
+    const attempt = connectKernel({
+      spawn: () => {
+        const port = new ScriptedPort(kernel);
+        spawned.push(port);
+        setTimeout(() => {
+          port.background(); // the platform lock can never come before the kernel ran honestly
+        });
+        return port;
+      },
+      passkey: PASSKEY,
+      ceremony: undefined,
+      setTimer: realtime,
+    });
+    await expect(attempt).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    expect(spawned).toHaveLength(1);
   });
 
   it("a respawned port that dies before its first status breaks the wallet", async () => {

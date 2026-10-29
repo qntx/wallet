@@ -28,5 +28,5 @@ export const utf8Encode = (input: string): Uint8Array => {
 };
 
 export const postJson = (value: unknown): void => {
-  __qntx.post(utf8Encode(JSON.stringify(value)).buffer as ArrayBuffer);
+  __qntx.frames.post(utf8Encode(JSON.stringify(value)).buffer as ArrayBuffer);
 };

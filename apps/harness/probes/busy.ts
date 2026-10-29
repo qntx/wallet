@@ -7,7 +7,7 @@
  */
 import { postJson, utf8Encode } from "./share";
 
-__qntx.setMessageHandler((message) => {
+__qntx.frames.onMessage((message) => {
   const text = new TextDecoder().decode(message);
   if (text === "kdf") {
     __qntx.pbkdf2("sha256", utf8Encode("v1-busy"), utf8Encode("v1-busy-salt"), 600_000, 32, (result, error) => {
@@ -20,7 +20,7 @@ __qntx.setMessageHandler((message) => {
     }
     postJson({ kind: "work-done", work: "spin" });
   } else {
-    __qntx.post(message);
+    __qntx.frames.post(message);
   }
 });
 

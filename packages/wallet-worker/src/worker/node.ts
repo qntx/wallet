@@ -66,10 +66,9 @@ const platform: KernelPlatform = {
   // fixed maximum, and the scrypt ceiling for this platform. There is no human presence on
   // Node: every successful request refreshes the idle timer.
   policy: {
-    idleMs: idleMsOf(data.idleMinutes),
+    idle: { ms: idleMsOf(data.idleMinutes), activity: "request" },
     maxSessionMs: MAX_SESSION_MS,
     maxScryptLogN: 20,
-    activity: "request",
   },
   backends: {
     nostr: nobleBackend,

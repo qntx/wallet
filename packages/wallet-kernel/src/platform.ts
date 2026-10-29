@@ -21,16 +21,21 @@ export type Pbkdf2 = (
 
 /** Session limits owned by the worker entry (Web and Node: idle 5/15/60 min, max 12 h). */
 export type KernelPolicy = {
-  readonly idleMs: number;
   readonly maxSessionMs: number;
   /** Upper bound for ncryptsec imports; enforced by the nostr module. */
   readonly maxScryptLogN: number;
   /**
-   * What refreshes the idle timer: "presence" counts only user-presence-bearing methods (web —
-   * background traffic must not hold a session open); "request" counts every successful request
-   * (node — there is no human user to observe).
+   * Idle lock. Absent on hosts that never idle-lock in the foreground (native locks on
+   * backgrounding instead): the session then ends only at `maxSessionMs`. "presence" counts only
+   * user-presence-bearing methods (web — background traffic must not hold a session open);
+   * "request" counts every successful request (node — there is no human to observe).
    */
-  readonly activity: "presence" | "request";
+  readonly idle?:
+    | {
+        readonly ms: number;
+        readonly activity: "presence" | "request";
+      }
+    | undefined;
 };
 
 /**
