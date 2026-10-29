@@ -22,21 +22,23 @@ std::mutex g_dirMutex;
 std::string g_dirOverride;
 
 [[noreturn]] void fail(const char* what) {
-  throw std::system_error(errno, std::system_category(), what);
+  const int saved = errno;
+  throw std::runtime_error(
+      std::string(what) + ": " + std::strerror(saved) + " (errno " + std::to_string(saved) + ")");
 }
 
-void fsyncOrFail(int fd, const char* what) {
+void fsyncOrFail(int fd, const char* what, bool full = false) {
+  // Files: on Apple the documented durable barrier is fcntl(F_FULLFSYNC).
+  // Directories: plain fsync everywhere (F_FULLFSYNC is for files only).
+  const int rc =
 #if defined(__APPLE__)
-  // Apple documents fcntl(F_FULLFSYNC) as the durable barrier (works on
-  // directories too); plain fsync is not guaranteed to flush on iOS.
-  if (::fcntl(fd, F_FULLFSYNC) != 0) {
-    fail(what);
-  }
+      full ? ::fcntl(fd, F_FULLFSYNC) : ::fsync(fd);
 #else
-  if (::fsync(fd) != 0) {
+      (::fsync(fd));
+#endif
+  if (rc != 0) {
     fail(what);
   }
-#endif
 }
 
 std::string pathFor(const std::string& leaf) {
@@ -120,7 +122,13 @@ void kernelFileWrite(const std::vector<uint8_t>& bytes) {
     }
     off += static_cast<size_t>(n);
   }
-  if (::fsync(fd) != 0) {
+  if (
+#if defined(__APPLE__)
+      ::fcntl(fd, F_FULLFSYNC)
+#else
+      ::fsync(fd)
+#endif
+      != 0) {
     const int saved = errno;
     ::close(fd);
     ::unlink(tmp.c_str());
@@ -136,10 +144,11 @@ void kernelFileWrite(const std::vector<uint8_t>& bytes) {
     fail("rename vault file");
   }
   const int dirFd = ::open(kernelFileDirectory().c_str(), O_RDONLY);
-  if (dirFd >= 0) {
-    fsyncOrFail(dirFd, "fsync vault directory");
-    ::close(dirFd);
+  if (dirFd < 0) {
+    fail("open vault directory");
   }
+  fsyncOrFail(dirFd, "fsync vault directory");
+  ::close(dirFd);
 }
 
 } // namespace qntx
