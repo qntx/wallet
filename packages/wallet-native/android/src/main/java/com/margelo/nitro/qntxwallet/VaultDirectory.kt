@@ -21,7 +21,7 @@ object VaultDirectory {
     val dir = File(context.noBackupFilesDir, "qntx-wallet")
     dir.mkdirs()
     if (!dir.isDirectory) {
-      throw IllegalStateException("vault directory: cannot create ${dir.absolutePath}")
+      throw IllegalStateException("vault directory: mkdirs failed")
     }
     return dir.absolutePath
   }
