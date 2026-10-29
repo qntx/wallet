@@ -17,11 +17,15 @@ import type { MethodName, ParamsOf, ProtocolValue, ResultOf } from "./protocol/i
 import { WalletError } from "./types.ts";
 import type { LockReason, StatusPayload } from "./types.ts";
 
+/** Why the kernel port ended: a fault in the enclave/transport, or a deliberate host-side
+ * lock triggered by the platform (native background expiry — W7). */
+export type PortExit = "crashed" | "background";
+
 /** The host packages' side of the kernel channel (worker, JSI runtime, in-process test port). */
 export type MainPort = {
   readonly post: (message: ProtocolValue, transfer: ArrayBuffer[]) => void;
   readonly listen: (handler: (message: unknown) => void) => () => void;
-  readonly onExit: (handler: () => void) => () => void;
+  readonly onExit: (handler: (reason: PortExit) => void) => () => void;
   readonly terminate: () => void;
 };
 
@@ -142,8 +146,8 @@ export class Channel {
       this.unlisten = port.listen((message) => {
         this.onMessage(message, generation);
       });
-      this.unlistenExit = port.onExit(() => {
-        this.onExit(generation);
+      this.unlistenExit = port.onExit((reason) => {
+        this.onExit(reason, generation);
       });
       this.port = port;
     } catch {
@@ -152,7 +156,7 @@ export class Channel {
     }
   }
 
-  private onExit(generation: number): void {
+  private onExit(reason: PortExit, generation: number): void {
     if (generation !== this.generation || this.destroyed || this.broken !== undefined) {
       return;
     }
@@ -164,6 +168,12 @@ export class Channel {
       // spawn would face the same broken peer. Initial connect rejects with integrity;
       // a respawned port dying this way breaks the wallet.
       this.breakChannel(integrity("the kernel port died before its first status"));
+      return;
+    }
+    if (reason === "background") {
+      // The platform backgrounded the app past autoLock.backgroundSeconds and locked the
+      // enclave: not a crash — take the lock path so the user sees the real reason.
+      this.lockWith("background");
       return;
     }
     // A proven port dying is a crash: fail everything in flight, mark it, respawn.
@@ -178,13 +188,17 @@ export class Channel {
    * again. Safe mid-commit: IndexedDB transactions are atomic.
    */
   lockNow(): void {
+    this.lockWith("user");
+  }
+
+  private lockWith(reason: "user" | "background"): void {
     if (this.destroyed || this.broken !== undefined) {
       return;
     }
     this.session = undefined;
     this.deferredStatus = undefined;
     this.failPending(new WalletError("locked", "the vault locked"));
-    this.handlers.onLocked("user");
+    this.handlers.onLocked(reason);
     this.respawn();
   }
 

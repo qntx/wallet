@@ -87,7 +87,7 @@ export async function createWebWallet(options: WalletOptions): Promise<Wallet> {
       onExit: (handler) => {
         // Web Workers have no exit event; error/messageerror are the only death signals.
         const listener = (): void => {
-          handler();
+          handler("crashed");
         };
         worker.addEventListener("error", listener);
         worker.addEventListener("messageerror", listener);
