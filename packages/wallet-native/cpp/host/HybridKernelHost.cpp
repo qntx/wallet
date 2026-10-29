@@ -17,11 +17,13 @@ HybridKernelHost::~HybridKernelHost() {
 }
 
 void HybridKernelHost::start(double backgroundLockSeconds) {
-  const int seconds = static_cast<int>(backgroundLockSeconds);
-  if (backgroundLockSeconds != seconds ||
-      (seconds != 0 && seconds != 60 && seconds != 300 && seconds != 900)) {
+  // Compare as doubles before converting: casting NaN or an out-of-range value
+  // to int is undefined behaviour.
+  if (backgroundLockSeconds != 0 && backgroundLockSeconds != 60 &&
+      backgroundLockSeconds != 300 && backgroundLockSeconds != 900) {
     throw std::runtime_error("backgroundLockSeconds must be one of 0, 60, 300, 900");
   }
+  const int seconds = static_cast<int>(backgroundLockSeconds);
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (runtime_ || exited_) {
