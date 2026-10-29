@@ -2,11 +2,19 @@
   "name": "@qntx/wallet-native",
   "version": "0.4.0",
   "private": true,
-  "description": "Native kernel runtime host for the qntx wallet — CBOR transport, KernelHost adapter and createNativeWallet",
+  "description": "Native kernel runtime host for the qntx wallet \u2014 CBOR transport, KernelHost adapter and createNativeWallet",
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
   "files": [
-    "dist"
+    "dist",
+    "cpp",
+    "ios",
+    "android",
+    "kernel/generated",
+    "nitrogen",
+    "scripts",
+    "react-native.config.js",
+    "WalletNative.podspec"
   ],
   "type": "module",
   "main": "dist/index.mjs",

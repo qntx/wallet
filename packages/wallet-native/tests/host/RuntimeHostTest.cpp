@@ -4,7 +4,7 @@
 // V1_PBKDF2_SHA256_1 / V1_PBKDF2_SHA256_80000 / V1_PBKDF2_SHA512_UTF8.
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
-#include "host/KernelSha256.hpp"
+#include "kernel.hpp"
 
 #if __has_include("generated/probes.hpp")
 #include "generated/probes.hpp"
@@ -574,23 +574,53 @@ __send(JSON.stringify({
   return g_failures;
 }
 
-// ── W2b: file primitive, queue cap, sha256 ─────────────────────────────────
+// ── W2b/W3: file primitive, queue cap, kernel bytecode, __qntx inventory ────
 
-int sha256Vectors() {
-  // RFC 4231-adjacent well-known digests.
-  const std::string abc = qntx::kernelSha256Hex(
-      reinterpret_cast<const uint8_t*>("abc"), 3);
-  CHECK(
-      abc == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-      "sha256: abc digest mismatch");
-  const std::string empty = qntx::kernelSha256Hex(nullptr, 0);
-  CHECK(
-      empty == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "sha256: empty digest mismatch");
-  // A multi-block input past one 64-byte block.
-  std::vector<uint8_t> big(100000, 0x61);
-  const auto digest = qntx::kernelSha256(big.data(), big.size());
-  CHECK(digest.size() == 32, "sha256: digest size");
+// The shipped compile-kernel.mjs produces this header during the host-test
+// build — running its KERNEL_BYTECODE end-to-end proves the shipped artifact.
+int kernelBytecode() {
+  Mailbox box;
+  const auto script = bytecodeScript(
+      {qntx::KERNEL_BYTECODE, qntx::KERNEL_BYTECODE + qntx::KERNEL_BYTECODE_SIZE});
+  auto rt = KernelRuntime::start(script, hooksFor(box), "");
+  CHECK(box.waitPosts(1, std::chrono::seconds(180)) == 1,
+      "kernel-bytecode: expected kernel-ready post");
+  {
+    std::lock_guard<std::mutex> lock(box.m);
+    CHECK(!box.posts.empty() &&
+              box.posts[0].find("\"kernel-ready\"") != std::string::npos,
+        "kernel-bytecode: first post was not kernel-ready");
+  }
+  CHECK(box.errors.empty(), "kernel-bytecode: unexpected onError");
+  rt->destroy();
+  return g_failures;
+}
+
+// The injected __qntx surface is the kernel's entire contract with the host —
+// the name set must match enclave.mdx exactly and every object member must be
+// frozen so kernel code cannot rewire its primitives.
+int qntxGlobals() {
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var names = Object.getOwnPropertyNames(__qntx).sort();
+var frozen = Object.isFrozen(__qntx);
+var objectsFrozen = names.every(function (n) {
+  var member = __qntx[n];
+  return typeof member !== "object" || member === null || Object.isFrozen(member);
+});
+__send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen);
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "qntx-globals: no report");
+    rt->destroy();
+  }
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1 &&
+            box.posts[0] ==
+                "elapsed,file,frames,now,pbkdf2,post,random,setMessageHandler,"
+                "setTimer|frozen=true|objectsFrozen=true",
+      "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
   return g_failures;
 }
 
@@ -1117,7 +1147,8 @@ int main(int argc, char** argv) {
        [](const char*) { return kernelProbe(false, KernelProfile::hardened); }},
       {"kernel-probe-bytecode-hardened",
        [](const char*) { return kernelProbe(true, KernelProfile::hardened); }},
-      {"sha256-vectors", [](const char*) { return sha256Vectors(); }},
+      {"kernel-bytecode", [](const char*) { return kernelBytecode(); }},
+      {"qntx-globals", [](const char*) { return qntxGlobals(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
       {"file-contract", [](const char*) { return fileContract(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},

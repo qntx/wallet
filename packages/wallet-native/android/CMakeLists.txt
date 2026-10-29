@@ -17,8 +17,28 @@ target_include_directories(${PACKAGE_NAME} PUBLIC
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/host"
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/platform"
-     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/generated"
+     "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel"
 )
+
+# Compile the shipped kernel bundle to bytecode with the app's own hermesc —
+# Hermes only loads its own bytecode version, so precompiled hbc cannot ship.
+# The script resolves react-native from the package dir upward, matching
+# whatever Hermes runtime the consuming app links.
+find_program(NODE_EXECUTABLE node REQUIRED)
+set(KERNEL_HEADER "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel/kernel.hpp")
+add_custom_command(
+     OUTPUT ${KERNEL_HEADER}
+     COMMAND ${NODE_EXECUTABLE}
+             "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/compile-kernel.mjs"
+             "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel"
+     DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/generated/kernel-entry.js"
+             "${CMAKE_CURRENT_SOURCE_DIR}/../kernel/generated/kernel.manifest.json"
+             "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/compile-kernel.mjs"
+     COMMENT "Compiling the kernel bytecode (hermesc)"
+     VERBATIM
+)
+add_custom_target(qntx-kernel-bytecode DEPENDS ${KERNEL_HEADER})
+add_dependencies(${PACKAGE_NAME} qntx-kernel-bytecode)
 
 # Adds the nitrogen-generated sources, the BUILDING_..._GENERATED_CMAKE_PROJECT
 # define they require, and the fbjni/ReactAndroid/NitroModules prefab links.

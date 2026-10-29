@@ -1,7 +1,6 @@
 #include "HybridKernelHost.hpp"
 
-#include "../generated/kernel.hpp"
-#include "KernelSha256.hpp"
+#include "kernel.hpp"
 #include "VaultDirectory.hpp"
 
 namespace margelo::nitro::qntxwallet {
@@ -23,14 +22,6 @@ void HybridKernelHost::start() {
     if (runtime_ || exited_) {
       return;
     }
-  }
-  // Verify before loading: the shipped hbc is only evaluated when its digest
-  // matches the constant pinned at build time.
-  const std::string actual =
-      qntx::kernelSha256Hex(qntx::KERNEL_BYTECODE, qntx::KERNEL_BYTECODE_SIZE);
-  if (actual != qntx::KERNEL_SHA256) {
-    exit(KernelExitReason::INTEGRITY);
-    return;
   }
   // Resolved once here: a platform failure rejects start() for the JS caller
   // instead of surfacing later as a store error inside the kernel.

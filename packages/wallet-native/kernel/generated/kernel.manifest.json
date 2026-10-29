@@ -1,0 +1,52 @@
+{
+  "protocol": 1,
+  "vaultFormat": 2,
+  "libraries": [
+    {
+      "name": "@noble/ciphers",
+      "version": "2.4.0",
+      "integrity": "sha512-AnjFn0Jv92laAkvMrghlFZq4qQCIN/4DxFV/eooqtC2YTjB7kBeLMS2T9KJX4Dn+ZVXLOwK0lSgqDtx9gvxtiw=="
+    },
+    {
+      "name": "@noble/curves",
+      "version": "2.4.0",
+      "integrity": "sha512-P4/62zrgfH33CneE3Dn4WhJVA22YUU0eR51wKIan4NVRvwsA0YnPTwWGpNbpuacSujmSFLvyzpyuR30+fbq2Ew=="
+    },
+    {
+      "name": "@noble/hashes",
+      "version": "2.4.0",
+      "integrity": "sha512-X5XaVWZIBCT7HHZGm5I7ZQXDwLG+bGXuSrMQAW+7Zvl87h1kmc1ZB1VSRJcpUfoUrGQp4Fkoxm5kZ+Ms+aW+eA=="
+    },
+    {
+      "name": "@qntx/nostr",
+      "version": "0.15.0",
+      "integrity": "sha512-bXgvNSlj4p/uw996x8rlB9bI50wcY+uH9rq+2lJBn6hZAUetBrf6ujTrKRQCpzg5DS2MwBWl4kmV4aXLzPUFRQ=="
+    },
+    {
+      "name": "@qntx/spark",
+      "version": "0.5.0",
+      "integrity": "sha512-nRJzrACUqRkKPwZP676dtYHXLWDTb2AzhVKLzN8PLlrcF7IEDYjQvlAMV0USC22vcQh1EqtWPvLGG6X/dCQ4Pw=="
+    },
+    {
+      "name": "@scure/base",
+      "version": "2.4.0",
+      "integrity": "sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg=="
+    },
+    {
+      "name": "@scure/bip32",
+      "version": "2.4.0",
+      "integrity": "sha512-i3DS0CptAocyvqE4n3SUkpzeQK4vJMFwWLofTwRiiKo2aWojBOfyMCgfKw9HVpO6fSY5AK86sHS/Uzn8kK9Few=="
+    },
+    {
+      "name": "@scure/bip39",
+      "version": "2.4.0",
+      "integrity": "sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA=="
+    }
+  ],
+  "bundles": [
+    {
+      "file": "kernel-entry.js",
+      "sha256": "66ac3d9128eb811091d46aacd74e26f0270d5adb649f26c0fc59c154c1b46135"
+    }
+  ]
+}

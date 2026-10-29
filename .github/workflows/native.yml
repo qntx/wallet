@@ -36,10 +36,10 @@ jobs:
 
       - run: pod install
         working-directory: apps/harness/ios
-      # Rebuild and diff the deterministic intermediate — kernel-entry.js reproduces
-      # byte-for-byte on any machine; hermesc's own output drifts a few bytes across
-      # environments on identical input (the shipped hbc is still sha-verified at load).
+      # Rebuild and diff the committed artifacts — the rolldown bundle and the
+      # manifest reproduce byte-for-byte on any machine. Bytecode is compiled by
+      # the consuming app's own hermesc at native-build time and never committed.
       - run: |
           bun run native:kernel
-          git diff --exit-code packages/wallet-native/cpp/generated/kernel-entry.js
+          git diff --exit-code packages/wallet-native/kernel/generated/
           bun run native:host-test
