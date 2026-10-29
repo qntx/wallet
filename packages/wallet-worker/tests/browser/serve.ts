@@ -6,7 +6,7 @@
  * the built dist, and `new URL("kernel.worker.js", import.meta.url)` must resolve against the
  * emitted bundle.
  */
-import { copyFileSync, existsSync, mkdtempSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -36,28 +36,11 @@ if (production) {
     configFile: false,
     root,
     build: { outDir },
+    // Same config consumers are told to use: "es" keeps the worker's dynamic imports as lazily
+    // fetched chunks (the default "iife" inlines the spark backend into the initial worker).
+    worker: { format: "es" },
     logLevel: "warn",
   });
-  // vite emits kernel.worker.js as an asset next to the page bundle; the worker fetches
-  // ./spark.wasm relative to its own URL, so the wasm must sit beside the emitted worker.
-  // Same-origin chunks: the code-split spark runtime and spark.wasm are fetched relative to the
-  // emitted worker asset, so every dist/ payload file must sit beside it.
-  // spark.wasm may be absent from dist/ after a cached (output-restoring) build — source it
-  // from @qntx/spark-wasm, the same package copy-spark-wasm.ts reads.
-  const wasmPkg = join(require.resolve("@qntx/spark-wasm/package.json"), "..");
-  const payloads: Array<[string, string]> = [
-    [join(wasmPkg, "dist", "spark.wasm"), "spark.wasm"],
-    ...readdirSync(distDir)
-      .filter((f) => f.endsWith(".js"))
-      .map((f): [string, string] => [join(distDir, f), f]),
-  ];
-  for (const dir of [outDir, join(outDir, "assets")]) {
-    if (existsSync(dir)) {
-      for (const [src, name] of payloads) {
-        copyFileSync(src, join(dir, name));
-      }
-    }
-  }
   const server = await preview({
     configFile: false,
     root,

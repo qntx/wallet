@@ -24,3 +24,5 @@ jobs:
         run: bunx playwright install --with-deps chromium webkit firefox
       - name: Build and run browser tests
         run: bun run test:browser
+      - name: Run the consumer smoke
+        run: bun run test:consumer

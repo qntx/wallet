@@ -52,7 +52,8 @@
     "smoke:hermes": "vp run @qntx/wallet#build && bun scripts/hermes-smoke.ts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/browser/tsconfig.json && tsc --noEmit -p src/worker/tsconfig.json && tsc --noEmit -p tests/browser/page/tsconfig.json",
     "check:pkg": "bun run build && publint && attw --pack . --profile esm-only",
-    "pack:local": "bun run build && bun pm pack"
+    "pack:local": "bun run build && bun pm pack",
+    "test:consumer": "bun scripts/consumer-smoke.ts"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
