@@ -122,10 +122,9 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
     pbkdf2: noblePbkdf2,
     store,
     policy: {
-      idleMs: 15 * 60_000,
       maxSessionMs: 12 * 3_600_000,
       maxScryptLogN: 20,
-      activity: "request",
+      idle: { ms: 15 * 60_000, activity: "request" },
     },
     // No spark.wasm in the bare-Hermes smoke — the backend must never load here anyway.
     backends: {

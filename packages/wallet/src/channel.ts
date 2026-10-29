@@ -17,8 +17,10 @@ import type { MethodName, ParamsOf, ProtocolValue, ResultOf } from "./protocol/i
 import { WalletError } from "./types.ts";
 import type { LockReason, StatusPayload } from "./types.ts";
 
-/** Why the kernel port ended: a fault in the enclave/transport, or a deliberate host-side
- * lock triggered by the platform (native background expiry — W7). */
+/**
+ * Why the kernel port ended: a fault in the enclave/transport, or a deliberate host-side lock
+ * triggered by the platform (native background expiry — W7).
+ */
 export type PortExit = "crashed" | "background";
 
 /** The host packages' side of the kernel channel (worker, JSI runtime, in-process test port). */

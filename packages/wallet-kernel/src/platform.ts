@@ -26,14 +26,16 @@ export type KernelPolicy = {
   readonly maxScryptLogN: number;
   /**
    * Idle lock. Absent on hosts that never idle-lock in the foreground (native locks on
-   * backgrounding instead): the session then ends only at `maxSessionMs`. "presence" counts
-   * only user-presence-bearing methods (web — background traffic must not hold a session
-   * open); "request" counts every successful request (node — there is no human to observe).
+   * backgrounding instead): the session then ends only at `maxSessionMs`. "presence" counts only
+   * user-presence-bearing methods (web — background traffic must not hold a session open);
+   * "request" counts every successful request (node — there is no human to observe).
    */
-  readonly idle?: {
-    readonly ms: number;
-    readonly activity: "presence" | "request";
-  };
+  readonly idle?:
+    | {
+        readonly ms: number;
+        readonly activity: "presence" | "request";
+      }
+    | undefined;
 };
 
 /**

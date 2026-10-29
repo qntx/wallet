@@ -120,7 +120,7 @@ class ScriptedPort implements MainPort {
   dead = false;
   private readonly kernel: FakeKernel;
   private handler: ((message: unknown) => void) | undefined;
-  private exitHandler: (() => void) | undefined;
+  private exitHandler: ((reason: PortExit) => void) | undefined;
 
   constructor(kernel: FakeKernel) {
     this.kernel = kernel;
@@ -444,11 +444,13 @@ describe("port lifecycle", () => {
     expect(wallet.getSnapshot().lockReason).toBe("background");
   });
 
-  it("a background exit before the first status still breaks the wallet", async () => {
+  it("a background exit before the first status still rejects with integrity", async () => {
     const kernel = new FakeKernel(unlockedStatus());
-    const wallet = connectKernel({
+    const spawned: ScriptedPort[] = [];
+    const attempt = connectKernel({
       spawn: () => {
         const port = new ScriptedPort(kernel);
+        spawned.push(port);
         setTimeout(() => {
           port.background(); // the platform lock can never come before the kernel ran honestly
         });
@@ -458,9 +460,8 @@ describe("port lifecycle", () => {
       ceremony: undefined,
       setTimer: realtime,
     });
-    await expect(wallet.dataKeys.get("notes")).rejects.toSatisfy(
-      (e) => walletError(e).code === "integrity",
-    );
+    await expect(attempt).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+    expect(spawned).toHaveLength(1);
   });
 
   it("a respawned port that dies before its first status breaks the wallet", async () => {

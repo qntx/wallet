@@ -103,10 +103,9 @@ function platform(store: ReturnType<typeof createMemoryStore>): KernelPlatform {
       }),
     store,
     policy: {
-      idleMs: 15 * 60_000,
       maxSessionMs: 12 * 3_600_000,
       maxScryptLogN: 18,
-      activity: "request",
+      idle: { ms: 15 * 60_000, activity: "request" },
     },
     backends: {
       nostr: nobleBackend,
