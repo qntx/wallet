@@ -75,8 +75,10 @@ const wallet = await createNodeWallet({
   update the app, do not reset.
 - The Node store's RPC failures surface as `unavailable` and precondition failures as
   `conflict` — neither hangs a kernel call.
-- The Web host is a **hot wallet**. CSP needs `worker-src 'self'`; Vite dev needs
-  `optimizeDeps.exclude: ["@qntx/wallet-worker"]` — `vite build` needs nothing.
+- The Web host is a **hot wallet**. CSP needs `worker-src 'self'`. The host spawns the kernel
+  with `new Worker(new URL("kernel.worker.js", import.meta.url))`, which bundlers bundle as a
+  worker entry (with its chunks and `spark.wasm`); Vite dev additionally needs
+  `optimizeDeps.exclude: ["@qntx/wallet-worker"]`.
 - `@qntx/wallet/host` is for host packages only — not application API.
 
 ## License

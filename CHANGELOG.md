@@ -9,6 +9,14 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet` and `package
 
 ## [Unreleased]
 
+### Fixed
+
+- `@qntx/wallet-worker`: the Web host spawns the kernel with the literal
+  `new Worker(new URL("kernel.worker.js", import.meta.url))` form. With a precomputed URL,
+  bundlers (Vite, webpack) copied `kernel.worker.js` as a single asset without its split chunks,
+  so the worker died loading its first import and `createWebWallet` rejected with "the kernel port
+  died before its first status" in every bundled app.
+
 ## [0.3.0] - 2026-10-28
 
 The E0 hardening series (#91–#108): the vault is fail-closed, cryptographically authenticated,
