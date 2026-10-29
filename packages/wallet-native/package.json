@@ -28,8 +28,7 @@
   },
   "devDependencies": {
     "@qntx/nostr": "0.15.0",
-    "@qntx/tsconfig": "1.0.1",
-    "@qntx/wallet": "0.3.0"
+    "@qntx/tsconfig": "1.0.1"
   },
   "peerDependencies": {
     "@qntx/wallet": "0.3.0"
