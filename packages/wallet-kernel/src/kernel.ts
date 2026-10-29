@@ -274,8 +274,7 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
           throw error;
         }
         setHealth("unavailable");
-        const detail = error instanceof Error ? `: ${error.message}` : "";
-        throw new KernelError("unavailable", `vault store: commit failed${detail}`);
+        throw new KernelError("unavailable", "vault store: commit failed");
       }
       if (options?.rotate !== undefined) {
         if (ctx.session.unlocked) {

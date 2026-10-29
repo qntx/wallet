@@ -625,7 +625,7 @@ void installKernelGlobals(
       rt,
       "read",
       hostFn(rt, "file.read", 0, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
-        const auto bytes = kernelFileRead();
+        const auto bytes = kernelFileRead(state->vaultDirectory);
         if (!bytes.has_value()) {
           return jsi::Value::null();
         }
@@ -641,7 +641,8 @@ void installKernelGlobals(
         }
         auto buffer = args[0].asObject(rt).getArrayBuffer(rt);
         const auto* data = buffer.data(rt);
-        kernelFileWrite(std::vector<uint8_t>(data, data + buffer.size(rt)));
+        kernelFileWrite(
+            state->vaultDirectory, std::vector<uint8_t>(data, data + buffer.size(rt)));
         return jsi::Value::undefined();
       }));
   intrinsics->freeze.call(rt, jsi::Value(rt, file));

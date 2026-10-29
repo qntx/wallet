@@ -2,9 +2,7 @@
 
 #include <cerrno>
 #include <cstring>
-#include <mutex>
 #include <stdexcept>
-#include <system_error>
 
 #if defined(_WIN32)
 #error "KernelFile has no Windows implementation"
@@ -17,9 +15,6 @@
 
 namespace qntx {
 namespace {
-
-std::mutex g_dirMutex;
-std::string g_dirOverride;
 
 [[noreturn]] void fail(const char* what) {
   const int saved = errno;
@@ -41,42 +36,14 @@ void fsyncOrFail(int fd, const char* what, bool full = false) {
   }
 }
 
-std::string pathFor(const std::string& leaf) {
-  const std::string dir = kernelFileDirectory();
-  return dir + "/" + leaf;
+std::string pathFor(const std::string& directory, const char* leaf) {
+  return directory + "/" + leaf;
 }
 
 } // namespace
 
-void setKernelFileDirectory(std::string directory) {
-  std::lock_guard<std::mutex> lock(g_dirMutex);
-  g_dirOverride = std::move(directory);
-}
-
-std::string kernelFileDirectoryOverride() {
-  std::lock_guard<std::mutex> lock(g_dirMutex);
-  return g_dirOverride;
-}
-
-// Default directory hook for hosts without a platform translation unit:
-// the override, then QNTX_VAULT_DIR. iOS and Android provide their own
-// kernelFileDirectory() instead (which still honours the override).
-__attribute__((weak)) std::string kernelFileDirectory() {
-  {
-    const std::string override = kernelFileDirectoryOverride();
-    if (!override.empty()) {
-      return override;
-    }
-  }
-  const char* env = ::getenv("QNTX_VAULT_DIR");
-  if (env != nullptr && env[0] != '\0') {
-    return env;
-  }
-  throw std::runtime_error("kernel file directory not configured");
-}
-
-std::optional<std::vector<uint8_t>> kernelFileRead() {
-  const std::string path = pathFor("vault.cbor");
+std::optional<std::vector<uint8_t>> kernelFileRead(const std::string& directory) {
+  const std::string path = pathFor(directory, "vault.cbor");
   const int fd = ::open(path.c_str(), O_RDONLY);
   if (fd < 0) {
     if (errno == ENOENT) {
@@ -103,9 +70,9 @@ std::optional<std::vector<uint8_t>> kernelFileRead() {
   return bytes;
 }
 
-void kernelFileWrite(const std::vector<uint8_t>& bytes) {
-  const std::string tmp = pathFor("vault.cbor.tmp");
-  const std::string final = pathFor("vault.cbor");
+void kernelFileWrite(const std::string& directory, const std::vector<uint8_t>& bytes) {
+  const std::string tmp = pathFor(directory, "vault.cbor.tmp");
+  const std::string final = pathFor(directory, "vault.cbor");
   const int fd = ::open(tmp.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
   if (fd < 0) {
     fail("open temp vault file");
@@ -122,18 +89,12 @@ void kernelFileWrite(const std::vector<uint8_t>& bytes) {
     }
     off += static_cast<size_t>(n);
   }
-  if (
-#if defined(__APPLE__)
-      ::fcntl(fd, F_FULLFSYNC)
-#else
-      ::fsync(fd)
-#endif
-      != 0) {
-    const int saved = errno;
+  try {
+    fsyncOrFail(fd, "fsync temp vault file", /*full=*/true);
+  } catch (...) {
     ::close(fd);
     ::unlink(tmp.c_str());
-    errno = saved;
-    fail("fsync temp vault file");
+    throw;
   }
   if (::close(fd) != 0) {
     ::unlink(tmp.c_str());
@@ -143,11 +104,16 @@ void kernelFileWrite(const std::vector<uint8_t>& bytes) {
     ::unlink(tmp.c_str());
     fail("rename vault file");
   }
-  const int dirFd = ::open(kernelFileDirectory().c_str(), O_RDONLY);
+  const int dirFd = ::open(directory.c_str(), O_RDONLY);
   if (dirFd < 0) {
     fail("open vault directory");
   }
-  fsyncOrFail(dirFd, "fsync vault directory");
+  try {
+    fsyncOrFail(dirFd, "fsync vault directory");
+  } catch (...) {
+    ::close(dirFd);
+    throw;
+  }
   ::close(dirFd);
 }
 

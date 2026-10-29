@@ -59,9 +59,13 @@ class KernelRuntime final : public std::enable_shared_from_this<KernelRuntime> {
     std::function<void()> onIntegrity;
   };
 
+  // `vaultDirectory` is the directory the kernel's vault file lives in (the
+  // host resolves it via platformVaultDirectory); the __qntx.file capabilities
+  // capture it for kernelFileRead/kernelFileWrite.
   static std::shared_ptr<KernelRuntime> start(
       KernelScript script,
       Hooks hooks,
+      std::string vaultDirectory,
       KernelProfile profile = KernelProfile::standard);
 
   ~KernelRuntime();

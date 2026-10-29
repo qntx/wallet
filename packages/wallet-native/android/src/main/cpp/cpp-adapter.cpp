@@ -1,11 +1,8 @@
 #include "WalletNativeOnLoad.hpp"
+#include "host/VaultDirectory.hpp"
 #include "runtime/platform/KernelPbkdf2.hpp"
 #include <fbjni/fbjni.h>
 #include <jni.h>
-
-namespace qntx {
-void kernelFileDirectorySetFromJava(const char* path);
-}
 
 // KernelFileModule.setVaultDirectory — Kotlin hands the computed
 // <noBackupFilesDir>/qntx-wallet path to C++ once at module init.

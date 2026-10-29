@@ -29150,7 +29150,7 @@ zoo`.split("\n"));
 						throw error;
 					}
 					setHealth("unavailable");
-					throw new KernelError("unavailable", `vault store: commit failed${error instanceof Error ? `: ${error.message}` : ""}`);
+					throw new KernelError("unavailable", "vault store: commit failed");
 				}
 				if ((options === null || options === void 0 ? void 0 : options.rotate) !== void 0) {
 					if (ctx.session.unlocked) ctx.session.rotate(options.rotate.dek, options.rotate.keyId);

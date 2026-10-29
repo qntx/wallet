@@ -194,7 +194,7 @@ int destroyBusyloop(const char* hbcPath) {
   Mailbox box;
   auto rt = KernelRuntime::start(
       bytecode ? bytecodeScript(readFile(hbcPath)) : sourceScript(js),
-      hooksFor(box));
+      hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "busyloop: ready post missing");
   const auto t0 = Clock::now();
   rt->destroy();
@@ -217,7 +217,7 @@ int destroyBeforeEvaluate() {
   auto rt = KernelRuntime::start(
       sourceScript(std::string(kSendHelper) +
           "var t = Date.now(); while (Date.now() - t < 3000) {} __send(\"done\");"),
-      hooksFor(box));
+      hooksFor(box), "");
   const auto t0 = Clock::now();
   rt->destroy();
   const auto destroyMs =
@@ -238,7 +238,7 @@ int destroyBeforeEvaluate() {
 int destroyConcurrent() {
   Mailbox box;
   auto rt = KernelRuntime::start(
-      sourceScript(std::string(kSendHelper) + "__send(\"ready\");"), hooksFor(box));
+      sourceScript(std::string(kSendHelper) + "__send(\"ready\");"), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "concurrent: ready post missing");
   std::thread a([&] {
     for (int i = 0; i < 10; i++) {
@@ -265,7 +265,7 @@ int destroyKdfInflight() {
           "__qntx.pbkdf2(\"sha256\", new Uint8Array(16), new Uint8Array(16), 10000000, 32,"
           " function () { __send(\"kdf-done\"); });"
           "__send(\"submitted\");"),
-      hooksFor(box));
+      hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(15)) == 1, "kdf-inflight: submit post missing");
   std::this_thread::sleep_for(std::chrono::milliseconds(300));
   rt->destroy();
@@ -287,7 +287,7 @@ int timersCancel() {
           "  cancel();"
           "}"
           "__send(\"done\");"),
-      hooksFor(box));
+      hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-cancel: never finished");
   rt->destroy();
   const uint64_t after = physicalFootprint();
@@ -309,7 +309,7 @@ int timersFired() {
           "  if (i >= 100000) { __send(\"done\"); } else { __qntx.setTimer(0, next); }"
           "}"
           "__qntx.setTimer(0, next);"),
-      hooksFor(box));
+      hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-fired: never finished");
   rt->destroy();
   const uint64_t after = physicalFootprint();
@@ -352,7 +352,7 @@ __send("pbkdf2-redefined:" + tryCall(function () {
       function (r) { __send("pbkdf2-done:" + (r ? r.length : "none")); });
 }));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(5, std::chrono::seconds(30)) == 5, "forged: missing posts");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() >= 4 && box.posts[0] == "pbkdf2-forged:threw",
@@ -398,7 +398,7 @@ for (var i = 0; i < bad.length; i++) {
 }
 __send(out.join(","));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "numeric: no report");
   std::string report;
   {
@@ -448,7 +448,7 @@ for (var i = 0; same && i < a.length; i++) { same = a[i] === b[i]; }
 out.push("distinct:" + (same ? "no" : "yes"));
 __send(out.join(","));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "random: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
@@ -484,7 +484,7 @@ t("bigint64", function () { return crypto.getRandomValues(new BigInt64Array(4)).
 t("plain", function () { crypto.getRandomValues({ length: 4 }); });
 __send(out.join(","));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "grv: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
@@ -502,7 +502,7 @@ int crashCase(bool promise, bool bytecode) {
   Mailbox box;
   const auto& script =
       promise ? qntx::harness::probes::kCrashPromise : qntx::harness::probes::kCrashSync;
-  auto rt = KernelRuntime::start(probeScript(script, bytecode), hooksFor(box));
+  auto rt = KernelRuntime::start(probeScript(script, bytecode), hooksFor(box), "");
   CHECK(box.waitErrors(1, std::chrono::seconds(30)), "crash: no onError");
   CHECK(
       rt->waitUntilStopped(std::chrono::seconds(1)),
@@ -521,7 +521,7 @@ try { eval("1"); out.push("eval:ran"); } catch (e) { out.push("eval:threw"); }
 try { Function("return 1")(); out.push("fn:ran"); } catch (e) { out.push("fn:threw"); }
 __send(out.join(","));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), profile);
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "", profile);
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "eval: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
@@ -561,7 +561,7 @@ __send(JSON.stringify({
   noPrivate: Object.getOwnPropertyNames(globalThis).indexOf("__qntxUnhandledRejection") < 0,
 }));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "descriptors: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
@@ -608,23 +608,22 @@ int filePrimitive() {
   if (dir.empty()) {
     return g_failures;
   }
-  qntx::setKernelFileDirectory(dir);
 
   // Missing file -> null, never an exception.
-  CHECK(!qntx::kernelFileRead().has_value(), "file: missing must read null");
+  CHECK(!qntx::kernelFileRead(dir).has_value(), "file: missing must read null");
 
   // Zero-length write -> reads back empty (not null).
-  qntx::kernelFileWrite({});
-  const auto empty = qntx::kernelFileRead();
+  qntx::kernelFileWrite(dir, {});
+  const auto empty = qntx::kernelFileRead(dir);
   CHECK(empty.has_value() && empty->empty(), "file: zero-length write");
 
   // Normal write -> atomic replace reads new bytes.
   const std::vector<uint8_t> first = {1, 2, 3};
   const std::vector<uint8_t> second = {9, 8, 7, 6, 5};
-  qntx::kernelFileWrite(first);
-  CHECK(qntx::kernelFileRead() == first, "file: first write");
-  qntx::kernelFileWrite(second);
-  CHECK(qntx::kernelFileRead() == second, "file: atomic replace");
+  qntx::kernelFileWrite(dir, first);
+  CHECK(qntx::kernelFileRead(dir) == first, "file: first write");
+  qntx::kernelFileWrite(dir, second);
+  CHECK(qntx::kernelFileRead(dir) == second, "file: atomic replace");
 
   // Simulated crash mid-write: a stale .tmp never shadows the committed file.
   const std::string tmpPath = dir + "/vault.cbor.tmp";
@@ -634,9 +633,8 @@ int filePrimitive() {
     std::fputs("partial-garbage", f);
     std::fclose(f);
   }
-  CHECK(qntx::kernelFileRead() == second, "file: crash mid-write preserves old file");
+  CHECK(qntx::kernelFileRead(dir) == second, "file: crash mid-write preserves old file");
 
-  qntx::setKernelFileDirectory("");
   return g_failures;
 }
 
@@ -655,7 +653,7 @@ int queueCap() {
           // Keep the kernel thread busy after ready so the 70 inbound frames pile
           // up in the queue instead of draining instantly.
           "__send(\"ready\"); var t = Date.now(); while (Date.now() - t < 5000) {}"),
-      std::move(hooks));
+      std::move(hooks), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
   std::vector<uint8_t> frame(16, 0x61);
   for (int i = 0; i < 70; i++) {
@@ -677,6 +675,7 @@ int globalInventory(KernelProfile profile) {
           std::string(kSendHelper) +
           "__send(JSON.stringify(Object.getOwnPropertyNames(globalThis)));"),
       hooksFor(box),
+      "",
       profile);
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "inventory: no report");
   std::set<std::string> kernelNames;
@@ -783,7 +782,7 @@ t("labels", function () {
 out.push("empty:" + (new TextDecoder().decode() === ""));
 __send(out.join(","));
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "decoder: no report");
   std::lock_guard<std::mutex> lock(box.m);
   if (!box.posts.empty()) {
@@ -849,7 +848,7 @@ __qntx.pbkdf2("sha512", new Uint8Array([
   0x70, 0xc3, 0xa4, 0x73, 0x73, 0x77, 0xc3, 0xb6, 0x72, 0x64, 0x20, 0xf0, 0x9f, 0x94, 0x91]),
   new Uint8Array([0x73, 0x61, 0x6c, 0x74, 0x2d, 0xe2, 0x9c, 0x93]), 777, 48, done);
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(60)) == 1, "pbkdf2: no report");
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -886,7 +885,7 @@ for (var i = 0; i < 8; i++) {
 }
 __qntx.pbkdf2("sha256", new Uint8Array(4), new Uint8Array(4), 1, 32, cb);
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   // Both the ninth and the tenth submit can be rejected when the worker has
   // not picked up the first job yet; every rejection must carry the error.
   CHECK(
@@ -919,7 +918,7 @@ for (var i = 0; i < 1000; i++) {
 }
 __send("monotonic:" + monotonic + ",fractional:" + fractional + ",subMs:" + subMs);
 )JS";
-  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box));
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "elapsed: no report");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(!box.posts.empty() &&
@@ -934,7 +933,7 @@ __send("monotonic:" + monotonic + ",fractional:" + fractional + ",subMs:" + subM
 int kernelProbe(bool bytecode, KernelProfile profile) {
   Mailbox box;
   auto rt = KernelRuntime::start(
-      probeScript(qntx::harness::probes::kKernel, bytecode), hooksFor(box), profile);
+      probeScript(qntx::harness::probes::kKernel, bytecode), hooksFor(box), "", profile);
   CHECK(
       box.waitPosts(2, std::chrono::seconds(180)) == 2,
       "kernel-probe: expected kernel-ready and done posts");
@@ -975,6 +974,7 @@ HermesInternal.enablePromiseRejectionTracker({
 Promise.reject(new TypeError("rejection probe"));
 )JS"),
       hooksFor(box),
+      "",
       profile);
   box.waitPosts(3, std::chrono::seconds(10));
   rt->destroy();

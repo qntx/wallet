@@ -146,6 +146,7 @@ KernelRuntime::~KernelRuntime() {
 std::shared_ptr<KernelRuntime> KernelRuntime::start(
     KernelScript script,
     Hooks hooks,
+    std::string vaultDirectory,
     KernelProfile profile) {
   if (script.bytes == nullptr || script.bytes->empty()) {
     throw std::invalid_argument("KernelRuntime::start: empty script");
@@ -156,6 +157,7 @@ std::shared_ptr<KernelRuntime> KernelRuntime::start(
   impl.script = std::move(script);
   impl.hooks = std::move(hooks);
   impl.globals = std::make_shared<KernelGlobalsState>();
+  impl.globals->vaultDirectory = std::move(vaultDirectory);
   impl.globals->active = std::make_shared<std::atomic_bool>(true);
   impl.globals->postToHost = impl.hooks.onPost;
   impl.globals->reportFatal = [&impl](std::string message) {

@@ -32,7 +32,7 @@ find_library(LOG_LIB log)
 
 target_link_libraries(
         ${PACKAGE_NAME}
-        wallet-native
+        WalletNative
         ${LOG_LIB}
         android
 )

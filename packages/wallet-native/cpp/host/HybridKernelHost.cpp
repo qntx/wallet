@@ -2,6 +2,7 @@
 
 #include "../generated/kernel.hpp"
 #include "KernelSha256.hpp"
+#include "VaultDirectory.hpp"
 
 namespace margelo::nitro::qntxwallet {
 
@@ -31,6 +32,9 @@ void HybridKernelHost::start() {
     exit(KernelExitReason::INTEGRITY);
     return;
   }
+  // Resolved once here: a platform failure rejects start() for the JS caller
+  // instead of surfacing later as a store error inside the kernel.
+  const std::string vaultDirectory = qntx::platformVaultDirectory();
 
   std::weak_ptr<HybridKernelHost> weak =
       std::dynamic_pointer_cast<HybridKernelHost>(shared_from_this());
@@ -62,7 +66,8 @@ void HybridKernelHost::start() {
       qntx::KernelScript::Kind::bytecode,
       std::make_shared<const std::vector<uint8_t>>(
           qntx::KERNEL_BYTECODE, qntx::KERNEL_BYTECODE + qntx::KERNEL_BYTECODE_SIZE)};
-  const auto runtime = qntx::KernelRuntime::start(script, std::move(hooks));
+  const auto runtime =
+      qntx::KernelRuntime::start(script, std::move(hooks), vaultDirectory);
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (exited_) {
