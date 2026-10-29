@@ -21,7 +21,7 @@ struct KernelPendingCall {
   std::optional<facebook::jsi::Function> done;
 };
 
-// Defined in KernelGlobals.cpp: captured JS intrinsics (defineProperty,
+// Defined in KernelJs.hpp: captured JS intrinsics (defineProperty,
 // freeze, %TypedArray%.prototype getters, the Uint8Array constructor, …) that
 // host functions call instead of looking properties up on possibly-tampered
 // objects.
@@ -81,8 +81,8 @@ struct KernelGlobalsState {
 };
 
 // Installs the kernel's capabilities on a fresh runtime:
-//   globalThis.__qntx   frozen { random, now, elapsed, setTimer, pbkdf2, post,
-//                              setMessageHandler }
+//   globalThis.__qntx   frozen { random, now, elapsed, setTimer, pbkdf2, file,
+//                              frames, backends }
 //   globalThis.crypto   frozen { getRandomValues }
 //   globalThis.TextDecoder   the native Hermes decoder (260318099+), frozen
 //                            and rebound hidden
