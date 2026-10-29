@@ -7,6 +7,7 @@
       "dependencies": {
         "@qntx/nostr": "0.15.1",
         "@qntx/nostr-native": "0.15.1",
+        "@qntx/spark-native": "0.5.0",
         "@qntx/v1-probe": "file:./modules/v1-probe",
         "@qntx/wallet": "file:../../packages/wallet",
         "@qntx/wallet-native": "file:../../packages/wallet-native",
@@ -398,13 +399,15 @@
 
     "@qntx/spark": ["@qntx/spark@0.5.0", "", { "dependencies": { "@bufbuild/protobuf": "^2.16.0", "@connectrpc/connect": "^2.2.0", "@connectrpc/connect-web": "^2.2.0", "@noble/ciphers": "2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0", "@scure/bip32": "^2.4.0", "@scure/btc-signer": "^2.4.1" } }, "sha512-nRJzrACUqRkKPwZP676dtYHXLWDTb2AzhVKLzN8PLlrcF7IEDYjQvlAMV0USC22vcQh1EqtWPvLGG6X/dCQ4Pw=="],
 
+    "@qntx/spark-native": ["@qntx/spark-native@0.5.0", "", { "peerDependencies": { "@qntx/spark": "^0.5.0", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-Vc8LxHc4OFpR64MnnsKHJt0AV3NtHalVjzYB+CbHr3dYtZK1RDZPiHYzokKZM0XP6Ji+iyvAYQ384k4BCn74lQ=="],
+
     "@qntx/tsconfig": ["@qntx/tsconfig@1.0.1", "", {}, "sha512-ONEFojcKeCateUga4lJO7tf0KUTLuz5DrPGuzf1zgoo9mQVJx7gHjWElj32tGNiCWE5lblO+9EJ28cvb/81PDQ=="],
 
     "@qntx/v1-probe": ["@qntx/v1-probe@file:modules/v1-probe", { "devDependencies": { "nitrogen": "0.37.1", "react-native-nitro-modules": "0.37.1" }, "peerDependencies": { "react": "*", "react-native": "*", "react-native-nitro-modules": "*" } }],
 
     "@qntx/wallet": ["@qntx/wallet@file:../../packages/wallet", { "dependencies": { "@scure/base": "^2.4.0" }, "devDependencies": { "@arethetypeswrong/cli": "0.18.5", "@qntx/nostr": "0.15.0", "@qntx/spark": "0.5.0", "@qntx/tsconfig": "1.0.1", "@types/node": "26.6.5", "publint": "0.3.25", "typescript": "7.0.2", "vite-plus": "1.3.0" }, "peerDependencies": { "@qntx/nostr": "^0.15.0", "@qntx/spark": "^0.5.0" }, "optionalPeers": ["@qntx/nostr", "@qntx/spark"] }],
 
-    "@qntx/wallet-native": ["@qntx/wallet-native@file:../../packages/wallet-native", { "dependencies": { "cborg": "6.1.4" }, "devDependencies": { "@qntx/nostr": "0.15.0", "@qntx/tsconfig": "1.0.1", "nitrogen": "0.37.1", "react-native-nitro-modules": "0.37.1" }, "peerDependencies": { "@qntx/wallet": "0.4.0", "react-native-nitro-modules": "*" } }],
+    "@qntx/wallet-native": ["@qntx/wallet-native@file:../../packages/wallet-native", { "dependencies": { "cborg": "6.1.4" }, "devDependencies": { "@qntx/nostr": "0.15.0", "@qntx/spark-native": "0.5.0", "@qntx/tsconfig": "1.0.1", "nitrogen": "0.37.1", "react-native-nitro-modules": "0.37.1" }, "peerDependencies": { "@qntx/spark-native": "0.5.0", "@qntx/wallet": "0.4.0", "react-native-nitro-modules": "*" } }],
 
     "@react-native/asset-utils": ["@react-native/asset-utils@0.88.0", "", {}, "sha512-Bj1DxQt5f4OrjdlgSVkZT37Z3hx5hUIN5AUDSqL/e99vgtTcqj5vnm067epZL1EF/QiqsniZO8Q1GSkItOakDg=="],
 
