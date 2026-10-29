@@ -156,7 +156,7 @@ const config: UserConfig = defineConfig({
       "target/**",
       ".vite-hooks/**",
       "vectors/**",
-      "packages/wallet-native/cpp/generated/**",
+      "packages/wallet-native/kernel/generated/**",
       // Nitrogen spec files require method signatures and are machine-consumed.
       "**/*.nitro.ts",
       // apps/harness is a standalone Expo project with its own toolchain and
@@ -389,7 +389,7 @@ const config: UserConfig = defineConfig({
       // Generated vectors stay byte-frozen.
       "vectors/**",
       // Generated kernel payloads stay byte-frozen.
-      "packages/wallet-native/cpp/generated/**",
+      "packages/wallet-native/kernel/generated/**",
       // Standalone Expo app (own toolchain), see the lint ignore above.
       "apps/harness/**",
     ],

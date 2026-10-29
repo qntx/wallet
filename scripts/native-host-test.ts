@@ -83,7 +83,7 @@ mkdirSync(buildDir, { recursive: true });
       "node",
       resolve(harness, "node_modules/@qntx/wallet-native/scripts/compile-kernel.mjs"),
       resolve(buildDir, "qntx-kernel"),
-        resolve(harness, "node_modules/react-native"),
+      resolve(harness, "node_modules/react-native"),
     ],
     { stdout: "inherit", stderr: "inherit" },
   );
