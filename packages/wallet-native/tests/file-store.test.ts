@@ -13,13 +13,13 @@ const vectors: { cases: Array<{ name: string; expect: string; frame: string }> }
 ) as { cases: Array<{ name: string; expect: string; frame: string }> };
 
 const fakeFile = (initial?: Uint8Array): KernelFile & { image: () => unknown } => {
-  let bytes: Uint8Array | null = initial ?? null;
+  let bytes: Uint8Array | undefined = initial;
   return {
     read: () => bytes,
     write: (b) => {
       bytes = b;
     },
-    image: () => (bytes === null ? undefined : decode(bytes)),
+    image: () => (bytes === undefined ? undefined : decode(bytes)),
   };
 };
 
@@ -63,7 +63,7 @@ describe("createFileStore", () => {
   });
 
   it("a failing write leaves file and memory at the previous state", async () => {
-    let bytes: Uint8Array | null = null;
+    let bytes: Uint8Array | undefined;
     const okWrite = (b: Uint8Array): void => {
       bytes = b;
     };

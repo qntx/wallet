@@ -651,11 +651,11 @@ int fileContract() {
   Mailbox box;
   const std::string js = std::string(kSendHelper) + R"JS(
 var out = [];
-out.push("read:" + (__qntx.file.read() === null ? "null" : "not-null"));
+out.push("read:" + (__qntx.file.read() === undefined ? "undefined" : "not-undefined"));
 var view = new Uint8Array([9, 1, 2, 3, 4, 8]).subarray(1, 5);
 __qntx.file.write(view);
 var back = __qntx.file.read();
-out.push("back:" + (back === null ? "null" : Array.from(back).join(",")));
+out.push("back:" + (back === undefined ? "undefined" : Array.from(back).join(",")));
 try {
   __qntx.file.write({ length: 4 });
   out.push("object:no-throw");
@@ -682,7 +682,7 @@ __send(out.join("|"));
       report = box.posts[0];
     }
   }
-  CHECK(report.find("read:null") != std::string::npos, "file-contract: missing file must read null");
+  CHECK(report.find("read:undefined") != std::string::npos, "file-contract: missing file must read undefined");
   CHECK(report.find("back:1,2,3,4") != std::string::npos,
       "file-contract: subarray bytes must persist exactly");
   CHECK(report.find("object:threw") != std::string::npos, "file-contract: plain object must throw");
@@ -691,7 +691,7 @@ __send(out.join("|"));
   Mailbox box2;
   const std::string js2 = std::string(kSendHelper) + R"JS(
 var back = __qntx.file.read();
-__send(back === null ? "r:null" : "r:" + Array.from(back).join(","));
+__send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
 )JS";
   {
     auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), dir);

@@ -627,7 +627,7 @@ void installKernelGlobals(
       hostFn(rt, "file.read", 0, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
         const auto bytes = kernelFileRead(state->vaultDirectory);
         if (!bytes.has_value()) {
-          return jsi::Value::null();
+          return jsi::Value::undefined();
         }
         auto buffer = arrayBufferFromBytes(rt, bytes->data(), bytes->size());
         return jsi::Value(rt, makeUint8Array(rt, *state->intrinsics, std::move(buffer)));
