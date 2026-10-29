@@ -130,7 +130,7 @@ export class KernelWallet implements Wallet {
         },
         onLocked: (reason) => {
           this.lockReason = reason;
-          this.emit();
+          this.markLocked();
         },
         onCrashed: () => {
           this.lockReason = "crashed";

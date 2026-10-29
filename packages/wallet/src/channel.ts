@@ -152,9 +152,11 @@ export class Channel {
         this.onExit(reason, generation);
       });
       this.port = port;
-    } catch {
+    } catch (error) {
       // A host that cannot spawn has no kernel to talk to — fail closed like a dead peer.
-      this.breakChannel(integrity("could not spawn the kernel port"));
+      const spawnError = integrity("could not spawn the kernel port");
+      spawnError.cause = error;
+      this.breakChannel(spawnError);
     }
   }
 
