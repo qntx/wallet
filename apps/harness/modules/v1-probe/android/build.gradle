@@ -73,6 +73,9 @@ android {
       "META-INF",
       "META-INF/**",
       "**/libNitroModules.so",
+      // The wallet-native Gradle module owns and packages libWalletNative.so;
+      // this build only links the CMake target for libV1Probe.so's symbols.
+      "**/libWalletNative.so",
       "**/libc++_shared.so",
       "**/libfbjni.so",
       "**/libjsi.so",

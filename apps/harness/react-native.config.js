@@ -13,9 +13,6 @@ module.exports = {
         ios: {
           podspecPath: path.join(walletNative, "WalletNative.podspec"),
         },
-        android: {
-          sourceDir: path.join(walletNative, "android"),
-        },
       },
     },
   },

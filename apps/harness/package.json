@@ -29,5 +29,8 @@
   },
   "patchedDependencies": {
     "react-native-nitro-modules@0.37.1": "patches/react-native-nitro-modules@0.37.1.patch"
+  },
+  "overrides": {
+    "@qntx/wallet": "file:../../packages/wallet"
   }
 }

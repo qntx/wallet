@@ -1,5 +1,7 @@
 #include "KernelGlobals.hpp"
 
+#include "../host/KernelFile.hpp"
+
 #include "KernelBuffer.hpp"
 #include "platform/KernelPbkdf2.hpp"
 
@@ -574,6 +576,77 @@ void installKernelGlobals(
         state->messageHandler = args[0].asObject(rt).asFunction(rt);
         return jsi::Value::undefined();
       }));
+
+  // __qntx.frames — the W2b injection-table shape over the same plumbing:
+  // post, onMessage, and onIntegrityViolation (the host fires that handler
+  // when it refuses a frame on integrity grounds).
+  auto frames = jsi::Object(rt);
+  frames.setProperty(
+      rt,
+      "post",
+      hostFn(rt, "frames.post", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isArrayBuffer(rt)) {
+          throw jsi::JSError(rt, "__qntx.frames.post expects an ArrayBuffer");
+        }
+        auto buffer = args[0].asObject(rt).getArrayBuffer(rt);
+        const auto* data = buffer.data(rt);
+        state->postToHost(std::vector<uint8_t>(data, data + buffer.size(rt)));
+        return jsi::Value::undefined();
+      }));
+  frames.setProperty(
+      rt,
+      "onMessage",
+      hostFn(rt, "frames.onMessage", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
+          throw jsi::JSError(rt, "__qntx.frames.onMessage expects a function");
+        }
+        state->messageHandler = args[0].asObject(rt).asFunction(rt);
+        return jsi::Value::undefined();
+      }));
+  frames.setProperty(
+      rt,
+      "onIntegrityViolation",
+      hostFn(rt, "frames.onIntegrityViolation", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
+          throw jsi::JSError(rt, "__qntx.frames.onIntegrityViolation expects a function");
+        }
+        state->integrityHandler = args[0].asObject(rt).asFunction(rt);
+        return jsi::Value::undefined();
+      }));
+  intrinsics->freeze.call(rt, jsi::Value(rt, frames));
+  qntx.setProperty(rt, "frames", jsi::Value(std::move(frames)));
+
+  // __qntx.file — one opaque file image: read() -> Uint8Array | null,
+  // write(bytes) atomically replaces. The C++ primitive owns durability
+  // (temp + fsync + rename + dir fsync); failures throw so the file store
+  // rejects instead of silently degrading.
+  auto file = jsi::Object(rt);
+  file.setProperty(
+      rt,
+      "read",
+      hostFn(rt, "file.read", 0, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
+        const auto bytes = kernelFileRead(state->vaultDirectory);
+        if (!bytes.has_value()) {
+          return jsi::Value::undefined();
+        }
+        auto buffer = arrayBufferFromBytes(rt, bytes->data(), bytes->size());
+        return jsi::Value(rt, makeUint8Array(rt, *state->intrinsics, std::move(buffer)));
+      }));
+  file.setProperty(
+      rt,
+      "write",
+      hostFn(rt, "file.write", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 1) {
+          throw jsi::JSError(rt, "__qntx.file.write expects an ArrayBuffer or TypedArray");
+        }
+        const auto view =
+            byteViewFromValue(rt, args[0], "__qntx.file.write", *state->intrinsics);
+        kernelFileWrite(
+            state->vaultDirectory, std::vector<uint8_t>(view.data, view.data + view.size));
+        return jsi::Value::undefined();
+      }));
+  intrinsics->freeze.call(rt, jsi::Value(rt, file));
+  qntx.setProperty(rt, "file", jsi::Value(std::move(file)));
 
   intrinsics->freeze.call(rt, jsi::Value(rt, qntx));
   defineHiddenGlobal(rt, *intrinsics, "__qntx", jsi::Value(std::move(qntx)));

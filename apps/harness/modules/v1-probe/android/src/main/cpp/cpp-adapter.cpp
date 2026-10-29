@@ -8,6 +8,6 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
     margelo::nitro::v1probe::registerAllNatives();
     qntx::kernelPbkdf2OnLoad(
         facebook::jni::Environment::current(),
-        "com/margelo/nitro/v1probe/KernelPbkdf2");
+        "com/margelo/nitro/qntxwallet/KernelPbkdf2");
   });
 }

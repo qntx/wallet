@@ -84,6 +84,11 @@ struct KernelRuntime::Impl {
   std::condition_variable cv;
   std::deque<std::function<void()>> immediate;
 
+  // Inbound frame deliveries queued but not yet run; capped at
+  // kMaxInboundFrames — the kernel must keep up or the host exits integrity.
+  static constexpr size_t kMaxInboundFrames = 64;
+  size_t pendingPosts = 0;
+
   std::atomic_bool stopping{false};
 
   // Publishes the live runtime's IHermes so destroy() can interrupt running
@@ -141,6 +146,7 @@ KernelRuntime::~KernelRuntime() {
 std::shared_ptr<KernelRuntime> KernelRuntime::start(
     KernelScript script,
     Hooks hooks,
+    std::string vaultDirectory,
     KernelProfile profile) {
   if (script.bytes == nullptr || script.bytes->empty()) {
     throw std::invalid_argument("KernelRuntime::start: empty script");
@@ -151,6 +157,7 @@ std::shared_ptr<KernelRuntime> KernelRuntime::start(
   impl.script = std::move(script);
   impl.hooks = std::move(hooks);
   impl.globals = std::make_shared<KernelGlobalsState>();
+  impl.globals->vaultDirectory = std::move(vaultDirectory);
   impl.globals->active = std::make_shared<std::atomic_bool>(true);
   impl.globals->postToHost = impl.hooks.onPost;
   impl.globals->reportFatal = [&impl](std::string message) {
@@ -189,16 +196,30 @@ bool KernelRuntime::waitUntilStopped(std::chrono::milliseconds timeout) const {
 
 void KernelRuntime::post(std::vector<uint8_t> bytes) {
   auto& impl = *impl_;
+  std::function<void()> integrity;
   {
     std::lock_guard<std::mutex> lock(impl.mutex);
     if (impl.stopping.load(std::memory_order_acquire) ||
         !impl.running.load(std::memory_order_acquire)) {
       return;
     }
-    impl.immediate.push_back(
-        [&impl, bytes = std::move(bytes)]() mutable { impl.deliver(std::move(bytes)); });
+    if (impl.pendingPosts >= Impl::kMaxInboundFrames) {
+      integrity = impl.hooks.onIntegrity;
+    } else {
+      impl.pendingPosts += 1;
+      impl.immediate.push_back([&impl, bytes = std::move(bytes)]() mutable {
+        {
+          std::lock_guard<std::mutex> inner(impl.mutex);
+          impl.pendingPosts -= 1;
+        }
+        impl.deliver(std::move(bytes));
+      });
+    }
   }
   impl.cv.notify_one();
+  if (integrity) {
+    integrity();
+  }
 }
 
 void KernelRuntime::destroy() noexcept {

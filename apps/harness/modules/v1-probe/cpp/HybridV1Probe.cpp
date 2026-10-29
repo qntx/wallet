@@ -159,7 +159,7 @@ std::shared_ptr<qntx::KernelRuntime> startKernel(
   }
   hooks.onPost = [channel](std::vector<uint8_t> bytes) { channel->push(std::move(bytes)); };
   hooks.onError = [channel](std::string message) { channel->fail(std::move(message)); };
-  return qntx::KernelRuntime::start(std::move(script), std::move(hooks), profile);
+  return qntx::KernelRuntime::start(std::move(script), std::move(hooks), "", profile);
 }
 
 std::string toString(const std::vector<uint8_t>& bytes) {
@@ -814,7 +814,7 @@ std::shared_ptr<Promise<void>> HybridV1Probe::openKernel(
     hooks.onError = [session](std::string message) {
       session->onError(std::move(message));
     };
-    session->rt = qntx::KernelRuntime::start(std::move(kernelScript), std::move(hooks));
+    session->rt = qntx::KernelRuntime::start(std::move(kernelScript), std::move(hooks), "");
     {
       std::lock_guard<std::mutex> lock(sessionMutex_);
       if (session_) {

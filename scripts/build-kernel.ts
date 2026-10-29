@@ -50,6 +50,10 @@ await build({
     emptyOutDir: false,
     minify: false,
     target: "es2017",
+    // Nothing may stay external: the bytecode runs in a bare Hermes runtime with
+    // no module loader — deps+peers in package.json must be inlined, not left as
+    // IIFE parameters.
+    rolldownOptions: { external: [] },
   },
 });
 // The bundle stays committed under cpp/generated — unlike the hermesc output it reproduces
@@ -58,6 +62,12 @@ await build({
 // the shipped hbc by its embedded SHA-256.
 const generated = resolve(outDir, "kernel-entry.js");
 const bytes0 = readFileSync(generated);
+const head = bytes0.toString("utf8").slice(0, 2000);
+if (/\(function\s*\([^)]+/.test(head) || head.includes("import ") || head.includes("require(")) {
+  throw new Error(
+    "kernel-entry.js is not self-contained: an externalized dependency leaked an IIFE parameter or import — check rollupOptions.external",
+  );
+}
 writeFileSync(tmpJs, bytes0);
 console.log(
   `kernel-entry.js: ${bytes0.length} bytes, sha256 ${createHash("sha256").update(bytes0).digest("hex").slice(0, 16)}…`,
