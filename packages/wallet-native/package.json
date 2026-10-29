@@ -34,6 +34,7 @@
     "react-native-nitro-modules": "0.37.1"
   },
   "peerDependencies": {
+    "@qntx/wallet": "0.4.0",
     "react-native-nitro-modules": "*"
   }
 }

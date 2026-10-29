@@ -8,7 +8,8 @@
     "prebuild": "expo prebuild --clean",
     "ios": "expo run:ios",
     "android": "expo run:android",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "postinstall": "rm -rf node_modules/@qntx/wallet-native/node_modules"
   },
   "dependencies": {
     "@qntx/nostr": "0.15.1",

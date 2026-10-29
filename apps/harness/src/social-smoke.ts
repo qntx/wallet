@@ -13,9 +13,8 @@ import { verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, PasskeyConfig } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
+import type { KernelHostLike } from "@qntx/wallet-native";
 import { createNativeWallet } from "@qntx/wallet-native";
-
-import type { KernelHost } from "@qntx/wallet-native/src/specs/kernel-host.nitro.ts";
 
 const PASSKEY: PasskeyConfig = {
   rpId: "harness.local",
@@ -34,7 +33,8 @@ const result = (name: string, ok: boolean, detail: string): void => {
   report(`smoke-${name}`, "release", ok, detail);
 };
 
-const host = (): KernelHost => NitroModules.createHybridObject<KernelHost>("KernelHost");
+const host = (): KernelHostLike =>
+  NitroModules.createHybridObject<KernelHostLike>("KernelHost");
 
 /** Resolve the vault status on a fresh boot — picks create vs unlock phase. */
 export async function smokePhase(): Promise<"create" | "unlock"> {
@@ -89,10 +89,14 @@ export async function smokeUnlock(): Promise<void> {
   if (walletId === undefined) {
     return;
   }
-  // The persisted key must still sign: same wallet, same index 0 derivation as
-  // the create run — compare pubkeys across the two launches' result lines.
+  // The persisted key must still sign: the key record from run 1 lives in the
+  // snapshot's nostr section (deriveKey would refuse it as already-exists).
   const api = nostr(wallet);
-  const key = await api.deriveKey(walletId, 0);
+  const key = snapshot.nostr.keys[0];
+  if (key === undefined) {
+    result("persisted-sign", false, "no persisted nostr key");
+    return;
+  }
   const event = await api.signer(key.ref).signEvent({
     kind: 1,
     created_at: Math.floor(Date.now() / 1000),
