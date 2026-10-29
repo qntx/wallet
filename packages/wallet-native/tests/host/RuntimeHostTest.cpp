@@ -616,6 +616,12 @@ int lifecycleDispatcher() {
   dispatcher.registerHost(sixty, 60);
   dispatcher.registerHost(nine, 900);
 
+  // A fresh registration has no background stamp: a foreground event (e.g. the
+  // observer replay at install on Android) must not lock anything.
+  dispatcher.onForeground();
+  CHECK(zero->locks == 0 && sixty->locks == 0 && nine->locks == 0,
+      "lifecycle: a never-backgrounded host locked on foreground");
+
   // seconds==0 locks the moment the app backgrounds; the others stamp.
   dispatcher.onBackground();
   CHECK(zero->locks == 1, "lifecycle: seconds==0 did not lock on background");

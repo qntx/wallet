@@ -12,7 +12,7 @@ KernelLifecycleDispatcher& KernelLifecycleDispatcher::shared() {
 void KernelLifecycleDispatcher::registerHost(
     const std::weak_ptr<LifecycleLockTarget>& host, int seconds) {
   std::lock_guard<std::mutex> lock(mutex_);
-  entries_.push_back(Entry{host, seconds, 0});
+  entries_.push_back(Entry{host, seconds, std::nullopt});
 }
 
 void KernelLifecycleDispatcher::unregister(const LifecycleLockTarget* host) {
