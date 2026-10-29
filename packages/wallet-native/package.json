@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet-native",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Native kernel runtime host for the qntx wallet — CBOR transport, KernelHost adapter and createNativeWallet",
   "license": "MIT OR Apache-2.0",
@@ -29,9 +29,9 @@
   "devDependencies": {
     "@qntx/nostr": "0.15.0",
     "@qntx/tsconfig": "1.0.1",
-    "@qntx/wallet": "0.3.0"
+    "@qntx/wallet": "0.3.1"
   },
   "peerDependencies": {
-    "@qntx/wallet": "0.3.0"
+    "@qntx/wallet": "0.3.1"
   }
 }
