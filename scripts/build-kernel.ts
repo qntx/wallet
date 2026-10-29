@@ -53,7 +53,7 @@ await build({
     // Nothing may stay external: the bytecode runs in a bare Hermes runtime with
     // no module loader — deps+peers in package.json must be inlined, not left as
     // IIFE parameters.
-    rollupOptions: { external: [] },
+    rolldownOptions: { external: [] },
   },
 });
 // The bundle stays committed under cpp/generated — unlike the hermesc output it reproduces

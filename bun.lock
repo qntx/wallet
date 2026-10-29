@@ -121,6 +121,7 @@
       },
       "peerDependencies": {
         "@qntx/wallet": "0.4.0",
+        "react-native-nitro-modules": "*",
       },
     },
     "packages/wallet-worker": {
