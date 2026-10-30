@@ -1,15 +1,16 @@
+import type { Transaction, NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
+ *
  * @scure/btc-signer selectUTXO (bip69), fee tiers from /fee-estimates (targets 1/3/6/144),
  * dust floors per output type, frozen 546/330-sat UTXOs, and POST /tx broadcasting. Custom
  * endpoints are validated by the genesis block hash via /block-height/0. RBF/CPFP are out
  * of scope for this layer.
  */
-import { selectUTXO, Transaction, NETWORK as BTC_MAINNET } from "@scure/btc-signer";
+import { selectUTXO } from "@scure/btc-signer/utxo.js";
 
-import type { SolanaRpc } from "../networks/controller.ts";
-
-const GAP = 20;
+const GAP_LIMIT = 20;
+export { GAP_LIMIT };
 const DUST: Record<string, number> = { p2wpkh: 294, p2tr: 330, p2pkh: 546 };
 const FROZEN_AMOUNTS = new Set([546, 330]);
 
@@ -40,7 +41,10 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 /** Ordered failover over the host/custom endpoint list. */
 export const esplora = (
   endpoints: ReadonlyArray<string>,
-  fetchFn: (url: string, init?: unknown) => Promise<{ json: () => Promise<unknown>; ok: boolean; text: () => Promise<string> }>,
+  fetchFn: (
+    url: string,
+    init?: unknown,
+  ) => Promise<{ json: () => Promise<unknown>; ok: boolean; text: () => Promise<string> }>,
 ): Esplora => ({
   get: async (path) => {
     let last: unknown;
@@ -48,8 +52,8 @@ export const esplora = (
       try {
         const res = await fetchFn(`${base.replace(/\/$/, "")}${path}`);
         return res.json();
-      } catch (e) {
-        last = e;
+      } catch (error) {
+        last = error;
       }
     }
     throw last instanceof Error ? last : new Error("all esplora endpoints failed");
@@ -64,18 +68,15 @@ export const esplora = (
           body,
         });
         return res.text();
-      } catch (e) {
-        last = e;
+      } catch (error) {
+        last = error;
       }
     }
     throw last instanceof Error ? last : new Error("all esplora endpoints failed");
   },
 });
 
-export const validateEndpoint = async (
-  es: Esplora,
-  genesisHash: string,
-): Promise<void> => {
+export const validateEndpoint = async (es: Esplora, genesisHash: string): Promise<void> => {
   const got = await es.get("/block-height/0");
   if (got !== genesisHash) {
     throw new Error(`endpoint genesis ${String(got)} ≠ ${genesisHash}`);
@@ -101,65 +102,75 @@ export const dustFor = (scriptType: string): number => DUST[scriptType] ?? 546;
 export const isFrozen = (value: number): boolean => FROZEN_AMOUNTS.has(value);
 
 export class BitcoinChainAdapter {
-  /** Fee-payer aware PSBT build with derivation entries the kernel re-derives. */
-  buildPsbt(params: {
-    readonly utxos: ReadonlyArray<BtcUtxo>;
-    readonly to: string;
-    readonly amount: bigint;
-    readonly feePerByte: number;
-    readonly changeAddress: string;
-    readonly network: typeof BTC_MAINNET;
-    readonly scriptOf: (address: string) => Uint8Array;
-    readonly fingerprint: number;
-    readonly pathOf: (utxo: BtcUtxo) => string;
-  }): Uint8Array {
-    const inputs = params.utxos
+  /** Inputs for selectUTXO — the same TransactionInputUpdate objects added to the PSBT. */
+  toInputs(
+    utxos: ReadonlyArray<BtcUtxo>,
+    fingerprint: number,
+    pathOf: (utxo: BtcUtxo) => number[],
+    pubkeyOf: (utxo: BtcUtxo) => Uint8Array,
+    scriptOf: (utxo: BtcUtxo) => Uint8Array,
+    tap: boolean,
+  ): ReadonlyArray<{
+    readonly txid: string;
+    readonly index: number;
+    readonly sequence: number;
+    readonly witnessUtxo: { readonly amount: bigint; readonly script: Uint8Array };
+    readonly bip32Derivation?: ReadonlyArray<
+      [Uint8Array, { readonly fingerprint: number; readonly path: ReadonlyArray<number> }]
+    >;
+    readonly tapBip32Derivation?: ReadonlyArray<
+      [
+        Uint8Array,
+        {
+          readonly hashes: ReadonlyArray<Uint8Array>;
+          readonly der: { readonly fingerprint: number; readonly path: ReadonlyArray<number> };
+        },
+      ]
+    >;
+    readonly tapInternalKey?: Uint8Array;
+  }> {
+    return utxos
       .filter((u) => u.status === "confirmed" && !isFrozen(u.value))
-      .map((u) => ({ txid: u.txid, index: u.vout }));
-    const outputs = [
-      { address: params.to, amount: params.amount },
-      { address: params.changeAddress, amount: 0n }, // placeholder — selectUTXO fills change
-    ];
-    const selection = selectUTXO(inputs, outputs.slice(0, 1), "default", {
-      feePerByte: BigInt(params.feePerByte),
-      changeAddress: params.changeAddress,
+      .map((u) => ({
+        txid: u.txid,
+        index: u.vout,
+        sequence: 0xfffffffd,
+        witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) },
+        ...(tap
+          ? {
+              tapInternalKey: pubkeyOf(u).slice(1, 33),
+              tapBip32Derivation: [
+                [
+                  pubkeyOf(u).slice(1, 33),
+                  { hashes: [] as Uint8Array[], der: { fingerprint, path: pathOf(u) } },
+                ],
+              ],
+            }
+          : {
+              bip32Derivation: [[pubkeyOf(u), { fingerprint, path: pathOf(u) }]],
+            }),
+      }));
+  }
+
+  buildPsbt(
+    inputs: ReadonlyArray<Parameters<typeof Transaction.prototype.addInput>[0]>,
+    to: string,
+    amount: bigint,
+    feePerByte: bigint,
+    changeAddress: string,
+    network: typeof BTC_MAINNET,
+  ): Uint8Array {
+    const selection = selectUTXO([...inputs], [{ address: to, amount }], "default", {
+      feePerByte,
+      changeAddress,
       bip69: true,
-      dust: dustFor("p2wpkh"),
-      network: params.network,
-      createTx: false,
-      requiredInputs: undefined,
+      dust: BigInt(dustFor("p2wpkh")),
+      network,
+      createTx: true,
     });
-    if (selection === undefined || !("inputs" in selection)) {
+    if (selection === undefined || selection.tx === undefined) {
       throw new Error("insufficient confirmed utxo for the amount + fee");
     }
-    const tx = new Transaction({ version: 2 });
-    for (const input of selection.inputs ?? []) {
-      const utxo = params.utxos.find(
-        (u) => u.txid === input.txid && u.vout === input.index,
-      );
-      if (utxo === undefined) {
-        continue;
-      }
-      tx.addInput({
-        txid: input.txid,
-        index: input.index,
-        sequence: 0xfffffff0,
-        witnessUtxo: {
-          script: params.scriptOf(params.changeAddress),
-          amount: BigInt(utxo.value),
-        },
-        bip32Derivation: [
-          {
-            fingerprint: params.fingerprint,
-            path: params.pathOf(utxo),
-            pubkey: new Uint8Array(33),
-          },
-        ],
-      });
-    }
-    for (const output of selection.outputs ?? []) {
-      tx.addOutputAddress(output.address ?? params.changeAddress, output.amount ?? 0n, params.network);
-    }
-    return tx.toPSBT();
+    return selection.tx.toPSBT();
   }
 }
