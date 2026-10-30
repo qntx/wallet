@@ -9,6 +9,7 @@ import { encodeFunctionData, isAddress, numberToHex } from "viem";
 import type { PublicClient } from "viem";
 
 import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
+import { checksumEvmAddress } from "@qntx/wallet-chains/evm";
 
 export type EvmSignRequest = Extract<SignRequest, { kind: "evm.transaction" }>;
 export type EvmSignResult = {
@@ -144,7 +145,7 @@ export class EvmChainAdapter {
   ): Promise<EvmUnsignedTransaction> {
     const nonce = await this.nonce(client, network, from);
     const erc20 = intent.kind === "erc20";
-    const to = erc20 ? intent.token : intent.to;
+    const to = checksumEvmAddress(erc20 ? intent.token : intent.to);
     const value = erc20 ? 0n : intent.value;
     const data = erc20
       ? encodeFunctionData({
