@@ -113,6 +113,45 @@ const send = async (
   return a.broadcast(r, wire);
 };
 
+const balance = (v: unknown): number => {
+  const o = typeof v === "object" && v !== null ? (v as { value?: unknown }).value : undefined;
+  return typeof o === "number" ? o : 0;
+};
+
+const waitFunded = async (r: SolanaRpc, addr: string, deadline: number): Promise<void> => {
+  const bal = await r.call("getBalance", [addr, { commitment: "confirmed" }]);
+  if (balance(bal) > 0) {
+    return;
+  }
+  if (Date.now() > deadline) {
+    throw new Error("airdrop never landed");
+  }
+  await r
+    .call("requestAirdrop", [addr, 10_000_000_000, { commitment: "confirmed" }])
+    .catch(() => "");
+  await sleep(1000);
+  return waitFunded(r, addr, deadline);
+};
+
+const waitBuild = async (
+  a: SolanaChainAdapter,
+  r: SolanaRpc,
+  network: string,
+  from: string,
+  to: string,
+  deadline: number,
+): ReturnType<SolanaChainAdapter["build"]> => {
+  try {
+    return await a.build(r, network, from, { kind: "sol", to, lamports: 1_000_000n });
+  } catch (error) {
+    if (Date.now() > deadline) {
+      throw error;
+    }
+    await sleep(1000);
+    return waitBuild(a, r, network, from, to, deadline);
+  }
+};
+
 describe.runIf(RUN)("solana e2e: local validator", () => {
   it("airdrops, transfers SOL, creates a mint, transfers SPL — balances and statuses check out", async () => {
     const ledger = mkdtempSync(join(tmpdir(), "sol-e2e-"));
@@ -151,22 +190,14 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
       };
       await waitFunded(Date.now() + 120_000);
 
-      const waitBuild = async (deadline: number): ReturnType<typeof a.build> => {
-        try {
-          return await a.build(r, NETWORK, payer.address, {
-            kind: "sol",
-            to: recipient.address,
-            lamports: 1_000_000n,
-          });
-        } catch (error) {
-          if (Date.now() > deadline) {
-            throw error;
-          }
-          await sleep(1000);
-          return waitBuild(deadline);
-        }
-      };
-      const unsigned = await waitBuild(Date.now() + 60_000);
+      const unsigned = await waitBuild(
+        a,
+        r,
+        NETWORK,
+        payer.address,
+        recipient.address,
+        Date.now() + 60_000,
+      );
       const solHash = await send(a, r, payer, unsigned);
       await waitConfirmed(a, r, solHash, Date.now() + 60_000);
       await expect(a.status(r, solHash)).resolves.toMatch(/confirmed|finalized/);

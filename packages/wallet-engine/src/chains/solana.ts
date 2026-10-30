@@ -276,7 +276,9 @@ export class SolanaChainAdapter {
     }
     const out = new Uint8Array(1 + 64 * signatures.length + messageBytes.length);
     out[0] = signatures.length;
-    signatures.forEach((sig, i) => out.set(sig, 1 + 64 * i));
+    for (const [i, sig] of signatures.entries()) {
+      out.set(sig, 1 + 64 * i);
+    }
     out.set(messageBytes, 1 + 64 * signatures.length);
     return out;
   }
