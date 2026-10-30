@@ -64,7 +64,7 @@ const windowUsed = async (
       p.then(async (acc) => {
         await new Promise((r) => setTimeout(r, 150));
         const txs = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
-        return [...acc, Array.isArray(txs) && txs.length > 0];
+        return [...acc, isUnknownArray(txs) && txs.length > 0];
       }),
     Promise.resolve([]),
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { dustFor, feeTiers, isFrozen, validateEndpoint } from "../src/chains/bitcoin.ts";
+import { dustFor, esplora, feeTiers, isFrozen, validateEndpoint } from "../src/chains/bitcoin.ts";
 import type { Esplora } from "../src/chains/bitcoin.ts";
 
 const es = (handlers: Record<string, unknown>): Esplora => ({
@@ -40,5 +40,90 @@ describe("bitcoin adapter", () => {
     await expect(
       validateEndpoint(es({ "/block-height/0": "0000aa" }), "0000aa"),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe("esplora 429 handling", () => {
+  const sleep = async () => Promise.resolve();
+  const resp = (
+    status: number,
+    body: string,
+    ra?: string,
+  ): {
+    ok: boolean;
+    status: number;
+    headers: { get: (n: string) => string | null };
+    json: () => Promise<unknown>;
+    text: () => Promise<string>;
+  } => ({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: { get: (n: string) => (n === "retry-after" ? (ra ?? null) : null) },
+    json: async () => Promise.resolve(JSON.parse(body) as unknown),
+    text: async () => Promise.resolve(body),
+  });
+
+  it("retries a 429 with exponential backoff and then succeeds", async () => {
+    let calls = 0;
+    const fetcher = async () => {
+      calls += 1;
+      return Promise.resolve(resp(calls <= 2 ? 429 : 200, calls <= 2 ? "" : '{"ok":true}'));
+    };
+    const es = esplora(["https://a.test"], fetcher, sleep);
+    const out = await es.get("/blocks/tip/height");
+    expect(out).toEqual({ ok: true });
+    expect(calls).toBe(3);
+  });
+
+  it("honours the Retry-After header", async () => {
+    const delays: number[] = [];
+    const record = async (ms: number) => {
+      delays.push(ms);
+      return Promise.resolve();
+    };
+    let calls = 0;
+    const fetcher = async () => {
+      calls += 1;
+      return Promise.resolve(
+        resp(calls === 1 ? 429 : 200, calls === 1 ? "" : "ok", calls === 1 ? "5" : undefined),
+      );
+    };
+    const es = esplora(["https://a.test"], fetcher, record);
+    await es.get("/x");
+    expect(delays).toEqual([5000]);
+  });
+
+  it("fails over to the next endpoint after exhausting retries on 429", async () => {
+    const first = async () => Promise.resolve(resp(429, ""));
+    const second = async () => Promise.resolve(resp(200, '"healthy"'));
+    const es = esplora(
+      ["https://a.test", "https://b.test"],
+      async (url: string) => (url.includes("b.test") ? second() : first()),
+      sleep,
+    );
+    const out = await es.get("/y");
+    expect(out).toBe("healthy");
+  });
+
+  it("caps in-flight requests at four", async () => {
+    let inFlight = 0;
+    let max = 0;
+    const fetcher = async () => {
+      inFlight += 1;
+      max = Math.max(max, inFlight);
+      await new Promise((r) => setTimeout(r, 10));
+      inFlight -= 1;
+      return resp(200, "[]");
+    };
+    const es = esplora(["https://a.test"], fetcher, sleep);
+    await Promise.all([
+      es.get("/a"),
+      es.get("/b"),
+      es.get("/c"),
+      es.get("/d"),
+      es.get("/e"),
+      es.get("/f"),
+    ]);
+    expect(max).toBeLessThanOrEqual(4);
   });
 });

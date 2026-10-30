@@ -1,3 +1,6 @@
+import { createPublicClient, fallback, http } from "viem";
+import type { PublicClient } from "viem";
+
 /**
  * EVM network controller: the built-in registry plus host-provided and user-added RPC endpoints.
  * Each network gets a lazily-created viem PublicClient on a `fallback` transport — endpoints are
@@ -5,9 +8,7 @@
  * without code here. Custom RPC URLs are validated against the registry chain id with `eth_chainId`
  * and persisted in the EngineStore.
  */
-import { createPublicClient, fallback, http } from "viem";
-import type { PublicClient } from "viem";
-
+import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -148,47 +149,17 @@ export class NetworkController extends Controller<NetworkControllerState> {
     };
   }
 
-  /** Ordered-failover Esplora client over the host + validated custom endpoints. */
+  /** Bounded-concurrency + 429-aware ordered-failover Esplora client. */
   esplora(network: string): Esplora {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
       throw new Error(`no esplora endpoint for ${network}`);
     }
-    const attempt = async (
-      rest: ReadonlyArray<string>,
-      path: string,
-      init: { method: string; body?: string } | undefined,
-      last: unknown,
-    ): Promise<unknown> => {
-      const [url, ...next] = rest;
-      if (url === undefined) {
-        throw last instanceof Error ? last : new Error(`all esplora endpoints failed: ${path}`);
-      }
-      try {
-        const res = await this.options.fetch(`${url.replace(/\/$/, "")}${path}`, {
-          method: init?.method ?? "GET",
-          ...(init?.body === undefined
-            ? {}
-            : { headers: { "content-type": "text/plain" }, body: init.body }),
-        });
-        if (!res.ok) {
-          return await attempt(next, path, init, new Error(`esplora ${url} ${res.status}`));
-        }
-        const text = await res.text();
-        try {
-          return JSON.parse(text) as unknown;
-        } catch {
-          return text;
-        }
-      } catch (error) {
-        return attempt(next, path, init, error);
-      }
-    };
-    return {
-      get: async (path: string) => attempt(urls, path, undefined, undefined),
-      post: async (path: string, body: string) =>
-        attempt(urls, path, { method: "POST", body }, undefined),
-    };
+    const sleep = async (ms: number) =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, ms);
+      });
+    return esplora(urls, this.options.fetch, sleep);
   }
 
   async addRpc(network: string, url: string): Promise<void> {

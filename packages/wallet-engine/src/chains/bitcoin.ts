@@ -41,14 +41,84 @@ export type Esplora = {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
-/** Ordered failover over the host/custom endpoint list. */
+export type EsploraResponse = {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly headers: { get: (name: string) => string | null };
+  readonly json: () => Promise<unknown>;
+  readonly text: () => Promise<string>;
+};
+export type EsploraFetch = (
+  url: string,
+  init?: { method: string; headers?: Record<string, string>; body?: string },
+) => Promise<EsploraResponse>;
+
+const MAX_IN_FLIGHT = 4;
+const MAX_RETRIES = 3;
+const MAX_BACKOFF_MS = 2000;
+
+/** Bounded-concurrency + 429-aware ordered failover over the endpoint list. */
 export const esplora = (
   endpoints: ReadonlyArray<string>,
-  fetchFn: (
-    url: string,
-    init?: unknown,
-  ) => Promise<{ json: () => Promise<unknown>; ok: boolean; text: () => Promise<string> }>,
+  fetchFn: EsploraFetch,
+  sleep: (ms: number) => Promise<void>,
 ): Esplora => {
+  let inFlight = 0;
+  const waiters: Array<() => void> = [];
+  const acquire = async (): Promise<void> => {
+    if (inFlight >= MAX_IN_FLIGHT) {
+      await new Promise<void>((resolve) => {
+        waiters.push(resolve);
+      });
+    }
+    inFlight += 1;
+  };
+  const release = (): void => {
+    inFlight -= 1;
+    const next = waiters.shift();
+    next?.();
+  };
+  const backoff = async (headers: EsploraResponse["headers"], retry: number): Promise<void> => {
+    const ra = headers.get("retry-after");
+    const retryAfterMs =
+      ra !== null && ra !== "" && !Number.isNaN(Number(ra)) ? Number(ra) * 1000 : undefined;
+    const jitter = Math.floor(Math.random() * 100);
+    await sleep(retryAfterMs ?? Math.min(100 * 2 ** retry + jitter, MAX_BACKOFF_MS));
+  };
+  const call = async (
+    base: string,
+    path: string,
+    body: string | undefined,
+    retry: number,
+  ): Promise<unknown> => {
+    await acquire();
+    try {
+      const res = await fetchFn(
+        `${base.replace(/\/$/, "")}${path}`,
+        body === undefined
+          ? { method: "GET" }
+          : { method: "POST", headers: { "content-type": "text/plain" }, body },
+      );
+      if (res.status === 429) {
+        if (retry >= MAX_RETRIES) {
+          throw new Error(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`);
+        }
+        await backoff(res.headers, retry);
+        return call(base, path, body, retry + 1);
+      }
+      if (!res.ok) {
+        throw new Error(`esplora ${base}${path}: ${res.status}`);
+      }
+      const text = await res.text();
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        return text;
+      }
+    } finally {
+      release();
+    }
+  };
   const attempt = async (
     rest: ReadonlyArray<string>,
     path: string,
@@ -60,13 +130,7 @@ export const esplora = (
       throw last instanceof Error ? last : new Error("all esplora endpoints failed");
     }
     try {
-      const res = await fetchFn(
-        `${base.replace(/\/$/, "")}${path}`,
-        body === undefined
-          ? undefined
-          : { method: "POST", headers: { "content-type": "text/plain" }, body },
-      );
-      return await (body === undefined ? res.json() : res.text());
+      return await call(base, path, body, 0);
     } catch (error) {
       return attempt(next, path, body, error);
     }
