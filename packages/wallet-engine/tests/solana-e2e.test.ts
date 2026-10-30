@@ -148,7 +148,7 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
     const name = `solana-e2e-${Date.now()}`;
     startValidator(name);
     try {
-      const url = await waitPort(name, Date.now() + 60_000);
+      const url = `http://127.0.0.1:${PORT}`;
       const r = rpc(url);
       await waitHealthy(r, name, Date.now() + 240_000);
       const payer = await generateKeyPairSigner();
