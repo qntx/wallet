@@ -15,24 +15,28 @@ const TXID = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
 const { script } = p2wpkh(PUB.publicKey!, NETWORK);
 
 const OUR_HASH = scripthash(TO_ADDR, NETWORK);
-const UTXO_LIST = [
+const DEFAULT_UTXOS = [
   { txid: TXID(1), vout: 0, value: 50_000 },
   { txid: TXID(2), vout: 0, value: 30_000 },
 ];
+let utxoList = [...DEFAULT_UTXOS];
+const setUtxos = (list: ReadonlyArray<{ txid: string; vout: number; value: number }>): void => {
+  utxoList = [...list];
+};
 const get = (url: string): unknown => {
   const sh = /^\/scripthash\/([0-9a-f]{64})\/(txs|utxo)$/.exec(url);
   if (sh !== null) {
     if (sh[1] !== OUR_HASH) {
       return [];
     }
-    return sh[2] === "txs" ? UTXO_LIST.map((u) => ({ txid: u.txid })) : UTXO_LIST;
+    return sh[2] === "txs" ? utxoList.map((u) => ({ txid: u.txid })) : utxoList;
   }
   if (url === "/fee-estimates") {
     return { "1": 20, "3": 10, "6": 5, "144": 1 };
   }
   const m = /^\/tx\/([0-9a-f]{64})$/.exec(url);
   if (m !== null) {
-    const u = UTXO_LIST.find((x) => x.txid === m[1]);
+    const u = utxoList.find((x) => x.txid === m[1]);
     return {
       vin: [{}],
       vout: [
@@ -64,6 +68,12 @@ const btcOf = (tx: TrackedTransaction): NonNullable<TrackedTransaction["btc"]> =
     throw new Error("no btc record");
   }
   return tx.btc;
+};
+const valueOf = (o: { readonly value: number } | undefined): number => {
+  if (o === undefined) {
+    throw new Error("missing output");
+  }
+  return o.value;
 };
 const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
   options: {
@@ -111,15 +121,17 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
   newId: nextId,
 });
 
-const send = async (c: RouteContext): Promise<TrackedTransaction> =>
-  route.send(c, {
+const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransaction> => {
+  setUtxos(DEFAULT_UTXOS);
+  return route.send(c, {
     account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
     network: "bip122:000000000019d6689c085ae165831e93",
     to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
-    amount: 10_000n,
+    amount,
     fee: "slow",
     verify: { kind: "password", password: "pw" },
   });
+};
 
 describe("bitcoin rbf", () => {
   it("cancel sends all inputs to the next change address", async () => {
@@ -164,5 +176,51 @@ describe("bitcoin rbf", () => {
     const packageFee = childBtc.fee + parentBtc.fee;
     const packageVsize = childBtc.vsize + parentBtc.vsize;
     expect(packageFee).toBeGreaterThanOrEqual(Math.ceil(10 * packageVsize) - 1);
+  });
+
+  it("shrinks only the change output when the bump fits", async () => {
+    const c = ctx();
+    const original = await send(c);
+    const bumped = await route.replace(c, original, "speed-up", {
+      kind: "password",
+      password: "pw",
+    });
+    expect(btcOf(bumped).inputs).toHaveLength(btcOf(original).inputs.length);
+    const oldChange = btcOf(original).outputs.find((o) => o.own);
+    const newChange = btcOf(bumped).outputs.find((o) => o.own);
+    expect(newChange).toBeDefined();
+    expect(valueOf(newChange)).toBeLessThan(valueOf(oldChange));
+  });
+
+  it("adds confirmed inputs when the change cannot absorb the bump", async () => {
+    setUtxos([
+      { txid: TXID(1), vout: 0, value: 50_000 },
+      { txid: TXID(2), vout: 0, value: 30_000 },
+    ]);
+    const c = ctx();
+    const original = await send(c, 49_400n);
+    const bumped = await route.replace(c, original, "speed-up", {
+      kind: "password",
+      password: "pw",
+    });
+    expect(btcOf(bumped).inputs.length).toBeGreaterThan(btcOf(original).inputs.length);
+  });
+
+  it("fails before signing when the bump is unfundable", async () => {
+    setUtxos([{ txid: TXID(1), vout: 0, value: 6000 }]);
+    const c = ctx();
+    const original = await route.send(c, {
+      account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
+      network: "bip122:000000000019d6689c085ae165831e93",
+      to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+      amount: 5400n,
+      fee: "slow",
+      verify: { kind: "password", password: "pw" },
+    });
+    const before = signedCalls.length;
+    await expect(
+      route.replace(c, original, "speed-up", { kind: "password", password: "pw" }),
+    ).rejects.toThrow("insufficient");
+    expect(signedCalls).toHaveLength(before);
   });
 });
