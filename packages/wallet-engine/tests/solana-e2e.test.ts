@@ -521,7 +521,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       ])) as { value: { amount: string } };
       // 100 bps of 500_000 = 5_000 withheld → recipient gets 495_000.
       expect(destBal.value.amount).toBe("495000");
-      process.stderr.write(`INTENT=${JSON.stringify(tx.intent).slice(0, 800)}\n`);
+
       expect(tx.intent?.outflows[0]?.amount.amount).toBe("495000");
 
       const ntMint = await t22MintSetup(r, payer, from, "nonTransferable");

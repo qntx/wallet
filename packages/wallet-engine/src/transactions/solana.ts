@@ -60,9 +60,9 @@ export const sendSolana = async (
       tokenProgram = PROGRAM_IDS.token2022;
       const mintBytes = arr(obj(owner)?.["data"])?.[0];
       const raw = typeof mintBytes === "string" ? base64.decode(mintBytes) : undefined;
-      if (raw !== undefined && raw.length > 83) {
+      if (raw !== undefined && raw.length > 166) {
         const epoch = obj(await rpc.call("getEpochInfo", []))?.["epoch"];
-        ext = parseMintExtensions(raw.subarray(83), BigInt(typeof epoch === "number" ? epoch : 0));
+        ext = parseMintExtensions(raw, BigInt(typeof epoch === "number" ? epoch : 0));
         if (ext.nonTransferable === true) {
           throw new Error("token is non-transferable");
         }
