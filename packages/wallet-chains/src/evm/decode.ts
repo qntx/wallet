@@ -236,6 +236,9 @@ export const decodeEvm = (
       verifiability: "opaque",
     };
   }
+  if (request.kind !== "evm.typed-data") {
+    throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
+  }
   const parsed = parseTypedData(request.typedData, request.network);
   return {
     family: "evm",

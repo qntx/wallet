@@ -1,7 +1,7 @@
+/// <reference types="node" />
+/** Bundles each family's /family + /family/sign minified and enforces the gzip budget. */
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-/// <reference types="node" />
-/** Bundles ./evm and ./evm/sign minified, gzips, and fails above 120 KB total. */
 import { gzipSync } from "node:zlib";
 
 type BunBuildOutput = {
@@ -19,11 +19,22 @@ declare const Bun: {
 };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const BUDGET = 120 * 1024;
 
-async function main(): Promise<number> {
+const FAMILIES = [
+  { name: "evm", budget: 120 * 1024 },
+  { name: "solana", budget: 80 * 1024 },
+] as const;
+
+type FamilyResult = {
+  name: string;
+  budget: number;
+  total: number;
+  outputs: number;
+};
+
+const measure = async (name: string, budget: number): Promise<FamilyResult> => {
   const result = await Bun.build({
-    entrypoints: [resolve(root, "src/evm/index.ts"), resolve(root, "src/evm/sign.ts")],
+    entrypoints: [resolve(root, `src/${name}/index.ts`), resolve(root, `src/${name}/sign.ts`)],
     target: "browser",
     format: "esm",
     minify: true,
@@ -32,18 +43,32 @@ async function main(): Promise<number> {
     for (const log of result.logs) {
       console.error(String(log));
     }
-    return 1;
+    throw new Error(`chains-size ${name}: bundle failed`);
   }
   const texts = await Promise.all(result.outputs.map(async (output) => output.text()));
   const total = texts.reduce((sum, text) => sum + gzipSync(Buffer.from(text)).length, 0);
-  console.log(
-    `chains-size: ${total} B gzipped across ${result.outputs.length} entries (budget ${BUDGET} B)`,
-  );
-  if (total > BUDGET) {
-    console.error("chains-size: budget exceeded");
-    return 1;
+  return { name, budget, total, outputs: result.outputs.length };
+};
+
+async function main(): Promise<number> {
+  let failed = false;
+  try {
+    const results = await Promise.all(
+      FAMILIES.map(async ({ name, budget }) => measure(name, budget)),
+    );
+    for (const { name, budget, total, outputs } of results) {
+      console.log(
+        `chains-size ${name}: ${total} B gzipped across ${outputs} entries (budget ${budget} B)`,
+      );
+      if (total > budget) {
+        console.error(`chains-size ${name}: budget exceeded`);
+        failed = true;
+      }
+    }
+  } catch {
+    failed = true;
   }
-  return 0;
+  return failed ? 1 : 0;
 }
 
 process.exitCode = await main();
