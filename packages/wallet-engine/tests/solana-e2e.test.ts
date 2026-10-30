@@ -115,7 +115,7 @@ const startValidator = (name: string): void => {
       "--reset",
       "--ledger",
       "/tmp/ledger",
-      "--rpc-bind-address",
+      "--bind-address",
       "0.0.0.0",
     ],
     { stdio: "pipe" },
