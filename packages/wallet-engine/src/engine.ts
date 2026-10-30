@@ -17,6 +17,7 @@ import type { CloudStore } from "./backup/port.ts";
 import type { EngineLogger } from "./events.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
+import { NetworkController } from "./networks/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
 import { pay as runPay } from "./payments/pay.ts";
@@ -27,6 +28,7 @@ import type { PrepareZapParams, PreparedZap, PayZapOptions } from "./payments/za
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import type { EngineStore } from "./store/port.ts";
+import { TransactionController } from "./transactions/controller.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
@@ -39,6 +41,10 @@ export type EngineOptions = {
   readonly openStore: () => Promise<EngineStore>;
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
+  /** RPC endpoints per network (CAIP-2), ordered by preference for the viem fallback transport. */
+  readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
+  /** Injected timer for transaction polling; defaults to setTimeout. */
+  readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → every wallet reports `unavailable`. */
   readonly metaSync?: MetaSyncConfig;
   /** Test seam — defaults to the wallet's real spark proxy. */
@@ -46,6 +52,8 @@ export type EngineOptions = {
 };
 
 export type WalletEngine = {
+  readonly networks: NetworkController;
+  readonly transactions: TransactionController;
   readonly spark: SparkController;
   readonly accounts: AccountTreeController;
   readonly metaSync: MetaSyncController;
@@ -87,6 +95,30 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         store,
         fetch,
       }),
+  });
+
+  const networks = new NetworkController({
+    fetch: options.fetch,
+    rpc: options.rpc ?? {},
+    openStore: options.openStore,
+    logger: options.logger,
+  });
+
+  const transactions = new TransactionController({
+    wallet: options.wallet,
+    networks,
+    openStore: options.openStore,
+    random: options.random,
+    setTimer:
+      options.setTimer ??
+      ((ms, fn) => {
+        const id = setTimeout(() => {
+          void fn();
+        }, ms);
+        return () => clearTimeout(id);
+      }),
+    now: options.now,
+    logger: options.logger,
   });
 
   const accounts = new AccountTreeController({
@@ -134,8 +166,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await controller.init();
       // Pull → merge → maybe publish for every wallet with a group-0 identity.
       await metaSync.init();
+      await networks.init();
+      await transactions.init();
     } else if (!unlocked && started) {
       started = false;
+      transactions.lock();
+      networks.lock();
       // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
       await metaSync.lock();
       await accounts.lock();
@@ -176,6 +212,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   });
   schedule();
   return {
+    networks,
+    transactions,
     spark: controller,
     accounts,
     metaSync,
