@@ -1,3 +1,8 @@
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { p2wpkh, Address, OutScript } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
+import { NETWORK } from "@scure/btc-signer/utils.js";
+
 /**
  * Bare-Hermes entry: runs the EVM sign vectors with no host globals. Prints HERMES_CHAINS_OK when
  * every signature matches the vector.
@@ -8,9 +13,13 @@ import {
   signEvmTypedData,
 } from "@qntx/wallet-chains/evm/sign";
 
+import { normalizeBitcoin } from "../../src/bitcoin/index.ts";
+import { signBitcoinPsbt, signBitcoinMessage } from "../../src/bitcoin/sign.ts";
 import { signSolanaMessage } from "../../src/solana/sign.ts";
 
 declare function print(s: string): void;
+
+const p2wpkhPub = (priv: Uint8Array): Uint8Array => secp256k1.getPublicKey(priv, true);
 
 const PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const PERSONAL = "0x48656c6c6f20576f726c64";
@@ -110,6 +119,54 @@ function main(): void {
   const solSig2 = signSolanaMessage(solMsg, solKey);
   if (solSig.length !== 64 || bytesToHex(solSig) !== bytesToHex(solSig2)) {
     throw new Error("solana sign mismatch");
+  }
+  const btcKey = hexToBytes("0x1111111111111111111111111111111111111111111111111111111111111111");
+  const btcPub = p2wpkhPub(btcKey);
+  const btcScript = p2wpkh(btcPub, NETWORK).script;
+  const tx = new Transaction({ version: 2 });
+  tx.addInput({
+    txid: hexToBytes(`0x${"07".repeat(32)}`),
+    index: 0,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script: btcScript, amount: 100000n },
+    bip32Derivation: [
+      [btcPub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
+    ],
+  });
+  tx.addOutput({
+    script: OutScript.encode(Address(NETWORK).decode("bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g")),
+    amount: 90000n,
+  });
+  const req = normalizeBitcoin({
+    kind: "bitcoin.psbt",
+    network: "bip122:000000000019d6689c085ae165831e93",
+    account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc" },
+    psbt: tx.toPSBT(0),
+    sign: [0],
+  });
+  if (req.kind !== "bitcoin.psbt") {
+    throw new Error("unexpected kind");
+  }
+  const signed = signBitcoinPsbt(
+    req.psbt,
+    [{ index: 0, privateKey: btcKey }],
+    () => new Uint8Array(32),
+  );
+  if (Transaction.fromPSBT(signed).getInput(0).partialSig === undefined) {
+    throw new Error("psbt sign mismatch");
+  }
+  const msgSig = signBitcoinMessage(
+    {
+      network: "bip122:000000000019d6689c085ae165831e93",
+      address: p2wpkh(btcPub, NETWORK).address,
+      message: "Hello World",
+      format: "bip322-simple",
+    },
+    btcKey,
+    () => new Uint8Array(32),
+  );
+  if (!msgSig.startsWith("smp")) {
+    throw new Error("bip322 sign mismatch");
   }
   print("HERMES_CHAINS_OK");
 }

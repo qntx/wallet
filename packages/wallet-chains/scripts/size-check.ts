@@ -1,5 +1,6 @@
 /// <reference types="node" />
 /** Bundles each family's /family + /family/sign minified and enforces the gzip budget. */
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -23,6 +24,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const FAMILIES = [
   { name: "evm", budget: 120 * 1024 },
   { name: "solana", budget: 80 * 1024 },
+  { name: "bitcoin", budget: 60 * 1024 },
 ] as const;
 
 type FamilyResult = {
@@ -33,8 +35,12 @@ type FamilyResult = {
 };
 
 const measure = async (name: string, budget: number): Promise<FamilyResult> => {
+  /* Per-consumer semantics: bundle one synthetic entry that re-exports both
+   * /family and /family/sign so shared dependencies are deduplicated exactly
+   * as a real consumer's bundler would. */
+  const entry = resolve(root, ".size-check", `${name}.ts`);
   const result = await Bun.build({
-    entrypoints: [resolve(root, `src/${name}/index.ts`), resolve(root, `src/${name}/sign.ts`)],
+    entrypoints: [entry],
     target: "browser",
     format: "esm",
     minify: true,
@@ -53,9 +59,18 @@ const measure = async (name: string, budget: number): Promise<FamilyResult> => {
 async function main(): Promise<number> {
   let failed = false;
   try {
+    const dir = resolve(root, ".size-check");
+    mkdirSync(dir, { recursive: true });
+    for (const { name } of FAMILIES) {
+      writeFileSync(
+        resolve(dir, `${name}.ts`),
+        `export * from "../src/${name}/index.ts";\nexport * from "../src/${name}/sign.ts";\n`,
+      );
+    }
     const results = await Promise.all(
       FAMILIES.map(async ({ name, budget }) => measure(name, budget)),
     );
+    rmSync(resolve(root, ".size-check"), { recursive: true, force: true });
     for (const { name, budget, total, outputs } of results) {
       console.log(
         `chains-size ${name}: ${total} B gzipped across ${outputs} entries (budget ${budget} B)`,

@@ -1,0 +1,71 @@
+{
+  "sources": {
+    "bip84": "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki",
+    "bip86": "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki",
+    "bip322": "https://github.com/bitcoin/bips/blob/master/bip-0322/basic-test-vectors.json",
+    "legacyMessage": "https://github.com/spesmilo/electrum/blob/master/tests/test_bitcoin.py (test_signmessage_legacy_address)",
+    "genesis": "https://github.com/bitcoin/bitcoin/blob/master/src/kernel/chainparams.cpp (assert(consensus.hashGenesisBlock))"
+  },
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "bip84": {
+    "path": "m/84'/0'/0'",
+    "addresses": {
+      "m/84'/0'/0'/0/0": "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
+      "m/84'/0'/0'/0/1": "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
+      "m/84'/0'/0'/1/0": "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el"
+    }
+  },
+  "bip86": {
+    "path": "m/86'/0'/0'",
+    "addresses": {
+      "m/86'/0'/0'/0/0": "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr",
+      "m/86'/0'/0'/0/1": "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh",
+      "m/86'/0'/0'/1/0": "bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7"
+    }
+  },
+  "bip322": {
+    "address": "bc1q9vza2e8x573nczrlzms0wvx3gsqjx7vavgkx0l",
+    "type": "p2wpkh",
+    "wif": "L3VFeEujGtevx9w18HD1fhRbCH67Az2dpCymeRE1SoPK6XQtaN2k",
+    "txHashes": [
+      {
+        "message": "",
+        "messageHash": "c90c269c4f8fcbe6880f72a721ddfbf1914268a794cbb21cfafee13770ae19f1",
+        "toSpendTxHash": "c5680aa69bb8d860bf82d4e9cd3504b55dde018de765a91bb566283c545a99a7"
+      },
+      {
+        "message": "Hello World",
+        "messageHash": "f0eb03b1a75ac6d9847f55c624a99169b5dccba2a31f5b23bea77ba270de0a7a",
+        "toSpendTxHash": "b79d196740ad5217771c1098fc4a4b51e0535c32236c71f1ea4d61a2d603352b"
+      }
+    ],
+    "simple": [
+      {
+        "message": "",
+        "signatures": [
+          "smpAkcwRAIgM2gBAQqvZX15ZiysmKmQpDrG83avLIT492QBzLnQIxYCIBaTpOaD20qRlEylyxFSeEA2ba9YOixpX8z46TSDtS40ASECx/EgAxlkQpQ9hYjgGu6EBCPMVPwVIVJqO4XCsMvViHI=",
+          "smpAkgwRQIhAPkJ1Q4oYS0htvyuSFHLxRQpFAY56b70UvE7Dxazen0ZAiAtZfFz1S6T6I23MWI2lK/pcNTWncuyL8UL+oMdydVgzAEhAsfxIAMZZEKUPYWI4BruhAQjzFT8FSFSajuFwrDL1Yhy"
+        ]
+      },
+      {
+        "message": "Hello World",
+        "signatures": [
+          "smpAkcwRAIgZRfIY3p7/DoVTty6YZbWS71bc5Vct9p9Fia83eRmw2QCICK/ENGfwLtptFluMGs2KsqoNSk89pO7F29zJLUx9a/sASECx/EgAxlkQpQ9hYjgGu6EBCPMVPwVIVJqO4XCsMvViHI=",
+          "smpAkgwRQIhAOzyynlqt93lOKJr+wmmxIens//zPzl9tqIOua93wO6MAiBi5n5EyAcPScOjf1lAqIUIQtr3zKNeavYabHyR8eGhowEhAsfxIAMZZEKUPYWI4BruhAQjzFT8FSFSajuFwrDL1Yhy"
+        ]
+      }
+    ]
+  },
+  "legacyMessage": {
+    "wif": "L1TnU2zbNaAqMoVh65Cyvmcjzbrj41Gs9iTLcWbpJCMynXuap6UN",
+    "address": "15hETetDmcXm1mM4sEf7U2KXC9hDHFMSzz",
+    "message": "Chancellor on brink of second bailout for banks",
+    "signature": "Hzsu0U/THAsPz/MSuXGBKSULz2dTfmrg1NsAhFp+wH5aKfmX4Db7ExLGa7FGn0m6Mf43KsbEOWpvUUUBTM3Uusw="
+  },
+  "networks": [
+    "bip122:000000000019d6689c085ae165831e93",
+    "bip122:00000000da84f2bafbbc53dee25a72ae",
+    "bip122:00000008819873e925422c1ff0f99f7c",
+    "bip122:0f9188f13cb7b2c71f2a335e3a4fc328"
+  ]
+}

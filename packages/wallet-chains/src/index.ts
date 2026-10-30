@@ -19,6 +19,22 @@ export type AccountRef =
 
 export type SignRequest =
   | {
+      readonly kind: "bitcoin.psbt";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly psbt: Uint8Array;
+      /** Input indices to sign — non-empty, unique, ascending, in range. */
+      readonly sign: ReadonlyArray<number>;
+    }
+  | {
+      readonly kind: "bitcoin.message";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly address: string;
+      readonly message: string;
+      readonly format: "bip322-simple" | "legacy";
+    }
+  | {
       readonly kind: "solana.transaction";
       readonly network: string;
       readonly account: AccountRef;
