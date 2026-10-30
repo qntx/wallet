@@ -18,8 +18,9 @@
     "./evm/sign": "./src/evm/sign.ts"
   },
   "scripts": {
-    "test": "vp test",
-    "typecheck": "tsc --noEmit"
+    "test": "vp test && bun scripts/size-check.ts",
+    "typecheck": "tsc --noEmit",
+    "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
   "dependencies": {
     "ox": "1.8.9"
