@@ -8,6 +8,8 @@ import {
   signEvmTypedData,
 } from "@qntx/wallet-chains/evm/sign";
 
+import { signSolanaMessage } from "../../src/solana/sign.ts";
+
 declare function print(s: string): void;
 
 const PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
@@ -101,6 +103,13 @@ function main(): void {
   }
   if (bytesToHex(signEvmTypedData(TYPED_DATA, key)) !== EXPECTED_TYPED_DATA) {
     throw new Error("typed-data mismatch");
+  }
+  const solKey = hexToBytes("0x0707070707070707070707070707070707070707070707070707070707070707");
+  const solMsg = hexToBytes("0x68656c6c6f20736f6c616e61");
+  const solSig = signSolanaMessage(solMsg, solKey);
+  const solSig2 = signSolanaMessage(solMsg, solKey);
+  if (solSig.length !== 64 || bytesToHex(solSig) !== bytesToHex(solSig2)) {
+    throw new Error("solana sign mismatch");
   }
   print("HERMES_CHAINS_OK");
 }

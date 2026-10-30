@@ -73,10 +73,15 @@ const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
 const isNumberArray = (value: unknown): value is ReadonlyArray<number> =>
   Array.isArray(value) && value.every((v) => typeof v === "number");
 
+const isArrayLike = (value: unknown): value is { readonly length: number } =>
+  isRecord(value) && typeof value["length"] === "number";
+
 const isIx = (value: unknown): value is CompiledIx =>
   isRecord(value) &&
   typeof value["programAddressIndex"] === "number" &&
-  isNumberArray(value["accountIndices"]) &&
+  (value["accountIndices"] === undefined ||
+    isNumberArray(value["accountIndices"]) ||
+    isArrayLike(value["accountIndices"])) &&
   value["data"] instanceof Uint8Array;
 
 const isLookup = (
@@ -113,7 +118,12 @@ const asCompiledMessage = (value: unknown): CompiledMessage => {
     if (!isIx(ix)) {
       throw new ChainError("invalid-request", "compiled message failed to decode");
     }
-    return ix;
+    const indices = ix.accountIndices;
+    return {
+      programAddressIndex: ix.programAddressIndex,
+      accountIndices: indices === undefined ? [] : [...indices],
+      data: ix.data,
+    };
   });
   const tables = (lookups ?? []).map((t) => {
     if (!isLookup(t)) {

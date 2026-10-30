@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 /// <reference types="node" />
-/** Bundles ./evm and ./evm/sign minified, gzips, and fails above 120 KB total. */
+/** Bundles each family's /family + /family/sign minified and enforces the gzip budget. */
 import { gzipSync } from "node:zlib";
 
 type BunBuildOutput = {
@@ -19,31 +19,38 @@ declare const Bun: {
 };
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const BUDGET = 120 * 1024;
+
+const FAMILIES = [
+  { name: "evm", budget: 120 * 1024 },
+  { name: "solana", budget: 80 * 1024 },
+] as const;
 
 async function main(): Promise<number> {
-  const result = await Bun.build({
-    entrypoints: [resolve(root, "src/evm/index.ts"), resolve(root, "src/evm/sign.ts")],
-    target: "browser",
-    format: "esm",
-    minify: true,
-  });
-  if (!result.success) {
-    for (const log of result.logs) {
-      console.error(String(log));
+  let failed = false;
+  for (const { name, budget } of FAMILIES) {
+    const result = await Bun.build({
+      entrypoints: [resolve(root, `src/${name}/index.ts`), resolve(root, `src/${name}/sign.ts`)],
+      target: "browser",
+      format: "esm",
+      minify: true,
+    });
+    if (!result.success) {
+      for (const log of result.logs) {
+        console.error(String(log));
+      }
+      return 1;
     }
-    return 1;
+    const texts = await Promise.all(result.outputs.map(async (output) => output.text()));
+    const total = texts.reduce((sum, text) => sum + gzipSync(Buffer.from(text)).length, 0);
+    console.log(
+      `chains-size ${name}: ${total} B gzipped across ${result.outputs.length} entries (budget ${budget} B)`,
+    );
+    if (total > budget) {
+      console.error(`chains-size ${name}: budget exceeded`);
+      failed = true;
+    }
   }
-  const texts = await Promise.all(result.outputs.map(async (output) => output.text()));
-  const total = texts.reduce((sum, text) => sum + gzipSync(Buffer.from(text)).length, 0);
-  console.log(
-    `chains-size: ${total} B gzipped across ${result.outputs.length} entries (budget ${BUDGET} B)`,
-  );
-  if (total > BUDGET) {
-    console.error("chains-size: budget exceeded");
-    return 1;
-  }
-  return 0;
+  return failed ? 1 : 0;
 }
 
 process.exitCode = await main();
