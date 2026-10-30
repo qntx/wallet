@@ -1,8 +1,10 @@
 import { spawnSync, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { base64 } from "@scure/base";
 import { getCreateAccountInstruction } from "@solana-program/system";
 import {
   findAssociatedTokenPda,
@@ -11,11 +13,26 @@ import {
   getMintToCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
-import { generateKeyPairSigner } from "@solana/kit";
+import {
+  getInitializeMintInstruction as initMint22,
+  getInitializeNonTransferableMintInstruction,
+  getInitializeTransferFeeConfigInstruction,
+  getMintSize,
+  getMintToCheckedInstruction as mintTo22,
+  TOKEN_2022_PROGRAM_ADDRESS,
+} from "@solana-program/token-2022";
+import { address as solAddress, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { Wallet } from "@qntx/wallet";
+import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
+
 import { SolanaChainAdapter } from "../src/chains/solana.ts";
+import { NetworkController } from "../src/networks/controller.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { TransactionController } from "../src/transactions/controller.ts";
 
 const RUN = process.env["ENGINE_E2E_SOLANA"] === "1";
 // Official Agave release binary on PATH (or SOLANA_TEST_VALIDATOR); CI installs v3.1.11
@@ -262,6 +279,258 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
         { commitment: "confirmed" },
       ])) as { value: { amount: string } };
       expect(ataBal.value.amount).toBe("500000");
+    } finally {
+      validator.kill("SIGKILL");
+      spawnSync("pkill", ["-f", VALIDATOR]);
+      rmSync(ledger, { recursive: true, force: true });
+    }
+  }, 300_000);
+});
+
+const taggedRandom = (): ((n: number) => Uint8Array) => {
+  let tag = 0;
+  return (n) => {
+    tag += 1;
+    return new Uint8Array(n).fill(tag);
+  };
+};
+
+const BPASS = "e2e-token2022";
+const BVERIFY = { kind: "password" as const, password: BPASS };
+const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
+
+const solFrom = (acct: unknown): string => {
+  const o = typeof acct === "object" && acct !== null ? (acct as Record<string, unknown>) : {};
+  return typeof o["address"] === "string" ? o["address"] : "";
+};
+
+const txHashOf = (tx: { readonly hash: string | undefined }): string => tx.hash ?? "";
+
+const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
+  const wallet = await createNodeWallet({
+    passkey: {
+      rpId: "qntx.test",
+      rpName: "qntx",
+      walletSalt: "qntx/wallet",
+      backupSalt: "qntx/backup",
+      vaultSalt: "qntx/vault",
+    },
+    autoLock: { platform: "web", idleMinutes: 15 },
+    authenticator: createSoftwarePasskey(randomBytes(32)),
+    kernelUrl: KERNEL_URL,
+  });
+  const info = await wallet.wallets.importMnemonic({
+    mnemonic:
+      "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    factor: { kind: "password", password: BPASS },
+  });
+  return { wallet, walletId: info.walletId };
+};
+
+const t22MintSetup = async (
+  r: SolanaRpc,
+  payer: Awaited<ReturnType<typeof generateKeyPairSigner>>,
+  owner: string,
+  kind: "transferFee" | "nonTransferable",
+): Promise<{ mint: Awaited<ReturnType<typeof generateKeyPairSigner>>; ata: string }> => {
+  const a = new SolanaChainAdapter();
+  const mint = await generateKeyPairSigner();
+  const [ata] = await findAssociatedTokenPda({
+    mint: mint.address,
+    owner: solAddress(owner),
+    tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+  });
+  const size =
+    kind === "transferFee"
+      ? getMintSize([
+          {
+            __kind: "TransferFeeConfig",
+            transferFeeConfigAuthority: payer.address,
+            withdrawWithheldAuthority: payer.address,
+            withheldAmount: 0,
+            olderTransferFee: { epoch: 0, maximumFee: 1_000_000, transferFeeBasisPoints: 100 },
+            newerTransferFee: { epoch: 0, maximumFee: 1_000_000, transferFeeBasisPoints: 100 },
+          },
+        ])
+      : getMintSize([{ __kind: "NonTransferable" }]);
+  const rent = (await r.call("getMinimumBalanceForRentExemption", [
+    size,
+    { commitment: "confirmed" },
+  ])) as number;
+  const bh = (await r.call("getLatestBlockhash", [{ commitment: "confirmed" }])) as {
+    value: { blockhash: string; lastValidBlockHeight: number };
+  };
+  const init22 = [
+    kind === "transferFee"
+      ? getInitializeTransferFeeConfigInstruction({
+          mint: mint.address,
+          transferFeeConfigAuthority: payer.address,
+          withdrawWithheldAuthority: payer.address,
+          transferFeeBasisPoints: 100,
+          maximumFee: 1_000_000n,
+        })
+      : getInitializeNonTransferableMintInstruction({ mint: mint.address }),
+    initMint22({
+      mint: mint.address,
+      decimals: 6,
+      mintAuthority: payer.address,
+    }),
+    getCreateAssociatedTokenIdempotentInstruction({
+      ata,
+      mint: mint.address,
+      owner: solAddress(owner),
+      payer,
+      tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+    }),
+    mintTo22({
+      mint: mint.address,
+      token: ata,
+      mintAuthority: payer,
+      amount: 1_000_000_000n,
+      decimals: 6,
+    }),
+  ];
+  const wire = a.applyFee(
+    {
+      family: "solana",
+      network: NETWORK,
+      from: payer.address,
+      instructions: [
+        getCreateAccountInstruction({
+          payer,
+          newAccount: mint,
+          lamports: BigInt(rent),
+          space: BigInt(size),
+          programAddress: TOKEN_2022_PROGRAM_ADDRESS,
+        }),
+        ...init22,
+      ],
+      writable: [],
+      unitsConsumed: 0,
+      blockhash: bh.value.blockhash,
+      lastValidBlockHeight: BigInt(bh.value.lastValidBlockHeight),
+    },
+    { tier: "normal", microLamportsPerCu: 0n },
+  );
+  const rawWire = a.finalize(wire, await sign(payer, wire, [mint]));
+  const simRaw = (await r.call("simulateTransaction", [
+    base64.encode(rawWire),
+    { encoding: "base64", commitment: "confirmed", sigVerify: true },
+  ])) as { value: { err?: unknown; logs?: string[] | null } };
+  process.stderr.write(
+    `\nT22SIM_ERR=${JSON.stringify(simRaw.value.err)}\nT22SIM_LOGS=${(simRaw.value.logs ?? []).join("\n").slice(-900)}\n`,
+  );
+  const hash = (await r.call("sendTransaction", [
+    base64.encode(rawWire),
+    { encoding: "base64", skipPreflight: true },
+  ])) as string;
+  await sleep(2000);
+  const st = (await r.call("getSignatureStatuses", [[hash]])) as {
+    value: Array<{ err?: unknown; confirmationStatus?: string } | null>;
+  };
+  const err = st.value[0]?.err;
+  if (err !== null && err !== undefined) {
+    throw new Error(`mint setup tx failed: ${JSON.stringify(err)}`);
+  }
+  await sleep(4000);
+  const st2 = (await r.call("getSignatureStatuses", [
+    [hash],
+    { searchTransactionHistory: true },
+  ])) as {
+    value: unknown[];
+  };
+  process.stderr.write(`\nT22STATUS=${JSON.stringify(st2.value[0]).slice(0, 600)}\n`);
+  await waitConfirmed(a, r, hash, Date.now() + 60_000);
+  return { mint, ata };
+};
+
+describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => {
+  it("sends a TransferFeeConfig mint (net received) and rejects NonTransferable", async () => {
+    const ledger = mkdtempSync(join(tmpdir(), "sol-t22-"));
+    const validator = spawn(
+      VALIDATOR,
+      ["--reset", "--ledger", ledger, "--quiet", "--bind-address", "127.0.0.1"],
+      { stdio: "ignore" },
+    );
+    try {
+      const url = "http://127.0.0.1:8899";
+      const r = rpc(url);
+      await waitHealthy(r, ledger, Date.now() + 120_000);
+      const payer = await generateKeyPairSigner();
+      const recipient = await generateKeyPairSigner();
+      const a = new SolanaChainAdapter();
+      await waitFunded(r, payer.address, Date.now() + 120_000);
+
+      const { wallet, walletId } = await realWallet();
+      const acct = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: "solana.bip44-change",
+        network: NETWORK,
+      });
+      const from = solFrom(acct);
+      await waitFunded(r, from, Date.now() + 120_000);
+
+      const timers: Array<() => unknown> = [];
+      const ctl = new TransactionController({
+        wallet,
+        networks: new NetworkController({
+          fetch: globalThis.fetch.bind(globalThis),
+          rpc: { [NETWORK]: [url] },
+          openStore: async () => Promise.resolve(createMemoryEngineStore()),
+          logger: { warn: () => {} },
+        }),
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: taggedRandom(),
+        setTimer: (_ms, fn) => {
+          timers.push(fn);
+          return () => {};
+        },
+        now: () => 1000,
+        logger: { warn: () => {} },
+        pollMs: 1,
+      });
+      await ctl.init();
+
+      const feeMint = await t22MintSetup(r, payer, from, "transferFee");
+      const tx = await ctl.send({
+        account: { kind: "hd", walletId, groupIndex: 0, template: "solana.bip44-change" },
+        network: NETWORK,
+        to: recipient.address,
+        amount: 500_000n,
+        token: feeMint.mint.address,
+        decimals: 6,
+        fee: "slow",
+        verify: BVERIFY,
+      });
+      expect(tx.state).toBe("submitted");
+      await waitConfirmed(a, r, txHashOf(tx), Date.now() + 120_000);
+      const [destAta] = await findAssociatedTokenPda({
+        mint: feeMint.mint.address,
+        owner: recipient.address,
+        tokenProgram: TOKEN_2022_PROGRAM_ADDRESS,
+      });
+      const destBal = (await r.call("getTokenAccountBalance", [
+        destAta,
+        { commitment: "confirmed" },
+      ])) as { value: { amount: string } };
+      // 100 bps of 500_000 = 5_000 withheld → recipient gets 495_000.
+      expect(destBal.value.amount).toBe("495000");
+      expect(tx.intent?.outflows[0]?.amount.amount).toBe("495000");
+
+      const ntMint = await t22MintSetup(r, payer, from, "nonTransferable");
+      await expect(
+        ctl.send({
+          account: { kind: "hd", walletId, groupIndex: 0, template: "solana.bip44-change" },
+          network: NETWORK,
+          to: recipient.address,
+          amount: 1000n,
+          token: ntMint.mint.address,
+          decimals: 6,
+          fee: "slow",
+          verify: BVERIFY,
+        }),
+      ).rejects.toThrow(/non-transferable/);
     } finally {
       validator.kill("SIGKILL");
       spawnSync("pkill", ["-f", VALIDATOR]);
