@@ -2,14 +2,15 @@ import { ChainError } from "../index.ts";
 
 /** SPL Token-2022 mint-account TLV extension type numbers (spl-token-2022 `ExtensionType`). */
 export const EXT = {
-  confidentialTransferMint: 2,
-  confidentialTransferFeeConfig: 3,
   transferFeeConfig: 1,
-  transferHook: 5,
-  permanentDelegate: 7,
+  confidentialTransferMint: 4,
+  defaultAccountState: 6,
   nonTransferable: 9,
-  defaultAccountState: 10,
   cpiGuard: 11,
+  permanentDelegate: 12,
+  transferHook: 14,
+  confidentialTransferFee: 16,
+  confidentialTransferFeeAmount: 17,
 } as const;
 
 export type MintExtensionSummary = {
@@ -26,7 +27,6 @@ export type MintExtensionSummary = {
 
 const u64 = (v: Uint8Array): bigint =>
   new DataView(v.buffer, v.byteOffset, 8).getBigUint64(0, true);
-const u32 = (v: Uint8Array): number => new DataView(v.buffer, v.byteOffset, 4).getUint32(0, true);
 const u16 = (v: Uint8Array): number => new DataView(v.buffer, v.byteOffset, 2).getUint16(0, true);
 
 /**
@@ -36,7 +36,7 @@ const u16 = (v: Uint8Array): number => new DataView(v.buffer, v.byteOffset, 2).g
  * type number in `unknown` rather than parsed.
  */
 export const parseMintExtensions = (data: Uint8Array, epoch: bigint): MintExtensionSummary => {
-  if (data.length < 4) {
+  if (data.length < 2) {
     return {};
   }
   const out: {
@@ -48,8 +48,16 @@ export const parseMintExtensions = (data: Uint8Array, epoch: bigint): MintExtens
     unknown: number[];
   } = { unknown: [] };
   let offset = 0;
-  while (offset + 4 <= data.length) {
+  while (offset + 2 <= data.length) {
     const type = u16(data.subarray(offset, offset + 2));
+    // Uninitialized entries are a u16 marker only — the program stops scanning there and
+    // treats the rest as unused space.
+    if (type === 0) {
+      break;
+    }
+    if (offset + 4 > data.length) {
+      throw new ChainError("invalid-request", `mint extension ${type} truncated`);
+    }
     const len = u16(data.subarray(offset + 2, offset + 4));
     offset += 4;
     if (offset + len > data.length) {
@@ -57,38 +65,39 @@ export const parseMintExtensions = (data: Uint8Array, epoch: bigint): MintExtens
     }
     const body = data.subarray(offset, offset + len);
     offset += len;
-    if (type === EXT.transferFeeConfig && len >= 116) {
-      // Layout: COption<Pubkey>×2 (36 B each) + u64 withheld + TransferFee×2 (18 B each:
-      // u64 epoch + u16 bps + u64 max). The current-epoch fee is the "newer" record once its
-      // activation epoch is reached, else the "older" one.
-      const olderBps = u16(body.subarray(80 + 8));
-      const olderMax = u64(body.subarray(80 + 10));
-      const newerEpoch = u64(body.subarray(98));
-      const newerBps = u16(body.subarray(98 + 8));
-      const newerMax = u64(body.subarray(98 + 10));
+    if (type === EXT.transferFeeConfig && len >= 108) {
+      // OptionalNonZeroPubkey×2 (32 B each, zero = none) + u64 withheld + TransferFee×2
+      // (18 B each: u64 epoch + u64 maximumFee + u16 basisPoints). The current-epoch fee is
+      // the "newer" record once its activation epoch is reached, else the "older" one.
+      const olderMax = u64(body.subarray(80));
+      const olderBps = u16(body.subarray(88));
+      const newerEpoch = u64(body.subarray(90));
+      const newerMax = u64(body.subarray(98));
+      const newerBps = u16(body.subarray(106));
       const active =
         newerEpoch <= epoch ? { bps: newerBps, max: newerMax } : { bps: olderBps, max: olderMax };
       if (active.bps !== 0 || active.max !== 0n) {
         out.transferFee = { basisPoints: active.bps, maximumFee: active.max };
       }
-    } else if (type === EXT.transferHook && len >= 68) {
-      // COption<Pubkey> authority (36) + program id (32).
-      const programId = body.subarray(36, 68);
-      if (programId.length === 32) {
-        out.transferHook = { programId };
-      }
-    } else if (type === EXT.permanentDelegate && len >= 36) {
-      if (u32(body.subarray(0, 4)) !== 0) {
-        out.permanentDelegate = { delegate: body.subarray(4, 36) };
+    } else if (type === EXT.transferHook && len >= 64) {
+      // OptionalNonZeroPubkey authority (32) + program id (32).
+      const programId = body.subarray(32, 64);
+      out.transferHook = { programId };
+    } else if (type === EXT.permanentDelegate && len >= 32) {
+      // OptionalNonZeroPubkey delegate (32) — all-zero means none.
+      const delegate = body.subarray(0, 32);
+      if (delegate.some((b) => b !== 0)) {
+        out.permanentDelegate = { delegate };
       }
     } else if (type === EXT.nonTransferable) {
       out.nonTransferable = true;
     } else if (
       type === EXT.confidentialTransferMint ||
-      type === EXT.confidentialTransferFeeConfig
+      type === EXT.confidentialTransferFee ||
+      type === EXT.confidentialTransferFeeAmount
     ) {
       out.confidential = true;
-    } else if (type !== 0) {
+    } else {
       out.unknown.push(type);
     }
   }
