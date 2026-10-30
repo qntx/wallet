@@ -10,9 +10,18 @@ const AUTH = address("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const DELEGATE = address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const HOOK_PROGRAM = address("Stake11111111111111111111111111111111111111");
 
+const TYPE_OFFSET = 165;
 const tlv = (exts: ExtensionArgs[]): Uint8Array =>
   getExtensionsEncoder().encode(exts) as Uint8Array;
-const oracle = (data: Uint8Array) => getExtensionsDecoder().decode(data);
+
+/** Frame a TLV region into a full mint account: 82-byte base + padding + type byte + TLV. */
+const fullMint = (tlvBytes: Uint8Array): Uint8Array => {
+  const out = new Uint8Array(TYPE_OFFSET + 1 + tlvBytes.length);
+  out[TYPE_OFFSET] = 1;
+  out.set(tlvBytes, TYPE_OFFSET + 1);
+  return out;
+};
+const oracle = (data: Uint8Array) => getExtensionsDecoder().decode(data.subarray(TYPE_OFFSET + 1));
 const addrBytes = (a: string): Uint8Array => getAddressEncoder().encode(address(a)) as Uint8Array;
 
 const extensionOf = (data: Uint8Array, kind: string, idx = 0) => {
@@ -60,16 +69,18 @@ const fieldOf = (s: MintExtensionSummary, k: keyof MintExtensionSummary): unknow
 
 describe("solana token-2022 mint extensions", () => {
   it("parses TransferFeeConfig and picks the current-epoch fee — oracle-checked", () => {
-    const data = tlv([
-      {
-        __kind: "TransferFeeConfig",
-        transferFeeConfigAuthority: AUTH,
-        withdrawWithheldAuthority: AUTH,
-        withheldAmount: 7n,
-        olderTransferFee: { epoch: 10n, maximumFee: 500n, transferFeeBasisPoints: 100 },
-        newerTransferFee: { epoch: 20n, maximumFee: 1000n, transferFeeBasisPoints: 250 },
-      },
-    ]);
+    const data = fullMint(
+      tlv([
+        {
+          __kind: "TransferFeeConfig",
+          transferFeeConfigAuthority: AUTH,
+          withdrawWithheldAuthority: AUTH,
+          withheldAmount: 7n,
+          olderTransferFee: { epoch: 10n, maximumFee: 500n, transferFeeBasisPoints: 100 },
+          newerTransferFee: { epoch: 20n, maximumFee: 1000n, transferFeeBasisPoints: 250 },
+        },
+      ]),
+    );
     const ext = feeConfig(data);
     // Before the newer epoch activates, the older fee applies.
     const before = parseMintExtensions(data, 15n);
@@ -82,16 +93,18 @@ describe("solana token-2022 mint extensions", () => {
   });
 
   it("flags NonTransferable — oracle-checked", () => {
-    const data = tlv([{ __kind: "NonTransferable" }]);
+    const data = fullMint(tlv([{ __kind: "NonTransferable" }]));
     expect(oracle(data)[0]?.__kind).toBe("NonTransferable");
     expect(parseMintExtensions(data, 0n).nonTransferable).toBe(true);
   });
 
   it("reads TransferHook and PermanentDelegate — oracle-checked", () => {
-    const data = tlv([
-      { __kind: "TransferHook", authority: AUTH, programId: HOOK_PROGRAM },
-      { __kind: "PermanentDelegate", delegate: DELEGATE },
-    ]);
+    const data = fullMint(
+      tlv([
+        { __kind: "TransferHook", authority: AUTH, programId: HOOK_PROGRAM },
+        { __kind: "PermanentDelegate", delegate: DELEGATE },
+      ]),
+    );
     const hook = hookExt(data);
     const delegate = delegateExt(data);
     const ext = parseMintExtensions(data, 0n);
@@ -101,17 +114,19 @@ describe("solana token-2022 mint extensions", () => {
 
   it("reports unhandled types by number — oracle-checked", () => {
     // InterestBearingConfig (type 10) is a mint extension this layer does not read.
-    const data = tlv([
-      {
-        __kind: "InterestBearingConfig",
-        rateAuthority: AUTH,
-        initializationTimestamp: 0,
-        preUpdateAverageRate: 0,
-        lastUpdateTimestamp: 0,
-        currentRate: 0,
-      },
-      { __kind: "NonTransferable" },
-    ]);
+    const data = fullMint(
+      tlv([
+        {
+          __kind: "InterestBearingConfig",
+          rateAuthority: AUTH,
+          initializationTimestamp: 0,
+          preUpdateAverageRate: 0,
+          lastUpdateTimestamp: 0,
+          currentRate: 0,
+        },
+        { __kind: "NonTransferable" },
+      ]),
+    );
     expect(oracle(data)[0]?.__kind).toBe("InterestBearingConfig");
     const ext = parseMintExtensions(data, 0n);
     expect(ext.unknown).toStrictEqual([10]);
@@ -126,16 +141,18 @@ describe("solana token-2022 mint extensions", () => {
   });
 
   it("stops at the Uninitialized marker and ignores trailing space", () => {
-    const data = new Uint8Array(16);
-    const v = new DataView(data.buffer);
+    const tlv16 = new Uint8Array(16);
+    const v = new DataView(tlv16.buffer);
     v.setUint16(0, EXT.nonTransferable, true);
     v.setUint16(2, 0, true);
+    const data = fullMint(tlv16);
     // bytes 4-5: Uninitialized (type 0) — the rest is unused space.
     expect(parseMintExtensions(data, 0n).nonTransferable).toBe(true);
   });
 
   it("rejects a truncated extension body", () => {
-    expect(() => parseMintExtensions(new Uint8Array([1, 0, 10, 0, 0]), 0n)).toThrow(/truncated/);
+    const truncated = fullMint(new Uint8Array([1, 0, 10, 0, 0]));
+    expect(() => parseMintExtensions(truncated, 0n)).toThrow(/truncated/);
   });
 
   it("computes the post-fee net amount", () => {

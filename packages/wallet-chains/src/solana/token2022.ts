@@ -29,16 +29,20 @@ const u64 = (v: Uint8Array): bigint =>
   new DataView(v.buffer, v.byteOffset, 8).getBigUint64(0, true);
 const u16 = (v: Uint8Array): number => new DataView(v.buffer, v.byteOffset, 2).getUint16(0, true);
 
+const ACCOUNT_TYPE_MINT = 1;
+const TYPE_OFFSET = 165;
+
 /**
- * Parse the TLV extension region of a Token-2022 mint account (after the 82-byte mint base and its
- * optional account-type byte). Each entry is `u16 type, u16 len, len bytes` — the same layout
- * spl-token-2022 uses. Returns a typed summary; extensions this layer does not read are reported by
- * type number in `unknown` rather than parsed.
+ * Parse the extension region of a full Token-2022 mint account. The account is the 82-byte mint
+ * base, zero padding up to byte 165, the account-type byte (`1` = Mint) at 165, then the TLV region
+ * at 166 — each entry `u16 type, u16 len, len bytes`. Returns a typed summary; extensions this
+ * layer does not read are reported by type number in `unknown` rather than parsed.
  */
 export const parseMintExtensions = (data: Uint8Array, epoch: bigint): MintExtensionSummary => {
-  if (data.length < 2) {
+  if (data.length <= TYPE_OFFSET + 1 || data[TYPE_OFFSET] !== ACCOUNT_TYPE_MINT) {
     return {};
   }
+  const tlv = data.subarray(TYPE_OFFSET + 1);
   const out: {
     transferFee?: { basisPoints: number; maximumFee: bigint };
     transferHook?: { programId: Uint8Array };
@@ -48,22 +52,22 @@ export const parseMintExtensions = (data: Uint8Array, epoch: bigint): MintExtens
     unknown: number[];
   } = { unknown: [] };
   let offset = 0;
-  while (offset + 2 <= data.length) {
-    const type = u16(data.subarray(offset, offset + 2));
+  while (offset + 2 <= tlv.length) {
+    const type = u16(tlv.subarray(offset, offset + 2));
     // Uninitialized entries are a u16 marker only — the program stops scanning there and
     // treats the rest as unused space.
     if (type === 0) {
       break;
     }
-    if (offset + 4 > data.length) {
+    if (offset + 4 > tlv.length) {
       throw new ChainError("invalid-request", `mint extension ${type} truncated`);
     }
-    const len = u16(data.subarray(offset + 2, offset + 4));
+    const len = u16(tlv.subarray(offset + 2, offset + 4));
     offset += 4;
-    if (offset + len > data.length) {
+    if (offset + len > tlv.length) {
       throw new ChainError("invalid-request", `mint extension ${type} truncated`);
     }
-    const body = data.subarray(offset, offset + len);
+    const body = tlv.subarray(offset, offset + len);
     offset += len;
     if (type === EXT.transferFeeConfig && len >= 108) {
       // OptionalNonZeroPubkey×2 (32 B each, zero = none) + u64 withheld + TransferFee×2
