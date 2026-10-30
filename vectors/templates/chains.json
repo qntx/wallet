@@ -1,26 +1,41 @@
 {
   "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
   "sources": [
-    "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki (account xpub, first receive/change addresses)",
-    "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki (account xpub, first receive/change addresses)",
-    "https://github.com/ethereum/go-ethereum/blob/master/accounts/hd_test.go (HD account derivation — MetaMask-compatible first two accounts)",
-    "https://github.com/solana-labs/solana/blob/master/web3.js/test/fixtures (SLIP-10 ed25519 m/44'/501'/i'/0' — cross-checked against the wallet-chains test helper verified by the SLIP-10 spec vectors)"
+    "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki — mainnet account key (given there as zpub; stored here re-serialized with xpub version bytes), first receive and change addresses",
+    "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki — mainnet account xpub, first receive and change addresses",
+    "EVM accounts 0 and 1: the widely published MetaMask/ethers values for this mnemonic at m/44'/60'/0'/0/i",
+    "Solana groups 0 and 1: m/44'/501'/i'/0' (Phantom/Solflare layout), cross-checked against the wallet-chains SLIP-10 test helper that is verified against the SLIP-10 spec vectors",
+    "Testnet tpub entries (coin type 1') have no BIP text vector; they are regression values from @scure/bip32 and assert only the coin-type and version-byte choice"
   ],
-  "master": { "fingerprint": "73c5da0a" },
+  "master": {
+    "fingerprint": "73c5da0a"
+  },
   "evm": {
     "template": "evm.bip44",
     "network": "eip155:1",
     "accounts": [
-      { "groupIndex": 0, "address": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94" },
-      { "groupIndex": 1, "address": "0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0" }
+      {
+        "groupIndex": 0,
+        "address": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+      },
+      {
+        "groupIndex": 1,
+        "address": "0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0"
+      }
     ]
   },
   "solana": {
     "template": "solana.bip44-change",
     "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     "accounts": [
-      { "groupIndex": 0, "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk" },
-      { "groupIndex": 1, "address": "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb" }
+      {
+        "groupIndex": 0,
+        "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+      },
+      {
+        "groupIndex": 1,
+        "address": "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb"
+      }
     ]
   },
   "bitcoin": [
@@ -33,7 +48,9 @@
         "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
         "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g"
       ],
-      "change": ["bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el"]
+      "change": [
+        "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el"
+      ]
     },
     {
       "template": "btc.bip86",
@@ -44,7 +61,9 @@
         "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr",
         "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh"
       ],
-      "change": ["bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7"]
+      "change": [
+        "bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7"
+      ]
     },
     {
       "template": "btc.bip84",
