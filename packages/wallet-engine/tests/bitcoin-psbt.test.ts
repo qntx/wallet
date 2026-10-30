@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vite-plus/test";
 import { HDKey } from "@scure/bip32";
 import { NETWORK, p2wpkh, Transaction } from "@scure/btc-signer";
+import { describe, expect, it } from "vite-plus/test";
 
 import { BitcoinChainAdapter, dustFor, isFrozen } from "../src/chains/bitcoin.ts";
 import type { BtcUtxo } from "../src/chains/bitcoin.ts";
@@ -10,8 +10,7 @@ const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'"
 const PUB = HD.deriveChild(0).deriveChild(0).publicKey!;
 const CHANGE_PUB = HD.deriveChild(1).deriveChild(0).publicKey!;
 const TO = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4";
-const CHANGE = p2wpkh(CHANGE_PUB, NETWORK).address!;
-
+const CHANGE = p2wpkh(CHANGE_PUB, NETWORK).address;
 
 const TXID = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
 
@@ -31,7 +30,7 @@ describe("bitcoin psbt construction", () => {
       0xdeadbeef,
       () => [0],
       () => PUB,
-      () => p2wpkh(PUB, NETWORK).script!,
+      () => p2wpkh(PUB, NETWORK).script,
       false,
     );
     expect(inputs).toHaveLength(1);
@@ -50,7 +49,7 @@ describe("bitcoin psbt construction", () => {
       0xdeadbeef,
       () => [1, 0],
       () => PUB,
-      () => p2wpkh(PUB, NETWORK).script!,
+      () => p2wpkh(PUB, NETWORK).script,
       false,
     );
     const { psbt, inputs: selected } = adapter.buildPsbt(

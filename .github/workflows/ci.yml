@@ -33,6 +33,7 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bunx vp run @qntx/wallet-engine#build
       - run: |
+          set -euo pipefail
           ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts 2>&1 | tee /tmp/e2e.out
           ! grep -q "skipped" /tmp/e2e.out
         working-directory: packages/wallet-engine
@@ -53,6 +54,7 @@ jobs:
           tar -xjf /tmp/sol.tar.bz2 -C /tmp
           echo "/tmp/solana-release/bin" >> "$GITHUB_PATH"
       - run: |
+          set -euo pipefail
           ENGINE_E2E_SOLANA=1 bunx vitest run tests/solana-e2e.test.ts 2>&1 | tee /tmp/e2e.out
           ! grep -q "1 skipped" /tmp/e2e.out
         working-directory: packages/wallet-engine
@@ -66,6 +68,7 @@ jobs:
       - run: bunx vp run @qntx/wallet-chains#build && bunx vp run @qntx/wallet-engine#build
       # blockstream/esplora bundles bitcoind + electrs + the REST API (mounted at /regtest/api).
       - run: |
+          set -euo pipefail
           ENGINE_E2E_BITCOIN=1 bunx vitest run tests/bitcoin-e2e.test.ts 2>&1 | tee /tmp/e2e.out
           ! grep -q "1 skipped" /tmp/e2e.out
         working-directory: packages/wallet-engine

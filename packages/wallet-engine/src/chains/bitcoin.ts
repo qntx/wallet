@@ -1,5 +1,4 @@
 import { hex } from "@scure/base";
-
 import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with

@@ -48,27 +48,25 @@ const asArray = (v: unknown): ReadonlyArray<unknown> => (isUnknownArray(v) ? v :
 export const scriptPubKey = (address: string, network: typeof BTC_NETWORK): Uint8Array =>
   OutScript.encode(Address(network).decode(address));
 
-/** Electrum-order scripthash: sha256 of the scriptPubKey, digest reversed. */
-export const scripthash = (address: string, network: typeof BTC_NETWORK): string => {
-  const decoded = Address(network).decode(address);
-  const script = OutScript.encode(decoded);
-  const h = sha256(script);
-  return [...h]
-    .reverse()
+/** Esplora scripthash: sha256 of the scriptPubKey, digest hex as-is (verified vs electrs REST). */
+export const scripthash = (address: string, network: typeof BTC_NETWORK): string =>
+  [...sha256(OutScript.encode(Address(network).decode(address)))]
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
-};
 
 const windowUsed = async (
   es: Esplora,
   params: typeof BTC_NETWORK,
   addrs: ReadonlyArray<ScanAddress>,
 ): Promise<ReadonlyArray<boolean>> =>
-  Promise.all(
-    addrs.map(async (a) => {
-      const txs = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
-      return Array.isArray(txs) && txs.length > 0;
-    }),
+  addrs.reduce<Promise<ReadonlyArray<boolean>>>(
+     async (p, a) =>
+      p.then(async (acc) => {
+        await new Promise((r) => setTimeout(r, 150));
+        const txs = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
+        return [...acc, Array.isArray(txs) && txs.length > 0];
+      }),
+    Promise.resolve([]),
   );
 
 export const scanChain = async (
