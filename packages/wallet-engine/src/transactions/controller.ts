@@ -6,7 +6,7 @@
 import { Controller } from "../controller.ts";
 import type { EngineStore } from "../store/port.ts";
 import { pollBitcoin, sendBitcoin } from "./bitcoin.ts";
-import { pollEvm, sendEvm } from "./evm.ts";
+import { pollEvm, replaceEvm, sendEvm } from "./evm.ts";
 import type {
   DisplayIntent,
   Options,
@@ -168,6 +168,31 @@ export class TransactionController extends Controller<TransactionControllerState
       return sendBitcoin(ctx, params);
     }
     return sendEvm(ctx, params);
+  }
+
+  /**
+   * Speed up or cancel a pending/submitted EVM transaction at the same nonce — a fresh signature is
+   * required and a rejection leaves the original untouched.
+   */
+  async replace(
+    id: string,
+    mode: "speed-up" | "cancel",
+    verify: SendParams["verify"],
+  ): Promise<TrackedTransaction> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    const old = this.getState().txs[id];
+    if (old === undefined) {
+      throw new Error(`unknown transaction ${id}`);
+    }
+    if (old.family !== "evm") {
+      throw new Error("replace is EVM-only in this layer");
+    }
+    if (old.state !== "pending" && old.state !== "submitted") {
+      throw new Error(`cannot replace a ${old.state} transaction`);
+    }
+    return replaceEvm(this.routeCtx(), old, mode, verify);
   }
 
   private track(id: string, hash: string): void {

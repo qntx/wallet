@@ -8,15 +8,27 @@ import type { RouteContext, SendParams, TrackedTransaction, TxState } from "./ro
 
 const evm = new EvmChainAdapter();
 
+type PendingBuild = {
+  readonly unsigned: Awaited<ReturnType<EvmChainAdapter["build"]>>;
+  readonly request: Parameters<ReturnType<typeof chains>["sign"]>[0]["request"];
+  readonly quote: { readonly tier: string };
+  readonly chainId: number;
+};
+
+/** In-memory build context keyed by tx id — the inputs a replace rebuilds from. */
+const pending = new Map<string, PendingBuild>();
+
+const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
+
 export const sendEvm = async (
   ctx: RouteContext,
   params: SendParams,
 ): Promise<TrackedTransaction> => {
   const { account, network, to, amount, fee, verify } = params;
+  const { networks } = ctx.options;
   if (account.kind !== "hd") {
     throw new Error("imported accounts are not yet supported");
   }
-  const { networks } = ctx.options;
   const info = networks.info(network);
   const client = networks.client(network);
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
@@ -40,10 +52,13 @@ export const sendEvm = async (
   if (quote === undefined) {
     throw new Error("no fee quote");
   }
-  const request = evm.toSignRequest(evm.applyFee(unsigned, quote), account, info.chainId);
+  const feed = evm.applyFee(unsigned, quote);
+  const request = evm.toSignRequest(feed, account, info.chainId);
   const intent = decodeEvm(request);
+  const id = newId(ctx.options.random);
+  pending.set(id, { unsigned: feed, request, quote, chainId: info.chainId });
   let tx: TrackedTransaction = {
-    id: newId(ctx.options.random),
+    id,
     family: "evm",
     network,
     account: account.walletId,
@@ -51,6 +66,97 @@ export const sendEvm = async (
     state: "draft",
     intent,
     nonce: unsigned.nonce,
+    submittedAt: ctx.options.now(),
+    error: undefined,
+  };
+  tx = await ctx.transition(tx, {});
+  let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
+  try {
+    const result = await apis.sign({ request, verify });
+    tx = await ctx.transition(tx, { state: "signed" });
+    signed = result;
+  } catch (error) {
+    await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
+    throw error;
+  }
+  try {
+    const raw = evm.finalize(feed, signed);
+    const hash = await evm.broadcast(client, raw);
+    tx = await ctx.transition(tx, {
+      state: "submitted",
+      hash,
+      submittedAt: ctx.options.now(),
+    });
+    ctx.track(tx.id, hash);
+    return tx;
+  } catch (error) {
+    await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
+    throw error;
+  }
+};
+
+/**
+ * EVM speed-up/cancel — replaces a pending tx at the same nonce with a bumped fee (cancel = a
+ * 0-value transfer to self). The new tx carries `replaces` and needs a fresh signature; a rejected
+ * one never reaches the network and leaves the original.
+ */
+export const replaceEvm = async (
+  ctx: RouteContext,
+  old: TrackedTransaction,
+  mode: "speed-up" | "cancel",
+  verify: SendParams["verify"],
+): Promise<TrackedTransaction> => {
+  const stash = pending.get(old.id);
+  if (stash === undefined) {
+    throw new Error("the original build context is gone — cannot replace after restart");
+  }
+  const { networks } = ctx.options;
+  const client = networks.client(old.network);
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const { tier } = stash.quote;
+  const estimates = await evm.estimateFee(client);
+  const estimate = estimates.find((q) => q.tier === tier) ?? estimates[1];
+  if (estimate === undefined) {
+    throw new Error("no fee quote");
+  }
+  const oldFee = stash.unsigned;
+  const bumpedFee = bump(oldFee.maxFeePerGas ?? oldFee.gasPrice ?? 0n);
+  const maxFeePerGas = bumpedFee > estimate.maxFeePerGas ? bumpedFee : estimate.maxFeePerGas;
+  const priorityBump =
+    oldFee.maxPriorityFeePerGas === undefined && estimate.maxPriorityFeePerGas === undefined
+      ? undefined
+      : bump(oldFee.maxPriorityFeePerGas ?? 0n) > (estimate.maxPriorityFeePerGas ?? 0n)
+        ? bump(oldFee.maxPriorityFeePerGas ?? 0n)
+        : (estimate.maxPriorityFeePerGas ?? 0n);
+  const feeFields =
+    priorityBump === undefined
+      ? { maxFeePerGas }
+      : { maxFeePerGas, maxPriorityFeePerGas: priorityBump };
+  const unsigned =
+    mode === "cancel"
+      ? {
+          ...stash.unsigned,
+          to: stash.unsigned.from,
+          value: 0n,
+          data: "0x" as const,
+          gas: 21000n,
+          ...feeFields,
+        }
+      : { ...stash.unsigned, ...feeFields };
+  const request = evm.toSignRequest(unsigned, stash.request.account, stash.chainId);
+  const intent = decodeEvm(request);
+  const id = newId(ctx.options.random);
+  pending.set(id, { unsigned, request, quote: stash.quote, chainId: stash.chainId });
+  let tx: TrackedTransaction = {
+    id,
+    family: "evm",
+    network: old.network,
+    account: old.account,
+    hash: undefined,
+    state: "draft",
+    intent,
+    nonce: old.nonce,
+    replaces: old.id,
     submittedAt: ctx.options.now(),
     error: undefined,
   };
@@ -92,5 +198,6 @@ export const pollEvm = async (
   if (state === "pending") {
     return undefined;
   }
+  pending.delete(tx.id);
   return state === "finalized" ? "confirmed" : state;
 };

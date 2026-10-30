@@ -114,6 +114,7 @@ const compileToken = (): string => {
 };
 
 const pad32 = (v: bigint): string => v.toString(16).padStart(64, "0");
+const nonZero = (v: bigint | undefined): bigint => v ?? 0n;
 
 describe.runIf(RUN)("anvil e2e: erc20 transfer", () => {
   it("deploys TestToken, transfers erc20 via the adapter, recipient balance grows; intent is partial", async () => {
@@ -177,4 +178,67 @@ describe.runIf(RUN)("anvil e2e: erc20 transfer", () => {
       proc.kill();
     }
   }, 60_000);
+});
+
+describe.runIf(RUN)("anvil e2e: evm replace", () => {
+  it("speed-up confirms the replacement and marks the original replaced", async () => {
+    const port = 18548;
+    const proc = execFile(anvil(), ["--port", String(port), "--silent"]);
+    await sleep(1500);
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      await rpcCall(url, "anvil_setBalance", [account.address, "0xde0b6b3a7640000"]);
+      await rpcCall(url, "evm_setAutomine", [false]);
+      const client = createPublicClient({ transport: http(url) });
+      const adapter = new EvmChainAdapter();
+      // low-fee original
+      const unsigned = await adapter.build(client, "eip155:31337", account.address, {
+        kind: "native",
+        to: RECIPIENT,
+        value: 10n ** 15n,
+      });
+      const feed = adapter.applyFee(unsigned, {
+        tier: "slow",
+        wei: 10n ** 9n,
+        maxFeePerGas: 10n ** 9n,
+        maxPriorityFeePerGas: 10n ** 8n,
+      });
+      const signed = await account.signTransaction({
+        chainId: 31337,
+        nonce: feed.nonce,
+        gas: feed.gas,
+        to: feed.to as `0x${string}`,
+
+        value: feed.value,
+        data: feed.data as `0x${string}`,
+        maxFeePerGas: nonZero(feed.maxFeePerGas),
+        maxPriorityFeePerGas: nonZero(feed.maxPriorityFeePerGas),
+      });
+      const hash = await adapter.broadcast(client, signed);
+      // speed-up: same nonce, fee × ~1.5 → lands in the block first
+      const bumped = {
+        ...feed,
+        maxFeePerGas: 15n * 10n ** 8n,
+        maxPriorityFeePerGas: 15n * 10n ** 7n,
+      };
+      const bumpedSigned = await account.signTransaction({
+        chainId: 31337,
+        nonce: bumped.nonce,
+        gas: bumped.gas,
+        to: bumped.to as `0x${string}`,
+        value: bumped.value,
+        data: bumped.data as `0x${string}`,
+        maxFeePerGas: nonZero(bumped.maxFeePerGas),
+        maxPriorityFeePerGas: nonZero(bumped.maxPriorityFeePerGas),
+      });
+      const bumpHash = await adapter.broadcast(client, bumpedSigned);
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      const bumpState = await adapter.status(client, bumpHash);
+      const origState = await adapter.status(client, hash);
+      expect(["confirmed", "finalized"]).toContain(bumpState);
+      expect(["failed", "dropped", "pending"]).toContain(origState);
+    } finally {
+      proc.kill();
+    }
+  }, 30_000);
 });
