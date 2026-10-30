@@ -10,6 +10,8 @@ import { chains } from "@qntx/wallet/chains";
 
 import { EvmChainAdapter } from "../chains/evm.ts";
 import type { EvmFeeTier } from "../chains/evm.ts";
+import { SolanaChainAdapter } from "../chains/solana.ts";
+import type { SolanaFeeTier } from "../chains/solana.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
@@ -26,17 +28,20 @@ export type TxState =
   | "pending"
   | "confirmed"
   | "failed"
-  | "rejected";
+  | "rejected"
+  | "dropped";
 
 export type TrackedTransaction = {
   readonly id: string;
-  readonly family: "evm";
+  readonly family: "evm" | "solana";
   readonly network: string;
   readonly account: string;
   readonly hash: string | undefined;
   readonly state: TxState;
   readonly intent: DisplayIntent | undefined;
   readonly nonce: number;
+  /** Solana only — the blockhash expiry that turns an unconfirmed tx `dropped`. */
+  readonly lastValidBlockHeight?: number;
   readonly submittedAt: number;
   readonly error: string | undefined;
 };
@@ -48,7 +53,9 @@ export type SendParams = {
   readonly amount: bigint;
   /** ERC-20 contract — when set, `to`/`amount` are the transfer recipient/units and value is 0. */
   readonly token?: string;
-  readonly fee: EvmFeeTier;
+  readonly fee: EvmFeeTier | SolanaFeeTier;
+  /** SPL mint decimals — required when `token` is a Solana mint. */
+  readonly decimals?: number;
   readonly verify: SignParams["verify"];
 };
 
@@ -81,6 +88,7 @@ const TX_STATES: ReadonlySet<string> = new Set([
   "confirmed",
   "failed",
   "rejected",
+  "dropped",
 ]);
 
 const isTxState = (v: unknown): v is TxState => typeof v === "string" && TX_STATES.has(v);
@@ -189,11 +197,14 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const { account, network, to, amount, fee, verify } = params;
     const { networks } = this.options;
-    const client = networks.client(network);
     const info = networks.info(network);
     if (account.kind !== "hd") {
       throw new Error("imported accounts are not yet supported");
     }
+    if (info.family === "solana" && account.kind === "hd") {
+      return this.sendSolana(params);
+    }
+    const client = networks.client(network);
     const apis = this.options.chains ?? chains(this.options.wallet);
     const evmAccount = await apis.account({
       walletId: account.walletId,
@@ -262,22 +273,123 @@ export class TransactionController extends Controller<TransactionControllerState
     }
   }
 
+  private readonly solana = new SolanaChainAdapter();
+  private readonly wires = new Map<string, Uint8Array>();
+
+  private async sendSolana(params: SendParams): Promise<TrackedTransaction> {
+    const { account, network, to, amount, fee, verify } = params;
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
+    const rpc = this.options.networks.solanaRpc(network);
+    const apis = this.options.chains ?? chains(this.options.wallet);
+    const solAccount = await apis.account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template: "solana.bip44-change",
+      network,
+    });
+    const from = "address" in solAccount ? solAccount.address : "";
+    const id = `tx-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    const unsigned = await this.solana.build(
+      rpc,
+      network,
+      from,
+      params.token === undefined
+        ? { kind: "sol", to, lamports: amount }
+        : { kind: "spl", mint: params.token, to, amount, decimals: params.decimals ?? 0 },
+    );
+    const quotes = await this.solana.estimateFee(rpc, unsigned.writable);
+    const quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
+    if (quote === undefined) {
+      throw new Error("no fee quote");
+    }
+    const messageBytes = this.solana.applyFee(unsigned, quote);
+    const request = {
+      kind: "solana.transaction" as const,
+      network,
+      account,
+      message: messageBytes,
+    };
+    let tx: TrackedTransaction = {
+      id,
+      family: "solana",
+      network,
+      account: account.walletId,
+      hash: undefined,
+      state: "draft",
+      intent: undefined,
+      nonce: 0,
+      lastValidBlockHeight: Number(unsigned.lastValidBlockHeight),
+      submittedAt: this.options.now(),
+      error: undefined,
+    };
+    tx = await this.transition(tx, {});
+    try {
+      const result = await apis.sign({ request, verify });
+      tx = await this.transition(tx, { state: "signed" });
+      if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
+        throw new Error("unexpected solana sign result");
+      }
+      const wire = this.solana.finalize(messageBytes, [result.signature]);
+      const hash = await this.solana.broadcast(rpc, wire);
+      this.wires.set(id, wire);
+      tx = await this.transition(tx, { state: "submitted", hash, submittedAt: this.options.now() });
+      this.track(tx.id, hash, network);
+      return tx;
+    } catch (error) {
+      const failed = tx.state === "signed" ? "failed" : "rejected";
+      await this.transition(tx, {
+        state: failed,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
   private track(id: string, hash: string, network: string): void {
     if (this.timers.has(id) || hash === "") {
       return;
     }
     const poll = this.options.pollMs ?? 4000;
+    const tx0 = this.getState().txs[id];
     const stop = this.options.setTimer(poll, async () => {
       if (this.locked) {
         return;
       }
       try {
-        const state = await this.evm.status(this.options.networks.client(network), hash);
-        if (state === "pending") {
-          return;
-        }
         const tx = this.getState().txs[id];
         if (tx === undefined) {
+          return;
+        }
+        if (tx.family === "solana") {
+          const rpc = this.options.networks.solanaRpc(network);
+          const state = await this.solana.status(rpc, hash);
+          if (state === "pending") {
+            if (
+              tx.lastValidBlockHeight !== undefined &&
+              (await this.solana.blockHeight(rpc)) > BigInt(tx.lastValidBlockHeight)
+            ) {
+              await this.transition(tx, { state: "dropped" });
+              this.timers.delete(id);
+              this.wires.delete(id);
+              stop();
+              return;
+            }
+            const wire = this.wires.get(id);
+            if (wire !== undefined) {
+              await this.solana.broadcast(rpc, wire).catch(() => "");
+            }
+            return;
+          }
+          await this.transition(tx, { state: state === "finalized" ? "confirmed" : state });
+          this.timers.delete(id);
+          this.wires.delete(id);
+          stop();
+          return;
+        }
+        const state = await this.evm.status(this.options.networks.client(network), hash);
+        if (state === "pending") {
           return;
         }
         const next: TxState = state === "finalized" ? "confirmed" : state;
@@ -289,5 +401,6 @@ export class TransactionController extends Controller<TransactionControllerState
       }
     });
     this.timers.set(id, stop);
+    void tx0;
   }
 }

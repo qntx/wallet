@@ -14,6 +14,10 @@ import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import type { EngineStore } from "../store/port.ts";
 
+const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
+
+const arr = (v: unknown): v is ReadonlyArray<unknown> => Array.isArray(v);
+
 const COLLECTION = "assets-custom-tokens";
 const POLL_MS = 60_000;
 
@@ -170,8 +174,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   async refresh(address: string, network: string): Promise<void> {
-    const client = this.options.networks.client(network);
     const info = this.options.networks.info(network);
+    if (info.family === "solana") {
+      await this.refreshSolana(address, network);
+      return;
+    }
+    const client = this.options.networks.client(network);
     const native = BigInt(
       await this.rpcHex(client, "eth_getBalance", [address, "latest"]),
     ).toString();
@@ -184,6 +192,48 @@ export class AssetsController extends Controller<AssetsControllerState> {
     );
     this.update((s) => ({
       balances: { ...s.balances, [key(network, address)]: { native, tokens } },
+    }));
+  }
+
+  /** SOL via getBalance; SPL via getTokenAccountsByOwner (jsonParsed) for known mints. */
+  private async refreshSolana(owner: string, network: string): Promise<void> {
+    const rpc = this.options.networks.solanaRpc(network);
+    const bal = obj(await rpc.call("getBalance", [owner, { commitment: "confirmed" }]));
+    const balValue = bal?.["value"];
+    const native =
+      typeof balValue === "string"
+        ? balValue
+        : typeof balValue === "number"
+          ? String(balValue)
+          : "0";
+    const custom = this.customTokens.get(network) ?? [];
+    const tokens = await Promise.all(
+      custom.map(async (t) => {
+        const accounts = obj(
+          await rpc.call("getTokenAccountsByOwner", [
+            owner,
+            { mint: t.address },
+            { encoding: "jsonParsed" },
+          ]),
+        );
+        const first = arr(accounts?.["value"]) ? accounts?.["value"][0] : undefined;
+        const parsed = obj(obj(obj(obj(obj(first)?.["account"])?.["data"])?.["parsed"])?.["info"]);
+        const amount = obj(parsed?.["tokenAmount"]);
+        const mintInfo = obj(
+          await rpc.call("getAccountInfo", [t.address, { encoding: "jsonParsed" }]),
+        );
+        const mintParsed = obj(obj(obj(obj(mintInfo?.["value"])?.["data"])?.["parsed"])?.["info"]);
+        return {
+          address: t.address,
+          symbol: "?",
+          decimals: typeof mintParsed?.["decimals"] === "number" ? mintParsed["decimals"] : 9,
+          balance: typeof amount?.["amount"] === "string" ? amount["amount"] : "0",
+          verified: t.verified,
+        };
+      }),
+    );
+    this.update((s) => ({
+      balances: { ...s.balances, [key(network, owner)]: { native, tokens } },
     }));
   }
 
@@ -314,9 +364,24 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /** Reads symbol/decimals on-chain, marks unverified, persists; throws when the calls fail. */
   async addToken(network: string, address: string): Promise<void> {
+    const info = this.options.networks.info(network);
+    if (info.family === "solana") {
+      const rpc = this.options.networks.solanaRpc(network);
+      const mint = obj(await rpc.call("getAccountInfo", [address, { encoding: "jsonParsed" }]));
+      const decimals = obj(obj(obj(mint?.["value"])?.["data"])?.["parsed"])?.["info"];
+      if (typeof obj(decimals)?.["decimals"] !== "number") {
+        throw new TypeError(`${address} is not a readable SPL mint on ${network}`);
+      }
+      await this.persistToken(network, address);
+      return;
+    }
     const client = this.options.networks.client(network);
     await this.callString(client, address, "symbol");
     await this.callNumber(client, address, "decimals");
+    await this.persistToken(network, address);
+  }
+
+  private async persistToken(network: string, address: string): Promise<void> {
     const existing = this.customTokens.get(network) ?? [];
     if (existing.some((t) => t.address === address)) {
       return;
@@ -324,9 +389,17 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const next = [...existing, { address, verified: false }];
     this.customTokens.set(network, next);
     if (this.engineStore !== undefined) {
+      const merged: Record<string, ReadonlyArray<{ address: string; verified: boolean }>> = {
+        [network]: next,
+      };
+      for (const [n, list] of this.customTokens) {
+        if (n !== network) {
+          merged[n] = list;
+        }
+      }
       await this.engineStore
         .collection(COLLECTION)
-        .put("customTokens", new TextEncoder().encode(JSON.stringify({ [network]: next })));
+        .put("customTokens", new TextEncoder().encode(JSON.stringify(merged)));
     }
   }
 

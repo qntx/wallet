@@ -10,6 +10,9 @@ export type NetworkInfo = {
   readonly name: string;
   readonly symbol: string;
   readonly multicall3?: string;
+  /** CAIP-2 family — `solana:<ref>` networks are validated against genesis-hash, not chainId. */
+  readonly family: "evm" | "solana";
+  readonly genesisHash?: string;
   readonly decimals: number;
   readonly testnet: boolean;
 };
@@ -27,6 +30,7 @@ const entry = (
   symbol,
   decimals: 18,
   testnet,
+  family: "evm",
   // Canonical Multicall3 — https://github.com/mds1/multicall3 deployments (all entries below).
   multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
 });
@@ -119,4 +123,28 @@ export const NETWORKS: ReadonlyArray<NetworkInfo> = [
 ];
 
 export const networkById = (id: string): NetworkInfo | undefined =>
-  NETWORKS.find((n) => n.id === id);
+  [...NETWORKS, ...SOLANA_NETWORKS].find((n) => n.id === id);
+export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = [
+  {
+    id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    chainId: 0,
+    name: "Solana",
+    symbol: "SOL",
+    decimals: 9,
+    testnet: false,
+    family: "solana",
+    // https://solana.com/docs/references/clusters (mainnet genesis hash)
+    genesisHash:
+      "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpWvDVGok8cUQPCbq9AzdTQvpNbNvyq4qDvMNTrDDezsFapSihepu2eQEdje",
+  },
+  {
+    id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+    chainId: 0,
+    name: "Solana Devnet",
+    symbol: "SOL",
+    decimals: 9,
+    testnet: true,
+    family: "solana",
+    genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBGGSWgX4GwCJRmgdcvRaRmFbXfw3nDZBTqsr",
+  },
+];
