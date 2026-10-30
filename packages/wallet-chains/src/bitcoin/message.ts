@@ -121,6 +121,7 @@ export const signBip322Simple = (
     sequence: 0,
     witnessUtxo: { script: scriptPubKey, amount: 0n },
     bip32Derivation: [[pub, { fingerprint: 0, path: [] }]],
+    ...(scriptPubKey[0] === 0x51 ? { tapInternalKey: pub.slice(1) } : {}),
   });
   tx.addOutput({ script: Uint8Array.of(0x6a), amount: 0n });
   const isTaproot = scriptPubKey[0] === 0x51;

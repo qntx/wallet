@@ -4,6 +4,11 @@
  * signature against the account address — a kernel that answers with someone else's signature fails
  * closed with `integrity`.
  */
+import {
+  bitcoinAddressFromXpub,
+  verifyBitcoinMessage,
+  verifyBitcoinPsbtSignatures,
+} from "@qntx/wallet-chains/bitcoin";
 import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { verifySolanaSignature } from "@qntx/wallet-chains/solana";
 
@@ -36,10 +41,53 @@ export type ChainsApi = {
 
 /** Whether the kernel's signature belongs to the account it was asked to sign for. */
 const checkSigner = (request: ChainSignRequest, result: ChainSignResult, account: ChainAccount) => {
+  if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
+    if (!("xpub" in account)) {
+      throw integrity("chain account has no xpub");
+    }
+    if (request.kind === "bitcoin.psbt" && result.kind === "bitcoin.psbt") {
+      if (
+        !verifyBitcoinPsbtSignatures(
+          result.signedPsbt,
+          request.sign,
+          account.xpub,
+          account.template,
+          request.network,
+        )
+      ) {
+        throw integrity("psbt signatures do not verify for the account");
+      }
+      return;
+    }
+    if (request.kind === "bitcoin.message" && result.kind === "bitcoin.message") {
+      const derived = bitcoinAddressFromXpub(
+        account.xpub,
+        account.template,
+        request.network,
+        request.change,
+        request.index,
+      );
+      if (
+        derived !== request.address ||
+        !verifyBitcoinMessage(request.address, request.message, result.signature, request.network)
+      ) {
+        throw integrity("message signature does not verify for the account");
+      }
+      return;
+    }
+    throw integrity("result kind does not match the request");
+  }
   if (!("address" in account)) {
     throw integrity("chain account has no address");
   }
   if (request.kind.startsWith("evm.")) {
+    if (
+      result.kind !== "evm.transaction" &&
+      result.kind !== "evm.personal-message" &&
+      result.kind !== "evm.typed-data"
+    ) {
+      throw integrity("result kind does not match the request");
+    }
     const signer = recoverEvmSigner(request, result);
     if (signer.toLowerCase() !== account.address.toLowerCase()) {
       throw integrity("signer does not match the account");

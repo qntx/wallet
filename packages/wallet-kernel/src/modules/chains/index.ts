@@ -5,10 +5,19 @@
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
+import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
 import { ChainError } from "@qntx/wallet-chains";
-import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import {
+  BITCOIN_NETWORKS,
+  bitcoinNetwork,
+  decodeBitcoinPsbt,
+  decodeMessageTarget,
+  normalizeBitcoin,
+} from "@qntx/wallet-chains/bitcoin";
+import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { decodeEvm, normalizeEvm, evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import {
   signEvmPersonalMessage,
@@ -39,6 +48,12 @@ export type ChainsModule = {
   readonly vault: VaultHooks;
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
+
+const isPath = (path: unknown): path is number[] =>
+  Array.isArray(path) && path.every((p) => typeof p === "number");
+
+const hex = (bytes: Uint8Array): string =>
+  bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 
 const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
@@ -193,11 +208,14 @@ export function createChainsModule(): ChainsModule {
       if (account.kind !== "hd") {
         throw new KernelError("unsupported", "imported accounts are not yet supported");
       }
-      const evm =
-        request.kind === "evm.transaction" ||
-        request.kind === "evm.personal-message" ||
-        request.kind === "evm.typed-data";
-      if (account.template !== (evm ? "evm.bip44" : "solana.bip44-change")) {
+      const [family] = request.kind.split(".", 1);
+      const expected =
+        family === "evm"
+          ? ["evm.bip44"]
+          : family === "solana"
+            ? ["solana.bip44-change"]
+            : ["btc.bip84", "btc.bip86"];
+      if (!expected.includes(account.template)) {
         throw new KernelError(
           "invalid-input",
           "account template does not match the request family",
@@ -217,7 +235,11 @@ export function createChainsModule(): ChainsModule {
         wipe(entropy);
       }
       try {
-        if (evm) {
+        if (
+          request.kind === "evm.transaction" ||
+          request.kind === "evm.personal-message" ||
+          request.kind === "evm.typed-data"
+        ) {
           const master = HDKey.fromMasterSeed(seed);
           try {
             const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
@@ -259,6 +281,202 @@ export function createChainsModule(): ChainsModule {
               };
             } finally {
               child.wipePrivateData();
+            }
+          } finally {
+            master.wipePrivateData();
+          }
+        }
+        if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
+          const net = bitcoinNetwork(request.network);
+          const master = HDKey.fromMasterSeed(seed, net.bip32);
+          try {
+            const purpose = account.template === "btc.bip86" ? 86 : 84;
+            const { coinType } = net;
+            const hardened = 0x80000000;
+
+            const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
+            const children: HDKey[] = [];
+            const derivation = (owner: {
+              bip32Derivation?: ReadonlyArray<
+                readonly [Uint8Array, { fingerprint: number; path: number[] }]
+              >;
+              tapBip32Derivation?: ReadonlyArray<
+                readonly [
+                  Uint8Array,
+                  { hashes: unknown; der: { fingerprint: unknown; path: unknown } },
+                ]
+              >;
+            }):
+              | { pubkey: Uint8Array; fingerprint: number; path: ReadonlyArray<number> }
+              | undefined => {
+              if (purpose === 86) {
+                const claimed = (der: {
+                  fingerprint: unknown;
+                  path: unknown;
+                }): der is { fingerprint: number; path: number[] } =>
+                  der.fingerprint === master.fingerprint && isPath(der.path);
+                for (const [key, value] of owner.tapBip32Derivation ?? []) {
+                  if (claimed(value.der)) {
+                    return {
+                      pubkey: key,
+                      fingerprint: value.der.fingerprint,
+                      path: value.der.path,
+                    };
+                  }
+                }
+                return undefined;
+              }
+              for (const [key, value] of owner.bip32Derivation ?? []) {
+                if (value.fingerprint === master.fingerprint) {
+                  return { pubkey: key, fingerprint: value.fingerprint, path: value.path };
+                }
+              }
+              return undefined;
+            };
+
+            const childAt = (path: ReadonlyArray<number>): HDKey => {
+              const [purposePath, coinPath, groupPath, change, index] = path;
+              if (
+                path.length !== 5 ||
+                purposePath !== purpose + hardened ||
+                coinPath !== coinType + hardened ||
+                groupPath !== account.groupIndex + hardened ||
+                change === undefined ||
+                index === undefined ||
+                (change !== 0 && change !== 1) ||
+                index < 0 ||
+                index >= hardened
+              ) {
+                throw new KernelError("invalid-input", "derivation path is not this account's");
+              }
+              const child = accountNode.deriveChild(change).deriveChild(index);
+              children.push(child);
+              return child;
+            };
+            const expectedPub = (pub: Uint8Array): Uint8Array =>
+              purpose === 86 ? pub.slice(1) : pub;
+            const expectedScript = (pub: Uint8Array): Uint8Array =>
+              purpose === 86 ? p2tr(pub.slice(1)).script : p2wpkh(pub).script;
+            try {
+              if (request.kind === "bitcoin.psbt") {
+                const tx = Transaction.fromPSBT(request.psbt);
+                const inputs: Array<{ index: number; privateKey: Uint8Array }> = [];
+                for (const idx of request.sign) {
+                  const input = tx.getInput(idx);
+                  const entry = derivation(input);
+                  if (entry === undefined) {
+                    throw new KernelError(
+                      "invalid-input",
+                      `input ${idx}: derivation entry is not this account's`,
+                    );
+                  }
+                  const child = childAt(entry.path);
+                  const pub = child.publicKey;
+                  const priv = child.privateKey;
+                  if (pub === null || priv === null) {
+                    throw new KernelError("integrity", "no key at derivation path");
+                  }
+                  if (!deepEqual(entry.pubkey, expectedPub(pub))) {
+                    throw new KernelError(
+                      "invalid-input",
+                      `input ${idx}: derivation pubkey is not ours`,
+                    );
+                  }
+                  const prevout = input.witnessUtxo;
+                  if (prevout === undefined || !deepEqual(prevout.script, expectedScript(pub))) {
+                    throw new KernelError(
+                      "invalid-input",
+                      `input ${idx}: prevout script is not this key's`,
+                    );
+                  }
+                  inputs.push({ index: idx, privateKey: priv });
+                }
+                const ownScripts = new Set<string>();
+                for (let i = 0; i < tx.outputsLength; i++) {
+                  const output = tx.getOutput(i);
+                  if (output.script === undefined) {
+                    continue;
+                  }
+                  const entry = derivation(output);
+                  if (entry === undefined) {
+                    continue;
+                  }
+                  try {
+                    const child = childAt(entry.path);
+                    const pub = child.publicKey;
+                    if (pub !== null && deepEqual(output.script, expectedScript(pub))) {
+                      ownScripts.add(hex(output.script));
+                    }
+                  } catch {
+                    continue;
+                  }
+                }
+                let normalized;
+                try {
+                  normalized = normalizeBitcoin(request);
+                } catch (error) {
+                  mapChainError(error);
+                }
+                if (!deepEqual(normalized, request)) {
+                  throw new KernelError("invalid-input", "request is not normalized");
+                }
+                try {
+                  decodeBitcoinPsbt(request, ownScripts);
+                } catch (error) {
+                  mapChainError(error);
+                }
+                await verifyFactor(ctx.platform, ctx.image, verify, dek);
+                return {
+                  kind: "bitcoin.psbt",
+                  signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32)),
+                };
+              }
+              if (request.format === "legacy") {
+                throw new KernelError("unsupported", "legacy message format is not supported");
+              }
+              const child = childAt([
+                purpose + hardened,
+                coinType + hardened,
+                account.groupIndex + hardened,
+                request.change,
+                request.index,
+              ]);
+              const pub = child.publicKey;
+              const priv = child.privateKey;
+              if (pub === null || priv === null) {
+                throw new KernelError("integrity", "no key at derivation path");
+              }
+              const derived =
+                purpose === 86
+                  ? p2tr(pub.slice(1), undefined, net.params).address
+                  : p2wpkh(pub, net.params).address;
+              if (derived !== request.address) {
+                throw new KernelError("invalid-input", "address is not ours");
+              }
+              let normalized;
+              try {
+                normalized = normalizeBitcoin(request);
+              } catch (error) {
+                mapChainError(error);
+              }
+              if (!deepEqual(normalized, request)) {
+                throw new KernelError("invalid-input", "request is not normalized");
+              }
+              try {
+                decodeMessageTarget(request);
+              } catch (error) {
+                mapChainError(error);
+              }
+              await verifyFactor(ctx.platform, ctx.image, verify, dek);
+              return {
+                kind: "bitcoin.message",
+                signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32)),
+              };
+            } finally {
+              for (const child of children) {
+                child.wipePrivateData();
+              }
+              accountNode.wipePrivateData();
             }
           } finally {
             master.wipePrivateData();

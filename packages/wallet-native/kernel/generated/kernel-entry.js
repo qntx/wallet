@@ -857,7 +857,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-5fYX7Jnc.mjs
+	//#region packages/wallet/dist/protocol-DhNA-jbv.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -921,6 +921,7 @@
 	var hexData = str(4e4, /^0x[0-9a-fA-F]*$/);
 	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
 	var solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
 	var safeInt = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
 		address: evmAddress,
@@ -977,6 +978,21 @@
 		account: accountRef,
 		message: bytes(1, 65536),
 		format: literal("raw")
+	}), obj({
+		kind: literal("bitcoin.psbt"),
+		network: caip2,
+		account: accountRef,
+		psbt: bytes(1, 131072),
+		sign: arr(int(0, 1024), 1024)
+	}), obj({
+		kind: literal("bitcoin.message"),
+		network: caip2,
+		account: accountRef,
+		address: bitcoinAddress,
+		message: str(1048576),
+		format: union(literal("bip322-simple"), literal("legacy")),
+		change: union(literal(0), literal(1)),
+		index: int(0, 2147483647)
 	}));
 	var signResult = union(obj({
 		kind: literal("evm.transaction"),
@@ -987,6 +1003,12 @@
 	}), obj({
 		kind: union(literal("solana.transaction"), literal("solana.message")),
 		signature: bytes(64, 64)
+	}), obj({
+		kind: literal("bitcoin.psbt"),
+		signedPsbt: bytes(1, 131072)
+	}), obj({
+		kind: literal("bitcoin.message"),
+		signature: str(512)
 	}));
 	var CHAINS_METHODS = {
 		"wallet.accounts": {
@@ -1877,7 +1899,7 @@
 	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
 	* ```
 	*/
-	function bytesToHex$4(bytes) {
+	function bytesToHex$5(bytes) {
 		abytes$4(bytes);
 		if (hasHexBuiltin$2) return bytes.toHex();
 		let hex = "";
@@ -3300,7 +3322,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8, hexFallback, hasHexBuiltin$1, hexBuiltin, hex$1;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$1, hexFallback, hasHexBuiltin$1, hexBuiltin, hex$2;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -3329,7 +3351,7 @@
 			});
 		};
 		base64Fallback = /* @__PURE__ */ freeze(() => chain(radix2(6), alphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"), padding(6)));
-		base64 = /* @__PURE__ */ freeze(() => hasBase64Builtin ? {
+		base64$1 = /* @__PURE__ */ freeze(() => hasBase64Builtin ? {
 			encode(b) {
 				abytes$3(b);
 				return b.toBase64();
@@ -3530,7 +3552,7 @@
 				return res.subarray(0, pos);
 			}
 		}));
-		utf8 = /* @__PURE__ */ freeze(() => {
+		utf8$1 = /* @__PURE__ */ freeze(() => {
 			let _utf8Encoder;
 			let _utf8Decoder;
 			const utf8Builtin = {
@@ -3575,7 +3597,7 @@
 				return Uint8Array.fromHex(s);
 			}
 		};
-		hex$1 = /* @__PURE__ */ freeze(() => hasHexBuiltin$1 ? hexBuiltin : hexFallback);
+		hex$2 = /* @__PURE__ */ freeze(() => hasHexBuiltin$1 ? hexBuiltin : hexFallback);
 	}));
 	//#endregion
 	//#region packages/wallet-kernel/src/errors.ts
@@ -4591,7 +4613,7 @@
 	*/
 	function hexToNumber$1(hex) {
 		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-		return hex === "" ? _0n$18 : BigInt("0x" + hex);
+		return hex === "" ? _0n$17 : BigInt("0x" + hex);
 	}
 	/**
 	* Parses big-endian bytes into bigint.
@@ -4606,7 +4628,7 @@
 	* ```
 	*/
 	function bytesToNumberBE$1(bytes) {
-		return hexToNumber$1(bytesToHex$4(bytes));
+		return hexToNumber$1(bytesToHex$5(bytes));
 	}
 	/**
 	* Parses little-endian bytes into bigint.
@@ -4621,7 +4643,7 @@
 	* ```
 	*/
 	function bytesToNumberLE$1(bytes) {
-		return hexToNumber$1(bytesToHex$4(copyBytes$1(abytes$4(bytes)).reverse()));
+		return hexToNumber$1(bytesToHex$5(copyBytes$1(abytes$4(bytes)).reverse()));
 	}
 	/**
 	* Encodes a bigint into fixed-length big-endian bytes.
@@ -4732,7 +4754,7 @@
 	* ```
 	*/
 	function isPosBig$1(n) {
-		return typeof n === "bigint" && _0n$18 <= n;
+		return typeof n === "bigint" && _0n$17 <= n;
 	}
 	/**
 	* Checks whether a bigint lies inside a half-open range.
@@ -4784,8 +4806,8 @@
 	* ```
 	*/
 	function bitLen$1(n) {
-		if (n < _0n$18) throw new Error("expected non-negative bigint, got " + n);
-		return n === _0n$18 ? 0 : n.toString(2).length;
+		if (n < _0n$17) throw new Error("expected non-negative bigint, got " + n);
+		return n === _0n$17 ? 0 : n.toString(2).length;
 	}
 	/**
 	* Minimal HMAC-DRBG from NIST 800-90 for RFC6979 sigs.
@@ -4890,17 +4912,17 @@
 		iter(fields, false);
 		iter(optFields, true);
 	}
-	var abytes$2, anumber$2, bytesToHex$3, concatBytes$4, hexToBytes$3, isBytes$4, randomBytes$3, _0n$18, _1n$16, atitle$2, bitMask$1, notImplemented;
+	var abytes$2, anumber$2, bytesToHex$3, concatBytes$4, hexToBytes$3, isBytes$4, randomBytes$3, _0n$17, _1n$16, atitle$2, bitMask$1, notImplemented;
 	var init_utils$1 = __esmMin((() => {
 		init_utils$2();
 		abytes$2 = (value, length, title) => abytes$4(value, length, title);
 		anumber$2 = anumber$4;
-		bytesToHex$3 = bytesToHex$4;
+		bytesToHex$3 = bytesToHex$5;
 		concatBytes$4 = (...arrays) => concatBytes$5(...arrays);
 		hexToBytes$3 = (hex) => hexToBytes$4(hex);
 		isBytes$4 = isBytes$6;
 		randomBytes$3 = (bytesLength) => randomBytes$4(bytesLength);
-		_0n$18 = /* @__PURE__ */ BigInt(0);
+		_0n$17 = /* @__PURE__ */ BigInt(0);
 		_1n$16 = /* @__PURE__ */ BigInt(1);
 		atitle$2 = (title) => title ? `"${title}" ` : "";
 		bitMask$1 = (n) => {
@@ -4927,9 +4949,9 @@
 	* ```
 	*/
 	function mod$1(a, b) {
-		if (b <= _0n$17) throw new Error("mod: expected positive modulus, got " + b);
+		if (b <= _0n$16) throw new Error("mod: expected positive modulus, got " + b);
 		const result = a % b;
-		return result >= _0n$17 ? result : b + result;
+		return result >= _0n$16 ? result : b + result;
 	}
 	/**
 	* Efficiently raise num to a power with modular reduction.
@@ -4951,14 +4973,14 @@
 	function pow$1(num, power, modulo) {
 		if (modulo <= _1n$15) throw new Error("pow: expected modulus > 1, got " + modulo);
 		if (typeof power !== "bigint") throw new TypeError("invalid exponent: expected bigint, got " + typeof power);
-		if (power < _0n$17) throw new Error("invalid exponent, negatives unsupported");
-		if (power === _0n$17) return _1n$15;
+		if (power < _0n$16) throw new Error("invalid exponent, negatives unsupported");
+		if (power === _0n$16) return _1n$15;
 		if (power === _1n$15) return num;
 		let d = num % modulo;
-		if (d < _0n$17) d += modulo;
+		if (d < _0n$16) d += modulo;
 		if (power < POW_WINDOWED_MIN$1) {
 			let p = _1n$15;
-			while (power > _0n$17) {
+			while (power > _0n$16) {
 				if (power & _1n$15) p = p * d % modulo;
 				d = d * d % modulo;
 				power >>= _1n$15;
@@ -4966,7 +4988,7 @@
 			return p;
 		}
 		const digits = [];
-		while (power > _0n$17) {
+		while (power > _0n$16) {
 			digits.push(Number(power & _15n$1));
 			power >>= _4n$6;
 		}
@@ -5003,9 +5025,9 @@
 	*/
 	function pow2$1(x, power, modulo) {
 		if (modulo <= _1n$15) throw new Error("pow2: expected modulus > 1, got " + modulo);
-		if (power < _0n$17) throw new Error("pow2: expected non-negative exponent, got " + power);
+		if (power < _0n$16) throw new Error("pow2: expected non-negative exponent, got " + power);
 		let res = x;
-		while (power-- > _0n$17) {
+		while (power-- > _0n$16) {
 			res *= res;
 			res %= modulo;
 		}
@@ -5026,12 +5048,12 @@
 	* ```
 	*/
 	function invert$1(number, modulo) {
-		if (number === _0n$17) throw new Error("invert: expected non-zero number");
+		if (number === _0n$16) throw new Error("invert: expected non-zero number");
 		if (modulo <= _1n$15) throw new Error("invert: expected modulus > 1, got " + modulo);
 		let a = mod$1(number, modulo);
 		let b = modulo;
-		let x = _0n$17, u = _1n$15;
-		while (a !== _0n$17) {
+		let x = _0n$16, u = _1n$15;
+		while (a !== _0n$16) {
 			const q = b / a;
 			const r = b - a * q;
 			const m = x - u * q;
@@ -5068,7 +5090,7 @@
 	function invertCt$1(a, prime) {
 		if (prime <= _1n$15) throw new Error("invertCt: expected prime modulus > 1, got " + prime);
 		const an = mod$1(a, prime);
-		if (an === _0n$17) throw new Error("invertCt: expected non-zero number");
+		if (an === _0n$16) throw new Error("invertCt: expected non-zero number");
 		const inverse = pow$1(an, prime - _2n$14, prime);
 		if (mod$1(an * inverse, prime) !== _1n$15) throw new Error("invertCt: does not exist");
 		return inverse;
@@ -5078,7 +5100,7 @@
 		if (!F.eql(F.sqr(root), n)) throw new Error("Cannot find square root");
 	}
 	function aoddModulus$1(order, fnName) {
-		if ((order & _1n$15) === _0n$17) throw new Error(fnName + ": expected odd modulus, got " + order);
+		if ((order & _1n$15) === _0n$16) throw new Error(fnName + ": expected odd modulus, got " + order);
 	}
 	function sqrt3mod4$1(Fp, n) {
 		const F = Fp;
@@ -5144,7 +5166,7 @@
 		aoddModulus$1(P, "tonelliShanks");
 		let Q = P - _1n$15;
 		let S = 0;
-		while (Q % _2n$14 === _0n$17) {
+		while (Q % _2n$14 === _0n$16) {
 			Q /= _2n$14;
 			S++;
 		}
@@ -5303,7 +5325,7 @@
 	*/
 	function nLength$1(n, nBitLength) {
 		if (nBitLength !== void 0) anumber$2(nBitLength);
-		if (n <= _0n$17) throw new Error("invalid n length: expected positive n, got " + n);
+		if (n <= _0n$16) throw new Error("invalid n length: expected positive n, got " + n);
 		if (nBitLength !== void 0 && nBitLength < 1) throw new Error("invalid n length: expected positive bit length, got " + nBitLength);
 		const bits = bitLen$1(n);
 		if (nBitLength !== void 0 && nBitLength < bits) throw new Error(`invalid n length: expected nBitLength (${nBitLength}) >= bitLen(n) (${bits})`);
@@ -5415,11 +5437,11 @@
 		const reduced = mod$1(isLE ? bytesToNumberLE$1(key) : bytesToNumberBE$1(key), fieldOrder - _1n$15) + _1n$15;
 		return isLE ? numberToBytesLE$1(reduced, fieldLen) : numberToBytesBE$1(reduced, fieldLen);
 	}
-	var _0n$17, _1n$15, _2n$14, _3n$4, _4n$6, _5n$3, _7n$3, _8n$7, _9n$1, _15n$1, _16n$1, POW_WINDOWED_MIN$1, isNegativeLE$1, FIELD_FIELDS$1, FIELD_SQRT$1, _Field$1;
+	var _0n$16, _1n$15, _2n$14, _3n$4, _4n$6, _5n$3, _7n$3, _8n$7, _9n$1, _15n$1, _16n$1, POW_WINDOWED_MIN$1, isNegativeLE$1, FIELD_FIELDS$1, FIELD_SQRT$1, _Field$1;
 	var init_modular = __esmMin((() => {
 		init_utils$1();
 		init_defineProperty();
-		_0n$17 = /* @__PURE__ */ BigInt(0);
+		_0n$16 = /* @__PURE__ */ BigInt(0);
 		_1n$15 = /* @__PURE__ */ BigInt(1);
 		_2n$14 = /* @__PURE__ */ BigInt(2);
 		_3n$4 = /* @__PURE__ */ BigInt(3);
@@ -5458,7 +5480,7 @@
 				_defineProperty(this, "BITS", void 0);
 				_defineProperty(this, "BYTES", void 0);
 				_defineProperty(this, "isLE", void 0);
-				_defineProperty(this, "ZERO", _0n$17);
+				_defineProperty(this, "ZERO", _0n$16);
 				_defineProperty(this, "ONE", _1n$15);
 				_defineProperty(this, "_lengths", void 0);
 				_defineProperty(this, "_mod", void 0);
@@ -5487,10 +5509,10 @@
 			}
 			isValid(num) {
 				if (typeof num !== "bigint") throw new TypeError("invalid field element: expected bigint, got " + typeof num);
-				return _0n$17 <= num && num < this.ORDER;
+				return _0n$16 <= num && num < this.ORDER;
 			}
 			is0(num) {
-				return num === _0n$17;
+				return num === _0n$16;
 			}
 			isValidNot0(num) {
 				return !this.is0(num) && this.isValid(num);
@@ -5697,7 +5719,7 @@
 		const half = size / 2;
 		const mask = BigInt(size - 1);
 		const d = [];
-		while (n > _0n$16) {
+		while (n > _0n$15) {
 			let w = 0;
 			if (n & _1n$14) {
 				w = Number(n & mask);
@@ -5729,7 +5751,7 @@
 			}
 			d.push(v);
 		}
-		if (n !== _0n$16) throw new Error("invalid wnaf");
+		if (n !== _0n$15) throw new Error("invalid wnaf");
 		return d;
 	}
 	/**
@@ -5836,7 +5858,7 @@
 			"h"
 		]) {
 			const val = CURVE[p];
-			if (!(isPosBig$1(val) && val !== _0n$16)) throw new Error(`CURVE.${p} must be positive bigint`);
+			if (!(isPosBig$1(val) && val !== _0n$15)) throw new Error(`CURVE.${p} must be positive bigint`);
 		}
 		const Fp = createField$1(CURVE.p, curveOpts.Fp, FpFnLE);
 		const Fn = createField$1(CURVE.n, curveOpts.Fn, FpFnLE);
@@ -5877,13 +5899,13 @@
 			};
 		};
 	}
-	var _0n$16, _1n$14, _4n$5, BLIND_BYTES$1, BLIND_BITS$1, FW_WINDOW$1, TABLE_BYTES_MAX$1, pointWindowSizes$1, ScalarMultiplier$1;
+	var _0n$15, _1n$14, _4n$5, BLIND_BYTES$1, BLIND_BITS$1, FW_WINDOW$1, TABLE_BYTES_MAX$1, pointWindowSizes$1, ScalarMultiplier$1;
 	var init_curve = __esmMin((() => {
 		init_utils$1();
 		init_modular();
 		init_defineProperty();
 		init_objectSpread2();
-		_0n$16 = /* @__PURE__ */ BigInt(0);
+		_0n$15 = /* @__PURE__ */ BigInt(0);
 		_1n$14 = /* @__PURE__ */ BigInt(1);
 		_4n$5 = /* @__PURE__ */ BigInt(4);
 		BLIND_BYTES$1 = 16;
@@ -6080,7 +6102,7 @@
 	init_modular();
 	init_defineProperty();
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$15 = /* @__PURE__ */ BigInt(0);
+	var _0n$14 = /* @__PURE__ */ BigInt(0);
 	var _1n$13 = /* @__PURE__ */ BigInt(1);
 	var _2n$13 = /* @__PURE__ */ BigInt(2);
 	var _4n$4 = /* @__PURE__ */ BigInt(4);
@@ -6142,7 +6164,7 @@
 			} catch (e) {
 				return {
 					isValid: false,
-					value: _0n$15
+					value: _0n$14
 				};
 			}
 		} : opts.uvRatio;
@@ -6153,7 +6175,7 @@
 		* Coordinates >= Fp.ORDER are allowed for zip215.
 		*/
 		function acoord(title, n, banZero = false) {
-			const min = banZero ? _1n$13 : _0n$15;
+			const min = banZero ? _1n$13 : _0n$14;
 			aInRange$1("coordinate " + title, n, min, MASK);
 			return n;
 		}
@@ -6196,7 +6218,7 @@
 				const lastByte = bytes[len - 1];
 				normed[len - 1] = lastByte & -129;
 				const y = bytesToNumberLE$1(normed);
-				aInRange$1("point.y", y, _0n$15, zip215 ? MASK : Fp.ORDER);
+				aInRange$1("point.y", y, _0n$14, zip215 ? MASK : Fp.ORDER);
 				const y2 = Fp.sqr(y);
 				const u = Fp.sub(y2, Fp.ONE);
 				const v = Fp.sub(Fp.mulN(d, y2), a);
@@ -6305,7 +6327,7 @@
 			}
 			multiplyUnsafe(scalar) {
 				if (!Fn.isValid(scalar)) throw new RangeError("invalid scalar: expected 0 <= sc < curve.n");
-				if (scalar === _0n$15) return Point.ZERO;
+				if (scalar === _0n$14) return Point.ZERO;
 				if (this.is0() || scalar === _1n$13) return this;
 				return wnaf.mulUnsafe(this, scalar, normalize);
 			}
@@ -6648,7 +6670,7 @@
 	init_modular();
 	init_objectSpread2();
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$14 = /* @__PURE__ */ BigInt(0);
+	var _0n$13 = /* @__PURE__ */ BigInt(0);
 	var _1n$12 = /* @__PURE__ */ BigInt(1);
 	var _2n$12 = /* @__PURE__ */ BigInt(2);
 	/**
@@ -6798,13 +6820,13 @@
 		* cofactor with those same doublings over 200k random u: no sixth value exists.
 		*/
 		const lowOrderU = new Set(is25519 ? [
-			_0n$14,
+			_0n$13,
 			_1n$12,
 			P - _1n$12,
 			BigInt("325606250916557431795983626356110631294008115727848805560023387167927233504"),
 			BigInt("39382357235489614581723060781553021112529911719440698176882885853963445705823")
 		] : [
-			_0n$14,
+			_0n$13,
 			_1n$12,
 			P - _1n$12
 		]);
@@ -6812,7 +6834,7 @@
 			const pointU = decodeU(u);
 			if (lowOrderU.has(pointU)) throw new Error("invalid private or public key received");
 			const pu = montgomeryLadder(pointU, decodeScalar(scalar));
-			if (pu === _0n$14) throw new Error("invalid private or public key received");
+			if (pu === _0n$13) throw new Error("invalid private or public key received");
 			return encodeU(pu);
 		}
 		function scalarMultBase(scalar) {
@@ -6820,7 +6842,7 @@
 			const k = decodeScalar(scalar);
 			aInRange$1("scalar", k, minScalar, maxScalar);
 			const pu = modP(mulBaseHook(k));
-			if (pu === _0n$14) throw new Error("invalid private or public key received");
+			if (pu === _0n$13) throw new Error("invalid private or public key received");
 			return encodeU(pu);
 		}
 		const getPublicKey = scalarMultBase;
@@ -6832,16 +6854,16 @@
 		* @returns resulting Montgomery u coordinate for the selected curve
 		*/
 		function montgomeryLadder(u, scalar) {
-			aInRange$1("u", u, _0n$14, P);
+			aInRange$1("u", u, _0n$13, P);
 			aInRange$1("scalar", scalar, minScalar, maxScalar);
 			const k = scalar;
 			const x_1 = u;
 			let x_2 = _1n$12;
-			let z_2 = _0n$14;
+			let z_2 = _0n$13;
 			let x_3 = u;
 			let z_3 = _1n$12;
 			const kx = k ^ k >> _1n$12;
-			for (let t = BigInt(montgomeryBits - 1); t >= _0n$14; t--) {
+			for (let t = BigInt(montgomeryBits - 1); t >= _0n$13; t--) {
 				const mask = cmask(P, kx >> t);
 				({x_2, x_3} = swap(mask, x_2, x_3));
 				({x_2: z_2, x_3: z_3} = swap(mask, z_2, z_3));
@@ -6906,7 +6928,7 @@
 	init_utils$1();
 	init_defineProperty();
 	var _RistrettoPoint2;
-	var _0n$13 = /* @__PURE__ */ BigInt(0);
+	var _0n$12 = /* @__PURE__ */ BigInt(0);
 	var _1n$11 = /* @__PURE__ */ BigInt(1);
 	var _2n$11 = /* @__PURE__ */ BigInt(2);
 	var _3n$3 = /* @__PURE__ */ BigInt(3);
@@ -7029,7 +7051,7 @@
 			adjustScalarBytes: adjustScalarBytes$1,
 			scalarMultBase: (k) => {
 				const kn = mod$1(k, ed25519_Point$1.Fn.ORDER);
-				if (kn === _0n$13) return _0n$13;
+				if (kn === _0n$12) return _0n$12;
 				const p = ed25519_Point$1.BASE.multiply(kn);
 				return mod$1((p.Z + p.Y) * powPminus2(mod$1(p.Z - p.Y, P)), P);
 			}
@@ -7636,7 +7658,7 @@
 	}
 	var PASSWORD_FACTOR_ITERATIONS = 6e5;
 	function factorId(random) {
-		return bytesToHex$4(random(16));
+		return bytesToHex$5(random(16));
 	}
 	/**
 	* The single "derive KEK for a new factor" path, shared by `makeFactor` and mnemonic-draft pending
@@ -7813,7 +7835,7 @@
 	async function rotateVault(platform, image, dek, removed, added) {
 		const nextDek = Secret.take(platform.random(32));
 		try {
-			const keyId = bytesToHex$4(platform.random(16));
+			const keyId = bytesToHex$5(platform.random(16));
 			const ops = [{
 				op: "set-key-id",
 				keyId
@@ -7903,7 +7925,7 @@
 	* not empty. The caller keeps `keyId` for the session it opens afterwards.
 	*/
 	function establishOps(platform, factor, records) {
-		const keyId = bytesToHex$4(platform.random(16));
+		const keyId = bytesToHex$5(platform.random(16));
 		return {
 			keyId,
 			ops: [
@@ -7955,10 +7977,10 @@
 	}
 	//#endregion
 	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/der.js
-	var _0n$12, DERErr$1, _DER$1, DER$1;
+	var _0n$11, DERErr$1, _DER$1, DER$1;
 	var init_der = __esmMin((() => {
 		init_utils$1();
-		_0n$12 = /* @__PURE__ */ BigInt(0);
+		_0n$11 = /* @__PURE__ */ BigInt(0);
 		DERErr$1 = class extends Error {
 			constructor(m = "") {
 				/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
@@ -8013,7 +8035,7 @@
 				encode(num) {
 					const { Err: E } = _DER$1;
 					abignumber$1(num);
-					if (num < _0n$12) throw new E("integer: negative integers are not allowed");
+					if (num < _0n$11) throw new E("integer: negative integers are not allowed");
 					let hex = numberToHexUnpadded$1(num);
 					if (Number.parseInt(hex[0], 16) & 8) hex = "00" + hex;
 					if (hex.length & 1) throw new E("unexpected DER parsing assertion: unpadded hex");
@@ -8066,18 +8088,18 @@
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/** Splits scalar for GLV endomorphism. */
 	function _splitEndoScalar$1(k, basis, n) {
-		aInRange$1("scalar", k, _0n$11, n);
+		aInRange$1("scalar", k, _0n$10, n);
 		const [[a1, b1], [a2, b2]] = basis;
 		const c1 = divNearest$1(b2 * k, n);
 		const c2 = divNearest$1(-b1 * k, n);
 		let k1 = k - c1 * a1 - c2 * a2;
 		let k2 = -c1 * b1 - c2 * b2;
-		const k1neg = k1 < _0n$11;
-		const k2neg = k2 < _0n$11;
+		const k1neg = k1 < _0n$10;
+		const k2neg = k2 < _0n$10;
 		if (k1neg) k1 = -k1;
 		if (k2neg) k2 = -k2;
 		const MAX_NUM = bitMask$1(Math.ceil(bitLen$1(n) / 2)) + _1n$10;
-		if (k1 < _0n$11 || k1 >= MAX_NUM || k2 < _0n$11 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
+		if (k1 < _0n$10 || k1 >= MAX_NUM || k2 < _0n$10 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
 		return {
 			k1neg,
 			k1,
@@ -8452,7 +8474,7 @@
 				const p = this;
 				const sc = scalar;
 				if (!Fn.isValid(sc)) throw new RangeError("invalid scalar: out of range");
-				if (sc === _0n$11 || p.is0()) return Point.ZERO;
+				if (sc === _0n$10 || p.is0()) return Point.ZERO;
 				if (sc === _1n$10) return p;
 				if (wnaf.hasWindowSize(this)) return wnaf.mulUnsafe(p, sc, normalize);
 				const points = [];
@@ -8842,7 +8864,7 @@
 		const ORDER_MASK = bitMask$1(fnBits);
 		/** Converts to bytes. Checks if num in `[0..ORDER_MASK-1]` e.g.: `[0..2^256-1]`. */
 		function int2octets(num) {
-			aInRange$1("num < 2^" + fnBits, num, _0n$11, ORDER_MASK);
+			aInRange$1("num < 2^" + fnBits, num, _0n$10, ORDER_MASK);
 			return Fn.toBytes(num);
 		}
 		function validateMsgAndHash(message, prehash) {
@@ -8875,7 +8897,7 @@
 				if (!Fn.isValidNot0(k)) return;
 				const q = Point.BASE.multiply(k).toAffine();
 				const r = Fn.create(q.x);
-				if (r === _0n$11) return;
+				if (r === _0n$10) return;
 				let s;
 				if (csprng !== void 0) {
 					const b = bytesToNumberBE$1(mapHashToField$1(csprng(blindLength), CURVE_ORDER));
@@ -8887,7 +8909,7 @@
 					const ik = invertCt$1(k, CURVE_ORDER);
 					s = Fn.create(ik * Fn.create(m + r * d));
 				}
-				if (s === _0n$11) return;
+				if (s === _0n$10) return;
 				let recovery = getRecoveryBit(q.x, q.y, r);
 				let normS = s;
 				if (lowS && isBiggerThanHalfOrder(s)) {
@@ -8979,7 +9001,7 @@
 			hash: hash_
 		});
 	}
-	var divNearest$1, _0n$11, _1n$10, _2n$10, _3n$2, _4n$3;
+	var divNearest$1, _0n$10, _1n$10, _2n$10, _3n$2, _4n$3;
 	var init_weierstrass = __esmMin((() => {
 		init_hmac();
 		init_utils$2();
@@ -8989,7 +9011,7 @@
 		init_modular();
 		init_defineProperty();
 		divNearest$1 = (num, den) => (num + (num >= 0 ? den : -den) / _2n$10) / den;
-		_0n$11 = /* @__PURE__ */ BigInt(0);
+		_0n$10 = /* @__PURE__ */ BigInt(0);
 		_1n$10 = /* @__PURE__ */ BigInt(1);
 		_2n$10 = /* @__PURE__ */ BigInt(2);
 		_3n$2 = /* @__PURE__ */ BigInt(3);
@@ -9026,7 +9048,7 @@
 		return sha256$2(concatBytes$4(tagP, ...messages));
 	}
 	function schnorrGetExtPubKey(priv) {
-		const { Fn, BASE } = Pointk1;
+		const { Fn, BASE } = Pointk1$1;
 		const d_ = Fn.fromBytes(abytes$2(priv, 32, "secretKey"));
 		const affine = BASE.multiply(d_).toAffine();
 		return {
@@ -9045,7 +9067,7 @@
 		const c = Fp.add(Fp.mulN(xx, x), BigInt(7));
 		let y = Fp.sqrt(c);
 		if (!hasEven$1(y)) y = Fp.neg(y);
-		const p = Pointk1.fromAffine({
+		const p = Pointk1$1.fromAffine({
 			x,
 			y
 		});
@@ -9054,7 +9076,7 @@
 	}
 	/** Create tagged hash, convert it to bigint, reduce modulo-n. */
 	function challenge(...args) {
-		return Pointk1.Fn.create(num(taggedHash("BIP0340/challenge", ...args)));
+		return Pointk1$1.Fn.create(num(taggedHash("BIP0340/challenge", ...args)));
 	}
 	/** Schnorr public key is just `x` coordinate of Point as per BIP340. */
 	function schnorrGetPublicKey(secretKey) {
@@ -9067,13 +9089,13 @@
 	* deterministic signing against side-channel and fault-injection attacks.
 	*/
 	function schnorrSign(message, secretKey, auxRand = randomBytes$4(32)) {
-		const { Fn, BASE } = Pointk1;
+		const { Fn, BASE } = Pointk1$1;
 		const m = copyBytes$1(abytes$2(message, void 0, "message"));
 		const { bytes: px, scalar: d } = schnorrGetExtPubKey(secretKey);
 		const a = abytes$2(auxRand, 32, "auxRand");
 		const rand = taggedHash("BIP0340/nonce", Fn.toBytes(d ^ num(taggedHash("BIP0340/aux", a))), px, m);
 		const k_ = Fn.create(num(rand));
-		if (k_ === _0n$10) throw new Error("sign failed: k is zero");
+		if (k_ === _0n$9) throw new Error("sign failed: k is zero");
 		const affine = BASE.multiply(k_).toAffine();
 		const k = hasEven$1(affine.y) ? k_ : Fn.neg(k_);
 		const rx = affineXToBytes(affine);
@@ -9089,7 +9111,7 @@
 	* Will swallow errors & return false except for initial type validation of arguments.
 	*/
 	function schnorrVerify(signature, message, publicKey) {
-		const { Fp, Fn, BASE } = Pointk1;
+		const { Fp, Fn, BASE } = Pointk1$1;
 		const sig = abytes$2(signature, 64, "signature");
 		const m = abytes$2(message, void 0, "message");
 		const pub = abytes$2(publicKey, 32, "publicKey");
@@ -9109,7 +9131,7 @@
 			return false;
 		}
 	}
-	var secp256k1_CURVE$1, secp256k1_ENDO$1, _0n$10, _2n$9, Fpk1$1, Pointk1, secp256k1$1, TAGGED_HASH_PREFIXES, pointToBytes, affineXToBytes, hasEven$1, num, schnorr;
+	var secp256k1_CURVE$1, secp256k1_ENDO$1, _0n$9, _2n$9, Fpk1$1, Pointk1$1, secp256k1$1, TAGGED_HASH_PREFIXES, pointToBytes, affineXToBytes, hasEven$1, num, schnorr;
 	var init_secp256k1 = __esmMin((() => {
 		init_sha2();
 		init_utils$2();
@@ -9130,14 +9152,14 @@
 			beta: BigInt("0x7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee"),
 			basises: [[BigInt("0x3086d221a7d46bcde86c90e49284eb15"), -BigInt("0xe4437ed6010e88286f547fa90abfe4c3")], [BigInt("0x114ca50f7a8e2f3f657c1108d9d44cfd8"), BigInt("0x3086d221a7d46bcde86c90e49284eb15")]]
 		};
-		_0n$10 = /* @__PURE__ */ BigInt(0);
+		_0n$9 = /* @__PURE__ */ BigInt(0);
 		_2n$9 = /* @__PURE__ */ BigInt(2);
 		Fpk1$1 = /* @__PURE__ */ Field$1(secp256k1_CURVE$1.p, { sqrt: sqrtMod$1 });
-		Pointk1 = /* @__PURE__ */ weierstrass$1(secp256k1_CURVE$1, {
+		Pointk1$1 = /* @__PURE__ */ weierstrass$1(secp256k1_CURVE$1, {
 			Fp: Fpk1$1,
 			endo: secp256k1_ENDO$1
 		});
-		secp256k1$1 = /* @__PURE__ */ ecdsa$1(Pointk1, sha256$2);
+		secp256k1$1 = /* @__PURE__ */ ecdsa$1(Pointk1$1, sha256$2);
 		TAGGED_HASH_PREFIXES = Object.create(null);
 		pointToBytes = (point) => point.toBytes(true).slice(1);
 		affineXToBytes = ({ x }) => Fpk1$1.toBytes(x);
@@ -9155,7 +9177,7 @@
 				getPublicKey: schnorrGetPublicKey,
 				sign: schnorrSign,
 				verify: schnorrVerify,
-				Point: Pointk1,
+				Point: Pointk1$1,
 				utils: Object.freeze({
 					randomSecretKey,
 					taggedHash,
@@ -9634,7 +9656,7 @@
 	function walletIdOf(master) {
 		const { publicKey } = master;
 		if (publicKey === null || publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
-		return bytesToHex$4(sha256$2(concatBytes$5(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
+		return bytesToHex$5(sha256$2(concatBytes$5(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
 	}
 	//#endregion
 	//#region packages/wallet-kernel/src/seed/entropy.ts
@@ -12256,7 +12278,7 @@ zoo`.split("\n"));
 			var _wordList$position;
 			return utf8ToBytes$1((_wordList$position = wordList[position]) !== null && _wordList$position !== void 0 ? _wordList$position : "");
 		});
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		ctx.session.putDraft(id, {
 			entropy: Secret.take(entropy),
 			words: params.words,
@@ -12275,7 +12297,7 @@ zoo`.split("\n"));
 	* public key derived from the held KEK, and the DEK wraps to that key.
 	*/
 	function storedFactorForPending(ctx, pending, dek) {
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
 		const header = factorHeader(pending, publicKey, ctx.platform.now());
 		const sealed = wrapDek(dek, publicKey, {
@@ -12418,7 +12440,7 @@ zoo`.split("\n"));
 	];
 	var BACKUP_KEY_KIND = "backup-key";
 	var BACKUP_KEY_ID = "default";
-	var b64 = {
+	var b64$1 = {
 		enc: (b) => base64urlnopad.encode(b),
 		dec: (s) => {
 			try {
@@ -12429,7 +12451,7 @@ zoo`.split("\n"));
 		}
 	};
 	function payloadContext(header) {
-		return `qntx-wallet/backup/v1/payload/${bytesToHex$4(sha256$2(utf8ToBytes$1(header)))}`;
+		return `qntx-wallet/backup/v1/payload/${bytesToHex$5(sha256$2(utf8ToBytes$1(header)))}`;
 	}
 	function factorContextOf(kind) {
 		return `qntx-wallet/backup/v1/factor/${kind}`;
@@ -12584,22 +12606,22 @@ zoo`.split("\n"));
 			}
 			if (factor.kind === "passkey") return {
 				kind: "passkey",
-				credentialId: b64.enc(factor.credentialId),
-				sealedBek: b64.enc(sealedBek)
+				credentialId: b64$1.enc(factor.credentialId),
+				sealedBek: b64$1.enc(sealedBek)
 			};
 			const salt = salts[index];
 			if (salt === void 0) throw new KernelError("integrity", "backup: missing password salt");
 			return {
 				kind: "password",
 				iterations: PASSWORD_ITERATIONS,
-				salt: b64.enc(salt),
-				sealedBek: b64.enc(sealedBek)
+				salt: b64$1.enc(salt),
+				sealedBek: b64$1.enc(sealedBek)
 			};
 		});
 	}
 	/** The backup record's public id: HKDF over the BEK — a verifier can never reach the BEK from it. */
 	function backupKeyIdOf(bek) {
-		return bytesToHex$4(hkdf(sha256$2, bek, /* @__PURE__ */ new Uint8Array(0), utf8ToBytes$1("qntx-wallet/backup/v1/id"), 16));
+		return bytesToHex$5(hkdf(sha256$2, bek, /* @__PURE__ */ new Uint8Array(0), utf8ToBytes$1("qntx-wallet/backup/v1/id"), 16));
 	}
 	function backupKeyRecord(ctx, dek, bek, factors) {
 		const header = encodeHeader({
@@ -12651,7 +12673,7 @@ zoo`.split("\n"));
 					createdAt: ctx.platform.now(),
 					header: contents.header,
 					factors: keyHeader.factors,
-					payload: b64.enc(sealedPayload)
+					payload: b64$1.enc(sealedPayload)
 				};
 				return { envelope: JSON.stringify(envelope) };
 			} finally {
@@ -12677,11 +12699,11 @@ zoo`.split("\n"));
 	/** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 	async function bekFromFactor(platform, envelope, backupFactor) {
 		if (backupFactor.kind === "passkey") {
-			const entry = envelope.factors.find((f) => f.kind === "passkey" && f.credentialId === b64.enc(backupFactor.credentialId));
+			const entry = envelope.factors.find((f) => f.kind === "passkey" && f.credentialId === b64$1.enc(backupFactor.credentialId));
 			if (entry === void 0) throw new KernelError("not-found", "backup: no factor for this credential");
 			const kek = hkdf(sha256$2, backupFactor.prfBackup, backupFactor.credentialId, utf8ToBytes$1("qntx-wallet/kek/backup/v1"), 32);
 			try {
-				return open(kek, b64.dec(entry.sealedBek), factorContextOf("passkey"), "");
+				return open(kek, b64$1.dec(entry.sealedBek), factorContextOf("passkey"), "");
 			} catch (_unused4) {
 				throw new KernelError("wrong-passkey", "backup: factor does not unwrap");
 			} finally {
@@ -12690,9 +12712,9 @@ zoo`.split("\n"));
 		}
 		const entry = envelope.factors.find((f) => f.kind === "password");
 		if (entry === void 0) throw new KernelError("not-found", "backup: no password factor");
-		const kek = await passwordKek(backupFactor.password, b64.dec(entry.salt), platform.pbkdf2);
+		const kek = await passwordKek(backupFactor.password, b64$1.dec(entry.salt), platform.pbkdf2);
 		try {
-			return open(kek, b64.dec(entry.sealedBek), factorContextOf("password"), "");
+			return open(kek, b64$1.dec(entry.sealedBek), factorContextOf("password"), "");
 		} catch (_unused5) {
 			throw new KernelError("wrong-password", "backup: factor does not unwrap");
 		} finally {
@@ -12709,7 +12731,7 @@ zoo`.split("\n"));
 		try {
 			let plaintext;
 			try {
-				plaintext = open(bek, b64.dec(envelope.payload), payloadContext(envelope.header), "");
+				plaintext = open(bek, b64$1.dec(envelope.payload), payloadContext(envelope.header), "");
 			} catch (_unused6) {
 				throw new KernelError("integrity", "backup: payload authentication failed");
 			}
@@ -12927,12 +12949,12 @@ zoo`.split("\n"));
 	/** Internal function for checking bit bounds of bigint in signed/unsinged form */
 	function checkBounds(value, bits, signed) {
 		if (signed) {
-			if (bits <= _0n$9) throw new Error(`checkBounds: signed bits must be positive, got ${bits}`);
+			if (bits <= _0n$8) throw new Error(`checkBounds: signed bits must be positive, got ${bits}`);
 			const signBit = _2n$8 ** (bits - _1n$9);
 			if (value < -signBit || value >= signBit) throw new Error(`value out of signed bounds. Expected ${-signBit} <= ${value} < ${signBit}`);
 		} else {
 			const max = _2n$8 ** bits;
-			if (_0n$9 > value || value >= max) throw new Error(`value out of unsigned bounds. Expected 0 <= ${value} < ${max}`);
+			if (_0n$8 > value || value >= max) throw new Error(`value out of unsigned bounds. Expected 0 <= ${value} < ${max}`);
 		}
 	}
 	function _wrap(inner) {
@@ -13100,7 +13122,7 @@ zoo`.split("\n"));
 		return {
 			encode: (from) => {
 				if (typeof from !== "bigint") throw new Error(`expected bigint, got ${typeof from}`);
-				let s = (from < _0n$9 ? -from : from).toString(10);
+				let s = (from < _0n$8 ? -from : from).toString(10);
 				let sep = s.length - precision;
 				if (sep < 0) {
 					s = s.padStart(s.length - sep, "0");
@@ -13111,7 +13133,7 @@ zoo`.split("\n"));
 				let int = s.slice(0, sep);
 				let frac = s.slice(sep, i + 1);
 				if (!int) int = "0";
-				if (from < _0n$9) int = "-" + int;
+				if (from < _0n$8) int = "-" + int;
 				if (!frac) return int;
 				return `${int}.${frac}`;
 			},
@@ -13131,7 +13153,7 @@ zoo`.split("\n"));
 				if (!round && fracS.length > precision) throw new Error(`fractional part cannot be represented with this precision (num=${to}, prec=${precision})`);
 				const fracLen = Math.min(fracS.length, precision);
 				const value = int + BigInt(fracS.slice(0, fracLen)) * _10n ** BigInt(precision - fracLen);
-				if (neg && value === _0n$9) throw new Error(`negative zero is not allowed`);
+				if (neg && value === _0n$8) throw new Error(`negative zero is not allowed`);
 				return neg ? -value : value;
 			}
 		};
@@ -13505,7 +13527,7 @@ zoo`.split("\n"));
 			}
 		});
 	}
-	var EMPTY$1, NULL, restrictedKeys, validateFieldName, findBytes, createView$1, _0n$9, _1n$9, _2n$8, _8n$4, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
+	var EMPTY$1, NULL, restrictedKeys, validateFieldName, findBytes, createView$1, _0n$8, _1n$9, _2n$8, _8n$4, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
 	var init_micro_packed = __esmMin((() => {
 		init_base();
 		init_defineProperty();
@@ -13524,7 +13546,7 @@ zoo`.split("\n"));
 		};
 		findBytes = (needle, data, pos = 0) => createFindBytes(needle)(data, pos);
 		createView$1 = (arr) => new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
-		_0n$9 = /* @__PURE__ */ BigInt(0);
+		_0n$8 = /* @__PURE__ */ BigInt(0);
 		_1n$9 = /* @__PURE__ */ BigInt(1);
 		_2n$8 = /* @__PURE__ */ BigInt(2);
 		_8n$4 = /* @__PURE__ */ BigInt(8);
@@ -13768,15 +13790,15 @@ zoo`.split("\n"));
 			}
 			finish() {
 				if (this.opts.allowUnreadBytes) return;
-				if (this.bitPos) throw this.err(`${this.bitPos} bits left after unpack: ${hex$1.encode(this.data.subarray(this.pos))}`);
+				if (this.bitPos) throw this.err(`${this.bitPos} bits left after unpack: ${hex$2.encode(this.data.subarray(this.pos))}`);
 				if (this.bs && !this.parent) {
 					const notRead = Bitset.indices(this.bs, this.data.length, true);
 					if (notRead.length) {
-						const formatted = Bitset.range(notRead).map(({ pos, length }) => `(${pos}/${length})[${hex$1.encode(this.data.subarray(pos, pos + length))}]`).join(", ");
+						const formatted = Bitset.range(notRead).map(({ pos, length }) => `(${pos}/${length})[${hex$2.encode(this.data.subarray(pos, pos + length))}]`).join(", ");
 						throw this.err(`unread byte ranges: ${formatted} (total=${this.data.length})`);
 					} else return;
 				}
-				if (!this.isEnd()) throw this.err(`${this.leftBytes} bytes ${this.bitPos} bits left after unpack: ${hex$1.encode(this.data.subarray(this.pos))}`);
+				if (!this.isEnd()) throw this.err(`${this.leftBytes} bytes ${this.bitPos} bits left after unpack: ${hex$2.encode(this.data.subarray(this.pos))}`);
 			}
 			err(msg) {
 				return Path.err("Reader", this.stack, msg);
@@ -14030,7 +14052,7 @@ zoo`.split("\n"));
 			return wrap({
 				size: sized ? size : void 0,
 				encodeStream: (w, value) => {
-					const zero = value === _0n$9;
+					const zero = value === _0n$8;
 					if (signed && value < 0) value = value | signBit;
 					let res = new Uint8Array(size);
 					for (let i = size - 1; i >= 0; i--) {
@@ -14057,7 +14079,7 @@ zoo`.split("\n"));
 				decodeStream: (r) => {
 					const value = r.bytes(sized ? size : Math.min(size, r.leftBytes));
 					if (!sized && minimal) checkMinimalBigintBytes(value, le, signed, (msg) => r.err(msg));
-					let res = _0n$9;
+					let res = _0n$8;
 					if (le) for (let i = value.length - 1; i >= 0; i--) res = res << _8n$4 | BigInt(value[i]);
 					else for (let i = 0; i < value.length; i++) res = res << _8n$4 | BigInt(value[i]);
 					const sBit = sized || !value.length ? signBit : _2n$8 ** (_8n$4 * BigInt(value.length) - _1n$9);
@@ -14155,7 +14177,7 @@ zoo`.split("\n"));
 				}
 			});
 		};
-		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8), (value) => {
+		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$1), (value) => {
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
@@ -14185,172 +14207,6 @@ zoo`.split("\n"));
 		};
 	}));
 	//#endregion
-	//#region node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/utils.js
-	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
-	/**
-	* Asserts something is a string.
-	* @param value - Value to validate.
-	* @param title - Label included in thrown errors.
-	* @returns The validated string.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Validate a label string.
-	*
-	* ```ts
-	* astring('example', 'label');
-	* ```
-	*/
-	function astring$2(value, title = "") {
-		if (typeof value !== "string") {
-			const prefix = title && `"${title}" `;
-			throw new TypeError(prefix + "expected string, got type=" + typeof value);
-		}
-		return value;
-	}
-	//#endregion
-	//#region node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/slip10.js
-	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
-	/**
-	* Allows to work with SLIP-0010 HD keys.
-	* @module
-	*/
-	init_utils$1();
-	init_hmac();
-	init_legacy();
-	init_sha2();
-	init_utils$2();
-	init_defineProperty();
-	/** SLIP-0010 master secret label for ed25519 keys. */
-	var MASTER_SECRET = /* @__PURE__ */ (() => utf8ToBytes$1("ed25519 seed"))();
-	/** Hardened child index offset. */
-	var HARDENED_OFFSET$1 = 2147483648;
-	var ZERO$1 = /* @__PURE__ */ (() => Uint8Array.of(0))();
-	var toU32 = (n, title = "number") => {
-		anumber$4(n, title);
-		if (!Number.isSafeInteger(n) || n < 0 || n > 2 ** 32 - 1) throw new RangeError(`"${title}" expected integer in range 0..2**32-1, got ${n}`);
-		const buf = /* @__PURE__ */ new Uint8Array(4);
-		createView$2(buf).setUint32(0, n, false);
-		return buf;
-	};
-	/**
-	* HD key for ed25519, SLIP-0010 format.
-	* This surface is the ed25519 private-only, hardened-only subset of SLIP-0010,
-	* not a full BIP-0032 xpub/xprv implementation.
-	* @param opt - Internal {@link HDKeyOpt} constructor options for derived keys:
-	* depth, child index, parent fingerprint, chain code, and private key.
-	* @example
-	* Start from a master seed, derive the hardened child path you need, then
-	* recreate the child from stored private key material and chain code.
-	* ```ts
-	* import { randomBytes } from '@noble/hashes/utils.js';
-	* import { HDKey } from 'micro-key-producer/slip10.js';
-	* const seed = randomBytes(32);
-	* const child = HDKey.fromMasterSeed(seed).derive("m/0'");
-	* const restored = new HDKey({
-	*   privateKey: child.privateKey,
-	*   chainCode: child.chainCode,
-	* });
-	* restored.fingerprintHex;
-	* ```
-	*/
-	var HDKey = class HDKey {
-		get publicKeyRaw() {
-			return ed25519$1.getPublicKey(this.privateKey);
-		}
-		get publicKey() {
-			return concatBytes$5(ZERO$1, this.publicKeyRaw);
-		}
-		get pubHash() {
-			return ripemd160(sha256$2(this.publicKey));
-		}
-		get fingerprint() {
-			return createView$2(this.pubHash).getUint32(0, false);
-		}
-		get fingerprintHex() {
-			return bytesToHex$4(toU32(this.fingerprint));
-		}
-		get parentFingerprintHex() {
-			return bytesToHex$4(toU32(this.parentFingerprint));
-		}
-		static fromMasterSeed(seed) {
-			seed = abytes$4(seed, void 0, "seed");
-			if (8 * seed.length < 128 || 8 * seed.length > 512) throw new Error(`HDKey: wrong seed length=${seed.length}. Should be between 128 and 512 bits; 256 bits is advised)`);
-			const I = hmac$1(sha512$1, MASTER_SECRET, seed);
-			return new HDKey({
-				privateKey: I.slice(0, 32),
-				chainCode: I.slice(32)
-			});
-		}
-		constructor(opt) {
-			_defineProperty(this, "depth", 0);
-			_defineProperty(this, "index", 0);
-			_defineProperty(this, "chainCode", void 0);
-			_defineProperty(this, "parentFingerprint", 0);
-			_defineProperty(this, "privateKey", void 0);
-			if (!opt || typeof opt !== "object") throw new Error("HDKey.constructor must not be called directly");
-			abytes$4(opt.privateKey, 32, "privateKey");
-			abytes$4(opt.chainCode, 32, "chainCode");
-			this.depth = opt.depth || 0;
-			this.index = opt.index || 0;
-			this.parentFingerprint = opt.parentFingerprint || 0;
-			if (!this.depth) {
-				if (this.parentFingerprint || this.index) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
-			}
-			this.chainCode = opt.chainCode;
-			this.privateKey = opt.privateKey;
-		}
-		derive(path, forceHardened = false) {
-			path = astring$2(path, "path");
-			forceHardened = abool$2(forceHardened, "forceHardened");
-			if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
-			if (/^[mM]'?$/.test(path)) return this;
-			const parts = path.replace(/^[mM]'?\//, "").split("/");
-			let child = this;
-			for (const c of parts) {
-				const m = /^(\d+)('?)$/.exec(c);
-				if (!m || m.length !== 3) throw new Error(`Invalid child index: ${c}`);
-				let idx = +m[1];
-				if (!Number.isSafeInteger(idx) || idx >= 2147483648) throw new Error("Invalid index");
-				if (forceHardened || m[2] === "'") idx += HARDENED_OFFSET$1;
-				child = child.deriveChild(idx);
-			}
-			return child;
-		}
-		deriveChild(index) {
-			const indexBytes = toU32(index, "index");
-			if (index < 2147483648) throw new Error(`Non-hardened child derivation not possible for Ed25519 (index=${index})`);
-			const data = concatBytes$5(ZERO$1, this.privateKey, indexBytes);
-			const I = hmac$1(sha512$1, this.chainCode, data);
-			return new HDKey({
-				chainCode: I.slice(32),
-				depth: this.depth + 1,
-				parentFingerprint: this.fingerprint,
-				index,
-				privateKey: I.slice(0, 32)
-			});
-		}
-		sign(message) {
-			message = abytes$4(message, void 0, "message");
-			return ed25519$1.sign(message, this.privateKey);
-		}
-		verify(message, signature) {
-			message = abytes$4(message, void 0, "message");
-			signature = abytes$4(signature, 64, "signature");
-			return ed25519$1.verify(signature, message, this.publicKeyRaw);
-		}
-	};
-	//#endregion
-	//#region packages/wallet-chains/dist/index.mjs
-	init_defineProperty();
-	var ChainError = class extends Error {
-		constructor(code, message) {
-			super(message);
-			_defineProperty(this, "code", void 0);
-			this.name = "ChainError";
-			this.code = code;
-		}
-	};
-	//#endregion
 	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
 	* Validates that a value is a non-negative bigint.
@@ -14366,7 +14222,7 @@ zoo`.split("\n"));
 	*/
 	function abigint(n, title = "value") {
 		if (typeof n !== "bigint") throw new TypeError(`"${title}" expected bigint, got type=${typeof n}`);
-		if (n < _0n$8) throw new RangeError(`"${title}" expected non-negative bigint, got ${n}`);
+		if (n < _0n$7) throw new RangeError(`"${title}" expected non-negative bigint, got ${n}`);
 		return n;
 	}
 	function aarray$1(item, title, inner = () => {}) {
@@ -14387,7 +14243,7 @@ zoo`.split("\n"));
 	* astring('example', 'label');
 	* ```
 	*/
-	function astring$1(value, title = "") {
+	function astring$2(value, title = "") {
 		if (typeof value !== "string") {
 			const prefix = title && `"${title}" `;
 			throw new TypeError(prefix + "expected string, got type=" + typeof value);
@@ -14574,7 +14430,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn, CURVE_ORDER, _0n$8, _2n$7, hasEven, isBytes$2, concatBytes$2, equalBytes, sha256$1, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn, CURVE_ORDER, _0n$7, _2n$7, hasEven, isBytes$2, concatBytes$2, equalBytes, sha256$1, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -14585,9 +14441,9 @@ zoo`.split("\n"));
 		Point = /* @__PURE__ */ (() => secp256k1$1.Point)();
 		Fn = /* @__PURE__ */ (() => Point.Fn)();
 		CURVE_ORDER = /* @__PURE__ */ (() => Point.Fn.ORDER)();
-		_0n$8 = /* @__PURE__ */ BigInt(0);
+		_0n$7 = /* @__PURE__ */ BigInt(0);
 		_2n$7 = /* @__PURE__ */ BigInt(2);
-		hasEven = (y) => y % _2n$7 === _0n$8;
+		hasEven = (y) => y % _2n$7 === _0n$7;
 		isBytes$2 = /* @__PURE__ */ (() => utils.isBytes)();
 		concatBytes$2 = /* @__PURE__ */ (() => utils.concatBytes)();
 		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
@@ -14619,60 +14475,6 @@ zoo`.split("\n"));
 		});
 	}));
 	//#endregion
-	//#region packages/wallet-chains/dist/networks-CN-LwmNI.mjs
-	init_utils();
-	init_objectSpread2();
-	/**
-	* Bip122 CAIP-2 networks = `bip122:` + the first 32 hex chars of the genesis hash, verified against
-	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
-	* class).
-	*/
-	var MAINNET_BIP32 = {
-		public: 76067358,
-		private: 76066276
-	};
-	var TESTNET_BIP32 = {
-		public: 70617039,
-		private: 70615956
-	};
-	var REGTEST_NETWORK = _objectSpread2(_objectSpread2({}, TEST_NETWORK), {}, { bech32: "bcrt" });
-	var NETWORKS = Object.freeze([
-		{
-			caip2: "bip122:000000000019d6689c085ae165831e93",
-			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-			params: NETWORK,
-			coinType: 0,
-			bip32: MAINNET_BIP32
-		},
-		{
-			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
-			genesis: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
-			params: TEST_NETWORK,
-			coinType: 1,
-			bip32: TESTNET_BIP32
-		},
-		{
-			caip2: "bip122:00000008819873e925422c1ff0f99f7c",
-			genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
-			params: TEST_NETWORK,
-			coinType: 1,
-			bip32: TESTNET_BIP32
-		},
-		{
-			caip2: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
-			genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
-			params: REGTEST_NETWORK,
-			coinType: 1,
-			bip32: TESTNET_BIP32
-		}
-	]);
-	var BITCOIN_NETWORKS = Object.freeze(Object.fromEntries(NETWORKS.map((n) => [n.caip2, n])));
-	var bitcoinNetwork = (caip2) => {
-		const net = BITCOIN_NETWORKS[caip2];
-		if (net === void 0) throw new ChainError("unsupported", `unknown bitcoin network: ${caip2}`);
-		return net;
-	};
-	//#endregion
 	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
 	/**
 	* Coder for Bitcoin Script numbers.
@@ -14691,7 +14493,7 @@ zoo`.split("\n"));
 	function ScriptNum(bytesLimit = 6, forceMinimal = false) {
 		return wrap({
 			encodeStream: (w, value) => {
-				if (value === _0n$7) return;
+				if (value === _0n$6) return;
 				const neg = value < 0;
 				const val = BigInt(value);
 				const nums = [];
@@ -14703,14 +14505,14 @@ zoo`.split("\n"));
 			decodeStream: (r) => {
 				const len = r.leftBytes;
 				if (len > bytesLimit) throw new Error(`ScriptNum: number (${len}) bigger than limit=${bytesLimit}`);
-				if (len === 0) return _0n$7;
+				if (len === 0) return _0n$6;
 				const data = r.bytes(len);
 				if (forceMinimal) {
 					if ((data[len - 1] & 127) === 0) {
 						if (len <= 1 || (data[len - 2] & 128) === 0) throw new Error("Non-minimally encoded ScriptNum");
 					}
 				}
-				let res = _0n$7;
+				let res = _0n$6;
 				for (let i = 0; i < len; ++i) res |= BigInt(data[i]) << _8n$3 * BigInt(i);
 				if (data[len - 1] >= 128) {
 					res &= _2n$6 ** BigInt(len * 8) - _1n$8 >> _1n$8;
@@ -14748,11 +14550,11 @@ zoo`.split("\n"));
 		if (tx.segwitFlag && tx.witnesses && tx.witnesses.every((w) => !w.length)) throw new Error("Segwit flag with only empty witness fields");
 		return tx;
 	}
-	var _0n$7, _1n$8, _2n$6, _8n$3, U8_MAX, COMPACT_DIRECT_MAX, OP, OPNames, scriptPushLen, Script, CompactSize, CompactSizeLen, _VarBytes, VarBytes, _RawWitness, RawWitness, BTCArray, RawInput, RawOutput, _RawTx, RawTx, RawOldTx;
+	var _0n$6, _1n$8, _2n$6, _8n$3, U8_MAX, COMPACT_DIRECT_MAX, OP, OPNames, scriptPushLen, Script, CompactSize, CompactSizeLen, _VarBytes, VarBytes, _RawWitness, RawWitness, BTCArray, RawInput, RawOutput, _RawTx, RawTx, RawOldTx;
 	var init_script = __esmMin((() => {
 		init_micro_packed();
 		init_utils();
-		_0n$7 = /* @__PURE__ */ BigInt(0);
+		_0n$6 = /* @__PURE__ */ BigInt(0);
 		_1n$8 = /* @__PURE__ */ BigInt(1);
 		_2n$6 = /* @__PURE__ */ BigInt(2);
 		_8n$3 = /* @__PURE__ */ BigInt(8);
@@ -14966,7 +14768,7 @@ zoo`.split("\n"));
 			return Object.freeze(wrap({
 				encodeStream: (w, value) => {
 					if (typeof value === "number") value = BigInt(value);
-					if (_0n$7 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
+					if (_0n$6 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
 					for (const [flag, bytes, start, stop] of limitsList) {
 						if (start > value || value > stop) continue;
 						w.byte(flag);
@@ -14979,7 +14781,7 @@ zoo`.split("\n"));
 					const b0 = r.byte();
 					if (b0 <= 252) return BigInt(b0);
 					const [_, bytes, start] = limits[b0];
-					let num = _0n$7;
+					let num = _0n$6;
 					for (let i = 0; i < bytes; i++) num |= BigInt(r.byte()) << _8n$3 * BigInt(i);
 					if (num < start) throw r.err(`Wrong CompactSize(${8 * bytes})`);
 					return num;
@@ -15048,7 +14850,7 @@ zoo`.split("\n"));
 				const seen = {};
 				const add = (key, value) => {
 					const _value = value;
-					const kStr = hex$1.encode(PSBTUnknownKey.encode(key));
+					const kStr = hex$2.encode(PSBTUnknownKey.encode(key));
 					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
 					seen[kStr] = true;
 					out.push({
@@ -15085,7 +14887,7 @@ zoo`.split("\n"));
 				const noKey = {};
 				const seen = {};
 				for (const elm of raw) {
-					const kStr = hex$1.encode(PSBTUnknownKey.encode(elm.key));
+					const kStr = hex$2.encode(PSBTUnknownKey.encode(elm.key));
 					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
 					seen[kStr] = true;
 					let name = "unknown";
@@ -15094,7 +14896,7 @@ zoo`.split("\n"));
 					if (byType[elm.key.type]) {
 						const [_name, kc, vc] = byType[elm.key.type];
 						name = _name;
-						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$1.encode(key)} value=${hex$1.encode(value)}`);
+						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$2.encode(key)} value=${hex$2.encode(value)}`);
 						key = kc ? kc.decode(key) : void 0;
 						value = vc.decode(value);
 						if (!kc) {
@@ -15236,7 +15038,7 @@ zoo`.split("\n"));
 					if (!Array.isArray(newKV)) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
 					newKV = newKV.map((val) => {
 						if (val.length !== 2) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
-						return [typeof val[0] === "string" ? kC.decode(hex$1.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$1.decode(val[1])) : val[1]];
+						return [typeof val[0] === "string" ? kC.decode(hex$2.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$2.decode(val[1])) : val[1]];
 					});
 					const map = {};
 					const add = (kStr, k, v) => {
@@ -15244,13 +15046,13 @@ zoo`.split("\n"));
 							map[kStr] = [k, v];
 							return;
 						}
-						const oldVal = hex$1.encode(vC.encode(map[kStr][1]));
-						const newVal = hex$1.encode(vC.encode(v));
+						const oldVal = hex$2.encode(vC.encode(map[kStr][1]));
+						const newVal = hex$2.encode(vC.encode(v));
 						if (oldVal !== newVal) throw new Error(`keyMap(${key}): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
 					};
-					for (const [k, v] of oldKV) add(hex$1.encode(kC.encode(k)), k, v);
+					for (const [k, v] of oldKV) add(hex$2.encode(kC.encode(k)), k, v);
 					for (const [k, v] of newKV) {
-						const kStr = hex$1.encode(kC.encode(k));
+						const kStr = hex$2.encode(kC.encode(k));
 						if (v === void 0) {
 							if (cannotChange) throw new Error(`Cannot remove signed field=${key}/${k}`);
 							delete map[kStr];
@@ -15262,26 +15064,26 @@ zoo`.split("\n"));
 					res[key] = Object.values(map);
 				}
 			} else {
-				if (typeof res[k] === "string") res[k] = vC.decode(hex$1.decode(res[k]));
+				if (typeof res[k] === "string") res[k] = vC.decode(hex$2.decode(res[k]));
 				if (cannotChange && k in _val) {
 					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
 					let current = _cur[k];
-					if (typeof current === "string") current = vC.decode(hex$1.decode(current));
+					if (typeof current === "string") current = vC.decode(hex$2.decode(current));
 					if (!equalBytes(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
 				}
 			}
 		}
 		if (unknownMode === "ignore" && _val.unknown) {
 			const map = {};
-			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$1.encode(PSBTUnknownKey.encode(k))] = [k, v];
+			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$2.encode(PSBTUnknownKey.encode(k))] = [k, v];
 			for (const [k, v] of _val.unknown) {
-				const kStr = hex$1.encode(PSBTUnknownKey.encode(k));
+				const kStr = hex$2.encode(PSBTUnknownKey.encode(k));
 				if (map[kStr] === void 0) {
 					map[kStr] = [k, v];
 					continue;
 				}
-				const oldVal = hex$1.encode(BytesInf.encode(map[kStr][1]));
-				const newVal = hex$1.encode(BytesInf.encode(v));
+				const oldVal = hex$2.encode(BytesInf.encode(map[kStr][1]));
+				const newVal = hex$2.encode(BytesInf.encode(v));
 				if (oldVal !== newVal) throw new Error(`keyMap(unknown): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
 			}
 			res.unknown = Object.values(map);
@@ -15323,13 +15125,13 @@ zoo`.split("\n"));
 			if (keyCoder || _current[key] === void 0 || _other[key] === void 0) continue;
 			let a = _current[key];
 			let b = _other[key];
-			if (typeof a === "string") a = valueCoder.decode(hex$1.decode(a));
-			if (typeof b === "string") b = valueCoder.decode(hex$1.decode(b));
+			if (typeof a === "string") a = valueCoder.decode(hex$2.decode(a));
+			if (typeof b === "string") b = valueCoder.decode(hex$2.decode(b));
 			if (!equalBytes(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
 	}
-	var unknowns, _0n$6, _1n$7, PubKeyECDSA, PubKeyECDSACompressed, PubKeySchnorr, SignatureSchnorr, RawWitnessWire, BIP32Der, TaprootBIP32Der, GlobalXPUB, tapScriptSigKey, _TaprootControlBlock, TaprootControlBlock, tapTree, BytesInf, ProprietaryKey, Bytes20, Bytes32, Bytes64, Bytes66, MuSig2Participants, MuSig2Key, SilentPaymentInfo, DNSSECProof, PSBTInfo, PSBTGlobal, PSBTInput, PSBTInputFinalKeys, PSBTInputSignatureKeys, PSBTOutput, PSBTOutputUnsignedKeys, PSBTKeyPair, PSBTUnknownKey, PSBTInputCoder, PSBTOutputCoder, PSBTGlobalCoder, _RawPSBTV0, _RawPSBTV2, RawPSBTV0, RawPSBTV2;
+	var unknowns, _0n$5, _1n$7, PubKeyECDSA, PubKeyECDSACompressed, PubKeySchnorr, SignatureSchnorr, RawWitnessWire, BIP32Der, TaprootBIP32Der, GlobalXPUB, tapScriptSigKey, _TaprootControlBlock, TaprootControlBlock, tapTree, BytesInf, ProprietaryKey, Bytes20, Bytes32, Bytes64, Bytes66, MuSig2Participants, MuSig2Key, SilentPaymentInfo, DNSSECProof, PSBTInfo, PSBTGlobal, PSBTInput, PSBTInputFinalKeys, PSBTInputSignatureKeys, PSBTOutput, PSBTOutputUnsignedKeys, PSBTKeyPair, PSBTUnknownKey, PSBTInputCoder, PSBTOutputCoder, PSBTGlobalCoder, _RawPSBTV0, _RawPSBTV2, RawPSBTV0, RawPSBTV2;
 	var init_psbt = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -15343,7 +15145,7 @@ zoo`.split("\n"));
 			if (mode === "ignore" || mode === "strip" || mode === "strict") return mode;
 			throw new Error(`PSBT: invalid ${name} policy=${mode}`);
 		};
-		_0n$6 = /* @__PURE__ */ BigInt(0);
+		_0n$5 = /* @__PURE__ */ BigInt(0);
 		_1n$7 = /* @__PURE__ */ BigInt(1);
 		PubKeyECDSA = /* @__PURE__ */ (() => validate$4(createBytes(null), (pub) => validatePubkey(pub, PubT.ecdsa)))();
 		PubKeyECDSACompressed = /* @__PURE__ */ (() => validate$4(createBytes(33), (pub) => validatePubkey(pub, PubT.ecdsa)))();
@@ -15406,7 +15208,7 @@ zoo`.split("\n"));
 				while (next.length < depth) next.push(0);
 				path = next;
 			}
-			let leaves = _0n$6;
+			let leaves = _0n$5;
 			for (let i = 0; i < tree.length; i++) leaves += _1n$7 << BigInt(maxDepth - tree[i].depth);
 			if (leaves !== _1n$7 << BigInt(maxDepth)) throw new Error("tapTree: tuples must describe a complete binary tree");
 			return tree;
@@ -15575,7 +15377,7 @@ zoo`.split("\n"));
 			return i;
 		})))();
 		PSBTOutputCoder = /* @__PURE__ */ (() => Object.freeze(validate$4(PSBTKeyMap(PSBTOutput), (o) => {
-			if (o.amount !== void 0 && o.amount < _0n$6) throw new Error(`validateOutput: wrong amount=${o.amount}`);
+			if (o.amount !== void 0 && o.amount < _0n$5) throw new Error(`validateOutput: wrong amount=${o.amount}`);
 			if (o.bip32Derivation) for (const [k] of o.bip32Derivation) validatePubkey(k, PubT.ecdsa);
 			return o;
 		})))();
@@ -15674,7 +15476,7 @@ zoo`.split("\n"));
 					c = void 0;
 				}
 				if (c !== void 0) {
-					if (!astring$1(c.type, "c.type").startsWith("tr_")) throw new Error(`P2TR: invalid custom type=${c.type}`);
+					if (!astring$2(c.type, "c.type").startsWith("tr_")) throw new Error(`P2TR: invalid custom type=${c.type}`);
 					return;
 				}
 			}
@@ -15750,7 +15552,7 @@ zoo`.split("\n"));
 			const version = tree.leafVersion;
 			const { script: leafScript } = tree;
 			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes(tree.tapMerkleRoot, EMPTY$1)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
-			const script = typeof leafScript === "string" ? hex$1.decode(leafScript) : abytes$2(leafScript, void 0, "tree.script");
+			const script = typeof leafScript === "string" ? hex$2.decode(leafScript) : abytes$2(leafScript, void 0, "tree.script");
 			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
 			return {
 				type: "leaf",
@@ -15774,7 +15576,7 @@ zoo`.split("\n"));
 	}
 	function p2tr(internalPubKey, tree, network = NETWORK, allowUnknownOutputs = false, customScripts) {
 		if (!internalPubKey && !tree) throw new Error("p2tr: should have pubKey or scriptTree (or both)");
-		const pubKey = typeof internalPubKey === "string" ? hex$1.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
+		const pubKey = typeof internalPubKey === "string" ? hex$2.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
 		if (!isValidPubkey(pubKey, PubT.schnorr)) throw new Error("p2tr: non-schnorr pubkey");
 		if (tree) {
 			let hashedTree = taprootAddPath(taprootHashTree(tree, pubKey, allowUnknownOutputs, customScripts));
@@ -15856,7 +15658,7 @@ zoo`.split("\n"));
 			encode(from) {
 				validateObject$1(from, {}, {}, "from");
 				const { type } = from;
-				astring$1(type, "from.type");
+				astring$2(type, "from.type");
 				if (type === "wpkh") return programToWitness(0, from.hash, network);
 				else if (type === "wsh") return programToWitness(0, from.hash, network);
 				else if (type === "tr") return programToWitness(1, from.pubkey, network);
@@ -15866,7 +15668,7 @@ zoo`.split("\n"));
 				throw new Error(`Unknown address type=${type}`);
 			},
 			decode(address) {
-				astring$1(address, "address");
+				astring$2(address, "address");
 				if (address.length < 14 || address.length > 74) throw new Error("Invalid address length");
 				if (network.bech32 && address.toLowerCase().startsWith(`${network.bech32}1`)) {
 					let res;
@@ -15913,7 +15715,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
+	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, p2wpkh, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
 	var init_payment = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -16156,6 +15958,23 @@ zoo`.split("\n"));
 				return out;
 			}
 		})))();
+		p2wpkh = (publicKey, network = NETWORK) => {
+			if (!isValidPubkey(publicKey, PubT.ecdsa)) throw new Error("P2WPKH: invalid publicKey");
+			if (publicKey.length === 65) throw new Error("P2WPKH: uncompressed public key");
+			const hash = hash160(publicKey);
+			return {
+				type: "wpkh",
+				script: OutScript.encode({
+					type: "wpkh",
+					hash
+				}),
+				address: Address(network).encode({
+					type: "wpkh",
+					hash
+				}),
+				hash
+			};
+		};
 		TAPROOT_MAX_DEPTH = 128;
 		tapLeafVersion = (version) => {
 			if (version === void 0) return 192;
@@ -16389,7 +16208,7 @@ zoo`.split("\n"));
 					allowUnknownInputs: true,
 					allowUnknownVersion: true
 				});
-				const txid = hex$1.encode(_i.txid);
+				const txid = hex$2.encode(_i.txid);
 				if (tx.id !== txid) throw new Error(`nonWitnessUtxo: wrong txid, exp=${txid} got=${tx.id}`);
 			}
 		} else if (_i.witnessUtxo) prevOut = _i.witnessUtxo;
@@ -16457,10 +16276,10 @@ zoo`.split("\n"));
 		const _cur = cur;
 		const _allowedFields = allowedFields;
 		let { nonWitnessUtxo, txid } = _i;
-		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$1.decode(nonWitnessUtxo);
+		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$2.decode(nonWitnessUtxo);
 		if (isBytes$2(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
 		if (!("nonWitnessUtxo" in _i) && nonWitnessUtxo === void 0) nonWitnessUtxo = _cur === null || _cur === void 0 ? void 0 : _cur.nonWitnessUtxo;
-		if (typeof txid === "string") txid = hex$1.decode(txid);
+		if (typeof txid === "string") txid = hex$2.decode(txid);
 		if (txid === void 0) txid = _cur === null || _cur === void 0 ? void 0 : _cur.txid;
 		let res = _objectSpread2(_objectSpread2(_objectSpread2({}, _cur), _i), {}, {
 			nonWitnessUtxo,
@@ -16553,7 +16372,7 @@ zoo`.split("\n"));
 			return res;
 		}
 	}
-	var _0n$5, _1n$5, U64_MAX, EMPTY32, EMPTY_OUTPUT, toVsize, stripCodeSeparator, DEFAULT_SEQUENCE, def, SignatureHash, SigHash, SigHashNames, cleanExtensions, cleanTxModifiable, TxHashIdx, sighashScope, normalizeUnknowns, LOCKTIME_THRESHOLD, inputSignatures, inputSignedKeys, Transaction;
+	var _0n$4, _1n$5, U64_MAX, EMPTY32, EMPTY_OUTPUT, toVsize, stripCodeSeparator, DEFAULT_SEQUENCE, def, SignatureHash, SigHash, SigHashNames, cleanExtensions, cleanTxModifiable, TxHashIdx, sighashScope, normalizeUnknowns, LOCKTIME_THRESHOLD, inputSignatures, inputSignedKeys, Transaction;
 	var init_transaction = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -16564,7 +16383,7 @@ zoo`.split("\n"));
 		init_utils();
 		init_objectSpread2();
 		init_defineProperty();
-		_0n$5 = /* @__PURE__ */ BigInt(0);
+		_0n$4 = /* @__PURE__ */ BigInt(0);
 		_1n$5 = /* @__PURE__ */ BigInt(1);
 		U64_MAX = /* @__PURE__ */ BigInt("0xffffffffffffffff");
 		EMPTY32 = /* @__PURE__ */ new Uint8Array(32);
@@ -16965,13 +16784,13 @@ zoo`.split("\n"));
 				return this.toBytes(false, false);
 			}
 			get hex() {
-				return hex$1.encode(this.toBytes(true, this.hasWitnesses));
+				return hex$2.encode(this.toBytes(true, this.hasWitnesses));
 			}
 			get hash() {
-				return hex$1.encode(sha256x2(this.toBytes(true)));
+				return hex$2.encode(sha256x2(this.toBytes(true)));
 			}
 			get id() {
-				return hex$1.encode(sha256x2(this.toBytes(true)).reverse());
+				return hex$2.encode(sha256x2(this.toBytes(true)).reverse());
 			}
 			checkInputIdx(idx) {
 				anumber$4(idx, "idx");
@@ -17050,7 +16869,7 @@ zoo`.split("\n"));
 				let { amount, script } = o;
 				if (amount === void 0) amount = cur === null || cur === void 0 ? void 0 : cur.amount;
 				amount = abigint(amount, "o.amount");
-				if (typeof script === "string") script = hex$1.decode(script);
+				if (typeof script === "string") script = hex$2.decode(script);
 				if (script === void 0) script = cur === null || cur === void 0 ? void 0 : cur.script;
 				let res = _objectSpread2(_objectSpread2(_objectSpread2({}, cur), o), {}, {
 					amount,
@@ -17091,7 +16910,7 @@ zoo`.split("\n"));
 				});
 			}
 			get fee() {
-				let res = _0n$5;
+				let res = _0n$4;
 				for (const i of this.inputs) {
 					const prevOut = getPrevOut(i);
 					if (!prevOut) throw new Error("Empty input amount");
@@ -17302,7 +17121,7 @@ zoo`.split("\n"));
 			}
 			finalizeIdx(idx) {
 				this.checkInputIdx(idx);
-				if (this.fee < _0n$5) throw new Error("Outputs spends more than inputs amount");
+				if (this.fee < _0n$4) throw new Error("Outputs spends more than inputs amount");
 				const input = this.inputs[idx];
 				cleanExtensions(input, this.opts.unknown, this.opts.proprietary);
 				cleanTxModifiable(this.global.txModifiable, this.opts.unknown);
@@ -17430,7 +17249,7 @@ zoo`.split("\n"));
 			extract() {
 				if (!this.isFinal) throw new Error("Transaction has unfinalized inputs");
 				if (!this.outputs.length) throw new Error("Transaction has no outputs");
-				if (this.fee < _0n$5) throw new Error("Outputs spends more than inputs amount");
+				if (this.fee < _0n$4) throw new Error("Outputs spends more than inputs amount");
 				return this.toBytes(true, true);
 			}
 			combine(other) {
@@ -17514,7 +17333,174 @@ zoo`.split("\n"));
 		};
 	}));
 	//#endregion
-	//#region packages/wallet-chains/dist/curve-CL7Z6SrU.mjs
+	//#region node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/utils.js
+	init_transaction();
+	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
+	/**
+	* Asserts something is a string.
+	* @param value - Value to validate.
+	* @param title - Label included in thrown errors.
+	* @returns The validated string.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Validate a label string.
+	*
+	* ```ts
+	* astring('example', 'label');
+	* ```
+	*/
+	function astring$1(value, title = "") {
+		if (typeof value !== "string") {
+			const prefix = title && `"${title}" `;
+			throw new TypeError(prefix + "expected string, got type=" + typeof value);
+		}
+		return value;
+	}
+	//#endregion
+	//#region node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/slip10.js
+	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
+	/**
+	* Allows to work with SLIP-0010 HD keys.
+	* @module
+	*/
+	init_utils$1();
+	init_hmac();
+	init_legacy();
+	init_sha2();
+	init_utils$2();
+	init_defineProperty();
+	/** SLIP-0010 master secret label for ed25519 keys. */
+	var MASTER_SECRET = /* @__PURE__ */ (() => utf8ToBytes$1("ed25519 seed"))();
+	/** Hardened child index offset. */
+	var HARDENED_OFFSET$1 = 2147483648;
+	var ZERO$1 = /* @__PURE__ */ (() => Uint8Array.of(0))();
+	var toU32 = (n, title = "number") => {
+		anumber$4(n, title);
+		if (!Number.isSafeInteger(n) || n < 0 || n > 2 ** 32 - 1) throw new RangeError(`"${title}" expected integer in range 0..2**32-1, got ${n}`);
+		const buf = /* @__PURE__ */ new Uint8Array(4);
+		createView$2(buf).setUint32(0, n, false);
+		return buf;
+	};
+	/**
+	* HD key for ed25519, SLIP-0010 format.
+	* This surface is the ed25519 private-only, hardened-only subset of SLIP-0010,
+	* not a full BIP-0032 xpub/xprv implementation.
+	* @param opt - Internal {@link HDKeyOpt} constructor options for derived keys:
+	* depth, child index, parent fingerprint, chain code, and private key.
+	* @example
+	* Start from a master seed, derive the hardened child path you need, then
+	* recreate the child from stored private key material and chain code.
+	* ```ts
+	* import { randomBytes } from '@noble/hashes/utils.js';
+	* import { HDKey } from 'micro-key-producer/slip10.js';
+	* const seed = randomBytes(32);
+	* const child = HDKey.fromMasterSeed(seed).derive("m/0'");
+	* const restored = new HDKey({
+	*   privateKey: child.privateKey,
+	*   chainCode: child.chainCode,
+	* });
+	* restored.fingerprintHex;
+	* ```
+	*/
+	var HDKey = class HDKey {
+		get publicKeyRaw() {
+			return ed25519$1.getPublicKey(this.privateKey);
+		}
+		get publicKey() {
+			return concatBytes$5(ZERO$1, this.publicKeyRaw);
+		}
+		get pubHash() {
+			return ripemd160(sha256$2(this.publicKey));
+		}
+		get fingerprint() {
+			return createView$2(this.pubHash).getUint32(0, false);
+		}
+		get fingerprintHex() {
+			return bytesToHex$5(toU32(this.fingerprint));
+		}
+		get parentFingerprintHex() {
+			return bytesToHex$5(toU32(this.parentFingerprint));
+		}
+		static fromMasterSeed(seed) {
+			seed = abytes$4(seed, void 0, "seed");
+			if (8 * seed.length < 128 || 8 * seed.length > 512) throw new Error(`HDKey: wrong seed length=${seed.length}. Should be between 128 and 512 bits; 256 bits is advised)`);
+			const I = hmac$1(sha512$1, MASTER_SECRET, seed);
+			return new HDKey({
+				privateKey: I.slice(0, 32),
+				chainCode: I.slice(32)
+			});
+		}
+		constructor(opt) {
+			_defineProperty(this, "depth", 0);
+			_defineProperty(this, "index", 0);
+			_defineProperty(this, "chainCode", void 0);
+			_defineProperty(this, "parentFingerprint", 0);
+			_defineProperty(this, "privateKey", void 0);
+			if (!opt || typeof opt !== "object") throw new Error("HDKey.constructor must not be called directly");
+			abytes$4(opt.privateKey, 32, "privateKey");
+			abytes$4(opt.chainCode, 32, "chainCode");
+			this.depth = opt.depth || 0;
+			this.index = opt.index || 0;
+			this.parentFingerprint = opt.parentFingerprint || 0;
+			if (!this.depth) {
+				if (this.parentFingerprint || this.index) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
+			}
+			this.chainCode = opt.chainCode;
+			this.privateKey = opt.privateKey;
+		}
+		derive(path, forceHardened = false) {
+			path = astring$1(path, "path");
+			forceHardened = abool$2(forceHardened, "forceHardened");
+			if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
+			if (/^[mM]'?$/.test(path)) return this;
+			const parts = path.replace(/^[mM]'?\//, "").split("/");
+			let child = this;
+			for (const c of parts) {
+				const m = /^(\d+)('?)$/.exec(c);
+				if (!m || m.length !== 3) throw new Error(`Invalid child index: ${c}`);
+				let idx = +m[1];
+				if (!Number.isSafeInteger(idx) || idx >= 2147483648) throw new Error("Invalid index");
+				if (forceHardened || m[2] === "'") idx += HARDENED_OFFSET$1;
+				child = child.deriveChild(idx);
+			}
+			return child;
+		}
+		deriveChild(index) {
+			const indexBytes = toU32(index, "index");
+			if (index < 2147483648) throw new Error(`Non-hardened child derivation not possible for Ed25519 (index=${index})`);
+			const data = concatBytes$5(ZERO$1, this.privateKey, indexBytes);
+			const I = hmac$1(sha512$1, this.chainCode, data);
+			return new HDKey({
+				chainCode: I.slice(32),
+				depth: this.depth + 1,
+				parentFingerprint: this.fingerprint,
+				index,
+				privateKey: I.slice(0, 32)
+			});
+		}
+		sign(message) {
+			message = abytes$4(message, void 0, "message");
+			return ed25519$1.sign(message, this.privateKey);
+		}
+		verify(message, signature) {
+			message = abytes$4(message, void 0, "message");
+			signature = abytes$4(signature, 64, "signature");
+			return ed25519$1.verify(signature, message, this.publicKeyRaw);
+		}
+	};
+	//#endregion
+	//#region packages/wallet-chains/dist/index.mjs
+	init_defineProperty();
+	var ChainError = class extends Error {
+		constructor(code, message) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			this.name = "ChainError";
+			this.code = code;
+		}
+	};
+	//#endregion
+	//#region packages/wallet-chains/dist/curve-BeDNVVGm.mjs
 	init_defineProperty();
 	init_objectSpread2();
 	var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
@@ -17816,7 +17802,7 @@ zoo`.split("\n"));
 	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
 	* ```
 	*/
-	function bytesToHex$1$1(bytes) {
+	function bytesToHex$1$3(bytes) {
 		abytes$1(bytes);
 		if (hasHexBuiltin) return bytes.toHex();
 		let hex = "";
@@ -18725,7 +18711,7 @@ zoo`.split("\n"));
 	* bytesToHex(Uint8Array.of(1, 2, 3));
 	* ```
 	*/
-	var bytesToHex$2 = bytesToHex$1$1;
+	var bytesToHex$4 = bytesToHex$1$3;
 	/**
 	* Concatenates byte arrays.
 	* @param arrays - Byte arrays to join.
@@ -18774,7 +18760,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	var randomBytes$2 = (bytesLength) => randomBytes$1(bytesLength);
-	var _0n$2$1 = /* @__PURE__ */ BigInt(0);
+	var _0n$2$2 = /* @__PURE__ */ BigInt(0);
 	var _1n$2$2 = /* @__PURE__ */ BigInt(1);
 	var atitle = (title) => title ? `"${title}" ` : "";
 	/**
@@ -18869,7 +18855,7 @@ zoo`.split("\n"));
 	*/
 	function hexToNumber(hex) {
 		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-		return hex === "" ? _0n$2$1 : BigInt("0x" + hex);
+		return hex === "" ? _0n$2$2 : BigInt("0x" + hex);
 	}
 	/**
 	* Parses big-endian bytes into bigint.
@@ -18884,7 +18870,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function bytesToNumberBE(bytes) {
-		return hexToNumber(bytesToHex$1$1(bytes));
+		return hexToNumber(bytesToHex$1$3(bytes));
 	}
 	/**
 	* Parses little-endian bytes into bigint.
@@ -18899,7 +18885,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function bytesToNumberLE(bytes) {
-		return hexToNumber(bytesToHex$1$1(copyBytes(abytes$1(bytes)).reverse()));
+		return hexToNumber(bytesToHex$1$3(copyBytes(abytes$1(bytes)).reverse()));
 	}
 	/**
 	* Encodes a bigint into fixed-length big-endian bytes.
@@ -18968,7 +18954,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function isPosBig(n) {
-		return typeof n === "bigint" && _0n$2$1 <= n;
+		return typeof n === "bigint" && _0n$2$2 <= n;
 	}
 	/**
 	* Checks whether a bigint lies inside a half-open range.
@@ -19020,8 +19006,8 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function bitLen(n) {
-		if (n < _0n$2$1) throw new Error("expected non-negative bigint, got " + n);
-		return n === _0n$2$1 ? 0 : n.toString(2).length;
+		if (n < _0n$2$2) throw new Error("expected non-negative bigint, got " + n);
+		return n === _0n$2$2 ? 0 : n.toString(2).length;
 	}
 	/**
 	* Calculate mask for N bits. Not using ** operator with bigints because of old engines.
@@ -19820,7 +19806,7 @@ zoo`.split("\n"));
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$4 = /* @__PURE__ */ BigInt(0);
+	var _0n$3 = /* @__PURE__ */ BigInt(0);
 	var _1n$6 = /* @__PURE__ */ BigInt(1);
 	var _4n$2 = /* @__PURE__ */ BigInt(4);
 	var BLIND_BYTES = 16;
@@ -19951,7 +19937,7 @@ zoo`.split("\n"));
 		const half = size / 2;
 		const mask = BigInt(size - 1);
 		const d = [];
-		while (n > _0n$4) {
+		while (n > _0n$3) {
 			let w = 0;
 			if (n & _1n$6) {
 				w = Number(n & mask);
@@ -19983,7 +19969,7 @@ zoo`.split("\n"));
 			}
 			d.push(v);
 		}
-		if (n !== _0n$4) throw new Error("invalid wnaf");
+		if (n !== _0n$3) throw new Error("invalid wnaf");
 		return d;
 	}
 	/**
@@ -20298,7 +20284,7 @@ zoo`.split("\n"));
 			"h"
 		]) {
 			const val = CURVE[p];
-			if (!(isPosBig(val) && val !== _0n$4)) throw new Error(`CURVE.${p} must be positive bigint`);
+			if (!(isPosBig(val) && val !== _0n$3)) throw new Error(`CURVE.${p} must be positive bigint`);
 		}
 		const Fp = createField(CURVE.p, curveOpts.Fp, FpFnLE);
 		const Fn = createField(CURVE.n, curveOpts.Fn, FpFnLE);
@@ -20340,7 +20326,7 @@ zoo`.split("\n"));
 		};
 	}
 	//#endregion
-	//#region packages/wallet-chains/dist/secp256k1-DQtclDMG.mjs
+	//#region packages/wallet-chains/dist/secp256k1-D0CRzacO.mjs
 	init_defineProperty();
 	/**
 	* HMAC: RFC2104 message authentication code.
@@ -20429,7 +20415,7 @@ zoo`.split("\n"));
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$1$1 = /* @__PURE__ */ BigInt(0);
+	var _0n$2$1 = /* @__PURE__ */ BigInt(0);
 	/**
 	* @param m - Error message.
 	* @example
@@ -20492,7 +20478,7 @@ zoo`.split("\n"));
 			encode(num) {
 				const { Err: E } = _DER;
 				abignumber(num);
-				if (num < _0n$1$1) throw new E("integer: negative integers are not allowed");
+				if (num < _0n$2$1) throw new E("integer: negative integers are not allowed");
 				let hex = numberToHexUnpadded(num);
 				if (Number.parseInt(hex[0], 16) & 8) hex = "00" + hex;
 				if (hex.length & 1) throw new E("unexpected DER parsing assertion: unpadded hex");
@@ -20583,18 +20569,18 @@ zoo`.split("\n"));
 	var divNearest = (num, den) => (num + (num >= 0 ? den : -den) / _2n$1$4) / den;
 	/** Splits scalar for GLV endomorphism. */
 	function _splitEndoScalar(k, basis, n) {
-		aInRange("scalar", k, _0n$3, n);
+		aInRange("scalar", k, _0n$1$1, n);
 		const [[a1, b1], [a2, b2]] = basis;
 		const c1 = divNearest(b2 * k, n);
 		const c2 = divNearest(-b1 * k, n);
 		let k1 = k - c1 * a1 - c2 * a2;
 		let k2 = -c1 * b1 - c2 * b2;
-		const k1neg = k1 < _0n$3;
-		const k2neg = k2 < _0n$3;
+		const k1neg = k1 < _0n$1$1;
+		const k2neg = k2 < _0n$1$1;
 		if (k1neg) k1 = -k1;
 		if (k2neg) k2 = -k2;
 		const MAX_NUM = bitMask(Math.ceil(bitLen(n) / 2)) + _1n$4;
-		if (k1 < _0n$3 || k1 >= MAX_NUM || k2 < _0n$3 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
+		if (k1 < _0n$1$1 || k1 >= MAX_NUM || k2 < _0n$1$1 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
 		return {
 			k1neg,
 			k1,
@@ -20619,7 +20605,7 @@ zoo`.split("\n"));
 		if (optsn.format !== void 0) validateSigFormat(optsn.format);
 		return optsn;
 	}
-	var _0n$3 = /* @__PURE__ */ BigInt(0);
+	var _0n$1$1 = /* @__PURE__ */ BigInt(0);
 	var _1n$4 = /* @__PURE__ */ BigInt(1);
 	var _2n$1$4 = /* @__PURE__ */ BigInt(2);
 	var _3n = /* @__PURE__ */ BigInt(3);
@@ -20666,7 +20652,7 @@ zoo`.split("\n"));
 			randomBytes: "function"
 		});
 		const { endo: endoOpts, allowInfinityPoint, clearCofactor, isTorsionFree, fromBytes, toBytes } = extraOpts;
-		const randomBytes$1 = extraOpts.randomBytes === void 0 ? randomBytes$2 : extraOpts.randomBytes;
+		const randomBytes$2$2 = extraOpts.randomBytes === void 0 ? randomBytes$2 : extraOpts.randomBytes;
 		if (endoOpts) {
 			if (!Fp.is0(CURVE.a) || typeof endoOpts.beta !== "bigint" || !Array.isArray(endoOpts.basises)) throw new Error("invalid endo: expected \"beta\": bigint and \"basises\": array");
 		}
@@ -20973,7 +20959,7 @@ zoo`.split("\n"));
 				const p = this;
 				const sc = scalar;
 				if (!Fn.isValid(sc)) throw new RangeError("invalid scalar: out of range");
-				if (sc === _0n$3 || p.is0()) return Point.ZERO;
+				if (sc === _0n$1$1 || p.is0()) return Point.ZERO;
 				if (sc === _1n$4) return p;
 				if (wnaf.hasWindowSize(this)) return wnaf.mulUnsafe(p, sc, normalize);
 				const points = [];
@@ -21049,7 +21035,7 @@ zoo`.split("\n"));
 				return encodePoint(Point, this, isCompressed);
 			}
 			toHex(isCompressed = true) {
-				return bytesToHex$2(this.toBytes(isCompressed));
+				return bytesToHex$4(this.toBytes(isCompressed));
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -21061,7 +21047,7 @@ zoo`.split("\n"));
 		_defineProperty(Point, "Fp", Fp);
 		_defineProperty(Point, "Fn", Fn);
 		const normalize = (points) => normalizeZ(Point, points);
-		const wnaf = new ScalarMultiplier(Point, randomBytes$1);
+		const wnaf = new ScalarMultiplier(Point, randomBytes$2$2);
 		if (wnaf.bits >= 6) Point.BASE.precompute(6);
 		Object.freeze(Point.prototype);
 		Object.freeze(Point);
@@ -21226,12 +21212,12 @@ zoo`.split("\n"));
 			bits2int_modN: "function"
 		});
 		const opts = Object.assign({}, ecdsaOpts);
-		const randomBytes$2$2 = opts.randomBytes === void 0 ? randomBytes$2 : opts.randomBytes;
+		const randomBytes$3 = opts.randomBytes === void 0 ? randomBytes$2 : opts.randomBytes;
 		const hmac$1 = opts.hmac === void 0 ? (key, msg) => hmac(hash_, key, msg) : opts.hmac;
 		const { Fp, Fn } = Point;
 		const { ORDER: CURVE_ORDER, BITS: fnBits } = Fn;
 		const blindLength = getMinHashLength(CURVE_ORDER);
-		const csprng = probeRandomBytes(randomBytes$2$2, blindLength);
+		const csprng = probeRandomBytes(randomBytes$3, blindLength);
 		const { keygen, getPublicKey, getSharedSecret, utils, lengths } = ecdh(Point, opts);
 		const defaultSigOpts = {
 			prehash: true,
@@ -21345,7 +21331,7 @@ zoo`.split("\n"));
 				return concatBytes(rb, sb);
 			}
 			toHex(format) {
-				return bytesToHex$2(this.toBytes(format));
+				return bytesToHex$4(this.toBytes(format));
 			}
 		}
 		Object.freeze(Signature.prototype);
@@ -21362,7 +21348,7 @@ zoo`.split("\n"));
 		const ORDER_MASK = bitMask(fnBits);
 		/** Converts to bytes. Checks if num in `[0..ORDER_MASK-1]` e.g.: `[0..2^256-1]`. */
 		function int2octets(num) {
-			aInRange("num < 2^" + fnBits, num, _0n$3, ORDER_MASK);
+			aInRange("num < 2^" + fnBits, num, _0n$1$1, ORDER_MASK);
 			return Fn.toBytes(num);
 		}
 		function validateMsgAndHash(message, prehash) {
@@ -21385,7 +21371,7 @@ zoo`.split("\n"));
 			if (!Fn.isValidNot0(d)) throw new Error("invalid private key");
 			const seedArgs = [int2octets(d), int2octets(h1int)];
 			if (extraEntropy != null && extraEntropy !== false) {
-				const e = extraEntropy === true ? randomBytes$2$2(lengths.secretKey) : extraEntropy;
+				const e = extraEntropy === true ? randomBytes$3(lengths.secretKey) : extraEntropy;
 				seedArgs.push(abytes(e, void 0, "extraEntropy"));
 			}
 			const seed = concatBytes(...seedArgs);
@@ -21395,7 +21381,7 @@ zoo`.split("\n"));
 				if (!Fn.isValidNot0(k)) return;
 				const q = Point.BASE.multiply(k).toAffine();
 				const r = Fn.create(q.x);
-				if (r === _0n$3) return;
+				if (r === _0n$1$1) return;
 				let s;
 				if (csprng !== void 0) {
 					const b = bytesToNumberBE(mapHashToField(csprng(blindLength), CURVE_ORDER));
@@ -21407,7 +21393,7 @@ zoo`.split("\n"));
 					const ik = invertCt(k, CURVE_ORDER);
 					s = Fn.create(ik * Fn.create(m + r * d));
 				}
-				if (s === _0n$3) return;
+				if (s === _0n$1$1) return;
 				let recovery = getRecoveryBit(q.x, q.y, r);
 				let normS = s;
 				if (lowS && isBiggerThanHalfOrder(s)) {
@@ -21563,6 +21549,438 @@ zoo`.split("\n"));
 		Fp: Fpk1,
 		endo: secp256k1_ENDO
 	}), sha256);
+	//#endregion
+	//#region packages/wallet-chains/dist/message-AfNel4WZ.mjs
+	init_utils();
+	init_objectSpread2();
+	/**
+	* Bip122 CAIP-2 networks = `bip122:` + the first 32 hex chars of the genesis hash, verified against
+	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
+	* class).
+	*/
+	var MAINNET_BIP32 = {
+		public: 76067358,
+		private: 76066276
+	};
+	var TESTNET_BIP32 = {
+		public: 70617039,
+		private: 70615956
+	};
+	var REGTEST_NETWORK = _objectSpread2(_objectSpread2({}, TEST_NETWORK), {}, { bech32: "bcrt" });
+	var NETWORKS = Object.freeze([
+		{
+			caip2: "bip122:000000000019d6689c085ae165831e93",
+			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+			params: NETWORK,
+			coinType: 0,
+			bip32: MAINNET_BIP32
+		},
+		{
+			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
+			genesis: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
+			params: TEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
+		},
+		{
+			caip2: "bip122:00000008819873e925422c1ff0f99f7c",
+			genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+			params: TEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
+		},
+		{
+			caip2: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+			genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+			params: REGTEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
+		}
+	]);
+	var BITCOIN_NETWORKS = Object.freeze(Object.fromEntries(NETWORKS.map((n) => [n.caip2, n])));
+	var bitcoinNetwork = (caip2) => {
+		const net = BITCOIN_NETWORKS[caip2];
+		if (net === void 0) throw new ChainError("unsupported", `unknown bitcoin network: ${caip2}`);
+		return net;
+	};
+	/**
+	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
+	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
+	*/
+	var utf8 = (s) => new TextEncoder().encode(s);
+	var BIP322_TAG = "BIP0322-signed-message";
+	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
+	var concat$2 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let o = 0;
+		for (const p of parts) {
+			out.set(p, o);
+			o += p.length;
+		}
+		return out;
+	};
+	/** CompactSize length prefix (values here are always < 253). */
+	var varint = (n) => Uint8Array.of(n);
+	var pushData = (data) => concat$2(varint(data.length), data);
+	var u32le$1 = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
+	var u64le$1 = (n) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		let v = n;
+		for (let i = 0; i < 8; i++) {
+			out[i] = Number(v % 256n);
+			v /= 256n;
+		}
+		return out;
+	};
+	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
+	var bip322MessageHash = (message) => {
+		const tag = sha256(utf8(BIP322_TAG));
+		return sha256(concat$2(tag, tag, utf8(message)));
+	};
+	/**
+	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
+	* message-hash scriptSig, one output paying the message's scriptPubKey. Returns txid (hash256d,
+	* big-endian display order).
+	*/
+	var toSpend = (scriptPubKey, messageHash) => {
+		const scriptSig = concat$2(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$2(u32le$1(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le$1(4294967295), pushData(scriptSig), u32le$1(0), varint(1), u64le$1(0n), pushData(scriptPubKey), u32le$1(0));
+		return {
+			txid: sha256(sha256(raw)),
+			raw
+		};
+	};
+	var BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	var b64 = (i) => {
+		var _BASE64$i;
+		return (_BASE64$i = BASE64[i]) !== null && _BASE64$i !== void 0 ? _BASE64$i : "";
+	};
+	var base64 = (bytes) => {
+		const c = b64;
+		let out = "";
+		for (let i = 0; i < bytes.length; i += 3) {
+			var _bytes$i, _bytes, _bytes2;
+			const b0 = (_bytes$i = bytes[i]) !== null && _bytes$i !== void 0 ? _bytes$i : 0;
+			const b1 = (_bytes = bytes[i + 1]) !== null && _bytes !== void 0 ? _bytes : 0;
+			const b2 = (_bytes2 = bytes[i + 2]) !== null && _bytes2 !== void 0 ? _bytes2 : 0;
+			out += c(Math.floor(b0 / 4)) + c(b0 % 4 * 16 + Math.floor(b1 / 16));
+			out += i + 1 < bytes.length ? c(b1 % 16 * 4 + Math.floor(b2 / 64)) : "=";
+			out += i + 2 < bytes.length ? c(b2 % 64) : "=";
+		}
+		return out;
+	};
+	/**
+	* Signs the BIP-322 to_sign input through a btc-signer Transaction and returns the `smp`-prefixed
+	* base64 witness encoding. `scriptPubKey` is the message address's output script (P2WPKH or P2TR).
+	*/
+	var signBip322Simple = (message, scriptPubKey, privateKey, auxRand) => {
+		const { txid } = toSpend(scriptPubKey, bip322MessageHash(message));
+		const tx = new Transaction({
+			version: 0,
+			lockTime: 0,
+			allowUnknownOutputs: true
+		});
+		const pub = secp256k1.getPublicKey(privateKey, true);
+		tx.addInput(_objectSpread2({
+			txid,
+			index: 0,
+			sequence: 0,
+			witnessUtxo: {
+				script: scriptPubKey,
+				amount: 0n
+			},
+			bip32Derivation: [[pub, {
+				fingerprint: 0,
+				path: []
+			}]]
+		}, scriptPubKey[0] === 81 ? { tapInternalKey: pub.slice(1) } : {}));
+		tx.addOutput({
+			script: Uint8Array.of(106),
+			amount: 0n
+		});
+		const isTaproot = scriptPubKey[0] === 81;
+		if (!tx.signIdx(privateKey, 0, isTaproot ? [SigHash.DEFAULT, SigHash.ALL] : [SigHash.ALL], auxRand(0))) throw new ChainError("invalid-request", "key cannot sign this BIP-322 input");
+		tx.finalizeIdx(0);
+		const witness = tx.getInput(0).finalScriptWitness;
+		if (witness === void 0) throw new ChainError("invalid-request", "BIP-322 input produced no witness");
+		return `smp${base64(concat$2(varint(witness.length), ...witness.map(pushData)))}`;
+	};
+	/**
+	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
+	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
+	*/
+	var signLegacyMessage = (message, privateKey) => {
+		var _recovered$;
+		const hash = sha256(sha256(concat$2(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
+		const recovered = secp256k1.sign(hash, privateKey, {
+			lowS: true,
+			format: "recovered"
+		});
+		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
+		return base64(concat$2(Uint8Array.of(header), recovered.slice(1)));
+	};
+	//#endregion
+	//#region packages/wallet-chains/dist/bitcoin.mjs
+	init_payment();
+	init_transaction();
+	/**
+	* BIP-32 derivation paths carry a coin type: 0 for mainnet, 1 for every test network. This is what
+	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
+	* marker.
+	*/
+	var isRecord$2$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/**
+	* Bip32Derivation values are [pubkey, { fingerprint, path }] tuples; tapBip32Derivation values are
+	* { hashes, der: { fingerprint, path } }.
+	*/
+	var derivationPaths = (map) => {
+		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$2$2(map) ? Object.values(map) : [];
+		const paths = [];
+		for (const entry of entries) {
+			const value = Array.isArray(entry) ? entry[1] : entry;
+			if (!isRecord$2$2(value)) continue;
+			const { path } = isRecord$2$2(value["der"]) ? value["der"] : value;
+			if (Array.isArray(path) && path.every((p) => typeof p === "number")) paths.push(path);
+		}
+		return paths;
+	};
+	var checkPaths = (paths, where, coinType) => {
+		var _path$;
+		for (const path of paths) if (path.length >= 2 && ((_path$ = path[1]) !== null && _path$ !== void 0 ? _path$ : -1) - 2147483648 !== coinType) throw new ChainError("chain-id-mismatch", `${where} derivation coin type is not this network's`);
+	};
+	var checkDerivations = (tx, coinType) => {
+		for (let i = 0; i < tx.inputsLength; i++) {
+			const input = tx.getInput(i);
+			checkPaths(derivationPaths(input.bip32Derivation), `input ${i}`, coinType);
+			checkPaths(derivationPaths(input.tapBip32Derivation), `input ${i}`, coinType);
+		}
+		for (let i = 0; i < tx.outputsLength; i++) {
+			const output = tx.getOutput(i);
+			checkPaths(derivationPaths(output.bip32Derivation), `output ${i}`, coinType);
+			checkPaths(derivationPaths(output.tapBip32Derivation), `output ${i}`, coinType);
+		}
+	};
+	var DEFAULT_SIGHASH = 0;
+	var SIGHASH_ALL = 1;
+	var isTaprootInput = (input) => input.tapInternalKey !== void 0 || getInputType(input).type === "taproot";
+	/**
+	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller).
+	* `strictPrevoutValidation` makes btc-signer verify every `nonWitnessUtxo`'s txid against its
+	* outpoint.
+	*/
+	var normalizeBitcoinPsbt = (psbt, sign, network) => {
+		const net = bitcoinNetwork(network);
+		let tx;
+		try {
+			tx = Transaction.fromPSBT(psbt, { strictPrevoutValidation: true });
+		} catch (_unused) {
+			throw new ChainError("invalid-request", "PSBT failed to decode");
+		}
+		if (!Array.isArray(sign) || sign.length === 0 || !sign.every((i) => Number.isSafeInteger(i) && i >= 0)) throw new ChainError("invalid-request", "sign must be a non-empty array of input indices");
+		const unique = [...new Set(sign.map(Number))].sort((a, b) => a - b);
+		const last = unique.at(-1);
+		if (unique.length !== sign.length || last === void 0 || last >= tx.inputsLength) throw new ChainError("invalid-request", "sign must be unique, ascending, and in range");
+		checkDerivations(tx, net.coinType);
+		for (const idx of unique) {
+			const input = tx.getInput(idx);
+			if (input.witnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing witnessUtxo`);
+			if (input.bip32Derivation === void 0 && input.tapBip32Derivation === void 0) throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
+			const { type } = getInputType(input);
+			if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
+			const sighash = input.sighashType;
+			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
+		}
+		return {
+			psbt: tx.toPSBT(0),
+			sign: unique
+		};
+	};
+	var SATS = "sats";
+	var OP_RETURN = 106;
+	var bytesToHex$2 = (bytes) => {
+		let out = "";
+		for (const b of bytes) out += b.toString(16).padStart(2, "0");
+		return out;
+	};
+	/** Decodes an output scriptPubKey; OP_RETURN gets an amount-0 display row. */
+	var decodeOutput = (script, amount) => {
+		const hex = bytesToHex$2(script);
+		if (script[0] === OP_RETURN) return {
+			amount,
+			script: hex,
+			opReturn: true
+		};
+		return {
+			amount,
+			script: hex,
+			opReturn: false
+		};
+	};
+	/**
+	* Decodes a normalized bitcoin.psbt request for display. `ownScripts` is the set of output script
+	* hexes the caller has independently verified as this account's (e.g. the kernel re-deriving
+	* change) — not a display hint.
+	*/
+	var decodeBitcoinPsbt = (request, ownScripts = /* @__PURE__ */ new Set()) => {
+		const tx = Transaction.fromPSBT(request.psbt);
+		const coder = Address(bitcoinNetwork(request.network).params);
+		const signed = new Set(request.sign);
+		const outflows = [];
+		let canFee = true;
+		let outSum = 0n;
+		for (let i = 0; i < tx.outputsLength; i++) {
+			var _addr;
+			const output = tx.getOutput(i);
+			const { script } = output;
+			const { amount } = output;
+			if (script === void 0 || amount === void 0) continue;
+			const decoded = decodeOutput(script, amount);
+			outSum += amount;
+			if (decoded.opReturn || ownScripts.has(decoded.script)) continue;
+			let addr;
+			try {
+				const out = OutScript.decode(script);
+				addr = out === void 0 ? void 0 : coder.encode(out);
+			} catch (_unused2) {
+				addr = void 0;
+			}
+			outflows.push({
+				to: (_addr = addr) !== null && _addr !== void 0 ? _addr : decoded.script,
+				amount: {
+					asset: SATS,
+					amount: amount.toString(10)
+				},
+				verified: addr !== void 0
+			});
+		}
+		let inSum = 0n;
+		for (let i = 0; i < tx.inputsLength; i++) {
+			const input = tx.getInput(i);
+			if (input.witnessUtxo === void 0) canFee = false;
+			else inSum += input.witnessUtxo.amount;
+		}
+		const external = tx.inputsLength - signed.size > 0;
+		const undecodable = outflows.some((o) => !o.verified);
+		const verifiability = external ? "opaque" : undecodable ? "partial" : "full";
+		return {
+			family: "bitcoin",
+			network: request.network,
+			summary: outflows.length > 0 ? "transfer" : "contract-call",
+			outflows,
+			approvals: [],
+			fee: canFee ? { max: {
+				asset: SATS,
+				amount: (inSum - outSum).toString(10)
+			} } : void 0,
+			warnings: [],
+			verifiability
+		};
+	};
+	/*! scure-base - MIT License (c) 2022 Paul Miller (paulmillr.com) */
+	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isAccountRef$2 = (value) => {
+		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
+		if (value["kind"] === "hd") return typeof value["walletId"] === "string" && typeof value["groupIndex"] === "number" && typeof value["template"] === "string";
+		return value["kind"] === "imported" && typeof value["keyId"] === "string" && typeof value["family"] === "string";
+	};
+	var common = (request) => {
+		const { network } = request;
+		const { account } = request;
+		if (typeof network !== "string") throw new ChainError("invalid-request", "request.network must be a string");
+		if (!isAccountRef$2(account)) throw new ChainError("invalid-request", "request.account must be an AccountRef");
+		bitcoinNetwork(network);
+		return {
+			network,
+			account
+		};
+	};
+	var messageTarget = (address, network, format) => {
+		if (typeof address !== "string") throw new ChainError("invalid-request", "address must be a string");
+		const net = bitcoinNetwork(network);
+		let decoded;
+		try {
+			decoded = Address(net.params).decode(address);
+		} catch (_unused5) {
+			throw new ChainError("invalid-address", "address does not belong to this network");
+		}
+		if (format === "bip322-simple") {
+			if (decoded.type !== "wpkh" && decoded.type !== "tr") throw new ChainError("unsupported", "bip322-simple is only for P2WPKH/P2TR addresses");
+		} else if (format === "legacy") {
+			if (decoded.type !== "pkh") throw new ChainError("unsupported", "legacy signing is only for P2PKH addresses");
+		} else throw new ChainError("unsupported", `unsupported message format: ${String(format)}`);
+		const scriptPubKey = OutScript.encode(decoded);
+		return {
+			type: decoded.type,
+			address,
+			format,
+			scriptPubKey
+		};
+	};
+	/**
+	* Normalizes a bitcoin sign request. Idempotent: the returned PSBT is the canonical
+	* re-serialization.
+	*/
+	var normalizeBitcoin = (request) => {
+		if (!isRecord$4(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
+		const { network, account } = common(request);
+		if (request["kind"] === "bitcoin.psbt") {
+			const { psbt } = request;
+			if (!(psbt instanceof Uint8Array)) throw new ChainError("invalid-request", "psbt must be bytes");
+			const normalized = normalizeBitcoinPsbt(psbt, request["sign"], network);
+			return {
+				kind: "bitcoin.psbt",
+				network,
+				account,
+				psbt: normalized.psbt,
+				sign: normalized.sign
+			};
+		}
+		if (request["kind"] === "bitcoin.message") {
+			const { format } = request;
+			const target = messageTarget(request["address"], network, format);
+			const { message, change, index } = request;
+			if (typeof message !== "string") throw new ChainError("invalid-request", "message must be a string");
+			if (change !== 0 && change !== 1) throw new ChainError("invalid-request", "change must be 0 or 1");
+			if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || index >= 2147483648) throw new ChainError("invalid-request", "index must be a non-hardened path index");
+			return {
+				kind: "bitcoin.message",
+				network,
+				account,
+				address: target.address,
+				message,
+				format: target.format,
+				change,
+				index
+			};
+		}
+		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
+	};
+	/** Decodes the message `address` into the scriptPubKey the signer needs. */
+	var decodeMessageTarget = (request) => messageTarget(request.address, request.network, request.format);
+	//#endregion
+	//#region packages/wallet-chains/dist/bitcoin-sign.mjs
+	init_payment();
+	init_transaction();
+	/**
+	* /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
+	* (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`
+	* first. No key caching.
+	*/
+	var signBitcoinPsbt = (psbt, inputs, auxRand) => {
+		const tx = Transaction.fromPSBT(psbt);
+		for (const { index, privateKey } of inputs) {
+			if (privateKey.length !== 32) throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
+			if (!tx.signIdx(privateKey, index, void 0, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
+		}
+		return tx.toPSBT(0);
+	};
+	/** Returns the signature string: `smp…` base64 witness for bip322-simple, compact base64 for legacy. */
+	var signBitcoinMessage = (request, privateKey, auxRand) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+		if (request.format === "legacy") return signLegacyMessage(request.message, privateKey);
+		const scriptPubKey = OutScript.encode(Address(bitcoinNetwork(request.network).params).decode(request.address));
+		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
+	};
 	//#endregion
 	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/version.js
 	/** @internal */
@@ -25735,7 +26153,7 @@ zoo`.split("\n"));
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
 	//#endregion
-	//#region packages/wallet-chains/dist/typed-data-BWnYcuIi.mjs
+	//#region packages/wallet-chains/dist/typed-data-D28VBOIm.mjs
 	init_defineProperty();
 	init_objectSpread2();
 	/**
@@ -26011,7 +26429,7 @@ zoo`.split("\n"));
 	function evmAddressFromPublicKey(pubkey) {
 		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
 		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
-		return checksumEvmAddress(`0x${bytesToHex$1$1(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+		return checksumEvmAddress(`0x${bytesToHex$1$3(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
 	}
 	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
 	function assertHex$1(value, field) {
@@ -28802,7 +29220,7 @@ zoo`.split("\n"));
 	function assertHex(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 	}
-	var hex = (value, field) => {
+	var hex$1 = (value, field) => {
 		assertHex(value, field);
 		return value;
 	};
@@ -28811,8 +29229,8 @@ zoo`.split("\n"));
 		return fromBytes$1(privateKey);
 	};
 	var accessEntry = (entry) => ({
-		address: hex(entry.address, "accessList.address"),
-		storageKeys: entry.storageKeys.map((k) => hex(k, "accessList.storageKeys"))
+		address: hex$1(entry.address, "accessList.address"),
+		storageKeys: entry.storageKeys.map((k) => hex$1(k, "accessList.storageKeys"))
 	});
 	var sign$1 = (payload, privateKey) => sign$2({
 		payload,
@@ -28824,8 +29242,8 @@ zoo`.split("\n"));
 		const privateKeyHex = key(privateKey);
 		const base = {
 			chainId: tx.chainId,
-			to: tx.to === void 0 ? void 0 : hex(tx.to, "to"),
-			data: hex(tx.data, "data"),
+			to: tx.to === void 0 ? void 0 : hex$1(tx.to, "to"),
+			data: hex$1(tx.data, "data"),
 			value: BigInt(tx.value),
 			nonce: BigInt(tx.nonce),
 			gas: BigInt(tx.gas)
@@ -28865,7 +29283,7 @@ zoo`.split("\n"));
 		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
 	};
 	//#endregion
-	//#region packages/wallet-chains/dist/ed25519-nz7LNw0K.mjs
+	//#region packages/wallet-chains/dist/ed25519-DUtI5nWr.mjs
 	init_defineProperty();
 	/**
 	* Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
@@ -29143,7 +29561,7 @@ zoo`.split("\n"));
 				return bytes;
 			}
 			toHex() {
-				return bytesToHex$2(this.toBytes());
+				return bytesToHex$4(this.toBytes());
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -31148,6 +31566,10 @@ zoo`.split("\n"));
 	* wiped in `finally` on every path. Signing is not in this module — `chain.sign` arrives in E2-b.
 	*/
 	init_bip32();
+	init_payment();
+	init_transaction();
+	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
+	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	var checkNetwork = (template, network) => {
 		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
@@ -31252,8 +31674,8 @@ zoo`.split("\n"));
 					const { request, verify } = params;
 					const { account } = request;
 					if (account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
-					const evm = request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data";
-					if (account.template !== (evm ? "evm.bip44" : "solana.bip44-change")) throw new KernelError("invalid-input", "account template does not match the request family");
+					const [family] = request.kind.split(".", 1);
+					if (!(family === "evm" ? ["evm.bip44"] : family === "solana" ? ["solana.bip44-change"] : ["btc.bip84", "btc.bip86"]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 					const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 					if (record === void 0) throw new KernelError("not-found", "no such wallet");
 					const entropy = openRecord(dek, record);
@@ -31264,7 +31686,7 @@ zoo`.split("\n"));
 						wipe(entropy);
 					}
 					try {
-						if (evm) {
+						if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") {
 							const master = HDKey$1.fromMasterSeed(seed);
 							try {
 								const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
@@ -31298,6 +31720,130 @@ zoo`.split("\n"));
 									};
 								} finally {
 									child.wipePrivateData();
+								}
+							} finally {
+								master.wipePrivateData();
+							}
+						}
+						if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
+							const net = bitcoinNetwork(request.network);
+							const master = HDKey$1.fromMasterSeed(seed, net.bip32);
+							try {
+								const purpose = account.template === "btc.bip86" ? 86 : 84;
+								const { coinType } = net;
+								const hardened = 2147483648;
+								const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
+								const children = [];
+								const derivation = (owner) => {
+									var _owner$bip32Derivatio;
+									if (purpose === 86) {
+										var _owner$tapBip32Deriva;
+										const claimed = (der) => der.fingerprint === master.fingerprint && isPath(der.path);
+										for (const [key, value] of (_owner$tapBip32Deriva = owner.tapBip32Derivation) !== null && _owner$tapBip32Deriva !== void 0 ? _owner$tapBip32Deriva : []) if (claimed(value.der)) return {
+											pubkey: key,
+											fingerprint: value.der.fingerprint,
+											path: value.der.path
+										};
+										return;
+									}
+									for (const [key, value] of (_owner$bip32Derivatio = owner.bip32Derivation) !== null && _owner$bip32Derivatio !== void 0 ? _owner$bip32Derivatio : []) if (value.fingerprint === master.fingerprint) return {
+										pubkey: key,
+										fingerprint: value.fingerprint,
+										path: value.path
+									};
+								};
+								const childAt = (path) => {
+									const [purposePath, coinPath, groupPath, change, index] = path;
+									if (path.length !== 5 || purposePath !== purpose + hardened || coinPath !== coinType + hardened || groupPath !== account.groupIndex + hardened || change === void 0 || index === void 0 || change !== 0 && change !== 1 || index < 0 || index >= hardened) throw new KernelError("invalid-input", "derivation path is not this account's");
+									const child = accountNode.deriveChild(change).deriveChild(index);
+									children.push(child);
+									return child;
+								};
+								const expectedPub = (pub) => purpose === 86 ? pub.slice(1) : pub;
+								const expectedScript = (pub) => purpose === 86 ? p2tr(pub.slice(1)).script : p2wpkh(pub).script;
+								try {
+									if (request.kind === "bitcoin.psbt") {
+										const tx = Transaction.fromPSBT(request.psbt);
+										const inputs = [];
+										for (const idx of request.sign) {
+											const input = tx.getInput(idx);
+											const entry = derivation(input);
+											if (entry === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
+											const child = childAt(entry.path);
+											const pub = child.publicKey;
+											const priv = child.privateKey;
+											if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+											if (!deepEqual(entry.pubkey, expectedPub(pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
+											const prevout = input.witnessUtxo;
+											if (prevout === void 0 || !deepEqual(prevout.script, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
+											inputs.push({
+												index: idx,
+												privateKey: priv
+											});
+										}
+										const ownScripts = /* @__PURE__ */ new Set();
+										for (let i = 0; i < tx.outputsLength; i++) {
+											const output = tx.getOutput(i);
+											if (output.script === void 0) continue;
+											const entry = derivation(output);
+											if (entry === void 0) continue;
+											try {
+												const pub = childAt(entry.path).publicKey;
+												if (pub !== null && deepEqual(output.script, expectedScript(pub))) ownScripts.add(hex(output.script));
+											} catch (_unused) {
+												continue;
+											}
+										}
+										let normalized;
+										try {
+											normalized = normalizeBitcoin(request);
+										} catch (error) {
+											mapChainError(error);
+										}
+										if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+										try {
+											decodeBitcoinPsbt(request, ownScripts);
+										} catch (error) {
+											mapChainError(error);
+										}
+										await verifyFactor(ctx.platform, ctx.image, verify, dek);
+										return {
+											kind: "bitcoin.psbt",
+											signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32))
+										};
+									}
+									if (request.format === "legacy") throw new KernelError("unsupported", "legacy message format is not supported");
+									const child = childAt([
+										purpose + hardened,
+										coinType + hardened,
+										account.groupIndex + hardened,
+										request.change,
+										request.index
+									]);
+									const pub = child.publicKey;
+									const priv = child.privateKey;
+									if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+									if ((purpose === 86 ? p2tr(pub.slice(1), void 0, net.params).address : p2wpkh(pub, net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
+									let normalized;
+									try {
+										normalized = normalizeBitcoin(request);
+									} catch (error) {
+										mapChainError(error);
+									}
+									if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+									try {
+										decodeMessageTarget(request);
+									} catch (error) {
+										mapChainError(error);
+									}
+									await verifyFactor(ctx.platform, ctx.image, verify, dek);
+									return {
+										kind: "bitcoin.message",
+										signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32))
+									};
+								} finally {
+									for (const child of children) child.wipePrivateData();
+									accountNode.wipePrivateData();
 								}
 							} finally {
 								master.wipePrivateData();
@@ -31378,7 +31924,7 @@ zoo`.split("\n"));
 	var HEX64_RE = /^[0-9a-f]{128}$/;
 	/** Lowercase hex encode. */
 	function bytesToHex$1(bytes) {
-		return bytesToHex$4(bytes);
+		return bytesToHex$5(bytes);
 	}
 	/** Decode lowercase or mixed-case hex to bytes. */
 	function hexToBytes$1(hex) {
@@ -32048,15 +32594,15 @@ zoo`.split("\n"));
 		const iv = randomBytes$4(16);
 		const plaintextBytes = utf8Encoder.encode(plaintext);
 		const ciphertext = cbc(sharedSecret, iv).encrypt(plaintextBytes);
-		return `${base64.encode(ciphertext)}?iv=${base64.encode(iv)}`;
+		return `${base64$1.encode(ciphertext)}?iv=${base64$1.encode(iv)}`;
 	}
 	/** Decrypt a NIP-04 payload with the raw 32-byte ECDH x-coordinate. */
 	function decrypt$2(payload, sharedSecret) {
 		assertByteLength(sharedSecret, 32, "shared secret");
 		const [ciphertextPart, ivPart] = splitPayload(payload);
 		try {
-			const iv = base64.decode(ivPart);
-			const ciphertext = base64.decode(ciphertextPart);
+			const iv = base64$1.decode(ivPart);
+			const ciphertext = base64$1.decode(ciphertextPart);
 			const plaintext = cbc(sharedSecret, iv).decrypt(ciphertext);
 			return utf8Decoder.decode(plaintext);
 		} catch (error) {
@@ -32186,7 +32732,7 @@ zoo`.split("\n"));
 		if (payload.length < 132 || payload.length > maxPayloadChars) throw new CryptoError(`invalid payload length: ${payload.length}`);
 		let data;
 		try {
-			data = base64.decode(payload);
+			data = base64$1.decode(payload);
 		} catch (error) {
 			throw new CryptoError("invalid base64", { cause: error });
 		}
@@ -32204,7 +32750,7 @@ zoo`.split("\n"));
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
 		const ciphertext = chacha20(chacha_key, chacha_nonce, pad(plaintext));
 		const mac = hmacAad(hmac_key, ciphertext, nonce);
-		return base64.encode(concatBytes$5(new Uint8Array([2]), nonce, ciphertext, mac));
+		return base64$1.encode(concatBytes$5(new Uint8Array([2]), nonce, ciphertext, mac));
 	}
 	function decrypt$1(payload, conversationKey, opts) {
 		var _opts$maxPayloadChars;
@@ -41323,7 +41869,7 @@ zoo`.split("\n"));
 	}
 	/** `sha256` of the exact description bytes, lowercase hex — the description enters hashed. */
 	function lightningAddressDescriptionHash(description) {
-		return bytesToHex$4(sha256$2(utf8ToBytes$1(description)));
+		return bytesToHex$5(sha256$2(utf8ToBytes$1(description)));
 	}
 	/**
 	* `POST /lnurlpay/{pubkey}`: the message claiming `username` on `domain`, fields joined by LF:
@@ -41443,7 +41989,7 @@ zoo`.split("\n"));
 	function commitmentKey(commitment) {
 		requireLength(commitment.hiding, 33, "commitment.hiding");
 		requireLength(commitment.binding, 33, "commitment.binding");
-		return bytesToHex$4(concatBytes$5(commitment.hiding, commitment.binding));
+		return bytesToHex$5(concatBytes$5(commitment.hiding, commitment.binding));
 	}
 	function checkOperators(operators) {
 		if (operators.length === 0) throw new SparkInputError("operators: must not be empty");
@@ -41454,7 +42000,7 @@ zoo`.split("\n"));
 			if (!Number.isSafeInteger(operator.id) || operator.id < 0) throw new SparkInputError("operator.id: must be a non-negative safe integer");
 			identifierBytes(operator.identifier);
 			requireLength(operator.identityPublicKey, 33, "operator.identityPublicKey");
-			const publicKey = bytesToHex$4(operator.identityPublicKey);
+			const publicKey = bytesToHex$5(operator.identityPublicKey);
 			if (ids.has(operator.id) || identifiers.has(operator.identifier) || publicKeys.has(publicKey)) throw new SparkInputError("operators: id, identifier and identityPublicKey must each be unique");
 			ids.add(operator.id);
 			identifiers.add(operator.identifier);
@@ -41736,7 +42282,7 @@ zoo`.split("\n"));
 					const nonce = item.slice(0, NONCE_LENGTH);
 					const hiding = item.slice(NONCE_LENGTH, 97);
 					const binding = item.slice(97, FROST_COMMITMENT_ITEM);
-					nonces.set(bytesToHex$4(concatBytes$5(hiding, binding)), nonce);
+					nonces.set(bytesToHex$5(concatBytes$5(hiding, binding)), nonce);
 					commitments.push({
 						hiding,
 						binding
@@ -41864,7 +42410,7 @@ zoo`.split("\n"));
 				const prevout = job.target.prevouts[job.target.inputIndex];
 				if (prevout === void 0) throw new SparkInputError("signFrost: inputIndex out of range for prevouts");
 				const tx = parseTransaction(job.target.transaction);
-				const key = bytesToHex$4(job.publicKey);
+				const key = bytesToHex$5(job.publicKey);
 				if (tx.inputsLength > 1) {
 					const foreign = /* @__PURE__ */ new Map();
 					for (let i = 0; i < tx.inputsLength; i++) {
@@ -41873,7 +42419,7 @@ zoo`.split("\n"));
 						if (!eq(otherPrevout.script, prevout.script)) {
 							const { txid } = tx.getInput(i);
 							if (txid === void 0) throw new SparkInputError("signFrost: foreign input carries no prevout txid");
-							foreign.set(bytesToHex$4(txid), txid);
+							foreign.set(bytesToHex$5(txid), txid);
 						}
 					}
 					if (foreign.size > 0) {
@@ -41895,7 +42441,7 @@ zoo`.split("\n"));
 						};
 						entry.amountSats = Math.max(entry.amountSats, prevout.amount);
 						leaves.set(key, entry);
-						exits.set(bytesToHex$4(txid), txid);
+						exits.set(bytesToHex$5(txid), txid);
 						continue;
 					}
 				}
@@ -41923,11 +42469,11 @@ zoo`.split("\n"));
 				leaves.set(key, entry);
 				if (tx.inputsLength === 1) {
 					const distinct = /* @__PURE__ */ new Map();
-					for (const script of violations) distinct.set(bytesToHex$4(script), script);
+					for (const script of violations) distinct.set(bytesToHex$5(script), script);
 					if (distinct.size !== 1) throw new SparkInputError("signFrost: job carries multiple non-whitelisted outputs");
 					const script = distinct.values().next().value;
 					if (script === void 0) throw new SparkInputError("signFrost: malformed output set");
-					lightnings.set(bytesToHex$4(script), script);
+					lightnings.set(bytesToHex$5(script), script);
 				} else throw new SparkInputError(`signFrost: non-whitelisted output on a ${tx.inputsLength}-input transaction`);
 			}
 			if (exits.size > 0 && lightnings.size > 0) throw new SparkInputError("signFrost: batch mixes connector and HTLC refunds");
@@ -41966,7 +42512,7 @@ zoo`.split("\n"));
 		const recordSign = (signingPublicKey, target) => {
 			const prevout = target.prevouts[target.inputIndex];
 			if (prevout === void 0) throw new SparkInputError("signFrost: inputIndex out of range for prevouts");
-			const key = bytesToHex$4(signingPublicKey);
+			const key = bytesToHex$5(signingPublicKey);
 			let record = signs.get(key);
 			if (record === void 0) {
 				if (signs.size >= MAX_SIGNING_KEYS) {
@@ -41985,13 +42531,13 @@ zoo`.split("\n"));
 			}
 			for (const leaf of leaves) {
 				var _receivers$get;
-				const pk = bytesToHex$4(leaf.publicKey);
+				const pk = bytesToHex$5(leaf.publicKey);
 				let receivers = leafReceivers.get(pk);
 				if (receivers === void 0) {
 					receivers = /* @__PURE__ */ new Map();
 					leafReceivers.set(pk, receivers);
 				}
-				const receiver = bytesToHex$4(leaf.receiverIdentityPublicKey);
+				const receiver = bytesToHex$5(leaf.receiverIdentityPublicKey);
 				receivers.set(receiver, ((_receivers$get = receivers.get(receiver)) !== null && _receivers$get !== void 0 ? _receivers$get : 0) + 1);
 				receiverScripts.set(receiver, p2trScriptFromPublicKey(leaf.receiverIdentityPublicKey, network));
 			}
@@ -42022,7 +42568,7 @@ zoo`.split("\n"));
 				return value !== void 0 && recorded !== void 0 && eq(recorded, value);
 			})) throw new SparkInputError("transfer package: key_tweak_package does not match the recorded operator packages");
 			const leafAmounts = prepared.leaves.map((leaf) => {
-				const record = signs.get(bytesToHex$4(leaf.publicKey));
+				const record = signs.get(bytesToHex$5(leaf.publicKey));
 				if (record === void 0) throw new SparkInputError(`transfer package: no recorded refund signature for leaf ${leaf.leafId}`);
 				return record.maxAmount;
 			});
@@ -42030,7 +42576,7 @@ zoo`.split("\n"));
 			const sspCount = prepared.leaves.map((leaf) => eq(leaf.receiverIdentityPublicKey, sspIdentityPublicKey)).filter(Boolean).length;
 			if (sspCount > 0 && sspCount !== prepared.leaves.length) throw new SparkInputError("transfer package: SSP and non-SSP receivers in one transfer");
 			if (sspCount > 0) {
-				const authorized = prepared.leaves.filter((leaf) => serviceAuthorized.has(bytesToHex$4(leaf.publicKey))).length;
+				const authorized = prepared.leaves.filter((leaf) => serviceAuthorized.has(bytesToHex$5(leaf.publicKey))).length;
 				if (authorized === prepared.leaves.length) return;
 				if (authorized !== 0) throw new SparkInputError("transfer package: SSP transfer mixes service-authorized and unauthorized leaves");
 				return {
@@ -42041,7 +42587,7 @@ zoo`.split("\n"));
 			}
 			const receivers = /* @__PURE__ */ new Map();
 			for (const [i, leaf] of prepared.leaves.entries()) {
-				const key = bytesToHex$4(leaf.receiverIdentityPublicKey);
+				const key = bytesToHex$5(leaf.receiverIdentityPublicKey);
 				const amount = leafAmounts[i];
 				if (amount === void 0) throw new SparkInputError("transfer package: leaf amount out of range");
 				const entry = receivers.get(key);
@@ -42062,9 +42608,9 @@ zoo`.split("\n"));
 			const prepared = transfers.get(transferId);
 			if (prepared !== void 0) {
 				for (const leaf of prepared.leaves) {
-					const pk = bytesToHex$4(leaf.publicKey);
+					const pk = bytesToHex$5(leaf.publicKey);
 					const receivers = leafReceivers.get(pk);
-					const receiver = bytesToHex$4(leaf.receiverIdentityPublicKey);
+					const receiver = bytesToHex$5(leaf.receiverIdentityPublicKey);
 					if (receivers !== void 0) {
 						const count = receivers.get(receiver);
 						if (count !== void 0) {
@@ -42082,7 +42628,7 @@ zoo`.split("\n"));
 		return {
 			evaluateJobs,
 			markServiceAuthorized: (publicKeys) => {
-				for (const pk of publicKeys) serviceAuthorized.add(bytesToHex$4(pk));
+				for (const pk of publicKeys) serviceAuthorized.add(bytesToHex$5(pk));
 			},
 			recordSign,
 			recordPrepare,
@@ -42131,7 +42677,7 @@ zoo`.split("\n"));
 		}
 		if (statement.kind === "static-deposit-claim") return {
 			digest: staticDepositStatementDigest({
-				transactionId: bytesToHex$4(statement.txid),
+				transactionId: bytesToHex$5(statement.txid),
 				outputIndex: statement.vout,
 				network: statement.network,
 				requestType: "fixed",
@@ -42142,7 +42688,7 @@ zoo`.split("\n"));
 		};
 		if (statement.kind === "static-deposit-refund") return {
 			digest: staticDepositStatementDigest({
-				transactionId: bytesToHex$4(statement.txid),
+				transactionId: bytesToHex$5(statement.txid),
 				outputIndex: statement.vout,
 				network: statement.network,
 				requestType: "refund",
@@ -43046,18 +43592,18 @@ zoo`.split("\n"));
 						sspIdentityPublicKey: rt.sparkNetworkConfig(account.network).ssp.identityPublicKey,
 						identityPublicKey: await signer.identityPublicKey()
 					}), outflow.htlcOutputScript)) continue;
-					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 					if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > budget + intent.maxFeeSats) continue;
-					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
 					return;
 				}
 				if (outflow.kind === "exit" && intent.kind === "exit") {
 					const { addressScript } = approval.decoded;
 					if (addressScript === void 0) continue;
 					if (!outflow.exitOutputs.some((output) => equalBytes$3(output.script, addressScript) && output.amountSats >= intent.amountSats)) continue;
-					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 					if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) continue;
-					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
 					return;
 				}
 				if (outflow.kind === "onchain" && intent.kind === "onchain") {
@@ -43188,7 +43734,7 @@ zoo`.split("\n"));
 		/** Opens a session, replacing any existing one. Returns the new session id. */
 		open(dek, keyId) {
 			this.wipeUnlocked();
-			const id = bytesToHex$4(this.platform.random(16));
+			const id = bytesToHex$5(this.platform.random(16));
 			const at = this.platform.elapsed();
 			this.state = {
 				status: "unlocked",
