@@ -12,6 +12,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
+import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import type { EngineLogger } from "./events.ts";
@@ -53,6 +54,7 @@ export type EngineOptions = {
 
 export type WalletEngine = {
   readonly networks: NetworkController;
+  readonly assets: AssetsController;
   readonly transactions: TransactionController;
   readonly spark: SparkController;
   readonly accounts: AccountTreeController;
@@ -101,6 +103,20 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     fetch: options.fetch,
     rpc: options.rpc ?? {},
     openStore: options.openStore,
+    logger: options.logger,
+  });
+
+  const assets = new AssetsController({
+    networks,
+    openStore: options.openStore,
+    setTimer:
+      options.setTimer ??
+      ((ms, fn) => {
+        const id = setTimeout(() => {
+          void fn();
+        }, ms);
+        return () => clearTimeout(id);
+      }),
     logger: options.logger,
   });
 
@@ -167,10 +183,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       // Pull → merge → maybe publish for every wallet with a group-0 identity.
       await metaSync.init();
       await networks.init();
+      await assets.init();
       await transactions.init();
     } else if (!unlocked && started) {
       started = false;
       transactions.lock();
+      assets.lock();
       networks.lock();
       // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
       await metaSync.lock();
@@ -213,6 +231,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   schedule();
   return {
     networks,
+    assets,
     transactions,
     spark: controller,
     accounts,

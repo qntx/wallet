@@ -21,8 +21,8 @@ describe("EvmChainAdapter", () => {
   it("allocates nonces serially per (network, from)", async () => {
     const a = new EvmChainAdapter();
     const c = rpc({ eth_getTransactionCount: "0x5", eth_estimateGas: "0x5208" });
-    const t1 = await a.build(c, "eip155:1", "0x1", "0x2", 1n);
-    const t2 = await a.build(c, "eip155:1", "0x1", "0x2", 1n);
+    const t1 = await a.build(c, "eip155:1", "0x1", { kind: "native", to: "0x2", value: 1n });
+    const t2 = await a.build(c, "eip155:1", "0x1", { kind: "native", to: "0x2", value: 1n });
     expect(t1.nonce).toBe(5);
     expect(t2.nonce).toBe(6);
     expect(t1.gas).toBe(25200n);
@@ -65,8 +65,7 @@ describe("EvmChainAdapter", () => {
       rpc({ eth_getTransactionCount: "0x0", eth_estimateGas: "0x5208" }),
       "eip155:1",
       "0xA",
-      "0xB",
-      7n,
+      { kind: "native", to: "0xB", value: 7n },
     );
     const priced = a.applyFee(tx, {
       tier: "normal",

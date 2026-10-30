@@ -46,6 +46,8 @@ export type SendParams = {
   readonly network: string;
   readonly to: string;
   readonly amount: bigint;
+  /** ERC-20 contract — when set, `to`/`amount` are the transfer recipient/units and value is 0. */
+  readonly token?: string;
   readonly fee: EvmFeeTier;
   readonly verify: SignParams["verify"];
 };
@@ -201,7 +203,14 @@ export class TransactionController extends Controller<TransactionControllerState
     });
     const from = "address" in evmAccount ? evmAccount.address : "";
     const id = `tx-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
-    const unsigned = await this.evm.build(client, network, from, to, amount);
+    const unsigned = await this.evm.build(
+      client,
+      network,
+      from,
+      params.token === undefined
+        ? { kind: "native", to, value: amount }
+        : { kind: "erc20", token: params.token, to, value: amount },
+    );
     const quotes = await this.evm.estimateFee(client);
     const quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
     if (quote === undefined) {

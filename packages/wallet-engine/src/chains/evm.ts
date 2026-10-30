@@ -5,7 +5,7 @@
  * 1.2 (ceil). Nonces are allocated on a per-(network, from) serial queue as max(pending count, last
  * submitted + 1). Finalization uses the `finalized` block tag; receipts with status 0 fail.
  */
-import { numberToHex } from "viem";
+import { encodeFunctionData, isAddress, numberToHex } from "viem";
 import type { PublicClient } from "viem";
 
 import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
@@ -24,6 +24,7 @@ export type EvmUnsignedTransaction = {
   readonly from: string;
   readonly to: string;
   readonly value: bigint;
+  readonly data: string;
   readonly nonce: number;
   readonly gas: bigint;
   readonly gasPrice?: bigint;
@@ -38,6 +39,47 @@ export type EvmFeeQuote = {
   readonly maxPriorityFeePerGas: bigint | undefined;
 };
 export type ChainTxStatus = "pending" | "confirmed" | "failed" | "finalized";
+
+export const ERC20_ABI = [
+  {
+    type: "function",
+    name: "transfer",
+    inputs: [
+      { name: "to", type: "address" },
+      { name: "value", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "symbol",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "decimals",
+    inputs: [],
+    outputs: [{ name: "", type: "uint8" }],
+    stateMutability: "view",
+  },
+] as const;
+
+const checkedAddress = (v: string): `0x${string}` => {
+  if (!isAddress(v)) {
+    throw new TypeError(`malformed evm address: ${v}`);
+  }
+  return v;
+};
 
 const hex = (v: bigint | number): string => numberToHex(v);
 
@@ -86,19 +128,37 @@ export class EvmChainAdapter {
     });
   }
 
+  /** ERC-20 gas is buffered ×1.1 instead of the native ×1.2 (chains.mdx "EVM"). */
   async build(
     client: PublicClient,
     network: string,
     from: string,
-    to: string,
-    value: bigint,
+    intent:
+      | { readonly kind: "native"; readonly to: string; readonly value: bigint }
+      | {
+          readonly kind: "erc20";
+          readonly token: string;
+          readonly to: string;
+          readonly value: bigint;
+        },
   ): Promise<EvmUnsignedTransaction> {
     const nonce = await this.nonce(client, network, from);
+    const erc20 = intent.kind === "erc20";
+    const to = erc20 ? intent.token : intent.to;
+    const value = erc20 ? 0n : intent.value;
+    const data = erc20
+      ? encodeFunctionData({
+          abi: ERC20_ABI,
+          functionName: "transfer",
+          args: [checkedAddress(intent.to), intent.value],
+        })
+      : "0x";
     const estimate = BigInt(
-      await this.rpcHex(client, "eth_estimateGas", [{ from, to, value: hex(value) }]),
+      await this.rpcHex(client, "eth_estimateGas", [{ from, to, value: hex(value), data }]),
     );
-    const gas = (estimate * 12n) / 10n + ((estimate * 12n) % 10n === 0n ? 0n : 1n);
-    return { family: "evm", network, from, to, value, nonce, gas };
+    const scale = erc20 ? 11n : 12n;
+    const gas = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
+    return { family: "evm", network, from, to, value, data, nonce, gas };
   }
 
   async estimateFee(client: PublicClient): Promise<ReadonlyArray<EvmFeeQuote>> {
@@ -168,7 +228,7 @@ export class EvmChainAdapter {
       gas: hex(tx.gas),
       to: tx.to,
       value: hex(tx.value),
-      data: "0x",
+      data: tx.data,
     };
     const transaction: EvmTransaction =
       tx.gasPrice === undefined
