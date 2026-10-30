@@ -248,6 +248,12 @@ export class BitcoinChainAdapter {
     for (const out of outputs) {
       tx.addOutputAddress(out.address, out.amount, network);
     }
-    return { psbt: tx.toPSBT(), vsize: tx.vsize };
+    // Unsigned tx has no witness — vsize is the BIP-141 weight estimate
+    // (10.5 overhead + ~68/input + ~31/output for P2WPKH; taproot ~57.5/43).
+    const tap = inputs.every((i) => i.tapInternalKey !== undefined);
+    const vsize = Math.ceil(
+      10.5 + inputs.length * (tap ? 57.5 : 68) + outputs.length * (tap ? 43 : 31),
+    );
+    return { psbt: tx.toPSBT(), vsize };
   }
 }

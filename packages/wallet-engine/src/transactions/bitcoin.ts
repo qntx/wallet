@@ -1,6 +1,6 @@
 /** Bitcoin route: scan → coin-select → PSBT → sign → broadcast, plus esplora status poll. */
 import { hex } from "@scure/base";
-import { Transaction } from "@scure/btc-signer";
+import { Address, OutScript, Transaction } from "@scure/btc-signer";
 
 import {
   decodeBitcoinPsbt,
@@ -160,17 +160,19 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       sign: Array.from({ length: txP.inputsLength }, (_, i) => i),
     };
     const intent = decodeBitcoinPsbt(request, ownScripts);
-    const { vsize } = txP;
+    const vsize = Math.ceil(
+      10.5 + txP.inputsLength * (tap ? 57.5 : 68) + txP.outputsLength * (tap ? 43 : 31),
+    );
     const outValues = Array.from({ length: txP.outputsLength }, (_, i) => {
       const o = txP.getOutput(i);
-      return {
-        address: "address" in o && typeof o.address === "string" ? o.address : "",
-        value: Number(o.amount ?? 0n),
-        own: false,
-      };
+      const scriptHex =
+        "script" in o && o.script instanceof Uint8Array ? o.script : new Uint8Array();
+      const address =
+        scriptHex.length > 0 ? Address(net.params).encode(OutScript.decode(scriptHex)) : "";
+      return { address, value: Number(o.amount ?? 0n), own: false };
     });
     for (const o of outValues) {
-      if (ownScripts.has(hex.encode(scriptPubKey(o.address, net.params)))) {
+      if (o.address !== "" && ownScripts.has(hex.encode(scriptPubKey(o.address, net.params)))) {
         (o as { own: boolean }).own = true;
       }
     }
@@ -466,14 +468,14 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const es = ctx.options.networks.esplora(old.network);
     const template = stash.tap ? ("btc.bip86" as const) : ("btc.bip84" as const);
     const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
-    const own = btc.outputs.filter((o) => o.own);
+    const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
     if (own.length === 0) {
       throw new Error("parent has no own outputs to bump");
     }
     const childInputs = bitcoin.toInputs(
-      own.map((o, i) => ({
+      own.map((o) => ({
         txid: old.hash ?? "",
-        vout: i,
+        vout: o.vout,
         value: o.value,
         address: o.address,
         status: "confirmed" as const,
