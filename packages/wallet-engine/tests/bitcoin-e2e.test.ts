@@ -4,20 +4,28 @@
  * change landing on the change chain; a 546-sat UTXO stays frozen.
  */
 import { execFileSync, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 
 import { HDKey } from "@scure/bip32";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { Wallet } from "@qntx/wallet";
 import {
   bitcoinAddressFromXpub,
   bitcoinPubkeyFromXpub,
   bitcoinNetwork,
 } from "@qntx/wallet-chains/bitcoin";
+import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
+import { chains } from "@qntx/wallet/chains";
 
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraResponse } from "../src/chains/bitcoin.ts";
 import { esplora, BitcoinChainAdapter, feeTiers } from "../src/chains/bitcoin.ts";
+import type { EngineLogger } from "../src/events.ts";
+import { NetworkController } from "../src/networks/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { TransactionController } from "../src/transactions/controller.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -51,10 +59,10 @@ const esploraClient = (base: string): Esplora =>
     sleep,
   );
 
-const rpc = (method: string, params: ReadonlyArray<unknown> = []): unknown => {
+const rpc = (container: string, method: string, params: ReadonlyArray<unknown> = []): unknown => {
   const out = docker([
     "exec",
-    NAME,
+    container,
     "/srv/explorer/bitcoin-30.2/bin/bitcoin-cli",
     "-regtest",
     "-datadir=/data/bitcoin",
@@ -144,7 +152,8 @@ const regtestFlow = async () => {
   ]);
   const base = `http://127.0.0.1:${port}/regtest/api`;
   const es = esploraClient(base);
-  const run = rpc;
+  const run = (method: string, params: ReadonlyArray<unknown> = []): unknown =>
+    rpc(NAME, method, params);
   try {
     await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
       throw new Error(`esplora never came up\n${logs()}`);
@@ -238,5 +247,202 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
   it("scans, sends, confirms, change lands on the change chain", { timeout: 300_000 }, async () => {
     expect.hasAssertions();
     await regtestFlow();
+  });
+});
+
+const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
+const BPASSWORD = "correct horse battery staple";
+const BVERIFY = { kind: "password" as const, password: BPASSWORD };
+const quiet: EngineLogger = { warn: () => {} };
+
+const taggedRandom = (): ((n: number) => Uint8Array) => {
+  let tag = 0;
+  return (n) => {
+    tag += 1;
+    return new Uint8Array(n).fill(tag);
+  };
+};
+
+const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
+  const wallet = await createNodeWallet({
+    passkey: {
+      rpId: "qntx.test",
+      rpName: "qntx",
+      walletSalt: "qntx/wallet",
+      backupSalt: "qntx/backup",
+      vaultSalt: "qntx/vault",
+    },
+    autoLock: { platform: "web", idleMinutes: 15 },
+    authenticator: createSoftwarePasskey(randomBytes(32)),
+    kernelUrl: KERNEL_URL,
+  });
+  const info = await wallet.wallets.importMnemonic({
+    mnemonic:
+      "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+    factor: { kind: "password", password: BPASSWORD },
+  });
+  return { wallet, walletId: info.walletId };
+};
+
+const ctlRig = async (
+  base: string,
+  timers: Array<() => unknown>,
+): Promise<{ ctl: TransactionController; walletId: string; xpub: string }> => {
+  const { wallet, walletId } = await realWallet();
+  const acct = await chains(wallet).account({
+    walletId,
+    groupIndex: 0,
+    template: "btc.bip84",
+    network: NETWORK,
+  });
+  const xpub = "xpub" in acct ? acct.xpub : "";
+  const ctl = new TransactionController({
+    wallet,
+    networks: new NetworkController({
+      fetch: globalThis.fetch.bind(globalThis),
+      rpc: { [NETWORK]: [base] },
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      logger: quiet,
+    }),
+    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    random: taggedRandom(),
+    setTimer: (_ms, fn) => {
+      timers.push(fn);
+      return () => {};
+    },
+    now: () => 1000,
+    logger: quiet,
+    pollMs: 1,
+  });
+  await ctl.init();
+  return { ctl, walletId, xpub };
+};
+
+const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
+  const port = 8194 + (Date.now() % 1000);
+  spawnSync("docker", [
+    "run",
+    "-d",
+    "--name",
+    `${NAME}-rbf`,
+    "-p",
+    `${port}:80`,
+    "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
+    "bash",
+    "-c",
+    "/srv/explorer/run.sh bitcoin-regtest explorer",
+  ]);
+  const base = `http://127.0.0.1:${port}/regtest/api`;
+  const timers: Array<() => unknown> = [];
+  try {
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logs()}`);
+    });
+    try {
+      rpc(`${NAME}-rbf`, "createwallet", ["e2e-rbf"]);
+    } catch {
+      // wallet exists
+    }
+    const { ctl, walletId, xpub } = await ctlRig(base, timers);
+    const recv = bitcoinAddressFromXpub(xpub, "btc.bip84", NETWORK, 0, 0);
+    const walletAddr = rpc(`${NAME}-rbf`, "getnewaddress") as string;
+    rpc(`${NAME}-rbf`, "generatetoaddress", [101, walletAddr]);
+    rpc(`${NAME}-rbf`, "sendtoaddress", [recv, "0.00050000"]);
+    rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
+    await waitFor(
+      async () => {
+        const es = esploraClient(base);
+        const scanned = await scanChain(
+          es,
+          xpub,
+          "btc.bip84",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        return scanned.some((s) => s.address === recv && s.used);
+      },
+      3000,
+      Date.now() + 120_000,
+      () => {
+        throw new Error("scan never saw the funded address");
+      },
+    );
+
+    const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
+    const original = await ctl.send({
+      account: { kind: "hd", walletId, groupIndex: 0, template: "btc.bip84" },
+      network: NETWORK,
+      to: external,
+      amount: 10_000n,
+      fee: "slow",
+      verify: BVERIFY,
+    });
+    expect(original.state).toBe("submitted");
+
+    if (mode === "cpfp") {
+      const child = await ctl.bumpChild(original.id, 10, BVERIFY);
+      expect(child.state).toBe("submitted");
+      rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
+      await waitFor(
+        async () => {
+          await Promise.all(timers.map((fn) => fn()));
+          return (
+            ctl.getState().txs[child.id]?.state === "confirmed" &&
+            ctl.getState().txs[original.id]?.state === "confirmed"
+          );
+        },
+        3000,
+        Date.now() + 120_000,
+        () => {
+          throw new Error("cpfp package never confirmed");
+        },
+      );
+      return;
+    }
+
+    const bumped = await ctl.replace(original.id, mode, BVERIFY);
+    expect(bumped.state).toBe("submitted");
+    rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
+    await waitFor(
+      async () => {
+        await Promise.all(timers.map((fn) => fn()));
+        const { txs } = ctl.getState();
+        return txs[bumped.id]?.state === "confirmed" && txs[original.id]?.state === "replaced";
+      },
+      3000,
+      Date.now() + 120_000,
+      () => {
+        throw new Error(`replacement never confirmed: ${JSON.stringify(ctl.getState().txs)}`);
+      },
+    );
+    if (mode === "cancel") {
+      const out = bumped.btc?.outputs;
+      expect(out).toHaveLength(1);
+      expect(out?.[0]?.own).toBe(true);
+    }
+  } finally {
+    spawnSync("docker", ["rm", "-f", `${NAME}-rbf`]);
+  }
+};
+
+describe.runIf(RUN)("bitcoin e2e: rbf/cpfp through engine.transactions", () => {
+  it(
+    "speed-up confirms the replacement; the original is replaced",
+    { timeout: 300_000 },
+    async () => {
+      expect.hasAssertions();
+      await rbfFlow("speed-up");
+    },
+  );
+
+  it("cancel sends the funds back to our change address", { timeout: 300_000 }, async () => {
+    expect.hasAssertions();
+    await rbfFlow("cancel");
+  });
+
+  it("cpfp child confirms the parent package", { timeout: 300_000 }, async () => {
+    expect.hasAssertions();
+    await rbfFlow("cpfp");
   });
 });

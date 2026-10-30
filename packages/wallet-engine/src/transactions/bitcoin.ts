@@ -34,6 +34,7 @@ type BtcStash = {
   readonly tier: string;
   readonly tap: boolean;
   readonly network: string;
+  readonly fp: number;
 };
 
 /** The account-relative full path `purpose'/coin'/group'/change/index` for a PSBT entry. */
@@ -195,6 +196,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       },
       scriptOf: (u) => scriptPubKey(u.address, net.params),
       changeAddresses: change.filter((a) => !a.used).map((a) => a.address),
+      fp,
       tier: fee === "fast" ? "fast" : fee === "slow" ? "slow" : "normal",
       tap,
       network,
@@ -383,7 +385,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         extraInputs.push(
           ...bitcoin.toInputs(
             [{ ...next, status: "confirmed" as const }],
-            0,
+            stash.fp,
             stash.pathOf,
             stash.pubkeyOf,
             stash.scriptOf,
@@ -481,7 +483,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         status: "confirmed" as const,
         height: 0,
       })),
-      0,
+      stash.fp,
       stash.pathOf,
       stash.pubkeyOf,
       stash.scriptOf,
