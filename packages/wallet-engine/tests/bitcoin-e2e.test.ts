@@ -29,6 +29,27 @@ const ACCT86 = HD.derive("m/86'/1'/0'");
 const docker = (args: string[]): string => execFileSync("docker", args).toString().trim();
 const logs = () => docker(["logs", NAME, "--tail", "60"]);
 
+const sleep =  async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const until = async (
+  done: (previous: unknown) => Promise<boolean>,
+  sleepMs: number,
+  deadline: number,
+  onTimeout: () => never,
+): Promise<void> => {
+  if (await done(undefined)) {
+    return;
+  }
+  if (Date.now() > deadline) {
+    onTimeout();
+  }
+  await sleep(sleepMs);
+  await until(done, sleepMs, deadline, onTimeout);
+};
+
 const rpc = async (method: string, params: unknown[] = []): Promise<unknown> => {
   const out = docker([
     "exec",
@@ -95,7 +116,7 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
         if (Date.now() > deadline) {
           throw new Error(`esplora never came up\n${logs()}`);
         }
-        await new Promise((r) => setTimeout(r, 3000));
+        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
         return waitUp(deadline);
       };
       await waitUp(Date.now() + 120_000);
@@ -108,7 +129,7 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
       } catch {
         // already exists
       }
-      const walletAddr = String(await rpc("getnewaddress"));
+      const walletAddr = String((await rpc("getnewaddress")));
       await rpc("generatetoaddress", [101, walletAddr]);
       await rpc("generatetoaddress", [1, wpkhRecv]);
       await rpc("generatetoaddress", [1, trRecv]);
@@ -118,13 +139,13 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
       const tip = Number(await rpc("getblockcount"));
       const waitTip = async (deadline: number): Promise<void> => {
         const r = await fetch(`${base}/blocks/tip/height`);
-        if (r.ok && Number(await r.text()) >= tip) {
+        if (r.ok && Number((await r.text())) >= tip) {
           return;
         }
         if (Date.now() > deadline) {
           throw new Error("electrs tip never caught up to the node");
         }
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise<void>((resolve) => setTimeout(resolve, 2000));
         return waitTip(deadline);
       };
       await waitTip(Date.now() + 60_000);
@@ -144,7 +165,7 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
         if (Date.now() > deadline) {
           throw new Error("scan never saw the funded address — electrs indexing stalled");
         }
-        await new Promise((r) => setTimeout(r, 3000));
+        await new Promise<void>((resolve) => setTimeout(resolve, 3000));
         return waitScan(deadline);
       };
       const receive = await waitScan(Date.now() + 120_000);

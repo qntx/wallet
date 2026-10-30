@@ -60,7 +60,7 @@ const windowUsed = async (
   addrs: ReadonlyArray<ScanAddress>,
 ): Promise<ReadonlyArray<boolean>> =>
   addrs.reduce<Promise<ReadonlyArray<boolean>>>(
-     async (p, a) =>
+    async (p, a) =>
       p.then(async (acc) => {
         await new Promise((r) => setTimeout(r, 150));
         const txs = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
