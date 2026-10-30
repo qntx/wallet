@@ -1,4 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
 import { createPublicClient, http } from "viem";
 import type { PublicClient } from "viem";
@@ -8,7 +9,6 @@ import { describe, expect, it } from "vite-plus/test";
 import { EvmChainAdapter } from "../src/chains/evm.ts";
 
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
-import { existsSync } from "node:fs";
 
 const local = `${process.env["HOME"] ?? ""}/.foundry/bin/anvil`;
 const anvil = existsSync(local) ? local : execFileSync("which", ["anvil"]).toString().trim();
