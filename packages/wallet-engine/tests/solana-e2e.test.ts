@@ -37,31 +37,21 @@ const rpc = (url: string): SolanaRpc => ({
   },
 });
 
-const logs = (name: string): string => {
+const probe = (args: string[]): string => {
   try {
-    const ps = execFileSync("docker", [
-      "ps",
-      "-a",
-      "--format",
-      "{{.Names}} {{.Status}}",
-    ]).toString();
-    const out = execFileSync("docker", ["logs", name]).toString();
-    const file = execFileSync("docker", [
-      "exec",
-      name,
-      "tail",
-      "-200",
-      "/tmp/ledger/validator.log",
-    ]).toString();
-    return `${ps}
---- docker logs ---
-${out}
---- validator.log ---
-${file}`;
+    return execFileSync("docker", args).toString();
   } catch {
-    return "<no logs>";
+    return "<failed>";
   }
 };
+
+const logs = (name: string): string =>
+  [
+    probe(["ps", "-a", "--format", "{{.Names}} {{.Status}}"]),
+    probe(["logs", name]),
+    probe(["inspect", name, "--format", "{{.State.ExitCode}} {{.State.Error}}"]),
+    probe(["exec", name, "tail", "-50", "/tmp/ledger/validator.log"]),
+  ].join("\n---\n");
 
 const PORT = "18899";
 
