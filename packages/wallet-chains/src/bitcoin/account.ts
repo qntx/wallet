@@ -45,3 +45,35 @@ export function bitcoinAddressFromXpub(
   }
   return address;
 }
+
+/**
+ * The compressed (P2WPKH) or x-only (P2TR) public key at `change`/`index` under an account-level
+ * xpub — the key placed in a PSBT's bip32Derivation/tapBip32Derivation entry so the signing kernel
+ * can re-derive it.
+ */
+export function bitcoinPubkeyFromXpub(
+  xpub: string,
+  template: BitcoinAccountTemplate,
+  network: string,
+  change: 0 | 1,
+  index: number,
+): Uint8Array {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new ChainError("invalid-request", "index must be a non-negative integer");
+  }
+  const net = bitcoinNetwork(network);
+  let node: HDKey;
+  try {
+    node = HDKey.fromExtendedKey(xpub, net.bip32);
+  } catch (error) {
+    throw new ChainError(
+      "invalid-request",
+      `xpub: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const pub = node.derive(`m/${change}/${index}`).publicKey;
+  if (pub === null) {
+    throw new ChainError("invalid-request", "xpub carries no public key");
+  }
+  return template === "btc.bip84" ? pub : pub.subarray(1);
+}

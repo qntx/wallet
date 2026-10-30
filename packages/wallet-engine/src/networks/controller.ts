@@ -8,6 +8,7 @@
 import { createPublicClient, fallback, http } from "viem";
 import type { PublicClient } from "viem";
 
+import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -147,9 +148,58 @@ export class NetworkController extends Controller<NetworkControllerState> {
     };
   }
 
+  /** Ordered-failover Esplora client over the host + validated custom endpoints. */
+  esplora(network: string): Esplora {
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no esplora endpoint for ${network}`);
+    }
+    const attempt = async (
+      rest: ReadonlyArray<string>,
+      path: string,
+      init: { method: string; body?: string } | undefined,
+      last: unknown,
+    ): Promise<unknown> => {
+      const [url, ...next] = rest;
+      if (url === undefined) {
+        throw last instanceof Error ? last : new Error(`all esplora endpoints failed: ${path}`);
+      }
+      try {
+        const res = await this.options.fetch(`${url.replace(/\/$/, "")}${path}`, {
+          method: init?.method ?? "GET",
+          ...(init?.body === undefined
+            ? {}
+            : { headers: { "content-type": "text/plain" }, body: init.body }),
+        });
+        if (!res.ok) {
+          return await attempt(next, path, init, new Error(`esplora ${url} ${res.status}`));
+        }
+        const text = await res.text();
+        try {
+          return JSON.parse(text) as unknown;
+        } catch {
+          return text;
+        }
+      } catch (error) {
+        return attempt(next, path, init, error);
+      }
+    };
+    return {
+      get:  async (path: string) => attempt(urls, path, undefined, undefined),
+      post:  async (path: string, body: string) =>
+        attempt(urls, path, { method: "POST", body }, undefined),
+    };
+  }
+
   async addRpc(network: string, url: string): Promise<void> {
     const info = this.info(network);
-    if (info.family === "solana") {
+    if (info.family === "bitcoin") {
+      const res = await this.options.fetch(`${url.replace(/\/$/, "")}/block-height/0`);
+      const genesis = (await res.text()).trim();
+      if (genesis !== info.genesisHash) {
+        throw new Error(`${url} reports genesis ${genesis}, expected ${info.genesisHash ?? ""}`);
+      }
+    } else if (info.family === "solana") {
       const res = await this.options.fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },

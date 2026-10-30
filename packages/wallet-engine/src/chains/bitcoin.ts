@@ -1,4 +1,4 @@
-import type { Transaction, NETWORK as BTC_MAINNET } from "@scure/btc-signer";
+import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
  *
@@ -20,6 +20,7 @@ export type BtcUtxo = {
   readonly txid: string;
   readonly vout: number;
   readonly value: number;
+  readonly address: string;
   readonly status: "unconfirmed" | "confirmed" | "locked" | "frozen";
   readonly height: number;
 };
@@ -101,6 +102,26 @@ export const dustFor = (scriptType: string): number => DUST[scriptType] ?? 546;
 
 export const isFrozen = (value: number): boolean => FROZEN_AMOUNTS.has(value);
 
+export type BtcInput = {
+  readonly txid: string;
+  readonly index: number;
+  readonly sequence: number;
+  readonly witnessUtxo: { readonly amount: bigint; readonly script: Uint8Array };
+  readonly bip32Derivation?: ReadonlyArray<
+    readonly [Uint8Array, { readonly fingerprint: number; readonly path: ReadonlyArray<number> }]
+  >;
+  readonly tapBip32Derivation?: ReadonlyArray<
+    readonly [
+      Uint8Array,
+      {
+        readonly hashes: ReadonlyArray<Uint8Array>;
+        readonly der: { readonly fingerprint: number; readonly path: ReadonlyArray<number> };
+      },
+    ]
+  >;
+  readonly tapInternalKey?: Uint8Array;
+};
+
 export class BitcoinChainAdapter {
   /** Inputs for selectUTXO — the same TransactionInputUpdate objects added to the PSBT. */
   toInputs(
@@ -138,10 +159,10 @@ export class BitcoinChainAdapter {
         witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) },
         ...(tap
           ? {
-              tapInternalKey: pubkeyOf(u).slice(1, 33),
+              tapInternalKey: pubkeyOf(u).subarray(1),
               tapBip32Derivation: [
                 [
-                  pubkeyOf(u).slice(1, 33),
+                  pubkeyOf(u).subarray(1),
                   { hashes: [] as Uint8Array[], der: { fingerprint, path: pathOf(u) } },
                 ],
               ],
@@ -153,21 +174,26 @@ export class BitcoinChainAdapter {
   }
 
   buildPsbt(
-    inputs: ReadonlyArray<Parameters<typeof Transaction.prototype.addInput>[0]>,
+    inputs: ReadonlyArray<BtcInput>,
     to: string,
     amount: bigint,
     feePerByte: bigint,
     changeAddress: string,
     network: typeof BTC_MAINNET,
   ): Uint8Array {
-    const selection = selectUTXO([...inputs], [{ address: to, amount }], "default", {
-      feePerByte,
-      changeAddress,
-      bip69: true,
-      dust: BigInt(dustFor("p2wpkh")),
-      network,
-      createTx: true,
-    });
+    const selection = selectUTXO(
+      [...inputs] as Parameters<typeof selectUTXO>[0],
+      [{ address: to, amount }],
+      "default",
+      {
+        feePerByte,
+        changeAddress,
+        bip69: true,
+        dust: BigInt(dustFor("p2wpkh")),
+        network,
+        createTx: true,
+      },
+    );
     if (selection === undefined || selection.tx === undefined) {
       throw new Error("insufficient confirmed utxo for the amount + fee");
     }

@@ -42,6 +42,10 @@ export type ScanState = {
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
+/** The scriptPubKey bytes of a bech32/base58 address on `network`. */
+export const scriptPubKey = (address: string, network: typeof BTC_NETWORK): Uint8Array =>
+  OutScript.encode(Address(network).decode(address));
+
 /** Electrum-order scripthash: sha256 of the scriptPubKey, digest reversed. */
 export const scripthash = (address: string, network: typeof BTC_NETWORK): string => {
   const decoded = Address(network).decode(address);
