@@ -31,7 +31,7 @@ describe("bitcoin psbt construction", () => {
       () => [0],
       () => PUB,
       () => p2wpkh(PUB, NETWORK).script,
-      false,
+      "btc.bip84",
     );
     expect(inputs).toHaveLength(1);
     expect(inputs[0]!.txid).toBe(TXID(3));
@@ -50,7 +50,7 @@ describe("bitcoin psbt construction", () => {
       () => [1, 0],
       () => PUB,
       () => p2wpkh(PUB, NETWORK).script,
-      false,
+      "btc.bip84",
     );
     const { psbt, inputs: selected } = adapter.buildPsbt(
       inputs,
@@ -72,5 +72,58 @@ describe("bitcoin psbt construction", () => {
     expect(der?.length).toBe(1);
     expect(der?.[0]?.[1]?.fingerprint).toBe(0xdeadbeef);
     expect(der?.[0]?.[1]?.path.join(",")).toBe("1,0");
+  });
+});
+
+describe("legacy template inputs", () => {
+  it("emits redeemScript for bip49 and keeps witnessUtxo", () => {
+    const inputs = adapter.toInputs(
+      [utxo(TXID(9), 0, 100_000)],
+      0xdeadbeef,
+      () => [0],
+      () => PUB,
+      () => p2wpkh(PUB, NETWORK).script,
+      "btc.bip49",
+    );
+    const i = inputs[0];
+    if (i === undefined) {
+      throw new Error("missing input");
+    }
+    expect(i.witnessUtxo).toBeDefined();
+    expect(i.redeemScript).toBeDefined();
+    expect(i.bip32Derivation).toBeDefined();
+    expect(i.tapBip32Derivation).toBeUndefined();
+  });
+
+  it("emits nonWitnessUtxo and no witnessUtxo for bip44", () => {
+    const raw = new Uint8Array([0xaa, 0xbb]);
+    const inputs = adapter.toInputs(
+      [utxo(TXID(9), 0, 100_000)],
+      0xdeadbeef,
+      () => [0],
+      () => PUB,
+      () => p2wpkh(PUB, NETWORK).script,
+      "btc.bip44",
+      () => raw,
+    );
+    const i = inputs[0];
+    if (i === undefined) {
+      throw new Error("missing input");
+    }
+    expect(i.witnessUtxo).toBeUndefined();
+    expect(i.nonWitnessUtxo).toEqual(raw);
+  });
+
+  it("throws when the bip44 raw tx is missing", () => {
+    expect(() =>
+      adapter.toInputs(
+        [utxo(TXID(9), 0, 100_000)],
+        0xdeadbeef,
+        () => [0],
+        () => PUB,
+        () => p2wpkh(PUB, NETWORK).script,
+        "btc.bip44",
+      ),
+    ).toThrow(/no raw transaction/);
   });
 });

@@ -1,6 +1,7 @@
 import { hex } from "@scure/base";
 import { Transaction } from "@scure/btc-signer";
 import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
+import { p2wpkh } from "@scure/btc-signer/payment.js";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
  *
@@ -177,25 +178,40 @@ export class BitcoinChainAdapter {
     pathOf: (utxo: BtcUtxo) => number[],
     pubkeyOf: (utxo: BtcUtxo) => Uint8Array,
     scriptOf: (utxo: BtcUtxo) => Uint8Array,
-    tap: boolean,
+    template: string,
+    rawTxOf?: (utxo: BtcUtxo) => Uint8Array | undefined,
   ): BtcInput[] {
     return utxos
       .filter((u) => u.status === "confirmed" && !isFrozen(u.value))
       .map((u) => {
         const pub = pubkeyOf(u);
+        // bip49 is a segwit-wrapped P2SH spend (witnessUtxo + redeemScript);
+        // bip44 P2PKH proves the prevout through the whole prior transaction.
         const entry: TransactionInputUpdate = {
           txid: u.txid,
           index: u.vout,
           sequence: 0xfffffffd,
-          witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) },
+          ...(template === "btc.bip44"
+            ? {}
+            : { witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) } }),
         };
-        if (tap) {
+        if (template === "btc.bip44") {
+          const raw = rawTxOf === undefined ? undefined : rawTxOf(u);
+          if (raw === undefined) {
+            throw new Error(`no raw transaction for bip44 input ${u.txid}`);
+          }
+          entry.nonWitnessUtxo = raw;
+        }
+        if (template === "btc.bip86") {
           entry.tapInternalKey = pub.subarray(1);
           entry.tapBip32Derivation = [
             [pub.subarray(1), { hashes: [], der: { fingerprint, path: pathOf(u) } }],
           ];
         } else {
           entry.bip32Derivation = [[pub, { fingerprint, path: pathOf(u) }]];
+          if (template === "btc.bip49") {
+            entry.redeemScript = p2wpkh(pub).script;
+          }
         }
         return entry;
       });

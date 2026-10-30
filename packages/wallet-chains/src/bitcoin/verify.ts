@@ -94,7 +94,12 @@ export const verifyBitcoinPsbtSignatures = (
       if (claimed === undefined || tail === undefined) {
         return false;
       }
-      const prevout = input.witnessUtxo;
+      const vout = input.index;
+      const legacyOut =
+        input.nonWitnessUtxo === undefined || vout === undefined
+          ? undefined
+          : input.nonWitnessUtxo.outputs[vout];
+      const prevout = input.witnessUtxo ?? legacyOut;
       if (prevout === undefined) {
         return false;
       }
@@ -141,12 +146,24 @@ export const verifyBitcoinPsbtSignatures = (
           return false;
         }
         const sighashType = input.sighashType ?? rawSig.at(-1) ?? SigHash.ALL;
-        const decoded = OutScript.decode(prevout.script);
+        // bip49 prevouts are P2SH — the BIP143 scriptCode is the inner P2WPKH
+        // redeem script, canonicalized to the equivalent P2PKH script.
+        const effective = input.redeemScript ?? prevout.script;
+        const decoded = OutScript.decode(effective);
         const scriptCode =
           decoded !== undefined && decoded.type === "wpkh"
             ? OutScript.encode({ type: "pkh", hash: decoded.hash })
-            : prevout.script;
-        const hash = tx.preimageWitnessV0(idx, scriptCode, sighashType, prevout.amount);
+            : effective;
+        // P2PKH inputs sign the legacy (non-segwit) preimage — btc-signer exposes it as a
+        // private method; the public witness preimages do not apply to non-witness inputs.
+        const hash =
+          input.nonWitnessUtxo === undefined
+            ? tx.preimageWitnessV0(idx, scriptCode, sighashType, prevout.amount)
+            : (
+                tx as unknown as {
+                  preimageLegacy: (i: number, s: Uint8Array, h: number) => Uint8Array;
+                }
+              ).preimageLegacy(idx, scriptCode, sighashType);
         if (
           !secp256k1.verify(
             secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(),
