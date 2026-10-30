@@ -1,16 +1,15 @@
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 /**
  * `chains(wallet)` host proxy: `account` forwards `wallet.accounts` to the kernel and returns the
  * validated result. The kernel-side derivation is covered in packages/wallet-kernel/tests.
  */
 import { describe, expect, it } from "vite-plus/test";
 
+import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
+
 import { chains } from "../src/chains/index.ts";
 import { connectKernel } from "../src/wallet.ts";
-import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
-
-import { WalletError } from "../src/types.ts";
-import { FakeKernel, unlockedStatus, PASSKEY, ScriptedPort } from "./host.test.ts";
+import { FakeKernel, unlockedStatus, PASSKEY, ScriptedPort, walletError } from "./host.test.ts";
 
 const RESULT = {
   template: "evm.bip44" as const,
@@ -98,7 +97,7 @@ describe("chains(wallet)", () => {
   it("rejects a forged kernel signature with integrity", async () => {
     const { wallet } = await connect(signEvmPersonalMessage(MESSAGE, new Uint8Array(32).fill(8)));
     await expect(chains(wallet).sign(signParams())).rejects.toSatisfy(
-      (error) => error instanceof WalletError && error.code === "integrity",
+      (e) => walletError(e).code === "integrity",
     );
   });
 });

@@ -6,19 +6,15 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { ProtocolValue } from "@qntx/wallet/protocol";
-
-import { ed25519 } from "@noble/curves/ed25519.js";
-import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
-
-import { normalizeEvm } from "@qntx/wallet-chains/evm";
+import { normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
-import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
-import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
-import { mnemonicToSeedSync } from "@scure/bip39";
+import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
@@ -36,6 +32,13 @@ function field(value: ProtocolValue, key: string): ProtocolValue {
   const v = value[key];
   if (v === undefined) {
     throw new Error(`missing field ${key}`);
+  }
+  return v;
+}
+function bytesField(value: ProtocolValue, key: string): Uint8Array {
+  const v = field(value, key);
+  if (!(v instanceof Uint8Array)) {
+    throw new Error("expected bytes");
   }
   return v;
 }
@@ -74,7 +77,11 @@ const vectors = JSON.parse(
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-const PASSKEY = () => ({ kind: "passkey", credentialId: new Uint8Array(CREDENTIAL_ID), prf: new Uint8Array(PRF_VAULT) });
+const PASSKEY = () => ({
+  kind: "passkey",
+  credentialId: new Uint8Array(CREDENTIAL_ID),
+  prf: new Uint8Array(PRF_VAULT),
+});
 const EVM_ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
 const SOL_ADDRESS = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
 
@@ -92,7 +99,21 @@ const solanaTransferMessage = (): Uint8Array => {
   dv.setUint32(0, 2, true);
   dv.setBigUint64(4, 1000n, true);
   return new Uint8Array([
-    1, 0, 1, 3, ...fp, ...dest, ...system, ...blockhash, 1, 2, 2, 0, 1, 12, ...data,
+    1,
+    0,
+    1,
+    3,
+    ...fp,
+    ...dest,
+    ...system,
+    ...blockhash,
+    1,
+    2,
+    2,
+    0,
+    1,
+    12,
+    ...data,
   ]);
 };
 
@@ -244,7 +265,9 @@ describe("chain.sign", () => {
     });
     const txRes = ok(await callSign(h, session, txReq));
     expect(
-      recoverEvmSigner(txReq, { signedTransaction: field(txRes, "signedTransaction") as Uint8Array }),
+      recoverEvmSigner(txReq, {
+        signedTransaction: field(txRes, "signedTransaction") as Uint8Array,
+      }),
     ).toBe(EVM_ADDRESS.toLowerCase());
     const msgReq = normalizeEvm({
       kind: "evm.personal-message",
@@ -253,9 +276,9 @@ describe("chain.sign", () => {
       message: utf8ToBytes("hello"),
     });
     const msgRes = ok(await callSign(h, session, msgReq));
-    expect(
-      recoverEvmSigner(msgReq, { signature: field(msgRes, "signature") as Uint8Array }),
-    ).toBe(EVM_ADDRESS.toLowerCase());
+    expect(recoverEvmSigner(msgReq, { signature: field(msgRes, "signature") as Uint8Array })).toBe(
+      EVM_ADDRESS.toLowerCase(),
+    );
     const td = JSON.stringify({
       types: {
         EIP712Domain: [{ name: "name", type: "string" }],
@@ -272,9 +295,9 @@ describe("chain.sign", () => {
       typedData: td,
     });
     const tdRes = ok(await callSign(h, session, tdReq));
-    expect(
-      recoverEvmSigner(tdReq, { signature: field(tdRes, "signature") as Uint8Array }),
-    ).toBe(EVM_ADDRESS.toLowerCase());
+    expect(recoverEvmSigner(tdReq, { signature: field(tdRes, "signature") as Uint8Array })).toBe(
+      EVM_ADDRESS.toLowerCase(),
+    );
   });
 
   it("signs a solana transaction and a raw message", async () => {
@@ -291,10 +314,7 @@ describe("chain.sign", () => {
       SOL_ADDRESS,
     );
     const txRes = ok(await callSign(h, session, txReq));
-    const txSig = field(txRes, "signature");
-    expect(txSig instanceof Uint8Array && verifySolanaSignature(txMsg, txSig, SOL_ADDRESS)).toBe(
-      true,
-    );
+    expect(verifySolanaSignature(txMsg, bytesField(txRes, "signature"), SOL_ADDRESS)).toBe(true);
     const msg = utf8ToBytes("hello solana");
     const msgReq = normalizeSolana(
       {
@@ -307,8 +327,7 @@ describe("chain.sign", () => {
       SOL_ADDRESS,
     );
     const msgRes = ok(await callSign(h, session, msgReq));
-    const sig = field(msgRes, "signature");
-    expect(sig instanceof Uint8Array && verifySolanaSignature(msg, sig, SOL_ADDRESS)).toBe(true);
+    expect(verifySolanaSignature(msg, bytesField(msgRes, "signature"), SOL_ADDRESS)).toBe(true);
   });
 
   it("rejects non-normalized, wrong-factor, mismatched, missing and bitcoin requests", async () => {
