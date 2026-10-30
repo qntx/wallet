@@ -1,3 +1,5 @@
+import { hex } from "@scure/base";
+
 import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
@@ -154,9 +156,18 @@ export class BitcoinChainAdapter {
     if (selection === undefined || selection.tx === undefined) {
       throw new Error("insufficient confirmed utxo for the amount + fee");
     }
-    const chosen = (selection.inputs ?? []).flatMap((s) =>
-      inputs.filter((i) => i.txid === s.txid && i.index === s.index),
+    const wanted = new Set(
+      (selection.inputs ?? []).flatMap((sel) => {
+        const raw = sel.txid;
+        if (!(raw instanceof Uint8Array)) {
+          return [];
+        }
+        const forward = hex.encode(raw);
+        const reverse = hex.encode(Uint8Array.from(raw).reverse());
+        return [`${forward}:${String(sel.index ?? -1)}`, `${reverse}:${String(sel.index ?? -1)}`];
+      }),
     );
+    const chosen = inputs.filter((i) => wanted.has(`${String(i.txid)}:${String(i.index)}`));
     return { psbt: selection.tx.toPSBT(), inputs: chosen };
   }
 }
