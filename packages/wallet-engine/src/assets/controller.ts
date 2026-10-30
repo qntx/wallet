@@ -8,6 +8,9 @@
 import { encodeFunctionData, decodeFunctionResult, isAddress, isHex } from "viem";
 import type { PublicClient } from "viem";
 
+import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+
+import { BtcUtxoStore, scanChain, scanUtxos } from "../chains/bitcoin-scan.ts";
 import { ERC20_ABI } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -33,6 +36,9 @@ export type TokenBalance = {
 export type AccountBalances = {
   readonly native: string;
   readonly tokens: ReadonlyArray<TokenBalance>;
+  /** Bitcoin only — confirmed + own unconfirmed change; frozen 546/330-sat UTXOs shown apart. */
+  readonly unconfirmed?: string;
+  readonly frozen?: string;
 };
 
 export type AssetsControllerState = {
@@ -89,6 +95,7 @@ export const MULTICALL3_ABI = [
 export class AssetsController extends Controller<AssetsControllerState> {
   private readonly options: Options;
   private engineStore: EngineStore | undefined;
+  private readonly bitcoinUtxos = new BtcUtxoStore();
   private visible = false;
   private cancelPoll: (() => void) | undefined;
   private readonly customTokens = new Map<
@@ -177,6 +184,10 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
       await this.refreshSolana(address, network);
+      return;
+    }
+    if (info.family === "bitcoin") {
+      await this.refreshBitcoin(address, network);
       return;
     }
     const client = this.options.networks.client(network);
@@ -413,5 +424,43 @@ export class AssetsController extends Controller<AssetsControllerState> {
       throw new TypeError(`${method} returned a malformed result`);
     }
     return result;
+  }
+
+  /** BTC balance = confirmed spendable + own unconfirmed change; frozen 546/330 shown separately. */
+  async refreshBitcoin(xpub: string, network: string): Promise<void> {
+    const es = this.options.networks.esplora(network);
+    const net = bitcoinNetwork(network);
+    const template = "btc.bip84" as const;
+    const receive = await scanChain(es, xpub, template, network, net.params, 0);
+    const change = await scanChain(es, xpub, template, network, net.params, 1);
+    const addresses = [...receive, ...change];
+    const scanned = await scanUtxos(es, addresses, net.params);
+    this.bitcoinUtxos.replace(scanned);
+    const changeSet = new Set(change.map((a) => a.address));
+    let confirmed = 0n;
+    let ownUnconfirmed = 0n;
+    let frozen = 0n;
+    for (const u of this.bitcoinUtxos.all()) {
+      const v = BigInt(u.value);
+      if (u.status === "frozen" || u.value === 546 || u.value === 330) {
+        frozen += v;
+      } else if (u.height > 0) {
+        confirmed += v;
+      } else if (changeSet.has(u.address)) {
+        ownUnconfirmed += v;
+      }
+    }
+    this.update((s) => ({
+      ...s,
+      balances: {
+        ...s.balances,
+        [`${xpub}:${network}:BTC`]: {
+          native: confirmed.toString(),
+          tokens: [],
+          unconfirmed: ownUnconfirmed.toString(),
+          frozen: frozen.toString(),
+        },
+      },
+    }));
   }
 }

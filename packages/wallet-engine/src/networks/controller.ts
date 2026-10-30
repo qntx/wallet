@@ -1,3 +1,6 @@
+import { createPublicClient, fallback, http } from "viem";
+import type { PublicClient } from "viem";
+
 /**
  * EVM network controller: the built-in registry plus host-provided and user-added RPC endpoints.
  * Each network gets a lazily-created viem PublicClient on a `fallback` transport — endpoints are
@@ -5,14 +8,18 @@
  * without code here. Custom RPC URLs are validated against the registry chain id with `eth_chainId`
  * and persisted in the EngineStore.
  */
-import { createPublicClient, fallback, http } from "viem";
-import type { PublicClient } from "viem";
-
+import { esplora } from "../chains/bitcoin.ts";
+import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
 import { networkById } from "./registry.ts";
 import type { NetworkInfo } from "./registry.ts";
+
+const esploraSleep = async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -147,9 +154,38 @@ export class NetworkController extends Controller<NetworkControllerState> {
     };
   }
 
+  /** Bounded-concurrency + 429-aware ordered-failover Esplora client. */
+  esplora(network: string): Esplora {
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no esplora endpoint for ${network}`);
+    }
+    return esplora(
+      urls,
+      async (url, init) => {
+        const r = await this.options.fetch(url, init);
+        return {
+          ok: r.ok,
+          status: r.status,
+          headers: { get: (h: string) => r.headers.get(h) ?? undefined },
+          json: async () => r.json(),
+          text: async () => r.text(),
+        };
+      },
+      esploraSleep,
+    );
+  }
+
   async addRpc(network: string, url: string): Promise<void> {
     const info = this.info(network);
-    if (info.family === "solana") {
+    if (info.family === "bitcoin") {
+      const res = await this.options.fetch(`${url.replace(/\/$/, "")}/block-height/0`);
+      const genesisText = await res.text();
+      const genesis = genesisText.trim();
+      if (genesis !== info.genesisHash) {
+        throw new Error(`${url} reports genesis ${genesis}, expected ${info.genesisHash ?? ""}`);
+      }
+    } else if (info.family === "solana") {
       const res = await this.options.fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },

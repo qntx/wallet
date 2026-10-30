@@ -1,13 +1,24 @@
-import type { Wallet } from "@qntx/wallet";
 /**
  * Transaction controller: `send` runs build → fee → intent decode → sign → broadcast → track.
  * Tracked transactions persist in the EngineStore on every transition and non-terminal ones resume
  * polling on unlock; all timers stop on lock. A rejected signature (wrong password, cancelled
  * presence) never broadcasts.
  */
+import { hex } from "@scure/base";
+import { Transaction } from "@scure/btc-signer";
+
+import type { Wallet } from "@qntx/wallet";
+import {
+  decodeBitcoinPsbt,
+  bitcoinNetwork,
+  bitcoinPubkeyFromXpub,
+} from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
+import { BtcUtxoStore, scanChain, scanUtxos, scriptPubKey } from "../chains/bitcoin-scan.ts";
+import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
+import { BitcoinChainAdapter, feeTiers } from "../chains/bitcoin.ts";
 import { EvmChainAdapter } from "../chains/evm.ts";
 import type { EvmFeeTier } from "../chains/evm.ts";
 import { SolanaChainAdapter } from "../chains/solana.ts";
@@ -33,7 +44,7 @@ export type TxState =
 
 export type TrackedTransaction = {
   readonly id: string;
-  readonly family: "evm" | "solana";
+  readonly family: "evm" | "solana" | "bitcoin";
   readonly network: string;
   readonly account: string;
   readonly hash: string | undefined;
@@ -204,6 +215,9 @@ export class TransactionController extends Controller<TransactionControllerState
     if (info.family === "solana" && account.kind === "hd") {
       return this.sendSolana(params);
     }
+    if (info.family === "bitcoin" && account.kind === "hd") {
+      return this.sendBitcoin(params);
+    }
     const client = networks.client(network);
     const apis = this.options.chains ?? chains(this.options.wallet);
     const evmAccount = await apis.account({
@@ -274,6 +288,8 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   private readonly solana = new SolanaChainAdapter();
+  private readonly bitcoin = new BitcoinChainAdapter();
+  private readonly bitcoinUtxos = new BtcUtxoStore();
   private readonly wires = new Map<string, Uint8Array>();
 
   private async sendSolana(params: SendParams): Promise<TrackedTransaction> {
@@ -334,6 +350,148 @@ export class TransactionController extends Controller<TransactionControllerState
       const wire = this.solana.finalize(messageBytes, [result.signature]);
       const hash = await this.solana.broadcast(rpc, wire);
       this.wires.set(id, wire);
+      tx = await this.transition(tx, { state: "submitted", hash, submittedAt: this.options.now() });
+      this.track(tx.id, hash, network);
+      return tx;
+    } catch (error) {
+      const failed = tx.state === "signed" ? "failed" : "rejected";
+      await this.transition(tx, {
+        state: failed,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /** The account-relative full path `purpose'/coin'/group'/change/index` for a PSBT entry. */
+  private static accountPath(accountPath: string): ReadonlyArray<number> {
+    const parts = accountPath.replace(/^m\//, "").split("/");
+    return parts.map((p) => {
+      const hardened = p.endsWith("'");
+      const n = Number(hardened ? p.slice(0, -1) : p);
+      return hardened ? n + 0x80000000 : n;
+    });
+  }
+
+  private async sendBitcoin(params: SendParams): Promise<TrackedTransaction> {
+    const { account, network, to, amount, fee, verify } = params;
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
+    const es = this.options.networks.esplora(network);
+    const apis = this.options.chains ?? chains(this.options.wallet);
+    const template = account.template === "btc.bip86" ? "btc.bip86" : "btc.bip84";
+    const btcAccount = await apis.account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template,
+      network,
+    });
+    if (!("xpub" in btcAccount) || btcAccount.xpub === undefined) {
+      throw new Error("bitcoin account carries no xpub");
+    }
+    const { xpub, fingerprint, path } = btcAccount as {
+      xpub: string;
+      fingerprint: string;
+      path: string;
+    };
+    const fp = Number.parseInt(fingerprint, 16);
+    const net = bitcoinNetwork(network);
+    const tap = template === "btc.bip86";
+
+    const receive = await scanChain(es, xpub, template, network, net.params, 0);
+    const change = await scanChain(es, xpub, template, network, net.params, 1);
+    const addresses: ScanAddress[] = [...receive, ...change];
+    const scannedUtxos: ReadonlyArray<ScanUtxo> = await scanUtxos(es, addresses, net.params);
+    const utxos = scannedUtxos.map((u) => ({
+      txid: u.txid,
+      vout: u.vout,
+      value: u.value,
+      address: u.address,
+      status: "confirmed" as const,
+      height: u.height,
+    }));
+    const byAddr = new Map(addresses.map((a) => [a.address, a]));
+    const base = TransactionController.accountPath(path);
+    const inputs = this.bitcoin.toInputs(
+      utxos,
+      fp,
+      (u) => {
+        const a = byAddr.get(u.address);
+        return a === undefined ? [] : [...base, a.chain, a.index];
+      },
+      (u) => {
+        const a = byAddr.get(u.address);
+        if (a === undefined) {
+          throw new Error(`utxo ${u.txid} on an unknown address`);
+        }
+        return bitcoinPubkeyFromXpub(xpub, template, network, a.chain, a.index);
+      },
+      (u) => scriptPubKey(u.address, net.params),
+      tap,
+    );
+    const changeAddr = change.find((a) => !a.used)?.address;
+    if (changeAddr === undefined) {
+      throw new Error("no unused change address");
+    }
+    const quotes = await feeTiers(es);
+    const quote =
+      quotes.find(
+        (q: { tier: string }) =>
+          q.tier === (fee === "fast" ? "fast" : fee === "slow" ? "slow" : "normal"),
+      ) ?? quotes[1];
+    if (quote === undefined) {
+      throw new Error("no fee quote");
+    }
+    const { psbt, inputs: selected } = this.bitcoin.buildPsbt(
+      inputs,
+      to,
+      amount,
+      BigInt(quote.satPerByte),
+      changeAddr,
+      net.params,
+    );
+    const selectedKeys = new Set(
+      selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
+    );
+    const selectedUtxos = utxos.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+    const txP = Transaction.fromPSBT(psbt);
+    const ownScripts = new Set(
+      change.filter((a) => !a.used).map((a) => hex.encode(scriptPubKey(a.address, net.params))),
+    );
+    const request = {
+      kind: "bitcoin.psbt" as const,
+      network,
+      account,
+      psbt,
+      sign: Array.from({ length: txP.inputsLength }, (_, i) => i),
+    };
+    const intent = decodeBitcoinPsbt(request, ownScripts);
+    const id = `tx-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+    let tx: TrackedTransaction = {
+      id,
+      family: "bitcoin",
+      network,
+      account: account.walletId,
+      hash: undefined,
+      state: "draft",
+      intent,
+      nonce: 0,
+      submittedAt: this.options.now(),
+      error: undefined,
+    };
+    tx = await this.transition(tx, {});
+    try {
+      const result = await apis.sign({ request, verify });
+      tx = await this.transition(tx, { state: "signed" });
+      if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
+        throw new Error("unexpected bitcoin sign result");
+      }
+      this.bitcoinUtxos.lock(selectedUtxos, tx.id);
+      const signed = Transaction.fromPSBT(result.signedPsbt);
+      signed.finalize();
+      const raw = signed.extract();
+      const hash = String(await es.post("/tx", hex.encode(raw)));
       tx = await this.transition(tx, { state: "submitted", hash, submittedAt: this.options.now() });
       this.track(tx.id, hash, network);
       return tx;

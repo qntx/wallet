@@ -7,7 +7,7 @@ import { normalizeBitcoinPsbt } from "./psbt.ts";
 
 export { BITCOIN_NETWORKS, bitcoinNetwork } from "./networks.ts";
 export type { BitcoinAccountTemplate } from "./account.ts";
-export { bitcoinAddressFromXpub } from "./account.ts";
+export { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "./account.ts";
 export { decodeBitcoinPsbt, verifiabilityBitcoin } from "./decode.ts";
 export { verifyBitcoinMessage, verifyBitcoinPsbtSignatures } from "./verify.ts";
 
