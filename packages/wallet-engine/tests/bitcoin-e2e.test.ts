@@ -13,7 +13,7 @@ import { BitcoinChainAdapter, feeTiers } from "../src/chains/bitcoin.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 
-const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1" && process.env["CI"] === undefined;
+const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
 const NETWORK = "bip122:0f9188f13cb7b2c71f2a335e3a4fc328"; // regtest
 const SEED = new Uint8Array(64).fill(7);
@@ -57,8 +57,16 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
     spawnSync("docker", ["run", "-d", "--name", NAME, "-p", `${port}:80`, "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541", "bash", "-c", "/srv/explorer/run.sh bitcoin-regtest explorer"]);
     const base = `http://127.0.0.1:${port}/regtest/api`;
     const es: Esplora = {
-      get: async (p) => (await fetch(`${base}${p}`)).json(),
-      post: async (p, b) => (await fetch(`${base}${p}`, { method: "POST", body: b })).text(),
+      get: async (p) => {
+        const res = await fetch(`${base}${p}`);
+        const text = await res.text();
+        if (!res.ok) {
+          throw new Error(`esplora ${p}: ${res.status}`);
+        }
+        return JSON.parse(text) as unknown;
+      },
+      post: async (p, b) =>
+        (await fetch(`${base}${p}`, { method: "POST", body: b })).text(),
     };
     try {
       // wait for esplora + bitcoind
@@ -92,7 +100,23 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
       await rpc("sendtoaddress", [wpkhRecv, "0.00000546"]);
       await rpc("generatetoaddress", [1, walletAddr]);
 
-      const receive = await scanChain(es, ACCT.publicExtendedKey, "btc.bip84", NETWORK, bitcoinNetwork(NETWORK).params, 0);
+      const waitScan = async (deadline: number): ReturnType<typeof scanChain> => {
+        let addrs: Awaited<ReturnType<typeof scanChain>>;
+        try {
+          addrs = await scanChain(es, ACCT.publicExtendedKey, "btc.bip84", NETWORK, bitcoinNetwork(NETWORK).params, 0);
+        } catch {
+          addrs = [];
+        }
+        if (addrs.find((a) => a.address === wpkhRecv)?.used === true) {
+          return addrs;
+        }
+        if (Date.now() > deadline) {
+          throw new Error("scan never saw the funded address — electrs indexing stalled");
+        }
+        await new Promise((r) => setTimeout(r, 3000));
+        return waitScan(deadline);
+      };
+      const receive = await waitScan(Date.now() + 120_000);
       expect(receive.find((a) => a.address === wpkhRecv)?.used).toBe(true);
       const change = await scanChain(es, ACCT.publicExtendedKey, "btc.bip84", NETWORK, bitcoinNetwork(NETWORK).params, 1);
       const utxos = await scanUtxos(es, [...receive, ...change], bitcoinNetwork(NETWORK).params);
