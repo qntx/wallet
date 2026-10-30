@@ -191,7 +191,55 @@ const config: UserConfig = defineConfig({
           "unicorn/no-array-sort": "off",
           "unicorn/no-array-reverse": "off",
           "eslint/no-restricted-globals": ["error", ...platformNeutralGlobals],
-          "eslint/no-restricted-imports": ["error", platformNeutralImports],
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: platformNeutralImports.paths,
+              patterns: [
+                ...platformNeutralImports.patterns,
+                {
+                  group: ["@qntx/wallet-chains/*/sign"],
+                  message:
+                    "chain sign functions may only run inside the kernel — import them only from packages/wallet-kernel (and the package's own tests)",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        // @qntx/wallet-chains is the platform-neutral chain-semantic layer: it
+        // never reaches back into engine/kernel/host packages. Relative imports
+        // and dependency imports (ox) stay unrestricted beyond the
+        // platform-neutral rules.
+        files: ["packages/wallet-chains/src/**"],
+        rules: {
+          "eslint/no-restricted-globals": ["error", ...platformNeutralGlobals],
+          "eslint/no-restricted-imports": [
+            "error",
+            {
+              paths: platformNeutralImports.paths,
+              patterns: [
+                ...platformNeutralImports.patterns,
+                {
+                  group: [
+                    "@qntx/wallet",
+                    "@qntx/wallet/**",
+                    "@qntx/wallet-kernel",
+                    "@qntx/wallet-kernel/**",
+                    "@qntx/wallet-engine",
+                    "@qntx/wallet-engine/**",
+                    "@qntx/wallet-worker",
+                    "@qntx/wallet-worker/**",
+                    "@qntx/wallet-native",
+                    "@qntx/wallet-native/**",
+                  ],
+                  message:
+                    "@qntx/wallet-chains is the leaf chain-semantic package — it never imports engine, kernel or host packages",
+                },
+              ],
+            },
+          ],
         },
       },
       {

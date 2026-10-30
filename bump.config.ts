@@ -11,6 +11,7 @@ const config: ReturnType<typeof defineConfig> = defineConfig({
     "packages/wallet-kernel/package.json",
     "packages/wallet-engine/package.json",
     "packages/wallet-native/package.json",
+    "packages/wallet-chains/package.json",
   ],
   execute: "bun scripts/sync-versions.ts",
   // execute rewrites bun.lock and the internal ranges; commit them too.
