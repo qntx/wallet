@@ -59,8 +59,8 @@ type CompiledMessage = {
   readonly instructions: ReadonlyArray<CompiledIx>;
   readonly addressTableLookups: ReadonlyArray<{
     readonly lookupTableAddress: string;
-    readonly readableIndices: ReadonlyArray<number>;
-    readonly writableIndices: ReadonlyArray<number>;
+    readonly readonlyIndexes: ReadonlyArray<number>;
+    readonly writableIndexes: ReadonlyArray<number>;
   }>;
 };
 
@@ -88,13 +88,13 @@ const isLookup = (
   value: unknown,
 ): value is {
   lookupTableAddress: string;
-  readableIndices: ReadonlyArray<number>;
-  writableIndices: ReadonlyArray<number>;
+  readonlyIndexes: ReadonlyArray<number> | Uint8Array;
+  writableIndexes: ReadonlyArray<number> | Uint8Array;
 } =>
   isRecord(value) &&
   typeof value["lookupTableAddress"] === "string" &&
-  isNumberArray(value["readableIndices"]) &&
-  isNumberArray(value["writableIndices"]);
+  (isNumberArray(value["readonlyIndexes"]) || value["readonlyIndexes"] instanceof Uint8Array) &&
+  (isNumberArray(value["writableIndexes"]) || value["writableIndexes"] instanceof Uint8Array);
 
 const asCompiledMessage = (value: unknown): CompiledMessage => {
   if (!isRecord(value) || !isRecord(value["header"])) {
@@ -129,7 +129,11 @@ const asCompiledMessage = (value: unknown): CompiledMessage => {
     if (!isLookup(t)) {
       throw new ChainError("invalid-request", "compiled message failed to decode");
     }
-    return t;
+    return {
+      lookupTableAddress: t.lookupTableAddress,
+      readonlyIndexes: [...t.readonlyIndexes],
+      writableIndexes: [...t.writableIndexes],
+    };
   });
   return {
     version,

@@ -84,12 +84,16 @@ const classifyIx = (
         kind: "token-transfer-checked",
         amount: u64le(data, 1),
         decimals: data[9],
-        to: resolveAccountIndex(parsed, ix.accountIndices[3] ?? 0, lookups),
+        to: resolveAccountIndex(parsed, ix.accountIndices[2] ?? 0, lookups),
         mint: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
       };
     }
     if (data.length === 9 && data[0] === 4) {
-      return { kind: "token-approve", amount: u64le(data, 1) };
+      return {
+        kind: "token-approve",
+        amount: u64le(data, 1),
+        to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
+      };
     }
     return { kind: "other" };
   }
@@ -195,7 +199,7 @@ const decodeTransaction = (
     if (call.kind === "token-approve") {
       approvals.push({
         asset: call.mint ?? "",
-        spender: "",
+        spender: call.to ?? "",
         amount: (call.amount ?? 0n).toString(10),
         unlimited: false,
         verified: false,
