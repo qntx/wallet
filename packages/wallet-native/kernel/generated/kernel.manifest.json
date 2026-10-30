@@ -59,12 +59,17 @@
       "name": "@scure/bip39",
       "version": "2.4.0",
       "integrity": "sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA=="
+    },
+    {
+      "name": "micro-key-producer",
+      "version": "0.10.2",
+      "integrity": "sha512-ApVEYeOhHwC4fsf54Jdt3Cf21eYfib/9GANrZCjlMCl1Sa71cXncS4J6wQ3IlbchBCvulOjQa2UoWf6/aE9XgA=="
     }
   ],
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "695b96f6667b4aa3aaf164234d4c160e395ccdde53da87d5b901f55c8aff1642"
+      "sha256": "bd5d44955768902062ffa495eefd5b7592956c4753b91292bc82003e0ac2751e"
     }
   ]
 }
