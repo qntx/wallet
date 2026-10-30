@@ -49,7 +49,7 @@
         "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/wallet-chains": "file:../wallet-chains",
+        "@qntx/wallet-chains": "0.4.0",
         "@types/node": "26.6.5",
         "publint": "0.3.25",
         "typescript": "7.0.2",
