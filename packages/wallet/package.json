@@ -67,12 +67,12 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp run @qntx/wallet-chains#build && vp pack",
     "dev": "vp pack --watch",
     "test": "vp test",
     "test:coverage": "vp test --coverage",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json",
-    "check:pkg": "vp pack && bun run check:chunks && publint && attw --pack . --profile esm-only",
+    "check:pkg": "vp run @qntx/wallet-chains#build && vp pack && bun run check:chunks && publint && attw --pack . --profile esm-only",
     "check:chunks": "bun scripts/check-nostr-free.ts",
     "pack:local": "vp pack && bun pm pack"
   },

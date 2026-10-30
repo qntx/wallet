@@ -21,7 +21,7 @@
     "test:browser": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run @qntx/wallet-worker#test:browser && vp run @qntx/playground#test:browser",
     "check:pkg": "vp run @qntx/wallet#check:pkg && vp run @qntx/wallet-worker#check:pkg && vp run @qntx/wallet-engine#check:pkg && vp run @qntx/wallet-chains#check:pkg",
     "smoke:hermes": "bun run --cwd packages/wallet-worker smoke:hermes && bun run --cwd packages/wallet-chains smoke:hermes",
-    "harness:bundles": "bun scripts/harness-bundles.ts",
+    "harness:bundles": "vp run @qntx/wallet-chains#build && bun scripts/harness-bundles.ts",
     "native:host-test": "vp run @qntx/wallet#build && vp run @qntx/wallet-worker#build && bun scripts/native-host-test.ts",
     "release": "bumpp",
     "prepare": "vp config",
