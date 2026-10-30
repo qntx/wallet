@@ -11,7 +11,7 @@ export type NetworkInfo = {
   readonly symbol: string;
   readonly multicall3?: string;
   /** CAIP-2 family — `solana:<ref>` networks are validated against genesis-hash, not chainId. */
-  readonly family: "evm" | "solana";
+  readonly family: "evm" | "solana" | "bitcoin";
   readonly genesisHash?: string;
   readonly decimals: number;
   readonly testnet: boolean;
@@ -123,7 +123,50 @@ export const NETWORKS: ReadonlyArray<NetworkInfo> = [
 ];
 
 export const networkById = (id: string): NetworkInfo | undefined =>
-  [...NETWORKS, ...SOLANA_NETWORKS].find((n) => n.id === id);
+  [...NETWORKS, ...SOLANA_NETWORKS, ...BITCOIN_NETWORKS].find((n) => n.id === id);
+export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo> = [
+  {
+    id: "bip122:000000000019d6689c085ae165831e93",
+    chainId: 0,
+    name: "Bitcoin",
+    symbol: "BTC",
+    decimals: 8,
+    testnet: false,
+    family: "bitcoin",
+    genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+  },
+  {
+    id: "bip122:00000000da84f2bafbbc53dee25a72ae",
+    chainId: 0,
+    name: "Bitcoin Testnet4",
+    symbol: "tBTC",
+    decimals: 8,
+    testnet: true,
+    family: "bitcoin",
+    genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
+  },
+  {
+    id: "bip122:00000008819873e925422c1ff0f99f7c",
+    chainId: 0,
+    name: "Bitcoin Signet",
+    symbol: "sBTC",
+    decimals: 8,
+    testnet: true,
+    family: "bitcoin",
+    genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+  },
+  {
+    id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+    chainId: 0,
+    name: "Bitcoin Regtest",
+    symbol: "rBTC",
+    decimals: 8,
+    testnet: true,
+    family: "bitcoin",
+    genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+  },
+];
+
 export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = [
   {
     id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
