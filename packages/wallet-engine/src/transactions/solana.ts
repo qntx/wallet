@@ -1,9 +1,16 @@
+import { base64 } from "@scure/base";
+
+import { parseMintExtensions, PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 /** Solana route: SOL/SPL send → sign → broadcast, plus status poll with rebroadcast/drop. */
 import { chains } from "@qntx/wallet/chains";
 
 import { SolanaChainAdapter } from "../chains/solana.ts";
 import { errorMessage, newId } from "./route.ts";
 import type { RouteContext, SendParams, TrackedTransaction, TxState } from "./route.ts";
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
+const arr = (v: unknown): unknown[] | undefined => (Array.isArray(v) ? v : undefined);
 
 const solana = new SolanaChainAdapter();
 
@@ -27,13 +34,52 @@ export const sendSolana = async (
     network,
   });
   const from = "address" in solAccount ? solAccount.address : "";
+  // For an SPL transfer, resolve the mint's owner (Token vs Token-2022) and reject the
+  // extension combinations the wallet cannot carry before any signing or broadcast.
+  let tokenProgram: string | undefined;
+  if (params.token !== undefined) {
+    const mintInfo = await rpc.call("getAccountInfo", [
+      params.token,
+      { encoding: "base64", commitment: "confirmed" },
+    ]);
+    const owner = obj(mintInfo)?.["value"];
+    if (obj(owner)?.["owner"] === PROGRAM_IDS.token2022) {
+      tokenProgram = PROGRAM_IDS.token2022;
+      const mintBytes = arr(obj(owner)?.["data"])?.[0];
+      const raw = typeof mintBytes === "string" ? base64.decode(mintBytes) : undefined;
+      if (raw !== undefined && raw.length > 83) {
+        const epoch = obj(await rpc.call("getEpochInfo", []))?.["epoch"];
+        const ext = parseMintExtensions(
+          raw.subarray(83),
+          BigInt(typeof epoch === "number" ? epoch : 0),
+        );
+        if (ext.nonTransferable === true) {
+          throw new Error("token is non-transferable");
+        }
+        if (ext.confidential === true) {
+          throw new Error("confidential transfer extensions are not supported");
+        }
+        // A hook or delegate extension leaves the intent partial — the decoded intent
+        // marks unknown-mint token calls verified:false, which is what the UI surfaces.
+        void ext.transferHook;
+        void ext.permanentDelegate;
+      }
+    }
+  }
   const unsigned = await solana.build(
     rpc,
     network,
     from,
     params.token === undefined
       ? { kind: "sol", to, lamports: amount }
-      : { kind: "spl", mint: params.token, to, amount, decimals: params.decimals ?? 0 },
+      : {
+          kind: "spl",
+          mint: params.token,
+          to,
+          amount,
+          decimals: params.decimals ?? 0,
+          ...(tokenProgram === undefined ? {} : { tokenProgram }),
+        },
   );
   const quotes = await solana.estimateFee(rpc, unsigned.writable);
   const quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
