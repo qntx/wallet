@@ -5,6 +5,7 @@ const config: UserConfig = defineConfig({
   pack: {
     entry: {
       index: "src/index.ts",
+      chains: "src/chains/index.ts",
       host: "src/host.ts",
       nostr: "src/nostr/index.ts",
       spark: "src/spark/index.ts",

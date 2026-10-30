@@ -27,6 +27,7 @@
     "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
   "dependencies": {
+    "@scure/bip32": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@solana/addresses": "8.5.0",
     "@solana/codecs": "8.5.0",
@@ -37,7 +38,6 @@
   "devDependencies": {
     "@metamask/eth-sig-util": "9.0.0",
     "@qntx/tsconfig": "1.0.1",
-    "@scure/bip32": "2.4.0",
     "@scure/bip39": "2.4.0",
     "@solana-program/compute-budget": "0.20.0",
     "@solana-program/stake": "0.11.0",

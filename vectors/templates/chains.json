@@ -1,0 +1,91 @@
+{
+  "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+  "sources": [
+    "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki — mainnet account key (given there as zpub; stored here re-serialized with xpub version bytes), first receive and change addresses",
+    "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki — mainnet account xpub, first receive and change addresses",
+    "EVM accounts 0 and 1: the widely published MetaMask/ethers values for this mnemonic at m/44'/60'/0'/0/i",
+    "Solana groups 0 and 1: m/44'/501'/i'/0' (Phantom/Solflare layout), cross-checked against the wallet-chains SLIP-10 test helper that is verified against the SLIP-10 spec vectors",
+    "Testnet tpub entries (coin type 1') have no BIP text vector; they are regression values from @scure/bip32 and assert only the coin-type and version-byte choice"
+  ],
+  "master": {
+    "fingerprint": "73c5da0a"
+  },
+  "evm": {
+    "template": "evm.bip44",
+    "network": "eip155:1",
+    "accounts": [
+      {
+        "groupIndex": 0,
+        "address": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94"
+      },
+      {
+        "groupIndex": 1,
+        "address": "0x6Fac4D18c912343BF86fa7049364Dd4E424Ab9C0"
+      }
+    ]
+  },
+  "solana": {
+    "template": "solana.bip44-change",
+    "network": "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    "accounts": [
+      {
+        "groupIndex": 0,
+        "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk"
+      },
+      {
+        "groupIndex": 1,
+        "address": "Hh8QwFUA6MtVu1qAoq12ucvFHNwCcVTV7hpWjeY1Hztb"
+      }
+    ]
+  },
+  "bitcoin": [
+    {
+      "template": "btc.bip84",
+      "network": "bip122:000000000019d6689c085ae165831e93",
+      "path": "m/84'/0'/0'",
+      "xpub": "xpub6CatWdiZiodmUeTDp8LT5or8nmbKNcuyvz7WyksVFkKB4RHwCD3XyuvPEbvqAQY3rAPshWcMLoP2fMFMKHPJ4ZeZXYVUhLv1VMrjPC7PW6V",
+      "receive": [
+        "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu",
+        "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g"
+      ],
+      "change": [
+        "bc1q8c6fshw2dlwun7ekn9qwf37cu2rn755upcp6el"
+      ]
+    },
+    {
+      "template": "btc.bip86",
+      "network": "bip122:000000000019d6689c085ae165831e93",
+      "path": "m/86'/0'/0'",
+      "xpub": "xpub6BgBgsespWvERF3LHQu6CnqdvfEvtMcQjYrcRzx53QJjSxarj2afYWcLteoGVky7D3UKDP9QyrLprQ3VCECoY49yfdDEHGCtMMj92pReUsQ",
+      "receive": [
+        "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr",
+        "bc1p4qhjn9zdvkux4e44uhx8tc55attvtyu358kutcqkudyccelu0was9fqzwh"
+      ],
+      "change": [
+        "bc1p3qkhfews2uk44qtvauqyr2ttdsw7svhkl9nkm9s9c3x4ax5h60wqwruhk7"
+      ]
+    },
+    {
+      "template": "btc.bip84",
+      "network": "bip122:00000000da84f2bafbbc53dee25a72ae",
+      "path": "m/84'/1'/0'",
+      "xpub": "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M",
+      "receive": [
+        "tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl",
+        "tb1qd7spv5q28348xl4myc8zmh983w5jx32cjhkn97"
+      ],
+      "change": ["tb1q9u62588spffmq4dzjxsr5l297znf3z6j5p2688"]
+    },
+    {
+      "template": "btc.bip86",
+      "network": "bip122:00000000da84f2bafbbc53dee25a72ae",
+      "path": "m/86'/1'/0'",
+      "xpub": "tpubDDfvzhdVV4unsoKt5aE6dcsNsfeWbTgmLZPi8LQDYU2xixrYemMfWJ3BaVneH3u7DBQePdTwhpybaKRU95pi6PMUtLPBJLVQRpzEnjfjZzX",
+      "receive": [
+        "tb1p8wpt9v4frpf3tkn0srd97pksgsxc5hs52lafxwru9kgeephvs7rqlqt9zj",
+        "tb1p90h6z3p36n9hrzy7580h5l429uwchyg8uc9sz4jwzhdtuhqdl5eqmpwq6n"
+      ],
+      "change": ["tb1p6uav7en8k7zsumsqugdmg5j6930zmzy4dg7jcddshsr0fvxlqx7q7p5els"]
+    }
+  ]
+}

@@ -32,7 +32,7 @@ const NOSTR_KEY: NostrKeyInfo = {
   createdAt: 1,
 };
 
-const PASSKEY = {
+export const PASSKEY = {
   rpId: "qntx.test",
   rpName: "qntx",
   walletSalt: "qntx/wallet",
@@ -55,9 +55,9 @@ type Handler = (request: Request) => Reply | Promise<Reply>;
  * A scripted kernel stand-in. Each spawned port delivers the current status on attach; requests are
  * routed through `handlers` (missing handler → err "integrity", like a confused peer would).
  */
-class FakeKernel {
+export class FakeKernel {
   status: StatusPayload;
-  readonly handlers = new Map<string, Handler>();
+  readonly handlers: Map<string, Handler> = new Map<string, Handler>();
   /** Every request method that reached the kernel, in order. */
   readonly received: string[] = [];
   private active: ScriptedPort | undefined;
@@ -116,7 +116,7 @@ class FakeKernel {
   }
 }
 
-class ScriptedPort implements MainPort {
+export class ScriptedPort implements MainPort {
   dead = false;
   private readonly kernel: FakeKernel;
   private handler: ((message: unknown) => void) | undefined;
@@ -174,7 +174,7 @@ class ScriptedPort implements MainPort {
   }
 }
 
-function unlockedStatus(): StatusPayload {
+export function unlockedStatus(): StatusPayload {
   return {
     protocol: 1,
     vault: "unlocked",

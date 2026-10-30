@@ -3,7 +3,7 @@ import type { AccountRef, SignRequest } from "../index.ts";
 import { isRecord, networkChainId, normalizeEvmTransaction } from "./transaction.ts";
 import { parseTypedData } from "./typed-data.ts";
 
-export { isEvmAddress, checksumEvmAddress } from "./address.ts";
+export { isEvmAddress, checksumEvmAddress, evmAddressFromPublicKey } from "./address.ts";
 export {
   networkChainId,
   normalizeEvmTransaction,

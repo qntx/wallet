@@ -1,3 +1,7 @@
+import { getAddressDecoder } from "@solana/addresses";
+
+import { ChainError } from "../index.ts";
+
 /** Well-known Solana program ids (base58, 32 bytes) — frozen constants. */
 export const PROGRAM_IDS: Readonly<{
   system: string;
@@ -27,3 +31,13 @@ export const SOLANA_NETWORKS: ReadonlyArray<string> = Object.freeze([
 const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export const isSolanaAddress = (value: string): boolean => BASE58.test(value);
+
+const decoder = getAddressDecoder();
+
+/** Base58-encoded address for a 32-byte ed25519 public key. */
+export function solanaAddressFromPublicKey(pubkey: Uint8Array): string {
+  if (pubkey.length !== 32) {
+    throw new ChainError("invalid-address", "expected a 32-byte ed25519 public key");
+  }
+  return decoder.decode(pubkey);
+}

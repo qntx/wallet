@@ -67,6 +67,7 @@
       "name": "@qntx/wallet-chains",
       "version": "0.4.0",
       "dependencies": {
+        "@scure/bip32": "2.4.0",
         "@scure/btc-signer": "2.4.1",
         "@solana/addresses": "8.5.0",
         "@solana/codecs": "8.5.0",
@@ -77,7 +78,6 @@
       "devDependencies": {
         "@metamask/eth-sig-util": "9.0.0",
         "@qntx/tsconfig": "1.0.1",
-        "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
         "@solana-program/compute-budget": "0.20.0",
         "@solana-program/stake": "0.11.0",
@@ -129,9 +129,11 @@
         "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/wallet": "0.4.0",
+        "@qntx/wallet-chains": "0.4.0",
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
+        "micro-key-producer": "0.10.2",
       },
       "devDependencies": {
         "@qntx/tsconfig": "1.0.1",
@@ -992,6 +994,8 @@
     "metro-transform-worker": ["metro-transform-worker@0.87.2", "", { "dependencies": { "@babel/core": "^7.25.2", "@babel/generator": "^7.29.1", "@babel/parser": "^7.29.9", "@babel/types": "^7.29.8", "flow-enums-runtime": "^0.0.6", "metro": "0.87.2", "metro-babel-transformer": "0.87.2", "metro-cache": "0.87.2", "metro-cache-key": "0.87.2", "metro-minify-terser": "0.87.2", "metro-source-map": "0.87.2", "metro-transform-plugins": "0.87.2", "nullthrows": "^1.1.1" } }, "sha512-DLpo4Xl2vShovtqXfB1JYJPAWsWjzuLlbmWYscOr0qpshjZ8Ii6JBDEnFBOVEzeXNyRG/gr697v61N25N9YvDg=="],
 
     "micro-ftch": ["micro-ftch@0.3.1", "", {}, "sha512-/0LLxhzP0tfiR5hcQebtudP56gUurs2CLkGarnCiB/OqEyUFQ6U3paQi/tgLv0hBJYt2rnr9MNpxz4fiiugstg=="],
+
+    "micro-key-producer": ["micro-key-producer@0.10.2", "", { "dependencies": { "@noble/ciphers": "2.4.0", "@noble/curves": "2.4.0", "@noble/hashes": "2.4.0", "@scure/base": "2.4.0", "micro-packed": "0.11.1" }, "bin": { "gpgkp": "bin/gpgkp.js", "aesscr": "bin/aesscr.js" } }, "sha512-ApVEYeOhHwC4fsf54Jdt3Cf21eYfib/9GANrZCjlMCl1Sa71cXncS4J6wQ3IlbchBCvulOjQa2UoWf6/aE9XgA=="],
 
     "micro-packed": ["micro-packed@0.11.1", "", { "dependencies": { "@scure/base": "2.4.0" } }, "sha512-agQGBnBCw8OoKQZMUxcaQPaOowdfxyEmBsq4CNAXAXCyB8KxlRG0lTl5GADJIsMEDaFb0trhXBHKYsjTWa5kuw=="],
 

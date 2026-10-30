@@ -6,6 +6,8 @@ import { bitcoinNetwork } from "./networks.ts";
 import { normalizeBitcoinPsbt } from "./psbt.ts";
 
 export { BITCOIN_NETWORKS, bitcoinNetwork } from "./networks.ts";
+export type { BitcoinAccountTemplate } from "./account.ts";
+export { bitcoinAddressFromXpub } from "./account.ts";
 export { decodeBitcoinPsbt, verifiabilityBitcoin } from "./decode.ts";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
