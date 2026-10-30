@@ -280,7 +280,12 @@ export const CHAINS_METHODS: {
       addressResult("evm.bip44"),
       addressResult("solana.bip44-change"),
       obj({
-        template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
+        template: union(
+          literal("btc.bip44"),
+          literal("btc.bip49"),
+          literal("btc.bip84"),
+          literal("btc.bip86"),
+        ),
         network: caip2,
         xpub: str(111, /^[a-zA-Z0-9]{111}$/),
         fingerprint: str(8, /^[0-9a-f]{8}$/),

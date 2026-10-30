@@ -8,14 +8,6 @@ import { HDKey } from "@scure/bip32";
 import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
-const BTC_PURPOSE: Readonly<Record<string, number>> = {
-  "btc.bip44": 44,
-  "btc.bip49": 49,
-  "btc.bip84": 84,
-  "btc.bip86": 86,
-};
-import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
-
 import { ChainError } from "@qntx/wallet-chains";
 import {
   BITCOIN_NETWORKS,
@@ -50,6 +42,13 @@ import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
 import { seedFromEntropy } from "../../seed/seed.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
+
+const BTC_PURPOSE: Readonly<Record<string, number>> = {
+  "btc.bip44": 44,
+  "btc.bip49": 49,
+  "btc.bip84": 84,
+  "btc.bip86": 86,
+};
 
 export type ChainsModule = {
   readonly vault: VaultHooks;
@@ -406,9 +405,7 @@ export function createChainsModule(): ChainsModule {
                     }
                     const vout = input.index;
                     const prevScript =
-                      vout === undefined
-                        ? undefined
-                        : input.nonWitnessUtxo.outputs[vout]?.script;
+                      vout === undefined ? undefined : input.nonWitnessUtxo.outputs[vout]?.script;
                     if (prevScript === undefined || !deepEqual(prevScript, expectedScript(pub))) {
                       throw new KernelError(
                         "invalid-input",
@@ -423,16 +420,15 @@ export function createChainsModule(): ChainsModule {
                         `input ${idx}: prevout script is not this key's`,
                       );
                     }
-                    if (purpose === 49) {
-                      if (
-                        input.redeemScript === undefined ||
-                        !deepEqual(input.redeemScript, p2wpkh(pub).script)
-                      ) {
-                        throw new KernelError(
-                          "invalid-input",
-                          `input ${idx}: redeemScript is not this key's`,
-                        );
-                      }
+                    if (
+                      purpose === 49 &&
+                      (input.redeemScript === undefined ||
+                        !deepEqual(input.redeemScript, p2wpkh(pub).script))
+                    ) {
+                      throw new KernelError(
+                        "invalid-input",
+                        `input ${idx}: redeemScript is not this key's`,
+                      );
                     }
                   }
                   inputs.push({ index: idx, privateKey: priv });
@@ -478,10 +474,7 @@ export function createChainsModule(): ChainsModule {
                 };
               }
               if (request.format === "legacy" && account.template !== "btc.bip44") {
-                throw new KernelError(
-                  "unsupported",
-                  "legacy message format is btc.bip44-only",
-                );
+                throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
               }
               const child = childAt([
                 purpose + hardened,
