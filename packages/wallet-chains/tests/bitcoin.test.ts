@@ -1,6 +1,3 @@
-import { Transaction } from "@scure/btc-signer/transaction.js";
-import { Address, OutScript, WIF, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
-import { NETWORK } from "@scure/btc-signer/utils.js";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -8,6 +5,9 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
+import { Address, OutScript, WIF, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
+import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeBitcoinPsbt, normalizeBitcoin } from "../src/bitcoin/index.ts";

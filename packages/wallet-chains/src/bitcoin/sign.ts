@@ -1,5 +1,5 @@
-import { Transaction } from "@scure/btc-signer/transaction.js";
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 /**
  * /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
  * (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`

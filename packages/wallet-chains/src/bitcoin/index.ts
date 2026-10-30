@@ -1,4 +1,5 @@
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
+
 import { ChainError } from "../index.ts";
 import type { AccountRef, SignRequest } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";

@@ -1,10 +1,10 @@
-import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 /**
  * BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
  * https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
  */
 import { sha256 } from "@noble/hashes/sha2.js";
+import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 
 import { ChainError } from "../index.ts";
 

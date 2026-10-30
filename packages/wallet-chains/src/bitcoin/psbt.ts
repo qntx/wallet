@@ -1,4 +1,5 @@
 import { Transaction, getInputType } from "@scure/btc-signer/transaction.js";
+
 import { ChainError } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 

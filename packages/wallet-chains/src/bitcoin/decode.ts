@@ -1,5 +1,6 @@
-import { Transaction } from "@scure/btc-signer/transaction.js";
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
+
 import type { AssetFlow, DisplayIntent, SignRequest, Verifiability } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
