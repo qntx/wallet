@@ -7,7 +7,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
-import { BITCOIN_NETWORKS } from "@qntx/wallet-chains/bitcoin";
+import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
 import type {
@@ -27,8 +27,6 @@ export type ChainsModule = {
   readonly vault: VaultHooks;
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
-
-const BIP32_TPBK = { public: 0x043587cf, private: 0x04358394 };
 
 const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
@@ -62,16 +60,24 @@ const accountFor = (
     }
   }
   if (template === "solana.bip44-change") {
-    const child = Slip10.fromMasterSeed(seed).derive(`m/44'/501'/${groupIndex}'/0'`);
-    const pub = ed25519.getPublicKey(child.privateKey);
-    return { template, network, address: solanaAddressFromPublicKey(pub) };
+    const root = Slip10.fromMasterSeed(seed);
+    const child = root.derive(`m/44'/501'/${groupIndex}'/0'`);
+    try {
+      return {
+        template,
+        network,
+        address: solanaAddressFromPublicKey(ed25519.getPublicKey(child.privateKey)),
+      };
+    } finally {
+      wipe(child.privateKey);
+      wipe(root.privateKey);
+    }
   }
   if (template !== "btc.bip84" && template !== "btc.bip86") {
     throw new KernelError("invalid-input", `unknown template ${String(template)}`);
   }
   const purpose = template === "btc.bip84" ? 84 : 86;
-  const coin = network === "bip122:000000000019d6689c085ae165831e93" ? 0 : 1;
-  const path = `m/${purpose}'/${coin}'/${groupIndex}'`;
+  const path = `m/${purpose}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
   const account = master.derive(path);
   try {
     return {
@@ -108,15 +114,17 @@ export function createChainsModule(): ChainsModule {
       }
       checkNetwork(params.template, params.network);
       const entropy = openRecord(dek, record);
-      const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-      wipe(entropy);
+      let seed: Uint8Array;
       try {
+        seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
+      } finally {
+        wipe(entropy);
+      }
+      try {
+        // Bitcoin account keys serialize with the network's version bytes (xpub or tpub).
         const master = HDKey.fromMasterSeed(
           seed,
-          params.template.startsWith("btc.") &&
-            params.network !== "bip122:000000000019d6689c085ae165831e93"
-            ? BIP32_TPBK
-            : undefined,
+          params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : undefined,
         );
         try {
           return accountFor(master, seed, params.template, params.network, params.groupIndex);

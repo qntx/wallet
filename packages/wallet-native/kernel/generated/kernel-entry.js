@@ -16030,34 +16030,58 @@ zoo`.split("\n"));
 	};
 	//#endregion
 	//#region packages/wallet-chains/src/bitcoin/networks.ts
+	/**
+	* Bip122 CAIP-2 networks = `bip122:` + the first 32 hex chars of the genesis hash, verified against
+	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
+	* class).
+	*/
 	init_utils();
+	init_objectSpread2();
+	var MAINNET_BIP32 = {
+		public: 76067358,
+		private: 76066276
+	};
+	var TESTNET_BIP32 = {
+		public: 70617039,
+		private: 70615956
+	};
+	var REGTEST_NETWORK = _objectSpread2(_objectSpread2({}, TEST_NETWORK), {}, { bech32: "bcrt" });
 	var NETWORKS = Object.freeze([
 		{
 			caip2: "bip122:000000000019d6689c085ae165831e93",
 			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
 			params: NETWORK,
-			coinType: 0
+			coinType: 0,
+			bip32: MAINNET_BIP32
 		},
 		{
 			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
 			genesis: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
 			params: TEST_NETWORK,
-			coinType: 1
+			coinType: 1,
+			bip32: TESTNET_BIP32
 		},
 		{
 			caip2: "bip122:00000008819873e925422c1ff0f99f7c",
 			genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
 			params: TEST_NETWORK,
-			coinType: 1
+			coinType: 1,
+			bip32: TESTNET_BIP32
 		},
 		{
 			caip2: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
 			genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
-			params: TEST_NETWORK,
-			coinType: 1
+			params: REGTEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
 		}
 	]);
 	var BITCOIN_NETWORKS = Object.freeze(Object.fromEntries(NETWORKS.map((n) => [n.caip2, n])));
+	var bitcoinNetwork = (caip2) => {
+		const net = BITCOIN_NETWORKS[caip2];
+		if (net === void 0) throw new ChainError("unsupported", `unknown bitcoin network: ${caip2}`);
+		return net;
+	};
 	//#endregion
 	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/transaction.js
 	/**
@@ -19410,10 +19434,6 @@ zoo`.split("\n"));
 	* wiped in `finally` on every path. Signing is not in this module — `chain.sign` arrives in E2-b.
 	*/
 	init_bip32();
-	var BIP32_TPBK = {
-		public: 70617039,
-		private: 70615956
-	};
 	var checkNetwork = (template, network) => {
 		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
@@ -19435,15 +19455,21 @@ zoo`.split("\n"));
 			}
 		}
 		if (template === "solana.bip44-change") {
-			const child = HDKey.fromMasterSeed(seed).derive(`m/44'/501'/${groupIndex}'/0'`);
-			return {
-				template,
-				network,
-				address: solanaAddressFromPublicKey(ed25519.getPublicKey(child.privateKey))
-			};
+			const root = HDKey.fromMasterSeed(seed);
+			const child = root.derive(`m/44'/501'/${groupIndex}'/0'`);
+			try {
+				return {
+					template,
+					network,
+					address: solanaAddressFromPublicKey(ed25519.getPublicKey(child.privateKey))
+				};
+			} finally {
+				wipe(child.privateKey);
+				wipe(root.privateKey);
+			}
 		}
 		if (template !== "btc.bip84" && template !== "btc.bip86") throw new KernelError("invalid-input", `unknown template ${String(template)}`);
-		const path = `m/${template === "btc.bip84" ? 84 : 86}'/${network === "bip122:000000000019d6689c085ae165831e93" ? 0 : 1}'/${groupIndex}'`;
+		const path = `m/${template === "btc.bip84" ? 84 : 86}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
 		const account = master.derive(path);
 		try {
 			return {
@@ -19474,10 +19500,14 @@ zoo`.split("\n"));
 				if (record === void 0) throw new KernelError("not-found", "no such wallet");
 				checkNetwork(params.template, params.network);
 				const entropy = openRecord(dek, record);
-				const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-				wipe(entropy);
+				let seed;
 				try {
-					const master = HDKey$1.fromMasterSeed(seed, params.template.startsWith("btc.") && params.network !== "bip122:000000000019d6689c085ae165831e93" ? BIP32_TPBK : void 0);
+					seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
+				} finally {
+					wipe(entropy);
+				}
+				try {
+					const master = HDKey$1.fromMasterSeed(seed, params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : void 0);
 					try {
 						return accountFor(master, seed, params.template, params.network, params.groupIndex);
 					} finally {
