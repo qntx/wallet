@@ -54,7 +54,11 @@ const sendOne = async (
   nonce: number,
   amount: bigint,
 ): Promise<void> => {
-  const tx = await adapter.build(client, "eip155:31337", account.address, RECIPIENT, amount);
+  const tx = await adapter.build(client, "eip155:31337", account.address, {
+    kind: "native",
+    to: RECIPIENT,
+    value: amount,
+  });
   expect(tx.nonce).toBe(nonce);
   const signed = await account.signTransaction({
     chainId: 31337,
@@ -91,4 +95,86 @@ describe.runIf(RUN)("anvil e2e: native transfer", () => {
       proc.kill();
     }
   }, 30_000);
+});
+
+const forge = (): string => {
+  const local = `${process.env["HOME"] ?? ""}/.foundry/bin/forge`;
+  return existsSync(local) ? local : execFileSync("which", ["forge"]).toString().trim();
+};
+
+const compileToken = (): string => {
+  const dir = execFileSync("mktemp", ["-d"]).toString().trim();
+  execFileSync(forge(), ["init", "--no-commit", dir]);
+  execFileSync("cp", ["tests/fixtures/TestToken.sol", `${dir}/src/TestToken.sol`]);
+  execFileSync(forge(), ["build", "--root", dir]);
+  const artifact = JSON.parse(
+    execFileSync("cat", [`${dir}/out/TestToken.sol/TestToken.json`]).toString(),
+  ) as { bytecode: { object: string } };
+  return artifact.bytecode.object;
+};
+
+const pad32 = (v: bigint): string => v.toString(16).padStart(64, "0");
+
+describe.runIf(RUN)("anvil e2e: erc20 transfer", () => {
+  it("deploys TestToken, transfers erc20 via the adapter, recipient balance grows; intent is partial", async () => {
+    const port = 18546;
+    const proc = execFile(anvil(), ["--port", String(port), "--silent"]);
+    await sleep(1500);
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      await rpcCall(url, "anvil_setBalance", [account.address, "0xde0b6b3a7640000"]);
+      const client = createPublicClient({ transport: http(url) });
+      const adapter = new EvmChainAdapter();
+      const supply = 1_000_000n * 10n ** 18n;
+      const initcode = `${compileToken()}${pad32(supply)}`;
+      const deploySigned = await account.signTransaction({
+        chainId: 31337,
+        nonce: 0,
+        gas: 1_500_000n,
+        data: initcode as `0x${string}`,
+        maxFeePerGas: 2n * 10n ** 9n,
+        maxPriorityFeePerGas: 10n ** 8n,
+      });
+      const deployHash = await adapter.broadcast(client, deploySigned);
+      expect(["confirmed", "finalized"]).toContain(
+        await waitFor(adapter, client, deployHash, Date.now() + 15_000),
+      );
+      const receipt = (await rpcCall(url, "eth_getTransactionReceipt", [deployHash])) as {
+        contractAddress: string;
+      };
+      const token = receipt.contractAddress as `0x${string}`;
+
+      const amount = 500n * 10n ** 18n;
+      const tx = await adapter.build(client, "eip155:31337", account.address, {
+        kind: "erc20",
+        token,
+        to: RECIPIENT,
+        value: amount,
+      });
+      expect(tx.to).toBe(token);
+      expect(tx.value).toBe(0n);
+      expect(tx.data.startsWith("0xa9059cbb")).toBe(true);
+      const signed = await account.signTransaction({
+        chainId: 31337,
+        nonce: tx.nonce,
+        gas: tx.gas,
+        to: token,
+        value: 0n,
+        data: tx.data as `0x${string}`,
+        maxFeePerGas: 2n * 10n ** 9n,
+        maxPriorityFeePerGas: 10n ** 8n,
+      });
+      const hash = await adapter.broadcast(client, signed);
+      expect(["confirmed", "finalized"]).toContain(
+        await waitFor(adapter, client, hash, Date.now() + 15_000),
+      );
+      const balCall = `0x70a08231${"0".repeat(24)}${RECIPIENT.slice(2).toLowerCase()}`;
+      const balance = BigInt(
+        (await rpcCall(url, "eth_call", [{ to: token, data: balCall }, "latest"])) as string,
+      );
+      expect(balance).toBe(amount);
+    } finally {
+      proc.kill();
+    }
+  }, 60_000);
 });
