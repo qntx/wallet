@@ -50,7 +50,7 @@ const fetchRawTxes = async (
         throw new TypeError(`esplora /tx/${u.txid}/hex: not a string`);
       }
       const bytes = hex.decode(raw);
-      if (Transaction.fromRaw(bytes, { allowUnknowInput: true }).id !== u.txid) {
+      if (Transaction.fromRaw(bytes, { allowUnknownInputs: true }).id !== u.txid) {
         throw new Error(`esplora /tx/${u.txid}/hex: txid mismatch`);
       }
       out.set(u.txid, bytes);

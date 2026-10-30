@@ -644,7 +644,7 @@ describe("chain.sign", () => {
         change: 0,
         index: 0,
       }),
-    ).toThrowError();
+    ).toThrow(/only for P2PKH/);
     const legacy = normalizeBitcoin({
       kind: "bitcoin.message",
       network: BTC_NETWORK,
@@ -661,7 +661,7 @@ describe("chain.sign", () => {
     expect(raw).toHaveLength(65);
     const expected = btcChild("btc.bip44", 0, 0).publicKey!;
     const msg = utf8ToBytes("hello");
-    const prefix = utf8ToBytes(`Bitcoin Signed Message:${String.fromCharCode(10)}`);
+    const prefix = utf8ToBytes(`Bitcoin Signed Message:${String.fromCodePoint(10)}`);
     const data = new Uint8Array(1 + prefix.length + 1 + msg.length);
     data[0] = prefix.length;
     data.set(prefix, 1);

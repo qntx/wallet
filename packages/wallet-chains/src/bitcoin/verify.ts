@@ -75,6 +75,20 @@ const eq = (a: Uint8Array, b: Uint8Array): boolean =>
  * derivation entry must claim the child pubkey re-derived from the xpub, and the signature must
  * verify over the input's sighash (BIP-143 partialSig for P2WPKH, tapKeySig for P2TR key path).
  */
+const preimageLegacy = (
+  tx: Transaction,
+  idx: number,
+  scriptCode: Uint8Array,
+  sighashType: number,
+): Uint8Array => {
+  const f: unknown = Reflect.get(tx, "preimageLegacy");
+  if (typeof f !== "function") {
+    return new Uint8Array(0);
+  }
+  const out: unknown = Reflect.apply(f, tx, [idx, scriptCode, sighashType]);
+  return out instanceof Uint8Array ? out : new Uint8Array(0);
+};
+
 export const verifyBitcoinPsbtSignatures = (
   signedPsbt: Uint8Array,
   sign: ReadonlyArray<number>,
@@ -95,14 +109,21 @@ export const verifyBitcoinPsbtSignatures = (
         return false;
       }
       const vout = input.index;
-      const legacyOut =
-        input.nonWitnessUtxo === undefined || vout === undefined
-          ? undefined
-          : input.nonWitnessUtxo.outputs[vout];
+      const nw:
+        | {
+            readonly outputs: ReadonlyArray<{
+              readonly script: Uint8Array;
+              readonly amount: bigint;
+            }>;
+          }
+        | undefined = input.nonWitnessUtxo;
+      const legacyOut = nw === undefined || vout === undefined ? undefined : nw.outputs[vout];
       const prevout = input.witnessUtxo ?? legacyOut;
       if (prevout === undefined) {
         return false;
       }
+      const prevScript: Uint8Array = prevout.script;
+      const prevAmount: bigint = prevout.amount;
       const pub = childPub(xpub, network, tail.change, tail.index);
       if (taproot) {
         const xonly = pub.slice(1);
@@ -148,9 +169,9 @@ export const verifyBitcoinPsbtSignatures = (
         const sighashType = input.sighashType ?? rawSig.at(-1) ?? SigHash.ALL;
         // bip49 prevouts are P2SH — the BIP143 scriptCode is the inner P2WPKH
         // redeem script, canonicalized to the equivalent P2PKH script.
-        const effective = input.redeemScript ?? prevout.script;
+        const effective: Uint8Array = input.redeemScript ?? prevScript;
         const decoded = OutScript.decode(effective);
-        const scriptCode =
+        const scriptCode: Uint8Array =
           decoded !== undefined && decoded.type === "wpkh"
             ? OutScript.encode({ type: "pkh", hash: decoded.hash })
             : effective;
@@ -158,12 +179,8 @@ export const verifyBitcoinPsbtSignatures = (
         // private method; the public witness preimages do not apply to non-witness inputs.
         const hash =
           input.nonWitnessUtxo === undefined
-            ? tx.preimageWitnessV0(idx, scriptCode, sighashType, prevout.amount)
-            : (
-                tx as unknown as {
-                  preimageLegacy: (i: number, s: Uint8Array, h: number) => Uint8Array;
-                }
-              ).preimageLegacy(idx, scriptCode, sighashType);
+            ? tx.preimageWitnessV0(idx, scriptCode, sighashType, prevAmount)
+            : preimageLegacy(tx, idx, scriptCode, sighashType);
         if (
           !secp256k1.verify(
             secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(),

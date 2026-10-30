@@ -408,8 +408,7 @@ export function createChainsModule(): ChainsModule {
                     const outs = input.nonWitnessUtxo.outputs as ReadonlyArray<{
                       readonly script?: Uint8Array;
                     }>;
-                    const prevScript =
-                      vout === undefined ? undefined : input.nonWitnessUtxo.outputs[vout]?.script;
+                    const prevScript = vout === undefined ? undefined : outs[vout]?.script;
                     if (prevScript === undefined || !deepEqual(prevScript, expectedScript(pub))) {
                       throw new KernelError(
                         "invalid-input",

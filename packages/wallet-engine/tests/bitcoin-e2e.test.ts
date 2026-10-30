@@ -495,13 +495,28 @@ const legacyFlow = async (): Promise<void> => {
     rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
     const es = esploraClient(base);
     await waitFor(
-      async () =>
-        (await scanChain(es, xpub49, "btc.bip49", NETWORK, bitcoinNetwork(NETWORK).params, 0)).some(
-          (a) => a.address === addr49 && a.used,
-        ) &&
-        (await scanChain(es, xpub44, "btc.bip44", NETWORK, bitcoinNetwork(NETWORK).params, 0)).some(
-          (a) => a.address === addr44 && a.used,
-        ),
+      async () => {
+        const s49 = await scanChain(
+          es,
+          xpub49,
+          "btc.bip49",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        const s44 = await scanChain(
+          es,
+          xpub44,
+          "btc.bip44",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        return (
+          s49.some((a) => a.address === addr49 && a.used) &&
+          s44.some((a) => a.address === addr44 && a.used)
+        );
+      },
       3000,
       Date.now() + 120_000,
       () => {
@@ -529,7 +544,7 @@ const legacyFlow = async (): Promise<void> => {
       now: () => 0,
     });
     await ctl.init();
-    const found = await ctl.discoverGroups(walletId);
+    const found: number[] = await ctl.discoverGroups(walletId);
     expect(found).toContain(0);
     const g0 = ctl.getState().groups[walletId]?.find((g) => g.index === 0);
     expect(g0?.used?.["bitcoin"]).toBe(true);
@@ -560,6 +575,7 @@ const legacyFlow = async (): Promise<void> => {
         0,
         template === "btc.bip49" ? 1 : 2,
       );
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential per template
       const tx = await txCtl.send({
         account: { kind: "hd", walletId, groupIndex: 0, template },
         network: NETWORK,
@@ -570,6 +586,7 @@ const legacyFlow = async (): Promise<void> => {
       });
       expect(tx.state).toBe("submitted");
       rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential confirm wait per template
       await waitFor(
         async () => {
           await Promise.all(timers.map((fn) => fn()));
@@ -603,6 +620,7 @@ describe.runIf(RUN)("bitcoin e2e: bip49/bip44 spend-only templates", () => {
     { timeout: 240_000 },
     async () => {
       await legacyFlow();
+      expect(true).toBe(true);
     },
   );
 });

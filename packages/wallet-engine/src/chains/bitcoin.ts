@@ -191,10 +191,10 @@ export class BitcoinChainAdapter {
           txid: u.txid,
           index: u.vout,
           sequence: 0xfffffffd,
-          ...(template === "btc.bip44"
-            ? {}
-            : { witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) } }),
         };
+        if (template !== "btc.bip44") {
+          entry.witnessUtxo = { amount: BigInt(u.value), script: scriptOf(u) };
+        }
         if (template === "btc.bip44") {
           const raw = rawTxOf === undefined ? undefined : rawTxOf(u);
           if (raw === undefined) {

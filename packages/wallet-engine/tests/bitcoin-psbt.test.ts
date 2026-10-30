@@ -85,14 +85,11 @@ describe("legacy template inputs", () => {
       () => p2wpkh(PUB, NETWORK).script,
       "btc.bip49",
     );
-    const i = inputs[0];
-    if (i === undefined) {
-      throw new Error("missing input");
-    }
-    expect(i.witnessUtxo).toBeDefined();
-    expect(i.redeemScript).toBeDefined();
-    expect(i.bip32Derivation).toBeDefined();
-    expect(i.tapBip32Derivation).toBeUndefined();
+    const [i] = inputs;
+    expect(i?.witnessUtxo).toBeDefined();
+    expect(i?.redeemScript).toBeDefined();
+    expect(i?.bip32Derivation).toBeDefined();
+    expect(i?.tapBip32Derivation).toBeUndefined();
   });
 
   it("emits nonWitnessUtxo and no witnessUtxo for bip44", () => {
@@ -106,12 +103,9 @@ describe("legacy template inputs", () => {
       "btc.bip44",
       () => raw,
     );
-    const i = inputs[0];
-    if (i === undefined) {
-      throw new Error("missing input");
-    }
-    expect(i.witnessUtxo).toBeUndefined();
-    expect(i.nonWitnessUtxo).toEqual(raw);
+    const [i] = inputs;
+    expect(i?.witnessUtxo).toBeUndefined();
+    expect(i?.nonWitnessUtxo).toStrictEqual(raw);
   });
 
   it("throws when the bip44 raw tx is missing", () => {
