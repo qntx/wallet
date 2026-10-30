@@ -67,5 +67,21 @@
     "bip122:00000000da84f2bafbbc53dee25a72ae",
     "bip122:00000008819873e925422c1ff0f99f7c",
     "bip122:0f9188f13cb7b2c71f2a335e3a4fc328"
-  ]
+  ],
+  "bip49": {
+    "path": "m/49'/0'/0'",
+    "addresses": {
+      "m/49'/0'/0'/0/0": "37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf",
+      "m/49'/0'/0'/0/1": "3LtMnn87fqUeHBUG414p9CWwnoV6E2pNKS",
+      "m/49'/0'/0'/1/0": "34K56kSjgUCUSD8GTtuF7c9Zzwokbs6uZ7"
+    }
+  },
+  "bip44": {
+    "path": "m/44'/0'/0'",
+    "addresses": {
+      "m/44'/0'/0'/0/0": "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA",
+      "m/44'/0'/0'/0/1": "1Ak8PffB2meyfYnbXZR9EGfLfFZVpzJvQP",
+      "m/44'/0'/0'/1/0": "1J3J6EvPrv8q6AC3VCjWV45Uf3nssNMRtH"
+    }
+  }
 }

@@ -1,8 +1,8 @@
 {
   "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
   "sources": [
-    "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki — mainnet account key (given there as zpub; stored here re-serialized with xpub version bytes), first receive and change addresses",
-    "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki — mainnet account xpub, first receive and change addresses",
+    "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki \u2014 mainnet account key (given there as zpub; stored here re-serialized with xpub version bytes), first receive and change addresses",
+    "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki \u2014 mainnet account xpub, first receive and change addresses",
     "EVM accounts 0 and 1: the widely published MetaMask/ethers values for this mnemonic at m/44'/60'/0'/0/i",
     "Solana groups 0 and 1: m/44'/501'/i'/0' (Phantom/Solflare layout), cross-checked against the wallet-chains SLIP-10 test helper that is verified against the SLIP-10 spec vectors",
     "Testnet tpub entries (coin type 1') have no BIP text vector; they are regression values from @scure/bip32 and assert only the coin-type and version-byte choice"
@@ -74,7 +74,9 @@
         "tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl",
         "tb1qd7spv5q28348xl4myc8zmh983w5jx32cjhkn97"
       ],
-      "change": ["tb1q9u62588spffmq4dzjxsr5l297znf3z6j5p2688"]
+      "change": [
+        "tb1q9u62588spffmq4dzjxsr5l297znf3z6j5p2688"
+      ]
     },
     {
       "template": "btc.bip86",
@@ -85,7 +87,35 @@
         "tb1p8wpt9v4frpf3tkn0srd97pksgsxc5hs52lafxwru9kgeephvs7rqlqt9zj",
         "tb1p90h6z3p36n9hrzy7580h5l429uwchyg8uc9sz4jwzhdtuhqdl5eqmpwq6n"
       ],
-      "change": ["tb1p6uav7en8k7zsumsqugdmg5j6930zmzy4dg7jcddshsr0fvxlqx7q7p5els"]
+      "change": [
+        "tb1p6uav7en8k7zsumsqugdmg5j6930zmzy4dg7jcddshsr0fvxlqx7q7p5els"
+      ]
+    },
+    {
+      "template": "btc.bip44",
+      "network": "bip122:000000000019d6689c085ae165831e93",
+      "path": "m/44'/0'/0'",
+      "xpub": "xpub6BosfCnifzxcFwrSzQiqu2DBVTshkCXacvNsWGYJVVhhawA7d4R5WSWGFNbi8Aw6ZRc1brxMyWMzG3DSSSSoekkudhUd9yLb6qx39T9nMdj",
+      "receive": [
+        "1LqBGSKuX5yYUonjxT5qGfpUsXKYYWeabA",
+        "1Ak8PffB2meyfYnbXZR9EGfLfFZVpzJvQP"
+      ],
+      "change": [
+        "1J3J6EvPrv8q6AC3VCjWV45Uf3nssNMRtH"
+      ]
+    },
+    {
+      "template": "btc.bip49",
+      "network": "bip122:000000000019d6689c085ae165831e93",
+      "path": "m/49'/0'/0'",
+      "xpub": "xpub6C6nQwHaWbSrzs5tZ1q7m5R9cPK9eYpNMFesiXsYrgc1P8bvLLAet9JfHjYXKjToD8cBRswJXXbbFpXgwsswVPAZzKMa1jUp2kVkGVUaJa7",
+      "receive": [
+        "37VucYSaXLCAsxYyAPfbSi9eh4iEcbShgf",
+        "3LtMnn87fqUeHBUG414p9CWwnoV6E2pNKS"
+      ],
+      "change": [
+        "34K56kSjgUCUSD8GTtuF7c9Zzwokbs6uZ7"
+      ]
     }
   ]
 }

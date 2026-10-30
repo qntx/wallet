@@ -7,10 +7,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { ed25519 } from "@noble/curves/ed25519.js";
+import { secp256k1 } from "@noble/curves/secp256k1.js";
+import { sha256 } from "@noble/hashes/sha2.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Address, OutScript, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
@@ -110,7 +112,7 @@ const btcVector = (template: string) => {
 
 /** Child node of the vector wallet's account at `change/index` under `template`. */
 const btcChild = (template: string, change: number, index: number): HDKey => {
-  const purpose = template === "btc.bip86" ? 86 : 84;
+  const purpose = BTC_PURPOSE_T[template] ?? 84;
   return HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(
     `m/${purpose}'/0'/0'/${change}/${index}`,
   );
@@ -146,8 +148,15 @@ type PsbtOpts = {
 };
 
 /** A one-input PSBT with correct derivation entries for the vector wallet's account. */
+const BTC_PURPOSE_T: Readonly<Record<string, number>> = {
+  "btc.bip44": 44,
+  "btc.bip49": 49,
+  "btc.bip84": 84,
+  "btc.bip86": 86,
+};
+
 const btcPsbt = (opts: PsbtOpts): Uint8Array => {
-  const purpose = opts.template === "btc.bip86" ? 86 : 84;
+  const purpose = BTC_PURPOSE_T[opts.template] ?? 84;
   const change = opts.change ?? 0;
   const index = opts.index ?? 0;
   const fp = opts.fingerprint ?? MASTER_FP;
@@ -156,7 +165,14 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   const child = btcChild(opts.template, change, index);
   const pub = child.publicKey!;
   const xonly = pub.slice(1);
-  const spend = purpose === 86 ? p2tr(xonly) : p2wpkh(pub);
+  const spend =
+    purpose === 86
+      ? p2tr(xonly)
+      : purpose === 49
+        ? p2sh(p2wpkh(pub))
+        : purpose === 44
+          ? p2pkh(pub)
+          : p2wpkh(pub);
   const path = [purpose + HARDENED, HARDENED, HARDENED, change, index];
   const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
   const input: Record<string, unknown> = {
@@ -186,6 +202,28 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
     input["bip32Derivation"] = [
       [opts.wrongPub === true ? foreignPub : pub, { fingerprint: fp, path }],
     ];
+  }
+  if (purpose === 49) {
+    input["redeemScript"] =
+      opts.wrongScript === true ? p2wpkh(foreignPub).script : p2wpkh(pub).script;
+    if (opts.wrongScript === true) {
+      input["witnessUtxo"] = {
+        script: p2sh(p2wpkh(foreignPub)).script,
+        amount: 100000n,
+      };
+    }
+  }
+  if (purpose === 44) {
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: hex("1111".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({
+      script: opts.wrongScript === true ? p2pkh(foreignPub).script : p2pkh(pub).script,
+      amount: 100000n,
+    });
+    input["txid"] = hex(prev.id);
+    input["index"] = 0;
+    input["nonWitnessUtxo"] = prev.toBytes(true, false);
+    delete input["witnessUtxo"];
   }
   tx.addInput(input);
   if (opts.extraInput === true) {
@@ -547,6 +585,89 @@ describe("chain.sign", () => {
     expect(verifyBitcoinMessage(bip86.receive[0]!, "hello bitcoin", signature, BTC_NETWORK)).toBe(
       true,
     );
+  });
+
+  it("rejects a bip49 input whose redeemScript is missing or wrong", async () => {
+    const { h, session, walletId } = await setup();
+    const wrong = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: hd(walletId, "btc.bip49"),
+      psbt: btcPsbt({ template: "btc.bip49", wrongScript: true }),
+      sign: [0],
+    });
+    expect("err" in (await callSign(h, session, wrong))).toBe(true);
+    const right = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: hd(walletId, "btc.bip49"),
+      psbt: btcPsbt({ template: "btc.bip49" }),
+      sign: [0],
+    });
+    const res = await callSign(h, session, right);
+    expect("err" in res).toBe(false);
+  });
+
+  it("rejects a bip44 input missing nonWitnessUtxo or with the wrong prevout", async () => {
+    const { h, session, walletId } = await setup();
+    const badPrev = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: hd(walletId, "btc.bip44"),
+      psbt: btcPsbt({ template: "btc.bip44", wrongScript: true }),
+      sign: [0],
+    });
+    expect("err" in (await callSign(h, session, badPrev))).toBe(true);
+    const right = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: hd(walletId, "btc.bip44"),
+      psbt: btcPsbt({ template: "btc.bip44" }),
+      sign: [0],
+    });
+    const res = await callSign(h, session, right);
+    expect("err" in res).toBe(false);
+  });
+
+  it("rejects legacy message on bip84 and verifies it on bip44", async () => {
+    const { h, session, walletId } = await setup();
+    const bip44 = btcVector("btc.bip44");
+    const bip84 = btcVector("btc.bip84");
+    expect(() =>
+      normalizeBitcoin({
+        kind: "bitcoin.message",
+        network: BTC_NETWORK,
+        account: hd(walletId, "btc.bip84"),
+        address: bip84.receive[0],
+        message: "hello",
+        format: "legacy",
+        change: 0,
+        index: 0,
+      }),
+    ).toThrow(/only for P2PKH/);
+    const legacy = normalizeBitcoin({
+      kind: "bitcoin.message",
+      network: BTC_NETWORK,
+      account: hd(walletId, "btc.bip44"),
+      address: bip44.receive[0],
+      message: "hello",
+      format: "legacy",
+      change: 0,
+      index: 0,
+    });
+    const res = ok(await callSign(h, session, legacy));
+    const sig = strField(res, "signature");
+    const raw = Buffer.from(sig, "base64");
+    expect(raw).toHaveLength(65);
+    const expected = btcChild("btc.bip44", 0, 0).publicKey!;
+    const msg = utf8ToBytes("hello");
+    const prefix = utf8ToBytes(`Bitcoin Signed Message:${String.fromCodePoint(10)}`);
+    const data = new Uint8Array(1 + prefix.length + 1 + msg.length);
+    data[0] = prefix.length;
+    data.set(prefix, 1);
+    data[1 + prefix.length] = msg.length;
+    data.set(msg, 2 + prefix.length);
+    expect(secp256k1.verify(raw.subarray(1), sha256(sha256(data)), expected)).toBe(true);
   });
 
   it("treats our change output as change and an external input as opaque", async () => {

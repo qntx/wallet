@@ -18,6 +18,7 @@ import {
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
+import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraResponse } from "../src/chains/bitcoin.ts";
@@ -219,7 +220,7 @@ const regtestFlow = async () => {
       bip84PathOf(all),
       bip84PubOf(all),
       scriptOf,
-      false,
+      "btc.bip84",
     );
     expect(inputs.every((i) => frozen.every((f) => f.txid !== i.txid))).toBe(true);
     const changeAddr = change.find((a) => !a.used)?.address;
@@ -445,4 +446,181 @@ describe.runIf(RUN)("bitcoin e2e: rbf/cpfp through engine.transactions", () => {
     expect.hasAssertions();
     await rbfFlow("cpfp");
   });
+});
+
+const legacyFlow = async (): Promise<void> => {
+  const port = 8294 + (Date.now() % 1000);
+  spawnSync("docker", [
+    "run",
+    "-d",
+    "--name",
+    `${NAME}-legacy`,
+    "-p",
+    `${port}:80`,
+    "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
+    "bash",
+    "-c",
+    "/srv/explorer/run.sh bitcoin-regtest explorer",
+  ]);
+  const base = `http://127.0.0.1:${port}/regtest/api`;
+  const timers: Array<() => unknown> = [];
+  try {
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logs()}`);
+    });
+    try {
+      rpc(`${NAME}-legacy`, "createwallet", ["e2e-legacy"]);
+    } catch {
+      // wallet exists
+    }
+    const { wallet, walletId } = await realWallet();
+    const acct = async (template: "btc.bip44" | "btc.bip49" | "btc.bip84") => {
+      const a = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template,
+        network: NETWORK,
+      });
+      return "xpub" in a ? a.xpub : "";
+    };
+    const xpub49 = await acct("btc.bip49");
+    const xpub44 = await acct("btc.bip44");
+    const xpub84 = await acct("btc.bip84");
+    const addr49 = bitcoinAddressFromXpub(xpub49, "btc.bip49", NETWORK, 0, 0);
+    const addr44 = bitcoinAddressFromXpub(xpub44, "btc.bip44", NETWORK, 0, 0);
+    const walletAddr = rpc(`${NAME}-legacy`, "getnewaddress") as string;
+    rpc(`${NAME}-legacy`, "generatetoaddress", [101, walletAddr]);
+    rpc(`${NAME}-legacy`, "sendtoaddress", [addr49, "0.00050000"]);
+    rpc(`${NAME}-legacy`, "sendtoaddress", [addr44, "0.00050000"]);
+    rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
+    const es = esploraClient(base);
+    await waitFor(
+      async () => {
+        const s49 = await scanChain(
+          es,
+          xpub49,
+          "btc.bip49",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        const s44 = await scanChain(
+          es,
+          xpub44,
+          "btc.bip44",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        return (
+          s49.some((a) => a.address === addr49 && a.used) &&
+          s44.some((a) => a.address === addr44 && a.used)
+        );
+      },
+      3000,
+      Date.now() + 120_000,
+      () => {
+        throw new Error("funded legacy addresses never indexed");
+      },
+    );
+    // group 0's discovery marks both templates used under `bitcoin`.
+    const ctl = new AccountTreeController({
+      wallet,
+      spark: {
+        store: { subscribe: () => () => {} },
+        inspect: async () => Promise.resolve({ balanceSats: 0, used: false }),
+        setAccounts: () => {},
+        setStore: () => {},
+      } as never,
+      sparkNetwork: "regtest",
+      networks: new NetworkController({
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { [NETWORK]: [base] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: quiet,
+      }),
+      chains: chains(wallet) as never,
+      logger: quiet,
+      now: () => 0,
+    });
+    await ctl.init();
+    const found: number[] = await ctl.discoverGroups(walletId);
+    expect(found).toContain(0);
+    const g0 = ctl.getState().groups[walletId]?.find((g) => g.index === 0);
+    expect(g0?.used?.["bitcoin"]).toBe(true);
+    // Send from each legacy template through engine.transactions — change lands on bip84.
+    const txCtl = new TransactionController({
+      wallet,
+      networks: new NetworkController({
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { [NETWORK]: [base] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: quiet,
+      }),
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      random: taggedRandom(),
+      setTimer: (_ms, fn) => {
+        timers.push(fn);
+        return () => {};
+      },
+      now: () => 1000,
+      logger: quiet,
+      pollMs: 1,
+    });
+    await txCtl.init();
+    for (const template of ["btc.bip49", "btc.bip44"] as const) {
+      const external = addrOf(
+        "wpkh",
+        HD.derive("m/84'/1'/9'"),
+        0,
+        template === "btc.bip49" ? 1 : 2,
+      );
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential per template
+      const tx = await txCtl.send({
+        account: { kind: "hd", walletId, groupIndex: 0, template },
+        network: NETWORK,
+        to: external,
+        amount: 10_000n,
+        fee: "slow",
+        verify: BVERIFY,
+      });
+      expect(tx.state).toBe("submitted");
+      rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential confirm wait per template
+      await waitFor(
+        async () => {
+          await Promise.all(timers.map((fn) => fn()));
+          return txCtl.getState().txs[tx.id]?.state === "confirmed";
+        },
+        3000,
+        Date.now() + 120_000,
+        () => {
+          throw new Error(`${template} send never confirmed`);
+        },
+      );
+    }
+    // The bip84 change chain received the change outputs.
+    const changeChain = await scanChain(
+      es,
+      xpub84,
+      "btc.bip84",
+      NETWORK,
+      bitcoinNetwork(NETWORK).params,
+      1,
+    );
+    expect(changeChain.some((a) => a.used)).toBe(true);
+  } finally {
+    spawnSync("docker", ["rm", "-f", `${NAME}-legacy`]);
+  }
+};
+
+describe.runIf(RUN)("bitcoin e2e: bip49/bip44 spend-only templates", () => {
+  it(
+    "discovers funded bip49/bip44 addresses and spends from them",
+    { timeout: 240_000 },
+    async () => {
+      await legacyFlow();
+      expect(true).toBe(true);
+    },
+  );
 });

@@ -5,7 +5,7 @@
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
-import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
@@ -43,6 +43,13 @@ import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
 import { seedFromEntropy } from "../../seed/seed.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
+
+const BTC_PURPOSE: Readonly<Record<string, number>> = {
+  "btc.bip44": 44,
+  "btc.bip49": 49,
+  "btc.bip84": 84,
+  "btc.bip86": 86,
+};
 
 export type ChainsModule = {
   readonly vault: VaultHooks;
@@ -100,10 +107,10 @@ const accountFor = (
       wipe(root.privateKey);
     }
   }
-  if (template !== "btc.bip84" && template !== "btc.bip86") {
-    throw new KernelError("invalid-input", `unknown template ${String(template)}`);
+  const purpose = BTC_PURPOSE[template];
+  if (purpose === undefined) {
+    throw new KernelError("invalid-input", `unknown template ${template}`);
   }
-  const purpose = template === "btc.bip84" ? 84 : 86;
   const path = `m/${purpose}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
   const account = master.derive(path);
   try {
@@ -214,7 +221,7 @@ export function createChainsModule(): ChainsModule {
           ? ["evm.bip44"]
           : family === "solana"
             ? ["solana.bip44-change"]
-            : ["btc.bip84", "btc.bip86"];
+            : ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"];
       if (!expected.includes(account.template)) {
         throw new KernelError(
           "invalid-input",
@@ -290,7 +297,7 @@ export function createChainsModule(): ChainsModule {
           const net = bitcoinNetwork(request.network);
           const master = HDKey.fromMasterSeed(seed, net.bip32);
           try {
-            const purpose = account.template === "btc.bip86" ? 86 : 84;
+            const purpose = BTC_PURPOSE[account.template] ?? 84;
             const { coinType } = net;
             const hardened = 0x80000000;
 
@@ -356,7 +363,13 @@ export function createChainsModule(): ChainsModule {
             const expectedPub = (pub: Uint8Array): Uint8Array =>
               purpose === 86 ? pub.slice(1) : pub;
             const expectedScript = (pub: Uint8Array): Uint8Array =>
-              purpose === 86 ? p2tr(pub.slice(1)).script : p2wpkh(pub).script;
+              purpose === 86
+                ? p2tr(pub.slice(1)).script
+                : purpose === 49
+                  ? p2sh(p2wpkh(pub)).script
+                  : purpose === 44
+                    ? p2pkh(pub).script
+                    : p2wpkh(pub).script;
             try {
               if (request.kind === "bitcoin.psbt") {
                 const tx = Transaction.fromPSBT(request.psbt);
@@ -382,12 +395,44 @@ export function createChainsModule(): ChainsModule {
                       `input ${idx}: derivation pubkey is not ours`,
                     );
                   }
-                  const prevout = input.witnessUtxo;
-                  if (prevout === undefined || !deepEqual(prevout.script, expectedScript(pub))) {
-                    throw new KernelError(
-                      "invalid-input",
-                      `input ${idx}: prevout script is not this key's`,
-                    );
+                  // bip84/bip49 spend via witnessUtxo; bip44 (P2PKH) proves the
+                  // prevout via nonWitnessUtxo — the PSBT must carry the matching tx.
+                  if (purpose === 44) {
+                    if (input.nonWitnessUtxo === undefined) {
+                      throw new KernelError(
+                        "invalid-input",
+                        `input ${idx}: P2PKH spend requires nonWitnessUtxo`,
+                      );
+                    }
+                    const vout = input.index;
+                    const outs = input.nonWitnessUtxo.outputs as ReadonlyArray<{
+                      readonly script?: Uint8Array;
+                    }>;
+                    const prevScript = vout === undefined ? undefined : outs[vout]?.script;
+                    if (prevScript === undefined || !deepEqual(prevScript, expectedScript(pub))) {
+                      throw new KernelError(
+                        "invalid-input",
+                        `input ${idx}: nonWitnessUtxo prevout is not this key's`,
+                      );
+                    }
+                  } else {
+                    const prevout = input.witnessUtxo;
+                    if (prevout === undefined || !deepEqual(prevout.script, expectedScript(pub))) {
+                      throw new KernelError(
+                        "invalid-input",
+                        `input ${idx}: prevout script is not this key's`,
+                      );
+                    }
+                    if (
+                      purpose === 49 &&
+                      (input.redeemScript === undefined ||
+                        !deepEqual(input.redeemScript, p2wpkh(pub).script))
+                    ) {
+                      throw new KernelError(
+                        "invalid-input",
+                        `input ${idx}: redeemScript is not this key's`,
+                      );
+                    }
                   }
                   inputs.push({ index: idx, privateKey: priv });
                 }
@@ -431,8 +476,8 @@ export function createChainsModule(): ChainsModule {
                   signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32)),
                 };
               }
-              if (request.format === "legacy") {
-                throw new KernelError("unsupported", "legacy message format is not supported");
+              if (request.format === "legacy" && account.template !== "btc.bip44") {
+                throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
               }
               const child = childAt([
                 purpose + hardened,
@@ -449,7 +494,11 @@ export function createChainsModule(): ChainsModule {
               const derived =
                 purpose === 86
                   ? p2tr(pub.slice(1), undefined, net.params).address
-                  : p2wpkh(pub, net.params).address;
+                  : purpose === 49
+                    ? p2sh(p2wpkh(pub, net.params), net.params).address
+                    : purpose === 44
+                      ? p2pkh(pub, net.params).address
+                      : p2wpkh(pub, net.params).address;
               if (derived !== request.address) {
                 throw new KernelError("invalid-input", "address is not ours");
               }

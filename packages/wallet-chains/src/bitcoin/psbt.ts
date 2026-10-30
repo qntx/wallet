@@ -105,8 +105,11 @@ export const normalizeBitcoinPsbt = (
   checkDerivations(tx, net.coinType);
   for (const idx of unique) {
     const input = tx.getInput(idx);
-    if (input.witnessUtxo === undefined) {
-      throw new ChainError("invalid-request", `input ${idx} is missing witnessUtxo`);
+    if (input.witnessUtxo === undefined && input.nonWitnessUtxo === undefined) {
+      throw new ChainError(
+        "invalid-request",
+        `input ${idx} carries neither witnessUtxo nor nonWitnessUtxo`,
+      );
     }
     if (input.bip32Derivation === undefined && input.tapBip32Derivation === undefined) {
       throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);

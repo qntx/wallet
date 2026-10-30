@@ -87,7 +87,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
       getTransactionCount: async () => Promise.resolve(0),
       getBalance: async () => {
         r.calls.push("evm");
-        if (r.failOn.has("evm")) {
+        if (r.failOn.has("evm") && r.evmGroup === 0) {
           throw new Error("rpc down");
         }
         return Promise.resolve(r.usedEvm.has(r.evmGroup) ? 1n : 0n);
@@ -168,9 +168,10 @@ describe("account discovery", () => {
       await init(r);
       const found = await r.ctl.discoverGroups(W);
       expect(found).toStrictEqual([0]);
-      const g1 = r.ctl.getState().groups[W]?.find((g) => g.index === 1);
-      expect(g1?.errors?.["evm"]).toBe("rpc down");
-      expect(g1?.used?.["evm"]).toBe(false);
+      // failOn breaks group 0's EVM probe; only discovered groups are recorded.
+      const g0 = r.ctl.getState().groups[W]?.find((g) => g.index === 0);
+      expect(g0?.errors?.["evm"]).toBe("rpc down");
+      expect(g0?.used?.["evm"]).toBe(false);
     },
   );
 

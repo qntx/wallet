@@ -857,7 +857,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-DhNA-jbv.mjs
+	//#region packages/wallet/dist/protocol-DWt0GXMz.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -900,7 +900,7 @@
 		factors: arr(union(literal("passkey"), literal("password")), 5, 1),
 		createdAt: safeTime
 	});
-	var template = union(literal("evm.bip44"), literal("solana.bip44-change"), literal("btc.bip84"), literal("btc.bip86"));
+	var template = union(literal("evm.bip44"), literal("solana.bip44-change"), union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84")), literal("btc.bip86"));
 	var caip2 = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
 	var addressResult = (t) => obj({
 		template: literal(t),
@@ -1021,7 +1021,7 @@
 				network: caip2
 			}),
 			result: union(addressResult("evm.bip44"), addressResult("solana.bip44-change"), obj({
-				template: union(literal("btc.bip84"), literal("btc.bip86")),
+				template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
 				network: caip2,
 				xpub: str(111, /^[a-zA-Z0-9]{111}$/),
 				fingerprint: str(8, /^[0-9a-f]{8}$/),
@@ -15715,7 +15715,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, p2wpkh, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
+	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, p2pkh, checkCanonicalScript, p2sh, p2wpkh, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
 	var init_payment = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -15958,6 +15958,58 @@ zoo`.split("\n"));
 				return out;
 			}
 		})))();
+		p2pkh = (publicKey, network = NETWORK) => {
+			if (!isValidPubkey(publicKey, PubT.ecdsa)) throw new Error("P2PKH: invalid publicKey");
+			const hash = hash160(publicKey);
+			return {
+				type: "pkh",
+				script: OutScript.encode({
+					type: "pkh",
+					hash
+				}),
+				address: Address(network).encode({
+					type: "pkh",
+					hash
+				}),
+				hash
+			};
+		};
+		checkCanonicalScript = (script, name, allowNonCanonicalScript) => {
+			if (allowNonCanonicalScript) return;
+			const decoded = Script.decode(script);
+			if (decoded.some((op) => isBytes(op) && op.length === 1 && (1 <= op[0] && op[0] <= 16 || op[0] === 129)) || !equalBytes(script, Script.encode(decoded))) throw new Error(`${name === "redeemScript" ? "P2SH" : "P2WSH"}: non-canonical ${name}`);
+		};
+		p2sh = (child, network = NETWORK, allowNonCanonicalScript = false) => {
+			validateObject(child, {}, {}, "child");
+			const c = child;
+			const cs = c.script;
+			if (!isBytes(cs)) throw new Error(`Wrong script: ${typeof c.script}, expected Uint8Array`);
+			if (cs.length > 520) throw new Error(`P2SH: redeemScript exceeds 520-byte push limit: len=${cs.length}`);
+			checkCanonicalScript(cs, "redeemScript", allowNonCanonicalScript);
+			const hash = hash160(cs);
+			const out = {
+				type: "sh",
+				hash
+			};
+			const script = OutScript.encode(out);
+			const address = Address(network).encode(out);
+			checkScript(script, cs, c.witnessScript);
+			if (c.witnessScript) return {
+				type: "sh",
+				redeemScript: cs,
+				script,
+				address,
+				hash,
+				witnessScript: c.witnessScript
+			};
+			else return {
+				type: "sh",
+				redeemScript: cs,
+				script,
+				address,
+				hash
+			};
+		};
 		p2wpkh = (publicKey, network = NETWORK) => {
 			if (!isValidPubkey(publicKey, PubT.ecdsa)) throw new Error("P2WPKH: invalid publicKey");
 			if (publicKey.length === 65) throw new Error("P2WPKH: uncompressed public key");
@@ -17736,7 +17788,7 @@ zoo`.split("\n"));
 		checkDerivations(tx, net.coinType);
 		for (const idx of unique) {
 			const input = tx.getInput(idx);
-			if (input.witnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing witnessUtxo`);
+			if (input.witnessUtxo === void 0 && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} carries neither witnessUtxo nor nonWitnessUtxo`);
 			if (input.bip32Derivation === void 0 && input.tapBip32Derivation === void 0) throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
 			const { type } = getInputType(input);
 			if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
@@ -26683,6 +26735,12 @@ zoo`.split("\n"));
 	init_bip32();
 	init_payment();
 	init_transaction();
+	var BTC_PURPOSE = {
+		"btc.bip44": 44,
+		"btc.bip49": 49,
+		"btc.bip84": 84,
+		"btc.bip86": 86
+	};
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
 	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	var checkNetwork = (template, network) => {
@@ -26719,8 +26777,9 @@ zoo`.split("\n"));
 				wipe(root.privateKey);
 			}
 		}
-		if (template !== "btc.bip84" && template !== "btc.bip86") throw new KernelError("invalid-input", `unknown template ${String(template)}`);
-		const path = `m/${template === "btc.bip84" ? 84 : 86}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
+		const purpose = BTC_PURPOSE[template];
+		if (purpose === void 0) throw new KernelError("invalid-input", `unknown template ${template}`);
+		const path = `m/${purpose}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
 		const account = master.derive(path);
 		try {
 			return {
@@ -26790,7 +26849,12 @@ zoo`.split("\n"));
 					const { account } = request;
 					if (account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
 					const [family] = request.kind.split(".", 1);
-					if (!(family === "evm" ? ["evm.bip44"] : family === "solana" ? ["solana.bip44-change"] : ["btc.bip84", "btc.bip86"]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
+					if (!(family === "evm" ? ["evm.bip44"] : family === "solana" ? ["solana.bip44-change"] : [
+						"btc.bip44",
+						"btc.bip49",
+						"btc.bip84",
+						"btc.bip86"
+					]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 					const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 					if (record === void 0) throw new KernelError("not-found", "no such wallet");
 					const entropy = openRecord(dek, record);
@@ -26844,7 +26908,8 @@ zoo`.split("\n"));
 							const net = bitcoinNetwork(request.network);
 							const master = HDKey$1.fromMasterSeed(seed, net.bip32);
 							try {
-								const purpose = account.template === "btc.bip86" ? 86 : 84;
+								var _BTC_PURPOSE$account$;
+								const purpose = (_BTC_PURPOSE$account$ = BTC_PURPOSE[account.template]) !== null && _BTC_PURPOSE$account$ !== void 0 ? _BTC_PURPOSE$account$ : 84;
 								const { coinType } = net;
 								const hardened = 2147483648;
 								const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
@@ -26875,7 +26940,7 @@ zoo`.split("\n"));
 									return child;
 								};
 								const expectedPub = (pub) => purpose === 86 ? pub.slice(1) : pub;
-								const expectedScript = (pub) => purpose === 86 ? p2tr(pub.slice(1)).script : p2wpkh(pub).script;
+								const expectedScript = (pub) => purpose === 86 ? p2tr(pub.slice(1)).script : purpose === 49 ? p2sh(p2wpkh(pub)).script : purpose === 44 ? p2pkh(pub).script : p2wpkh(pub).script;
 								try {
 									if (request.kind === "bitcoin.psbt") {
 										const tx = Transaction.fromPSBT(request.psbt);
@@ -26889,8 +26954,18 @@ zoo`.split("\n"));
 											const priv = child.privateKey;
 											if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
 											if (!deepEqual(entry.pubkey, expectedPub(pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
-											const prevout = input.witnessUtxo;
-											if (prevout === void 0 || !deepEqual(prevout.script, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
+											if (purpose === 44) {
+												var _outs$vout;
+												if (input.nonWitnessUtxo === void 0) throw new KernelError("invalid-input", `input ${idx}: P2PKH spend requires nonWitnessUtxo`);
+												const vout = input.index;
+												const outs = input.nonWitnessUtxo.outputs;
+												const prevScript = vout === void 0 ? void 0 : (_outs$vout = outs[vout]) === null || _outs$vout === void 0 ? void 0 : _outs$vout.script;
+												if (prevScript === void 0 || !deepEqual(prevScript, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: nonWitnessUtxo prevout is not this key's`);
+											} else {
+												const prevout = input.witnessUtxo;
+												if (prevout === void 0 || !deepEqual(prevout.script, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
+												if (purpose === 49 && (input.redeemScript === void 0 || !deepEqual(input.redeemScript, p2wpkh(pub).script))) throw new KernelError("invalid-input", `input ${idx}: redeemScript is not this key's`);
+											}
 											inputs.push({
 												index: idx,
 												privateKey: priv
@@ -26927,7 +27002,7 @@ zoo`.split("\n"));
 											signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32))
 										};
 									}
-									if (request.format === "legacy") throw new KernelError("unsupported", "legacy message format is not supported");
+									if (request.format === "legacy" && account.template !== "btc.bip44") throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
 									const child = childAt([
 										purpose + hardened,
 										coinType + hardened,
@@ -26938,7 +27013,7 @@ zoo`.split("\n"));
 									const pub = child.publicKey;
 									const priv = child.privateKey;
 									if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
-									if ((purpose === 86 ? p2tr(pub.slice(1), void 0, net.params).address : p2wpkh(pub, net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
+									if ((purpose === 86 ? p2tr(pub.slice(1), void 0, net.params).address : purpose === 49 ? p2sh(p2wpkh(pub, net.params), net.params).address : purpose === 44 ? p2pkh(pub, net.params).address : p2wpkh(pub, net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
 									let normalized;
 									try {
 										normalized = normalizeBitcoin(request);

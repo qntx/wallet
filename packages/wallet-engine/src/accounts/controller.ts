@@ -763,7 +763,9 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         const combos = nets
           .enabled("bitcoin")
           .flatMap((network) =>
-            (["btc.bip84", "btc.bip86"] as const).map((template) => [network, template] as const),
+            (["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const).map(
+              (template) => [network, template] as const,
+            ),
           );
         const seen = await Promise.all(
           combos.map(async ([network, template]) => {

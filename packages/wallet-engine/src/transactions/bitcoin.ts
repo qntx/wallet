@@ -8,6 +8,7 @@ import {
   bitcoinPubkeyFromXpub,
 } from "@qntx/wallet-chains/bitcoin";
 import { chains } from "@qntx/wallet/chains";
+import type { ChainTemplate } from "@qntx/wallet/protocol";
 
 import { BtcUtxoStore, scanChain, scanUtxos, scriptPubKey } from "../chains/bitcoin-scan.ts";
 import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
@@ -32,9 +33,30 @@ type BtcStash = {
   readonly scriptOf: (u: { readonly address: string }) => Uint8Array;
   readonly changeAddresses: ReadonlyArray<string>;
   readonly tier: string;
-  readonly tap: boolean;
+  readonly template: ChainTemplate;
   readonly network: string;
   readonly fp: number;
+};
+
+const fetchRawTxes = async (
+  es: { readonly get: (path: string) => Promise<unknown> },
+  utxos: ReadonlyArray<{ readonly txid: string }>,
+): Promise<Map<string, Uint8Array>> => {
+  const out = new Map<string, Uint8Array>();
+  await Promise.all(
+    utxos.map(async (u) => {
+      const raw = await es.get(`/tx/${u.txid}/hex`);
+      if (typeof raw !== "string") {
+        throw new TypeError(`esplora /tx/${u.txid}/hex: not a string`);
+      }
+      const bytes = hex.decode(raw);
+      if (Transaction.fromRaw(bytes, { allowUnknownInputs: true }).id !== u.txid) {
+        throw new Error(`esplora /tx/${u.txid}/hex: txid mismatch`);
+      }
+      out.set(u.txid, bytes);
+    }),
+  );
+  return out;
 };
 
 /** The account-relative full path `purpose'/coin'/group'/change/index` for a PSBT entry. */
@@ -74,7 +96,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const es = ctx.options.networks.esplora(network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const template = account.template === "btc.bip86" ? "btc.bip86" : "btc.bip84";
+    const template =
+      (["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const).find(
+        (x) => x === account.template,
+      ) ?? "btc.bip84";
     const btcAccount = await apis.account({
       walletId: account.walletId,
       groupIndex: account.groupIndex,
@@ -92,6 +117,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const fp = Number.parseInt(fingerprint, 16);
     const net = bitcoinNetwork(network);
     const tap = template === "btc.bip86";
+    const rawTxOf = (u: { readonly txid: string }): Uint8Array | undefined => rawTxes.get(u.txid);
 
     const receive = await scanChain(es, xpub, template, network, net.params, 0);
     const change = await scanChain(es, xpub, template, network, net.params, 1);
@@ -107,6 +133,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }));
     const byAddr = new Map(addresses.map((a) => [a.address, a]));
     const base = accountPath(path);
+    const rawTxes =
+      template === "btc.bip44" ? await fetchRawTxes(es, utxos) : new Map<string, Uint8Array>();
     const inputs = bitcoin.toInputs(
       utxos,
       fp,
@@ -122,9 +150,25 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         return bitcoinPubkeyFromXpub(xpub, template, network, a.chain, a.index);
       },
       (u) => scriptPubKey(u.address, net.params),
-      tap,
+      template,
+      template === "btc.bip44" ? rawTxOf : undefined,
     );
-    const changeAddr = change.find((a) => !a.used)?.address;
+    // bip49/bip44 are spend-only — their change goes on the group's bip84 chain.
+    let changeAddr = change.find((a) => !a.used)?.address;
+    if (template === "btc.bip49" || template === "btc.bip44") {
+      const acct84 = await apis.account({
+        walletId: account.walletId,
+        groupIndex: account.groupIndex,
+        template: "btc.bip84",
+        network,
+      });
+      const xpub84 = "xpub" in acct84 ? acct84.xpub : undefined;
+      if (xpub84 === undefined) {
+        throw new Error("no bip84 account for the legacy-template change chain");
+      }
+      const change84 = await scanChain(es, xpub84, "btc.bip84", network, net.params, 1);
+      changeAddr = change84.find((a) => !a.used)?.address;
+    }
     if (changeAddr === undefined) {
       throw new Error("no unused change address");
     }
@@ -198,7 +242,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       changeAddresses: change.filter((a) => !a.used).map((a) => a.address),
       fp,
       tier: fee === "fast" ? "fast" : fee === "slow" ? "slow" : "normal",
-      tap,
+      template,
       network,
     });
     let tx: TrackedTransaction = {
@@ -332,7 +376,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const es = ctx.options.networks.esplora(old.network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const template = stash.tap ? ("btc.bip86" as const) : ("btc.bip84" as const);
+    const { template } = stash;
     const btcAccount = await apis.account({
       walletId: old.account,
       groupIndex: 0,
@@ -389,7 +433,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
             stash.pathOf,
             stash.pubkeyOf,
             stash.scriptOf,
-            stash.tap,
+            stash.template,
           ),
         );
       }
@@ -408,7 +452,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
               stash.pathOf,
               stash.pubkeyOf,
               stash.scriptOf,
-              stash.tap,
+              stash.template,
             ),
           );
         }
@@ -468,7 +512,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       throw new Error("the parent build context is gone — cannot bump after restart");
     }
     const es = ctx.options.networks.esplora(old.network);
-    const template = stash.tap ? ("btc.bip86" as const) : ("btc.bip84" as const);
+    const { template } = stash;
     const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
     const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
     if (own.length === 0) {
@@ -487,7 +531,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       stash.pathOf,
       stash.pubkeyOf,
       stash.scriptOf,
-      stash.tap,
+      stash.template,
     );
     const [changeAddr] = stash.changeAddresses;
     if (changeAddr === undefined) {
