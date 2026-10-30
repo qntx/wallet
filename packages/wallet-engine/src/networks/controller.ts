@@ -14,6 +14,12 @@ import type { EngineStore } from "../store/port.ts";
 import { networkById } from "./registry.ts";
 import type { NetworkInfo } from "./registry.ts";
 
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+export type SolanaRpc = {
+  readonly call: (method: string, params: unknown[]) => Promise<unknown>;
+};
+
 type StoreOrUndefined = EngineStore | undefined;
 
 export type NetworkControllerState = {
@@ -102,8 +108,71 @@ export class NetworkController extends Controller<NetworkControllerState> {
   }
 
   /** Validate a custom endpoint's reported chain id, then persist it first in the list. */
+  /** Solana JSON-RPC over the ordered endpoint list — kit's transport is single-endpoint. */
+  solanaRpc(network: string): SolanaRpc {
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no rpc endpoint for ${network}`);
+    }
+    return {
+      call: async (method, params) => {
+        const attempt = async (rest: ReadonlyArray<string>, last: unknown): Promise<unknown> => {
+          const [url, ...next] = rest;
+          if (url === undefined) {
+            throw last instanceof Error
+              ? last
+              : new Error(typeof last === "string" ? last : method);
+          }
+          try {
+            const res = await this.options.fetch(url, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+            });
+            const body: unknown = await res.json();
+            if (!isObject(body)) {
+              return await attempt(next, new Error(`malformed response from ${url}`));
+            }
+            if (body["error"] !== undefined) {
+              const msg = isObject(body["error"]) ? body["error"]["message"] : undefined;
+              return await attempt(next, new Error(typeof msg === "string" ? msg : method));
+            }
+            return body["result"];
+          } catch (error) {
+            return attempt(next, error);
+          }
+        };
+        return attempt(urls, undefined);
+      },
+    };
+  }
+
   async addRpc(network: string, url: string): Promise<void> {
     const info = this.info(network);
+    if (info.family === "solana") {
+      const res = await this.options.fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getGenesisHash", params: [] }),
+      });
+      const body: unknown = await res.json();
+      const genesis = isObject(body) ? body["result"] : undefined;
+      if (genesis !== info.genesisHash) {
+        throw new Error(
+          `${url} reports genesis hash ${String(genesis)}, expected ${info.genesisHash ?? ""}`,
+        );
+      }
+      const current = this.getState().customRpc[network] ?? [];
+      const customRpc = { ...this.getState().customRpc, [network]: [url, ...current] };
+      this.update((s) => ({ ...s, customRpc }));
+      const store = this.engineStore;
+      if (store !== undefined) {
+        await store
+          .collection("networks")
+          .put("customRpc", new TextEncoder().encode(JSON.stringify(customRpc)));
+      }
+      return;
+    }
     const res = await this.options.fetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
