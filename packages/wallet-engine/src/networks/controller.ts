@@ -185,8 +185,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
       }
     };
     return {
-      get:  async (path: string) => attempt(urls, path, undefined, undefined),
-      post:  async (path: string, body: string) =>
+      get: async (path: string) => attempt(urls, path, undefined, undefined),
+      post: async (path: string, body: string) =>
         attempt(urls, path, { method: "POST", body }, undefined),
     };
   }
@@ -195,7 +195,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
     const info = this.info(network);
     if (info.family === "bitcoin") {
       const res = await this.options.fetch(`${url.replace(/\/$/, "")}/block-height/0`);
-      const genesis = (await res.text()).trim();
+      const genesisText = await res.text();
+      const genesis = genesisText.trim();
       if (genesis !== info.genesisHash) {
         throw new Error(`${url} reports genesis ${genesis}, expected ${info.genesisHash ?? ""}`);
       }

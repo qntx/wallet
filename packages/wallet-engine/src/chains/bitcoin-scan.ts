@@ -164,3 +164,96 @@ export class BitcoinScanStore {
     this.engineStore = undefined;
   }
 }
+
+/** Persistent UTXO lock/spent lifecycle — locked by an in-flight tx, released or spent at its end. */
+export type LockedUtxo = ScanUtxo & {
+  readonly status: "confirmed" | "locked" | "frozen";
+  readonly txId?: string;
+};
+
+export class BtcUtxoStore {
+  private engineStore: EngineStore | undefined;
+  private utxos = new Map<string, LockedUtxo>();
+
+  async unlock(store: EngineStore): Promise<void> {
+    this.engineStore = store;
+    const raw = await store.collection("btc-utxos").get("state");
+    this.utxos =
+      raw === undefined
+        ? new Map()
+        : new Map(
+            Object.entries(JSON.parse(new TextDecoder().decode(raw)) as Record<string, LockedUtxo>),
+          );
+  }
+
+  private async persist(): Promise<void> {
+    const store = this.engineStore;
+    if (store !== undefined) {
+      await store
+        .collection("btc-utxos")
+        .put("state", new TextEncoder().encode(JSON.stringify(Object.fromEntries(this.utxos))));
+    }
+  }
+
+  private static key(u: { txid: string; vout: number }): string {
+    return `${u.txid}:${u.vout}`;
+  }
+
+  replace(utxos: ReadonlyArray<ScanUtxo>): void {
+    const locked = [...this.utxos.entries()].filter(
+      ([, u]) => u.status === "locked" || u.status === "frozen",
+    );
+    this.utxos = new Map(
+      utxos.map((u) => [BtcUtxoStore.key(u), { ...u, status: "confirmed" as const }]),
+    );
+    for (const [k, u] of locked) {
+      this.utxos.set(k, u);
+    }
+  }
+
+  lock(utxos: ReadonlyArray<ScanUtxo>, txId: string): void {
+    for (const u of utxos) {
+      this.utxos.set(BtcUtxoStore.key(u), { ...u, status: "locked", txId });
+    }
+    void this.persist();
+  }
+
+  /** Released on failed/rejected/dropped; spent-removed on confirmed. */
+  endTx(txId: string, final: "confirmed" | "failed" | "rejected" | "dropped"): void {
+    if (final === "confirmed") {
+      for (const [k, u] of this.utxos) {
+        if (u.txId === txId) {
+          this.utxos.delete(k);
+        }
+      }
+    } else {
+      for (const [k, u] of this.utxos) {
+        if (u.txId === txId && u.status === "locked") {
+          const { txId: _t, ...rest } = u;
+          this.utxos.set(k, { ...rest, status: "confirmed" });
+        }
+      }
+    }
+    void this.persist();
+  }
+
+  spendable(): ReadonlyArray<LockedUtxo> {
+    return [...this.utxos.values()].filter(
+      (u) => u.status === "confirmed" && !(u.value === 546 || u.value === 330),
+    );
+  }
+
+  frozen(): ReadonlyArray<LockedUtxo> {
+    return [...this.utxos.values()].filter(
+      (u) => u.status === "frozen" || u.value === 546 || u.value === 330,
+    );
+  }
+
+  all(): ReadonlyArray<LockedUtxo> {
+    return [...this.utxos.values()];
+  }
+
+  lockStore(): void {
+    this.engineStore = undefined;
+  }
+}

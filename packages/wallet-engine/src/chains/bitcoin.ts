@@ -180,9 +180,9 @@ export class BitcoinChainAdapter {
     feePerByte: bigint,
     changeAddress: string,
     network: typeof BTC_MAINNET,
-  ): Uint8Array {
+  ): { readonly psbt: Uint8Array; readonly inputs: ReadonlyArray<BtcInput> } {
     const selection = selectUTXO(
-      [...inputs] as Parameters<typeof selectUTXO>[0],
+      [...inputs] as unknown as Parameters<typeof selectUTXO>[0],
       [{ address: to, amount }],
       "default",
       {
@@ -197,6 +197,9 @@ export class BitcoinChainAdapter {
     if (selection === undefined || selection.tx === undefined) {
       throw new Error("insufficient confirmed utxo for the amount + fee");
     }
-    return selection.tx.toPSBT();
+    return {
+      psbt: selection.tx.toPSBT(),
+      inputs: selection.inputs as unknown as ReadonlyArray<BtcInput>,
+    };
   }
 }

@@ -8,11 +8,15 @@ import { hex } from "@scure/base";
 import { Transaction } from "@scure/btc-signer";
 
 import type { Wallet } from "@qntx/wallet";
-import { decodeBitcoinPsbt, bitcoinNetwork,bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
+import {
+  decodeBitcoinPsbt,
+  bitcoinNetwork,
+  bitcoinPubkeyFromXpub,
+} from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
-import { scanChain, scanUtxos, scriptPubKey } from "../chains/bitcoin-scan.ts";
+import { BtcUtxoStore, scanChain, scanUtxos, scriptPubKey } from "../chains/bitcoin-scan.ts";
 import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
 import { BitcoinChainAdapter, feeTiers } from "../chains/bitcoin.ts";
 import { EvmChainAdapter } from "../chains/evm.ts";
@@ -285,6 +289,7 @@ export class TransactionController extends Controller<TransactionControllerState
 
   private readonly solana = new SolanaChainAdapter();
   private readonly bitcoin = new BitcoinChainAdapter();
+  private readonly bitcoinUtxos = new BtcUtxoStore();
   private readonly wires = new Map<string, Uint8Array>();
 
   private async sendSolana(params: SendParams): Promise<TrackedTransaction> {
@@ -397,9 +402,14 @@ export class TransactionController extends Controller<TransactionControllerState
     const receive = await scanChain(es, xpub, template, network, net.params, 0);
     const change = await scanChain(es, xpub, template, network, net.params, 1);
     const addresses: ScanAddress[] = [...receive, ...change];
-    const utxos = (await scanUtxos(es, addresses, net.params)).map((u: ScanUtxo) => ({
-      ...u,
+    const scannedUtxos: ReadonlyArray<ScanUtxo> = await scanUtxos(es, addresses, net.params);
+    const utxos = scannedUtxos.map((u) => ({
+      txid: u.txid,
+      vout: u.vout,
+      value: u.value,
+      address: u.address,
       status: "confirmed" as const,
+      height: u.height,
     }));
     const byAddr = new Map(addresses.map((a) => [a.address, a]));
     const base = TransactionController.accountPath(path);
@@ -433,7 +443,7 @@ export class TransactionController extends Controller<TransactionControllerState
     if (quote === undefined) {
       throw new Error("no fee quote");
     }
-    const psbt = this.bitcoin.buildPsbt(
+    const { psbt, inputs: selected } = this.bitcoin.buildPsbt(
       inputs,
       to,
       amount,
@@ -441,6 +451,10 @@ export class TransactionController extends Controller<TransactionControllerState
       changeAddr,
       net.params,
     );
+    const selectedKeys = new Set(
+      selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
+    );
+    const selectedUtxos = utxos.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
     const txP = Transaction.fromPSBT(psbt);
     const ownScripts = new Set(
       change.filter((a) => !a.used).map((a) => hex.encode(scriptPubKey(a.address, net.params))),
@@ -473,6 +487,7 @@ export class TransactionController extends Controller<TransactionControllerState
       if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
         throw new Error("unexpected bitcoin sign result");
       }
+      this.bitcoinUtxos.lock(selectedUtxos, tx.id);
       const signed = Transaction.fromPSBT(result.signedPsbt);
       signed.finalize();
       const raw = signed.extract();
