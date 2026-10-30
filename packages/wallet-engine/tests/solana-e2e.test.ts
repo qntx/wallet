@@ -50,10 +50,11 @@ const logs = (name: string): string =>
     probe(["ps", "-a", "--format", "{{.Names}} {{.Status}}"]),
     probe(["logs", name]),
     probe(["inspect", name, "--format", "{{.State.ExitCode}} {{.State.Error}}"]),
+    probe(["cp", `${name}:/tmp/ledger/validator.log`, "/dev/stdout"]),
     probe(["exec", name, "tail", "-50", "/tmp/ledger/validator.log"]),
   ].join("\n---\n");
 
-const PORT = "18899";
+const PORT = "8899";
 
 const waitHealthy = async (r: SolanaRpc, name: string, deadline: number): Promise<void> => {
   try {
@@ -95,18 +96,16 @@ const startValidator = (name: string): void => {
       "-d",
       "--platform",
       "linux/amd64",
+      "--network",
+      "host",
       "--entrypoint",
       "solana-test-validator",
       "--name",
       name,
-      "-p",
-      `${PORT}:8899`,
       IMAGE,
       "--reset",
       "--ledger",
       "/tmp/ledger",
-      "--bind-address",
-      "0.0.0.0",
     ],
     { stdio: "pipe" },
   );
