@@ -160,35 +160,14 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
       ["--reset", "--ledger", ledger, "--quiet", "--bind-address", "127.0.0.1"],
       { stdio: "ignore" },
     );
-    const { killed } = validator;
     try {
       const url = "http://127.0.0.1:8899";
       const r = rpc(url);
-      if (!killed && validator.exitCode !== null) {
-        throw new Error(`validator exited ${validator.exitCode}\n${ledgerLog(ledger)}`);
-      }
       await waitHealthy(r, ledger, Date.now() + 120_000);
       const payer = await generateKeyPairSigner();
       const recipient = await generateKeyPairSigner();
       const a = new SolanaChainAdapter();
-      const waitFunded = async (deadline: number): Promise<void> => {
-        const bal = await r.call("getBalance", [payer.address, { commitment: "confirmed" }]);
-        const v =
-          typeof bal === "object" && bal !== null ? ((bal as { value?: number }).value ?? 0) : 0;
-        if (v > 0) {
-          return;
-        }
-        if (Date.now() > deadline) {
-          throw new Error("airdrop never landed");
-        }
-        // The faucet isn't credited until genesis settles — retry the request itself.
-        await r
-          .call("requestAirdrop", [payer.address, 10_000_000_000, { commitment: "confirmed" }])
-          .catch(() => "");
-        await sleep(1000);
-        return waitFunded(deadline);
-      };
-      await waitFunded(Date.now() + 120_000);
+      await waitFunded(r, payer.address, Date.now() + 120_000);
 
       const unsigned = await waitBuild(
         a,
