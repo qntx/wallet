@@ -10,8 +10,10 @@ import { EvmChainAdapter } from "../src/chains/evm.ts";
 
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
 
-const local = `${process.env["HOME"] ?? ""}/.foundry/bin/anvil`;
-const anvil = existsSync(local) ? local : execFileSync("which", ["anvil"]).toString().trim();
+const anvil = (): string => {
+  const local = `${process.env["HOME"] ?? ""}/.foundry/bin/anvil`;
+  return existsSync(local) ? local : execFileSync("which", ["anvil"]).toString().trim();
+};
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const account = mnemonicToAccount(MNEMONIC, { accountIndex: 0 });
@@ -71,7 +73,7 @@ const sendOne = async (
 describe.runIf(RUN)("anvil e2e: native transfer", () => {
   it("sends two sequential transfers, nonces n and n+1, and the recipient balance doubles", async () => {
     const port = 18545;
-    const proc = execFile(anvil, ["--port", String(port), "--silent"]);
+    const proc = execFile(anvil(), ["--port", String(port), "--silent"]);
     await sleep(1500);
     try {
       const url = `http://127.0.0.1:${port}`;
