@@ -12,6 +12,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { bitcoinAddressFromXpub } from "../src/bitcoin/account.ts";
 import { evmAddressFromPublicKey } from "../src/evm/address.ts";
+import { ChainError } from "../src/index.ts";
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 
 const vectors = JSON.parse(
@@ -80,5 +81,18 @@ describe("address derivation helpers", () => {
         ).toBe(address);
       }
     }
+  });
+
+  it("bitcoinAddressFromXpub encodes the network prefix and rejects a cross-network tpub", () => {
+    // Entries 2-3 of vectors.bitcoin are the coin-type-1' tpub accounts (bip84, bip86).
+    const tpub84 = vectors.bitcoin[2]!.xpub;
+    const tpub86 = vectors.bitcoin[3]!.xpub;
+    const mainnet = "bip122:000000000019d6689c085ae165831e93";
+    const testnet4 = "bip122:00000000da84f2bafbbc53dee25a72ae";
+    const regtest = "bip122:0f9188f13cb7b2c71f2a335e3a4fc328";
+    expect(bitcoinAddressFromXpub(tpub84, "btc.bip84", testnet4, 0, 0)).toMatch(/^tb1q/);
+    expect(bitcoinAddressFromXpub(tpub84, "btc.bip84", regtest, 0, 0)).toMatch(/^bcrt1q/);
+    expect(bitcoinAddressFromXpub(tpub86, "btc.bip86", regtest, 0, 0)).toMatch(/^bcrt1p/);
+    expect(() => bitcoinAddressFromXpub(tpub84, "btc.bip84", mainnet, 0, 0)).toThrow(ChainError);
   });
 });

@@ -24,7 +24,7 @@ export function bitcoinAddressFromXpub(
   const net = bitcoinNetwork(network);
   let node: HDKey;
   try {
-    node = HDKey.fromExtendedKey(xpub);
+    node = HDKey.fromExtendedKey(xpub, net.bip32);
   } catch (error) {
     throw new ChainError(
       "invalid-request",

@@ -70,16 +70,22 @@
       "network": "bip122:00000000da84f2bafbbc53dee25a72ae",
       "path": "m/84'/1'/0'",
       "xpub": "tpubDC8msFGeGuwnKG9Upg7DM2b4DaRqg3CUZa5g8v2SRQ6K4NSkxUgd7HsL2XVWbVm39yBA4LAxysQAm397zwQSQoQgewGiYZqrA9DsP4zbQ1M",
-      "receive": [],
-      "change": []
+      "receive": [
+        "tb1q6rz28mcfaxtmd6v789l9rrlrusdprr9pqcpvkl",
+        "tb1qd7spv5q28348xl4myc8zmh983w5jx32cjhkn97"
+      ],
+      "change": ["tb1q9u62588spffmq4dzjxsr5l297znf3z6j5p2688"]
     },
     {
       "template": "btc.bip86",
       "network": "bip122:00000000da84f2bafbbc53dee25a72ae",
       "path": "m/86'/1'/0'",
       "xpub": "tpubDDfvzhdVV4unsoKt5aE6dcsNsfeWbTgmLZPi8LQDYU2xixrYemMfWJ3BaVneH3u7DBQePdTwhpybaKRU95pi6PMUtLPBJLVQRpzEnjfjZzX",
-      "receive": [],
-      "change": []
+      "receive": [
+        "tb1p8wpt9v4frpf3tkn0srd97pksgsxc5hs52lafxwru9kgeephvs7rqlqt9zj",
+        "tb1p90h6z3p36n9hrzy7580h5l429uwchyg8uc9sz4jwzhdtuhqdl5eqmpwq6n"
+      ],
+      "change": ["tb1p6uav7en8k7zsumsqugdmg5j6930zmzy4dg7jcddshsr0fvxlqx7q7p5els"]
     }
   ]
 }
