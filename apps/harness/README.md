@@ -56,15 +56,16 @@ bun run harness:bundles
 `expo prebuild` regenerates the gitignored `ios/` and `android/` dirs; run
 `pod install` inside `ios/` afterwards.
 
-The harness installs `@qntx/wallet-native`, `@qntx/wallet` and `@qntx/wallet-chains` as
-`file:` copies and bundles their sources (`dist/` where applicable). After changing
-any of them, rebuild it and refresh
-the copies before building the app — otherwise the app runs the previous JS
-against the new native code:
+The harness links `@qntx/wallet-native`, `@qntx/wallet`, `@qntx/wallet-chains` and
+`@qntx/v1-probe` via `link:` deps — `node_modules/@qntx/*` are symlinks to the
+live `packages/*` trees, so Metro resolution and native autolinking always see
+the current source. `file:` deps are copied at install time, which made the
+copies go stale whenever a package's `dist/` was rebuilt after install; `link:`
+removes that class of bug. After changing a package just rebuild its `dist/`
+before building the app — no reinstall or copy refresh is needed:
 
 ```bash
-bun run --cwd packages/wallet build && bun run --cwd packages/wallet-native build   # repo root
-cd apps/harness && rm -rf node_modules/@qntx/wallet node_modules/@qntx/wallet-native && bun install
+bun run --cwd packages/wallet build    # repo root, as needed
 ```
 
 ## Running
