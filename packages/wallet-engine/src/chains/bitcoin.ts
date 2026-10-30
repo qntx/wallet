@@ -7,6 +7,7 @@ import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
  * endpoints are validated by the genesis block hash via /block-height/0. RBF/CPFP are out
  * of scope for this layer.
  */
+import type { TransactionInputUpdate } from "@scure/btc-signer/psbt.js";
 import { selectUTXO } from "@scure/btc-signer/utxo.js";
 
 const GAP_LIMIT = 20;
@@ -102,25 +103,7 @@ export const dustFor = (scriptType: string): number => DUST[scriptType] ?? 546;
 
 export const isFrozen = (value: number): boolean => FROZEN_AMOUNTS.has(value);
 
-export type BtcInput = {
-  readonly txid: string;
-  readonly index: number;
-  readonly sequence: number;
-  readonly witnessUtxo: { readonly amount: bigint; readonly script: Uint8Array };
-  readonly bip32Derivation?: ReadonlyArray<
-    readonly [Uint8Array, { readonly fingerprint: number; readonly path: ReadonlyArray<number> }]
-  >;
-  readonly tapBip32Derivation?: ReadonlyArray<
-    readonly [
-      Uint8Array,
-      {
-        readonly hashes: ReadonlyArray<Uint8Array>;
-        readonly der: { readonly fingerprint: number; readonly path: ReadonlyArray<number> };
-      },
-    ]
-  >;
-  readonly tapInternalKey?: Uint8Array;
-};
+export type BtcInput = TransactionInputUpdate;
 
 export class BitcoinChainAdapter {
   /** Inputs for selectUTXO — the same TransactionInputUpdate objects added to the PSBT. */
@@ -131,46 +114,29 @@ export class BitcoinChainAdapter {
     pubkeyOf: (utxo: BtcUtxo) => Uint8Array,
     scriptOf: (utxo: BtcUtxo) => Uint8Array,
     tap: boolean,
-  ): ReadonlyArray<{
-    readonly txid: string;
-    readonly index: number;
-    readonly sequence: number;
-    readonly witnessUtxo: { readonly amount: bigint; readonly script: Uint8Array };
-    readonly bip32Derivation?: ReadonlyArray<
-      [Uint8Array, { readonly fingerprint: number; readonly path: ReadonlyArray<number> }]
-    >;
-    readonly tapBip32Derivation?: ReadonlyArray<
-      [
-        Uint8Array,
-        {
-          readonly hashes: ReadonlyArray<Uint8Array>;
-          readonly der: { readonly fingerprint: number; readonly path: ReadonlyArray<number> };
-        },
-      ]
-    >;
-    readonly tapInternalKey?: Uint8Array;
-  }> {
+  ): BtcInput[] {
     return utxos
       .filter((u) => u.status === "confirmed" && !isFrozen(u.value))
-      .map((u) => ({
-        txid: u.txid,
-        index: u.vout,
-        sequence: 0xfffffffd,
-        witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) },
-        ...(tap
-          ? {
-              tapInternalKey: pubkeyOf(u).subarray(1),
-              tapBip32Derivation: [
-                [
-                  pubkeyOf(u).subarray(1),
-                  { hashes: [] as Uint8Array[], der: { fingerprint, path: pathOf(u) } },
+      .map((u) => {
+        const pub = pubkeyOf(u);
+        const entry: TransactionInputUpdate = {
+          txid: u.txid,
+          index: u.vout,
+          sequence: 0xfffffffd,
+          witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) },
+          ...(tap
+            ? {
+                tapInternalKey: pub.subarray(1),
+                tapBip32Derivation: [
+                  [pub.subarray(1), { hashes: [], der: { fingerprint, path: pathOf(u) } }],
                 ],
-              ],
-            }
-          : {
-              bip32Derivation: [[pubkeyOf(u), { fingerprint, path: pathOf(u) }]],
-            }),
-      }));
+              }
+            : {
+                bip32Derivation: [[pub, { fingerprint, path: pathOf(u) }]],
+              }),
+        };
+        return entry;
+      });
   }
 
   buildPsbt(
@@ -181,25 +147,20 @@ export class BitcoinChainAdapter {
     changeAddress: string,
     network: typeof BTC_MAINNET,
   ): { readonly psbt: Uint8Array; readonly inputs: ReadonlyArray<BtcInput> } {
-    const selection = selectUTXO(
-      [...inputs] as unknown as Parameters<typeof selectUTXO>[0],
-      [{ address: to, amount }],
-      "default",
-      {
-        feePerByte,
-        changeAddress,
-        bip69: true,
-        dust: BigInt(dustFor("p2wpkh")),
-        network,
-        createTx: true,
-      },
-    );
+    const selection = selectUTXO([...inputs], [{ address: to, amount }], "default", {
+      feePerByte,
+      changeAddress,
+      bip69: true,
+      dust: BigInt(dustFor("p2wpkh")),
+      network,
+      createTx: true,
+    });
     if (selection === undefined || selection.tx === undefined) {
       throw new Error("insufficient confirmed utxo for the amount + fee");
     }
-    return {
-      psbt: selection.tx.toPSBT(),
-      inputs: selection.inputs as unknown as ReadonlyArray<BtcInput>,
-    };
+    const chosen = (selection.inputs ?? []).flatMap((s) =>
+      inputs.filter((i) => i.txid === s.txid && i.index === s.index),
+    );
+    return { psbt: selection.tx.toPSBT(), inputs: chosen };
   }
 }

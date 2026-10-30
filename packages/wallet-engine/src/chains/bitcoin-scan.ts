@@ -229,8 +229,14 @@ export class BtcUtxoStore {
     } else {
       for (const [k, u] of this.utxos) {
         if (u.txId === txId && u.status === "locked") {
-          const { txId: _t, ...rest } = u;
-          this.utxos.set(k, { ...rest, status: "confirmed" });
+          this.utxos.set(k, {
+            txid: u.txid,
+            vout: u.vout,
+            value: u.value,
+            address: u.address,
+            height: u.height,
+            status: "confirmed",
+          });
         }
       }
     }
