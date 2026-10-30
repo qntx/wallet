@@ -22,6 +22,7 @@ playwright-report/
 
 # Hermes smoke bundle (built on demand by scripts/hermes-smoke.ts)
 packages/wallet-worker/.hermes-smoke.iife.js
+packages/wallet-chains/.hermes-chains.iife.js
 
 # Android CMake/Gradle build outputs
 **/.cxx/
