@@ -8,18 +8,10 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { build } from "vite";
+
 // The repo does not depend on @types/bun; declare the used surface.
-type BunBuildOutput = {
-  success: boolean;
-  logs: ReadonlyArray<{ toString: () => string }>;
-  outputs: ReadonlyArray<{ kind: string }>;
-};
 declare const Bun: {
-  build: (options: {
-    entrypoints: string[];
-    target: "browser";
-    format: "iife";
-  }) => Promise<BunBuildOutput>;
   write: (path: string, data: unknown) => Promise<unknown>;
   spawnSync: (
     cmd: ReadonlyArray<string>,
@@ -41,23 +33,25 @@ async function main(): Promise<number> {
     return 1;
   }
 
-  const result = await Bun.build({
-    entrypoints: [resolve(root, "tests/hermes/entry.ts")],
-    target: "browser",
-    format: "iife",
+  // Same pipeline as scripts/build-kernel.ts: the es2017 target lowers class static blocks
+  // (ox emits them) that bare Hermes cannot parse.
+  await build({
+    configFile: false,
+    logLevel: "warn",
+    build: {
+      lib: {
+        entry: resolve(root, "tests/hermes/entry.ts"),
+        formats: ["iife"],
+        name: "qntxHermesSmoke",
+        fileName: () => ".hermes-smoke.iife.js",
+      },
+      outDir: root,
+      emptyOutDir: false,
+      minify: false,
+      target: "es2017",
+      rolldownOptions: { external: [] },
+    },
   });
-  if (!result.success) {
-    for (const log of result.logs) {
-      console.error(String(log));
-    }
-    return 1;
-  }
-  const bundle = result.outputs.find((o: { kind: string }) => o.kind === "entry-point");
-  if (!bundle) {
-    console.error("bun build produced no entry-point output");
-    return 1;
-  }
-  await Bun.write(outfile, bundle);
 
   const proc = Bun.spawnSync([hermes, outfile], { stdout: "pipe", stderr: "pipe" });
   const out = proc.stdout.toString() + proc.stderr.toString();
