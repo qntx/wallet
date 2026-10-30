@@ -70,8 +70,8 @@ describe("bindNativeNostr", () => {
     const id = new Uint8Array(32).fill(1);
     const sk = new Uint8Array(32).fill(2);
     const aux = new Uint8Array(32).fill(3);
-    expect(backend.sign(id, sk, aux)).toEqual(OUT);
-    expect(seen).toEqual({ id, sk, aux });
+    expect(backend.sign(id, sk, aux)).toStrictEqual(OUT);
+    expect(seen).toStrictEqual({ id, sk, aux });
   });
 
   it("rethrows non-backend errors untouched", () => {
