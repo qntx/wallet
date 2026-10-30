@@ -141,6 +141,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     wallet: options.wallet,
     spark: controller,
     sparkNetwork: options.sparkNetwork,
+    networks,
     logger: options.logger,
     now: options.now,
   });

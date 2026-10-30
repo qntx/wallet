@@ -11,6 +11,7 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
+import { AccountTreeController } from "../src/accounts/controller.ts";
 import { EvmChainAdapter } from "../src/chains/evm.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
@@ -395,4 +396,73 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
       proc.kill();
     }
   }, 60_000);
+});
+
+const groupAt = (
+  ctl: AccountTreeController,
+  walletId: string,
+  index: number,
+): { readonly used?: Readonly<Record<string, boolean>> } => {
+  const groups = ctl.getState().groups[walletId];
+  const g = groups === undefined ? undefined : groups.find((x) => x.index === index);
+  if (g === undefined) {
+    throw new Error(`group ${index} missing`);
+  }
+  return g;
+};
+const evmUsedAt = (ctl: AccountTreeController, walletId: string, index: number): boolean =>
+  groupAt(ctl, walletId, index).used?.["evm"] ?? false;
+
+const g1AddressOf = (acct: unknown): string => {
+  const a =
+    typeof acct === "object" && acct !== null && "address" in acct ? acct.address : undefined;
+  if (typeof a !== "string") {
+    throw new TypeError("no evm address");
+  }
+  return a;
+};
+
+describe.runIf(RUN)("anvil e2e: account discovery", () => {
+  it("finds group 1 used on EVM only and stops after two unused", { timeout: 60_000 }, async () => {
+    const port = 18556;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { wallet, walletId } = await realWallet();
+      const g1 = await chains(wallet).account({
+        walletId,
+        groupIndex: 1,
+        template: "evm.bip44",
+        network: "eip155:1",
+      });
+      const g1Addr = g1AddressOf(g1);
+      await rpcCall(url, "anvil_setBalance", [g1Addr, "0xde0b6b3a7640000"]);
+      const spark = {
+        store: { subscribe: () => () => {} },
+        inspect: async () => Promise.resolve({ balanceSats: 0, used: false }),
+        setAccounts: () => {},
+        setStore: () => {},
+      } as never;
+      const ctl = new AccountTreeController({
+        wallet,
+        spark,
+        sparkNetwork: "regtest",
+        networks: new NetworkController({
+          fetch: globalThis.fetch.bind(globalThis),
+          rpc: { "eip155:1": [url] },
+          openStore: async () => Promise.resolve(createMemoryEngineStore()),
+          logger: anvilLogger,
+        }),
+        logger: anvilLogger,
+        now: () => 0,
+      });
+      await ctl.init();
+      const found = await ctl.discoverGroups(walletId);
+      expect(found).toStrictEqual([0, 1]);
+      expect(evmUsedAt(ctl, walletId, 1)).toBe(true);
+    } finally {
+      proc.kill();
+    }
+  });
 });

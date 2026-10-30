@@ -116,6 +116,18 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   /** Validate a custom endpoint's reported chain id, then persist it first in the list. */
   /** Solana JSON-RPC over the ordered endpoint list — kit's transport is single-endpoint. */
+  /** Networks with at least one configured endpoint, filtered by family. */
+  enabled(family: "evm" | "solana" | "bitcoin"): ReadonlyArray<string> {
+    const ids = new Set([
+      ...Object.keys(this.options.rpc),
+      ...Object.keys(this.getState().customRpc),
+    ]);
+    return [...ids].filter((id) => {
+      const info = networkById(id);
+      return info !== undefined && info.family === family;
+    });
+  }
+
   solanaRpc(network: string): SolanaRpc {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
