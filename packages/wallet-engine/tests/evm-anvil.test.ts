@@ -2,7 +2,7 @@ import { execFile, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 
-import { createPublicClient, http } from "viem";
+import { createPublicClient, getAddress, http } from "viem";
 import type { PublicClient } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
@@ -161,7 +161,7 @@ describe.runIf(RUN)("anvil e2e: erc20 transfer", () => {
         to: RECIPIENT,
         value: amount,
       });
-      expect(tx.to).toBe(token);
+      expect(tx.to).toBe(getAddress(token));
       expect(tx.value).toBe(0n);
       expect(tx.data.startsWith("0xa9059cbb")).toBe(true);
       const signed = await account.signTransaction({
