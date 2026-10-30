@@ -44,17 +44,11 @@ jobs:
       - run: bunx vp run @qntx/wallet-engine#build
       # Official Agave release binaries; the SHA-256 was computed once from the
       # published asset (releases ship no checksum file) and is pinned here.
-      - uses: actions/cache@a2a59e6ef58e6b8a46f7f4f7fe90f66fd2f0f6f7 # v5.0.4
-        with:
-          path: /tmp/solana-release
-          key: solana-release-3.1.11-5978d621
       - run: |
           set -e
-          if [ ! -f /tmp/solana-release/bin/solana-test-validator ]; then
-            curl -sL -o /tmp/sol.tar.bz2               https://github.com/anza-xyz/agave/releases/download/v3.1.11/solana-release-x86_64-unknown-linux-gnu.tar.bz2
-            echo "5978d621fe2582fc2403fa13f3c06502020bcb42e806ddd4612150049d1a3fbb  /tmp/sol.tar.bz2" | sha256sum -c -
-            tar -xjf /tmp/sol.tar.bz2 -C /tmp
-          fi
+          curl -sL -o /tmp/sol.tar.bz2             https://github.com/anza-xyz/agave/releases/download/v3.1.11/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo "5978d621fe2582fc2403fa13f3c06502020bcb42e806ddd4612150049d1a3fbb  /tmp/sol.tar.bz2" | sha256sum -c -
+          tar -xjf /tmp/sol.tar.bz2 -C /tmp
           echo "/tmp/solana-release/bin" >> "$GITHUB_PATH"
       - run: ENGINE_E2E_SOLANA=1 bunx vp test tests/solana-e2e.test.ts
         working-directory: packages/wallet-engine
