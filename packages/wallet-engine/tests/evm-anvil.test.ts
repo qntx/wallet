@@ -1,12 +1,19 @@
 import { execFile, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-import { createPublicClient, http } from "viem";
+import { createPublicClient, hexToBytes, http } from "viem";
 import type { PublicClient } from "viem";
 import { mnemonicToAccount } from "viem/accounts";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { Wallet } from "@qntx/wallet";
+import type { chains } from "@qntx/wallet/chains";
+
 import { EvmChainAdapter } from "../src/chains/evm.ts";
+import type { EngineLogger } from "../src/events.ts";
+import { NetworkController } from "../src/networks/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { TransactionController } from "../src/transactions/controller.ts";
 
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
 
@@ -17,6 +24,7 @@ const anvil = (): string => {
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const account = mnemonicToAccount(MNEMONIC, { accountIndex: 0 });
+const account2 = mnemonicToAccount(MNEMONIC, { accountIndex: 1 });
 const RECIPIENT = "0x00000000000000000000000000000000deadbeef";
 
 const rpcCall = async (url: string, method: string, params: unknown[]): Promise<unknown> => {
@@ -237,6 +245,174 @@ describe.runIf(RUN)("anvil e2e: evm replace", () => {
       const origState = await adapter.status(client, hash);
       expect(["confirmed", "finalized"]).toContain(bumpState);
       expect(["failed", "dropped", "pending"]).toContain(origState);
+    } finally {
+      proc.kill();
+    }
+  }, 30_000);
+});
+
+type SignParams = Parameters<ReturnType<typeof chains>["sign"]>[0];
+
+const anvilLogger: EngineLogger = { warn: () => {} };
+
+const taggedRandom = (): ((n: number) => Uint8Array) => {
+  let tag = 0;
+  return (n) => {
+    tag += 1;
+    return new Uint8Array(n).fill(tag);
+  };
+};
+
+/** Sign `evm.transaction` requests locally with the anvil mnemonic account. */
+const anvilChains = (signer: typeof account): ReturnType<typeof chains> => {
+  const acct: ReturnType<typeof chains>["account"] = async () =>
+    Promise.resolve({
+      template: "evm.bip44",
+      network: "eip155:1",
+      address: signer.address,
+    });
+  const sign: ReturnType<typeof chains>["sign"] = async ({ request }: SignParams) => {
+    if (request.kind !== "evm.transaction" || request.tx.type !== "eip1559") {
+      return Promise.reject(new Error("unexpected sign request"));
+    }
+    const { tx } = request;
+    const raw = await signer.signTransaction({
+      type: "eip1559",
+      chainId: tx.chainId,
+      nonce: tx.nonce,
+      gas: BigInt(tx.gas),
+      to: tx.to as `0x${string}`,
+      value: BigInt(tx.value ?? "0x0"),
+      data: (tx.data ?? "0x") as `0x${string}`,
+      maxFeePerGas: BigInt(tx.maxFeePerGas ?? "0x0"),
+      maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas ?? "0x0"),
+    });
+    return { kind: "evm.transaction", signedTransaction: hexToBytes(raw) };
+  };
+  return { account: acct, sign };
+};
+
+const SEND_ACCOUNT = {
+  kind: "hd" as const,
+  walletId: "w",
+  groupIndex: 0,
+  template: "evm.bip44" as const,
+};
+
+describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
+  it("speed-up confirms the replacement and marks the original replaced", async () => {
+    const port = 18551;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers: Array<() => unknown> = [];
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      await rpcCall(url, "anvil_setBalance", [account.address, "0xde0b6b3a7640000"]);
+      await rpcCall(url, "evm_setAutomine", [false]);
+      const ctl = new TransactionController({
+        wallet: {} as Wallet,
+        networks: new NetworkController({
+          fetch: globalThis.fetch.bind(globalThis),
+          rpc: { "eip155:1": [url] },
+          openStore: async () => Promise.resolve(createMemoryEngineStore()),
+          logger: anvilLogger,
+        }),
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: taggedRandom(),
+        setTimer: (_ms, fn) => {
+          timers.push(fn);
+          return () => {};
+        },
+        now: () => 1000,
+        logger: anvilLogger,
+        pollMs: 1,
+        chains: anvilChains(account),
+      });
+      await ctl.init();
+      const original = await ctl.send({
+        account: SEND_ACCOUNT,
+        network: "eip155:1",
+        to: RECIPIENT,
+        amount: 10n ** 15n,
+        fee: "slow",
+        verify: { kind: "password", password: "pw" },
+      });
+      expect(original.state).toBe("submitted");
+      const bumped = await ctl.replace(original.id, "speed-up", {
+        kind: "password",
+        password: "pw",
+      });
+      expect(bumped.state).toBe("submitted");
+      expect(bumped.nonce).toBe(original.nonce);
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      await Promise.all(
+        timers.map(async (fn) => {
+          await fn();
+        }),
+      );
+      const { txs } = ctl.getState();
+      expect(txs[bumped.id]?.state).toBe("confirmed");
+      expect(txs[original.id]?.state).toBe("replaced");
+    } finally {
+      proc.kill();
+    }
+  }, 30_000);
+
+  it("cancel confirms a self-transfer; the original is replaced and the recipient gets nothing", async () => {
+    const port = 18552;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers: Array<() => unknown> = [];
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      await rpcCall(url, "anvil_setBalance", [account2.address, "0xde0b6b3a7640000"]);
+      await rpcCall(url, "evm_setAutomine", [false]);
+      const ctl = new TransactionController({
+        wallet: {} as Wallet,
+        networks: new NetworkController({
+          fetch: globalThis.fetch.bind(globalThis),
+          rpc: { "eip155:1": [url] },
+          openStore: async () => Promise.resolve(createMemoryEngineStore()),
+          logger: anvilLogger,
+        }),
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: taggedRandom(),
+        setTimer: (_ms, fn) => {
+          timers.push(fn);
+          return () => {};
+        },
+        now: () => 1000,
+        logger: anvilLogger,
+        pollMs: 1,
+        chains: anvilChains(account2),
+      });
+      await ctl.init();
+      const original = await ctl.send({
+        account: SEND_ACCOUNT,
+        network: "eip155:1",
+        to: RECIPIENT,
+        amount: 10n ** 15n,
+        fee: "slow",
+        verify: { kind: "password", password: "pw" },
+      });
+      const cancelled = await ctl.replace(original.id, "cancel", {
+        kind: "password",
+        password: "pw",
+      });
+      expect(cancelled.state).toBe("submitted");
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      await Promise.all(
+        timers.map(async (fn) => {
+          await fn();
+        }),
+      );
+      const { txs } = ctl.getState();
+      expect(txs[cancelled.id]?.state).toBe("confirmed");
+      expect(txs[original.id]?.state).toBe("replaced");
+      const balance = BigInt(
+        (await rpcCall(url, "eth_getBalance", [RECIPIENT, "latest"])) as string,
+      );
+      expect(balance).toBe(0n);
     } finally {
       proc.kill();
     }

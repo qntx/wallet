@@ -89,6 +89,70 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
   }) as typeof fetch;
 
 type Sign = ReturnType<typeof chains>["sign"];
+
+/** RPC mock that assigns sequential tx hashes and reports a chosen one as confirmed. */
+const receiptFetch = (confirmed: string | undefined): typeof fetch => {
+  const hashes = [`0x${"aa".repeat(32)}`, `0x${"bb".repeat(32)}`, `0x${"cc".repeat(32)}`];
+  let sent = 0;
+  return (async (_url: unknown, init: { body?: string } | undefined) => {
+    const body = JSON.parse(init?.body ?? "{}") as { method: string; params?: unknown[] };
+    const table: Record<string, unknown> = {
+      eth_getTransactionCount: "0x0",
+      eth_estimateGas: "0x5208",
+      eth_feeHistory: {
+        baseFeePerGas: ["0x1", "0x1"],
+        reward: [
+          ["0x1", "0x2", "0x3"],
+          ["0x1", "0x2", "0x3"],
+        ],
+      },
+      eth_getBlockByNumber: { number: "0x2" },
+    };
+    if (body.method === "eth_sendRawTransaction") {
+      sent += 1;
+      return Promise.resolve(Response.json({ result: hashes[sent - 1] }));
+    }
+    if (body.method === "eth_getTransactionReceipt") {
+      const hash = String(body.params?.[0]);
+      return Promise.resolve(
+        Response.json({
+          result: hash === confirmed ? { status: "0x1", blockNumber: "0x1" } : null,
+        }),
+      );
+    }
+    return Promise.resolve(
+      body.method in table
+        ? Response.json({ result: table[body.method] })
+        : Response.json({ error: { message: `unmocked ${body.method}` } }, { status: 500 }),
+    );
+  }) as typeof fetch;
+};
+
+const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: Array<() => unknown>) => {
+  let tag = 0;
+  return new TransactionController({
+    wallet: {} as Wallet,
+    networks: new NetworkController({
+      fetch: fetchFn,
+      rpc: { "eip155:1": ["http://fake.local"] },
+      openStore: async () => Promise.resolve(memoryStore()),
+      logger,
+    }),
+    openStore: async () => Promise.resolve(memoryStore()),
+    random: (n) => {
+      tag += 1;
+      return new Uint8Array(n).fill(tag);
+    },
+    setTimer: (_ms, fn) => {
+      timers.push(fn);
+      return () => {};
+    },
+    now: () => 1000,
+    logger,
+    pollMs: 1,
+    chains: apis(sign),
+  });
+};
 const apis = (sign: Sign): ReturnType<typeof chains> => {
   const account: ReturnType<typeof chains>["account"] = async () =>
     Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: ADDR });
@@ -172,5 +236,65 @@ describe("TransactionController.replace", () => {
     await expect(ctl.replace(original!.id, "cancel", SEND.verify)).rejects.toThrow(
       "cannot replace",
     );
+  });
+});
+
+describe("TransactionController.replace — state resolution", () => {
+  it("replacement confirms → the original flips to replaced", async () => {
+    const timers: Array<() => unknown> = [];
+    const ctl = ctlWithFetch(
+      receiptFetch(`0x${"bb".repeat(32)}`),
+      async () =>
+        Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) }),
+      timers,
+    );
+    await ctl.init();
+    const original = await ctl.send(SEND);
+    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    await Promise.all(
+      timers.map(async (fn) => {
+        await fn();
+      }),
+    );
+    const { txs } = ctl.getState();
+    expect(txs[bumped.id]?.state).toBe("confirmed");
+    expect(txs[original.id]?.state).toBe("replaced");
+  });
+
+  it("original confirms first → the replacement flips to replaced", async () => {
+    const timers: Array<() => unknown> = [];
+    const ctl = ctlWithFetch(
+      receiptFetch(`0x${"aa".repeat(32)}`),
+      async () =>
+        Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) }),
+      timers,
+    );
+    await ctl.init();
+    const original = await ctl.send(SEND);
+    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    await Promise.all(
+      timers.map(async (fn) => {
+        await fn();
+      }),
+    );
+    const { txs } = ctl.getState();
+    expect(txs[original.id]?.state).toBe("confirmed");
+    expect(txs[bumped.id]?.state).toBe("replaced");
+  });
+
+  it("a new send while a replace is pending gets the next nonce, not the replaced one", async () => {
+    const timers: Array<() => unknown> = [];
+    const ctl = ctlWithFetch(
+      receiptFetch(undefined),
+      async () =>
+        Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) }),
+      timers,
+    );
+    await ctl.init();
+    const original = await ctl.send(SEND);
+    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    const next = await ctl.send(SEND);
+    expect(bumped.nonce).toBe(original.nonce);
+    expect(next.nonce).toBe(original.nonce + 1);
   });
 });
