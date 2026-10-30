@@ -52,11 +52,11 @@ describe("kernel manifest", () => {
     expect(manifest.protocol).toBe(PROTOCOL_VERSION);
     expect(manifest.vaultFormat).toBe(VAULT_FORMAT);
     // Every external kernel dependency plus the host's backend packages are listed once, sorted
-    // by name, pinned version and a sha512 integrity; the workspace package @qntx/wallet is
-    // bundled source, not a library.
+    // by name, pinned version and a sha512 integrity; workspace packages (@qntx/wallet*)
+    // are bundled source, not libraries.
     expect(manifest.libraries.map(({ name }) => name)).toStrictEqual(
       [...Object.keys(kernelPkg.dependencies), "@qntx/spark-wasm"]
-        .filter((name) => name !== "@qntx/wallet")
+        .filter((name) => !name.startsWith("@qntx/wallet"))
         .toSorted((a, b) => a.localeCompare(b)),
     );
     const expectedVersions: Record<string, string> = {
