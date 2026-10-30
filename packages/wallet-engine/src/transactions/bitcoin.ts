@@ -349,19 +349,97 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const net = bitcoinNetwork(old.network);
     const inTotal = btc.inputs.reduce((a, i) => a + i.value, 0);
-    const outputs =
-      mode === "cancel"
-        ? [{ address: changeAddr, amount: BigInt(inTotal - newFee) }]
-        : btc.outputs
-            .filter((o) => !o.own || o.value - (newFee - btc.fee) >= 546)
-            .map((o) =>
-              o.own
-                ? { address: o.address, amount: BigInt(o.value - (newFee - btc.fee)) }
-                : { address: o.address, amount: BigInt(o.value) },
-            );
-    const { psbt, vsize } = bitcoin.buildExactPsbt(stash.inputs, outputs, net.params);
+    const dust = 546;
+    const payee = btc.outputs
+      .filter((o) => !o.own)
+      .map((o) => ({ address: o.address, amount: BigInt(o.value) }));
+    const usedKeys = new Set(btc.inputs.map((i) => `${i.txid}:${i.vout}`));
+    const spare = stash.allUtxos.filter((u) => !usedKeys.has(`${u.txid}:${u.vout}`));
+    const extraInputs: ReturnType<typeof bitcoin.toInputs> = [];
+    const extraUtxos: typeof spare = [];
+    const feeNeeded = (o: ReadonlyArray<{ amount: bigint }>): bigint =>
+      BigInt(newFee) -
+      (BigInt(inTotal) +
+        extraUtxos.reduce((a, u) => a + BigInt(u.value), 0n) -
+        o.reduce((a, x) => a + x.amount, 0n));
+    let outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>;
+    if (mode === "cancel") {
+      outputs = [{ address: changeAddr, amount: BigInt(inTotal - newFee) }];
+    } else {
+      const shrunk = btc.outputs.find((o) => o.own);
+      const changeAfter = shrunk === undefined ? 0 : shrunk.value - (newFee - btc.fee);
+      outputs =
+        changeAfter >= dust
+          ? [...payee, { address: changeAddr, amount: BigInt(changeAfter) }]
+          : payee;
+      while (feeNeeded(outputs) > 0n && spare.length > extraUtxos.length) {
+        const next = spare[extraUtxos.length];
+        if (next === undefined) {
+          break;
+        }
+        extraUtxos.push(next);
+        extraInputs.push(
+          ...bitcoin.toInputs(
+            [{ ...next, status: "confirmed" as const }],
+            0,
+            stash.pathOf,
+            stash.pubkeyOf,
+            stash.scriptOf,
+            stash.tap,
+          ),
+        );
+      }
+      if (feeNeeded(outputs) > 0n) {
+        const keepChange = [...outputs, { address: changeAddr, amount: BigInt(dust) }];
+        while (feeNeeded(keepChange) > 0n && spare.length > extraUtxos.length) {
+          const next = spare[extraUtxos.length];
+          if (next === undefined) {
+            break;
+          }
+          extraUtxos.push(next);
+          extraInputs.push(
+            ...bitcoin.toInputs(
+              [{ ...next, status: "confirmed" as const }],
+              0,
+              stash.pathOf,
+              stash.pubkeyOf,
+              stash.scriptOf,
+              stash.tap,
+            ),
+          );
+        }
+        if (feeNeeded(keepChange) > 0n) {
+          throw new Error("insufficient confirmed utxo to fund the replacement fee");
+        }
+        const changeValue =
+          inTotal +
+          extraUtxos.reduce((a, u) => a + u.value, 0) -
+          payee.reduce((a, o) => a + Number(o.amount), 0) -
+          newFee;
+        outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
+      } else {
+        const changeValue =
+          inTotal +
+          extraUtxos.reduce((a, u) => a + u.value, 0) -
+          payee.reduce((a, o) => a + Number(o.amount), 0) -
+          newFee;
+        if (changeValue >= dust) {
+          outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
+        }
+      }
+    }
+    const allInputs = [...stash.inputs, ...extraInputs];
+    const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params);
     const record = {
-      inputs: btc.inputs,
+      inputs: [
+        ...btc.inputs,
+        ...extraUtxos.map((u) => ({
+          txid: u.txid,
+          vout: u.vout,
+          value: u.value,
+          address: u.address,
+        })),
+      ],
       outputs: outputs.map((o) => ({
         address: o.address,
         value: Number(o.amount),
