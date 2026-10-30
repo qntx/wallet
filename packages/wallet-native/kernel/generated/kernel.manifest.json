@@ -4,6 +4,9 @@
   "backends": {
     "spark": {
       "abiVersion": 1
+    },
+    "nostr": {
+      "abiVersion": 2
     }
   },
   "libraries": [
@@ -24,18 +27,23 @@
     },
     {
       "name": "@qntx/nostr",
-      "version": "0.15.0",
-      "integrity": "sha512-bXgvNSlj4p/uw996x8rlB9bI50wcY+uH9rq+2lJBn6hZAUetBrf6ujTrKRQCpzg5DS2MwBWl4kmV4aXLzPUFRQ=="
+      "version": "0.15.2",
+      "integrity": "sha512-IRRyxF43n1gPgMRn7qDcZlzq52noQ75J7orwsN2VdT9ISLxHK6tk0OmFw5lZ2s/LcIlSE5YdvucSro+hBfgk/g=="
+    },
+    {
+      "name": "@qntx/nostr-native",
+      "version": "0.15.2",
+      "integrity": "sha512-hLk7KGaOGj+j2UZprZ/9Bau7e4GINCmiNoRSoaTibDUTSu46JUPXxaLHtmXjLyijJb8HKmc+Adp+4FOYD6nkIw=="
     },
     {
       "name": "@qntx/spark",
-      "version": "0.5.1",
-      "integrity": "sha512-5Zx2J1i0R/yGRXiK6+Pg80TGKRLCpN5zxeXxBAXGERSrthwsDSCSky5kJOxau7O+zpyup5dwoa9fOZstKaoGvA=="
+      "version": "0.5.2",
+      "integrity": "sha512-x5J1vJCuUdW5ANldVuRJRu5qczxkENhnZqEWH5PQt7dKKGqJbuLvsV6EyphKbf0MoYYM2kxWalW0NCzoXojamQ=="
     },
     {
       "name": "@qntx/spark-native",
-      "version": "0.5.1",
-      "integrity": "sha512-saOcOM9I8BBSOI0QRfY76SQvjym1WsNoOCJLvyDFWClCKwI0vnfZ3QxBjmb+iyVgboHib90aobKrY2a69fes3w=="
+      "version": "0.5.2",
+      "integrity": "sha512-MclvFeazgWKxf98hIFlBcO+wVoQkv8r0ap6lXGUyfaVT4qqvf2r837DMJ1Bb3kNJUcgNCBmUd0Hej/L4honRpw=="
     },
     {
       "name": "@scure/base",
@@ -56,7 +64,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "bbb37cc4b6dc64648eb2dc28baa02554e11110d298854ce556b3baca1e3e62d5"
+      "sha256": "0f55e394f642f0860e5c75f294ccf06b3425640a6d9149af69b9c9b5156d6d52"
     }
   ]
 }

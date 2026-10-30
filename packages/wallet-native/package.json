@@ -36,15 +36,17 @@
     "cborg": "6.1.4"
   },
   "devDependencies": {
-    "@qntx/nostr": "0.15.0",
-    "@qntx/spark": "0.5.1",
-    "@qntx/spark-native": "0.5.1",
+    "@qntx/nostr": "0.15.2",
+    "@qntx/nostr-native": "0.15.2",
+    "@qntx/spark": "0.5.2",
+    "@qntx/spark-native": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
     "nitrogen": "0.37.1",
     "react-native-nitro-modules": "0.37.1"
   },
   "peerDependencies": {
-    "@qntx/spark-native": "0.5.1",
+    "@qntx/nostr-native": "0.15.2",
+    "@qntx/spark-native": "0.5.2",
     "@qntx/wallet": "0.4.0",
     "react-native-nitro-modules": "*"
   }

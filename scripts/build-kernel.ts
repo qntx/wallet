@@ -85,13 +85,22 @@ if (!isSparkCrypto(sparkCrypto)) {
   throw new TypeError("@qntx/spark/crypto: SPARK_ABI_VERSION missing");
 }
 const { SPARK_ABI_VERSION } = sparkCrypto;
+const { NOSTR_NATIVE_ABI_VERSION } = await import(
+  pathToFileURL(resolve(root, "packages/wallet-native/kernel/nostr.ts")).href
+);
 const manifest = {
   protocol: PROTOCOL_VERSION,
   vaultFormat: VAULT_FORMAT,
-  backends: { spark: { abiVersion: SPARK_ABI_VERSION } },
+  backends: {
+    spark: { abiVersion: SPARK_ABI_VERSION },
+    nostr: { abiVersion: NOSTR_NATIVE_ABI_VERSION },
+  },
   libraries: manifestLibraries({
     dependencies: stringMap(isRecord(kernelPkg) ? kernelPkg["dependencies"] : undefined),
-    backendDependencies: { "@qntx/spark-native": nativeDevDeps["@qntx/spark-native"] ?? "" },
+    backendDependencies: {
+      "@qntx/spark-native": nativeDevDeps["@qntx/spark-native"] ?? "",
+      "@qntx/nostr-native": nativeDevDeps["@qntx/nostr-native"] ?? "",
+    },
     lockPackages: lockPackages(parseLockfile(readFileSync(resolve(root, "bun.lock"), "utf8"))),
   }),
   bundles: manifestBundles([{ file: "kernel-entry.js", bytes }]),
