@@ -9,6 +9,7 @@ export type NetworkInfo = {
   readonly chainId: number;
   readonly name: string;
   readonly symbol: string;
+  readonly multicall3?: string;
   readonly decimals: number;
   readonly testnet: boolean;
 };
@@ -19,7 +20,16 @@ const entry = (
   symbol: string,
   testnet: boolean,
   _source: string,
-): NetworkInfo => ({ id: `eip155:${chainId}`, chainId, name, symbol, decimals: 18, testnet });
+): NetworkInfo => ({
+  id: `eip155:${chainId}`,
+  chainId,
+  name,
+  symbol,
+  decimals: 18,
+  testnet,
+  // Canonical Multicall3 — https://github.com/mds1/multicall3 deployments (all entries below).
+  multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
+});
 
 export const NETWORKS: ReadonlyArray<NetworkInfo> = [
   // https://chainlist.org + https://ethereum.org (Ethereum mainnet chainId 1)
