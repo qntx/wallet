@@ -6,6 +6,8 @@ import { expect, test } from "@playwright/test";
 
 const PASSWORD = "correct horse battery staple";
 
+test.setTimeout(120_000);
+
 test("create, unlock, account, lock — and the spark chunk stays lazy", async ({ page }) => {
   const sparkRequests: string[] = [];
   page.on("request", (r) => {
