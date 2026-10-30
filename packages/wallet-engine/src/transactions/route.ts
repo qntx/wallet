@@ -40,6 +40,25 @@ export type TrackedTransaction = {
   readonly lastValidBlockHeight?: number;
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
   readonly replaces?: string;
+  /** CPFP — the unconfirmed parent this child pushes. */
+  readonly parentId?: string;
+  /** Bitcoin build record persisted at send for RBF/CPFP rebuilds. */
+  readonly btc?: {
+    readonly inputs: ReadonlyArray<{
+      readonly txid: string;
+      readonly vout: number;
+      readonly value: number;
+      readonly address: string;
+    }>;
+    readonly outputs: ReadonlyArray<{
+      readonly address: string;
+      readonly value: number;
+      readonly own: boolean;
+    }>;
+    readonly vsize: number;
+    readonly fee: number;
+    readonly feeRate: number;
+  };
   readonly submittedAt: number;
   readonly error: string | undefined;
 };

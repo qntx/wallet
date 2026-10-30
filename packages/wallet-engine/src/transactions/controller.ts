@@ -5,7 +5,7 @@
  */
 import { Controller } from "../controller.ts";
 import type { EngineStore } from "../store/port.ts";
-import { pollBitcoin, sendBitcoin } from "./bitcoin.ts";
+import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
   DisplayIntent,
@@ -43,6 +43,36 @@ const TX_STATES: ReadonlySet<string> = new Set([
 
 const isTxState = (v: unknown): v is TxState => typeof v === "string" && TX_STATES.has(v);
 
+type BtcRecord = NonNullable<TrackedTransaction["btc"]>;
+const isBtcRecord = (v: unknown): v is BtcRecord => {
+  if (!isObject(v)) {
+    return false;
+  }
+  const { inputs, outputs, vsize, fee, feeRate } = v;
+  return (
+    Array.isArray(inputs) &&
+    Array.isArray(outputs) &&
+    typeof vsize === "number" &&
+    typeof fee === "number" &&
+    typeof feeRate === "number" &&
+    inputs.every(
+      (i) =>
+        isObject(i) &&
+        typeof i["txid"] === "string" &&
+        typeof i["vout"] === "number" &&
+        typeof i["value"] === "number" &&
+        typeof i["address"] === "string",
+    ) &&
+    outputs.every(
+      (o) =>
+        isObject(o) &&
+        typeof o["address"] === "string" &&
+        typeof o["value"] === "number" &&
+        typeof o["own"] === "boolean",
+    )
+  );
+};
+
 const isIntent = (v: unknown): v is DisplayIntent =>
   isObject(v) &&
   typeof v["summary"] === "string" &&
@@ -54,8 +84,21 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
   if (!isObject(parsed)) {
     return undefined;
   }
-  const { id, family, network, account, hash, state, intent, nonce, replaces, submittedAt, error } =
-    parsed;
+  const {
+    id,
+    family,
+    network,
+    account,
+    hash,
+    state,
+    intent,
+    nonce,
+    replaces,
+    parentId,
+    btc,
+    submittedAt,
+    error,
+  } = parsed;
   if (
     typeof id !== "string" ||
     (family !== "evm" && family !== "solana" && family !== "bitcoin") ||
@@ -77,6 +120,8 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     intent: isIntent(intent) ? intent : undefined,
     nonce,
     ...(typeof replaces === "string" ? { replaces } : {}),
+    ...(typeof parentId === "string" ? { parentId } : {}),
+    ...(isBtcRecord(btc) ? { btc } : {}),
     submittedAt,
     error: typeof error === "string" ? error : undefined,
   };
@@ -87,6 +132,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private engineStore?: EngineStore | undefined;
   private readonly timers = new Map<string, () => void>();
   private evmRoute = createEvmRoute();
+  private readonly bitcoinRoute = createBitcoinRoute();
   private locked = true;
 
   constructor(options: Options) {
@@ -167,7 +213,7 @@ export class TransactionController extends Controller<TransactionControllerState
       return sendSolana(ctx, params);
     }
     if (info.family === "bitcoin") {
-      return sendBitcoin(ctx, params);
+      return this.bitcoinRoute.send(ctx, params);
     }
     return this.evmRoute.send(ctx, params);
   }
@@ -188,6 +234,9 @@ export class TransactionController extends Controller<TransactionControllerState
     if (old === undefined) {
       throw new Error(`unknown transaction ${id}`);
     }
+    if (old.family === "bitcoin") {
+      return this.bitcoinRoute.replace(this.routeCtx(), old, mode, verify);
+    }
     if (old.family !== "evm") {
       throw new Error("replace is EVM-only in this layer");
     }
@@ -195,6 +244,31 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error(`cannot replace a ${old.state} transaction`);
     }
     return this.evmRoute.replace(this.routeCtx(), old, mode, verify);
+  }
+
+  /**
+   * CPFP — spend an unconfirmed tx's own outputs into a higher-fee child so the package mines.
+   * Bitcoin only; the child is linked via `parentId`.
+   */
+  async bumpChild(
+    id: string,
+    targetRate: number,
+    verify: SendParams["verify"],
+  ): Promise<TrackedTransaction> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    const old = this.getState().txs[id];
+    if (old === undefined) {
+      throw new Error(`unknown transaction ${id}`);
+    }
+    if (old.family !== "bitcoin") {
+      throw new Error("bumpChild is Bitcoin-only in this layer");
+    }
+    if (old.state !== "pending" && old.state !== "submitted") {
+      throw new Error(`cannot bump a ${old.state} transaction`);
+    }
+    return this.bitcoinRoute.bumpChild(this.routeCtx(), old, targetRate, verify);
   }
 
   private track(id: string, hash: string): void {
@@ -216,7 +290,7 @@ export class TransactionController extends Controller<TransactionControllerState
           tx.family === "solana"
             ? await pollSolana(ctx, tx)
             : tx.family === "bitcoin"
-              ? await pollBitcoin(ctx, tx)
+              ? await this.bitcoinRoute.poll(ctx, tx)
               : await this.evmRoute.poll(ctx, tx);
         if (next === undefined) {
           return;

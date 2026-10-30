@@ -1,4 +1,5 @@
 import { hex } from "@scure/base";
+import { Transaction } from "@scure/btc-signer";
 import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
@@ -232,5 +233,21 @@ export class BitcoinChainAdapter {
     );
     const chosen = inputs.filter((i) => wanted.has(`${String(i.txid)}:${String(i.index)}`));
     return { psbt: selection.tx.toPSBT(), inputs: chosen };
+  }
+
+  /** Fixed-input/output PSBT — the RBF/CPFP path, which chooses nothing itself. */
+  buildExactPsbt(
+    inputs: ReadonlyArray<BtcInput>,
+    outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>,
+    network: typeof BTC_MAINNET,
+  ): { readonly psbt: Uint8Array; readonly vsize: number } {
+    const tx = new Transaction();
+    for (const input of inputs) {
+      tx.addInput(input);
+    }
+    for (const out of outputs) {
+      tx.addOutputAddress(out.address, out.amount, network);
+    }
+    return { psbt: tx.toPSBT(), vsize: tx.vsize };
   }
 }
