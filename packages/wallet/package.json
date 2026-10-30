@@ -67,12 +67,12 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp run @qntx/wallet-chains#build && vp pack",
     "dev": "vp pack --watch",
     "test": "vp test",
     "test:coverage": "vp test --coverage",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json",
-    "check:pkg": "vp pack && bun run check:chunks && publint && attw --pack . --profile esm-only",
+    "check:pkg": "vp run @qntx/wallet-chains#build && vp pack && bun run check:chunks && publint && attw --pack . --profile esm-only",
     "check:chunks": "bun scripts/check-nostr-free.ts",
     "pack:local": "vp pack && bun pm pack"
   },
@@ -84,6 +84,7 @@
     "@qntx/nostr": "0.15.3",
     "@qntx/spark": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
+    "@qntx/wallet-chains": "0.4.0",
     "@types/node": "26.6.5",
     "publint": "0.3.25",
     "typescript": "7.0.2",
@@ -91,13 +92,17 @@
   },
   "peerDependencies": {
     "@qntx/nostr": "^0.15.0",
-    "@qntx/spark": "^0.5.0"
+    "@qntx/spark": "^0.5.0",
+    "@qntx/wallet-chains": "0.4.0"
   },
   "peerDependenciesMeta": {
     "@qntx/nostr": {
       "optional": true
     },
     "@qntx/spark": {
+      "optional": true
+    },
+    "@qntx/wallet-chains": {
       "optional": true
     }
   },

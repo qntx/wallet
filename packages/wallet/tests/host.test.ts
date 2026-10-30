@@ -266,7 +266,7 @@ async function connectFake(
   return { wallet, kernel, spawned };
 }
 
-function walletError(error: unknown): WalletError {
+export function walletError(error: unknown): WalletError {
   if (!(error instanceof WalletError)) {
     throw error;
   }

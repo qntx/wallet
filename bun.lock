@@ -49,6 +49,7 @@
         "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
+        "@qntx/wallet-chains": "0.4.0",
         "@types/node": "26.6.5",
         "publint": "0.3.25",
         "typescript": "7.0.2",
@@ -57,10 +58,12 @@
       "peerDependencies": {
         "@qntx/nostr": "^0.15.0",
         "@qntx/spark": "^0.5.0",
+        "@qntx/wallet-chains": "0.4.0",
       },
       "optionalPeers": [
         "@qntx/nostr",
         "@qntx/spark",
+        "@qntx/wallet-chains",
       ],
     },
     "packages/wallet-chains": {
@@ -76,6 +79,7 @@
         "ox": "1.8.9",
       },
       "devDependencies": {
+        "@arethetypeswrong/cli": "0.18.5",
         "@metamask/eth-sig-util": "9.0.0",
         "@qntx/tsconfig": "1.0.1",
         "@scure/bip39": "2.4.0",
@@ -88,6 +92,7 @@
         "@types/node": "26.6.5",
         "bitcoinjs-lib": "^7.0.5",
         "ecpair": "^3.0.2",
+        "publint": "0.3.25",
         "tiny-secp256k1": "^2.2.5",
         "typescript": "7.0.2",
         "viem": "2.57.8",

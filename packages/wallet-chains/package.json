@@ -1,8 +1,7 @@
 {
   "name": "@qntx/wallet-chains",
   "version": "0.4.0",
-  "private": true,
-  "description": "qntx/wallet chain semantics: SignRequest codecs, display decoding and verifiability (private, bundled by the host packages)",
+  "description": "qntx/wallet chain semantics: SignRequest codecs, display decoding, verifiability and signing for EVM, Solana and Bitcoin",
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
   "repository": {
@@ -10,21 +9,54 @@
     "url": "git+https://github.com/qntx/wallet.git",
     "directory": "packages/wallet-chains"
   },
+  "files": [
+    "dist",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "README.md"
+  ],
   "type": "module",
   "sideEffects": false,
   "exports": {
-    ".": "./src/index.ts",
-    "./evm": "./src/evm/index.ts",
-    "./evm/sign": "./src/evm/sign.ts",
-    "./solana": "./src/solana/index.ts",
-    "./solana/sign": "./src/solana/sign.ts",
-    "./bitcoin": "./src/bitcoin/index.ts",
-    "./bitcoin/sign": "./src/bitcoin/sign.ts"
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./evm": {
+      "types": "./dist/evm.d.mts",
+      "default": "./dist/evm.mjs"
+    },
+    "./evm/sign": {
+      "types": "./dist/evm-sign.d.mts",
+      "default": "./dist/evm-sign.mjs"
+    },
+    "./solana": {
+      "types": "./dist/solana.d.mts",
+      "default": "./dist/solana.mjs"
+    },
+    "./solana/sign": {
+      "types": "./dist/solana-sign.d.mts",
+      "default": "./dist/solana-sign.mjs"
+    },
+    "./bitcoin": {
+      "types": "./dist/bitcoin.d.mts",
+      "default": "./dist/bitcoin.mjs"
+    },
+    "./bitcoin/sign": {
+      "types": "./dist/bitcoin-sign.d.mts",
+      "default": "./dist/bitcoin-sign.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
+    "build": "vp pack",
     "test": "vp test && bun scripts/size-check.ts",
     "typecheck": "tsc --noEmit",
-    "smoke:hermes": "bun scripts/hermes-smoke.ts"
+    "smoke:hermes": "bun scripts/hermes-smoke.ts",
+    "check:pkg": "vp pack && publint && attw --pack . --profile esm-only"
   },
   "dependencies": {
     "@scure/bip32": "2.4.0",
@@ -36,6 +68,7 @@
     "ox": "1.8.9"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
     "@metamask/eth-sig-util": "9.0.0",
     "@qntx/tsconfig": "1.0.1",
     "@scure/bip39": "2.4.0",
@@ -48,6 +81,7 @@
     "@types/node": "26.6.5",
     "bitcoinjs-lib": "^7.0.5",
     "ecpair": "^3.0.2",
+    "publint": "0.3.25",
     "tiny-secp256k1": "^2.2.5",
     "typescript": "7.0.2",
     "viem": "2.57.8",
