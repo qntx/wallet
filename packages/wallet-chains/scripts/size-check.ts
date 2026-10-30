@@ -15,6 +15,7 @@ declare const Bun: {
     target: "browser";
     format: "esm";
     minify: boolean;
+    splitting?: boolean;
   }) => Promise<BunBuildOutput>;
 };
 
@@ -23,6 +24,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const FAMILIES = [
   { name: "evm", budget: 120 * 1024 },
   { name: "solana", budget: 80 * 1024 },
+  { name: "bitcoin", budget: 60 * 1024 },
 ] as const;
 
 type FamilyResult = {
@@ -38,6 +40,7 @@ const measure = async (name: string, budget: number): Promise<FamilyResult> => {
     target: "browser",
     format: "esm",
     minify: true,
+    splitting: true,
   });
   if (!result.success) {
     for (const log of result.logs) {

@@ -17,7 +17,9 @@
     "./evm": "./src/evm/index.ts",
     "./evm/sign": "./src/evm/sign.ts",
     "./solana": "./src/solana/index.ts",
-    "./solana/sign": "./src/solana/sign.ts"
+    "./solana/sign": "./src/solana/sign.ts",
+    "./bitcoin": "./src/bitcoin/index.ts",
+    "./bitcoin/sign": "./src/bitcoin/sign.ts"
   },
   "scripts": {
     "test": "vp test && bun scripts/size-check.ts",
@@ -25,6 +27,7 @@
     "smoke:hermes": "bun scripts/hermes-smoke.ts"
   },
   "dependencies": {
+    "@scure/btc-signer": "2.4.1",
     "@solana/addresses": "8.5.0",
     "@solana/codecs": "8.5.0",
     "@solana/transaction-messages": "8.5.0",
