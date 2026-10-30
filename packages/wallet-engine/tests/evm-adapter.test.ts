@@ -6,7 +6,7 @@ import { EvmChainAdapter } from "../src/chains/evm.ts";
 const client = (handlers: Record<string, unknown>): PublicClient =>
   ({
     transport: {
-      request: ({ method }: { method: string; params?: unknown[] }) => {
+      request: async ({ method }: { method: string; params?: unknown[] }) => {
         const v = handlers[method];
         return method in handlers
           ? Promise.resolve(typeof v === "function" ? v() : v)

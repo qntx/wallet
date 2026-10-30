@@ -31,6 +31,6 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
       - run: bun install --frozen-lockfile
-      - run: vp run @qntx/wallet-engine#build
+      - run: bunx vp run @qntx/wallet-engine#build
       - run: ENGINE_E2E_ANVIL=1 bunx vp test tests/evm-anvil.test.ts
         working-directory: packages/wallet-engine
