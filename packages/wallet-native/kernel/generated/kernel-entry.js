@@ -26490,9 +26490,9 @@ zoo`.split("\n"));
 	};
 	var LAMPORTS_ASSET = "lamports";
 	var u32 = getU32Decoder();
-	var u64 = getU64Decoder();
+	var u64$1 = getU64Decoder();
 	var u32le = (data, offset) => u32.decode(data, offset);
-	var u64le = (data, offset) => u64.decode(data, offset);
+	var u64le = (data, offset) => u64$1.decode(data, offset);
 	/**
 	* Classifies one instruction by program + discriminator/layout. Exact-length checks keep
 	* non-canonical encodings out of the `full` class.
