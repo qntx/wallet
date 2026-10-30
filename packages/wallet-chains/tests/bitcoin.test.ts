@@ -384,3 +384,143 @@ describe("signBitcoinPsbt", () => {
     expect(tx.getInput(0).partialSig).toBeDefined();
   });
 });
+
+describe("bitcoinjs oracle", () => {
+  const psbtFor = (input: Record<string, unknown>): Uint8Array => {
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput(input);
+    tx.addOutput({ script: OutScript.encode(Address(NETWORK).decode(PAYEE)), amount: 90000n });
+    return tx.toPSBT(0);
+  };
+  const ourSig = (psbt: Uint8Array, key: Uint8Array): Uint8Array => {
+    const tx = Transaction.fromPSBT(
+      signBitcoinPsbt(psbt, [{ index: 0, privateKey: key }], auxRand),
+    );
+    const partial = tx.getInput(0).partialSig;
+    const tap = tx.getInput(0).tapKeySig;
+    if (tap !== undefined) {
+      return tap;
+    }
+    if (partial === undefined) {
+      throw new Error("no signature produced");
+    }
+    const [, sig] = partial[0] ?? [];
+    if (sig === undefined) {
+      throw new Error("no signature produced");
+    }
+    return sig;
+  };
+  const theirSig = async (psbt: Uint8Array, key: Uint8Array): Promise<Uint8Array> => {
+    const bitcoin = await import("bitcoinjs-lib");
+    const ecc = await import("tiny-secp256k1");
+    bitcoin.initEccLib(ecc);
+    const { ECPairFactory } = await import("ecpair");
+    const ECPair = ECPairFactory(ecc);
+    const signer = ECPair.fromPrivateKey(key);
+    const theirs = bitcoin.Psbt.fromBuffer(Buffer.from(psbt));
+    const [tapInput] = theirs.data.inputs;
+    if (tapInput?.tapInternalKey === undefined) {
+      theirs.signInput(0, signer);
+    } else {
+      const tweakHash = bitcoin.crypto.taggedHash("TapTweak", signer.publicKey.subarray(1));
+      theirs.signInput(0, signer.tweak(tweakHash));
+    }
+    const partial = theirs.data.inputs[0]?.partialSig;
+    if (partial !== undefined) {
+      const sig = partial[0]?.signature;
+      if (sig !== undefined) {
+        return sig;
+      }
+    }
+    const tap = theirs.data.inputs[0]?.tapKeySig;
+    if (tap !== undefined) {
+      return tap;
+    }
+    throw new Error("no signature produced");
+  };
+  const ownNode = HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(
+    "m/84'/0'/0'/0/0",
+  );
+  const priv = ownNode.privateKey!;
+  const pub = p2wpkh(ownNode.publicKey!, NETWORK);
+
+  const baseInput = (): Record<string, unknown> => ({
+    txid: hex("0707".repeat(16)),
+    index: 0,
+    sequence: 0xfffffffd,
+  });
+
+  it("P2WPKH partial sig matches bitcoinjs byte-for-byte", async () => {
+    const psbt = psbtFor({
+      ...baseInput(),
+      witnessUtxo: { script: pub.script, amount: 100000n },
+      bip32Derivation: [
+        [
+          ownNode.publicKey!,
+          { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] },
+        ],
+      ],
+    });
+    expect(ourSig(psbt, priv)).toStrictEqual(await theirSig(psbt, priv));
+  });
+
+  it("P2SH-P2WPKH partial sig matches bitcoinjs byte-for-byte", async () => {
+    const { p2sh } = await import("@scure/btc-signer/payment.js");
+    const wrapped = p2sh(pub, NETWORK);
+    const psbt = psbtFor({
+      ...baseInput(),
+      witnessUtxo: { script: wrapped.script, amount: 100000n },
+      redeemScript: pub.script,
+      bip32Derivation: [
+        [
+          ownNode.publicKey!,
+          { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] },
+        ],
+      ],
+    });
+    expect(ourSig(psbt, priv)).toStrictEqual(await theirSig(psbt, priv));
+  });
+
+  it("P2PKH partial sig matches bitcoinjs byte-for-byte", async () => {
+    const { p2pkh } = await import("@scure/btc-signer/payment.js");
+    const pk = p2pkh(ownNode.publicKey!, NETWORK);
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0000".repeat(16)), index: 0, sequence: 0xfffffffd });
+    prev.addOutput({ script: pk.script, amount: 100000n });
+    const prevBytes = prev.toBytes();
+    const prevTxid = hex(prev.id);
+    const psbt = psbtFor({
+      ...baseInput(),
+      txid: prevTxid,
+      nonWitnessUtxo: prevBytes,
+      witnessUtxo: { script: pk.script, amount: 100000n },
+      bip32Derivation: [
+        [
+          ownNode.publicKey!,
+          { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] },
+        ],
+      ],
+    });
+    expect(ourSig(psbt, priv)).toStrictEqual(await theirSig(psbt, priv));
+  });
+
+  it("P2TR key-path tapKeySig matches bitcoinjs byte-for-byte", async () => {
+    const internal = ownNode.publicKey!.subarray(1);
+    const tr = p2tr(internal, undefined, NETWORK);
+    const psbt = psbtFor({
+      ...baseInput(),
+      witnessUtxo: { script: tr.script, amount: 100000n },
+      tapInternalKey: internal,
+      tapBip32Derivation: [
+        [
+          internal,
+          {
+            hashes: [],
+            der: { fingerprint: 0x73c5da0a, path: [0x80000056, 0x80000000, 0x80000000, 0, 0] },
+          },
+        ],
+      ],
+    });
+    expect(ourSig(psbt, priv)).toStrictEqual(await theirSig(psbt, priv));
+  });
+});

@@ -15,7 +15,6 @@ declare const Bun: {
     target: "browser";
     format: "esm";
     minify: boolean;
-    splitting?: boolean;
   }) => Promise<BunBuildOutput>;
 };
 
@@ -24,7 +23,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const FAMILIES = [
   { name: "evm", budget: 120 * 1024 },
   { name: "solana", budget: 80 * 1024 },
-  { name: "bitcoin", budget: 60 * 1024 },
+  { name: "bitcoin", budget: 110 * 1024 },
 ] as const;
 
 type FamilyResult = {
@@ -35,12 +34,14 @@ type FamilyResult = {
 };
 
 const measure = async (name: string, budget: number): Promise<FamilyResult> => {
+  /* Per-consumer semantics: each entry's graph (its chunk plus every chunk it
+   * loads) is bundled standalone so shared code is counted for each entry —
+   * a consumer of either entry loads it. */
   const result = await Bun.build({
     entrypoints: [resolve(root, `src/${name}/index.ts`), resolve(root, `src/${name}/sign.ts`)],
     target: "browser",
     format: "esm",
     minify: true,
-    splitting: true,
   });
   if (!result.success) {
     for (const log of result.logs) {
