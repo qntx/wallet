@@ -98,9 +98,7 @@ export type EvmTransactionWire =
       readonly accessList: ReadonlyArray<EvmAccessListEntryWire>;
     });
 
-/**
- * `chain.sign`'s request — the wire mirror of @qntx/wallet-chains `SignRequest`.
- */
+/** `chain.sign`'s request — the wire mirror of @qntx/wallet-chains `SignRequest`. */
 export type ChainSignRequest =
   | {
       readonly kind: "evm.transaction";

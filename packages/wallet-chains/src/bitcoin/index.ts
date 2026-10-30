@@ -107,7 +107,12 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
     if (change !== 0 && change !== 1) {
       throw new ChainError("invalid-request", "change must be 0 or 1");
     }
-    if (!Number.isSafeInteger(index) || (index as number) < 0 || (index as number) >= 0x80000000) {
+    if (
+      typeof index !== "number" ||
+      !Number.isSafeInteger(index) ||
+      index < 0 ||
+      index >= 0x80000000
+    ) {
       throw new ChainError("invalid-request", "index must be a non-hardened path index");
     }
     return {
@@ -118,7 +123,7 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
       message,
       format: target.format,
       change,
-      index: index as number,
+      index,
     };
   }
   throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);

@@ -4,6 +4,7 @@
  * `/bitcoin` entry only — no private key material.
  */
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
+import { base64 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
 import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
@@ -58,15 +59,16 @@ const derivationOf = (
 
 /** The non-hardened `{change, index}` tail of a derivation path, if present and valid. */
 const tailOf = (path: ReadonlyArray<number>): { change: 0 | 1; index: number } | undefined => {
-  const change = path[path.length - 2];
-  const index = path[path.length - 1];
+  const change = path.at(-2);
+  const index = path.at(-1);
   if ((change !== 0 && change !== 1) || index === undefined || index < 0 || index >= 0x80000000) {
     return undefined;
   }
   return { change, index };
 };
 
-const eq = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((v, i) => v === b[i]);
+const eq = (a: Uint8Array, b: Uint8Array): boolean =>
+  a.length === b.length && a.every((v, i) => v === b[i]);
 
 /**
  * Verify every signature on the inputs listed in `sign` against the account's xpub: the input's
@@ -85,9 +87,9 @@ export const verifyBitcoinPsbtSignatures = (
     const taproot = template === "btc.bip86";
     for (const idx of sign) {
       const input = tx.getInput(idx);
-      const claimed = derivationOf(
-        taproot ? input.tapBip32Derivation : input.bip32Derivation,
-      ).find(({ path }) => tailOf(path) !== undefined);
+      const claimed = derivationOf(taproot ? input.tapBip32Derivation : input.bip32Derivation).find(
+        ({ path }) => tailOf(path) !== undefined,
+      );
       const tail = claimed === undefined ? undefined : tailOf(claimed.path);
       if (claimed === undefined || tail === undefined) {
         return false;
@@ -107,7 +109,8 @@ export const verifyBitcoinPsbtSignatures = (
         ) {
           return false;
         }
-        const sighashType = rawSig.length === 65 ? (rawSig[64] ?? SigHash.DEFAULT) : SigHash.DEFAULT;
+        const sighashType =
+          rawSig.length === 65 ? (rawSig[64] ?? SigHash.DEFAULT) : SigHash.DEFAULT;
         const sig = rawSig.slice(0, 64);
         const scripts: Uint8Array[] = [];
         const amounts: bigint[] = [];
@@ -121,7 +124,10 @@ export const verifyBitcoinPsbtSignatures = (
           scripts.push(w.script);
           amounts.push(w.amount);
         }
-        if (!complete || !schnorr.verify(sig, tx.preimageWitnessV1(idx, scripts, sighashType, amounts), xonly)) {
+        if (
+          !complete ||
+          !schnorr.verify(sig, tx.preimageWitnessV1(idx, scripts, sighashType, amounts), xonly)
+        ) {
           return false;
         }
       } else {
@@ -129,18 +135,26 @@ export const verifyBitcoinPsbtSignatures = (
         const found = Array.isArray(partial)
           ? partial.find(([p]) => p instanceof Uint8Array && eq(p, pub))
           : undefined;
-        const rawSig = Array.isArray(found) && found[1] instanceof Uint8Array ? found[1] : undefined;
+        const rawSig =
+          Array.isArray(found) && found[1] instanceof Uint8Array ? found[1] : undefined;
         if (!eq(claimed.pubkey, pub) || rawSig === undefined || rawSig.length === 0) {
           return false;
         }
-        const sighashType = input.sighashType ?? (rawSig[rawSig.length - 1] ?? SigHash.ALL);
+        const sighashType = input.sighashType ?? rawSig.at(-1) ?? SigHash.ALL;
         const decoded = OutScript.decode(prevout.script);
         const scriptCode =
           decoded !== undefined && decoded.type === "wpkh"
             ? OutScript.encode({ type: "pkh", hash: decoded.hash })
             : prevout.script;
         const hash = tx.preimageWitnessV0(idx, scriptCode, sighashType, prevout.amount);
-        if (!secp256k1.verify(secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(), hash, pub, { prehash: false })) {
+        if (
+          !secp256k1.verify(
+            secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(),
+            hash,
+            pub,
+            { prehash: false },
+          )
+        ) {
           return false;
         }
       }
@@ -151,36 +165,13 @@ export const verifyBitcoinPsbtSignatures = (
   }
 };
 
-const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-const base64Decode = (s: string): Uint8Array | undefined => {
-  if (s.length % 4 === 1 || !/^[A-Za-z0-9+/]+={0,2}$/.test(s)) {
-    return undefined;
-  }
-  const out = new Uint8Array(Math.floor((s.replace(/=+$/, "").length * 3) / 4));
-  let acc = 0;
-  let bits = 0;
-  let o = 0;
-  for (const ch of s) {
-    if (ch === "=") {
-      break;
-    }
-    acc = (acc << 6) | B64.indexOf(ch);
-    bits += 6;
-    if (bits >= 8) {
-      bits -= 8;
-      out[o++] = (acc >>> bits) & 0xff;
-    }
-  }
-  return out.slice(0, o);
-};
-
 /** Deserialize the `smp`-prefixed base64 witness: count + pushData items. */
 const witnessOf = (sig: string): ReadonlyArray<Uint8Array> | undefined => {
   if (!sig.startsWith("smp")) {
     return undefined;
   }
-  const raw = base64Decode(sig.slice(3));
-  if (raw === undefined || raw.length < 1) {
+  const raw = base64.decode(sig.slice(3));
+  if (raw === undefined || raw.length === 0) {
     return undefined;
   }
   const items: Uint8Array[] = [];
@@ -221,25 +212,29 @@ export const verifyBitcoinMessage = (
       witnessUtxo: { script: scriptPubKey, amount: 0n },
     });
     tx.addOutput({ script: Uint8Array.of(0x6a), amount: 0n });
-    if (scriptPubKey[0] === 0x51) {
-      const rawSig = witness[0];
+    if (scriptPubKey.at(0) === 0x51) {
+      const [rawSig] = witness;
       const xonly = scriptPubKey.slice(2);
-      if (rawSig === undefined || xonly.length !== 32 || (rawSig.length !== 64 && rawSig.length !== 65)) {
+      if (
+        rawSig === undefined ||
+        xonly.length !== 32 ||
+        (rawSig.length !== 64 && rawSig.length !== 65)
+      ) {
         return false;
       }
-      const sighashType = rawSig.length === 65 ? (rawSig[64] ?? SigHash.DEFAULT) : SigHash.DEFAULT;
+      const sighashType =
+        rawSig.length === 65 ? (rawSig.at(64) ?? SigHash.DEFAULT) : SigHash.DEFAULT;
       return schnorr.verify(
         rawSig.slice(0, 64),
         tx.preimageWitnessV1(0, [scriptPubKey], sighashType, [0n]),
         xonly,
       );
     }
-    const rawSig = witness[0];
-    const pub = witness[1];
+    const [rawSig, pub] = witness;
     if (rawSig === undefined || pub === undefined || pub.length !== 33 || rawSig.length === 0) {
       return false;
     }
-    const sighashType = rawSig[rawSig.length - 1] ?? SigHash.ALL;
+    const sighashType = rawSig.at(-1) ?? SigHash.ALL;
     const decoded = OutScript.decode(scriptPubKey);
     const scriptCode =
       decoded !== undefined && decoded.type === "wpkh"

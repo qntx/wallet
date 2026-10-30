@@ -8,14 +8,14 @@ import { join } from "node:path";
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
+import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { HDKey } from "@scure/bip32";
-import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
-import { Transaction } from "@scure/btc-signer/transaction.js";
-
+import type { SignRequest } from "@qntx/wallet-chains";
 import {
   bitcoinNetwork,
   normalizeBitcoin,
@@ -23,7 +23,6 @@ import {
   verifyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
 } from "@qntx/wallet-chains/bitcoin";
-import type { SignRequest } from "@qntx/wallet-chains";
 import { normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
@@ -120,15 +119,13 @@ const btcChild = (template: string, change: number, index: number): HDKey => {
 const hex = (s: string): Uint8Array => {
   const out = new Uint8Array(s.length / 2);
   for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(s.slice(i * 2, i * 2 + 2), 16);
+    out[i] = Number.parseInt(s.slice(i * 2, i * 2 + 2), 16);
   }
   return out;
 };
 
 const PAYEE = "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g";
-const PAYEE_SCRIPT = OutScript.encode(
-  Address(bitcoinNetwork(BTC_NETWORK).params).decode(PAYEE),
-);
+const PAYEE_SCRIPT = OutScript.encode(Address(bitcoinNetwork(BTC_NETWORK).params).decode(PAYEE));
 const asPsbt = (r: SignRequest): Extract<SignRequest, { kind: "bitcoin.psbt" }> => {
   if (r.kind !== "bitcoin.psbt") {
     throw new Error("expected bitcoin.psbt");
@@ -136,7 +133,7 @@ const asPsbt = (r: SignRequest): Extract<SignRequest, { kind: "bitcoin.psbt" }> 
   return r;
 };
 
-interface PsbtOpts {
+type PsbtOpts = {
   readonly template: string;
   readonly change?: number;
   readonly index?: number;
@@ -146,7 +143,7 @@ interface PsbtOpts {
   readonly changeOutput?: boolean;
   readonly foreignOutput?: boolean;
   readonly extraInput?: boolean;
-}
+};
 
 /** A one-input PSBT with correct derivation entries for the vector wallet's account. */
 const btcPsbt = (opts: PsbtOpts): Uint8Array => {
@@ -160,13 +157,7 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   const pub = child.publicKey!;
   const xonly = pub.slice(1);
   const spend = purpose === 86 ? p2tr(xonly) : p2wpkh(pub);
-  const path = [
-    purpose + HARDENED,
-    HARDENED,
-    HARDENED,
-    change,
-    index,
-  ];
+  const path = [purpose + HARDENED, HARDENED, HARDENED, change, index];
   const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
   const input: Record<string, unknown> = {
     txid: hex("0707".repeat(16)),
@@ -186,7 +177,10 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   if (purpose === 86) {
     input["tapInternalKey"] = opts.wrongScript === true ? foreignXonly : xonly;
     input["tapBip32Derivation"] = [
-      [opts.wrongPub === true ? foreignPub.slice(1) : xonly, { hashes: [], der: { fingerprint: fp, path } }],
+      [
+        opts.wrongPub === true ? foreignPub.slice(1) : xonly,
+        { hashes: [], der: { fingerprint: fp, path } },
+      ],
     ];
   } else {
     input["bip32Derivation"] = [
@@ -207,13 +201,21 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
   tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
   if (opts.changeOutput === true) {
     const changePub = btcChild(opts.template, 1, 0).publicKey!;
-    const changeScript = purpose === 86 ? p2tr(changePub.slice(1)).script : p2wpkh(changePub).script;
+    const changeScript =
+      purpose === 86 ? p2tr(changePub.slice(1)).script : p2wpkh(changePub).script;
     const changePath = [purpose + HARDENED, HARDENED, HARDENED, 1, 0];
     const changeKey = purpose === 86 ? changePub.slice(1) : changePub;
     tx.addOutput({ script: changeScript, amount: 5000n });
-    tx.updateOutput(1, purpose === 86
-      ? { tapBip32Derivation: [[changeKey, { hashes: [], der: { fingerprint: MASTER_FP, path: changePath } }]] }
-      : { bip32Derivation: [[changeKey, { fingerprint: MASTER_FP, path: changePath }]] });
+    tx.updateOutput(
+      1,
+      purpose === 86
+        ? {
+            tapBip32Derivation: [
+              [changeKey, { hashes: [], der: { fingerprint: MASTER_FP, path: changePath } }],
+            ],
+          }
+        : { bip32Derivation: [[changeKey, { fingerprint: MASTER_FP, path: changePath }]] },
+    );
   }
   return tx.toPSBT(0);
 };
@@ -525,9 +527,9 @@ describe("chain.sign", () => {
     });
     const txRes = ok(await callSign(h, session, txReq));
     const signedPsbt = bytesField(txRes, "signedPsbt");
-    expect(
-      verifyBitcoinPsbtSignatures(signedPsbt, [0], bip84.xpub, "btc.bip84", BTC_NETWORK),
-    ).toBe(true);
+    expect(verifyBitcoinPsbtSignatures(signedPsbt, [0], bip84.xpub, "btc.bip84", BTC_NETWORK)).toBe(
+      true,
+    );
     const bip86 = btcVector("btc.bip86");
     const msgReq = normalizeBitcoin({
       kind: "bitcoin.message",
@@ -542,9 +544,9 @@ describe("chain.sign", () => {
     const msgRes = ok(await callSign(h, session, msgReq));
     const signature = strField(msgRes, "signature");
     expect(signature.startsWith("smp")).toBe(true);
-    expect(
-      verifyBitcoinMessage(bip86.receive[0]!, "hello bitcoin", signature, BTC_NETWORK),
-    ).toBe(true);
+    expect(verifyBitcoinMessage(bip86.receive[0]!, "hello bitcoin", signature, BTC_NETWORK)).toBe(
+      true,
+    );
   });
 
   it("treats our change output as change and an external input as opaque", async () => {
@@ -576,8 +578,8 @@ describe("chain.sign", () => {
     });
     const externalRes = ok(await callSign(h, session, externalReq));
     const extTx = Transaction.fromPSBT(bytesField(externalRes, "signedPsbt"));
-    expect(extTx.getInput(0).partialSig === undefined).toBe(false);
-    expect(extTx.getInput(1).partialSig === undefined).toBe(true);
+    expect(extTx.getInput(0).partialSig).toBeDefined();
+    expect(extTx.getInput(1).partialSig).toBeUndefined();
     expect(verifiabilityBitcoin(asPsbt(externalReq))).toBe("opaque");
   });
 
@@ -625,7 +627,7 @@ describe("chain.sign", () => {
       kind: "bitcoin.message",
       network: BTC_NETWORK,
       account: hd(walletId, "btc.bip86"),
-      address: bip86.receive[1] ?? bip86.receive[0],
+      address: bip86.receive[1]!,
       message: "hi",
       format: "bip322-simple",
       change: 0,

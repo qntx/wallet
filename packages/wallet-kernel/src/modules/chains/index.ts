@@ -5,24 +5,25 @@
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
+import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
 import { ChainError } from "@qntx/wallet-chains";
-import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import {
+  BITCOIN_NETWORKS,
+  bitcoinNetwork,
+  decodeBitcoinPsbt,
+  decodeMessageTarget,
+  normalizeBitcoin,
+} from "@qntx/wallet-chains/bitcoin";
+import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { decodeEvm, normalizeEvm, evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import {
   signEvmPersonalMessage,
   signEvmTransaction,
   signEvmTypedData,
 } from "@qntx/wallet-chains/evm/sign";
-import { Transaction } from "@scure/btc-signer/transaction.js";
-import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
-import {
-  decodeBitcoinPsbt,
-  decodeMessageTarget,
-  normalizeBitcoin,
-} from "@qntx/wallet-chains/bitcoin";
-import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import {
   decodeSolana,
   normalizeSolana,
@@ -201,7 +202,7 @@ export function createChainsModule(): ChainsModule {
       if (account.kind !== "hd") {
         throw new KernelError("unsupported", "imported accounts are not yet supported");
       }
-      const family = request.kind.split(".", 1)[0];
+      const [family] = request.kind.split(".", 1);
       const expected =
         family === "evm"
           ? ["evm.bip44"]
@@ -284,54 +285,55 @@ export function createChainsModule(): ChainsModule {
           const master = HDKey.fromMasterSeed(seed, net.bip32);
           try {
             const purpose = account.template === "btc.bip86" ? 86 : 84;
-            const coinType = net.coinType;
+            const { coinType } = net;
             const hardened = 0x80000000;
-            const accountNode = master.derive(
-              `m/${purpose}'/${coinType}'/${account.groupIndex}'`,
-            );
+
+            const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
             const children: HDKey[] = [];
-            const derivation = (
-              owner: { bip32Derivation?: unknown; tapBip32Derivation?: unknown },
-            ): { pubkey: Uint8Array; fingerprint: number; path: ReadonlyArray<number> } | undefined => {
-              const entries: Array<readonly [unknown, unknown]> = [];
-              const collect = (map: unknown): void => {
-                if (map instanceof Map) {
-                  for (const [k, v] of map) {
-                    entries.push([k, v]);
-                  }
-                } else if (Array.isArray(map)) {
-                  for (const e of map) {
-                    if (Array.isArray(e) && e.length === 2) {
-                      entries.push([e[0], e[1]]);
-                    }
+            const derivation = (owner: {
+              bip32Derivation?: ReadonlyArray<
+                readonly [Uint8Array, { fingerprint: number; path: number[] }]
+              >;
+              tapBip32Derivation?: ReadonlyArray<
+                readonly [
+                  Uint8Array,
+                  { hashes: unknown; der: { fingerprint: unknown; path: unknown } },
+                ]
+              >;
+            }):
+              | { pubkey: Uint8Array; fingerprint: number; path: ReadonlyArray<number> }
+              | undefined => {
+              if (purpose === 86) {
+                const claimed = (
+                  der: { fingerprint: unknown; path: unknown },
+                ): der is { fingerprint: number; path: number[] } =>
+                  der.fingerprint === master.fingerprint && isPath(der.path);
+                for (const [key, value] of owner.tapBip32Derivation ?? []) {
+                  if (claimed(value.der)) {
+                    return {
+                      pubkey: key,
+                      fingerprint: value.der.fingerprint,
+                      path: value.der.path,
+                    };
                   }
                 }
-              };
-              collect(purpose === 86 ? owner.tapBip32Derivation : owner.bip32Derivation);
-              for (const [key, value] of entries) {
-                const der = isObj(value) && isObj(value["der"]) ? value["der"] : value;
-                if (!isObj(der) || !(key instanceof Uint8Array)) {
-                  continue;
-                }
-                const { fingerprint, path } = der;
-                if (
-                  fingerprint === master.fingerprint &&
-                  Array.isArray(path) &&
-                  path.every((p) => typeof p === "number")
-                ) {
-                  return { pubkey: key, fingerprint, path };
+                return undefined;
+              }
+              for (const [key, value] of owner.bip32Derivation ?? []) {
+                if (value.fingerprint === master.fingerprint) {
+                  return { pubkey: key, fingerprint: value.fingerprint, path: value.path };
                 }
               }
               return undefined;
             };
+
             const childAt = (path: ReadonlyArray<number>): HDKey => {
-              const change = path[3];
-              const index = path[4];
+              const [purposePath, coinPath, groupPath, change, index] = path;
               if (
                 path.length !== 5 ||
-                path[0] !== purpose + hardened ||
-                path[1] !== coinType + hardened ||
-                path[2] !== account.groupIndex + hardened ||
+                purposePath !== purpose + hardened ||
+                coinPath !== coinType + hardened ||
+                groupPath !== account.groupIndex + hardened ||
                 change === undefined ||
                 index === undefined ||
                 (change !== 0 && change !== 1) ||
@@ -383,8 +385,6 @@ export function createChainsModule(): ChainsModule {
                   inputs.push({ index: idx, privateKey: priv });
                 }
                 const ownScripts = new Set<string>();
-                const hex = (bytes: Uint8Array): string =>
-                  [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
                 for (let i = 0; i < tx.outputsLength; i++) {
                   const output = tx.getOutput(i);
                   if (output.script === undefined) {
@@ -421,11 +421,7 @@ export function createChainsModule(): ChainsModule {
                 await verifyFactor(ctx.platform, ctx.image, verify, dek);
                 return {
                   kind: "bitcoin.psbt",
-                  signedPsbt: signBitcoinPsbt(
-                    request.psbt,
-                    inputs,
-                    () => ctx.platform.random(32),
-                  ),
+                  signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32)),
                 };
               }
               if (request.format === "legacy") {

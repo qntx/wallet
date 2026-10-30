@@ -1,25 +1,21 @@
 import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { HDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { Address, OutScript, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
 /**
  * `chains(wallet)` host proxy: `account` forwards `wallet.accounts` to the kernel and returns the
  * validated result. The kernel-side derivation is covered in packages/wallet-kernel/tests.
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  bitcoinAddressFromXpub,
-  bitcoinNetwork,
-} from "@qntx/wallet-chains/bitcoin";
+import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
-import { HDKey } from "@scure/bip32";
-import { mnemonicToSeedSync } from "@scure/bip39";
-import { Address, OutScript, p2wpkh } from "@scure/btc-signer/payment.js";
-import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import { chains } from "../src/chains/index.ts";
-import { connectKernel } from "../src/wallet.ts";
 import type { ChainSignRequest } from "../src/protocol/chains.ts";
-
+import { connectKernel } from "../src/wallet.ts";
 import { FakeKernel, unlockedStatus, PASSKEY, ScriptedPort, walletError } from "./host.test.ts";
 
 const RESULT = {
@@ -148,7 +144,11 @@ describe("chains(wallet)", () => {
     return tx.toPSBT(0);
   };
 
-  const btcConnect = async (result: { readonly kind: string; readonly signedPsbt?: Uint8Array; readonly signature?: string }) => {
+  const btcConnect = async (result: {
+    readonly kind: string;
+    readonly signedPsbt?: Uint8Array;
+    readonly signature?: string;
+  }) => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("chain.sign", () => ({ ok: result }));
     kernel.handlers.set("wallet.accounts", () => ({
@@ -198,7 +198,13 @@ describe("chains(wallet)", () => {
       ),
     });
     const result = await chains(wallet).sign(
-      btcParams({ kind: "bitcoin.psbt", network: BTC_NETWORK, account: btcAccount(), psbt: btcPsbt(), sign: [0] }),
+      btcParams({
+        kind: "bitcoin.psbt",
+        network: BTC_NETWORK,
+        account: btcAccount(),
+        psbt: btcPsbt(),
+        sign: [0],
+      }),
     );
     expect(result.kind).toBe("bitcoin.psbt");
   });
@@ -209,10 +215,7 @@ describe("chains(wallet)", () => {
         "legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth useful legal winner thank year wave sausage worth title",
       ),
     ).derive("m/84'/0'/0'/0/0");
-    const foreignPub = foreignNode.publicKey;
-    if (foreignPub === null || foreignNode.privateKey === null) {
-      throw new Error("no foreign key");
-    }
+    const foreignPub = foreignNode.publicKey!;
     const foreignTx = new Transaction({ version: 2, allowUnknownOutputs: true });
     foreignTx.addInput({
       txid: new Uint8Array(32),
@@ -234,7 +237,13 @@ describe("chains(wallet)", () => {
     });
     await expect(
       chains(wallet).sign(
-        btcParams({ kind: "bitcoin.psbt", network: BTC_NETWORK, account: btcAccount(), psbt: btcPsbt(), sign: [0] }),
+        btcParams({
+          kind: "bitcoin.psbt",
+          network: BTC_NETWORK,
+          account: btcAccount(),
+          psbt: btcPsbt(),
+          sign: [0],
+        }),
       ),
     ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
   });
