@@ -14,6 +14,8 @@ const config: UserConfig = defineConfig({
     },
     deps: {
       neverBundle: ["@qntx/nostr", "@qntx/spark"],
+      // Same rule: src imports of undeclared packages must not be inlined into dist.
+      onlyBundle: [],
     },
     dts: {
       generator: "tsgo",

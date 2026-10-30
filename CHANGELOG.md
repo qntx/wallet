@@ -9,6 +9,16 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Fixed
+
+- `@qntx/wallet-chains` no longer bundles `@noble/curves`, `@noble/hashes` and
+  `@scure/base` into `dist`: they are declared as exact-pinned dependencies so
+  consumers resolve one deduplicated copy. `@qntx/wallet-engine` and
+  `@qntx/wallet-worker` declare `@noble/hashes`/`@scure/base` for the same reason,
+  and every published package's `vp pack` now externals all imports
+  (`deps.onlyBundle: []`) with a `check-dist-deps` gate that fails `check:pkg`
+  on any undeclared dist import.
+
 ### Added
 
 - `@qntx/wallet-native` injects the native Spark backend into the kernel: the host binds

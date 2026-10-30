@@ -56,9 +56,12 @@
     "test": "vp test && bun scripts/size-check.ts",
     "typecheck": "tsc --noEmit",
     "smoke:hermes": "bun scripts/hermes-smoke.ts",
-    "check:pkg": "vp pack && publint && attw --pack . --profile esm-only"
+    "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only"
   },
   "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@solana/addresses": "8.5.0",

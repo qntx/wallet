@@ -50,6 +50,9 @@
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
         "@qntx/wallet-chains": "0.4.0",
+        "@scure/bip32": "2.4.0",
+        "@scure/bip39": "2.4.0",
+        "@scure/btc-signer": "2.4.1",
         "@types/node": "26.6.5",
         "publint": "0.3.25",
         "typescript": "7.0.2",
@@ -70,6 +73,9 @@
       "name": "@qntx/wallet-chains",
       "version": "0.4.0",
       "dependencies": {
+        "@noble/curves": "2.4.0",
+        "@noble/hashes": "2.4.0",
+        "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/btc-signer": "2.4.1",
         "@solana/addresses": "8.5.0",
@@ -104,6 +110,7 @@
       "version": "0.4.0",
       "dependencies": {
         "@noble/ciphers": "^2.4.0",
+        "@noble/hashes": "^2.4.0",
         "@scure/base": "^2.4.0",
         "zustand": "^5.0.15",
       },
@@ -138,6 +145,7 @@
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
+        "@scure/btc-signer": "2.4.1",
         "micro-key-producer": "0.10.2",
       },
       "devDependencies": {
@@ -172,6 +180,10 @@
     "packages/wallet-worker": {
       "name": "@qntx/wallet-worker",
       "version": "0.4.0",
+      "dependencies": {
+        "@noble/hashes": "^2.4.0",
+        "@scure/base": "^2.4.0",
+      },
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@noble/hashes": "2.4.0",
