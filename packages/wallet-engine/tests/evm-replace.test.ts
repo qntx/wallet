@@ -25,12 +25,42 @@ const SEND = {
 };
 
 const logger: EngineLogger = { warn: () => {} };
-const field = (r: { maxFeePerGas?: string }): string => r.maxFeePerGas ?? "0x0";
-const captureRequest = (tx: { to?: string; value?: string; gas?: string }) => ({
-  to: tx.to,
-  value: tx.value ?? "0x0",
-  gas: tx.gas ?? "0x0",
-});
+type Request = Parameters<Sign>[0]["request"];
+const evmTx = (request: Request) => {
+  if (request.kind !== "evm.transaction") {
+    throw new Error("unexpected request");
+  }
+  return request.tx;
+};
+const evm1559 = (request: Request) => {
+  const tx = evmTx(request);
+  if (tx.type !== "eip1559") {
+    throw new Error("expected eip1559");
+  }
+  return tx;
+};
+const ok = {
+  kind: "evm.transaction" as const,
+  signedTransaction: new Uint8Array([1, 2]),
+};
+const recordEvmSign =
+  (seen: Array<{ nonce: number; maxFeePerGas: string; maxPriorityFeePerGas: string }>) =>
+  async ({ request }: { request: Request; verify: Parameters<Sign>[0]["verify"] }) => {
+    const { nonce, maxFeePerGas, maxPriorityFeePerGas } = evm1559(request);
+    seen.push({
+      nonce,
+      maxFeePerGas: maxFeePerGas ?? "0x0",
+      maxPriorityFeePerGas: maxPriorityFeePerGas ?? "0x0",
+    });
+    return Promise.resolve(ok);
+  };
+const recordCancelSign =
+  (seen: Array<{ to: string | undefined; value: string; gas: string }>) =>
+  async ({ request }: { request: Request; verify: Parameters<Sign>[0]["verify"] }) => {
+    const tx = evmTx(request);
+    seen.push({ to: tx.to, value: tx.value ?? "0x0", gas: tx.gas ?? "0x0" });
+    return Promise.resolve(ok);
+  };
 const memoryStore = () => createMemoryEngineStore();
 
 const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
@@ -85,20 +115,8 @@ const ctlWith = (sign: Sign): TransactionController =>
 
 describe("TransactionController.replace", () => {
   it("speed-up rebuilds at the same nonce with a bumped fee and replaces the original", async () => {
-    let signedCount = 0;
-    const seen: Array<{ nonce: number; maxFeePerGas?: string; maxPriorityFeePerGas?: string }> = [];
-    const ctl = ctlWith(async ({ request }) => {
-      signedCount += 1;
-      if (request.kind !== "evm.transaction" || request.tx.type !== "eip1559") {
-        return Promise.reject(new Error("unexpected request"));
-      }
-      const { nonce, maxFeePerGas, maxPriorityFeePerGas } = request.tx;
-      seen.push({ nonce, maxFeePerGas, maxPriorityFeePerGas });
-      return Promise.resolve({
-        kind: "evm.transaction",
-        signedTransaction: new Uint8Array([1, 2]),
-      });
-    });
+    const seen: Array<{ nonce: number; maxFeePerGas: string; maxPriorityFeePerGas: string }> = [];
+    const ctl = ctlWith(recordEvmSign(seen));
     await ctl.init();
     const original = await ctl.send(SEND);
     expect(original.state).toBe("submitted");
@@ -106,12 +124,12 @@ describe("TransactionController.replace", () => {
     expect(bumped.state).toBe("submitted");
     expect(bumped.replaces).toBe(original.id);
     expect(bumped.nonce).toBe(original.nonce);
-    expect(signedCount).toBe(2);
+    expect(seen).toHaveLength(2);
     const first = seen[0]!;
     const second = seen[1]!;
     expect(second.nonce).toBe(first.nonce);
-    const oldFee = BigInt(first.maxFeePerGas ?? "0x0");
-    const newFee = BigInt(second.maxFeePerGas ?? "0x0");
+    const oldFee = BigInt(first.maxFeePerGas);
+    const newFee = BigInt(second.maxFeePerGas);
     const bumpedFee = oldFee * 11n;
     expect(newFee * 10n).toBeGreaterThanOrEqual(bumpedFee);
     expect(newFee * 10n).toBeLessThan(bumpedFee + oldFee + 10n);
@@ -119,24 +137,15 @@ describe("TransactionController.replace", () => {
 
   it("cancel rebuilds as a 0-value transfer to self with gas 21000", async () => {
     const seen: Array<{ to: string | undefined; value: string; gas: string }> = [];
-    const ctl = ctlWith(async ({ request }) => {
-      if (request.kind !== "evm.transaction") {
-        return Promise.reject(new Error("unexpected request"));
-      }
-      seen.push(captureRequest(request.tx));
-      return Promise.resolve({
-        kind: "evm.transaction",
-        signedTransaction: new Uint8Array([1, 2]),
-      });
-    });
+    const ctl = ctlWith(recordCancelSign(seen));
     await ctl.init();
     const original = await ctl.send(SEND);
     const cancelled = await ctl.replace(original.id, "cancel", SEND.verify);
     expect(cancelled.replaces).toBe(original.id);
     const last = seen.at(-1)!;
     expect(last.to).toBe(ADDR);
-    expect(BigInt(last.value ?? "0x0")).toBe(0n);
-    expect(BigInt(last.gas ?? "0x0")).toBe(21000n);
+    expect(BigInt(last.value)).toBe(0n);
+    expect(BigInt(last.gas)).toBe(21000n);
   });
 
   it("wrong password → rejected, nothing broadcast, original untouched", async () => {
