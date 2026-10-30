@@ -3,7 +3,12 @@ import type { AccountRef, SignRequest } from "../index.ts";
 import { SOLANA_NETWORKS, isSolanaAddress } from "./ids.ts";
 import { parseCompiledMessage, validateLookupTables } from "./message.ts";
 
-export { PROGRAM_IDS, SOLANA_NETWORKS, isSolanaAddress } from "./ids.ts";
+export {
+  PROGRAM_IDS,
+  SOLANA_NETWORKS,
+  isSolanaAddress,
+  solanaAddressFromPublicKey,
+} from "./ids.ts";
 export { decodeSolana, verifiabilitySolana } from "./decode.ts";
 export { parseCompiledMessage } from "./message.ts";
 export type { SolanaTokenTable } from "./tokens.ts";

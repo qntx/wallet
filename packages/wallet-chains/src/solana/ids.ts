@@ -27,3 +27,17 @@ export const SOLANA_NETWORKS: ReadonlyArray<string> = Object.freeze([
 const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export const isSolanaAddress = (value: string): boolean => BASE58.test(value);
+
+import { getAddressDecoder } from "@solana/addresses";
+
+import { ChainError } from "../index.ts";
+
+const decoder = getAddressDecoder();
+
+/** Base58-encoded address for a 32-byte ed25519 public key. */
+export function solanaAddressFromPublicKey(pubkey: Uint8Array): string {
+  if (pubkey.length !== 32) {
+    throw new ChainError("invalid-address", "expected a 32-byte ed25519 public key");
+  }
+  return decoder.decode(pubkey);
+}
