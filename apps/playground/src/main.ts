@@ -46,44 +46,32 @@ const say = (msg: string, err = false): void => {
 const verify = (): UnlockFactor => ({ kind: "password", password: input("password").value });
 const random = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));
 
-const wallet = await createWebWallet({
-  passkey: {
-    rpId: "localhost",
-    rpName: "qntx playground",
-    walletSalt: "qntx/wallet",
-    vaultSalt: "qntx/vault",
-    backupSalt: "qntx/backup",
-  },
-  autoLock: { platform: "web", idleMinutes: 15 },
-}).catch((error: unknown) => {
-  el("error").textContent = `wallet init failed: ${String(error)}`;
-  throw error instanceof Error ? error : new Error(String(error));
-});
-
-const engine = createWalletEngine({
-  wallet,
-  sparkNetwork: "regtest",
-  fetch: globalThis.fetch.bind(globalThis),
-  random,
-  now: () => Date.now(),
-  logger: { warn: (m: string, e?: unknown) => void [m, e] },
-  openStore: async () =>
-    openIndexedDbEngineStore({
-      name: "playground-engine",
-      dataKey: await wallet.dataKeys.get("wallet-db"),
-      random,
-    }),
-});
+// Init is async — the listener registrations below attach synchronously so an early click is
+// queued behind boot instead of dropped; each handler awaits the promise it needs.
+const deferred = <T>(): { promise: Promise<T>; resolve: (v: T) => void } => {
+  const slot: { fn: ((v: T) => void) | undefined } = { fn: undefined };
+  const promise = new Promise<T>((resolve) => {
+    slot.fn = resolve;
+  });
+  const resolve = (v: T): void => {
+    slot.fn?.(v);
+  };
+  return { promise, resolve };
+};
+const walletD = deferred<Awaited<ReturnType<typeof createWebWallet>>>();
+const engineD = deferred<ReturnType<typeof createWalletEngine>>();
+const walletP = walletD.promise;
+const engineP = engineD.promise;
 
 let walletId = "";
-const ref = (): SparkAccountRef => {
+const ref = (engine: Awaited<typeof engineP>): SparkAccountRef => {
   const sel = engine.accounts.getState().selected;
   return { walletId, groupIndex: sel?.groupIndex ?? 0, network: "regtest" };
 };
-const key = () => `${walletId}:${ref().groupIndex}:regtest`;
+const key = (engine: Awaited<typeof engineP>) => `${walletId}:${ref(engine).groupIndex}:regtest`;
 
 /** Rebuilds the group picker from the account tree and marks the selected group. */
-const renderGroups = (): void => {
+const renderGroups = (engine: Awaited<typeof engineP>): void => {
   const tree = engine.accounts.getState();
   const picker = pickerEl();
   picker.innerHTML = "";
@@ -99,9 +87,7 @@ const renderGroups = (): void => {
     }
   }
 };
-engine.accounts.store.subscribe(() => {
-  renderGroups();
-});
+
 const enable = (ids: string[], on: boolean): void => {
   for (const id of ids) {
     button(id).disabled = !on;
@@ -111,6 +97,7 @@ const enable = (ids: string[], on: boolean): void => {
 button("create").addEventListener("click", () => {
   void (async () => {
     try {
+      const wallet = await walletP;
       const factor: UnlockFactor = { kind: "password", password: input("password").value };
       const words = input("mnemonic").value.trim();
       if (words.length > 0) {
@@ -134,9 +121,11 @@ button("create").addEventListener("click", () => {
 button("unlock").addEventListener("click", () => {
   void (async () => {
     try {
+      const wallet = await walletP;
       await wallet.vault.unlock(verify());
       say("unlocked");
-      renderGroups();
+      const engine = await engineP;
+      renderGroups(engine);
       enable(["addGroup", "groupPicker"], true);
     } catch (error) {
       say(`unlock failed: ${String(error)}`, true);
@@ -146,6 +135,7 @@ button("unlock").addEventListener("click", () => {
 
 button("lock").addEventListener("click", () => {
   void (async () => {
+    const wallet = await walletP;
     await wallet.vault.lock();
     el("accountState").textContent = "locked";
     say("locked");
@@ -153,18 +143,23 @@ button("lock").addEventListener("click", () => {
 });
 
 button("addGroup").addEventListener("click", () => {
-  engine.accounts.addGroup(walletId);
-  renderGroups();
+  void (async () => {
+    const engine = await engineP;
+    engine.accounts.addGroup(walletId);
+    renderGroups(engine);
+  })();
 });
 
 button("groupPicker").addEventListener("change", () => {
-  const index = Number(pickerEl().value);
-  engine.accounts.select(walletId, index);
+  void (async () => {
+    const engine = await engineP;
+    engine.accounts.select(walletId, Number(pickerEl().value));
+  })();
 });
 
 // The engine drives spark.setAccounts on selection; this watch just renders the live account.
-const tick = (): void => {
-  const s = engine.spark.getState().accounts[key()];
+const tick = (engine: Awaited<typeof engineP>): void => {
+  const s = engine.spark.getState().accounts[key(engine)];
   // With no live Spark account the line shows the tree status — "locked" after lock.
   const state = s?.status ?? engine.accounts.getState().status;
   el("accountState").textContent = state;
@@ -174,24 +169,22 @@ const tick = (): void => {
     enable(["createInvoice", "payInvoice", "send", "withdrawBtn"], true);
   }
   if (state !== "ready" && state !== "error") {
-    setTimeout(tick, 500);
+    setTimeout(() => tick(engine), 500);
   } else if (state === "error") {
     say(`account error: ${errText(s?.errorCategory)}`, true);
   }
 };
-const watchAccount = (): void => {
-  tick();
-};
-engine.accounts.store.subscribe(() => {
-  watchAccount();
-});
 
-const action = (id: string, label: string, run: () => Promise<unknown>): void => {
+const action = (
+  id: string,
+  label: string,
+  run: (engine: Awaited<typeof engineP>) => Promise<unknown>,
+): void => {
   button(id).addEventListener("click", () => {
     void (async () => {
       say(`${label}…`);
       try {
-        const r = await run();
+        const r = await run(await engineP);
         say(`${label}: ${JSON.stringify(r).slice(0, 200)}`);
       } catch (error) {
         say(`${label} failed: ${String(error)}`, true);
@@ -200,33 +193,70 @@ const action = (id: string, label: string, run: () => Promise<unknown>): void =>
   });
 };
 
-action("createInvoice", "invoice", async () => {
-  const { invoice } = await engine.spark.createInvoice(ref(), {
+action("createInvoice", "invoice", async (engine) => {
+  const { invoice } = await engine.spark.createInvoice(ref(engine), {
     amountSats: Number(input("invoiceAmount").value),
   });
   input("invoice").value = invoice;
   return invoice.slice(0, 40);
 });
-action("payInvoice", "pay", async () =>
-  engine.spark.payInvoice(ref(), {
+action("payInvoice", "pay", async (engine) =>
+  engine.spark.payInvoice(ref(engine), {
     invoice: input("invoice").value,
     maxFeeSats: 100,
     verify: verify(),
   }),
 );
-action("send", "send", async () =>
-  engine.spark.send(ref(), {
+action("send", "send", async (engine) =>
+  engine.spark.send(ref(engine), {
     receiver: input("invoice").value,
     amountSats: Number(input("invoiceAmount").value),
     verify: verify(),
   }),
 );
-action("withdrawBtn", "withdraw", async () => {
+action("withdrawBtn", "withdraw", async (engine) => {
   const amt = input("withdrawAmount").value.trim();
-  return engine.spark.withdraw(ref(), {
+  return engine.spark.withdraw(ref(engine), {
     address: input("l1addr").value,
     speed: "MEDIUM",
     ...(amt.length === 0 ? {} : { amountSats: Number(amt) }),
     verify: verify(),
   });
 });
+
+// Boot resolves the deferreds; every handler registered above queues behind these promises.
+try {
+  const wallet = await createWebWallet({
+    passkey: {
+      rpId: "localhost",
+      rpName: "qntx playground",
+      walletSalt: "qntx/wallet",
+      vaultSalt: "qntx/vault",
+      backupSalt: "qntx/backup",
+    },
+    autoLock: { platform: "web", idleMinutes: 15 },
+  });
+  walletD.resolve(wallet);
+  engineD.resolve(
+    createWalletEngine({
+      wallet,
+      sparkNetwork: "regtest",
+      fetch: globalThis.fetch.bind(globalThis),
+      random,
+      now: () => Date.now(),
+      logger: { warn: (m: string, e?: unknown) => void [m, e] },
+      openStore: async () =>
+        openIndexedDbEngineStore({
+          name: "playground-engine",
+          dataKey: await wallet.dataKeys.get("wallet-db"),
+          random,
+        }),
+    }),
+  );
+  const engine = await engineP;
+  engine.accounts.store.subscribe(() => renderGroups(engine));
+  engine.accounts.store.subscribe(() => tick(engine));
+} catch (error) {
+  el("error").textContent = `wallet init failed: ${String(error)}`;
+  throw error instanceof Error ? error : new Error(String(error));
+}
