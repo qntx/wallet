@@ -1,11 +1,11 @@
 /** Public-derivation helpers for account-level extended keys — no secrets involved. */
 import { HDKey } from "@scure/bip32";
-import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 
 import { ChainError } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
-export type BitcoinAccountTemplate = "btc.bip84" | "btc.bip86";
+export type BitcoinAccountTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 /**
  * Derive the address at `change`/`index` under an account-level xpub (`m/84'/c'/i'` or
@@ -39,7 +39,11 @@ export function bitcoinAddressFromXpub(
   const address =
     template === "btc.bip84"
       ? p2wpkh(pub, net.params).address
-      : p2tr(pub.subarray(1), undefined, net.params).address;
+      : template === "btc.bip49"
+        ? p2sh(p2wpkh(pub, net.params), net.params).address
+        : template === "btc.bip44"
+          ? p2pkh(pub, net.params).address
+          : p2tr(pub.subarray(1), undefined, net.params).address;
   if (address === undefined) {
     throw new ChainError("invalid-request", "could not encode the derived address");
   }
@@ -75,5 +79,7 @@ export function bitcoinPubkeyFromXpub(
   if (pub === null) {
     throw new ChainError("invalid-request", "xpub carries no public key");
   }
-  return template === "btc.bip84" ? pub : pub.subarray(1);
+  // bip44/bip49 keep the compressed key — the signing kernel needs it for
+  // redeemScript/scriptSig; only bip86 derives to the x-only key.
+  return template === "btc.bip86" ? pub.subarray(1) : pub;
 }
