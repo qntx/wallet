@@ -172,7 +172,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
             : { headers: { "content-type": "text/plain" }, body: init.body }),
         });
         if (!res.ok) {
-          return attempt(next, path, init, new Error(`esplora ${url} ${res.status}`));
+          return await attempt(next, path, init, new Error(`esplora ${url} ${res.status}`));
         }
         const text = await res.text();
         try {
@@ -181,7 +181,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
           return text;
         }
       } catch (error) {
-        return await attempt(next, path, init, error);
+        return attempt(next, path, init, error);
       }
     };
     return {

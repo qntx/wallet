@@ -47,36 +47,34 @@ export const esplora = (
     url: string,
     init?: unknown,
   ) => Promise<{ json: () => Promise<unknown>; ok: boolean; text: () => Promise<string> }>,
-): Esplora => ({
-  get: async (path) => {
-    let last: unknown;
-    for (const base of endpoints) {
-      try {
-        const res = await fetchFn(`${base.replace(/\/$/, "")}${path}`);
-        return res.json();
-      } catch (error) {
-        last = error;
-      }
+): Esplora => {
+  const attempt = async (
+    rest: ReadonlyArray<string>,
+    path: string,
+    body: string | undefined,
+    last: unknown,
+  ): Promise<unknown> => {
+    const [base, ...next] = rest;
+    if (base === undefined) {
+      throw last instanceof Error ? last : new Error("all esplora endpoints failed");
     }
-    throw last instanceof Error ? last : new Error("all esplora endpoints failed");
-  },
-  post: async (path, body) => {
-    let last: unknown;
-    for (const base of endpoints) {
-      try {
-        const res = await fetchFn(`${base.replace(/\/$/, "")}${path}`, {
-          method: "POST",
-          headers: { "content-type": "text/plain" },
-          body,
-        });
-        return res.text();
-      } catch (error) {
-        last = error;
-      }
+    try {
+      const res = await fetchFn(
+        `${base.replace(/\/$/, "")}${path}`,
+        body === undefined
+          ? undefined
+          : { method: "POST", headers: { "content-type": "text/plain" }, body },
+      );
+      return await (body === undefined ? res.json() : res.text());
+    } catch (error) {
+      return attempt(next, path, body, error);
     }
-    throw last instanceof Error ? last : new Error("all esplora endpoints failed");
-  },
-});
+  };
+  return {
+    get: async (path) => attempt(endpoints, path, undefined, undefined),
+    post: async (path, body) => attempt(endpoints, path, body, undefined),
+  };
+};
 
 export const validateEndpoint = async (es: Esplora, genesisHash: string): Promise<void> => {
   const got = await es.get("/block-height/0");
@@ -124,17 +122,15 @@ export class BitcoinChainAdapter {
           index: u.vout,
           sequence: 0xfffffffd,
           witnessUtxo: { amount: BigInt(u.value), script: scriptOf(u) },
-          ...(tap
-            ? {
-                tapInternalKey: pub.subarray(1),
-                tapBip32Derivation: [
-                  [pub.subarray(1), { hashes: [], der: { fingerprint, path: pathOf(u) } }],
-                ],
-              }
-            : {
-                bip32Derivation: [[pub, { fingerprint, path: pathOf(u) }]],
-              }),
         };
+        if (tap) {
+          entry.tapInternalKey = pub.subarray(1);
+          entry.tapBip32Derivation = [
+            [pub.subarray(1), { hashes: [], der: { fingerprint, path: pathOf(u) } }],
+          ];
+        } else {
+          entry.bip32Derivation = [[pub, { fingerprint, path: pathOf(u) }]];
+        }
         return entry;
       });
   }

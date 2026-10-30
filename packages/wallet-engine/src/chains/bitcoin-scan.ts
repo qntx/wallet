@@ -41,6 +41,8 @@ export type ScanState = {
 };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+const isUnknownArray = (v: unknown): v is ReadonlyArray<unknown> => Array.isArray(v);
+const asArray = (v: unknown): ReadonlyArray<unknown> => (isUnknownArray(v) ? v : []);
 
 /** The scriptPubKey bytes of a bech32/base58 address on `network`. */
 export const scriptPubKey = (address: string, network: typeof BTC_NETWORK): Uint8Array =>
@@ -106,11 +108,8 @@ const scanAddressUtxos = async (
   a: ScanAddress,
   params: typeof BTC_NETWORK,
 ): Promise<ReadonlyArray<ScanUtxo>> => {
-  const utxos = await es.get(`/scripthash/${scripthash(a.address, params)}/utxo`);
-  if (!Array.isArray(utxos)) {
-    return [];
-  }
-  return utxos.flatMap((u: unknown): ScanUtxo[] => {
+  const utxos: unknown = await es.get(`/scripthash/${scripthash(a.address, params)}/utxo`);
+  return asArray(utxos).flatMap((u): ScanUtxo[] => {
     const o = isObject(u) ? u : {};
     const status = isObject(o["status"]) ? o["status"] : {};
     const txid = typeof o["txid"] === "string" ? o["txid"] : "";
@@ -146,7 +145,21 @@ export class BitcoinScanStore {
   async unlock(store: EngineStore): Promise<ScanState | undefined> {
     this.engineStore = store;
     const raw = await store.collection(COLL).get("state");
-    return raw === undefined ? undefined : (JSON.parse(new TextDecoder().decode(raw)) as ScanState);
+    const parsed: unknown =
+      raw === undefined ? undefined : JSON.parse(new TextDecoder().decode(raw));
+    if (
+      !isObject(parsed) ||
+      !Array.isArray(parsed["addresses"]) ||
+      !Array.isArray(parsed["utxos"])
+    ) {
+      return undefined;
+    }
+    const state: ScanState = {
+      addresses: asArray(parsed["addresses"]).flatMap((a) => toScanAddress(a)),
+      utxos: asArray(parsed["utxos"]).flatMap((u) => toScanUtxo(u)),
+      scannedAt: typeof parsed["scannedAt"] === "number" ? parsed["scannedAt"] : 0,
+    };
+    return state;
   }
 
   async persist(state: ScanState): Promise<void> {
@@ -165,6 +178,71 @@ export class BitcoinScanStore {
   }
 }
 
+const str = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+const num = (v: unknown): number | undefined => (typeof v === "number" ? v : undefined);
+
+const toScanAddress = (v: unknown): ScanAddress[] => {
+  if (!isObject(v)) {
+    return [];
+  }
+  const chain = num(v["chain"]);
+  const index = num(v["index"]);
+  const address = str(v["address"]);
+  const used = v["used"] === true;
+  return chain !== undefined &&
+    index !== undefined &&
+    address !== undefined &&
+    (chain === 0 || chain === 1)
+    ? [{ chain: chain === 0 ? (0 as const) : (1 as const), index, address, used }]
+    : [];
+};
+
+const toScanUtxo = (v: unknown): ScanUtxo[] => {
+  if (!isObject(v)) {
+    return [];
+  }
+  const txid = str(v["txid"]);
+  const vout = num(v["vout"]);
+  const value = num(v["value"]);
+  const address = str(v["address"]);
+  const height = num(v["height"]);
+  return txid !== undefined && vout !== undefined && value !== undefined && address !== undefined
+    ? [{ txid, vout, value, address, height: height ?? 0 }]
+    : [];
+};
+
+const toLockedUtxo = (v: unknown): LockedUtxo | undefined => {
+  const [base] = toScanUtxo(v);
+  if (base === undefined || !isObject(v)) {
+    return undefined;
+  }
+  const status = str(v["status"]);
+  const txId = str(v["txId"]);
+  if (status !== "confirmed" && status !== "locked" && status !== "frozen") {
+    return undefined;
+  }
+  const locked: LockedUtxo =
+    txId === undefined
+      ? {
+          txid: base.txid,
+          vout: base.vout,
+          value: base.value,
+          address: base.address,
+          height: base.height,
+          status,
+        }
+      : {
+          txid: base.txid,
+          vout: base.vout,
+          value: base.value,
+          address: base.address,
+          height: base.height,
+          status,
+          txId,
+        };
+  return locked;
+};
+
 /** Persistent UTXO lock/spent lifecycle — locked by an in-flight tx, released or spent at its end. */
 export type LockedUtxo = ScanUtxo & {
   readonly status: "confirmed" | "locked" | "frozen";
@@ -180,9 +258,21 @@ export class BtcUtxoStore {
     const raw = await store.collection("btc-utxos").get("state");
     this.utxos =
       raw === undefined
-        ? new Map()
-        : new Map(
-            Object.entries(JSON.parse(new TextDecoder().decode(raw)) as Record<string, LockedUtxo>),
+        ? new Map<string, LockedUtxo>()
+        : new Map<string, LockedUtxo>(
+            Object.entries(
+              ((): Record<string, LockedUtxo> => {
+                const rawParsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+                const parsed = isObject(rawParsed) ? rawParsed : {};
+                const pairs: ReadonlyArray<readonly [string, LockedUtxo]> = Object.entries(
+                  parsed,
+                ).flatMap(([k, v]) => {
+                  const u = toLockedUtxo(v);
+                  return u === undefined ? [] : [[k, u] as const];
+                });
+                return Object.fromEntries(pairs);
+              })(),
+            ),
           );
   }
 
@@ -204,7 +294,17 @@ export class BtcUtxoStore {
       ([, u]) => u.status === "locked" || u.status === "frozen",
     );
     this.utxos = new Map(
-      utxos.map((u) => [BtcUtxoStore.key(u), { ...u, status: "confirmed" as const }]),
+      utxos.map((u) => [
+        BtcUtxoStore.key(u),
+        {
+          txid: u.txid,
+          vout: u.vout,
+          value: u.value,
+          address: u.address,
+          height: u.height,
+          status: "confirmed" as const,
+        },
+      ]),
     );
     for (const [k, u] of locked) {
       this.utxos.set(k, u);
@@ -213,7 +313,15 @@ export class BtcUtxoStore {
 
   lock(utxos: ReadonlyArray<ScanUtxo>, txId: string): void {
     for (const u of utxos) {
-      this.utxos.set(BtcUtxoStore.key(u), { ...u, status: "locked", txId });
+      this.utxos.set(BtcUtxoStore.key(u), {
+        txid: u.txid,
+        vout: u.vout,
+        value: u.value,
+        address: u.address,
+        height: u.height,
+        status: "locked",
+        txId,
+      });
     }
     void this.persist();
   }
