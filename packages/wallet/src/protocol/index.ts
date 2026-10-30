@@ -210,7 +210,8 @@ export const kernelEvent: Validator<KernelEvent> = union(
 export const responseError: Validator<{ code: WalletErrorCode; retryAt?: number | undefined }> =
   errorPayload;
 
-export { CHAINS_METHODS, NOSTR_METHODS, SPARK_METHODS };
+export { NOSTR_METHODS, SPARK_METHODS };
+export { CHAINS_METHODS } from "./chains.ts";
 export type { ChainAccount, ChainAccountsParams, ChainTemplate } from "./chains.ts";
 export { CORE_METHODS, walletErrorCode } from "./core.ts";
 export type { MethodSpec } from "./core.ts";

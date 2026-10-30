@@ -57,7 +57,11 @@
       "import": "./dist/types.mjs",
       "default": "./dist/types.mjs"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./chains": {
+      "types": "./dist/chains.d.mts",
+      "default": "./dist/chains.mjs"
+    }
   },
   "publishConfig": {
     "access": "public"
