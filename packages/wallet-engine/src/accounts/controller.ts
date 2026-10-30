@@ -1,16 +1,26 @@
+import { isAddress } from "viem";
+
 import type { SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
+import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { chains } from "@qntx/wallet/chains";
 
+import { scanChain } from "../chains/bitcoin-scan.ts";
+import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { MetaDoc, MetaDocGroup } from "../meta/doc.ts";
 import type { SparkController } from "../spark/controller.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
+import { errorMessage } from "../transactions/route.ts";
 import { AccountTreeError } from "./errors.ts";
 
 export type AccountGroup = {
   readonly walletId: string;
   readonly index: number;
+  /** `discoverGroups` result — family key → used; a family error lives under `errors`. */
+  readonly used?: Readonly<Record<string, boolean>>;
+  readonly errors?: Readonly<Record<string, string>>;
   readonly name?: string;
   readonly hidden: boolean;
   /** A social identity (64 lowercase hex) bound to this group; one identity binds one group. */
@@ -32,10 +42,34 @@ export type AccountTreeState = {
   readonly totals: Readonly<Record<string, number>>;
 };
 
+type DiscoveryNetworks = {
+  readonly client: (network: string) => {
+    readonly getTransactionCount: (p: {
+      readonly address: `0x${string}`;
+      readonly blockTag: "latest";
+    }) => Promise<number>;
+    readonly getBalance: (p: { readonly address: `0x${string}` }) => Promise<bigint>;
+  };
+  readonly solanaRpc: (network: string) => {
+    readonly call: (method: string, params: unknown[]) => Promise<unknown>;
+  };
+  readonly esplora: (network: string) => Esplora;
+  readonly enabled: (family: "evm" | "solana" | "bitcoin") => ReadonlyArray<string>;
+};
+
 export type AccountTreeControllerOptions = {
   readonly wallet: Wallet;
   readonly spark: SparkController;
   readonly sparkNetwork: SparkNetwork;
+  readonly networks?: DiscoveryNetworks;
+  readonly chains?: {
+    readonly account: (params: {
+      readonly walletId: string;
+      readonly groupIndex: number;
+      readonly template: string;
+      readonly network: string;
+    }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
+  };
   readonly logger: EngineLogger;
   readonly now: () => number;
 };
@@ -229,6 +263,22 @@ function encodeTree(tree: PersistedTree): Uint8Array {
  * selected again). The active account's `balanceSats` feeds `totals`, debounced 1 s before
  * persist.
  */
+const check = async (
+  family: string,
+  run: () => Promise<boolean>,
+): Promise<readonly [string, { readonly used: boolean; readonly error?: string }]> => {
+  try {
+    return [family, { used: await run() }] as const;
+  } catch (error) {
+    return [family, { used: false, error: errorMessage(error) }] as const;
+  }
+};
+
+const evmAddress = (v: unknown): `0x${string}` | undefined =>
+  typeof v === "string" && isAddress(v) ? v : undefined;
+
+const addressOf = (v: unknown): string | undefined => (typeof v === "string" ? v : undefined);
+
 export class AccountTreeController extends Controller<AccountTreeState> {
   private readonly options: AccountTreeControllerOptions;
   private col: EngineCollection | undefined;
@@ -626,6 +676,157 @@ export class AccountTreeController extends Controller<AccountTreeState> {
       const { used } = await this.options.spark.inspect(ref);
       if (used) {
         if (index !== 0) {
+          found.push(index);
+        }
+        unused = 0;
+      } else {
+        unused += 1;
+        if (index !== 0 && unused >= 2) {
+          break;
+        }
+      }
+      index += 1;
+    }
+    return found;
+  }
+
+  /**
+   * Per-group chain-family discovery — same stop rule as `discoverSpark`: group 0 always, stop
+   * after two consecutive fully-unused groups. A family error is reported on the group and does NOT
+   * count as unused (the group stays in `found` — it can't be proven empty).
+   */
+  async discoverGroups(walletId: string): Promise<number[]> {
+    this.mustWallet(walletId);
+    const apis = this.options.chains ?? chains(this.options.wallet);
+    const nets = this.options.networks;
+    const found: number[] = [0];
+    let index = 0;
+    let unused = 0;
+    while (index < 65) {
+      const groupIndex = index;
+      const evm = async (): Promise<boolean> => {
+        if (nets === undefined) {
+          return false;
+        }
+        const seen = await Promise.all(
+          nets.enabled("evm").map(async (network) => {
+            const acct = await apis.account({
+              walletId,
+              groupIndex,
+              template: "evm.bip44",
+              network,
+            });
+            const address = "address" in acct ? evmAddress(acct.address) : undefined;
+            if (address === undefined) {
+              return false;
+            }
+            const client = nets.client(network);
+            const [nonce, balance] = await Promise.all([
+              client.getTransactionCount({ address, blockTag: "latest" }),
+              client.getBalance({ address }),
+            ]);
+            return nonce > 0 || balance > 0n;
+          }),
+        );
+        return seen.some(Boolean);
+      };
+      const solana = async (): Promise<boolean> => {
+        if (nets === undefined) {
+          return false;
+        }
+        const seen = await Promise.all(
+          nets.enabled("solana").map(async (network) => {
+            const acct = await apis.account({
+              walletId,
+              groupIndex,
+              template: "solana.bip44-change",
+              network,
+            });
+            const address = "address" in acct ? addressOf(acct.address) : undefined;
+            if (address === undefined) {
+              return false;
+            }
+            const rpc = nets.solanaRpc(network);
+            const sigs: unknown = await rpc.call("getSignaturesForAddress", [
+              address,
+              { limit: 1 },
+            ]);
+            return Array.isArray(sigs) && sigs.length > 0;
+          }),
+        );
+        return seen.some(Boolean);
+      };
+      const bitcoin = async (): Promise<boolean> => {
+        if (nets === undefined) {
+          return false;
+        }
+        const combos = nets
+          .enabled("bitcoin")
+          .flatMap((network) =>
+            (["btc.bip84", "btc.bip86"] as const).map((template) => [network, template] as const),
+          );
+        const seen = await Promise.all(
+          combos.map(async ([network, template]) => {
+            const net = bitcoinNetwork(network);
+            const es = nets.esplora(network);
+            const acct = await apis.account({ walletId, groupIndex, template, network });
+            const xpub = "xpub" in acct ? acct.xpub : undefined;
+            if (xpub === undefined) {
+              return false;
+            }
+            const [receive, change] = await Promise.all([
+              scanChain(es, xpub, template, network, net.params, 0),
+              scanChain(es, xpub, template, network, net.params, 1),
+            ]);
+            return receive.some((a) => a.used) || change.some((a) => a.used);
+          }),
+        );
+        return seen.some(Boolean);
+      };
+      const spark = async (): Promise<boolean> => {
+        const ref = {
+          walletId,
+          groupIndex,
+          network: this.options.sparkNetwork,
+        } as const;
+        const { used } = await this.options.spark.inspect(ref);
+        return used;
+      };
+      // oxlint-disable-next-line eslint/no-await-in-loop -- discovery is sequential per spec
+      const results = await Promise.all([
+        check("spark", spark),
+        check("evm", evm),
+        check("solana", solana),
+        check("bitcoin", bitcoin),
+      ]);
+      const usedMap = Object.fromEntries(results.map(([k, v]) => [k, v.used]));
+      const errorMap = Object.fromEntries(
+        results.flatMap(([k, v]) => (v.error === undefined ? [] : [[k, v.error] as const])),
+      );
+      const anyUsed = results.some(([, v]) => v.used);
+      const anyError = results.some(([, v]) => v.error !== undefined);
+      this.mutateGroups(walletId, (list) => {
+        const have = list.some((g) => g.index === groupIndex);
+        const updatedAt = this.options.now();
+        if (!have) {
+          return [
+            ...list,
+            {
+              walletId,
+              index: groupIndex,
+              hidden: false,
+              used: usedMap,
+              errors: errorMap,
+              updatedAt,
+            },
+          ].sort((a, b) => a.index - b.index);
+        }
+        return list.map((g) =>
+          g.index === groupIndex ? { ...g, used: usedMap, errors: errorMap, updatedAt } : g,
+        );
+      });
+      if (anyUsed || anyError) {
+        if (index !== 0 && anyUsed) {
           found.push(index);
         }
         unused = 0;
