@@ -5,7 +5,7 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { Address, OutScript, WIF, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Address, OutScript, WIF, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
@@ -34,6 +34,8 @@ const expectedHash = (message: string): Uint8Array => {
 type BtcVectors = {
   mnemonic: string;
   bip84: { path: string; addresses: Record<string, string> };
+  bip49: { path: string; addresses: Record<string, string> };
+  bip44: { path: string; addresses: Record<string, string> };
   bip86: { path: string; addresses: Record<string, string> };
   bip322: {
     address: string;
@@ -58,6 +60,10 @@ const readVectors = (): BtcVectors => {
     typeof raw["mnemonic"] !== "string" ||
     !isRec(raw["bip84"]) ||
     !isStrMap(raw["bip84"]["addresses"]) ||
+    !isRec(raw["bip49"]) ||
+    !isStrMap(raw["bip49"]["addresses"]) ||
+    !isRec(raw["bip44"]) ||
+    !isStrMap(raw["bip44"]["addresses"]) ||
     !isRec(raw["bip86"]) ||
     !isStrMap(raw["bip86"]["addresses"]) ||
     !isRec(raw["bip322"]) ||
@@ -92,6 +98,8 @@ const readVectors = (): BtcVectors => {
   return {
     mnemonic: raw["mnemonic"],
     bip84: { path: String(raw["bip84"]["path"]), addresses: raw["bip84"]["addresses"] },
+    bip49: { path: String(raw["bip49"]["path"]), addresses: raw["bip49"]["addresses"] },
+    bip44: { path: String(raw["bip44"]["path"]), addresses: raw["bip44"]["addresses"] },
     bip86: { path: String(raw["bip86"]["path"]), addresses: raw["bip86"]["addresses"] },
     bip322: {
       address: typeof v["address"] === "string" ? v["address"] : "",
@@ -124,6 +132,17 @@ describe("derivation", () => {
     const derived = HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(path);
     expect(derived.publicKey).toBeDefined();
     expect(p2wpkh(derived.publicKey!, NETWORK).address).toBe(expected);
+  });
+
+  it.each(Object.entries(vectors.bip49.addresses))("BIP-49 %s → P2SH-P2WPKH", (path, expected) => {
+    const derived = HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(path);
+    const wrapped = p2sh(p2wpkh(derived.publicKey!, NETWORK), NETWORK);
+    expect(wrapped.address).toBe(expected);
+  });
+
+  it.each(Object.entries(vectors.bip44.addresses))("BIP-44 %s → P2PKH", (path, expected) => {
+    const derived = HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(path);
+    expect(p2pkh(derived.publicKey!, NETWORK).address).toBe(expected);
   });
 
   it.each(Object.entries(vectors.bip86.addresses))("BIP-86 %s → address", (path, expected) => {

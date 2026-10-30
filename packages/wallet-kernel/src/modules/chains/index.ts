@@ -7,6 +7,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
 import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
+import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
 import { ChainError } from "@qntx/wallet-chains";
 import {
@@ -108,7 +109,7 @@ const accountFor = (
   }
   const purpose = BTC_PURPOSE[template];
   if (purpose === undefined) {
-    throw new KernelError("invalid-input", `unknown template ${String(template)}`);
+    throw new KernelError("invalid-input", `unknown template ${template}`);
   }
   const path = `m/${purpose}'/${bitcoinNetwork(network).coinType}'/${groupIndex}'`;
   const account = master.derive(path);
@@ -404,6 +405,9 @@ export function createChainsModule(): ChainsModule {
                       );
                     }
                     const vout = input.index;
+                    const outs = input.nonWitnessUtxo.outputs as ReadonlyArray<{
+                      readonly script?: Uint8Array;
+                    }>;
                     const prevScript =
                       vout === undefined ? undefined : input.nonWitnessUtxo.outputs[vout]?.script;
                     if (prevScript === undefined || !deepEqual(prevScript, expectedScript(pub))) {
@@ -491,7 +495,11 @@ export function createChainsModule(): ChainsModule {
               const derived =
                 purpose === 86
                   ? p2tr(pub.slice(1), undefined, net.params).address
-                  : p2wpkh(pub, net.params).address;
+                  : purpose === 49
+                    ? p2sh(p2wpkh(pub, net.params), net.params).address
+                    : purpose === 44
+                      ? p2pkh(pub, net.params).address
+                      : p2wpkh(pub, net.params).address;
               if (derived !== request.address) {
                 throw new KernelError("invalid-input", "address is not ours");
               }
