@@ -22,6 +22,7 @@ import type { LockReason } from "@qntx/wallet/types";
 import type { CommitOptions, Handler, KernelContext } from "./commands/context.ts";
 import { CORE_HANDLERS } from "./commands/index.ts";
 import { KernelError } from "./errors.ts";
+import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
 import { createSparkModule } from "./modules/spark/index.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
@@ -94,9 +95,11 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
   // add a line here and a section in status.ts's composition.
   const nostr = createNostrModule(platform.backends.nostr);
   const spark = createSparkModule();
+  const chains = createChainsModule();
   const HANDLERS = {
     status: (ctx: KernelContext) => statusPayload(ctx, nostr),
     ...CORE_HANDLERS,
+    ...chains.handlers,
     ...nostr.handlers,
     ...spark.handlers,
   } satisfies { [M in MethodName]: Handler<M> };
@@ -255,7 +258,7 @@ export function startKernel(platform: KernelPlatform, port: Port): void {
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
-    modules: [nostr.vault, spark.vault],
+    modules: [nostr.vault, spark.vault, chains.vault],
     image: EMPTY_IMAGE,
     health: "ok",
     commit: async (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => {
