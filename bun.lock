@@ -46,7 +46,7 @@
       },
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
-        "@qntx/nostr": "0.15.2",
+        "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
         "@types/node": "26.6.5",
@@ -74,7 +74,7 @@
       "devDependencies": {
         "@arethetypeswrong/cli": "0.18.5",
         "@noble/hashes": "^2.0.1",
-        "@qntx/nostr": "0.15.2",
+        "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/wallet": "0.4.0",
@@ -95,7 +95,7 @@
         "@noble/ciphers": "2.4.0",
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
-        "@qntx/nostr": "0.15.2",
+        "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/wallet": "0.4.0",
         "@scure/base": "2.4.0",
@@ -116,8 +116,8 @@
         "cborg": "6.1.4",
       },
       "devDependencies": {
-        "@qntx/nostr": "0.15.2",
-        "@qntx/nostr-native": "0.15.2",
+        "@qntx/nostr": "0.15.3",
+        "@qntx/nostr-native": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-native": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
@@ -125,7 +125,7 @@
         "react-native-nitro-modules": "0.37.1",
       },
       "peerDependencies": {
-        "@qntx/nostr-native": "0.15.2",
+        "@qntx/nostr-native": "0.15.3",
         "@qntx/spark-native": "0.5.2",
         "@qntx/wallet": "0.4.0",
         "react-native-nitro-modules": "*",
@@ -138,7 +138,7 @@
         "@arethetypeswrong/cli": "0.18.5",
         "@noble/hashes": "2.4.0",
         "@playwright/test": "1.63.0",
-        "@qntx/nostr": "0.15.2",
+        "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
@@ -340,9 +340,9 @@
 
     "@publint/pack": ["@publint/pack@0.1.7", "", { "dependencies": { "tinyexec": "^1.3.0" } }, "sha512-4EDEmvxWtgsCnnVeBvtFIFZtUhPPt1+bA9JrSwU4Sa//6oKtzCSlGGXYJr44OD9aGISymbieJ4mCKHUygUDU+g=="],
 
-    "@qntx/nostr": ["@qntx/nostr@0.15.2", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-IRRyxF43n1gPgMRn7qDcZlzq52noQ75J7orwsN2VdT9ISLxHK6tk0OmFw5lZ2s/LcIlSE5YdvucSro+hBfgk/g=="],
+    "@qntx/nostr": ["@qntx/nostr@0.15.3", "", { "dependencies": { "@noble/ciphers": "^2.4.0", "@noble/curves": "^2.4.0", "@noble/hashes": "^2.4.0", "@scure/base": "^2.4.0" }, "peerDependencies": { "ws": "^8.18.0" }, "optionalPeers": ["ws"] }, "sha512-AefcRXe/3basIgDA0gBGzzQ2Y9k131SfrU0hZ+eJqfLzCSzsVJyum5XKzffJ74VU6FroQPbS/fSS7W5mGd22ow=="],
 
-    "@qntx/nostr-native": ["@qntx/nostr-native@0.15.2", "", { "peerDependencies": { "@qntx/nostr": "^0.15.2", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-hLk7KGaOGj+j2UZprZ/9Bau7e4GINCmiNoRSoaTibDUTSu46JUPXxaLHtmXjLyijJb8HKmc+Adp+4FOYD6nkIw=="],
+    "@qntx/nostr-native": ["@qntx/nostr-native@0.15.3", "", { "peerDependencies": { "@qntx/nostr": "^0.15.3", "react-native": "*", "react-native-nitro-modules": "^0.37.1" } }, "sha512-0JB2sapmRUFONNeDF3lTCfsgzmiu1EKB3ue/msQCm18fSrmVYN6HV7WQzJsGa7GZXMvlZ13udrV1gDbmXv1/4A=="],
 
     "@qntx/oxfmt": ["@qntx/oxfmt@1.1.1", "", { "peerDependencies": { "oxfmt": ">=0.66.0 <1.0.0" }, "optionalPeers": ["oxfmt"] }, "sha512-i/+3GBLZlwDNW6gT1Z76LKEfPBm4LMSjee0URPRn5YeILbEtGQtMuUNNLcfabYpGPZI4wGL3YyPjdD3/Abf9Kw=="],
 

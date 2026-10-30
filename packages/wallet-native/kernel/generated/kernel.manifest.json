@@ -27,13 +27,13 @@
     },
     {
       "name": "@qntx/nostr",
-      "version": "0.15.2",
-      "integrity": "sha512-IRRyxF43n1gPgMRn7qDcZlzq52noQ75J7orwsN2VdT9ISLxHK6tk0OmFw5lZ2s/LcIlSE5YdvucSro+hBfgk/g=="
+      "version": "0.15.3",
+      "integrity": "sha512-AefcRXe/3basIgDA0gBGzzQ2Y9k131SfrU0hZ+eJqfLzCSzsVJyum5XKzffJ74VU6FroQPbS/fSS7W5mGd22ow=="
     },
     {
       "name": "@qntx/nostr-native",
-      "version": "0.15.2",
-      "integrity": "sha512-hLk7KGaOGj+j2UZprZ/9Bau7e4GINCmiNoRSoaTibDUTSu46JUPXxaLHtmXjLyijJb8HKmc+Adp+4FOYD6nkIw=="
+      "version": "0.15.3",
+      "integrity": "sha512-0JB2sapmRUFONNeDF3lTCfsgzmiu1EKB3ue/msQCm18fSrmVYN6HV7WQzJsGa7GZXMvlZ13udrV1gDbmXv1/4A=="
     },
     {
       "name": "@qntx/spark",
@@ -64,7 +64,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "0f55e394f642f0860e5c75f294ccf06b3425640a6d9149af69b9c9b5156d6d52"
+      "sha256": "695b96f6667b4aa3aaf164234d4c160e395ccdde53da87d5b901f55c8aff1642"
     }
   ]
 }

@@ -46,7 +46,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@noble/hashes": "^2.0.1",
-    "@qntx/nostr": "0.15.2",
+    "@qntx/nostr": "0.15.3",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",
     "@qntx/wallet": "0.4.0",
