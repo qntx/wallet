@@ -1,3 +1,7 @@
+import { getAddressDecoder } from "@solana/addresses";
+
+import { ChainError } from "../index.ts";
+
 /** Well-known Solana program ids (base58, 32 bytes) — frozen constants. */
 export const PROGRAM_IDS: Readonly<{
   system: string;
@@ -27,10 +31,6 @@ export const SOLANA_NETWORKS: ReadonlyArray<string> = Object.freeze([
 const BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export const isSolanaAddress = (value: string): boolean => BASE58.test(value);
-
-import { getAddressDecoder } from "@solana/addresses";
-
-import { ChainError } from "../index.ts";
 
 const decoder = getAddressDecoder();
 

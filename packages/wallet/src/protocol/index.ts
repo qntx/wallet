@@ -9,6 +9,7 @@
  */
 import type { LockReason, StatusPayload, WalletErrorCode } from "../types.ts";
 import { backupInfo } from "./backup.ts";
+import { CHAINS_METHODS } from "./chains.ts";
 import {
   CORE_METHODS,
   factorInfo,
@@ -161,6 +162,7 @@ export const METHODS: {
   readonly status: MethodSpec<NullValue, StatusPayload>;
 } & typeof CORE_METHODS &
   typeof NOSTR_METHODS &
+  typeof CHAINS_METHODS &
   typeof SPARK_METHODS = {
   status: {
     session: false,
@@ -169,6 +171,7 @@ export const METHODS: {
     result: statusPayload,
   },
   ...CORE_METHODS,
+  ...CHAINS_METHODS,
   ...NOSTR_METHODS,
   ...SPARK_METHODS,
 };
