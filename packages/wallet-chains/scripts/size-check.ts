@@ -34,10 +34,8 @@ async function main(): Promise<number> {
     }
     return 1;
   }
-  let total = 0;
-  for (const output of result.outputs) {
-    total += gzipSync(Buffer.from(await output.text())).length;
-  }
+  const texts = await Promise.all(result.outputs.map(async (output) => output.text()));
+  const total = texts.reduce((sum, text) => sum + gzipSync(Buffer.from(text)).length, 0);
   console.log(
     `chains-size: ${total} B gzipped across ${result.outputs.length} entries (budget ${BUDGET} B)`,
   );

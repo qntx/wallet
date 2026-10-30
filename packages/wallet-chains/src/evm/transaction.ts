@@ -2,6 +2,13 @@ import { ChainError } from "../index.ts";
 import type { EvmTransaction, EvmAccessListEntry } from "../index.ts";
 import { checksumEvmAddress, isEvmAddress } from "./address.ts";
 
+/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
+export function assertHex(value: string, field: string): asserts value is `0x${string}` {
+  if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
+    throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+  }
+}
+
 export const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
@@ -11,30 +18,6 @@ export const isCanonicalHex = (value: string): boolean => CANONICAL_HEX.test(val
 
 export const canonicalHex = (value: bigint): string => `0x${value.toString(16)}`;
 
-/** The exact key sets allowed per transaction type, minus `type` and `chainId`. */
-const TX_FIELDS: Readonly<Record<EvmTransaction["type"], ReadonlySet<string>>> = {
-  legacy: new Set(["to", "data", "value", "nonce", "gas", "gasPrice"]),
-  eip2930: new Set(["to", "data", "value", "nonce", "gas", "gasPrice", "accessList"]),
-  eip1559: new Set([
-    "to",
-    "data",
-    "value",
-    "nonce",
-    "gas",
-    "accessList",
-    "maxFeePerGas",
-    "maxPriorityFeePerGas",
-  ]),
-};
-
-const QUANTITY_FIELDS = new Set([
-  "value",
-  "gas",
-  "gasPrice",
-  "maxFeePerGas",
-  "maxPriorityFeePerGas",
-]);
-
 const safeInteger = (value: unknown, field: string): number => {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
@@ -42,37 +25,31 @@ const safeInteger = (value: unknown, field: string): number => {
   return value;
 };
 
-const normalizeQuantity = (value: unknown, field: string): string => {
-  if (typeof value === "string") {
-    if (CANONICAL_HEX.test(value)) {
-      return value;
-    }
-    // Accept a non-canonical hex form and canonicalize it (leading zeros, uppercase, `0x` alone).
-    if (/^0x[0-9a-fA-F]+$/.test(value) || value === "0x") {
-      return canonicalHex(BigInt(value === "0x" ? "0x0" : value));
-    }
+const quantity = (value: unknown, field: string): string => {
+  if (typeof value !== "string") {
+    throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
   }
-  if (typeof value === "bigint") {
-    return canonicalHex(value);
+  if (CANONICAL_HEX.test(value)) {
+    return value;
   }
-  throw new ChainError("invalid-quantity", `${field} must be a canonical 0x quantity`);
+  if (/^0x[0-9a-fA-F]+$/.test(value) || value === "0x") {
+    return canonicalHex(BigInt(value === "0x" ? "0x0" : value));
+  }
+  throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
 };
 
-const normalizeHexBytes = (value: unknown, field: string): string => {
+const hexBytes = (value: unknown, field: string): string => {
   if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
     throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
   }
   return value.toLowerCase();
 };
 
-const normalizeAccessList = (value: unknown): ReadonlyArray<EvmAccessListEntry> => {
+const accessList = (value: unknown): ReadonlyArray<EvmAccessListEntry> => {
   if (!Array.isArray(value)) {
-    throw new ChainError("unknown-field", "accessList must be an array");
+    throw new ChainError("invalid-request", "accessList must be an array");
   }
   return value.map((entry): EvmAccessListEntry => {
-    if (typeof entry !== "object" || entry === null) {
-      throw new ChainError("invalid-address", "accessList entries must be objects");
-    }
     if (!isRecord(entry)) {
       throw new ChainError("invalid-address", "accessList entries must be objects");
     }
@@ -87,18 +64,20 @@ const normalizeAccessList = (value: unknown): ReadonlyArray<EvmAccessListEntry> 
     if (typeof address !== "string" || !isEvmAddress(address)) {
       throw new ChainError("invalid-address", "accessList entry has an invalid address");
     }
-    if (
-      !Array.isArray(storageKeys) ||
-      storageKeys.some((k) => typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k))
-    ) {
-      throw new ChainError(
-        "invalid-quantity",
-        "accessList storageKeys must be 32-byte hex strings",
-      );
+    if (!Array.isArray(storageKeys)) {
+      throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
     }
     return {
       address: checksumEvmAddress(address),
-      storageKeys: storageKeys.map((k) => String(k).toLowerCase()),
+      storageKeys: storageKeys.map((k) => {
+        if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) {
+          throw new ChainError(
+            "invalid-quantity",
+            "accessList storageKeys must be 32-byte hex strings",
+          );
+        }
+        return k.toLowerCase();
+      }),
     };
   });
 };
@@ -117,54 +96,94 @@ export const networkChainId = (network: string): number => {
   return id;
 };
 
-/**
- * Canonicalizes an EVM transaction: exact key sets per type, chainId must match the request's
- * `network` (checked by the caller), `0x` canonical quantities, EIP-55 addresses, sorted nothing —
- * the result is idempotent.
- */
-export const normalizeEvmTransaction = (tx: EvmTransaction): EvmTransaction => {
-  if (!isRecord(tx)) {
-    throw new ChainError("invalid-request", "tx must be an object");
+const REQUIRED = {
+  base: ["chainId", "nonce", "gas", "value", "data"],
+  gasPrice: ["gasPrice"],
+  accessList: ["accessList"],
+  eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"],
+} as const;
+
+const ALLOWED = {
+  base: ["type", "chainId", "nonce", "gas", "value", "data", "to"],
+  legacy: ["gasPrice"],
+  eip2930: ["gasPrice", "accessList"],
+  eip1559: ["accessList", "maxFeePerGas", "maxPriorityFeePerGas"],
+} as const;
+
+const requireFields = (input: Record<string, unknown>, fields: ReadonlyArray<string>): void => {
+  for (const field of fields) {
+    if (input[field] === undefined) {
+      throw new ChainError("invalid-request", `tx.${field} is required`);
+    }
   }
-  const input: Record<string, unknown> = tx;
-  const { type } = input;
-  if (type !== "legacy" && type !== "eip2930" && type !== "eip1559") {
-    throw new ChainError(
-      "unsupported",
-      `transaction type ${String(type)} is not supported (legacy, eip2930 and eip1559 only)`,
-    );
-  }
-  const allowed = TX_FIELDS[type];
-  const unknown = Object.keys(input).filter(
-    (k) => k !== "type" && k !== "chainId" && !allowed.has(k),
-  );
+};
+
+const rejectUnknown = (
+  input: Record<string, unknown>,
+  type: "legacy" | "eip2930" | "eip1559",
+): void => {
+  const allowed = new Set<string>([...ALLOWED.base, ...ALLOWED[type]]);
+  const unknown = Object.keys(input).filter((k) => !allowed.has(k));
   if (unknown.length > 0) {
     throw new ChainError(
       "unknown-field",
       `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`,
     );
   }
-  const out: Record<string, unknown> = { type, chainId: safeInteger(input["chainId"], "chainId") };
-  for (const key of allowed) {
-    const value = input[key];
-    if (value === undefined) {
-      continue;
-    }
-    if (key === "to") {
-      if (typeof value !== "string" || !isEvmAddress(value)) {
-        throw new ChainError("invalid-address", "to must be a valid EVM address");
-      }
-      out["to"] = checksumEvmAddress(value);
-    } else if (key === "data") {
-      out["data"] = normalizeHexBytes(value, "data");
-    } else if (key === "nonce") {
-      out["nonce"] = safeInteger(value, "nonce");
-    } else if (key === "accessList") {
-      out["accessList"] = normalizeAccessList(value);
-    } else if (QUANTITY_FIELDS.has(key)) {
-      out[key] = normalizeQuantity(value, key);
-    }
+};
+
+/**
+ * Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
+ * canonical quantities, EIP-55 addresses. Idempotent.
+ */
+export const normalizeEvmTransaction = (tx: unknown): EvmTransaction => {
+  if (!isRecord(tx)) {
+    throw new ChainError("invalid-request", "tx must be an object");
   }
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every field was narrowed per the exact key set above
-  return out as unknown as EvmTransaction;
+  const { type } = tx;
+  if (type !== "legacy" && type !== "eip2930" && type !== "eip1559") {
+    throw new ChainError(
+      "unsupported",
+      `transaction type ${String(type)} is not supported (legacy, eip2930 and eip1559 only)`,
+    );
+  }
+  rejectUnknown(tx, type);
+  requireFields(tx, REQUIRED.base);
+  const chainId = safeInteger(tx["chainId"], "chainId");
+  const nonce = safeInteger(tx["nonce"], "nonce");
+  const gas = quantity(tx["gas"], "gas");
+  const value = quantity(tx["value"], "value");
+  const data = hexBytes(tx["data"], "data");
+  const toRaw = tx["to"];
+  const to =
+    toRaw === undefined
+      ? undefined
+      : typeof toRaw === "string" && isEvmAddress(toRaw)
+        ? checksumEvmAddress(toRaw)
+        : undefined;
+  if (toRaw !== undefined && to === undefined) {
+    throw new ChainError("invalid-address", "to must be a valid EVM address");
+  }
+  const base = { chainId, nonce, gas, value, data, ...(to === undefined ? {} : { to }) };
+  if (type === "legacy") {
+    requireFields(tx, REQUIRED.gasPrice);
+    return { type, ...base, gasPrice: quantity(tx["gasPrice"], "gasPrice") };
+  }
+  if (type === "eip2930") {
+    requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
+    return {
+      type,
+      ...base,
+      gasPrice: quantity(tx["gasPrice"], "gasPrice"),
+      accessList: accessList(tx["accessList"]),
+    };
+  }
+  requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
+  return {
+    type,
+    ...base,
+    accessList: accessList(tx["accessList"]),
+    maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
+    maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas"),
+  };
 };

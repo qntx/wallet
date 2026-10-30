@@ -42,19 +42,32 @@ export type EvmAccessListEntry = {
   readonly storageKeys: ReadonlyArray<string>;
 };
 
-export type EvmTransaction = {
-  readonly type: "legacy" | "eip2930" | "eip1559";
+type EvmTransactionBase = {
   readonly chainId: number;
+  readonly nonce: number;
+  readonly gas: string;
+  readonly value: string;
+  readonly data: string;
   readonly to?: string;
-  readonly data?: string;
-  readonly value?: string;
-  readonly nonce?: number;
-  readonly gas?: string;
-  readonly gasPrice?: string;
-  readonly accessList?: ReadonlyArray<EvmAccessListEntry>;
-  readonly maxFeePerGas?: string;
-  readonly maxPriorityFeePerGas?: string;
 };
+
+/**
+ * A complete transaction — every field the signer needs is present; `to` absent means contract
+ * creation.
+ */
+export type EvmTransaction =
+  | (EvmTransactionBase & { readonly type: "legacy"; readonly gasPrice: string })
+  | (EvmTransactionBase & {
+      readonly type: "eip2930";
+      readonly gasPrice: string;
+      readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+    })
+  | (EvmTransactionBase & {
+      readonly type: "eip1559";
+      readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+      readonly maxFeePerGas: string;
+      readonly maxPriorityFeePerGas: string;
+    });
 
 export type Verifiability = "full" | "partial" | "opaque";
 

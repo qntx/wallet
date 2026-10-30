@@ -21,6 +21,7 @@ const TRANSACTIONS = [
       type: "legacy",
       chainId: 1,
       to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      data: "0x",
       value: "0x16345785d8a0000",
       nonce: 0,
       gas: "0x5208",
@@ -34,6 +35,7 @@ const TRANSACTIONS = [
       type: "eip2930",
       chainId: 1,
       to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      data: "0x",
       value: "0x16345785d8a0000",
       nonce: 1,
       gas: "0x5208",
@@ -53,9 +55,11 @@ const TRANSACTIONS = [
       type: "eip1559",
       chainId: 1,
       to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+      data: "0x",
       value: "0x16345785d8a0000",
       nonce: 2,
       gas: "0x5208",
+      accessList: [],
       maxFeePerGas: "0x77359400",
       maxPriorityFeePerGas: "0x59682f00",
     },
@@ -78,8 +82,8 @@ const hexToBytes = (hex: string): Uint8Array => {
 };
 const bytesToHex = (bytes: Uint8Array): string => {
   let s = "0x";
-  for (let i = 0; i < bytes.length; i++) {
-    s += (bytes[i] ?? 0).toString(16).padStart(2, "0");
+  for (const b of bytes) {
+    s += b.toString(16).padStart(2, "0");
   }
   return s;
 };
