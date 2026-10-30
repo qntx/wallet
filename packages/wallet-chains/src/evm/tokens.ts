@@ -1,8 +1,7 @@
 /**
- * Built-in ERC-20 token table, keyed by `chainId` then checksummed address. Intentionally EMPTY in
- * this layer — real entries need official-source review (C6). Tests exercise the `full` ERC-20 path
- * through `evmTokenTable`, which is exported for the kernel/test callers only via the `/evm` entry
- * point.
+ * Built-in ERC-20 token table, keyed by `chainId` then checksummed address. An entry here makes an
+ * ERC-20 `transfer` `full`-verifiable (WD-065), so every entry must come from the issuer's own
+ * published list and be reviewed against it; the source is recorded per issuer below.
  */
 
 export type EvmToken = {
@@ -13,10 +12,21 @@ export type EvmToken = {
 
 export type EvmTokenTable = Readonly<Record<string, Readonly<Record<string, EvmToken>>>>;
 
-const EMPTY_TABLE: EvmTokenTable = Object.freeze({});
+// Circle USDC (native issuance, 6 decimals), from
+// https://developers.circle.com/stablecoins/usdc-contract-addresses (reviewed 2026-10-30). BNB
+// Chain has no Circle-issued USDC (the Binance-pegged token is a different issuer), so it is absent.
+const USDC: EvmToken = Object.freeze({ symbol: "USDC", decimals: 6, name: "USD Coin" });
 
-/** The built-in table — empty until official-source review lands the entries. */
-export const evmTokenTable: EvmTokenTable = EMPTY_TABLE;
+/** The built-in table. */
+export const evmTokenTable: EvmTokenTable = Object.freeze({
+  "1": Object.freeze({ "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC }),
+  "10": Object.freeze({ "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": USDC }),
+  "137": Object.freeze({ "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359": USDC }),
+  "999": Object.freeze({ "0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC }),
+  "8453": Object.freeze({ "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC }),
+  "42161": Object.freeze({ "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC }),
+  "43114": Object.freeze({ "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC }),
+});
 
 export const lookupEvmToken = (
   table: EvmTokenTable,
