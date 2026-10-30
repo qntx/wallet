@@ -31,7 +31,8 @@
     "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
     "@scure/bip39": "2.4.0",
-    "micro-key-producer": "0.10.2"
+    "micro-key-producer": "0.10.2",
+    "@scure/btc-signer": "2.4.1"
   },
   "devDependencies": {
     "@qntx/tsconfig": "1.0.1",

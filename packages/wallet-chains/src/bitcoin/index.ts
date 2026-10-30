@@ -9,6 +9,7 @@ export { BITCOIN_NETWORKS, bitcoinNetwork } from "./networks.ts";
 export type { BitcoinAccountTemplate } from "./account.ts";
 export { bitcoinAddressFromXpub } from "./account.ts";
 export { decodeBitcoinPsbt, verifiabilityBitcoin } from "./decode.ts";
+export { verifyBitcoinMessage, verifyBitcoinPsbtSignatures } from "./verify.ts";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -99,9 +100,15 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
     const { format } = request;
     const target = messageTarget(request["address"], network, format);
     void target;
-    const { message } = request;
+    const { message, change, index } = request;
     if (typeof message !== "string") {
       throw new ChainError("invalid-request", "message must be a string");
+    }
+    if (change !== 0 && change !== 1) {
+      throw new ChainError("invalid-request", "change must be 0 or 1");
+    }
+    if (!Number.isSafeInteger(index) || (index as number) < 0 || (index as number) >= 0x80000000) {
+      throw new ChainError("invalid-request", "index must be a non-hardened path index");
     }
     return {
       kind: "bitcoin.message",
@@ -110,6 +117,8 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
       address: target.address,
       message,
       format: target.format,
+      change,
+      index: index as number,
     };
   }
   throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);

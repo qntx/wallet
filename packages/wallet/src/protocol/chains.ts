@@ -99,8 +99,7 @@ export type EvmTransactionWire =
     });
 
 /**
- * `chain.sign`'s request — the wire mirror of @qntx/wallet-chains `SignRequest` minus the bitcoin
- * kinds, which are rejected here until E2-c.
+ * `chain.sign`'s request — the wire mirror of @qntx/wallet-chains `SignRequest`.
  */
 export type ChainSignRequest =
   | {
@@ -137,12 +136,31 @@ export type ChainSignRequest =
       readonly account: AccountRef;
       readonly message: Uint8Array;
       readonly format: "raw";
+    }
+  | {
+      readonly kind: "bitcoin.psbt";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly psbt: Uint8Array;
+      readonly sign: ReadonlyArray<number>;
+    }
+  | {
+      readonly kind: "bitcoin.message";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly address: string;
+      readonly message: string;
+      readonly format: "bip322-simple" | "legacy";
+      readonly change: 0 | 1;
+      readonly index: number;
     };
 
 export type ChainSignResult =
   | { readonly kind: "evm.transaction"; readonly signedTransaction: Uint8Array }
   | { readonly kind: "evm.personal-message" | "evm.typed-data"; readonly signature: Uint8Array }
-  | { readonly kind: "solana.transaction" | "solana.message"; readonly signature: Uint8Array };
+  | { readonly kind: "solana.transaction" | "solana.message"; readonly signature: Uint8Array }
+  | { readonly kind: "bitcoin.psbt"; readonly signedPsbt: Uint8Array }
+  | { readonly kind: "bitcoin.message"; readonly signature: string };
 
 export type ChainSignParams = { readonly request: ChainSignRequest; readonly verify: Factor };
 
@@ -159,6 +177,7 @@ const hexQuantity = str(66, /^0x[0-9a-fA-F]+$/);
 const hexData = str(40000, /^0x[0-9a-fA-F]*$/);
 const evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
 const solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+const bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
 const safeInt = int(0, 9007199254740991);
 const accessList = arr(
   obj({ address: evmAddress, storageKeys: arr(str(66, /^0x[0-9a-fA-F]{64}$/), 256) }),
@@ -212,6 +231,23 @@ const signRequest: Validator<ChainSignRequest> = union(
     message: bytes(1, 65536),
     format: literal("raw"),
   }),
+  obj({
+    kind: literal("bitcoin.psbt"),
+    network: caip2,
+    account: accountRef,
+    psbt: bytes(1, 131072),
+    sign: arr(int(0, 1024), 1024),
+  }),
+  obj({
+    kind: literal("bitcoin.message"),
+    network: caip2,
+    account: accountRef,
+    address: bitcoinAddress,
+    message: str(1048576),
+    format: union(literal("bip322-simple"), literal("legacy")),
+    change: union(literal(0), literal(1)),
+    index: int(0, 2147483647),
+  }),
 );
 
 const signResult: Validator<ChainSignResult> = union(
@@ -224,6 +260,8 @@ const signResult: Validator<ChainSignResult> = union(
     kind: union(literal("solana.transaction"), literal("solana.message")),
     signature: bytes(64, 64),
   }),
+  obj({ kind: literal("bitcoin.psbt"), signedPsbt: bytes(1, 131072) }),
+  obj({ kind: literal("bitcoin.message"), signature: str(512) }),
 );
 
 export const CHAINS_METHODS: {

@@ -33,6 +33,9 @@ export type SignRequest =
       readonly address: string;
       readonly message: string;
       readonly format: "bip322-simple" | "legacy";
+      /** Account change chain and index the address is derived at (0 = receive, 1 = change). */
+      readonly change: 0 | 1;
+      readonly index: number;
     }
   | {
       readonly kind: "solana.transaction";
