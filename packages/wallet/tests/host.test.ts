@@ -57,7 +57,7 @@ type Handler = (request: Request) => Reply | Promise<Reply>;
  */
 export class FakeKernel {
   status: StatusPayload;
-  readonly handlers = new Map<string, Handler>();
+  readonly handlers: Map<string, Handler> = new Map<string, Handler>();
   /** Every request method that reached the kernel, in order. */
   readonly received: string[] = [];
   private active: ScriptedPort | undefined;
