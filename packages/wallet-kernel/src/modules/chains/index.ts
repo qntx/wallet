@@ -304,9 +304,10 @@ export function createChainsModule(): ChainsModule {
               | { pubkey: Uint8Array; fingerprint: number; path: ReadonlyArray<number> }
               | undefined => {
               if (purpose === 86) {
-                const claimed = (
-                  der: { fingerprint: unknown; path: unknown },
-                ): der is { fingerprint: number; path: number[] } =>
+                const claimed = (der: {
+                  fingerprint: unknown;
+                  path: unknown;
+                }): der is { fingerprint: number; path: number[] } =>
                   der.fingerprint === master.fingerprint && isPath(der.path);
                 for (const [key, value] of owner.tapBip32Derivation ?? []) {
                   if (claimed(value.der)) {
