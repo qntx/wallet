@@ -1,6 +1,6 @@
 /// <reference types="node" />
 /** Bundles each family's /family + /family/sign minified and enforces the gzip budget. */
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -38,12 +38,7 @@ const measure = async (name: string, budget: number): Promise<FamilyResult> => {
   /* Per-consumer semantics: bundle one synthetic entry that re-exports both
    * /family and /family/sign so shared dependencies are deduplicated exactly
    * as a real consumer's bundler would. */
-  const dir = resolve(root, ".size-check");
-  const entry = resolve(dir, `${name}.ts`);
-  await Bun.write(
-    entry,
-    `export * from "../src/${name}/index.ts";\nexport * from "../src/${name}/sign.ts";\n`,
-  );
+  const entry = resolve(root, ".size-check", `${name}.ts`);
   const result = await Bun.build({
     entrypoints: [entry],
     target: "browser",
@@ -64,7 +59,14 @@ const measure = async (name: string, budget: number): Promise<FamilyResult> => {
 async function main(): Promise<number> {
   let failed = false;
   try {
-    mkdirSync(resolve(root, ".size-check"), { recursive: true });
+    const dir = resolve(root, ".size-check");
+    mkdirSync(dir, { recursive: true });
+    for (const { name } of FAMILIES) {
+      writeFileSync(
+        resolve(dir, `${name}.ts`),
+        `export * from "../src/${name}/index.ts";\nexport * from "../src/${name}/sign.ts";\n`,
+      );
+    }
     const results = await Promise.all(
       FAMILIES.map(async ({ name, budget }) => measure(name, budget)),
     );
