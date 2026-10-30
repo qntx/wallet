@@ -23,3 +23,14 @@ jobs:
     # bun run lint → vp check + check-version
     # bun run test → vp run -r test (per-package vp test)
     # scripts → bun run check:pkg && bun run test:coverage
+
+  evm-anvil:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - uses: foundry-rs/foundry-toolchain@dba66c27052e63476d886f22216e119ba7e615bf # v1.9.2
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-engine#build
+      - run: ENGINE_E2E_ANVIL=1 bunx vp test tests/evm-anvil.test.ts
+        working-directory: packages/wallet-engine
