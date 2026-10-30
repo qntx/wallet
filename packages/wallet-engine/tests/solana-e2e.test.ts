@@ -454,11 +454,11 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
     const ledger = mkdtempSync(join(tmpdir(), "sol-t22-"));
     const validator = spawn(
       VALIDATOR,
-      ["--reset", "--ledger", ledger, "--quiet", "--bind-address", "127.0.0.1"],
+      ["--reset", "--ledger", ledger, "--quiet", "--bind-address", "127.0.0.1", "--rpc-port", "8898", "--faucet-port", "9908"],
       { stdio: "ignore" },
     );
     try {
-      const url = "http://127.0.0.1:8899";
+      const url = "http://127.0.0.1:8898";
       const r = rpc(url);
       await waitHealthy(r, ledger, Date.now() + 120_000);
       const payer = await generateKeyPairSigner();
