@@ -45,11 +45,20 @@ const logs = (name: string): string => {
   }
 };
 
+const probePort = (name: string): string | undefined => {
+  try {
+    const portOut = execFileSync("docker", ["port", name, "8899"]).toString();
+    const port = portOut.trim().split(":").at(-1);
+    return port === undefined || port === "" ? undefined : `http://127.0.0.1:${port}`;
+  } catch {
+    return undefined;
+  }
+};
+
 const waitPort = async (name: string, deadline: number): Promise<string> => {
-  const portOut = execFileSync("docker", ["port", name, "8899"]).toString();
-  const port = portOut.trim().split(":").at(-1);
-  if (port !== undefined && port !== "") {
-    return `http://127.0.0.1:${port}`;
+  const url = probePort(name);
+  if (url !== undefined) {
+    return url;
   }
   if (Date.now() > deadline) {
     throw new Error(`validator container never exposed a port\n${logs(name)}`);
