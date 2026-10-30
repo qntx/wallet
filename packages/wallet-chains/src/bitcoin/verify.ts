@@ -134,9 +134,13 @@ export const verifyBitcoinPsbtSignatures = (
           return false;
         }
         const sighashType = input.sighashType ?? (rawSig[rawSig.length - 1] ?? SigHash.ALL);
-        const sig = rawSig.slice(0, -1);
-        const hash = tx.preimageWitnessV0(idx, prevout.script, sighashType, prevout.amount);
-        if (!secp256k1.verify(sig, hash, pub, { format: "der", lowS: true })) {
+        const decoded = OutScript.decode(prevout.script);
+        const scriptCode =
+          decoded !== undefined && decoded.type === "wpkh"
+            ? OutScript.encode({ type: "pkh", hash: decoded.hash })
+            : prevout.script;
+        const hash = tx.preimageWitnessV0(idx, scriptCode, sighashType, prevout.amount);
+        if (!secp256k1.verify(secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(), hash, pub, { prehash: false })) {
           return false;
         }
       }
@@ -211,7 +215,7 @@ export const verifyBitcoinMessage = (
     }
     const tx = new Transaction({ version: 0, lockTime: 0, allowUnknownOutputs: true });
     tx.addInput({
-      txid: bip322ToSpendTxid(scriptPubKey, message),
+      txid: Uint8Array.from([...bip322ToSpendTxid(scriptPubKey, message)].reverse()),
       index: 0,
       sequence: 0,
       witnessUtxo: { script: scriptPubKey, amount: 0n },
@@ -236,11 +240,16 @@ export const verifyBitcoinMessage = (
       return false;
     }
     const sighashType = rawSig[rawSig.length - 1] ?? SigHash.ALL;
+    const decoded = OutScript.decode(scriptPubKey);
+    const scriptCode =
+      decoded !== undefined && decoded.type === "wpkh"
+        ? OutScript.encode({ type: "pkh", hash: decoded.hash })
+        : scriptPubKey;
     return secp256k1.verify(
-      rawSig.slice(0, -1),
-      tx.preimageWitnessV0(0, scriptPubKey, sighashType, 0n),
+      secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(),
+      tx.preimageWitnessV0(0, scriptCode, sighashType, 0n),
       pub,
-      { format: "der", lowS: true },
+      { prehash: false },
     );
   } catch {
     return false;

@@ -297,6 +297,8 @@ describe("bitcoin.message normalize", () => {
     address,
     message: "hi",
     format,
+    change: 0,
+    index: 0,
   });
 
   it("accepts bip322-simple for P2WPKH/P2TR, legacy for P2PKH", () => {
