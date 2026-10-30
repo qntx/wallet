@@ -39,9 +39,20 @@ const rpc = (url: string): SolanaRpc => ({
 
 const logs = (name: string): string => {
   try {
-    const ps = execFileSync("docker", ["ps", "-a", "--format", "{{.Names}} {{.Status}}"]).toString();
+    const ps = execFileSync("docker", [
+      "ps",
+      "-a",
+      "--format",
+      "{{.Names}} {{.Status}}",
+    ]).toString();
     const out = execFileSync("docker", ["logs", name]).toString();
-    const file = execFileSync("docker", ["exec", name, "tail", "-200", "/tmp/ledger/validator.log"]).toString();
+    const file = execFileSync("docker", [
+      "exec",
+      name,
+      "tail",
+      "-200",
+      "/tmp/ledger/validator.log",
+    ]).toString();
     return `${ps}
 --- docker logs ---
 ${out}
