@@ -356,6 +356,9 @@ qntx::harness::probes::Script scriptFor(const std::string& name) {
   if (name == "nitro-ping") {
     return kNitroPing;
   }
+  if (name == "chains") {
+    return kChains;
+  }
   throw std::invalid_argument("unknown probe script: " + name);
 }
 
@@ -363,7 +366,8 @@ qntx::harness::probes::Script scriptFor(const std::string& name) {
 std::string runPosted(
     const qntx::harness::probes::Script& script,
     bool bytecode,
-    qntx::KernelProfile profile = qntx::KernelProfile::standard) {
+    qntx::KernelProfile profile = qntx::KernelProfile::standard,
+    std::chrono::milliseconds deadline = std::chrono::seconds(30)) {
   auto channel = std::make_shared<Channel>();
   auto rt = startKernel(
       profile,
@@ -374,7 +378,7 @@ std::string runPosted(
       bytecode,
       channel);
   try {
-    auto bytes = channel->take(deadlineAfter(std::chrono::seconds(30)));
+    auto bytes = channel->take(deadlineAfter(deadline));
     rt->destroy();
     return toString(bytes);
   } catch (...) {
@@ -725,6 +729,10 @@ std::string execute(const std::string& probe, const std::string& mode) {
   }
   if (probe == "nitro" || probe == "nitro-ping") {
     return runTwoPosts(scriptFor(probe), bytecode, true);
+  }
+  if (probe == "chains") {
+    return runPosted(
+        scriptFor("chains"), bytecode, qntx::KernelProfile::standard, std::chrono::minutes(5));
   }
   throw std::invalid_argument("unknown probe: " + probe);
 }

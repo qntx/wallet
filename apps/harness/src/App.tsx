@@ -28,6 +28,7 @@ const PROBES: ReadonlyArray<readonly [string, string]> = [
   ["crash-promise", "source"],
   ["hardened", "source"],
   ["kernel", "source"],
+  ["chains", "bytecode"],
   ["kernel", "bytecode"],
   ["kernel-hardened", "source"],
   ["kernel-hardened", "bytecode"],
