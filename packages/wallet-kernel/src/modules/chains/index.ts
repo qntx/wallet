@@ -424,7 +424,7 @@ export function createChainsModule(): ChainsModule {
                   signedPsbt: signBitcoinPsbt(
                     request.psbt,
                     inputs,
-                    (n) => ctx.platform.random(n),
+                    () => ctx.platform.random(32),
                   ),
                 };
               }
@@ -467,7 +467,7 @@ export function createChainsModule(): ChainsModule {
               await verifyFactor(ctx.platform, ctx.image, verify, dek);
               return {
                 kind: "bitcoin.message",
-                signature: signBitcoinMessage(request, priv, (n) => ctx.platform.random(n)),
+                signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32)),
               };
             } finally {
               for (const child of children) {

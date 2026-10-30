@@ -857,7 +857,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-5fYX7Jnc.mjs
+	//#region packages/wallet/dist/protocol-DhNA-jbv.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -921,6 +921,7 @@
 	var hexData = str(4e4, /^0x[0-9a-fA-F]*$/);
 	var evmAddress = str(42, /^0x[0-9a-fA-F]{40}$/);
 	var solanaAddress = str(44, /^[1-9A-HJ-NP-Za-km-z]{32,44}$/);
+	var bitcoinAddress = str(90, /^(bc1|tb1|bcrt1|[13mn2])[a-zA-Z0-9]{4,87}$/);
 	var safeInt = int(0, 9007199254740991);
 	var accessList$1 = arr(obj({
 		address: evmAddress,
@@ -977,6 +978,21 @@
 		account: accountRef,
 		message: bytes(1, 65536),
 		format: literal("raw")
+	}), obj({
+		kind: literal("bitcoin.psbt"),
+		network: caip2,
+		account: accountRef,
+		psbt: bytes(1, 131072),
+		sign: arr(int(0, 1024), 1024)
+	}), obj({
+		kind: literal("bitcoin.message"),
+		network: caip2,
+		account: accountRef,
+		address: bitcoinAddress,
+		message: str(1048576),
+		format: union(literal("bip322-simple"), literal("legacy")),
+		change: union(literal(0), literal(1)),
+		index: int(0, 2147483647)
 	}));
 	var signResult = union(obj({
 		kind: literal("evm.transaction"),
@@ -987,6 +1003,12 @@
 	}), obj({
 		kind: union(literal("solana.transaction"), literal("solana.message")),
 		signature: bytes(64, 64)
+	}), obj({
+		kind: literal("bitcoin.psbt"),
+		signedPsbt: bytes(1, 131072)
+	}), obj({
+		kind: literal("bitcoin.message"),
+		signature: str(512)
 	}));
 	var CHAINS_METHODS = {
 		"wallet.accounts": {
@@ -1877,7 +1899,7 @@
 	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
 	* ```
 	*/
-	function bytesToHex$4(bytes) {
+	function bytesToHex$5(bytes) {
 		abytes$4(bytes);
 		if (hasHexBuiltin$2) return bytes.toHex();
 		let hex = "";
@@ -3300,7 +3322,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8, hexFallback, hasHexBuiltin$1, hexBuiltin, hex$1;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$1, hexFallback, hasHexBuiltin$1, hexBuiltin, hex$1;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -3329,7 +3351,7 @@
 			});
 		};
 		base64Fallback = /* @__PURE__ */ freeze(() => chain(radix2(6), alphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"), padding(6)));
-		base64 = /* @__PURE__ */ freeze(() => hasBase64Builtin ? {
+		base64$1 = /* @__PURE__ */ freeze(() => hasBase64Builtin ? {
 			encode(b) {
 				abytes$3(b);
 				return b.toBase64();
@@ -3530,7 +3552,7 @@
 				return res.subarray(0, pos);
 			}
 		}));
-		utf8 = /* @__PURE__ */ freeze(() => {
+		utf8$1 = /* @__PURE__ */ freeze(() => {
 			let _utf8Encoder;
 			let _utf8Decoder;
 			const utf8Builtin = {
@@ -4591,7 +4613,7 @@
 	*/
 	function hexToNumber$1(hex) {
 		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-		return hex === "" ? _0n$18 : BigInt("0x" + hex);
+		return hex === "" ? _0n$17 : BigInt("0x" + hex);
 	}
 	/**
 	* Parses big-endian bytes into bigint.
@@ -4606,7 +4628,7 @@
 	* ```
 	*/
 	function bytesToNumberBE$1(bytes) {
-		return hexToNumber$1(bytesToHex$4(bytes));
+		return hexToNumber$1(bytesToHex$5(bytes));
 	}
 	/**
 	* Parses little-endian bytes into bigint.
@@ -4621,7 +4643,7 @@
 	* ```
 	*/
 	function bytesToNumberLE$1(bytes) {
-		return hexToNumber$1(bytesToHex$4(copyBytes$1(abytes$4(bytes)).reverse()));
+		return hexToNumber$1(bytesToHex$5(copyBytes$1(abytes$4(bytes)).reverse()));
 	}
 	/**
 	* Encodes a bigint into fixed-length big-endian bytes.
@@ -4732,7 +4754,7 @@
 	* ```
 	*/
 	function isPosBig$1(n) {
-		return typeof n === "bigint" && _0n$18 <= n;
+		return typeof n === "bigint" && _0n$17 <= n;
 	}
 	/**
 	* Checks whether a bigint lies inside a half-open range.
@@ -4784,8 +4806,8 @@
 	* ```
 	*/
 	function bitLen$1(n) {
-		if (n < _0n$18) throw new Error("expected non-negative bigint, got " + n);
-		return n === _0n$18 ? 0 : n.toString(2).length;
+		if (n < _0n$17) throw new Error("expected non-negative bigint, got " + n);
+		return n === _0n$17 ? 0 : n.toString(2).length;
 	}
 	/**
 	* Minimal HMAC-DRBG from NIST 800-90 for RFC6979 sigs.
@@ -4890,17 +4912,17 @@
 		iter(fields, false);
 		iter(optFields, true);
 	}
-	var abytes$2, anumber$2, bytesToHex$3, concatBytes$4, hexToBytes$3, isBytes$4, randomBytes$3, _0n$18, _1n$16, atitle$2, bitMask$1, notImplemented;
+	var abytes$2, anumber$2, bytesToHex$3, concatBytes$4, hexToBytes$3, isBytes$4, randomBytes$3, _0n$17, _1n$16, atitle$2, bitMask$1, notImplemented;
 	var init_utils$1 = __esmMin((() => {
 		init_utils$2();
 		abytes$2 = (value, length, title) => abytes$4(value, length, title);
 		anumber$2 = anumber$4;
-		bytesToHex$3 = bytesToHex$4;
+		bytesToHex$3 = bytesToHex$5;
 		concatBytes$4 = (...arrays) => concatBytes$5(...arrays);
 		hexToBytes$3 = (hex) => hexToBytes$4(hex);
 		isBytes$4 = isBytes$6;
 		randomBytes$3 = (bytesLength) => randomBytes$4(bytesLength);
-		_0n$18 = /* @__PURE__ */ BigInt(0);
+		_0n$17 = /* @__PURE__ */ BigInt(0);
 		_1n$16 = /* @__PURE__ */ BigInt(1);
 		atitle$2 = (title) => title ? `"${title}" ` : "";
 		bitMask$1 = (n) => {
@@ -4927,9 +4949,9 @@
 	* ```
 	*/
 	function mod$1(a, b) {
-		if (b <= _0n$17) throw new Error("mod: expected positive modulus, got " + b);
+		if (b <= _0n$16) throw new Error("mod: expected positive modulus, got " + b);
 		const result = a % b;
-		return result >= _0n$17 ? result : b + result;
+		return result >= _0n$16 ? result : b + result;
 	}
 	/**
 	* Efficiently raise num to a power with modular reduction.
@@ -4951,14 +4973,14 @@
 	function pow$1(num, power, modulo) {
 		if (modulo <= _1n$15) throw new Error("pow: expected modulus > 1, got " + modulo);
 		if (typeof power !== "bigint") throw new TypeError("invalid exponent: expected bigint, got " + typeof power);
-		if (power < _0n$17) throw new Error("invalid exponent, negatives unsupported");
-		if (power === _0n$17) return _1n$15;
+		if (power < _0n$16) throw new Error("invalid exponent, negatives unsupported");
+		if (power === _0n$16) return _1n$15;
 		if (power === _1n$15) return num;
 		let d = num % modulo;
-		if (d < _0n$17) d += modulo;
+		if (d < _0n$16) d += modulo;
 		if (power < POW_WINDOWED_MIN$1) {
 			let p = _1n$15;
-			while (power > _0n$17) {
+			while (power > _0n$16) {
 				if (power & _1n$15) p = p * d % modulo;
 				d = d * d % modulo;
 				power >>= _1n$15;
@@ -4966,7 +4988,7 @@
 			return p;
 		}
 		const digits = [];
-		while (power > _0n$17) {
+		while (power > _0n$16) {
 			digits.push(Number(power & _15n$1));
 			power >>= _4n$6;
 		}
@@ -5003,9 +5025,9 @@
 	*/
 	function pow2$1(x, power, modulo) {
 		if (modulo <= _1n$15) throw new Error("pow2: expected modulus > 1, got " + modulo);
-		if (power < _0n$17) throw new Error("pow2: expected non-negative exponent, got " + power);
+		if (power < _0n$16) throw new Error("pow2: expected non-negative exponent, got " + power);
 		let res = x;
-		while (power-- > _0n$17) {
+		while (power-- > _0n$16) {
 			res *= res;
 			res %= modulo;
 		}
@@ -5026,12 +5048,12 @@
 	* ```
 	*/
 	function invert$1(number, modulo) {
-		if (number === _0n$17) throw new Error("invert: expected non-zero number");
+		if (number === _0n$16) throw new Error("invert: expected non-zero number");
 		if (modulo <= _1n$15) throw new Error("invert: expected modulus > 1, got " + modulo);
 		let a = mod$1(number, modulo);
 		let b = modulo;
-		let x = _0n$17, u = _1n$15;
-		while (a !== _0n$17) {
+		let x = _0n$16, u = _1n$15;
+		while (a !== _0n$16) {
 			const q = b / a;
 			const r = b - a * q;
 			const m = x - u * q;
@@ -5068,7 +5090,7 @@
 	function invertCt$1(a, prime) {
 		if (prime <= _1n$15) throw new Error("invertCt: expected prime modulus > 1, got " + prime);
 		const an = mod$1(a, prime);
-		if (an === _0n$17) throw new Error("invertCt: expected non-zero number");
+		if (an === _0n$16) throw new Error("invertCt: expected non-zero number");
 		const inverse = pow$1(an, prime - _2n$14, prime);
 		if (mod$1(an * inverse, prime) !== _1n$15) throw new Error("invertCt: does not exist");
 		return inverse;
@@ -5078,7 +5100,7 @@
 		if (!F.eql(F.sqr(root), n)) throw new Error("Cannot find square root");
 	}
 	function aoddModulus$1(order, fnName) {
-		if ((order & _1n$15) === _0n$17) throw new Error(fnName + ": expected odd modulus, got " + order);
+		if ((order & _1n$15) === _0n$16) throw new Error(fnName + ": expected odd modulus, got " + order);
 	}
 	function sqrt3mod4$1(Fp, n) {
 		const F = Fp;
@@ -5144,7 +5166,7 @@
 		aoddModulus$1(P, "tonelliShanks");
 		let Q = P - _1n$15;
 		let S = 0;
-		while (Q % _2n$14 === _0n$17) {
+		while (Q % _2n$14 === _0n$16) {
 			Q /= _2n$14;
 			S++;
 		}
@@ -5303,7 +5325,7 @@
 	*/
 	function nLength$1(n, nBitLength) {
 		if (nBitLength !== void 0) anumber$2(nBitLength);
-		if (n <= _0n$17) throw new Error("invalid n length: expected positive n, got " + n);
+		if (n <= _0n$16) throw new Error("invalid n length: expected positive n, got " + n);
 		if (nBitLength !== void 0 && nBitLength < 1) throw new Error("invalid n length: expected positive bit length, got " + nBitLength);
 		const bits = bitLen$1(n);
 		if (nBitLength !== void 0 && nBitLength < bits) throw new Error(`invalid n length: expected nBitLength (${nBitLength}) >= bitLen(n) (${bits})`);
@@ -5415,11 +5437,11 @@
 		const reduced = mod$1(isLE ? bytesToNumberLE$1(key) : bytesToNumberBE$1(key), fieldOrder - _1n$15) + _1n$15;
 		return isLE ? numberToBytesLE$1(reduced, fieldLen) : numberToBytesBE$1(reduced, fieldLen);
 	}
-	var _0n$17, _1n$15, _2n$14, _3n$4, _4n$6, _5n$3, _7n$3, _8n$7, _9n$1, _15n$1, _16n$1, POW_WINDOWED_MIN$1, isNegativeLE$1, FIELD_FIELDS$1, FIELD_SQRT$1, _Field$1;
+	var _0n$16, _1n$15, _2n$14, _3n$4, _4n$6, _5n$3, _7n$3, _8n$7, _9n$1, _15n$1, _16n$1, POW_WINDOWED_MIN$1, isNegativeLE$1, FIELD_FIELDS$1, FIELD_SQRT$1, _Field$1;
 	var init_modular = __esmMin((() => {
 		init_utils$1();
 		init_defineProperty();
-		_0n$17 = /* @__PURE__ */ BigInt(0);
+		_0n$16 = /* @__PURE__ */ BigInt(0);
 		_1n$15 = /* @__PURE__ */ BigInt(1);
 		_2n$14 = /* @__PURE__ */ BigInt(2);
 		_3n$4 = /* @__PURE__ */ BigInt(3);
@@ -5458,7 +5480,7 @@
 				_defineProperty(this, "BITS", void 0);
 				_defineProperty(this, "BYTES", void 0);
 				_defineProperty(this, "isLE", void 0);
-				_defineProperty(this, "ZERO", _0n$17);
+				_defineProperty(this, "ZERO", _0n$16);
 				_defineProperty(this, "ONE", _1n$15);
 				_defineProperty(this, "_lengths", void 0);
 				_defineProperty(this, "_mod", void 0);
@@ -5487,10 +5509,10 @@
 			}
 			isValid(num) {
 				if (typeof num !== "bigint") throw new TypeError("invalid field element: expected bigint, got " + typeof num);
-				return _0n$17 <= num && num < this.ORDER;
+				return _0n$16 <= num && num < this.ORDER;
 			}
 			is0(num) {
-				return num === _0n$17;
+				return num === _0n$16;
 			}
 			isValidNot0(num) {
 				return !this.is0(num) && this.isValid(num);
@@ -5697,7 +5719,7 @@
 		const half = size / 2;
 		const mask = BigInt(size - 1);
 		const d = [];
-		while (n > _0n$16) {
+		while (n > _0n$15) {
 			let w = 0;
 			if (n & _1n$14) {
 				w = Number(n & mask);
@@ -5729,7 +5751,7 @@
 			}
 			d.push(v);
 		}
-		if (n !== _0n$16) throw new Error("invalid wnaf");
+		if (n !== _0n$15) throw new Error("invalid wnaf");
 		return d;
 	}
 	/**
@@ -5836,7 +5858,7 @@
 			"h"
 		]) {
 			const val = CURVE[p];
-			if (!(isPosBig$1(val) && val !== _0n$16)) throw new Error(`CURVE.${p} must be positive bigint`);
+			if (!(isPosBig$1(val) && val !== _0n$15)) throw new Error(`CURVE.${p} must be positive bigint`);
 		}
 		const Fp = createField$1(CURVE.p, curveOpts.Fp, FpFnLE);
 		const Fn = createField$1(CURVE.n, curveOpts.Fn, FpFnLE);
@@ -5877,13 +5899,13 @@
 			};
 		};
 	}
-	var _0n$16, _1n$14, _4n$5, BLIND_BYTES$1, BLIND_BITS$1, FW_WINDOW$1, TABLE_BYTES_MAX$1, pointWindowSizes$1, ScalarMultiplier$1;
+	var _0n$15, _1n$14, _4n$5, BLIND_BYTES$1, BLIND_BITS$1, FW_WINDOW$1, TABLE_BYTES_MAX$1, pointWindowSizes$1, ScalarMultiplier$1;
 	var init_curve = __esmMin((() => {
 		init_utils$1();
 		init_modular();
 		init_defineProperty();
 		init_objectSpread2();
-		_0n$16 = /* @__PURE__ */ BigInt(0);
+		_0n$15 = /* @__PURE__ */ BigInt(0);
 		_1n$14 = /* @__PURE__ */ BigInt(1);
 		_4n$5 = /* @__PURE__ */ BigInt(4);
 		BLIND_BYTES$1 = 16;
@@ -6080,7 +6102,7 @@
 	init_modular();
 	init_defineProperty();
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$15 = /* @__PURE__ */ BigInt(0);
+	var _0n$14 = /* @__PURE__ */ BigInt(0);
 	var _1n$13 = /* @__PURE__ */ BigInt(1);
 	var _2n$13 = /* @__PURE__ */ BigInt(2);
 	var _4n$4 = /* @__PURE__ */ BigInt(4);
@@ -6142,7 +6164,7 @@
 			} catch (e) {
 				return {
 					isValid: false,
-					value: _0n$15
+					value: _0n$14
 				};
 			}
 		} : opts.uvRatio;
@@ -6153,7 +6175,7 @@
 		* Coordinates >= Fp.ORDER are allowed for zip215.
 		*/
 		function acoord(title, n, banZero = false) {
-			const min = banZero ? _1n$13 : _0n$15;
+			const min = banZero ? _1n$13 : _0n$14;
 			aInRange$1("coordinate " + title, n, min, MASK);
 			return n;
 		}
@@ -6196,7 +6218,7 @@
 				const lastByte = bytes[len - 1];
 				normed[len - 1] = lastByte & -129;
 				const y = bytesToNumberLE$1(normed);
-				aInRange$1("point.y", y, _0n$15, zip215 ? MASK : Fp.ORDER);
+				aInRange$1("point.y", y, _0n$14, zip215 ? MASK : Fp.ORDER);
 				const y2 = Fp.sqr(y);
 				const u = Fp.sub(y2, Fp.ONE);
 				const v = Fp.sub(Fp.mulN(d, y2), a);
@@ -6305,7 +6327,7 @@
 			}
 			multiplyUnsafe(scalar) {
 				if (!Fn.isValid(scalar)) throw new RangeError("invalid scalar: expected 0 <= sc < curve.n");
-				if (scalar === _0n$15) return Point.ZERO;
+				if (scalar === _0n$14) return Point.ZERO;
 				if (this.is0() || scalar === _1n$13) return this;
 				return wnaf.mulUnsafe(this, scalar, normalize);
 			}
@@ -6648,7 +6670,7 @@
 	init_modular();
 	init_objectSpread2();
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$14 = /* @__PURE__ */ BigInt(0);
+	var _0n$13 = /* @__PURE__ */ BigInt(0);
 	var _1n$12 = /* @__PURE__ */ BigInt(1);
 	var _2n$12 = /* @__PURE__ */ BigInt(2);
 	/**
@@ -6798,13 +6820,13 @@
 		* cofactor with those same doublings over 200k random u: no sixth value exists.
 		*/
 		const lowOrderU = new Set(is25519 ? [
-			_0n$14,
+			_0n$13,
 			_1n$12,
 			P - _1n$12,
 			BigInt("325606250916557431795983626356110631294008115727848805560023387167927233504"),
 			BigInt("39382357235489614581723060781553021112529911719440698176882885853963445705823")
 		] : [
-			_0n$14,
+			_0n$13,
 			_1n$12,
 			P - _1n$12
 		]);
@@ -6812,7 +6834,7 @@
 			const pointU = decodeU(u);
 			if (lowOrderU.has(pointU)) throw new Error("invalid private or public key received");
 			const pu = montgomeryLadder(pointU, decodeScalar(scalar));
-			if (pu === _0n$14) throw new Error("invalid private or public key received");
+			if (pu === _0n$13) throw new Error("invalid private or public key received");
 			return encodeU(pu);
 		}
 		function scalarMultBase(scalar) {
@@ -6820,7 +6842,7 @@
 			const k = decodeScalar(scalar);
 			aInRange$1("scalar", k, minScalar, maxScalar);
 			const pu = modP(mulBaseHook(k));
-			if (pu === _0n$14) throw new Error("invalid private or public key received");
+			if (pu === _0n$13) throw new Error("invalid private or public key received");
 			return encodeU(pu);
 		}
 		const getPublicKey = scalarMultBase;
@@ -6832,16 +6854,16 @@
 		* @returns resulting Montgomery u coordinate for the selected curve
 		*/
 		function montgomeryLadder(u, scalar) {
-			aInRange$1("u", u, _0n$14, P);
+			aInRange$1("u", u, _0n$13, P);
 			aInRange$1("scalar", scalar, minScalar, maxScalar);
 			const k = scalar;
 			const x_1 = u;
 			let x_2 = _1n$12;
-			let z_2 = _0n$14;
+			let z_2 = _0n$13;
 			let x_3 = u;
 			let z_3 = _1n$12;
 			const kx = k ^ k >> _1n$12;
-			for (let t = BigInt(montgomeryBits - 1); t >= _0n$14; t--) {
+			for (let t = BigInt(montgomeryBits - 1); t >= _0n$13; t--) {
 				const mask = cmask(P, kx >> t);
 				({x_2, x_3} = swap(mask, x_2, x_3));
 				({x_2: z_2, x_3: z_3} = swap(mask, z_2, z_3));
@@ -6906,7 +6928,7 @@
 	init_utils$1();
 	init_defineProperty();
 	var _RistrettoPoint2;
-	var _0n$13 = /* @__PURE__ */ BigInt(0);
+	var _0n$12 = /* @__PURE__ */ BigInt(0);
 	var _1n$11 = /* @__PURE__ */ BigInt(1);
 	var _2n$11 = /* @__PURE__ */ BigInt(2);
 	var _3n$3 = /* @__PURE__ */ BigInt(3);
@@ -7029,7 +7051,7 @@
 			adjustScalarBytes: adjustScalarBytes$1,
 			scalarMultBase: (k) => {
 				const kn = mod$1(k, ed25519_Point$1.Fn.ORDER);
-				if (kn === _0n$13) return _0n$13;
+				if (kn === _0n$12) return _0n$12;
 				const p = ed25519_Point$1.BASE.multiply(kn);
 				return mod$1((p.Z + p.Y) * powPminus2(mod$1(p.Z - p.Y, P)), P);
 			}
@@ -7636,7 +7658,7 @@
 	}
 	var PASSWORD_FACTOR_ITERATIONS = 6e5;
 	function factorId(random) {
-		return bytesToHex$4(random(16));
+		return bytesToHex$5(random(16));
 	}
 	/**
 	* The single "derive KEK for a new factor" path, shared by `makeFactor` and mnemonic-draft pending
@@ -7813,7 +7835,7 @@
 	async function rotateVault(platform, image, dek, removed, added) {
 		const nextDek = Secret.take(platform.random(32));
 		try {
-			const keyId = bytesToHex$4(platform.random(16));
+			const keyId = bytesToHex$5(platform.random(16));
 			const ops = [{
 				op: "set-key-id",
 				keyId
@@ -7903,7 +7925,7 @@
 	* not empty. The caller keeps `keyId` for the session it opens afterwards.
 	*/
 	function establishOps(platform, factor, records) {
-		const keyId = bytesToHex$4(platform.random(16));
+		const keyId = bytesToHex$5(platform.random(16));
 		return {
 			keyId,
 			ops: [
@@ -7955,10 +7977,10 @@
 	}
 	//#endregion
 	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/der.js
-	var _0n$12, DERErr$1, _DER$1, DER$1;
+	var _0n$11, DERErr$1, _DER$1, DER$1;
 	var init_der = __esmMin((() => {
 		init_utils$1();
-		_0n$12 = /* @__PURE__ */ BigInt(0);
+		_0n$11 = /* @__PURE__ */ BigInt(0);
 		DERErr$1 = class extends Error {
 			constructor(m = "") {
 				/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
@@ -8013,7 +8035,7 @@
 				encode(num) {
 					const { Err: E } = _DER$1;
 					abignumber$1(num);
-					if (num < _0n$12) throw new E("integer: negative integers are not allowed");
+					if (num < _0n$11) throw new E("integer: negative integers are not allowed");
 					let hex = numberToHexUnpadded$1(num);
 					if (Number.parseInt(hex[0], 16) & 8) hex = "00" + hex;
 					if (hex.length & 1) throw new E("unexpected DER parsing assertion: unpadded hex");
@@ -8066,18 +8088,18 @@
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/** Splits scalar for GLV endomorphism. */
 	function _splitEndoScalar$1(k, basis, n) {
-		aInRange$1("scalar", k, _0n$11, n);
+		aInRange$1("scalar", k, _0n$10, n);
 		const [[a1, b1], [a2, b2]] = basis;
 		const c1 = divNearest$1(b2 * k, n);
 		const c2 = divNearest$1(-b1 * k, n);
 		let k1 = k - c1 * a1 - c2 * a2;
 		let k2 = -c1 * b1 - c2 * b2;
-		const k1neg = k1 < _0n$11;
-		const k2neg = k2 < _0n$11;
+		const k1neg = k1 < _0n$10;
+		const k2neg = k2 < _0n$10;
 		if (k1neg) k1 = -k1;
 		if (k2neg) k2 = -k2;
 		const MAX_NUM = bitMask$1(Math.ceil(bitLen$1(n) / 2)) + _1n$10;
-		if (k1 < _0n$11 || k1 >= MAX_NUM || k2 < _0n$11 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
+		if (k1 < _0n$10 || k1 >= MAX_NUM || k2 < _0n$10 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
 		return {
 			k1neg,
 			k1,
@@ -8452,7 +8474,7 @@
 				const p = this;
 				const sc = scalar;
 				if (!Fn.isValid(sc)) throw new RangeError("invalid scalar: out of range");
-				if (sc === _0n$11 || p.is0()) return Point.ZERO;
+				if (sc === _0n$10 || p.is0()) return Point.ZERO;
 				if (sc === _1n$10) return p;
 				if (wnaf.hasWindowSize(this)) return wnaf.mulUnsafe(p, sc, normalize);
 				const points = [];
@@ -8842,7 +8864,7 @@
 		const ORDER_MASK = bitMask$1(fnBits);
 		/** Converts to bytes. Checks if num in `[0..ORDER_MASK-1]` e.g.: `[0..2^256-1]`. */
 		function int2octets(num) {
-			aInRange$1("num < 2^" + fnBits, num, _0n$11, ORDER_MASK);
+			aInRange$1("num < 2^" + fnBits, num, _0n$10, ORDER_MASK);
 			return Fn.toBytes(num);
 		}
 		function validateMsgAndHash(message, prehash) {
@@ -8875,7 +8897,7 @@
 				if (!Fn.isValidNot0(k)) return;
 				const q = Point.BASE.multiply(k).toAffine();
 				const r = Fn.create(q.x);
-				if (r === _0n$11) return;
+				if (r === _0n$10) return;
 				let s;
 				if (csprng !== void 0) {
 					const b = bytesToNumberBE$1(mapHashToField$1(csprng(blindLength), CURVE_ORDER));
@@ -8887,7 +8909,7 @@
 					const ik = invertCt$1(k, CURVE_ORDER);
 					s = Fn.create(ik * Fn.create(m + r * d));
 				}
-				if (s === _0n$11) return;
+				if (s === _0n$10) return;
 				let recovery = getRecoveryBit(q.x, q.y, r);
 				let normS = s;
 				if (lowS && isBiggerThanHalfOrder(s)) {
@@ -8979,7 +9001,7 @@
 			hash: hash_
 		});
 	}
-	var divNearest$1, _0n$11, _1n$10, _2n$10, _3n$2, _4n$3;
+	var divNearest$1, _0n$10, _1n$10, _2n$10, _3n$2, _4n$3;
 	var init_weierstrass = __esmMin((() => {
 		init_hmac();
 		init_utils$2();
@@ -8989,7 +9011,7 @@
 		init_modular();
 		init_defineProperty();
 		divNearest$1 = (num, den) => (num + (num >= 0 ? den : -den) / _2n$10) / den;
-		_0n$11 = /* @__PURE__ */ BigInt(0);
+		_0n$10 = /* @__PURE__ */ BigInt(0);
 		_1n$10 = /* @__PURE__ */ BigInt(1);
 		_2n$10 = /* @__PURE__ */ BigInt(2);
 		_3n$2 = /* @__PURE__ */ BigInt(3);
@@ -9026,7 +9048,7 @@
 		return sha256$2(concatBytes$4(tagP, ...messages));
 	}
 	function schnorrGetExtPubKey(priv) {
-		const { Fn, BASE } = Pointk1;
+		const { Fn, BASE } = Pointk1$1;
 		const d_ = Fn.fromBytes(abytes$2(priv, 32, "secretKey"));
 		const affine = BASE.multiply(d_).toAffine();
 		return {
@@ -9045,7 +9067,7 @@
 		const c = Fp.add(Fp.mulN(xx, x), BigInt(7));
 		let y = Fp.sqrt(c);
 		if (!hasEven$1(y)) y = Fp.neg(y);
-		const p = Pointk1.fromAffine({
+		const p = Pointk1$1.fromAffine({
 			x,
 			y
 		});
@@ -9054,7 +9076,7 @@
 	}
 	/** Create tagged hash, convert it to bigint, reduce modulo-n. */
 	function challenge(...args) {
-		return Pointk1.Fn.create(num(taggedHash("BIP0340/challenge", ...args)));
+		return Pointk1$1.Fn.create(num(taggedHash("BIP0340/challenge", ...args)));
 	}
 	/** Schnorr public key is just `x` coordinate of Point as per BIP340. */
 	function schnorrGetPublicKey(secretKey) {
@@ -9067,13 +9089,13 @@
 	* deterministic signing against side-channel and fault-injection attacks.
 	*/
 	function schnorrSign(message, secretKey, auxRand = randomBytes$4(32)) {
-		const { Fn, BASE } = Pointk1;
+		const { Fn, BASE } = Pointk1$1;
 		const m = copyBytes$1(abytes$2(message, void 0, "message"));
 		const { bytes: px, scalar: d } = schnorrGetExtPubKey(secretKey);
 		const a = abytes$2(auxRand, 32, "auxRand");
 		const rand = taggedHash("BIP0340/nonce", Fn.toBytes(d ^ num(taggedHash("BIP0340/aux", a))), px, m);
 		const k_ = Fn.create(num(rand));
-		if (k_ === _0n$10) throw new Error("sign failed: k is zero");
+		if (k_ === _0n$9) throw new Error("sign failed: k is zero");
 		const affine = BASE.multiply(k_).toAffine();
 		const k = hasEven$1(affine.y) ? k_ : Fn.neg(k_);
 		const rx = affineXToBytes(affine);
@@ -9089,7 +9111,7 @@
 	* Will swallow errors & return false except for initial type validation of arguments.
 	*/
 	function schnorrVerify(signature, message, publicKey) {
-		const { Fp, Fn, BASE } = Pointk1;
+		const { Fp, Fn, BASE } = Pointk1$1;
 		const sig = abytes$2(signature, 64, "signature");
 		const m = abytes$2(message, void 0, "message");
 		const pub = abytes$2(publicKey, 32, "publicKey");
@@ -9109,7 +9131,7 @@
 			return false;
 		}
 	}
-	var secp256k1_CURVE$1, secp256k1_ENDO$1, _0n$10, _2n$9, Fpk1$1, Pointk1, secp256k1$1, TAGGED_HASH_PREFIXES, pointToBytes, affineXToBytes, hasEven$1, num, schnorr;
+	var secp256k1_CURVE$1, secp256k1_ENDO$1, _0n$9, _2n$9, Fpk1$1, Pointk1$1, secp256k1$1, TAGGED_HASH_PREFIXES, pointToBytes, affineXToBytes, hasEven$1, num, schnorr;
 	var init_secp256k1 = __esmMin((() => {
 		init_sha2();
 		init_utils$2();
@@ -9130,14 +9152,14 @@
 			beta: BigInt("0x7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee"),
 			basises: [[BigInt("0x3086d221a7d46bcde86c90e49284eb15"), -BigInt("0xe4437ed6010e88286f547fa90abfe4c3")], [BigInt("0x114ca50f7a8e2f3f657c1108d9d44cfd8"), BigInt("0x3086d221a7d46bcde86c90e49284eb15")]]
 		};
-		_0n$10 = /* @__PURE__ */ BigInt(0);
+		_0n$9 = /* @__PURE__ */ BigInt(0);
 		_2n$9 = /* @__PURE__ */ BigInt(2);
 		Fpk1$1 = /* @__PURE__ */ Field$1(secp256k1_CURVE$1.p, { sqrt: sqrtMod$1 });
-		Pointk1 = /* @__PURE__ */ weierstrass$1(secp256k1_CURVE$1, {
+		Pointk1$1 = /* @__PURE__ */ weierstrass$1(secp256k1_CURVE$1, {
 			Fp: Fpk1$1,
 			endo: secp256k1_ENDO$1
 		});
-		secp256k1$1 = /* @__PURE__ */ ecdsa$1(Pointk1, sha256$2);
+		secp256k1$1 = /* @__PURE__ */ ecdsa$1(Pointk1$1, sha256$2);
 		TAGGED_HASH_PREFIXES = Object.create(null);
 		pointToBytes = (point) => point.toBytes(true).slice(1);
 		affineXToBytes = ({ x }) => Fpk1$1.toBytes(x);
@@ -9155,7 +9177,7 @@
 				getPublicKey: schnorrGetPublicKey,
 				sign: schnorrSign,
 				verify: schnorrVerify,
-				Point: Pointk1,
+				Point: Pointk1$1,
 				utils: Object.freeze({
 					randomSecretKey,
 					taggedHash,
@@ -9634,7 +9656,7 @@
 	function walletIdOf(master) {
 		const { publicKey } = master;
 		if (publicKey === null || publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
-		return bytesToHex$4(sha256$2(concatBytes$5(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
+		return bytesToHex$5(sha256$2(concatBytes$5(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
 	}
 	//#endregion
 	//#region packages/wallet-kernel/src/seed/entropy.ts
@@ -12256,7 +12278,7 @@ zoo`.split("\n"));
 			var _wordList$position;
 			return utf8ToBytes$1((_wordList$position = wordList[position]) !== null && _wordList$position !== void 0 ? _wordList$position : "");
 		});
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		ctx.session.putDraft(id, {
 			entropy: Secret.take(entropy),
 			words: params.words,
@@ -12275,7 +12297,7 @@ zoo`.split("\n"));
 	* public key derived from the held KEK, and the DEK wraps to that key.
 	*/
 	function storedFactorForPending(ctx, pending, dek) {
-		const id = bytesToHex$4(ctx.platform.random(16));
+		const id = bytesToHex$5(ctx.platform.random(16));
 		const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
 		const header = factorHeader(pending, publicKey, ctx.platform.now());
 		const sealed = wrapDek(dek, publicKey, {
@@ -12418,7 +12440,7 @@ zoo`.split("\n"));
 	];
 	var BACKUP_KEY_KIND = "backup-key";
 	var BACKUP_KEY_ID = "default";
-	var b64 = {
+	var b64$1 = {
 		enc: (b) => base64urlnopad.encode(b),
 		dec: (s) => {
 			try {
@@ -12429,7 +12451,7 @@ zoo`.split("\n"));
 		}
 	};
 	function payloadContext(header) {
-		return `qntx-wallet/backup/v1/payload/${bytesToHex$4(sha256$2(utf8ToBytes$1(header)))}`;
+		return `qntx-wallet/backup/v1/payload/${bytesToHex$5(sha256$2(utf8ToBytes$1(header)))}`;
 	}
 	function factorContextOf(kind) {
 		return `qntx-wallet/backup/v1/factor/${kind}`;
@@ -12584,22 +12606,22 @@ zoo`.split("\n"));
 			}
 			if (factor.kind === "passkey") return {
 				kind: "passkey",
-				credentialId: b64.enc(factor.credentialId),
-				sealedBek: b64.enc(sealedBek)
+				credentialId: b64$1.enc(factor.credentialId),
+				sealedBek: b64$1.enc(sealedBek)
 			};
 			const salt = salts[index];
 			if (salt === void 0) throw new KernelError("integrity", "backup: missing password salt");
 			return {
 				kind: "password",
 				iterations: PASSWORD_ITERATIONS,
-				salt: b64.enc(salt),
-				sealedBek: b64.enc(sealedBek)
+				salt: b64$1.enc(salt),
+				sealedBek: b64$1.enc(sealedBek)
 			};
 		});
 	}
 	/** The backup record's public id: HKDF over the BEK — a verifier can never reach the BEK from it. */
 	function backupKeyIdOf(bek) {
-		return bytesToHex$4(hkdf(sha256$2, bek, /* @__PURE__ */ new Uint8Array(0), utf8ToBytes$1("qntx-wallet/backup/v1/id"), 16));
+		return bytesToHex$5(hkdf(sha256$2, bek, /* @__PURE__ */ new Uint8Array(0), utf8ToBytes$1("qntx-wallet/backup/v1/id"), 16));
 	}
 	function backupKeyRecord(ctx, dek, bek, factors) {
 		const header = encodeHeader({
@@ -12651,7 +12673,7 @@ zoo`.split("\n"));
 					createdAt: ctx.platform.now(),
 					header: contents.header,
 					factors: keyHeader.factors,
-					payload: b64.enc(sealedPayload)
+					payload: b64$1.enc(sealedPayload)
 				};
 				return { envelope: JSON.stringify(envelope) };
 			} finally {
@@ -12677,11 +12699,11 @@ zoo`.split("\n"));
 	/** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 	async function bekFromFactor(platform, envelope, backupFactor) {
 		if (backupFactor.kind === "passkey") {
-			const entry = envelope.factors.find((f) => f.kind === "passkey" && f.credentialId === b64.enc(backupFactor.credentialId));
+			const entry = envelope.factors.find((f) => f.kind === "passkey" && f.credentialId === b64$1.enc(backupFactor.credentialId));
 			if (entry === void 0) throw new KernelError("not-found", "backup: no factor for this credential");
 			const kek = hkdf(sha256$2, backupFactor.prfBackup, backupFactor.credentialId, utf8ToBytes$1("qntx-wallet/kek/backup/v1"), 32);
 			try {
-				return open(kek, b64.dec(entry.sealedBek), factorContextOf("passkey"), "");
+				return open(kek, b64$1.dec(entry.sealedBek), factorContextOf("passkey"), "");
 			} catch (_unused4) {
 				throw new KernelError("wrong-passkey", "backup: factor does not unwrap");
 			} finally {
@@ -12690,9 +12712,9 @@ zoo`.split("\n"));
 		}
 		const entry = envelope.factors.find((f) => f.kind === "password");
 		if (entry === void 0) throw new KernelError("not-found", "backup: no password factor");
-		const kek = await passwordKek(backupFactor.password, b64.dec(entry.salt), platform.pbkdf2);
+		const kek = await passwordKek(backupFactor.password, b64$1.dec(entry.salt), platform.pbkdf2);
 		try {
-			return open(kek, b64.dec(entry.sealedBek), factorContextOf("password"), "");
+			return open(kek, b64$1.dec(entry.sealedBek), factorContextOf("password"), "");
 		} catch (_unused5) {
 			throw new KernelError("wrong-password", "backup: factor does not unwrap");
 		} finally {
@@ -12709,7 +12731,7 @@ zoo`.split("\n"));
 		try {
 			let plaintext;
 			try {
-				plaintext = open(bek, b64.dec(envelope.payload), payloadContext(envelope.header), "");
+				plaintext = open(bek, b64$1.dec(envelope.payload), payloadContext(envelope.header), "");
 			} catch (_unused6) {
 				throw new KernelError("integrity", "backup: payload authentication failed");
 			}
@@ -12927,12 +12949,12 @@ zoo`.split("\n"));
 	/** Internal function for checking bit bounds of bigint in signed/unsinged form */
 	function checkBounds(value, bits, signed) {
 		if (signed) {
-			if (bits <= _0n$9) throw new Error(`checkBounds: signed bits must be positive, got ${bits}`);
-			const signBit = _2n$8 ** (bits - _1n$9);
+			if (bits <= _0n$8) throw new Error(`checkBounds: signed bits must be positive, got ${bits}`);
+			const signBit = _2n$8 ** (bits - _1n$8);
 			if (value < -signBit || value >= signBit) throw new Error(`value out of signed bounds. Expected ${-signBit} <= ${value} < ${signBit}`);
 		} else {
 			const max = _2n$8 ** bits;
-			if (_0n$9 > value || value >= max) throw new Error(`value out of unsigned bounds. Expected 0 <= ${value} < ${max}`);
+			if (_0n$8 > value || value >= max) throw new Error(`value out of unsigned bounds. Expected 0 <= ${value} < ${max}`);
 		}
 	}
 	function _wrap(inner) {
@@ -13100,7 +13122,7 @@ zoo`.split("\n"));
 		return {
 			encode: (from) => {
 				if (typeof from !== "bigint") throw new Error(`expected bigint, got ${typeof from}`);
-				let s = (from < _0n$9 ? -from : from).toString(10);
+				let s = (from < _0n$8 ? -from : from).toString(10);
 				let sep = s.length - precision;
 				if (sep < 0) {
 					s = s.padStart(s.length - sep, "0");
@@ -13111,7 +13133,7 @@ zoo`.split("\n"));
 				let int = s.slice(0, sep);
 				let frac = s.slice(sep, i + 1);
 				if (!int) int = "0";
-				if (from < _0n$9) int = "-" + int;
+				if (from < _0n$8) int = "-" + int;
 				if (!frac) return int;
 				return `${int}.${frac}`;
 			},
@@ -13131,7 +13153,7 @@ zoo`.split("\n"));
 				if (!round && fracS.length > precision) throw new Error(`fractional part cannot be represented with this precision (num=${to}, prec=${precision})`);
 				const fracLen = Math.min(fracS.length, precision);
 				const value = int + BigInt(fracS.slice(0, fracLen)) * _10n ** BigInt(precision - fracLen);
-				if (neg && value === _0n$9) throw new Error(`negative zero is not allowed`);
+				if (neg && value === _0n$8) throw new Error(`negative zero is not allowed`);
 				return neg ? -value : value;
 			}
 		};
@@ -13505,7 +13527,7 @@ zoo`.split("\n"));
 			}
 		});
 	}
-	var EMPTY$1, NULL, restrictedKeys, validateFieldName, findBytes, createView$1, _0n$9, _1n$9, _2n$8, _8n$4, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
+	var EMPTY$1, NULL, restrictedKeys, validateFieldName, findBytes, createView$1, _0n$8, _1n$8, _2n$8, _8n$4, _10n, _255n, hasOwn, utils, lengthCoder, Bitset, Path, _Reader, _Writer, swapEndianness, wrap, isBaseCoder, numberBigint, reverse, coders, bigint, U256LE, U64LE, I64LE, view, intView, U32LE, U32BE, I32LE, U16LE, U8, createBytes, string, flag;
 	var init_micro_packed = __esmMin((() => {
 		init_base();
 		init_defineProperty();
@@ -13524,8 +13546,8 @@ zoo`.split("\n"));
 		};
 		findBytes = (needle, data, pos = 0) => createFindBytes(needle)(data, pos);
 		createView$1 = (arr) => new DataView(arr.buffer, arr.byteOffset, arr.byteLength);
-		_0n$9 = /* @__PURE__ */ BigInt(0);
-		_1n$9 = /* @__PURE__ */ BigInt(1);
+		_0n$8 = /* @__PURE__ */ BigInt(0);
+		_1n$8 = /* @__PURE__ */ BigInt(1);
 		_2n$8 = /* @__PURE__ */ BigInt(2);
 		_8n$4 = /* @__PURE__ */ BigInt(8);
 		_10n = /* @__PURE__ */ BigInt(10);
@@ -14026,11 +14048,11 @@ zoo`.split("\n"));
 			if (typeof sized !== "boolean") throw new Error(`bigint/sized: expected boolean, got ${typeof sized}`);
 			if (typeof minimal !== "boolean") throw new Error(`bigint/minimal: expected boolean, got ${typeof minimal}`);
 			const bLen = BigInt(size);
-			const signBit = _2n$8 ** (_8n$4 * bLen - _1n$9);
+			const signBit = _2n$8 ** (_8n$4 * bLen - _1n$8);
 			return wrap({
 				size: sized ? size : void 0,
 				encodeStream: (w, value) => {
-					const zero = value === _0n$9;
+					const zero = value === _0n$8;
 					if (signed && value < 0) value = value | signBit;
 					let res = new Uint8Array(size);
 					for (let i = size - 1; i >= 0; i--) {
@@ -14057,10 +14079,10 @@ zoo`.split("\n"));
 				decodeStream: (r) => {
 					const value = r.bytes(sized ? size : Math.min(size, r.leftBytes));
 					if (!sized && minimal) checkMinimalBigintBytes(value, le, signed, (msg) => r.err(msg));
-					let res = _0n$9;
+					let res = _0n$8;
 					if (le) for (let i = value.length - 1; i >= 0; i--) res = res << _8n$4 | BigInt(value[i]);
 					else for (let i = 0; i < value.length; i++) res = res << _8n$4 | BigInt(value[i]);
-					const sBit = sized || !value.length ? signBit : _2n$8 ** (_8n$4 * BigInt(value.length) - _1n$9);
+					const sBit = sized || !value.length ? signBit : _2n$8 ** (_8n$4 * BigInt(value.length) - _1n$8);
 					if (signed && res & sBit) res = (res ^ sBit) - sBit;
 					return res;
 				},
@@ -14155,7 +14177,7 @@ zoo`.split("\n"));
 				}
 			});
 		};
-		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8), (value) => {
+		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$1), (value) => {
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
@@ -14267,10 +14289,10 @@ zoo`.split("\n"));
 			return createView$2(this.pubHash).getUint32(0, false);
 		}
 		get fingerprintHex() {
-			return bytesToHex$4(toU32(this.fingerprint));
+			return bytesToHex$5(toU32(this.fingerprint));
 		}
 		get parentFingerprintHex() {
-			return bytesToHex$4(toU32(this.parentFingerprint));
+			return bytesToHex$5(toU32(this.parentFingerprint));
 		}
 		static fromMasterSeed(seed) {
 			seed = abytes$4(seed, void 0, "seed");
@@ -14351,3170 +14373,7 @@ zoo`.split("\n"));
 		}
 	};
 	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
-	/**
-	* Validates that a value is a non-negative bigint.
-	* @param n - Value to validate.
-	* @param title - Label included in thrown errors.
-	* @returns The same bigint.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Validate a satoshi amount before transaction encoding.
-	* ```ts
-	* abigint(1n, 'amount');
-	* ```
-	*/
-	function abigint(n, title = "value") {
-		if (typeof n !== "bigint") throw new TypeError(`"${title}" expected bigint, got type=${typeof n}`);
-		if (n < _0n$8) throw new RangeError(`"${title}" expected non-negative bigint, got ${n}`);
-		return n;
-	}
-	function aarray$1(item, title, inner = () => {}) {
-		if (!Array.isArray(item)) throw new TypeError(`"${title}" expected array, got type=${typeof item}`);
-		for (let i = 0; i < item.length; i++) inner(item[i], `${title}[${i}]`);
-		return item;
-	}
-	/**
-	* Asserts something is a string.
-	* @param value - Value to validate.
-	* @param title - Label included in thrown errors.
-	* @returns The validated string.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Validate a label string.
-	*
-	* ```ts
-	* astring('example', 'label');
-	* ```
-	*/
-	function astring$1(value, title = "") {
-		if (typeof value !== "string") {
-			const prefix = title && `"${title}" `;
-			throw new TypeError(prefix + "expected string, got type=" + typeof value);
-		}
-		return value;
-	}
-	function validateObject$1(object, fields = {}, optFields = {}, _title = "object") {
-		return validateObject$2(object, fields, optFields);
-	}
-	/**
-	* Signs a 32-byte hash with ECDSA and returns DER encoding.
-	* @param hash - message hash to sign
-	* @param privateKey - signer private key
-	* @param lowR - whether to grind for low-R signatures
-	* @returns DER-encoded signature bytes.
-	* @throws If low-R grinding overflows or ECDSA signing fails validation. {@link Error}
-	* @example
-	* Hash a message first, then create the DER-encoded ECDSA signature.
-	* ```ts
-	* import { randomPrivateKeyBytes, sha256, signECDSA } from '@scure/btc-signer/utils.js';
-	* signECDSA(sha256(new Uint8Array([1, 2, 3])), randomPrivateKeyBytes());
-	* ```
-	*/
-	function signECDSA(hash, privateKey, lowR = false) {
-		abytes$2(hash, 32, "hash");
-		let sig = secp256k1$1.Signature.fromBytes(secp256k1$1.sign(hash, privateKey, { prehash: false }));
-		if (lowR && !hasLowR(sig)) {
-			const extraEntropy = /* @__PURE__ */ new Uint8Array(32);
-			let counter = 0;
-			while (!hasLowR(sig)) {
-				extraEntropy.set(U32LE.encode(counter++));
-				sig = secp256k1$1.Signature.fromBytes(secp256k1$1.sign(hash, privateKey, {
-					prehash: false,
-					extraEntropy
-				}));
-				if (counter > 4294967295) throw new Error("lowR counter overflow: report the error");
-			}
-		}
-		return sig.toBytes("der");
-	}
-	/**
-	* Validates a public key against the expected Bitcoin key encoding.
-	* @param pub - public key bytes to validate
-	* @param type - expected public key format
-	* @returns The validated public key bytes.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @example
-	* Reject keys that do not match the encoding required by the current script path.
-	* ```ts
-	* import {
-	*   PubT,
-	*   pubECDSA,
-	*   randomPrivateKeyBytes,
-	*   validatePubkey,
-	* } from '@scure/btc-signer/utils.js';
-	* validatePubkey(pubECDSA(randomPrivateKeyBytes()), PubT.ecdsa);
-	* ```
-	*/
-	function validatePubkey(pub, type) {
-		const len = pub.length;
-		if (type === PubT.ecdsa) {
-			if (len === 32) throw new RangeError("Expected non-Schnorr key");
-			Point.fromBytes(pub);
-			return pub;
-		} else if (type === PubT.schnorr) {
-			if (len !== 32) throw new RangeError("Expected 32-byte Schnorr key");
-			schnorr.utils.lift_x(bytesToNumberBE$1(pub));
-			return pub;
-		} else throw new TypeError("Unknown key type");
-	}
-	/**
-	* Computes the Taproot tweak scalar from an internal key and merkle root.
-	* @param a - internal key bytes
-	* @param b - optional merkle root bytes
-	* @returns Taproot tweak scalar.
-	* @throws If the tweak scalar is outside the curve order. {@link Error}
-	* @example
-	* Combine the internal key and Merkle root into the Taproot tweak scalar.
-	* ```ts
-	* import { pubSchnorr, randomPrivateKeyBytes, tapTweak } from '@scure/btc-signer/utils.js';
-	* tapTweak(pubSchnorr(randomPrivateKeyBytes()), new Uint8Array());
-	* ```
-	*/
-	function tapTweak(a, b) {
-		const tn = bytesToNumberBE$1(schnorr.utils.taggedHash("TapTweak", a, b));
-		if (tn >= CURVE_ORDER) throw new Error("tweak higher than curve order");
-		return tn;
-	}
-	/**
-	* Tweaks a private key for Taproot key-path spending.
-	* @param privKey - internal private key bytes
-	* @param merkleRoot - optional taproot merkle root
-	* @returns Tweaked private key bytes.
-	* @throws If the Taproot tweak scalar is outside the curve order. {@link Error}
-	* @example
-	* Derive the tweaked Taproot key-path secret from the internal private key.
-	* ```ts
-	* import { randomPrivateKeyBytes, taprootTweakPrivKey } from '@scure/btc-signer/utils.js';
-	* taprootTweakPrivKey(randomPrivateKeyBytes());
-	* ```
-	*/
-	function taprootTweakPrivKey(privKey, merkleRoot = Uint8Array.of()) {
-		const u = schnorr.utils;
-		abytes$2(privKey, 32, "privKey");
-		const seckey0 = bytesToNumberBE$1(privKey);
-		const P = Point.BASE.multiply(seckey0);
-		const seckey = hasEven(P.y) ? seckey0 : Fn.neg(seckey0);
-		const t = tapTweak(u.pointToBytes(P), merkleRoot);
-		return numberToBytesBE$1(Fn.add(seckey, t), 32);
-	}
-	/**
-	* Tweaks a Schnorr public key for Taproot key-path spending.
-	* @param pubKey - x-only internal public key
-	* @param h - taproot merkle root
-	* @returns Tweaked public key and output-key parity.
-	* @throws If the Taproot tweak scalar is outside the curve order. {@link Error}
-	* @example
-	* Derive the final Taproot output key from the internal key and Merkle root.
-	* ```ts
-	* import {
-	*   pubSchnorr,
-	*   randomPrivateKeyBytes,
-	*   taprootTweakPubkey,
-	* } from '@scure/btc-signer/utils.js';
-	* taprootTweakPubkey(pubSchnorr(randomPrivateKeyBytes()), new Uint8Array());
-	* ```
-	*/
-	function taprootTweakPubkey(pubKey, h) {
-		const u = schnorr.utils;
-		abytes$2(pubKey, 32, "pubKey");
-		const t = tapTweak(pubKey, h);
-		const Q = u.lift_x(bytesToNumberBE$1(pubKey)).add(Point.BASE.multiply(t));
-		const parity = hasEven(Q.y) ? 0 : 1;
-		return [u.pointToBytes(Q), parity];
-	}
-	/**
-	* Returns an owned copy of the library's stable Taproot NUMS key.
-	* @returns A new 32-byte NUMS key copy.
-	* @example
-	* Obtain an internal key without sharing mutable exported storage.
-	* ```ts
-	* import { taprootNumsKey } from '@scure/btc-signer/utils.js';
-	* const internalKey = taprootNumsKey();
-	* ```
-	*/
-	function taprootNumsKey() {
-		return Uint8Array.from(INTERNAL_TAPROOT_NUMS);
-	}
-	/**
-	* Lexicographically compares two byte arrays.
-	* @param a - first byte array
-	* @param b - second byte array
-	* @returns `-1`, `0`, or `1` depending on the ordering.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Compare two serialized keys using Bitcoin's byte ordering.
-	* ```ts
-	* compareBytes(new Uint8Array([1]), new Uint8Array([2]));
-	* ```
-	*/
-	function compareBytes$2(a, b) {
-		if (!isBytes$2(a) || !isBytes$2(b)) throw new TypeError(`cmp: wrong type a=${typeof a} b=${typeof b}`);
-		const len = Math.min(a.length, b.length);
-		for (let i = 0; i < len; i++) if (a[i] != b[i]) return Math.sign(a[i] - b[i]);
-		return Math.sign(a.length - b.length);
-	}
-	/**
-	* Reverses an object's keys and values.
-	* @param obj - object to reverse
-	* @returns Object with original values mapped back to keys.
-	* @throws If duplicate values would collide while reversing the object. {@link Error}
-	* @example
-	* Flip a lookup table so the values become keys.
-	* ```ts
-	* reverseObject({ a: 1, b: 2 });
-	* ```
-	*/
-	function reverseObject(obj) {
-		const res = Object.create(null);
-		for (const k in obj) {
-			if (res[obj[k]] !== void 0) throw new Error("duplicate key");
-			res[obj[k]] = k;
-		}
-		return res;
-	}
-	var Point, Fn, CURVE_ORDER, _0n$8, _2n$7, hasEven, isBytes$2, concatBytes$2, equalBytes, sha256$1, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
-	var init_utils = __esmMin((() => {
-		init_secp256k1();
-		init_utils$1();
-		init_legacy();
-		init_sha2();
-		init_micro_packed();
-		init_utils$2();
-		Point = /* @__PURE__ */ (() => secp256k1$1.Point)();
-		Fn = /* @__PURE__ */ (() => Point.Fn)();
-		CURVE_ORDER = /* @__PURE__ */ (() => Point.Fn.ORDER)();
-		_0n$8 = /* @__PURE__ */ BigInt(0);
-		_2n$7 = /* @__PURE__ */ BigInt(2);
-		hasEven = (y) => y % _2n$7 === _0n$8;
-		isBytes$2 = /* @__PURE__ */ (() => utils.isBytes)();
-		concatBytes$2 = /* @__PURE__ */ (() => utils.concatBytes)();
-		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
-		sha256$1 = /* @__PURE__ */ (() => sha256$2)();
-		hash160 = (msg) => ripemd160(sha256$1(msg));
-		sha256x2 = (...msgs) => sha256$1(sha256$1(concatBytes$2(...msgs)));
-		pubSchnorr = (priv) => schnorr.getPublicKey(priv);
-		pubECDSA = (privateKey, isCompressed) => secp256k1$1.getPublicKey(privateKey, isCompressed);
-		LOW_R_BOUND = /* @__PURE__ */ (() => CURVE_ORDER / _2n$7)();
-		hasLowR = (sig) => sig.r < LOW_R_BOUND;
-		signSchnorr = (message, secretKey, auxRand) => schnorr.sign(message, secretKey, auxRand);
-		tagSchnorr = (tag, ...messages) => schnorr.utils.taggedHash(tag, ...messages);
-		PubT = /* @__PURE__ */ (() => Object.freeze({
-			ecdsa: 0,
-			schnorr: 1
-		}))();
-		INTERNAL_TAPROOT_NUMS = /* @__PURE__ */ (() => sha256$1(Point.BASE.toBytes(false)))();
-		NETWORK = /* @__PURE__ */ Object.freeze({
-			bech32: "bc",
-			pubKeyHash: 0,
-			scriptHash: 5,
-			wif: 128
-		});
-		TEST_NETWORK = /* @__PURE__ */ Object.freeze({
-			bech32: "tb",
-			pubKeyHash: 111,
-			scriptHash: 196,
-			wif: 239
-		});
-	}));
-	//#endregion
-	//#region packages/wallet-chains/dist/networks-CN-LwmNI.mjs
-	init_utils();
-	init_objectSpread2();
-	/**
-	* Bip122 CAIP-2 networks = `bip122:` + the first 32 hex chars of the genesis hash, verified against
-	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
-	* class).
-	*/
-	var MAINNET_BIP32 = {
-		public: 76067358,
-		private: 76066276
-	};
-	var TESTNET_BIP32 = {
-		public: 70617039,
-		private: 70615956
-	};
-	var REGTEST_NETWORK = _objectSpread2(_objectSpread2({}, TEST_NETWORK), {}, { bech32: "bcrt" });
-	var NETWORKS = Object.freeze([
-		{
-			caip2: "bip122:000000000019d6689c085ae165831e93",
-			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
-			params: NETWORK,
-			coinType: 0,
-			bip32: MAINNET_BIP32
-		},
-		{
-			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
-			genesis: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
-			params: TEST_NETWORK,
-			coinType: 1,
-			bip32: TESTNET_BIP32
-		},
-		{
-			caip2: "bip122:00000008819873e925422c1ff0f99f7c",
-			genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
-			params: TEST_NETWORK,
-			coinType: 1,
-			bip32: TESTNET_BIP32
-		},
-		{
-			caip2: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
-			genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
-			params: REGTEST_NETWORK,
-			coinType: 1,
-			bip32: TESTNET_BIP32
-		}
-	]);
-	var BITCOIN_NETWORKS = Object.freeze(Object.fromEntries(NETWORKS.map((n) => [n.caip2, n])));
-	var bitcoinNetwork = (caip2) => {
-		const net = BITCOIN_NETWORKS[caip2];
-		if (net === void 0) throw new ChainError("unsupported", `unknown bitcoin network: ${caip2}`);
-		return net;
-	};
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
-	/**
-	* Coder for Bitcoin Script numbers.
-	* bytesLimit only constrains decode. encode still serializes any bigint in
-	* Script's signed-magnitude byte form so higher-level consumers can enforce
-	* opcode-specific 4-byte or 5-byte bounds separately.
-	* @param bytesLimit - maximum decoded length in bytes
-	* @param forceMinimal - whether to reject non-minimal encodings
-	* @returns Script number coder.
-	* @example
-	* Encode a small integer using Script number rules.
-	* ```ts
-	* ScriptNum().encode(1n);
-	* ```
-	*/
-	function ScriptNum(bytesLimit = 6, forceMinimal = false) {
-		return wrap({
-			encodeStream: (w, value) => {
-				if (value === _0n$7) return;
-				const neg = value < 0;
-				const val = BigInt(value);
-				const nums = [];
-				for (let abs = neg ? -val : val; abs; abs >>= _8n$3) nums.push(Number(abs & U8_MAX));
-				if (nums[nums.length - 1] >= 128) nums.push(neg ? 128 : 0);
-				else if (neg) nums[nums.length - 1] |= 128;
-				w.bytes(new Uint8Array(nums));
-			},
-			decodeStream: (r) => {
-				const len = r.leftBytes;
-				if (len > bytesLimit) throw new Error(`ScriptNum: number (${len}) bigger than limit=${bytesLimit}`);
-				if (len === 0) return _0n$7;
-				const data = r.bytes(len);
-				if (forceMinimal) {
-					if ((data[len - 1] & 127) === 0) {
-						if (len <= 1 || (data[len - 2] & 128) === 0) throw new Error("Non-minimally encoded ScriptNum");
-					}
-				}
-				let res = _0n$7;
-				for (let i = 0; i < len; ++i) res |= BigInt(data[i]) << _8n$3 * BigInt(i);
-				if (data[len - 1] >= 128) {
-					res &= _2n$6 ** BigInt(len * 8) - _1n$8 >> _1n$8;
-					res = -res;
-				}
-				return res;
-			}
-		});
-	}
-	/**
-	* Attempts to decode a numeric script element into a JavaScript number.
-	* Accepts decoded small integers already represented as JS numbers and pushed
-	* `ScriptNum` byte payloads, but does not interpret opcode mnemonics like `1NEGATE`.
-	* @param op - script element to decode
-	* @param bytesLimit - maximum encoded length in bytes
-	* @param forceMinimal - whether to enforce minimal `ScriptNum` encoding
-	* @returns Decoded number, or `undefined` when the element is not a JS number or valid `ScriptNum` bytes.
-	* @example
-	* Decode a script element back into a JavaScript number when possible.
-	* ```ts
-	* OpToNum(1);
-	* ```
-	*/
-	function OpToNum(op, bytesLimit = 4, forceMinimal = true) {
-		if (typeof op === "number") return op;
-		if (isBytes$2(op)) try {
-			const val = ScriptNum(bytesLimit, forceMinimal).decode(op);
-			if (val > Number.MAX_SAFE_INTEGER || val < -Number.MAX_SAFE_INTEGER) return;
-			return Number(val);
-		} catch (e) {
-			return;
-		}
-	}
-	function validateRawTx(tx) {
-		if (tx.segwitFlag && tx.witnesses && tx.witnesses.every((w) => !w.length)) throw new Error("Segwit flag with only empty witness fields");
-		return tx;
-	}
-	var _0n$7, _1n$8, _2n$6, _8n$3, U8_MAX, COMPACT_DIRECT_MAX, OP, OPNames, scriptPushLen, Script, CompactSize, CompactSizeLen, _VarBytes, VarBytes, _RawWitness, RawWitness, BTCArray, RawInput, RawOutput, _RawTx, RawTx, RawOldTx;
-	var init_script = __esmMin((() => {
-		init_micro_packed();
-		init_utils();
-		_0n$7 = /* @__PURE__ */ BigInt(0);
-		_1n$8 = /* @__PURE__ */ BigInt(1);
-		_2n$6 = /* @__PURE__ */ BigInt(2);
-		_8n$3 = /* @__PURE__ */ BigInt(8);
-		U8_MAX = /* @__PURE__ */ BigInt(255);
-		COMPACT_DIRECT_MAX = /* @__PURE__ */ BigInt(252);
-		OP = /* @__PURE__ */ Object.freeze({
-			OP_0: 0,
-			PUSHDATA1: 76,
-			PUSHDATA2: 77,
-			PUSHDATA4: 78,
-			"1NEGATE": 79,
-			RESERVED: 80,
-			OP_1: 81,
-			OP_2: 82,
-			OP_3: 83,
-			OP_4: 84,
-			OP_5: 85,
-			OP_6: 86,
-			OP_7: 87,
-			OP_8: 88,
-			OP_9: 89,
-			OP_10: 90,
-			OP_11: 91,
-			OP_12: 92,
-			OP_13: 93,
-			OP_14: 94,
-			OP_15: 95,
-			OP_16: 96,
-			NOP: 97,
-			VER: 98,
-			IF: 99,
-			NOTIF: 100,
-			VERIF: 101,
-			VERNOTIF: 102,
-			ELSE: 103,
-			ENDIF: 104,
-			VERIFY: 105,
-			RETURN: 106,
-			TOALTSTACK: 107,
-			FROMALTSTACK: 108,
-			"2DROP": 109,
-			"2DUP": 110,
-			"3DUP": 111,
-			"2OVER": 112,
-			"2ROT": 113,
-			"2SWAP": 114,
-			IFDUP: 115,
-			DEPTH: 116,
-			DROP: 117,
-			DUP: 118,
-			NIP: 119,
-			OVER: 120,
-			PICK: 121,
-			ROLL: 122,
-			ROT: 123,
-			SWAP: 124,
-			TUCK: 125,
-			CAT: 126,
-			SUBSTR: 127,
-			LEFT: 128,
-			RIGHT: 129,
-			SIZE: 130,
-			INVERT: 131,
-			AND: 132,
-			OR: 133,
-			XOR: 134,
-			EQUAL: 135,
-			EQUALVERIFY: 136,
-			RESERVED1: 137,
-			RESERVED2: 138,
-			"1ADD": 139,
-			"1SUB": 140,
-			"2MUL": 141,
-			"2DIV": 142,
-			NEGATE: 143,
-			ABS: 144,
-			NOT: 145,
-			"0NOTEQUAL": 146,
-			ADD: 147,
-			SUB: 148,
-			MUL: 149,
-			DIV: 150,
-			MOD: 151,
-			LSHIFT: 152,
-			RSHIFT: 153,
-			BOOLAND: 154,
-			BOOLOR: 155,
-			NUMEQUAL: 156,
-			NUMEQUALVERIFY: 157,
-			NUMNOTEQUAL: 158,
-			LESSTHAN: 159,
-			GREATERTHAN: 160,
-			LESSTHANOREQUAL: 161,
-			GREATERTHANOREQUAL: 162,
-			MIN: 163,
-			MAX: 164,
-			WITHIN: 165,
-			RIPEMD160: 166,
-			SHA1: 167,
-			SHA256: 168,
-			HASH160: 169,
-			HASH256: 170,
-			CODESEPARATOR: 171,
-			CHECKSIG: 172,
-			CHECKSIGVERIFY: 173,
-			CHECKMULTISIG: 174,
-			CHECKMULTISIGVERIFY: 175,
-			NOP1: 176,
-			CHECKLOCKTIMEVERIFY: 177,
-			CHECKSEQUENCEVERIFY: 178,
-			NOP4: 179,
-			NOP5: 180,
-			NOP6: 181,
-			NOP7: 182,
-			NOP8: 183,
-			NOP9: 184,
-			NOP10: 185,
-			CHECKSIGADD: 186,
-			INVALID: 255
-		});
-		OPNames = /* @__PURE__ */ (() => Object.freeze(reverseObject(OP)))();
-		scriptPushLen = (op, read) => {
-			if (!(OP.OP_0 < op && op <= OP.PUSHDATA4)) return;
-			if (op < OP.PUSHDATA1) return op;
-			if (op === OP.PUSHDATA1) return read(1);
-			if (op === OP.PUSHDATA2) return read(2);
-			if (op === OP.PUSHDATA4) return read(4);
-			throw new Error("Should be not possible");
-		};
-		Script = /* @__PURE__ */ (() => Object.freeze(wrap({
-			encodeStream: (w, value) => {
-				aarray$1(value, "value");
-				for (let o of value) {
-					if (typeof o === "string") {
-						const op = OP[o];
-						if (typeof op !== "number") throw new Error(`Unknown opcode=${o}`);
-						w.byte(op);
-						continue;
-					} else if (typeof o === "number") {
-						if (o === 0) {
-							w.byte(0);
-							continue;
-						} else if (o === -1) {
-							w.byte(OP["1NEGATE"]);
-							continue;
-						} else if (1 <= o && o <= 16) {
-							w.byte(OP.OP_1 - 1 + o);
-							continue;
-						}
-					}
-					if (typeof o === "number") o = ScriptNum().encode(BigInt(o));
-					abytes$2(o, void 0, "value");
-					const len = o.length;
-					if (len < OP.PUSHDATA1) w.byte(len);
-					else if (len <= 255) {
-						w.byte(OP.PUSHDATA1);
-						w.byte(len);
-					} else if (len <= 65535) {
-						w.byte(OP.PUSHDATA2);
-						w.bytes(U16LE.encode(len));
-					} else {
-						w.byte(OP.PUSHDATA4);
-						w.bytes(U32LE.encode(len));
-					}
-					w.bytes(o);
-				}
-			},
-			decodeStream: (r) => {
-				const out = [];
-				while (!r.isEnd()) {
-					const cur = r.byte();
-					const len = scriptPushLen(cur, (bytes) => {
-						if (bytes === 1) return U8.decodeStream(r);
-						if (bytes === 2) return U16LE.decodeStream(r);
-						return U32LE.decodeStream(r);
-					});
-					if (len !== void 0) out.push(r.bytes(len));
-					else if (cur === 0) out.push(0);
-					else if (OP.OP_1 <= cur && cur <= OP.OP_16) out.push(cur - (OP.OP_1 - 1));
-					else {
-						const op = OPNames[cur];
-						if (op === void 0) throw new Error(`Unknown opcode=${cur.toString(16)}`);
-						out.push(op);
-					}
-				}
-				return out;
-			}
-		})))();
-		CompactSize = /* @__PURE__ */ (() => {
-			const limits = {
-				253: [
-					253,
-					2,
-					BigInt(253),
-					BigInt(65535)
-				],
-				254: [
-					254,
-					4,
-					BigInt(65536),
-					BigInt(4294967295)
-				],
-				255: [
-					255,
-					8,
-					BigInt(4294967296),
-					BigInt("0xffffffffffffffff")
-				]
-			};
-			const limitsList = Object.values(limits);
-			return Object.freeze(wrap({
-				encodeStream: (w, value) => {
-					if (typeof value === "number") value = BigInt(value);
-					if (_0n$7 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
-					for (const [flag, bytes, start, stop] of limitsList) {
-						if (start > value || value > stop) continue;
-						w.byte(flag);
-						for (let i = 0; i < bytes; i++) w.byte(Number(value >> _8n$3 * BigInt(i) & U8_MAX));
-						return;
-					}
-					throw w.err(`VarInt too big: ${value}`);
-				},
-				decodeStream: (r) => {
-					const b0 = r.byte();
-					if (b0 <= 252) return BigInt(b0);
-					const [_, bytes, start] = limits[b0];
-					let num = _0n$7;
-					for (let i = 0; i < bytes; i++) num |= BigInt(r.byte()) << _8n$3 * BigInt(i);
-					if (num < start) throw r.err(`Wrong CompactSize(${8 * bytes})`);
-					return num;
-				}
-			}));
-		})();
-		CompactSizeLen = /* @__PURE__ */ (() => Object.freeze(apply(CompactSize, coders.numberBigint)))();
-		_VarBytes = /* @__PURE__ */ (() => Object.freeze(createBytes(CompactSize)))();
-		VarBytes = _VarBytes;
-		_RawWitness = /* @__PURE__ */ (() => Object.freeze(array(CompactSizeLen, _VarBytes)))();
-		RawWitness = _RawWitness;
-		BTCArray = (t) => array(CompactSize, t);
-		RawInput = /* @__PURE__ */ (() => Object.freeze(struct({
-			txid: createBytes(32, true),
-			index: U32LE,
-			finalScriptSig: _VarBytes,
-			sequence: U32LE
-		})))();
-		RawOutput = /* @__PURE__ */ (() => Object.freeze(struct({
-			amount: U64LE,
-			script: _VarBytes
-		})))();
-		_RawTx = /* @__PURE__ */ (() => struct({
-			version: I32LE,
-			segwitFlag: flag(new Uint8Array([0, 1])),
-			inputs: BTCArray(RawInput),
-			outputs: BTCArray(RawOutput),
-			witnesses: flagged("segwitFlag", array("inputs/length", _RawWitness)),
-			lockTime: U32LE
-		}))();
-		RawTx = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawTx, validateRawTx)))();
-		RawOldTx = /* @__PURE__ */ (() => Object.freeze(struct({
-			version: I32LE,
-			inputs: BTCArray(RawInput),
-			outputs: BTCArray(RawOutput),
-			lockTime: U32LE
-		})))();
-	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/psbt.js
-	function PSBTKeyInfo(info) {
-		const [type, kc, vc, reqInc, allowInc, silentIgnore] = info;
-		return {
-			type,
-			kc,
-			vc,
-			reqInc,
-			allowInc,
-			silentIgnore
-		};
-	}
-	function PSBTKeyMap(psbtEnum) {
-		const byType = {};
-		for (const k in psbtEnum) {
-			const [num, kc, vc] = psbtEnum[k];
-			byType[num] = [
-				k,
-				kc,
-				vc
-			];
-		}
-		return wrap({
-			encodeStream: (w, value) => {
-				const _value = value;
-				let out = [];
-				const seen = {};
-				const add = (key, value) => {
-					const _value = value;
-					const kStr = hex$1.encode(PSBTUnknownKey.encode(key));
-					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
-					seen[kStr] = true;
-					out.push({
-						key,
-						value: _value
-					});
-				};
-				for (const name in psbtEnum) {
-					const val = _value[name];
-					if (val === void 0) continue;
-					const [type, kc, vc] = psbtEnum[name];
-					if (!kc) add({
-						type,
-						key: EMPTY$1
-					}, vc.encode(val));
-					else {
-						const kv = val.map(([k, v]) => [kc.encode(k), vc.encode(v)]);
-						kv.sort((a, b) => compareBytes$2(a[0], b[0]));
-						for (const [key, value] of kv) add({
-							key,
-							type
-						}, value);
-					}
-				}
-				if (_value.unknown) {
-					_value.unknown.sort((a, b) => compareBytes$2(a[0].key, b[0].key));
-					for (const [k, v] of _value.unknown) add(k, v);
-				}
-				PSBTKeyPair.encodeStream(w, out);
-			},
-			decodeStream: (r) => {
-				const raw = PSBTKeyPair.decodeStream(r);
-				const out = {};
-				const noKey = {};
-				const seen = {};
-				for (const elm of raw) {
-					const kStr = hex$1.encode(PSBTUnknownKey.encode(elm.key));
-					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
-					seen[kStr] = true;
-					let name = "unknown";
-					let key = elm.key.key;
-					let value = elm.value;
-					if (byType[elm.key.type]) {
-						const [_name, kc, vc] = byType[elm.key.type];
-						name = _name;
-						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$1.encode(key)} value=${hex$1.encode(value)}`);
-						key = kc ? kc.decode(key) : void 0;
-						value = vc.decode(value);
-						if (!kc) {
-							if (out[name]) throw new Error(`PSBT: Same keys: ${name} (key=${key} value=${value})`);
-							out[name] = value;
-							noKey[name] = true;
-							continue;
-						}
-					} else key = {
-						type: elm.key.type,
-						key: elm.key.key
-					};
-					if (noKey[name]) throw new Error(`PSBT: Key type with empty key and no key=${name} val=${value}`);
-					if (!out[name]) out[name] = [];
-					out[name].push([key, value]);
-				}
-				return out;
-			}
-		});
-	}
-	function validatePSBTFields(version, info, lst) {
-		const _lst = lst;
-		for (const k in _lst) {
-			if (k === "unknown") continue;
-			if (!info[k]) continue;
-			const { allowInc } = PSBTKeyInfo(info[k]);
-			if (!allowInc.includes(version)) throw new Error(`PSBTv${version}: field ${k} is not allowed`);
-		}
-		for (const k in info) {
-			const { reqInc } = PSBTKeyInfo(info[k]);
-			if (reqInc.includes(version) && _lst[k] === void 0) throw new Error(`PSBTv${version}: missing required field ${k}`);
-		}
-	}
-	/**
-	* Removes fields that are not valid for the requested PSBT version.
-	* @param version - target PSBT version
-	* @param info - PSBT field definition table
-	* @param lst - decoded PSBT key map
-	* @returns Filtered PSBT key map.
-	* @throws If a field cannot be serialized in the requested PSBT version. {@link Error}
-	* @example
-	* Drop fields that are not allowed in the target PSBT version before encoding.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { PSBTInput, cleanPSBTFields } from '@scure/btc-signer/psbt.js';
-	* cleanPSBTFields(2, PSBTInput, {
-	*   txid: hex.decode('0000000000000000000000000000000000000000000000000000000000000001'),
-	*   index: 0,
-	* });
-	* ```
-	*/
-	function cleanPSBTFields(version, info, lst) {
-		anumber$4(version, "version");
-		validateObject$1(info, {}, {}, "info");
-		validateObject$1(lst, {}, {}, "lst");
-		const _lst = lst;
-		const out = {};
-		for (const _k in _lst) {
-			const k = _k;
-			if (k !== "unknown") {
-				if (!info[k]) continue;
-				const { allowInc, silentIgnore } = PSBTKeyInfo(info[k]);
-				if (!allowInc.includes(version)) {
-					if (silentIgnore) continue;
-					throw new Error(`Failed to serialize in PSBTv${version}: ${k} but versions allows inclusion=${allowInc}`);
-				}
-			}
-			out[k] = _lst[k];
-		}
-		return out;
-	}
-	function validatePSBT(tx) {
-		const version = tx && tx.global && tx.global.version || 0;
-		validatePSBTFields(version, PSBTGlobal, tx.global);
-		for (const i of tx.inputs) validatePSBTFields(version, PSBTInput, i);
-		for (const o of tx.outputs) validatePSBTFields(version, PSBTOutput, o);
-		const inputCount = !version ? tx.global.unsignedTx.inputs.length : tx.global.inputCount;
-		if (tx.inputs.length !== inputCount) throw new Error(`Wrong number of input maps=${tx.inputs.length}, expected=${inputCount}`);
-		const outputCount = !version ? tx.global.unsignedTx.outputs.length : tx.global.outputCount;
-		if (tx.outputs.length < outputCount) throw new Error("Not outputs inputs");
-		if (version === 0 && inputCount === 0 && Object.keys(tx.outputs[0] || {}).length === 0 && (outputCount > 0 && tx.outputs.length === outputCount + 1 || outputCount === 0 && tx.outputs.length === 2 && Object.keys(tx.outputs[1]).length === 0)) return tx;
-		const outputsLeft = tx.outputs.slice(outputCount);
-		if (outputsLeft.length > 1 || outputsLeft.length && (version !== 0 || Object.keys(outputsLeft[0]).length)) throw new Error(`Unexpected outputs left in tx=${outputsLeft}`);
-		return tx;
-	}
-	/**
-	* Merges two PSBT key maps while preserving keyed-field uniqueness.
-	* @param psbtEnum - PSBT field definition table
-	* @param val - new values to merge in
-	* @param cur - existing decoded PSBT key map
-	* @param allowedFields - fields still allowed to change
-	* @param unknown - handling policy for unknown PSBT fields
-	* @param proprietary - handling policy for proprietary PSBT fields
-	* @returns Merged PSBT key map.
-	* @throws If keyed PSBT fields conflict or signed fields would be removed. {@link Error}
-	* @example
-	* Merge an updated `witnessUtxo` into an existing decoded input map.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { PSBTInput, mergeKeyMap } from '@scure/btc-signer/psbt.js';
-	* mergeKeyMap(
-	*   PSBTInput,
-	*   { witnessUtxo: { amount: 2n, script: new Uint8Array([0x51]) } },
-	*   {
-	*     txid: hex.decode('0000000000000000000000000000000000000000000000000000000000000001'),
-	*     index: 0,
-	*   }
-	* );
-	* ```
-	*/
-	function mergeKeyMap(psbtEnum, val, cur, allowedFields, unknown = "strip", proprietary = "strip") {
-		validateObject$1(psbtEnum, {}, {}, "psbtEnum");
-		validateObject$1(val, {}, {}, "val");
-		if (cur !== void 0) validateObject$1(cur, {}, {}, "cur");
-		if (allowedFields !== void 0) aarray$1(allowedFields, "allowedFields");
-		const _val = val;
-		const _cur = cur;
-		const _allowedFields = allowedFields;
-		const unknownMode = unknowns(unknown, "unknown");
-		const proprietaryMode = unknowns(proprietary, "proprietary");
-		for (const [name, mode] of [["unknown", unknownMode], ["proprietary", proprietaryMode]]) {
-			var _val$name, _cur$name;
-			if (mode !== "strict") continue;
-			if (((_val$name = _val[name]) === null || _val$name === void 0 ? void 0 : _val$name.length) || (_cur === null || _cur === void 0 || (_cur$name = _cur[name]) === null || _cur$name === void 0 ? void 0 : _cur$name.length)) throw new Error(`PSBT: ${name} PSBT field is not allowed in strict mode`);
-		}
-		const res = _objectSpread2(_objectSpread2({}, _cur), _val);
-		for (const k in psbtEnum) {
-			const key = k;
-			if (k === "proprietary" && proprietaryMode !== "ignore") continue;
-			const [_, kC, vC] = psbtEnum[key];
-			const cannotChange = _allowedFields && !_allowedFields.includes(k);
-			if (_val[k] === void 0 && k in _val) {
-				if (cannotChange) throw new Error(`Cannot remove signed field=${k}`);
-				delete res[k];
-			} else if (kC) {
-				const oldKV = _cur && _cur[k] ? _cur[k] : [];
-				let newKV = _val[key];
-				if (newKV) {
-					if (!Array.isArray(newKV)) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
-					newKV = newKV.map((val) => {
-						if (val.length !== 2) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
-						return [typeof val[0] === "string" ? kC.decode(hex$1.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$1.decode(val[1])) : val[1]];
-					});
-					const map = {};
-					const add = (kStr, k, v) => {
-						if (map[kStr] === void 0) {
-							map[kStr] = [k, v];
-							return;
-						}
-						const oldVal = hex$1.encode(vC.encode(map[kStr][1]));
-						const newVal = hex$1.encode(vC.encode(v));
-						if (oldVal !== newVal) throw new Error(`keyMap(${key}): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
-					};
-					for (const [k, v] of oldKV) add(hex$1.encode(kC.encode(k)), k, v);
-					for (const [k, v] of newKV) {
-						const kStr = hex$1.encode(kC.encode(k));
-						if (v === void 0) {
-							if (cannotChange) throw new Error(`Cannot remove signed field=${key}/${k}`);
-							delete map[kStr];
-						} else {
-							if (cannotChange && map[kStr] === void 0) throw new Error(`Cannot add signed field=${key}/${kStr}`);
-							add(kStr, k, v);
-						}
-					}
-					res[key] = Object.values(map);
-				}
-			} else {
-				if (typeof res[k] === "string") res[k] = vC.decode(hex$1.decode(res[k]));
-				if (cannotChange && k in _val) {
-					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
-					let current = _cur[k];
-					if (typeof current === "string") current = vC.decode(hex$1.decode(current));
-					if (!equalBytes(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
-				}
-			}
-		}
-		if (unknownMode === "ignore" && _val.unknown) {
-			const map = {};
-			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$1.encode(PSBTUnknownKey.encode(k))] = [k, v];
-			for (const [k, v] of _val.unknown) {
-				const kStr = hex$1.encode(PSBTUnknownKey.encode(k));
-				if (map[kStr] === void 0) {
-					map[kStr] = [k, v];
-					continue;
-				}
-				const oldVal = hex$1.encode(BytesInf.encode(map[kStr][1]));
-				const newVal = hex$1.encode(BytesInf.encode(v));
-				if (oldVal !== newVal) throw new Error(`keyMap(unknown): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
-			}
-			res.unknown = Object.values(map);
-		}
-		for (const k in res) if (!psbtEnum[k]) {
-			if (unknownMode === "ignore" && k === "unknown") continue;
-			delete res[k];
-		}
-		if (unknownMode !== "ignore") delete res.unknown;
-		if (proprietaryMode !== "ignore") delete res.proprietary;
-		return res;
-	}
-	/**
-	* Combines two independently produced PSBT maps without choosing between conflicting scalar
-	* values. Keyed fields retain {@link mergeKeyMap}'s union semantics.
-	* @param psbtEnum - PSBT field definition table
-	* @param current - first map
-	* @param other - second map
-	* @param unknown - handling policy for unknown PSBT fields
-	* @param proprietary - handling policy for proprietary PSBT fields
-	* @returns The symmetric map union.
-	* @throws If both maps provide different values for the same scalar field. {@link Error}
-	* @example
-	* Combine disjoint global metadata without choosing an operand as authoritative.
-	* ```ts
-	* import { combineKeyMap, PSBTGlobal } from '@scure/btc-signer/psbt.js';
-	* combineKeyMap(PSBTGlobal, { txVersion: 2 }, { fallbackLocktime: 0 });
-	* ```
-	*/
-	function combineKeyMap(psbtEnum, current, other, unknown = "strip", proprietary = "strip") {
-		validateObject$1(psbtEnum, {}, {}, "psbtEnum");
-		validateObject$1(current, {}, {}, "current");
-		validateObject$1(other, {}, {}, "other");
-		const _current = current;
-		const _other = other;
-		for (const k in psbtEnum) {
-			const key = k;
-			const [_, keyCoder, valueCoder] = psbtEnum[key];
-			if (keyCoder || _current[key] === void 0 || _other[key] === void 0) continue;
-			let a = _current[key];
-			let b = _other[key];
-			if (typeof a === "string") a = valueCoder.decode(hex$1.decode(a));
-			if (typeof b === "string") b = valueCoder.decode(hex$1.decode(b));
-			if (!equalBytes(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
-		}
-		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
-	}
-	var unknowns, _0n$6, _1n$7, PubKeyECDSA, PubKeyECDSACompressed, PubKeySchnorr, SignatureSchnorr, RawWitnessWire, BIP32Der, TaprootBIP32Der, GlobalXPUB, tapScriptSigKey, _TaprootControlBlock, TaprootControlBlock, tapTree, BytesInf, ProprietaryKey, Bytes20, Bytes32, Bytes64, Bytes66, MuSig2Participants, MuSig2Key, SilentPaymentInfo, DNSSECProof, PSBTInfo, PSBTGlobal, PSBTInput, PSBTInputFinalKeys, PSBTInputSignatureKeys, PSBTOutput, PSBTOutputUnsignedKeys, PSBTKeyPair, PSBTUnknownKey, PSBTInputCoder, PSBTOutputCoder, PSBTGlobalCoder, _RawPSBTV0, _RawPSBTV2, RawPSBTV0, RawPSBTV2;
-	var init_psbt = __esmMin((() => {
-		init_base();
-		init_utils$2();
-		init_micro_packed();
-		init_script();
-		init_utils();
-		init_objectSpread2();
-		unknowns = (mode, name) => {
-			if (mode === true) return "ignore";
-			if (mode === false) return "strip";
-			if (mode === "ignore" || mode === "strip" || mode === "strict") return mode;
-			throw new Error(`PSBT: invalid ${name} policy=${mode}`);
-		};
-		_0n$6 = /* @__PURE__ */ BigInt(0);
-		_1n$7 = /* @__PURE__ */ BigInt(1);
-		PubKeyECDSA = /* @__PURE__ */ (() => validate$4(createBytes(null), (pub) => validatePubkey(pub, PubT.ecdsa)))();
-		PubKeyECDSACompressed = /* @__PURE__ */ (() => validate$4(createBytes(33), (pub) => validatePubkey(pub, PubT.ecdsa)))();
-		PubKeySchnorr = /* @__PURE__ */ (() => validate$4(createBytes(32), (pub) => validatePubkey(pub, PubT.schnorr)))();
-		SignatureSchnorr = /* @__PURE__ */ (() => validate$4(createBytes(null), (sig) => {
-			if (sig.length !== 64 && sig.length !== 65) throw new Error("Schnorr signature should be 64 or 65 bytes long");
-			return sig;
-		}))();
-		RawWitnessWire = RawWitness;
-		BIP32Der = /* @__PURE__ */ (() => struct({
-			fingerprint: U32BE,
-			path: array(null, U32LE)
-		}))();
-		TaprootBIP32Der = /* @__PURE__ */ (() => struct({
-			hashes: array(CompactSizeLen, createBytes(32)),
-			der: BIP32Der
-		}))();
-		GlobalXPUB = /* @__PURE__ */ (() => validate$4(struct({
-			version: U32BE,
-			depth: U8,
-			parentFingerprint: U32BE,
-			childNumber: U32BE,
-			chainCode: createBytes(32),
-			publicKey: PubKeyECDSACompressed
-		}), (xpub) => {
-			if (xpub.depth === 0 && xpub.parentFingerprint !== 0) throw new Error("GlobalXPUB: depth=0 requires parentFingerprint=0");
-			if (xpub.depth === 0 && xpub.childNumber !== 0) throw new Error("GlobalXPUB: depth=0 requires childNumber=0");
-			return xpub;
-		}))();
-		tapScriptSigKey = /* @__PURE__ */ (() => struct({
-			pubKey: PubKeySchnorr,
-			leafHash: createBytes(32)
-		}))();
-		_TaprootControlBlock = /* @__PURE__ */ (() => struct({
-			version: U8,
-			internalKey: createBytes(32),
-			merklePath: array(null, createBytes(32))
-		}))();
-		TaprootControlBlock = /* @__PURE__ */ (() => Object.freeze(validate$4(_TaprootControlBlock, (cb) => {
-			if (cb.merklePath.length > 128) throw new Error("TaprootControlBlock: merklePath should be of length 0..128 (inclusive)");
-			return cb;
-		})))();
-		tapTree = /* @__PURE__ */ (() => validate$4(array(null, struct({
-			depth: U8,
-			version: U8,
-			script: VarBytes
-		})), (tree) => {
-			if (tree.length < 1) throw new Error("tapTree: expected at least one tuple");
-			let path = Array(tree[0].depth).fill(0);
-			let maxDepth = tree[0].depth;
-			for (let i = 1; i < tree.length; i++) {
-				const { depth } = tree[i];
-				if (depth > maxDepth) maxDepth = depth;
-				let j = path.length - 1;
-				while (j >= 0 && path[j] === 1) j--;
-				if (j < 0) throw new Error("tapTree: tuples must be in DFS order");
-				const next = path.slice(0, j);
-				next.push(1);
-				if (depth < next.length) throw new Error("tapTree: tuples must be in DFS order");
-				while (next.length < depth) next.push(0);
-				path = next;
-			}
-			let leaves = _0n$6;
-			for (let i = 0; i < tree.length; i++) leaves += _1n$7 << BigInt(maxDepth - tree[i].depth);
-			if (leaves !== _1n$7 << BigInt(maxDepth)) throw new Error("tapTree: tuples must describe a complete binary tree");
-			return tree;
-		}))();
-		BytesInf = /* @__PURE__ */ createBytes(null);
-		ProprietaryKey = /* @__PURE__ */ (() => {
-			const suffix = struct({
-				identifier: createBytes(CompactSizeLen),
-				subtype: CompactSizeLen,
-				data: BytesInf
-			});
-			return validate$4(BytesInf, (key) => {
-				try {
-					suffix.decode(key);
-				} catch (error) {
-					const message = error instanceof Error ? error.message : String(error);
-					throw new Error(`Proprietary key: expected BIP174 identifier and subtype, got ${message}`);
-				}
-				return key;
-			});
-		})();
-		Bytes20 = /* @__PURE__ */ createBytes(20);
-		Bytes32 = /* @__PURE__ */ createBytes(32);
-		Bytes64 = /* @__PURE__ */ createBytes(64);
-		Bytes66 = /* @__PURE__ */ createBytes(66);
-		MuSig2Participants = /* @__PURE__ */ (() => array(null, PubKeyECDSACompressed))();
-		MuSig2Key = /* @__PURE__ */ (() => apply(BytesInf, {
-			decode: (key) => {
-				const _key = key;
-				return concatBytes$5(PubKeyECDSACompressed.encode(_key.participantPubkey), PubKeyECDSACompressed.encode(_key.aggregatePubkey), _key.leafHash === void 0 ? EMPTY$1 : Bytes32.encode(_key.leafHash));
-			},
-			encode: (raw) => {
-				const _raw = raw;
-				if (_raw.length !== 66 && _raw.length !== 98) throw new Error(`MuSig2 key: expected 66 or 98 bytes, got ${_raw.length}`);
-				const key = {
-					participantPubkey: PubKeyECDSACompressed.decode(_raw.subarray(0, 33)),
-					aggregatePubkey: PubKeyECDSACompressed.decode(_raw.subarray(33, 66))
-				};
-				if (_raw.length === 98) key.leafHash = Bytes32.decode(_raw.subarray(66));
-				return key;
-			}
-		}))();
-		SilentPaymentInfo = /* @__PURE__ */ (() => struct({
-			scanKey: PubKeyECDSACompressed,
-			spendKey: PubKeyECDSACompressed
-		}))();
-		DNSSECProof = /* @__PURE__ */ (() => struct({
-			name: createBytes(U8),
-			proof: BytesInf
-		}))();
-		PSBTInfo = (type, kc, vc, reqInc, allowInc, silentIgnore) => /* @__PURE__ */ Object.freeze([
-			type,
-			kc && typeof kc === "object" ? Object.freeze(kc) : kc,
-			vc && typeof vc === "object" ? Object.freeze(vc) : vc,
-			Object.freeze([...reqInc]),
-			Object.freeze([...allowInc]),
-			silentIgnore
-		]);
-		PSBTGlobal = /* @__PURE__ */ (() => Object.freeze({
-			unsignedTx: PSBTInfo(0, false, RawOldTx, [0], [0], false),
-			xpub: PSBTInfo(1, GlobalXPUB, BIP32Der, [], [0, 2], false),
-			txVersion: PSBTInfo(2, false, U32LE, [2], [2], false),
-			fallbackLocktime: PSBTInfo(3, false, U32LE, [], [2], false),
-			inputCount: PSBTInfo(4, false, CompactSizeLen, [2], [2], false),
-			outputCount: PSBTInfo(5, false, CompactSizeLen, [2], [2], false),
-			txModifiable: PSBTInfo(6, false, U8, [], [2], false),
-			spEcdhShare: PSBTInfo(7, PubKeyECDSACompressed, PubKeyECDSACompressed, [], [2], false),
-			spDleq: PSBTInfo(8, PubKeyECDSACompressed, Bytes64, [], [2], false),
-			genericSignedMessage: PSBTInfo(9, false, BytesInf, [], [0, 2], false),
-			version: PSBTInfo(251, false, U32LE, [], [0, 2], false),
-			proprietary: PSBTInfo(252, ProprietaryKey, BytesInf, [], [0, 2], false)
-		}))();
-		PSBTInput = /* @__PURE__ */ (() => Object.freeze({
-			nonWitnessUtxo: PSBTInfo(0, false, RawTx, [], [0, 2], false),
-			witnessUtxo: PSBTInfo(1, false, RawOutput, [], [0, 2], false),
-			partialSig: PSBTInfo(2, PubKeyECDSA, BytesInf, [], [0, 2], false),
-			sighashType: PSBTInfo(3, false, U32LE, [], [0, 2], false),
-			redeemScript: PSBTInfo(4, false, BytesInf, [], [0, 2], false),
-			witnessScript: PSBTInfo(5, false, BytesInf, [], [0, 2], false),
-			bip32Derivation: PSBTInfo(6, PubKeyECDSA, BIP32Der, [], [0, 2], false),
-			finalScriptSig: PSBTInfo(7, false, BytesInf, [], [0, 2], false),
-			finalScriptWitness: PSBTInfo(8, false, RawWitnessWire, [], [0, 2], false),
-			porCommitment: PSBTInfo(9, false, BytesInf, [], [0, 2], false),
-			ripemd160: PSBTInfo(10, Bytes20, BytesInf, [], [0, 2], false),
-			sha256: PSBTInfo(11, Bytes32, BytesInf, [], [0, 2], false),
-			hash160: PSBTInfo(12, Bytes20, BytesInf, [], [0, 2], false),
-			hash256: PSBTInfo(13, Bytes32, BytesInf, [], [0, 2], false),
-			txid: PSBTInfo(14, false, createBytes(32, true), [2], [2], true),
-			index: PSBTInfo(15, false, U32LE, [2], [2], true),
-			sequence: PSBTInfo(16, false, U32LE, [], [2], true),
-			requiredTimeLocktime: PSBTInfo(17, false, U32LE, [], [2], false),
-			requiredHeightLocktime: PSBTInfo(18, false, U32LE, [], [2], false),
-			tapKeySig: PSBTInfo(19, false, SignatureSchnorr, [], [0, 2], false),
-			tapScriptSig: PSBTInfo(20, tapScriptSigKey, SignatureSchnorr, [], [0, 2], false),
-			tapLeafScript: PSBTInfo(21, TaprootControlBlock, BytesInf, [], [0, 2], false),
-			tapBip32Derivation: PSBTInfo(22, PubKeySchnorr, TaprootBIP32Der, [], [0, 2], false),
-			tapInternalKey: PSBTInfo(23, false, PubKeySchnorr, [], [0, 2], false),
-			tapMerkleRoot: PSBTInfo(24, false, Bytes32, [], [0, 2], false),
-			p2cKeyTweak: PSBTInfo(25, PubKeyECDSACompressed, Bytes32, [], [0, 2], false),
-			musig2ParticipantPubkeys: PSBTInfo(26, PubKeyECDSACompressed, MuSig2Participants, [], [0, 2], false),
-			musig2PubNonce: PSBTInfo(27, MuSig2Key, Bytes66, [], [0, 2], false),
-			musig2PartialSig: PSBTInfo(28, MuSig2Key, Bytes32, [], [0, 2], false),
-			spEcdhShare: PSBTInfo(29, PubKeyECDSACompressed, PubKeyECDSACompressed, [], [2], false),
-			spDleq: PSBTInfo(30, PubKeyECDSACompressed, Bytes64, [], [2], false),
-			spSpendBip32Derivation: PSBTInfo(31, PubKeyECDSACompressed, BIP32Der, [], [2], false),
-			spTweak: PSBTInfo(32, false, Bytes32, [], [2], false),
-			proprietary: PSBTInfo(252, ProprietaryKey, BytesInf, [], [0, 2], false)
-		}))();
-		PSBTInputFinalKeys = /* @__PURE__ */ Object.freeze([
-			"txid",
-			"sequence",
-			"index",
-			"witnessUtxo",
-			"nonWitnessUtxo",
-			"requiredTimeLocktime",
-			"requiredHeightLocktime",
-			"finalScriptSig",
-			"finalScriptWitness",
-			"unknown"
-		]);
-		PSBTInputSignatureKeys = /* @__PURE__ */ Object.freeze([
-			"partialSig",
-			"finalScriptSig",
-			"finalScriptWitness",
-			"tapKeySig",
-			"tapScriptSig"
-		]);
-		PSBTOutput = /* @__PURE__ */ (() => Object.freeze({
-			redeemScript: PSBTInfo(0, false, BytesInf, [], [0, 2], false),
-			witnessScript: PSBTInfo(1, false, BytesInf, [], [0, 2], false),
-			bip32Derivation: PSBTInfo(2, PubKeyECDSA, BIP32Der, [], [0, 2], false),
-			amount: PSBTInfo(3, false, I64LE, [2], [2], true),
-			script: PSBTInfo(4, false, BytesInf, [2], [2], true),
-			tapInternalKey: PSBTInfo(5, false, PubKeySchnorr, [], [0, 2], false),
-			tapTree: PSBTInfo(6, false, tapTree, [], [0, 2], false),
-			tapBip32Derivation: PSBTInfo(7, PubKeySchnorr, TaprootBIP32Der, [], [0, 2], false),
-			musig2ParticipantPubkeys: PSBTInfo(8, PubKeyECDSACompressed, MuSig2Participants, [], [0, 2], false),
-			spV0Info: PSBTInfo(9, false, SilentPaymentInfo, [], [2], false),
-			spV0Label: PSBTInfo(10, false, U32LE, [], [2], false),
-			dnssecProof: PSBTInfo(53, false, DNSSECProof, [], [0, 2], false),
-			proprietary: PSBTInfo(252, ProprietaryKey, BytesInf, [], [0, 2], false)
-		}))();
-		PSBTOutputUnsignedKeys = /* @__PURE__ */ Object.freeze([]);
-		PSBTKeyPair = /* @__PURE__ */ (() => array(NULL, struct({
-			key: prefix(CompactSizeLen, struct({
-				type: CompactSizeLen,
-				key: createBytes(null)
-			})),
-			value: createBytes(CompactSizeLen)
-		})))();
-		PSBTUnknownKey = /* @__PURE__ */ (() => struct({
-			type: CompactSizeLen,
-			key: createBytes(null)
-		}))();
-		PSBTInputCoder = /* @__PURE__ */ (() => Object.freeze(validate$4(PSBTKeyMap(PSBTInput), (i) => {
-			if (i.finalScriptWitness && !i.finalScriptWitness.length) throw new Error("validateInput: empty finalScriptWitness");
-			if (i.partialSig && !i.partialSig.length) throw new Error("Empty partialSig");
-			if (i.partialSig) for (const [k] of i.partialSig) validatePubkey(k, PubT.ecdsa);
-			if (i.bip32Derivation) for (const [k] of i.bip32Derivation) validatePubkey(k, PubT.ecdsa);
-			if (i.requiredTimeLocktime !== void 0 && i.requiredTimeLocktime < 5e8) throw new Error(`validateInput: wrong timeLocktime=${i.requiredTimeLocktime}`);
-			if (i.requiredHeightLocktime !== void 0 && (i.requiredHeightLocktime <= 0 || i.requiredHeightLocktime >= 5e8)) throw new Error(`validateInput: wrong heighLocktime=${i.requiredHeightLocktime}`);
-			if (i.tapLeafScript) for (const [k, v] of i.tapLeafScript) {
-				if ((k.version & 254) !== v[v.length - 1]) throw new Error("validateInput: tapLeafScript version mimatch");
-				if (v[v.length - 1] & 1) throw new Error("validateInput: tapLeafScript version has parity bit!");
-			}
-			return i;
-		})))();
-		PSBTOutputCoder = /* @__PURE__ */ (() => Object.freeze(validate$4(PSBTKeyMap(PSBTOutput), (o) => {
-			if (o.amount !== void 0 && o.amount < _0n$6) throw new Error(`validateOutput: wrong amount=${o.amount}`);
-			if (o.bip32Derivation) for (const [k] of o.bip32Derivation) validatePubkey(k, PubT.ecdsa);
-			return o;
-		})))();
-		PSBTGlobalCoder = /* @__PURE__ */ (() => validate$4(PSBTKeyMap(PSBTGlobal), (g) => {
-			if ((g.version || 0) === 0) {
-				if (!g.unsignedTx) throw new Error("PSBTv0: missing unsignedTx");
-				for (const inp of g.unsignedTx.inputs) if (inp.finalScriptSig && inp.finalScriptSig.length) throw new Error("PSBTv0: input scriptSig found in unsignedTx");
-			}
-			for (const [xpub, der] of g.xpub || []) if (xpub.depth !== der.path.length) throw new Error(`PSBT_GLOBAL_XPUB: xpub depth=${xpub.depth} must match derivation path length=${der.path.length}`);
-			return g;
-		}))();
-		_RawPSBTV0 = /* @__PURE__ */ (() => Object.freeze(struct({
-			magic: magic(string(new Uint8Array([255])), "psbt"),
-			global: PSBTGlobalCoder,
-			inputs: array("global/unsignedTx/inputs/length", PSBTInputCoder),
-			outputs: array(null, PSBTOutputCoder)
-		})))();
-		_RawPSBTV2 = /* @__PURE__ */ (() => Object.freeze(struct({
-			magic: magic(string(new Uint8Array([255])), "psbt"),
-			global: PSBTGlobalCoder,
-			inputs: array("global/inputCount", PSBTInputCoder),
-			outputs: array("global/outputCount", PSBTOutputCoder)
-		})))();
-		RawPSBTV0 = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawPSBTV0, validatePSBT)))();
-		RawPSBTV2 = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawPSBTV2, validatePSBT)))();
-	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/payment.js
-	function isValidPubkey(pub, type) {
-		try {
-			validatePubkey(pub, type);
-			return true;
-		} catch (e) {
-			return false;
-		}
-	}
-	function checkWSH(s, witnessScript) {
-		if (!equalBytes(s.hash, sha256$1(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
-		const w = OutScript.decode(witnessScript);
-		if (w.type === "tr" || w.type === "tr_ns" || w.type === "tr_ms") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2SH`);
-		if (w.type === "wpkh" || w.type === "wsh" || w.type === "sh") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2WSH`);
-	}
-	/**
-	* Validates that nested redeem and witness scripts match their wrappers.
-	* @param script - top-level output script
-	* @param redeemScript - optional redeem script for P2SH wrappers
-	* @param witnessScript - optional witness script for P2WSH wrappers
-	* @throws If the script nesting is invalid or unsupported. {@link Error}
-	* @example
-	* Verify that wrapped scripts and hashes still match after custom edits.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { checkScript, p2pkh, p2sh } from '@scure/btc-signer/payment.js';
-	* const wrapped = p2sh(
-	*   p2pkh(hex.decode('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'))
-	* );
-	* checkScript(wrapped.script, wrapped.redeemScript);
-	* ```
-	*/
-	function checkScript(script, redeemScript, witnessScript) {
-		let hasWsh = false;
-		let r = void 0;
-		if (script) {
-			const s = _WitnessOutScript.decode(script);
-			if (s.type === "tr_ns" || s.type === "tr_ms" || s.type === "ms" || s.type == "pk") throw new Error(`checkScript: non-wrapped ${s.type}`);
-			if (redeemScript) {
-				if (s.type !== "sh") throw new Error("checkScript: redeemScript without P2SH");
-				if (!equalBytes(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
-				r = _WitnessOutScript.decode(redeemScript);
-				if ((r === null || r === void 0 ? void 0 : r.type) === "tr" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ns" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ms") throw new Error(`checkScript: P2${r.type} cannot be wrapped in P2SH`);
-				if ((r === null || r === void 0 ? void 0 : r.type) === "sh") throw new Error("checkScript: P2SH cannot be wrapped in P2SH");
-			}
-			if (s.type === "wsh") {
-				hasWsh = true;
-				if (witnessScript) checkWSH(s, witnessScript);
-			}
-		}
-		if (redeemScript) {
-			if (r === void 0) r = _WitnessOutScript.decode(redeemScript);
-			if ((r === null || r === void 0 ? void 0 : r.type) === "wsh") {
-				hasWsh = true;
-				if (witnessScript) checkWSH(r, witnessScript);
-			}
-		}
-		if (witnessScript && !hasWsh) throw new Error("checkScript: witnessScript without P2WSH");
-	}
-	function checkTaprootScript(script, internalPubKey, allowUnknownOutputs = false, customScripts) {
-		const out = OutScript.decode(script);
-		if (out.type === "unknown") {
-			if (customScripts) {
-				const cs = apply(Script, coders.match(customScripts));
-				let c;
-				try {
-					c = cs.decode(script);
-				} catch (e) {
-					c = void 0;
-				}
-				if (c !== void 0) {
-					if (!astring$1(c.type, "c.type").startsWith("tr_")) throw new Error(`P2TR: invalid custom type=${c.type}`);
-					return;
-				}
-			}
-			if (allowUnknownOutputs) return;
-		}
-		if (!["tr_ns", "tr_ms"].includes(out.type)) throw new Error(`P2TR: invalid leaf script=${out.type}`);
-		const outms = out;
-		if (!allowUnknownOutputs && outms.pubkeys) for (const p of outms.pubkeys) {
-			if (equalBytes(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
-			if (equalBytes(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
-		}
-	}
-	/**
-	* Converts a flat list of weighted leaves into a binary taproot tree.
-	* @param taprootList - weighted leaves to arrange
-	* @returns Binary taproot script tree.
-	* @throws If the list is empty and cannot describe any tree. {@link Error}
-	* @example
-	* Start from a flat weighted list, then let the helper build the binary tree shape.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { p2tr_pk, taprootListToTree } from '@scure/btc-signer/payment.js';
-	* taprootListToTree([
-	*   p2tr_pk(hex.decode('f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9')),
-	*   p2tr_pk(hex.decode('dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659')),
-	* ]);
-	* ```
-	*/
-	function taprootListToTree(taprootList) {
-		aarray$1(taprootList, "taprootList", (leaf, title) => {
-			if (Array.isArray(leaf)) return;
-			validateObject$1(leaf, {}, {}, title);
-			if (leaf.weight !== void 0) anumber$4(leaf.weight, title + ".weight");
-		});
-		if (!taprootList.length) throw new Error("taprootListToTree: empty tree");
-		const lst = Array.from(taprootList);
-		while (lst.length >= 2) {
-			lst.sort((a, b) => (b.weight || 1) - (a.weight || 1));
-			const b = lst.pop();
-			const a = lst.pop();
-			const weight = ((a === null || a === void 0 ? void 0 : a.weight) || 1) + ((b === null || b === void 0 ? void 0 : b.weight) || 1);
-			lst.push({
-				weight,
-				childs: [(a === null || a === void 0 ? void 0 : a.childs) || a, (b === null || b === void 0 ? void 0 : b.childs) || b]
-			});
-		}
-		const last = lst[0];
-		return (last === null || last === void 0 ? void 0 : last.childs) || last;
-	}
-	function taprootAddPath(tree, path = []) {
-		if (!tree) throw new Error(`taprootAddPath: empty tree`);
-		if (tree.type === "leaf") return _objectSpread2(_objectSpread2({}, tree), {}, { path });
-		if (tree.type !== "branch") throw new Error(`taprootAddPath: wrong type=${tree}`);
-		return _objectSpread2(_objectSpread2({}, tree), {}, {
-			path,
-			left: taprootAddPath(tree.left, [tree.right.hash, ...path]),
-			right: taprootAddPath(tree.right, [tree.left.hash, ...path])
-		});
-	}
-	function taprootWalkTree(tree) {
-		if (!tree) throw new Error(`taprootAddPath: empty tree`);
-		if (tree.type === "leaf") return [tree];
-		if (tree.type !== "branch") throw new Error(`taprootWalkTree: wrong type=${tree}`);
-		return [...taprootWalkTree(tree.left), ...taprootWalkTree(tree.right)];
-	}
-	function taprootHashTree(tree, internalPubKey, allowUnknownOutputs = false, customScripts, depth = 0) {
-		if (depth > TAPROOT_MAX_DEPTH) throw new RangeError(`P2TR: tree depth exceeds ${TAPROOT_MAX_DEPTH}`);
-		if (tree === void 0) throw new Error("taprootHashTree: empty tree");
-		if (!Array.isArray(tree) && !utils.isPlainObject(tree)) throw new TypeError("\"tree\" expected object or array, got type=" + typeof tree);
-		if (Array.isArray(tree) && tree.length === 1) tree = tree[0];
-		if (!Array.isArray(tree)) {
-			validateObject$1(tree, {}, {}, "tree");
-			const version = tree.leafVersion;
-			const { script: leafScript } = tree;
-			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes(tree.tapMerkleRoot, EMPTY$1)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
-			const script = typeof leafScript === "string" ? hex$1.decode(leafScript) : abytes$2(leafScript, void 0, "tree.script");
-			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
-			return {
-				type: "leaf",
-				version,
-				script,
-				hash: tapLeafHash(script, tapLeafVersion(version))
-			};
-		}
-		if (tree.length !== 2) tree = taprootListToTree(tree);
-		if (tree.length !== 2) throw new Error("hashTree: non binary tree!");
-		const left = taprootHashTree(tree[0], internalPubKey, allowUnknownOutputs, customScripts, depth + 1);
-		const right = taprootHashTree(tree[1], internalPubKey, allowUnknownOutputs, customScripts, depth + 1);
-		let [lH, rH] = [left.hash, right.hash];
-		if (compareBytes$2(rH, lH) === -1) [lH, rH] = [rH, lH];
-		return {
-			type: "branch",
-			left,
-			right,
-			hash: tagSchnorr("TapBranch", lH, rH)
-		};
-	}
-	function p2tr(internalPubKey, tree, network = NETWORK, allowUnknownOutputs = false, customScripts) {
-		if (!internalPubKey && !tree) throw new Error("p2tr: should have pubKey or scriptTree (or both)");
-		const pubKey = typeof internalPubKey === "string" ? hex$1.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
-		if (!isValidPubkey(pubKey, PubT.schnorr)) throw new Error("p2tr: non-schnorr pubkey");
-		if (tree) {
-			let hashedTree = taprootAddPath(taprootHashTree(tree, pubKey, allowUnknownOutputs, customScripts));
-			const tapMerkleRoot = hashedTree.hash;
-			const [tweakedPubkey, parity] = taprootTweakPubkey(pubKey, tapMerkleRoot);
-			const tapLeafScript = [];
-			const leaves = taprootWalkTree(hashedTree).map((l) => {
-				const version = tapLeafVersion(l.version);
-				const controlBlock = {
-					version: version + parity,
-					internalKey: pubKey,
-					merklePath: l.path
-				};
-				tapLeafScript.push([controlBlock, concatBytes$2(l.script, new Uint8Array([version]))]);
-				return _objectSpread2(_objectSpread2({}, l), {}, { controlBlock: TaprootControlBlock.encode(controlBlock) });
-			});
-			return {
-				type: "tr",
-				script: OutScript.encode({
-					type: "tr",
-					pubkey: tweakedPubkey
-				}),
-				address: Address(network).encode({
-					type: "tr",
-					pubkey: tweakedPubkey
-				}),
-				tweakedPubkey,
-				tapInternalKey: pubKey,
-				leaves,
-				tapLeafScript,
-				tapMerkleRoot
-			};
-		} else {
-			const tweakedPubkey = taprootTweakPubkey(pubKey, EMPTY$1)[0];
-			return {
-				type: "tr",
-				script: OutScript.encode({
-					type: "tr",
-					pubkey: tweakedPubkey
-				}),
-				address: Address(network).encode({
-					type: "tr",
-					pubkey: tweakedPubkey
-				}),
-				tweakedPubkey,
-				tapInternalKey: pubKey
-			};
-		}
-	}
-	function validateWitness(version, data) {
-		if (data.length < 2 || data.length > 40) throw new Error("Witness: invalid length");
-		if (version > 16) throw new Error("Witness: invalid version");
-		if (version === 0 && !(data.length === 20 || data.length === 32)) throw new Error("Witness: invalid length for version");
-	}
-	function programToWitness(version, data, network = NETWORK) {
-		validateWitness(version, data);
-		const coder = version === 0 ? bech32 : bech32m;
-		return coder.encode(network.bech32, [version].concat(coder.toWords(data)));
-	}
-	function formatKey(hashed, prefix) {
-		return base58check.encode(concatBytes$2(Uint8Array.from(prefix), hashed));
-	}
-	/**
-	* Address encoder/decoder for a specific Bitcoin network.
-	* @param network - address network parameters
-	* @returns Address coder backed by the provided network.
-	* @example
-	* Create a network-specific address coder and encode a payment descriptor.
-	* ```ts
-	* import { Address, p2wpkh } from '@scure/btc-signer/payment.js';
-	* import { pubECDSA, randomPrivateKeyBytes } from '@scure/btc-signer/utils.js';
-	* const coder = Address();
-	* coder.encode(p2wpkh(pubECDSA(randomPrivateKeyBytes())));
-	* ```
-	*/
-	function Address(network = NETWORK) {
-		validateObject$1(network, {}, {}, "network");
-		return {
-			encode(from) {
-				validateObject$1(from, {}, {}, "from");
-				const { type } = from;
-				astring$1(type, "from.type");
-				if (type === "wpkh") return programToWitness(0, from.hash, network);
-				else if (type === "wsh") return programToWitness(0, from.hash, network);
-				else if (type === "tr") return programToWitness(1, from.pubkey, network);
-				else if (type === "p2a") return programToWitness(1, P2A_PROGRAM, network);
-				else if (type === "pkh") return formatKey(from.hash, [network.pubKeyHash]);
-				else if (type === "sh") return formatKey(from.hash, [network.scriptHash]);
-				throw new Error(`Unknown address type=${type}`);
-			},
-			decode(address) {
-				astring$1(address, "address");
-				if (address.length < 14 || address.length > 74) throw new Error("Invalid address length");
-				if (network.bech32 && address.toLowerCase().startsWith(`${network.bech32}1`)) {
-					let res;
-					try {
-						res = bech32.decode(address);
-						if (res.words[0] !== 0) throw new Error(`bech32: wrong version=${res.words[0]}`);
-					} catch (_) {
-						res = bech32m.decode(address);
-						if (res.words[0] === 0) throw new Error(`bech32m: wrong version=${res.words[0]}`);
-					}
-					if (res.prefix !== network.bech32) throw new Error(`wrong bech32 prefix=${res.prefix}`);
-					const [version, ...program] = res.words;
-					const data = bech32.fromWords(program);
-					validateWitness(version, data);
-					if (version === 0 && data.length === 32) return {
-						type: "wsh",
-						hash: data
-					};
-					else if (version === 0 && data.length === 20) return {
-						type: "wpkh",
-						hash: data
-					};
-					else if (version === 1 && data.length === 32) return {
-						type: "tr",
-						pubkey: data
-					};
-					else if (version === 1 && equalBytes(data, P2A_PROGRAM)) return {
-						type: "p2a",
-						script: Script.encode([1, data])
-					};
-					else throw new Error("Unknown witness program");
-				}
-				const data = base58check.decode(address);
-				if (data.length !== 21) throw new Error("Invalid base58 address");
-				if (data[0] === network.pubKeyHash) return {
-					type: "pkh",
-					hash: data.slice(1)
-				};
-				else if (data[0] === network.scriptHash) return {
-					type: "sh",
-					hash: data.slice(1)
-				};
-				throw new Error(`Invalid address prefix=${data[0]}`);
-			}
-		};
-	}
-	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
-	var init_payment = __esmMin((() => {
-		init_base();
-		init_utils$2();
-		init_utils$1();
-		init_micro_packed();
-		init_psbt();
-		init_script();
-		init_utils();
-		init_objectSpread2();
-		P2A_PROGRAM = /* @__PURE__ */ Uint8Array.from([78, 115]);
-		OutP2A = {
-			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes$2(from[1]) || !equalBytes(from[1], P2A_PROGRAM)) return;
-				return {
-					type: "p2a",
-					script: Script.encode(from)
-				};
-			},
-			decode: (to) => {
-				if (to.type !== "p2a") return;
-				return [1, Uint8Array.from(P2A_PROGRAM)];
-			}
-		};
-		OutPK = {
-			encode(from) {
-				if (from.length !== 2 || !isBytes$2(from[0]) || !isValidPubkey(from[0], PubT.ecdsa) || from[1] !== "CHECKSIG") return;
-				return {
-					type: "pk",
-					pubkey: from[0]
-				};
-			},
-			decode: (to) => {
-				if (to.type !== "pk") return;
-				return [to.pubkey, "CHECKSIG"];
-			}
-		};
-		OutPKH = {
-			encode(from) {
-				if (from.length !== 5 || from[0] !== "DUP" || from[1] !== "HASH160" || !isBytes$2(from[2])) return;
-				if (from[2].length !== 20) return;
-				if (from[3] !== "EQUALVERIFY" || from[4] !== "CHECKSIG") return;
-				return {
-					type: "pkh",
-					hash: from[2]
-				};
-			},
-			decode: (to) => to.type === "pkh" ? [
-				"DUP",
-				"HASH160",
-				to.hash,
-				"EQUALVERIFY",
-				"CHECKSIG"
-			] : void 0
-		};
-		OutSH = {
-			encode(from) {
-				if (from.length !== 3 || from[0] !== "HASH160" || !isBytes$2(from[1]) || from[2] !== "EQUAL") return;
-				if (from[1].length !== 20) return;
-				return {
-					type: "sh",
-					hash: from[1]
-				};
-			},
-			decode: (to) => to.type === "sh" ? [
-				"HASH160",
-				to.hash,
-				"EQUAL"
-			] : void 0
-		};
-		OutWSH = {
-			encode(from) {
-				if (from.length !== 2 || from[0] !== 0 || !isBytes$2(from[1])) return;
-				if (from[1].length !== 32) return;
-				return {
-					type: "wsh",
-					hash: from[1]
-				};
-			},
-			decode: (to) => to.type === "wsh" ? [0, to.hash] : void 0
-		};
-		OutWPKH = {
-			encode(from) {
-				if (from.length !== 2 || from[0] !== 0 || !isBytes$2(from[1])) return;
-				if (from[1].length !== 20) return;
-				return {
-					type: "wpkh",
-					hash: from[1]
-				};
-			},
-			decode: (to) => to.type === "wpkh" ? [0, to.hash] : void 0
-		};
-		OutMS = {
-			encode(from) {
-				const last = from.length - 1;
-				if (from[last] !== "CHECKMULTISIG") return;
-				const m = from[0];
-				const n = from[last - 1];
-				if (typeof m !== "number" || typeof n !== "number") return;
-				const pubkeys = from.slice(1, -2);
-				if (n !== pubkeys.length) return;
-				for (const pub of pubkeys) if (!isBytes$2(pub) || !isValidPubkey(pub, PubT.ecdsa)) return;
-				if (!Number.isSafeInteger(m) || m < 1 || m > n) return;
-				return {
-					type: "ms",
-					m,
-					pubkeys
-				};
-			},
-			decode: (to) => to.type === "ms" ? [
-				to.m,
-				...to.pubkeys,
-				to.pubkeys.length,
-				"CHECKMULTISIG"
-			] : void 0
-		};
-		OutTR = {
-			encode(from) {
-				if (from.length !== 2 || from[0] !== 1 || !isBytes$2(from[1]) || from[1].length !== 32) return;
-				if (!isValidPubkey(from[1], PubT.schnorr)) return;
-				return {
-					type: "tr",
-					pubkey: from[1]
-				};
-			},
-			decode: (to) => to.type === "tr" ? [1, to.pubkey] : void 0
-		};
-		OutTRNS = {
-			encode(from) {
-				const last = from.length - 1;
-				if (from[last] !== "CHECKSIG") return;
-				const pubkeys = [];
-				for (let i = 0; i < last; i++) {
-					const elm = from[i];
-					if (i & 1) {
-						if (elm !== "CHECKSIGVERIFY" || i === last - 1) return;
-						continue;
-					}
-					if (!isBytes$2(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
-					pubkeys.push(elm);
-				}
-				if (!pubkeys.length || pubkeys.length > 999) return;
-				return {
-					type: "tr_ns",
-					pubkeys
-				};
-			},
-			decode: (to) => {
-				if (to.type !== "tr_ns") return;
-				const out = [];
-				for (let i = 0; i < to.pubkeys.length - 1; i++) out.push(to.pubkeys[i], "CHECKSIGVERIFY");
-				out.push(to.pubkeys[to.pubkeys.length - 1], "CHECKSIG");
-				return out;
-			}
-		};
-		OutTRMS = {
-			encode(from) {
-				const last = from.length - 1;
-				if (from[last] !== "NUMEQUAL" || from[1] !== "CHECKSIG") return;
-				const pubkeys = [];
-				const m = OpToNum(from[last - 1]);
-				if (typeof m !== "number") return;
-				for (let i = 0; i < last - 1; i++) {
-					const elm = from[i];
-					if (i & 1) {
-						if (elm !== (i === 1 ? "CHECKSIG" : "CHECKSIGADD")) return;
-						continue;
-					}
-					if (!isBytes$2(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
-					pubkeys.push(elm);
-				}
-				if (!Number.isSafeInteger(m) || m < 1 || m > pubkeys.length || pubkeys.length > 999) return;
-				return {
-					type: "tr_ms",
-					pubkeys,
-					m
-				};
-			},
-			decode: (to) => {
-				if (to.type !== "tr_ms") return;
-				const out = [to.pubkeys[0], "CHECKSIG"];
-				for (let i = 1; i < to.pubkeys.length; i++) out.push(to.pubkeys[i], "CHECKSIGADD");
-				out.push(to.m, "NUMEQUAL");
-				return out;
-			}
-		};
-		OutUnknown = {
-			encode(from) {
-				return {
-					type: "unknown",
-					script: Script.encode(from)
-				};
-			},
-			decode: (to) => to.type === "unknown" ? Script.decode(to.script) : void 0
-		};
-		OutScripts = /* @__PURE__ */ (() => [
-			OutP2A,
-			OutPK,
-			OutPKH,
-			OutSH,
-			OutWSH,
-			OutWPKH,
-			OutMS,
-			OutTR,
-			OutTRNS,
-			OutTRMS,
-			OutUnknown
-		])();
-		_OutScript = /* @__PURE__ */ (() => apply(Script, coders.match(OutScripts)))();
-		OutScript = /* @__PURE__ */ (() => Object.freeze(validate$4(_OutScript, (i) => {
-			if (i.type === "pk" && !isValidPubkey(i.pubkey, PubT.ecdsa)) throw new Error("OutScript/pk: wrong key");
-			if ((i.type === "pkh" || i.type === "sh" || i.type === "wpkh") && (!isBytes$2(i.hash) || i.hash.length !== 20)) throw new Error(`OutScript/${i.type}: wrong hash`);
-			if (i.type === "wsh" && (!isBytes$2(i.hash) || i.hash.length !== 32)) throw new Error(`OutScript/wsh: wrong hash`);
-			if (i.type === "tr" && (!isBytes$2(i.pubkey) || !isValidPubkey(i.pubkey, PubT.schnorr))) throw new Error("OutScript/tr: wrong taproot public key");
-			if (i.type === "ms" || i.type === "tr_ns" || i.type === "tr_ms") {
-				if (!Array.isArray(i.pubkeys)) throw new Error("OutScript/multisig: wrong pubkeys array");
-			}
-			if (i.type === "ms") {
-				const n = i.pubkeys.length;
-				for (const p of i.pubkeys) if (!isValidPubkey(p, PubT.ecdsa)) throw new Error("OutScript/multisig: wrong pubkey");
-				anumber$4(i.m, "m");
-				if (i.m <= 0 || n > 16 || i.m > n) throw new Error("OutScript/multisig: invalid params");
-			}
-			if (i.type === "tr_ns" || i.type === "tr_ms") {
-				if (i.pubkeys.length > 999) throw new Error(`OutScript/${i.type}: invalid params`);
-				for (const p of i.pubkeys) if (!isValidPubkey(p, PubT.schnorr)) throw new Error(`OutScript/${i.type}: wrong pubkey`);
-			}
-			if (i.type === "tr_ms") {
-				const n = i.pubkeys.length;
-				anumber$4(i.m, "m");
-				if (i.m <= 0 || i.m > n) throw new Error("OutScript/tr_ms: invalid params");
-			}
-			return i;
-		})))();
-		_WitnessOutScript = /* @__PURE__ */ (() => Object.freeze(wrap({
-			encodeStream: (w, value) => OutScript.encodeStream(w, value),
-			decodeStream: (r) => {
-				const raw = r.bytes(r.leftBytes);
-				const out = OutScript.decode(raw);
-				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
-				return out;
-			}
-		})))();
-		TAPROOT_MAX_DEPTH = 128;
-		tapLeafVersion = (version) => {
-			if (version === void 0) return 192;
-			anumber$4(version, "leafVersion");
-			if (version > 254 || version === 80 || !!(version & 1)) throw new Error(`P2TR: invalid leafVersion=${version}`);
-			return version;
-		};
-		tapLeafHash = (script, version = 192) => tagSchnorr("TapLeaf", new Uint8Array([tapLeafVersion(version)]), VarBytes.encode(script));
-		base58check = /* @__PURE__ */ createBase58check(sha256$1);
-	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/transaction.js
-	/**
-	* Deep-clones plain transaction data structures.
-	* @param obj - value to clone
-	* @returns Deep copy of the input value.
-	* @throws If the value contains an unsupported runtime type. {@link Error}
-	* @example
-	* Clone plain transaction data structures before mutating them.
-	* ```ts
-	* cloneDeep({ a: [new Uint8Array([1])] });
-	* ```
-	*/
-	function cloneDeep(obj) {
-		if (Array.isArray(obj)) return obj.map((i) => cloneDeep(i));
-		else if (isBytes$2(obj)) return Uint8Array.from(obj);
-		else if ([
-			"number",
-			"bigint",
-			"boolean",
-			"string",
-			"undefined"
-		].includes(typeof obj)) return obj;
-		else if (obj === null) return obj;
-		else if (typeof obj === "object") return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, cloneDeep(v)]));
-		throw new Error(`cloneDeep: unknown type=${typeof obj}`);
-	}
-	function getTaprootKeys(privKey, pubKey, internalKey, merkleRoot = EMPTY$1) {
-		if (equalBytes(internalKey, pubKey)) {
-			privKey = taprootTweakPrivKey(privKey, merkleRoot);
-			pubKey = pubSchnorr(privKey);
-		}
-		return {
-			privKey,
-			pubKey
-		};
-	}
-	function outputBeforeSign(i) {
-		if (i.script === void 0 || i.amount === void 0) throw new Error("Transaction/output: script and amount required");
-		return {
-			script: i.script,
-			amount: i.amount
-		};
-	}
-	/**
-	* Normalizes a PSBT input into the fields needed for signing.
-	* @param i - PSBT input to validate
-	* @returns Input fields required for signing.
-	* @throws If the input is missing `txid` or `index`. {@link Error}
-	* @example
-	* Fill in defaults for the fields the signer expects to see.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { inputBeforeSign } from '@scure/btc-signer/transaction.js';
-	* inputBeforeSign({
-	*   txid: hex.decode('0000000000000000000000000000000000000000000000000000000000000001'),
-	*   index: 0,
-	* });
-	* ```
-	*/
-	function inputBeforeSign(i) {
-		validateObject$1(i, {}, {}, "i");
-		if (i.txid === void 0 || i.index === void 0) throw new Error("Transaction/input: txid and index required");
-		const res = {
-			txid: i.txid,
-			index: i.index,
-			sequence: def(i.sequence, DEFAULT_SEQUENCE),
-			finalScriptSig: def(i.finalScriptSig, EMPTY$1)
-		};
-		RawInput.encode(res);
-		return res;
-	}
-	function cleanFinalInput(i, unknownMode = "strip", proprietaryMode = "strip") {
-		const _i = i;
-		const extensions = cleanExtensions(_i, unknownMode, proprietaryMode);
-		if (extensions.unknown) _i.unknown = extensions.unknown;
-		else delete _i.unknown;
-		if (extensions.proprietary) _i.proprietary = extensions.proprietary;
-		else delete _i.proprietary;
-		for (const _k in _i) {
-			var _i$proprietary;
-			const k = _k;
-			if (proprietaryMode === "ignore" && k === "proprietary" && ((_i$proprietary = _i.proprietary) === null || _i$proprietary === void 0 ? void 0 : _i$proprietary.length)) continue;
-			if (!PSBTInputFinalKeys.includes(k)) delete _i[k];
-		}
-	}
-	function validateSigHash(s) {
-		if (typeof s !== "number" || typeof SigHashNames[s] !== "string") throw new Error(`Invalid SigHash=${s}`);
-		return s;
-	}
-	function unpackSighash(hashType) {
-		const masked = hashType & 31;
-		return {
-			isAny: !!(hashType & SignatureHash.ANYONECANPAY),
-			isNone: masked === SignatureHash.NONE,
-			isSingle: masked === SignatureHash.SINGLE
-		};
-	}
-	function validateOpts(opts) {
-		if (opts !== void 0) validateObject$1(opts, {}, {}, "opts");
-		const _opts = _objectSpread2(_objectSpread2({}, opts), {}, {
-			version: def(opts.version, 2),
-			lockTime: def(opts.lockTime, 0),
-			PSBTVersion: def(opts.PSBTVersion, 0)
-		});
-		if (typeof _opts.allowUnknowInput !== "undefined") _opts.allowUnknownInputs = _opts.allowUnknowInput;
-		if (typeof _opts.allowUnknowOutput !== "undefined") _opts.allowUnknownOutputs = _opts.allowUnknowOutput;
-		if (_opts.allowMissingTxModifiable === void 0) _opts.allowMissingTxModifiable = true;
-		if (typeof _opts.lockTime !== "number") throw new Error("Transaction lock time should be number");
-		U32LE.encode(_opts.lockTime);
-		if (_opts.PSBTVersion !== 0 && _opts.PSBTVersion !== 2) throw new Error(`Unknown PSBT version ${_opts.PSBTVersion}`);
-		for (const k of [
-			"allowUnknownVersion",
-			"allowUnknownOutputs",
-			"allowUnknownInputs",
-			"disableScriptCheck",
-			"bip174jsCompat",
-			"allowLegacyWitnessUtxo",
-			"strictPrevoutValidation",
-			"lowR",
-			"allowUnknown",
-			"allowMissingTxModifiable"
-		]) {
-			const v = _opts[k];
-			if (v === void 0) continue;
-			if (typeof v !== "boolean") throw new Error(`Transation options wrong type: ${k}=${v} (${typeof v})`);
-		}
-		_opts.unknown = normalizeUnknowns("unknown", _opts.unknown, _opts.allowUnknown);
-		_opts.proprietary = normalizeUnknowns("proprietary", _opts.proprietary, void 0, _opts.unknown);
-		if (_opts.allowUnknownVersion ? typeof _opts.version !== "number" : ![
-			-1,
-			0,
-			1,
-			2,
-			3
-		].includes(_opts.version)) throw new Error(`Unknown version: ${_opts.version}`);
-		I32LE.encode(_opts.version);
-		if (_opts.customScripts !== void 0) {
-			const cs = _opts.customScripts;
-			if (!Array.isArray(cs)) throw new Error(`wrong custom scripts type (expected array): customScripts=${cs} (${typeof cs})`);
-			for (const s of cs) {
-				if (typeof s.encode !== "function" || typeof s.decode !== "function") throw new Error(`wrong script=${s} (${typeof s})`);
-				if (s.finalizeTaproot !== void 0 && typeof s.finalizeTaproot !== "function") throw new Error(`wrong script=${s} (${typeof s})`);
-			}
-		}
-		return Object.freeze(_opts);
-	}
-	function checkTaprootInputCommitments(input, prevScript) {
-		var _input$tapLeafScript, _input$tapLeafScript2;
-		const output = _WitnessOutScript.decode(prevScript);
-		const hasTaprootCommitments = input.tapInternalKey !== void 0 || input.tapMerkleRoot !== void 0 || !!((_input$tapLeafScript = input.tapLeafScript) === null || _input$tapLeafScript === void 0 ? void 0 : _input$tapLeafScript.length);
-		if (output.type !== "tr") {
-			if (hasTaprootCommitments) throw new Error("validateInput: Taproot metadata without P2TR previous output");
-			return;
-		}
-		const checkOutputKey = (internalKey, merkleRoot, parity) => {
-			const [outputKey, outputParity] = taprootTweakPubkey(internalKey, merkleRoot);
-			if (!equalBytes(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
-			if (parity !== void 0 && outputParity !== parity) throw new Error("validateInput: Taproot control-block parity does not match previous output");
-		};
-		if (input.tapLeafScript) for (const [controlBlock, scriptWithVersion] of input.tapLeafScript) {
-			const leafVersion = scriptWithVersion[scriptWithVersion.length - 1];
-			const script = scriptWithVersion.subarray(0, -1);
-			let merkleRoot = tapLeafHash(script, leafVersion);
-			for (const sibling of controlBlock.merklePath) merkleRoot = compareBytes$2(sibling, merkleRoot) === -1 ? tagSchnorr("TapBranch", sibling, merkleRoot) : tagSchnorr("TapBranch", merkleRoot, sibling);
-			checkOutputKey(controlBlock.internalKey, merkleRoot, controlBlock.version & 1);
-			if (input.tapInternalKey && !equalBytes(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
-			if (input.tapMerkleRoot && !equalBytes(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
-		}
-		if (input.tapInternalKey && (input.tapMerkleRoot || !((_input$tapLeafScript2 = input.tapLeafScript) === null || _input$tapLeafScript2 === void 0 ? void 0 : _input$tapLeafScript2.length))) checkOutputKey(input.tapInternalKey, input.tapMerkleRoot || EMPTY$1);
-	}
-	function validateRequiredLocktimes(input) {
-		const height = input.requiredHeightLocktime;
-		if (height !== void 0) {
-			anumber$4(height, "requiredHeightLocktime");
-			if (height === 0 || height >= LOCKTIME_THRESHOLD) throw new RangeError(`requiredHeightLocktime must be between 1 and 499999999, got ${height}`);
-		}
-		const time = input.requiredTimeLocktime;
-		if (time !== void 0) {
-			anumber$4(time, "requiredTimeLocktime");
-			if (time < LOCKTIME_THRESHOLD || time > 4294967295) throw new RangeError(`requiredTimeLocktime must be between ${LOCKTIME_THRESHOLD} and 4294967295, got ${time}`);
-		}
-	}
-	function resolvePSBTLocktime(inputs, fallback = 0) {
-		let height = 0;
-		let time = 0;
-		let hasRequirements = false;
-		let heightSupported = true;
-		let timeSupported = true;
-		for (const input of inputs) {
-			validateRequiredLocktimes(input);
-			const hasHeight = input.requiredHeightLocktime !== void 0;
-			const hasTime = input.requiredTimeLocktime !== void 0;
-			if (!hasHeight && !hasTime) continue;
-			hasRequirements = true;
-			if (hasHeight) height = Math.max(height, input.requiredHeightLocktime);
-			else heightSupported = false;
-			if (hasTime) time = Math.max(time, input.requiredTimeLocktime);
-			else timeSupported = false;
-		}
-		if (!hasRequirements) return fallback;
-		if (heightSupported) return height;
-		if (timeSupported) return time;
-		throw new Error("PSBTv2: incompatible height-based and time-based locktime requirements");
-	}
-	function validateInput(i, disableScriptCheck = false) {
-		validateObject$1(i, {}, {}, "i");
-		const _i = i;
-		validateRequiredLocktimes(_i);
-		let prevOut;
-		if (_i.nonWitnessUtxo && _i.index !== void 0) {
-			const last = _i.nonWitnessUtxo.outputs.length - 1;
-			if (_i.index > last) throw new Error(`validateInput: index(${_i.index}) not in nonWitnessUtxo`);
-			prevOut = _i.nonWitnessUtxo.outputs[_i.index];
-			if (_i.witnessUtxo && (!equalBytes(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
-			if (_i.txid) {
-				if (_i.nonWitnessUtxo.outputs.length - 1 < _i.index) throw new Error("nonWitnessUtxo: incorect output index");
-				const tx = Transaction.fromRaw(RawTx.encode(_i.nonWitnessUtxo), {
-					allowUnknownOutputs: true,
-					disableScriptCheck: true,
-					allowUnknownInputs: true,
-					allowUnknownVersion: true
-				});
-				const txid = hex$1.encode(_i.txid);
-				if (tx.id !== txid) throw new Error(`nonWitnessUtxo: wrong txid, exp=${txid} got=${tx.id}`);
-			}
-		} else if (_i.witnessUtxo) prevOut = _i.witnessUtxo;
-		if (prevOut && !disableScriptCheck) {
-			checkScript(prevOut.script, _i.redeemScript, _i.witnessScript);
-			checkTaprootInputCommitments(_i, prevOut.script);
-		}
-		return _i;
-	}
-	/**
-	* Extracts the previous output referenced by an input.
-	* @param input - PSBT input with previous output data
-	* @returns Previous output information.
-	* @throws If the input does not contain usable previous-output information. {@link Error}
-	* @example
-	* Read the previous output from either `witnessUtxo` or `nonWitnessUtxo`.
-	* ```ts
-	* getPrevOut({ witnessUtxo: { amount: 1n, script: new Uint8Array([0x51]) } });
-	* ```
-	*/
-	function getPrevOut(input) {
-		validateObject$1(input, {}, {}, "input");
-		const _input = input;
-		if (_input.nonWitnessUtxo) {
-			if (_input.index === void 0) throw new Error("Unknown input index");
-			if (!Number.isSafeInteger(_input.index) || _input.index < 0 || _input.index >= _input.nonWitnessUtxo.outputs.length) throw new Error(`Wrong input index=${_input.index}`);
-			return _input.nonWitnessUtxo.outputs[_input.index];
-		} else if ("witnessUtxo" in _input) {
-			const prev = _input.witnessUtxo;
-			validateObject$1(prev, {}, {}, "input.witnessUtxo");
-			abigint(prev.amount, "input.witnessUtxo.amount");
-			if (!isBytes$2(prev.script)) throw new TypeError("\"input.witnessUtxo.script\" expected Uint8Array, got type=" + typeof prev.script);
-			return prev;
-		} else throw new Error("Cannot find previous output info");
-	}
-	/**
-	* Normalizes a transaction input update into canonical PSBT form.
-	* @param i - input update to normalize
-	* @param cur - existing input value to merge with
-	* @param allowedFields - fields that may still change on signed inputs
-	* @param disableScriptCheck - whether to skip wrapper and Taproot commitment sanity checks
-	* @param unknown - handling policy for unknown PSBT fields
-	* @param proprietary - handling policy for proprietary PSBT fields
-	* @returns Normalized PSBT input.
-	* @throws If the update conflicts with the existing input or its signatures. {@link Error}
-	* @throws If a numeric input field is outside its wire or protocol range. {@link RangeError}
-	* @example
-	* Accept hex txids from callers in the same display-order form used by `Transaction.id`, then
-	* normalize them into the repo's internal `TransactionInput` shape.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { normalizeInput } from '@scure/btc-signer/transaction.js';
-	* normalizeInput({
-	*   txid: '0000000000000000000000000000000000000000000000000000000000000001',
-	*   index: 0,
-	*   witnessUtxo: { amount: 1n, script: new Uint8Array([0x51]) },
-	* });
-	* ```
-	*/
-	function normalizeInput(i, cur, allowedFields, disableScriptCheck = false, unknown = "strip", proprietary = "strip") {
-		validateObject$1(i, {}, {}, "i");
-		if (cur !== void 0) validateObject$1(cur, {}, {}, "cur");
-		if (allowedFields !== void 0) aarray$1(allowedFields, "allowedFields");
-		const _i = i;
-		const _cur = cur;
-		const _allowedFields = allowedFields;
-		let { nonWitnessUtxo, txid } = _i;
-		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$1.decode(nonWitnessUtxo);
-		if (isBytes$2(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
-		if (!("nonWitnessUtxo" in _i) && nonWitnessUtxo === void 0) nonWitnessUtxo = _cur === null || _cur === void 0 ? void 0 : _cur.nonWitnessUtxo;
-		if (typeof txid === "string") txid = hex$1.decode(txid);
-		if (txid === void 0) txid = _cur === null || _cur === void 0 ? void 0 : _cur.txid;
-		let res = _objectSpread2(_objectSpread2(_objectSpread2({}, _cur), _i), {}, {
-			nonWitnessUtxo,
-			txid
-		});
-		if (!("nonWitnessUtxo" in _i) && res.nonWitnessUtxo === void 0) delete res.nonWitnessUtxo;
-		if (res.sequence === void 0) res.sequence = DEFAULT_SEQUENCE;
-		if (res.tapMerkleRoot === null) delete res.tapMerkleRoot;
-		res = mergeKeyMap(PSBTInput, res, _cur, _allowedFields, unknown, proprietary);
-		if (Array.isArray(res.tapLeafScript) && !res.tapLeafScript.length) delete res.tapLeafScript;
-		validateRequiredLocktimes(res);
-		PSBTInputCoder.encode(res);
-		return validateInput(res, disableScriptCheck);
-	}
-	/**
-	* Determines how an input should be signed and finalized.
-	* Wrapper consistency is expected to be validated earlier by {@link normalizeInput}
-	* and {@link checkScript}; this helper classifies already-normalized inputs and is
-	* not a standalone redeemScript/witnessScript correctness gate for raw caller input.
-	* @param input - PSBT input to inspect
-	* @param allowLegacyWitnessUtxo - whether legacy inputs may rely on witness UTXO data only
-	* @returns Input classification including transaction type and sighash defaults.
-	* @throws If a documented runtime validation or state check fails. {@link Error}
-	* @example
-	* Detect how the signer should treat a SegWit input from its previous output script.
-	* ```ts
-	* import { hex } from '@scure/base';
-	* import { p2wpkh } from '@scure/btc-signer/payment.js';
-	* import { getInputType } from '@scure/btc-signer/transaction.js';
-	* import { pubECDSA, randomPrivateKeyBytes } from '@scure/btc-signer/utils.js';
-	* getInputType({
-	*   witnessUtxo: {
-	*     amount: 1n,
-	*     script: p2wpkh(pubECDSA(randomPrivateKeyBytes())).script,
-	*   },
-	* });
-	* ```
-	*/
-	function getInputType(input, allowLegacyWitnessUtxo = false) {
-		const _input = input;
-		let txType = "legacy";
-		let defaultSighash = SignatureHash.ALL;
-		const prevOut = getPrevOut(_input);
-		const first = _WitnessOutScript.decode(prevOut.script);
-		let type = first.type;
-		let cur = first;
-		const stack = [first];
-		let lastScript = prevOut.script;
-		if (first.type === "tr") {
-			defaultSighash = SignatureHash.DEFAULT;
-			return {
-				txType: "taproot",
-				type: "tr",
-				last: first,
-				lastScript: prevOut.script,
-				defaultSighash,
-				sighash: _input.sighashType || defaultSighash
-			};
-		} else {
-			if (first.type === "wpkh" || first.type === "wsh") txType = "segwit";
-			if (first.type === "sh") {
-				if (!_input.redeemScript) throw new Error("inputType: sh without redeemScript");
-				let child = _WitnessOutScript.decode(_input.redeemScript);
-				if (child.type === "wpkh" || child.type === "wsh") txType = "segwit";
-				stack.push(child);
-				cur = child;
-				lastScript = _input.redeemScript;
-				type += `-${child.type}`;
-			}
-			if (cur.type === "wsh") {
-				if (!_input.witnessScript) throw new Error("inputType: wsh without witnessScript");
-				let child = OutScript.decode(_input.witnessScript);
-				if (child.type === "wsh") txType = "segwit";
-				stack.push(child);
-				cur = child;
-				lastScript = _input.witnessScript;
-				type += `-${child.type}`;
-			}
-			const last = stack[stack.length - 1];
-			if (last.type === "sh" || last.type === "wsh") throw new Error("inputType: sh/wsh cannot be terminal type");
-			const res = {
-				type,
-				txType,
-				last,
-				lastScript,
-				defaultSighash,
-				sighash: _input.sighashType || defaultSighash
-			};
-			if (txType === "legacy" && !allowLegacyWitnessUtxo && !_input.nonWitnessUtxo) throw new Error(`Transaction/sign: legacy input without nonWitnessUtxo, can result in attack that forces paying higher fees. Pass allowLegacyWitnessUtxo=true, if you sure`);
-			return res;
-		}
-	}
-	var _0n$5, _1n$5, U64_MAX, EMPTY32, EMPTY_OUTPUT, toVsize, stripCodeSeparator, DEFAULT_SEQUENCE, def, SignatureHash, SigHash, SigHashNames, cleanExtensions, cleanTxModifiable, TxHashIdx, sighashScope, normalizeUnknowns, LOCKTIME_THRESHOLD, inputSignatures, inputSignedKeys, Transaction;
-	var init_transaction = __esmMin((() => {
-		init_base();
-		init_utils$2();
-		init_micro_packed();
-		init_payment();
-		init_psbt();
-		init_script();
-		init_utils();
-		init_objectSpread2();
-		init_defineProperty();
-		_0n$5 = /* @__PURE__ */ BigInt(0);
-		_1n$5 = /* @__PURE__ */ BigInt(1);
-		U64_MAX = /* @__PURE__ */ BigInt("0xffffffffffffffff");
-		EMPTY32 = /* @__PURE__ */ new Uint8Array(32);
-		EMPTY_OUTPUT = {
-			amount: U64_MAX,
-			script: EMPTY$1
-		};
-		toVsize = (weight) => Math.ceil(weight / 4);
-		stripCodeSeparator = (script) => {
-			let start = 0;
-			const out = [];
-			for (let i = 0; i < script.length;) {
-				const pos = i;
-				const op = script[i++];
-				if (op === OP.CODESEPARATOR) {
-					if (start < pos) out.push(script.subarray(start, pos));
-					start = i;
-					continue;
-				}
-				const len = scriptPushLen(op, (bytes) => {
-					if (i + bytes > script.length) throw new Error("Unexpected end of script");
-					let len = 0;
-					for (let j = 0; j < bytes; j++) len |= script[i + j] << 8 * j;
-					i += bytes;
-					return len;
-				});
-				if (len === void 0) continue;
-				i += len;
-				if (i > script.length) throw new Error("Unexpected end of script");
-			}
-			if (start === 0) return script;
-			if (start < script.length) out.push(script.subarray(start));
-			return out.length ? concatBytes$2(...out) : EMPTY$1;
-		};
-		DEFAULT_SEQUENCE = 4294967295;
-		def = (value, def) => value === void 0 ? def : value;
-		SignatureHash = /* @__PURE__ */ (() => Object.freeze({
-			DEFAULT: 0,
-			ALL: 1,
-			NONE: 2,
-			SINGLE: 3,
-			ANYONECANPAY: 128
-		}))();
-		SigHash = /* @__PURE__ */ (() => Object.freeze({
-			DEFAULT: SignatureHash.DEFAULT,
-			ALL: SignatureHash.ALL,
-			NONE: SignatureHash.NONE,
-			SINGLE: SignatureHash.SINGLE,
-			ALL_ANYONECANPAY: SignatureHash.ALL | SignatureHash.ANYONECANPAY,
-			NONE_ANYONECANPAY: SignatureHash.NONE | SignatureHash.ANYONECANPAY,
-			SINGLE_ANYONECANPAY: SignatureHash.SINGLE | SignatureHash.ANYONECANPAY
-		}))();
-		SigHashNames = /* @__PURE__ */ (() => Object.freeze(reverseObject(SigHash)))();
-		cleanExtensions = (map, unknownMode, proprietaryMode, rejectStrip = false) => {
-			const out = _objectSpread2({}, map);
-			for (const [name, mode] of [["unknown", unknownMode], ["proprietary", proprietaryMode]]) {
-				const value = out[name];
-				if (value !== void 0) aarray$1(value, `${name} PSBT field`);
-				const rows = value;
-				if (!(rows === null || rows === void 0 ? void 0 : rows.length)) {
-					delete out[name];
-					continue;
-				}
-				if (mode === "strict") throw new Error(`PSBT: ${name} PSBT field is not allowed in strict mode`);
-				if (mode === "strip") {
-					if (rejectStrip) throw new Error(`PSBT: ${name} PSBT field cannot be supplied when policy is strip`);
-					delete out[name];
-				}
-			}
-			return out;
-		};
-		cleanTxModifiable = (value, mode) => {
-			if (value === void 0 || !(value & -8)) return value;
-			if (mode === "strict") throw new Error("PSBT: unknown txModifiable bits in strict mode");
-			return mode === "strip" ? value & 7 : value;
-		};
-		TxHashIdx = /* @__PURE__ */ (() => struct({
-			txid: createBytes(32, true),
-			index: U32LE
-		}))();
-		sighashScope = (sighash) => ({
-			sigInputs: sighash & SignatureHash.ANYONECANPAY,
-			sigOutputs: sighash === SignatureHash.DEFAULT ? SignatureHash.ALL : sighash & 3
-		});
-		normalizeUnknowns = (name, mode, legacy, fallback = "strip") => {
-			const alias = legacy === void 0 ? void 0 : legacy ? "ignore" : "strip";
-			if (mode !== void 0 && mode !== "ignore" && mode !== "strip" && mode !== "strict") throw new Error(`Transaction options wrong value: ${name}=${mode}`);
-			if (mode !== void 0 && alias !== void 0 && mode !== alias) throw new Error(`Transaction options: conflicting ${name} options`);
-			return mode || alias || fallback;
-		};
-		LOCKTIME_THRESHOLD = 5e8;
-		inputSignatures = (input) => {
-			const _input = input;
-			const res = [];
-			const add = (signature, taproot, scriptPath = false) => {
-				const sig = signature;
-				if (!sig.length) return;
-				const sighash = taproot && sig.length === 64 ? SignatureHash.DEFAULT : sig[sig.length - 1];
-				res.push({
-					sighash,
-					taproot,
-					scriptPath
-				});
-			};
-			for (const [, signature] of _input.partialSig || []) add(signature, false);
-			if (_input.tapKeySig) add(_input.tapKeySig, true);
-			for (const [, signature] of _input.tapScriptSig || []) add(signature, true, true);
-			return res;
-		};
-		inputSignedKeys = {
-			self: [
-				"txid",
-				"index",
-				"sequence",
-				"nonWitnessUtxo",
-				"witnessUtxo",
-				"sighashType"
-			],
-			ecdsa: ["redeemScript", "witnessScript"],
-			tapscript: ["tapLeafScript"],
-			cross: ["txid", "index"],
-			prevout: ["nonWitnessUtxo", "witnessUtxo"]
-		};
-		Transaction = class Transaction {
-			constructor(opts = {}) {
-				_defineProperty(this, "global", {});
-				_defineProperty(this, "inputs", []);
-				_defineProperty(this, "outputs", []);
-				_defineProperty(this, "opts", void 0);
-				const _opts = this.opts = validateOpts(opts);
-				this.global.fallbackLocktime = _opts.lockTime;
-				this.global.txVersion = _opts.version;
-				if (_opts.PSBTVersion === 2) this.global.txModifiable = 3;
-			}
-			isPSBTv2() {
-				var _this$global$version;
-				return ((_this$global$version = this.global.version) !== null && _this$global$version !== void 0 ? _this$global$version : this.opts.PSBTVersion) === 2;
-			}
-			requireTxModifiable(bit, kind) {
-				if (!this.isPSBTv2()) return;
-				if (!(this.txModifiablePolicy() & bit)) throw new Error(`PSBTv2: ${kind} are not modifiable`);
-			}
-			txModifiablePolicy(allowMissing = this.opts.allowMissingTxModifiable, unknownMode = this.opts.unknown) {
-				if (!this.isPSBTv2()) return 3;
-				if (this.global.txModifiable !== void 0) return cleanTxModifiable(this.global.txModifiable, unknownMode);
-				return allowMissing ? 3 : 0;
-			}
-			modifiable(allowMissing = this.opts.allowMissingTxModifiable, unknownMode = this.opts.unknown) {
-				let flags = this.txModifiablePolicy(allowMissing, unknownMode);
-				let hasOpaqueFinal = false;
-				let hasSingle = false;
-				for (let idx = 0; idx < this.inputs.length; idx++) {
-					const signatures = inputSignatures(this.inputs[idx]);
-					if (!signatures.length && this.inputStatus(idx) === "finalized") hasOpaqueFinal = true;
-					for (const { sighash } of signatures) {
-						const { isAny, isNone, isSingle } = unpackSighash(sighash);
-						if (!isAny) flags &= -2;
-						if (!isNone) flags &= -3;
-						if (isSingle) hasSingle = true;
-					}
-				}
-				if (hasSingle) flags |= 4;
-				if (hasOpaqueFinal && this.global.txModifiable === void 0) flags &= -4;
-				return flags;
-			}
-			get txModifiable() {
-				return this.modifiable();
-			}
-			static fromRaw(raw, opts = {}) {
-				const parsed = RawTx.decode(raw);
-				const tx = new Transaction(_objectSpread2(_objectSpread2({}, opts), {}, {
-					version: parsed.version,
-					lockTime: parsed.lockTime
-				}));
-				for (const o of parsed.outputs) tx.addOutput(o);
-				tx.outputs = parsed.outputs;
-				tx.inputs = parsed.inputs;
-				if (parsed.witnesses) for (let i = 0; i < parsed.witnesses.length; i++) tx.inputs[i].finalScriptWitness = parsed.witnesses[i];
-				return tx;
-			}
-			static fromPSBT(psbt_, opts = {}) {
-				var _tx$global$fallbackLo;
-				let parsed;
-				try {
-					parsed = RawPSBTV0.decode(psbt_);
-				} catch (e0) {
-					try {
-						parsed = RawPSBTV2.decode(psbt_);
-					} catch (e2) {
-						throw e0;
-					}
-				}
-				const PSBTVersion = parsed.global.version || 0;
-				if (PSBTVersion !== 0 && PSBTVersion !== 2) throw new Error(`Wrong PSBT version=${PSBTVersion}`);
-				const unsigned = parsed.global.unsignedTx;
-				const version = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.version : parsed.global.txVersion;
-				const lockTime = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.lockTime : parsed.global.fallbackLocktime;
-				const tx = new Transaction(_objectSpread2(_objectSpread2({}, opts), {}, {
-					version,
-					lockTime,
-					PSBTVersion
-				}));
-				const inputCount = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.inputs.length : parsed.global.inputCount;
-				tx.inputs = parsed.inputs.slice(0, inputCount).map((i, j) => {
-					var _parsed$global$unsign, _i$finalScriptSig;
-					const input = _objectSpread2(_objectSpread2({}, (_parsed$global$unsign = parsed.global.unsignedTx) === null || _parsed$global$unsign === void 0 ? void 0 : _parsed$global$unsign.inputs[j]), i);
-					if (!((_i$finalScriptSig = i.finalScriptSig) === null || _i$finalScriptSig === void 0 ? void 0 : _i$finalScriptSig.length)) delete input.finalScriptSig;
-					return validateInput(input, tx.opts.disableScriptCheck);
-				});
-				const outputCount = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.outputs.length : parsed.global.outputCount;
-				const outputStart = PSBTVersion === 0 && inputCount === 0 && Object.keys(parsed.outputs[0] || {}).length === 0 && (outputCount > 0 && parsed.outputs.length === outputCount + 1 || outputCount === 0 && parsed.outputs.length === 2 && Object.keys(parsed.outputs[1]).length === 0) ? 1 : 0;
-				tx.outputs = parsed.outputs.slice(outputStart, outputStart + outputCount).map((i, j) => {
-					var _parsed$global$unsign2;
-					return _objectSpread2(_objectSpread2({}, i), (_parsed$global$unsign2 = parsed.global.unsignedTx) === null || _parsed$global$unsign2 === void 0 ? void 0 : _parsed$global$unsign2.outputs[j]);
-				});
-				const unknownMode = tx.opts.unknown;
-				const proprietaryMode = tx.opts.proprietary;
-				tx.global = cleanExtensions(_objectSpread2(_objectSpread2({}, parsed.global), {}, { txVersion: version }), unknownMode, proprietaryMode);
-				tx.inputs = tx.inputs.map((input) => cleanExtensions(input, unknownMode, proprietaryMode));
-				tx.outputs = tx.outputs.map((output) => cleanExtensions(output, unknownMode, proprietaryMode));
-				if (tx.global.txModifiable !== void 0) tx.global.txModifiable = cleanTxModifiable(tx.global.txModifiable, unknownMode);
-				resolvePSBTLocktime(tx.inputs, (_tx$global$fallbackLo = tx.global.fallbackLocktime) !== null && _tx$global$fallbackLo !== void 0 ? _tx$global$fallbackLo : 0);
-				if (PSBTVersion === 0) tx.global.fallbackLocktime = def(lockTime, 0);
-				return tx;
-			}
-			toPSBT(PSBTVersion = this.global.version || this.opts.PSBTVersion) {
-				if (PSBTVersion !== void 0) anumber$4(PSBTVersion, "PSBTVersion");
-				if (PSBTVersion !== 0 && PSBTVersion !== 2) throw new Error(`Wrong PSBT version=${PSBTVersion}`);
-				const inputs = this.inputs.map((i) => cleanExtensions(cleanPSBTFields(PSBTVersion, PSBTInput, validateInput(i, this.opts.disableScriptCheck)), this.opts.unknown, this.opts.proprietary));
-				for (const inp of inputs) {
-					if (inp.partialSig && !inp.partialSig.length) delete inp.partialSig;
-					if (inp.finalScriptSig && !inp.finalScriptSig.length) delete inp.finalScriptSig;
-					if (inp.finalScriptWitness && !inp.finalScriptWitness.length) delete inp.finalScriptWitness;
-				}
-				const outputs = this.outputs.map((i) => cleanExtensions(cleanPSBTFields(PSBTVersion, PSBTOutput, i), this.opts.unknown, this.opts.proprietary));
-				const global = cleanExtensions(_objectSpread2({}, this.global), this.opts.unknown, this.opts.proprietary);
-				if (global.txModifiable !== void 0) global.txModifiable = cleanTxModifiable(global.txModifiable, this.opts.unknown);
-				if (PSBTVersion === 0) {
-					global.unsignedTx = RawOldTx.decode(RawOldTx.encode({
-						version: this.version,
-						lockTime: this.lockTime,
-						inputs: this.inputs.map((i) => inputBeforeSign(i)).map((i) => _objectSpread2(_objectSpread2({}, i), {}, { finalScriptSig: EMPTY$1 })),
-						outputs: this.outputs.map((o) => outputBeforeSign(o))
-					}));
-					delete global.fallbackLocktime;
-					delete global.txVersion;
-					delete global.inputCount;
-					delete global.outputCount;
-					delete global.version;
-					delete global.txModifiable;
-				} else {
-					delete global.unsignedTx;
-					global.version = PSBTVersion;
-					global.txVersion = this.version;
-					global.inputCount = this.inputs.length;
-					global.outputCount = this.outputs.length;
-					if (!this.isPSBTv2() || global.txModifiable === void 0 && this.opts.allowMissingTxModifiable) global.txModifiable = this.txModifiable;
-				}
-				if (this.opts.bip174jsCompat && PSBTVersion === 0 && !outputs.length) outputs.push({});
-				const raw = {
-					global,
-					inputs,
-					outputs
-				};
-				return PSBTVersion === 0 ? RawPSBTV0.encode(raw) : RawPSBTV2.encode(raw);
-			}
-			get lockTime() {
-				var _this$global$fallback;
-				return resolvePSBTLocktime(this.inputs, (_this$global$fallback = this.global.fallbackLocktime) !== null && _this$global$fallback !== void 0 ? _this$global$fallback : 0);
-			}
-			get version() {
-				if (this.global.txVersion === void 0) throw new Error("No global.txVersion");
-				return this.global.txVersion;
-			}
-			inputStatus(idx) {
-				this.checkInputIdx(idx);
-				const input = this.inputs[idx];
-				if (input.finalScriptSig && input.finalScriptSig.length) return "finalized";
-				if (input.finalScriptWitness && input.finalScriptWitness.length) return "finalized";
-				if (input.tapKeySig) return "signed";
-				if (input.tapScriptSig && input.tapScriptSig.length) return "signed";
-				if (input.partialSig && input.partialSig.length) return "signed";
-				return "unsigned";
-			}
-			cleanFinalInput(input) {
-				cleanFinalInput(input, this.opts.unknown, this.opts.proprietary);
-				if (this.global.txModifiable !== void 0) this.global.txModifiable = cleanTxModifiable(this.global.txModifiable, this.opts.unknown);
-			}
-			inputSighash(idx) {
-				this.checkInputIdx(idx);
-				const inputSighash = this.inputs[idx].sighashType;
-				const sighash = inputSighash === void 0 ? SignatureHash.DEFAULT : inputSighash;
-				return sighashScope(sighash);
-			}
-			signatures() {
-				const res = [];
-				for (let idx = 0; idx < this.inputs.length; idx++) {
-					const actual = inputSignatures(this.inputs[idx]);
-					for (const signature of actual) res.push(_objectSpread2({ idx }, signature));
-					if (actual.length || this.inputStatus(idx) !== "finalized") continue;
-					let taproot = true;
-					try {
-						taproot = _WitnessOutScript.decode(getPrevOut(this.inputs[idx]).script).type === "tr";
-					} catch (_unused) {}
-					const declared = this.inputs[idx].sighashType;
-					const sighash = declared === void 0 ? SignatureHash.DEFAULT : declared;
-					res.push({
-						idx,
-						sighash,
-						taproot,
-						scriptPath: taproot
-					});
-				}
-				return res;
-			}
-			signedInputKeys(idx, signatures = this.signatures()) {
-				const res = /* @__PURE__ */ new Set();
-				const add = (keys) => {
-					for (const key of keys) res.add(key);
-				};
-				for (const signature of signatures) {
-					const { isAny, isNone, isSingle } = unpackSighash(signature.sighash);
-					if (signature.idx === idx) {
-						add(inputSignedKeys.self);
-						if (signature.taproot) {
-							if (signature.scriptPath) add(inputSignedKeys.tapscript);
-						} else add(inputSignedKeys.ecdsa);
-					} else if (!isAny) {
-						add(inputSignedKeys.cross);
-						if (signature.taproot || !isNone && !isSingle) res.add("sequence");
-						if (signature.taproot) add(inputSignedKeys.prevout);
-					}
-				}
-				return [...res];
-			}
-			signStatus(signatures = this.signatures()) {
-				let addInput = true, addOutput = true;
-				let inputs = [], outputs = [];
-				for (const { idx, sighash } of signatures) {
-					const { sigInputs, sigOutputs } = sighashScope(sighash);
-					if (sigInputs === SignatureHash.ANYONECANPAY) {
-						if (!inputs.includes(idx)) inputs.push(idx);
-					} else addInput = false;
-					if (sigOutputs === SignatureHash.ALL) addOutput = false;
-					else if (sigOutputs === SignatureHash.SINGLE) {
-						if (!outputs.includes(idx)) outputs.push(idx);
-					} else if (sigOutputs === SignatureHash.NONE) {} else throw new Error(`Wrong signature hash output type: ${sigOutputs}`);
-				}
-				return {
-					addInput,
-					addOutput,
-					inputs,
-					outputs
-				};
-			}
-			get isFinal() {
-				for (let idx = 0; idx < this.inputs.length; idx++) if (this.inputStatus(idx) !== "finalized") return false;
-				return true;
-			}
-			get hasWitnesses() {
-				for (const i of this.inputs) if (i.finalScriptWitness && i.finalScriptWitness.length) return true;
-				return false;
-			}
-			get weight() {
-				if (!this.isFinal) throw new Error("Transaction is not finalized");
-				const varLen = (dataLen) => CompactSizeLen.encode(dataLen).length + dataLen;
-				const hasWitnesses = this.hasWitnesses;
-				let out = 32;
-				const outputs = this.outputs.map(outputBeforeSign);
-				out += 4 * CompactSizeLen.encode(this.outputs.length).length;
-				for (const o of outputs) out += 32 + 4 * varLen(o.script.length);
-				if (hasWitnesses) out += 2;
-				out += 4 * CompactSizeLen.encode(this.inputs.length).length;
-				for (const i of this.inputs) {
-					out += 160 + 4 * varLen((i.finalScriptSig || EMPTY$1).length);
-					if (hasWitnesses) {
-						const witness = i.finalScriptWitness || [];
-						out += CompactSizeLen.encode(witness.length).length;
-						for (const w of witness) out += varLen(w.length);
-					}
-				}
-				return out;
-			}
-			get vsize() {
-				return toVsize(this.weight);
-			}
-			toBytes(withScriptSig = false, withWitness = false) {
-				return RawTx.encode({
-					version: this.version,
-					lockTime: this.lockTime,
-					inputs: this.inputs.map(inputBeforeSign).map((i) => _objectSpread2(_objectSpread2({}, i), {}, { finalScriptSig: withScriptSig && i.finalScriptSig || EMPTY$1 })),
-					outputs: this.outputs.map(outputBeforeSign),
-					witnesses: this.inputs.map((i) => i.finalScriptWitness || []),
-					segwitFlag: withWitness && this.hasWitnesses
-				});
-			}
-			get unsignedTx() {
-				return this.toBytes(false, false);
-			}
-			get hex() {
-				return hex$1.encode(this.toBytes(true, this.hasWitnesses));
-			}
-			get hash() {
-				return hex$1.encode(sha256x2(this.toBytes(true)));
-			}
-			get id() {
-				return hex$1.encode(sha256x2(this.toBytes(true)).reverse());
-			}
-			checkInputIdx(idx) {
-				anumber$4(idx, "idx");
-				if (idx >= this.inputs.length) throw new Error(`Wrong input index=${idx}`);
-			}
-			validatePrevoutsForSigning() {
-				if (!this.opts.strictPrevoutValidation) return;
-				for (let i = 0; i < this.inputs.length; i++) {
-					const input = this.inputs[i];
-					if (!input.nonWitnessUtxo) throw new Error(`Transaction/sign: strictPrevoutValidation requires nonWitnessUtxo for input=${i}`);
-					if (input.txid === void 0 || input.index === void 0) throw new Error(`Transaction/sign: strictPrevoutValidation requires an outpoint for input=${i}`);
-					validateInput(input, this.opts.disableScriptCheck);
-				}
-			}
-			getInput(idx) {
-				this.checkInputIdx(idx);
-				return cloneDeep(this.inputs[idx]);
-			}
-			get inputsLength() {
-				return this.inputs.length;
-			}
-			addInput(input, _ignoreSignStatus = false) {
-				var _this$global$fallback2;
-				validateObject$1(input, {}, {}, "input");
-				cleanExtensions(input, this.opts.unknown, this.opts.proprietary, true);
-				this.requireTxModifiable(1, "inputs");
-				const signatures = _ignoreSignStatus ? void 0 : this.signatures();
-				const status = signatures && this.signStatus(signatures);
-				if (status && !status.addInput) throw new Error("Tx has signed inputs, cannot add new one");
-				const normalized = cloneDeep(normalizeInput(input, void 0, void 0, this.opts.disableScriptCheck, this.opts.unknown, this.opts.proprietary));
-				const nextLockTime = resolvePSBTLocktime([...this.inputs, normalized], (_this$global$fallback2 = this.global.fallbackLocktime) !== null && _this$global$fallback2 !== void 0 ? _this$global$fallback2 : 0);
-				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
-				this.inputs.push(normalized);
-				return this.inputs.length - 1;
-			}
-			updateInput(idx, input, _ignoreSignStatus = false) {
-				var _this$global$fallback3;
-				this.checkInputIdx(idx);
-				cleanExtensions(input, this.opts.unknown, this.opts.proprietary, true);
-				let allowedFields;
-				const signatures = _ignoreSignStatus ? void 0 : this.signatures();
-				if (signatures === null || signatures === void 0 ? void 0 : signatures.length) {
-					if (this.inputStatus(idx) === "finalized") allowedFields = PSBTInputSignatureKeys.filter((key) => this.inputs[idx][key] !== void 0);
-					else {
-						const signed = new Set(this.signedInputKeys(idx, signatures));
-						if (signed.size) allowedFields = Object.keys(PSBTInput).filter((key) => !signed.has(key));
-					}
-				}
-				const normalized = cloneDeep(normalizeInput(input, this.inputs[idx], allowedFields, this.opts.disableScriptCheck, this.opts.unknown, this.opts.proprietary));
-				const inputs = this.inputs.slice();
-				inputs[idx] = normalized;
-				const nextLockTime = resolvePSBTLocktime(inputs, (_this$global$fallback3 = this.global.fallbackLocktime) !== null && _this$global$fallback3 !== void 0 ? _this$global$fallback3 : 0);
-				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
-				const current = this.inputs[idx];
-				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
-				this.inputs[idx] = normalized;
-			}
-			checkOutputIdx(idx) {
-				anumber$4(idx, "idx");
-				if (idx >= this.outputs.length) throw new Error(`Wrong output index=${idx}`);
-			}
-			getOutput(idx) {
-				this.checkOutputIdx(idx);
-				return cloneDeep(this.outputs[idx]);
-			}
-			getOutputAddress(idx, network = NETWORK) {
-				const out = this.getOutput(idx);
-				if (!out.script) return;
-				return Address(network).encode(_WitnessOutScript.decode(out.script));
-			}
-			get outputsLength() {
-				return this.outputs.length;
-			}
-			normalizeOutput(o, cur, allowedFields) {
-				validateObject$1(o, {}, {}, "o");
-				let { amount, script } = o;
-				if (amount === void 0) amount = cur === null || cur === void 0 ? void 0 : cur.amount;
-				amount = abigint(amount, "o.amount");
-				if (typeof script === "string") script = hex$1.decode(script);
-				if (script === void 0) script = cur === null || cur === void 0 ? void 0 : cur.script;
-				let res = _objectSpread2(_objectSpread2(_objectSpread2({}, cur), o), {}, {
-					amount,
-					script
-				});
-				if (res.amount === void 0) delete res.amount;
-				res = mergeKeyMap(PSBTOutput, res, cur, allowedFields, this.opts.unknown, this.opts.proprietary);
-				PSBTOutputCoder.encode(res);
-				if (res.script && !this.opts.allowUnknownOutputs && _WitnessOutScript.decode(res.script).type === "unknown") throw new Error("Transaction/output: unknown output script type, there is a chance that input is unspendable. Pass allowUnknownOutputs=true, if you sure");
-				if (!this.opts.disableScriptCheck) checkScript(res.script, res.redeemScript, res.witnessScript);
-				return res;
-			}
-			addOutput(o, _ignoreSignStatus = false) {
-				cleanExtensions(o, this.opts.unknown, this.opts.proprietary, true);
-				this.requireTxModifiable(2, "outputs");
-				const status = _ignoreSignStatus ? void 0 : this.signStatus();
-				if (status && (!status.addOutput || status.outputs.includes(this.outputs.length))) throw new Error("Tx has signed outputs, cannot add new one");
-				this.outputs.push(cloneDeep(this.normalizeOutput(o)));
-				return this.outputs.length - 1;
-			}
-			updateOutput(idx, output, _ignoreSignStatus = false) {
-				this.checkOutputIdx(idx);
-				cleanExtensions(output, this.opts.unknown, this.opts.proprietary, true);
-				let allowedFields = void 0;
-				if (!_ignoreSignStatus) {
-					const status = this.signStatus();
-					if (!status.addOutput || status.outputs.includes(idx)) allowedFields = PSBTOutputUnsignedKeys;
-				}
-				const current = this.outputs[idx];
-				const normalized = cloneDeep(this.normalizeOutput(output, current, allowedFields));
-				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
-				this.outputs[idx] = normalized;
-			}
-			addOutputAddress(address, amount, network = NETWORK) {
-				return this.addOutput({
-					script: OutScript.encode(Address(network).decode(address)),
-					amount
-				});
-			}
-			get fee() {
-				let res = _0n$5;
-				for (const i of this.inputs) {
-					const prevOut = getPrevOut(i);
-					if (!prevOut) throw new Error("Empty input amount");
-					res += prevOut.amount;
-				}
-				const outputs = this.outputs.map(outputBeforeSign);
-				for (const o of outputs) res -= o.amount;
-				return res;
-			}
-			preimageLegacy(idx, prevOutScript, hashType) {
-				const { isAny, isNone, isSingle } = unpackSighash(hashType);
-				if (idx < 0 || !Number.isSafeInteger(idx)) throw new Error(`Invalid input idx=${idx}`);
-				if (isSingle && idx >= this.outputs.length || idx >= this.inputs.length) return U256LE.encode(_1n$5);
-				prevOutScript = stripCodeSeparator(prevOutScript);
-				let inputs = this.inputs.map(inputBeforeSign).map((input, inputIdx) => _objectSpread2(_objectSpread2({}, input), {}, { finalScriptSig: inputIdx === idx ? prevOutScript : EMPTY$1 }));
-				if (isAny) inputs = [inputs[idx]];
-				else if (isNone || isSingle) inputs = inputs.map((input, inputIdx) => _objectSpread2(_objectSpread2({}, input), {}, { sequence: inputIdx === idx ? input.sequence : 0 }));
-				let outputs = this.outputs.map(outputBeforeSign);
-				if (isNone) outputs = [];
-				else if (isSingle) outputs = outputs.slice(0, idx).fill(EMPTY_OUTPUT).concat([outputs[idx]]);
-				const tmpTx = RawTx.encode({
-					lockTime: this.lockTime,
-					version: this.version,
-					segwitFlag: false,
-					inputs,
-					outputs
-				});
-				return sha256x2(tmpTx, I32LE.encode(hashType));
-			}
-			preimageWitnessV0(idx, prevOutScript, hashType, amount) {
-				anumber$4(idx, "idx");
-				if (idx >= this.inputs.length) throw new Error(`Invalid input idx=${idx}`);
-				const { isAny, isNone, isSingle } = unpackSighash(hashType);
-				let inputHash = EMPTY32;
-				let sequenceHash = EMPTY32;
-				let outputHash = EMPTY32;
-				const inputs = this.inputs.map(inputBeforeSign);
-				const outputs = this.outputs.map(outputBeforeSign);
-				if (!isAny) inputHash = sha256x2(...inputs.map(TxHashIdx.encode));
-				if (!isAny && !isSingle && !isNone) sequenceHash = sha256x2(...inputs.map((i) => U32LE.encode(i.sequence)));
-				if (!isSingle && !isNone) outputHash = sha256x2(...outputs.map(RawOutput.encode));
-				else if (isSingle && idx < outputs.length) outputHash = sha256x2(RawOutput.encode(outputs[idx]));
-				const input = inputs[idx];
-				return sha256x2(I32LE.encode(this.version), inputHash, sequenceHash, createBytes(32, true).encode(input.txid), U32LE.encode(input.index), VarBytes.encode(prevOutScript), U64LE.encode(amount), U32LE.encode(input.sequence), outputHash, U32LE.encode(this.lockTime), U32LE.encode(hashType));
-			}
-			preimageWitnessV1(idx, prevOutScript, hashType, amount, codeSeparator = -1, leafScript, leafVer = 192, annex) {
-				anumber$4(idx, "idx");
-				if (idx >= this.inputs.length) throw new Error(`Invalid input idx=${idx}`);
-				aarray$1(amount, "amount");
-				aarray$1(prevOutScript, "prevOutScript");
-				if (this.inputs.length !== amount.length) throw new Error(`Invalid amounts array=${amount}`);
-				if (this.inputs.length !== prevOutScript.length) throw new Error(`Invalid prevOutScript array=${prevOutScript}`);
-				const out = [
-					U8.encode(0),
-					U8.encode(hashType),
-					I32LE.encode(this.version),
-					U32LE.encode(this.lockTime)
-				];
-				const outType = hashType === SignatureHash.DEFAULT ? SignatureHash.ALL : hashType & 3;
-				const inType = hashType & SignatureHash.ANYONECANPAY;
-				const inputs = this.inputs.map(inputBeforeSign);
-				const outputs = this.outputs.map(outputBeforeSign);
-				if (outType === SignatureHash.SINGLE && idx >= outputs.length) throw new Error(`Input with sighash SINGLE, but there is no output with corresponding index=${idx}`);
-				if (inType !== SignatureHash.ANYONECANPAY) out.push(...[
-					inputs.map(TxHashIdx.encode),
-					amount.map(U64LE.encode),
-					prevOutScript.map(VarBytes.encode),
-					inputs.map((i) => U32LE.encode(i.sequence))
-				].map((i) => sha256$1(concatBytes$2(...i))));
-				if (outType === SignatureHash.ALL) out.push(sha256$1(concatBytes$2(...outputs.map(RawOutput.encode))));
-				const spendType = (annex ? 1 : 0) | (leafScript ? 2 : 0);
-				out.push(new Uint8Array([spendType]));
-				if (inType === SignatureHash.ANYONECANPAY) {
-					const inp = inputs[idx];
-					out.push(TxHashIdx.encode(inp), U64LE.encode(amount[idx]), VarBytes.encode(prevOutScript[idx]), U32LE.encode(inp.sequence));
-				} else out.push(U32LE.encode(idx));
-				if (spendType & 1) out.push(sha256$1(VarBytes.encode(annex || EMPTY$1)));
-				if (outType === SignatureHash.SINGLE) out.push(sha256$1(RawOutput.encode(outputs[idx])));
-				if (leafScript) out.push(tapLeafHash(leafScript, leafVer), U8.encode(0), I32LE.encode(codeSeparator));
-				return tagSchnorr("TapSighash", ...out);
-			}
-			signIdx(privateKey, idx, allowedSighash, _auxRand) {
-				if (!isBytes$2(privateKey)) {
-					if (!privateKey || typeof privateKey !== "object" || typeof privateKey.deriveChild !== "function") throw new TypeError("\"privateKey\" expected Uint8Array or HDKey, got type=" + typeof privateKey);
-				}
-				this.checkInputIdx(idx);
-				this.validatePrevoutsForSigning();
-				const input = validateInput(this.inputs[idx], this.opts.disableScriptCheck);
-				const inputType = getInputType(input, this.opts.allowLegacyWitnessUtxo);
-				const canSign = (privateKey) => {
-					if (inputType.txType === "taproot") {
-						const pubKey = pubSchnorr(privateKey);
-						if (input.tapInternalKey && equalBytes(pubKey, input.tapInternalKey)) return true;
-						if (!input.tapLeafScript) return false;
-						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes$2(op) && equalBytes(op, pubKey)) return true;
-						return false;
-					}
-					const pubKey = pubECDSA(privateKey);
-					const pubKeyHash = hash160(pubKey);
-					for (const op of Script.decode(inputType.lastScript)) if (isBytes$2(op) && (equalBytes(op, pubKey) || equalBytes(op, pubKeyHash))) return true;
-					return false;
-				};
-				if (!isBytes$2(privateKey)) {
-					var _input$tapBip32Deriva, _input$bip32Derivatio;
-					const root = privateKey;
-					const deriveSigners = (label, rows, pubKey) => {
-						if (!rows || !rows.length) throw new Error(`${label}: empty`);
-						const signers = rows.filter((row) => row.fingerprint == root.fingerprint).map((row) => {
-							let s = root;
-							for (const i of row.path) s = s.deriveChild(i);
-							if (!equalBytes(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
-							if (!s.privateKey) throw new Error(`${label}: no privateKey`);
-							return s;
-						});
-						if (!signers.length) throw new Error(`${label}: no items with fingerprint=${root.fingerprint}`);
-						return signers;
-					};
-					const signers = inputType.txType === "taproot" ? deriveSigners("tapBip32Derivation", (_input$tapBip32Deriva = input.tapBip32Derivation) === null || _input$tapBip32Deriva === void 0 ? void 0 : _input$tapBip32Deriva.map(([pubKey, { der }]) => ({
-						pubKey,
-						fingerprint: der.fingerprint,
-						path: der.path
-					})), (s) => s.publicKey.slice(1)) : deriveSigners("bip32Derivation", (_input$bip32Derivatio = input.bip32Derivation) === null || _input$bip32Derivatio === void 0 ? void 0 : _input$bip32Derivatio.map(([pubKey, der]) => ({
-						pubKey,
-						fingerprint: der.fingerprint,
-						path: der.path
-					})), (s) => s.publicKey);
-					let signed = false;
-					for (const s of signers) {
-						if (!canSign(s.privateKey)) continue;
-						if (this.signIdx(s.privateKey, idx, allowedSighash, _auxRand)) signed = true;
-					}
-					if (signed) return true;
-					if (inputType.txType === "taproot") throw new Error("No taproot scripts signed");
-					throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
-				}
-				if (!allowedSighash) allowedSighash = [inputType.defaultSighash];
-				else allowedSighash.forEach(validateSigHash);
-				const sighash = inputType.sighash;
-				if (!allowedSighash.includes(sighash)) throw new Error(`Input with not allowed sigHash=${sighash}. Allowed: ${allowedSighash.join(", ")}`);
-				const { sigOutputs } = this.inputSighash(idx);
-				if (sigOutputs === SignatureHash.SINGLE && idx >= this.outputs.length) throw new Error(`Input with sighash SINGLE, but there is no output with corresponding index=${idx}`);
-				const prevOut = getPrevOut(input);
-				if (inputType.txType === "taproot") {
-					const prevOuts = this.inputs.map(getPrevOut);
-					const prevOutScript = prevOuts.map((i) => i.script);
-					const amount = prevOuts.map((i) => i.amount);
-					let signed = false;
-					let schnorrPub = pubSchnorr(privateKey);
-					let merkleRoot = input.tapMerkleRoot || EMPTY$1;
-					if (input.tapInternalKey) {
-						const { pubKey, privKey } = getTaprootKeys(privateKey, schnorrPub, input.tapInternalKey, merkleRoot);
-						const [taprootPubKey, _] = taprootTweakPubkey(input.tapInternalKey, merkleRoot);
-						if (equalBytes(taprootPubKey, pubKey)) {
-							const hash = this.preimageWitnessV1(idx, prevOutScript, sighash, amount);
-							const sig = concatBytes$2(signSchnorr(hash, privKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$1);
-							this.updateInput(idx, { tapKeySig: sig }, true);
-							signed = true;
-						}
-					}
-					if (input.tapLeafScript) {
-						input.tapScriptSig = input.tapScriptSig || [];
-						for (const [_, _script] of input.tapLeafScript) {
-							const script = _script.subarray(0, -1);
-							const scriptDecoded = Script.decode(script);
-							const ver = _script[_script.length - 1];
-							const hash = tapLeafHash(script, ver);
-							if (scriptDecoded.findIndex((i) => isBytes$2(i) && equalBytes(i, schnorrPub)) === -1) continue;
-							const msg = this.preimageWitnessV1(idx, prevOutScript, sighash, amount, void 0, script, ver);
-							const sig = concatBytes$2(signSchnorr(msg, privateKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$1);
-							this.updateInput(idx, { tapScriptSig: [[{
-								pubKey: schnorrPub,
-								leafHash: hash
-							}, sig]] }, true);
-							signed = true;
-						}
-					}
-					if (!signed) throw new Error("No taproot scripts signed");
-					return true;
-				} else {
-					const pubKey = pubECDSA(privateKey);
-					let hasPubkey = false;
-					const pubKeyHash = hash160(pubKey);
-					for (const i of Script.decode(inputType.lastScript)) if (isBytes$2(i) && (equalBytes(i, pubKey) || equalBytes(i, pubKeyHash))) hasPubkey = true;
-					if (!hasPubkey) throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
-					let hash;
-					if (inputType.txType === "legacy") hash = this.preimageLegacy(idx, inputType.lastScript, sighash);
-					else if (inputType.txType === "segwit") {
-						let script = inputType.lastScript;
-						if (inputType.last.type === "wpkh") script = OutScript.encode({
-							type: "pkh",
-							hash: inputType.last.hash
-						});
-						hash = this.preimageWitnessV0(idx, script, sighash, prevOut.amount);
-					} else throw new Error(`Transaction/sign: unknown tx type: ${inputType.txType}`);
-					const sig = signECDSA(hash, privateKey, this.opts.lowR);
-					this.updateInput(idx, { partialSig: [[pubKey, concatBytes$2(sig, new Uint8Array([sighash]))]] }, true);
-				}
-				return true;
-			}
-			sign(privateKey, allowedSighash, _auxRand) {
-				this.validatePrevoutsForSigning();
-				let num = 0;
-				for (let i = 0; i < this.inputs.length; i++) try {
-					if (this.signIdx(privateKey, i, allowedSighash, _auxRand)) num++;
-				} catch (e) {}
-				if (!num) throw new Error("No inputs signed");
-				return num;
-			}
-			finalizeIdx(idx) {
-				this.checkInputIdx(idx);
-				if (this.fee < _0n$5) throw new Error("Outputs spends more than inputs amount");
-				const input = this.inputs[idx];
-				cleanExtensions(input, this.opts.unknown, this.opts.proprietary);
-				cleanTxModifiable(this.global.txModifiable, this.opts.unknown);
-				const inputType = getInputType(input, this.opts.allowLegacyWitnessUtxo);
-				if (inputType.txType === "taproot") {
-					if (input.tapKeySig) input.finalScriptWitness = [input.tapKeySig];
-					else if (input.tapLeafScript && input.tapScriptSig) {
-						const leafs = input.tapLeafScript.slice().sort((a, b) => TaprootControlBlock.encode(a[0]).length - TaprootControlBlock.encode(b[0]).length);
-						let smallest;
-						let smallestSize = Number.POSITIVE_INFINITY;
-						let unsupported = false;
-						for (const [cb, _script] of leafs) {
-							const script = _script.slice(0, -1);
-							const ver = _script[_script.length - 1];
-							const outScript = OutScript.decode(script);
-							const hash = tapLeafHash(script, ver);
-							const scriptSig = input.tapScriptSig.filter((i) => equalBytes(i[0].leafHash, hash));
-							let signatures = [];
-							let witness;
-							if (outScript.type === "tr_ms") {
-								const m = outScript.m;
-								const pubkeys = outScript.pubkeys;
-								let added = 0;
-								for (const pub of pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
-									if (added === m || sigIdx === -1) {
-										signatures.push(EMPTY$1);
-										continue;
-									}
-									signatures.push(scriptSig[sigIdx][1]);
-									added++;
-								}
-								if (added !== m) continue;
-							} else if (outScript.type === "tr_ns") {
-								for (const pub of outScript.pubkeys) {
-									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
-									if (sigIdx === -1) continue;
-									signatures.push(scriptSig[sigIdx][1]);
-								}
-								if (signatures.length !== outScript.pubkeys.length) continue;
-							} else if (outScript.type === "unknown" && this.opts.allowUnknownInputs) {
-								const scriptDecoded = Script.decode(script);
-								signatures = scriptSig.map(([{ pubKey }, signature]) => {
-									const pos = scriptDecoded.findIndex((i) => isBytes$2(i) && equalBytes(i, pubKey));
-									if (pos === -1) throw new Error("finalize/taproot: cannot find position of pubkey in script");
-									return {
-										signature,
-										pos
-									};
-								}).sort((a, b) => a.pos - b.pos).map((i) => i.signature);
-								if (!signatures.length) continue;
-							} else {
-								const custom = this.opts.customScripts;
-								let recognized = false;
-								if (custom) for (const c of custom) {
-									if (!c.finalizeTaproot) continue;
-									const scriptDecoded = Script.decode(script);
-									const csEncoded = c.encode(scriptDecoded);
-									if (csEncoded === void 0) continue;
-									recognized = true;
-									const finalized = c.finalizeTaproot(script, csEncoded, scriptSig);
-									if (!finalized) continue;
-									witness = finalized.concat(TaprootControlBlock.encode(cb));
-									break;
-								}
-								if (!witness && !recognized && scriptSig.length) unsupported = true;
-								if (!witness) continue;
-							}
-							witness || (witness = signatures.reverse().concat([script, TaprootControlBlock.encode(cb)]));
-							const size = RawWitness.encode(witness).length;
-							if (size >= smallestSize) continue;
-							smallest = witness;
-							smallestSize = size;
-						}
-						if (!smallest && unsupported) throw new Error("Finalize: Unknown tapLeafScript");
-						if (!smallest) throw new Error("finalize/taproot: empty witness");
-						input.finalScriptWitness = smallest;
-					} else throw new Error("finalize/taproot: unknown input");
-					delete input.finalScriptSig;
-					this.cleanFinalInput(input);
-					return;
-				}
-				if (!input.partialSig || !input.partialSig.length) throw new Error("Not enough partial sign");
-				let inputScript = EMPTY$1;
-				let witness = [];
-				if (inputType.last.type === "ms") {
-					const m = inputType.last.m;
-					const pubkeys = inputType.last.pubkeys;
-					let signatures = [];
-					for (const pub of pubkeys) {
-						const sign = input.partialSig.find((s) => equalBytes(pub, s[0]));
-						if (!sign) continue;
-						signatures.push(sign[1]);
-					}
-					signatures = signatures.slice(0, m);
-					if (signatures.length !== m) throw new Error(`Multisig: wrong signatures count, m=${m} n=${pubkeys.length} signatures=${signatures.length}`);
-					inputScript = Script.encode([0, ...signatures]);
-				} else if (inputType.last.type === "pk") inputScript = Script.encode([input.partialSig[0][1]]);
-				else if (inputType.last.type === "pkh") inputScript = Script.encode([input.partialSig[0][1], input.partialSig[0][0]]);
-				else if (inputType.last.type === "wpkh") {
-					inputScript = EMPTY$1;
-					witness = [input.partialSig[0][1], input.partialSig[0][0]];
-				} else if (inputType.last.type === "unknown" && !this.opts.allowUnknownInputs) throw new Error("Unknown inputs not allowed");
-				let finalScriptSig, finalScriptWitness;
-				if (inputType.type.includes("wsh-")) {
-					if (inputScript.length && inputType.lastScript.length) witness = Script.decode(inputScript).map((i) => {
-						if (i === 0) return EMPTY$1;
-						if (isBytes$2(i)) return i;
-						throw new Error(`Wrong witness op=${i}`);
-					});
-					witness = witness.concat(inputType.lastScript);
-				}
-				if (inputType.txType === "segwit") finalScriptWitness = witness;
-				if (inputType.type.startsWith("sh-wsh-")) finalScriptSig = Script.encode([Script.encode([0, sha256$1(inputType.lastScript)])]);
-				else if (inputType.type.startsWith("sh-")) finalScriptSig = Script.encode([...Script.decode(inputScript), inputType.lastScript]);
-				else if (inputType.type.startsWith("wsh-")) {} else if (inputType.txType !== "segwit") finalScriptSig = inputScript;
-				if (!finalScriptSig && !finalScriptWitness) throw new Error("Unknown error finalizing input");
-				if (finalScriptSig) input.finalScriptSig = finalScriptSig;
-				if (finalScriptWitness) input.finalScriptWitness = finalScriptWitness;
-				this.cleanFinalInput(input);
-			}
-			finalize() {
-				for (let i = 0; i < this.inputs.length; i++) this.finalizeIdx(i);
-			}
-			extract() {
-				if (!this.isFinal) throw new Error("Transaction has unfinalized inputs");
-				if (!this.outputs.length) throw new Error("Transaction has no outputs");
-				if (this.fee < _0n$5) throw new Error("Outputs spends more than inputs amount");
-				return this.toBytes(true, true);
-			}
-			combine(other) {
-				if (!(other instanceof Transaction)) throw new TypeError("\"other\" expected Transaction, got type=" + typeof other);
-				const opts = this.opts;
-				const PSBTVersion = Math.max(this.opts.PSBTVersion || 0, other.opts.PSBTVersion || 0);
-				if (this.opts.version !== other.opts.version) throw new Error(`Transaction/combine: different version this=${this.opts.version} other=${other.opts.version}`);
-				const thisV2 = this.isPSBTv2();
-				const otherV2 = other.isPSBTv2();
-				if (!thisV2 || !otherV2) {
-					const thisLockTime = this.lockTime;
-					const otherLockTime = other.lockTime;
-					if (thisLockTime !== otherLockTime) throw new Error(`Transaction/combine: different lockTime this=${thisLockTime} other=${otherLockTime}`);
-				}
-				for (const k of ["inputs", "outputs"]) if (this[k].length !== other[k].length) throw new Error(`Transaction/combine: different ${k} length this=${this[k].length} other=${other[k].length}`);
-				const unsignedTx = this.unsignedTx;
-				if (!equalBytes(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
-				let txModifiable;
-				if (thisV2 && otherV2) {
-					const policy = (tx) => {
-						if (tx.global.txModifiable !== void 0) return cleanTxModifiable(tx.global.txModifiable, opts.unknown);
-						return opts.allowMissingTxModifiable ? tx.modifiable(true, opts.unknown) : 0;
-					};
-					const a = policy(this);
-					const b = policy(other);
-					if ((a & -8) !== (b & -8)) throw new Error("Transaction/combine: conflicting unknown txModifiable flags");
-					txModifiable = a & -8 | a & b & 3 | (a | b) & 4;
-					if (txModifiable === 0 && this.global.txModifiable === void 0 && other.global.txModifiable === void 0 && !opts.allowMissingTxModifiable) txModifiable = void 0;
-				} else if (thisV2) txModifiable = this.modifiable(opts.allowMissingTxModifiable, opts.unknown);
-				else if (otherV2) txModifiable = other.modifiable(opts.allowMissingTxModifiable, opts.unknown);
-				const thisGlobal = _objectSpread2({}, this.global);
-				const otherGlobal = _objectSpread2({}, other.global);
-				if (thisV2 !== otherV2) {
-					if (!thisV2) delete thisGlobal.fallbackLocktime;
-					if (!otherV2) delete otherGlobal.fallbackLocktime;
-					if (!thisV2) delete thisGlobal.version;
-					if (!otherV2) delete otherGlobal.version;
-				}
-				const fallbackLocktime = thisGlobal.fallbackLocktime !== void 0 ? thisGlobal.fallbackLocktime : otherGlobal.fallbackLocktime;
-				delete thisGlobal.txModifiable;
-				delete otherGlobal.txModifiable;
-				delete thisGlobal.fallbackLocktime;
-				delete otherGlobal.fallbackLocktime;
-				const global = combineKeyMap(PSBTGlobal, thisGlobal, otherGlobal, opts.unknown, opts.proprietary);
-				if (fallbackLocktime !== void 0) global.fallbackLocktime = fallbackLocktime;
-				if (PSBTVersion) global.version = PSBTVersion;
-				if (txModifiable === void 0) delete global.txModifiable;
-				else global.txModifiable = txModifiable;
-				let hasOpaqueFinalizedV0 = false;
-				const inputs = this.inputs.map((current, i) => {
-					const currentFinal = this.inputStatus(i) === "finalized";
-					const otherFinal = other.inputStatus(i) === "finalized";
-					if (!thisV2 && currentFinal || !otherV2 && otherFinal) hasOpaqueFinalizedV0 = true;
-					if (currentFinal && otherFinal) for (const k of ["finalScriptSig", "finalScriptWitness"]) {
-						var _this$inputs$i$k, _other$inputs$i$k;
-						if (!!((_this$inputs$i$k = this.inputs[i][k]) === null || _this$inputs$i$k === void 0 ? void 0 : _this$inputs$i$k.length) !== !!((_other$inputs$i$k = other.inputs[i][k]) === null || _other$inputs$i$k === void 0 ? void 0 : _other$inputs$i$k.length)) throw new Error(`Transaction/combine: different finalized field=${k} input=${i}`);
-					}
-					const combined = combineKeyMap(PSBTInput, current, other.inputs[i], opts.unknown, opts.proprietary);
-					if (currentFinal || otherFinal) cleanFinalInput(combined, opts.unknown, opts.proprietary);
-					return cloneDeep(normalizeInput(combined, void 0, void 0, opts.disableScriptCheck, opts.unknown, opts.proprietary));
-				});
-				if (hasOpaqueFinalizedV0 && global.txModifiable !== void 0) global.txModifiable &= -4;
-				const candidate = new Transaction(_objectSpread2(_objectSpread2({}, opts), {}, { PSBTVersion }));
-				const outputs = this.outputs.map((current, i) => {
-					const combined = combineKeyMap(PSBTOutput, current, other.outputs[i], opts.unknown, opts.proprietary);
-					return cloneDeep(candidate.normalizeOutput(combined));
-				});
-				candidate.global = global;
-				candidate.inputs = inputs;
-				candidate.outputs = outputs;
-				if ((!thisV2 || !otherV2) && candidate.isPSBTv2()) candidate.global.txModifiable = candidate.txModifiable;
-				if (!equalBytes(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
-				this.global = candidate.global;
-				this.inputs = candidate.inputs;
-				this.outputs = candidate.outputs;
-				return this;
-			}
-			clone() {
-				return Transaction.fromPSBT(this.toPSBT(), this.opts);
-			}
-		};
-	}));
-	//#endregion
-	//#region packages/wallet-chains/dist/curve-CL7Z6SrU.mjs
+	//#region packages/wallet-chains/dist/curve-BeDNVVGm.mjs
 	init_defineProperty();
 	init_objectSpread2();
 	var U32_MASK64 = /* @__PURE__ */ (() => BigInt(2 ** 32 - 1))();
@@ -17816,7 +14675,7 @@ zoo`.split("\n"));
 	* bytesToHex(Uint8Array.from([0xca, 0xfe, 0x01, 0x23])); // 'cafe0123'
 	* ```
 	*/
-	function bytesToHex$1$1(bytes) {
+	function bytesToHex$1$3(bytes) {
 		abytes$1(bytes);
 		if (hasHexBuiltin) return bytes.toHex();
 		let hex = "";
@@ -18597,7 +15456,7 @@ zoo`.split("\n"));
 	* sha256(new Uint8Array([97, 98, 99]));
 	* ```
 	*/
-	var sha256 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
+	var sha256$1 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
 	/**
 	* SHA2-512 hash function from RFC 4634.
 	* @param msg - message bytes to hash
@@ -18628,7 +15487,7 @@ zoo`.split("\n"));
 	* aarray([1n, 2n], 'scalars');
 	* ```
 	*/
-	function aarray(item, title, inner = () => {}) {
+	function aarray$1(item, title, inner = () => {}) {
 		if (!Array.isArray(item)) throw new TypeError(`"${title}" expected array, got type=${typeof item}`);
 		for (let i = 0; i < item.length; i++) inner(item[i], `${title}[${i}]`);
 		return item;
@@ -18673,7 +15532,7 @@ zoo`.split("\n"));
 	* astring('example', 'label');
 	* ```
 	*/
-	function astring(value, title = "") {
+	function astring$1(value, title = "") {
 		if (typeof value !== "string") {
 			const prefix = title && `"${title}" `;
 			throw new TypeError(prefix + "expected string, got type=" + typeof value);
@@ -18725,7 +15584,7 @@ zoo`.split("\n"));
 	* bytesToHex(Uint8Array.of(1, 2, 3));
 	* ```
 	*/
-	var bytesToHex$2 = bytesToHex$1$1;
+	var bytesToHex$4 = bytesToHex$1$3;
 	/**
 	* Concatenates byte arrays.
 	* @param arrays - Byte arrays to join.
@@ -18737,7 +15596,7 @@ zoo`.split("\n"));
 	* concatBytes(Uint8Array.of(1), Uint8Array.of(2));
 	* ```
 	*/
-	var concatBytes = (...arrays) => concatBytes$1(...arrays);
+	var concatBytes$2 = (...arrays) => concatBytes$1(...arrays);
 	/**
 	* Decodes lowercase or uppercase hex into bytes.
 	* @param hex - Hex string to decode.
@@ -18761,7 +15620,7 @@ zoo`.split("\n"));
 	* isBytes(new Uint8Array(1));
 	* ```
 	*/
-	var isBytes = isBytes$1;
+	var isBytes$2 = isBytes$1;
 	/**
 	* Reads random bytes from the platform CSPRNG.
 	* @param bytesLength - Number of random bytes to read.
@@ -18774,7 +15633,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	var randomBytes$2 = (bytesLength) => randomBytes$1(bytesLength);
-	var _0n$2$1 = /* @__PURE__ */ BigInt(0);
+	var _0n$2$2 = /* @__PURE__ */ BigInt(0);
 	var _1n$2$2 = /* @__PURE__ */ BigInt(1);
 	var atitle = (title) => title ? `"${title}" ` : "";
 	/**
@@ -18869,7 +15728,7 @@ zoo`.split("\n"));
 	*/
 	function hexToNumber(hex) {
 		if (typeof hex !== "string") throw new TypeError("hex string expected, got " + typeof hex);
-		return hex === "" ? _0n$2$1 : BigInt("0x" + hex);
+		return hex === "" ? _0n$2$2 : BigInt("0x" + hex);
 	}
 	/**
 	* Parses big-endian bytes into bigint.
@@ -18884,7 +15743,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function bytesToNumberBE(bytes) {
-		return hexToNumber(bytesToHex$1$1(bytes));
+		return hexToNumber(bytesToHex$1$3(bytes));
 	}
 	/**
 	* Parses little-endian bytes into bigint.
@@ -18899,7 +15758,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function bytesToNumberLE(bytes) {
-		return hexToNumber(bytesToHex$1$1(copyBytes(abytes$1(bytes)).reverse()));
+		return hexToNumber(bytesToHex$1$3(copyBytes(abytes$1(bytes)).reverse()));
 	}
 	/**
 	* Encodes a bigint into fixed-length big-endian bytes.
@@ -18968,7 +15827,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function isPosBig(n) {
-		return typeof n === "bigint" && _0n$2$1 <= n;
+		return typeof n === "bigint" && _0n$2$2 <= n;
 	}
 	/**
 	* Checks whether a bigint lies inside a half-open range.
@@ -19020,8 +15879,8 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function bitLen(n) {
-		if (n < _0n$2$1) throw new Error("expected non-negative bigint, got " + n);
-		return n === _0n$2$1 ? 0 : n.toString(2).length;
+		if (n < _0n$2$2) throw new Error("expected non-negative bigint, got " + n);
+		return n === _0n$2$2 ? 0 : n.toString(2).length;
 	}
 	/**
 	* Calculate mask for N bits. Not using ** operator with bigints because of old engines.
@@ -19079,7 +15938,7 @@ zoo`.split("\n"));
 			k.fill(0);
 			i = 0;
 		};
-		const h = (...msgs) => hmacFn(k, concatBytes(v, ...msgs));
+		const h = (...msgs) => hmacFn(k, concatBytes$2(v, ...msgs));
 		const reseed = (seed = NULL) => {
 			k = h(byte0, seed);
 			v = h();
@@ -19097,7 +15956,7 @@ zoo`.split("\n"));
 				out.push(sl);
 				len += v.length;
 			}
-			return concatBytes(...out);
+			return concatBytes$2(...out);
 		};
 		const genUntil = (seed, pred) => {
 			reset();
@@ -19127,7 +15986,7 @@ zoo`.split("\n"));
 	* validateObject({ flag: true }, { flag: 'boolean' });
 	* ```
 	*/
-	function validateObject(object, fields = {}, optFields = {}, title = "object") {
+	function validateObject$1(object, fields = {}, optFields = {}, title = "object") {
 		aobject(object, title);
 		aobject(fields, "fields");
 		aobject(optFields, "optFields");
@@ -19151,13 +16010,13 @@ zoo`.split("\n"));
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	var _0n$1$2 = /* @__PURE__ */ BigInt(0);
-	var _1n$1$5 = /* @__PURE__ */ BigInt(1);
-	var _2n$4 = /* @__PURE__ */ BigInt(2);
+	var _1n$1$8 = /* @__PURE__ */ BigInt(1);
+	var _2n$6 = /* @__PURE__ */ BigInt(2);
 	var _3n$1 = /* @__PURE__ */ BigInt(3);
 	var _4n$1$1 = /* @__PURE__ */ BigInt(4);
 	var _5n$1 = /* @__PURE__ */ BigInt(5);
 	var _7n$2 = /* @__PURE__ */ BigInt(7);
-	var _8n$2 = /* @__PURE__ */ BigInt(8);
+	var _8n$3 = /* @__PURE__ */ BigInt(8);
 	var _9n = /* @__PURE__ */ BigInt(9);
 	var _15n = /* @__PURE__ */ BigInt(15);
 	var _16n = /* @__PURE__ */ BigInt(16);
@@ -19197,19 +16056,19 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function pow(num, power, modulo) {
-		if (modulo <= _1n$1$5) throw new Error("pow: expected modulus > 1, got " + modulo);
+		if (modulo <= _1n$1$8) throw new Error("pow: expected modulus > 1, got " + modulo);
 		if (typeof power !== "bigint") throw new TypeError("invalid exponent: expected bigint, got " + typeof power);
 		if (power < _0n$1$2) throw new Error("invalid exponent, negatives unsupported");
-		if (power === _0n$1$2) return _1n$1$5;
-		if (power === _1n$1$5) return num;
+		if (power === _0n$1$2) return _1n$1$8;
+		if (power === _1n$1$8) return num;
 		let d = num % modulo;
 		if (d < _0n$1$2) d += modulo;
 		if (power < POW_WINDOWED_MIN) {
-			let p = _1n$1$5;
+			let p = _1n$1$8;
 			while (power > _0n$1$2) {
-				if (power & _1n$1$5) p = p * d % modulo;
+				if (power & _1n$1$8) p = p * d % modulo;
 				d = d * d % modulo;
-				power >>= _1n$1$5;
+				power >>= _1n$1$8;
 			}
 			return p;
 		}
@@ -19219,7 +16078,7 @@ zoo`.split("\n"));
 			power >>= _4n$1$1;
 		}
 		const table = new Array(16);
-		table[0] = _1n$1$5;
+		table[0] = _1n$1$8;
 		table[1] = d;
 		for (let i = 2; i < 16; i++) table[i] = table[i - 1] * d % modulo;
 		let p = table[digits[digits.length - 1]];
@@ -19250,7 +16109,7 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function pow2(x, power, modulo) {
-		if (modulo <= _1n$1$5) throw new Error("pow2: expected modulus > 1, got " + modulo);
+		if (modulo <= _1n$1$8) throw new Error("pow2: expected modulus > 1, got " + modulo);
 		if (power < _0n$1$2) throw new Error("pow2: expected non-negative exponent, got " + power);
 		let res = x;
 		while (power-- > _0n$1$2) {
@@ -19275,17 +16134,17 @@ zoo`.split("\n"));
 	*/
 	function invert(number, modulo) {
 		if (number === _0n$1$2) throw new Error("invert: expected non-zero number");
-		if (modulo <= _1n$1$5) throw new Error("invert: expected modulus > 1, got " + modulo);
+		if (modulo <= _1n$1$8) throw new Error("invert: expected modulus > 1, got " + modulo);
 		let a = mod(number, modulo);
 		let b = modulo;
-		let x = _0n$1$2, u = _1n$1$5;
+		let x = _0n$1$2, u = _1n$1$8;
 		while (a !== _0n$1$2) {
 			const q = b / a;
 			const r = b - a * q;
 			const m = x - u * q;
 			b = a, a = r, x = u, u = m;
 		}
-		if (b !== _1n$1$5) throw new Error("invert: does not exist");
+		if (b !== _1n$1$8) throw new Error("invert: does not exist");
 		return mod(x, modulo);
 	}
 	/**
@@ -19314,11 +16173,11 @@ zoo`.split("\n"));
 	* ```
 	*/
 	function invertCt(a, prime) {
-		if (prime <= _1n$1$5) throw new Error("invertCt: expected prime modulus > 1, got " + prime);
+		if (prime <= _1n$1$8) throw new Error("invertCt: expected prime modulus > 1, got " + prime);
 		const an = mod(a, prime);
 		if (an === _0n$1$2) throw new Error("invertCt: expected non-zero number");
-		const inverse = pow(an, prime - _2n$4, prime);
-		if (mod(an * inverse, prime) !== _1n$1$5) throw new Error("invertCt: does not exist");
+		const inverse = pow(an, prime - _2n$6, prime);
+		if (mod(an * inverse, prime) !== _1n$1$8) throw new Error("invertCt: does not exist");
 		return inverse;
 	}
 	function assertIsSquare(Fp, root, n) {
@@ -19326,22 +16185,22 @@ zoo`.split("\n"));
 		if (!F.eql(F.sqr(root), n)) throw new Error("Cannot find square root");
 	}
 	function aoddModulus(order, fnName) {
-		if ((order & _1n$1$5) === _0n$1$2) throw new Error(fnName + ": expected odd modulus, got " + order);
+		if ((order & _1n$1$8) === _0n$1$2) throw new Error(fnName + ": expected odd modulus, got " + order);
 	}
 	function sqrt3mod4(Fp, n) {
 		const F = Fp;
-		const p1div4 = (F.ORDER + _1n$1$5) / _4n$1$1;
+		const p1div4 = (F.ORDER + _1n$1$8) / _4n$1$1;
 		const root = F.pow(n, p1div4);
 		assertIsSquare(F, root, n);
 		return root;
 	}
 	function sqrt5mod8(Fp, n) {
 		const F = Fp;
-		const p5div8 = (F.ORDER - _5n$1) / _8n$2;
-		const n2 = F.mul(n, _2n$4);
+		const p5div8 = (F.ORDER - _5n$1) / _8n$3;
+		const n2 = F.mul(n, _2n$6);
 		const v = F.pow(n2, p5div8);
 		const nv = F.mul(n, v);
-		const i = F.mul(F.mul(nv, _2n$4), v);
+		const i = F.mul(F.mul(nv, _2n$6), v);
 		const root = F.mul(nv, F.sub(i, F.ONE));
 		assertIsSquare(F, root, n);
 		return root;
@@ -19390,18 +16249,18 @@ zoo`.split("\n"));
 	function tonelliShanks(P) {
 		if (P < _3n$1) throw new Error("sqrt is not defined for small field");
 		aoddModulus(P, "tonelliShanks");
-		let Q = P - _1n$1$5;
+		let Q = P - _1n$1$8;
 		let S = 0;
-		while (Q % _2n$4 === _0n$1$2) {
-			Q /= _2n$4;
+		while (Q % _2n$6 === _0n$1$2) {
+			Q /= _2n$6;
 			S++;
 		}
-		let Z = _2n$4;
+		let Z = _2n$6;
 		const _Fp = Field(P);
 		while (FpLegendre(_Fp, Z) === 1) if (Z++ > 1e3) throw new Error("Cannot find square root: probably non-prime P");
 		if (S === 1) return sqrt3mod4;
 		let cc = _Fp.pow(Z, Q);
-		const Q1div2 = (Q + _1n$1$5) / _2n$4;
+		const Q1div2 = (Q + _1n$1$8) / _2n$6;
 		return function tonelliSlow(Fp, n) {
 			const F = Fp;
 			if (F.is0(n)) return n;
@@ -19419,7 +16278,7 @@ zoo`.split("\n"));
 					t_tmp = F.sqr(t_tmp);
 					if (i === M) throw new Error("Cannot find square root");
 				}
-				const exponent = _1n$1$5 << BigInt(M - i - 1);
+				const exponent = _1n$1$8 << BigInt(M - i - 1);
 				const b = F.pow(c, exponent);
 				M = i;
 				c = F.sqr(b);
@@ -19456,7 +16315,7 @@ zoo`.split("\n"));
 	function FpSqrt(P) {
 		aoddModulus(P, "Fp.sqrt");
 		if (P % _4n$1$1 === _3n$1) return sqrt3mod4;
-		if (P % _8n$2 === _5n$1) return sqrt5mod8;
+		if (P % _8n$3 === _5n$1) return sqrt5mod8;
 		if (P % _16n === _9n) return sqrt9mod16(P);
 		return tonelliShanks(P);
 	}
@@ -19472,7 +16331,7 @@ zoo`.split("\n"));
 	* isNegativeLE(3n, 11n);
 	* ```
 	*/
-	var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$1$5) === _1n$1$5;
+	var isNegativeLE = (num, modulo) => (mod(num, modulo) & _1n$1$8) === _1n$1$8;
 	var FIELD_FIELDS = [
 		"create",
 		"isValid",
@@ -19513,12 +16372,12 @@ zoo`.split("\n"));
 		asafenumber(field.BITS, "BITS");
 		for (const name of FIELD_FIELDS) afunction(field[name], "field." + name);
 		if (field.BYTES < 1 || field.BITS < 1) throw new Error("invalid field: expected BYTES/BITS > 0");
-		if (field.ORDER <= _1n$1$5) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
+		if (field.ORDER <= _1n$1$8) throw new Error("invalid field: expected ORDER > 1, got " + field.ORDER);
 		return field;
 	}
 	function FpInvertBatch(Fp, nums, passZero = false) {
 		validateField(Fp);
-		aarray(nums, "nums");
+		aarray$1(nums, "nums");
 		abool(passZero, "passZero");
 		const F = Fp;
 		const inverted = new Array(nums.length).fill(passZero ? F.ZERO : void 0);
@@ -19560,7 +16419,7 @@ zoo`.split("\n"));
 		validateField(Fp);
 		const F = Fp;
 		aoddModulus(F.ORDER, "FpLegendre");
-		const p1mod2 = (F.ORDER - _1n$1$5) / _2n$4;
+		const p1mod2 = (F.ORDER - _1n$1$8) / _2n$6;
 		const powered = F.pow(n, p1mod2);
 		const yes = F.eql(powered, F.ONE);
 		const zero = F.eql(powered, F.ZERO);
@@ -19601,10 +16460,10 @@ zoo`.split("\n"));
 			_defineProperty(this, "BYTES", void 0);
 			_defineProperty(this, "isLE", void 0);
 			_defineProperty(this, "ZERO", _0n$1$2);
-			_defineProperty(this, "ONE", _1n$1$5);
+			_defineProperty(this, "ONE", _1n$1$8);
 			_defineProperty(this, "_lengths", void 0);
 			_defineProperty(this, "_mod", void 0);
-			if (ORDER <= _1n$1$5) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
+			if (ORDER <= _1n$1$8) throw new Error("invalid field: expected ORDER > 1, got " + ORDER);
 			let _nbitLength = void 0;
 			this.isLE = false;
 			if (opts != null && typeof opts === "object") {
@@ -19638,7 +16497,7 @@ zoo`.split("\n"));
 			return !this.is0(num) && this.isValid(num);
 		}
 		isOdd(num) {
-			return (num & _1n$1$5) === _1n$1$5;
+			return (num & _1n$1$8) === _1n$1$8;
 		}
 		neg(num) {
 			return mod(-num, this.ORDER);
@@ -19758,8 +16617,8 @@ zoo`.split("\n"));
 	*/
 	function getFieldBytesLength(fieldOrder) {
 		if (typeof fieldOrder !== "bigint") throw new Error("field order must be bigint");
-		if (fieldOrder <= _1n$1$5) throw new Error("field order must be greater than 1");
-		const bitLength = bitLen(fieldOrder - _1n$1$5);
+		if (fieldOrder <= _1n$1$8) throw new Error("field order must be greater than 1");
+		const bitLength = bitLen(fieldOrder - _1n$1$8);
 		return Math.ceil(bitLength / 8);
 	}
 	/**
@@ -19811,7 +16670,7 @@ zoo`.split("\n"));
 		const fieldLen = getFieldBytesLength(fieldOrder);
 		const minLen = Math.max(getMinHashLength(fieldOrder), 16);
 		if (len < minLen || len > 1024) throw new Error("expected " + minLen + "-1024 bytes of input, got " + len);
-		const reduced = mod(isLE ? bytesToNumberLE(key) : bytesToNumberBE(key), fieldOrder - _1n$1$5) + _1n$1$5;
+		const reduced = mod(isLE ? bytesToNumberLE(key) : bytesToNumberBE(key), fieldOrder - _1n$1$8) + _1n$1$8;
 		return isLE ? numberToBytesLE(reduced, fieldLen) : numberToBytesBE(reduced, fieldLen);
 	}
 	/**
@@ -19820,8 +16679,8 @@ zoo`.split("\n"));
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$4 = /* @__PURE__ */ BigInt(0);
-	var _1n$6 = /* @__PURE__ */ BigInt(1);
+	var _0n$7 = /* @__PURE__ */ BigInt(0);
+	var _1n$9 = /* @__PURE__ */ BigInt(1);
 	var _4n$2 = /* @__PURE__ */ BigInt(4);
 	var BLIND_BYTES = 16;
 	var BLIND_BITS = 128;
@@ -19913,14 +16772,14 @@ zoo`.split("\n"));
 		afunction(randomBytes, "randomBytes");
 		try {
 			const probe = randomBytes(length);
-			if (!isBytes(probe) || probe.length !== length) return void 0;
+			if (!isBytes$2(probe) || probe.length !== length) return void 0;
 		} catch (_unused) {
 			return;
 		}
 		return randomBytes;
 	}
 	function validateMSMPoints(points, c) {
-		aarray(points, "points");
+		aarray$1(points, "points");
 		points.forEach((p, i) => {
 			if (!(p instanceof c)) throw new Error("invalid point at index " + i);
 		});
@@ -19951,15 +16810,15 @@ zoo`.split("\n"));
 		const half = size / 2;
 		const mask = BigInt(size - 1);
 		const d = [];
-		while (n > _0n$4) {
+		while (n > _0n$7) {
 			let w = 0;
-			if (n & _1n$6) {
+			if (n & _1n$9) {
 				w = Number(n & mask);
 				if (w >= half) w -= size;
 				n -= BigInt(w);
 			}
 			d.push(w);
-			n >>= _1n$6;
+			n >>= _1n$9;
 		}
 		return d;
 	}
@@ -19979,11 +16838,11 @@ zoo`.split("\n"));
 			n >>= shiftBy;
 			if (v > half) {
 				v -= size;
-				n += _1n$6;
+				n += _1n$9;
 			}
 			d.push(v);
 		}
-		if (n !== _0n$4) throw new Error("invalid wnaf");
+		if (n !== _0n$7) throw new Error("invalid wnaf");
 		return d;
 	}
 	/**
@@ -20129,7 +16988,7 @@ zoo`.split("\n"));
 		}
 		validateMulInput(point, scalar) {
 			this.assertPoint(point);
-			if (!inRange(scalar, _1n$6, this.Point.Fn.ORDER)) throw new Error("invalid scalar");
+			if (!inRange(scalar, _1n$9, this.Point.Fn.ORDER)) throw new Error("invalid scalar");
 		}
 		runCT(point, n, bits, transform) {
 			const W = getWindowSize(point);
@@ -20145,7 +17004,7 @@ zoo`.split("\n"));
 			if (this.randomBytes === void 0) throw new Error("randomBytes is required for scalar blinding");
 			const bits = this.Point.Fn.BITS + BLIND_BITS;
 			const blind = this.randomBytes(BLIND_BYTES);
-			if (!isBytes(blind) || blind.length !== BLIND_BYTES) throw new Error("randomBytes returned invalid byte array");
+			if (!isBytes$2(blind) || blind.length !== BLIND_BYTES) throw new Error("randomBytes returned invalid byte array");
 			blind[0] = blind[0] & 63 | 128;
 			const n = scalar + bytesToNumberBE(blind) * this.Point.Fn.ORDER;
 			return this.runCT(point, n, bits, transform);
@@ -20188,7 +17047,7 @@ zoo`.split("\n"));
 		}
 		shouldBlind(point, cofactor) {
 			if (this.randomBytes === void 0) return false;
-			if (cofactor === _1n$6) return true;
+			if (cofactor === _1n$9) return true;
 			if (point !== this.BASE) return false;
 			if (this.baseCanBeBlinded === void 0) this.baseCanBeBlinded = this.mulUnsafe(this.BASE, this.Point.Fn.ORDER).is0();
 			return this.baseCanBeBlinded;
@@ -20291,14 +17150,14 @@ zoo`.split("\n"));
 		if (type !== "weierstrass" && type !== "edwards") throw new Error("expected curve type \"weierstrass\" or \"edwards\"");
 		if (FpFnLE === void 0) FpFnLE = type === "edwards";
 		if (!CURVE || typeof CURVE !== "object") throw new Error(`expected valid ${type} CURVE object`);
-		validateObject(curveOpts);
+		validateObject$1(curveOpts);
 		for (const p of [
 			"p",
 			"n",
 			"h"
 		]) {
 			const val = CURVE[p];
-			if (!(isPosBig(val) && val !== _0n$4)) throw new Error(`CURVE.${p} must be positive bigint`);
+			if (!(isPosBig(val) && val !== _0n$7)) throw new Error(`CURVE.${p} must be positive bigint`);
 		}
 		const Fp = createField(CURVE.p, curveOpts.Fp, FpFnLE);
 		const Fn = createField(CURVE.n, curveOpts.Fn, FpFnLE);
@@ -20340,7 +17199,7 @@ zoo`.split("\n"));
 		};
 	}
 	//#endregion
-	//#region packages/wallet-chains/dist/secp256k1-DQtclDMG.mjs
+	//#region packages/wallet-chains/dist/secp256k1-D0CRzacO.mjs
 	init_defineProperty();
 	/**
 	* HMAC: RFC2104 message authentication code.
@@ -20429,7 +17288,7 @@ zoo`.split("\n"));
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var _0n$1$1 = /* @__PURE__ */ BigInt(0);
+	var _0n$2$1 = /* @__PURE__ */ BigInt(0);
 	/**
 	* @param m - Error message.
 	* @example
@@ -20451,7 +17310,7 @@ zoo`.split("\n"));
 				const { Err: E } = _DER;
 				asafenumber(tag, "tag");
 				if (tag < 0 || tag > 255) throw new E("tlv.encode: wrong tag");
-				astring(data, "data");
+				astring$1(data, "data");
 				if (data.length & 1) throw new E("tlv.encode: unpadded data");
 				const dataLen = data.length / 2;
 				const len = numberToHexUnpadded(dataLen);
@@ -20492,7 +17351,7 @@ zoo`.split("\n"));
 			encode(num) {
 				const { Err: E } = _DER;
 				abignumber(num);
-				if (num < _0n$1$1) throw new E("integer: negative integers are not allowed");
+				if (num < _0n$2$1) throw new E("integer: negative integers are not allowed");
 				let hex = numberToHexUnpadded(num);
 				if (Number.parseInt(hex[0], 16) & 8) hex = "00" + hex;
 				if (hex.length & 1) throw new E("unexpected DER parsing assertion: unpadded hex");
@@ -20526,7 +17385,7 @@ zoo`.split("\n"));
 		},
 		hexFromSig(sig) {
 			const { _tlv: tlv, _int: int } = _DER;
-			validateObject(sig, {
+			validateObject$1(sig, {
 				r: "bigint",
 				s: "bigint"
 			}, {}, "sig");
@@ -20580,21 +17439,21 @@ zoo`.split("\n"));
 	* @module
 	*/
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
-	var divNearest = (num, den) => (num + (num >= 0 ? den : -den) / _2n$1$4) / den;
+	var divNearest = (num, den) => (num + (num >= 0 ? den : -den) / _2n$1$6) / den;
 	/** Splits scalar for GLV endomorphism. */
 	function _splitEndoScalar(k, basis, n) {
-		aInRange("scalar", k, _0n$3, n);
+		aInRange("scalar", k, _0n$1$1, n);
 		const [[a1, b1], [a2, b2]] = basis;
 		const c1 = divNearest(b2 * k, n);
 		const c2 = divNearest(-b1 * k, n);
 		let k1 = k - c1 * a1 - c2 * a2;
 		let k2 = -c1 * b1 - c2 * b2;
-		const k1neg = k1 < _0n$3;
-		const k2neg = k2 < _0n$3;
+		const k1neg = k1 < _0n$1$1;
+		const k2neg = k2 < _0n$1$1;
 		if (k1neg) k1 = -k1;
 		if (k2neg) k2 = -k2;
-		const MAX_NUM = bitMask(Math.ceil(bitLen(n) / 2)) + _1n$4;
-		if (k1 < _0n$3 || k1 >= MAX_NUM || k2 < _0n$3 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
+		const MAX_NUM = bitMask(Math.ceil(bitLen(n) / 2)) + _1n$7;
+		if (k1 < _0n$1$1 || k1 >= MAX_NUM || k2 < _0n$1$1 || k2 >= MAX_NUM) throw new Error("splitScalar (endomorphism): failed for k");
 		return {
 			k1neg,
 			k1,
@@ -20611,7 +17470,7 @@ zoo`.split("\n"));
 		return format;
 	}
 	function validateSigOpts(opts, def) {
-		validateObject(opts);
+		validateObject$1(opts);
 		const optsn = {};
 		for (let optName of Object.keys(def)) optsn[optName] = opts[optName] === void 0 ? def[optName] : opts[optName];
 		abool(optsn.lowS, "lowS");
@@ -20619,9 +17478,9 @@ zoo`.split("\n"));
 		if (optsn.format !== void 0) validateSigFormat(optsn.format);
 		return optsn;
 	}
-	var _0n$3 = /* @__PURE__ */ BigInt(0);
-	var _1n$4 = /* @__PURE__ */ BigInt(1);
-	var _2n$1$4 = /* @__PURE__ */ BigInt(2);
+	var _0n$1$1 = /* @__PURE__ */ BigInt(0);
+	var _1n$7 = /* @__PURE__ */ BigInt(1);
+	var _2n$1$6 = /* @__PURE__ */ BigInt(2);
 	var _3n = /* @__PURE__ */ BigInt(3);
 	var _4n$1 = /* @__PURE__ */ BigInt(4);
 	/**
@@ -20656,7 +17515,7 @@ zoo`.split("\n"));
 		const Fn = validated.Fn;
 		let CURVE = validated.CURVE;
 		const { h: cofactor, n: CURVE_ORDER } = CURVE;
-		validateObject(extraOpts, {}, {
+		validateObject$1(extraOpts, {}, {
 			allowInfinityPoint: "boolean",
 			clearCofactor: "function",
 			isTorsionFree: "function",
@@ -20666,7 +17525,7 @@ zoo`.split("\n"));
 			randomBytes: "function"
 		});
 		const { endo: endoOpts, allowInfinityPoint, clearCofactor, isTorsionFree, fromBytes, toBytes } = extraOpts;
-		const randomBytes$1 = extraOpts.randomBytes === void 0 ? randomBytes$2 : extraOpts.randomBytes;
+		const randomBytes$2$2 = extraOpts.randomBytes === void 0 ? randomBytes$2 : extraOpts.randomBytes;
 		if (endoOpts) {
 			if (!Fp.is0(CURVE.a) || typeof endoOpts.beta !== "bigint" || !Array.isArray(endoOpts.basises)) throw new Error("invalid endo: expected \"beta\": bigint and \"basises\": array");
 		}
@@ -20688,8 +17547,8 @@ zoo`.split("\n"));
 			abool(isCompressed, "isCompressed");
 			if (isCompressed) {
 				assertCompressionIsSupported();
-				return concatBytes(pprefix(!Fp.isOdd(y)), bx);
-			} else return concatBytes(Uint8Array.of(4), bx, Fp.toBytes(y));
+				return concatBytes$2(pprefix(!Fp.isOdd(y)), bx);
+			} else return concatBytes$2(Uint8Array.of(4), bx, Fp.toBytes(y));
 		}
 		function pointFromBytes(bytes) {
 			abytes(bytes, void 0, "Point");
@@ -20973,8 +17832,8 @@ zoo`.split("\n"));
 				const p = this;
 				const sc = scalar;
 				if (!Fn.isValid(sc)) throw new RangeError("invalid scalar: out of range");
-				if (sc === _0n$3 || p.is0()) return Point.ZERO;
-				if (sc === _1n$4) return p;
+				if (sc === _0n$1$1 || p.is0()) return Point.ZERO;
+				if (sc === _1n$7) return p;
 				if (wnaf.hasWindowSize(this)) return wnaf.mulUnsafe(p, sc, normalize);
 				const points = [];
 				const scalars = [];
@@ -21030,17 +17889,17 @@ zoo`.split("\n"));
 			* Always torsion-free for cofactor=1 curves.
 			*/
 			isTorsionFree() {
-				if (cofactor === _1n$4) return true;
+				if (cofactor === _1n$7) return true;
 				if (isTorsionFree) return isTorsionFree(Point, this);
 				return wnaf.mulUnsafe(this, CURVE_ORDER).is0();
 			}
 			clearCofactor() {
-				if (cofactor === _1n$4) return this;
+				if (cofactor === _1n$7) return this;
 				if (clearCofactor) return clearCofactor(Point, this);
 				return this.multiplyUnsafe(cofactor);
 			}
 			isSmallOrder() {
-				if (cofactor === _1n$4) return this.is0();
+				if (cofactor === _1n$7) return this.is0();
 				return this.clearCofactor().is0();
 			}
 			toBytes(isCompressed = true) {
@@ -21049,7 +17908,7 @@ zoo`.split("\n"));
 				return encodePoint(Point, this, isCompressed);
 			}
 			toHex(isCompressed = true) {
-				return bytesToHex$2(this.toBytes(isCompressed));
+				return bytesToHex$4(this.toBytes(isCompressed));
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -21061,7 +17920,7 @@ zoo`.split("\n"));
 		_defineProperty(Point, "Fp", Fp);
 		_defineProperty(Point, "Fn", Fn);
 		const normalize = (points) => normalizeZ(Point, points);
-		const wnaf = new ScalarMultiplier(Point, randomBytes$1);
+		const wnaf = new ScalarMultiplier(Point, randomBytes$2$2);
 		if (wnaf.bits >= 6) Point.BASE.precompute(6);
 		Object.freeze(Point.prototype);
 		Object.freeze(Point);
@@ -21143,7 +18002,7 @@ zoo`.split("\n"));
 		function isProbPub(item) {
 			const { secretKey, publicKey, publicKeyUncompressed } = lengths;
 			const allowedLengths = Fn._lengths;
-			if (!isBytes(item)) return void 0;
+			if (!isBytes$2(item)) return void 0;
 			const l = abytes(item, void 0, "key").length;
 			const isPub = l === publicKey || l === publicKeyUncompressed;
 			const isSec = l === secretKey || !!(allowedLengths === null || allowedLengths === void 0 ? void 0 : allowedLengths.includes(l));
@@ -21218,7 +18077,7 @@ zoo`.split("\n"));
 		validatePointCons(Point);
 		const hash_ = hash;
 		ahash(hash_);
-		validateObject(ecdsaOpts, {}, {
+		validateObject$1(ecdsaOpts, {}, {
 			hmac: "function",
 			lowS: "boolean",
 			randomBytes: "function",
@@ -21226,12 +18085,12 @@ zoo`.split("\n"));
 			bits2int_modN: "function"
 		});
 		const opts = Object.assign({}, ecdsaOpts);
-		const randomBytes$2$2 = opts.randomBytes === void 0 ? randomBytes$2 : opts.randomBytes;
+		const randomBytes$3 = opts.randomBytes === void 0 ? randomBytes$2 : opts.randomBytes;
 		const hmac$1 = opts.hmac === void 0 ? (key, msg) => hmac(hash_, key, msg) : opts.hmac;
 		const { Fp, Fn } = Point;
 		const { ORDER: CURVE_ORDER, BITS: fnBits } = Fn;
 		const blindLength = getMinHashLength(CURVE_ORDER);
-		const csprng = probeRandomBytes(randomBytes$2$2, blindLength);
+		const csprng = probeRandomBytes(randomBytes$3, blindLength);
 		const { keygen, getPublicKey, getSharedSecret, utils, lengths } = ecdh(Point, opts);
 		const defaultSigOpts = {
 			prehash: true,
@@ -21239,9 +18098,9 @@ zoo`.split("\n"));
 			format: "compact",
 			extraEntropy: false
 		};
-		const hasLargeRecoveryLifts = CURVE_ORDER * _2n$1$4 + _1n$4 < Fp.ORDER;
+		const hasLargeRecoveryLifts = CURVE_ORDER * _2n$1$6 + _1n$7 < Fp.ORDER;
 		function isBiggerThanHalfOrder(number) {
-			return number > CURVE_ORDER >> _1n$4;
+			return number > CURVE_ORDER >> _1n$7;
 		}
 		function validateRS(title, num) {
 			if (!Fn.isValidNot0(num)) throw new Error(`invalid signature ${title}: out of range 1..Point.Fn.ORDER`);
@@ -21319,7 +18178,7 @@ zoo`.split("\n"));
 				const radj = recovery === 2 || recovery === 3 ? r + CURVE_ORDER : r;
 				if (!Fp.isValid(radj)) throw new Error("invalid recovery id: sig.r+curve.n != R.x");
 				const x = Fp.toBytes(radj);
-				const R = Point.fromBytes(concatBytes(pprefix((recovery & 1) === 0), x));
+				const R = Point.fromBytes(concatBytes$2(pprefix((recovery & 1) === 0), x));
 				const ir = Fn.inv(radj);
 				const h = bits2int_modN(abytes(messageHash, void 0, "msgHash"));
 				const u1 = Fn.create(-h * ir);
@@ -21340,12 +18199,12 @@ zoo`.split("\n"));
 				const sb = Fn.toBytes(s);
 				if (format === "recovered") {
 					assertRecoverableCurve();
-					return concatBytes(Uint8Array.of(this.assertRecovery()), rb, sb);
+					return concatBytes$2(Uint8Array.of(this.assertRecovery()), rb, sb);
 				}
-				return concatBytes(rb, sb);
+				return concatBytes$2(rb, sb);
 			}
 			toHex(format) {
-				return bytesToHex$2(this.toBytes(format));
+				return bytesToHex$4(this.toBytes(format));
 			}
 		}
 		Object.freeze(Signature.prototype);
@@ -21362,7 +18221,7 @@ zoo`.split("\n"));
 		const ORDER_MASK = bitMask(fnBits);
 		/** Converts to bytes. Checks if num in `[0..ORDER_MASK-1]` e.g.: `[0..2^256-1]`. */
 		function int2octets(num) {
-			aInRange("num < 2^" + fnBits, num, _0n$3, ORDER_MASK);
+			aInRange("num < 2^" + fnBits, num, _0n$1$1, ORDER_MASK);
 			return Fn.toBytes(num);
 		}
 		function validateMsgAndHash(message, prehash) {
@@ -21385,17 +18244,17 @@ zoo`.split("\n"));
 			if (!Fn.isValidNot0(d)) throw new Error("invalid private key");
 			const seedArgs = [int2octets(d), int2octets(h1int)];
 			if (extraEntropy != null && extraEntropy !== false) {
-				const e = extraEntropy === true ? randomBytes$2$2(lengths.secretKey) : extraEntropy;
+				const e = extraEntropy === true ? randomBytes$3(lengths.secretKey) : extraEntropy;
 				seedArgs.push(abytes(e, void 0, "extraEntropy"));
 			}
-			const seed = concatBytes(...seedArgs);
+			const seed = concatBytes$2(...seedArgs);
 			const m = h1int;
 			function k2sig(kBytes) {
 				const k = bits2int(kBytes);
 				if (!Fn.isValidNot0(k)) return;
 				const q = Point.BASE.multiply(k).toAffine();
 				const r = Fn.create(q.x);
-				if (r === _0n$3) return;
+				if (r === _0n$1$1) return;
 				let s;
 				if (csprng !== void 0) {
 					const b = bytesToNumberBE(mapHashToField(csprng(blindLength), CURVE_ORDER));
@@ -21407,7 +18266,7 @@ zoo`.split("\n"));
 					const ik = invertCt(k, CURVE_ORDER);
 					s = Fn.create(ik * Fn.create(m + r * d));
 				}
-				if (s === _0n$3) return;
+				if (s === _0n$1$1) return;
 				let recovery = getRecoveryBit(q.x, q.y, r);
 				let normS = s;
 				if (lowS && isBiggerThanHalfOrder(s)) {
@@ -21455,7 +18314,7 @@ zoo`.split("\n"));
 			const { lowS, prehash, format } = validateSigOpts(opts, defaultSigOpts);
 			publicKey = abytes(publicKey, void 0, "publicKey");
 			message = validateMsgAndHash(message, prehash);
-			if (!isBytes(signature)) {
+			if (!isBytes$2(signature)) {
 				const end = signature instanceof Signature ? ", use sig.toBytes()" : "";
 				throw new Error("verify expects Uint8Array signature" + end);
 			}
@@ -21520,7 +18379,7 @@ zoo`.split("\n"));
 		beta: BigInt("0x7ae96a2b657c07106e64479eac3434e99cf0497512f58995c1396c28719501ee"),
 		basises: [[BigInt("0x3086d221a7d46bcde86c90e49284eb15"), -BigInt("0xe4437ed6010e88286f547fa90abfe4c3")], [BigInt("0x114ca50f7a8e2f3f657c1108d9d44cfd8"), BigInt("0x3086d221a7d46bcde86c90e49284eb15")]]
 	};
-	var _2n$5 = /* @__PURE__ */ BigInt(2);
+	var _2n$7 = /* @__PURE__ */ BigInt(2);
 	/**
 	* √n = n^((p+1)/4) for fields p = 3 mod 4. We unwrap the loop and multiply bit-by-bit.
 	* (P+1n/4n).toString(2) would produce bits [223x 1, 0, 22x 1, 4x 0, 11, 00]
@@ -21531,11 +18390,11 @@ zoo`.split("\n"));
 		const _23n = BigInt(23), _44n = BigInt(44), _88n = BigInt(88);
 		const b2 = y * y * y % P;
 		const b3 = b2 * b2 * y % P;
-		const b11 = pow2(pow2(pow2(b3, _3n, P) * b3 % P, _3n, P) * b3 % P, _2n$5, P) * b2 % P;
+		const b11 = pow2(pow2(pow2(b3, _3n, P) * b3 % P, _3n, P) * b3 % P, _2n$7, P) * b2 % P;
 		const b22 = pow2(b11, _11n, P) * b11 % P;
 		const b44 = pow2(b22, _22n, P) * b22 % P;
 		const b88 = pow2(b44, _44n, P) * b44 % P;
-		const root = pow2(pow2(pow2(pow2(pow2(pow2(b88, _88n, P) * b88 % P, _44n, P) * b44 % P, _3n, P) * b3 % P, _23n, P) * b22 % P, _6n, P) * b2 % P, _2n$5, P);
+		const root = pow2(pow2(pow2(pow2(pow2(pow2(b88, _88n, P) * b88 % P, _44n, P) * b44 % P, _3n, P) * b3 % P, _23n, P) * b22 % P, _6n, P) * b2 % P, _2n$7, P);
 		if (!Fpk1.eql(Fpk1.sqr(root), y)) throw new Error("Cannot find square root");
 		return root;
 	}
@@ -21562,7 +18421,3541 @@ zoo`.split("\n"));
 	var secp256k1 = /* @__PURE__ */ ecdsa(/* @__PURE__ */ weierstrass(secp256k1_CURVE, {
 		Fp: Fpk1,
 		endo: secp256k1_ENDO
-	}), sha256);
+	}), sha256$1);
+	//#endregion
+	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
+	/**
+	* Validates that a value is a non-negative bigint.
+	* @param n - Value to validate.
+	* @param title - Label included in thrown errors.
+	* @returns The same bigint.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Validate a satoshi amount before transaction encoding.
+	* ```ts
+	* abigint(1n, 'amount');
+	* ```
+	*/
+	function abigint(n, title = "value") {
+		if (typeof n !== "bigint") throw new TypeError(`"${title}" expected bigint, got type=${typeof n}`);
+		if (n < _0n$6) throw new RangeError(`"${title}" expected non-negative bigint, got ${n}`);
+		return n;
+	}
+	function aarray(item, title, inner = () => {}) {
+		if (!Array.isArray(item)) throw new TypeError(`"${title}" expected array, got type=${typeof item}`);
+		for (let i = 0; i < item.length; i++) inner(item[i], `${title}[${i}]`);
+		return item;
+	}
+	/**
+	* Asserts something is a string.
+	* @param value - Value to validate.
+	* @param title - Label included in thrown errors.
+	* @returns The validated string.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Validate a label string.
+	*
+	* ```ts
+	* astring('example', 'label');
+	* ```
+	*/
+	function astring(value, title = "") {
+		if (typeof value !== "string") {
+			const prefix = title && `"${title}" `;
+			throw new TypeError(prefix + "expected string, got type=" + typeof value);
+		}
+		return value;
+	}
+	function validateObject(object, fields = {}, optFields = {}, _title = "object") {
+		return validateObject$2(object, fields, optFields);
+	}
+	/**
+	* Signs a 32-byte hash with ECDSA and returns DER encoding.
+	* @param hash - message hash to sign
+	* @param privateKey - signer private key
+	* @param lowR - whether to grind for low-R signatures
+	* @returns DER-encoded signature bytes.
+	* @throws If low-R grinding overflows or ECDSA signing fails validation. {@link Error}
+	* @example
+	* Hash a message first, then create the DER-encoded ECDSA signature.
+	* ```ts
+	* import { randomPrivateKeyBytes, sha256, signECDSA } from '@scure/btc-signer/utils.js';
+	* signECDSA(sha256(new Uint8Array([1, 2, 3])), randomPrivateKeyBytes());
+	* ```
+	*/
+	function signECDSA(hash, privateKey, lowR = false) {
+		abytes$2(hash, 32, "hash");
+		let sig = secp256k1$1.Signature.fromBytes(secp256k1$1.sign(hash, privateKey, { prehash: false }));
+		if (lowR && !hasLowR(sig)) {
+			const extraEntropy = /* @__PURE__ */ new Uint8Array(32);
+			let counter = 0;
+			while (!hasLowR(sig)) {
+				extraEntropy.set(U32LE.encode(counter++));
+				sig = secp256k1$1.Signature.fromBytes(secp256k1$1.sign(hash, privateKey, {
+					prehash: false,
+					extraEntropy
+				}));
+				if (counter > 4294967295) throw new Error("lowR counter overflow: report the error");
+			}
+		}
+		return sig.toBytes("der");
+	}
+	/**
+	* Validates a public key against the expected Bitcoin key encoding.
+	* @param pub - public key bytes to validate
+	* @param type - expected public key format
+	* @returns The validated public key bytes.
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @example
+	* Reject keys that do not match the encoding required by the current script path.
+	* ```ts
+	* import {
+	*   PubT,
+	*   pubECDSA,
+	*   randomPrivateKeyBytes,
+	*   validatePubkey,
+	* } from '@scure/btc-signer/utils.js';
+	* validatePubkey(pubECDSA(randomPrivateKeyBytes()), PubT.ecdsa);
+	* ```
+	*/
+	function validatePubkey(pub, type) {
+		const len = pub.length;
+		if (type === PubT.ecdsa) {
+			if (len === 32) throw new RangeError("Expected non-Schnorr key");
+			Point.fromBytes(pub);
+			return pub;
+		} else if (type === PubT.schnorr) {
+			if (len !== 32) throw new RangeError("Expected 32-byte Schnorr key");
+			schnorr.utils.lift_x(bytesToNumberBE$1(pub));
+			return pub;
+		} else throw new TypeError("Unknown key type");
+	}
+	/**
+	* Computes the Taproot tweak scalar from an internal key and merkle root.
+	* @param a - internal key bytes
+	* @param b - optional merkle root bytes
+	* @returns Taproot tweak scalar.
+	* @throws If the tweak scalar is outside the curve order. {@link Error}
+	* @example
+	* Combine the internal key and Merkle root into the Taproot tweak scalar.
+	* ```ts
+	* import { pubSchnorr, randomPrivateKeyBytes, tapTweak } from '@scure/btc-signer/utils.js';
+	* tapTweak(pubSchnorr(randomPrivateKeyBytes()), new Uint8Array());
+	* ```
+	*/
+	function tapTweak(a, b) {
+		const tn = bytesToNumberBE$1(schnorr.utils.taggedHash("TapTweak", a, b));
+		if (tn >= CURVE_ORDER) throw new Error("tweak higher than curve order");
+		return tn;
+	}
+	/**
+	* Tweaks a private key for Taproot key-path spending.
+	* @param privKey - internal private key bytes
+	* @param merkleRoot - optional taproot merkle root
+	* @returns Tweaked private key bytes.
+	* @throws If the Taproot tweak scalar is outside the curve order. {@link Error}
+	* @example
+	* Derive the tweaked Taproot key-path secret from the internal private key.
+	* ```ts
+	* import { randomPrivateKeyBytes, taprootTweakPrivKey } from '@scure/btc-signer/utils.js';
+	* taprootTweakPrivKey(randomPrivateKeyBytes());
+	* ```
+	*/
+	function taprootTweakPrivKey(privKey, merkleRoot = Uint8Array.of()) {
+		const u = schnorr.utils;
+		abytes$2(privKey, 32, "privKey");
+		const seckey0 = bytesToNumberBE$1(privKey);
+		const P = Point.BASE.multiply(seckey0);
+		const seckey = hasEven(P.y) ? seckey0 : Fn.neg(seckey0);
+		const t = tapTweak(u.pointToBytes(P), merkleRoot);
+		return numberToBytesBE$1(Fn.add(seckey, t), 32);
+	}
+	/**
+	* Tweaks a Schnorr public key for Taproot key-path spending.
+	* @param pubKey - x-only internal public key
+	* @param h - taproot merkle root
+	* @returns Tweaked public key and output-key parity.
+	* @throws If the Taproot tweak scalar is outside the curve order. {@link Error}
+	* @example
+	* Derive the final Taproot output key from the internal key and Merkle root.
+	* ```ts
+	* import {
+	*   pubSchnorr,
+	*   randomPrivateKeyBytes,
+	*   taprootTweakPubkey,
+	* } from '@scure/btc-signer/utils.js';
+	* taprootTweakPubkey(pubSchnorr(randomPrivateKeyBytes()), new Uint8Array());
+	* ```
+	*/
+	function taprootTweakPubkey(pubKey, h) {
+		const u = schnorr.utils;
+		abytes$2(pubKey, 32, "pubKey");
+		const t = tapTweak(pubKey, h);
+		const Q = u.lift_x(bytesToNumberBE$1(pubKey)).add(Point.BASE.multiply(t));
+		const parity = hasEven(Q.y) ? 0 : 1;
+		return [u.pointToBytes(Q), parity];
+	}
+	/**
+	* Returns an owned copy of the library's stable Taproot NUMS key.
+	* @returns A new 32-byte NUMS key copy.
+	* @example
+	* Obtain an internal key without sharing mutable exported storage.
+	* ```ts
+	* import { taprootNumsKey } from '@scure/btc-signer/utils.js';
+	* const internalKey = taprootNumsKey();
+	* ```
+	*/
+	function taprootNumsKey() {
+		return Uint8Array.from(INTERNAL_TAPROOT_NUMS);
+	}
+	/**
+	* Lexicographically compares two byte arrays.
+	* @param a - first byte array
+	* @param b - second byte array
+	* @returns `-1`, `0`, or `1` depending on the ordering.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Compare two serialized keys using Bitcoin's byte ordering.
+	* ```ts
+	* compareBytes(new Uint8Array([1]), new Uint8Array([2]));
+	* ```
+	*/
+	function compareBytes$2(a, b) {
+		if (!isBytes(a) || !isBytes(b)) throw new TypeError(`cmp: wrong type a=${typeof a} b=${typeof b}`);
+		const len = Math.min(a.length, b.length);
+		for (let i = 0; i < len; i++) if (a[i] != b[i]) return Math.sign(a[i] - b[i]);
+		return Math.sign(a.length - b.length);
+	}
+	/**
+	* Reverses an object's keys and values.
+	* @param obj - object to reverse
+	* @returns Object with original values mapped back to keys.
+	* @throws If duplicate values would collide while reversing the object. {@link Error}
+	* @example
+	* Flip a lookup table so the values become keys.
+	* ```ts
+	* reverseObject({ a: 1, b: 2 });
+	* ```
+	*/
+	function reverseObject(obj) {
+		const res = Object.create(null);
+		for (const k in obj) {
+			if (res[obj[k]] !== void 0) throw new Error("duplicate key");
+			res[obj[k]] = k;
+		}
+		return res;
+	}
+	var Point, Fn, CURVE_ORDER, _0n$6, _2n$5, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var init_utils = __esmMin((() => {
+		init_secp256k1();
+		init_utils$1();
+		init_legacy();
+		init_sha2();
+		init_micro_packed();
+		init_utils$2();
+		Point = /* @__PURE__ */ (() => secp256k1$1.Point)();
+		Fn = /* @__PURE__ */ (() => Point.Fn)();
+		CURVE_ORDER = /* @__PURE__ */ (() => Point.Fn.ORDER)();
+		_0n$6 = /* @__PURE__ */ BigInt(0);
+		_2n$5 = /* @__PURE__ */ BigInt(2);
+		hasEven = (y) => y % _2n$5 === _0n$6;
+		isBytes = /* @__PURE__ */ (() => utils.isBytes)();
+		concatBytes = /* @__PURE__ */ (() => utils.concatBytes)();
+		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
+		sha256 = /* @__PURE__ */ (() => sha256$2)();
+		hash160 = (msg) => ripemd160(sha256(msg));
+		sha256x2 = (...msgs) => sha256(sha256(concatBytes(...msgs)));
+		pubSchnorr = (priv) => schnorr.getPublicKey(priv);
+		pubECDSA = (privateKey, isCompressed) => secp256k1$1.getPublicKey(privateKey, isCompressed);
+		LOW_R_BOUND = /* @__PURE__ */ (() => CURVE_ORDER / _2n$5)();
+		hasLowR = (sig) => sig.r < LOW_R_BOUND;
+		signSchnorr = (message, secretKey, auxRand) => schnorr.sign(message, secretKey, auxRand);
+		tagSchnorr = (tag, ...messages) => schnorr.utils.taggedHash(tag, ...messages);
+		PubT = /* @__PURE__ */ (() => Object.freeze({
+			ecdsa: 0,
+			schnorr: 1
+		}))();
+		INTERNAL_TAPROOT_NUMS = /* @__PURE__ */ (() => sha256(Point.BASE.toBytes(false)))();
+		NETWORK = /* @__PURE__ */ Object.freeze({
+			bech32: "bc",
+			pubKeyHash: 0,
+			scriptHash: 5,
+			wif: 128
+		});
+		TEST_NETWORK = /* @__PURE__ */ Object.freeze({
+			bech32: "tb",
+			pubKeyHash: 111,
+			scriptHash: 196,
+			wif: 239
+		});
+	}));
+	//#endregion
+	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
+	/**
+	* Coder for Bitcoin Script numbers.
+	* bytesLimit only constrains decode. encode still serializes any bigint in
+	* Script's signed-magnitude byte form so higher-level consumers can enforce
+	* opcode-specific 4-byte or 5-byte bounds separately.
+	* @param bytesLimit - maximum decoded length in bytes
+	* @param forceMinimal - whether to reject non-minimal encodings
+	* @returns Script number coder.
+	* @example
+	* Encode a small integer using Script number rules.
+	* ```ts
+	* ScriptNum().encode(1n);
+	* ```
+	*/
+	function ScriptNum(bytesLimit = 6, forceMinimal = false) {
+		return wrap({
+			encodeStream: (w, value) => {
+				if (value === _0n$5) return;
+				const neg = value < 0;
+				const val = BigInt(value);
+				const nums = [];
+				for (let abs = neg ? -val : val; abs; abs >>= _8n$2) nums.push(Number(abs & U8_MAX));
+				if (nums[nums.length - 1] >= 128) nums.push(neg ? 128 : 0);
+				else if (neg) nums[nums.length - 1] |= 128;
+				w.bytes(new Uint8Array(nums));
+			},
+			decodeStream: (r) => {
+				const len = r.leftBytes;
+				if (len > bytesLimit) throw new Error(`ScriptNum: number (${len}) bigger than limit=${bytesLimit}`);
+				if (len === 0) return _0n$5;
+				const data = r.bytes(len);
+				if (forceMinimal) {
+					if ((data[len - 1] & 127) === 0) {
+						if (len <= 1 || (data[len - 2] & 128) === 0) throw new Error("Non-minimally encoded ScriptNum");
+					}
+				}
+				let res = _0n$5;
+				for (let i = 0; i < len; ++i) res |= BigInt(data[i]) << _8n$2 * BigInt(i);
+				if (data[len - 1] >= 128) {
+					res &= _2n$4 ** BigInt(len * 8) - _1n$6 >> _1n$6;
+					res = -res;
+				}
+				return res;
+			}
+		});
+	}
+	/**
+	* Attempts to decode a numeric script element into a JavaScript number.
+	* Accepts decoded small integers already represented as JS numbers and pushed
+	* `ScriptNum` byte payloads, but does not interpret opcode mnemonics like `1NEGATE`.
+	* @param op - script element to decode
+	* @param bytesLimit - maximum encoded length in bytes
+	* @param forceMinimal - whether to enforce minimal `ScriptNum` encoding
+	* @returns Decoded number, or `undefined` when the element is not a JS number or valid `ScriptNum` bytes.
+	* @example
+	* Decode a script element back into a JavaScript number when possible.
+	* ```ts
+	* OpToNum(1);
+	* ```
+	*/
+	function OpToNum(op, bytesLimit = 4, forceMinimal = true) {
+		if (typeof op === "number") return op;
+		if (isBytes(op)) try {
+			const val = ScriptNum(bytesLimit, forceMinimal).decode(op);
+			if (val > Number.MAX_SAFE_INTEGER || val < -Number.MAX_SAFE_INTEGER) return;
+			return Number(val);
+		} catch (e) {
+			return;
+		}
+	}
+	function validateRawTx(tx) {
+		if (tx.segwitFlag && tx.witnesses && tx.witnesses.every((w) => !w.length)) throw new Error("Segwit flag with only empty witness fields");
+		return tx;
+	}
+	var _0n$5, _1n$6, _2n$4, _8n$2, U8_MAX, COMPACT_DIRECT_MAX, OP, OPNames, scriptPushLen, Script, CompactSize, CompactSizeLen, _VarBytes, VarBytes, _RawWitness, RawWitness, BTCArray, RawInput, RawOutput, _RawTx, RawTx, RawOldTx;
+	var init_script = __esmMin((() => {
+		init_micro_packed();
+		init_utils();
+		_0n$5 = /* @__PURE__ */ BigInt(0);
+		_1n$6 = /* @__PURE__ */ BigInt(1);
+		_2n$4 = /* @__PURE__ */ BigInt(2);
+		_8n$2 = /* @__PURE__ */ BigInt(8);
+		U8_MAX = /* @__PURE__ */ BigInt(255);
+		COMPACT_DIRECT_MAX = /* @__PURE__ */ BigInt(252);
+		OP = /* @__PURE__ */ Object.freeze({
+			OP_0: 0,
+			PUSHDATA1: 76,
+			PUSHDATA2: 77,
+			PUSHDATA4: 78,
+			"1NEGATE": 79,
+			RESERVED: 80,
+			OP_1: 81,
+			OP_2: 82,
+			OP_3: 83,
+			OP_4: 84,
+			OP_5: 85,
+			OP_6: 86,
+			OP_7: 87,
+			OP_8: 88,
+			OP_9: 89,
+			OP_10: 90,
+			OP_11: 91,
+			OP_12: 92,
+			OP_13: 93,
+			OP_14: 94,
+			OP_15: 95,
+			OP_16: 96,
+			NOP: 97,
+			VER: 98,
+			IF: 99,
+			NOTIF: 100,
+			VERIF: 101,
+			VERNOTIF: 102,
+			ELSE: 103,
+			ENDIF: 104,
+			VERIFY: 105,
+			RETURN: 106,
+			TOALTSTACK: 107,
+			FROMALTSTACK: 108,
+			"2DROP": 109,
+			"2DUP": 110,
+			"3DUP": 111,
+			"2OVER": 112,
+			"2ROT": 113,
+			"2SWAP": 114,
+			IFDUP: 115,
+			DEPTH: 116,
+			DROP: 117,
+			DUP: 118,
+			NIP: 119,
+			OVER: 120,
+			PICK: 121,
+			ROLL: 122,
+			ROT: 123,
+			SWAP: 124,
+			TUCK: 125,
+			CAT: 126,
+			SUBSTR: 127,
+			LEFT: 128,
+			RIGHT: 129,
+			SIZE: 130,
+			INVERT: 131,
+			AND: 132,
+			OR: 133,
+			XOR: 134,
+			EQUAL: 135,
+			EQUALVERIFY: 136,
+			RESERVED1: 137,
+			RESERVED2: 138,
+			"1ADD": 139,
+			"1SUB": 140,
+			"2MUL": 141,
+			"2DIV": 142,
+			NEGATE: 143,
+			ABS: 144,
+			NOT: 145,
+			"0NOTEQUAL": 146,
+			ADD: 147,
+			SUB: 148,
+			MUL: 149,
+			DIV: 150,
+			MOD: 151,
+			LSHIFT: 152,
+			RSHIFT: 153,
+			BOOLAND: 154,
+			BOOLOR: 155,
+			NUMEQUAL: 156,
+			NUMEQUALVERIFY: 157,
+			NUMNOTEQUAL: 158,
+			LESSTHAN: 159,
+			GREATERTHAN: 160,
+			LESSTHANOREQUAL: 161,
+			GREATERTHANOREQUAL: 162,
+			MIN: 163,
+			MAX: 164,
+			WITHIN: 165,
+			RIPEMD160: 166,
+			SHA1: 167,
+			SHA256: 168,
+			HASH160: 169,
+			HASH256: 170,
+			CODESEPARATOR: 171,
+			CHECKSIG: 172,
+			CHECKSIGVERIFY: 173,
+			CHECKMULTISIG: 174,
+			CHECKMULTISIGVERIFY: 175,
+			NOP1: 176,
+			CHECKLOCKTIMEVERIFY: 177,
+			CHECKSEQUENCEVERIFY: 178,
+			NOP4: 179,
+			NOP5: 180,
+			NOP6: 181,
+			NOP7: 182,
+			NOP8: 183,
+			NOP9: 184,
+			NOP10: 185,
+			CHECKSIGADD: 186,
+			INVALID: 255
+		});
+		OPNames = /* @__PURE__ */ (() => Object.freeze(reverseObject(OP)))();
+		scriptPushLen = (op, read) => {
+			if (!(OP.OP_0 < op && op <= OP.PUSHDATA4)) return;
+			if (op < OP.PUSHDATA1) return op;
+			if (op === OP.PUSHDATA1) return read(1);
+			if (op === OP.PUSHDATA2) return read(2);
+			if (op === OP.PUSHDATA4) return read(4);
+			throw new Error("Should be not possible");
+		};
+		Script = /* @__PURE__ */ (() => Object.freeze(wrap({
+			encodeStream: (w, value) => {
+				aarray(value, "value");
+				for (let o of value) {
+					if (typeof o === "string") {
+						const op = OP[o];
+						if (typeof op !== "number") throw new Error(`Unknown opcode=${o}`);
+						w.byte(op);
+						continue;
+					} else if (typeof o === "number") {
+						if (o === 0) {
+							w.byte(0);
+							continue;
+						} else if (o === -1) {
+							w.byte(OP["1NEGATE"]);
+							continue;
+						} else if (1 <= o && o <= 16) {
+							w.byte(OP.OP_1 - 1 + o);
+							continue;
+						}
+					}
+					if (typeof o === "number") o = ScriptNum().encode(BigInt(o));
+					abytes$2(o, void 0, "value");
+					const len = o.length;
+					if (len < OP.PUSHDATA1) w.byte(len);
+					else if (len <= 255) {
+						w.byte(OP.PUSHDATA1);
+						w.byte(len);
+					} else if (len <= 65535) {
+						w.byte(OP.PUSHDATA2);
+						w.bytes(U16LE.encode(len));
+					} else {
+						w.byte(OP.PUSHDATA4);
+						w.bytes(U32LE.encode(len));
+					}
+					w.bytes(o);
+				}
+			},
+			decodeStream: (r) => {
+				const out = [];
+				while (!r.isEnd()) {
+					const cur = r.byte();
+					const len = scriptPushLen(cur, (bytes) => {
+						if (bytes === 1) return U8.decodeStream(r);
+						if (bytes === 2) return U16LE.decodeStream(r);
+						return U32LE.decodeStream(r);
+					});
+					if (len !== void 0) out.push(r.bytes(len));
+					else if (cur === 0) out.push(0);
+					else if (OP.OP_1 <= cur && cur <= OP.OP_16) out.push(cur - (OP.OP_1 - 1));
+					else {
+						const op = OPNames[cur];
+						if (op === void 0) throw new Error(`Unknown opcode=${cur.toString(16)}`);
+						out.push(op);
+					}
+				}
+				return out;
+			}
+		})))();
+		CompactSize = /* @__PURE__ */ (() => {
+			const limits = {
+				253: [
+					253,
+					2,
+					BigInt(253),
+					BigInt(65535)
+				],
+				254: [
+					254,
+					4,
+					BigInt(65536),
+					BigInt(4294967295)
+				],
+				255: [
+					255,
+					8,
+					BigInt(4294967296),
+					BigInt("0xffffffffffffffff")
+				]
+			};
+			const limitsList = Object.values(limits);
+			return Object.freeze(wrap({
+				encodeStream: (w, value) => {
+					if (typeof value === "number") value = BigInt(value);
+					if (_0n$5 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
+					for (const [flag, bytes, start, stop] of limitsList) {
+						if (start > value || value > stop) continue;
+						w.byte(flag);
+						for (let i = 0; i < bytes; i++) w.byte(Number(value >> _8n$2 * BigInt(i) & U8_MAX));
+						return;
+					}
+					throw w.err(`VarInt too big: ${value}`);
+				},
+				decodeStream: (r) => {
+					const b0 = r.byte();
+					if (b0 <= 252) return BigInt(b0);
+					const [_, bytes, start] = limits[b0];
+					let num = _0n$5;
+					for (let i = 0; i < bytes; i++) num |= BigInt(r.byte()) << _8n$2 * BigInt(i);
+					if (num < start) throw r.err(`Wrong CompactSize(${8 * bytes})`);
+					return num;
+				}
+			}));
+		})();
+		CompactSizeLen = /* @__PURE__ */ (() => Object.freeze(apply(CompactSize, coders.numberBigint)))();
+		_VarBytes = /* @__PURE__ */ (() => Object.freeze(createBytes(CompactSize)))();
+		VarBytes = _VarBytes;
+		_RawWitness = /* @__PURE__ */ (() => Object.freeze(array(CompactSizeLen, _VarBytes)))();
+		RawWitness = _RawWitness;
+		BTCArray = (t) => array(CompactSize, t);
+		RawInput = /* @__PURE__ */ (() => Object.freeze(struct({
+			txid: createBytes(32, true),
+			index: U32LE,
+			finalScriptSig: _VarBytes,
+			sequence: U32LE
+		})))();
+		RawOutput = /* @__PURE__ */ (() => Object.freeze(struct({
+			amount: U64LE,
+			script: _VarBytes
+		})))();
+		_RawTx = /* @__PURE__ */ (() => struct({
+			version: I32LE,
+			segwitFlag: flag(new Uint8Array([0, 1])),
+			inputs: BTCArray(RawInput),
+			outputs: BTCArray(RawOutput),
+			witnesses: flagged("segwitFlag", array("inputs/length", _RawWitness)),
+			lockTime: U32LE
+		}))();
+		RawTx = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawTx, validateRawTx)))();
+		RawOldTx = /* @__PURE__ */ (() => Object.freeze(struct({
+			version: I32LE,
+			inputs: BTCArray(RawInput),
+			outputs: BTCArray(RawOutput),
+			lockTime: U32LE
+		})))();
+	}));
+	//#endregion
+	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/psbt.js
+	function PSBTKeyInfo(info) {
+		const [type, kc, vc, reqInc, allowInc, silentIgnore] = info;
+		return {
+			type,
+			kc,
+			vc,
+			reqInc,
+			allowInc,
+			silentIgnore
+		};
+	}
+	function PSBTKeyMap(psbtEnum) {
+		const byType = {};
+		for (const k in psbtEnum) {
+			const [num, kc, vc] = psbtEnum[k];
+			byType[num] = [
+				k,
+				kc,
+				vc
+			];
+		}
+		return wrap({
+			encodeStream: (w, value) => {
+				const _value = value;
+				let out = [];
+				const seen = {};
+				const add = (key, value) => {
+					const _value = value;
+					const kStr = hex$1.encode(PSBTUnknownKey.encode(key));
+					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
+					seen[kStr] = true;
+					out.push({
+						key,
+						value: _value
+					});
+				};
+				for (const name in psbtEnum) {
+					const val = _value[name];
+					if (val === void 0) continue;
+					const [type, kc, vc] = psbtEnum[name];
+					if (!kc) add({
+						type,
+						key: EMPTY$1
+					}, vc.encode(val));
+					else {
+						const kv = val.map(([k, v]) => [kc.encode(k), vc.encode(v)]);
+						kv.sort((a, b) => compareBytes$2(a[0], b[0]));
+						for (const [key, value] of kv) add({
+							key,
+							type
+						}, value);
+					}
+				}
+				if (_value.unknown) {
+					_value.unknown.sort((a, b) => compareBytes$2(a[0].key, b[0].key));
+					for (const [k, v] of _value.unknown) add(k, v);
+				}
+				PSBTKeyPair.encodeStream(w, out);
+			},
+			decodeStream: (r) => {
+				const raw = PSBTKeyPair.decodeStream(r);
+				const out = {};
+				const noKey = {};
+				const seen = {};
+				for (const elm of raw) {
+					const kStr = hex$1.encode(PSBTUnknownKey.encode(elm.key));
+					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
+					seen[kStr] = true;
+					let name = "unknown";
+					let key = elm.key.key;
+					let value = elm.value;
+					if (byType[elm.key.type]) {
+						const [_name, kc, vc] = byType[elm.key.type];
+						name = _name;
+						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$1.encode(key)} value=${hex$1.encode(value)}`);
+						key = kc ? kc.decode(key) : void 0;
+						value = vc.decode(value);
+						if (!kc) {
+							if (out[name]) throw new Error(`PSBT: Same keys: ${name} (key=${key} value=${value})`);
+							out[name] = value;
+							noKey[name] = true;
+							continue;
+						}
+					} else key = {
+						type: elm.key.type,
+						key: elm.key.key
+					};
+					if (noKey[name]) throw new Error(`PSBT: Key type with empty key and no key=${name} val=${value}`);
+					if (!out[name]) out[name] = [];
+					out[name].push([key, value]);
+				}
+				return out;
+			}
+		});
+	}
+	function validatePSBTFields(version, info, lst) {
+		const _lst = lst;
+		for (const k in _lst) {
+			if (k === "unknown") continue;
+			if (!info[k]) continue;
+			const { allowInc } = PSBTKeyInfo(info[k]);
+			if (!allowInc.includes(version)) throw new Error(`PSBTv${version}: field ${k} is not allowed`);
+		}
+		for (const k in info) {
+			const { reqInc } = PSBTKeyInfo(info[k]);
+			if (reqInc.includes(version) && _lst[k] === void 0) throw new Error(`PSBTv${version}: missing required field ${k}`);
+		}
+	}
+	/**
+	* Removes fields that are not valid for the requested PSBT version.
+	* @param version - target PSBT version
+	* @param info - PSBT field definition table
+	* @param lst - decoded PSBT key map
+	* @returns Filtered PSBT key map.
+	* @throws If a field cannot be serialized in the requested PSBT version. {@link Error}
+	* @example
+	* Drop fields that are not allowed in the target PSBT version before encoding.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { PSBTInput, cleanPSBTFields } from '@scure/btc-signer/psbt.js';
+	* cleanPSBTFields(2, PSBTInput, {
+	*   txid: hex.decode('0000000000000000000000000000000000000000000000000000000000000001'),
+	*   index: 0,
+	* });
+	* ```
+	*/
+	function cleanPSBTFields(version, info, lst) {
+		anumber$4(version, "version");
+		validateObject(info, {}, {}, "info");
+		validateObject(lst, {}, {}, "lst");
+		const _lst = lst;
+		const out = {};
+		for (const _k in _lst) {
+			const k = _k;
+			if (k !== "unknown") {
+				if (!info[k]) continue;
+				const { allowInc, silentIgnore } = PSBTKeyInfo(info[k]);
+				if (!allowInc.includes(version)) {
+					if (silentIgnore) continue;
+					throw new Error(`Failed to serialize in PSBTv${version}: ${k} but versions allows inclusion=${allowInc}`);
+				}
+			}
+			out[k] = _lst[k];
+		}
+		return out;
+	}
+	function validatePSBT(tx) {
+		const version = tx && tx.global && tx.global.version || 0;
+		validatePSBTFields(version, PSBTGlobal, tx.global);
+		for (const i of tx.inputs) validatePSBTFields(version, PSBTInput, i);
+		for (const o of tx.outputs) validatePSBTFields(version, PSBTOutput, o);
+		const inputCount = !version ? tx.global.unsignedTx.inputs.length : tx.global.inputCount;
+		if (tx.inputs.length !== inputCount) throw new Error(`Wrong number of input maps=${tx.inputs.length}, expected=${inputCount}`);
+		const outputCount = !version ? tx.global.unsignedTx.outputs.length : tx.global.outputCount;
+		if (tx.outputs.length < outputCount) throw new Error("Not outputs inputs");
+		if (version === 0 && inputCount === 0 && Object.keys(tx.outputs[0] || {}).length === 0 && (outputCount > 0 && tx.outputs.length === outputCount + 1 || outputCount === 0 && tx.outputs.length === 2 && Object.keys(tx.outputs[1]).length === 0)) return tx;
+		const outputsLeft = tx.outputs.slice(outputCount);
+		if (outputsLeft.length > 1 || outputsLeft.length && (version !== 0 || Object.keys(outputsLeft[0]).length)) throw new Error(`Unexpected outputs left in tx=${outputsLeft}`);
+		return tx;
+	}
+	/**
+	* Merges two PSBT key maps while preserving keyed-field uniqueness.
+	* @param psbtEnum - PSBT field definition table
+	* @param val - new values to merge in
+	* @param cur - existing decoded PSBT key map
+	* @param allowedFields - fields still allowed to change
+	* @param unknown - handling policy for unknown PSBT fields
+	* @param proprietary - handling policy for proprietary PSBT fields
+	* @returns Merged PSBT key map.
+	* @throws If keyed PSBT fields conflict or signed fields would be removed. {@link Error}
+	* @example
+	* Merge an updated `witnessUtxo` into an existing decoded input map.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { PSBTInput, mergeKeyMap } from '@scure/btc-signer/psbt.js';
+	* mergeKeyMap(
+	*   PSBTInput,
+	*   { witnessUtxo: { amount: 2n, script: new Uint8Array([0x51]) } },
+	*   {
+	*     txid: hex.decode('0000000000000000000000000000000000000000000000000000000000000001'),
+	*     index: 0,
+	*   }
+	* );
+	* ```
+	*/
+	function mergeKeyMap(psbtEnum, val, cur, allowedFields, unknown = "strip", proprietary = "strip") {
+		validateObject(psbtEnum, {}, {}, "psbtEnum");
+		validateObject(val, {}, {}, "val");
+		if (cur !== void 0) validateObject(cur, {}, {}, "cur");
+		if (allowedFields !== void 0) aarray(allowedFields, "allowedFields");
+		const _val = val;
+		const _cur = cur;
+		const _allowedFields = allowedFields;
+		const unknownMode = unknowns(unknown, "unknown");
+		const proprietaryMode = unknowns(proprietary, "proprietary");
+		for (const [name, mode] of [["unknown", unknownMode], ["proprietary", proprietaryMode]]) {
+			var _val$name, _cur$name;
+			if (mode !== "strict") continue;
+			if (((_val$name = _val[name]) === null || _val$name === void 0 ? void 0 : _val$name.length) || (_cur === null || _cur === void 0 || (_cur$name = _cur[name]) === null || _cur$name === void 0 ? void 0 : _cur$name.length)) throw new Error(`PSBT: ${name} PSBT field is not allowed in strict mode`);
+		}
+		const res = _objectSpread2(_objectSpread2({}, _cur), _val);
+		for (const k in psbtEnum) {
+			const key = k;
+			if (k === "proprietary" && proprietaryMode !== "ignore") continue;
+			const [_, kC, vC] = psbtEnum[key];
+			const cannotChange = _allowedFields && !_allowedFields.includes(k);
+			if (_val[k] === void 0 && k in _val) {
+				if (cannotChange) throw new Error(`Cannot remove signed field=${k}`);
+				delete res[k];
+			} else if (kC) {
+				const oldKV = _cur && _cur[k] ? _cur[k] : [];
+				let newKV = _val[key];
+				if (newKV) {
+					if (!Array.isArray(newKV)) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
+					newKV = newKV.map((val) => {
+						if (val.length !== 2) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
+						return [typeof val[0] === "string" ? kC.decode(hex$1.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$1.decode(val[1])) : val[1]];
+					});
+					const map = {};
+					const add = (kStr, k, v) => {
+						if (map[kStr] === void 0) {
+							map[kStr] = [k, v];
+							return;
+						}
+						const oldVal = hex$1.encode(vC.encode(map[kStr][1]));
+						const newVal = hex$1.encode(vC.encode(v));
+						if (oldVal !== newVal) throw new Error(`keyMap(${key}): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
+					};
+					for (const [k, v] of oldKV) add(hex$1.encode(kC.encode(k)), k, v);
+					for (const [k, v] of newKV) {
+						const kStr = hex$1.encode(kC.encode(k));
+						if (v === void 0) {
+							if (cannotChange) throw new Error(`Cannot remove signed field=${key}/${k}`);
+							delete map[kStr];
+						} else {
+							if (cannotChange && map[kStr] === void 0) throw new Error(`Cannot add signed field=${key}/${kStr}`);
+							add(kStr, k, v);
+						}
+					}
+					res[key] = Object.values(map);
+				}
+			} else {
+				if (typeof res[k] === "string") res[k] = vC.decode(hex$1.decode(res[k]));
+				if (cannotChange && k in _val) {
+					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
+					let current = _cur[k];
+					if (typeof current === "string") current = vC.decode(hex$1.decode(current));
+					if (!equalBytes(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
+				}
+			}
+		}
+		if (unknownMode === "ignore" && _val.unknown) {
+			const map = {};
+			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$1.encode(PSBTUnknownKey.encode(k))] = [k, v];
+			for (const [k, v] of _val.unknown) {
+				const kStr = hex$1.encode(PSBTUnknownKey.encode(k));
+				if (map[kStr] === void 0) {
+					map[kStr] = [k, v];
+					continue;
+				}
+				const oldVal = hex$1.encode(BytesInf.encode(map[kStr][1]));
+				const newVal = hex$1.encode(BytesInf.encode(v));
+				if (oldVal !== newVal) throw new Error(`keyMap(unknown): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
+			}
+			res.unknown = Object.values(map);
+		}
+		for (const k in res) if (!psbtEnum[k]) {
+			if (unknownMode === "ignore" && k === "unknown") continue;
+			delete res[k];
+		}
+		if (unknownMode !== "ignore") delete res.unknown;
+		if (proprietaryMode !== "ignore") delete res.proprietary;
+		return res;
+	}
+	/**
+	* Combines two independently produced PSBT maps without choosing between conflicting scalar
+	* values. Keyed fields retain {@link mergeKeyMap}'s union semantics.
+	* @param psbtEnum - PSBT field definition table
+	* @param current - first map
+	* @param other - second map
+	* @param unknown - handling policy for unknown PSBT fields
+	* @param proprietary - handling policy for proprietary PSBT fields
+	* @returns The symmetric map union.
+	* @throws If both maps provide different values for the same scalar field. {@link Error}
+	* @example
+	* Combine disjoint global metadata without choosing an operand as authoritative.
+	* ```ts
+	* import { combineKeyMap, PSBTGlobal } from '@scure/btc-signer/psbt.js';
+	* combineKeyMap(PSBTGlobal, { txVersion: 2 }, { fallbackLocktime: 0 });
+	* ```
+	*/
+	function combineKeyMap(psbtEnum, current, other, unknown = "strip", proprietary = "strip") {
+		validateObject(psbtEnum, {}, {}, "psbtEnum");
+		validateObject(current, {}, {}, "current");
+		validateObject(other, {}, {}, "other");
+		const _current = current;
+		const _other = other;
+		for (const k in psbtEnum) {
+			const key = k;
+			const [_, keyCoder, valueCoder] = psbtEnum[key];
+			if (keyCoder || _current[key] === void 0 || _other[key] === void 0) continue;
+			let a = _current[key];
+			let b = _other[key];
+			if (typeof a === "string") a = valueCoder.decode(hex$1.decode(a));
+			if (typeof b === "string") b = valueCoder.decode(hex$1.decode(b));
+			if (!equalBytes(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
+		}
+		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
+	}
+	var unknowns, _0n$4, _1n$5, PubKeyECDSA, PubKeyECDSACompressed, PubKeySchnorr, SignatureSchnorr, RawWitnessWire, BIP32Der, TaprootBIP32Der, GlobalXPUB, tapScriptSigKey, _TaprootControlBlock, TaprootControlBlock, tapTree, BytesInf, ProprietaryKey, Bytes20, Bytes32, Bytes64, Bytes66, MuSig2Participants, MuSig2Key, SilentPaymentInfo, DNSSECProof, PSBTInfo, PSBTGlobal, PSBTInput, PSBTInputFinalKeys, PSBTInputSignatureKeys, PSBTOutput, PSBTOutputUnsignedKeys, PSBTKeyPair, PSBTUnknownKey, PSBTInputCoder, PSBTOutputCoder, PSBTGlobalCoder, _RawPSBTV0, _RawPSBTV2, RawPSBTV0, RawPSBTV2;
+	var init_psbt = __esmMin((() => {
+		init_base();
+		init_utils$2();
+		init_micro_packed();
+		init_script();
+		init_utils();
+		init_objectSpread2();
+		unknowns = (mode, name) => {
+			if (mode === true) return "ignore";
+			if (mode === false) return "strip";
+			if (mode === "ignore" || mode === "strip" || mode === "strict") return mode;
+			throw new Error(`PSBT: invalid ${name} policy=${mode}`);
+		};
+		_0n$4 = /* @__PURE__ */ BigInt(0);
+		_1n$5 = /* @__PURE__ */ BigInt(1);
+		PubKeyECDSA = /* @__PURE__ */ (() => validate$4(createBytes(null), (pub) => validatePubkey(pub, PubT.ecdsa)))();
+		PubKeyECDSACompressed = /* @__PURE__ */ (() => validate$4(createBytes(33), (pub) => validatePubkey(pub, PubT.ecdsa)))();
+		PubKeySchnorr = /* @__PURE__ */ (() => validate$4(createBytes(32), (pub) => validatePubkey(pub, PubT.schnorr)))();
+		SignatureSchnorr = /* @__PURE__ */ (() => validate$4(createBytes(null), (sig) => {
+			if (sig.length !== 64 && sig.length !== 65) throw new Error("Schnorr signature should be 64 or 65 bytes long");
+			return sig;
+		}))();
+		RawWitnessWire = RawWitness;
+		BIP32Der = /* @__PURE__ */ (() => struct({
+			fingerprint: U32BE,
+			path: array(null, U32LE)
+		}))();
+		TaprootBIP32Der = /* @__PURE__ */ (() => struct({
+			hashes: array(CompactSizeLen, createBytes(32)),
+			der: BIP32Der
+		}))();
+		GlobalXPUB = /* @__PURE__ */ (() => validate$4(struct({
+			version: U32BE,
+			depth: U8,
+			parentFingerprint: U32BE,
+			childNumber: U32BE,
+			chainCode: createBytes(32),
+			publicKey: PubKeyECDSACompressed
+		}), (xpub) => {
+			if (xpub.depth === 0 && xpub.parentFingerprint !== 0) throw new Error("GlobalXPUB: depth=0 requires parentFingerprint=0");
+			if (xpub.depth === 0 && xpub.childNumber !== 0) throw new Error("GlobalXPUB: depth=0 requires childNumber=0");
+			return xpub;
+		}))();
+		tapScriptSigKey = /* @__PURE__ */ (() => struct({
+			pubKey: PubKeySchnorr,
+			leafHash: createBytes(32)
+		}))();
+		_TaprootControlBlock = /* @__PURE__ */ (() => struct({
+			version: U8,
+			internalKey: createBytes(32),
+			merklePath: array(null, createBytes(32))
+		}))();
+		TaprootControlBlock = /* @__PURE__ */ (() => Object.freeze(validate$4(_TaprootControlBlock, (cb) => {
+			if (cb.merklePath.length > 128) throw new Error("TaprootControlBlock: merklePath should be of length 0..128 (inclusive)");
+			return cb;
+		})))();
+		tapTree = /* @__PURE__ */ (() => validate$4(array(null, struct({
+			depth: U8,
+			version: U8,
+			script: VarBytes
+		})), (tree) => {
+			if (tree.length < 1) throw new Error("tapTree: expected at least one tuple");
+			let path = Array(tree[0].depth).fill(0);
+			let maxDepth = tree[0].depth;
+			for (let i = 1; i < tree.length; i++) {
+				const { depth } = tree[i];
+				if (depth > maxDepth) maxDepth = depth;
+				let j = path.length - 1;
+				while (j >= 0 && path[j] === 1) j--;
+				if (j < 0) throw new Error("tapTree: tuples must be in DFS order");
+				const next = path.slice(0, j);
+				next.push(1);
+				if (depth < next.length) throw new Error("tapTree: tuples must be in DFS order");
+				while (next.length < depth) next.push(0);
+				path = next;
+			}
+			let leaves = _0n$4;
+			for (let i = 0; i < tree.length; i++) leaves += _1n$5 << BigInt(maxDepth - tree[i].depth);
+			if (leaves !== _1n$5 << BigInt(maxDepth)) throw new Error("tapTree: tuples must describe a complete binary tree");
+			return tree;
+		}))();
+		BytesInf = /* @__PURE__ */ createBytes(null);
+		ProprietaryKey = /* @__PURE__ */ (() => {
+			const suffix = struct({
+				identifier: createBytes(CompactSizeLen),
+				subtype: CompactSizeLen,
+				data: BytesInf
+			});
+			return validate$4(BytesInf, (key) => {
+				try {
+					suffix.decode(key);
+				} catch (error) {
+					const message = error instanceof Error ? error.message : String(error);
+					throw new Error(`Proprietary key: expected BIP174 identifier and subtype, got ${message}`);
+				}
+				return key;
+			});
+		})();
+		Bytes20 = /* @__PURE__ */ createBytes(20);
+		Bytes32 = /* @__PURE__ */ createBytes(32);
+		Bytes64 = /* @__PURE__ */ createBytes(64);
+		Bytes66 = /* @__PURE__ */ createBytes(66);
+		MuSig2Participants = /* @__PURE__ */ (() => array(null, PubKeyECDSACompressed))();
+		MuSig2Key = /* @__PURE__ */ (() => apply(BytesInf, {
+			decode: (key) => {
+				const _key = key;
+				return concatBytes$5(PubKeyECDSACompressed.encode(_key.participantPubkey), PubKeyECDSACompressed.encode(_key.aggregatePubkey), _key.leafHash === void 0 ? EMPTY$1 : Bytes32.encode(_key.leafHash));
+			},
+			encode: (raw) => {
+				const _raw = raw;
+				if (_raw.length !== 66 && _raw.length !== 98) throw new Error(`MuSig2 key: expected 66 or 98 bytes, got ${_raw.length}`);
+				const key = {
+					participantPubkey: PubKeyECDSACompressed.decode(_raw.subarray(0, 33)),
+					aggregatePubkey: PubKeyECDSACompressed.decode(_raw.subarray(33, 66))
+				};
+				if (_raw.length === 98) key.leafHash = Bytes32.decode(_raw.subarray(66));
+				return key;
+			}
+		}))();
+		SilentPaymentInfo = /* @__PURE__ */ (() => struct({
+			scanKey: PubKeyECDSACompressed,
+			spendKey: PubKeyECDSACompressed
+		}))();
+		DNSSECProof = /* @__PURE__ */ (() => struct({
+			name: createBytes(U8),
+			proof: BytesInf
+		}))();
+		PSBTInfo = (type, kc, vc, reqInc, allowInc, silentIgnore) => /* @__PURE__ */ Object.freeze([
+			type,
+			kc && typeof kc === "object" ? Object.freeze(kc) : kc,
+			vc && typeof vc === "object" ? Object.freeze(vc) : vc,
+			Object.freeze([...reqInc]),
+			Object.freeze([...allowInc]),
+			silentIgnore
+		]);
+		PSBTGlobal = /* @__PURE__ */ (() => Object.freeze({
+			unsignedTx: PSBTInfo(0, false, RawOldTx, [0], [0], false),
+			xpub: PSBTInfo(1, GlobalXPUB, BIP32Der, [], [0, 2], false),
+			txVersion: PSBTInfo(2, false, U32LE, [2], [2], false),
+			fallbackLocktime: PSBTInfo(3, false, U32LE, [], [2], false),
+			inputCount: PSBTInfo(4, false, CompactSizeLen, [2], [2], false),
+			outputCount: PSBTInfo(5, false, CompactSizeLen, [2], [2], false),
+			txModifiable: PSBTInfo(6, false, U8, [], [2], false),
+			spEcdhShare: PSBTInfo(7, PubKeyECDSACompressed, PubKeyECDSACompressed, [], [2], false),
+			spDleq: PSBTInfo(8, PubKeyECDSACompressed, Bytes64, [], [2], false),
+			genericSignedMessage: PSBTInfo(9, false, BytesInf, [], [0, 2], false),
+			version: PSBTInfo(251, false, U32LE, [], [0, 2], false),
+			proprietary: PSBTInfo(252, ProprietaryKey, BytesInf, [], [0, 2], false)
+		}))();
+		PSBTInput = /* @__PURE__ */ (() => Object.freeze({
+			nonWitnessUtxo: PSBTInfo(0, false, RawTx, [], [0, 2], false),
+			witnessUtxo: PSBTInfo(1, false, RawOutput, [], [0, 2], false),
+			partialSig: PSBTInfo(2, PubKeyECDSA, BytesInf, [], [0, 2], false),
+			sighashType: PSBTInfo(3, false, U32LE, [], [0, 2], false),
+			redeemScript: PSBTInfo(4, false, BytesInf, [], [0, 2], false),
+			witnessScript: PSBTInfo(5, false, BytesInf, [], [0, 2], false),
+			bip32Derivation: PSBTInfo(6, PubKeyECDSA, BIP32Der, [], [0, 2], false),
+			finalScriptSig: PSBTInfo(7, false, BytesInf, [], [0, 2], false),
+			finalScriptWitness: PSBTInfo(8, false, RawWitnessWire, [], [0, 2], false),
+			porCommitment: PSBTInfo(9, false, BytesInf, [], [0, 2], false),
+			ripemd160: PSBTInfo(10, Bytes20, BytesInf, [], [0, 2], false),
+			sha256: PSBTInfo(11, Bytes32, BytesInf, [], [0, 2], false),
+			hash160: PSBTInfo(12, Bytes20, BytesInf, [], [0, 2], false),
+			hash256: PSBTInfo(13, Bytes32, BytesInf, [], [0, 2], false),
+			txid: PSBTInfo(14, false, createBytes(32, true), [2], [2], true),
+			index: PSBTInfo(15, false, U32LE, [2], [2], true),
+			sequence: PSBTInfo(16, false, U32LE, [], [2], true),
+			requiredTimeLocktime: PSBTInfo(17, false, U32LE, [], [2], false),
+			requiredHeightLocktime: PSBTInfo(18, false, U32LE, [], [2], false),
+			tapKeySig: PSBTInfo(19, false, SignatureSchnorr, [], [0, 2], false),
+			tapScriptSig: PSBTInfo(20, tapScriptSigKey, SignatureSchnorr, [], [0, 2], false),
+			tapLeafScript: PSBTInfo(21, TaprootControlBlock, BytesInf, [], [0, 2], false),
+			tapBip32Derivation: PSBTInfo(22, PubKeySchnorr, TaprootBIP32Der, [], [0, 2], false),
+			tapInternalKey: PSBTInfo(23, false, PubKeySchnorr, [], [0, 2], false),
+			tapMerkleRoot: PSBTInfo(24, false, Bytes32, [], [0, 2], false),
+			p2cKeyTweak: PSBTInfo(25, PubKeyECDSACompressed, Bytes32, [], [0, 2], false),
+			musig2ParticipantPubkeys: PSBTInfo(26, PubKeyECDSACompressed, MuSig2Participants, [], [0, 2], false),
+			musig2PubNonce: PSBTInfo(27, MuSig2Key, Bytes66, [], [0, 2], false),
+			musig2PartialSig: PSBTInfo(28, MuSig2Key, Bytes32, [], [0, 2], false),
+			spEcdhShare: PSBTInfo(29, PubKeyECDSACompressed, PubKeyECDSACompressed, [], [2], false),
+			spDleq: PSBTInfo(30, PubKeyECDSACompressed, Bytes64, [], [2], false),
+			spSpendBip32Derivation: PSBTInfo(31, PubKeyECDSACompressed, BIP32Der, [], [2], false),
+			spTweak: PSBTInfo(32, false, Bytes32, [], [2], false),
+			proprietary: PSBTInfo(252, ProprietaryKey, BytesInf, [], [0, 2], false)
+		}))();
+		PSBTInputFinalKeys = /* @__PURE__ */ Object.freeze([
+			"txid",
+			"sequence",
+			"index",
+			"witnessUtxo",
+			"nonWitnessUtxo",
+			"requiredTimeLocktime",
+			"requiredHeightLocktime",
+			"finalScriptSig",
+			"finalScriptWitness",
+			"unknown"
+		]);
+		PSBTInputSignatureKeys = /* @__PURE__ */ Object.freeze([
+			"partialSig",
+			"finalScriptSig",
+			"finalScriptWitness",
+			"tapKeySig",
+			"tapScriptSig"
+		]);
+		PSBTOutput = /* @__PURE__ */ (() => Object.freeze({
+			redeemScript: PSBTInfo(0, false, BytesInf, [], [0, 2], false),
+			witnessScript: PSBTInfo(1, false, BytesInf, [], [0, 2], false),
+			bip32Derivation: PSBTInfo(2, PubKeyECDSA, BIP32Der, [], [0, 2], false),
+			amount: PSBTInfo(3, false, I64LE, [2], [2], true),
+			script: PSBTInfo(4, false, BytesInf, [2], [2], true),
+			tapInternalKey: PSBTInfo(5, false, PubKeySchnorr, [], [0, 2], false),
+			tapTree: PSBTInfo(6, false, tapTree, [], [0, 2], false),
+			tapBip32Derivation: PSBTInfo(7, PubKeySchnorr, TaprootBIP32Der, [], [0, 2], false),
+			musig2ParticipantPubkeys: PSBTInfo(8, PubKeyECDSACompressed, MuSig2Participants, [], [0, 2], false),
+			spV0Info: PSBTInfo(9, false, SilentPaymentInfo, [], [2], false),
+			spV0Label: PSBTInfo(10, false, U32LE, [], [2], false),
+			dnssecProof: PSBTInfo(53, false, DNSSECProof, [], [0, 2], false),
+			proprietary: PSBTInfo(252, ProprietaryKey, BytesInf, [], [0, 2], false)
+		}))();
+		PSBTOutputUnsignedKeys = /* @__PURE__ */ Object.freeze([]);
+		PSBTKeyPair = /* @__PURE__ */ (() => array(NULL, struct({
+			key: prefix(CompactSizeLen, struct({
+				type: CompactSizeLen,
+				key: createBytes(null)
+			})),
+			value: createBytes(CompactSizeLen)
+		})))();
+		PSBTUnknownKey = /* @__PURE__ */ (() => struct({
+			type: CompactSizeLen,
+			key: createBytes(null)
+		}))();
+		PSBTInputCoder = /* @__PURE__ */ (() => Object.freeze(validate$4(PSBTKeyMap(PSBTInput), (i) => {
+			if (i.finalScriptWitness && !i.finalScriptWitness.length) throw new Error("validateInput: empty finalScriptWitness");
+			if (i.partialSig && !i.partialSig.length) throw new Error("Empty partialSig");
+			if (i.partialSig) for (const [k] of i.partialSig) validatePubkey(k, PubT.ecdsa);
+			if (i.bip32Derivation) for (const [k] of i.bip32Derivation) validatePubkey(k, PubT.ecdsa);
+			if (i.requiredTimeLocktime !== void 0 && i.requiredTimeLocktime < 5e8) throw new Error(`validateInput: wrong timeLocktime=${i.requiredTimeLocktime}`);
+			if (i.requiredHeightLocktime !== void 0 && (i.requiredHeightLocktime <= 0 || i.requiredHeightLocktime >= 5e8)) throw new Error(`validateInput: wrong heighLocktime=${i.requiredHeightLocktime}`);
+			if (i.tapLeafScript) for (const [k, v] of i.tapLeafScript) {
+				if ((k.version & 254) !== v[v.length - 1]) throw new Error("validateInput: tapLeafScript version mimatch");
+				if (v[v.length - 1] & 1) throw new Error("validateInput: tapLeafScript version has parity bit!");
+			}
+			return i;
+		})))();
+		PSBTOutputCoder = /* @__PURE__ */ (() => Object.freeze(validate$4(PSBTKeyMap(PSBTOutput), (o) => {
+			if (o.amount !== void 0 && o.amount < _0n$4) throw new Error(`validateOutput: wrong amount=${o.amount}`);
+			if (o.bip32Derivation) for (const [k] of o.bip32Derivation) validatePubkey(k, PubT.ecdsa);
+			return o;
+		})))();
+		PSBTGlobalCoder = /* @__PURE__ */ (() => validate$4(PSBTKeyMap(PSBTGlobal), (g) => {
+			if ((g.version || 0) === 0) {
+				if (!g.unsignedTx) throw new Error("PSBTv0: missing unsignedTx");
+				for (const inp of g.unsignedTx.inputs) if (inp.finalScriptSig && inp.finalScriptSig.length) throw new Error("PSBTv0: input scriptSig found in unsignedTx");
+			}
+			for (const [xpub, der] of g.xpub || []) if (xpub.depth !== der.path.length) throw new Error(`PSBT_GLOBAL_XPUB: xpub depth=${xpub.depth} must match derivation path length=${der.path.length}`);
+			return g;
+		}))();
+		_RawPSBTV0 = /* @__PURE__ */ (() => Object.freeze(struct({
+			magic: magic(string(new Uint8Array([255])), "psbt"),
+			global: PSBTGlobalCoder,
+			inputs: array("global/unsignedTx/inputs/length", PSBTInputCoder),
+			outputs: array(null, PSBTOutputCoder)
+		})))();
+		_RawPSBTV2 = /* @__PURE__ */ (() => Object.freeze(struct({
+			magic: magic(string(new Uint8Array([255])), "psbt"),
+			global: PSBTGlobalCoder,
+			inputs: array("global/inputCount", PSBTInputCoder),
+			outputs: array("global/outputCount", PSBTOutputCoder)
+		})))();
+		RawPSBTV0 = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawPSBTV0, validatePSBT)))();
+		RawPSBTV2 = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawPSBTV2, validatePSBT)))();
+	}));
+	//#endregion
+	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/payment.js
+	function isValidPubkey(pub, type) {
+		try {
+			validatePubkey(pub, type);
+			return true;
+		} catch (e) {
+			return false;
+		}
+	}
+	function checkWSH(s, witnessScript) {
+		if (!equalBytes(s.hash, sha256(witnessScript))) throw new Error("checkScript: wsh wrong witnessScript hash");
+		const w = OutScript.decode(witnessScript);
+		if (w.type === "tr" || w.type === "tr_ns" || w.type === "tr_ms") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2SH`);
+		if (w.type === "wpkh" || w.type === "wsh" || w.type === "sh") throw new Error(`checkScript: P2${w.type} cannot be wrapped in P2WSH`);
+	}
+	/**
+	* Validates that nested redeem and witness scripts match their wrappers.
+	* @param script - top-level output script
+	* @param redeemScript - optional redeem script for P2SH wrappers
+	* @param witnessScript - optional witness script for P2WSH wrappers
+	* @throws If the script nesting is invalid or unsupported. {@link Error}
+	* @example
+	* Verify that wrapped scripts and hashes still match after custom edits.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { checkScript, p2pkh, p2sh } from '@scure/btc-signer/payment.js';
+	* const wrapped = p2sh(
+	*   p2pkh(hex.decode('0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798'))
+	* );
+	* checkScript(wrapped.script, wrapped.redeemScript);
+	* ```
+	*/
+	function checkScript(script, redeemScript, witnessScript) {
+		let hasWsh = false;
+		let r = void 0;
+		if (script) {
+			const s = _WitnessOutScript.decode(script);
+			if (s.type === "tr_ns" || s.type === "tr_ms" || s.type === "ms" || s.type == "pk") throw new Error(`checkScript: non-wrapped ${s.type}`);
+			if (redeemScript) {
+				if (s.type !== "sh") throw new Error("checkScript: redeemScript without P2SH");
+				if (!equalBytes(s.hash, hash160(redeemScript))) throw new Error("checkScript: sh wrong redeemScript hash");
+				r = _WitnessOutScript.decode(redeemScript);
+				if ((r === null || r === void 0 ? void 0 : r.type) === "tr" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ns" || (r === null || r === void 0 ? void 0 : r.type) === "tr_ms") throw new Error(`checkScript: P2${r.type} cannot be wrapped in P2SH`);
+				if ((r === null || r === void 0 ? void 0 : r.type) === "sh") throw new Error("checkScript: P2SH cannot be wrapped in P2SH");
+			}
+			if (s.type === "wsh") {
+				hasWsh = true;
+				if (witnessScript) checkWSH(s, witnessScript);
+			}
+		}
+		if (redeemScript) {
+			if (r === void 0) r = _WitnessOutScript.decode(redeemScript);
+			if ((r === null || r === void 0 ? void 0 : r.type) === "wsh") {
+				hasWsh = true;
+				if (witnessScript) checkWSH(r, witnessScript);
+			}
+		}
+		if (witnessScript && !hasWsh) throw new Error("checkScript: witnessScript without P2WSH");
+	}
+	function checkTaprootScript(script, internalPubKey, allowUnknownOutputs = false, customScripts) {
+		const out = OutScript.decode(script);
+		if (out.type === "unknown") {
+			if (customScripts) {
+				const cs = apply(Script, coders.match(customScripts));
+				let c;
+				try {
+					c = cs.decode(script);
+				} catch (e) {
+					c = void 0;
+				}
+				if (c !== void 0) {
+					if (!astring(c.type, "c.type").startsWith("tr_")) throw new Error(`P2TR: invalid custom type=${c.type}`);
+					return;
+				}
+			}
+			if (allowUnknownOutputs) return;
+		}
+		if (!["tr_ns", "tr_ms"].includes(out.type)) throw new Error(`P2TR: invalid leaf script=${out.type}`);
+		const outms = out;
+		if (!allowUnknownOutputs && outms.pubkeys) for (const p of outms.pubkeys) {
+			if (equalBytes(p, taprootNumsKey())) throw new Error("Unspendable taproot key in leaf script");
+			if (equalBytes(p, internalPubKey)) throw new Error("Using P2TR with leaf script with same key as internal key is not supported");
+		}
+	}
+	/**
+	* Converts a flat list of weighted leaves into a binary taproot tree.
+	* @param taprootList - weighted leaves to arrange
+	* @returns Binary taproot script tree.
+	* @throws If the list is empty and cannot describe any tree. {@link Error}
+	* @example
+	* Start from a flat weighted list, then let the helper build the binary tree shape.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { p2tr_pk, taprootListToTree } from '@scure/btc-signer/payment.js';
+	* taprootListToTree([
+	*   p2tr_pk(hex.decode('f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9')),
+	*   p2tr_pk(hex.decode('dff1d77f2a671c5f36183726db2341be58feae1da2deced843240f7b502ba659')),
+	* ]);
+	* ```
+	*/
+	function taprootListToTree(taprootList) {
+		aarray(taprootList, "taprootList", (leaf, title) => {
+			if (Array.isArray(leaf)) return;
+			validateObject(leaf, {}, {}, title);
+			if (leaf.weight !== void 0) anumber$4(leaf.weight, title + ".weight");
+		});
+		if (!taprootList.length) throw new Error("taprootListToTree: empty tree");
+		const lst = Array.from(taprootList);
+		while (lst.length >= 2) {
+			lst.sort((a, b) => (b.weight || 1) - (a.weight || 1));
+			const b = lst.pop();
+			const a = lst.pop();
+			const weight = ((a === null || a === void 0 ? void 0 : a.weight) || 1) + ((b === null || b === void 0 ? void 0 : b.weight) || 1);
+			lst.push({
+				weight,
+				childs: [(a === null || a === void 0 ? void 0 : a.childs) || a, (b === null || b === void 0 ? void 0 : b.childs) || b]
+			});
+		}
+		const last = lst[0];
+		return (last === null || last === void 0 ? void 0 : last.childs) || last;
+	}
+	function taprootAddPath(tree, path = []) {
+		if (!tree) throw new Error(`taprootAddPath: empty tree`);
+		if (tree.type === "leaf") return _objectSpread2(_objectSpread2({}, tree), {}, { path });
+		if (tree.type !== "branch") throw new Error(`taprootAddPath: wrong type=${tree}`);
+		return _objectSpread2(_objectSpread2({}, tree), {}, {
+			path,
+			left: taprootAddPath(tree.left, [tree.right.hash, ...path]),
+			right: taprootAddPath(tree.right, [tree.left.hash, ...path])
+		});
+	}
+	function taprootWalkTree(tree) {
+		if (!tree) throw new Error(`taprootAddPath: empty tree`);
+		if (tree.type === "leaf") return [tree];
+		if (tree.type !== "branch") throw new Error(`taprootWalkTree: wrong type=${tree}`);
+		return [...taprootWalkTree(tree.left), ...taprootWalkTree(tree.right)];
+	}
+	function taprootHashTree(tree, internalPubKey, allowUnknownOutputs = false, customScripts, depth = 0) {
+		if (depth > TAPROOT_MAX_DEPTH) throw new RangeError(`P2TR: tree depth exceeds ${TAPROOT_MAX_DEPTH}`);
+		if (tree === void 0) throw new Error("taprootHashTree: empty tree");
+		if (!Array.isArray(tree) && !utils.isPlainObject(tree)) throw new TypeError("\"tree\" expected object or array, got type=" + typeof tree);
+		if (Array.isArray(tree) && tree.length === 1) tree = tree[0];
+		if (!Array.isArray(tree)) {
+			validateObject(tree, {}, {}, "tree");
+			const version = tree.leafVersion;
+			const { script: leafScript } = tree;
+			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes(tree.tapMerkleRoot, EMPTY$1)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
+			const script = typeof leafScript === "string" ? hex$1.decode(leafScript) : abytes$2(leafScript, void 0, "tree.script");
+			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
+			return {
+				type: "leaf",
+				version,
+				script,
+				hash: tapLeafHash(script, tapLeafVersion(version))
+			};
+		}
+		if (tree.length !== 2) tree = taprootListToTree(tree);
+		if (tree.length !== 2) throw new Error("hashTree: non binary tree!");
+		const left = taprootHashTree(tree[0], internalPubKey, allowUnknownOutputs, customScripts, depth + 1);
+		const right = taprootHashTree(tree[1], internalPubKey, allowUnknownOutputs, customScripts, depth + 1);
+		let [lH, rH] = [left.hash, right.hash];
+		if (compareBytes$2(rH, lH) === -1) [lH, rH] = [rH, lH];
+		return {
+			type: "branch",
+			left,
+			right,
+			hash: tagSchnorr("TapBranch", lH, rH)
+		};
+	}
+	function p2tr(internalPubKey, tree, network = NETWORK, allowUnknownOutputs = false, customScripts) {
+		if (!internalPubKey && !tree) throw new Error("p2tr: should have pubKey or scriptTree (or both)");
+		const pubKey = typeof internalPubKey === "string" ? hex$1.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
+		if (!isValidPubkey(pubKey, PubT.schnorr)) throw new Error("p2tr: non-schnorr pubkey");
+		if (tree) {
+			let hashedTree = taprootAddPath(taprootHashTree(tree, pubKey, allowUnknownOutputs, customScripts));
+			const tapMerkleRoot = hashedTree.hash;
+			const [tweakedPubkey, parity] = taprootTweakPubkey(pubKey, tapMerkleRoot);
+			const tapLeafScript = [];
+			const leaves = taprootWalkTree(hashedTree).map((l) => {
+				const version = tapLeafVersion(l.version);
+				const controlBlock = {
+					version: version + parity,
+					internalKey: pubKey,
+					merklePath: l.path
+				};
+				tapLeafScript.push([controlBlock, concatBytes(l.script, new Uint8Array([version]))]);
+				return _objectSpread2(_objectSpread2({}, l), {}, { controlBlock: TaprootControlBlock.encode(controlBlock) });
+			});
+			return {
+				type: "tr",
+				script: OutScript.encode({
+					type: "tr",
+					pubkey: tweakedPubkey
+				}),
+				address: Address(network).encode({
+					type: "tr",
+					pubkey: tweakedPubkey
+				}),
+				tweakedPubkey,
+				tapInternalKey: pubKey,
+				leaves,
+				tapLeafScript,
+				tapMerkleRoot
+			};
+		} else {
+			const tweakedPubkey = taprootTweakPubkey(pubKey, EMPTY$1)[0];
+			return {
+				type: "tr",
+				script: OutScript.encode({
+					type: "tr",
+					pubkey: tweakedPubkey
+				}),
+				address: Address(network).encode({
+					type: "tr",
+					pubkey: tweakedPubkey
+				}),
+				tweakedPubkey,
+				tapInternalKey: pubKey
+			};
+		}
+	}
+	function validateWitness(version, data) {
+		if (data.length < 2 || data.length > 40) throw new Error("Witness: invalid length");
+		if (version > 16) throw new Error("Witness: invalid version");
+		if (version === 0 && !(data.length === 20 || data.length === 32)) throw new Error("Witness: invalid length for version");
+	}
+	function programToWitness(version, data, network = NETWORK) {
+		validateWitness(version, data);
+		const coder = version === 0 ? bech32 : bech32m;
+		return coder.encode(network.bech32, [version].concat(coder.toWords(data)));
+	}
+	function formatKey(hashed, prefix) {
+		return base58check.encode(concatBytes(Uint8Array.from(prefix), hashed));
+	}
+	/**
+	* Address encoder/decoder for a specific Bitcoin network.
+	* @param network - address network parameters
+	* @returns Address coder backed by the provided network.
+	* @example
+	* Create a network-specific address coder and encode a payment descriptor.
+	* ```ts
+	* import { Address, p2wpkh } from '@scure/btc-signer/payment.js';
+	* import { pubECDSA, randomPrivateKeyBytes } from '@scure/btc-signer/utils.js';
+	* const coder = Address();
+	* coder.encode(p2wpkh(pubECDSA(randomPrivateKeyBytes())));
+	* ```
+	*/
+	function Address(network = NETWORK) {
+		validateObject(network, {}, {}, "network");
+		return {
+			encode(from) {
+				validateObject(from, {}, {}, "from");
+				const { type } = from;
+				astring(type, "from.type");
+				if (type === "wpkh") return programToWitness(0, from.hash, network);
+				else if (type === "wsh") return programToWitness(0, from.hash, network);
+				else if (type === "tr") return programToWitness(1, from.pubkey, network);
+				else if (type === "p2a") return programToWitness(1, P2A_PROGRAM, network);
+				else if (type === "pkh") return formatKey(from.hash, [network.pubKeyHash]);
+				else if (type === "sh") return formatKey(from.hash, [network.scriptHash]);
+				throw new Error(`Unknown address type=${type}`);
+			},
+			decode(address) {
+				astring(address, "address");
+				if (address.length < 14 || address.length > 74) throw new Error("Invalid address length");
+				if (network.bech32 && address.toLowerCase().startsWith(`${network.bech32}1`)) {
+					let res;
+					try {
+						res = bech32.decode(address);
+						if (res.words[0] !== 0) throw new Error(`bech32: wrong version=${res.words[0]}`);
+					} catch (_) {
+						res = bech32m.decode(address);
+						if (res.words[0] === 0) throw new Error(`bech32m: wrong version=${res.words[0]}`);
+					}
+					if (res.prefix !== network.bech32) throw new Error(`wrong bech32 prefix=${res.prefix}`);
+					const [version, ...program] = res.words;
+					const data = bech32.fromWords(program);
+					validateWitness(version, data);
+					if (version === 0 && data.length === 32) return {
+						type: "wsh",
+						hash: data
+					};
+					else if (version === 0 && data.length === 20) return {
+						type: "wpkh",
+						hash: data
+					};
+					else if (version === 1 && data.length === 32) return {
+						type: "tr",
+						pubkey: data
+					};
+					else if (version === 1 && equalBytes(data, P2A_PROGRAM)) return {
+						type: "p2a",
+						script: Script.encode([1, data])
+					};
+					else throw new Error("Unknown witness program");
+				}
+				const data = base58check.decode(address);
+				if (data.length !== 21) throw new Error("Invalid base58 address");
+				if (data[0] === network.pubKeyHash) return {
+					type: "pkh",
+					hash: data.slice(1)
+				};
+				else if (data[0] === network.scriptHash) return {
+					type: "sh",
+					hash: data.slice(1)
+				};
+				throw new Error(`Invalid address prefix=${data[0]}`);
+			}
+		};
+	}
+	var P2A_PROGRAM, OutP2A, OutPK, OutPKH, OutSH, OutWSH, OutWPKH, OutMS, OutTR, OutTRNS, OutTRMS, OutUnknown, OutScripts, _OutScript, OutScript, _WitnessOutScript, p2wpkh, TAPROOT_MAX_DEPTH, tapLeafVersion, tapLeafHash, base58check;
+	var init_payment = __esmMin((() => {
+		init_base();
+		init_utils$2();
+		init_utils$1();
+		init_micro_packed();
+		init_psbt();
+		init_script();
+		init_utils();
+		init_objectSpread2();
+		P2A_PROGRAM = /* @__PURE__ */ Uint8Array.from([78, 115]);
+		OutP2A = {
+			encode(from) {
+				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || !equalBytes(from[1], P2A_PROGRAM)) return;
+				return {
+					type: "p2a",
+					script: Script.encode(from)
+				};
+			},
+			decode: (to) => {
+				if (to.type !== "p2a") return;
+				return [1, Uint8Array.from(P2A_PROGRAM)];
+			}
+		};
+		OutPK = {
+			encode(from) {
+				if (from.length !== 2 || !isBytes(from[0]) || !isValidPubkey(from[0], PubT.ecdsa) || from[1] !== "CHECKSIG") return;
+				return {
+					type: "pk",
+					pubkey: from[0]
+				};
+			},
+			decode: (to) => {
+				if (to.type !== "pk") return;
+				return [to.pubkey, "CHECKSIG"];
+			}
+		};
+		OutPKH = {
+			encode(from) {
+				if (from.length !== 5 || from[0] !== "DUP" || from[1] !== "HASH160" || !isBytes(from[2])) return;
+				if (from[2].length !== 20) return;
+				if (from[3] !== "EQUALVERIFY" || from[4] !== "CHECKSIG") return;
+				return {
+					type: "pkh",
+					hash: from[2]
+				};
+			},
+			decode: (to) => to.type === "pkh" ? [
+				"DUP",
+				"HASH160",
+				to.hash,
+				"EQUALVERIFY",
+				"CHECKSIG"
+			] : void 0
+		};
+		OutSH = {
+			encode(from) {
+				if (from.length !== 3 || from[0] !== "HASH160" || !isBytes(from[1]) || from[2] !== "EQUAL") return;
+				if (from[1].length !== 20) return;
+				return {
+					type: "sh",
+					hash: from[1]
+				};
+			},
+			decode: (to) => to.type === "sh" ? [
+				"HASH160",
+				to.hash,
+				"EQUAL"
+			] : void 0
+		};
+		OutWSH = {
+			encode(from) {
+				if (from.length !== 2 || from[0] !== 0 || !isBytes(from[1])) return;
+				if (from[1].length !== 32) return;
+				return {
+					type: "wsh",
+					hash: from[1]
+				};
+			},
+			decode: (to) => to.type === "wsh" ? [0, to.hash] : void 0
+		};
+		OutWPKH = {
+			encode(from) {
+				if (from.length !== 2 || from[0] !== 0 || !isBytes(from[1])) return;
+				if (from[1].length !== 20) return;
+				return {
+					type: "wpkh",
+					hash: from[1]
+				};
+			},
+			decode: (to) => to.type === "wpkh" ? [0, to.hash] : void 0
+		};
+		OutMS = {
+			encode(from) {
+				const last = from.length - 1;
+				if (from[last] !== "CHECKMULTISIG") return;
+				const m = from[0];
+				const n = from[last - 1];
+				if (typeof m !== "number" || typeof n !== "number") return;
+				const pubkeys = from.slice(1, -2);
+				if (n !== pubkeys.length) return;
+				for (const pub of pubkeys) if (!isBytes(pub) || !isValidPubkey(pub, PubT.ecdsa)) return;
+				if (!Number.isSafeInteger(m) || m < 1 || m > n) return;
+				return {
+					type: "ms",
+					m,
+					pubkeys
+				};
+			},
+			decode: (to) => to.type === "ms" ? [
+				to.m,
+				...to.pubkeys,
+				to.pubkeys.length,
+				"CHECKMULTISIG"
+			] : void 0
+		};
+		OutTR = {
+			encode(from) {
+				if (from.length !== 2 || from[0] !== 1 || !isBytes(from[1]) || from[1].length !== 32) return;
+				if (!isValidPubkey(from[1], PubT.schnorr)) return;
+				return {
+					type: "tr",
+					pubkey: from[1]
+				};
+			},
+			decode: (to) => to.type === "tr" ? [1, to.pubkey] : void 0
+		};
+		OutTRNS = {
+			encode(from) {
+				const last = from.length - 1;
+				if (from[last] !== "CHECKSIG") return;
+				const pubkeys = [];
+				for (let i = 0; i < last; i++) {
+					const elm = from[i];
+					if (i & 1) {
+						if (elm !== "CHECKSIGVERIFY" || i === last - 1) return;
+						continue;
+					}
+					if (!isBytes(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
+					pubkeys.push(elm);
+				}
+				if (!pubkeys.length || pubkeys.length > 999) return;
+				return {
+					type: "tr_ns",
+					pubkeys
+				};
+			},
+			decode: (to) => {
+				if (to.type !== "tr_ns") return;
+				const out = [];
+				for (let i = 0; i < to.pubkeys.length - 1; i++) out.push(to.pubkeys[i], "CHECKSIGVERIFY");
+				out.push(to.pubkeys[to.pubkeys.length - 1], "CHECKSIG");
+				return out;
+			}
+		};
+		OutTRMS = {
+			encode(from) {
+				const last = from.length - 1;
+				if (from[last] !== "NUMEQUAL" || from[1] !== "CHECKSIG") return;
+				const pubkeys = [];
+				const m = OpToNum(from[last - 1]);
+				if (typeof m !== "number") return;
+				for (let i = 0; i < last - 1; i++) {
+					const elm = from[i];
+					if (i & 1) {
+						if (elm !== (i === 1 ? "CHECKSIG" : "CHECKSIGADD")) return;
+						continue;
+					}
+					if (!isBytes(elm) || !isValidPubkey(elm, PubT.schnorr)) return;
+					pubkeys.push(elm);
+				}
+				if (!Number.isSafeInteger(m) || m < 1 || m > pubkeys.length || pubkeys.length > 999) return;
+				return {
+					type: "tr_ms",
+					pubkeys,
+					m
+				};
+			},
+			decode: (to) => {
+				if (to.type !== "tr_ms") return;
+				const out = [to.pubkeys[0], "CHECKSIG"];
+				for (let i = 1; i < to.pubkeys.length; i++) out.push(to.pubkeys[i], "CHECKSIGADD");
+				out.push(to.m, "NUMEQUAL");
+				return out;
+			}
+		};
+		OutUnknown = {
+			encode(from) {
+				return {
+					type: "unknown",
+					script: Script.encode(from)
+				};
+			},
+			decode: (to) => to.type === "unknown" ? Script.decode(to.script) : void 0
+		};
+		OutScripts = /* @__PURE__ */ (() => [
+			OutP2A,
+			OutPK,
+			OutPKH,
+			OutSH,
+			OutWSH,
+			OutWPKH,
+			OutMS,
+			OutTR,
+			OutTRNS,
+			OutTRMS,
+			OutUnknown
+		])();
+		_OutScript = /* @__PURE__ */ (() => apply(Script, coders.match(OutScripts)))();
+		OutScript = /* @__PURE__ */ (() => Object.freeze(validate$4(_OutScript, (i) => {
+			if (i.type === "pk" && !isValidPubkey(i.pubkey, PubT.ecdsa)) throw new Error("OutScript/pk: wrong key");
+			if ((i.type === "pkh" || i.type === "sh" || i.type === "wpkh") && (!isBytes(i.hash) || i.hash.length !== 20)) throw new Error(`OutScript/${i.type}: wrong hash`);
+			if (i.type === "wsh" && (!isBytes(i.hash) || i.hash.length !== 32)) throw new Error(`OutScript/wsh: wrong hash`);
+			if (i.type === "tr" && (!isBytes(i.pubkey) || !isValidPubkey(i.pubkey, PubT.schnorr))) throw new Error("OutScript/tr: wrong taproot public key");
+			if (i.type === "ms" || i.type === "tr_ns" || i.type === "tr_ms") {
+				if (!Array.isArray(i.pubkeys)) throw new Error("OutScript/multisig: wrong pubkeys array");
+			}
+			if (i.type === "ms") {
+				const n = i.pubkeys.length;
+				for (const p of i.pubkeys) if (!isValidPubkey(p, PubT.ecdsa)) throw new Error("OutScript/multisig: wrong pubkey");
+				anumber$4(i.m, "m");
+				if (i.m <= 0 || n > 16 || i.m > n) throw new Error("OutScript/multisig: invalid params");
+			}
+			if (i.type === "tr_ns" || i.type === "tr_ms") {
+				if (i.pubkeys.length > 999) throw new Error(`OutScript/${i.type}: invalid params`);
+				for (const p of i.pubkeys) if (!isValidPubkey(p, PubT.schnorr)) throw new Error(`OutScript/${i.type}: wrong pubkey`);
+			}
+			if (i.type === "tr_ms") {
+				const n = i.pubkeys.length;
+				anumber$4(i.m, "m");
+				if (i.m <= 0 || i.m > n) throw new Error("OutScript/tr_ms: invalid params");
+			}
+			return i;
+		})))();
+		_WitnessOutScript = /* @__PURE__ */ (() => Object.freeze(wrap({
+			encodeStream: (w, value) => OutScript.encodeStream(w, value),
+			decodeStream: (r) => {
+				const raw = r.bytes(r.leftBytes);
+				const out = OutScript.decode(raw);
+				if (out && (out.type === "p2a" || out.type === "wpkh" || out.type === "wsh" || out.type === "tr") && !equalBytes(raw, OutScript.encode(out))) throw new Error("OutScript: non-canonical witness program");
+				return out;
+			}
+		})))();
+		p2wpkh = (publicKey, network = NETWORK) => {
+			if (!isValidPubkey(publicKey, PubT.ecdsa)) throw new Error("P2WPKH: invalid publicKey");
+			if (publicKey.length === 65) throw new Error("P2WPKH: uncompressed public key");
+			const hash = hash160(publicKey);
+			return {
+				type: "wpkh",
+				script: OutScript.encode({
+					type: "wpkh",
+					hash
+				}),
+				address: Address(network).encode({
+					type: "wpkh",
+					hash
+				}),
+				hash
+			};
+		};
+		TAPROOT_MAX_DEPTH = 128;
+		tapLeafVersion = (version) => {
+			if (version === void 0) return 192;
+			anumber$4(version, "leafVersion");
+			if (version > 254 || version === 80 || !!(version & 1)) throw new Error(`P2TR: invalid leafVersion=${version}`);
+			return version;
+		};
+		tapLeafHash = (script, version = 192) => tagSchnorr("TapLeaf", new Uint8Array([tapLeafVersion(version)]), VarBytes.encode(script));
+		base58check = /* @__PURE__ */ createBase58check(sha256);
+	}));
+	//#endregion
+	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/transaction.js
+	/**
+	* Deep-clones plain transaction data structures.
+	* @param obj - value to clone
+	* @returns Deep copy of the input value.
+	* @throws If the value contains an unsupported runtime type. {@link Error}
+	* @example
+	* Clone plain transaction data structures before mutating them.
+	* ```ts
+	* cloneDeep({ a: [new Uint8Array([1])] });
+	* ```
+	*/
+	function cloneDeep(obj) {
+		if (Array.isArray(obj)) return obj.map((i) => cloneDeep(i));
+		else if (isBytes(obj)) return Uint8Array.from(obj);
+		else if ([
+			"number",
+			"bigint",
+			"boolean",
+			"string",
+			"undefined"
+		].includes(typeof obj)) return obj;
+		else if (obj === null) return obj;
+		else if (typeof obj === "object") return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k, cloneDeep(v)]));
+		throw new Error(`cloneDeep: unknown type=${typeof obj}`);
+	}
+	function getTaprootKeys(privKey, pubKey, internalKey, merkleRoot = EMPTY$1) {
+		if (equalBytes(internalKey, pubKey)) {
+			privKey = taprootTweakPrivKey(privKey, merkleRoot);
+			pubKey = pubSchnorr(privKey);
+		}
+		return {
+			privKey,
+			pubKey
+		};
+	}
+	function outputBeforeSign(i) {
+		if (i.script === void 0 || i.amount === void 0) throw new Error("Transaction/output: script and amount required");
+		return {
+			script: i.script,
+			amount: i.amount
+		};
+	}
+	/**
+	* Normalizes a PSBT input into the fields needed for signing.
+	* @param i - PSBT input to validate
+	* @returns Input fields required for signing.
+	* @throws If the input is missing `txid` or `index`. {@link Error}
+	* @example
+	* Fill in defaults for the fields the signer expects to see.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { inputBeforeSign } from '@scure/btc-signer/transaction.js';
+	* inputBeforeSign({
+	*   txid: hex.decode('0000000000000000000000000000000000000000000000000000000000000001'),
+	*   index: 0,
+	* });
+	* ```
+	*/
+	function inputBeforeSign(i) {
+		validateObject(i, {}, {}, "i");
+		if (i.txid === void 0 || i.index === void 0) throw new Error("Transaction/input: txid and index required");
+		const res = {
+			txid: i.txid,
+			index: i.index,
+			sequence: def(i.sequence, DEFAULT_SEQUENCE),
+			finalScriptSig: def(i.finalScriptSig, EMPTY$1)
+		};
+		RawInput.encode(res);
+		return res;
+	}
+	function cleanFinalInput(i, unknownMode = "strip", proprietaryMode = "strip") {
+		const _i = i;
+		const extensions = cleanExtensions(_i, unknownMode, proprietaryMode);
+		if (extensions.unknown) _i.unknown = extensions.unknown;
+		else delete _i.unknown;
+		if (extensions.proprietary) _i.proprietary = extensions.proprietary;
+		else delete _i.proprietary;
+		for (const _k in _i) {
+			var _i$proprietary;
+			const k = _k;
+			if (proprietaryMode === "ignore" && k === "proprietary" && ((_i$proprietary = _i.proprietary) === null || _i$proprietary === void 0 ? void 0 : _i$proprietary.length)) continue;
+			if (!PSBTInputFinalKeys.includes(k)) delete _i[k];
+		}
+	}
+	function validateSigHash(s) {
+		if (typeof s !== "number" || typeof SigHashNames[s] !== "string") throw new Error(`Invalid SigHash=${s}`);
+		return s;
+	}
+	function unpackSighash(hashType) {
+		const masked = hashType & 31;
+		return {
+			isAny: !!(hashType & SignatureHash.ANYONECANPAY),
+			isNone: masked === SignatureHash.NONE,
+			isSingle: masked === SignatureHash.SINGLE
+		};
+	}
+	function validateOpts(opts) {
+		if (opts !== void 0) validateObject(opts, {}, {}, "opts");
+		const _opts = _objectSpread2(_objectSpread2({}, opts), {}, {
+			version: def(opts.version, 2),
+			lockTime: def(opts.lockTime, 0),
+			PSBTVersion: def(opts.PSBTVersion, 0)
+		});
+		if (typeof _opts.allowUnknowInput !== "undefined") _opts.allowUnknownInputs = _opts.allowUnknowInput;
+		if (typeof _opts.allowUnknowOutput !== "undefined") _opts.allowUnknownOutputs = _opts.allowUnknowOutput;
+		if (_opts.allowMissingTxModifiable === void 0) _opts.allowMissingTxModifiable = true;
+		if (typeof _opts.lockTime !== "number") throw new Error("Transaction lock time should be number");
+		U32LE.encode(_opts.lockTime);
+		if (_opts.PSBTVersion !== 0 && _opts.PSBTVersion !== 2) throw new Error(`Unknown PSBT version ${_opts.PSBTVersion}`);
+		for (const k of [
+			"allowUnknownVersion",
+			"allowUnknownOutputs",
+			"allowUnknownInputs",
+			"disableScriptCheck",
+			"bip174jsCompat",
+			"allowLegacyWitnessUtxo",
+			"strictPrevoutValidation",
+			"lowR",
+			"allowUnknown",
+			"allowMissingTxModifiable"
+		]) {
+			const v = _opts[k];
+			if (v === void 0) continue;
+			if (typeof v !== "boolean") throw new Error(`Transation options wrong type: ${k}=${v} (${typeof v})`);
+		}
+		_opts.unknown = normalizeUnknowns("unknown", _opts.unknown, _opts.allowUnknown);
+		_opts.proprietary = normalizeUnknowns("proprietary", _opts.proprietary, void 0, _opts.unknown);
+		if (_opts.allowUnknownVersion ? typeof _opts.version !== "number" : ![
+			-1,
+			0,
+			1,
+			2,
+			3
+		].includes(_opts.version)) throw new Error(`Unknown version: ${_opts.version}`);
+		I32LE.encode(_opts.version);
+		if (_opts.customScripts !== void 0) {
+			const cs = _opts.customScripts;
+			if (!Array.isArray(cs)) throw new Error(`wrong custom scripts type (expected array): customScripts=${cs} (${typeof cs})`);
+			for (const s of cs) {
+				if (typeof s.encode !== "function" || typeof s.decode !== "function") throw new Error(`wrong script=${s} (${typeof s})`);
+				if (s.finalizeTaproot !== void 0 && typeof s.finalizeTaproot !== "function") throw new Error(`wrong script=${s} (${typeof s})`);
+			}
+		}
+		return Object.freeze(_opts);
+	}
+	function checkTaprootInputCommitments(input, prevScript) {
+		var _input$tapLeafScript, _input$tapLeafScript2;
+		const output = _WitnessOutScript.decode(prevScript);
+		const hasTaprootCommitments = input.tapInternalKey !== void 0 || input.tapMerkleRoot !== void 0 || !!((_input$tapLeafScript = input.tapLeafScript) === null || _input$tapLeafScript === void 0 ? void 0 : _input$tapLeafScript.length);
+		if (output.type !== "tr") {
+			if (hasTaprootCommitments) throw new Error("validateInput: Taproot metadata without P2TR previous output");
+			return;
+		}
+		const checkOutputKey = (internalKey, merkleRoot, parity) => {
+			const [outputKey, outputParity] = taprootTweakPubkey(internalKey, merkleRoot);
+			if (!equalBytes(outputKey, output.pubkey)) throw new Error("validateInput: Taproot commitment does not match previous output");
+			if (parity !== void 0 && outputParity !== parity) throw new Error("validateInput: Taproot control-block parity does not match previous output");
+		};
+		if (input.tapLeafScript) for (const [controlBlock, scriptWithVersion] of input.tapLeafScript) {
+			const leafVersion = scriptWithVersion[scriptWithVersion.length - 1];
+			const script = scriptWithVersion.subarray(0, -1);
+			let merkleRoot = tapLeafHash(script, leafVersion);
+			for (const sibling of controlBlock.merklePath) merkleRoot = compareBytes$2(sibling, merkleRoot) === -1 ? tagSchnorr("TapBranch", sibling, merkleRoot) : tagSchnorr("TapBranch", merkleRoot, sibling);
+			checkOutputKey(controlBlock.internalKey, merkleRoot, controlBlock.version & 1);
+			if (input.tapInternalKey && !equalBytes(input.tapInternalKey, controlBlock.internalKey)) throw new Error("validateInput: tapInternalKey does not match Taproot control block");
+			if (input.tapMerkleRoot && !equalBytes(input.tapMerkleRoot, merkleRoot)) throw new Error("validateInput: tapMerkleRoot does not match Taproot control block");
+		}
+		if (input.tapInternalKey && (input.tapMerkleRoot || !((_input$tapLeafScript2 = input.tapLeafScript) === null || _input$tapLeafScript2 === void 0 ? void 0 : _input$tapLeafScript2.length))) checkOutputKey(input.tapInternalKey, input.tapMerkleRoot || EMPTY$1);
+	}
+	function validateRequiredLocktimes(input) {
+		const height = input.requiredHeightLocktime;
+		if (height !== void 0) {
+			anumber$4(height, "requiredHeightLocktime");
+			if (height === 0 || height >= LOCKTIME_THRESHOLD) throw new RangeError(`requiredHeightLocktime must be between 1 and 499999999, got ${height}`);
+		}
+		const time = input.requiredTimeLocktime;
+		if (time !== void 0) {
+			anumber$4(time, "requiredTimeLocktime");
+			if (time < LOCKTIME_THRESHOLD || time > 4294967295) throw new RangeError(`requiredTimeLocktime must be between ${LOCKTIME_THRESHOLD} and 4294967295, got ${time}`);
+		}
+	}
+	function resolvePSBTLocktime(inputs, fallback = 0) {
+		let height = 0;
+		let time = 0;
+		let hasRequirements = false;
+		let heightSupported = true;
+		let timeSupported = true;
+		for (const input of inputs) {
+			validateRequiredLocktimes(input);
+			const hasHeight = input.requiredHeightLocktime !== void 0;
+			const hasTime = input.requiredTimeLocktime !== void 0;
+			if (!hasHeight && !hasTime) continue;
+			hasRequirements = true;
+			if (hasHeight) height = Math.max(height, input.requiredHeightLocktime);
+			else heightSupported = false;
+			if (hasTime) time = Math.max(time, input.requiredTimeLocktime);
+			else timeSupported = false;
+		}
+		if (!hasRequirements) return fallback;
+		if (heightSupported) return height;
+		if (timeSupported) return time;
+		throw new Error("PSBTv2: incompatible height-based and time-based locktime requirements");
+	}
+	function validateInput(i, disableScriptCheck = false) {
+		validateObject(i, {}, {}, "i");
+		const _i = i;
+		validateRequiredLocktimes(_i);
+		let prevOut;
+		if (_i.nonWitnessUtxo && _i.index !== void 0) {
+			const last = _i.nonWitnessUtxo.outputs.length - 1;
+			if (_i.index > last) throw new Error(`validateInput: index(${_i.index}) not in nonWitnessUtxo`);
+			prevOut = _i.nonWitnessUtxo.outputs[_i.index];
+			if (_i.witnessUtxo && (!equalBytes(_i.witnessUtxo.script, prevOut.script) || _i.witnessUtxo.amount !== prevOut.amount)) throw new Error("validateInput: witnessUtxo different from nonWitnessUtxo");
+			if (_i.txid) {
+				if (_i.nonWitnessUtxo.outputs.length - 1 < _i.index) throw new Error("nonWitnessUtxo: incorect output index");
+				const tx = Transaction.fromRaw(RawTx.encode(_i.nonWitnessUtxo), {
+					allowUnknownOutputs: true,
+					disableScriptCheck: true,
+					allowUnknownInputs: true,
+					allowUnknownVersion: true
+				});
+				const txid = hex$1.encode(_i.txid);
+				if (tx.id !== txid) throw new Error(`nonWitnessUtxo: wrong txid, exp=${txid} got=${tx.id}`);
+			}
+		} else if (_i.witnessUtxo) prevOut = _i.witnessUtxo;
+		if (prevOut && !disableScriptCheck) {
+			checkScript(prevOut.script, _i.redeemScript, _i.witnessScript);
+			checkTaprootInputCommitments(_i, prevOut.script);
+		}
+		return _i;
+	}
+	/**
+	* Extracts the previous output referenced by an input.
+	* @param input - PSBT input with previous output data
+	* @returns Previous output information.
+	* @throws If the input does not contain usable previous-output information. {@link Error}
+	* @example
+	* Read the previous output from either `witnessUtxo` or `nonWitnessUtxo`.
+	* ```ts
+	* getPrevOut({ witnessUtxo: { amount: 1n, script: new Uint8Array([0x51]) } });
+	* ```
+	*/
+	function getPrevOut(input) {
+		validateObject(input, {}, {}, "input");
+		const _input = input;
+		if (_input.nonWitnessUtxo) {
+			if (_input.index === void 0) throw new Error("Unknown input index");
+			if (!Number.isSafeInteger(_input.index) || _input.index < 0 || _input.index >= _input.nonWitnessUtxo.outputs.length) throw new Error(`Wrong input index=${_input.index}`);
+			return _input.nonWitnessUtxo.outputs[_input.index];
+		} else if ("witnessUtxo" in _input) {
+			const prev = _input.witnessUtxo;
+			validateObject(prev, {}, {}, "input.witnessUtxo");
+			abigint(prev.amount, "input.witnessUtxo.amount");
+			if (!isBytes(prev.script)) throw new TypeError("\"input.witnessUtxo.script\" expected Uint8Array, got type=" + typeof prev.script);
+			return prev;
+		} else throw new Error("Cannot find previous output info");
+	}
+	/**
+	* Normalizes a transaction input update into canonical PSBT form.
+	* @param i - input update to normalize
+	* @param cur - existing input value to merge with
+	* @param allowedFields - fields that may still change on signed inputs
+	* @param disableScriptCheck - whether to skip wrapper and Taproot commitment sanity checks
+	* @param unknown - handling policy for unknown PSBT fields
+	* @param proprietary - handling policy for proprietary PSBT fields
+	* @returns Normalized PSBT input.
+	* @throws If the update conflicts with the existing input or its signatures. {@link Error}
+	* @throws If a numeric input field is outside its wire or protocol range. {@link RangeError}
+	* @example
+	* Accept hex txids from callers in the same display-order form used by `Transaction.id`, then
+	* normalize them into the repo's internal `TransactionInput` shape.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { normalizeInput } from '@scure/btc-signer/transaction.js';
+	* normalizeInput({
+	*   txid: '0000000000000000000000000000000000000000000000000000000000000001',
+	*   index: 0,
+	*   witnessUtxo: { amount: 1n, script: new Uint8Array([0x51]) },
+	* });
+	* ```
+	*/
+	function normalizeInput(i, cur, allowedFields, disableScriptCheck = false, unknown = "strip", proprietary = "strip") {
+		validateObject(i, {}, {}, "i");
+		if (cur !== void 0) validateObject(cur, {}, {}, "cur");
+		if (allowedFields !== void 0) aarray(allowedFields, "allowedFields");
+		const _i = i;
+		const _cur = cur;
+		const _allowedFields = allowedFields;
+		let { nonWitnessUtxo, txid } = _i;
+		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$1.decode(nonWitnessUtxo);
+		if (isBytes(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
+		if (!("nonWitnessUtxo" in _i) && nonWitnessUtxo === void 0) nonWitnessUtxo = _cur === null || _cur === void 0 ? void 0 : _cur.nonWitnessUtxo;
+		if (typeof txid === "string") txid = hex$1.decode(txid);
+		if (txid === void 0) txid = _cur === null || _cur === void 0 ? void 0 : _cur.txid;
+		let res = _objectSpread2(_objectSpread2(_objectSpread2({}, _cur), _i), {}, {
+			nonWitnessUtxo,
+			txid
+		});
+		if (!("nonWitnessUtxo" in _i) && res.nonWitnessUtxo === void 0) delete res.nonWitnessUtxo;
+		if (res.sequence === void 0) res.sequence = DEFAULT_SEQUENCE;
+		if (res.tapMerkleRoot === null) delete res.tapMerkleRoot;
+		res = mergeKeyMap(PSBTInput, res, _cur, _allowedFields, unknown, proprietary);
+		if (Array.isArray(res.tapLeafScript) && !res.tapLeafScript.length) delete res.tapLeafScript;
+		validateRequiredLocktimes(res);
+		PSBTInputCoder.encode(res);
+		return validateInput(res, disableScriptCheck);
+	}
+	/**
+	* Determines how an input should be signed and finalized.
+	* Wrapper consistency is expected to be validated earlier by {@link normalizeInput}
+	* and {@link checkScript}; this helper classifies already-normalized inputs and is
+	* not a standalone redeemScript/witnessScript correctness gate for raw caller input.
+	* @param input - PSBT input to inspect
+	* @param allowLegacyWitnessUtxo - whether legacy inputs may rely on witness UTXO data only
+	* @returns Input classification including transaction type and sighash defaults.
+	* @throws If a documented runtime validation or state check fails. {@link Error}
+	* @example
+	* Detect how the signer should treat a SegWit input from its previous output script.
+	* ```ts
+	* import { hex } from '@scure/base';
+	* import { p2wpkh } from '@scure/btc-signer/payment.js';
+	* import { getInputType } from '@scure/btc-signer/transaction.js';
+	* import { pubECDSA, randomPrivateKeyBytes } from '@scure/btc-signer/utils.js';
+	* getInputType({
+	*   witnessUtxo: {
+	*     amount: 1n,
+	*     script: p2wpkh(pubECDSA(randomPrivateKeyBytes())).script,
+	*   },
+	* });
+	* ```
+	*/
+	function getInputType(input, allowLegacyWitnessUtxo = false) {
+		const _input = input;
+		let txType = "legacy";
+		let defaultSighash = SignatureHash.ALL;
+		const prevOut = getPrevOut(_input);
+		const first = _WitnessOutScript.decode(prevOut.script);
+		let type = first.type;
+		let cur = first;
+		const stack = [first];
+		let lastScript = prevOut.script;
+		if (first.type === "tr") {
+			defaultSighash = SignatureHash.DEFAULT;
+			return {
+				txType: "taproot",
+				type: "tr",
+				last: first,
+				lastScript: prevOut.script,
+				defaultSighash,
+				sighash: _input.sighashType || defaultSighash
+			};
+		} else {
+			if (first.type === "wpkh" || first.type === "wsh") txType = "segwit";
+			if (first.type === "sh") {
+				if (!_input.redeemScript) throw new Error("inputType: sh without redeemScript");
+				let child = _WitnessOutScript.decode(_input.redeemScript);
+				if (child.type === "wpkh" || child.type === "wsh") txType = "segwit";
+				stack.push(child);
+				cur = child;
+				lastScript = _input.redeemScript;
+				type += `-${child.type}`;
+			}
+			if (cur.type === "wsh") {
+				if (!_input.witnessScript) throw new Error("inputType: wsh without witnessScript");
+				let child = OutScript.decode(_input.witnessScript);
+				if (child.type === "wsh") txType = "segwit";
+				stack.push(child);
+				cur = child;
+				lastScript = _input.witnessScript;
+				type += `-${child.type}`;
+			}
+			const last = stack[stack.length - 1];
+			if (last.type === "sh" || last.type === "wsh") throw new Error("inputType: sh/wsh cannot be terminal type");
+			const res = {
+				type,
+				txType,
+				last,
+				lastScript,
+				defaultSighash,
+				sighash: _input.sighashType || defaultSighash
+			};
+			if (txType === "legacy" && !allowLegacyWitnessUtxo && !_input.nonWitnessUtxo) throw new Error(`Transaction/sign: legacy input without nonWitnessUtxo, can result in attack that forces paying higher fees. Pass allowLegacyWitnessUtxo=true, if you sure`);
+			return res;
+		}
+	}
+	var _0n$3, _1n$4, U64_MAX, EMPTY32, EMPTY_OUTPUT, toVsize, stripCodeSeparator, DEFAULT_SEQUENCE, def, SignatureHash, SigHash, SigHashNames, cleanExtensions, cleanTxModifiable, TxHashIdx, sighashScope, normalizeUnknowns, LOCKTIME_THRESHOLD, inputSignatures, inputSignedKeys, Transaction;
+	var init_transaction = __esmMin((() => {
+		init_base();
+		init_utils$2();
+		init_micro_packed();
+		init_payment();
+		init_psbt();
+		init_script();
+		init_utils();
+		init_objectSpread2();
+		init_defineProperty();
+		_0n$3 = /* @__PURE__ */ BigInt(0);
+		_1n$4 = /* @__PURE__ */ BigInt(1);
+		U64_MAX = /* @__PURE__ */ BigInt("0xffffffffffffffff");
+		EMPTY32 = /* @__PURE__ */ new Uint8Array(32);
+		EMPTY_OUTPUT = {
+			amount: U64_MAX,
+			script: EMPTY$1
+		};
+		toVsize = (weight) => Math.ceil(weight / 4);
+		stripCodeSeparator = (script) => {
+			let start = 0;
+			const out = [];
+			for (let i = 0; i < script.length;) {
+				const pos = i;
+				const op = script[i++];
+				if (op === OP.CODESEPARATOR) {
+					if (start < pos) out.push(script.subarray(start, pos));
+					start = i;
+					continue;
+				}
+				const len = scriptPushLen(op, (bytes) => {
+					if (i + bytes > script.length) throw new Error("Unexpected end of script");
+					let len = 0;
+					for (let j = 0; j < bytes; j++) len |= script[i + j] << 8 * j;
+					i += bytes;
+					return len;
+				});
+				if (len === void 0) continue;
+				i += len;
+				if (i > script.length) throw new Error("Unexpected end of script");
+			}
+			if (start === 0) return script;
+			if (start < script.length) out.push(script.subarray(start));
+			return out.length ? concatBytes(...out) : EMPTY$1;
+		};
+		DEFAULT_SEQUENCE = 4294967295;
+		def = (value, def) => value === void 0 ? def : value;
+		SignatureHash = /* @__PURE__ */ (() => Object.freeze({
+			DEFAULT: 0,
+			ALL: 1,
+			NONE: 2,
+			SINGLE: 3,
+			ANYONECANPAY: 128
+		}))();
+		SigHash = /* @__PURE__ */ (() => Object.freeze({
+			DEFAULT: SignatureHash.DEFAULT,
+			ALL: SignatureHash.ALL,
+			NONE: SignatureHash.NONE,
+			SINGLE: SignatureHash.SINGLE,
+			ALL_ANYONECANPAY: SignatureHash.ALL | SignatureHash.ANYONECANPAY,
+			NONE_ANYONECANPAY: SignatureHash.NONE | SignatureHash.ANYONECANPAY,
+			SINGLE_ANYONECANPAY: SignatureHash.SINGLE | SignatureHash.ANYONECANPAY
+		}))();
+		SigHashNames = /* @__PURE__ */ (() => Object.freeze(reverseObject(SigHash)))();
+		cleanExtensions = (map, unknownMode, proprietaryMode, rejectStrip = false) => {
+			const out = _objectSpread2({}, map);
+			for (const [name, mode] of [["unknown", unknownMode], ["proprietary", proprietaryMode]]) {
+				const value = out[name];
+				if (value !== void 0) aarray(value, `${name} PSBT field`);
+				const rows = value;
+				if (!(rows === null || rows === void 0 ? void 0 : rows.length)) {
+					delete out[name];
+					continue;
+				}
+				if (mode === "strict") throw new Error(`PSBT: ${name} PSBT field is not allowed in strict mode`);
+				if (mode === "strip") {
+					if (rejectStrip) throw new Error(`PSBT: ${name} PSBT field cannot be supplied when policy is strip`);
+					delete out[name];
+				}
+			}
+			return out;
+		};
+		cleanTxModifiable = (value, mode) => {
+			if (value === void 0 || !(value & -8)) return value;
+			if (mode === "strict") throw new Error("PSBT: unknown txModifiable bits in strict mode");
+			return mode === "strip" ? value & 7 : value;
+		};
+		TxHashIdx = /* @__PURE__ */ (() => struct({
+			txid: createBytes(32, true),
+			index: U32LE
+		}))();
+		sighashScope = (sighash) => ({
+			sigInputs: sighash & SignatureHash.ANYONECANPAY,
+			sigOutputs: sighash === SignatureHash.DEFAULT ? SignatureHash.ALL : sighash & 3
+		});
+		normalizeUnknowns = (name, mode, legacy, fallback = "strip") => {
+			const alias = legacy === void 0 ? void 0 : legacy ? "ignore" : "strip";
+			if (mode !== void 0 && mode !== "ignore" && mode !== "strip" && mode !== "strict") throw new Error(`Transaction options wrong value: ${name}=${mode}`);
+			if (mode !== void 0 && alias !== void 0 && mode !== alias) throw new Error(`Transaction options: conflicting ${name} options`);
+			return mode || alias || fallback;
+		};
+		LOCKTIME_THRESHOLD = 5e8;
+		inputSignatures = (input) => {
+			const _input = input;
+			const res = [];
+			const add = (signature, taproot, scriptPath = false) => {
+				const sig = signature;
+				if (!sig.length) return;
+				const sighash = taproot && sig.length === 64 ? SignatureHash.DEFAULT : sig[sig.length - 1];
+				res.push({
+					sighash,
+					taproot,
+					scriptPath
+				});
+			};
+			for (const [, signature] of _input.partialSig || []) add(signature, false);
+			if (_input.tapKeySig) add(_input.tapKeySig, true);
+			for (const [, signature] of _input.tapScriptSig || []) add(signature, true, true);
+			return res;
+		};
+		inputSignedKeys = {
+			self: [
+				"txid",
+				"index",
+				"sequence",
+				"nonWitnessUtxo",
+				"witnessUtxo",
+				"sighashType"
+			],
+			ecdsa: ["redeemScript", "witnessScript"],
+			tapscript: ["tapLeafScript"],
+			cross: ["txid", "index"],
+			prevout: ["nonWitnessUtxo", "witnessUtxo"]
+		};
+		Transaction = class Transaction {
+			constructor(opts = {}) {
+				_defineProperty(this, "global", {});
+				_defineProperty(this, "inputs", []);
+				_defineProperty(this, "outputs", []);
+				_defineProperty(this, "opts", void 0);
+				const _opts = this.opts = validateOpts(opts);
+				this.global.fallbackLocktime = _opts.lockTime;
+				this.global.txVersion = _opts.version;
+				if (_opts.PSBTVersion === 2) this.global.txModifiable = 3;
+			}
+			isPSBTv2() {
+				var _this$global$version;
+				return ((_this$global$version = this.global.version) !== null && _this$global$version !== void 0 ? _this$global$version : this.opts.PSBTVersion) === 2;
+			}
+			requireTxModifiable(bit, kind) {
+				if (!this.isPSBTv2()) return;
+				if (!(this.txModifiablePolicy() & bit)) throw new Error(`PSBTv2: ${kind} are not modifiable`);
+			}
+			txModifiablePolicy(allowMissing = this.opts.allowMissingTxModifiable, unknownMode = this.opts.unknown) {
+				if (!this.isPSBTv2()) return 3;
+				if (this.global.txModifiable !== void 0) return cleanTxModifiable(this.global.txModifiable, unknownMode);
+				return allowMissing ? 3 : 0;
+			}
+			modifiable(allowMissing = this.opts.allowMissingTxModifiable, unknownMode = this.opts.unknown) {
+				let flags = this.txModifiablePolicy(allowMissing, unknownMode);
+				let hasOpaqueFinal = false;
+				let hasSingle = false;
+				for (let idx = 0; idx < this.inputs.length; idx++) {
+					const signatures = inputSignatures(this.inputs[idx]);
+					if (!signatures.length && this.inputStatus(idx) === "finalized") hasOpaqueFinal = true;
+					for (const { sighash } of signatures) {
+						const { isAny, isNone, isSingle } = unpackSighash(sighash);
+						if (!isAny) flags &= -2;
+						if (!isNone) flags &= -3;
+						if (isSingle) hasSingle = true;
+					}
+				}
+				if (hasSingle) flags |= 4;
+				if (hasOpaqueFinal && this.global.txModifiable === void 0) flags &= -4;
+				return flags;
+			}
+			get txModifiable() {
+				return this.modifiable();
+			}
+			static fromRaw(raw, opts = {}) {
+				const parsed = RawTx.decode(raw);
+				const tx = new Transaction(_objectSpread2(_objectSpread2({}, opts), {}, {
+					version: parsed.version,
+					lockTime: parsed.lockTime
+				}));
+				for (const o of parsed.outputs) tx.addOutput(o);
+				tx.outputs = parsed.outputs;
+				tx.inputs = parsed.inputs;
+				if (parsed.witnesses) for (let i = 0; i < parsed.witnesses.length; i++) tx.inputs[i].finalScriptWitness = parsed.witnesses[i];
+				return tx;
+			}
+			static fromPSBT(psbt_, opts = {}) {
+				var _tx$global$fallbackLo;
+				let parsed;
+				try {
+					parsed = RawPSBTV0.decode(psbt_);
+				} catch (e0) {
+					try {
+						parsed = RawPSBTV2.decode(psbt_);
+					} catch (e2) {
+						throw e0;
+					}
+				}
+				const PSBTVersion = parsed.global.version || 0;
+				if (PSBTVersion !== 0 && PSBTVersion !== 2) throw new Error(`Wrong PSBT version=${PSBTVersion}`);
+				const unsigned = parsed.global.unsignedTx;
+				const version = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.version : parsed.global.txVersion;
+				const lockTime = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.lockTime : parsed.global.fallbackLocktime;
+				const tx = new Transaction(_objectSpread2(_objectSpread2({}, opts), {}, {
+					version,
+					lockTime,
+					PSBTVersion
+				}));
+				const inputCount = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.inputs.length : parsed.global.inputCount;
+				tx.inputs = parsed.inputs.slice(0, inputCount).map((i, j) => {
+					var _parsed$global$unsign, _i$finalScriptSig;
+					const input = _objectSpread2(_objectSpread2({}, (_parsed$global$unsign = parsed.global.unsignedTx) === null || _parsed$global$unsign === void 0 ? void 0 : _parsed$global$unsign.inputs[j]), i);
+					if (!((_i$finalScriptSig = i.finalScriptSig) === null || _i$finalScriptSig === void 0 ? void 0 : _i$finalScriptSig.length)) delete input.finalScriptSig;
+					return validateInput(input, tx.opts.disableScriptCheck);
+				});
+				const outputCount = PSBTVersion === 0 ? unsigned === null || unsigned === void 0 ? void 0 : unsigned.outputs.length : parsed.global.outputCount;
+				const outputStart = PSBTVersion === 0 && inputCount === 0 && Object.keys(parsed.outputs[0] || {}).length === 0 && (outputCount > 0 && parsed.outputs.length === outputCount + 1 || outputCount === 0 && parsed.outputs.length === 2 && Object.keys(parsed.outputs[1]).length === 0) ? 1 : 0;
+				tx.outputs = parsed.outputs.slice(outputStart, outputStart + outputCount).map((i, j) => {
+					var _parsed$global$unsign2;
+					return _objectSpread2(_objectSpread2({}, i), (_parsed$global$unsign2 = parsed.global.unsignedTx) === null || _parsed$global$unsign2 === void 0 ? void 0 : _parsed$global$unsign2.outputs[j]);
+				});
+				const unknownMode = tx.opts.unknown;
+				const proprietaryMode = tx.opts.proprietary;
+				tx.global = cleanExtensions(_objectSpread2(_objectSpread2({}, parsed.global), {}, { txVersion: version }), unknownMode, proprietaryMode);
+				tx.inputs = tx.inputs.map((input) => cleanExtensions(input, unknownMode, proprietaryMode));
+				tx.outputs = tx.outputs.map((output) => cleanExtensions(output, unknownMode, proprietaryMode));
+				if (tx.global.txModifiable !== void 0) tx.global.txModifiable = cleanTxModifiable(tx.global.txModifiable, unknownMode);
+				resolvePSBTLocktime(tx.inputs, (_tx$global$fallbackLo = tx.global.fallbackLocktime) !== null && _tx$global$fallbackLo !== void 0 ? _tx$global$fallbackLo : 0);
+				if (PSBTVersion === 0) tx.global.fallbackLocktime = def(lockTime, 0);
+				return tx;
+			}
+			toPSBT(PSBTVersion = this.global.version || this.opts.PSBTVersion) {
+				if (PSBTVersion !== void 0) anumber$4(PSBTVersion, "PSBTVersion");
+				if (PSBTVersion !== 0 && PSBTVersion !== 2) throw new Error(`Wrong PSBT version=${PSBTVersion}`);
+				const inputs = this.inputs.map((i) => cleanExtensions(cleanPSBTFields(PSBTVersion, PSBTInput, validateInput(i, this.opts.disableScriptCheck)), this.opts.unknown, this.opts.proprietary));
+				for (const inp of inputs) {
+					if (inp.partialSig && !inp.partialSig.length) delete inp.partialSig;
+					if (inp.finalScriptSig && !inp.finalScriptSig.length) delete inp.finalScriptSig;
+					if (inp.finalScriptWitness && !inp.finalScriptWitness.length) delete inp.finalScriptWitness;
+				}
+				const outputs = this.outputs.map((i) => cleanExtensions(cleanPSBTFields(PSBTVersion, PSBTOutput, i), this.opts.unknown, this.opts.proprietary));
+				const global = cleanExtensions(_objectSpread2({}, this.global), this.opts.unknown, this.opts.proprietary);
+				if (global.txModifiable !== void 0) global.txModifiable = cleanTxModifiable(global.txModifiable, this.opts.unknown);
+				if (PSBTVersion === 0) {
+					global.unsignedTx = RawOldTx.decode(RawOldTx.encode({
+						version: this.version,
+						lockTime: this.lockTime,
+						inputs: this.inputs.map((i) => inputBeforeSign(i)).map((i) => _objectSpread2(_objectSpread2({}, i), {}, { finalScriptSig: EMPTY$1 })),
+						outputs: this.outputs.map((o) => outputBeforeSign(o))
+					}));
+					delete global.fallbackLocktime;
+					delete global.txVersion;
+					delete global.inputCount;
+					delete global.outputCount;
+					delete global.version;
+					delete global.txModifiable;
+				} else {
+					delete global.unsignedTx;
+					global.version = PSBTVersion;
+					global.txVersion = this.version;
+					global.inputCount = this.inputs.length;
+					global.outputCount = this.outputs.length;
+					if (!this.isPSBTv2() || global.txModifiable === void 0 && this.opts.allowMissingTxModifiable) global.txModifiable = this.txModifiable;
+				}
+				if (this.opts.bip174jsCompat && PSBTVersion === 0 && !outputs.length) outputs.push({});
+				const raw = {
+					global,
+					inputs,
+					outputs
+				};
+				return PSBTVersion === 0 ? RawPSBTV0.encode(raw) : RawPSBTV2.encode(raw);
+			}
+			get lockTime() {
+				var _this$global$fallback;
+				return resolvePSBTLocktime(this.inputs, (_this$global$fallback = this.global.fallbackLocktime) !== null && _this$global$fallback !== void 0 ? _this$global$fallback : 0);
+			}
+			get version() {
+				if (this.global.txVersion === void 0) throw new Error("No global.txVersion");
+				return this.global.txVersion;
+			}
+			inputStatus(idx) {
+				this.checkInputIdx(idx);
+				const input = this.inputs[idx];
+				if (input.finalScriptSig && input.finalScriptSig.length) return "finalized";
+				if (input.finalScriptWitness && input.finalScriptWitness.length) return "finalized";
+				if (input.tapKeySig) return "signed";
+				if (input.tapScriptSig && input.tapScriptSig.length) return "signed";
+				if (input.partialSig && input.partialSig.length) return "signed";
+				return "unsigned";
+			}
+			cleanFinalInput(input) {
+				cleanFinalInput(input, this.opts.unknown, this.opts.proprietary);
+				if (this.global.txModifiable !== void 0) this.global.txModifiable = cleanTxModifiable(this.global.txModifiable, this.opts.unknown);
+			}
+			inputSighash(idx) {
+				this.checkInputIdx(idx);
+				const inputSighash = this.inputs[idx].sighashType;
+				const sighash = inputSighash === void 0 ? SignatureHash.DEFAULT : inputSighash;
+				return sighashScope(sighash);
+			}
+			signatures() {
+				const res = [];
+				for (let idx = 0; idx < this.inputs.length; idx++) {
+					const actual = inputSignatures(this.inputs[idx]);
+					for (const signature of actual) res.push(_objectSpread2({ idx }, signature));
+					if (actual.length || this.inputStatus(idx) !== "finalized") continue;
+					let taproot = true;
+					try {
+						taproot = _WitnessOutScript.decode(getPrevOut(this.inputs[idx]).script).type === "tr";
+					} catch (_unused) {}
+					const declared = this.inputs[idx].sighashType;
+					const sighash = declared === void 0 ? SignatureHash.DEFAULT : declared;
+					res.push({
+						idx,
+						sighash,
+						taproot,
+						scriptPath: taproot
+					});
+				}
+				return res;
+			}
+			signedInputKeys(idx, signatures = this.signatures()) {
+				const res = /* @__PURE__ */ new Set();
+				const add = (keys) => {
+					for (const key of keys) res.add(key);
+				};
+				for (const signature of signatures) {
+					const { isAny, isNone, isSingle } = unpackSighash(signature.sighash);
+					if (signature.idx === idx) {
+						add(inputSignedKeys.self);
+						if (signature.taproot) {
+							if (signature.scriptPath) add(inputSignedKeys.tapscript);
+						} else add(inputSignedKeys.ecdsa);
+					} else if (!isAny) {
+						add(inputSignedKeys.cross);
+						if (signature.taproot || !isNone && !isSingle) res.add("sequence");
+						if (signature.taproot) add(inputSignedKeys.prevout);
+					}
+				}
+				return [...res];
+			}
+			signStatus(signatures = this.signatures()) {
+				let addInput = true, addOutput = true;
+				let inputs = [], outputs = [];
+				for (const { idx, sighash } of signatures) {
+					const { sigInputs, sigOutputs } = sighashScope(sighash);
+					if (sigInputs === SignatureHash.ANYONECANPAY) {
+						if (!inputs.includes(idx)) inputs.push(idx);
+					} else addInput = false;
+					if (sigOutputs === SignatureHash.ALL) addOutput = false;
+					else if (sigOutputs === SignatureHash.SINGLE) {
+						if (!outputs.includes(idx)) outputs.push(idx);
+					} else if (sigOutputs === SignatureHash.NONE) {} else throw new Error(`Wrong signature hash output type: ${sigOutputs}`);
+				}
+				return {
+					addInput,
+					addOutput,
+					inputs,
+					outputs
+				};
+			}
+			get isFinal() {
+				for (let idx = 0; idx < this.inputs.length; idx++) if (this.inputStatus(idx) !== "finalized") return false;
+				return true;
+			}
+			get hasWitnesses() {
+				for (const i of this.inputs) if (i.finalScriptWitness && i.finalScriptWitness.length) return true;
+				return false;
+			}
+			get weight() {
+				if (!this.isFinal) throw new Error("Transaction is not finalized");
+				const varLen = (dataLen) => CompactSizeLen.encode(dataLen).length + dataLen;
+				const hasWitnesses = this.hasWitnesses;
+				let out = 32;
+				const outputs = this.outputs.map(outputBeforeSign);
+				out += 4 * CompactSizeLen.encode(this.outputs.length).length;
+				for (const o of outputs) out += 32 + 4 * varLen(o.script.length);
+				if (hasWitnesses) out += 2;
+				out += 4 * CompactSizeLen.encode(this.inputs.length).length;
+				for (const i of this.inputs) {
+					out += 160 + 4 * varLen((i.finalScriptSig || EMPTY$1).length);
+					if (hasWitnesses) {
+						const witness = i.finalScriptWitness || [];
+						out += CompactSizeLen.encode(witness.length).length;
+						for (const w of witness) out += varLen(w.length);
+					}
+				}
+				return out;
+			}
+			get vsize() {
+				return toVsize(this.weight);
+			}
+			toBytes(withScriptSig = false, withWitness = false) {
+				return RawTx.encode({
+					version: this.version,
+					lockTime: this.lockTime,
+					inputs: this.inputs.map(inputBeforeSign).map((i) => _objectSpread2(_objectSpread2({}, i), {}, { finalScriptSig: withScriptSig && i.finalScriptSig || EMPTY$1 })),
+					outputs: this.outputs.map(outputBeforeSign),
+					witnesses: this.inputs.map((i) => i.finalScriptWitness || []),
+					segwitFlag: withWitness && this.hasWitnesses
+				});
+			}
+			get unsignedTx() {
+				return this.toBytes(false, false);
+			}
+			get hex() {
+				return hex$1.encode(this.toBytes(true, this.hasWitnesses));
+			}
+			get hash() {
+				return hex$1.encode(sha256x2(this.toBytes(true)));
+			}
+			get id() {
+				return hex$1.encode(sha256x2(this.toBytes(true)).reverse());
+			}
+			checkInputIdx(idx) {
+				anumber$4(idx, "idx");
+				if (idx >= this.inputs.length) throw new Error(`Wrong input index=${idx}`);
+			}
+			validatePrevoutsForSigning() {
+				if (!this.opts.strictPrevoutValidation) return;
+				for (let i = 0; i < this.inputs.length; i++) {
+					const input = this.inputs[i];
+					if (!input.nonWitnessUtxo) throw new Error(`Transaction/sign: strictPrevoutValidation requires nonWitnessUtxo for input=${i}`);
+					if (input.txid === void 0 || input.index === void 0) throw new Error(`Transaction/sign: strictPrevoutValidation requires an outpoint for input=${i}`);
+					validateInput(input, this.opts.disableScriptCheck);
+				}
+			}
+			getInput(idx) {
+				this.checkInputIdx(idx);
+				return cloneDeep(this.inputs[idx]);
+			}
+			get inputsLength() {
+				return this.inputs.length;
+			}
+			addInput(input, _ignoreSignStatus = false) {
+				var _this$global$fallback2;
+				validateObject(input, {}, {}, "input");
+				cleanExtensions(input, this.opts.unknown, this.opts.proprietary, true);
+				this.requireTxModifiable(1, "inputs");
+				const signatures = _ignoreSignStatus ? void 0 : this.signatures();
+				const status = signatures && this.signStatus(signatures);
+				if (status && !status.addInput) throw new Error("Tx has signed inputs, cannot add new one");
+				const normalized = cloneDeep(normalizeInput(input, void 0, void 0, this.opts.disableScriptCheck, this.opts.unknown, this.opts.proprietary));
+				const nextLockTime = resolvePSBTLocktime([...this.inputs, normalized], (_this$global$fallback2 = this.global.fallbackLocktime) !== null && _this$global$fallback2 !== void 0 ? _this$global$fallback2 : 0);
+				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
+				this.inputs.push(normalized);
+				return this.inputs.length - 1;
+			}
+			updateInput(idx, input, _ignoreSignStatus = false) {
+				var _this$global$fallback3;
+				this.checkInputIdx(idx);
+				cleanExtensions(input, this.opts.unknown, this.opts.proprietary, true);
+				let allowedFields;
+				const signatures = _ignoreSignStatus ? void 0 : this.signatures();
+				if (signatures === null || signatures === void 0 ? void 0 : signatures.length) {
+					if (this.inputStatus(idx) === "finalized") allowedFields = PSBTInputSignatureKeys.filter((key) => this.inputs[idx][key] !== void 0);
+					else {
+						const signed = new Set(this.signedInputKeys(idx, signatures));
+						if (signed.size) allowedFields = Object.keys(PSBTInput).filter((key) => !signed.has(key));
+					}
+				}
+				const normalized = cloneDeep(normalizeInput(input, this.inputs[idx], allowedFields, this.opts.disableScriptCheck, this.opts.unknown, this.opts.proprietary));
+				const inputs = this.inputs.slice();
+				inputs[idx] = normalized;
+				const nextLockTime = resolvePSBTLocktime(inputs, (_this$global$fallback3 = this.global.fallbackLocktime) !== null && _this$global$fallback3 !== void 0 ? _this$global$fallback3 : 0);
+				if ((signatures === null || signatures === void 0 ? void 0 : signatures.length) && nextLockTime !== this.lockTime) throw new Error("Tx has signed inputs, cannot change lockTime");
+				const current = this.inputs[idx];
+				if (current.index !== normalized.index || def(current.sequence, 4294967295) !== def(normalized.sequence, 4294967295) || (current.txid === void 0 ? normalized.txid !== void 0 : normalized.txid === void 0 || !equalBytes(current.txid, normalized.txid)) || nextLockTime !== this.lockTime) this.requireTxModifiable(1, "inputs");
+				this.inputs[idx] = normalized;
+			}
+			checkOutputIdx(idx) {
+				anumber$4(idx, "idx");
+				if (idx >= this.outputs.length) throw new Error(`Wrong output index=${idx}`);
+			}
+			getOutput(idx) {
+				this.checkOutputIdx(idx);
+				return cloneDeep(this.outputs[idx]);
+			}
+			getOutputAddress(idx, network = NETWORK) {
+				const out = this.getOutput(idx);
+				if (!out.script) return;
+				return Address(network).encode(_WitnessOutScript.decode(out.script));
+			}
+			get outputsLength() {
+				return this.outputs.length;
+			}
+			normalizeOutput(o, cur, allowedFields) {
+				validateObject(o, {}, {}, "o");
+				let { amount, script } = o;
+				if (amount === void 0) amount = cur === null || cur === void 0 ? void 0 : cur.amount;
+				amount = abigint(amount, "o.amount");
+				if (typeof script === "string") script = hex$1.decode(script);
+				if (script === void 0) script = cur === null || cur === void 0 ? void 0 : cur.script;
+				let res = _objectSpread2(_objectSpread2(_objectSpread2({}, cur), o), {}, {
+					amount,
+					script
+				});
+				if (res.amount === void 0) delete res.amount;
+				res = mergeKeyMap(PSBTOutput, res, cur, allowedFields, this.opts.unknown, this.opts.proprietary);
+				PSBTOutputCoder.encode(res);
+				if (res.script && !this.opts.allowUnknownOutputs && _WitnessOutScript.decode(res.script).type === "unknown") throw new Error("Transaction/output: unknown output script type, there is a chance that input is unspendable. Pass allowUnknownOutputs=true, if you sure");
+				if (!this.opts.disableScriptCheck) checkScript(res.script, res.redeemScript, res.witnessScript);
+				return res;
+			}
+			addOutput(o, _ignoreSignStatus = false) {
+				cleanExtensions(o, this.opts.unknown, this.opts.proprietary, true);
+				this.requireTxModifiable(2, "outputs");
+				const status = _ignoreSignStatus ? void 0 : this.signStatus();
+				if (status && (!status.addOutput || status.outputs.includes(this.outputs.length))) throw new Error("Tx has signed outputs, cannot add new one");
+				this.outputs.push(cloneDeep(this.normalizeOutput(o)));
+				return this.outputs.length - 1;
+			}
+			updateOutput(idx, output, _ignoreSignStatus = false) {
+				this.checkOutputIdx(idx);
+				cleanExtensions(output, this.opts.unknown, this.opts.proprietary, true);
+				let allowedFields = void 0;
+				if (!_ignoreSignStatus) {
+					const status = this.signStatus();
+					if (!status.addOutput || status.outputs.includes(idx)) allowedFields = PSBTOutputUnsignedKeys;
+				}
+				const current = this.outputs[idx];
+				const normalized = cloneDeep(this.normalizeOutput(output, current, allowedFields));
+				if (current.amount !== normalized.amount || (current.script === void 0 ? normalized.script !== void 0 : normalized.script === void 0 || !equalBytes(current.script, normalized.script))) this.requireTxModifiable(2, "outputs");
+				this.outputs[idx] = normalized;
+			}
+			addOutputAddress(address, amount, network = NETWORK) {
+				return this.addOutput({
+					script: OutScript.encode(Address(network).decode(address)),
+					amount
+				});
+			}
+			get fee() {
+				let res = _0n$3;
+				for (const i of this.inputs) {
+					const prevOut = getPrevOut(i);
+					if (!prevOut) throw new Error("Empty input amount");
+					res += prevOut.amount;
+				}
+				const outputs = this.outputs.map(outputBeforeSign);
+				for (const o of outputs) res -= o.amount;
+				return res;
+			}
+			preimageLegacy(idx, prevOutScript, hashType) {
+				const { isAny, isNone, isSingle } = unpackSighash(hashType);
+				if (idx < 0 || !Number.isSafeInteger(idx)) throw new Error(`Invalid input idx=${idx}`);
+				if (isSingle && idx >= this.outputs.length || idx >= this.inputs.length) return U256LE.encode(_1n$4);
+				prevOutScript = stripCodeSeparator(prevOutScript);
+				let inputs = this.inputs.map(inputBeforeSign).map((input, inputIdx) => _objectSpread2(_objectSpread2({}, input), {}, { finalScriptSig: inputIdx === idx ? prevOutScript : EMPTY$1 }));
+				if (isAny) inputs = [inputs[idx]];
+				else if (isNone || isSingle) inputs = inputs.map((input, inputIdx) => _objectSpread2(_objectSpread2({}, input), {}, { sequence: inputIdx === idx ? input.sequence : 0 }));
+				let outputs = this.outputs.map(outputBeforeSign);
+				if (isNone) outputs = [];
+				else if (isSingle) outputs = outputs.slice(0, idx).fill(EMPTY_OUTPUT).concat([outputs[idx]]);
+				const tmpTx = RawTx.encode({
+					lockTime: this.lockTime,
+					version: this.version,
+					segwitFlag: false,
+					inputs,
+					outputs
+				});
+				return sha256x2(tmpTx, I32LE.encode(hashType));
+			}
+			preimageWitnessV0(idx, prevOutScript, hashType, amount) {
+				anumber$4(idx, "idx");
+				if (idx >= this.inputs.length) throw new Error(`Invalid input idx=${idx}`);
+				const { isAny, isNone, isSingle } = unpackSighash(hashType);
+				let inputHash = EMPTY32;
+				let sequenceHash = EMPTY32;
+				let outputHash = EMPTY32;
+				const inputs = this.inputs.map(inputBeforeSign);
+				const outputs = this.outputs.map(outputBeforeSign);
+				if (!isAny) inputHash = sha256x2(...inputs.map(TxHashIdx.encode));
+				if (!isAny && !isSingle && !isNone) sequenceHash = sha256x2(...inputs.map((i) => U32LE.encode(i.sequence)));
+				if (!isSingle && !isNone) outputHash = sha256x2(...outputs.map(RawOutput.encode));
+				else if (isSingle && idx < outputs.length) outputHash = sha256x2(RawOutput.encode(outputs[idx]));
+				const input = inputs[idx];
+				return sha256x2(I32LE.encode(this.version), inputHash, sequenceHash, createBytes(32, true).encode(input.txid), U32LE.encode(input.index), VarBytes.encode(prevOutScript), U64LE.encode(amount), U32LE.encode(input.sequence), outputHash, U32LE.encode(this.lockTime), U32LE.encode(hashType));
+			}
+			preimageWitnessV1(idx, prevOutScript, hashType, amount, codeSeparator = -1, leafScript, leafVer = 192, annex) {
+				anumber$4(idx, "idx");
+				if (idx >= this.inputs.length) throw new Error(`Invalid input idx=${idx}`);
+				aarray(amount, "amount");
+				aarray(prevOutScript, "prevOutScript");
+				if (this.inputs.length !== amount.length) throw new Error(`Invalid amounts array=${amount}`);
+				if (this.inputs.length !== prevOutScript.length) throw new Error(`Invalid prevOutScript array=${prevOutScript}`);
+				const out = [
+					U8.encode(0),
+					U8.encode(hashType),
+					I32LE.encode(this.version),
+					U32LE.encode(this.lockTime)
+				];
+				const outType = hashType === SignatureHash.DEFAULT ? SignatureHash.ALL : hashType & 3;
+				const inType = hashType & SignatureHash.ANYONECANPAY;
+				const inputs = this.inputs.map(inputBeforeSign);
+				const outputs = this.outputs.map(outputBeforeSign);
+				if (outType === SignatureHash.SINGLE && idx >= outputs.length) throw new Error(`Input with sighash SINGLE, but there is no output with corresponding index=${idx}`);
+				if (inType !== SignatureHash.ANYONECANPAY) out.push(...[
+					inputs.map(TxHashIdx.encode),
+					amount.map(U64LE.encode),
+					prevOutScript.map(VarBytes.encode),
+					inputs.map((i) => U32LE.encode(i.sequence))
+				].map((i) => sha256(concatBytes(...i))));
+				if (outType === SignatureHash.ALL) out.push(sha256(concatBytes(...outputs.map(RawOutput.encode))));
+				const spendType = (annex ? 1 : 0) | (leafScript ? 2 : 0);
+				out.push(new Uint8Array([spendType]));
+				if (inType === SignatureHash.ANYONECANPAY) {
+					const inp = inputs[idx];
+					out.push(TxHashIdx.encode(inp), U64LE.encode(amount[idx]), VarBytes.encode(prevOutScript[idx]), U32LE.encode(inp.sequence));
+				} else out.push(U32LE.encode(idx));
+				if (spendType & 1) out.push(sha256(VarBytes.encode(annex || EMPTY$1)));
+				if (outType === SignatureHash.SINGLE) out.push(sha256(RawOutput.encode(outputs[idx])));
+				if (leafScript) out.push(tapLeafHash(leafScript, leafVer), U8.encode(0), I32LE.encode(codeSeparator));
+				return tagSchnorr("TapSighash", ...out);
+			}
+			signIdx(privateKey, idx, allowedSighash, _auxRand) {
+				if (!isBytes(privateKey)) {
+					if (!privateKey || typeof privateKey !== "object" || typeof privateKey.deriveChild !== "function") throw new TypeError("\"privateKey\" expected Uint8Array or HDKey, got type=" + typeof privateKey);
+				}
+				this.checkInputIdx(idx);
+				this.validatePrevoutsForSigning();
+				const input = validateInput(this.inputs[idx], this.opts.disableScriptCheck);
+				const inputType = getInputType(input, this.opts.allowLegacyWitnessUtxo);
+				const canSign = (privateKey) => {
+					if (inputType.txType === "taproot") {
+						const pubKey = pubSchnorr(privateKey);
+						if (input.tapInternalKey && equalBytes(pubKey, input.tapInternalKey)) return true;
+						if (!input.tapLeafScript) return false;
+						for (const [_, leaf] of input.tapLeafScript) for (const op of Script.decode(leaf.subarray(0, -1))) if (isBytes(op) && equalBytes(op, pubKey)) return true;
+						return false;
+					}
+					const pubKey = pubECDSA(privateKey);
+					const pubKeyHash = hash160(pubKey);
+					for (const op of Script.decode(inputType.lastScript)) if (isBytes(op) && (equalBytes(op, pubKey) || equalBytes(op, pubKeyHash))) return true;
+					return false;
+				};
+				if (!isBytes(privateKey)) {
+					var _input$tapBip32Deriva, _input$bip32Derivatio;
+					const root = privateKey;
+					const deriveSigners = (label, rows, pubKey) => {
+						if (!rows || !rows.length) throw new Error(`${label}: empty`);
+						const signers = rows.filter((row) => row.fingerprint == root.fingerprint).map((row) => {
+							let s = root;
+							for (const i of row.path) s = s.deriveChild(i);
+							if (!equalBytes(pubKey(s), row.pubKey)) throw new Error(`${label}: wrong pubKey`);
+							if (!s.privateKey) throw new Error(`${label}: no privateKey`);
+							return s;
+						});
+						if (!signers.length) throw new Error(`${label}: no items with fingerprint=${root.fingerprint}`);
+						return signers;
+					};
+					const signers = inputType.txType === "taproot" ? deriveSigners("tapBip32Derivation", (_input$tapBip32Deriva = input.tapBip32Derivation) === null || _input$tapBip32Deriva === void 0 ? void 0 : _input$tapBip32Deriva.map(([pubKey, { der }]) => ({
+						pubKey,
+						fingerprint: der.fingerprint,
+						path: der.path
+					})), (s) => s.publicKey.slice(1)) : deriveSigners("bip32Derivation", (_input$bip32Derivatio = input.bip32Derivation) === null || _input$bip32Derivatio === void 0 ? void 0 : _input$bip32Derivatio.map(([pubKey, der]) => ({
+						pubKey,
+						fingerprint: der.fingerprint,
+						path: der.path
+					})), (s) => s.publicKey);
+					let signed = false;
+					for (const s of signers) {
+						if (!canSign(s.privateKey)) continue;
+						if (this.signIdx(s.privateKey, idx, allowedSighash, _auxRand)) signed = true;
+					}
+					if (signed) return true;
+					if (inputType.txType === "taproot") throw new Error("No taproot scripts signed");
+					throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
+				}
+				if (!allowedSighash) allowedSighash = [inputType.defaultSighash];
+				else allowedSighash.forEach(validateSigHash);
+				const sighash = inputType.sighash;
+				if (!allowedSighash.includes(sighash)) throw new Error(`Input with not allowed sigHash=${sighash}. Allowed: ${allowedSighash.join(", ")}`);
+				const { sigOutputs } = this.inputSighash(idx);
+				if (sigOutputs === SignatureHash.SINGLE && idx >= this.outputs.length) throw new Error(`Input with sighash SINGLE, but there is no output with corresponding index=${idx}`);
+				const prevOut = getPrevOut(input);
+				if (inputType.txType === "taproot") {
+					const prevOuts = this.inputs.map(getPrevOut);
+					const prevOutScript = prevOuts.map((i) => i.script);
+					const amount = prevOuts.map((i) => i.amount);
+					let signed = false;
+					let schnorrPub = pubSchnorr(privateKey);
+					let merkleRoot = input.tapMerkleRoot || EMPTY$1;
+					if (input.tapInternalKey) {
+						const { pubKey, privKey } = getTaprootKeys(privateKey, schnorrPub, input.tapInternalKey, merkleRoot);
+						const [taprootPubKey, _] = taprootTweakPubkey(input.tapInternalKey, merkleRoot);
+						if (equalBytes(taprootPubKey, pubKey)) {
+							const hash = this.preimageWitnessV1(idx, prevOutScript, sighash, amount);
+							const sig = concatBytes(signSchnorr(hash, privKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$1);
+							this.updateInput(idx, { tapKeySig: sig }, true);
+							signed = true;
+						}
+					}
+					if (input.tapLeafScript) {
+						input.tapScriptSig = input.tapScriptSig || [];
+						for (const [_, _script] of input.tapLeafScript) {
+							const script = _script.subarray(0, -1);
+							const scriptDecoded = Script.decode(script);
+							const ver = _script[_script.length - 1];
+							const hash = tapLeafHash(script, ver);
+							if (scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, schnorrPub)) === -1) continue;
+							const msg = this.preimageWitnessV1(idx, prevOutScript, sighash, amount, void 0, script, ver);
+							const sig = concatBytes(signSchnorr(msg, privateKey, _auxRand), sighash !== SignatureHash.DEFAULT ? new Uint8Array([sighash]) : EMPTY$1);
+							this.updateInput(idx, { tapScriptSig: [[{
+								pubKey: schnorrPub,
+								leafHash: hash
+							}, sig]] }, true);
+							signed = true;
+						}
+					}
+					if (!signed) throw new Error("No taproot scripts signed");
+					return true;
+				} else {
+					const pubKey = pubECDSA(privateKey);
+					let hasPubkey = false;
+					const pubKeyHash = hash160(pubKey);
+					for (const i of Script.decode(inputType.lastScript)) if (isBytes(i) && (equalBytes(i, pubKey) || equalBytes(i, pubKeyHash))) hasPubkey = true;
+					if (!hasPubkey) throw new Error(`Input script doesn't have pubKey: ${inputType.lastScript}`);
+					let hash;
+					if (inputType.txType === "legacy") hash = this.preimageLegacy(idx, inputType.lastScript, sighash);
+					else if (inputType.txType === "segwit") {
+						let script = inputType.lastScript;
+						if (inputType.last.type === "wpkh") script = OutScript.encode({
+							type: "pkh",
+							hash: inputType.last.hash
+						});
+						hash = this.preimageWitnessV0(idx, script, sighash, prevOut.amount);
+					} else throw new Error(`Transaction/sign: unknown tx type: ${inputType.txType}`);
+					const sig = signECDSA(hash, privateKey, this.opts.lowR);
+					this.updateInput(idx, { partialSig: [[pubKey, concatBytes(sig, new Uint8Array([sighash]))]] }, true);
+				}
+				return true;
+			}
+			sign(privateKey, allowedSighash, _auxRand) {
+				this.validatePrevoutsForSigning();
+				let num = 0;
+				for (let i = 0; i < this.inputs.length; i++) try {
+					if (this.signIdx(privateKey, i, allowedSighash, _auxRand)) num++;
+				} catch (e) {}
+				if (!num) throw new Error("No inputs signed");
+				return num;
+			}
+			finalizeIdx(idx) {
+				this.checkInputIdx(idx);
+				if (this.fee < _0n$3) throw new Error("Outputs spends more than inputs amount");
+				const input = this.inputs[idx];
+				cleanExtensions(input, this.opts.unknown, this.opts.proprietary);
+				cleanTxModifiable(this.global.txModifiable, this.opts.unknown);
+				const inputType = getInputType(input, this.opts.allowLegacyWitnessUtxo);
+				if (inputType.txType === "taproot") {
+					if (input.tapKeySig) input.finalScriptWitness = [input.tapKeySig];
+					else if (input.tapLeafScript && input.tapScriptSig) {
+						const leafs = input.tapLeafScript.slice().sort((a, b) => TaprootControlBlock.encode(a[0]).length - TaprootControlBlock.encode(b[0]).length);
+						let smallest;
+						let smallestSize = Number.POSITIVE_INFINITY;
+						let unsupported = false;
+						for (const [cb, _script] of leafs) {
+							const script = _script.slice(0, -1);
+							const ver = _script[_script.length - 1];
+							const outScript = OutScript.decode(script);
+							const hash = tapLeafHash(script, ver);
+							const scriptSig = input.tapScriptSig.filter((i) => equalBytes(i[0].leafHash, hash));
+							let signatures = [];
+							let witness;
+							if (outScript.type === "tr_ms") {
+								const m = outScript.m;
+								const pubkeys = outScript.pubkeys;
+								let added = 0;
+								for (const pub of pubkeys) {
+									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
+									if (added === m || sigIdx === -1) {
+										signatures.push(EMPTY$1);
+										continue;
+									}
+									signatures.push(scriptSig[sigIdx][1]);
+									added++;
+								}
+								if (added !== m) continue;
+							} else if (outScript.type === "tr_ns") {
+								for (const pub of outScript.pubkeys) {
+									const sigIdx = scriptSig.findIndex((i) => equalBytes(i[0].pubKey, pub));
+									if (sigIdx === -1) continue;
+									signatures.push(scriptSig[sigIdx][1]);
+								}
+								if (signatures.length !== outScript.pubkeys.length) continue;
+							} else if (outScript.type === "unknown" && this.opts.allowUnknownInputs) {
+								const scriptDecoded = Script.decode(script);
+								signatures = scriptSig.map(([{ pubKey }, signature]) => {
+									const pos = scriptDecoded.findIndex((i) => isBytes(i) && equalBytes(i, pubKey));
+									if (pos === -1) throw new Error("finalize/taproot: cannot find position of pubkey in script");
+									return {
+										signature,
+										pos
+									};
+								}).sort((a, b) => a.pos - b.pos).map((i) => i.signature);
+								if (!signatures.length) continue;
+							} else {
+								const custom = this.opts.customScripts;
+								let recognized = false;
+								if (custom) for (const c of custom) {
+									if (!c.finalizeTaproot) continue;
+									const scriptDecoded = Script.decode(script);
+									const csEncoded = c.encode(scriptDecoded);
+									if (csEncoded === void 0) continue;
+									recognized = true;
+									const finalized = c.finalizeTaproot(script, csEncoded, scriptSig);
+									if (!finalized) continue;
+									witness = finalized.concat(TaprootControlBlock.encode(cb));
+									break;
+								}
+								if (!witness && !recognized && scriptSig.length) unsupported = true;
+								if (!witness) continue;
+							}
+							witness || (witness = signatures.reverse().concat([script, TaprootControlBlock.encode(cb)]));
+							const size = RawWitness.encode(witness).length;
+							if (size >= smallestSize) continue;
+							smallest = witness;
+							smallestSize = size;
+						}
+						if (!smallest && unsupported) throw new Error("Finalize: Unknown tapLeafScript");
+						if (!smallest) throw new Error("finalize/taproot: empty witness");
+						input.finalScriptWitness = smallest;
+					} else throw new Error("finalize/taproot: unknown input");
+					delete input.finalScriptSig;
+					this.cleanFinalInput(input);
+					return;
+				}
+				if (!input.partialSig || !input.partialSig.length) throw new Error("Not enough partial sign");
+				let inputScript = EMPTY$1;
+				let witness = [];
+				if (inputType.last.type === "ms") {
+					const m = inputType.last.m;
+					const pubkeys = inputType.last.pubkeys;
+					let signatures = [];
+					for (const pub of pubkeys) {
+						const sign = input.partialSig.find((s) => equalBytes(pub, s[0]));
+						if (!sign) continue;
+						signatures.push(sign[1]);
+					}
+					signatures = signatures.slice(0, m);
+					if (signatures.length !== m) throw new Error(`Multisig: wrong signatures count, m=${m} n=${pubkeys.length} signatures=${signatures.length}`);
+					inputScript = Script.encode([0, ...signatures]);
+				} else if (inputType.last.type === "pk") inputScript = Script.encode([input.partialSig[0][1]]);
+				else if (inputType.last.type === "pkh") inputScript = Script.encode([input.partialSig[0][1], input.partialSig[0][0]]);
+				else if (inputType.last.type === "wpkh") {
+					inputScript = EMPTY$1;
+					witness = [input.partialSig[0][1], input.partialSig[0][0]];
+				} else if (inputType.last.type === "unknown" && !this.opts.allowUnknownInputs) throw new Error("Unknown inputs not allowed");
+				let finalScriptSig, finalScriptWitness;
+				if (inputType.type.includes("wsh-")) {
+					if (inputScript.length && inputType.lastScript.length) witness = Script.decode(inputScript).map((i) => {
+						if (i === 0) return EMPTY$1;
+						if (isBytes(i)) return i;
+						throw new Error(`Wrong witness op=${i}`);
+					});
+					witness = witness.concat(inputType.lastScript);
+				}
+				if (inputType.txType === "segwit") finalScriptWitness = witness;
+				if (inputType.type.startsWith("sh-wsh-")) finalScriptSig = Script.encode([Script.encode([0, sha256(inputType.lastScript)])]);
+				else if (inputType.type.startsWith("sh-")) finalScriptSig = Script.encode([...Script.decode(inputScript), inputType.lastScript]);
+				else if (inputType.type.startsWith("wsh-")) {} else if (inputType.txType !== "segwit") finalScriptSig = inputScript;
+				if (!finalScriptSig && !finalScriptWitness) throw new Error("Unknown error finalizing input");
+				if (finalScriptSig) input.finalScriptSig = finalScriptSig;
+				if (finalScriptWitness) input.finalScriptWitness = finalScriptWitness;
+				this.cleanFinalInput(input);
+			}
+			finalize() {
+				for (let i = 0; i < this.inputs.length; i++) this.finalizeIdx(i);
+			}
+			extract() {
+				if (!this.isFinal) throw new Error("Transaction has unfinalized inputs");
+				if (!this.outputs.length) throw new Error("Transaction has no outputs");
+				if (this.fee < _0n$3) throw new Error("Outputs spends more than inputs amount");
+				return this.toBytes(true, true);
+			}
+			combine(other) {
+				if (!(other instanceof Transaction)) throw new TypeError("\"other\" expected Transaction, got type=" + typeof other);
+				const opts = this.opts;
+				const PSBTVersion = Math.max(this.opts.PSBTVersion || 0, other.opts.PSBTVersion || 0);
+				if (this.opts.version !== other.opts.version) throw new Error(`Transaction/combine: different version this=${this.opts.version} other=${other.opts.version}`);
+				const thisV2 = this.isPSBTv2();
+				const otherV2 = other.isPSBTv2();
+				if (!thisV2 || !otherV2) {
+					const thisLockTime = this.lockTime;
+					const otherLockTime = other.lockTime;
+					if (thisLockTime !== otherLockTime) throw new Error(`Transaction/combine: different lockTime this=${thisLockTime} other=${otherLockTime}`);
+				}
+				for (const k of ["inputs", "outputs"]) if (this[k].length !== other[k].length) throw new Error(`Transaction/combine: different ${k} length this=${this[k].length} other=${other[k].length}`);
+				const unsignedTx = this.unsignedTx;
+				if (!equalBytes(unsignedTx, other.unsignedTx)) throw new Error(`Transaction/combine: different unsigned tx`);
+				let txModifiable;
+				if (thisV2 && otherV2) {
+					const policy = (tx) => {
+						if (tx.global.txModifiable !== void 0) return cleanTxModifiable(tx.global.txModifiable, opts.unknown);
+						return opts.allowMissingTxModifiable ? tx.modifiable(true, opts.unknown) : 0;
+					};
+					const a = policy(this);
+					const b = policy(other);
+					if ((a & -8) !== (b & -8)) throw new Error("Transaction/combine: conflicting unknown txModifiable flags");
+					txModifiable = a & -8 | a & b & 3 | (a | b) & 4;
+					if (txModifiable === 0 && this.global.txModifiable === void 0 && other.global.txModifiable === void 0 && !opts.allowMissingTxModifiable) txModifiable = void 0;
+				} else if (thisV2) txModifiable = this.modifiable(opts.allowMissingTxModifiable, opts.unknown);
+				else if (otherV2) txModifiable = other.modifiable(opts.allowMissingTxModifiable, opts.unknown);
+				const thisGlobal = _objectSpread2({}, this.global);
+				const otherGlobal = _objectSpread2({}, other.global);
+				if (thisV2 !== otherV2) {
+					if (!thisV2) delete thisGlobal.fallbackLocktime;
+					if (!otherV2) delete otherGlobal.fallbackLocktime;
+					if (!thisV2) delete thisGlobal.version;
+					if (!otherV2) delete otherGlobal.version;
+				}
+				const fallbackLocktime = thisGlobal.fallbackLocktime !== void 0 ? thisGlobal.fallbackLocktime : otherGlobal.fallbackLocktime;
+				delete thisGlobal.txModifiable;
+				delete otherGlobal.txModifiable;
+				delete thisGlobal.fallbackLocktime;
+				delete otherGlobal.fallbackLocktime;
+				const global = combineKeyMap(PSBTGlobal, thisGlobal, otherGlobal, opts.unknown, opts.proprietary);
+				if (fallbackLocktime !== void 0) global.fallbackLocktime = fallbackLocktime;
+				if (PSBTVersion) global.version = PSBTVersion;
+				if (txModifiable === void 0) delete global.txModifiable;
+				else global.txModifiable = txModifiable;
+				let hasOpaqueFinalizedV0 = false;
+				const inputs = this.inputs.map((current, i) => {
+					const currentFinal = this.inputStatus(i) === "finalized";
+					const otherFinal = other.inputStatus(i) === "finalized";
+					if (!thisV2 && currentFinal || !otherV2 && otherFinal) hasOpaqueFinalizedV0 = true;
+					if (currentFinal && otherFinal) for (const k of ["finalScriptSig", "finalScriptWitness"]) {
+						var _this$inputs$i$k, _other$inputs$i$k;
+						if (!!((_this$inputs$i$k = this.inputs[i][k]) === null || _this$inputs$i$k === void 0 ? void 0 : _this$inputs$i$k.length) !== !!((_other$inputs$i$k = other.inputs[i][k]) === null || _other$inputs$i$k === void 0 ? void 0 : _other$inputs$i$k.length)) throw new Error(`Transaction/combine: different finalized field=${k} input=${i}`);
+					}
+					const combined = combineKeyMap(PSBTInput, current, other.inputs[i], opts.unknown, opts.proprietary);
+					if (currentFinal || otherFinal) cleanFinalInput(combined, opts.unknown, opts.proprietary);
+					return cloneDeep(normalizeInput(combined, void 0, void 0, opts.disableScriptCheck, opts.unknown, opts.proprietary));
+				});
+				if (hasOpaqueFinalizedV0 && global.txModifiable !== void 0) global.txModifiable &= -4;
+				const candidate = new Transaction(_objectSpread2(_objectSpread2({}, opts), {}, { PSBTVersion }));
+				const outputs = this.outputs.map((current, i) => {
+					const combined = combineKeyMap(PSBTOutput, current, other.outputs[i], opts.unknown, opts.proprietary);
+					return cloneDeep(candidate.normalizeOutput(combined));
+				});
+				candidate.global = global;
+				candidate.inputs = inputs;
+				candidate.outputs = outputs;
+				if ((!thisV2 || !otherV2) && candidate.isPSBTv2()) candidate.global.txModifiable = candidate.txModifiable;
+				if (!equalBytes(candidate.unsignedTx, unsignedTx)) throw new Error("Transaction/combine: combined unsigned tx differs");
+				this.global = candidate.global;
+				this.inputs = candidate.inputs;
+				this.outputs = candidate.outputs;
+				return this;
+			}
+			clone() {
+				return Transaction.fromPSBT(this.toPSBT(), this.opts);
+			}
+		};
+	}));
+	//#endregion
+	//#region packages/wallet-chains/dist/message-AfNel4WZ.mjs
+	init_utils();
+	init_transaction();
+	init_objectSpread2();
+	/**
+	* Bip122 CAIP-2 networks = `bip122:` + the first 32 hex chars of the genesis hash, verified against
+	* Bitcoin Core `src/kernel/chainparams.cpp` (assert(consensus.hashGenesisBlock == ...) per network
+	* class).
+	*/
+	var MAINNET_BIP32 = {
+		public: 76067358,
+		private: 76066276
+	};
+	var TESTNET_BIP32 = {
+		public: 70617039,
+		private: 70615956
+	};
+	var REGTEST_NETWORK = _objectSpread2(_objectSpread2({}, TEST_NETWORK), {}, { bech32: "bcrt" });
+	var NETWORKS = Object.freeze([
+		{
+			caip2: "bip122:000000000019d6689c085ae165831e93",
+			genesis: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f",
+			params: NETWORK,
+			coinType: 0,
+			bip32: MAINNET_BIP32
+		},
+		{
+			caip2: "bip122:00000000da84f2bafbbc53dee25a72ae",
+			genesis: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043",
+			params: TEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
+		},
+		{
+			caip2: "bip122:00000008819873e925422c1ff0f99f7c",
+			genesis: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6",
+			params: TEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
+		},
+		{
+			caip2: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+			genesis: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206",
+			params: REGTEST_NETWORK,
+			coinType: 1,
+			bip32: TESTNET_BIP32
+		}
+	]);
+	var BITCOIN_NETWORKS = Object.freeze(Object.fromEntries(NETWORKS.map((n) => [n.caip2, n])));
+	var bitcoinNetwork = (caip2) => {
+		const net = BITCOIN_NETWORKS[caip2];
+		if (net === void 0) throw new ChainError("unsupported", `unknown bitcoin network: ${caip2}`);
+		return net;
+	};
+	/**
+	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
+	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
+	*/
+	var utf8 = (s) => new TextEncoder().encode(s);
+	var BIP322_TAG = "BIP0322-signed-message";
+	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
+	var concat$2 = (...parts) => {
+		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+		let o = 0;
+		for (const p of parts) {
+			out.set(p, o);
+			o += p.length;
+		}
+		return out;
+	};
+	/** CompactSize length prefix (values here are always < 253). */
+	var varint = (n) => Uint8Array.of(n);
+	var pushData = (data) => concat$2(varint(data.length), data);
+	var u32le$1 = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
+	var u64le$1 = (n) => {
+		const out = /* @__PURE__ */ new Uint8Array(8);
+		let v = n;
+		for (let i = 0; i < 8; i++) {
+			out[i] = Number(v % 256n);
+			v /= 256n;
+		}
+		return out;
+	};
+	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
+	var bip322MessageHash = (message) => {
+		const tag = sha256$1(utf8(BIP322_TAG));
+		return sha256$1(concat$2(tag, tag, utf8(message)));
+	};
+	/**
+	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
+	* message-hash scriptSig, one output paying the message's scriptPubKey. Returns txid (hash256d,
+	* big-endian display order).
+	*/
+	var toSpend = (scriptPubKey, messageHash) => {
+		const scriptSig = concat$2(Uint8Array.of(0), pushData(messageHash));
+		const raw = concat$2(u32le$1(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le$1(4294967295), pushData(scriptSig), u32le$1(0), varint(1), u64le$1(0n), pushData(scriptPubKey), u32le$1(0));
+		return {
+			txid: sha256$1(sha256$1(raw)),
+			raw
+		};
+	};
+	var BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	var b64 = (i) => {
+		var _BASE64$i;
+		return (_BASE64$i = BASE64[i]) !== null && _BASE64$i !== void 0 ? _BASE64$i : "";
+	};
+	var base64 = (bytes) => {
+		const c = b64;
+		let out = "";
+		for (let i = 0; i < bytes.length; i += 3) {
+			var _bytes$i, _bytes, _bytes2;
+			const b0 = (_bytes$i = bytes[i]) !== null && _bytes$i !== void 0 ? _bytes$i : 0;
+			const b1 = (_bytes = bytes[i + 1]) !== null && _bytes !== void 0 ? _bytes : 0;
+			const b2 = (_bytes2 = bytes[i + 2]) !== null && _bytes2 !== void 0 ? _bytes2 : 0;
+			out += c(Math.floor(b0 / 4)) + c(b0 % 4 * 16 + Math.floor(b1 / 16));
+			out += i + 1 < bytes.length ? c(b1 % 16 * 4 + Math.floor(b2 / 64)) : "=";
+			out += i + 2 < bytes.length ? c(b2 % 64) : "=";
+		}
+		return out;
+	};
+	/**
+	* Signs the BIP-322 to_sign input through a btc-signer Transaction and returns the `smp`-prefixed
+	* base64 witness encoding. `scriptPubKey` is the message address's output script (P2WPKH or P2TR).
+	*/
+	var signBip322Simple = (message, scriptPubKey, privateKey, auxRand) => {
+		const { txid } = toSpend(scriptPubKey, bip322MessageHash(message));
+		const tx = new Transaction({
+			version: 0,
+			lockTime: 0,
+			allowUnknownOutputs: true
+		});
+		const pub = secp256k1.getPublicKey(privateKey, true);
+		tx.addInput(_objectSpread2({
+			txid,
+			index: 0,
+			sequence: 0,
+			witnessUtxo: {
+				script: scriptPubKey,
+				amount: 0n
+			},
+			bip32Derivation: [[pub, {
+				fingerprint: 0,
+				path: []
+			}]]
+		}, scriptPubKey[0] === 81 ? { tapInternalKey: pub.slice(1) } : {}));
+		tx.addOutput({
+			script: Uint8Array.of(106),
+			amount: 0n
+		});
+		const isTaproot = scriptPubKey[0] === 81;
+		if (!tx.signIdx(privateKey, 0, isTaproot ? [SigHash.DEFAULT, SigHash.ALL] : [SigHash.ALL], auxRand(0))) throw new ChainError("invalid-request", "key cannot sign this BIP-322 input");
+		tx.finalizeIdx(0);
+		const witness = tx.getInput(0).finalScriptWitness;
+		if (witness === void 0) throw new ChainError("invalid-request", "BIP-322 input produced no witness");
+		return `smp${base64(concat$2(varint(witness.length), ...witness.map(pushData)))}`;
+	};
+	/**
+	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
+	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
+	*/
+	var signLegacyMessage = (message, privateKey) => {
+		var _recovered$;
+		const hash = sha256$1(sha256$1(concat$2(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
+		const recovered = secp256k1.sign(hash, privateKey, {
+			lowS: true,
+			format: "recovered"
+		});
+		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
+		return base64(concat$2(Uint8Array.of(header), recovered.slice(1)));
+	};
+	//#endregion
+	//#region packages/wallet-chains/dist/bitcoin.mjs
+	init_payment();
+	init_transaction();
+	/**
+	* BIP-32 derivation paths carry a coin type: 0 for mainnet, 1 for every test network. This is what
+	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
+	* marker.
+	*/
+	var isRecord$2$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/**
+	* Bip32Derivation values are [pubkey, { fingerprint, path }] tuples; tapBip32Derivation values are
+	* { hashes, der: { fingerprint, path } }.
+	*/
+	var derivationPaths = (map) => {
+		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$2$2(map) ? Object.values(map) : [];
+		const paths = [];
+		for (const entry of entries) {
+			const value = Array.isArray(entry) ? entry[1] : entry;
+			if (!isRecord$2$2(value)) continue;
+			const { path } = isRecord$2$2(value["der"]) ? value["der"] : value;
+			if (Array.isArray(path) && path.every((p) => typeof p === "number")) paths.push(path);
+		}
+		return paths;
+	};
+	var checkPaths = (paths, where, coinType) => {
+		var _path$;
+		for (const path of paths) if (path.length >= 2 && ((_path$ = path[1]) !== null && _path$ !== void 0 ? _path$ : -1) - 2147483648 !== coinType) throw new ChainError("chain-id-mismatch", `${where} derivation coin type is not this network's`);
+	};
+	var checkDerivations = (tx, coinType) => {
+		for (let i = 0; i < tx.inputsLength; i++) {
+			const input = tx.getInput(i);
+			checkPaths(derivationPaths(input.bip32Derivation), `input ${i}`, coinType);
+			checkPaths(derivationPaths(input.tapBip32Derivation), `input ${i}`, coinType);
+		}
+		for (let i = 0; i < tx.outputsLength; i++) {
+			const output = tx.getOutput(i);
+			checkPaths(derivationPaths(output.bip32Derivation), `output ${i}`, coinType);
+			checkPaths(derivationPaths(output.tapBip32Derivation), `output ${i}`, coinType);
+		}
+	};
+	var DEFAULT_SIGHASH = 0;
+	var SIGHASH_ALL = 1;
+	var isTaprootInput = (input) => input.tapInternalKey !== void 0 || getInputType(input).type === "taproot";
+	/**
+	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller).
+	* `strictPrevoutValidation` makes btc-signer verify every `nonWitnessUtxo`'s txid against its
+	* outpoint.
+	*/
+	var normalizeBitcoinPsbt = (psbt, sign, network) => {
+		const net = bitcoinNetwork(network);
+		let tx;
+		try {
+			tx = Transaction.fromPSBT(psbt, { strictPrevoutValidation: true });
+		} catch (_unused) {
+			throw new ChainError("invalid-request", "PSBT failed to decode");
+		}
+		if (!Array.isArray(sign) || sign.length === 0 || !sign.every((i) => Number.isSafeInteger(i) && i >= 0)) throw new ChainError("invalid-request", "sign must be a non-empty array of input indices");
+		const unique = [...new Set(sign.map(Number))].sort((a, b) => a - b);
+		const last = unique.at(-1);
+		if (unique.length !== sign.length || last === void 0 || last >= tx.inputsLength) throw new ChainError("invalid-request", "sign must be unique, ascending, and in range");
+		checkDerivations(tx, net.coinType);
+		for (const idx of unique) {
+			const input = tx.getInput(idx);
+			if (input.witnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing witnessUtxo`);
+			if (input.bip32Derivation === void 0 && input.tapBip32Derivation === void 0) throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
+			const { type } = getInputType(input);
+			if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
+			const sighash = input.sighashType;
+			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
+		}
+		return {
+			psbt: tx.toPSBT(0),
+			sign: unique
+		};
+	};
+	var SATS = "sats";
+	var OP_RETURN = 106;
+	var bytesToHex$2 = (bytes) => {
+		let out = "";
+		for (const b of bytes) out += b.toString(16).padStart(2, "0");
+		return out;
+	};
+	/** Decodes an output scriptPubKey; OP_RETURN gets an amount-0 display row. */
+	var decodeOutput = (script, amount) => {
+		const hex = bytesToHex$2(script);
+		if (script[0] === OP_RETURN) return {
+			amount,
+			script: hex,
+			opReturn: true
+		};
+		return {
+			amount,
+			script: hex,
+			opReturn: false
+		};
+	};
+	/**
+	* Decodes a normalized bitcoin.psbt request for display. `ownScripts` is the set of output script
+	* hexes the caller has independently verified as this account's (e.g. the kernel re-deriving
+	* change) — not a display hint.
+	*/
+	var decodeBitcoinPsbt = (request, ownScripts = /* @__PURE__ */ new Set()) => {
+		const tx = Transaction.fromPSBT(request.psbt);
+		const coder = Address(bitcoinNetwork(request.network).params);
+		const signed = new Set(request.sign);
+		const outflows = [];
+		let canFee = true;
+		let outSum = 0n;
+		for (let i = 0; i < tx.outputsLength; i++) {
+			var _addr;
+			const output = tx.getOutput(i);
+			const { script } = output;
+			const { amount } = output;
+			if (script === void 0 || amount === void 0) continue;
+			const decoded = decodeOutput(script, amount);
+			outSum += amount;
+			if (decoded.opReturn || ownScripts.has(decoded.script)) continue;
+			let addr;
+			try {
+				const out = OutScript.decode(script);
+				addr = out === void 0 ? void 0 : coder.encode(out);
+			} catch (_unused2) {
+				addr = void 0;
+			}
+			outflows.push({
+				to: (_addr = addr) !== null && _addr !== void 0 ? _addr : decoded.script,
+				amount: {
+					asset: SATS,
+					amount: amount.toString(10)
+				},
+				verified: addr !== void 0
+			});
+		}
+		let inSum = 0n;
+		for (let i = 0; i < tx.inputsLength; i++) {
+			const input = tx.getInput(i);
+			if (input.witnessUtxo === void 0) canFee = false;
+			else inSum += input.witnessUtxo.amount;
+		}
+		const external = tx.inputsLength - signed.size > 0;
+		const undecodable = outflows.some((o) => !o.verified);
+		const verifiability = external ? "opaque" : undecodable ? "partial" : "full";
+		return {
+			family: "bitcoin",
+			network: request.network,
+			summary: outflows.length > 0 ? "transfer" : "contract-call",
+			outflows,
+			approvals: [],
+			fee: canFee ? { max: {
+				asset: SATS,
+				amount: (inSum - outSum).toString(10)
+			} } : void 0,
+			warnings: [],
+			verifiability
+		};
+	};
+	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isAccountRef$2 = (value) => {
+		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
+		if (value["kind"] === "hd") return typeof value["walletId"] === "string" && typeof value["groupIndex"] === "number" && typeof value["template"] === "string";
+		return value["kind"] === "imported" && typeof value["keyId"] === "string" && typeof value["family"] === "string";
+	};
+	var common = (request) => {
+		const { network } = request;
+		const { account } = request;
+		if (typeof network !== "string") throw new ChainError("invalid-request", "request.network must be a string");
+		if (!isAccountRef$2(account)) throw new ChainError("invalid-request", "request.account must be an AccountRef");
+		bitcoinNetwork(network);
+		return {
+			network,
+			account
+		};
+	};
+	var messageTarget = (address, network, format) => {
+		if (typeof address !== "string") throw new ChainError("invalid-request", "address must be a string");
+		const net = bitcoinNetwork(network);
+		let decoded;
+		try {
+			decoded = Address(net.params).decode(address);
+		} catch (_unused5) {
+			throw new ChainError("invalid-address", "address does not belong to this network");
+		}
+		if (format === "bip322-simple") {
+			if (decoded.type !== "wpkh" && decoded.type !== "tr") throw new ChainError("unsupported", "bip322-simple is only for P2WPKH/P2TR addresses");
+		} else if (format === "legacy") {
+			if (decoded.type !== "pkh") throw new ChainError("unsupported", "legacy signing is only for P2PKH addresses");
+		} else throw new ChainError("unsupported", `unsupported message format: ${String(format)}`);
+		const scriptPubKey = OutScript.encode(decoded);
+		return {
+			type: decoded.type,
+			address,
+			format,
+			scriptPubKey
+		};
+	};
+	/**
+	* Normalizes a bitcoin sign request. Idempotent: the returned PSBT is the canonical
+	* re-serialization.
+	*/
+	var normalizeBitcoin = (request) => {
+		if (!isRecord$4(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
+		const { network, account } = common(request);
+		if (request["kind"] === "bitcoin.psbt") {
+			const { psbt } = request;
+			if (!(psbt instanceof Uint8Array)) throw new ChainError("invalid-request", "psbt must be bytes");
+			const normalized = normalizeBitcoinPsbt(psbt, request["sign"], network);
+			return {
+				kind: "bitcoin.psbt",
+				network,
+				account,
+				psbt: normalized.psbt,
+				sign: normalized.sign
+			};
+		}
+		if (request["kind"] === "bitcoin.message") {
+			const { format } = request;
+			const target = messageTarget(request["address"], network, format);
+			const { message, change, index } = request;
+			if (typeof message !== "string") throw new ChainError("invalid-request", "message must be a string");
+			if (change !== 0 && change !== 1) throw new ChainError("invalid-request", "change must be 0 or 1");
+			if (!Number.isSafeInteger(index) || index < 0 || index >= 2147483648) throw new ChainError("invalid-request", "index must be a non-hardened path index");
+			return {
+				kind: "bitcoin.message",
+				network,
+				account,
+				address: target.address,
+				message,
+				format: target.format,
+				change,
+				index
+			};
+		}
+		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
+	};
+	/** Decodes the message `address` into the scriptPubKey the signer needs. */
+	var decodeMessageTarget = (request) => messageTarget(request.address, request.network, request.format);
 	//#endregion
 	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/version.js
 	/** @internal */
@@ -25735,7 +26128,7 @@ zoo`.split("\n"));
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
 	//#endregion
-	//#region packages/wallet-chains/dist/typed-data-BWnYcuIi.mjs
+	//#region packages/wallet-chains/dist/typed-data-D28VBOIm.mjs
 	init_defineProperty();
 	init_objectSpread2();
 	/**
@@ -26011,7 +26404,7 @@ zoo`.split("\n"));
 	function evmAddressFromPublicKey(pubkey) {
 		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
 		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
-		return checksumEvmAddress(`0x${bytesToHex$1$1(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+		return checksumEvmAddress(`0x${bytesToHex$1$3(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
 	}
 	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
 	function assertHex$1(value, field) {
@@ -28865,7 +29258,31 @@ zoo`.split("\n"));
 		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
 	};
 	//#endregion
-	//#region packages/wallet-chains/dist/ed25519-nz7LNw0K.mjs
+	//#region packages/wallet-chains/dist/bitcoin-sign.mjs
+	init_payment();
+	init_transaction();
+	/**
+	* /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
+	* (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`
+	* first. No key caching.
+	*/
+	var signBitcoinPsbt = (psbt, inputs, auxRand) => {
+		const tx = Transaction.fromPSBT(psbt);
+		for (const { index, privateKey } of inputs) {
+			if (privateKey.length !== 32) throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
+			if (!tx.signIdx(privateKey, index, void 0, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
+		}
+		return tx.toPSBT(0);
+	};
+	/** Returns the signature string: `smp…` base64 witness for bip322-simple, compact base64 for legacy. */
+	var signBitcoinMessage = (request, privateKey, auxRand) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+		if (request.format === "legacy") return signLegacyMessage(request.message, privateKey);
+		const scriptPubKey = OutScript.encode(Address(bitcoinNetwork(request.network).params).decode(request.address));
+		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
+	};
+	//#endregion
+	//#region packages/wallet-chains/dist/ed25519-DUtI5nWr.mjs
 	init_defineProperty();
 	/**
 	* Twisted Edwards curve. The formula is: ax² + y² = 1 + dx²y².
@@ -28909,7 +29326,7 @@ zoo`.split("\n"));
 	*/
 	function edwards(params, extraOpts = {}) {
 		var _Point;
-		validateObject(extraOpts, {}, {}, "extraOpts");
+		validateObject$1(extraOpts, {}, {}, "extraOpts");
 		const opts = extraOpts;
 		const validated = createCurveFields("edwards", params, opts, opts.FpFnLE);
 		const { Fp, Fn } = validated;
@@ -28917,7 +29334,7 @@ zoo`.split("\n"));
 		const { h: cofactor } = CURVE;
 		if (FpLegendre(Fp, CURVE.a) !== 1) throw new Error("edwards: CURVE.a must be a square in Fp for complete addition formulas");
 		if (FpLegendre(Fp, CURVE.d) !== -1) throw new Error("edwards: CURVE.d must be a non-square in Fp for complete addition formulas");
-		validateObject(opts, {}, {
+		validateObject$1(opts, {}, {
 			uvRatio: "function",
 			randomBytes: "function"
 		});
@@ -29143,7 +29560,7 @@ zoo`.split("\n"));
 				return bytes;
 			}
 			toHex() {
-				return bytesToHex$2(this.toBytes());
+				return bytesToHex$4(this.toBytes());
 			}
 			toString() {
 				return `<Point ${this.is0() ? "ZERO" : this.toHex()}>`;
@@ -29187,7 +29604,7 @@ zoo`.split("\n"));
 		if (typeof cHash !== "function") throw new Error("\"hash\" function param is required");
 		const hash = cHash;
 		const opts = eddsaOpts;
-		validateObject(opts, {}, {
+		validateObject$1(opts, {}, {
 			adjustScalarBytes: "function",
 			randomBytes: "function",
 			domain: "function",
@@ -29247,12 +29664,12 @@ zoo`.split("\n"));
 			return getExtendedPublicKey(secretKey).pointBytes;
 		}
 		function hashDomainToScalar(context = Uint8Array.of(), ...msgs) {
-			const msg = concatBytes(...msgs);
+			const msg = concatBytes$2(...msgs);
 			return modN_LE(hash(domain(msg, abytes(context, void 0, "context"), !!prehash)));
 		}
 		/** Signs message with secret key. RFC8032 5.1.6 */
 		function sign(msg, secretKey, options = {}) {
-			validateObject(options, {}, {}, "options");
+			validateObject$1(options, {}, {}, "options");
 			msg = copyBytes(abytes(msg, void 0, "message"));
 			if (prehash) msg = prehash(msg);
 			const { prefix, scalar, pointBytes } = getExtendedPublicKey(secretKey);
@@ -29261,7 +29678,7 @@ zoo`.split("\n"));
 			const k = hashDomainToScalar(options.context, R, pointBytes, msg);
 			const s = Fn.create(r + k * scalar);
 			if (!Fn.isValid(s)) throw new Error("sign failed: invalid s");
-			return abytes(concatBytes(R, Fn.toBytes(s)), lengths.signature, "result");
+			return abytes(concatBytes$2(R, Fn.toBytes(s)), lengths.signature, "result");
 		}
 		const verifyOpts = { zip215: opts.zip215 };
 		/**
@@ -29269,7 +29686,7 @@ zoo`.split("\n"));
 		* A cofactored verification equation is checked.
 		*/
 		function verify(sig, msg, publicKey, options = verifyOpts) {
-			validateObject(options);
+			validateObject$1(options);
 			const { context } = options;
 			const zip215 = options.zip215 === void 0 ? !!verifyOpts.zip215 : options.zip215;
 			const len = lengths.signature;
@@ -29305,7 +29722,7 @@ zoo`.split("\n"));
 			return abytes(seed, lengths.seed, "seed");
 		}
 		function isValidSecretKey(key) {
-			return isBytes(key) && key.length === lengths.secretKey;
+			return isBytes$2(key) && key.length === lengths.secretKey;
 		}
 		function isValidPublicKey(key, zip215) {
 			try {
@@ -31148,6 +31565,8 @@ zoo`.split("\n"));
 	* wiped in `finally` on every path. Signing is not in this module — `chain.sign` arrives in E2-b.
 	*/
 	init_bip32();
+	init_transaction();
+	init_payment();
 	var checkNetwork = (template, network) => {
 		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
@@ -31252,8 +31671,8 @@ zoo`.split("\n"));
 					const { request, verify } = params;
 					const { account } = request;
 					if (account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
-					const evm = request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data";
-					if (account.template !== (evm ? "evm.bip44" : "solana.bip44-change")) throw new KernelError("invalid-input", "account template does not match the request family");
+					const family = request.kind.split(".", 1)[0];
+					if (!(family === "evm" ? ["evm.bip44"] : family === "solana" ? ["solana.bip44-change"] : ["btc.bip84", "btc.bip86"]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 					const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 					if (record === void 0) throw new KernelError("not-found", "no such wallet");
 					const entropy = openRecord(dek, record);
@@ -31264,7 +31683,7 @@ zoo`.split("\n"));
 						wipe(entropy);
 					}
 					try {
-						if (evm) {
+						if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") {
 							const master = HDKey$1.fromMasterSeed(seed);
 							try {
 								const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
@@ -31298,6 +31717,134 @@ zoo`.split("\n"));
 									};
 								} finally {
 									child.wipePrivateData();
+								}
+							} finally {
+								master.wipePrivateData();
+							}
+						}
+						if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
+							const net = bitcoinNetwork(request.network);
+							const master = HDKey$1.fromMasterSeed(seed, net.bip32);
+							try {
+								const purpose = account.template === "btc.bip86" ? 86 : 84;
+								const coinType = net.coinType;
+								const hardened = 2147483648;
+								const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
+								const children = [];
+								const derivation = (owner) => {
+									const entries = [];
+									const collect = (map) => {
+										if (map instanceof Map) for (const [k, v] of map) entries.push([k, v]);
+										else if (Array.isArray(map)) {
+											for (const e of map) if (Array.isArray(e) && e.length === 2) entries.push([e[0], e[1]]);
+										}
+									};
+									collect(purpose === 86 ? owner.tapBip32Derivation : owner.bip32Derivation);
+									for (const [key, value] of entries) {
+										const der = isObj(value) && isObj(value["der"]) ? value["der"] : value;
+										if (!isObj(der) || !(key instanceof Uint8Array)) continue;
+										const { fingerprint, path } = der;
+										if (fingerprint === master.fingerprint && Array.isArray(path) && path.every((p) => typeof p === "number")) return {
+											pubkey: key,
+											fingerprint,
+											path
+										};
+									}
+								};
+								const childAt = (path) => {
+									const change = path[3];
+									const index = path[4];
+									if (path.length !== 5 || path[0] !== purpose + hardened || path[1] !== coinType + hardened || path[2] !== account.groupIndex + hardened || change === void 0 || index === void 0 || change !== 0 && change !== 1 || index < 0 || index >= hardened) throw new KernelError("invalid-input", "derivation path is not this account's");
+									const child = accountNode.deriveChild(change).deriveChild(index);
+									children.push(child);
+									return child;
+								};
+								const expectedPub = (pub) => purpose === 86 ? pub.slice(1) : pub;
+								const expectedScript = (pub) => purpose === 86 ? p2tr(pub.slice(1)).script : p2wpkh(pub).script;
+								try {
+									if (request.kind === "bitcoin.psbt") {
+										const tx = Transaction.fromPSBT(request.psbt);
+										const inputs = [];
+										for (const idx of request.sign) {
+											const input = tx.getInput(idx);
+											const entry = derivation(input);
+											if (entry === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
+											const child = childAt(entry.path);
+											const pub = child.publicKey;
+											const priv = child.privateKey;
+											if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+											if (!deepEqual(entry.pubkey, expectedPub(pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
+											const prevout = input.witnessUtxo;
+											if (prevout === void 0 || !deepEqual(prevout.script, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
+											inputs.push({
+												index: idx,
+												privateKey: priv
+											});
+										}
+										const ownScripts = /* @__PURE__ */ new Set();
+										const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+										for (let i = 0; i < tx.outputsLength; i++) {
+											const output = tx.getOutput(i);
+											if (output.script === void 0) continue;
+											const entry = derivation(output);
+											if (entry === void 0) continue;
+											try {
+												const pub = childAt(entry.path).publicKey;
+												if (pub !== null && deepEqual(output.script, expectedScript(pub))) ownScripts.add(hex(output.script));
+											} catch (_unused) {
+												continue;
+											}
+										}
+										let normalized;
+										try {
+											normalized = normalizeBitcoin(request);
+										} catch (error) {
+											mapChainError(error);
+										}
+										if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+										try {
+											decodeBitcoinPsbt(request, ownScripts);
+										} catch (error) {
+											mapChainError(error);
+										}
+										await verifyFactor(ctx.platform, ctx.image, verify, dek);
+										return {
+											kind: "bitcoin.psbt",
+											signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32))
+										};
+									}
+									if (request.format === "legacy") throw new KernelError("unsupported", "legacy message format is not supported");
+									const child = childAt([
+										purpose + hardened,
+										coinType + hardened,
+										account.groupIndex + hardened,
+										request.change,
+										request.index
+									]);
+									const pub = child.publicKey;
+									const priv = child.privateKey;
+									if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+									if ((purpose === 86 ? p2tr(pub.slice(1), void 0, net.params).address : p2wpkh(pub, net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
+									let normalized;
+									try {
+										normalized = normalizeBitcoin(request);
+									} catch (error) {
+										mapChainError(error);
+									}
+									if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+									try {
+										decodeMessageTarget(request);
+									} catch (error) {
+										mapChainError(error);
+									}
+									await verifyFactor(ctx.platform, ctx.image, verify, dek);
+									return {
+										kind: "bitcoin.message",
+										signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32))
+									};
+								} finally {
+									for (const child of children) child.wipePrivateData();
+									accountNode.wipePrivateData();
 								}
 							} finally {
 								master.wipePrivateData();
@@ -31378,7 +31925,7 @@ zoo`.split("\n"));
 	var HEX64_RE = /^[0-9a-f]{128}$/;
 	/** Lowercase hex encode. */
 	function bytesToHex$1(bytes) {
-		return bytesToHex$4(bytes);
+		return bytesToHex$5(bytes);
 	}
 	/** Decode lowercase or mixed-case hex to bytes. */
 	function hexToBytes$1(hex) {
@@ -32048,15 +32595,15 @@ zoo`.split("\n"));
 		const iv = randomBytes$4(16);
 		const plaintextBytes = utf8Encoder.encode(plaintext);
 		const ciphertext = cbc(sharedSecret, iv).encrypt(plaintextBytes);
-		return `${base64.encode(ciphertext)}?iv=${base64.encode(iv)}`;
+		return `${base64$1.encode(ciphertext)}?iv=${base64$1.encode(iv)}`;
 	}
 	/** Decrypt a NIP-04 payload with the raw 32-byte ECDH x-coordinate. */
 	function decrypt$2(payload, sharedSecret) {
 		assertByteLength(sharedSecret, 32, "shared secret");
 		const [ciphertextPart, ivPart] = splitPayload(payload);
 		try {
-			const iv = base64.decode(ivPart);
-			const ciphertext = base64.decode(ciphertextPart);
+			const iv = base64$1.decode(ivPart);
+			const ciphertext = base64$1.decode(ciphertextPart);
 			const plaintext = cbc(sharedSecret, iv).decrypt(ciphertext);
 			return utf8Decoder.decode(plaintext);
 		} catch (error) {
@@ -32186,7 +32733,7 @@ zoo`.split("\n"));
 		if (payload.length < 132 || payload.length > maxPayloadChars) throw new CryptoError(`invalid payload length: ${payload.length}`);
 		let data;
 		try {
-			data = base64.decode(payload);
+			data = base64$1.decode(payload);
 		} catch (error) {
 			throw new CryptoError("invalid base64", { cause: error });
 		}
@@ -32204,7 +32751,7 @@ zoo`.split("\n"));
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
 		const ciphertext = chacha20(chacha_key, chacha_nonce, pad(plaintext));
 		const mac = hmacAad(hmac_key, ciphertext, nonce);
-		return base64.encode(concatBytes$5(new Uint8Array([2]), nonce, ciphertext, mac));
+		return base64$1.encode(concatBytes$5(new Uint8Array([2]), nonce, ciphertext, mac));
 	}
 	function decrypt$1(payload, conversationKey, opts) {
 		var _opts$maxPayloadChars;
@@ -41323,7 +41870,7 @@ zoo`.split("\n"));
 	}
 	/** `sha256` of the exact description bytes, lowercase hex — the description enters hashed. */
 	function lightningAddressDescriptionHash(description) {
-		return bytesToHex$4(sha256$2(utf8ToBytes$1(description)));
+		return bytesToHex$5(sha256$2(utf8ToBytes$1(description)));
 	}
 	/**
 	* `POST /lnurlpay/{pubkey}`: the message claiming `username` on `domain`, fields joined by LF:
@@ -41443,7 +41990,7 @@ zoo`.split("\n"));
 	function commitmentKey(commitment) {
 		requireLength(commitment.hiding, 33, "commitment.hiding");
 		requireLength(commitment.binding, 33, "commitment.binding");
-		return bytesToHex$4(concatBytes$5(commitment.hiding, commitment.binding));
+		return bytesToHex$5(concatBytes$5(commitment.hiding, commitment.binding));
 	}
 	function checkOperators(operators) {
 		if (operators.length === 0) throw new SparkInputError("operators: must not be empty");
@@ -41454,7 +42001,7 @@ zoo`.split("\n"));
 			if (!Number.isSafeInteger(operator.id) || operator.id < 0) throw new SparkInputError("operator.id: must be a non-negative safe integer");
 			identifierBytes(operator.identifier);
 			requireLength(operator.identityPublicKey, 33, "operator.identityPublicKey");
-			const publicKey = bytesToHex$4(operator.identityPublicKey);
+			const publicKey = bytesToHex$5(operator.identityPublicKey);
 			if (ids.has(operator.id) || identifiers.has(operator.identifier) || publicKeys.has(publicKey)) throw new SparkInputError("operators: id, identifier and identityPublicKey must each be unique");
 			ids.add(operator.id);
 			identifiers.add(operator.identifier);
@@ -41736,7 +42283,7 @@ zoo`.split("\n"));
 					const nonce = item.slice(0, NONCE_LENGTH);
 					const hiding = item.slice(NONCE_LENGTH, 97);
 					const binding = item.slice(97, FROST_COMMITMENT_ITEM);
-					nonces.set(bytesToHex$4(concatBytes$5(hiding, binding)), nonce);
+					nonces.set(bytesToHex$5(concatBytes$5(hiding, binding)), nonce);
 					commitments.push({
 						hiding,
 						binding
@@ -41864,7 +42411,7 @@ zoo`.split("\n"));
 				const prevout = job.target.prevouts[job.target.inputIndex];
 				if (prevout === void 0) throw new SparkInputError("signFrost: inputIndex out of range for prevouts");
 				const tx = parseTransaction(job.target.transaction);
-				const key = bytesToHex$4(job.publicKey);
+				const key = bytesToHex$5(job.publicKey);
 				if (tx.inputsLength > 1) {
 					const foreign = /* @__PURE__ */ new Map();
 					for (let i = 0; i < tx.inputsLength; i++) {
@@ -41873,7 +42420,7 @@ zoo`.split("\n"));
 						if (!eq(otherPrevout.script, prevout.script)) {
 							const { txid } = tx.getInput(i);
 							if (txid === void 0) throw new SparkInputError("signFrost: foreign input carries no prevout txid");
-							foreign.set(bytesToHex$4(txid), txid);
+							foreign.set(bytesToHex$5(txid), txid);
 						}
 					}
 					if (foreign.size > 0) {
@@ -41895,7 +42442,7 @@ zoo`.split("\n"));
 						};
 						entry.amountSats = Math.max(entry.amountSats, prevout.amount);
 						leaves.set(key, entry);
-						exits.set(bytesToHex$4(txid), txid);
+						exits.set(bytesToHex$5(txid), txid);
 						continue;
 					}
 				}
@@ -41923,11 +42470,11 @@ zoo`.split("\n"));
 				leaves.set(key, entry);
 				if (tx.inputsLength === 1) {
 					const distinct = /* @__PURE__ */ new Map();
-					for (const script of violations) distinct.set(bytesToHex$4(script), script);
+					for (const script of violations) distinct.set(bytesToHex$5(script), script);
 					if (distinct.size !== 1) throw new SparkInputError("signFrost: job carries multiple non-whitelisted outputs");
 					const script = distinct.values().next().value;
 					if (script === void 0) throw new SparkInputError("signFrost: malformed output set");
-					lightnings.set(bytesToHex$4(script), script);
+					lightnings.set(bytesToHex$5(script), script);
 				} else throw new SparkInputError(`signFrost: non-whitelisted output on a ${tx.inputsLength}-input transaction`);
 			}
 			if (exits.size > 0 && lightnings.size > 0) throw new SparkInputError("signFrost: batch mixes connector and HTLC refunds");
@@ -41966,7 +42513,7 @@ zoo`.split("\n"));
 		const recordSign = (signingPublicKey, target) => {
 			const prevout = target.prevouts[target.inputIndex];
 			if (prevout === void 0) throw new SparkInputError("signFrost: inputIndex out of range for prevouts");
-			const key = bytesToHex$4(signingPublicKey);
+			const key = bytesToHex$5(signingPublicKey);
 			let record = signs.get(key);
 			if (record === void 0) {
 				if (signs.size >= MAX_SIGNING_KEYS) {
@@ -41985,13 +42532,13 @@ zoo`.split("\n"));
 			}
 			for (const leaf of leaves) {
 				var _receivers$get;
-				const pk = bytesToHex$4(leaf.publicKey);
+				const pk = bytesToHex$5(leaf.publicKey);
 				let receivers = leafReceivers.get(pk);
 				if (receivers === void 0) {
 					receivers = /* @__PURE__ */ new Map();
 					leafReceivers.set(pk, receivers);
 				}
-				const receiver = bytesToHex$4(leaf.receiverIdentityPublicKey);
+				const receiver = bytesToHex$5(leaf.receiverIdentityPublicKey);
 				receivers.set(receiver, ((_receivers$get = receivers.get(receiver)) !== null && _receivers$get !== void 0 ? _receivers$get : 0) + 1);
 				receiverScripts.set(receiver, p2trScriptFromPublicKey(leaf.receiverIdentityPublicKey, network));
 			}
@@ -42022,7 +42569,7 @@ zoo`.split("\n"));
 				return value !== void 0 && recorded !== void 0 && eq(recorded, value);
 			})) throw new SparkInputError("transfer package: key_tweak_package does not match the recorded operator packages");
 			const leafAmounts = prepared.leaves.map((leaf) => {
-				const record = signs.get(bytesToHex$4(leaf.publicKey));
+				const record = signs.get(bytesToHex$5(leaf.publicKey));
 				if (record === void 0) throw new SparkInputError(`transfer package: no recorded refund signature for leaf ${leaf.leafId}`);
 				return record.maxAmount;
 			});
@@ -42030,7 +42577,7 @@ zoo`.split("\n"));
 			const sspCount = prepared.leaves.map((leaf) => eq(leaf.receiverIdentityPublicKey, sspIdentityPublicKey)).filter(Boolean).length;
 			if (sspCount > 0 && sspCount !== prepared.leaves.length) throw new SparkInputError("transfer package: SSP and non-SSP receivers in one transfer");
 			if (sspCount > 0) {
-				const authorized = prepared.leaves.filter((leaf) => serviceAuthorized.has(bytesToHex$4(leaf.publicKey))).length;
+				const authorized = prepared.leaves.filter((leaf) => serviceAuthorized.has(bytesToHex$5(leaf.publicKey))).length;
 				if (authorized === prepared.leaves.length) return;
 				if (authorized !== 0) throw new SparkInputError("transfer package: SSP transfer mixes service-authorized and unauthorized leaves");
 				return {
@@ -42041,7 +42588,7 @@ zoo`.split("\n"));
 			}
 			const receivers = /* @__PURE__ */ new Map();
 			for (const [i, leaf] of prepared.leaves.entries()) {
-				const key = bytesToHex$4(leaf.receiverIdentityPublicKey);
+				const key = bytesToHex$5(leaf.receiverIdentityPublicKey);
 				const amount = leafAmounts[i];
 				if (amount === void 0) throw new SparkInputError("transfer package: leaf amount out of range");
 				const entry = receivers.get(key);
@@ -42062,9 +42609,9 @@ zoo`.split("\n"));
 			const prepared = transfers.get(transferId);
 			if (prepared !== void 0) {
 				for (const leaf of prepared.leaves) {
-					const pk = bytesToHex$4(leaf.publicKey);
+					const pk = bytesToHex$5(leaf.publicKey);
 					const receivers = leafReceivers.get(pk);
-					const receiver = bytesToHex$4(leaf.receiverIdentityPublicKey);
+					const receiver = bytesToHex$5(leaf.receiverIdentityPublicKey);
 					if (receivers !== void 0) {
 						const count = receivers.get(receiver);
 						if (count !== void 0) {
@@ -42082,7 +42629,7 @@ zoo`.split("\n"));
 		return {
 			evaluateJobs,
 			markServiceAuthorized: (publicKeys) => {
-				for (const pk of publicKeys) serviceAuthorized.add(bytesToHex$4(pk));
+				for (const pk of publicKeys) serviceAuthorized.add(bytesToHex$5(pk));
 			},
 			recordSign,
 			recordPrepare,
@@ -42131,7 +42678,7 @@ zoo`.split("\n"));
 		}
 		if (statement.kind === "static-deposit-claim") return {
 			digest: staticDepositStatementDigest({
-				transactionId: bytesToHex$4(statement.txid),
+				transactionId: bytesToHex$5(statement.txid),
 				outputIndex: statement.vout,
 				network: statement.network,
 				requestType: "fixed",
@@ -42142,7 +42689,7 @@ zoo`.split("\n"));
 		};
 		if (statement.kind === "static-deposit-refund") return {
 			digest: staticDepositStatementDigest({
-				transactionId: bytesToHex$4(statement.txid),
+				transactionId: bytesToHex$5(statement.txid),
 				outputIndex: statement.vout,
 				network: statement.network,
 				requestType: "refund",
@@ -43046,18 +43593,18 @@ zoo`.split("\n"));
 						sspIdentityPublicKey: rt.sparkNetworkConfig(account.network).ssp.identityPublicKey,
 						identityPublicKey: await signer.identityPublicKey()
 					}), outflow.htlcOutputScript)) continue;
-					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 					if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > budget + intent.maxFeeSats) continue;
-					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
 					return;
 				}
 				if (outflow.kind === "exit" && intent.kind === "exit") {
 					const { addressScript } = approval.decoded;
 					if (addressScript === void 0) continue;
 					if (!outflow.exitOutputs.some((output) => equalBytes$3(output.script, addressScript) && output.amountSats >= intent.amountSats)) continue;
-					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$5(leaf.publicKey)));
 					if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) continue;
-					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$5(leaf.publicKey), leaf.amountSats);
 					return;
 				}
 				if (outflow.kind === "onchain" && intent.kind === "onchain") {
@@ -43188,7 +43735,7 @@ zoo`.split("\n"));
 		/** Opens a session, replacing any existing one. Returns the new session id. */
 		open(dek, keyId) {
 			this.wipeUnlocked();
-			const id = bytesToHex$4(this.platform.random(16));
+			const id = bytesToHex$5(this.platform.random(16));
 			const at = this.platform.elapsed();
 			this.state = {
 				status: "unlocked",

@@ -61,6 +61,11 @@
       "integrity": "sha512-82dxFbZUYboyOf0AXiydsQrFQ5Q4h9mX+O2UkE91ROYmsc0BKMGZLwDmy96Jpa2+vrtoxomjUhy1RPIgH/r2nA=="
     },
     {
+      "name": "@scure/btc-signer",
+      "version": "2.4.1",
+      "integrity": "sha512-ch6h66o9nPhEoe/KciMMUJeH2MBPB8UAJI1if35Fxl6885lKTsc9YoCRqTW0/RjI0Vv9GSg1tmKtHHODyAw81g=="
+    },
+    {
       "name": "micro-key-producer",
       "version": "0.10.2",
       "integrity": "sha512-ApVEYeOhHwC4fsf54Jdt3Cf21eYfib/9GANrZCjlMCl1Sa71cXncS4J6wQ3IlbchBCvulOjQa2UoWf6/aE9XgA=="
@@ -69,7 +74,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "45a49611d1faf966990534981c4dc06efc0867748233996ac771d215dfba0a86"
+      "sha256": "92ca32a56459893f52f0c5ac12da72ab7fb6f5cf68a5c5a7a02edf7127aedc42"
     }
   ]
 }
