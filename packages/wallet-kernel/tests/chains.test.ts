@@ -11,6 +11,15 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
+
+import { normalizeEvm } from "@qntx/wallet-chains/evm";
+import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
+import { solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
+import { mnemonicToSeedSync } from "@scure/bip39";
+
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
 
@@ -65,6 +74,34 @@ const vectors = JSON.parse(
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+const PASSKEY = () => ({ kind: "passkey", credentialId: new Uint8Array(CREDENTIAL_ID), prf: new Uint8Array(PRF_VAULT) });
+const EVM_ADDRESS = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+const SOL_ADDRESS = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
+
+/** A legacy Solana transfer whose fee payer is account 0's public key. */
+const solanaTransferMessage = (): Uint8Array => {
+  const seed = mnemonicToSeedSync(vectors.mnemonic);
+  const priv = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'").privateKey;
+  const fp = ed25519.getPublicKey(priv);
+  const dest = new Uint8Array(32).fill(0x22);
+  const system = new Uint8Array(32);
+  system[31] = 2;
+  const blockhash = new Uint8Array(32).fill(0x33);
+  const data = new Uint8Array(12);
+  const dv = new DataView(data.buffer);
+  dv.setUint32(0, 2, true);
+  dv.setBigUint64(4, 1000n, true);
+  return new Uint8Array([
+    1, 0, 1, 3, ...fp, ...dest, ...system, ...blockhash, 1, 2, 2, 0, 1, 12, ...data,
+  ]);
+};
+
+const hd = (walletId: string, template: string) => ({
+  kind: "hd",
+  walletId,
+  groupIndex: 0,
+  template,
+});
 
 describe("wallet.accounts", () => {
   const setup = async () => {
@@ -158,5 +195,184 @@ describe("wallet.accounts", () => {
       session,
     );
     expect("err" in missing).toBe(true);
+  });
+});
+
+describe("chain.sign", () => {
+  const setup = async () => {
+    const h = createHarness();
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+      }),
+    );
+    return {
+      h,
+      session: strField(res, "session"),
+      walletId: strField(field(res, "wallet"), "walletId"),
+    };
+  };
+
+  const callSign = async (
+    h: ReturnType<typeof createHarness>,
+    session: string,
+    request: unknown,
+    verify: unknown = PASSKEY(),
+  ) => h.call("chain.sign", { request, verify }, session);
+
+  it("signs an eip1559 transaction, personal message and typed data", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "evm.bip44");
+    const txReq = normalizeEvm({
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account,
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x0",
+        data: "0x",
+        to: "0x00000000000000000000000000000000deadbeef",
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    });
+    const txRes = ok(await callSign(h, session, txReq));
+    expect(
+      recoverEvmSigner(txReq, { signedTransaction: field(txRes, "signedTransaction") as Uint8Array }),
+    ).toBe(EVM_ADDRESS.toLowerCase());
+    const msgReq = normalizeEvm({
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account,
+      message: utf8ToBytes("hello"),
+    });
+    const msgRes = ok(await callSign(h, session, msgReq));
+    expect(
+      recoverEvmSigner(msgReq, { signature: field(msgRes, "signature") as Uint8Array }),
+    ).toBe(EVM_ADDRESS.toLowerCase());
+    const td = JSON.stringify({
+      types: {
+        EIP712Domain: [{ name: "name", type: "string" }],
+        Mail: [{ name: "m", type: "string" }],
+      },
+      domain: { name: "X" },
+      primaryType: "Mail",
+      message: { m: "hi" },
+    });
+    const tdReq = normalizeEvm({
+      kind: "evm.typed-data",
+      network: "eip155:1",
+      account,
+      typedData: td,
+    });
+    const tdRes = ok(await callSign(h, session, tdReq));
+    expect(
+      recoverEvmSigner(tdReq, { signature: field(tdRes, "signature") as Uint8Array }),
+    ).toBe(EVM_ADDRESS.toLowerCase());
+  });
+
+  it("signs a solana transaction and a raw message", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "solana.bip44-change");
+    const txMsg = solanaTransferMessage();
+    const txReq = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: vectors.solana.network,
+        account,
+        message: txMsg,
+      },
+      SOL_ADDRESS,
+    );
+    const txRes = ok(await callSign(h, session, txReq));
+    const txSig = field(txRes, "signature");
+    expect(txSig instanceof Uint8Array && verifySolanaSignature(txMsg, txSig, SOL_ADDRESS)).toBe(
+      true,
+    );
+    const msg = utf8ToBytes("hello solana");
+    const msgReq = normalizeSolana(
+      {
+        kind: "solana.message",
+        network: vectors.solana.network,
+        account,
+        message: msg,
+        format: "raw",
+      },
+      SOL_ADDRESS,
+    );
+    const msgRes = ok(await callSign(h, session, msgReq));
+    const sig = field(msgRes, "signature");
+    expect(sig instanceof Uint8Array && verifySolanaSignature(msg, sig, SOL_ADDRESS)).toBe(true);
+  });
+
+  it("rejects non-normalized, wrong-factor, mismatched, missing and bitcoin requests", async () => {
+    const { h, session, walletId } = await setup();
+    const badHex = {
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: hd(walletId, "evm.bip44"),
+      message: utf8ToBytes("hello"),
+    };
+    const nonNormalized = {
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: hd(walletId, "evm.bip44"),
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x0",
+        data: "0x",
+        to: "0x00000000000000000000000000000000DEADBEEF",
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    };
+    expect("err" in (await callSign(h, session, nonNormalized))).toBe(true);
+    const wrongFactor = await callSign(h, session, normalizeEvm(badHex), {
+      kind: "password",
+      password: utf8ToBytes("wrong password"),
+    });
+    expect("err" in wrongFactor).toBe(true);
+    const mismatch = {
+      ...normalizeEvm(badHex),
+      account: hd(walletId, "solana.bip44-change"),
+    };
+    expect("err" in (await callSign(h, session, mismatch))).toBe(true);
+    const missing = {
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: hd("0000000000000000", "evm.bip44"),
+      message: utf8ToBytes("hello"),
+    };
+    expect("err" in (await callSign(h, session, missing))).toBe(true);
+    const imported = {
+      ...normalizeEvm(badHex),
+      account: { kind: "imported", keyId: "0123456789abcdef", family: "evm" },
+    };
+    expect("err" in (await callSign(h, session, imported))).toBe(true);
+    const bitcoin = await h.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "bitcoin.psbt",
+          network: "bip122:000000000019d6689c085ae165831e93",
+          account: hd(walletId, "btc.bip84"),
+          psbt: new Uint8Array(4),
+          sign: [0],
+        },
+        verify: PASSKEY(),
+      },
+      session,
+    );
+    expect("err" in bitcoin).toBe(true);
   });
 });
