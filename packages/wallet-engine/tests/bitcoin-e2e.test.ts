@@ -43,7 +43,7 @@ const esploraClient = (base: string): Esplora =>
       return {
         ok: r.ok,
         status: r.status,
-        headers: r.headers,
+        headers: { get: (n: string) => r.headers.get(n) ?? undefined },
         json: async () => r.json(),
         text: async () => r.text(),
       };
@@ -51,7 +51,7 @@ const esploraClient = (base: string): Esplora =>
     sleep,
   );
 
-const rpc = async (method: string, params: ReadonlyArray<unknown> = []): Promise<unknown> => {
+const rpc = (method: string, params: ReadonlyArray<unknown> = []): unknown => {
   const out = docker([
     "exec",
     NAME,
@@ -59,10 +59,13 @@ const rpc = async (method: string, params: ReadonlyArray<unknown> = []): Promise
     "-regtest",
     "-datadir=/data/bitcoin",
     method,
-    ...params.map((p) => String(p)),
+    ...params.map(String),
   ]);
-  const parsed: unknown = JSON.parse(out);
-  return parsed;
+  try {
+    return JSON.parse(out) as unknown;
+  } catch {
+    return out;
+  }
 };
 
 const waitFor = async (
@@ -125,111 +128,115 @@ const bip84PubOf =
 const scriptOf = (u: { address: string }): Uint8Array =>
   scriptPubKey(u.address, bitcoinNetwork(NETWORK).params);
 
-const makeRpc =
-  () =>
-  async (method: string, params: ReadonlyArray<unknown> = []): Promise<unknown> =>
-    rpc(method, params);
+const regtestFlow = async () => {
+  const port = 8094 + (Date.now() % 1000);
+  spawnSync("docker", [
+    "run",
+    "-d",
+    "--name",
+    NAME,
+    "-p",
+    `${port}:80`,
+    "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
+    "bash",
+    "-c",
+    "/srv/explorer/run.sh bitcoin-regtest explorer",
+  ]);
+  const base = `http://127.0.0.1:${port}/regtest/api`;
+  const es = esploraClient(base);
+  const run = rpc;
+  try {
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logs()}`);
+    });
+
+    const wpkhRecv = addrOf("wpkh", ACCT, 0, 0);
+    const trRecv = addrOf("tr", ACCT86, 0, 0);
+    try {
+      run("createwallet", ["e2e"]);
+    } catch {
+      // wallet already exists
+    }
+    const walletAddr = run("getnewaddress") as string;
+    run("generatetoaddress", [101, walletAddr]);
+    run("generatetoaddress", [1, wpkhRecv]);
+    run("generatetoaddress", [1, trRecv]);
+    run("sendtoaddress", [wpkhRecv, "0.00000546"]);
+    run("generatetoaddress", [1, walletAddr]);
+
+    const tip = Number(await run("getblockcount"));
+    await waitFor(tipSynced(base, tip), 2000, Date.now() + 60_000, () => {
+      throw new Error("electrs tip never caught up to the node");
+    });
+
+    let receive: ReadonlyArray<ScanAddress> = [];
+    await waitFor(
+      async () => {
+        receive = await scanChain(
+          es,
+          ACCT.publicExtendedKey,
+          "btc.bip84",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        return receive.some((a) => a.address === wpkhRecv && a.used);
+      },
+      3000,
+      Date.now() + 120_000,
+      () => {
+        throw new Error("scan never saw the funded address — electrs indexing stalled");
+      },
+    );
+    expect(receive.some((a) => a.address === wpkhRecv && a.used)).toBe(true);
+    const change = await scanChain(
+      es,
+      ACCT.publicExtendedKey,
+      "btc.bip84",
+      NETWORK,
+      bitcoinNetwork(NETWORK).params,
+      1,
+    );
+    const all = [...receive, ...change];
+    const utxos = await scanUtxos(es, all, bitcoinNetwork(NETWORK).params);
+    expect(utxos.length).toBeGreaterThan(0);
+    const frozen = utxos.filter((u) => u.value === 546);
+    const spendable = utxos.filter((u) => u.value !== 546 && u.value !== 330);
+
+    const adapter = new BitcoinChainAdapter();
+    const inputs = adapter.toInputs(
+      spendable.map((u) => ({ ...u, status: "confirmed" as const })),
+      HD.fingerprint,
+      bip84PathOf(all),
+      bip84PubOf(all),
+      scriptOf,
+      false,
+    );
+    expect(inputs.every((i) => frozen.every((f) => f.txid !== i.txid))).toBe(true);
+    const changeAddr = change.find((a) => !a.used)?.address;
+    expect(changeAddr).toBeDefined();
+    const quotes = await feeTiers(es);
+    const satPerByte = quotes[0]?.satPerByte ?? 1;
+    expect(satPerByte).toBeGreaterThanOrEqual(1);
+    const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
+    const { psbt } = adapter.buildPsbt(
+      inputs,
+      external,
+      50_000n,
+      BigInt(satPerByte),
+      changeAddr ?? external,
+      bitcoinNetwork(NETWORK).params,
+    );
+    expect(psbt.length).toBeGreaterThan(0);
+    expect(frozen.length).toBeGreaterThanOrEqual(0);
+  } finally {
+    spawnSync("docker", ["rm", "-f", NAME]);
+  }
+};
 
 describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
   it("scans, sends, confirms, change lands on the change chain", { timeout: 300_000 }, async () => {
-    const port = 8094 + (Date.now() % 1000);
-    spawnSync("docker", [
-      "run",
-      "-d",
-      "--name",
-      NAME,
-      "-p",
-      `${port}:80`,
-      "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
-      "bash",
-      "-c",
-      "/srv/explorer/run.sh bitcoin-regtest explorer",
-    ]);
-    const base = `http://127.0.0.1:${port}/regtest/api`;
-    const es = esploraClient(base);
-    const run = makeRpc();
-    try {
-      await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-        throw new Error(`esplora never came up\n${logs()}`);
-      });
-
-      const wpkhRecv = addrOf("wpkh", ACCT, 0, 0);
-      const trRecv = addrOf("tr", ACCT86, 0, 0);
-      await run("createwallet", ["e2e"]).catch(() => undefined);
-      const walletAddr = String(await run("getnewaddress"));
-      await run("generatetoaddress", [101, walletAddr]);
-      await run("generatetoaddress", [1, wpkhRecv]);
-      await run("generatetoaddress", [1, trRecv]);
-      await run("sendtoaddress", [wpkhRecv, "0.00000546"]);
-      await run("generatetoaddress", [1, walletAddr]);
-
-      const tip = Number(await run("getblockcount"));
-      await waitFor(tipSynced(base, tip), 2000, Date.now() + 60_000, () => {
-        throw new Error("electrs tip never caught up to the node");
-      });
-
-      let receive: ReadonlyArray<ScanAddress> = [];
-      await waitFor(
-        async () => {
-          receive = await scanChain(
-            es,
-            ACCT.publicExtendedKey,
-            "btc.bip84",
-            NETWORK,
-            bitcoinNetwork(NETWORK).params,
-            0,
-          );
-          return receive.some((a) => a.address === wpkhRecv && a.used);
-        },
-        3000,
-        Date.now() + 120_000,
-        () => {
-          throw new Error("scan never saw the funded address — electrs indexing stalled");
-        },
-      );
-      expect(receive.some((a) => a.address === wpkhRecv && a.used)).toBe(true);
-      const change = await scanChain(
-        es,
-        ACCT.publicExtendedKey,
-        "btc.bip84",
-        NETWORK,
-        bitcoinNetwork(NETWORK).params,
-        1,
-      );
-      const all = [...receive, ...change];
-      const utxos = await scanUtxos(es, all, bitcoinNetwork(NETWORK).params);
-      expect(utxos.length).toBeGreaterThan(0);
-      const frozen = utxos.filter((u) => u.value === 546);
-      const spendable = utxos.filter((u) => u.value !== 546 && u.value !== 330);
-
-      const adapter = new BitcoinChainAdapter();
-      const inputs = adapter.toInputs(
-        spendable.map((u) => ({ ...u, status: "confirmed" as const })),
-        Number(HD.fingerprint),
-        bip84PathOf(all),
-        bip84PubOf(all),
-        scriptOf,
-        false,
-      );
-      expect(inputs.every((i) => frozen.every((f) => f.txid !== i.txid))).toBe(true);
-      const changeAddr = change.find((a) => !a.used)?.address;
-      expect(changeAddr).toBeDefined();
-      const quotes = await feeTiers(es);
-      const satPerByte = quotes[0]?.satPerByte ?? 1;
-      expect(satPerByte).toBeGreaterThanOrEqual(1);
-      const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
-      const { psbt } = adapter.buildPsbt(
-        inputs,
-        external,
-        50_000n,
-        BigInt(satPerByte),
-        changeAddr ?? external,
-        bitcoinNetwork(NETWORK).params,
-      );
-      expect(psbt.length).toBeGreaterThan(0);
-      expect(frozen.length).toBeGreaterThanOrEqual(0);
-    } finally {
-      spawnSync("docker", ["rm", "-f", NAME]);
-    }
+    expect.hasAssertions();
+    await regtestFlow();
   });
 });

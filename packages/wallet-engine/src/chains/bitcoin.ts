@@ -44,7 +44,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 export type EsploraResponse = {
   readonly ok: boolean;
   readonly status: number;
-  readonly headers: { get: (name: string) => string | null };
+  readonly headers: { get: (name: string) => string | undefined };
   readonly json: () => Promise<unknown>;
   readonly text: () => Promise<string>;
 };
@@ -104,7 +104,7 @@ export const esplora = (
           throw new Error(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`);
         }
         await backoff(res.headers, retry);
-        return call(base, path, body, retry + 1);
+        return await call(base, path, body, retry + 1);
       }
       if (!res.ok) {
         throw new Error(`esplora ${base}${path}: ${res.status}`);

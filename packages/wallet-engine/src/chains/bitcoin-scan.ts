@@ -59,14 +59,11 @@ const windowUsed = async (
   params: typeof BTC_NETWORK,
   addrs: ReadonlyArray<ScanAddress>,
 ): Promise<ReadonlyArray<boolean>> =>
-  addrs.reduce<Promise<ReadonlyArray<boolean>>>(
-    async (p, a) =>
-      p.then(async (acc) => {
-        await new Promise((r) => setTimeout(r, 150));
-        const txs = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
-        return [...acc, isUnknownArray(txs) && txs.length > 0];
-      }),
-    Promise.resolve([]),
+  Promise.all(
+    addrs.map(async (a) => {
+      const txs: unknown = await es.get(`/scripthash/${scripthash(a.address, params)}/txs`);
+      return isUnknownArray(txs) && txs.length > 0;
+    }),
   );
 
 export const scanChain = async (

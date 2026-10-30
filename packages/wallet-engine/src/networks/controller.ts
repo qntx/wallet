@@ -16,6 +16,11 @@ import type { EngineStore } from "../store/port.ts";
 import { networkById } from "./registry.ts";
 import type { NetworkInfo } from "./registry.ts";
 
+const esploraSleep = async (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 export type SolanaRpc = {
@@ -155,11 +160,20 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (urls.length === 0) {
       throw new Error(`no esplora endpoint for ${network}`);
     }
-    const sleep = async (ms: number) =>
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, ms);
-      });
-    return esplora(urls, this.options.fetch, sleep);
+    return esplora(
+      urls,
+      async (url, init) => {
+        const r = await this.options.fetch(url, init);
+        return {
+          ok: r.ok,
+          status: r.status,
+          headers: { get: (h: string) => r.headers.get(h) ?? undefined },
+          json: async () => r.json(),
+          text: async () => r.text(),
+        };
+      },
+      esploraSleep,
+    );
   }
 
   async addRpc(network: string, url: string): Promise<void> {

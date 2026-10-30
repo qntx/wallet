@@ -45,34 +45,64 @@ describe("bitcoin adapter", () => {
 
 describe("esplora 429 handling", () => {
   const sleep = async () => Promise.resolve();
-  const resp = (
-    status: number,
-    body: string,
-    ra?: string,
-  ): {
-    ok: boolean;
-    status: number;
-    headers: { get: (n: string) => string | null };
-    json: () => Promise<unknown>;
-    text: () => Promise<string>;
-  } => ({
+  const resp = (status: number, body: string, ra?: string) => ({
     ok: status >= 200 && status < 300,
     status,
-    headers: { get: (n: string) => (n === "retry-after" ? (ra ?? null) : null) },
+    headers: { get: (n: string) => (n === "retry-after" ? ra : undefined) },
     json: async () => Promise.resolve(JSON.parse(body) as unknown),
     text: async () => Promise.resolve(body),
   });
+  const failThen = (fails: number, okBody: string) => {
+    let calls = 0;
+    const status = () => (calls <= fails ? 429 : 200);
+    const body = () => (calls <= fails ? "" : okBody);
+    return {
+      calls: () => calls,
+      fetcher: async () => {
+        calls += 1;
+        return Promise.resolve(resp(status(), body()));
+      },
+    };
+  };
+  const raFetcher = () => {
+    let calls = 0;
+    const build = () => (calls === 1 ? resp(429, "", "5") : resp(200, "ok"));
+    return async () => {
+      calls += 1;
+      return Promise.resolve(build());
+    };
+  };
+  const byHost = async (url: string) => {
+    const healthy = url.includes("b.test");
+    const status = healthy ? 200 : 429;
+    const body = healthy ? '"healthy"' : "";
+    return Promise.resolve(resp(status, body));
+  };
+  const trackPeak = () => {
+    let inFlight = 0;
+    let max = 0;
+    return {
+      max: () => max,
+      fetcher: async () => {
+        inFlight += 1;
+        if (inFlight > max) {
+          max = inFlight;
+        }
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 10);
+        });
+        inFlight -= 1;
+        return resp(200, "[]");
+      },
+    };
+  };
 
   it("retries a 429 with exponential backoff and then succeeds", async () => {
-    let calls = 0;
-    const fetcher = async () => {
-      calls += 1;
-      return Promise.resolve(resp(calls <= 2 ? 429 : 200, calls <= 2 ? "" : '{"ok":true}'));
-    };
+    const { fetcher, calls } = failThen(2, '{"ok":true}');
     const es = esplora(["https://a.test"], fetcher, sleep);
     const out = await es.get("/blocks/tip/height");
-    expect(out).toEqual({ ok: true });
-    expect(calls).toBe(3);
+    expect(out).toStrictEqual({ ok: true });
+    expect(calls()).toBe(3);
   });
 
   it("honours the Retry-After header", async () => {
@@ -81,40 +111,19 @@ describe("esplora 429 handling", () => {
       delays.push(ms);
       return Promise.resolve();
     };
-    let calls = 0;
-    const fetcher = async () => {
-      calls += 1;
-      return Promise.resolve(
-        resp(calls === 1 ? 429 : 200, calls === 1 ? "" : "ok", calls === 1 ? "5" : undefined),
-      );
-    };
-    const es = esplora(["https://a.test"], fetcher, record);
+    const es = esplora(["https://a.test"], raFetcher(), record);
     await es.get("/x");
-    expect(delays).toEqual([5000]);
+    expect(delays).toStrictEqual([5000]);
   });
 
   it("fails over to the next endpoint after exhausting retries on 429", async () => {
-    const first = async () => Promise.resolve(resp(429, ""));
-    const second = async () => Promise.resolve(resp(200, '"healthy"'));
-    const es = esplora(
-      ["https://a.test", "https://b.test"],
-      async (url: string) => (url.includes("b.test") ? second() : first()),
-      sleep,
-    );
+    const es = esplora(["https://a.test", "https://b.test"], byHost, sleep);
     const out = await es.get("/y");
     expect(out).toBe("healthy");
   });
 
   it("caps in-flight requests at four", async () => {
-    let inFlight = 0;
-    let max = 0;
-    const fetcher = async () => {
-      inFlight += 1;
-      max = Math.max(max, inFlight);
-      await new Promise((r) => setTimeout(r, 10));
-      inFlight -= 1;
-      return resp(200, "[]");
-    };
+    const { fetcher, max } = trackPeak();
     const es = esplora(["https://a.test"], fetcher, sleep);
     await Promise.all([
       es.get("/a"),
@@ -124,6 +133,6 @@ describe("esplora 429 handling", () => {
       es.get("/e"),
       es.get("/f"),
     ]);
-    expect(max).toBeLessThanOrEqual(4);
+    expect(max()).toBeLessThanOrEqual(4);
   });
 });
