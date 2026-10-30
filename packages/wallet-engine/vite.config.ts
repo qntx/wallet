@@ -7,12 +7,14 @@ const config: UserConfig = defineConfig({
     {
       entry: { index: "src/index.ts" },
       tsconfig: "tsconfig.src.json",
+      deps: { onlyBundle: [] },
       dts: { generator: "tsgo" },
       sourcemap: true,
     },
     {
       entry: { idb: "src/idb/indexeddb.ts" },
       tsconfig: "tsconfig.idb.json",
+      deps: { onlyBundle: [] },
       dts: { generator: "tsgo" },
       sourcemap: true,
     },

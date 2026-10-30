@@ -12,6 +12,11 @@ const config: UserConfig = defineConfig({
       bitcoin: "src/bitcoin/index.ts",
       "bitcoin-sign": "src/bitcoin/sign.ts",
     },
+    deps: {
+      // Every third-party import must resolve as an external dependency; a src import that
+      // lands in dist because it is undeclared is a packaging bug.
+      onlyBundle: [],
+    },
     dts: {
       generator: "tsgo",
     },

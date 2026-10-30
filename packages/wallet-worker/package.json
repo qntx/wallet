@@ -55,6 +55,10 @@
     "pack:local": "bun run build && bun pm pack",
     "test:consumer": "bun scripts/consumer-smoke.ts"
   },
+  "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "@scure/base": "^2.4.0"
+  },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@noble/hashes": "2.4.0",

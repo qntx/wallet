@@ -15,6 +15,9 @@ const config: UserConfig = defineConfig({
     },
     deps: {
       neverBundle: ["@qntx/wallet"],
+      // These entries are the published host wrappers; the kernel's self-contained
+      // bundles come from bun build (scripts/build-kernel), not vp pack.
+      onlyBundle: [],
     },
     sourcemap: true,
   },
