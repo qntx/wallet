@@ -12,7 +12,13 @@ import type { MethodSpec } from "./index.ts";
 import type { Validator } from "./validate.ts";
 import { arr, bytes, int, literal, obj, opt, str, union } from "./validate.ts";
 
-export type ChainTemplate = "evm.bip44" | "solana.bip44-change" | "btc.bip84" | "btc.bip86";
+export type ChainTemplate =
+  | "evm.bip44"
+  | "solana.bip44-change"
+  | "btc.bip44"
+  | "btc.bip49"
+  | "btc.bip84"
+  | "btc.bip86";
 
 export type ChainAccountsParams = {
   readonly walletId: string;
@@ -33,7 +39,7 @@ export type ChainAccount =
       readonly address: string;
     }
   | {
-      readonly template: "btc.bip84" | "btc.bip86";
+      readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
       readonly network: string;
       readonly xpub: string;
       /** Master-key fingerprint as 8 lowercase hex chars (PSBT bip32Derivation). */
@@ -45,7 +51,7 @@ export type ChainAccount =
 const template: Validator<ChainTemplate> = union(
   literal("evm.bip44"),
   literal("solana.bip44-change"),
-  literal("btc.bip84"),
+  union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84")),
   literal("btc.bip86"),
 );
 
@@ -274,7 +280,7 @@ export const CHAINS_METHODS: {
       addressResult("evm.bip44"),
       addressResult("solana.bip44-change"),
       obj({
-        template: union(literal("btc.bip84"), literal("btc.bip86")),
+        template: union(literal("btc.bip44"), literal("btc.bip49"), literal("btc.bip84"), literal("btc.bip86")),
         network: caip2,
         xpub: str(111, /^[a-zA-Z0-9]{111}$/),
         fingerprint: str(8, /^[0-9a-f]{8}$/),

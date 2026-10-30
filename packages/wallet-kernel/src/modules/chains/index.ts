@@ -477,8 +477,11 @@ export function createChainsModule(): ChainsModule {
                   signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32)),
                 };
               }
-              if (request.format === "legacy") {
-                throw new KernelError("unsupported", "legacy message format is not supported");
+              if (request.format === "legacy" && account.template !== "btc.bip44") {
+                throw new KernelError(
+                  "unsupported",
+                  "legacy message format is btc.bip44-only",
+                );
               }
               const child = childAt([
                 purpose + hardened,
