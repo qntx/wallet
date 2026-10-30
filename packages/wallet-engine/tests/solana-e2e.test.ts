@@ -45,27 +45,7 @@ const logs = (name: string): string => {
   }
 };
 
-const probePort = (name: string): string | undefined => {
-  try {
-    const portOut = execFileSync("docker", ["port", name, "8899"]).toString();
-    const port = portOut.trim().split(":").at(-1);
-    return port === undefined || port === "" ? undefined : `http://127.0.0.1:${port}`;
-  } catch {
-    return undefined;
-  }
-};
-
-const waitPort = async (name: string, deadline: number): Promise<string> => {
-  const url = probePort(name);
-  if (url !== undefined) {
-    return url;
-  }
-  if (Date.now() > deadline) {
-    throw new Error(`validator container never exposed a port\n${logs(name)}`);
-  }
-  await sleep(1000);
-  return waitPort(name, deadline);
-};
+const PORT = "18899";
 
 const waitHealthy = async (r: SolanaRpc, name: string, deadline: number): Promise<void> => {
   try {
@@ -112,7 +92,7 @@ const startValidator = (name: string): void => {
       "--name",
       name,
       "-p",
-      "0:8899",
+      `${PORT}:8899`,
       IMAGE,
       "--reset",
       "--ledger",
