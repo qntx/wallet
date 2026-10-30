@@ -1,4 +1,5 @@
 import { hex } from "@scure/base";
+import { Transaction } from "@scure/btc-signer";
 import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
@@ -232,5 +233,27 @@ export class BitcoinChainAdapter {
     );
     const chosen = inputs.filter((i) => wanted.has(`${String(i.txid)}:${String(i.index)}`));
     return { psbt: selection.tx.toPSBT(), inputs: chosen };
+  }
+
+  /** Fixed-input/output PSBT — the RBF/CPFP path, which chooses nothing itself. */
+  buildExactPsbt(
+    inputs: ReadonlyArray<BtcInput>,
+    outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>,
+    network: typeof BTC_MAINNET,
+  ): { readonly psbt: Uint8Array; readonly vsize: number } {
+    const tx = new Transaction();
+    for (const input of inputs) {
+      tx.addInput(input);
+    }
+    for (const out of outputs) {
+      tx.addOutputAddress(out.address, out.amount, network);
+    }
+    // Unsigned tx has no witness — vsize is the BIP-141 weight estimate
+    // (10.5 overhead + ~68/input + ~31/output for P2WPKH; taproot ~57.5/43).
+    const tap = inputs.every((i) => i.tapInternalKey !== undefined);
+    const vsize = Math.ceil(
+      10.5 + inputs.length * (tap ? 57.5 : 68) + outputs.length * (tap ? 43 : 31),
+    );
+    return { psbt: tx.toPSBT(), vsize };
   }
 }
