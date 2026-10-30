@@ -19,7 +19,8 @@ const IMAGE =
   "anzaxyz/agave:v3.1.11@sha256:d6440a53f2ca6172172f87cf0d2ea54e6a98a99b0ea1739962a0dbc40727b758";
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
-const sleep =  async (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = async (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 const rpc = (url: string): SolanaRpc => ({
   call: async (method, params) => {
@@ -60,7 +61,6 @@ const waitPort = async (name: string, deadline: number): Promise<string> => {
 const waitHealthy = async (r: SolanaRpc, name: string, deadline: number): Promise<void> => {
   try {
     await r.call("getHealth", []);
-    return;
   } catch {
     if (Date.now() > deadline) {
       throw new Error(`validator never became healthy\n${logs(name)}`);
@@ -68,6 +68,7 @@ const waitHealthy = async (r: SolanaRpc, name: string, deadline: number): Promis
     await sleep(1000);
     return waitHealthy(r, name, deadline);
   }
+  return Promise.resolve();
 };
 
 const waitConfirmed = async (
@@ -107,7 +108,7 @@ const startValidator = (name: string): void => {
       "--reset",
       "--ledger",
       "/tmp/ledger",
-      "--bind-address",
+      "--rpc-bind-address",
       "0.0.0.0",
     ],
     { stdio: "pipe" },
