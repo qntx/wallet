@@ -63,6 +63,8 @@ set_target_properties(qntx_spark PROPERTIES
      IMPORTED_LOCATION "${QNTX_SPARK_LIBDIR}/libqntx_spark.so")
 target_include_directories(${PACKAGE_NAME} PRIVATE "${QNTX_SPARK_NATIVE_PATH}/include")
 
+find_package(qntx_nostr-native REQUIRED CONFIG)
+
 # Adds the nitrogen-generated sources, the BUILDING_..._GENERATED_CMAKE_PROJECT
 # define they require, and the fbjni/ReactAndroid/NitroModules prefab links.
 include(${CMAKE_CURRENT_SOURCE_DIR}/../nitrogen/generated/android/WalletNative+autolinking.cmake)
@@ -85,6 +87,7 @@ target_link_libraries(
         fbjni::fbjni
         ReactAndroid::jsi
         qntx_spark
+        qntx_nostr-native::NostrNative
         ${LOG_LIB}
         android
 )

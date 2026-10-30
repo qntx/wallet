@@ -1,13 +1,13 @@
 /**
  * Kernel entry: the script compiled to bytecode and embedded in the runtime. Builds the platform
  * from the injected `__qntx` object and starts the kernel on the frame transport. `backends.nostr`
- * is noble; `backends.spark` binds the host's native qs_* bridge (ABI pinned by
- * SPARK_ABI_VERSION).
+ * and `backends.spark` binds the host's native qs_* bridge (ABI pinned by SPARK_ABI_VERSION).
  */
-import { nobleBackend } from "@qntx/nostr";
 
 import { startKernel } from "../../wallet-kernel/src/kernel.ts";
 import type { KernelPlatform } from "../../wallet-kernel/src/platform.ts";
+import { bindNativeNostr } from "./nostr.ts";
+import type { KernelNostrNative } from "./nostr.ts";
 import { bindNativeSpark } from "./spark.ts";
 import type { KernelSparkNative } from "./spark.ts";
 import { createFileStore } from "./store.ts";
@@ -30,7 +30,10 @@ export type KernelGlobals = {
   ) => void;
   readonly file: KernelFile;
   readonly frames: KernelFramePipe;
-  readonly backends: { readonly spark: KernelSparkNative };
+  readonly backends: {
+    readonly spark: KernelSparkNative;
+    readonly nostr: KernelNostrNative;
+  };
 };
 
 declare const __qntx: KernelGlobals;
@@ -55,7 +58,7 @@ const platform: KernelPlatform = {
   // autoLock.backgroundSeconds (W7); the session still ends at 24 h.
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },
   backends: {
-    nostr: nobleBackend,
+    nostr: bindNativeNostr(__qntx.backends.nostr),
     // oxlint-disable-next-line typescript/require-await -- errors must reject, not throw synchronously
     spark: async () => bindNativeSpark(__qntx.backends.spark),
   },

@@ -147,6 +147,7 @@ dependencies {
 
   // NitroModules core (provides the react-native-nitro-modules prefab + HybridObject runtime)
   implementation project(":react-native-nitro-modules")
+  implementation project(":qntx_nostr-native")
 }
 
 repositories {

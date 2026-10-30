@@ -85,13 +85,28 @@ if (!isSparkCrypto(sparkCrypto)) {
   throw new TypeError("@qntx/spark/crypto: SPARK_ABI_VERSION missing");
 }
 const { SPARK_ABI_VERSION } = sparkCrypto;
+const nostrKernel: unknown = await import(
+  pathToFileURL(resolve(root, "packages/wallet-native/kernel/nostr.ts")).href
+);
+const isNostrKernel = (value: unknown): value is { NOSTR_NATIVE_ABI_VERSION: number } =>
+  isRecord(value) && typeof value["NOSTR_NATIVE_ABI_VERSION"] === "number";
+if (!isNostrKernel(nostrKernel)) {
+  throw new TypeError("kernel/nostr: NOSTR_NATIVE_ABI_VERSION missing");
+}
+const { NOSTR_NATIVE_ABI_VERSION } = nostrKernel;
 const manifest = {
   protocol: PROTOCOL_VERSION,
   vaultFormat: VAULT_FORMAT,
-  backends: { spark: { abiVersion: SPARK_ABI_VERSION } },
+  backends: {
+    spark: { abiVersion: SPARK_ABI_VERSION },
+    nostr: { abiVersion: NOSTR_NATIVE_ABI_VERSION },
+  },
   libraries: manifestLibraries({
     dependencies: stringMap(isRecord(kernelPkg) ? kernelPkg["dependencies"] : undefined),
-    backendDependencies: { "@qntx/spark-native": nativeDevDeps["@qntx/spark-native"] ?? "" },
+    backendDependencies: {
+      "@qntx/spark-native": nativeDevDeps["@qntx/spark-native"] ?? "",
+      "@qntx/nostr-native": nativeDevDeps["@qntx/nostr-native"] ?? "",
+    },
     lockPackages: lockPackages(parseLockfile(readFileSync(resolve(root, "bun.lock"), "utf8"))),
   }),
   bundles: manifestBundles([{ file: "kernel-entry.js", bytes }]),

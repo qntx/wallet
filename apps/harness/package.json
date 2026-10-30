@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@qntx/nostr": "0.15.1",
-    "@qntx/nostr-native": "0.15.1",
-    "@qntx/spark-native": "0.5.1",
+    "@qntx/nostr": "0.15.3",
+    "@qntx/nostr-native": "0.15.3",
+    "@qntx/spark-native": "0.5.2",
     "@qntx/v1-probe": "file:./modules/v1-probe",
     "@qntx/wallet": "file:../../packages/wallet",
     "@qntx/wallet-native": "file:../../packages/wallet-native",

@@ -5,6 +5,7 @@
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
 #include "host/Lifecycle.hpp"
+#include "HostNostrNative.hpp"
 #include "HostQntxSpark.hpp"
 #include "kernel.hpp"
 
@@ -693,8 +694,10 @@ var objectsFrozen = names.every(function (n) {
   return typeof member !== "object" || member === null || Object.isFrozen(member);
 });
 var spark = __qntx.backends.spark;
+var nostr = __qntx.backends.nostr;
 __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen +
-  "|sparkFrozen=" + Object.isFrozen(spark) + "|sparkAbi=" + typeof spark.abiVersion);
+  "|sparkFrozen=" + Object.isFrozen(spark) + "|sparkAbi=" + typeof spark.abiVersion +
+  "|nostrFrozen=" + Object.isFrozen(nostr) + "|nostrAbi=" + typeof nostr.abiVersion);
 )JS";
   {
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
@@ -705,7 +708,8 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
                 "backends,elapsed,file,frames,now,pbkdf2,random,setTimer"
-                "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number",
+                "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number"
+                "|nostrFrozen=true|nostrAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
   return g_failures;
 }
@@ -773,6 +777,88 @@ __send(r.join(" "));
   CHECK(qntxTestSpark::goodFrees() == 7, "backends-spark: expected one free per emitted output");
   CHECK(qntxTestSpark::outstandingAllocs() == 0,
       "backends-spark: an emitted buffer leaked (never reached qs_free)");
+  return g_failures;
+}
+
+// The nostr_native_* bridge: views pass bytes (respecting byteOffset),
+// 32/64-byte inputs are checked exactly, a 0 return throws `nostr_native: <fn>
+// rejected the input`, and verifySerialized answers with a boolean.
+int backendsNostr() {
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var r = [];
+function hx(u8) {
+  var s = "";
+  for (var i = 0; i < u8.length; i++) {
+    var h = u8[i].toString(16);
+    s += h.length < 2 ? "0" + h : h;
+  }
+  return s;
+}
+function eq(name, got, want) {
+  r.push(name + "=" + (got === want ? "ok" : JSON.stringify(got)));
+}
+function catches(name, fn, needle) {
+  try {
+    fn();
+    r.push(name + "=nothrow");
+  } catch (e) {
+    var m = e && e.message ? String(e.message) : "";
+    r.push(name + "=" + (m.indexOf(needle) >= 0 ? "ok" : m));
+  }
+}
+var nostr = __qntx.backends.nostr;
+var sk = new Uint8Array(32);
+for (var i = 0; i < 32; i++) sk[i] = i + 1;
+var padded = new Uint8Array(40);
+padded.set(sk, 4);
+eq("pub", hx(nostr.publicKey(new Uint8Array(padded.buffer, 4, 32))).length, 64);
+var idBuf = new Uint8Array(36);
+idBuf.fill(0x55);
+var id = new Uint8Array(idBuf.buffer, 4, 32);
+eq("sigLen", nostr.sign(id, new Uint8Array(padded.buffer, 4, 32), new Uint8Array(32)).length, 64);
+var pubBuf = new Uint8Array(36);
+pubBuf.fill(0x77);
+var pubX = new Uint8Array(pubBuf.buffer, 4, 32);
+eq("ecdh", nostr.ecdhX(new Uint8Array(padded.buffer, 4, 32), pubX).length, 32);
+eq("verifyTrue", nostr.verifySerialized(new Uint8Array([1, 2, 3]), new Uint8Array(32), new Uint8Array(32), new Uint8Array(64)), true);
+eq("verifyFalse", nostr.verifySerialized(new Uint8Array([0, 2]), new Uint8Array(32), new Uint8Array(32), new Uint8Array(64)), false);
+eq("verifyLen", nostr.verifySerialized(new Uint8Array([1]), new Uint8Array(31), new Uint8Array(32), new Uint8Array(64)), false);
+var bad = new Uint8Array(32);
+bad.fill(0xEE);
+catches("pubReject", function () { nostr.publicKey(bad); }, "nostr_native: publicKey rejected the input");
+catches("signReject", function () { nostr.sign(new Uint8Array(32), bad, new Uint8Array(32)); }, "nostr_native: sign rejected the input");
+catches("ecdhReject", function () { nostr.ecdhX(bad, new Uint8Array(32)); }, "nostr_native: ecdhX rejected the input");
+catches("len31", function () { nostr.publicKey(new Uint8Array(31)); }, "32-byte view");
+catches("len33", function () { nostr.sign(new Uint8Array(32), new Uint8Array(33), new Uint8Array(32)); }, "32-byte view");
+__send(r.join(" "));
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-nostr: no report");
+    rt->destroy();
+  }
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1 &&
+            box.posts[0] ==
+                "pub=ok sigLen=ok ecdh=ok verifyTrue=ok verifyFalse=ok verifyLen=ok "
+                "pubReject=ok signReject=ok ecdhReject=ok len31=ok len33=ok",
+      "backends-nostr: bridge behaviour drifted");
+  {
+    uint8_t recorded[64];
+    size_t len = 0;
+    hostNostrRecordedSerialized(recorded, &len);
+    CHECK(len == 2 && recorded[0] == 0 && recorded[1] == 2,
+        "backends-nostr: verifySerialized view passed wrong bytes");
+    uint8_t signId[32];
+    hostNostrRecordedSignId(signId);
+    CHECK(signId[0] == 0x55 && signId[31] == 0x55,
+        "backends-nostr: sign saw a non-offset id");
+    uint8_t ecdhPub[32];
+    hostNostrRecordedEcdhPub(ecdhPub);
+    CHECK(ecdhPub[0] == 0x77 && ecdhPub[31] == 0x77,
+        "backends-nostr: ecdhX saw a non-offset pubkey");
+  }
   return g_failures;
 }
 
@@ -1306,6 +1392,7 @@ int main(int argc, char** argv) {
       {"kernel-bytecode", [](const char*) { return kernelBytecode(); }},
       {"qntx-globals", [](const char*) { return qntxGlobals(); }},
       {"backends-spark", [](const char*) { return backendsSpark(); }},
+      {"backends-nostr", [](const char*) { return backendsNostr(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
       {"file-contract", [](const char*) { return fileContract(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},

@@ -110,6 +110,25 @@ export async function smokeUnlock(): Promise<void> {
   });
   result("persisted-sign", verifyEvent(event), `wallet=${walletId} pubkey=${key.publicKey}`);
 
+  // W4b: 100 event signs through the native Nostr backend, each verified —
+  // the timing is the number the N-V1 decision asked for.
+  const signer = api.signer(key.ref);
+  const started = Date.now();
+  let verified = 0;
+  for (let i = 0; i < 100; i += 1) {
+    const signed = await signer.signEvent({
+      kind: 1,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: `w4b nostr bench ${i}`,
+      pubkey: key.publicKey,
+    });
+    if (verifyEvent(signed)) {
+      verified += 1;
+    }
+  }
+  result("nostr-bench", verified === 100, `verified=${verified} ms=${Date.now() - started}`);
+
   // W4a: newCommitments drives crypto.frostCommit through the native qs_*
   // bridge — the backend answers without any network access.
   const commitments = await spark(wallet)

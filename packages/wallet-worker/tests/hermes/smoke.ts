@@ -306,6 +306,11 @@ export async function main(): Promise<void> {
       })();
     },
     file: __qntxFile,
+    // The native kernel entry binds backends.nostr eagerly at platform
+    // construction — the smoke never calls it, so only the ABI pin is real.
+    backends: {
+      nostr: { abiVersion: 2 },
+    },
     frames: {
       post: (frame: ArrayBuffer) => {
         postedFrames.push(frame);
