@@ -331,7 +331,7 @@ export class TransactionController extends Controller<TransactionControllerState
       if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
         throw new Error("unexpected solana sign result");
       }
-      const wire = this.solana.finalize(messageBytes, result.signature);
+      const wire = this.solana.finalize(messageBytes, [result.signature]);
       const hash = await this.solana.broadcast(rpc, wire);
       this.wires.set(id, wire);
       tx = await this.transition(tx, { state: "submitted", hash, submittedAt: this.options.now() });

@@ -52,7 +52,7 @@ describe("SolanaChainAdapter", () => {
     const a = new SolanaChainAdapter();
     const sig = new Uint8Array(64).fill(9);
     const msg = new Uint8Array(10).fill(1);
-    const wire = a.finalize(msg, sig);
+    const wire = a.finalize(msg, [sig]);
     expect(wire).toHaveLength(75);
     expect(wire[0]).toBe(1);
     expect(wire.slice(1, 65)).toStrictEqual(sig);

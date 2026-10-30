@@ -267,12 +267,17 @@ export class SolanaChainAdapter {
     return compiled.messageBytes;
   }
 
-  /** Wire transaction bytes from the kernel signature — broadcastable via sendTransaction. */
-  finalize(messageBytes: Uint8Array, signature: Uint8Array): Uint8Array {
-    const out = new Uint8Array(1 + signature.length + messageBytes.length);
-    out[0] = 1;
-    out.set(signature, 1);
-    out.set(messageBytes, 1 + signature.length);
+  /** Wire transaction bytes — sigCount shortvec + each 64-byte sig + message. */
+  finalize(messageBytes: Uint8Array, signatures: ReadonlyArray<Uint8Array>): Uint8Array {
+    for (const sig of signatures) {
+      if (sig.length !== 64) {
+        throw new Error(`solana signature must be 64 bytes, got ${sig.length}`);
+      }
+    }
+    const out = new Uint8Array(1 + 64 * signatures.length + messageBytes.length);
+    out[0] = signatures.length;
+    signatures.forEach((sig, i) => out.set(sig, 1 + 64 * i));
+    out.set(messageBytes, 1 + 64 * signatures.length);
     return out;
   }
 
