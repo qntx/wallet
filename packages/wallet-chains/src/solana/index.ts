@@ -11,6 +11,7 @@ export {
 } from "./ids.ts";
 export { decodeSolana, verifiabilitySolana } from "./decode.ts";
 export { parseCompiledMessage } from "./message.ts";
+export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";
 export { solanaTokenTable } from "./tokens.ts";
 
