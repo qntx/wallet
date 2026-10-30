@@ -87,7 +87,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
       getTransactionCount: async () => Promise.resolve(0),
       getBalance: async () => {
         r.calls.push("evm");
-        if (r.failOn.has("evm")) {
+        if (r.failOn.has("evm") && r.evmGroup === 0) {
           throw new Error("rpc down");
         }
         return Promise.resolve(r.usedEvm.has(r.evmGroup) ? 1n : 0n);
