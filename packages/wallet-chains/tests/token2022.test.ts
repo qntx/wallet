@@ -10,9 +10,42 @@ const AUTH = address("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
 const DELEGATE = address("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
 const HOOK_PROGRAM = address("Stake11111111111111111111111111111111111111");
 
-const tlv = (exts: ExtensionArgs[]): Uint8Array => getExtensionsEncoder().encode(exts);
+const tlv = (exts: ExtensionArgs[]): Uint8Array =>
+  getExtensionsEncoder().encode(exts) as Uint8Array;
 const oracle = (data: Uint8Array) => getExtensionsDecoder().decode(data);
-const addrBytes = (a: string): Uint8Array => getAddressEncoder().encode(address(a));
+const addrBytes = (a: string): Uint8Array => getAddressEncoder().encode(address(a)) as Uint8Array;
+
+const extensionOf = (data: Uint8Array, kind: string, idx = 0) => {
+  const ext = oracle(data)[idx];
+  if (ext === undefined || ext.__kind !== kind) {
+    throw new Error(`oracle did not decode ${kind}`);
+  }
+  return ext;
+};
+
+const feeConfig = (data: Uint8Array) => {
+  const ext = extensionOf(data, "TransferFeeConfig");
+  if (ext.__kind !== "TransferFeeConfig") {
+    throw new Error("unreachable");
+  }
+  return ext;
+};
+
+const hookExt = (data: Uint8Array) => {
+  const ext = extensionOf(data, "TransferHook");
+  if (ext.__kind !== "TransferHook") {
+    throw new Error("unreachable");
+  }
+  return ext;
+};
+
+const delegateExt = (data: Uint8Array) => {
+  const ext = extensionOf(data, "PermanentDelegate", 1);
+  if (ext.__kind !== "PermanentDelegate") {
+    throw new Error("unreachable");
+  }
+  return ext;
+};
 
 const SUMMARY_KEYS: ReadonlyArray<keyof MintExtensionSummary> = [
   "transferFee",
@@ -37,10 +70,7 @@ describe("solana token-2022 mint extensions", () => {
         newerTransferFee: { epoch: 20n, maximumFee: 1000n, transferFeeBasisPoints: 250 },
       },
     ]);
-    const [ext] = oracle(data);
-    if (ext === undefined || ext.__kind !== "TransferFeeConfig") {
-      throw new Error("oracle did not decode TransferFeeConfig");
-    }
+    const ext = feeConfig(data);
     // Before the newer epoch activates, the older fee applies.
     const before = parseMintExtensions(data, 15n);
     expect(before.transferFee?.basisPoints).toBe(ext.olderTransferFee.transferFeeBasisPoints);
@@ -62,16 +92,9 @@ describe("solana token-2022 mint extensions", () => {
       { __kind: "TransferHook", authority: AUTH, programId: HOOK_PROGRAM },
       { __kind: "PermanentDelegate", delegate: DELEGATE },
     ]);
-    const [hook, delegate] = oracle(data);
+    const hook = hookExt(data);
+    const delegate = delegateExt(data);
     const ext = parseMintExtensions(data, 0n);
-    expect(hook?.__kind).toBe("TransferHook");
-    expect(delegate?.__kind).toBe("PermanentDelegate");
-    if (hook === undefined || hook.__kind !== "TransferHook") {
-      throw new Error("oracle did not decode TransferHook");
-    }
-    if (delegate === undefined || delegate.__kind !== "PermanentDelegate") {
-      throw new Error("oracle did not decode PermanentDelegate");
-    }
     expect(ext.transferHook?.programId).toStrictEqual(addrBytes(hook.programId));
     expect(ext.permanentDelegate?.delegate).toStrictEqual(addrBytes(delegate.delegate));
   });
