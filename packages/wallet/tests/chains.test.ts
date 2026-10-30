@@ -231,7 +231,7 @@ describe("chains(wallet)", () => {
       kind: "bitcoin.psbt",
       signedPsbt: signBitcoinPsbt(
         foreignTx.toPSBT(0),
-        [{ index: 0, privateKey: foreignNode.privateKey }],
+        [{ index: 0, privateKey: foreignNode.privateKey! }],
         () => new Uint8Array(32),
       ),
     });

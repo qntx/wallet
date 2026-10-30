@@ -49,6 +49,12 @@ export type ChainsModule = {
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
 
+const isPath = (path: unknown): path is number[] =>
+  Array.isArray(path) && path.every((p) => typeof p === "number");
+
+const hex = (bytes: Uint8Array): string =>
+  bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+
 const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
     throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");

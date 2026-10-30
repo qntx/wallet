@@ -31568,6 +31568,8 @@ zoo`.split("\n"));
 	init_bip32();
 	init_payment();
 	init_transaction();
+	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
+	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	var checkNetwork = (template, network) => {
 		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
