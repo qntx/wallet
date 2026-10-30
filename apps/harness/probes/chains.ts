@@ -68,7 +68,7 @@ const auxRand = (): Uint8Array => new Uint8Array(32);
 const buildP2wpkhPsbt = (pub: Uint8Array): Uint8Array => {
   const tx = new Transaction({ version: 2 });
   tx.addInput({
-    txid: hexToBytes("0x07".repeat(32)),
+    txid: hexToBytes("0x" + "07".repeat(32)),
     index: 0,
     sequence: 0xfffffffd,
     witnessUtxo: { script: p2wpkh(pub, NETWORK).script, amount: 100000n },
@@ -81,7 +81,7 @@ const buildP2wpkhPsbt = (pub: Uint8Array): Uint8Array => {
 const buildP2trPsbt = (internal: Uint8Array): Uint8Array => {
   const tx = new Transaction({ version: 2 });
   tx.addInput({
-    txid: hexToBytes("0x08".repeat(32)),
+    txid: hexToBytes("0x" + "08".repeat(32)),
     index: 0,
     sequence: 0xfffffffd,
     witnessUtxo: { script: p2tr(internal, undefined, NETWORK).script, amount: 100000n },
@@ -194,7 +194,7 @@ function main(): void {
           kind: "evm.transaction",
           network: "eip155:1",
           account: { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" },
-          transaction: EVM_TX,
+          tx: EVM_TX,
         });
         if (decodeEvm(n).verifiability !== "full") {
           throw new Error("evm decode mismatch");
