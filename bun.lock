@@ -79,6 +79,7 @@
         "ox": "1.8.9",
       },
       "devDependencies": {
+        "@arethetypeswrong/cli": "0.18.5",
         "@metamask/eth-sig-util": "9.0.0",
         "@qntx/tsconfig": "1.0.1",
         "@scure/bip39": "2.4.0",
@@ -91,6 +92,7 @@
         "@types/node": "26.6.5",
         "bitcoinjs-lib": "^7.0.5",
         "ecpair": "^3.0.2",
+        "publint": "0.3.25",
         "tiny-secp256k1": "^2.2.5",
         "typescript": "7.0.2",
         "viem": "2.57.8",
@@ -1273,8 +1275,6 @@
     "@noble/post-quantum/@noble/curves": ["@noble/curves@2.2.0", "", { "dependencies": { "@noble/hashes": "2.2.0" } }, "sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ=="],
 
     "@noble/post-quantum/@noble/hashes": ["@noble/hashes@2.2.0", "", {}, "sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg=="],
-
-    "@qntx/wallet/@qntx/wallet-chains": ["@qntx/wallet-chains@file:packages/wallet-chains", { "dependencies": { "@scure/bip32": "2.4.0", "@scure/btc-signer": "2.4.1", "@solana/addresses": "8.5.0", "@solana/codecs": "8.5.0", "@solana/transaction-messages": "8.5.0", "@solana/transactions": "8.5.0", "ox": "1.8.9" }, "devDependencies": { "@metamask/eth-sig-util": "9.0.0", "@qntx/tsconfig": "1.0.1", "@scure/bip39": "2.4.0", "@solana-program/compute-budget": "0.20.0", "@solana-program/stake": "0.11.0", "@solana-program/system": "0.16.0", "@solana-program/token": "0.18.0", "@solana-program/token-2022": "0.20.0", "@solana/kit": "8.5.0", "@types/node": "26.6.5", "bitcoinjs-lib": "^7.0.5", "ecpair": "^3.0.2", "tiny-secp256k1": "^2.2.5", "typescript": "7.0.2", "viem": "2.57.8", "vite-plus": "1.3.0" } }],
 
     "@react-native/codegen/yargs": ["yargs@17.7.3", "", { "dependencies": { "cliui": "^8.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "require-directory": "^2.1.1", "string-width": "^4.2.3", "y18n": "^5.0.5", "yargs-parser": "^21.1.1" } }, "sha512-GZtjxm/J/4TSxuL3FNYjCmLktBTnIw/rVmKSIyKeYAZpmJB2ig9VauCC5xsa82GNKVKDAqpOn3KVzNt0zmrU0g=="],
 
