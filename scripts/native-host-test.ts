@@ -103,6 +103,7 @@ const runtimeSources = [
   resolve(cppDir, "host/KernelFile.cpp"),
   resolve(cppDir, "host/Lifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
+  resolve(moduleDir, "tests/host/HostNostrNative.cpp"),
   resolve(moduleDir, "tests/host/HostQntxSpark.cpp"),
 ];
 const cxxFlags = [
@@ -118,6 +119,14 @@ const cxxFlags = [
   resolve(
     dirname(
       createRequire(resolve(moduleDir, "package.json")).resolve("@qntx/spark-native/package.json"),
+    ),
+    "include",
+  ),
+  // nostr_native.h from the published @qntx/nostr-native package.
+  "-I",
+  resolve(
+    dirname(
+      createRequire(resolve(moduleDir, "package.json")).resolve("@qntx/nostr-native/package.json"),
     ),
     "include",
   ),

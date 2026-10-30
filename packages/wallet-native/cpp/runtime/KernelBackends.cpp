@@ -7,6 +7,7 @@
 // pod's headers (added by the WalletNative podspec), Android and the host
 // test via the package's include/ directory.
 #include "qntx_spark.h"
+#include "nostr_native.h"
 
 #include <string>
 
@@ -174,8 +175,121 @@ void installKernelBackends(
 
   intrinsics.freeze.call(rt, jsi::Value(rt, spark));
 
+  // The nostr_native_* calls write fixed-size outputs on the stack and return
+  // 0/1 rather than an allocator + error code, so they do not go through
+  // callOut. Exact-length inputs are checked before the call; verifySerialized
+  // answers with a boolean like nobleBackend instead of throwing.
+  auto nostr = jsi::Object(rt);
+  nostr.setProperty(
+      rt, "abiVersion", jsi::Value(static_cast<double>(nostr_native_abi_version())));
+
+  auto exact32 = [](jsi::Runtime& rt, const ByteView& view, const char* name) {
+    if (view.size != 32) {
+      throw jsi::JSError(rt, std::string(name) + " expects a 32-byte view");
+    }
+  };
+  auto wipe = [](uint8_t* data, size_t size) {
+    volatile uint8_t* p = data;
+    while (size--) {
+      *p++ = 0;
+    }
+  };
+
+  nostr.setProperty(
+      rt,
+      "publicKey",
+      hostFn(rt, "nostr.publicKey", 1, [&intrinsics, &exact32, &wipe](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 1) {
+          throw jsi::JSError(rt, "__qntx.backends.nostr.publicKey expects (secretKey)");
+        }
+        auto sk = byteViewFromValue(rt, args[0], "__qntx.backends.nostr.publicKey secretKey", intrinsics);
+        exact32(rt, sk, "__qntx.backends.nostr.publicKey secretKey");
+        uint8_t out[32];
+        const int ok = nostr_native_public_key(sk.data, out);
+        jsi::Value result;
+        if (ok == 1) {
+          result = jsi::Value(rt, makeUint8Array(rt, intrinsics, arrayBufferFromBytes(rt, out, sizeof out)));
+        }
+        wipe(out, sizeof out);
+        if (ok != 1) {
+          throw jsi::JSError(rt, "nostr_native: publicKey rejected the input");
+        }
+        return result;
+      }));
+
+  nostr.setProperty(
+      rt,
+      "sign",
+      hostFn(rt, "nostr.sign", 3, [&intrinsics, &exact32, &wipe](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 3) {
+          throw jsi::JSError(rt, "__qntx.backends.nostr.sign expects (id, secretKey, auxRand)");
+        }
+        auto id = byteViewFromValue(rt, args[0], "__qntx.backends.nostr.sign id", intrinsics);
+        auto sk = byteViewFromValue(rt, args[1], "__qntx.backends.nostr.sign secretKey", intrinsics);
+        auto aux = byteViewFromValue(rt, args[2], "__qntx.backends.nostr.sign auxRand", intrinsics);
+        exact32(rt, id, "__qntx.backends.nostr.sign id");
+        exact32(rt, sk, "__qntx.backends.nostr.sign secretKey");
+        exact32(rt, aux, "__qntx.backends.nostr.sign auxRand");
+        uint8_t out[64];
+        const int ok = nostr_native_sign(id.data, sk.data, aux.data, out);
+        jsi::Value result;
+        if (ok == 1) {
+          result = jsi::Value(rt, makeUint8Array(rt, intrinsics, arrayBufferFromBytes(rt, out, sizeof out)));
+        }
+        wipe(out, sizeof out);
+        if (ok != 1) {
+          throw jsi::JSError(rt, "nostr_native: sign rejected the input");
+        }
+        return result;
+      }));
+
+  nostr.setProperty(
+      rt,
+      "verifySerialized",
+      hostFn(rt, "nostr.verifySerialized", 4, [&intrinsics](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 4) {
+          throw jsi::JSError(rt, "__qntx.backends.nostr.verifySerialized expects (serialized, id, pubkey, sig)");
+        }
+        auto serialized = byteViewFromValue(rt, args[0], "__qntx.backends.nostr.verifySerialized serialized", intrinsics);
+        auto id = byteViewFromValue(rt, args[1], "__qntx.backends.nostr.verifySerialized id", intrinsics);
+        auto pubkey = byteViewFromValue(rt, args[2], "__qntx.backends.nostr.verifySerialized pubkey", intrinsics);
+        auto sig = byteViewFromValue(rt, args[3], "__qntx.backends.nostr.verifySerialized sig", intrinsics);
+        if (id.size != 32 || pubkey.size != 32 || sig.size != 64) {
+          return jsi::Value(false);
+        }
+        return jsi::Value(nostr_native_verify_serialized(
+            serialized.data, serialized.size, id.data, pubkey.data, sig.data) == 1);
+      }));
+
+  nostr.setProperty(
+      rt,
+      "ecdhX",
+      hostFn(rt, "nostr.ecdhX", 2, [&intrinsics, &exact32, &wipe](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 2) {
+          throw jsi::JSError(rt, "__qntx.backends.nostr.ecdhX expects (secretKey, publicKeyX)");
+        }
+        auto sk = byteViewFromValue(rt, args[0], "__qntx.backends.nostr.ecdhX secretKey", intrinsics);
+        auto pubX = byteViewFromValue(rt, args[1], "__qntx.backends.nostr.ecdhX publicKeyX", intrinsics);
+        exact32(rt, sk, "__qntx.backends.nostr.ecdhX secretKey");
+        exact32(rt, pubX, "__qntx.backends.nostr.ecdhX publicKeyX");
+        uint8_t out[32];
+        const int ok = nostr_native_ecdh_x(sk.data, pubX.data, out);
+        jsi::Value result;
+        if (ok == 1) {
+          result = jsi::Value(rt, makeUint8Array(rt, intrinsics, arrayBufferFromBytes(rt, out, sizeof out)));
+        }
+        wipe(out, sizeof out);
+        if (ok != 1) {
+          throw jsi::JSError(rt, "nostr_native: ecdhX rejected the input");
+        }
+        return result;
+      }));
+
+  intrinsics.freeze.call(rt, jsi::Value(rt, nostr));
+
   auto backends = jsi::Object(rt);
   backends.setProperty(rt, "spark", jsi::Value(std::move(spark)));
+  backends.setProperty(rt, "nostr", jsi::Value(std::move(nostr)));
   intrinsics.freeze.call(rt, jsi::Value(rt, backends));
   qntx.setProperty(rt, "backends", jsi::Value(std::move(backends)));
 }
