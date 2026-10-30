@@ -19,6 +19,25 @@ export type AccountRef =
 
 export type SignRequest =
   | {
+      readonly kind: "solana.transaction";
+      readonly network: string;
+      readonly account: AccountRef;
+      /** Compiled wire message (legacy or v0). */
+      readonly message: Uint8Array;
+      readonly lookupTables?: ReadonlyArray<{
+        readonly address: string;
+        readonly addresses: ReadonlyArray<string>;
+      }>;
+    }
+  | {
+      readonly kind: "solana.message";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly message: Uint8Array;
+      /** Only "raw" exists in this layer; offchain formats land with C7. */
+      readonly format: "raw";
+    }
+  | {
       readonly kind: "evm.transaction";
       readonly network: string;
       readonly account: AccountRef;
@@ -120,6 +139,7 @@ export type DisplayIntent = {
 export type ChainErrorCode =
   | "unknown-field"
   | "chain-id-mismatch"
+  | "fee-payer-mismatch"
   | "invalid-quantity"
   | "invalid-address"
   | "invalid-typed-data"
