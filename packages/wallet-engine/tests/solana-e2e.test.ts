@@ -50,7 +50,7 @@ const logs = (name: string): string =>
     probe(["ps", "-a", "--format", "{{.Names}} {{.Status}}"]),
     probe(["logs", name]),
     probe(["inspect", name, "--format", "{{.State.ExitCode}} {{.State.Error}}"]),
-    probe(["cp", `${name}:/tmp/ledger/validator.log`, "/dev/stdout"]),
+    probe(["cp", `${name}:/tmp/ledger/validator.log`, "-"]),
     probe(["exec", name, "tail", "-50", "/tmp/ledger/validator.log"]),
   ].join("\n---\n");
 
@@ -98,6 +98,8 @@ const startValidator = (name: string): void => {
       "linux/amd64",
       "--network",
       "host",
+      "-e",
+      "RUST_BACKTRACE=1",
       "--entrypoint",
       "solana-test-validator",
       "--name",
