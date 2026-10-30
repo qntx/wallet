@@ -21,8 +21,16 @@ describe("EvmChainAdapter", () => {
   it("allocates nonces serially per (network, from)", async () => {
     const a = new EvmChainAdapter();
     const c = rpc({ eth_getTransactionCount: "0x5", eth_estimateGas: "0x5208" });
-    const t1 = await a.build(c, "eip155:1", "0x1", { kind: "native", to: "0x2", value: 1n });
-    const t2 = await a.build(c, "eip155:1", "0x1", { kind: "native", to: "0x2", value: 1n });
+    const t1 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
+      kind: "native",
+      to: `0x${"2".repeat(40)}`,
+      value: 1n,
+    });
+    const t2 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
+      kind: "native",
+      to: `0x${"2".repeat(40)}`,
+      value: 1n,
+    });
     expect(t1.nonce).toBe(5);
     expect(t2.nonce).toBe(6);
     expect(t1.gas).toBe(25200n);
@@ -34,7 +42,7 @@ describe("EvmChainAdapter", () => {
       eth_feeHistory: {
         baseFeePerGas: ["0x10", "0x14"],
         reward: [
-          ["0x1", "0x2", "0x3"],
+          [`0x${"1".repeat(40)}`, `0x${"2".repeat(40)}`, "0x3"],
           ["0x4", "0x5", "0x6"],
         ],
       },
@@ -65,7 +73,7 @@ describe("EvmChainAdapter", () => {
       rpc({ eth_getTransactionCount: "0x0", eth_estimateGas: "0x5208" }),
       "eip155:1",
       "0xA",
-      { kind: "native", to: "0xB", value: 7n },
+      { kind: "native", to: `0x${"b".repeat(40)}`, value: 7n },
     );
     const priced = a.applyFee(tx, {
       tier: "normal",
@@ -88,14 +96,22 @@ describe("EvmChainAdapter", () => {
   it("reads receipt status and the finalized tag", async () => {
     const a = new EvmChainAdapter();
     const c = rpc({
-      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x5", blockHash: "0x1" },
+      eth_getTransactionReceipt: {
+        status: `0x${"1".repeat(40)}`,
+        blockNumber: "0x5",
+        blockHash: `0x${"1".repeat(40)}`,
+      },
       eth_getBlockByNumber: { number: "0x6" },
     });
     await expect(a.status(c, "0x0")).resolves.toBe("finalized");
     const pending = rpc({ eth_getTransactionReceipt: null });
     await expect(a.status(pending, "0x0")).resolves.toBe("pending");
     const failed = rpc({
-      eth_getTransactionReceipt: { status: "0x0", blockNumber: "0x5", blockHash: "0x1" },
+      eth_getTransactionReceipt: {
+        status: "0x0",
+        blockNumber: "0x5",
+        blockHash: `0x${"1".repeat(40)}`,
+      },
     });
     await expect(a.status(failed, "0x0")).resolves.toBe("failed");
   });

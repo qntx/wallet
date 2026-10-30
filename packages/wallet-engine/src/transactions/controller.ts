@@ -6,7 +6,7 @@
 import { Controller } from "../controller.ts";
 import type { EngineStore } from "../store/port.ts";
 import { pollBitcoin, sendBitcoin } from "./bitcoin.ts";
-import { pollEvm, replaceEvm, sendEvm } from "./evm.ts";
+import { createEvmRoute } from "./evm.ts";
 import type {
   DisplayIntent,
   Options,
@@ -86,6 +86,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private readonly options: Options;
   private engineStore?: EngineStore | undefined;
   private readonly timers = new Map<string, () => void>();
+  private evmRoute = createEvmRoute();
   private locked = true;
 
   constructor(options: Options) {
@@ -123,6 +124,7 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     this.timers.clear();
     this.engineStore = undefined;
+    this.evmRoute = createEvmRoute();
   }
 
   private async persist(tx: TrackedTransaction): Promise<void> {
@@ -167,7 +169,7 @@ export class TransactionController extends Controller<TransactionControllerState
     if (info.family === "bitcoin") {
       return sendBitcoin(ctx, params);
     }
-    return sendEvm(ctx, params);
+    return this.evmRoute.send(ctx, params);
   }
 
   /**
@@ -192,7 +194,7 @@ export class TransactionController extends Controller<TransactionControllerState
     if (old.state !== "pending" && old.state !== "submitted") {
       throw new Error(`cannot replace a ${old.state} transaction`);
     }
-    return replaceEvm(this.routeCtx(), old, mode, verify);
+    return this.evmRoute.replace(this.routeCtx(), old, mode, verify);
   }
 
   private track(id: string, hash: string): void {
@@ -215,7 +217,7 @@ export class TransactionController extends Controller<TransactionControllerState
             ? await pollSolana(ctx, tx)
             : tx.family === "bitcoin"
               ? await pollBitcoin(ctx, tx)
-              : await pollEvm(ctx, tx);
+              : await this.evmRoute.poll(ctx, tx);
         if (next === undefined) {
           return;
         }

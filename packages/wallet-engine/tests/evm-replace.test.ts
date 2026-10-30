@@ -282,6 +282,19 @@ describe("TransactionController.replace — state resolution", () => {
     expect(txs[bumped.id]?.state).toBe("replaced");
   });
 
+  it("two engine instances do not share nonce state", async () => {
+    const sign: Sign = async () =>
+      Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) });
+    const a = ctlWith(sign);
+    const b = ctlWith(sign);
+    await a.init();
+    await b.init();
+    const txA = await a.send(SEND);
+    const txB = await b.send(SEND);
+    expect(txA.nonce).toBe(0);
+    expect(txB.nonce).toBe(0);
+  });
+
   it("a new send while a replace is pending gets the next nonce, not the replaced one", async () => {
     const timers: Array<() => unknown> = [];
     const ctl = ctlWithFetch(
