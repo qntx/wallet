@@ -48,12 +48,12 @@ const template: Validator<ChainTemplate> = union(
   literal("btc.bip86"),
 );
 
-const caip2: Validator<string> = str(8, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
+const caip2: Validator<string> = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
 const addressResult = (t: "evm.bip44" | "solana.bip44-change"): Validator<ChainAccount> =>
   obj({
     template: literal(t),
     network: caip2,
-    address: str(1, /^[0-9a-zA-Z-]{20,128}$/),
+    address: str(128, /^[0-9a-zA-Z-]{20,128}$/),
   });
 
 export const CHAINS_METHODS: {

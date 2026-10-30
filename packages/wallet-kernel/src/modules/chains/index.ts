@@ -28,7 +28,7 @@ export type ChainsModule = {
   readonly handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> };
 };
 
-const BIP32_TPBK = { public: 0x04358394, private: 0x043587cf };
+const BIP32_TPBK = { public: 0x043587cf, private: 0x04358394 };
 
 const checkNetwork = (template: string, network: string): void => {
   if (template.startsWith("evm.") && !network.startsWith("eip155:")) {
