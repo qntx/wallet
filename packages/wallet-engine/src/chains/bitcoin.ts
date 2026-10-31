@@ -52,12 +52,18 @@ export type EsploraResponse = {
 };
 export type EsploraFetch = (
   url: string,
-  init?: { method: string; headers?: Record<string, string>; body?: string },
+  init?: {
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+  },
 ) => Promise<EsploraResponse>;
 
 const MAX_IN_FLIGHT = 4;
 const MAX_RETRIES = 3;
 const MAX_BACKOFF_MS = 2000;
+const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Bounded-concurrency + 429-aware ordered failover over the endpoint list. */
 export const esplora = (
@@ -95,12 +101,14 @@ export const esplora = (
   ): Promise<unknown> => {
     await acquire();
     try {
-      const res = await fetchFn(
-        `${base.replace(/\/$/, "")}${path}`,
-        body === undefined
+      const res = await fetchFn(`${base.replace(/\/$/, "")}${path}`, {
+        ...(body === undefined
           ? { method: "GET" }
-          : { method: "POST", headers: { "content-type": "text/plain" }, body },
-      );
+          : { method: "POST", headers: { "content-type": "text/plain" }, body }),
+        // An unbounded request can hang the whole scan — bound it so a stalled
+        // electrs surfaces as a failure the caller can retry rather than a hang.
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
       if (res.status === 429) {
         if (retry >= MAX_RETRIES) {
           throw new Error(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`);
