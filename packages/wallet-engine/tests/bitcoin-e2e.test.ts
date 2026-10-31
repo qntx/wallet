@@ -75,6 +75,28 @@ const startEsplora = (name: string): string => {
   return `http://${mapped}/regtest/api`;
 };
 
+/**
+ * Operations the legacy flow has started but not finished — engine fetches and kernel account
+ * derivations — so the near-timeout dump shows what a stalled step is waiting on.
+ */
+const pending = new Map<number, { readonly what: string; readonly since: number }>();
+let nextPending = 0;
+const tracked = async <T>(what: string, run: () => Promise<T>): Promise<T> => {
+  const id = nextPending++;
+  pending.set(id, { what, since: Date.now() });
+  try {
+    return await run();
+  } finally {
+    pending.delete(id);
+  }
+};
+const pendingReport = (): string =>
+  [...pending.values()]
+    .map((p) => `${Math.round((Date.now() - p.since) / 1000)}s ${p.what}`)
+    .join("\n");
+const trackedFetch: typeof fetch = async (input, init) =>
+  tracked(`fetch ${String(input)}`, async () => fetch(input, init));
+
 /** Runs one flow step and logs its duration, so a CI timeout shows where the time went. */
 const step = async <T>(label: string, run: () => Promise<T>): Promise<T> => {
   const started = Date.now();
@@ -555,12 +577,17 @@ const legacyFlow = async (): Promise<void> => {
       } as never,
       sparkNetwork: "regtest",
       networks: new NetworkController({
-        fetch: globalThis.fetch.bind(globalThis),
+        fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: quiet,
       }),
-      chains: chains(wallet) as never,
+      chains: {
+        account: async (params: Parameters<ReturnType<typeof chains>["account"]>[0]) =>
+          tracked(`account ${params.template} group ${params.groupIndex}`, async () =>
+            chains(wallet).account(params),
+          ),
+      } as never,
       logger: quiet,
       now: () => 0,
     });
@@ -573,7 +600,7 @@ const legacyFlow = async (): Promise<void> => {
     const txCtl = new TransactionController({
       wallet,
       networks: new NetworkController({
-        fetch: globalThis.fetch.bind(globalThis),
+        fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: quiet,
@@ -653,7 +680,9 @@ describe.runIf(RUN)("bitcoin e2e: bip49/bip44 spend-only templates", () => {
     async () => {
       // A timeout abandons the flow without unwinding it: dump the container first.
       const watchdog = setTimeout(() => {
-        console.error(`[bitcoin-e2e] near timeout; ${LEGACY} logs:\n${logsOf(LEGACY)}`);
+        console.error(
+          `[bitcoin-e2e] near timeout; pending:\n${pendingReport()}\n${LEGACY} logs:\n${logsOf(LEGACY)}`,
+        );
       }, 230_000);
       try {
         await legacyFlow();
