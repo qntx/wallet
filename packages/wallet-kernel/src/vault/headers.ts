@@ -42,6 +42,13 @@ export type PasskeyFactorHeader = {
   readonly createdAt: number;
 };
 
+export type HardwareFactorHeader = {
+  /** base64url (no padding), decodes to 1–512 bytes — the keystore-sealed KEK. */
+  readonly sealedKek: string;
+  readonly publicKey: string; // base64url (no padding) X25519 wrapping key, 32 bytes
+  readonly createdAt: number;
+};
+
 export type BackupKeyHeader = {
   /** 32 lowercase hex — HKDF over the BEK; never the BEK itself. */
   readonly id: string;
@@ -54,6 +61,7 @@ export type CoreHeader =
   | DataKeyHeader
   | PasswordFactorHeader
   | PasskeyFactorHeader
+  | HardwareFactorHeader
   | BackupKeyHeader;
 
 const PURPOSE_PATTERN = /^[a-z0-9-]{1,32}$/;
@@ -66,6 +74,13 @@ export function encodeHeader(header: CoreHeader): string {
   if ("credentialId" in header) {
     return JSON.stringify({
       credentialId: header.credentialId,
+      publicKey: header.publicKey,
+      createdAt: header.createdAt,
+    });
+  }
+  if ("sealedKek" in header) {
+    return JSON.stringify({
+      sealedKek: header.sealedKek,
       publicKey: header.publicKey,
       createdAt: header.createdAt,
     });
@@ -154,6 +169,16 @@ export function parsePasskeyFactorHeader(text: string): PasskeyFactorHeader {
   expectKeys(object, ["credentialId", "publicKey", "createdAt"]);
   return {
     credentialId: asBase64url(object["credentialId"], 1, 1023),
+    publicKey: asBase64url(object["publicKey"], 32, 32),
+    createdAt: asCreatedAt(object["createdAt"]),
+  };
+}
+
+export function parseHardwareFactorHeader(text: string): HardwareFactorHeader {
+  const object = headerObject(text);
+  expectKeys(object, ["sealedKek", "publicKey", "createdAt"]);
+  return {
+    sealedKek: asBase64url(object["sealedKek"], 1, 512),
     publicKey: asBase64url(object["publicKey"], 32, 32),
     createdAt: asCreatedAt(object["createdAt"]),
   };
