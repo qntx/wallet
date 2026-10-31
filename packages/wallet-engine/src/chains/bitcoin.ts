@@ -52,18 +52,35 @@ export type EsploraResponse = {
 };
 export type EsploraFetch = (
   url: string,
-  init?: { method: string; headers?: Record<string, string>; body?: string },
+  init?: {
+    method: string;
+    headers?: Record<string, string>;
+    body?: string;
+    signal?: AbortSignal;
+  },
 ) => Promise<EsploraResponse>;
+
+export class EsploraError extends Error {
+  /** True for request timeout/abort, network failure, 429-after-retries and 5xx — safe to retry. */
+  readonly transient: boolean;
+  constructor(message: string, transient: boolean) {
+    super(message);
+    this.name = "EsploraError";
+    this.transient = transient;
+  }
+}
 
 const MAX_IN_FLIGHT = 4;
 const MAX_RETRIES = 3;
 const MAX_BACKOFF_MS = 2000;
+const REQUEST_TIMEOUT_MS = 10_000;
 
 /** Bounded-concurrency + 429-aware ordered failover over the endpoint list. */
 export const esplora = (
   endpoints: ReadonlyArray<string>,
   fetchFn: EsploraFetch,
   sleep: (ms: number) => Promise<void>,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Esplora => {
   let inFlight = 0;
   const waiters: Array<() => void> = [];
@@ -94,22 +111,33 @@ export const esplora = (
     retry: number,
   ): Promise<unknown> => {
     await acquire();
+    let res: EsploraResponse;
     try {
-      const res = await fetchFn(
-        `${base.replace(/\/$/, "")}${path}`,
-        body === undefined
+      // An unbounded request can hang the whole scan — bound it so a stalled
+      // electrs surfaces as a failure the caller can retry rather than a hang.
+      res = await fetchFn(`${base.replace(/\/$/, "")}${path}`, {
+        ...(body === undefined
           ? { method: "GET" }
-          : { method: "POST", headers: { "content-type": "text/plain" }, body },
+          : { method: "POST", headers: { "content-type": "text/plain" }, body }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (error) {
+      release();
+      throw new EsploraError(
+        `esplora ${base}${path}: request failed (${error instanceof Error ? error.name : "unknown"})`,
+        true,
       );
+    }
+    try {
       if (res.status === 429) {
         if (retry >= MAX_RETRIES) {
-          throw new Error(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`);
+          throw new EsploraError(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`, true);
         }
         await backoff(res.headers, retry);
         return await call(base, path, body, retry + 1);
       }
       if (!res.ok) {
-        throw new Error(`esplora ${base}${path}: ${res.status}`);
+        throw new EsploraError(`esplora ${base}${path}: ${res.status}`, res.status >= 500);
       }
       const text = await res.text();
       try {

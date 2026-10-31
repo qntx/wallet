@@ -22,7 +22,7 @@ import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraResponse } from "../src/chains/bitcoin.ts";
-import { esplora, BitcoinChainAdapter, feeTiers } from "../src/chains/bitcoin.ts";
+import { esplora, BitcoinChainAdapter, EsploraError, feeTiers } from "../src/chains/bitcoin.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -494,28 +494,36 @@ const legacyFlow = async (): Promise<void> => {
     rpc(`${NAME}-legacy`, "sendtoaddress", [addr44, "0.00050000"]);
     rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
     const es = esploraClient(base);
+
     await waitFor(
       async () => {
-        const s49 = await scanChain(
-          es,
-          xpub49,
-          "btc.bip49",
-          NETWORK,
-          bitcoinNetwork(NETWORK).params,
-          0,
-        );
-        const s44 = await scanChain(
-          es,
-          xpub44,
-          "btc.bip44",
-          NETWORK,
-          bitcoinNetwork(NETWORK).params,
-          0,
-        );
-        return (
-          s49.some((a) => a.address === addr49 && a.used) &&
-          s44.some((a) => a.address === addr44 && a.used)
-        );
+        try {
+          const s49 = await scanChain(
+            es,
+            xpub49,
+            "btc.bip49",
+            NETWORK,
+            bitcoinNetwork(NETWORK).params,
+            0,
+          );
+          const s44 = await scanChain(
+            es,
+            xpub44,
+            "btc.bip44",
+            NETWORK,
+            bitcoinNetwork(NETWORK).params,
+            0,
+          );
+          return (
+            s49.some((a) => a.address === addr49 && a.used) &&
+            s44.some((a) => a.address === addr44 && a.used)
+          );
+        } catch (error) {
+          if (!(error instanceof EsploraError && error.transient)) {
+            throw error;
+          }
+          return false;
+        }
       },
       3000,
       Date.now() + 120_000,
@@ -589,8 +597,15 @@ const legacyFlow = async (): Promise<void> => {
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential confirm wait per template
       await waitFor(
         async () => {
-          await Promise.all(timers.map((fn) => fn()));
-          return txCtl.getState().txs[tx.id]?.state === "confirmed";
+          try {
+            await Promise.all(timers.map((fn) => fn()));
+            return txCtl.getState().txs[tx.id]?.state === "confirmed";
+          } catch (error) {
+            if (!(error instanceof EsploraError && error.transient)) {
+              throw error;
+            }
+            return false;
+          }
         },
         3000,
         Date.now() + 120_000,
