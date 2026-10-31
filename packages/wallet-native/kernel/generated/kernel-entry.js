@@ -24715,15 +24715,26 @@ zoo`.split("\n"));
 		decimals: 6,
 		name: "USD Coin"
 	});
+	var USDT$1 = Object.freeze({
+		symbol: "USDT",
+		decimals: 6,
+		name: "Tether USD"
+	});
 	/** The built-in table. */
 	var evmTokenTable = Object.freeze({
-		"1": Object.freeze({ "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC$1 }),
+		"1": Object.freeze({
+			"0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": USDC$1,
+			"0xdAC17F958D2ee523a2206206994597C13D831ec7": USDT$1
+		}),
 		"10": Object.freeze({ "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85": USDC$1 }),
 		"137": Object.freeze({ "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359": USDC$1 }),
 		"999": Object.freeze({ "0xb88339CB7199b77E23DB6E890353E22632Ba630f": USDC$1 }),
 		"8453": Object.freeze({ "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913": USDC$1 }),
 		"42161": Object.freeze({ "0xaf88d065e77c8cC2239327C5EDb3A432268e5831": USDC$1 }),
-		"43114": Object.freeze({ "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC$1 })
+		"43114": Object.freeze({
+			"0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E": USDC$1,
+			"0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7": USDT$1
+		})
 	});
 	var lookupEvmToken = (table, chainId, address) => {
 		var _table$String;
@@ -26501,7 +26512,15 @@ zoo`.split("\n"));
 		decimals: 6,
 		name: "USD Coin"
 	});
-	var solanaTokenTable = Object.freeze({ "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": Object.freeze({ EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: USDC }) });
+	var USDT = Object.freeze({
+		symbol: "USDT",
+		decimals: 6,
+		name: "Tether USD"
+	});
+	var solanaTokenTable = Object.freeze({ "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": Object.freeze({
+		EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: USDC,
+		Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: USDT
+	}) });
 	var lookupSolanaToken = (table, network, mint) => {
 		var _table$network;
 		return (_table$network = table[network]) === null || _table$network === void 0 ? void 0 : _table$network[mint];
