@@ -253,6 +253,7 @@ async function connectFake(
       kernel.attach(port);
       return port;
     },
+    factors: "software",
     passkey: PASSKEY,
     ceremony: undefined,
     setTimer,
@@ -456,6 +457,7 @@ describe("port lifecycle", () => {
         });
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
       setTimer: realtime,
@@ -516,6 +518,7 @@ describe("connect lifecycle", () => {
         });
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
       setTimer: realtime,
@@ -537,6 +540,7 @@ describe("connect lifecycle", () => {
         });
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
       setTimer: realtime,
@@ -824,6 +828,7 @@ describe("passkey restore purpose", () => {
         kernel.attach(port);
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony,
       setTimer: realtime,
@@ -891,6 +896,7 @@ describe("passkey config validation", () => {
         kernel.attach(port);
         return port;
       },
+      factors: "software",
       passkey: { ...PASSKEY, ...patch },
       ceremony: undefined,
       setTimer: realtime,

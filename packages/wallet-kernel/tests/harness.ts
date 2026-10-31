@@ -3,7 +3,7 @@ import type { KernelEvent, ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import { startKernel } from "../src/kernel.ts";
-import type { KernelPlatform, Port, Random } from "../src/platform.ts";
+import type { KernelPlatform, Keystore, Pbkdf2, Port, Random } from "../src/platform.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore } from "../src/vault/store.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
@@ -134,6 +134,10 @@ export function createHarness(opts?: {
   backends?: KernelPlatform["backends"];
   /** Overrides the seeded stream entirely — vector tests replay recorded draws. */
   random?: Random;
+  /** A platform keystore: makes this a hardware-factor (React Native) kernel. */
+  keystore?: Keystore;
+  /** Overrides the WebCrypto PBKDF2 (spies observing seed derivation). */
+  pbkdf2?: Pbkdf2;
 }): Harness {
   let now = opts?.start ?? 1_700_000_000_000; // wall clock — persisted timestamps only
   let elapsed = 0; // monotonic clock — session deadlines and timers
@@ -195,7 +199,7 @@ export function createHarness(opts?: {
         }
       };
     },
-    pbkdf2: subtlePbkdf2,
+    pbkdf2: opts?.pbkdf2 ?? subtlePbkdf2,
     store,
     policy: {
       maxSessionMs: opts?.maxSessionMs ?? 12 * 3_600_000,
@@ -205,7 +209,7 @@ export function createHarness(opts?: {
           ? undefined
           : { ms: opts?.idleMs ?? 15 * 60_000, activity: opts?.activity ?? "presence" },
     },
-    keystore: undefined,
+    keystore: opts?.keystore,
     backends: opts?.backends ?? {
       spark: async () => {
         await Promise.resolve();

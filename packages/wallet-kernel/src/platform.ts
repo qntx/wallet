@@ -1,14 +1,13 @@
 import type { SparkCrypto } from "@qntx/spark/crypto";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { KernelError } from "./errors.ts";
 /**
  * Platform capabilities injected by the host packages. The kernel holds no ambient singletons and
  * imports no platform APIs; every capability arrives through these types.
  */
 import type { NostrBackend } from "./modules/nostr/backend.ts";
 import type { RecordStore } from "./vault/store.ts";
-import { KernelError } from "./errors.ts";
-import type { StoredFactor } from "./vault/store.ts";
 
 /** Returns `length` cryptographically random bytes. */
 export type Random = (length: number) => Uint8Array;
@@ -60,9 +59,9 @@ export type KernelPlatform = {
   readonly store: RecordStore;
   readonly policy: KernelPolicy;
   /**
-   * The device keystore — present only on hosts with secure hardware (RN). `undefined` on
-   * web/node. When present, the only vault factor kind is `hardware`; when absent, only
-   * `password`/`passkey` — enforced by the kernel at every factor entry.
+   * The device keystore — present only on hosts with secure hardware (RN). `undefined` on web/node.
+   * When present, the only vault factor kind is `hardware`; when absent, only `password`/`passkey`
+   * — enforced by the kernel at every factor entry.
    */
   readonly keystore: Keystore | undefined;
   /**
@@ -107,39 +106,52 @@ export type Keystore = {
  * Serializes keystore ceremonies — seal/open/authenticate run strictly one at a time (the platform
  * cannot show two presence prompts at once). A rejection does not wedge the queue.
  */
-export const serialKeystore = (keystore: Keystore): Keystore => {
-  let tail: Promise<unknown> = Promise.resolve();
-  const queue = <T>(work: () => Promise<T>): Promise<T> => {
-    const next = tail.then(work);
-    tail = next.then(() => undefined, () => undefined);
-    return next;
+export function serialKeystore(keystore: Keystore): Keystore {
+  let tail: Promise<void> = Promise.resolve();
+  const queue = async <T>(work: () => Promise<T>): Promise<T> => {
+    const previous = tail;
+    let release: (() => void) | undefined;
+    tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await previous;
+      return await work();
+    } finally {
+      release?.();
+    }
   };
   return {
     locale: keystore.locale,
-    seal: (id, secret, prompt) => queue(() => keystore.seal(id, secret, prompt)),
-    open: (id, sealed, prompt) => queue(() => keystore.open(id, sealed, prompt)),
-    authenticate: (prompt) => queue(() => keystore.authenticate(prompt)),
-    clear: () => queue(() => keystore.clear()),
+    seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
+    open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
+    authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
+    clear: async () => queue(async () => keystore.clear()),
   };
-};
+}
 
 /**
- * Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors; a host
- * without one (web/node) takes only `password`/`passkey`. Backup factors are exempt — the caller
- * checks them separately.
+ * Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
+ * password there would let a compromised main runtime satisfy per-operation verification without
+ * the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
+ * factors are exempt.
  */
-export const assertFactorKindAvailable = (
+export function assertFactorKindAvailable(
   platform: KernelPlatform,
-  kind: StoredFactor["kind"],
-): void => {
-  const hasKeystore = platform.keystore !== undefined;
-  if (hasKeystore !== (kind === "hardware")) {
-    throw new KernelError(
-      "factor-unavailable",
-      `${kind} factors are not available on this platform`,
-    );
+  kind: "hardware" | "password" | "passkey",
+): void {
+  if ((platform.keystore !== undefined) !== (kind === "hardware")) {
+    throw new KernelError("factor-unavailable", "this factor kind is not available here");
   }
-};
+}
+
+/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
+export function requireKeystore(platform: KernelPlatform): Keystore {
+  if (platform.keystore === undefined) {
+    throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
+  }
+  return platform.keystore;
+}
 
 /**
  * One direction of the host↔kernel channel. `post` may move the listed ArrayBuffers (transferable

@@ -43,7 +43,7 @@ export type PasskeyFactorHeader = {
 };
 
 export type HardwareFactorHeader = {
-  /** base64url (no padding), decodes to 1–512 bytes — the keystore-sealed KEK. */
+  /** Base64url (no padding), decodes to 1–512 bytes — the keystore-sealed KEK. */
   readonly sealedKek: string;
   readonly publicKey: string; // base64url (no padding) X25519 wrapping key, 32 bytes
   readonly createdAt: number;

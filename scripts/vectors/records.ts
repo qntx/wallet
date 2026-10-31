@@ -13,6 +13,7 @@
  * - Nostr nip46-client: publicKey, origin, createdAt (never carries backedUp)
  * - Password factor: salt, iterations, publicKey, createdAt
  * - Passkey factor: credentialId, publicKey, createdAt
+ * - Hardware factor: sealedKek, publicKey, createdAt
  * - Backup key: id, factors, createdAt
  * - Vault meta: format, revision, keyId, failedAttempts, lastFailureAt
  *
@@ -71,6 +72,12 @@ function textOf(kind: string, input: Input): string {
     case "factor-passkey":
       return JSON.stringify({
         credentialId: i["credentialId"],
+        publicKey: i["publicKey"],
+        createdAt: i["createdAt"],
+      });
+    case "factor-hardware":
+      return JSON.stringify({
+        sealedKek: i["sealedKek"],
         publicKey: i["publicKey"],
         createdAt: i["createdAt"],
       });
@@ -184,6 +191,15 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     input: {
       credentialId: "3q2-78r-",
       publicKey: "JqRYFT66Kmogg041szL7sSC6lKDj6VPKh-5HsP3DbAE",
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "factor-hardware",
+    kind: "factor-hardware",
+    input: {
+      sealedKek: "BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8",
+      publicKey: "PxLfxal_e43m4jpaNusYyCfYFXOkFoQAQ1lQI1s0HUM",
       createdAt: CREATED_AT,
     },
   },

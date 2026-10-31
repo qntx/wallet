@@ -6,6 +6,7 @@ import type { KernelContext } from "../../commands/context.ts";
 import { commitRecords, gate } from "../../commands/wallets.ts";
 import { masterKey } from "../../derive/hd.ts";
 import { KernelError } from "../../errors.ts";
+import { corePromptFor } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { seedFromEntropy } from "../../seed/seed.ts";
@@ -208,7 +209,13 @@ export async function removeKey(
     if (params.verify === undefined) {
       throw new KernelError("invalid-input", "factor verification is required");
     }
-    await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+    await verifyFactor(
+      ctx.platform,
+      ctx.image,
+      params.verify,
+      dek,
+      corePromptFor(ctx.platform.keystore, "remove-key"),
+    );
   }
   // Reconciliation forgets the live signer once the delete lands.
   await ctx.commit([{ op: "delete-record", kind: NOSTR_KEY_KIND, id: params.publicKey }]);
@@ -221,7 +228,13 @@ export async function exportKey(
   requestSession: string | undefined,
 ): Promise<Uint8Array> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "export-key"),
+  );
   const record = findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey);
   const header = parseNostrKeyHeader(record.header);
   const secretKey = openRecord(dek, record);

@@ -2543,7 +2543,7 @@ describe("backend routing (WD-054)", () => {
       },
     });
     const h = createHarness({
-    backends: {
+      backends: {
         nostr: counting,
         spark: async () => {
           await Promise.resolve();

@@ -47,6 +47,7 @@ const platform: KernelPlatform = {
     };
   },
   pbkdf2: subtlePbkdf2,
+  keystore: undefined,
   store: createStoreClient({
     post: (message) => {
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- worker_threads port, not window.postMessage

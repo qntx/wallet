@@ -134,6 +134,16 @@
       "text": "{\"credentialId\":\"3q2-78r-\",\"publicKey\":\"JqRYFT66Kmogg041szL7sSC6lKDj6VPKh-5HsP3DbAE\",\"createdAt\":1767225600000}"
     },
     {
+      "name": "factor-hardware",
+      "kind": "factor-hardware",
+      "input": {
+        "sealedKek": "BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8",
+        "publicKey": "PxLfxal_e43m4jpaNusYyCfYFXOkFoQAQ1lQI1s0HUM",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"sealedKek\":\"BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8\",\"publicKey\":\"PxLfxal_e43m4jpaNusYyCfYFXOkFoQAQ1lQI1s0HUM\",\"createdAt\":1767225600000}"
+    },
+    {
       "name": "backup-key",
       "kind": "backup-key",
       "input": {
