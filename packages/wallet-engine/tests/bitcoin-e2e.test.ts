@@ -494,9 +494,6 @@ const legacyFlow = async (): Promise<void> => {
     rpc(`${NAME}-legacy`, "sendtoaddress", [addr44, "0.00050000"]);
     rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
     const es = esploraClient(base);
-    const mark = (s: string) =>
-      process.stderr.write(`\nLEGACYMARK ${s} @${Math.round(performance.now() / 1000)}s\n`);
-    mark("fund+mine");
 
     await waitFor(
       async () => {
@@ -531,7 +528,6 @@ const legacyFlow = async (): Promise<void> => {
         throw new Error("funded legacy addresses never indexed");
       },
     );
-    mark("indexed");
     // group 0's discovery marks both templates used under `bitcoin`.
     const ctl = new AccountTreeController({
       wallet,
@@ -554,7 +550,6 @@ const legacyFlow = async (): Promise<void> => {
     });
     await ctl.init();
     const found: number[] = await ctl.discoverGroups(walletId);
-    mark(`discovered=${JSON.stringify(found)}`);
     expect(found).toContain(0);
     const g0 = ctl.getState().groups[walletId]?.find((g) => g.index === 0);
     expect(g0?.used?.["bitcoin"]).toBe(true);
@@ -595,7 +590,6 @@ const legacyFlow = async (): Promise<void> => {
         verify: BVERIFY,
       });
       expect(tx.state).toBe("submitted");
-      mark(`send ${template} submitted`);
       rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential confirm wait per template
       await waitFor(
@@ -613,7 +607,6 @@ const legacyFlow = async (): Promise<void> => {
           throw new Error(`${template} send never confirmed`);
         },
       );
-      mark(`send ${template} confirmed`);
     }
     // The bip84 change chain received the change outputs.
     const changeChain = await scanChain(
