@@ -78,11 +78,15 @@ struct KernelGlobalsState {
   // integrity grounds (oversize, queue full); installed through
   // __qntx.frames.onIntegrityViolation. Kernel thread only.
   std::optional<facebook::jsi::Function> integrityHandler;
+
+  // Dismisses an in-flight keystore prompt; installed by installKernelKeystore
+  // and run by teardown. Kernel thread only.
+  std::function<void()> cancelCeremony;
 };
 
 // Installs the kernel's capabilities on a fresh runtime:
 //   globalThis.__qntx   frozen { random, now, elapsed, setTimer, pbkdf2, file,
-//                              frames, backends }
+//                              frames, backends, keystore }
 //   globalThis.crypto   frozen { getRandomValues }
 //   globalThis.TextDecoder   the native Hermes decoder (260318099+), frozen
 //                            and rebound hidden

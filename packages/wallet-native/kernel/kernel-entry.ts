@@ -6,6 +6,8 @@
 
 import { startKernel } from "../../wallet-kernel/src/kernel.ts";
 import type { KernelPlatform } from "../../wallet-kernel/src/platform.ts";
+import { bindNativeKeystore } from "./keystore.ts";
+import type { KernelKeystoreNative } from "./keystore.ts";
 import { bindNativeNostr } from "./nostr.ts";
 import type { KernelNostrNative } from "./nostr.ts";
 import { bindNativeSpark } from "./spark.ts";
@@ -29,6 +31,7 @@ export type KernelGlobals = {
     callback: (result: Uint8Array | undefined, error: string | undefined) => void,
   ) => void;
   readonly file: KernelFile;
+  readonly keystore: KernelKeystoreNative;
   readonly frames: KernelFramePipe;
   readonly backends: {
     readonly spark: KernelSparkNative;
@@ -54,7 +57,7 @@ const platform: KernelPlatform = {
       });
     }),
   store: createFileStore(__qntx.file),
-  keystore: undefined,
+  keystore: bindNativeKeystore(__qntx.keystore),
   // No foreground idle lock on native — the host locks on backgrounding after
   // autoLock.backgroundSeconds (W7); the session still ends at 24 h.
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },

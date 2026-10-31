@@ -1,10 +1,12 @@
 /**
- * W2b social-mode smoke: runs the real native kernel end to end through
- * `createNativeWallet` — mnemonic create + quiz, Nostr sign + verify, vault
- * lock — then on relaunch proves the vault persisted by unlocking with the
- * password (and rejecting a wrong one). Prints machine-readable
- * `SMOKE_RESULT <name> <ok|fail> <detail>` lines on the console, which Metro/
- * logcat forward like the V1 result lines.
+ * Social-mode smoke on the hardware factor (W5): runs the real native kernel
+ * end to end through `createNativeWallet` — mnemonic create + quiz (the
+ * hardware key is created at confirm), Nostr sign + verify, vault lock — then
+ * on relaunch drives the system verification: the first unlock prompt must be
+ * cancelled by the tester (`cancelled`, vault stays locked), the second
+ * approved; the mnemonic export and an EVM transfer each show their own
+ * kernel-written prompt. Prints machine-readable result lines through the V1
+ * report channel.
  */
 import { AppState } from "react-native";
 import { NitroModules } from "react-native-nitro-modules";
@@ -13,6 +15,7 @@ import { report } from "@qntx/v1-probe";
 import { verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, PasskeyConfig, Wallet, WalletSnapshot } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
+import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 import type { KernelHostLike } from "@qntx/wallet-native";
@@ -26,9 +29,10 @@ const PASSKEY: PasskeyConfig = {
   backupSalt: "backup",
 };
 // W7: the native host locks the enclave the moment the app backgrounds.
+// A system verification sheet must not count as backgrounding: every prompt
+// below runs with this policy armed.
 const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 0 };
-const PASSWORD = "smoke-password-1";
-const WRONG = "smoke-password-2";
+const HARDWARE = { kind: "hardware" } as const;
 
 const result = (name: string, ok: boolean, detail: string): void => {
   // The native V1 report channel reaches stderr (iOS) and logcat (Android) on
@@ -49,12 +53,14 @@ export async function smokePhase(): Promise<"create" | "unlock"> {
 /** First boot: create the vault, run the ceremony, sign, lock. */
 export async function smokeCreate(): Promise<void> {
   const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
-  const draft = await wallet.wallets.createMnemonic({
-    words: 12,
-    factor: { kind: "password", password: PASSWORD },
-  });
+  const draft = await wallet.wallets.createMnemonic({ words: 12 });
   const words = new TextDecoder().decode(draft.words.read()).split(" ");
   const { walletId } = await draft.confirm(draft.quiz.map((i) => words[i]!));
+  result(
+    "hardware-factor",
+    wallet.getSnapshot().factors.map((f) => f.kind).join(",") === "hardware",
+    "",
+  );
 
   const api = nostr(wallet);
   const key = await api.deriveKey(walletId, 0);
@@ -70,19 +76,18 @@ export async function smokeCreate(): Promise<void> {
   result("lock", wallet.getSnapshot().vault === "locked", "");
 }
 
-/** Relaunch: the persisted vault must unlock with the password and reject a wrong one. */
+/** Relaunch: cancel the first unlock prompt, approve the second, then the guarded prompts. */
 export async function smokeUnlock(): Promise<void> {
-  const walletWrong = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
-  let wrongRejected = false;
-  try {
-    await walletWrong.vault.unlock({ kind: "password", password: WRONG });
-  } catch (error) {
-    wrongRejected = error instanceof WalletError && error.code === "wrong-password";
-  }
-  result("unlock-wrong", wrongRejected, "");
-
   const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
-  await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+  let cancelled = false;
+  try {
+    await wallet.vault.unlock();
+  } catch (error) {
+    cancelled = error instanceof WalletError && error.code === "cancelled";
+  }
+  result("unlock-cancelled", cancelled && wallet.getSnapshot().vault === "locked", "");
+
+  await wallet.vault.unlock();
   const snapshot = wallet.getSnapshot();
   const walletId = snapshot.wallets[0]?.walletId;
   result(
@@ -143,6 +148,33 @@ export async function smokeUnlock(): Promise<void> {
       commitment.binding.length === 33,
     `commitments=${commitments.length}`,
   );
+
+  // W5 re-verification: one prompt for the export, one for an EVM transfer
+  // whose prompt text the kernel renders from its own decode.
+  const exported = await wallet.wallets.exportMnemonic(walletId, HARDWARE);
+  const exportedWords = new TextDecoder().decode(exported.read()).split(" ").length;
+  result("export-verified", exportedWords === 12, `words=${exportedWords}`);
+  const signed = await chains(wallet).sign({
+    request: {
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0xb1a2bc2ec50000",
+        data: "0x",
+        to: "0x00000000000000000000000000000000DeaDBeef",
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    },
+    verify: HARDWARE,
+  });
+  result("chain-verified", signed.kind === "evm.transaction", "");
 
   // W7: armed at backgroundSeconds=0 — backgrounding locks the enclave at the
   // platform layer; foreground must reveal vault=locked with the real reason.

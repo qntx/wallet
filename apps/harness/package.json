@@ -16,12 +16,13 @@
     "@qntx/spark-native": "0.5.2",
     "@qntx/v1-probe": "link:./modules/v1-probe",
     "@qntx/wallet": "link:../../packages/wallet",
+    "@qntx/wallet-chains": "link:../../packages/wallet-chains",
     "@qntx/wallet-native": "link:../../packages/wallet-native",
     "expo": "58.0.12",
+    "expo-build-properties": "58.0.11",
     "react": "19.3.0",
     "react-native": "0.88.0",
-    "react-native-nitro-modules": "0.37.1",
-    "@qntx/wallet-chains": "link:../../packages/wallet-chains"
+    "react-native-nitro-modules": "0.37.1"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

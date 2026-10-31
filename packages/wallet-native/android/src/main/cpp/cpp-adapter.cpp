@@ -7,6 +7,7 @@
 namespace qntx {
 void kernelVaultDirectoryInit(facebook::jni::alias_ref<jclass> clazz);
 void kernelLifecycleInit(facebook::jni::alias_ref<jclass> clazz);
+void kernelKeystoreInit(facebook::jni::alias_ref<jclass> clazz);
 }
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
@@ -15,6 +16,8 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
         facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/VaultDirectory"));
     qntx::kernelLifecycleInit(
         facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/AppLifecycle"));
+    qntx::kernelKeystoreInit(
+        facebook::jni::findClassLocal("com/margelo/nitro/qntxwallet/Keystore"));
     margelo::nitro::qntxwallet::registerAllNatives();
     qntx::kernelPbkdf2OnLoad(
         facebook::jni::Environment::current(),

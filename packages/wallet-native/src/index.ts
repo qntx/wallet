@@ -48,7 +48,7 @@ export async function createNativeWallet(options: NativeWalletOptions): Promise<
   // background expiry — the kernel never sees a presence source here.
   return connectKernel({
     spawn: () => spawnFromHost(host, autoLock.backgroundSeconds),
-    factors: "software",
+    factors: "hardware",
     passkey: options.passkey,
     ceremony: options.ceremony,
     setTimer,
