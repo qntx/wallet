@@ -40,6 +40,7 @@ describe("chains(wallet)", () => {
         kernel.attach(port);
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
       setTimer: (ms, fn) => {
@@ -68,6 +69,7 @@ describe("chains(wallet)", () => {
         kernel.attach(port);
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
       setTimer: (ms, fn) => {
@@ -166,6 +168,7 @@ describe("chains(wallet)", () => {
         kernel.attach(port);
         return port;
       },
+      factors: "software",
       passkey: PASSKEY,
       ceremony: undefined,
       setTimer: (ms, fn) => {

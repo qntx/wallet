@@ -2,6 +2,7 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import type { Factor } from "@qntx/wallet/protocol";
 
+import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import { mnemonicFromEntropy } from "../seed/mnemonic.ts";
 import { encodeHeader, parseEntropyHeader } from "../vault/headers.ts";
@@ -15,7 +16,13 @@ export async function exportMnemonic(
   requestSession: string | undefined,
 ): Promise<Uint8Array> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "export-mnemonic"),
+  );
   const record = findRecord(ctx.image, "entropy", params.walletId);
   const header = parseEntropyHeader(record.header);
   const entropy = openRecord(dek, record);

@@ -42,12 +42,35 @@ export type PasskeyCeremony = {
   }) => Promise<PrfResult>;
 };
 
+/**
+ * Which vault factors a host offers: `hardware` (React Native — the platform keystore is the only
+ * factor, and omitted factors mean it) or `software` (web/node — passkey and password). The kernel
+ * enforces the same rule; resolving here keeps a doomed request from firing a ceremony.
+ */
+export type FactorMode = "hardware" | "software";
+
 /** What factor resolution needs from the wallet: config, the ceremony, live factor records. */
 export type FactorSource = {
+  readonly mode: FactorMode;
   readonly passkey: PasskeyConfig;
   readonly ceremony: PasskeyCeremony | undefined;
   readonly factors: () => ReadonlyArray<FactorInfo>;
 };
+
+const HARDWARE: Factor = { kind: "hardware" };
+
+function hardwareOnly(): WalletError {
+  return new WalletError("factor-unavailable", "this host unlocks only with the hardware factor");
+}
+
+function noHardware(): WalletError {
+  return new WalletError("factor-unavailable", "hardware factors exist only on React Native");
+}
+
+/** The factor `vault.unlock()` uses when the caller passes none. */
+export function defaultUnlockFactor(source: FactorSource): UnlockFactor {
+  return source.mode === "hardware" ? { kind: "hardware" } : { kind: "passkey" };
+}
 
 export function vaultSaltBytes(source: FactorSource): Uint8Array {
   return new TextEncoder().encode(source.passkey.vaultSalt);
@@ -70,6 +93,9 @@ export async function resolveBackupFactor(
   factor: UnlockFactor,
   transfer: ArrayBuffer[],
 ): Promise<BackupFactor> {
+  if (factor.kind === "hardware") {
+    throw new WalletError("invalid-input", "backup factors are passkeys or passwords");
+  }
   if (factor.kind === "password") {
     return { kind: "password", password: wireSecretText(factor.password, transfer) };
   }
@@ -142,6 +168,15 @@ export async function resolveFactor(
   factor: UnlockFactor,
   transfer: ArrayBuffer[],
 ): Promise<Factor> {
+  if (source.mode === "hardware") {
+    if (factor.kind !== "hardware") {
+      throw hardwareOnly();
+    }
+    return HARDWARE;
+  }
+  if (factor.kind === "hardware") {
+    throw noHardware();
+  }
   if (factor.kind === "password") {
     return { kind: "password", password: wireSecretText(factor.password, transfer) };
   }
@@ -159,7 +194,8 @@ export async function resolveFactor(
 
 /**
  * Resolves a public `InitialFactor` (a factor being created). For `create/restoreWithPasskey` the
- * default passkey factor reuses the wallet ceremony's own credential and `second` PRF output.
+ * default passkey factor reuses the wallet ceremony's own credential and `second` PRF output; a
+ * hardware host always establishes the hardware factor and drops that output.
  */
 export async function resolveInitialFactor(
   source: FactorSource,
@@ -167,6 +203,13 @@ export async function resolveInitialFactor(
   transfer: ArrayBuffer[],
   walletCeremony?: PrfResult,
 ): Promise<Factor> {
+  if (source.mode === "hardware") {
+    walletCeremony?.second?.fill(0);
+    if (factor !== undefined && factor.kind !== "hardware") {
+      throw hardwareOnly();
+    }
+    return HARDWARE;
+  }
   if (factor === undefined || factor.kind === "passkey") {
     const name = factor === undefined ? undefined : passkeyName(factor.name);
     if (walletCeremony !== undefined) {
@@ -200,5 +243,5 @@ export async function resolveInitialFactor(
     walletCeremony?.second?.fill(0); // the passkey vault factor is not needed
     return { kind: "password", password: wireSecretText(factor.password, transfer) };
   }
-  throw new WalletError("factor-unavailable", "hardware factors exist only on React Native");
+  throw noHardware();
 }

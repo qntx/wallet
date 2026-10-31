@@ -8,12 +8,15 @@ import type { WalletInfo } from "@qntx/wallet/types";
 import { masterKey } from "../derive/hd.ts";
 import { walletIdOf } from "../derive/wallet-id.ts";
 import { KernelError } from "../errors.ts";
+import { assertFactorKindAvailable } from "../platform.ts";
 import type { KernelPlatform } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import { decodeUtf8Secret, Secret, wipe } from "../secret/secret.ts";
 import { randomEntropy } from "../seed/entropy.ts";
 import { entropyFromMnemonic, mnemonicFromEntropy } from "../seed/mnemonic.ts";
 import { entropyFromPrf } from "../seed/passkey.ts";
 import { seedFromEntropy } from "../seed/seed.ts";
+import { wipePendingFactor } from "../session/session.ts";
 import type { PendingFactor } from "../session/session.ts";
 import { factorPublicKey, wrapDek } from "../vault/factors.ts";
 import { encodeHeader } from "../vault/headers.ts";
@@ -22,9 +25,11 @@ import type { StoredFactor, StoredRecord } from "../vault/store.ts";
 import {
   establishOps,
   factorHeader,
+  factorRow,
   findRecord,
   makeFactor,
   newFactorKek,
+  newHardwareKek,
   sealRecord,
   verifyFactor,
   walletInfo,
@@ -145,18 +150,43 @@ export async function commitRecords(
     if (factor === undefined) {
       throw new KernelError("integrity", "unreachable: initial factor missing");
     }
-    const storedFactor = await makeFactor(ctx.platform, factor, gated.dek);
-    const { ops, keyId } = establishOps(ctx.platform, storedFactor, records);
-    try {
-      await ctx.commit(ops);
-    } catch (error) {
-      gated.dek.wipe();
-      throw error;
-    }
-    return openSession(ctx, gated.dek, keyId);
+    return establishVault(
+      ctx,
+      gated.dek,
+      async () => makeFactor(ctx.platform, factor, gated.dek),
+      records,
+    );
   }
   await ctx.commit(records.map((record) => ({ op: "put-record" as const, record })));
   return ctx.session.current().id;
+}
+
+/**
+ * Establishes the vault in one `init` commit and opens the session; wipes `dek` on failure. On a
+ * keystore host the vault is uninitialized here and the kernel is the single writer, so every
+ * hardware key this app left behind (a reinstall keeps iOS keychain items, a failed establish) is
+ * cleared before the new key is sealed — and again if the establish fails after sealing.
+ */
+async function establishVault(
+  ctx: KernelContext,
+  dek: Secret,
+  factorRowFor: () => Promise<StoredFactor>,
+  records: ReadonlyArray<StoredRecord>,
+): Promise<string> {
+  const { keystore } = ctx.platform;
+  let keyId: string;
+  try {
+    await keystore?.clear();
+    const established = establishOps(ctx.platform, await factorRowFor(), records);
+    ({ keyId } = established);
+    await ctx.commit(established.ops);
+  } catch (error) {
+    dek.wipe();
+    // Best effort; the establish error is the one the caller needs.
+    await keystore?.clear().catch(() => undefined);
+    throw error;
+  }
+  return openSession(ctx, dek, keyId);
 }
 
 function ensureNewWallet(ctx: KernelContext, material: WalletMaterial): void {
@@ -188,6 +218,10 @@ function quizPositions(random: KernelPlatform["random"], count: number): [number
  * inside `newFactorKek` because the factor is being created.
  */
 async function pendingFactorOf(ctx: KernelContext, factor: Factor): Promise<PendingFactor> {
+  if (factor.kind === "hardware") {
+    assertFactorKindAvailable(ctx.platform, "hardware");
+    return { kind: "hardware" };
+  }
   const material = await newFactorKek(ctx.platform, factor);
   return material.kind === "password"
     ? { kind: "password", kek: Secret.take(material.kek), salt: material.salt }
@@ -230,14 +264,18 @@ export async function createMnemonic(
 
 /**
  * Turns a draft's pending factor into its stored record once the DEK exists: the header gets the
- * public key derived from the held KEK, and the DEK wraps to that key.
+ * public key derived from the held KEK, and the DEK wraps to that key. A hardware factor seals its
+ * KEK now, under a key created for this factor id.
  */
-function storedFactorForPending(
+async function storedFactorForPending(
   ctx: KernelContext,
   pending: PendingFactor,
   dek: Secret,
-): StoredFactor {
+): Promise<StoredFactor> {
   const id = bytesToHex(ctx.platform.random(16));
+  if (pending.kind === "hardware") {
+    return factorRow(ctx.platform, await newHardwareKek(ctx.platform, id), id, dek);
+  }
   const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
   const header = factorHeader(pending, publicKey, ctx.platform.now());
   const sealed = wrapDek(dek, publicKey, { kind: pending.kind, id, header }, ctx.platform.random);
@@ -270,18 +308,16 @@ export async function confirmMnemonic(
       ensureNewWallet(ctx, material);
       const createdAt = ctx.platform.now();
       // The quiz just proved the user wrote the words down.
-      if (taken.pendingFactor !== undefined) {
+      const { pendingFactor } = taken;
+      if (pendingFactor !== undefined) {
         const dek = Secret.take(ctx.platform.random(32));
-        const storedFactor = storedFactorForPending(ctx, taken.pendingFactor, dek);
         const record = walletRecord(ctx, dek, material, "mnemonic", createdAt);
-        const { ops, keyId } = establishOps(ctx.platform, storedFactor, [record]);
-        try {
-          await ctx.commit(ops);
-        } catch (error) {
-          dek.wipe();
-          throw error;
-        }
-        const session = openSession(ctx, dek, keyId);
+        const session = await establishVault(
+          ctx,
+          dek,
+          async () => storedFactorForPending(ctx, pendingFactor, dek),
+          [record],
+        );
         return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
       }
       const session = ctx.session.current();
@@ -297,12 +333,7 @@ export async function confirmMnemonic(
       wipe(expected);
     }
     if (taken.pendingFactor !== undefined) {
-      taken.pendingFactor.kek.wipe();
-      if (taken.pendingFactor.kind === "password") {
-        wipe(taken.pendingFactor.salt);
-      } else {
-        wipe(taken.pendingFactor.credentialId);
-      }
+      wipePendingFactor(taken.pendingFactor);
     }
   }
 }
@@ -368,7 +399,13 @@ export async function deleteWallet(
   requestSession: string | undefined,
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "delete-wallet"),
+  );
   findRecord(ctx.image, "entropy", params.walletId);
   // The entropy row and every module record derived from this wallet go in ONE commit —
   // a partial deletion can never land. Reconciliation forgets the evicted live state.

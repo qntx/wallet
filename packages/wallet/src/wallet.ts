@@ -18,8 +18,9 @@ import {
   wireBytes,
   wireSecretText,
   resolveBackupFactor,
+  defaultUnlockFactor,
 } from "./factors.ts";
-import type { FactorSource, PasskeyCeremony } from "./factors.ts";
+import type { FactorMode, FactorSource, PasskeyCeremony } from "./factors.ts";
 import { registerInternals } from "./internal.ts";
 import type { Factor } from "./protocol/index.ts";
 import { SingleUseSecret } from "./secret.ts";
@@ -44,6 +45,8 @@ import type {
 
 export type ConnectOptions = {
   readonly spawn: () => MainPort;
+  /** Fixed by the host entry: `hardware` on React Native, `software` on web and node. */
+  readonly factors: FactorMode;
   readonly passkey: PasskeyConfig;
   readonly ceremony: PasskeyCeremony | undefined;
   /** Timer source injected by the host package (globalThis timers on web/node). */
@@ -93,6 +96,7 @@ function deepEqual(a: unknown, b: unknown): boolean {
 
 export class KernelWallet implements Wallet {
   private readonly channel: Channel;
+  private readonly factorMode: FactorMode;
   private readonly passkeyCfg: PasskeyConfig;
   private readonly ceremony: PasskeyCeremony | undefined;
   private readonly setTimer: SetTimer;
@@ -109,6 +113,7 @@ export class KernelWallet implements Wallet {
   private readonly listeners = new Set<() => void>();
 
   private constructor(options: ConnectOptions) {
+    this.factorMode = options.factors;
     this.passkeyCfg = options.passkey;
     this.ceremony = options.ceremony;
     this.setTimer = options.setTimer;
@@ -252,6 +257,7 @@ export class KernelWallet implements Wallet {
 
   private get factorSource(): FactorSource {
     return {
+      mode: this.factorMode,
       passkey: this.passkeyCfg,
       ceremony: this.ceremony,
       factors: () => this.snapshotValue.factors,
@@ -285,7 +291,7 @@ export class KernelWallet implements Wallet {
       }
       return undefined;
     }
-    if (factor === undefined) {
+    if (factor === undefined && this.factorMode === "software") {
       throw new WalletError("invalid-input", "an initial factor is required");
     }
     return resolveInitialFactor(this.factorSource, factor, transfer);
@@ -302,7 +308,7 @@ export class KernelWallet implements Wallet {
         const transfer: ArrayBuffer[] = [];
         const wire = await resolveFactor(
           this.factorSource,
-          factor ?? { kind: "passkey" },
+          factor ?? defaultUnlockFactor(this.factorSource),
           transfer,
         );
         const result = await this.channel.call("vault.unlock", { factor: wire }, transfer);

@@ -13,6 +13,7 @@ import type {
 
 import type { Handler, KernelContext, VaultHooks } from "../../commands/context.ts";
 import { KernelError } from "../../errors.ts";
+import { promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import { seedFromEntropy } from "../../seed/seed.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
@@ -23,6 +24,7 @@ import { openRecord, verifyFactor } from "../../vault/vault.ts";
  * loaded on first use only, so a nostr-only session never touches wasm; a WasmPoisonedError drops
  * the instance and every signer built on it, and the next call reloads.
  */
+import { sparkPrompt } from "./prompt.ts";
 import { loadSparkRuntime } from "./runtime.ts";
 import type { SparkRuntime } from "./runtime.ts";
 
@@ -533,18 +535,27 @@ export function createSparkModule(): SparkModule {
       if (record === undefined) {
         throw new KernelError("not-found", "no such wallet");
       }
-      // The factor gates registration — a wrong verify registers nothing.
-      await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
       const key = poolKey(params.account);
-      const live = liveApprovals(ctx, key);
-      if (live.length >= APPROVAL_MAX_PER_ACCOUNT) {
+      if (liveApprovals(ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) {
         throw new KernelError("invalid-input", "approval cap reached for this account");
       }
+      // Decode first: the verification prompt shows the kernel's own reading of the intent. The
+      // factor gates registration — a wrong verify registers nothing.
       const { summary, decoded } = decodeIntent(
         await sparkRuntime(),
         params.account,
         params.intent,
       );
+      await verifyFactor(ctx.platform, ctx.image, params.verify, dek, () =>
+        sparkPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), summary),
+      );
+      // Re-check after the prompt: the session may have ended and approvals may have expired or
+      // been added meanwhile.
+      ctx.session.require(session);
+      const live = liveApprovals(ctx, key);
+      if (live.length >= APPROVAL_MAX_PER_ACCOUNT) {
+        throw new KernelError("invalid-input", "approval cap reached for this account");
+      }
       live.push({
         intent: params.intent,
         deadline: ctx.platform.elapsed() + APPROVAL_TTL_MS,

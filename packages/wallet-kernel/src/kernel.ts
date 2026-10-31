@@ -25,6 +25,7 @@ import { KernelError } from "./errors.ts";
 import { createChainsModule } from "./modules/chains/index.ts";
 import { createNostrModule } from "./modules/nostr/index.ts";
 import { createSparkModule } from "./modules/spark/index.ts";
+import { serialKeystore } from "./platform.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
 import { wipe } from "./secret/secret.ts";
 import { Session } from "./session/session.ts";
@@ -89,7 +90,12 @@ function classifyLoadFailure(error: unknown): "corrupted" | "unsupported" | "una
   return "unavailable";
 }
 
-export function startKernel(platform: KernelPlatform, port: Port): void {
+export function startKernel(host: KernelPlatform, port: Port): void {
+  // Every keystore ceremony goes through one queue: the system shows a single prompt at a time.
+  const platform: KernelPlatform = {
+    ...host,
+    keystore: host.keystore === undefined ? undefined : serialKeystore(host.keystore),
+  };
   // The module composition is explicit and static: the nostr module owns its handler table, its
   // VaultHooks entry in ctx.modules and its status section; there is no registry — future modules
   // add a line here and a section in status.ts's composition.

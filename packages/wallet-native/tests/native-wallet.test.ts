@@ -78,6 +78,7 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
 function platform(store: ReturnType<typeof createMemoryStore>): KernelPlatform {
   return {
     random: (n) => crypto.getRandomValues(new Uint8Array(n)),
+    keystore: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
     setTimer: (ms, fn) => {

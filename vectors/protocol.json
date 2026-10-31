@@ -40,6 +40,20 @@
       }
     },
     {
+      "name": "request-vault.unlock-hardware",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 2,
+        "method": "vault.unlock",
+        "params": {
+          "factor": {
+            "kind": "hardware"
+          }
+        }
+      }
+    },
+    {
       "name": "request-vault.reset",
       "check": "request",
       "message": {
@@ -1188,6 +1202,59 @@
       }
     },
     {
+      "name": "event-status-hardware",
+      "check": "event",
+      "message": {
+        "v": 1,
+        "event": "status",
+        "status": {
+          "protocol": 1,
+          "vault": "unlocked",
+          "factors": [
+            {
+              "kind": "hardware",
+              "id": "11223344556677889900aabbccddeeff",
+              "createdAt": 1767225600000
+            }
+          ],
+          "wallets": [
+            {
+              "walletId": "0011223344556677",
+              "origin": "mnemonic",
+              "words": 12,
+              "backup": "mnemonic",
+              "createdAt": 1767225600000
+            }
+          ],
+          "nostr": {
+            "keys": [
+              {
+                "ref": {
+                  "kind": "standalone",
+                  "id": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917"
+                },
+                "publicKey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
+                "origin": "generated",
+                "backedUp": false,
+                "createdAt": 1767225600000
+              },
+              {
+                "ref": {
+                  "kind": "derived",
+                  "walletId": "0011223344556677",
+                  "groupIndex": 0
+                },
+                "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
+                "origin": "derived",
+                "createdAt": 1767225600000
+              }
+            ]
+          },
+          "backup": null
+        }
+      }
+    },
+    {
       "name": "event-locked-idle",
       "check": "event",
       "message": {
@@ -1320,6 +1387,23 @@
             }
           },
           "toString": 1
+        }
+      }
+    },
+    {
+      "name": "params-hardware-with-material",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 2,
+        "method": "vault.unlock",
+        "params": {
+          "factor": {
+            "kind": "hardware",
+            "password": {
+              "$bytes": "636f727265637420686f727365206261747465727920737461706c65"
+            }
+          }
         }
       }
     },

@@ -103,6 +103,7 @@ export async function createWebWallet(options: WalletOptions): Promise<Wallet> {
   };
 
   const wallet = await connectKernel({
+    factors: "software",
     spawn,
     passkey: options.passkey,
     ceremony,

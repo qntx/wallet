@@ -6,7 +6,9 @@ import type { Factor } from "@qntx/wallet/protocol";
 import type { FactorInfo, WalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
-import type { KernelPlatform } from "../platform.ts";
+import { assertFactorKindAvailable, requireKeystore } from "../platform.ts";
+import type { KernelPlatform, KeystorePrompt } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import { Secret, wipe } from "../secret/secret.ts";
 import { open, recordContext, seal } from "./envelope.ts";
 import {
@@ -20,7 +22,12 @@ import {
   wrapDek,
 } from "./factors.ts";
 import type { EntropyHeader } from "./headers.ts";
-import { encodeHeader, parsePasskeyFactorHeader, parsePasswordFactorHeader } from "./headers.ts";
+import {
+  encodeHeader,
+  parseHardwareFactorHeader,
+  parsePasskeyFactorHeader,
+  parsePasswordFactorHeader,
+} from "./headers.ts";
 import type { StoredFactor, StoredRecord, StoreOp, VaultImage, VaultMeta } from "./store.ts";
 import { VAULT_FORMAT } from "./store.ts";
 
@@ -46,22 +53,28 @@ function factorId(random: KernelPlatform["random"]): string {
 }
 
 /**
- * A new factor's derived KEK plus the public header material. The KEK is caller-owned (wipe it or
- * hand it to `Secret.take`); the password variant's raw `salt` must be wiped after encoding.
+ * A new factor's KEK plus the public header material. The KEK is caller-owned (wipe it or hand it
+ * to `Secret.take`); the password variant's raw `salt` must be wiped after encoding.
  */
 export type FactorKekMaterial =
   | { readonly kind: "password"; readonly kek: Uint8Array; readonly salt: Uint8Array }
-  | { readonly kind: "passkey"; readonly kek: Uint8Array; readonly credentialId: Uint8Array };
+  | { readonly kind: "passkey"; readonly kek: Uint8Array; readonly credentialId: Uint8Array }
+  | { readonly kind: "hardware"; readonly kek: Uint8Array; readonly sealedKek: Uint8Array };
+
+export type SoftwareFactor = Exclude<Factor, { readonly kind: "hardware" }>;
+type SoftwareKekMaterial = Exclude<FactorKekMaterial, { readonly kind: "hardware" }>;
+type HardwareKekMaterial = Extract<FactorKekMaterial, { readonly kind: "hardware" }>;
 
 /**
- * The single "derive KEK for a new factor" path, shared by `makeFactor` and mnemonic-draft pending
- * factors. The password policy applies only here: factor creation. `factor`'s secret bytes are
- * consumed (wiped) by the KDFs.
+ * The single "derive KEK for a new software factor" path, shared by `makeFactor` and mnemonic-draft
+ * pending factors. The password policy applies only here: factor creation. `factor`'s secret bytes
+ * are consumed (wiped) by the KDFs.
  */
 export async function newFactorKek(
   platform: KernelPlatform,
-  factor: Factor,
-): Promise<FactorKekMaterial> {
+  factor: SoftwareFactor,
+): Promise<SoftwareKekMaterial> {
+  assertFactorKindAvailable(platform, factor.kind);
   if (factor.kind === "password") {
     assertPasswordPolicy(factor.password);
     const salt = platform.random(16);
@@ -72,9 +85,31 @@ export async function newFactorKek(
   return { kind: "passkey", kek, credentialId: factor.credentialId };
 }
 
+/**
+ * A hardware factor's KEK: 32 random bytes sealed by the platform keystore under key alias `id`
+ * (the factor id). Only the sealed form is stored — in the public header, beside the X25519 key the
+ * DEK wraps to, so rotation never needs a prompt.
+ */
+export async function newHardwareKek(
+  platform: KernelPlatform,
+  id: string,
+): Promise<HardwareKekMaterial> {
+  assertFactorKindAvailable(platform, "hardware");
+  const keystore = requireKeystore(platform);
+  const kek = platform.random(32);
+  try {
+    const sealedKek = await keystore.seal(id, kek, corePromptFor(keystore, "create")());
+    return { kind: "hardware", kek, sealedKek };
+  } catch (error) {
+    wipe(kek);
+    throw error;
+  }
+}
+
 type FactorHeaderMaterial =
   | { readonly kind: "password"; readonly salt: Uint8Array }
-  | { readonly kind: "passkey"; readonly credentialId: Uint8Array };
+  | { readonly kind: "passkey"; readonly credentialId: Uint8Array }
+  | { readonly kind: "hardware"; readonly sealedKek: Uint8Array };
 
 /** Public header text for a new factor (raw bytes → base64url). `publicKey` is not consumed. */
 export function factorHeader(
@@ -91,6 +126,13 @@ export function factorHeader(
       createdAt,
     });
   }
+  if (material.kind === "hardware") {
+    return encodeHeader({
+      sealedKek: base64urlnopad.encode(material.sealedKek),
+      publicKey: pk,
+      createdAt,
+    });
+  }
   return encodeHeader({
     credentialId: base64urlnopad.encode(material.credentialId),
     publicKey: pk,
@@ -98,14 +140,16 @@ export function factorHeader(
   });
 }
 
-/** Builds a new factor record wrapping `dek`; see `newFactorKek` for the KEK/policy rules. */
-export async function makeFactor(
+/**
+ * The stored row for a factor whose KEK material exists: header with the KEK's public wrapping key,
+ * the DEK wrapped to it. Wipes the material's KEK and password salt.
+ */
+export function factorRow(
   platform: KernelPlatform,
-  factor: Factor,
+  material: FactorKekMaterial,
+  id: string,
   dek: Secret,
-): Promise<StoredFactor> {
-  const material = await newFactorKek(platform, factor);
-  const id = factorId(platform.random);
+): StoredFactor {
   try {
     const publicKey = factorPublicKey(material.kek);
     const header = factorHeader(material, publicKey, platform.now());
@@ -119,12 +163,34 @@ export async function makeFactor(
   }
 }
 
-/** KEK for an existing factor record; `factor`'s secret bytes are consumed. */
+/** Builds a new factor record wrapping `dek`. The id comes first: it is the hardware key alias. */
+export async function makeFactor(
+  platform: KernelPlatform,
+  factor: Factor,
+  dek: Secret,
+): Promise<StoredFactor> {
+  const id = factorId(platform.random);
+  const material =
+    factor.kind === "hardware"
+      ? await newHardwareKek(platform, id)
+      : await newFactorKek(platform, factor);
+  return factorRow(platform, material, id, dek);
+}
+
+/**
+ * KEK for an existing factor record; `factor`'s secret bytes are consumed. A hardware factor runs
+ * the keystore ceremony with the prompt the caller rendered.
+ */
 async function kekFor(
   platform: KernelPlatform,
   factor: Factor,
   stored: StoredFactor,
+  prompt: () => KeystorePrompt,
 ): Promise<Uint8Array> {
+  if (factor.kind === "hardware") {
+    const { sealedKek } = parseHardwareFactorHeader(stored.header);
+    return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), prompt());
+  }
   if (factor.kind === "password") {
     const { salt } = parsePasswordFactorHeader(stored.header);
     return passwordKek(factor.password, base64urlnopad.decode(salt), platform.pbkdf2);
@@ -152,7 +218,7 @@ export type OpenedRecord = {
  * `invalid-input` and never counted; an attempt rejected while backoff is armed is `rate-limited`
  * and never counted; a real miss commits `record-failure` through the given `commit` (atomic
  * against the shared store) and a success clears a nonzero counter with `reset-failures`. Passkey
- * unlock is never gated or counted.
+ * and hardware unlock are never gated or counted — the platform rate-limits its own prompt.
  */
 export async function unlock(
   platform: KernelPlatform,
@@ -165,8 +231,20 @@ export async function unlock(
     throw new KernelError("invalid-input", "vault is not initialized");
   }
 
+  assertFactorKindAvailable(platform, factor.kind);
   let dek: Secret | undefined;
-  if (factor.kind === "password") {
+  if (factor.kind === "hardware") {
+    const stored = image.factors.find((f) => f.kind === "hardware");
+    if (stored === undefined) {
+      throw new KernelError("factor-unavailable", "no hardware factor exists");
+    }
+    const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
+    try {
+      dek = unwrapDek(kek, stored);
+    } finally {
+      wipe(kek);
+    }
+  } else if (factor.kind === "password") {
     const passwords = image.factors.filter((stored) => stored.kind === "password");
     if (passwords.length === 0) {
       throw new KernelError("invalid-input", "no password factor exists");
@@ -179,7 +257,12 @@ export async function unlock(
     }
     for (const stored of passwords) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
-      const kek = await kekFor(platform, factor, stored);
+      const kek = await kekFor(
+        platform,
+        factor,
+        stored,
+        corePromptFor(platform.keystore, "unlock"),
+      );
       try {
         dek = unwrapDek(kek, stored);
         break;
@@ -207,7 +290,7 @@ export async function unlock(
       wipe(factor.prf);
       throw new KernelError("wrong-passkey", "no passkey factor matches the credential");
     }
-    const kek = await kekFor(platform, factor, stored);
+    const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
     try {
       dek = unwrapDek(kek, stored);
     } finally {
@@ -231,26 +314,30 @@ function credentialIdOf(stored: StoredFactor): string | undefined {
  * compare. A public-key miss — `wrong-password`/`wrong-passkey` — tries the next candidate; every
  * other failure (including corruption-marked integrity) propagates immediately. When no candidate
  * matched, the miss is reported by factor kind: `wrong-password` (or `invalid-input` when no
- * password factor exists) or `wrong-passkey`. The verify path never touches the rate limiter.
+ * password factor exists), `wrong-passkey`, or for hardware `factor-unavailable` (no hardware
+ * factor) / `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system
+ * verification text and runs only for hardware. The verify path never touches the rate limiter.
  */
 export async function verifyFactor(
   platform: KernelPlatform,
   image: VaultImage,
   factor: Factor,
   dek: Secret,
+  prompt: () => KeystorePrompt,
 ): Promise<void> {
+  assertFactorKindAvailable(platform, factor.kind);
   const candidates = image.factors.filter((stored) => {
     if (factor.kind !== stored.kind) {
       return false;
     }
     return (
-      factor.kind === "password" ||
+      factor.kind !== "passkey" ||
       credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId)
     );
   });
   for (const stored of candidates) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
-    const kek = await kekFor(platform, factor, stored);
+    const kek = await kekFor(platform, factor, stored, prompt);
     try {
       const opened = unwrapDek(kek, stored);
       try {
@@ -278,6 +365,11 @@ export async function verifyFactor(
       candidates.length > 0 ? "wrong-password" : "invalid-input",
       "password did not verify",
     );
+  }
+  if (factor.kind === "hardware") {
+    throw candidates.length > 0
+      ? new KernelError("integrity", "hardware factor does not open this vault", undefined, true)
+      : new KernelError("factor-unavailable", "no hardware factor exists");
   }
   throw new KernelError("wrong-passkey", "passkey did not verify");
 }
@@ -431,6 +523,13 @@ export function establishOps(
 
 /** The `FactorInfo` a stored factor reports: kind, id, creation time, passkey credentialId. */
 export function factorInfo(stored: StoredFactor): FactorInfo {
+  if (stored.kind === "hardware") {
+    return {
+      kind: "hardware",
+      id: stored.id,
+      createdAt: parseHardwareFactorHeader(stored.header).createdAt,
+    };
+  }
   if (stored.kind === "password") {
     return {
       kind: "password",

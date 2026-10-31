@@ -10,6 +10,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
 import { ChainError } from "@qntx/wallet-chains";
+import type { DisplayIntent } from "@qntx/wallet-chains";
 import {
   BITCOIN_NETWORKS,
   bitcoinNetwork,
@@ -33,6 +34,7 @@ import {
 import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 import type {
   ChainAccount,
+  ChainSignResult,
   ChainTemplate,
   CHAINS_METHODS,
   MethodName,
@@ -40,9 +42,12 @@ import type {
 
 import type { Handler, VaultHooks } from "../../commands/context.ts";
 import { KernelError } from "../../errors.ts";
+import { promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import { seedFromEntropy } from "../../seed/seed.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
+import { chainPrompt, MESSAGE_INTENT } from "./prompt.ts";
+import type { PromptIntent } from "./prompt.ts";
 
 const BTC_PURPOSE: Readonly<Record<string, number>> = {
   "btc.bip44": 44,
@@ -158,12 +163,12 @@ const deepEqual = (a: unknown, b: unknown): boolean => {
   return ka.length === kb.size && ka.every((k) => kb.has(k) && deepEqual(a[k], b[k]));
 };
 
-const mapChainError = (error: unknown): never => {
+function mapChainError(error: unknown): never {
   if (error instanceof ChainError) {
     throw new KernelError("invalid-input", "invalid sign request");
   }
   throw error;
-};
+}
 
 export function createChainsModule(): ChainsModule {
   const vault: VaultHooks = {
@@ -234,14 +239,10 @@ export function createChainsModule(): ChainsModule {
       if (record === undefined) {
         throw new KernelError("not-found", "no such wallet");
       }
-      const entropy = openRecord(dek, record);
-      let seed: Uint8Array;
-      try {
-        seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-      } finally {
-        wipe(entropy);
-      }
-      try {
+      const execute = (
+        seed: Uint8Array,
+        intentOnly: boolean,
+      ): ChainSignResult | { readonly prompt: PromptIntent } => {
         if (
           request.kind === "evm.transaction" ||
           request.kind === "evm.personal-message" ||
@@ -264,12 +265,15 @@ export function createChainsModule(): ChainsModule {
               if (!deepEqual(normalized, request)) {
                 throw new KernelError("invalid-input", "request is not normalized");
               }
+              let intent: DisplayIntent;
               try {
-                decodeEvm(request);
+                intent = decodeEvm(request);
               } catch (error) {
                 mapChainError(error);
               }
-              await verifyFactor(ctx.platform, ctx.image, verify, dek);
+              if (intentOnly) {
+                return { prompt: intent };
+              }
               if (request.kind === "evm.transaction") {
                 return {
                   kind: "evm.transaction",
@@ -465,12 +469,15 @@ export function createChainsModule(): ChainsModule {
                 if (!deepEqual(normalized, request)) {
                   throw new KernelError("invalid-input", "request is not normalized");
                 }
+                let intent: DisplayIntent;
                 try {
-                  decodeBitcoinPsbt(request, ownScripts);
+                  intent = decodeBitcoinPsbt(request, ownScripts);
                 } catch (error) {
                   mapChainError(error);
                 }
-                await verifyFactor(ctx.platform, ctx.image, verify, dek);
+                if (intentOnly) {
+                  return { prompt: intent };
+                }
                 return {
                   kind: "bitcoin.psbt",
                   signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32)),
@@ -516,7 +523,9 @@ export function createChainsModule(): ChainsModule {
               } catch (error) {
                 mapChainError(error);
               }
-              await verifyFactor(ctx.platform, ctx.image, verify, dek);
+              if (intentOnly) {
+                return { prompt: MESSAGE_INTENT };
+              }
               return {
                 kind: "bitcoin.message",
                 signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32)),
@@ -545,14 +554,17 @@ export function createChainsModule(): ChainsModule {
           if (!deepEqual(normalized, request)) {
             throw new KernelError("invalid-input", "request is not normalized");
           }
+          let intent: PromptIntent = MESSAGE_INTENT;
           if (request.kind === "solana.transaction") {
             try {
-              decodeSolana(request, signer);
+              intent = decodeSolana(request, signer);
             } catch (error) {
               mapChainError(error);
             }
           }
-          await verifyFactor(ctx.platform, ctx.image, verify, dek);
+          if (intentOnly) {
+            return { prompt: intent };
+          }
           return {
             kind: request.kind,
             signature: signSolanaMessage(request.message, priv),
@@ -561,9 +573,38 @@ export function createChainsModule(): ChainsModule {
           wipe(child.privateKey);
           wipe(root.privateKey);
         }
-      } finally {
-        wipe(seed);
+      };
+      // Two passes over the seed: `prepare` checks ownership, normalizes and decodes, returning
+      // only the intent; the seed and every key are wiped before the (possibly long) system
+      // verification prompt. `sign` re-derives and signs only after verification passed.
+      const withSeed = async <R>(run: (seed: Uint8Array) => R): Promise<R> => {
+        const entropy = openRecord(dek, record);
+        let seed: Uint8Array;
+        try {
+          seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
+        } finally {
+          wipe(entropy);
+        }
+        try {
+          return run(seed);
+        } finally {
+          wipe(seed);
+        }
+      };
+      const prepared = await withSeed((seed) => execute(seed, true));
+      if (!("prompt" in prepared)) {
+        throw new KernelError("integrity", "unreachable: prepare pass signed");
       }
+      await verifyFactor(ctx.platform, ctx.image, verify, dek, () =>
+        chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
+      );
+      // The session may have ended while the prompt was up.
+      ctx.session.require(session);
+      const signed = await withSeed((seed) => execute(seed, false));
+      if ("prompt" in signed) {
+        throw new KernelError("integrity", "unreachable: sign pass did not sign");
+      }
+      return signed;
     },
   };
 
