@@ -42,8 +42,8 @@ void setCurrentContext(LAContext* context) {
   g_context = context;
 }
 
-NSData* tagFor(const std::string& id) {
-  NSString* tag = [kTagPrefix stringByAppendingString:@(id.c_str())];
+NSData* tagFor(const std::string& factorId) {
+  NSString* tag = [kTagPrefix stringByAppendingString:@(factorId.c_str())];
   return [tag dataUsingEncoding:NSUTF8StringEncoding];
 }
 
@@ -93,11 +93,11 @@ bool deviceOwnerAuthenticationAvailable() {
   return [probe canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:nil];
 }
 
-KeystoreResult sealNow(const std::string& id, const SecretBytes& secret) {
+KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
   if (!deviceOwnerAuthenticationAvailable()) {
     return {KeystoreStatus::unavailable, {}};
   }
-  NSData* tag = tagFor(id);
+  NSData* tag = tagFor(factorId);
   deleteKey(tag);
   SecAccessControlCreateFlags flags = kSecAccessControlUserPresence;
 #if !TARGET_OS_SIMULATOR
@@ -156,22 +156,23 @@ KeystoreResult sealNow(const std::string& id, const SecretBytes& secret) {
 }
 
 KeystoreResult openNow(
-    const std::string& id,
+    const std::string& factorId,
     const std::vector<uint8_t>& sealed,
     const KeystorePrompt& prompt) {
   LAContext* context = [LAContext new];
   context.touchIDAuthenticationAllowableReuseDuration = 0;
   context.localizedReason = @(prompt.description.c_str());
-  SecKeyRef privateKey = nullptr;
+  CFTypeRef keyRef = nullptr;
   const OSStatus found = SecItemCopyMatching(
       (__bridge CFDictionaryRef) @{
         (id)kSecClass : (id)kSecClassKey,
         (id)kSecAttrKeyType : (id)kSecAttrKeyTypeECSECPrimeRandom,
-        (id)kSecAttrApplicationTag : tagFor(id),
+        (id)kSecAttrApplicationTag : tagFor(factorId),
         (id)kSecReturnRef : @YES,
         (id)kSecUseAuthenticationContext : context,
       },
-      reinterpret_cast<CFTypeRef*>(&privateKey));
+      &keyRef);
+  auto privateKey = static_cast<SecKeyRef>(const_cast<void*>(keyRef));
   if (found == errSecItemNotFound) {
     return {KeystoreStatus::invalidated, {}};
   }
@@ -206,25 +207,25 @@ KeystoreResult openNow(
 } // namespace
 
 void keystoreSeal(
-    const std::string& id,
+    const std::string& factorId,
     SecretBytes secret,
     KeystorePrompt,
     KeystoreDone done) {
   auto input = std::make_shared<SecretBytes>(std::move(secret));
   auto finish = std::make_shared<KeystoreDone>(std::move(done));
   dispatch_async(keystoreQueue(), ^{
-    (*finish)(sealNow(id, *input));
+    (*finish)(sealNow(factorId, *input));
   });
 }
 
 void keystoreOpen(
-    const std::string& id,
+    const std::string& factorId,
     std::vector<uint8_t> sealed,
     KeystorePrompt prompt,
     KeystoreDone done) {
   auto finish = std::make_shared<KeystoreDone>(std::move(done));
   dispatch_async(keystoreQueue(), ^{
-    (*finish)(openNow(id, sealed, prompt));
+    (*finish)(openNow(factorId, sealed, prompt));
   });
 }
 
