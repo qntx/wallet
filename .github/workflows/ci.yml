@@ -69,6 +69,6 @@ jobs:
       # blockstream/esplora bundles bitcoind + electrs + the REST API (mounted at /regtest/api).
       - run: |
           set -euo pipefail
-          ENGINE_E2E_BITCOIN=1 bunx vitest run tests/bitcoin-e2e.test.ts 2>&1 | tee /tmp/e2e.out
+          ENGINE_E2E_BITCOIN=1 bunx vitest run tests/bitcoin-e2e.test.ts --silent=false 2>&1 | tee /tmp/e2e.out
           ! grep -q "1 skipped" /tmp/e2e.out
         working-directory: packages/wallet-engine
