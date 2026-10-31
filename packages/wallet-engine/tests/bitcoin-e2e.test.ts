@@ -494,7 +494,8 @@ const legacyFlow = async (): Promise<void> => {
     rpc(`${NAME}-legacy`, "sendtoaddress", [addr44, "0.00050000"]);
     rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
     const es = esploraClient(base);
-    const mark = (s: string) => process.stderr.write(`\nLEGACYMARK ${s} @${Math.round(performance.now()/1000)}s\n`);
+    const mark = (s: string) =>
+      process.stderr.write(`\nLEGACYMARK ${s} @${Math.round(performance.now() / 1000)}s\n`);
     mark("fund+mine");
 
     await waitFor(
