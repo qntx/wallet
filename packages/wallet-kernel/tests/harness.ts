@@ -205,13 +205,13 @@ export function createHarness(opts?: {
           ? undefined
           : { ms: opts?.idleMs ?? 15 * 60_000, activity: opts?.activity ?? "presence" },
     },
+    keystore: undefined,
     backends: opts?.backends ?? {
       spark: async () => {
         await Promise.resolve();
         throw new Error("no spark backend in this harness");
       },
       nostr: nobleBackend,
-        keystore: undefined,
     },
   };
   startKernel(platform, port);

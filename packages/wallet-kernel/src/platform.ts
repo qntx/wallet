@@ -7,6 +7,8 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
  */
 import type { NostrBackend } from "./modules/nostr/backend.ts";
 import type { RecordStore } from "./vault/store.ts";
+import { KernelError } from "./errors.ts";
+import type { StoredFactor } from "./vault/store.ts";
 
 /** Returns `length` cryptographically random bytes. */
 export type Random = (length: number) => Uint8Array;
@@ -58,6 +60,12 @@ export type KernelPlatform = {
   readonly store: RecordStore;
   readonly policy: KernelPolicy;
   /**
+   * The device keystore — present only on hosts with secure hardware (RN). `undefined` on
+   * web/node. When present, the only vault factor kind is `hardware`; when absent, only
+   * `password`/`passkey` — enforced by the kernel at every factor entry.
+   */
+  readonly keystore: Keystore | undefined;
+  /**
    * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
    * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
    * nostr-only session never loads it. Each call must return a backend the kernel keeps until a
@@ -66,12 +74,6 @@ export type KernelPlatform = {
    */
   readonly backends: {
     readonly spark: () => Promise<SparkCrypto>;
-    /**
-     * The device keystore — present only on hosts with secure hardware (RN). `undefined` on
-     * web/node. When present, the only vault factor kind is `hardware`; when absent, only
-     * `password`/`passkey` — enforced by the kernel at every factor entry.
-     */
-    readonly keystore: Keystore | undefined;
     /**
      * The nostr signing/verification/ECDH backend (WD-054). Required: the host wires noble or
      * native explicitly so no path silently falls back to the JS implementation. `Keys`/
@@ -121,8 +123,6 @@ export const serialKeystore = (keystore: Keystore): Keystore => {
   };
 };
 
-import { KernelError } from "./errors.ts";
-
 /**
  * Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors; a host
  * without one (web/node) takes only `password`/`passkey`. Backup factors are exempt — the caller
@@ -130,9 +130,9 @@ import { KernelError } from "./errors.ts";
  */
 export const assertFactorKindAvailable = (
   platform: KernelPlatform,
-  kind: string,
+  kind: StoredFactor["kind"],
 ): void => {
-  const hasKeystore = platform.backends.keystore !== undefined;
+  const hasKeystore = platform.keystore !== undefined;
   if (hasKeystore !== (kind === "hardware")) {
     throw new KernelError(
       "factor-unavailable",

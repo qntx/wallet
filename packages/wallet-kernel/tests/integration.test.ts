@@ -2543,9 +2543,8 @@ describe("backend routing (WD-054)", () => {
       },
     });
     const h = createHarness({
-      backends: {
+    backends: {
         nostr: counting,
-        keystore: undefined,
         spark: async () => {
           await Promise.resolve();
           throw new Error("no spark");
