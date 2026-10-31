@@ -67,12 +67,78 @@ export type KernelPlatform = {
   readonly backends: {
     readonly spark: () => Promise<SparkCrypto>;
     /**
+     * The device keystore — present only on hosts with secure hardware (RN). `undefined` on
+     * web/node. When present, the only vault factor kind is `hardware`; when absent, only
+     * `password`/`passkey` — enforced by the kernel at every factor entry.
+     */
+    readonly keystore: Keystore | undefined;
+    /**
      * The nostr signing/verification/ECDH backend (WD-054). Required: the host wires noble or
      * native explicitly so no path silently falls back to the JS implementation. `Keys`/
      * `KeysSigner`/`createEventVerifier` get this object.
      */
     readonly nostr: NostrBackend;
   };
+};
+
+export type KeystorePrompt = {
+  readonly title: string;
+  readonly description: string;
+};
+
+/**
+ * The platform keystore contract (W5): a hardware-backed sealer that owns the vault factor's KEK.
+ * `seal` creates the key alias `id` and encrypts `secret` under it after a user-presence prompt;
+ * `open` decrypts after the same presence check; `authenticate` only proves the device owner is
+ * present (reset); `clear` deletes every vault key this app created. The host rejects with
+ * KernelError codes `cancelled` | `factor-invalidated` | `factor-unavailable` | `unavailable`.
+ */
+export type Keystore = {
+  readonly locale: string; // host-preferred BCP 47 language tag
+  readonly seal: (id: string, secret: Uint8Array, prompt: KeystorePrompt) => Promise<Uint8Array>;
+  readonly open: (id: string, sealed: Uint8Array, prompt: KeystorePrompt) => Promise<Uint8Array>;
+  readonly authenticate: (prompt: KeystorePrompt) => Promise<void>;
+  readonly clear: () => Promise<void>;
+};
+
+/**
+ * Serializes keystore ceremonies — seal/open/authenticate run strictly one at a time (the platform
+ * cannot show two presence prompts at once). A rejection does not wedge the queue.
+ */
+export const serialKeystore = (keystore: Keystore): Keystore => {
+  let tail: Promise<unknown> = Promise.resolve();
+  const queue = <T>(work: () => Promise<T>): Promise<T> => {
+    const next = tail.then(work);
+    tail = next.then(() => undefined, () => undefined);
+    return next;
+  };
+  return {
+    locale: keystore.locale,
+    seal: (id, secret, prompt) => queue(() => keystore.seal(id, secret, prompt)),
+    open: (id, sealed, prompt) => queue(() => keystore.open(id, sealed, prompt)),
+    authenticate: (prompt) => queue(() => keystore.authenticate(prompt)),
+    clear: () => queue(() => keystore.clear()),
+  };
+};
+
+import { KernelError } from "./errors.ts";
+
+/**
+ * Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors; a host
+ * without one (web/node) takes only `password`/`passkey`. Backup factors are exempt — the caller
+ * checks them separately.
+ */
+export const assertFactorKindAvailable = (
+  platform: KernelPlatform,
+  kind: string,
+): void => {
+  const hasKeystore = platform.backends.keystore !== undefined;
+  if (hasKeystore !== (kind === "hardware")) {
+    throw new KernelError(
+      "factor-unavailable",
+      `${kind} factors are not available on this platform`,
+    );
+  }
 };
 
 /**

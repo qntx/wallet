@@ -211,6 +211,7 @@ export function createHarness(opts?: {
         throw new Error("no spark backend in this harness");
       },
       nostr: nobleBackend,
+        keystore: undefined,
     },
   };
   startKernel(platform, port);

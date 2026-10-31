@@ -98,6 +98,7 @@ describe("vault meta vector", () => {
           throw new Error("no spark backend");
         },
         nostr: nobleBackend,
+        keystore: undefined,
       },
     };
     const factor: StoredFactor = {
