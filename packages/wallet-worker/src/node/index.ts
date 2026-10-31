@@ -78,6 +78,7 @@ export async function createNodeWallet(options: NodeWalletOptions): Promise<Wall
   };
 
   return connectKernel({
+    factors: "software",
     spawn,
     passkey: options.passkey,
     ceremony: options.authenticator,

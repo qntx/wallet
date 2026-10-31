@@ -10,7 +10,11 @@ import { KernelError } from "../errors.ts";
 import type { Pbkdf2, Random } from "../platform.ts";
 import { Secret, decodeUtf8Secret, wipe } from "../secret/secret.ts";
 import { aadOf, factorContext, open, seal } from "./envelope.ts";
-import { parsePasskeyFactorHeader, parsePasswordFactorHeader } from "./headers.ts";
+import {
+  parseHardwareFactorHeader,
+  parsePasskeyFactorHeader,
+  parsePasswordFactorHeader,
+} from "./headers.ts";
 import type { StoredFactor } from "./store.ts";
 
 const PASSWORD_ITERATIONS = 600000;
@@ -110,7 +114,9 @@ export function factorHeaderPublicKey(stored: StoredFactor): Uint8Array {
   const header =
     stored.kind === "password"
       ? parsePasswordFactorHeader(stored.header)
-      : parsePasskeyFactorHeader(stored.header);
+      : stored.kind === "hardware"
+        ? parseHardwareFactorHeader(stored.header)
+        : parsePasskeyFactorHeader(stored.header);
   return base64urlnopad.decode(header.publicKey);
 }
 
@@ -200,9 +206,13 @@ export function unwrapDek(kek: Uint8Array, stored: StoredFactor): Secret {
   try {
     const factorPk = x25519.getPublicKey(factorSk);
     if (!equalBytes(factorPk, factorHeaderPublicKey(stored))) {
+      // A hardware public-key miss is corruption: the keystore handed back a KEK that does
+      // not match its own header — there is no "wrong" hardware attempt.
       throw stored.kind === "password"
         ? new KernelError("wrong-password", "password did not open the vault")
-        : new KernelError("wrong-passkey", "passkey does not match the factor");
+        : stored.kind === "hardware"
+          ? corruptError("hardware factor returned a key that does not match its header")
+          : new KernelError("wrong-passkey", "passkey does not match the factor");
     }
     const { sealed } = stored;
     if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) {

@@ -10,6 +10,7 @@ import {
   parseBackupKeyHeader,
   parseDataKeyHeader,
   parseEntropyHeader,
+  parseHardwareFactorHeader,
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
 } from "../src/vault/headers.ts";
@@ -66,6 +67,12 @@ describe("record and factor header vectors", () => {
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeHeader(parsed)).toBe(vector.text);
   });
+
+  it.each(byKind("factor-hardware"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseHardwareFactorHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeHeader(parsed)).toBe(vector.text);
+  });
 });
 
 const metaVector = vectors.find((v) => v.kind === "meta");
@@ -92,6 +99,7 @@ describe("vault meta vector", () => {
       pbkdf2: subtlePbkdf2,
       store: createMemoryStore(),
       policy: { maxSessionMs: 0, maxScryptLogN: 20, idle: { ms: 0, activity: "presence" } },
+      keystore: undefined,
       backends: {
         spark: async () => {
           await Promise.resolve();

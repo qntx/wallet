@@ -30,6 +30,7 @@ import type { WalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
 import type { KernelPlatform } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
 import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
@@ -343,7 +344,13 @@ export async function enableBackup(
   requestSession: string | undefined,
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "backup"),
+  );
   const bek = ctx.platform.random(32);
   if (bek.length !== 32) {
     throw new KernelError("integrity", "random source returned a wrong-length BEK");

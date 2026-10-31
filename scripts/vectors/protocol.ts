@@ -65,6 +65,8 @@ const walletInfo = {
   createdAt: CREATED_AT,
 };
 const passwordFactorInfo = { kind: "password", id: FACTOR_ID, createdAt: CREATED_AT };
+const hardwareFactor = { kind: "hardware" };
+const hardwareFactorInfo = { kind: "hardware", id: FACTOR_ID, createdAt: CREATED_AT };
 const standaloneKey = {
   ref: { kind: "standalone", id: PUBLIC_KEY },
   publicKey: PUBLIC_KEY,
@@ -111,6 +113,10 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "vault.unlock",
     message: { v: 1, id: 2, method: "vault.unlock", params: { factor: passwordFactor } },
+  },
+  {
+    name: "vault.unlock-hardware",
+    message: { v: 1, id: 2, method: "vault.unlock", params: { factor: hardwareFactor } },
   },
   {
     name: "vault.reset",
@@ -657,6 +663,15 @@ const accept = [
     message: { v: 1, event: "status", status: statusUnlocked },
   },
   {
+    name: "event-status-hardware",
+    check: "event",
+    message: {
+      v: 1,
+      event: "status",
+      status: { ...statusUnlocked, factors: [hardwareFactorInfo], backup: null },
+    },
+  },
+  {
     name: "event-locked-idle",
     check: "event",
     message: { v: 1, event: "locked", reason: "idle" },
@@ -731,6 +746,16 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
       id: 2,
       method: "vault.unlock",
       params: JSON.parse(`{"factor":${JSON.stringify(passwordFactor)},"toString":1}`) as unknown,
+    },
+  },
+  {
+    name: "params-hardware-with-material",
+    check: "request",
+    message: {
+      v: 1,
+      id: 2,
+      method: "vault.unlock",
+      params: { factor: { ...hardwareFactor, password: passwordFactor.password } },
     },
   },
   {

@@ -40,7 +40,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
   return undefined;
 }
 
-const FACTOR_KINDS = new Set(["password", "passkey"]);
+const FACTOR_KINDS = new Set(["hardware", "password", "passkey"]);
 
 /**
  * Snapshot contents for the `status` payload — the record-ownership composition point, and the

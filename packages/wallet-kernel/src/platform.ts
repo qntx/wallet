@@ -1,6 +1,7 @@
 import type { SparkCrypto } from "@qntx/spark/crypto";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { KernelError } from "./errors.ts";
 /**
  * Platform capabilities injected by the host packages. The kernel holds no ambient singletons and
  * imports no platform APIs; every capability arrives through these types.
@@ -58,6 +59,12 @@ export type KernelPlatform = {
   readonly store: RecordStore;
   readonly policy: KernelPolicy;
   /**
+   * The device keystore — present only on hosts with secure hardware (RN). `undefined` on web/node.
+   * When present, the only vault factor kind is `hardware`; when absent, only `password`/`passkey`
+   * — enforced by the kernel at every factor entry.
+   */
+  readonly keystore: Keystore | undefined;
+  /**
    * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
    * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
    * nostr-only session never loads it. Each call must return a backend the kernel keeps until a
@@ -74,6 +81,77 @@ export type KernelPlatform = {
     readonly nostr: NostrBackend;
   };
 };
+
+export type KeystorePrompt = {
+  readonly title: string;
+  readonly description: string;
+};
+
+/**
+ * The platform keystore contract (W5): a hardware-backed sealer that owns the vault factor's KEK.
+ * `seal` creates the key alias `id` and encrypts `secret` under it after a user-presence prompt;
+ * `open` decrypts after the same presence check; `authenticate` only proves the device owner is
+ * present (reset); `clear` deletes every vault key this app created. The host rejects with
+ * KernelError codes `cancelled` | `factor-invalidated` | `factor-unavailable` | `unavailable`.
+ */
+export type Keystore = {
+  readonly locale: string; // host-preferred BCP 47 language tag
+  readonly seal: (id: string, secret: Uint8Array, prompt: KeystorePrompt) => Promise<Uint8Array>;
+  readonly open: (id: string, sealed: Uint8Array, prompt: KeystorePrompt) => Promise<Uint8Array>;
+  readonly authenticate: (prompt: KeystorePrompt) => Promise<void>;
+  readonly clear: () => Promise<void>;
+};
+
+/**
+ * Serializes keystore ceremonies — seal/open/authenticate run strictly one at a time (the platform
+ * cannot show two presence prompts at once). A rejection does not wedge the queue.
+ */
+export function serialKeystore(keystore: Keystore): Keystore {
+  let tail: Promise<void> = Promise.resolve();
+  const queue = async <T>(work: () => Promise<T>): Promise<T> => {
+    const previous = tail;
+    let release: (() => void) | undefined;
+    tail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    try {
+      await previous;
+      return await work();
+    } finally {
+      release?.();
+    }
+  };
+  return {
+    locale: keystore.locale,
+    seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
+    open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
+    authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
+    clear: async () => queue(async () => keystore.clear()),
+  };
+}
+
+/**
+ * Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
+ * password there would let a compromised main runtime satisfy per-operation verification without
+ * the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
+ * factors are exempt.
+ */
+export function assertFactorKindAvailable(
+  platform: KernelPlatform,
+  kind: "hardware" | "password" | "passkey",
+): void {
+  if ((platform.keystore !== undefined) !== (kind === "hardware")) {
+    throw new KernelError("factor-unavailable", "this factor kind is not available here");
+  }
+}
+
+/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
+export function requireKeystore(platform: KernelPlatform): Keystore {
+  if (platform.keystore === undefined) {
+    throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
+  }
+  return platform.keystore;
+}
 
 /**
  * One direction of the host↔kernel channel. `post` may move the listed ArrayBuffers (transferable

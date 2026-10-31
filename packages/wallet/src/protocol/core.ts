@@ -38,11 +38,17 @@ export const credentialId: Validator<string> = str(1364, /^[A-Za-z0-9_-]+$/);
 export const safeTime: Validator<number> = int(0, Number.MAX_SAFE_INTEGER);
 export const groupIndex: Validator<number> = int(0, 0x7fffffff);
 
+/**
+ * Vault factor material on the wire. `hardware` carries nothing: the kernel runs the platform
+ * keystore ceremony itself, so the main runtime never touches the KEK.
+ */
 export type Factor =
+  | { readonly kind: "hardware" }
   | { readonly kind: "password"; readonly password: Uint8Array }
   | { readonly kind: "passkey"; readonly credentialId: Uint8Array; readonly prf: Uint8Array };
 
 export const factor: Validator<Factor> = union(
+  obj({ kind: literal("hardware") }),
   obj({ kind: literal("password"), password: bytes(1, 1024) }),
   obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prf: bytes(32) }),
 );
@@ -65,7 +71,7 @@ export const backupFactor: Validator<BackupFactor> = union(
 );
 
 export const factorInfo: Validator<FactorInfo> = union(
-  obj({ kind: literal("hardware") }),
+  obj({ kind: literal("hardware"), id: sessionId, createdAt: safeTime }),
   obj({
     kind: literal("passkey"),
     id: sessionId,

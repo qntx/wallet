@@ -9,7 +9,7 @@ export type LockReason =
   | "invalidated";
 
 export type FactorInfo =
-  | { readonly kind: "hardware" }
+  | { readonly kind: "hardware"; readonly id: string; readonly createdAt: number }
   | {
       readonly kind: "passkey";
       readonly id: string;
@@ -119,8 +119,12 @@ export class WalletError extends Error {
   }
 }
 
-/** A factor the user proves again for a guarded operation (Web/Node). */
+/**
+ * A factor the user proves again for a guarded operation. `hardware` is the React Native factor:
+ * the kernel shows the system verification prompt with text it renders itself.
+ */
 export type UnlockFactor =
+  | { readonly kind: "hardware" }
   | { readonly kind: "passkey" }
   | { readonly kind: "password"; readonly password: string };
 
