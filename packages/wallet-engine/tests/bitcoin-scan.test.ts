@@ -3,7 +3,8 @@ import { NETWORK, p2wpkh } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import { scripthash, scanChain } from "../src/chains/bitcoin-scan.ts";
-import type { Esplora } from "../src/chains/bitcoin.ts";
+import { esplora as esploraClient, EsploraError } from "../src/chains/bitcoin.ts";
+import type { Esplora, EsploraFetch, EsploraResponse } from "../src/chains/bitcoin.ts";
 
 const XPUB = HDKey.fromMasterSeed(new Uint8Array(64).fill(1));
 const ACCOUNT = XPUB.derive("m/84'/0'/0'");
@@ -68,5 +69,50 @@ describe("gap-20 scanning", () => {
     );
     expect(addrs).toHaveLength(40);
     expect(addrs[19]!.used).toBe(true);
+  });
+});
+
+const noSleep = async (): Promise<void> => Promise.resolve();
+
+const resp = (status: number): EsploraResponse => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: { get: () => undefined },
+  json: async () => Promise.resolve({}),
+  text: async () => Promise.resolve(""),
+});
+
+const hang: EsploraFetch = async (_url, init) => {
+  const sig = init?.signal;
+  if (sig === undefined) {
+    return new Promise<EsploraResponse>(() => {});
+  }
+  return new Promise<EsploraResponse>((_resolve, reject) => {
+    sig.addEventListener("abort", () => {
+      reject(new DOMException("aborted", "AbortError"));
+    });
+  });
+};
+
+describe("esplora client timeout", () => {
+  it("rejects a stalled request with a transient EsploraError", async () => {
+    const es = esploraClient(["http://electrs.test"], hang, noSleep, 20);
+    await expect(es.get("/blocks/tip/height")).rejects.toThrow(EsploraError);
+    await expect(es.get("/blocks/tip/height")).rejects.toMatchObject({ transient: true });
+  });
+
+  it("maps a 5xx to transient and a 4xx to permanent", async () => {
+    const es500 = esploraClient(
+      ["http://electrs.test"],
+      async () => Promise.resolve(resp(500)),
+      noSleep,
+    );
+    await expect(es500.get("/x")).rejects.toMatchObject({ transient: true });
+    const es404 = esploraClient(
+      ["http://electrs.test"],
+      async () => Promise.resolve(resp(404)),
+      noSleep,
+    );
+    await expect(es404.get("/x")).rejects.toMatchObject({ transient: false });
   });
 });

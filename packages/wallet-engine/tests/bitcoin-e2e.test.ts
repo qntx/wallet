@@ -22,7 +22,7 @@ import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraResponse } from "../src/chains/bitcoin.ts";
-import { esplora, BitcoinChainAdapter, feeTiers } from "../src/chains/bitcoin.ts";
+import { esplora, BitcoinChainAdapter, EsploraError, feeTiers } from "../src/chains/bitcoin.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -518,7 +518,10 @@ const legacyFlow = async (): Promise<void> => {
             s49.some((a) => a.address === addr49 && a.used) &&
             s44.some((a) => a.address === addr44 && a.used)
           );
-        } catch {
+        } catch (error) {
+          if (!(error instanceof EsploraError && error.transient)) {
+            throw error;
+          }
           return false;
         }
       },
@@ -597,7 +600,10 @@ const legacyFlow = async (): Promise<void> => {
           try {
             await Promise.all(timers.map((fn) => fn()));
             return txCtl.getState().txs[tx.id]?.state === "confirmed";
-          } catch {
+          } catch (error) {
+            if (!(error instanceof EsploraError && error.transient)) {
+              throw error;
+            }
             return false;
           }
         },
