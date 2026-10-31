@@ -36,8 +36,54 @@ const HD = HDKey.fromMasterSeed(SEED, bitcoinNetwork(NETWORK).bip32);
 const ACCT = HD.derive("m/84'/1'/0'");
 const ACCT86 = HD.derive("m/86'/1'/0'");
 
+const ESPLORA_IMAGE =
+  "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541";
+
 const docker = (args: string[]): string => execFileSync("docker", args).toString().trim();
-const logs = () => docker(["logs", NAME, "--tail", "60"]);
+
+/** The container's last log lines (electrs and bitcoind write to both streams). */
+const logsOf = (name: string): string => {
+  const out = spawnSync("docker", ["logs", name, "--tail", "80"], { encoding: "utf8" });
+  return `${out.stdout}${out.stderr}`;
+};
+
+/**
+ * Starts an esplora container on a Docker-assigned loopback port and returns its API base. A failed
+ * `docker run` throws instead of leaving the flow to poll a port nothing listens on.
+ */
+const startEsplora = (name: string): string => {
+  const run = spawnSync(
+    "docker",
+    [
+      "run",
+      "-d",
+      "--name",
+      name,
+      "-p",
+      "127.0.0.1::80",
+      ESPLORA_IMAGE,
+      "bash",
+      "-c",
+      "/srv/explorer/run.sh bitcoin-regtest explorer",
+    ],
+    { encoding: "utf8" },
+  );
+  if (run.status !== 0) {
+    throw new Error(`docker run ${name} failed: ${run.stderr}`);
+  }
+  const mapped = docker(["port", name, "80/tcp"]).split("\n")[0] ?? "";
+  return `http://${mapped}/regtest/api`;
+};
+
+/** Runs one flow step and logs its duration, so a CI timeout shows where the time went. */
+const step = async <T>(label: string, run: () => Promise<T>): Promise<T> => {
+  const started = Date.now();
+  try {
+    return await run();
+  } finally {
+    console.info(`[bitcoin-e2e] ${label}: ${Date.now() - started} ms`);
+  }
+};
 
 const sleep = async (ms: number) =>
   new Promise<void>((resolve) => {
@@ -95,7 +141,7 @@ const waitFor = async (
 
 const esploraUp = (base: string) => async (): Promise<boolean> => {
   try {
-    const r = await fetch(`${base}/blocks/tip/height`);
+    const r = await fetch(`${base}/blocks/tip/height`, { signal: AbortSignal.timeout(5000) });
     return r.ok;
   } catch {
     return false;
@@ -103,7 +149,7 @@ const esploraUp = (base: string) => async (): Promise<boolean> => {
 };
 
 const tipSynced = (base: string, tip: number) => async (): Promise<boolean> => {
-  const r = await fetch(`${base}/blocks/tip/height`);
+  const r = await fetch(`${base}/blocks/tip/height`, { signal: AbortSignal.timeout(5000) });
   const text = await r.text();
   return r.ok && Number(text) >= tip;
 };
@@ -138,26 +184,13 @@ const scriptOf = (u: { address: string }): Uint8Array =>
   scriptPubKey(u.address, bitcoinNetwork(NETWORK).params);
 
 const regtestFlow = async () => {
-  const port = 8094 + (Date.now() % 1000);
-  spawnSync("docker", [
-    "run",
-    "-d",
-    "--name",
-    NAME,
-    "-p",
-    `${port}:80`,
-    "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
-    "bash",
-    "-c",
-    "/srv/explorer/run.sh bitcoin-regtest explorer",
-  ]);
-  const base = `http://127.0.0.1:${port}/regtest/api`;
+  const base = startEsplora(NAME);
   const es = esploraClient(base);
   const run = (method: string, params: ReadonlyArray<unknown> = []): unknown =>
     rpc(NAME, method, params);
   try {
     await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-      throw new Error(`esplora never came up\n${logs()}`);
+      throw new Error(`esplora never came up\n${logsOf(NAME)}`);
     });
 
     const wpkhRecv = addrOf("wpkh", ACCT, 0, 0);
@@ -320,24 +353,11 @@ const ctlRig = async (
 };
 
 const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
-  const port = 8194 + (Date.now() % 1000);
-  spawnSync("docker", [
-    "run",
-    "-d",
-    "--name",
-    `${NAME}-rbf`,
-    "-p",
-    `${port}:80`,
-    "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
-    "bash",
-    "-c",
-    "/srv/explorer/run.sh bitcoin-regtest explorer",
-  ]);
-  const base = `http://127.0.0.1:${port}/regtest/api`;
+  const base = startEsplora(`${NAME}-rbf`);
   const timers: Array<() => unknown> = [];
   try {
     await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-      throw new Error(`esplora never came up\n${logs()}`);
+      throw new Error(`esplora never came up\n${logsOf(`${NAME}-rbf`)}`);
     });
     try {
       rpc(`${NAME}-rbf`, "createwallet", ["e2e-rbf"]);
@@ -448,26 +468,17 @@ describe.runIf(RUN)("bitcoin e2e: rbf/cpfp through engine.transactions", () => {
   });
 });
 
+const LEGACY = `${NAME}-legacy`;
+
 const legacyFlow = async (): Promise<void> => {
-  const port = 8294 + (Date.now() % 1000);
-  spawnSync("docker", [
-    "run",
-    "-d",
-    "--name",
-    `${NAME}-legacy`,
-    "-p",
-    `${port}:80`,
-    "blockstream/esplora@sha256:ef092138f7fcd5f3988441adf056632d64a7b95908896c471355c750a18f4541",
-    "bash",
-    "-c",
-    "/srv/explorer/run.sh bitcoin-regtest explorer",
-  ]);
-  const base = `http://127.0.0.1:${port}/regtest/api`;
+  const base = startEsplora(LEGACY);
   const timers: Array<() => unknown> = [];
   try {
-    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-      throw new Error(`esplora never came up\n${logs()}`);
-    });
+    await step("esplora up", async () =>
+      waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+        throw new Error(`esplora never came up\n${logsOf(LEGACY)}`);
+      }),
+    );
     try {
       rpc(`${NAME}-legacy`, "createwallet", ["e2e-legacy"]);
     } catch {
@@ -495,41 +506,43 @@ const legacyFlow = async (): Promise<void> => {
     rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
     const es = esploraClient(base);
 
-    await waitFor(
-      async () => {
-        try {
-          const s49 = await scanChain(
-            es,
-            xpub49,
-            "btc.bip49",
-            NETWORK,
-            bitcoinNetwork(NETWORK).params,
-            0,
-          );
-          const s44 = await scanChain(
-            es,
-            xpub44,
-            "btc.bip44",
-            NETWORK,
-            bitcoinNetwork(NETWORK).params,
-            0,
-          );
-          return (
-            s49.some((a) => a.address === addr49 && a.used) &&
-            s44.some((a) => a.address === addr44 && a.used)
-          );
-        } catch (error) {
-          if (!(error instanceof EsploraError && error.transient)) {
-            throw error;
+    await step("legacy addresses indexed", async () =>
+      waitFor(
+        async () => {
+          try {
+            const s49 = await scanChain(
+              es,
+              xpub49,
+              "btc.bip49",
+              NETWORK,
+              bitcoinNetwork(NETWORK).params,
+              0,
+            );
+            const s44 = await scanChain(
+              es,
+              xpub44,
+              "btc.bip44",
+              NETWORK,
+              bitcoinNetwork(NETWORK).params,
+              0,
+            );
+            return (
+              s49.some((a) => a.address === addr49 && a.used) &&
+              s44.some((a) => a.address === addr44 && a.used)
+            );
+          } catch (error) {
+            if (!(error instanceof EsploraError && error.transient)) {
+              throw error;
+            }
+            return false;
           }
-          return false;
-        }
-      },
-      3000,
-      Date.now() + 120_000,
-      () => {
-        throw new Error("funded legacy addresses never indexed");
-      },
+        },
+        3000,
+        Date.now() + 120_000,
+        () => {
+          throw new Error("funded legacy addresses never indexed");
+        },
+      ),
     );
     // group 0's discovery marks both templates used under `bitcoin`.
     const ctl = new AccountTreeController({
@@ -552,7 +565,7 @@ const legacyFlow = async (): Promise<void> => {
       now: () => 0,
     });
     await ctl.init();
-    const found: number[] = await ctl.discoverGroups(walletId);
+    const found: number[] = await step("discover groups", async () => ctl.discoverGroups(walletId));
     expect(found).toContain(0);
     const g0 = ctl.getState().groups[walletId]?.find((g) => g.index === 0);
     expect(g0?.used?.["bitcoin"]).toBe(true);
@@ -584,34 +597,38 @@ const legacyFlow = async (): Promise<void> => {
         template === "btc.bip49" ? 1 : 2,
       );
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential per template
-      const tx = await txCtl.send({
-        account: { kind: "hd", walletId, groupIndex: 0, template },
-        network: NETWORK,
-        to: external,
-        amount: 10_000n,
-        fee: "slow",
-        verify: BVERIFY,
-      });
+      const tx = await step(`${template} send`, async () =>
+        txCtl.send({
+          account: { kind: "hd", walletId, groupIndex: 0, template },
+          network: NETWORK,
+          to: external,
+          amount: 10_000n,
+          fee: "slow",
+          verify: BVERIFY,
+        }),
+      );
       expect(tx.state).toBe("submitted");
       rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential confirm wait per template
-      await waitFor(
-        async () => {
-          try {
-            await Promise.all(timers.map((fn) => fn()));
-            return txCtl.getState().txs[tx.id]?.state === "confirmed";
-          } catch (error) {
-            if (!(error instanceof EsploraError && error.transient)) {
-              throw error;
+      await step(`${template} confirmed`, async () =>
+        waitFor(
+          async () => {
+            try {
+              await Promise.all(timers.map((fn) => fn()));
+              return txCtl.getState().txs[tx.id]?.state === "confirmed";
+            } catch (error) {
+              if (!(error instanceof EsploraError && error.transient)) {
+                throw error;
+              }
+              return false;
             }
-            return false;
-          }
-        },
-        3000,
-        Date.now() + 120_000,
-        () => {
-          throw new Error(`${template} send never confirmed`);
-        },
+          },
+          3000,
+          Date.now() + 120_000,
+          () => {
+            throw new Error(`${template} send never confirmed`);
+          },
+        ),
       );
     }
     // The bip84 change chain received the change outputs.
@@ -625,7 +642,7 @@ const legacyFlow = async (): Promise<void> => {
     );
     expect(changeChain.some((a) => a.used)).toBe(true);
   } finally {
-    spawnSync("docker", ["rm", "-f", `${NAME}-legacy`]);
+    spawnSync("docker", ["rm", "-f", LEGACY]);
   }
 };
 
@@ -634,7 +651,15 @@ describe.runIf(RUN)("bitcoin e2e: bip49/bip44 spend-only templates", () => {
     "discovers funded bip49/bip44 addresses and spends from them",
     { timeout: 240_000 },
     async () => {
-      await legacyFlow();
+      // A timeout abandons the flow without unwinding it: dump the container first.
+      const watchdog = setTimeout(() => {
+        console.error(`[bitcoin-e2e] near timeout; ${LEGACY} logs:\n${logsOf(LEGACY)}`);
+      }, 230_000);
+      try {
+        await legacyFlow();
+      } finally {
+        clearTimeout(watchdog);
+      }
       expect(true).toBe(true);
     },
   );
