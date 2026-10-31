@@ -31,7 +31,12 @@ import {
 } from "@solana/kit";
 import type { Instruction } from "@solana/kit";
 
+import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
+
 import type { SolanaRpc } from "../networks/controller.ts";
+
+/** Token-2022 program id — the mint's owner for extension mints. */
+export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
 const MAX_MESSAGE_BYTES = 1232;
 const CU_SIMULATE_LIMIT = 1_400_000;
@@ -44,6 +49,8 @@ export type SolanaIntent =
       readonly to: string;
       readonly amount: bigint;
       readonly decimals: number;
+      /** Token-2022 mints carry the TokenzQd owner — defaults to the classic SPL program. */
+      readonly tokenProgram?: string;
     };
 
 export type SolanaFeeTier = "slow" | "normal" | "fast";
@@ -102,15 +109,17 @@ export class SolanaChainAdapter {
         }),
       ];
     }
+    const tokenProgram =
+      intent.tokenProgram === undefined ? TOKEN_PROGRAM_ADDRESS : address(intent.tokenProgram);
     const [sourceAta] = await findAssociatedTokenPda({
       mint: address(intent.mint),
       owner: address(from),
-      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      tokenProgram,
     });
     const [destAta] = await findAssociatedTokenPda({
       mint: address(intent.mint),
       owner: address(intent.to),
-      tokenProgram: TOKEN_PROGRAM_ADDRESS,
+      tokenProgram,
     });
     const ixs: Instruction[] = [];
     const destInfo = await this.rpc(rpc, "getAccountInfo", [
@@ -124,19 +133,22 @@ export class SolanaChainAdapter {
           mint: address(intent.mint),
           owner: address(intent.to),
           payer: createNoopSigner(address(from)),
-          tokenProgram: TOKEN_PROGRAM_ADDRESS,
+          tokenProgram,
         }),
       );
     }
     ixs.push(
-      getTransferCheckedInstruction({
-        source: sourceAta,
-        mint: address(intent.mint),
-        destination: destAta,
-        authority: address(from),
-        amount: intent.amount,
-        decimals: intent.decimals,
-      }),
+      getTransferCheckedInstruction(
+        {
+          source: sourceAta,
+          mint: address(intent.mint),
+          destination: destAta,
+          authority: address(from),
+          amount: intent.amount,
+          decimals: intent.decimals,
+        },
+        { programAddress: tokenProgram },
+      ),
     );
     return ixs;
   }

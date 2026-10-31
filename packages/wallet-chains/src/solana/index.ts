@@ -10,6 +10,8 @@ export {
   solanaAddressFromPublicKey,
 } from "./ids.ts";
 export { decodeSolana, verifiabilitySolana } from "./decode.ts";
+export { EXT, parseMintExtensions, netAfterTransferFee } from "./token2022.ts";
+export type { MintExtensionSummary } from "./token2022.ts";
 export { parseCompiledMessage } from "./message.ts";
 export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";

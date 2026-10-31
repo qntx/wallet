@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { AssetsController, MULTICALL3_ABI } from "../src/assets/controller.ts";
 import { ERC20_ABI, EvmChainAdapter } from "../src/chains/evm.ts";
+import type { SolanaRpc } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 
 const client = (handlers: Record<string, unknown>): PublicClient =>
@@ -163,5 +164,77 @@ describe("AssetsController", () => {
     fresh.setVisible(false);
     fresh.lock();
     expect(fresh.getState().balances).toStrictEqual({});
+  });
+});
+
+const solRpc = (handlers: Record<string, unknown>): SolanaRpc => ({
+  call: async (method, params) => {
+    const v = handlers[method];
+    return method in handlers
+      ? Promise.resolve(typeof v === "function" ? (v as (p?: unknown[]) => unknown)(params) : v)
+      : Promise.reject(new Error(`unmocked ${method}`));
+  },
+});
+
+const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const SOL_OWNER = "Owner1111111111111111111111111111111111111";
+const T22_MINT = "Mint2022zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+// A token account owned by the Token-2022 program (TokenzQd...) holding 7 raw units.
+const T22_ACCOUNT = {
+  pubkey: "Ata2022zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
+  account: {
+    owner: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    data: {
+      parsed: {
+        info: {
+          mint: T22_MINT,
+          owner: SOL_OWNER,
+          tokenAmount: { amount: "7", decimals: 6 },
+        },
+        type: "account",
+      },
+      program: "spl-token-2022",
+    },
+  },
+};
+
+const solNetInfo = (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm" });
+
+const balancesOf = (ctl: AssetsController, k: string) => {
+  const entry = ctl.getState().balances[k];
+  if (entry === undefined) {
+    throw new Error(`no balance entry for ${k}`);
+  }
+  return entry;
+};
+
+describe("AssetsController solana", () => {
+  it("reports a Token-2022 token account in balances (mint-filtered query covers it)", async () => {
+    const r = solRpc({
+      getBalance: { value: 5_000_000 },
+      getAccountInfo: {
+        value: {
+          data: { parsed: { info: { decimals: 6 } }, program: "spl-token-2022" },
+        },
+      },
+      getTokenAccountsByOwner: () => ({ value: [T22_ACCOUNT] }),
+    });
+    const ctl = new AssetsController({
+      networks: {
+        info: solNetInfo,
+        solanaRpc: () => r,
+      } as never,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      setTimer: () => () => {},
+      logger,
+    });
+    await ctl.init();
+    await ctl.addToken(SOL_NET, T22_MINT);
+    await ctl.refresh(SOL_OWNER, SOL_NET);
+    const entry = balancesOf(ctl, `${SOL_NET}:${SOL_OWNER}`);
+    expect(entry.native).toBe("5000000");
+    const tok = entry.tokens.find((t) => t.address === T22_MINT);
+    expect(tok?.balance).toBe("7");
+    expect(tok?.decimals).toBe(6);
   });
 });
