@@ -454,7 +454,18 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
     const ledger = mkdtempSync(join(tmpdir(), "sol-t22-"));
     const validator = spawn(
       VALIDATOR,
-      ["--reset", "--ledger", ledger, "--quiet", "--bind-address", "127.0.0.1", "--rpc-port", "8898", "--faucet-port", "9908"],
+      [
+        "--reset",
+        "--ledger",
+        ledger,
+        "--quiet",
+        "--bind-address",
+        "127.0.0.1",
+        "--rpc-port",
+        "8898",
+        "--faucet-port",
+        "9908",
+      ],
       { stdio: "ignore" },
     );
     try {
