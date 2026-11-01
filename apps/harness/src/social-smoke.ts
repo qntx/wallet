@@ -8,7 +8,7 @@
  * kernel-written prompt. Prints machine-readable result lines through the V1
  * report channel.
  */
-import { AppState } from "react-native";
+import { AppState, Platform } from "react-native";
 import { NitroModules } from "react-native-nitro-modules";
 
 import { report } from "@qntx/v1-probe";
@@ -22,8 +22,9 @@ import type { KernelHostLike } from "@qntx/wallet-native";
 import { createNativeWallet } from "@qntx/wallet-native";
 
 const PASSKEY: PasskeyConfig = {
-  rpId: "harness.local",
-  rpName: "Harness",
+  // Served by apps/harness/relying-party (AASA + assetlinks for this app).
+  rpId: "wallet-harness.qntx.org",
+  rpName: "QNTX Wallet Harness",
   walletSalt: "wallet",
   vaultSalt: "vault",
   backupSalt: "backup",
@@ -191,6 +192,8 @@ export async function smokeUnlock(): Promise<void> {
   });
   result("chain-verified", signed.kind === "evm.transaction", "");
 
+  await smokePasskey(wallet);
+
   // W7: armed at backgroundSeconds=0 — backgrounding locks the enclave at the
   // platform layer; foreground must reveal vault=locked with the real reason.
   result("background-armed", true, "");
@@ -228,3 +231,28 @@ const waitBackgroundLock = async (wallet: Wallet): Promise<WalletSnapshot> => {
   }
   return wallet.getSnapshot();
 };
+
+/**
+ * W6 native passkeys, run by the kernel itself: create a passkey wallet, protect the backup with
+ * a passkey, delete the wallet and restore it from the passkey — the same walletId must come
+ * back. iOS has no native passkey bridge yet (W6c), so it must report factor-unavailable.
+ */
+async function smokePasskey(wallet: Wallet): Promise<void> {
+  if (Platform.OS !== "android") {
+    let unavailable = false;
+    try {
+      await wallet.wallets.createWithPasskey({ name: "QNTX Harness" });
+    } catch (error) {
+      unavailable = error instanceof WalletError && error.code === "factor-unavailable";
+    }
+    result("passkey-unavailable", unavailable, "");
+    return;
+  }
+  const created = await wallet.wallets.createWithPasskey({ name: "QNTX Harness" });
+  result("passkey-create", created.origin === "passkey", `backup=${created.backup}`);
+  await wallet.backup.enable({ verify: HARDWARE, factors: [{ kind: "passkey" }] });
+  result("passkey-backup", true, "");
+  await wallet.wallets.delete(created.walletId, HARDWARE);
+  const restored = await wallet.wallets.restoreWithPasskey();
+  result("passkey-restore", restored.walletId === created.walletId, "");
+}

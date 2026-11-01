@@ -1,6 +1,7 @@
 package com.margelo.nitro.qntxwallet
 
 import android.os.CancellationSignal
+import android.util.Log
 import androidx.annotation.Keep
 import androidx.core.content.ContextCompat
 import androidx.credentials.CreateCredentialResponse
@@ -43,6 +44,8 @@ object Passkey {
   private const val CANCELLED = 1
   private const val UNAVAILABLE = 3
   private const val FAILED = 4
+  // The exception type only — never the message, which can name the account.
+  private const val TAG = "QntxPasskey"
 
   @Volatile private var signal: CancellationSignal? = null
 
@@ -68,6 +71,7 @@ object Passkey {
 
         override fun onError(e: CreateCredentialException) {
           signal = null
+          Log.w(TAG, "create failed: ${e.type}")
           nativeComplete(token, statusOf(e), null)
         }
       },
@@ -96,6 +100,7 @@ object Passkey {
 
         override fun onError(e: GetCredentialException) {
           signal = null
+          Log.w(TAG, "get failed: ${e.type}")
           nativeComplete(token, statusOf(e), null)
         }
       },
