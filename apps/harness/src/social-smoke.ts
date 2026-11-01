@@ -80,12 +80,27 @@ export async function smokeCreate(): Promise<void> {
 export async function smokeUnlock(): Promise<void> {
   const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
   let cancelled = false;
+  let outcome = "approved";
   try {
     await wallet.vault.unlock();
   } catch (error) {
+    outcome = error instanceof WalletError ? error.code : String(error);
+    if (error instanceof WalletError && error.code === "factor-invalidated") {
+      // The hardware key is gone (lock screen removed, device restored): the
+      // recovery entry is a device-owner-verified reset; the next launch
+      // creates a fresh vault.
+      result("factor-invalidated", true, "");
+      await wallet.vault.reset();
+      result("recovery-reset", wallet.getSnapshot().vault === "uninitialized", "");
+      return;
+    }
     cancelled = error instanceof WalletError && error.code === "cancelled";
   }
-  result("unlock-cancelled", cancelled && wallet.getSnapshot().vault === "locked", "");
+  result(
+    "unlock-cancelled",
+    cancelled && wallet.getSnapshot().vault === "locked",
+    `outcome=${outcome}`,
+  );
 
   await wallet.vault.unlock();
   const snapshot = wallet.getSnapshot();

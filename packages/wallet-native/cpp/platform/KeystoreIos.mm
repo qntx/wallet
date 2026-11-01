@@ -43,8 +43,9 @@ void setCurrentContext(LAContext* context) {
 }
 
 NSData* tagFor(const std::string& factorId) {
-  NSString* tag = [kTagPrefix stringByAppendingString:@(factorId.c_str())];
-  return [tag dataUsingEncoding:NSUTF8StringEncoding];
+  NSString* suffix = [NSString stringWithUTF8String:factorId.c_str()];
+  return [[kTagPrefix stringByAppendingString:suffix ?: @""]
+      dataUsingEncoding:NSUTF8StringEncoding];
 }
 
 KeystoreStatus statusOf(NSError* error) {
@@ -211,10 +212,13 @@ void keystoreSeal(
     SecretBytes secret,
     KeystorePrompt,
     KeystoreDone done) {
+  // Blocks capture C++ references as references: copy everything the
+  // asynchronous work needs into values first.
+  const std::string alias = factorId;
   auto input = std::make_shared<SecretBytes>(std::move(secret));
   auto finish = std::make_shared<KeystoreDone>(std::move(done));
   dispatch_async(keystoreQueue(), ^{
-    (*finish)(sealNow(factorId, *input));
+    (*finish)(sealNow(alias, *input));
   });
 }
 
@@ -223,9 +227,10 @@ void keystoreOpen(
     std::vector<uint8_t> sealed,
     KeystorePrompt prompt,
     KeystoreDone done) {
+  const std::string alias = factorId;
   auto finish = std::make_shared<KeystoreDone>(std::move(done));
   dispatch_async(keystoreQueue(), ^{
-    (*finish)(openNow(factorId, sealed, prompt));
+    (*finish)(openNow(alias, sealed, prompt));
   });
 }
 
