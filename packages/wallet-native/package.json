@@ -33,7 +33,7 @@
     "codegen": "nitrogen"
   },
   "dependencies": {
-    "cborg": "6.1.4"
+    "cborg": "6.1.5"
   },
   "devDependencies": {
     "@qntx/nostr": "0.15.3",
