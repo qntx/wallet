@@ -7,7 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { chainPrompt, MESSAGE_INTENT } from "../src/modules/chains/prompt.ts";
 import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
-import { corePrompt, formatUnits, promptLocale } from "../src/prompts.ts";
+import { backupCredentialName, corePrompt, formatUnits, promptLocale } from "../src/prompts.ts";
 
 const TO = "0x00000000000000000000000000000000DeaDBeef";
 const SPENDER = "0x1111111254EEB25477B68fb85Ed929f73A960582";
@@ -193,5 +193,12 @@ describe("spark prompts", () => {
       title: "Confirm token transfer",
       description: `Send 42 of token ${hashHex} to ${keyHex}`,
     });
+  });
+});
+
+describe("backup credential name", () => {
+  it("names the protection credential apart from wallet passkeys, per locale", () => {
+    expect(backupCredentialName("en")).toBe("Cloud backup key");
+    expect(backupCredentialName("zh-Hans")).toBe("云备份密钥");
   });
 });

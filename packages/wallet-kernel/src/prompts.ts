@@ -76,6 +76,19 @@ export function corePrompt(locale: PromptLocale, kind: CorePromptKind): Keystore
   return CORE[locale][kind];
 }
 
+/**
+ * The display name of a backup protection credential, chosen by the kernel so password managers
+ * list it apart from the user's wallet passkeys (the RP and app name are shown next to it).
+ */
+export function backupCredentialName(locale: PromptLocale): string {
+  return BACKUP_CREDENTIAL_NAME[locale];
+}
+
+const BACKUP_CREDENTIAL_NAME: Readonly<Record<PromptLocale, string>> = {
+  "zh-Hans": "云备份密钥",
+  en: "Cloud backup key",
+};
+
 /** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 export const corePromptFor =
   (keystore: { readonly locale: string } | undefined, kind: CorePromptKind) => (): KeystorePrompt =>
