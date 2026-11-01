@@ -65,6 +65,8 @@ const walletInfo = {
   createdAt: CREATED_AT,
 };
 const passwordFactorInfo = { kind: "password", id: FACTOR_ID, createdAt: CREATED_AT };
+const hardwareFactor = { kind: "hardware" };
+const hardwareFactorInfo = { kind: "hardware", id: FACTOR_ID, createdAt: CREATED_AT };
 const standaloneKey = {
   ref: { kind: "standalone", id: PUBLIC_KEY },
   publicKey: PUBLIC_KEY,
@@ -113,6 +115,10 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     message: { v: 1, id: 2, method: "vault.unlock", params: { factor: passwordFactor } },
   },
   {
+    name: "vault.unlock-hardware",
+    message: { v: 1, id: 2, method: "vault.unlock", params: { factor: hardwareFactor } },
+  },
+  {
     name: "vault.reset",
     message: { v: 1, id: 3, method: "vault.reset", session: SESSION, params: null },
   },
@@ -142,7 +148,41 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
       v: 1,
       id: 6,
       method: "wallet.createWithPasskey",
-      params: { credentialId: $b("deadbeefcafe"), prfWallet: $b(PRF), synced: true },
+      params: {
+        ceremony: "host",
+        credentialId: $b("deadbeefcafe"),
+        prfWallet: $b(PRF),
+        synced: true,
+      },
+    },
+  },
+  {
+    name: "wallet.createWithPasskey-kernel",
+    message: {
+      v: 1,
+      id: 6,
+      method: "wallet.createWithPasskey",
+      params: {
+        ceremony: "kernel",
+        rpId: "wallet-harness.qntx.org",
+        rpName: "Harness",
+        name: "alice",
+        walletSalt: "harness/wallet/v1",
+        factor: hardwareFactor,
+      },
+    },
+  },
+  {
+    name: "wallet.restoreWithPasskey-kernel",
+    message: {
+      v: 1,
+      id: 7,
+      method: "wallet.restoreWithPasskey",
+      params: {
+        ceremony: "kernel",
+        rpId: "wallet-harness.qntx.org",
+        walletSalt: "harness/wallet/v1",
+      },
     },
   },
   {
@@ -152,6 +192,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
       id: 7,
       method: "wallet.restoreWithPasskey",
       params: {
+        ceremony: "host",
         credentialId: $b("deadbeefcafe"),
         prfWallet: $b(PRF),
         synced: false,
@@ -657,6 +698,15 @@ const accept = [
     message: { v: 1, event: "status", status: statusUnlocked },
   },
   {
+    name: "event-status-hardware",
+    check: "event",
+    message: {
+      v: 1,
+      event: "status",
+      status: { ...statusUnlocked, factors: [hardwareFactorInfo], backup: null },
+    },
+  },
+  {
     name: "event-locked-idle",
     check: "event",
     message: { v: 1, event: "locked", reason: "idle" },
@@ -731,6 +781,41 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
       id: 2,
       method: "vault.unlock",
       params: JSON.parse(`{"factor":${JSON.stringify(passwordFactor)},"toString":1}`) as unknown,
+    },
+  },
+  {
+    name: "params-kernel-ceremony-with-evidence",
+    check: "request",
+    message: {
+      v: 1,
+      id: 7,
+      method: "wallet.restoreWithPasskey",
+      params: {
+        ceremony: "kernel",
+        rpId: "wallet-harness.qntx.org",
+        walletSalt: "harness/wallet/v1",
+        prfWallet: $b(PRF),
+      },
+    },
+  },
+  {
+    name: "params-kernel-ceremony-bad-rp-id",
+    check: "request",
+    message: {
+      v: 1,
+      id: 7,
+      method: "wallet.restoreWithPasskey",
+      params: { ceremony: "kernel", rpId: "https://qntx.org", walletSalt: "harness/wallet/v1" },
+    },
+  },
+  {
+    name: "params-hardware-with-material",
+    check: "request",
+    message: {
+      v: 1,
+      id: 2,
+      method: "vault.unlock",
+      params: { factor: { ...hardwareFactor, password: passwordFactor.password } },
     },
   },
   {

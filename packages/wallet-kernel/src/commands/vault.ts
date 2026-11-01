@@ -2,6 +2,8 @@ import type { Factor, NullValue } from "@qntx/wallet/protocol";
 import type { FactorInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
+import { assertFactorKindAvailable } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import type { Secret } from "../secret/secret.ts";
 import type { VaultImage } from "../vault/store.ts";
 import { factorInfo, makeFactor, rotateVault, unlock, verifyFactor } from "../vault/vault.ts";
@@ -50,11 +52,23 @@ export function openSession(ctx: KernelContext, dek: Secret, keyId: string): str
   return session;
 }
 
+/**
+ * Deletes every record and factor. On a keystore host the device owner proves presence first
+ * (WD-055: the main runtime alone cannot erase the vault) and the hardware keys go with the data.
+ */
 export async function resetVault(ctx: KernelContext): Promise<NullValue> {
+  const { keystore } = ctx.platform;
+  if (keystore !== undefined) {
+    await keystore.authenticate(corePromptFor(keystore, "reset")());
+  }
   // A user-initiated reset locks with "user" before the commit drops the session to
   // uninitialized — an external wipe reaching setInitialized instead reports "invalidated".
   ctx.session.lock("user");
   await ctx.commit([{ op: "clear" }]);
+  if (keystore !== undefined) {
+    // Best effort: the data is already gone, and the next establish clears leftover keys first.
+    await keystore.clear().catch(() => undefined);
+  }
   return null;
 }
 
@@ -62,8 +76,8 @@ export async function resetVault(ctx: KernelContext): Promise<NullValue> {
  * Adds a factor after re-verifying with an existing one. A password factor REPLACES the existing
  * password factor and rotates the DEK (change password): every record re-seals and every retained
  * factor re-wraps in one guarded commit — other hosts see the keyId change and invalidate. A
- * passkey factor wraps the current DEK only: no rotation, keyId unchanged. At least one factor
- * always remains.
+ * passkey or hardware factor wraps the current DEK only: no rotation, keyId unchanged. At most one
+ * hardware factor exists. Kind and uniqueness are checked before the verification prompt.
  */
 export async function addFactor(
   ctx: KernelContext,
@@ -71,8 +85,18 @@ export async function addFactor(
   requestSession: string | undefined,
 ): Promise<FactorInfo> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
-  if (params.factor.kind === "passkey") {
+  assertFactorKindAvailable(ctx.platform, params.factor.kind);
+  if (params.factor.kind === "hardware" && ctx.image.factors.some((f) => f.kind === "hardware")) {
+    throw new KernelError("already-exists", "the vault already has a hardware factor");
+  }
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "manage-factors"),
+  );
+  if (params.factor.kind !== "password") {
     const stored = await makeFactor(ctx.platform, params.factor, dek);
     await ctx.commit([{ op: "put-factor", factor: stored }]);
     return factorInfo(stored);
@@ -102,7 +126,6 @@ export async function removeFactor(
   requestSession: string | undefined,
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
   const stored = ctx.image.factors.find((f) => f.id === params.id);
   if (stored === undefined) {
     throw new KernelError("not-found", "no such factor");
@@ -110,6 +133,13 @@ export async function removeFactor(
   if (ctx.image.factors.length <= 1) {
     throw new KernelError("invalid-input", "the vault must keep at least one factor");
   }
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "manage-factors"),
+  );
   const rotation = await rotateVault(ctx.platform, ctx.image, dek, new Set([params.id]), []);
   await ctx.commit(rotation.ops, {
     rotate: { dek: rotation.dek, keyId: rotation.keyId },

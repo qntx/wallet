@@ -503,7 +503,7 @@
 		init_toPropertyKey();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/core-QJ66nLLG.mjs
+	//#region packages/wallet/dist/core-CsNI5An_.mjs
 	init_defineProperty();
 	var ValidationError = class extends Error {
 		constructor(..._args) {
@@ -637,7 +637,7 @@
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
 	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
-	var factor = union(obj({
+	var factor = union(obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
 		password: bytes(1, 1024)
 	}), obj({
@@ -645,15 +645,11 @@
 		credentialId: bytes(1, 1023),
 		prf: bytes(32)
 	}));
-	var backupFactor = union(obj({
-		kind: literal("password"),
-		password: bytes(1, 1024)
+	var factorInfo$1 = union(obj({
+		kind: literal("hardware"),
+		id: sessionId,
+		createdAt: safeTime
 	}), obj({
-		kind: literal("passkey"),
-		credentialId: bytes(1, 1023),
-		prfBackup: bytes(32)
-	}));
-	var factorInfo$1 = union(obj({ kind: literal("hardware") }), obj({
 		kind: literal("passkey"),
 		id: sessionId,
 		credentialId,
@@ -662,6 +658,53 @@
 		kind: literal("password"),
 		id: sessionId,
 		createdAt: safeTime
+	}));
+	var RP_ID = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
+	var hostEvidence = {
+		ceremony: literal("host"),
+		credentialId: bytes(1, 1023),
+		prfWallet: bytes(32),
+		synced: bool,
+		factor: opt(factor)
+	};
+	var createWithPasskeyParams = union(obj(hostEvidence), obj({
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		rpName: label(64),
+		name: label(64),
+		walletSalt: label(64),
+		factor: opt(factor)
+	}));
+	var restoreWithPasskeyParams = union(obj(hostEvidence), obj({
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		walletSalt: label(64),
+		factor: opt(factor)
+	}));
+	var hostBackupPasskey = obj({
+		kind: literal("passkey"),
+		ceremony: literal("host"),
+		credentialId: bytes(1, 1023),
+		prfBackup: bytes(32)
+	});
+	var backupPassword = obj({
+		kind: literal("password"),
+		password: bytes(1, 1024)
+	});
+	var backupFactor = union(backupPassword, hostBackupPasskey, obj({
+		kind: literal("passkey"),
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		rpName: label(64),
+		name: label(64),
+		backupSalt: label(64)
+	}));
+	var backupUnlockFactor = union(backupPassword, hostBackupPasskey, obj({
+		kind: literal("passkey"),
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		backupSalt: label(64)
 	}));
 	var walletInfo$1 = obj({
 		walletId,
@@ -715,23 +758,13 @@
 		"wallet.createWithPasskey": {
 			session: false,
 			presence: true,
-			params: obj({
-				credentialId: bytes(1, 1023),
-				prfWallet: bytes(32),
-				synced: bool,
-				factor: opt(factor)
-			}),
+			params: createWithPasskeyParams,
 			result: createdResult
 		},
 		"wallet.restoreWithPasskey": {
 			session: false,
 			presence: true,
-			params: obj({
-				credentialId: bytes(1, 1023),
-				prfWallet: bytes(32),
-				synced: bool,
-				factor: opt(factor)
-			}),
+			params: restoreWithPasskeyParams,
 			result: createdResult
 		},
 		"wallet.createMnemonic": {
@@ -788,7 +821,7 @@
 			presence: true,
 			params: obj({
 				envelope: str(4e6),
-				backupFactor,
+				backupFactor: backupUnlockFactor,
 				factor: opt(factor)
 			}),
 			result: obj({
@@ -857,7 +890,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-DWt0GXMz.mjs
+	//#region packages/wallet/dist/protocol-BEfEjAX-.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -3629,6 +3662,170 @@
 			this.corrupted = corrupted;
 		}
 	};
+	//#endregion
+	//#region packages/wallet-kernel/src/platform.ts
+	init_objectSpread2();
+	/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
+	function requirePasskey(platform) {
+		if (platform.passkey === void 0) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies in the host");
+		return platform.passkey;
+	}
+	/**
+	* Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
+	* create/get share one queue, because the platform can show only one verification at a time. A
+	* rejection does not wedge the queue. Applied once by `startKernel`.
+	*/
+	function serializeCeremonies(platform) {
+		let tail = Promise.resolve();
+		const queue = async (work) => {
+			const previous = tail;
+			let release;
+			tail = new Promise((resolve) => {
+				release = resolve;
+			});
+			try {
+				await previous;
+				return await work();
+			} finally {
+				release === null || release === void 0 || release();
+			}
+		};
+		const { keystore, passkey } = platform;
+		return _objectSpread2(_objectSpread2({}, platform), {}, {
+			keystore: keystore === void 0 ? void 0 : {
+				locale: keystore.locale,
+				seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
+				open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
+				authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
+				clear: async () => queue(async () => keystore.clear())
+			},
+			passkey: passkey === void 0 ? void 0 : {
+				create: async (input) => queue(async () => passkey.create(input)),
+				get: async (input) => queue(async () => passkey.get(input))
+			}
+		});
+	}
+	/**
+	* Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
+	* password there would let a compromised main runtime satisfy per-operation verification without
+	* the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
+	* factors are exempt.
+	*/
+	function assertFactorKindAvailable(platform, kind) {
+		if (platform.keystore !== void 0 !== (kind === "hardware")) throw new KernelError("factor-unavailable", "this factor kind is not available here");
+	}
+	/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
+	function requireKeystore(platform) {
+		if (platform.keystore === void 0) throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
+		return platform.keystore;
+	}
+	//#endregion
+	//#region packages/wallet-kernel/src/prompts.ts
+	function promptLocale(tag) {
+		return tag.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
+	}
+	var CORE = {
+		"zh-Hans": {
+			unlock: {
+				title: "解锁钱包",
+				description: "验证身份以解锁钱包"
+			},
+			create: {
+				title: "保护钱包",
+				description: "验证身份以启用本设备的硬件保护"
+			},
+			"export-mnemonic": {
+				title: "导出助记词",
+				description: "验证身份以显示助记词"
+			},
+			"export-key": {
+				title: "导出私钥",
+				description: "验证身份以导出私钥"
+			},
+			"delete-wallet": {
+				title: "删除钱包",
+				description: "验证身份以从本设备删除此钱包"
+			},
+			"remove-key": {
+				title: "删除密钥",
+				description: "验证身份以删除此密钥"
+			},
+			backup: {
+				title: "开启云备份",
+				description: "验证身份以开启云备份"
+			},
+			"manage-factors": {
+				title: "管理解锁方式",
+				description: "验证身份以更改钱包的解锁方式"
+			},
+			reset: {
+				title: "重置钱包",
+				description: "验证设备所有者身份以删除本设备上的全部钱包数据"
+			}
+		},
+		en: {
+			unlock: {
+				title: "Unlock wallet",
+				description: "Verify your identity to unlock the wallet"
+			},
+			create: {
+				title: "Protect wallet",
+				description: "Verify your identity to protect the wallet with this device"
+			},
+			"export-mnemonic": {
+				title: "Export recovery phrase",
+				description: "Verify your identity to reveal the recovery phrase"
+			},
+			"export-key": {
+				title: "Export private key",
+				description: "Verify your identity to export the private key"
+			},
+			"delete-wallet": {
+				title: "Delete wallet",
+				description: "Verify your identity to delete this wallet from this device"
+			},
+			"remove-key": {
+				title: "Remove key",
+				description: "Verify your identity to remove this key"
+			},
+			backup: {
+				title: "Turn on cloud backup",
+				description: "Verify your identity to turn on cloud backup"
+			},
+			"manage-factors": {
+				title: "Manage unlock methods",
+				description: "Verify your identity to change how the wallet unlocks"
+			},
+			reset: {
+				title: "Reset wallet",
+				description: "Verify you own this device to erase all wallet data on it"
+			}
+		}
+	};
+	function corePrompt(locale, kind) {
+		return CORE[locale][kind];
+	}
+	/** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
+	var corePromptFor = (keystore, kind) => () => {
+		var _keystore$locale;
+		return corePrompt(promptLocale((_keystore$locale = keystore === null || keystore === void 0 ? void 0 : keystore.locale) !== null && _keystore$locale !== void 0 ? _keystore$locale : "en"), kind);
+	};
+	/**
+	* An integer amount in smallest units rendered at `decimals` places with bigint arithmetic — no
+	* float rounding — and trailing fractional zeros trimmed. `amount` is a canonical decimal string.
+	*/
+	function formatUnits(amount, decimals) {
+		const value = BigInt(amount);
+		if (decimals === 0) return value.toString();
+		const scale = 10n ** BigInt(decimals);
+		const whole = value / scale;
+		const fraction = (value % scale).toString().padStart(decimals, "0").replace(/0+$/, "");
+		return fraction.length === 0 ? whole.toString() : `${whole}.${fraction}`;
+	}
+	/** The prompt lines joined for the system UI: one fact per line. */
+	function joinLines(lines) {
+		return lines.join("\n");
+	}
 	//#endregion
 	//#region node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/_arx.js
 	/**
@@ -7333,6 +7530,11 @@
 			publicKey: header.publicKey,
 			createdAt: header.createdAt
 		});
+		if ("sealedKek" in header) return JSON.stringify({
+			sealedKek: header.sealedKek,
+			publicKey: header.publicKey,
+			createdAt: header.createdAt
+		});
 		if ("salt" in header) return JSON.stringify({
 			salt: header.salt,
 			iterations: header.iterations,
@@ -7415,6 +7617,19 @@
 		]);
 		return {
 			credentialId: asBase64url(object["credentialId"], 1, 1023),
+			publicKey: asBase64url(object["publicKey"], 32, 32),
+			createdAt: asCreatedAt(object["createdAt"])
+		};
+	}
+	function parseHardwareFactorHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, [
+			"sealedKek",
+			"publicKey",
+			"createdAt"
+		]);
+		return {
+			sealedKek: asBase64url(object["sealedKek"], 1, 512),
 			publicKey: asBase64url(object["publicKey"], 32, 32),
 			createdAt: asCreatedAt(object["createdAt"])
 		};
@@ -7524,7 +7739,7 @@
 	}
 	/** The `publicKey` a factor header declares, decoded; malformed headers throw `integrity`. */
 	function factorHeaderPublicKey(stored) {
-		const header = stored.kind === "password" ? parsePasswordFactorHeader(stored.header) : parsePasskeyFactorHeader(stored.header);
+		const header = stored.kind === "password" ? parsePasswordFactorHeader(stored.header) : stored.kind === "hardware" ? parseHardwareFactorHeader(stored.header) : parsePasskeyFactorHeader(stored.header);
 		return base64urlnopad.decode(header.publicKey);
 	}
 	/** The binding tag a `sealed` factor row must carry for `dek` (constant-time verified). */
@@ -7586,7 +7801,7 @@
 		const factorSk = hkdf(sha256$1, kek, /* @__PURE__ */ new Uint8Array(0), FACTOR_KEY_INFO, 32);
 		try {
 			const factorPk = x25519.getPublicKey(factorSk);
-			if (!equalBytes$3(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : new KernelError("wrong-passkey", "passkey does not match the factor");
+			if (!equalBytes$3(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "hardware" ? corruptError("hardware factor returned a key that does not match its header") : new KernelError("wrong-passkey", "passkey does not match the factor");
 			const { sealed } = stored;
 			if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) throw corruptError("malformed factor wrapping");
 			const ephPk = sealed.subarray(1, 33);
@@ -7661,11 +7876,12 @@
 		return bytesToHex$4(random(16));
 	}
 	/**
-	* The single "derive KEK for a new factor" path, shared by `makeFactor` and mnemonic-draft pending
-	* factors. The password policy applies only here: factor creation. `factor`'s secret bytes are
-	* consumed (wiped) by the KDFs.
+	* The single "derive KEK for a new software factor" path, shared by `makeFactor` and mnemonic-draft
+	* pending factors. The password policy applies only here: factor creation. `factor`'s secret bytes
+	* are consumed (wiped) by the KDFs.
 	*/
 	async function newFactorKek(platform, factor) {
+		assertFactorKindAvailable(platform, factor.kind);
 		if (factor.kind === "password") {
 			assertPasswordPolicy(factor.password);
 			const salt = platform.random(16);
@@ -7681,6 +7897,26 @@
 			credentialId: factor.credentialId
 		};
 	}
+	/**
+	* A hardware factor's KEK: 32 random bytes sealed by the platform keystore under key alias `id`
+	* (the factor id). Only the sealed form is stored — in the public header, beside the X25519 key the
+	* DEK wraps to, so rotation never needs a prompt.
+	*/
+	async function newHardwareKek(platform, id) {
+		assertFactorKindAvailable(platform, "hardware");
+		const keystore = requireKeystore(platform);
+		const kek = platform.random(32);
+		try {
+			return {
+				kind: "hardware",
+				kek,
+				sealedKek: await keystore.seal(id, kek, corePromptFor(keystore, "create")())
+			};
+		} catch (error) {
+			wipe(kek);
+			throw error;
+		}
+	}
 	/** Public header text for a new factor (raw bytes → base64url). `publicKey` is not consumed. */
 	function factorHeader(material, publicKey, createdAt) {
 		const pk = base64urlnopad.encode(publicKey);
@@ -7690,16 +7926,22 @@
 			publicKey: pk,
 			createdAt
 		});
+		if (material.kind === "hardware") return encodeHeader({
+			sealedKek: base64urlnopad.encode(material.sealedKek),
+			publicKey: pk,
+			createdAt
+		});
 		return encodeHeader({
 			credentialId: base64urlnopad.encode(material.credentialId),
 			publicKey: pk,
 			createdAt
 		});
 	}
-	/** Builds a new factor record wrapping `dek`; see `newFactorKek` for the KEK/policy rules. */
-	async function makeFactor(platform, factor, dek) {
-		const material = await newFactorKek(platform, factor);
-		const id = factorId(platform.random);
+	/**
+	* The stored row for a factor whose KEK material exists: header with the KEK's public wrapping key,
+	* the DEK wrapped to it. Wipes the material's KEK and password salt.
+	*/
+	function factorRow(platform, material, id, dek) {
 		try {
 			const publicKey = factorPublicKey(material.kek);
 			const header = factorHeader(material, publicKey, platform.now());
@@ -7719,8 +7961,20 @@
 			if (material.kind === "password") wipe(material.salt);
 		}
 	}
-	/** KEK for an existing factor record; `factor`'s secret bytes are consumed. */
-	async function kekFor(platform, factor, stored) {
+	/** Builds a new factor record wrapping `dek`. The id comes first: it is the hardware key alias. */
+	async function makeFactor(platform, factor, dek) {
+		const id = factorId(platform.random);
+		return factorRow(platform, factor.kind === "hardware" ? await newHardwareKek(platform, id) : await newFactorKek(platform, factor), id, dek);
+	}
+	/**
+	* KEK for an existing factor record; `factor`'s secret bytes are consumed. A hardware factor runs
+	* the keystore ceremony with the prompt the caller rendered.
+	*/
+	async function kekFor(platform, factor, stored, prompt) {
+		if (factor.kind === "hardware") {
+			const { sealedKek } = parseHardwareFactorHeader(stored.header);
+			return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), prompt());
+		}
 		if (factor.kind === "password") {
 			const { salt } = parsePasswordFactorHeader(stored.header);
 			return passwordKek(factor.password, base64urlnopad.decode(salt), platform.pbkdf2);
@@ -7736,19 +7990,29 @@
 	* `invalid-input` and never counted; an attempt rejected while backoff is armed is `rate-limited`
 	* and never counted; a real miss commits `record-failure` through the given `commit` (atomic
 	* against the shared store) and a success clears a nonzero counter with `reset-failures`. Passkey
-	* unlock is never gated or counted.
+	* and hardware unlock are never gated or counted — the platform rate-limits its own prompt.
 	*/
 	async function unlock(platform, image, factor, commit) {
 		const { meta } = image;
 		if (meta === void 0) throw new KernelError("invalid-input", "vault is not initialized");
+		assertFactorKindAvailable(platform, factor.kind);
 		let dek;
-		if (factor.kind === "password") {
+		if (factor.kind === "hardware") {
+			const stored = image.factors.find((f) => f.kind === "hardware");
+			if (stored === void 0) throw new KernelError("factor-unavailable", "no hardware factor exists");
+			const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
+			try {
+				dek = unwrapDek(kek, stored);
+			} finally {
+				wipe(kek);
+			}
+		} else if (factor.kind === "password") {
 			const passwords = image.factors.filter((stored) => stored.kind === "password");
 			if (passwords.length === 0) throw new KernelError("invalid-input", "no password factor exists");
 			const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
 			if (platform.now() < retryAt) throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
 			for (const stored of passwords) {
-				const kek = await kekFor(platform, factor, stored);
+				const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 				try {
 					dek = unwrapDek(kek, stored);
 					break;
@@ -7773,7 +8037,7 @@
 				wipe(factor.prf);
 				throw new KernelError("wrong-passkey", "no passkey factor matches the credential");
 			}
-			const kek = await kekFor(platform, factor, stored);
+			const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 			try {
 				dek = unwrapDek(kek, stored);
 			} finally {
@@ -7797,15 +8061,18 @@
 	* compare. A public-key miss — `wrong-password`/`wrong-passkey` — tries the next candidate; every
 	* other failure (including corruption-marked integrity) propagates immediately. When no candidate
 	* matched, the miss is reported by factor kind: `wrong-password` (or `invalid-input` when no
-	* password factor exists) or `wrong-passkey`. The verify path never touches the rate limiter.
+	* password factor exists), `wrong-passkey`, or for hardware `factor-unavailable` (no hardware
+	* factor) / `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system
+	* verification text and runs only for hardware. The verify path never touches the rate limiter.
 	*/
-	async function verifyFactor(platform, image, factor, dek) {
+	async function verifyFactor(platform, image, factor, dek, prompt) {
+		assertFactorKindAvailable(platform, factor.kind);
 		const candidates = image.factors.filter((stored) => {
 			if (factor.kind !== stored.kind) return false;
-			return factor.kind === "password" || credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId);
+			return factor.kind !== "passkey" || credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId);
 		});
 		for (const stored of candidates) {
-			const kek = await kekFor(platform, factor, stored);
+			const kek = await kekFor(platform, factor, stored, prompt);
 			try {
 				const opened = unwrapDek(kek, stored);
 				try {
@@ -7820,6 +8087,7 @@
 			}
 		}
 		if (factor.kind === "password") throw new KernelError(candidates.length > 0 ? "wrong-password" : "invalid-input", "password did not verify");
+		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("factor-unavailable", "no hardware factor exists");
 		throw new KernelError("wrong-passkey", "passkey did not verify");
 	}
 	/**
@@ -7952,6 +8220,11 @@
 	}
 	/** The `FactorInfo` a stored factor reports: kind, id, creation time, passkey credentialId. */
 	function factorInfo(stored) {
+		if (stored.kind === "hardware") return {
+			kind: "hardware",
+			id: stored.id,
+			createdAt: parseHardwareFactorHeader(stored.header).createdAt
+		};
 		if (stored.kind === "password") return {
 			kind: "password",
 			id: stored.id,
@@ -12053,6 +12326,172 @@ zoo`.split("\n"));
 		return seedFromMnemonic(mnemonicFromEntropy(entropy), "", pbkdf2);
 	}
 	//#endregion
+	//#region packages/wallet-kernel/src/session/session.ts
+	init_utils$2();
+	init_defineProperty();
+	init_objectSpread2();
+	function wipePendingFactor(pending) {
+		if (pending.kind === "hardware") return;
+		pending.kek.wipe();
+		if (pending.kind === "password") wipe(pending.salt);
+		else wipe(pending.credentialId);
+	}
+	function wipeDraft(draft) {
+		draft.entropy.wipe();
+		for (const expected of draft.expected) wipe(expected);
+		if (draft.pendingFactor !== void 0) wipePendingFactor(draft.pendingFactor);
+	}
+	/**
+	* Session state machine: uninitialized | locked | unlocked. Timeout checks run at the start of
+	* every request (the authoritative path); the injected `platform.setTimer` additionally locks
+	* proactively so a quiet Worker still locks on time.
+	*/
+	var Session = class {
+		constructor(platform, onLock) {
+			_defineProperty(this, "state", { status: "uninitialized" });
+			_defineProperty(this, "drafts", /* @__PURE__ */ new Map());
+			_defineProperty(this, "cancelTimer", void 0);
+			_defineProperty(this, "platform", void 0);
+			_defineProperty(this, "onLock", void 0);
+			this.platform = platform;
+			this.onLock = onLock;
+		}
+		get status() {
+			return this.state.status;
+		}
+		get unlocked() {
+			return this.state.status === "unlocked";
+		}
+		/** Called once the initial store image is loaded and after every external change. */
+		setInitialized(initialized) {
+			if (this.state.status === "uninitialized" && initialized) this.state = { status: "locked" };
+			else if (!initialized && this.state.status !== "uninitialized") {
+				this.lock("invalidated");
+				this.state = { status: "uninitialized" };
+			}
+		}
+		/** Opens a session, replacing any existing one. Returns the new session id. */
+		open(dek, keyId) {
+			this.wipeUnlocked();
+			const id = bytesToHex$4(this.platform.random(16));
+			const at = this.platform.elapsed();
+			this.state = {
+				status: "unlocked",
+				id,
+				dek,
+				keyId,
+				unlockedAt: at,
+				lastActivityAt: at
+			};
+			this.schedule();
+			return id;
+		}
+		/** Swaps the live DEK after a rotation commit (old DEK wiped); throws `locked` when not unlocked. */
+		rotate(dek, keyId) {
+			const { state } = this;
+			if (state.status !== "unlocked") throw new KernelError("locked", "session is not unlocked");
+			state.dek.wipe();
+			this.state = _objectSpread2(_objectSpread2({}, state), {}, {
+				dek,
+				keyId
+			});
+		}
+		/**
+		* Enforces idle and max-session deadlines on the monotonic elapsed clock. Returns the lock reason
+		* when the session expired; the caller locks before handling the request. Pure check — activity
+		* is stamped by `touch()` on a successful request, never here.
+		*/
+		checkTimeouts() {
+			const { state } = this;
+			if (state.status !== "unlocked") return;
+			const now = this.platform.elapsed();
+			if (now - state.unlockedAt > this.platform.policy.maxSessionMs) return "expired";
+			const { idle } = this.platform.policy;
+			if (idle !== void 0 && now - state.lastActivityAt > idle.ms) return "idle";
+		}
+		/**
+		* Stamps user activity: the idle deadline moves forward and the timer re-arms. The max-session
+		* deadline never moves — `schedule()` still clamps to it.
+		*/
+		touch() {
+			const { state } = this;
+			if (state.status !== "unlocked") return;
+			state.lastActivityAt = this.platform.elapsed();
+			this.schedule();
+		}
+		/** The live session for a request that carries `session`; throws `locked` on any mismatch. */
+		require(requestSession) {
+			const { state } = this;
+			if (state.status !== "unlocked" || requestSession !== state.id) throw new KernelError("locked", "session is not unlocked");
+			return {
+				id: state.id,
+				dek: state.dek
+			};
+		}
+		/** The live session without a request-id check (drafts prove same-process provenance). */
+		current() {
+			const { state } = this;
+			if (state.status !== "unlocked") throw new KernelError("locked", "session is not unlocked");
+			return {
+				id: state.id,
+				dek: state.dek,
+				keyId: state.keyId
+			};
+		}
+		putDraft(id, draft) {
+			const existing = this.drafts.get(id);
+			if (existing !== void 0) wipeDraft(existing);
+			this.drafts.set(id, draft);
+		}
+		takeDraft(id) {
+			const draft = this.drafts.get(id);
+			if (draft === void 0) throw new KernelError("not-found", "unknown draft");
+			this.drafts.delete(id);
+			return draft;
+		}
+		/** Peek without removing: a wrong quiz answer keeps the draft. */
+		getDraft(id) {
+			const draft = this.drafts.get(id);
+			if (draft === void 0) throw new KernelError("not-found", "unknown draft");
+			return draft;
+		}
+		dropDraft(id) {
+			const draft = this.drafts.get(id);
+			if (draft !== void 0) {
+				this.drafts.delete(id);
+				wipeDraft(draft);
+			}
+		}
+		lock(reason) {
+			const wasUnlocked = this.state.status === "unlocked";
+			this.wipeUnlocked();
+			for (const draft of this.drafts.values()) wipeDraft(draft);
+			this.drafts.clear();
+			this.state = { status: this.state.status === "uninitialized" ? "uninitialized" : "locked" };
+			if (wasUnlocked) this.onLock(reason);
+		}
+		wipeUnlocked() {
+			if (this.state.status === "unlocked") this.state.dek.wipe();
+			if (this.cancelTimer !== void 0) {
+				this.cancelTimer();
+				this.cancelTimer = void 0;
+			}
+		}
+		schedule() {
+			if (this.state.status !== "unlocked") return;
+			const now = this.platform.elapsed();
+			const { idle } = this.platform.policy;
+			const deadline = Math.min(this.state.unlockedAt + this.platform.policy.maxSessionMs, idle === void 0 ? Number.POSITIVE_INFINITY : this.state.lastActivityAt + idle.ms);
+			const delay = Math.max(0, deadline - now);
+			if (this.cancelTimer !== void 0) this.cancelTimer();
+			this.cancelTimer = this.platform.setTimer(delay, () => {
+				const reason = this.checkTimeouts();
+				if (reason === void 0) this.schedule();
+				else this.lock(reason);
+			});
+		}
+	};
+	//#endregion
 	//#region packages/wallet-kernel/src/commands/vault.ts
 	var EMPTY_IMAGE$1 = {
 		meta: void 0,
@@ -12083,22 +12522,31 @@ zoo`.split("\n"));
 		if (!ctx.session.unlocked) throw new KernelError("integrity", "vault contents failed authentication", void 0, true);
 		return session;
 	}
+	/**
+	* Deletes every record and factor. On a keystore host the device owner proves presence first
+	* (WD-055: the main runtime alone cannot erase the vault) and the hardware keys go with the data.
+	*/
 	async function resetVault(ctx) {
+		const { keystore } = ctx.platform;
+		if (keystore !== void 0) await keystore.authenticate(corePromptFor(keystore, "reset")());
 		ctx.session.lock("user");
 		await ctx.commit([{ op: "clear" }]);
+		if (keystore !== void 0) await keystore.clear().catch(() => void 0);
 		return null;
 	}
 	/**
 	* Adds a factor after re-verifying with an existing one. A password factor REPLACES the existing
 	* password factor and rotates the DEK (change password): every record re-seals and every retained
 	* factor re-wraps in one guarded commit — other hosts see the keyId change and invalidate. A
-	* passkey factor wraps the current DEK only: no rotation, keyId unchanged. At least one factor
-	* always remains.
+	* passkey or hardware factor wraps the current DEK only: no rotation, keyId unchanged. At most one
+	* hardware factor exists. Kind and uniqueness are checked before the verification prompt.
 	*/
 	async function addFactor(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
-		if (params.factor.kind === "passkey") {
+		assertFactorKindAvailable(ctx.platform, params.factor.kind);
+		if (params.factor.kind === "hardware" && ctx.image.factors.some((f) => f.kind === "hardware")) throw new KernelError("already-exists", "the vault already has a hardware factor");
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "manage-factors"));
+		if (params.factor.kind !== "password") {
 			const stored = await makeFactor(ctx.platform, params.factor, dek);
 			await ctx.commit([{
 				op: "put-factor",
@@ -12119,9 +12567,9 @@ zoo`.split("\n"));
 	}
 	async function removeFactor(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
 		if (ctx.image.factors.find((f) => f.id === params.id) === void 0) throw new KernelError("not-found", "no such factor");
 		if (ctx.image.factors.length <= 1) throw new KernelError("invalid-input", "the vault must keep at least one factor");
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "manage-factors"));
 		const rotation = await rotateVault(ctx.platform, ctx.image, dek, /* @__PURE__ */ new Set([params.id]), []);
 		await ctx.commit(rotation.ops, { rotate: {
 			dek: rotation.dek,
@@ -12206,21 +12654,34 @@ zoo`.split("\n"));
 	async function commitRecords(ctx, gated, factor, records) {
 		if (gated.uninitialized) {
 			if (factor === void 0) throw new KernelError("integrity", "unreachable: initial factor missing");
-			const storedFactor = await makeFactor(ctx.platform, factor, gated.dek);
-			const { ops, keyId } = establishOps(ctx.platform, storedFactor, records);
-			try {
-				await ctx.commit(ops);
-			} catch (error) {
-				gated.dek.wipe();
-				throw error;
-			}
-			return openSession(ctx, gated.dek, keyId);
+			return establishVault(ctx, gated.dek, async () => makeFactor(ctx.platform, factor, gated.dek), records);
 		}
 		await ctx.commit(records.map((record) => ({
 			op: "put-record",
 			record
 		})));
 		return ctx.session.current().id;
+	}
+	/**
+	* Establishes the vault in one `init` commit and opens the session; wipes `dek` on failure. On a
+	* keystore host the vault is uninitialized here and the kernel is the single writer, so every
+	* hardware key this app left behind (a reinstall keeps iOS keychain items, a failed establish) is
+	* cleared before the new key is sealed — and again if the establish fails after sealing.
+	*/
+	async function establishVault(ctx, dek, factorRowFor, records) {
+		const { keystore } = ctx.platform;
+		let keyId;
+		try {
+			await (keystore === null || keystore === void 0 ? void 0 : keystore.clear());
+			const established = establishOps(ctx.platform, await factorRowFor(), records);
+			({keyId} = established);
+			await ctx.commit(established.ops);
+		} catch (error) {
+			dek.wipe();
+			await (keystore === null || keystore === void 0 ? void 0 : keystore.clear().catch(() => void 0));
+			throw error;
+		}
+		return openSession(ctx, dek, keyId);
 	}
 	function ensureNewWallet(ctx, material) {
 		if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) throw new KernelError("already-exists", "wallet already exists");
@@ -12249,6 +12710,10 @@ zoo`.split("\n"));
 	* inside `newFactorKek` because the factor is being created.
 	*/
 	async function pendingFactorOf(ctx, factor) {
+		if (factor.kind === "hardware") {
+			assertFactorKindAvailable(ctx.platform, "hardware");
+			return { kind: "hardware" };
+		}
 		const material = await newFactorKek(ctx.platform, factor);
 		return material.kind === "password" ? {
 			kind: "password",
@@ -12294,10 +12759,12 @@ zoo`.split("\n"));
 	}
 	/**
 	* Turns a draft's pending factor into its stored record once the DEK exists: the header gets the
-	* public key derived from the held KEK, and the DEK wraps to that key.
+	* public key derived from the held KEK, and the DEK wraps to that key. A hardware factor seals its
+	* KEK now, under a key created for this factor id.
 	*/
-	function storedFactorForPending(ctx, pending, dek) {
+	async function storedFactorForPending(ctx, pending, dek) {
 		const id = bytesToHex$4(ctx.platform.random(16));
+		if (pending.kind === "hardware") return factorRow(ctx.platform, await newHardwareKek(ctx.platform, id), id, dek);
 		const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
 		const header = factorHeader(pending, publicKey, ctx.platform.now());
 		const sealed = wrapDek(dek, publicKey, {
@@ -12326,18 +12793,10 @@ zoo`.split("\n"));
 			try {
 				ensureNewWallet(ctx, material);
 				const createdAt = ctx.platform.now();
-				if (taken.pendingFactor !== void 0) {
+				const { pendingFactor } = taken;
+				if (pendingFactor !== void 0) {
 					const dek = Secret.take(ctx.platform.random(32));
-					const storedFactor = storedFactorForPending(ctx, taken.pendingFactor, dek);
-					const record = walletRecord(ctx, dek, material, "mnemonic", createdAt);
-					const { ops, keyId } = establishOps(ctx.platform, storedFactor, [record]);
-					try {
-						await ctx.commit(ops);
-					} catch (error) {
-						dek.wipe();
-						throw error;
-					}
-					const session = openSession(ctx, dek, keyId);
+					const session = await establishVault(ctx, dek, async () => storedFactorForPending(ctx, pendingFactor, dek), [walletRecord(ctx, dek, material, "mnemonic", createdAt)]);
 					return {
 						wallet: walletInfoOf(material, "mnemonic", createdAt),
 						session
@@ -12359,11 +12818,7 @@ zoo`.split("\n"));
 		} finally {
 			taken.entropy.wipe();
 			for (const expected of taken.expected) wipe(expected);
-			if (taken.pendingFactor !== void 0) {
-				taken.pendingFactor.kek.wipe();
-				if (taken.pendingFactor.kind === "password") wipe(taken.pendingFactor.salt);
-				else wipe(taken.pendingFactor.credentialId);
-			}
+			if (taken.pendingFactor !== void 0) wipePendingFactor(taken.pendingFactor);
 		}
 	}
 	function discardMnemonic(ctx, params) {
@@ -12392,14 +12847,82 @@ zoo`.split("\n"));
 			wipe(entropy);
 		}
 	}
+	var PURPOSE_WALLET = 1;
+	/**
+	* One platform ceremony's wallet PRF: the result must be user-verified and carry a 32-byte `first`
+	* output; anything else is an authenticator without usable PRF support (`factor-unavailable`). The
+	* unused `second` output is wiped.
+	*/
+	function walletPrfOf(result) {
+		var _result$first;
+		if (result.second !== void 0) wipe(result.second);
+		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
+			if (result.first !== void 0) wipe(result.first);
+			throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+		}
+		return {
+			prfWallet: result.first,
+			synced: result.synced
+		};
+	}
+	/**
+	* The kernel-run wallet ceremony (React Native): the PRF output is produced and consumed here and
+	* never crosses the channel. Create registers a discoverable credential whose user handle starts
+	* with the wallet purpose byte; an authenticator that evaluates PRF only on assertion gets one
+	* follow-up assertion of the new credential. Restore asserts any credential for the RP and accepts
+	* only a wallet-purpose one — a vault or backup credential would silently derive another wallet.
+	*/
+	async function walletCeremony(ctx, params) {
+		var _asserted$userHandle;
+		const passkey = requirePasskey(ctx.platform);
+		const salts = { first: utf8ToBytes$1(params.walletSalt) };
+		if ("name" in params) {
+			const created = await passkey.create({
+				rpId: params.rpId,
+				rpName: params.rpName,
+				userId: concatBytes$3(new Uint8Array([PURPOSE_WALLET]), ctx.platform.random(15)),
+				userName: params.name,
+				salts
+			});
+			if (created.first !== void 0) return walletPrfOf(created);
+			return walletPrfOf(await passkey.get({
+				rpId: params.rpId,
+				allowCredentials: [created.credentialId],
+				salts
+			}));
+		}
+		const asserted = await passkey.get({
+			rpId: params.rpId,
+			allowCredentials: void 0,
+			salts
+		});
+		if (((_asserted$userHandle = asserted.userHandle) === null || _asserted$userHandle === void 0 ? void 0 : _asserted$userHandle[0]) !== PURPOSE_WALLET) {
+			for (const output of [asserted.first, asserted.second]) if (output !== void 0) wipe(output);
+			throw new KernelError("wrong-passkey", "the passkey is not a wallet credential");
+		}
+		return walletPrfOf(asserted);
+	}
+	/**
+	* Creates or restores a passkey wallet. The ceremony runs where the platform puts it: in the kernel
+	* when a platform authenticator exists, in the host (evidence on the wire) otherwise — the other
+	* shape is `factor-unavailable`.
+	*/
 	async function createWithPasskey(ctx, params, requestSession) {
+		if (ctx.platform.passkey !== void 0 !== (params.ceremony === "kernel")) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
 		const gated = gate(ctx, params.factor, requestSession);
-		const entropy = entropyFromPrf(params.prfWallet);
+		let prf;
+		try {
+			prf = params.ceremony === "kernel" ? await walletCeremony(ctx, params) : params;
+		} catch (error) {
+			if (gated.uninitialized) gated.dek.wipe();
+			throw error;
+		}
+		const entropy = entropyFromPrf(prf.prfWallet);
 		const material = await walletMaterial(ctx.platform, entropy, "passkey", 12);
 		try {
 			ensureNewWallet(ctx, material);
 			const createdAt = ctx.platform.now();
-			const backup = params.synced ? "passkey" : "none";
+			const backup = prf.synced ? "passkey" : "none";
 			const record = walletRecord(ctx, gated.dek, material, backup, createdAt);
 			const session = await commitRecords(ctx, gated, params.factor, [record]);
 			return {
@@ -12412,7 +12935,7 @@ zoo`.split("\n"));
 	}
 	async function deleteWallet(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "delete-wallet"));
 		findRecord(ctx.image, "entropy", params.walletId);
 		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId));
 		await ctx.commit([{
@@ -12581,11 +13104,58 @@ zoo`.split("\n"));
 		for (const wallet of contents.wallets) wallet.entropy.fill(0);
 		for (const secretKey of contents.nostrSecrets) secretKey.fill(0);
 	}
+	var PURPOSE_PROTECTION = 2;
 	/**
-	* Seals the BEK under every backup factor. Deterministic draw order: every password salt in
-	* factor-array order, then every sealedBek nonce in factor-array order — no random draw follows an
-	* await, so async scheduling (pbkdf2 suspending) can never reorder it.
+	* The backup PRF from one platform ceremony: user-verified with a 32-byte `first` output, else
+	* `factor-unavailable`. The unused `second` output is wiped.
 	*/
+	function backupMaterialOf(result) {
+		var _result$second, _result$first;
+		(_result$second = result.second) === null || _result$second === void 0 || _result$second.fill(0);
+		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
+			var _result$first2;
+			(_result$first2 = result.first) === null || _result$first2 === void 0 || _result$first2.fill(0);
+			throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+		}
+		return {
+			kind: "passkey",
+			credentialId: result.credentialId,
+			prfBackup: result.first
+		};
+	}
+	/**
+	* Resolves wire backup factors to material. A `kernel` passkey arm runs the platform ceremony here
+	* (React Native): enabling registers a protection credential (purpose `0x02`, asserted once when
+	* registration returns no PRF); restoring asserts one of `allowCredentials` — the envelope's own
+	* passkey factors. Each platform accepts only its own ceremony shape.
+	*/
+	async function backupMaterial(ctx, factor, allowCredentials) {
+		if (factor.kind === "password") return factor;
+		if (ctx.platform.passkey !== void 0 !== (factor.ceremony === "kernel")) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+		if (factor.ceremony === "host") return factor;
+		const passkey = requirePasskey(ctx.platform);
+		const salts = { first: utf8ToBytes$1(factor.backupSalt) };
+		if ("name" in factor) {
+			const created = await passkey.create({
+				rpId: factor.rpId,
+				rpName: factor.rpName,
+				userId: concatBytes$3(new Uint8Array([PURPOSE_PROTECTION]), ctx.platform.random(15)),
+				userName: factor.name,
+				salts
+			});
+			return created.first === void 0 ? backupMaterialOf(await passkey.get({
+				rpId: factor.rpId,
+				allowCredentials: [created.credentialId],
+				salts
+			})) : backupMaterialOf(created);
+		}
+		if (allowCredentials.length === 0) throw new KernelError("not-found", "backup: the envelope has no passkey factor");
+		return backupMaterialOf(await passkey.get({
+			rpId: factor.rpId,
+			allowCredentials,
+			salts
+		}));
+	}
 	async function sealBackupFactors(platform, bek, backupFactors) {
 		const salts = backupFactors.map((factor) => factor.kind === "password" ? platform.random(16) : void 0);
 		const keks = await Promise.all(backupFactors.map(async (factor, index) => {
@@ -12638,11 +13208,13 @@ zoo`.split("\n"));
 	*/
 	async function enableBackup(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "backup"));
 		const bek = ctx.platform.random(32);
 		if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
 		try {
-			const record = backupKeyRecord(ctx, dek, bek, await sealBackupFactors(ctx.platform, bek, params.factors));
+			const materials = [];
+			for (const factor of params.factors) materials.push(await backupMaterial(ctx, factor, []));
+			const record = backupKeyRecord(ctx, dek, bek, await sealBackupFactors(ctx.platform, bek, materials));
 			await ctx.commit([{
 				op: "put-record",
 				record
@@ -12727,7 +13299,8 @@ zoo`.split("\n"));
 	*/
 	async function restoreBackup(ctx, params, requestSession) {
 		const envelope = parseEnvelope(params.envelope);
-		const bek = await bekFromFactor(ctx.platform, envelope, params.backupFactor);
+		const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$1.dec(f.credentialId)] : []);
+		const bek = await bekFromFactor(ctx.platform, envelope, await backupMaterial(ctx, params.backupFactor, credentials));
 		try {
 			let plaintext;
 			try {
@@ -12789,7 +13362,7 @@ zoo`.split("\n"));
 	/** One-shot export: the mnemonic as UTF-8 bytes (the host wraps it in a wipeable buffer). */
 	async function exportMnemonic(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
 		const record = findRecord(ctx.image, "entropy", params.walletId);
 		const header = parseEntropyHeader(record.header);
 		const entropy = openRecord(dek, record);
@@ -26763,6 +27336,78 @@ zoo`.split("\n"));
 		return signature;
 	};
 	//#endregion
+	//#region packages/wallet-kernel/src/modules/chains/prompt.ts
+	/** Off-chain messages carry no decodable value flow. */
+	var MESSAGE_INTENT = {
+		summary: "message",
+		outflows: [],
+		approvals: [],
+		fee: void 0,
+		verifiability: "opaque"
+	};
+	var CATALOGS$1 = {
+		"zh-Hans": {
+			titles: {
+				transfer: "确认转账",
+				approve: "确认授权",
+				"contract-call": "确认合约调用",
+				swap: "确认兑换",
+				message: "确认签名",
+				authorization: "确认账户授权",
+				batch: "确认批量交易"
+			},
+			generic: "签署来自应用的请求",
+			otherOutflows: "可能还有其他转出",
+			send: (amount, to) => `发送 ${amount} 到 ${to}`,
+			allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
+			unlimited: (asset) => `全部 ${asset}`,
+			maxFee: (fee) => `最高手续费 ${fee}`
+		},
+		en: {
+			titles: {
+				transfer: "Confirm transfer",
+				approve: "Confirm approval",
+				"contract-call": "Confirm contract call",
+				swap: "Confirm swap",
+				message: "Confirm signature",
+				authorization: "Confirm account authorization",
+				batch: "Confirm batch"
+			},
+			generic: "Sign a request from an app",
+			otherOutflows: "There may be other outflows",
+			send: (amount, to) => `Send ${amount} to ${to}`,
+			allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
+			unlimited: (asset) => `unlimited ${asset}`,
+			maxFee: (fee) => `Max fee ${fee}`
+		}
+	};
+	/** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
+	function formatAmount(amount) {
+		var _amount$symbol;
+		return amount.decimals === void 0 ? `${amount.amount} ${amount.asset}` : `${formatUnits(amount.amount, amount.decimals)} ${(_amount$symbol = amount.symbol) !== null && _amount$symbol !== void 0 ? _amount$symbol : amount.asset}`;
+	}
+	function chainPrompt(locale, intent) {
+		const catalog = CATALOGS$1[locale];
+		const title = catalog.titles[intent.summary];
+		if (intent.verifiability === "opaque") return {
+			title,
+			description: catalog.generic
+		};
+		const lines = [
+			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
+			...intent.approvals.map((change) => catalog.allow(change.spender, change.unlimited ? catalog.unlimited(change.asset) : `${change.amount} ${change.asset}`)),
+			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]
+		];
+		if (intent.verifiability === "partial") return {
+			title,
+			description: joinLines([catalog.otherOutflows, ...lines])
+		};
+		return {
+			title,
+			description: joinLines(lines.length === 0 ? [catalog.generic] : lines)
+		};
+	}
+	//#endregion
 	//#region packages/wallet-kernel/src/modules/chains/index.ts
 	/**
 	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
@@ -26841,10 +27486,10 @@ zoo`.split("\n"));
 		const kb = new Set(Object.keys(b));
 		return ka.length === kb.size && ka.every((k) => kb.has(k) && deepEqual(a[k], b[k]));
 	};
-	var mapChainError = (error) => {
+	function mapChainError(error) {
 		if (error instanceof ChainError) throw new KernelError("invalid-input", "invalid sign request");
 		throw error;
-	};
+	}
 	function createChainsModule() {
 		return {
 			vault: {
@@ -26894,14 +27539,7 @@ zoo`.split("\n"));
 					]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
 					const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 					if (record === void 0) throw new KernelError("not-found", "no such wallet");
-					const entropy = openRecord(dek, record);
-					let seed;
-					try {
-						seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-					} finally {
-						wipe(entropy);
-					}
-					try {
+					const execute = (seed, intentOnly) => {
 						if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") {
 							const master = HDKey$1.fromMasterSeed(seed);
 							try {
@@ -26916,12 +27554,13 @@ zoo`.split("\n"));
 										mapChainError(error);
 									}
 									if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+									let intent;
 									try {
-										decodeEvm(request);
+										intent = decodeEvm(request);
 									} catch (error) {
 										mapChainError(error);
 									}
-									await verifyFactor(ctx.platform, ctx.image, verify, dek);
+									if (intentOnly) return { prompt: intent };
 									if (request.kind === "evm.transaction") return {
 										kind: "evm.transaction",
 										signedTransaction: signEvmTransaction(request.tx, priv)
@@ -27028,12 +27667,13 @@ zoo`.split("\n"));
 											mapChainError(error);
 										}
 										if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+										let intent;
 										try {
-											decodeBitcoinPsbt(request, ownScripts);
+											intent = decodeBitcoinPsbt(request, ownScripts);
 										} catch (error) {
 											mapChainError(error);
 										}
-										await verifyFactor(ctx.platform, ctx.image, verify, dek);
+										if (intentOnly) return { prompt: intent };
 										return {
 											kind: "bitcoin.psbt",
 											signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32))
@@ -27063,7 +27703,7 @@ zoo`.split("\n"));
 									} catch (error) {
 										mapChainError(error);
 									}
-									await verifyFactor(ctx.platform, ctx.image, verify, dek);
+									if (intentOnly) return { prompt: MESSAGE_INTENT };
 									return {
 										kind: "bitcoin.message",
 										signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32))
@@ -27088,12 +27728,13 @@ zoo`.split("\n"));
 								mapChainError(error);
 							}
 							if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+							let intent = MESSAGE_INTENT;
 							if (request.kind === "solana.transaction") try {
-								decodeSolana(request, signer);
+								intent = decodeSolana(request, signer);
 							} catch (error) {
 								mapChainError(error);
 							}
-							await verifyFactor(ctx.platform, ctx.image, verify, dek);
+							if (intentOnly) return { prompt: intent };
 							return {
 								kind: request.kind,
 								signature: signSolanaMessage(request.message, priv)
@@ -27102,9 +27743,31 @@ zoo`.split("\n"));
 							wipe(child.privateKey);
 							wipe(root.privateKey);
 						}
-					} finally {
-						wipe(seed);
-					}
+					};
+					const withSeed = async (run) => {
+						const entropy = openRecord(dek, record);
+						let seed;
+						try {
+							seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
+						} finally {
+							wipe(entropy);
+						}
+						try {
+							return run(seed);
+						} finally {
+							wipe(seed);
+						}
+					};
+					const prepared = await withSeed((seed) => execute(seed, true));
+					if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
+					await verifyFactor(ctx.platform, ctx.image, verify, dek, () => {
+						var _ctx$platform$keystor, _ctx$platform$keystor2;
+						return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
+					});
+					ctx.session.require(session);
+					const signed = await withSeed((seed) => execute(seed, false));
+					if ("prompt" in signed) throw new KernelError("integrity", "unreachable: sign pass did not sign");
+					return signed;
 				}
 			}
 		};
@@ -28987,7 +29650,7 @@ zoo`.split("\n"));
 		const { dek } = ctx.session.require(requestSession);
 		if (parseNostrKeyHeader(findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey).header).origin !== "nip46-client") {
 			if (params.verify === void 0) throw new KernelError("invalid-input", "factor verification is required");
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "remove-key"));
 		}
 		await ctx.commit([{
 			op: "delete-record",
@@ -28998,7 +29661,7 @@ zoo`.split("\n"));
 	}
 	async function exportKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-key"));
 		const record = findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey);
 		const header = parseNostrKeyHeader(record.header);
 		const secretKey = openRecord(dek, record);
@@ -29118,6 +29781,61 @@ zoo`.split("\n"));
 				"nostr.unwrapGiftWraps": async (ctx, params, session) => unwrapGiftWraps(ctx, pool, params, session)
 			},
 			status: (records) => nostrStatus(records)
+		};
+	}
+	//#endregion
+	//#region packages/wallet-kernel/src/modules/spark/prompt.ts
+	init_utils$2();
+	var CATALOGS = {
+		"zh-Hans": {
+			titles: {
+				transfer: "确认 Spark 转账",
+				lightning: "确认闪电付款",
+				exit: "确认提取到链上",
+				onchain: "确认链上发送",
+				token: "确认代币转账"
+			},
+			send: (sats, to) => `发送 ${sats} sats 到 ${to}`,
+			pay: (sats, hash) => `支付 ${sats} sats，付款哈希 ${hash}`,
+			payOpen: (hash) => `支付闪电发票，付款哈希 ${hash}`,
+			withdraw: (sats, address) => `提取 ${sats} sats 到 ${address}`,
+			onchain: (address, maxFee) => `发送到 ${address}，最高手续费 ${maxFee} sats`,
+			maxFee: (maxFee) => `最高手续费 ${maxFee} sats`,
+			sendToken: (amount, token, to) => `发送 ${amount} 个代币 ${token} 到 ${to}`
+		},
+		en: {
+			titles: {
+				transfer: "Confirm Spark transfer",
+				lightning: "Confirm Lightning payment",
+				exit: "Confirm withdrawal",
+				onchain: "Confirm on-chain send",
+				token: "Confirm token transfer"
+			},
+			send: (sats, to) => `Send ${sats} sats to ${to}`,
+			pay: (sats, hash) => `Pay ${sats} sats, payment hash ${hash}`,
+			payOpen: (hash) => `Pay a Lightning invoice, payment hash ${hash}`,
+			withdraw: (sats, address) => `Withdraw ${sats} sats to ${address}`,
+			onchain: (address, maxFee) => `Send to ${address}, max fee ${maxFee} sats`,
+			maxFee: (maxFee) => `Max fee ${maxFee} sats`,
+			sendToken: (amount, token, to) => `Send ${amount} of token ${token} to ${to}`
+		}
+	};
+	function lines(catalog, summary) {
+		if (summary.kind === "transfer") return summary.receivers.map((receiver) => catalog.send(receiver.amountSats, bytesToHex$4(receiver.identityPublicKey)));
+		if (summary.kind === "lightning") {
+			const hash = bytesToHex$4(summary.paymentHash);
+			return [summary.invoiceAmountSats === void 0 ? catalog.payOpen(hash) : catalog.pay(summary.invoiceAmountSats, hash), catalog.maxFee(summary.maxFeeSats)];
+		}
+		if (summary.kind === "exit") return [catalog.withdraw(summary.amountSats, summary.address), catalog.maxFee(summary.maxFeeSats)];
+		if (summary.kind === "onchain") return [catalog.onchain(summary.address, summary.maxFeeSats)];
+		const token = bytesToHex$4(summary.tokenIdentifier);
+		return summary.receivers.map((receiver) => catalog.sendToken(receiver.amount, token, bytesToHex$4(receiver.ownerPublicKey)));
+	}
+	function sparkPrompt(locale, summary) {
+		const catalog = CATALOGS[locale];
+		return {
+			title: catalog.titles[summary.kind],
+			description: joinLines(lines(catalog, summary))
 		};
 	}
 	//#endregion
@@ -38896,11 +39614,16 @@ zoo`.split("\n"));
 				"spark.approve": async (ctx, params, session) => {
 					const { dek } = ctx.session.require(session);
 					if (ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.account.walletId) === void 0) throw new KernelError("not-found", "no such wallet");
-					await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
 					const key = poolKey(params.account);
+					if (liveApprovals(ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
+					const { summary, decoded } = decodeIntent(await sparkRuntime(), params.account, params.intent);
+					await verifyFactor(ctx.platform, ctx.image, params.verify, dek, () => {
+						var _ctx$platform$keystor, _ctx$platform$keystor2;
+						return sparkPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), summary);
+					});
+					ctx.session.require(session);
 					const live = liveApprovals(ctx, key);
 					if (live.length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
-					const { summary, decoded } = decodeIntent(await sparkRuntime(), params.account, params.intent);
 					live.push({
 						intent: params.intent,
 						deadline: ctx.platform.elapsed() + APPROVAL_TTL_MS,
@@ -38915,171 +39638,6 @@ zoo`.split("\n"));
 		};
 	}
 	//#endregion
-	//#region packages/wallet-kernel/src/session/session.ts
-	init_utils$2();
-	init_defineProperty();
-	init_objectSpread2();
-	function wipePendingFactor(pending) {
-		pending.kek.wipe();
-		if (pending.kind === "password") wipe(pending.salt);
-		else wipe(pending.credentialId);
-	}
-	function wipeDraft(draft) {
-		draft.entropy.wipe();
-		for (const expected of draft.expected) wipe(expected);
-		if (draft.pendingFactor !== void 0) wipePendingFactor(draft.pendingFactor);
-	}
-	/**
-	* Session state machine: uninitialized | locked | unlocked. Timeout checks run at the start of
-	* every request (the authoritative path); the injected `platform.setTimer` additionally locks
-	* proactively so a quiet Worker still locks on time.
-	*/
-	var Session = class {
-		constructor(platform, onLock) {
-			_defineProperty(this, "state", { status: "uninitialized" });
-			_defineProperty(this, "drafts", /* @__PURE__ */ new Map());
-			_defineProperty(this, "cancelTimer", void 0);
-			_defineProperty(this, "platform", void 0);
-			_defineProperty(this, "onLock", void 0);
-			this.platform = platform;
-			this.onLock = onLock;
-		}
-		get status() {
-			return this.state.status;
-		}
-		get unlocked() {
-			return this.state.status === "unlocked";
-		}
-		/** Called once the initial store image is loaded and after every external change. */
-		setInitialized(initialized) {
-			if (this.state.status === "uninitialized" && initialized) this.state = { status: "locked" };
-			else if (!initialized && this.state.status !== "uninitialized") {
-				this.lock("invalidated");
-				this.state = { status: "uninitialized" };
-			}
-		}
-		/** Opens a session, replacing any existing one. Returns the new session id. */
-		open(dek, keyId) {
-			this.wipeUnlocked();
-			const id = bytesToHex$4(this.platform.random(16));
-			const at = this.platform.elapsed();
-			this.state = {
-				status: "unlocked",
-				id,
-				dek,
-				keyId,
-				unlockedAt: at,
-				lastActivityAt: at
-			};
-			this.schedule();
-			return id;
-		}
-		/** Swaps the live DEK after a rotation commit (old DEK wiped); throws `locked` when not unlocked. */
-		rotate(dek, keyId) {
-			const { state } = this;
-			if (state.status !== "unlocked") throw new KernelError("locked", "session is not unlocked");
-			state.dek.wipe();
-			this.state = _objectSpread2(_objectSpread2({}, state), {}, {
-				dek,
-				keyId
-			});
-		}
-		/**
-		* Enforces idle and max-session deadlines on the monotonic elapsed clock. Returns the lock reason
-		* when the session expired; the caller locks before handling the request. Pure check — activity
-		* is stamped by `touch()` on a successful request, never here.
-		*/
-		checkTimeouts() {
-			const { state } = this;
-			if (state.status !== "unlocked") return;
-			const now = this.platform.elapsed();
-			if (now - state.unlockedAt > this.platform.policy.maxSessionMs) return "expired";
-			const { idle } = this.platform.policy;
-			if (idle !== void 0 && now - state.lastActivityAt > idle.ms) return "idle";
-		}
-		/**
-		* Stamps user activity: the idle deadline moves forward and the timer re-arms. The max-session
-		* deadline never moves — `schedule()` still clamps to it.
-		*/
-		touch() {
-			const { state } = this;
-			if (state.status !== "unlocked") return;
-			state.lastActivityAt = this.platform.elapsed();
-			this.schedule();
-		}
-		/** The live session for a request that carries `session`; throws `locked` on any mismatch. */
-		require(requestSession) {
-			const { state } = this;
-			if (state.status !== "unlocked" || requestSession !== state.id) throw new KernelError("locked", "session is not unlocked");
-			return {
-				id: state.id,
-				dek: state.dek
-			};
-		}
-		/** The live session without a request-id check (drafts prove same-process provenance). */
-		current() {
-			const { state } = this;
-			if (state.status !== "unlocked") throw new KernelError("locked", "session is not unlocked");
-			return {
-				id: state.id,
-				dek: state.dek,
-				keyId: state.keyId
-			};
-		}
-		putDraft(id, draft) {
-			const existing = this.drafts.get(id);
-			if (existing !== void 0) wipeDraft(existing);
-			this.drafts.set(id, draft);
-		}
-		takeDraft(id) {
-			const draft = this.drafts.get(id);
-			if (draft === void 0) throw new KernelError("not-found", "unknown draft");
-			this.drafts.delete(id);
-			return draft;
-		}
-		/** Peek without removing: a wrong quiz answer keeps the draft. */
-		getDraft(id) {
-			const draft = this.drafts.get(id);
-			if (draft === void 0) throw new KernelError("not-found", "unknown draft");
-			return draft;
-		}
-		dropDraft(id) {
-			const draft = this.drafts.get(id);
-			if (draft !== void 0) {
-				this.drafts.delete(id);
-				wipeDraft(draft);
-			}
-		}
-		lock(reason) {
-			const wasUnlocked = this.state.status === "unlocked";
-			this.wipeUnlocked();
-			for (const draft of this.drafts.values()) wipeDraft(draft);
-			this.drafts.clear();
-			this.state = { status: this.state.status === "uninitialized" ? "uninitialized" : "locked" };
-			if (wasUnlocked) this.onLock(reason);
-		}
-		wipeUnlocked() {
-			if (this.state.status === "unlocked") this.state.dek.wipe();
-			if (this.cancelTimer !== void 0) {
-				this.cancelTimer();
-				this.cancelTimer = void 0;
-			}
-		}
-		schedule() {
-			if (this.state.status !== "unlocked") return;
-			const now = this.platform.elapsed();
-			const { idle } = this.platform.policy;
-			const deadline = Math.min(this.state.unlockedAt + this.platform.policy.maxSessionMs, idle === void 0 ? Number.POSITIVE_INFINITY : this.state.lastActivityAt + idle.ms);
-			const delay = Math.max(0, deadline - now);
-			if (this.cancelTimer !== void 0) this.cancelTimer();
-			this.cancelTimer = this.platform.setTimer(delay, () => {
-				const reason = this.checkTimeouts();
-				if (reason === void 0) this.schedule();
-				else this.lock(reason);
-			});
-		}
-	};
-	//#endregion
 	//#region packages/wallet-kernel/src/status.ts
 	function metaHealth(image) {
 		const { meta } = image;
@@ -39088,7 +39646,11 @@ zoo`.split("\n"));
 		if (meta.format !== 2) return "unsupported";
 		if (!Number.isSafeInteger(meta.revision) || meta.revision < 1 || typeof meta.keyId !== "string" || !/^[0-9a-f]{32}$/.test(meta.keyId) || !Number.isSafeInteger(meta.failedAttempts) || meta.failedAttempts < 0 || !Number.isSafeInteger(meta.lastFailureAt) || meta.lastFailureAt < 0) return "corrupted";
 	}
-	var FACTOR_KINDS = /* @__PURE__ */ new Set(["password", "passkey"]);
+	var FACTOR_KINDS = /* @__PURE__ */ new Set([
+		"hardware",
+		"password",
+		"passkey"
+	]);
 	/**
 	* Snapshot contents for the `status` payload — the record-ownership composition point, and the
 	* image's health assessment. The core parses the kinds it owns (entropy, data-key), claimed records
@@ -39194,7 +39756,8 @@ zoo`.split("\n"));
 		}
 		return "unavailable";
 	}
-	function startKernel(platform, port) {
+	function startKernel(host, port) {
+		const platform = serializeCeremonies(host);
 		const nostr = createNostrModule(platform.backends.nostr);
 		const spark = createSparkModule();
 		const chains = createChainsModule();
@@ -39442,6 +40005,56 @@ zoo`.split("\n"));
 			enqueue(async () => handle(message));
 		});
 		enqueue(reloadAndPost);
+	}
+	//#endregion
+	//#region packages/wallet-native/kernel/keystore.ts
+	/**
+	* Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
+	* completes each call with `(bytes, code)`; a failure code is already the kernel error code
+	* (`cancelled`, `factor-invalidated`, `factor-unavailable`, `unavailable`) and becomes a
+	* `KernelError` so the vault reports it verbatim instead of as an integrity failure.
+	*/
+	function failure(code) {
+		return code === "cancelled" || code === "factor-invalidated" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform keystore did not complete") : new KernelError("unavailable", "the platform keystore reported no outcome");
+	}
+	async function bytesOf(start) {
+		return new Promise((resolve, reject) => {
+			start((result, code) => {
+				if (result === void 0) {
+					reject(failure(code));
+					return;
+				}
+				resolve(result);
+			});
+		});
+	}
+	async function outcomeOf(start) {
+		return new Promise((resolve, reject) => {
+			start((_result, code) => {
+				if (code !== void 0) {
+					reject(failure(code));
+					return;
+				}
+				resolve();
+			});
+		});
+	}
+	function bindNativeKeystore(raw) {
+		return {
+			locale: raw.locale,
+			seal: async (id, secret, prompt) => bytesOf((done) => {
+				raw.seal(id, secret, prompt.title, prompt.description, done);
+			}),
+			open: async (id, sealed, prompt) => bytesOf((done) => {
+				raw.open(id, sealed, prompt.title, prompt.description, done);
+			}),
+			authenticate: async (prompt) => outcomeOf((done) => {
+				raw.authenticate(prompt.title, prompt.description, done);
+			}),
+			clear: async () => outcomeOf((done) => {
+				raw.clear(done);
+			})
+		};
 	}
 	function call$1(invoke) {
 		try {
@@ -42186,6 +42799,8 @@ zoo`.split("\n"));
 			});
 		}),
 		store: createFileStore(__qntx.file),
+		keystore: bindNativeKeystore(__qntx.keystore),
+		passkey: void 0,
 		policy: {
 			maxSessionMs: 864e5,
 			maxScryptLogN: 18

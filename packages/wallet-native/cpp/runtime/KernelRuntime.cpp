@@ -465,6 +465,7 @@ void KernelRuntime::Impl::teardown() {
   // Drop every jsi value before the runtime itself.
   globals->intrinsics.reset();
   globals->messageHandler.reset();
+  globals->integrityHandler.reset();
   for (const auto& call : globals->pending) {
     call->done.reset();
   }
@@ -472,6 +473,10 @@ void KernelRuntime::Impl::teardown() {
   // A KDF worker that sees inactive drops its job — safe only because `done`
   // was already cleared above, on this thread, while the runtime was alive.
   globals->active->store(false, std::memory_order_release);
+  // A system prompt still on screen belongs to nobody now: dismiss it.
+  if (globals->cancelCeremony) {
+    globals->cancelCeremony();
+  }
   // Timed/timerIndex are kernel-thread-only state.
   timed.clear();
   timerIndex.clear();

@@ -115,6 +115,8 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
   };
   const platform: KernelPlatform = {
     random,
+    keystore: undefined,
+    passkey: undefined,
     now: () => 1_700_000_000_000,
     elapsed: () => 0,
     // The session's idle/max timers simply never fire in this smoke — no ambient clock advances.
@@ -306,6 +308,15 @@ export async function main(): Promise<void> {
       })();
     },
     file: __qntxFile,
+    // The native kernel entry binds the keystore eagerly; the smoke never
+    // reaches a factor ceremony, so only the shape is needed.
+    keystore: {
+      locale: "en",
+      seal: () => undefined,
+      open: () => undefined,
+      authenticate: () => undefined,
+      clear: () => undefined,
+    },
     // The native kernel entry binds backends.nostr eagerly at platform
     // construction — the smoke never calls it, so only the ABI pin is real.
     backends: {

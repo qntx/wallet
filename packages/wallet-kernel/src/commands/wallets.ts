@@ -1,19 +1,27 @@
 import { equalBytes } from "@noble/ciphers/utils.js";
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { HDKey } from "@scure/bip32";
 
-import type { Factor, NullValue } from "@qntx/wallet/protocol";
+import type {
+  CreateWithPasskeyParams,
+  Factor,
+  NullValue,
+  RestoreWithPasskeyParams,
+} from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { masterKey } from "../derive/hd.ts";
 import { walletIdOf } from "../derive/wallet-id.ts";
 import { KernelError } from "../errors.ts";
-import type { KernelPlatform } from "../platform.ts";
+import { assertFactorKindAvailable, requirePasskey } from "../platform.ts";
+import type { KernelPlatform, PasskeyResult } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import { decodeUtf8Secret, Secret, wipe } from "../secret/secret.ts";
 import { randomEntropy } from "../seed/entropy.ts";
 import { entropyFromMnemonic, mnemonicFromEntropy } from "../seed/mnemonic.ts";
 import { entropyFromPrf } from "../seed/passkey.ts";
 import { seedFromEntropy } from "../seed/seed.ts";
+import { wipePendingFactor } from "../session/session.ts";
 import type { PendingFactor } from "../session/session.ts";
 import { factorPublicKey, wrapDek } from "../vault/factors.ts";
 import { encodeHeader } from "../vault/headers.ts";
@@ -22,9 +30,11 @@ import type { StoredFactor, StoredRecord } from "../vault/store.ts";
 import {
   establishOps,
   factorHeader,
+  factorRow,
   findRecord,
   makeFactor,
   newFactorKek,
+  newHardwareKek,
   sealRecord,
   verifyFactor,
   walletInfo,
@@ -145,18 +155,43 @@ export async function commitRecords(
     if (factor === undefined) {
       throw new KernelError("integrity", "unreachable: initial factor missing");
     }
-    const storedFactor = await makeFactor(ctx.platform, factor, gated.dek);
-    const { ops, keyId } = establishOps(ctx.platform, storedFactor, records);
-    try {
-      await ctx.commit(ops);
-    } catch (error) {
-      gated.dek.wipe();
-      throw error;
-    }
-    return openSession(ctx, gated.dek, keyId);
+    return establishVault(
+      ctx,
+      gated.dek,
+      async () => makeFactor(ctx.platform, factor, gated.dek),
+      records,
+    );
   }
   await ctx.commit(records.map((record) => ({ op: "put-record" as const, record })));
   return ctx.session.current().id;
+}
+
+/**
+ * Establishes the vault in one `init` commit and opens the session; wipes `dek` on failure. On a
+ * keystore host the vault is uninitialized here and the kernel is the single writer, so every
+ * hardware key this app left behind (a reinstall keeps iOS keychain items, a failed establish) is
+ * cleared before the new key is sealed — and again if the establish fails after sealing.
+ */
+async function establishVault(
+  ctx: KernelContext,
+  dek: Secret,
+  factorRowFor: () => Promise<StoredFactor>,
+  records: ReadonlyArray<StoredRecord>,
+): Promise<string> {
+  const { keystore } = ctx.platform;
+  let keyId: string;
+  try {
+    await keystore?.clear();
+    const established = establishOps(ctx.platform, await factorRowFor(), records);
+    ({ keyId } = established);
+    await ctx.commit(established.ops);
+  } catch (error) {
+    dek.wipe();
+    // Best effort; the establish error is the one the caller needs.
+    await keystore?.clear().catch(() => undefined);
+    throw error;
+  }
+  return openSession(ctx, dek, keyId);
 }
 
 function ensureNewWallet(ctx: KernelContext, material: WalletMaterial): void {
@@ -188,6 +223,10 @@ function quizPositions(random: KernelPlatform["random"], count: number): [number
  * inside `newFactorKek` because the factor is being created.
  */
 async function pendingFactorOf(ctx: KernelContext, factor: Factor): Promise<PendingFactor> {
+  if (factor.kind === "hardware") {
+    assertFactorKindAvailable(ctx.platform, "hardware");
+    return { kind: "hardware" };
+  }
   const material = await newFactorKek(ctx.platform, factor);
   return material.kind === "password"
     ? { kind: "password", kek: Secret.take(material.kek), salt: material.salt }
@@ -230,14 +269,18 @@ export async function createMnemonic(
 
 /**
  * Turns a draft's pending factor into its stored record once the DEK exists: the header gets the
- * public key derived from the held KEK, and the DEK wraps to that key.
+ * public key derived from the held KEK, and the DEK wraps to that key. A hardware factor seals its
+ * KEK now, under a key created for this factor id.
  */
-function storedFactorForPending(
+async function storedFactorForPending(
   ctx: KernelContext,
   pending: PendingFactor,
   dek: Secret,
-): StoredFactor {
+): Promise<StoredFactor> {
   const id = bytesToHex(ctx.platform.random(16));
+  if (pending.kind === "hardware") {
+    return factorRow(ctx.platform, await newHardwareKek(ctx.platform, id), id, dek);
+  }
   const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
   const header = factorHeader(pending, publicKey, ctx.platform.now());
   const sealed = wrapDek(dek, publicKey, { kind: pending.kind, id, header }, ctx.platform.random);
@@ -270,18 +313,16 @@ export async function confirmMnemonic(
       ensureNewWallet(ctx, material);
       const createdAt = ctx.platform.now();
       // The quiz just proved the user wrote the words down.
-      if (taken.pendingFactor !== undefined) {
+      const { pendingFactor } = taken;
+      if (pendingFactor !== undefined) {
         const dek = Secret.take(ctx.platform.random(32));
-        const storedFactor = storedFactorForPending(ctx, taken.pendingFactor, dek);
         const record = walletRecord(ctx, dek, material, "mnemonic", createdAt);
-        const { ops, keyId } = establishOps(ctx.platform, storedFactor, [record]);
-        try {
-          await ctx.commit(ops);
-        } catch (error) {
-          dek.wipe();
-          throw error;
-        }
-        const session = openSession(ctx, dek, keyId);
+        const session = await establishVault(
+          ctx,
+          dek,
+          async () => storedFactorForPending(ctx, pendingFactor, dek),
+          [record],
+        );
         return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
       }
       const session = ctx.session.current();
@@ -297,12 +338,7 @@ export async function confirmMnemonic(
       wipe(expected);
     }
     if (taken.pendingFactor !== undefined) {
-      taken.pendingFactor.kek.wipe();
-      if (taken.pendingFactor.kind === "password") {
-        wipe(taken.pendingFactor.salt);
-      } else {
-        wipe(taken.pendingFactor.credentialId);
-      }
+      wipePendingFactor(taken.pendingFactor);
     }
   }
 }
@@ -341,19 +377,99 @@ export async function importMnemonic(
   }
 }
 
+const PURPOSE_WALLET = 0x01;
+
+/** The PRF output that becomes a passkey wallet's entropy, plus whether the credential syncs. */
+type WalletPrf = { readonly prfWallet: Uint8Array; readonly synced: boolean };
+
+/**
+ * One platform ceremony's wallet PRF: the result must be user-verified and carry a 32-byte `first`
+ * output; anything else is an authenticator without usable PRF support (`factor-unavailable`). The
+ * unused `second` output is wiped.
+ */
+function walletPrfOf(result: PasskeyResult): WalletPrf {
+  if (result.second !== undefined) {
+    wipe(result.second);
+  }
+  if (!result.userVerified || result.first?.length !== 32) {
+    if (result.first !== undefined) {
+      wipe(result.first);
+    }
+    throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+  }
+  return { prfWallet: result.first, synced: result.synced };
+}
+
+/**
+ * The kernel-run wallet ceremony (React Native): the PRF output is produced and consumed here and
+ * never crosses the channel. Create registers a discoverable credential whose user handle starts
+ * with the wallet purpose byte; an authenticator that evaluates PRF only on assertion gets one
+ * follow-up assertion of the new credential. Restore asserts any credential for the RP and accepts
+ * only a wallet-purpose one — a vault or backup credential would silently derive another wallet.
+ */
+async function walletCeremony(
+  ctx: KernelContext,
+  params: Extract<CreateWithPasskeyParams | RestoreWithPasskeyParams, { ceremony: "kernel" }>,
+): Promise<WalletPrf> {
+  const passkey = requirePasskey(ctx.platform);
+  const salts = { first: utf8ToBytes(params.walletSalt) };
+  if ("name" in params) {
+    const created = await passkey.create({
+      rpId: params.rpId,
+      rpName: params.rpName,
+      userId: concatBytes(new Uint8Array([PURPOSE_WALLET]), ctx.platform.random(15)),
+      userName: params.name,
+      salts,
+    });
+    if (created.first !== undefined) {
+      return walletPrfOf(created);
+    }
+    return walletPrfOf(
+      await passkey.get({ rpId: params.rpId, allowCredentials: [created.credentialId], salts }),
+    );
+  }
+  const asserted = await passkey.get({ rpId: params.rpId, allowCredentials: undefined, salts });
+  if (asserted.userHandle?.[0] !== PURPOSE_WALLET) {
+    for (const output of [asserted.first, asserted.second]) {
+      if (output !== undefined) {
+        wipe(output);
+      }
+    }
+    throw new KernelError("wrong-passkey", "the passkey is not a wallet credential");
+  }
+  return walletPrfOf(asserted);
+}
+
+/**
+ * Creates or restores a passkey wallet. The ceremony runs where the platform puts it: in the kernel
+ * when a platform authenticator exists, in the host (evidence on the wire) otherwise — the other
+ * shape is `factor-unavailable`.
+ */
 export async function createWithPasskey(
   ctx: KernelContext,
-  params: { credentialId: Uint8Array; prfWallet: Uint8Array; synced: boolean; factor?: Factor },
+  params: CreateWithPasskeyParams | RestoreWithPasskeyParams,
   requestSession: string | undefined,
 ): Promise<{ wallet: WalletInfo; session: string }> {
+  if ((ctx.platform.passkey !== undefined) !== (params.ceremony === "kernel")) {
+    throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+  }
   const gated = gate(ctx, params.factor, requestSession);
-  const entropy = entropyFromPrf(params.prfWallet);
+  let prf: WalletPrf;
+  try {
+    prf = params.ceremony === "kernel" ? await walletCeremony(ctx, params) : params;
+  } catch (error) {
+    if (gated.uninitialized) {
+      gated.dek.wipe();
+    }
+    throw error;
+  }
+  const entropy = entropyFromPrf(prf.prfWallet);
   const material = await walletMaterial(ctx.platform, entropy, "passkey", 12);
   try {
     ensureNewWallet(ctx, material);
     const createdAt = ctx.platform.now();
     // Only a synced passkey backs the wallet up; a device-bound credential dies with the device.
-    const backup = params.synced ? "passkey" : "none";
+    const backup = prf.synced ? "passkey" : "none";
     const record = walletRecord(ctx, gated.dek, material, backup, createdAt);
     const session = await commitRecords(ctx, gated, params.factor, [record]);
     return { wallet: walletInfoOf(material, backup, createdAt), session };
@@ -368,7 +484,13 @@ export async function deleteWallet(
   requestSession: string | undefined,
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "delete-wallet"),
+  );
   findRecord(ctx.image, "entropy", params.walletId);
   // The entropy row and every module record derived from this wallet go in ONE commit —
   // a partial deletion can never land. Reconciliation forgets the evicted live state.

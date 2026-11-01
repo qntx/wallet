@@ -8,6 +8,8 @@ import { nostr } from "@qntx/wallet/nostr";
 
 import { startKernel } from "../../wallet-kernel/src/index.ts";
 import type { KernelPlatform, createMemoryStore } from "../../wallet-kernel/src/index.ts";
+import { bindNativeKeystore } from "../kernel/keystore.ts";
+import type { KernelKeystoreNative } from "../kernel/keystore.ts";
 import { createFileStore } from "../kernel/store.ts";
 import { createKernelPort } from "../kernel/transport.ts";
 import type { KernelFramePipe } from "../kernel/transport.ts";
@@ -23,7 +25,60 @@ const PASSKEY: PasskeyConfig = {
   backupSalt: "backup",
 };
 const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 60 };
-const PASSWORD = "correct horse battery staple";
+
+/**
+ * A `__qntx.keystore` stand-in with the native completion shape: sealing reverses the bytes, keys
+ * live per id, and `failNext` makes the next prompting call complete with a native failure code.
+ */
+function fakeNativeKeystore() {
+  const keys = new Map<string, Uint8Array>();
+  const failures: string[] = [];
+  const later = (fn: () => void) => {
+    setTimeout(fn);
+  };
+  // Reversible stand-in for platform encryption: byte order reversed.
+  const seal = (bytes: Uint8Array) => bytes.toReversed();
+  const native: KernelKeystoreNative = {
+    locale: "en-US",
+    seal: (id, secret, _title, _description, done) => {
+      const code = failures.shift();
+      const sealed = seal(secret);
+      if (code === undefined) {
+        keys.set(id, sealed);
+      }
+      later(() => {
+        done(code === undefined ? sealed : undefined, code);
+      });
+    },
+    open: (id, sealed, _title, _description, done) => {
+      const code = failures.shift();
+      const known = keys.get(id);
+      later(() => {
+        if (code !== undefined) {
+          done(undefined, code);
+          return;
+        }
+        done(
+          known === undefined ? undefined : seal(sealed),
+          known === undefined ? "factor-invalidated" : undefined,
+        );
+      });
+    },
+    authenticate: (_title, _description, done) => {
+      const code = failures.shift();
+      later(() => {
+        done(undefined, code);
+      });
+    },
+    clear: (done) => {
+      keys.clear();
+      later(() => {
+        done(undefined, undefined);
+      });
+    },
+  };
+  return { native, failNext: (code: string) => failures.push(code) };
+}
 
 /** In-memory frame pipe: host wrapper (MainPort) ↔ kernel-side transport (Port). */
 type FakeHost = KernelHostLike & {
@@ -75,9 +130,14 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   return { host, pipe };
 }
 
-function platform(store: ReturnType<typeof createMemoryStore>): KernelPlatform {
+function platform(
+  store: ReturnType<typeof createMemoryStore>,
+  keystore: KernelKeystoreNative,
+): KernelPlatform {
   return {
     random: (n) => crypto.getRandomValues(new Uint8Array(n)),
+    keystore: bindNativeKeystore(keystore),
+    passkey: undefined,
     now: () => Date.now(),
     elapsed: () => performance.now(),
     setTimer: (ms, fn) => {
@@ -125,9 +185,9 @@ const fileStore = (bytes: { value: Uint8Array | undefined }) =>
     },
   });
 
-const boot = (store: ReturnType<typeof createMemoryStore>) => {
+const boot = (store: ReturnType<typeof createMemoryStore>, keystore: KernelKeystoreNative) => {
   const { host, pipe } = makePipe();
-  startKernel(platform(store), createKernelPort(pipe));
+  startKernel(platform(store, keystore), createKernelPort(pipe));
   return host;
 };
 
@@ -141,24 +201,26 @@ describe("createNativeWallet", () => {
 
   it("mnemonic ceremony, import, unlock, nostr sign, lock, crash and rebuild", async () => {
     // Vault A covers the mnemonic-create ceremony; vault B covers import — both
-    // methods are one-shot vault initializers.
+    // methods are one-shot vault initializers. Both establish the hardware factor by default.
+    const keystore = fakeNativeKeystore();
     const bytes = { value: undefined as Uint8Array | undefined };
-    const hostA = boot(fileStore(bytes));
+    const hostA = boot(fileStore(bytes), fakeNativeKeystore().native);
     const walletA = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: hostA });
-    const draft = await walletA.wallets.createMnemonic({
-      words: 12,
-      factor: { kind: "password", password: PASSWORD },
-    });
+    const draft = await walletA.wallets.createMnemonic({ words: 12 });
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
     await draft.confirm(draft.quiz.map((i) => words[i]!));
+    expect(walletA.getSnapshot().factors.map((f) => f.kind)).toStrictEqual(["hardware"]);
 
     const bytesB = { value: undefined as Uint8Array | undefined };
-    const host = boot(fileStore(bytesB));
+    const host = boot(fileStore(bytesB), keystore.native);
     const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host });
-    const imported = await wallet.wallets.importMnemonic({
-      mnemonic: words.join(" "),
-      factor: { kind: "password", password: PASSWORD },
-    });
+    await expect(
+      wallet.wallets.importMnemonic({
+        mnemonic: words.join(" "),
+        factor: { kind: "password", password: "correct horse battery staple" },
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: "factor-unavailable" }));
+    const imported = await wallet.wallets.importMnemonic({ mnemonic: words.join(" ") });
     const { walletId } = imported;
 
     const api = nostr(wallet);
@@ -175,9 +237,14 @@ describe("createNativeWallet", () => {
     await wallet.vault.lock();
 
     // Simulated host crash: the runtime dies; a fresh host+kernel on the same store recovers.
-    const host2 = boot(fileStore(bytesB));
+    const host2 = boot(fileStore(bytesB), keystore.native);
     const wallet2 = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host2 });
-    await wallet2.vault.unlock({ kind: "password", password: PASSWORD });
+    keystore.failNext("cancelled");
+    await expect(wallet2.vault.unlock()).rejects.toThrow(
+      expect.objectContaining({ code: "cancelled" }),
+    );
+    expect(wallet2.getSnapshot().vault).toBe("locked");
+    await wallet2.vault.unlock();
     expect(wallet2.getSnapshot().vault).toBe("unlocked");
   });
 });

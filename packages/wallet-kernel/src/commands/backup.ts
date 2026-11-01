@@ -9,7 +9,7 @@
 
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
 
 import {
@@ -21,6 +21,7 @@ import type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,
   BackupFactor,
+  BackupUnlockFactor,
   BackupHeaderWallet,
   BackupHeaderWire,
   Factor,
@@ -29,7 +30,9 @@ import type {
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
-import type { KernelPlatform } from "../platform.ts";
+import { requirePasskey } from "../platform.ts";
+import type { KernelPlatform, PasskeyResult } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
 import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
@@ -251,10 +254,72 @@ function wipeContents(contents: BackupContents): void {
  * factor-array order, then every sealedBek nonce in factor-array order — no random draw follows an
  * await, so async scheduling (pbkdf2 suspending) can never reorder it.
  */
+/** Backup factor material once any passkey ceremony ran: a password or the PRF evidence. */
+type BackupMaterial =
+  | { readonly kind: "password"; readonly password: Uint8Array }
+  | { readonly kind: "passkey"; readonly credentialId: Uint8Array; readonly prfBackup: Uint8Array };
+
+const PURPOSE_PROTECTION = 0x02;
+
+/**
+ * The backup PRF from one platform ceremony: user-verified with a 32-byte `first` output, else
+ * `factor-unavailable`. The unused `second` output is wiped.
+ */
+function backupMaterialOf(result: PasskeyResult): BackupMaterial {
+  result.second?.fill(0);
+  if (!result.userVerified || result.first?.length !== 32) {
+    result.first?.fill(0);
+    throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+  }
+  return { kind: "passkey", credentialId: result.credentialId, prfBackup: result.first };
+}
+
+/**
+ * Resolves wire backup factors to material. A `kernel` passkey arm runs the platform ceremony here
+ * (React Native): enabling registers a protection credential (purpose `0x02`, asserted once when
+ * registration returns no PRF); restoring asserts one of `allowCredentials` — the envelope's own
+ * passkey factors. Each platform accepts only its own ceremony shape.
+ */
+async function backupMaterial(
+  ctx: KernelContext,
+  factor: BackupFactor | BackupUnlockFactor,
+  allowCredentials: ReadonlyArray<Uint8Array>,
+): Promise<BackupMaterial> {
+  if (factor.kind === "password") {
+    return factor;
+  }
+  if ((ctx.platform.passkey !== undefined) !== (factor.ceremony === "kernel")) {
+    throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+  }
+  if (factor.ceremony === "host") {
+    return factor;
+  }
+  const passkey = requirePasskey(ctx.platform);
+  const salts = { first: utf8ToBytes(factor.backupSalt) };
+  if ("name" in factor) {
+    const created = await passkey.create({
+      rpId: factor.rpId,
+      rpName: factor.rpName,
+      userId: concatBytes(new Uint8Array([PURPOSE_PROTECTION]), ctx.platform.random(15)),
+      userName: factor.name,
+      salts,
+    });
+    return created.first === undefined
+      ? backupMaterialOf(
+          await passkey.get({ rpId: factor.rpId, allowCredentials: [created.credentialId], salts }),
+        )
+      : backupMaterialOf(created);
+  }
+  if (allowCredentials.length === 0) {
+    throw new KernelError("not-found", "backup: the envelope has no passkey factor");
+  }
+  return backupMaterialOf(await passkey.get({ rpId: factor.rpId, allowCredentials, salts }));
+}
+
 async function sealBackupFactors(
   platform: KernelPlatform,
   bek: Uint8Array,
-  backupFactors: ReadonlyArray<BackupFactor>,
+  backupFactors: ReadonlyArray<BackupMaterial>,
 ): Promise<BackupEnvelopeFactor[]> {
   const salts = backupFactors.map((factor) =>
     factor.kind === "password" ? platform.random(16) : undefined,
@@ -343,13 +408,24 @@ export async function enableBackup(
   requestSession: string | undefined,
 ): Promise<NullValue> {
   const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    corePromptFor(ctx.platform.keystore, "backup"),
+  );
   const bek = ctx.platform.random(32);
   if (bek.length !== 32) {
     throw new KernelError("integrity", "random source returned a wrong-length BEK");
   }
   try {
-    const factors = await sealBackupFactors(ctx.platform, bek, params.factors);
+    const materials: BackupMaterial[] = [];
+    for (const factor of params.factors) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one system ceremony at a time
+      materials.push(await backupMaterial(ctx, factor, []));
+    }
+    const factors = await sealBackupFactors(ctx.platform, bek, materials);
     const record = backupKeyRecord(ctx, dek, bek, factors);
     // put-record replaces an existing backup-key row.
     await ctx.commit([{ op: "put-record", record }]);
@@ -429,7 +505,7 @@ export async function disableBackup(
 async function bekFromFactor(
   platform: KernelPlatform,
   envelope: BackupEnvelopeWire,
-  backupFactor: BackupFactor,
+  backupFactor: BackupMaterial,
 ): Promise<Uint8Array> {
   if (backupFactor.kind === "passkey") {
     const entry = envelope.factors.find(
@@ -477,11 +553,18 @@ async function bekFromFactor(
  */
 export async function restoreBackup(
   ctx: KernelContext,
-  params: { envelope: string; backupFactor: BackupFactor; factor?: Factor },
+  params: { envelope: string; backupFactor: BackupUnlockFactor; factor?: Factor },
   requestSession: string | undefined,
 ): Promise<{ wallets: WalletInfo[]; session: string }> {
   const envelope = parseEnvelope(params.envelope);
-  const bek = await bekFromFactor(ctx.platform, envelope, params.backupFactor);
+  const credentials = envelope.factors.flatMap((f) =>
+    f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
+  );
+  const bek = await bekFromFactor(
+    ctx.platform,
+    envelope,
+    await backupMaterial(ctx, params.backupFactor, credentials),
+  );
   try {
     // The payload tag authenticates the raw header text — parse the header only after this open.
     let plaintext: Uint8Array;

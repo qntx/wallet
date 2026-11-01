@@ -278,6 +278,7 @@ function respawn(h: Harness, wrapStore?: (store: RecordStore) => RecordStore): H
 async function createPasskeyWallet(h: ReturnType<typeof createHarness>) {
   const res = ok(
     await h.call("wallet.createWithPasskey", {
+      ceremony: "host",
       credentialId: CREDENTIAL_ID,
       prfWallet: new Uint8Array(PRF_WALLET),
       synced: true,
@@ -330,7 +331,12 @@ describe("create / import", () => {
       errCode(
         await h.call(
           "wallet.restoreWithPasskey",
-          { credentialId: CREDENTIAL_ID, prfWallet: new Uint8Array(PRF_WALLET), synced: true },
+          {
+            ceremony: "host",
+            credentialId: CREDENTIAL_ID,
+            prfWallet: new Uint8Array(PRF_WALLET),
+            synced: true,
+          },
           session,
         ),
       ),
@@ -390,6 +396,7 @@ describe("wallet backup state", () => {
 
     const res = ok(
       await synced.call("wallet.createWithPasskey", {
+        ceremony: "host",
         credentialId: CREDENTIAL_ID,
         prfWallet: new Uint8Array(PRF_WALLET),
         synced: false,
@@ -405,6 +412,7 @@ describe("wallet backup state", () => {
     await h.settle();
     const res = ok(
       await h.call("wallet.restoreWithPasskey", {
+        ceremony: "host",
         credentialId: CREDENTIAL_ID,
         prfWallet: new Uint8Array(PRF_WALLET),
         synced: false,
@@ -431,6 +439,7 @@ describe("wallet backup state", () => {
     await h.settle();
     const res = ok(
       await h.call("wallet.createWithPasskey", {
+        ceremony: "host",
         credentialId: CREDENTIAL_ID,
         prfWallet: new Uint8Array(PRF_WALLET),
         synced: false,

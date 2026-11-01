@@ -43,7 +43,9 @@ android {
   compileSdkVersion = getExtOrIntegerDefault("compileSdkVersion")
 
   defaultConfig {
-    minSdkVersion = getExtOrIntegerDefault("minSdkVersion")
+    // WD-024: per-use Keystore keys that accept a biometric or the device
+    // credential through BiometricPrompt need API 30.
+    minSdkVersion = 30
     targetSdkVersion = getExtOrIntegerDefault("targetSdkVersion")
 
     consumerProguardFiles "consumer-rules.pro"
@@ -159,6 +161,9 @@ dependencies {
   // ProcessLifecycleOwner for the background lock (W7) — the version the app
   // already resolves for androidx.lifecycle.
   implementation "androidx.lifecycle:lifecycle-process:2.6.2"
+
+  // BiometricPrompt + CryptoObject for the hardware vault factor (W5).
+  implementation "androidx.biometric:biometric:1.1.0"
 }
 
 repositories {

@@ -3,6 +3,7 @@
 #include "../host/KernelFile.hpp"
 
 #include "KernelBackends.hpp"
+#include "KernelKeystore.hpp"
 #include "KernelBuffer.hpp"
 #include "KernelJs.hpp"
 #include "platform/KernelPbkdf2.hpp"
@@ -453,6 +454,7 @@ void installKernelGlobals(
   qntx.setProperty(rt, "file", jsi::Value(std::move(file)));
 
   installKernelBackends(rt, qntx, *intrinsics);
+  installKernelKeystore(rt, qntx, state);
 
   intrinsics->freeze.call(rt, jsi::Value(rt, qntx));
   defineHiddenGlobal(rt, *intrinsics, "__qntx", jsi::Value(std::move(qntx)));

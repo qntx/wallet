@@ -32,6 +32,8 @@ const onInit = (event: MessageEvent<unknown>): void => {
     },
     pbkdf2: subtlePbkdf2,
     store: createIndexedDbStore(),
+    keystore: undefined,
+    passkey: undefined,
     // Session limits are owned here, not by the page: idle from the validated init message,
     // the fixed maximum, and the scrypt ceiling for this platform. Only presence-bearing
     // methods refresh the idle timer — request traffic does not keep a session alive.

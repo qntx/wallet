@@ -153,6 +153,7 @@ const vaultPasskeyFactor = () => ({
 
 const backupPasskeyF = () => ({
   kind: "passkey" as const,
+  ceremony: "host" as const,
   credentialId: CREDENTIAL_ID,
   prfBackup: new Uint8Array(PRF_BACKUP),
 });
@@ -160,6 +161,7 @@ const backupPasskeyF = () => ({
 async function createPasskeyWallet(h: Harness) {
   const res = ok(
     await h.call("wallet.createWithPasskey", {
+      ceremony: "host",
       credentialId: CREDENTIAL_ID,
       prfWallet: PRF_WALLET,
       synced: true,
@@ -389,6 +391,7 @@ describe("backup.restore", () => {
       envelope,
       backupFactor: {
         kind: "passkey",
+        ceremony: "host",
         credentialId: CREDENTIAL_ID,
         prfBackup: hexToBytes("99".repeat(32)),
       },
@@ -400,6 +403,7 @@ describe("backup.restore", () => {
       envelope,
       backupFactor: {
         kind: "passkey",
+        ceremony: "host",
         credentialId: utf8ToBytes("other-credential"),
         prfBackup: PRF_BACKUP,
       },
@@ -476,6 +480,7 @@ describe("backup vector", () => {
     await h.settle();
     const res = ok(
       await h.call("wallet.createWithPasskey", {
+        ceremony: "host",
         credentialId,
         prfWallet: hexToBytes(inputs.prfWallet),
         synced: true,
@@ -502,6 +507,7 @@ describe("backup vector", () => {
             { kind: "password", password: utf8ToBytes(inputs.password) },
             {
               kind: "passkey",
+              ceremony: "host",
               credentialId,
               prfBackup: new Uint8Array(prfBackup),
             },
@@ -532,6 +538,7 @@ describe("backup vector", () => {
         envelope: vector.envelopes[0],
         backupFactor: {
           kind: "passkey",
+          ceremony: "host",
           credentialId,
           prfBackup: new Uint8Array(prfBackup),
         },
