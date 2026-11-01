@@ -104,50 +104,62 @@ export const esplora = (
     const jitter = Math.floor(Math.random() * 100);
     await sleep(retryAfterMs ?? Math.min(100 * 2 ** retry + jitter, MAX_BACKOFF_MS));
   };
-  const call = async (
+  // One request inside a concurrency slot. A 429 releases the slot before anyone backs off:
+  // retrying while holding it deadlocks once every slot is throttled at the same time.
+  const request = async (
     base: string,
     path: string,
     body: string | undefined,
-    retry: number,
-  ): Promise<unknown> => {
+  ): Promise<{ readonly value: unknown } | { readonly throttled: EsploraResponse["headers"] }> => {
     await acquire();
-    let res: EsploraResponse;
     try {
-      // An unbounded request can hang the whole scan — bound it so a stalled
-      // electrs surfaces as a failure the caller can retry rather than a hang.
-      res = await fetchFn(`${base.replace(/\/$/, "")}${path}`, {
-        ...(body === undefined
-          ? { method: "GET" }
-          : { method: "POST", headers: { "content-type": "text/plain" }, body }),
-        signal: AbortSignal.timeout(timeoutMs),
-      });
-    } catch (error) {
-      release();
-      throw new EsploraError(
-        `esplora ${base}${path}: request failed (${error instanceof Error ? error.name : "unknown"})`,
-        true,
-      );
-    }
-    try {
+      let res: EsploraResponse;
+      try {
+        // An unbounded request can hang the whole scan — bound it so a stalled
+        // electrs surfaces as a failure the caller can retry rather than a hang.
+        res = await fetchFn(`${base.replace(/\/$/, "")}${path}`, {
+          ...(body === undefined
+            ? { method: "GET" }
+            : { method: "POST", headers: { "content-type": "text/plain" }, body }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (error) {
+        throw new EsploraError(
+          `esplora ${base}${path}: request failed (${error instanceof Error ? error.name : "unknown"})`,
+          true,
+        );
+      }
       if (res.status === 429) {
-        if (retry >= MAX_RETRIES) {
-          throw new EsploraError(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`, true);
-        }
-        await backoff(res.headers, retry);
-        return await call(base, path, body, retry + 1);
+        return { throttled: res.headers };
       }
       if (!res.ok) {
         throw new EsploraError(`esplora ${base}${path}: ${res.status}`, res.status >= 500);
       }
       const text = await res.text();
       try {
-        return JSON.parse(text) as unknown;
+        return { value: JSON.parse(text) as unknown };
       } catch {
-        return text;
+        return { value: text };
       }
     } finally {
       release();
     }
+  };
+  const call = async (
+    base: string,
+    path: string,
+    body: string | undefined,
+    retry: number,
+  ): Promise<unknown> => {
+    const outcome = await request(base, path, body);
+    if ("value" in outcome) {
+      return outcome.value;
+    }
+    if (retry >= MAX_RETRIES) {
+      throw new EsploraError(`esplora ${base}${path}: 429 after ${MAX_RETRIES} retries`, true);
+    }
+    await backoff(outcome.throttled, retry);
+    return call(base, path, body, retry + 1);
   };
   const attempt = async (
     rest: ReadonlyArray<string>,
