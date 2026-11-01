@@ -100,6 +100,7 @@ describe("vault meta vector", () => {
       store: createMemoryStore(),
       policy: { maxSessionMs: 0, maxScryptLogN: 20, idle: { ms: 0, activity: "presence" } },
       keystore: undefined,
+      passkey: undefined,
       backends: {
         spark: async () => {
           await Promise.resolve();

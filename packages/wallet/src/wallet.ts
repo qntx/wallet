@@ -349,9 +349,27 @@ export class KernelWallet implements Wallet {
       readonly factor?: InitialFactor;
     }): Promise<WalletInfo> =>
       this.withVerifying(async () => {
-        const ceremony = requireCeremony(this.factorSource);
         const name = passkeyName(options.name);
         const transfer: ArrayBuffer[] = [];
+        if (this.factorMode === "hardware") {
+          // The kernel runs the platform ceremony: nothing secret crosses the channel.
+          const factor = await this.createFactorParam(options.factor, transfer);
+          const created = await this.channel.call(
+            "wallet.createWithPasskey",
+            {
+              ceremony: "kernel",
+              rpId: this.passkeyCfg.rpId,
+              rpName: this.passkeyCfg.rpName,
+              name,
+              walletSalt: this.passkeyCfg.walletSalt,
+              ...(factor === undefined ? {} : { factor }),
+            },
+            transfer,
+          );
+          this.sessionOf(created);
+          return created.wallet;
+        }
+        const ceremony = requireCeremony(this.factorSource);
         const result = await ceremony.create({
           purpose: "wallet",
           name,
@@ -372,6 +390,7 @@ export class KernelWallet implements Wallet {
         const created = await this.channel.call(
           "wallet.createWithPasskey",
           {
+            ceremony: "host",
             credentialId: wireBytes(result.credentialId, transfer),
             prfWallet: wireBytes(result.first, transfer, true),
             synced: result.synced,
@@ -386,8 +405,23 @@ export class KernelWallet implements Wallet {
       readonly factor?: InitialFactor;
     }): Promise<WalletInfo> =>
       this.withVerifying(async () => {
-        const ceremony = requireCeremony(this.factorSource);
         const transfer: ArrayBuffer[] = [];
+        if (this.factorMode === "hardware") {
+          const factor = await this.createFactorParam(options?.factor, transfer);
+          const created = await this.channel.call(
+            "wallet.restoreWithPasskey",
+            {
+              ceremony: "kernel",
+              rpId: this.passkeyCfg.rpId,
+              walletSalt: this.passkeyCfg.walletSalt,
+              ...(factor === undefined ? {} : { factor }),
+            },
+            transfer,
+          );
+          this.sessionOf(created);
+          return created.wallet;
+        }
+        const ceremony = requireCeremony(this.factorSource);
         const result = await ceremony.assert({
           salts: {
             first: walletSaltBytes(this.factorSource),
@@ -413,6 +447,7 @@ export class KernelWallet implements Wallet {
         const created = await this.channel.call(
           "wallet.restoreWithPasskey",
           {
+            ceremony: "host",
             credentialId: wireBytes(result.credentialId, transfer),
             prfWallet: wireBytes(result.first, transfer, true),
             synced: result.synced,

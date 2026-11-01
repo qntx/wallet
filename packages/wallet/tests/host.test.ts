@@ -882,6 +882,50 @@ describe("passkey restore purpose", () => {
   });
 });
 
+describe("kernel-run passkey ceremonies (hardware host)", () => {
+  it("sends the kernel ceremony shape with no PRF evidence and no host ceremony", async () => {
+    const kernel = new FakeKernel({ ...unlockedStatus(), vault: "uninitialized" });
+    const seen: ProtocolValue[] = [];
+    kernel.handlers.set("wallet.createWithPasskey", (request) => {
+      seen.push(request.params);
+      return {
+        ok: {
+          wallet: {
+            walletId: "0123456789abcdef",
+            origin: "passkey",
+            words: 12,
+            backup: "passkey",
+            createdAt: 1,
+          },
+          session: "ab".repeat(16),
+        },
+      };
+    });
+    const wallet = await connectKernel({
+      spawn: () => {
+        const port = new ScriptedPort(kernel);
+        kernel.attach(port);
+        return port;
+      },
+      factors: "hardware",
+      passkey: PASSKEY,
+      ceremony: undefined,
+      setTimer: realtime,
+    });
+    await wallet.wallets.createWithPasskey({ name: " alice " });
+    expect(seen).toStrictEqual([
+      {
+        ceremony: "kernel",
+        rpId: PASSKEY.rpId,
+        rpName: PASSKEY.rpName,
+        name: "alice",
+        walletSalt: PASSKEY.walletSalt,
+        factor: { kind: "hardware" },
+      },
+    ]);
+  });
+});
+
 describe("passkey config validation", () => {
   function connectWithPasskey(patch: Partial<PasskeyConfig>): {
     attempt: ReturnType<typeof connectKernel>;

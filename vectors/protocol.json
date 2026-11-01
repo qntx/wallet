@@ -118,6 +118,7 @@
         "id": 6,
         "method": "wallet.createWithPasskey",
         "params": {
+          "ceremony": "host",
           "credentialId": {
             "$bytes": "deadbeefcafe"
           },
@@ -129,6 +130,39 @@
       }
     },
     {
+      "name": "request-wallet.createWithPasskey-kernel",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 6,
+        "method": "wallet.createWithPasskey",
+        "params": {
+          "ceremony": "kernel",
+          "rpId": "wallet-harness.qntx.org",
+          "rpName": "Harness",
+          "name": "alice",
+          "walletSalt": "harness/wallet/v1",
+          "factor": {
+            "kind": "hardware"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-wallet.restoreWithPasskey-kernel",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 7,
+        "method": "wallet.restoreWithPasskey",
+        "params": {
+          "ceremony": "kernel",
+          "rpId": "wallet-harness.qntx.org",
+          "walletSalt": "harness/wallet/v1"
+        }
+      }
+    },
+    {
       "name": "request-wallet.restoreWithPasskey",
       "check": "request",
       "message": {
@@ -136,6 +170,7 @@
         "id": 7,
         "method": "wallet.restoreWithPasskey",
         "params": {
+          "ceremony": "host",
           "credentialId": {
             "$bytes": "deadbeefcafe"
           },
@@ -1387,6 +1422,37 @@
             }
           },
           "toString": 1
+        }
+      }
+    },
+    {
+      "name": "params-kernel-ceremony-with-evidence",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 7,
+        "method": "wallet.restoreWithPasskey",
+        "params": {
+          "ceremony": "kernel",
+          "rpId": "wallet-harness.qntx.org",
+          "walletSalt": "harness/wallet/v1",
+          "prfWallet": {
+            "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+          }
+        }
+      }
+    },
+    {
+      "name": "params-kernel-ceremony-bad-rp-id",
+      "check": "request",
+      "message": {
+        "v": 1,
+        "id": 7,
+        "method": "wallet.restoreWithPasskey",
+        "params": {
+          "ceremony": "kernel",
+          "rpId": "https://qntx.org",
+          "walletSalt": "harness/wallet/v1"
         }
       }
     },

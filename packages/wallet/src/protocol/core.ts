@@ -81,6 +81,79 @@ export const factorInfo: Validator<FactorInfo> = union(
   obj({ kind: literal("password"), id: sessionId, createdAt: safeTime }),
 );
 
+/**
+ * Passkey wallet creation. `host`: the host ran the WebAuthn ceremony and hands over the PRF
+ * evidence (web). `kernel`: the kernel runs the platform ceremony itself and nothing secret crosses
+ * the channel (React Native). The kernel accepts exactly the shape its platform supports.
+ */
+export type CreateWithPasskeyParams =
+  | {
+      readonly ceremony: "host";
+      readonly credentialId: Uint8Array;
+      readonly prfWallet: Uint8Array;
+      readonly synced: boolean;
+      readonly factor?: Factor;
+    }
+  | {
+      readonly ceremony: "kernel";
+      readonly rpId: string;
+      readonly rpName: string;
+      readonly name: string;
+      readonly walletSalt: string;
+      readonly factor?: Factor;
+    };
+
+export type RestoreWithPasskeyParams =
+  | {
+      readonly ceremony: "host";
+      readonly credentialId: Uint8Array;
+      readonly prfWallet: Uint8Array;
+      readonly synced: boolean;
+      readonly factor?: Factor;
+    }
+  | {
+      readonly ceremony: "kernel";
+      readonly rpId: string;
+      readonly walletSalt: string;
+      readonly factor?: Factor;
+    };
+
+// An RP id is a lowercase DNS name; the platform rejects anything its associated domains do not
+// list, so this only bounds the shape.
+const RP_ID =
+  /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+const label = (max: number): Validator<string> => str(max, /^\S(?:.*\S)?$/su);
+
+const hostEvidence = {
+  ceremony: literal("host"),
+  credentialId: bytes(1, 1023),
+  prfWallet: bytes(32),
+  synced: bool,
+  factor: opt(factor),
+};
+
+const createWithPasskeyParams: Validator<CreateWithPasskeyParams> = union(
+  obj(hostEvidence),
+  obj({
+    ceremony: literal("kernel"),
+    rpId: str(253, RP_ID),
+    rpName: label(64),
+    name: label(64),
+    walletSalt: label(64),
+    factor: opt(factor),
+  }),
+);
+
+const restoreWithPasskeyParams: Validator<RestoreWithPasskeyParams> = union(
+  obj(hostEvidence),
+  obj({
+    ceremony: literal("kernel"),
+    rpId: str(253, RP_ID),
+    walletSalt: label(64),
+    factor: opt(factor),
+  }),
+);
+
 export const walletInfo: Validator<WalletInfo> = obj({
   walletId,
   origin: union(literal("passkey"), literal("mnemonic")),
@@ -133,24 +206,8 @@ export const CORE_METHODS: {
     NullValue
   >;
   readonly "session.touch": MethodSpec<NullValue, NullValue>;
-  readonly "wallet.createWithPasskey": MethodSpec<
-    {
-      readonly credentialId: Uint8Array;
-      readonly prfWallet: Uint8Array;
-      readonly synced: boolean;
-      readonly factor?: Factor;
-    },
-    CreatedResult
-  >;
-  readonly "wallet.restoreWithPasskey": MethodSpec<
-    {
-      readonly credentialId: Uint8Array;
-      readonly prfWallet: Uint8Array;
-      readonly synced: boolean;
-      readonly factor?: Factor;
-    },
-    CreatedResult
-  >;
+  readonly "wallet.createWithPasskey": MethodSpec<CreateWithPasskeyParams, CreatedResult>;
+  readonly "wallet.restoreWithPasskey": MethodSpec<RestoreWithPasskeyParams, CreatedResult>;
   readonly "wallet.createMnemonic": MethodSpec<
     { readonly words: 12 | 24; readonly factor?: Factor },
     { readonly draft: string; readonly words: Uint8Array; readonly quiz: ReadonlyArray<number> }
@@ -219,23 +276,13 @@ export const CORE_METHODS: {
   "wallet.createWithPasskey": {
     session: false,
     presence: true,
-    params: obj({
-      credentialId: bytes(1, 1023),
-      prfWallet: bytes(32),
-      synced: bool,
-      factor: opt(factor),
-    }),
+    params: createWithPasskeyParams,
     result: createdResult,
   },
   "wallet.restoreWithPasskey": {
     session: false,
     presence: true,
-    params: obj({
-      credentialId: bytes(1, 1023),
-      prfWallet: bytes(32),
-      synced: bool,
-      factor: opt(factor),
-    }),
+    params: restoreWithPasskeyParams,
     result: createdResult,
   },
   "wallet.createMnemonic": {

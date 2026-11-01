@@ -96,6 +96,7 @@ describe("leak check", () => {
 
     const created = ok(
       await h.call("wallet.createWithPasskey", {
+        ceremony: "host",
         credentialId: CREDENTIAL_ID,
         prfWallet: new Uint8Array(PRF_WALLET),
         synced: true,
