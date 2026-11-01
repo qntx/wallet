@@ -3,7 +3,30 @@
 #include "kernel.hpp"
 #include "VaultDirectory.hpp"
 
+#if defined(__ANDROID__)
+#include <android/log.h>
+#elif defined(__APPLE__)
+#include <os/log.h>
+#endif
+
 namespace margelo::nitro::qntxwallet {
+
+namespace {
+
+// A kernel crash reaches JS only as "crashed"; the reason goes to the system
+// log so field reports and device runs can tell causes apart. Kernel error
+// messages are static strings that never echo input or secrets.
+void logKernelCrash(const std::string& reason) {
+#if defined(__ANDROID__)
+  __android_log_print(ANDROID_LOG_ERROR, "QntxKernel", "kernel runtime crashed: %s", reason.c_str());
+#elif defined(__APPLE__)
+  os_log_error(OS_LOG_DEFAULT, "qntx kernel runtime crashed: %{public}s", reason.c_str());
+#else
+  (void)reason;
+#endif
+}
+
+} // namespace
 
 HybridKernelHost::~HybridKernelHost() {
   std::shared_ptr<qntx::KernelRuntime> runtime;
@@ -54,7 +77,8 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
       }
     }
   };
-  hooks.onError = [weak](std::string) {
+  hooks.onError = [weak](std::string reason) {
+    logKernelCrash(reason);
     if (const auto self = weak.lock()) {
       self->exit(KernelExitReason::CRASHED);
     }
