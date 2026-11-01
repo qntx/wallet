@@ -14,9 +14,13 @@ import androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import java.security.KeyStore
+import java.util.concurrent.Executor
 import java.security.UnrecoverableKeyException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -202,34 +206,60 @@ object Keystore {
     done: (Int, BiometricPrompt.CryptoObject?) -> Unit,
   ) {
     val executor = ContextCompat.getMainExecutor(activity)
-    executor.execute {
-      val info = BiometricPrompt.PromptInfo.Builder()
-        .setTitle(title)
-        .setDescription(description)
-        .setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
-        .build()
-      val biometricPrompt = BiometricPrompt(
-        activity,
-        executor,
-        object : BiometricPrompt.AuthenticationCallback() {
-          override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-            current = null
-            done(OK, result.cryptoObject)
-          }
+    executor.execute { whenResumed(activity) { show(activity, executor, title, description, crypto, done) } }
+  }
 
-          override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-            current = null
-            done(statusOf(errorCode), null)
-          }
-        },
-      )
-      current = biometricPrompt
-      try {
-        if (crypto == null) biometricPrompt.authenticate(info) else biometricPrompt.authenticate(info, crypto)
-      } catch (e: Exception) {
-        current = null
-        done(FAILED, null)
+  // A prompt started while the activity is not resumed — e.g. right after a
+  // Credential Manager sheet finishes and before our activity is back on top —
+  // is cancelled by the framework at once. Start it on the next ON_RESUME.
+  private fun whenResumed(activity: FragmentActivity, action: () -> Unit) {
+    val lifecycle = activity.lifecycle
+    if (lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+      action()
+      return
+    }
+    lifecycle.addObserver(object : DefaultLifecycleObserver {
+      override fun onResume(owner: LifecycleOwner) {
+        lifecycle.removeObserver(this)
+        action()
       }
+    })
+  }
+
+  private fun show(
+    activity: FragmentActivity,
+    executor: Executor,
+    title: String,
+    description: String,
+    crypto: BiometricPrompt.CryptoObject?,
+    done: (Int, BiometricPrompt.CryptoObject?) -> Unit,
+  ) {
+    val info = BiometricPrompt.PromptInfo.Builder()
+      .setTitle(title)
+      .setDescription(description)
+      .setAllowedAuthenticators(BIOMETRIC_STRONG or DEVICE_CREDENTIAL)
+      .build()
+    val biometricPrompt = BiometricPrompt(
+      activity,
+      executor,
+      object : BiometricPrompt.AuthenticationCallback() {
+        override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+          current = null
+          done(OK, result.cryptoObject)
+        }
+
+        override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+          current = null
+          done(statusOf(errorCode), null)
+        }
+      },
+    )
+    current = biometricPrompt
+    try {
+      if (crypto == null) biometricPrompt.authenticate(info) else biometricPrompt.authenticate(info, crypto)
+    } catch (e: Exception) {
+      current = null
+      done(FAILED, null)
     }
   }
 

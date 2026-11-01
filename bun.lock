@@ -176,6 +176,7 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-native": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
+        "@scure/base": "2.4.0",
         "nitrogen": "0.37.1",
         "react-native-nitro-modules": "0.37.1",
       },

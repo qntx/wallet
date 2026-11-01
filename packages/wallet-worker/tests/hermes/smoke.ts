@@ -317,6 +317,7 @@ export async function main(): Promise<void> {
       authenticate: () => undefined,
       clear: () => undefined,
     },
+    passkey: { create: () => undefined, get: () => undefined },
     // The native kernel entry binds backends.nostr eagerly at platform
     // construction — the smoke never calls it, so only the ABI pin is real.
     backends: {

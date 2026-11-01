@@ -146,11 +146,11 @@ void installKernelKeystore(
     jsi::Object& qntx,
     const std::shared_ptr<KernelGlobalsState>& state) {
   auto calls = std::make_shared<KeystoreCalls>();
-  state->cancelCeremony = [calls] {
+  state->cancelCeremonies.emplace_back([calls] {
     if (calls->inFlight > 0) {
       keystoreCancel();
     }
-  };
+  });
 
   auto keystore = jsi::Object(rt);
   keystore.setProperty(rt, "locale", jsi::String::createFromUtf8(rt, keystoreLocale()));
