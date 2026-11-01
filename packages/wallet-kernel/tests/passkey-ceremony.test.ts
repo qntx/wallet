@@ -64,6 +64,13 @@ function fakeAuthenticator(answers: Array<Partial<PasskeyResult> | KernelError>)
   return { authenticator, calls };
 }
 
+function okOf(response: KernelResponse): ProtocolValue {
+  if ("err" in response) {
+    throw new Error(`expected ok, got ${JSON.stringify(response.err)}`);
+  }
+  return response.ok;
+}
+
 function errCode(response: KernelResponse): string | undefined {
   return "err" in response ? response.err.code : undefined;
 }
@@ -212,5 +219,53 @@ describe("ceremony shape follows the platform", () => {
       factor: { kind: "password", password: utf8ToBytes("correct horse battery staple") },
     });
     expect(errCode(response)).toBe("factor-unavailable");
+  });
+});
+
+describe("kernel passkey ceremony: backup factor", () => {
+  const BACKUP_SALT = "harness/backup/v1";
+
+  it("enables with a new protection credential and restores by asserting the envelope's", async () => {
+    const created = fakeAuthenticator([{}, {}]);
+    const h = nativeHarness(created.authenticator);
+    const session = okOf(await create(h)) as { session: string };
+    await expect(
+      h.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [
+            {
+              kind: "passkey",
+              ceremony: "kernel",
+              ...RP,
+              name: "Harness",
+              backupSalt: BACKUP_SALT,
+            },
+          ],
+        },
+        session.session,
+      ),
+    ).resolves.toStrictEqual({ id: 2, ok: null });
+    const enable = created.calls[1]?.input as Parameters<PasskeyAuthenticator["create"]>[0];
+    expect(created.calls[1]?.op).toBe("create");
+    expect(enable.userId[0]).toBe(0x02);
+    expect(enable.salts.first).toStrictEqual(utf8ToBytes(BACKUP_SALT));
+    const update = okOf(await h.call("backup.update", null, session.session)) as {
+      envelope: string;
+    };
+
+    const restored = fakeAuthenticator([{}]);
+    const fresh = nativeHarness(restored.authenticator);
+    await fresh.settle();
+    const result = await fresh.call("backup.restore", {
+      envelope: update.envelope,
+      backupFactor: { kind: "passkey", ceremony: "kernel", rpId: RP.rpId, backupSalt: BACKUP_SALT },
+      factor: { kind: "hardware" },
+    });
+    expect(result).toMatchObject({ ok: { wallets: [{ origin: "passkey" }] } });
+    const get = restored.calls[0]?.input as Parameters<PasskeyAuthenticator["get"]>[0];
+    expect(get.allowCredentials).toStrictEqual([CREDENTIAL]);
+    expect(get.salts.first).toStrictEqual(utf8ToBytes(BACKUP_SALT));
   });
 });

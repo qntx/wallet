@@ -53,22 +53,43 @@ export const factor: Validator<Factor> = union(
   obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prf: bytes(32) }),
 );
 
+/** A host-run backup passkey ceremony's evidence: the PRF over `backupSalt` (web). */
+type HostBackupPasskey = {
+  readonly kind: "passkey";
+  readonly ceremony: "host";
+  readonly credentialId: Uint8Array;
+  readonly prfBackup: Uint8Array;
+};
+
 /**
- * A backup-envelope factor: same shapes as `Factor`, except the passkey arm carries `prfBackup` —
- * the PRF evaluated over `backupSalt`, not the vault or wallet salt.
+ * A factor that seals a new backup key. On React Native the kernel registers a protection
+ * credential (`kernel`) itself; on the web the host hands over its ceremony's evidence.
  */
 export type BackupFactor =
   | { readonly kind: "password"; readonly password: Uint8Array }
+  | HostBackupPasskey
   | {
       readonly kind: "passkey";
-      readonly credentialId: Uint8Array;
-      readonly prfBackup: Uint8Array;
+      readonly ceremony: "kernel";
+      readonly rpId: string;
+      readonly rpName: string;
+      readonly name: string;
+      readonly backupSalt: string;
     };
 
-export const backupFactor: Validator<BackupFactor> = union(
-  obj({ kind: literal("password"), password: bytes(1, 1024) }),
-  obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prfBackup: bytes(32) }),
-);
+/**
+ * A factor that opens a backup envelope. The `kernel` passkey arm asserts one of the envelope's own
+ * credentials.
+ */
+export type BackupUnlockFactor =
+  | { readonly kind: "password"; readonly password: Uint8Array }
+  | HostBackupPasskey
+  | {
+      readonly kind: "passkey";
+      readonly ceremony: "kernel";
+      readonly rpId: string;
+      readonly backupSalt: string;
+    };
 
 export const factorInfo: Validator<FactorInfo> = union(
   obj({ kind: literal("hardware"), id: sessionId, createdAt: safeTime }),
@@ -154,6 +175,38 @@ const restoreWithPasskeyParams: Validator<RestoreWithPasskeyParams> = union(
   }),
 );
 
+const hostBackupPasskey = obj({
+  kind: literal("passkey"),
+  ceremony: literal("host"),
+  credentialId: bytes(1, 1023),
+  prfBackup: bytes(32),
+});
+const backupPassword = obj({ kind: literal("password"), password: bytes(1, 1024) });
+
+export const backupFactor: Validator<BackupFactor> = union(
+  backupPassword,
+  hostBackupPasskey,
+  obj({
+    kind: literal("passkey"),
+    ceremony: literal("kernel"),
+    rpId: str(253, RP_ID),
+    rpName: label(64),
+    name: label(64),
+    backupSalt: label(64),
+  }),
+);
+
+export const backupUnlockFactor: Validator<BackupUnlockFactor> = union(
+  backupPassword,
+  hostBackupPasskey,
+  obj({
+    kind: literal("passkey"),
+    ceremony: literal("kernel"),
+    rpId: str(253, RP_ID),
+    backupSalt: label(64),
+  }),
+);
+
 export const walletInfo: Validator<WalletInfo> = obj({
   walletId,
   origin: union(literal("passkey"), literal("mnemonic")),
@@ -229,7 +282,7 @@ export const CORE_METHODS: {
   readonly "backup.restore": MethodSpec<
     {
       readonly envelope: string;
-      readonly backupFactor: BackupFactor;
+      readonly backupFactor: BackupUnlockFactor;
       readonly factor?: Factor;
     },
     { readonly wallets: ReadonlyArray<WalletInfo>; readonly session: string }
@@ -328,7 +381,11 @@ export const CORE_METHODS: {
   "backup.restore": {
     session: false,
     presence: true,
-    params: obj({ envelope: str(4_000_000), backupFactor, factor: opt(factor) }),
+    params: obj({
+      envelope: str(4_000_000),
+      backupFactor: backupUnlockFactor,
+      factor: opt(factor),
+    }),
     result: obj({ wallets: arr(walletInfo, 1000), session: sessionId }),
   },
   "wallet.importMnemonic": {

@@ -503,7 +503,7 @@
 		init_toPropertyKey();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/core-CyeQkAmi.mjs
+	//#region packages/wallet/dist/core-CsNI5An_.mjs
 	init_defineProperty();
 	var ValidationError = class extends Error {
 		constructor(..._args) {
@@ -645,14 +645,6 @@
 		credentialId: bytes(1, 1023),
 		prf: bytes(32)
 	}));
-	var backupFactor = union(obj({
-		kind: literal("password"),
-		password: bytes(1, 1024)
-	}), obj({
-		kind: literal("passkey"),
-		credentialId: bytes(1, 1023),
-		prfBackup: bytes(32)
-	}));
 	var factorInfo$1 = union(obj({
 		kind: literal("hardware"),
 		id: sessionId,
@@ -689,6 +681,30 @@
 		rpId: str(253, RP_ID),
 		walletSalt: label(64),
 		factor: opt(factor)
+	}));
+	var hostBackupPasskey = obj({
+		kind: literal("passkey"),
+		ceremony: literal("host"),
+		credentialId: bytes(1, 1023),
+		prfBackup: bytes(32)
+	});
+	var backupPassword = obj({
+		kind: literal("password"),
+		password: bytes(1, 1024)
+	});
+	var backupFactor = union(backupPassword, hostBackupPasskey, obj({
+		kind: literal("passkey"),
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		rpName: label(64),
+		name: label(64),
+		backupSalt: label(64)
+	}));
+	var backupUnlockFactor = union(backupPassword, hostBackupPasskey, obj({
+		kind: literal("passkey"),
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		backupSalt: label(64)
 	}));
 	var walletInfo$1 = obj({
 		walletId,
@@ -805,7 +821,7 @@
 			presence: true,
 			params: obj({
 				envelope: str(4e6),
-				backupFactor,
+				backupFactor: backupUnlockFactor,
 				factor: opt(factor)
 			}),
 			result: obj({
@@ -874,7 +890,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-BfopEP8S.mjs
+	//#region packages/wallet/dist/protocol-BEfEjAX-.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -3646,6 +3662,63 @@
 			this.corrupted = corrupted;
 		}
 	};
+	//#endregion
+	//#region packages/wallet-kernel/src/platform.ts
+	init_objectSpread2();
+	/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
+	function requirePasskey(platform) {
+		if (platform.passkey === void 0) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies in the host");
+		return platform.passkey;
+	}
+	/**
+	* Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
+	* create/get share one queue, because the platform can show only one verification at a time. A
+	* rejection does not wedge the queue. Applied once by `startKernel`.
+	*/
+	function serializeCeremonies(platform) {
+		let tail = Promise.resolve();
+		const queue = async (work) => {
+			const previous = tail;
+			let release;
+			tail = new Promise((resolve) => {
+				release = resolve;
+			});
+			try {
+				await previous;
+				return await work();
+			} finally {
+				release === null || release === void 0 || release();
+			}
+		};
+		const { keystore, passkey } = platform;
+		return _objectSpread2(_objectSpread2({}, platform), {}, {
+			keystore: keystore === void 0 ? void 0 : {
+				locale: keystore.locale,
+				seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
+				open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
+				authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
+				clear: async () => queue(async () => keystore.clear())
+			},
+			passkey: passkey === void 0 ? void 0 : {
+				create: async (input) => queue(async () => passkey.create(input)),
+				get: async (input) => queue(async () => passkey.get(input))
+			}
+		});
+	}
+	/**
+	* Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
+	* password there would let a compromised main runtime satisfy per-operation verification without
+	* the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
+	* factors are exempt.
+	*/
+	function assertFactorKindAvailable(platform, kind) {
+		if (platform.keystore !== void 0 !== (kind === "hardware")) throw new KernelError("factor-unavailable", "this factor kind is not available here");
+	}
+	/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
+	function requireKeystore(platform) {
+		if (platform.keystore === void 0) throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
+		return platform.keystore;
+	}
 	//#endregion
 	//#region packages/wallet-kernel/src/prompts.ts
 	function promptLocale(tag) {
@@ -7766,63 +7839,6 @@
 		} finally {
 			wipe(factorSk);
 		}
-	}
-	//#endregion
-	//#region packages/wallet-kernel/src/platform.ts
-	init_objectSpread2();
-	/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
-	function requirePasskey(platform) {
-		if (platform.passkey === void 0) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies in the host");
-		return platform.passkey;
-	}
-	/**
-	* Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
-	* create/get share one queue, because the platform can show only one verification at a time. A
-	* rejection does not wedge the queue. Applied once by `startKernel`.
-	*/
-	function serializeCeremonies(platform) {
-		let tail = Promise.resolve();
-		const queue = async (work) => {
-			const previous = tail;
-			let release;
-			tail = new Promise((resolve) => {
-				release = resolve;
-			});
-			try {
-				await previous;
-				return await work();
-			} finally {
-				release === null || release === void 0 || release();
-			}
-		};
-		const { keystore, passkey } = platform;
-		return _objectSpread2(_objectSpread2({}, platform), {}, {
-			keystore: keystore === void 0 ? void 0 : {
-				locale: keystore.locale,
-				seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
-				open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
-				authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
-				clear: async () => queue(async () => keystore.clear())
-			},
-			passkey: passkey === void 0 ? void 0 : {
-				create: async (input) => queue(async () => passkey.create(input)),
-				get: async (input) => queue(async () => passkey.get(input))
-			}
-		});
-	}
-	/**
-	* Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
-	* password there would let a compromised main runtime satisfy per-operation verification without
-	* the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
-	* factors are exempt.
-	*/
-	function assertFactorKindAvailable(platform, kind) {
-		if (platform.keystore !== void 0 !== (kind === "hardware")) throw new KernelError("factor-unavailable", "this factor kind is not available here");
-	}
-	/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
-	function requireKeystore(platform) {
-		if (platform.keystore === void 0) throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
-		return platform.keystore;
 	}
 	//#endregion
 	//#region packages/wallet-kernel/src/vault/store.ts
@@ -13088,11 +13104,58 @@ zoo`.split("\n"));
 		for (const wallet of contents.wallets) wallet.entropy.fill(0);
 		for (const secretKey of contents.nostrSecrets) secretKey.fill(0);
 	}
+	var PURPOSE_PROTECTION = 2;
 	/**
-	* Seals the BEK under every backup factor. Deterministic draw order: every password salt in
-	* factor-array order, then every sealedBek nonce in factor-array order — no random draw follows an
-	* await, so async scheduling (pbkdf2 suspending) can never reorder it.
+	* The backup PRF from one platform ceremony: user-verified with a 32-byte `first` output, else
+	* `factor-unavailable`. The unused `second` output is wiped.
 	*/
+	function backupMaterialOf(result) {
+		var _result$second, _result$first;
+		(_result$second = result.second) === null || _result$second === void 0 || _result$second.fill(0);
+		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
+			var _result$first2;
+			(_result$first2 = result.first) === null || _result$first2 === void 0 || _result$first2.fill(0);
+			throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+		}
+		return {
+			kind: "passkey",
+			credentialId: result.credentialId,
+			prfBackup: result.first
+		};
+	}
+	/**
+	* Resolves wire backup factors to material. A `kernel` passkey arm runs the platform ceremony here
+	* (React Native): enabling registers a protection credential (purpose `0x02`, asserted once when
+	* registration returns no PRF); restoring asserts one of `allowCredentials` — the envelope's own
+	* passkey factors. Each platform accepts only its own ceremony shape.
+	*/
+	async function backupMaterial(ctx, factor, allowCredentials) {
+		if (factor.kind === "password") return factor;
+		if (ctx.platform.passkey !== void 0 !== (factor.ceremony === "kernel")) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+		if (factor.ceremony === "host") return factor;
+		const passkey = requirePasskey(ctx.platform);
+		const salts = { first: utf8ToBytes$1(factor.backupSalt) };
+		if ("name" in factor) {
+			const created = await passkey.create({
+				rpId: factor.rpId,
+				rpName: factor.rpName,
+				userId: concatBytes$3(new Uint8Array([PURPOSE_PROTECTION]), ctx.platform.random(15)),
+				userName: factor.name,
+				salts
+			});
+			return created.first === void 0 ? backupMaterialOf(await passkey.get({
+				rpId: factor.rpId,
+				allowCredentials: [created.credentialId],
+				salts
+			})) : backupMaterialOf(created);
+		}
+		if (allowCredentials.length === 0) throw new KernelError("not-found", "backup: the envelope has no passkey factor");
+		return backupMaterialOf(await passkey.get({
+			rpId: factor.rpId,
+			allowCredentials,
+			salts
+		}));
+	}
 	async function sealBackupFactors(platform, bek, backupFactors) {
 		const salts = backupFactors.map((factor) => factor.kind === "password" ? platform.random(16) : void 0);
 		const keks = await Promise.all(backupFactors.map(async (factor, index) => {
@@ -13149,7 +13212,9 @@ zoo`.split("\n"));
 		const bek = ctx.platform.random(32);
 		if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
 		try {
-			const record = backupKeyRecord(ctx, dek, bek, await sealBackupFactors(ctx.platform, bek, params.factors));
+			const materials = [];
+			for (const factor of params.factors) materials.push(await backupMaterial(ctx, factor, []));
+			const record = backupKeyRecord(ctx, dek, bek, await sealBackupFactors(ctx.platform, bek, materials));
 			await ctx.commit([{
 				op: "put-record",
 				record
@@ -13234,7 +13299,8 @@ zoo`.split("\n"));
 	*/
 	async function restoreBackup(ctx, params, requestSession) {
 		const envelope = parseEnvelope(params.envelope);
-		const bek = await bekFromFactor(ctx.platform, envelope, params.backupFactor);
+		const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$1.dec(f.credentialId)] : []);
+		const bek = await bekFromFactor(ctx.platform, envelope, await backupMaterial(ctx, params.backupFactor, credentials));
 		try {
 			let plaintext;
 			try {
