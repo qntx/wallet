@@ -307,6 +307,15 @@ export async function main(): Promise<void> {
       })();
     },
     file: __qntxFile,
+    // The native kernel entry binds the keystore eagerly; the smoke never
+    // reaches a factor ceremony, so only the shape is needed.
+    keystore: {
+      locale: "en",
+      seal: () => undefined,
+      open: () => undefined,
+      authenticate: () => undefined,
+      clear: () => undefined,
+    },
     // The native kernel entry binds backends.nostr eagerly at platform
     // construction — the smoke never calls it, so only the ABI pin is real.
     backends: {

@@ -5,6 +5,7 @@
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
 #include "host/Lifecycle.hpp"
+#include "HostKeystore.hpp"
 #include "HostNostrNative.hpp"
 #include "HostQntxSpark.hpp"
 #include "kernel.hpp"
@@ -707,10 +708,110 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "backends,elapsed,file,frames,now,pbkdf2,random,setTimer"
+                "backends,elapsed,file,frames,keystore,now,pbkdf2,random,setTimer"
                 "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number"
                 "|nostrFrozen=true|nostrAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
+  return g_failures;
+}
+
+// The keystore bridge: arguments are validated before the platform sees them,
+// prompts and bytes reach the platform verbatim, completions come back on the
+// kernel thread with the KEK as a Uint8Array, and every failure status maps to
+// its kernel error code.
+int keystoreBinding() {
+  qntxTestKeystore::reset();
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var ks = __qntx.keystore;
+var r = ["locale=" + ks.locale, "frozen=" + Object.isFrozen(ks)];
+var id = "0123456789abcdef0123456789abcdef";
+var kek = new Uint8Array(32);
+for (var i = 0; i < 32; i++) kek[i] = i;
+function throws(name, fn) {
+  try { fn(); r.push(name + "=nothrow"); } catch (e) { r.push(name + "=ok"); }
+}
+var done = function () {};
+throws("badId", function () { ks.seal("ABC", kek, "t", "d", done); });
+throws("shortSecret", function () { ks.seal(id, new Uint8Array(31), "t", "d", done); });
+throws("emptyTitle", function () { ks.open(id, new Uint8Array(4), "", "d", done); });
+throws("longDescription", function () { ks.open(id, new Uint8Array(4), "t", new Array(1026).join("x"), done); });
+throws("emptySealed", function () { ks.open(id, new Uint8Array(0), "t", "d", done); });
+throws("noCallback", function () { ks.clear(1); });
+function step(fn) { return new Promise(function (resolve) { fn(function (value, code) { resolve([value, code]); }); }); }
+step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).then(function (sealed) {
+  r.push("sealed=" + (sealed[0] instanceof Uint8Array && sealed[0].length === 32 && sealed[1] === undefined));
+  return step(function (cb) { ks.open(id, sealed[0], "解锁钱包", "验证身份以解锁钱包", cb); });
+}).then(function (opened) {
+  var same = opened[0] instanceof Uint8Array && opened[0].length === 32;
+  for (var j = 0; same && j < 32; j++) same = opened[0][j] === j;
+  r.push("opened=" + same);
+  return step(function (cb) { ks.authenticate("重置钱包", "验证设备所有者", cb); });
+}).then(function (auth) {
+  r.push("auth=" + (auth[0] === undefined && auth[1] === undefined));
+  return step(function (cb) { ks.open("ffffffffffffffffffffffffffffffff", new Uint8Array(4), "t", "d", cb); });
+}).then(function (missing) {
+  r.push("missing=" + missing[1]);
+  return step(function (cb) { ks.authenticate("fail:cancelled", "d", cb); });
+}).then(function (c1) {
+  r.push("cancelled=" + c1[1]);
+  return step(function (cb) { ks.authenticate("fail:unavailable", "d", cb); });
+}).then(function (c2) {
+  r.push("unavailable=" + c2[1]);
+  return step(function (cb) { ks.open(id, new Uint8Array(4), "fail:failed", "d", cb); });
+}).then(function (c3) {
+  r.push("failed=" + c3[1]);
+  return step(function (cb) { ks.clear(cb); });
+}).then(function (c4) {
+  r.push("clear=" + (c4[0] === undefined && c4[1] === undefined));
+  __send(r.join(" "));
+});
+)JS";
+  {
+    auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+    CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-binding: no report");
+    rt->destroy();
+  }
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1 &&
+            box.posts[0] ==
+                "locale=zh-Hans-CN frozen=true badId=ok shortSecret=ok emptyTitle=ok "
+                "longDescription=ok emptySealed=ok noCallback=ok sealed=true opened=true "
+                "auth=true missing=factor-invalidated cancelled=cancelled "
+                "unavailable=factor-unavailable failed=unavailable clear=true",
+      "keystore-binding: bridge behaviour drifted");
+  const auto calls = qntxTestKeystore::calls();
+  CHECK(calls.size() == 8, "keystore-binding: expected eight platform calls");
+  CHECK(!calls.empty() && calls[0].op == "seal" && calls[0].title == "保护钱包" &&
+            calls[0].bytes == 32,
+      "keystore-binding: seal did not reach the platform verbatim");
+  CHECK(calls.size() > 1 && calls[1].op == "open" &&
+            calls[1].description == "验证身份以解锁钱包",
+      "keystore-binding: open prompt did not reach the platform verbatim");
+  return g_failures;
+}
+
+// A lock while a prompt is on screen: teardown dismisses it through
+// keystoreCancel, and the late completion is dropped without touching the
+// dead runtime (ASan/TSan builds catch a use-after-free here).
+int keystoreTeardown() {
+  qntxTestKeystore::reset();
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+__qntx.keystore.authenticate("t", "d", function () { __send("late"); });
+__send("held");
+)JS";
+  qntxTestKeystore::holdNext();
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-teardown: no post");
+  rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "keystore-teardown: runtime still running");
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  CHECK(qntxTestKeystore::cancels() == 1, "keystore-teardown: teardown did not cancel the prompt");
+  CHECK(!qntxTestKeystore::releaseHeld(), "keystore-teardown: the held call survived cancel");
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1, "keystore-teardown: a completion reached the dead runtime");
+  CHECK(box.errors.empty(), "keystore-teardown: unexpected onError");
   return g_failures;
 }
 
@@ -1391,6 +1492,8 @@ int main(int argc, char** argv) {
        [](const char*) { return lifecycleDispatcher(); }},
       {"kernel-bytecode", [](const char*) { return kernelBytecode(); }},
       {"qntx-globals", [](const char*) { return qntxGlobals(); }},
+      {"keystore-binding", [](const char*) { return keystoreBinding(); }},
+      {"keystore-teardown", [](const char*) { return keystoreTeardown(); }},
       {"backends-spark", [](const char*) { return backendsSpark(); }},
       {"backends-nostr", [](const char*) { return backendsNostr(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
