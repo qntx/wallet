@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { dustFor, esplora, feeTiers, isFrozen, validateEndpoint } from "../src/chains/bitcoin.ts";
-import type { Esplora } from "../src/chains/bitcoin.ts";
+import type { Esplora, EsploraFetch } from "../src/chains/bitcoin.ts";
 
 const es = (handlers: Record<string, unknown>): Esplora => ({
   get: async (path) => {
@@ -120,6 +120,25 @@ describe("esplora 429 handling", () => {
     const es = esplora(["https://a.test", "https://b.test"], byHost, sleep);
     const out = await es.get("/y");
     expect(out).toBe("healthy");
+  });
+
+  it("releases its slot before backing off a 429, so a throttled burst cannot deadlock", async () => {
+    // Every request is throttled once, then served: with eight concurrent gets all four slots
+    // are throttled at once — retrying inside the slot would wait on itself forever.
+    const seen = new Set<string>();
+    const fetcher: EsploraFetch = async (url) => {
+      await Promise.resolve();
+      if (!seen.has(url)) {
+        seen.add(url);
+        return resp(429, "");
+      }
+      return resp(200, '"served"');
+    };
+    const es = esplora(["https://a.test"], fetcher, sleep);
+    const paths = Array.from({ length: 8 }, (_, i) => `/p/${i}`);
+    await expect(Promise.all(paths.map(async (p) => es.get(p)))).resolves.toStrictEqual(
+      paths.map(() => "served"),
+    );
   });
 
   it("caps in-flight requests at four", async () => {
