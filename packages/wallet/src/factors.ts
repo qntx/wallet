@@ -136,7 +136,6 @@ export async function resolveBackupFactor(
       ceremony: "kernel",
       rpId: source.passkey.rpId,
       rpName: source.passkey.rpName,
-      name: source.passkey.rpName,
       backupSalt: source.passkey.backupSalt,
     };
   }

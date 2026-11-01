@@ -239,7 +239,6 @@ describe("kernel passkey ceremony: backup factor", () => {
               kind: "passkey",
               ceremony: "kernel",
               ...RP,
-              name: "Harness",
               backupSalt: BACKUP_SALT,
             },
           ],
@@ -250,6 +249,7 @@ describe("kernel passkey ceremony: backup factor", () => {
     const enable = created.calls[1]?.input as Parameters<PasskeyAuthenticator["create"]>[0];
     expect(created.calls[1]?.op).toBe("create");
     expect(enable.userId[0]).toBe(0x02);
+    expect(enable.userName).toBe("Cloud backup key");
     expect(enable.salts.first).toStrictEqual(utf8ToBytes(BACKUP_SALT));
     const update = okOf(await h.call("backup.update", null, session.session)) as {
       envelope: string;

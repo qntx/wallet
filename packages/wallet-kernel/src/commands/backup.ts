@@ -32,7 +32,7 @@ import type { WalletInfo } from "@qntx/wallet/types";
 import { KernelError } from "../errors.ts";
 import { requirePasskey } from "../platform.ts";
 import type { KernelPlatform, PasskeyResult } from "../platform.ts";
-import { corePromptFor } from "../prompts.ts";
+import { backupCredentialName, corePromptFor, promptLocale } from "../prompts.ts";
 import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
 import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
@@ -296,12 +296,12 @@ async function backupMaterial(
   }
   const passkey = requirePasskey(ctx.platform);
   const salts = { first: utf8ToBytes(factor.backupSalt) };
-  if ("name" in factor) {
+  if ("rpName" in factor) {
     const created = await passkey.create({
       rpId: factor.rpId,
       rpName: factor.rpName,
       userId: concatBytes(new Uint8Array([PURPOSE_PROTECTION]), ctx.platform.random(15)),
-      userName: factor.name,
+      userName: backupCredentialName(promptLocale(ctx.platform.keystore?.locale ?? "en")),
       salts,
     });
     return created.first === undefined

@@ -63,7 +63,8 @@ type HostBackupPasskey = {
 
 /**
  * A factor that seals a new backup key. On React Native the kernel registers a protection
- * credential (`kernel`) itself; on the web the host hands over its ceremony's evidence.
+ * credential (`kernel`) itself and names it; on the web the host hands over its ceremony's
+ * evidence.
  */
 export type BackupFactor =
   | { readonly kind: "password"; readonly password: Uint8Array }
@@ -73,7 +74,6 @@ export type BackupFactor =
       readonly ceremony: "kernel";
       readonly rpId: string;
       readonly rpName: string;
-      readonly name: string;
       readonly backupSalt: string;
     };
 
@@ -191,7 +191,6 @@ export const backupFactor: Validator<BackupFactor> = union(
     ceremony: literal("kernel"),
     rpId: str(253, RP_ID),
     rpName: label(64),
-    name: label(64),
     backupSalt: label(64),
   }),
 );

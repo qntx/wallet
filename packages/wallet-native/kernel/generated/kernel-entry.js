@@ -503,7 +503,7 @@
 		init_toPropertyKey();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/core-CsNI5An_.mjs
+	//#region packages/wallet/dist/core-Dmz5SbyJ.mjs
 	init_defineProperty();
 	var ValidationError = class extends Error {
 		constructor(..._args) {
@@ -697,7 +697,6 @@
 		ceremony: literal("kernel"),
 		rpId: str(253, RP_ID),
 		rpName: label(64),
-		name: label(64),
 		backupSalt: label(64)
 	}));
 	var backupUnlockFactor = union(backupPassword, hostBackupPasskey, obj({
@@ -890,7 +889,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-BEfEjAX-.mjs
+	//#region packages/wallet/dist/protocol-DvzlUKB8.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -3805,6 +3804,17 @@
 	function corePrompt(locale, kind) {
 		return CORE[locale][kind];
 	}
+	/**
+	* The display name of a backup protection credential, chosen by the kernel so password managers
+	* list it apart from the user's wallet passkeys (the RP and app name are shown next to it).
+	*/
+	function backupCredentialName(locale) {
+		return BACKUP_CREDENTIAL_NAME[locale];
+	}
+	var BACKUP_CREDENTIAL_NAME = {
+		"zh-Hans": "云备份密钥",
+		en: "Cloud backup key"
+	};
 	/** A prompt thunk for a core operation — the keystore locale is read only when it runs. */
 	var corePromptFor = (keystore, kind) => () => {
 		var _keystore$locale;
@@ -13135,12 +13145,13 @@ zoo`.split("\n"));
 		if (factor.ceremony === "host") return factor;
 		const passkey = requirePasskey(ctx.platform);
 		const salts = { first: utf8ToBytes$1(factor.backupSalt) };
-		if ("name" in factor) {
+		if ("rpName" in factor) {
+			var _ctx$platform$keystor, _ctx$platform$keystor2;
 			const created = await passkey.create({
 				rpId: factor.rpId,
 				rpName: factor.rpName,
 				userId: concatBytes$3(new Uint8Array([PURPOSE_PROTECTION]), ctx.platform.random(15)),
-				userName: factor.name,
+				userName: backupCredentialName(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en")),
 				salts
 			});
 			return created.first === void 0 ? backupMaterialOf(await passkey.get({
