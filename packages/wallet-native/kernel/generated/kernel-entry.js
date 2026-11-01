@@ -13299,7 +13299,7 @@ zoo`.split("\n"));
 	*/
 	async function restoreBackup(ctx, params, requestSession) {
 		const envelope = parseEnvelope(params.envelope);
-		const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$1.dec(f.credentialId)] : []);
+		const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$2.dec(f.credentialId)] : []);
 		const bek = await bekFromFactor(ctx.platform, envelope, await backupMaterial(ctx, params.backupFactor, credentials));
 		try {
 			let plaintext;
