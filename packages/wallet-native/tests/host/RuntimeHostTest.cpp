@@ -6,6 +6,7 @@
 #include "host/KernelFile.hpp"
 #include "host/Lifecycle.hpp"
 #include "HostKeystore.hpp"
+#include "HostPasskey.hpp"
 #include "HostNostrNative.hpp"
 #include "HostQntxSpark.hpp"
 #include "kernel.hpp"
@@ -708,7 +709,7 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "backends,elapsed,file,frames,keystore,now,pbkdf2,random,setTimer"
+                "backends,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,setTimer"
                 "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number"
                 "|nostrFrozen=true|nostrAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
@@ -812,6 +813,57 @@ __send("held");
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1, "keystore-teardown: a completion reached the dead runtime");
   CHECK(box.errors.empty(), "keystore-teardown: unexpected onError");
+  return g_failures;
+}
+
+// The passkey bridge: the request JSON reaches the platform verbatim, the
+// response JSON comes back on the kernel thread, failures map to kernel error
+// codes, bad arguments throw, and teardown cancels a held ceremony.
+int passkeyBinding() {
+  qntxTestPasskey::reset();
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var pk = __qntx.passkey;
+var r = ["frozen=" + Object.isFrozen(pk)];
+function throws(name, fn) {
+  try { fn(); r.push(name + "=nothrow"); } catch (e) { r.push(name + "=ok"); }
+}
+throws("empty", function () { pk.create("", function () {}); });
+throws("long", function () { pk.get(new Array(16 * 1024 + 2).join("x"), function () {}); });
+throws("noCallback", function () { pk.get("{}", 1); });
+function step(fn) { return new Promise(function (resolve) { fn(function (value, code) { resolve([value, code]); }); }); }
+step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
+  r.push("create=" + (c[0] === '{"echo":{"rp":"x"}}' && c[1] === undefined));
+  return step(function (cb) { pk.get('{"m":"fail:cancelled"}', cb); });
+}).then(function (c) {
+  r.push("cancelled=" + c[1]);
+  return step(function (cb) { pk.get('{"m":"fail:unavailable"}', cb); });
+}).then(function (c) {
+  r.push("unavailable=" + c[1]);
+  return step(function (cb) { pk.create('{"m":"fail:failed"}', cb); });
+}).then(function (c) {
+  r.push("failed=" + c[1]);
+  __send(r.join(" "));
+  pk.get('{"m":"hold"}', function () { __send("late"); });
+});
+)JS";
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+  CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "passkey-binding: no report");
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "passkey-binding: runtime still running");
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+  CHECK(qntxTestPasskey::cancels() == 1, "passkey-binding: teardown did not cancel the ceremony");
+  std::lock_guard<std::mutex> lock(box.m);
+  CHECK(box.posts.size() == 1 &&
+            box.posts[0] ==
+                "frozen=true empty=ok long=ok noCallback=ok create=true cancelled=cancelled "
+                "unavailable=factor-unavailable failed=unavailable",
+      "passkey-binding: bridge behaviour drifted");
+  for (const auto& error : box.errors) {
+    std::fprintf(stderr, "passkey-binding onError: %s\n", error.c_str());
+  }
+  CHECK(box.errors.empty(), "passkey-binding: unexpected onError");
   return g_failures;
 }
 
@@ -1494,6 +1546,7 @@ int main(int argc, char** argv) {
       {"qntx-globals", [](const char*) { return qntxGlobals(); }},
       {"keystore-binding", [](const char*) { return keystoreBinding(); }},
       {"keystore-teardown", [](const char*) { return keystoreTeardown(); }},
+      {"passkey-binding", [](const char*) { return passkeyBinding(); }},
       {"backends-spark", [](const char*) { return backendsSpark(); }},
       {"backends-nostr", [](const char*) { return backendsNostr(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},

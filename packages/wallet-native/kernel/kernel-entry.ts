@@ -10,6 +10,8 @@ import { bindNativeKeystore } from "./keystore.ts";
 import type { KernelKeystoreNative } from "./keystore.ts";
 import { bindNativeNostr } from "./nostr.ts";
 import type { KernelNostrNative } from "./nostr.ts";
+import { bindNativePasskey } from "./passkey.ts";
+import type { KernelPasskeyNative } from "./passkey.ts";
 import { bindNativeSpark } from "./spark.ts";
 import type { KernelSparkNative } from "./spark.ts";
 import { createFileStore } from "./store.ts";
@@ -32,6 +34,7 @@ export type KernelGlobals = {
   ) => void;
   readonly file: KernelFile;
   readonly keystore: KernelKeystoreNative;
+  readonly passkey: KernelPasskeyNative;
   readonly frames: KernelFramePipe;
   readonly backends: {
     readonly spark: KernelSparkNative;
@@ -58,7 +61,7 @@ const platform: KernelPlatform = {
     }),
   store: createFileStore(__qntx.file),
   keystore: bindNativeKeystore(__qntx.keystore),
-  passkey: undefined,
+  passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
   // No foreground idle lock on native — the host locks on backgrounding after
   // autoLock.backgroundSeconds (W7); the session still ends at 24 h.
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },

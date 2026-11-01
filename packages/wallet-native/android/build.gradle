@@ -164,6 +164,11 @@ dependencies {
 
   // BiometricPrompt + CryptoObject for the hardware vault factor (W5).
   implementation "androidx.biometric:biometric:1.1.0"
+
+  // Credential Manager for native passkeys (W6); the Play services provider
+  // backs Google Password Manager.
+  implementation "androidx.credentials:credentials:1.6.0"
+  implementation "androidx.credentials:credentials-play-services-auth:1.6.0"
 }
 
 repositories {

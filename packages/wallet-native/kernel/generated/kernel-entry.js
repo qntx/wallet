@@ -12947,7 +12947,7 @@ zoo`.split("\n"));
 	];
 	var BACKUP_KEY_KIND = "backup-key";
 	var BACKUP_KEY_ID = "default";
-	var b64$1 = {
+	var b64$2 = {
 		enc: (b) => base64urlnopad.encode(b),
 		dec: (s) => {
 			try {
@@ -13113,16 +13113,16 @@ zoo`.split("\n"));
 			}
 			if (factor.kind === "passkey") return {
 				kind: "passkey",
-				credentialId: b64$1.enc(factor.credentialId),
-				sealedBek: b64$1.enc(sealedBek)
+				credentialId: b64$2.enc(factor.credentialId),
+				sealedBek: b64$2.enc(sealedBek)
 			};
 			const salt = salts[index];
 			if (salt === void 0) throw new KernelError("integrity", "backup: missing password salt");
 			return {
 				kind: "password",
 				iterations: PASSWORD_ITERATIONS,
-				salt: b64$1.enc(salt),
-				sealedBek: b64$1.enc(sealedBek)
+				salt: b64$2.enc(salt),
+				sealedBek: b64$2.enc(sealedBek)
 			};
 		});
 	}
@@ -13180,7 +13180,7 @@ zoo`.split("\n"));
 					createdAt: ctx.platform.now(),
 					header: contents.header,
 					factors: keyHeader.factors,
-					payload: b64$1.enc(sealedPayload)
+					payload: b64$2.enc(sealedPayload)
 				};
 				return { envelope: JSON.stringify(envelope) };
 			} finally {
@@ -13206,11 +13206,11 @@ zoo`.split("\n"));
 	/** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 	async function bekFromFactor(platform, envelope, backupFactor) {
 		if (backupFactor.kind === "passkey") {
-			const entry = envelope.factors.find((f) => f.kind === "passkey" && f.credentialId === b64$1.enc(backupFactor.credentialId));
+			const entry = envelope.factors.find((f) => f.kind === "passkey" && f.credentialId === b64$2.enc(backupFactor.credentialId));
 			if (entry === void 0) throw new KernelError("not-found", "backup: no factor for this credential");
 			const kek = hkdf(sha256$1, backupFactor.prfBackup, backupFactor.credentialId, utf8ToBytes$1("qntx-wallet/kek/backup/v1"), 32);
 			try {
-				return open(kek, b64$1.dec(entry.sealedBek), factorContextOf("passkey"), "");
+				return open(kek, b64$2.dec(entry.sealedBek), factorContextOf("passkey"), "");
 			} catch (_unused4) {
 				throw new KernelError("wrong-passkey", "backup: factor does not unwrap");
 			} finally {
@@ -13219,9 +13219,9 @@ zoo`.split("\n"));
 		}
 		const entry = envelope.factors.find((f) => f.kind === "password");
 		if (entry === void 0) throw new KernelError("not-found", "backup: no password factor");
-		const kek = await passwordKek(backupFactor.password, b64$1.dec(entry.salt), platform.pbkdf2);
+		const kek = await passwordKek(backupFactor.password, b64$2.dec(entry.salt), platform.pbkdf2);
 		try {
-			return open(kek, b64$1.dec(entry.sealedBek), factorContextOf("password"), "");
+			return open(kek, b64$2.dec(entry.sealedBek), factorContextOf("password"), "");
 		} catch (_unused5) {
 			throw new KernelError("wrong-password", "backup: factor does not unwrap");
 		} finally {
@@ -13238,7 +13238,7 @@ zoo`.split("\n"));
 		try {
 			let plaintext;
 			try {
-				plaintext = open(bek, b64$1.dec(envelope.payload), payloadContext(envelope.header), "");
+				plaintext = open(bek, b64$2.dec(envelope.payload), payloadContext(envelope.header), "");
 			} catch (_unused6) {
 				throw new KernelError("integrity", "backup: payload authentication failed");
 			}
@@ -18162,12 +18162,12 @@ zoo`.split("\n"));
 		};
 	};
 	var BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	var b64 = (i) => {
+	var b64$1 = (i) => {
 		var _BASE64$i;
 		return (_BASE64$i = BASE64[i]) !== null && _BASE64$i !== void 0 ? _BASE64$i : "";
 	};
 	var base64 = (bytes) => {
-		const c = b64;
+		const c = b64$1;
 		let out = "";
 		for (let i = 0; i < bytes.length; i += 3) {
 			var _bytes$i, _bytes, _bytes2;
@@ -39948,14 +39948,14 @@ zoo`.split("\n"));
 	* (`cancelled`, `factor-invalidated`, `factor-unavailable`, `unavailable`) and becomes a
 	* `KernelError` so the vault reports it verbatim instead of as an integrity failure.
 	*/
-	function failure(code) {
+	function failure$1(code) {
 		return code === "cancelled" || code === "factor-invalidated" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform keystore did not complete") : new KernelError("unavailable", "the platform keystore reported no outcome");
 	}
-	async function bytesOf(start) {
+	async function bytesOf$1(start) {
 		return new Promise((resolve, reject) => {
 			start((result, code) => {
 				if (result === void 0) {
-					reject(failure(code));
+					reject(failure$1(code));
 					return;
 				}
 				resolve(result);
@@ -39966,7 +39966,7 @@ zoo`.split("\n"));
 		return new Promise((resolve, reject) => {
 			start((_result, code) => {
 				if (code !== void 0) {
-					reject(failure(code));
+					reject(failure$1(code));
 					return;
 				}
 				resolve();
@@ -39976,10 +39976,10 @@ zoo`.split("\n"));
 	function bindNativeKeystore(raw) {
 		return {
 			locale: raw.locale,
-			seal: async (id, secret, prompt) => bytesOf((done) => {
+			seal: async (id, secret, prompt) => bytesOf$1((done) => {
 				raw.seal(id, secret, prompt.title, prompt.description, done);
 			}),
-			open: async (id, sealed, prompt) => bytesOf((done) => {
+			open: async (id, sealed, prompt) => bytesOf$1((done) => {
 				raw.open(id, sealed, prompt.title, prompt.description, done);
 			}),
 			authenticate: async (prompt) => outcomeOf((done) => {
@@ -40005,6 +40005,148 @@ zoo`.split("\n"));
 			sign: (id, secretKey, auxRand) => call$1(() => raw.sign(id, secretKey, auxRand)),
 			verifySerialized: (serializedUtf8, id, pubkey, sig) => raw.verifySerialized(serializedUtf8, id, pubkey, sig),
 			ecdhX: (secretKey, publicKeyX) => call$1(() => raw.ecdhX(secretKey, publicKeyX))
+		};
+	}
+	//#endregion
+	//#region packages/wallet-native/kernel/passkey.ts
+	init_base();
+	init_objectSpread2();
+	var TIMEOUT_MS = 12e4;
+	var FLAGS_OFFSET = 32;
+	var FLAG_UV = 4;
+	var FLAG_BE = 8;
+	var FLAG_BS = 16;
+	/** Whether bit `flag` (a power of two) is set in the authenticator-data flags byte. */
+	var hasFlag = (flags, flag) => Math.floor(flags / flag) % 2 === 1;
+	function failure(code) {
+		return code === "cancelled" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform passkey ceremony did not complete") : new KernelError("unavailable", "the platform passkey ceremony reported no outcome");
+	}
+	var malformed = () => new KernelError("unavailable", "the platform returned a malformed passkey response");
+	var b64 = (bytes) => base64urlnopad.encode(bytes);
+	/** WebAuthn JSON is base64url; tolerate the padding some providers emit. */
+	function bytesOf(value) {
+		if (typeof value !== "string") throw malformed();
+		try {
+			return base64urlnopad.decode(value.replace(/=+$/, ""));
+		} catch (_unused) {
+			throw malformed();
+		}
+	}
+	function objectOf(value) {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw malformed();
+		return Object.fromEntries(Object.entries(value));
+	}
+	function prfEval(salts) {
+		return salts.second === void 0 ? { first: b64(salts.first) } : {
+			first: b64(salts.first),
+			second: b64(salts.second)
+		};
+	}
+	/** PRF outputs from `clientExtensionResults.prf.results`, absent when the provider gave none. */
+	function prfResults(extensions) {
+		if (extensions === void 0) return {};
+		const { prf } = objectOf(extensions);
+		if (prf === void 0) return {};
+		const { results } = objectOf(prf);
+		if (results === void 0) return {};
+		const { first, second } = objectOf(results);
+		return _objectSpread2(_objectSpread2({}, first === void 0 ? {} : { first: bytesOf(first) }), second === void 0 ? {} : { second: bytesOf(second) });
+	}
+	/**
+	* Parses a registration (`assertion: false`) or authentication response. Without authenticator data
+	* a registration carries no trustworthy flags, so its PRF results are dropped and the kernel falls
+	* back to an assertion that does carry them.
+	*/
+	function parseResponse(json, assertion) {
+		let parsed;
+		try {
+			parsed = JSON.parse(json);
+		} catch (_unused2) {
+			throw malformed();
+		}
+		const credential = objectOf(parsed);
+		const response = objectOf(credential["response"]);
+		const credentialId = bytesOf(credential["rawId"]);
+		const { first, second } = prfResults(credential["clientExtensionResults"]);
+		const rawAuthData = response["authenticatorData"];
+		if (rawAuthData === void 0 && !assertion) {
+			first === null || first === void 0 || first.fill(0);
+			second === null || second === void 0 || second.fill(0);
+			return {
+				credentialId,
+				first: void 0,
+				second: void 0,
+				userHandle: void 0,
+				synced: false,
+				userVerified: false
+			};
+		}
+		const flags = bytesOf(rawAuthData)[FLAGS_OFFSET];
+		if (flags === void 0) throw malformed();
+		const handle = response["userHandle"];
+		return {
+			credentialId,
+			first,
+			second,
+			userHandle: assertion && typeof handle === "string" ? bytesOf(handle) : void 0,
+			synced: hasFlag(flags, FLAG_BE) && hasFlag(flags, FLAG_BS),
+			userVerified: hasFlag(flags, FLAG_UV)
+		};
+	}
+	async function run(start, request, assertion) {
+		return parseResponse(await new Promise((resolve, reject) => {
+			start(JSON.stringify(request), (responseJson, code) => {
+				if (responseJson === void 0) {
+					reject(failure(code));
+					return;
+				}
+				resolve(responseJson);
+			});
+		}), assertion);
+	}
+	function bindNativePasskey(raw, random) {
+		return {
+			create: async (input) => run(raw.create, {
+				challenge: b64(random(32)),
+				rp: {
+					id: input.rpId,
+					name: input.rpName
+				},
+				user: {
+					id: b64(input.userId),
+					name: input.userName,
+					displayName: input.userName
+				},
+				pubKeyCredParams: [{
+					type: "public-key",
+					alg: -7
+				}, {
+					type: "public-key",
+					alg: -257
+				}],
+				authenticatorSelection: {
+					residentKey: "required",
+					requireResidentKey: true,
+					userVerification: "required"
+				},
+				attestation: "none",
+				timeout: TIMEOUT_MS,
+				extensions: { prf: { eval: prfEval(input.salts) } }
+			}, false),
+			get: async (input) => {
+				var _input$allowCredentia;
+				return run(raw.get, {
+					challenge: b64(random(32)),
+					rpId: input.rpId,
+					allowCredentials: ((_input$allowCredentia = input.allowCredentials) !== null && _input$allowCredentia !== void 0 ? _input$allowCredentia : []).map((id) => ({
+						type: "public-key",
+						id: b64(id)
+					})),
+					userVerification: "required",
+					timeout: TIMEOUT_MS,
+					extensions: { prf: { eval: prfEval(input.salts) } }
+				}, true);
+			}
 		};
 	}
 	//#endregion
@@ -42734,7 +42876,7 @@ zoo`.split("\n"));
 		}),
 		store: createFileStore(__qntx.file),
 		keystore: bindNativeKeystore(__qntx.keystore),
-		passkey: void 0,
+		passkey: bindNativePasskey(__qntx.passkey, (length) => __qntx.random(length)),
 		policy: {
 			maxSessionMs: 864e5,
 			maxScryptLogN: 18

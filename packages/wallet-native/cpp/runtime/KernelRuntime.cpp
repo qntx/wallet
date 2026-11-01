@@ -474,8 +474,8 @@ void KernelRuntime::Impl::teardown() {
   // was already cleared above, on this thread, while the runtime was alive.
   globals->active->store(false, std::memory_order_release);
   // A system prompt still on screen belongs to nobody now: dismiss it.
-  if (globals->cancelCeremony) {
-    globals->cancelCeremony();
+  for (const auto& cancel : globals->cancelCeremonies) {
+    cancel();
   }
   // Timed/timerIndex are kernel-thread-only state.
   timed.clear();

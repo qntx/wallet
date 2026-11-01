@@ -100,11 +100,13 @@ const runtimeSources = [
   resolve(cppDir, "runtime/KernelJs.cpp"),
   resolve(cppDir, "runtime/KernelBackends.cpp"),
   resolve(cppDir, "runtime/KernelKeystore.cpp"),
+  resolve(cppDir, "runtime/KernelPasskey.cpp"),
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
   resolve(cppDir, "host/Lifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostKeystore.cpp"),
+  resolve(moduleDir, "tests/host/HostPasskey.cpp"),
   resolve(moduleDir, "tests/host/HostNostrNative.cpp"),
   resolve(moduleDir, "tests/host/HostQntxSpark.cpp"),
 ];
