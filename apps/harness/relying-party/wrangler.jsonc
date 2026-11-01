@@ -1,0 +1,7 @@
+{
+  "name": "wallet-harness",
+  "main": "worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "wallet-harness.qntx.org", "custom_domain": true }]
+}

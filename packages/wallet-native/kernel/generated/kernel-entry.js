@@ -503,7 +503,7 @@
 		init_toPropertyKey();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/core-LKMdDRJR.mjs
+	//#region packages/wallet/dist/core-CyeQkAmi.mjs
 	init_defineProperty();
 	var ValidationError = class extends Error {
 		constructor(..._args) {
@@ -667,6 +667,29 @@
 		id: sessionId,
 		createdAt: safeTime
 	}));
+	var RP_ID = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/;
+	var label = (max) => str(max, new RegExp("^\\S(?:.*\\S)?$", "su"));
+	var hostEvidence = {
+		ceremony: literal("host"),
+		credentialId: bytes(1, 1023),
+		prfWallet: bytes(32),
+		synced: bool,
+		factor: opt(factor)
+	};
+	var createWithPasskeyParams = union(obj(hostEvidence), obj({
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		rpName: label(64),
+		name: label(64),
+		walletSalt: label(64),
+		factor: opt(factor)
+	}));
+	var restoreWithPasskeyParams = union(obj(hostEvidence), obj({
+		ceremony: literal("kernel"),
+		rpId: str(253, RP_ID),
+		walletSalt: label(64),
+		factor: opt(factor)
+	}));
 	var walletInfo$1 = obj({
 		walletId,
 		origin: union(literal("passkey"), literal("mnemonic")),
@@ -719,23 +742,13 @@
 		"wallet.createWithPasskey": {
 			session: false,
 			presence: true,
-			params: obj({
-				credentialId: bytes(1, 1023),
-				prfWallet: bytes(32),
-				synced: bool,
-				factor: opt(factor)
-			}),
+			params: createWithPasskeyParams,
 			result: createdResult
 		},
 		"wallet.restoreWithPasskey": {
 			session: false,
 			presence: true,
-			params: obj({
-				credentialId: bytes(1, 1023),
-				prfWallet: bytes(32),
-				synced: bool,
-				factor: opt(factor)
-			}),
+			params: restoreWithPasskeyParams,
 			result: createdResult
 		},
 		"wallet.createMnemonic": {
@@ -861,7 +874,7 @@
 		init_defineProperty();
 	}));
 	//#endregion
-	//#region packages/wallet/dist/protocol-DU20RcAt.mjs
+	//#region packages/wallet/dist/protocol-BfopEP8S.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -7756,11 +7769,18 @@
 	}
 	//#endregion
 	//#region packages/wallet-kernel/src/platform.ts
+	init_objectSpread2();
+	/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
+	function requirePasskey(platform) {
+		if (platform.passkey === void 0) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies in the host");
+		return platform.passkey;
+	}
 	/**
-	* Serializes keystore ceremonies — seal/open/authenticate run strictly one at a time (the platform
-	* cannot show two presence prompts at once). A rejection does not wedge the queue.
+	* Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
+	* create/get share one queue, because the platform can show only one verification at a time. A
+	* rejection does not wedge the queue. Applied once by `startKernel`.
 	*/
-	function serialKeystore(keystore) {
+	function serializeCeremonies(platform) {
 		let tail = Promise.resolve();
 		const queue = async (work) => {
 			const previous = tail;
@@ -7775,13 +7795,20 @@
 				release === null || release === void 0 || release();
 			}
 		};
-		return {
-			locale: keystore.locale,
-			seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
-			open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
-			authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
-			clear: async () => queue(async () => keystore.clear())
-		};
+		const { keystore, passkey } = platform;
+		return _objectSpread2(_objectSpread2({}, platform), {}, {
+			keystore: keystore === void 0 ? void 0 : {
+				locale: keystore.locale,
+				seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
+				open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
+				authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
+				clear: async () => queue(async () => keystore.clear())
+			},
+			passkey: passkey === void 0 ? void 0 : {
+				create: async (input) => queue(async () => passkey.create(input)),
+				get: async (input) => queue(async () => passkey.get(input))
+			}
+		});
 	}
 	/**
 	* Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
@@ -12804,14 +12831,82 @@ zoo`.split("\n"));
 			wipe(entropy);
 		}
 	}
+	var PURPOSE_WALLET = 1;
+	/**
+	* One platform ceremony's wallet PRF: the result must be user-verified and carry a 32-byte `first`
+	* output; anything else is an authenticator without usable PRF support (`factor-unavailable`). The
+	* unused `second` output is wiped.
+	*/
+	function walletPrfOf(result) {
+		var _result$first;
+		if (result.second !== void 0) wipe(result.second);
+		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
+			if (result.first !== void 0) wipe(result.first);
+			throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+		}
+		return {
+			prfWallet: result.first,
+			synced: result.synced
+		};
+	}
+	/**
+	* The kernel-run wallet ceremony (React Native): the PRF output is produced and consumed here and
+	* never crosses the channel. Create registers a discoverable credential whose user handle starts
+	* with the wallet purpose byte; an authenticator that evaluates PRF only on assertion gets one
+	* follow-up assertion of the new credential. Restore asserts any credential for the RP and accepts
+	* only a wallet-purpose one — a vault or backup credential would silently derive another wallet.
+	*/
+	async function walletCeremony(ctx, params) {
+		var _asserted$userHandle;
+		const passkey = requirePasskey(ctx.platform);
+		const salts = { first: utf8ToBytes$1(params.walletSalt) };
+		if ("name" in params) {
+			const created = await passkey.create({
+				rpId: params.rpId,
+				rpName: params.rpName,
+				userId: concatBytes$3(new Uint8Array([PURPOSE_WALLET]), ctx.platform.random(15)),
+				userName: params.name,
+				salts
+			});
+			if (created.first !== void 0) return walletPrfOf(created);
+			return walletPrfOf(await passkey.get({
+				rpId: params.rpId,
+				allowCredentials: [created.credentialId],
+				salts
+			}));
+		}
+		const asserted = await passkey.get({
+			rpId: params.rpId,
+			allowCredentials: void 0,
+			salts
+		});
+		if (((_asserted$userHandle = asserted.userHandle) === null || _asserted$userHandle === void 0 ? void 0 : _asserted$userHandle[0]) !== PURPOSE_WALLET) {
+			for (const output of [asserted.first, asserted.second]) if (output !== void 0) wipe(output);
+			throw new KernelError("wrong-passkey", "the passkey is not a wallet credential");
+		}
+		return walletPrfOf(asserted);
+	}
+	/**
+	* Creates or restores a passkey wallet. The ceremony runs where the platform puts it: in the kernel
+	* when a platform authenticator exists, in the host (evidence on the wire) otherwise — the other
+	* shape is `factor-unavailable`.
+	*/
 	async function createWithPasskey(ctx, params, requestSession) {
+		if (ctx.platform.passkey !== void 0 !== (params.ceremony === "kernel")) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
 		const gated = gate(ctx, params.factor, requestSession);
-		const entropy = entropyFromPrf(params.prfWallet);
+		let prf;
+		try {
+			prf = params.ceremony === "kernel" ? await walletCeremony(ctx, params) : params;
+		} catch (error) {
+			if (gated.uninitialized) gated.dek.wipe();
+			throw error;
+		}
+		const entropy = entropyFromPrf(prf.prfWallet);
 		const material = await walletMaterial(ctx.platform, entropy, "passkey", 12);
 		try {
 			ensureNewWallet(ctx, material);
 			const createdAt = ctx.platform.now();
-			const backup = params.synced ? "passkey" : "none";
+			const backup = prf.synced ? "passkey" : "none";
 			const record = walletRecord(ctx, gated.dek, material, backup, createdAt);
 			const session = await commitRecords(ctx, gated, params.factor, [record]);
 			return {
@@ -39596,7 +39691,7 @@ zoo`.split("\n"));
 		return "unavailable";
 	}
 	function startKernel(host, port) {
-		const platform = _objectSpread2(_objectSpread2({}, host), {}, { keystore: host.keystore === void 0 ? void 0 : serialKeystore(host.keystore) });
+		const platform = serializeCeremonies(host);
 		const nostr = createNostrModule(platform.backends.nostr);
 		const spark = createSparkModule();
 		const chains = createChainsModule();
@@ -42639,6 +42734,7 @@ zoo`.split("\n"));
 		}),
 		store: createFileStore(__qntx.file),
 		keystore: bindNativeKeystore(__qntx.keystore),
+		passkey: void 0,
 		policy: {
 			maxSessionMs: 864e5,
 			maxScryptLogN: 18

@@ -1,15 +1,20 @@
 import { equalBytes } from "@noble/ciphers/utils.js";
-import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import type { HDKey } from "@scure/bip32";
 
-import type { Factor, NullValue } from "@qntx/wallet/protocol";
+import type {
+  CreateWithPasskeyParams,
+  Factor,
+  NullValue,
+  RestoreWithPasskeyParams,
+} from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
 import { masterKey } from "../derive/hd.ts";
 import { walletIdOf } from "../derive/wallet-id.ts";
 import { KernelError } from "../errors.ts";
-import { assertFactorKindAvailable } from "../platform.ts";
-import type { KernelPlatform } from "../platform.ts";
+import { assertFactorKindAvailable, requirePasskey } from "../platform.ts";
+import type { KernelPlatform, PasskeyResult } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
 import { decodeUtf8Secret, Secret, wipe } from "../secret/secret.ts";
 import { randomEntropy } from "../seed/entropy.ts";
@@ -372,19 +377,99 @@ export async function importMnemonic(
   }
 }
 
+const PURPOSE_WALLET = 0x01;
+
+/** The PRF output that becomes a passkey wallet's entropy, plus whether the credential syncs. */
+type WalletPrf = { readonly prfWallet: Uint8Array; readonly synced: boolean };
+
+/**
+ * One platform ceremony's wallet PRF: the result must be user-verified and carry a 32-byte `first`
+ * output; anything else is an authenticator without usable PRF support (`factor-unavailable`). The
+ * unused `second` output is wiped.
+ */
+function walletPrfOf(result: PasskeyResult): WalletPrf {
+  if (result.second !== undefined) {
+    wipe(result.second);
+  }
+  if (!result.userVerified || result.first?.length !== 32) {
+    if (result.first !== undefined) {
+      wipe(result.first);
+    }
+    throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+  }
+  return { prfWallet: result.first, synced: result.synced };
+}
+
+/**
+ * The kernel-run wallet ceremony (React Native): the PRF output is produced and consumed here and
+ * never crosses the channel. Create registers a discoverable credential whose user handle starts
+ * with the wallet purpose byte; an authenticator that evaluates PRF only on assertion gets one
+ * follow-up assertion of the new credential. Restore asserts any credential for the RP and accepts
+ * only a wallet-purpose one — a vault or backup credential would silently derive another wallet.
+ */
+async function walletCeremony(
+  ctx: KernelContext,
+  params: Extract<CreateWithPasskeyParams | RestoreWithPasskeyParams, { ceremony: "kernel" }>,
+): Promise<WalletPrf> {
+  const passkey = requirePasskey(ctx.platform);
+  const salts = { first: utf8ToBytes(params.walletSalt) };
+  if ("name" in params) {
+    const created = await passkey.create({
+      rpId: params.rpId,
+      rpName: params.rpName,
+      userId: concatBytes(new Uint8Array([PURPOSE_WALLET]), ctx.platform.random(15)),
+      userName: params.name,
+      salts,
+    });
+    if (created.first !== undefined) {
+      return walletPrfOf(created);
+    }
+    return walletPrfOf(
+      await passkey.get({ rpId: params.rpId, allowCredentials: [created.credentialId], salts }),
+    );
+  }
+  const asserted = await passkey.get({ rpId: params.rpId, allowCredentials: undefined, salts });
+  if (asserted.userHandle?.[0] !== PURPOSE_WALLET) {
+    for (const output of [asserted.first, asserted.second]) {
+      if (output !== undefined) {
+        wipe(output);
+      }
+    }
+    throw new KernelError("wrong-passkey", "the passkey is not a wallet credential");
+  }
+  return walletPrfOf(asserted);
+}
+
+/**
+ * Creates or restores a passkey wallet. The ceremony runs where the platform puts it: in the kernel
+ * when a platform authenticator exists, in the host (evidence on the wire) otherwise — the other
+ * shape is `factor-unavailable`.
+ */
 export async function createWithPasskey(
   ctx: KernelContext,
-  params: { credentialId: Uint8Array; prfWallet: Uint8Array; synced: boolean; factor?: Factor },
+  params: CreateWithPasskeyParams | RestoreWithPasskeyParams,
   requestSession: string | undefined,
 ): Promise<{ wallet: WalletInfo; session: string }> {
+  if ((ctx.platform.passkey !== undefined) !== (params.ceremony === "kernel")) {
+    throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+  }
   const gated = gate(ctx, params.factor, requestSession);
-  const entropy = entropyFromPrf(params.prfWallet);
+  let prf: WalletPrf;
+  try {
+    prf = params.ceremony === "kernel" ? await walletCeremony(ctx, params) : params;
+  } catch (error) {
+    if (gated.uninitialized) {
+      gated.dek.wipe();
+    }
+    throw error;
+  }
+  const entropy = entropyFromPrf(prf.prfWallet);
   const material = await walletMaterial(ctx.platform, entropy, "passkey", 12);
   try {
     ensureNewWallet(ctx, material);
     const createdAt = ctx.platform.now();
     // Only a synced passkey backs the wallet up; a device-bound credential dies with the device.
-    const backup = params.synced ? "passkey" : "none";
+    const backup = prf.synced ? "passkey" : "none";
     const record = walletRecord(ctx, gated.dek, material, backup, createdAt);
     const session = await commitRecords(ctx, gated, params.factor, [record]);
     return { wallet: walletInfoOf(material, backup, createdAt), session };

@@ -116,6 +116,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
   const platform: KernelPlatform = {
     random,
     keystore: undefined,
+    passkey: undefined,
     now: () => 1_700_000_000_000,
     elapsed: () => 0,
     // The session's idle/max timers simply never fire in this smoke — no ambient clock advances.

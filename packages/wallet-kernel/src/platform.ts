@@ -65,6 +65,12 @@ export type KernelPlatform = {
    */
   readonly keystore: Keystore | undefined;
   /**
+   * The platform passkey authenticator — present only where the kernel runs WebAuthn ceremonies
+   * itself (RN), so PRF outputs never pass through the main runtime. `undefined` on web/node, where
+   * the host runs the ceremony and hands over the evidence.
+   */
+  readonly passkey: PasskeyAuthenticator | undefined;
+  /**
    * Heavy cryptographic backends the host supplies lazily. `spark` loads and verifies the wasm (or
    * native) SparkCrypto instance; the kernel calls it only when a spark.* method runs, so a
    * nostr-only session never loads it. Each call must return a backend the kernel keeps until a
@@ -102,11 +108,61 @@ export type Keystore = {
   readonly clear: () => Promise<void>;
 };
 
+/** PRF inputs of one ceremony: at most two evaluations (WebAuthn `prf.eval`). */
+export type PrfSalts = { readonly first: Uint8Array; readonly second?: Uint8Array };
+
 /**
- * Serializes keystore ceremonies — seal/open/authenticate run strictly one at a time (the platform
- * cannot show two presence prompts at once). A rejection does not wedge the queue.
+ * One ceremony's outcome. `first`/`second` are the PRF outputs (32 bytes each); a create may omit
+ * them when the authenticator evaluates PRF only on assertion — the kernel then asserts once.
+ * `synced`: the credential's backup-eligible and backed-up flags are both set. `userVerified`: the
+ * UV flag of the authenticator data.
  */
-export function serialKeystore(keystore: Keystore): Keystore {
+export type PasskeyResult = {
+  readonly credentialId: Uint8Array;
+  readonly first: Uint8Array | undefined;
+  readonly second: Uint8Array | undefined;
+  readonly userHandle: Uint8Array | undefined;
+  readonly synced: boolean;
+  readonly userVerified: boolean;
+};
+
+/**
+ * The platform passkey contract (W6): discoverable, user-verified credentials with the PRF
+ * extension. The host rejects with KernelError codes `cancelled` | `factor-unavailable` (no PRF
+ * support, unconfigured associated domain) | `unavailable`.
+ */
+export type PasskeyAuthenticator = {
+  readonly create: (input: {
+    readonly rpId: string;
+    readonly rpName: string;
+    readonly userId: Uint8Array;
+    readonly userName: string;
+    readonly salts: PrfSalts;
+  }) => Promise<PasskeyResult>;
+  readonly get: (input: {
+    readonly rpId: string;
+    readonly allowCredentials: ReadonlyArray<Uint8Array> | undefined;
+    readonly salts: PrfSalts;
+  }) => Promise<PasskeyResult>;
+};
+
+/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
+export function requirePasskey(platform: KernelPlatform): PasskeyAuthenticator {
+  if (platform.passkey === undefined) {
+    throw new KernelError(
+      "factor-unavailable",
+      "this platform runs passkey ceremonies in the host",
+    );
+  }
+  return platform.passkey;
+}
+
+/**
+ * Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
+ * create/get share one queue, because the platform can show only one verification at a time. A
+ * rejection does not wedge the queue. Applied once by `startKernel`.
+ */
+export function serializeCeremonies(platform: KernelPlatform): KernelPlatform {
   let tail: Promise<void> = Promise.resolve();
   const queue = async <T>(work: () => Promise<T>): Promise<T> => {
     const previous = tail;
@@ -121,12 +177,28 @@ export function serialKeystore(keystore: Keystore): Keystore {
       release?.();
     }
   };
+  const { keystore, passkey } = platform;
   return {
-    locale: keystore.locale,
-    seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
-    open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
-    authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
-    clear: async () => queue(async () => keystore.clear()),
+    ...platform,
+    keystore:
+      keystore === undefined
+        ? undefined
+        : {
+            locale: keystore.locale,
+            seal: async (id, secret, prompt) =>
+              queue(async () => keystore.seal(id, secret, prompt)),
+            open: async (id, sealed, prompt) =>
+              queue(async () => keystore.open(id, sealed, prompt)),
+            authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
+            clear: async () => queue(async () => keystore.clear()),
+          },
+    passkey:
+      passkey === undefined
+        ? undefined
+        : {
+            create: async (input) => queue(async () => passkey.create(input)),
+            get: async (input) => queue(async () => passkey.get(input)),
+          },
   };
 }
 

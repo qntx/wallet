@@ -3,7 +3,14 @@ import type { KernelEvent, ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import { startKernel } from "../src/kernel.ts";
-import type { KernelPlatform, Keystore, Pbkdf2, Port, Random } from "../src/platform.ts";
+import type {
+  KernelPlatform,
+  Keystore,
+  PasskeyAuthenticator,
+  Pbkdf2,
+  Port,
+  Random,
+} from "../src/platform.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore } from "../src/vault/store.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
@@ -136,6 +143,8 @@ export function createHarness(opts?: {
   random?: Random;
   /** A platform keystore: makes this a hardware-factor (React Native) kernel. */
   keystore?: Keystore;
+  /** A platform passkey authenticator: the kernel runs WebAuthn ceremonies itself (React Native). */
+  passkey?: PasskeyAuthenticator;
   /** Overrides the WebCrypto PBKDF2 (spies observing seed derivation). */
   pbkdf2?: Pbkdf2;
 }): Harness {
@@ -210,6 +219,7 @@ export function createHarness(opts?: {
           : { ms: opts?.idleMs ?? 15 * 60_000, activity: opts?.activity ?? "presence" },
     },
     keystore: opts?.keystore,
+    passkey: opts?.passkey,
     backends: opts?.backends ?? {
       spark: async () => {
         await Promise.resolve();

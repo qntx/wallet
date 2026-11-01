@@ -160,6 +160,7 @@ const backupPasskeyF = () => ({
 async function createPasskeyWallet(h: Harness) {
   const res = ok(
     await h.call("wallet.createWithPasskey", {
+      ceremony: "host",
       credentialId: CREDENTIAL_ID,
       prfWallet: PRF_WALLET,
       synced: true,
@@ -476,6 +477,7 @@ describe("backup vector", () => {
     await h.settle();
     const res = ok(
       await h.call("wallet.createWithPasskey", {
+        ceremony: "host",
         credentialId,
         prfWallet: hexToBytes(inputs.prfWallet),
         synced: true,

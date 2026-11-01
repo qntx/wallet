@@ -148,7 +148,41 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
       v: 1,
       id: 6,
       method: "wallet.createWithPasskey",
-      params: { credentialId: $b("deadbeefcafe"), prfWallet: $b(PRF), synced: true },
+      params: {
+        ceremony: "host",
+        credentialId: $b("deadbeefcafe"),
+        prfWallet: $b(PRF),
+        synced: true,
+      },
+    },
+  },
+  {
+    name: "wallet.createWithPasskey-kernel",
+    message: {
+      v: 1,
+      id: 6,
+      method: "wallet.createWithPasskey",
+      params: {
+        ceremony: "kernel",
+        rpId: "wallet-harness.qntx.org",
+        rpName: "Harness",
+        name: "alice",
+        walletSalt: "harness/wallet/v1",
+        factor: hardwareFactor,
+      },
+    },
+  },
+  {
+    name: "wallet.restoreWithPasskey-kernel",
+    message: {
+      v: 1,
+      id: 7,
+      method: "wallet.restoreWithPasskey",
+      params: {
+        ceremony: "kernel",
+        rpId: "wallet-harness.qntx.org",
+        walletSalt: "harness/wallet/v1",
+      },
     },
   },
   {
@@ -158,6 +192,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
       id: 7,
       method: "wallet.restoreWithPasskey",
       params: {
+        ceremony: "host",
         credentialId: $b("deadbeefcafe"),
         prfWallet: $b(PRF),
         synced: false,
@@ -746,6 +781,31 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
       id: 2,
       method: "vault.unlock",
       params: JSON.parse(`{"factor":${JSON.stringify(passwordFactor)},"toString":1}`) as unknown,
+    },
+  },
+  {
+    name: "params-kernel-ceremony-with-evidence",
+    check: "request",
+    message: {
+      v: 1,
+      id: 7,
+      method: "wallet.restoreWithPasskey",
+      params: {
+        ceremony: "kernel",
+        rpId: "wallet-harness.qntx.org",
+        walletSalt: "harness/wallet/v1",
+        prfWallet: $b(PRF),
+      },
+    },
+  },
+  {
+    name: "params-kernel-ceremony-bad-rp-id",
+    check: "request",
+    message: {
+      v: 1,
+      id: 7,
+      method: "wallet.restoreWithPasskey",
+      params: { ceremony: "kernel", rpId: "https://qntx.org", walletSalt: "harness/wallet/v1" },
     },
   },
   {

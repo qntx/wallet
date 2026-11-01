@@ -227,7 +227,13 @@ export {
   backupHeader,
   backupInfo,
 } from "./backup.ts";
-export type { BackupFactor, CreatedResult, Factor } from "./core.ts";
+export type {
+  BackupFactor,
+  CreatedResult,
+  CreateWithPasskeyParams,
+  Factor,
+  RestoreWithPasskeyParams,
+} from "./core.ts";
 export type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,
