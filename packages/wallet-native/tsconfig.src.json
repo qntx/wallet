@@ -1,0 +1,6 @@
+{
+  // The published entry only: the package build must not pull the kernel or tests (which import
+  // wallet-kernel sources) into its declaration program — tsgo would emit .d.ts beside them.
+  "extends": "./tsconfig.json",
+  "include": ["src"]
+}
