@@ -229,6 +229,7 @@ export {
 } from "./backup.ts";
 export type {
   BackupFactor,
+  BackupUnlockFactor,
   CreatedResult,
   CreateWithPasskeyParams,
   Factor,

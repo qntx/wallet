@@ -18,6 +18,7 @@ import {
   wireBytes,
   wireSecretText,
   resolveBackupFactor,
+  resolveBackupUnlockFactor,
   defaultUnlockFactor,
 } from "./factors.ts";
 import type { FactorMode, FactorSource, PasskeyCeremony } from "./factors.ts";
@@ -561,7 +562,7 @@ export class KernelWallet implements Wallet {
     }): Promise<ReadonlyArray<WalletInfo>> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const backupFactor = await resolveBackupFactor(
+        const backupFactor = await resolveBackupUnlockFactor(
           this.factorSource,
           options.backupFactor,
           transfer,
