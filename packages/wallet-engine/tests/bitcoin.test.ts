@@ -122,19 +122,23 @@ describe("esplora 429 handling", () => {
     expect(out).toBe("healthy");
   });
 
+  /** Answers each URL's first request with 429 and every later one with a body. */
+  const throttledOnce = (): EsploraFetch => {
+    const seen = new Set<string>();
+    return async (url) => {
+      await Promise.resolve();
+      if (seen.has(url)) {
+        return resp(200, '"served"');
+      }
+      seen.add(url);
+      return resp(429, "");
+    };
+  };
+
   it("releases its slot before backing off a 429, so a throttled burst cannot deadlock", async () => {
     // Every request is throttled once, then served: with eight concurrent gets all four slots
     // are throttled at once — retrying inside the slot would wait on itself forever.
-    const seen = new Set<string>();
-    const fetcher: EsploraFetch = async (url) => {
-      await Promise.resolve();
-      if (!seen.has(url)) {
-        seen.add(url);
-        return resp(429, "");
-      }
-      return resp(200, '"served"');
-    };
-    const es = esplora(["https://a.test"], fetcher, sleep);
+    const es = esplora(["https://a.test"], throttledOnce(), sleep);
     const paths = Array.from({ length: 8 }, (_, i) => `/p/${i}`);
     await expect(Promise.all(paths.map(async (p) => es.get(p)))).resolves.toStrictEqual(
       paths.map(() => "served"),
