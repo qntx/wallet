@@ -177,8 +177,7 @@ export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = [
     testnet: false,
     family: "solana",
     // https://solana.com/docs/references/clusters (mainnet genesis hash)
-    genesisHash:
-      "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpWvDVGok8cUQPCbq9AzdTQvpNbNvyq4qDvMNTrDDezsFapSihepu2eQEdje",
+    genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
   },
   {
     id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
@@ -188,6 +187,6 @@ export const SOLANA_NETWORKS: ReadonlyArray<NetworkInfo> = [
     decimals: 9,
     testnet: true,
     family: "solana",
-    genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBGGSWgX4GwCJRmgdcvRaRmFbXfw3nDZBTqsr",
+    genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
   },
 ];
