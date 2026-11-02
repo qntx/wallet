@@ -11,6 +11,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Changed
 
+- **BREAKING** `@qntx/wallet-engine`: every Spark, Lightning and cooperative-exit payment now goes
+  through the request pipeline. `engine.payments.pay` and `engine.zaps.pay` are removed, and
+  `engine.spark` no longer exposes `send`, `payInvoice`, `paySparkInvoice` or `withdraw`. Use
+  `engine.requests.prepare({ method: "pay", account, option, ... })` or
+  `{ method: "zap", account, zap, maxFeeSats }`, then `engine.requests.approve(id, "pay" | "zap",
+  verify)`. Receiving through an LNURL-withdraw moved to `engine.payments.withdrawLnurl(params)`
+  and needs no verification factor.
 - **BREAKING** `@qntx/wallet-engine`: `transactions.replace` and `transactions.bumpChild` are
   removed, and `requests.prepare` now takes a discriminated input: `{ method: "send", ... }`,
   `{ method: "speed-up" | "cancel", txId }` or `{ method: "cpfp", txId, feeRate }`.
@@ -28,6 +35,11 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine`: Spark requests. `PendingRequest.display` is a `SparkDisplay`
+  (`family: "spark"`: kind, amount, fee ceiling, receiver, description) for payments, prepared
+  before approval with every input check and the LNURL invoice fetch done once; approval refuses
+  an invoice that is within 60 seconds of expiry (a Spark invoice must not be expired), and a
+  Lightning or exit request whose `maxFeeSats` reaches the amount records `fee-exceeds-amount`.
 - `@qntx/wallet-engine`: `RequestController` (`engine.requests`). A request carries the locally
   decoded `display`, a `verification` of `verified` or `unverifiable` with its `checks`, and expires
   after 10 minutes; locking invalidates unfinished requests and frees what they reserved. When the

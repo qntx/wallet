@@ -12,7 +12,7 @@ import type {
   Options,
   PrepareParams,
   PreparedRequest,
-  RequestInput,
+  ChainRequestInput,
   RouteContext,
   TrackedTransaction,
   TxState,
@@ -24,8 +24,8 @@ export type {
   AccountRef,
   PrepareParams,
   PreparedRequest,
-  RequestInput,
-  RequestMethod,
+  ChainRequestInput,
+  ChainRequestMethod,
   SendParams,
   TrackedTransaction,
   TxState,
@@ -245,7 +245,7 @@ export class TransactionController extends Controller<TransactionControllerState
    * replacement needs without signing it. The original must be `submitted` or `pending`.
    */
   async prepareReplacement(
-    input: Exclude<RequestInput, { method: "send" }>,
+    input: Exclude<ChainRequestInput, { method: "send" }>,
     requestId: string,
   ): Promise<PreparedRequest> {
     if (this.locked) {

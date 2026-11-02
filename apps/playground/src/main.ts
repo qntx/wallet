@@ -1,5 +1,6 @@
 import type { UnlockFactor } from "@qntx/wallet";
 import { createWalletEngine } from "@qntx/wallet-engine";
+import type { PaymentOption } from "@qntx/wallet-engine";
 import { openIndexedDbEngineStore } from "@qntx/wallet-engine/idb";
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -200,28 +201,42 @@ action("createInvoice", "invoice", async (engine) => {
   input("invoice").value = invoice;
   return invoice.slice(0, 40);
 });
-action("payInvoice", "pay", async (engine) =>
-  engine.spark.payInvoice(ref(engine), {
-    invoice: input("invoice").value,
-    maxFeeSats: 100,
-    verify: verify(),
-  }),
-);
+/** Prepares a payment request and approves it at once — the playground has no review screen. */
+const payNow = async (
+  engine: Awaited<typeof engineP>,
+  option: PaymentOption,
+  extra: { amountSats?: number; maxFeeSats?: number; speed?: "FAST" | "MEDIUM" | "SLOW" },
+) => {
+  const request = await engine.requests.prepare({
+    method: "pay",
+    account: ref(engine),
+    option,
+    ...extra,
+  });
+  return engine.requests.approve(request.id, "pay", verify());
+};
+action("payInvoice", "pay", async (engine) => {
+  const parsed = engine.payments.parse(input("invoice").value, ref(engine).network);
+  const option = parsed.kind === "request" ? parsed.request.options[0] : undefined;
+  if (option === undefined) {
+    throw new Error("not a payable invoice");
+  }
+  return payNow(engine, option, { maxFeeSats: 100 });
+});
 action("send", "send", async (engine) =>
-  engine.spark.send(ref(engine), {
-    receiver: input("invoice").value,
-    amountSats: Number(input("invoiceAmount").value),
-    verify: verify(),
-  }),
+  payNow(
+    engine,
+    { kind: "spark", address: input("invoice").value },
+    { amountSats: Number(input("invoiceAmount").value) },
+  ),
 );
 action("withdrawBtn", "withdraw", async (engine) => {
   const amt = input("withdrawAmount").value.trim();
-  return engine.spark.withdraw(ref(engine), {
-    address: input("l1addr").value,
-    speed: "MEDIUM",
-    ...(amt.length === 0 ? {} : { amountSats: Number(amt) }),
-    verify: verify(),
-  });
+  return payNow(
+    engine,
+    { kind: "bitcoin", address: input("l1addr").value },
+    { speed: "MEDIUM", ...(amt.length === 0 ? {} : { amountSats: Number(amt) }) },
+  );
 });
 
 // Boot resolves the deferreds; every handler registered above queues behind these promises.

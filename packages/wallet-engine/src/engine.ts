@@ -5,10 +5,9 @@
  * so an unlock→lock flip can never overlap a still-opening store.
  */
 import { createSparkClient } from "@qntx/spark";
-import type { LightningPayment, SparkNetwork } from "@qntx/spark";
+import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
 import { nostr } from "@qntx/wallet/nostr";
-import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
@@ -21,11 +20,11 @@ import type { MetaSyncConfig } from "./meta/controller.ts";
 import { NetworkController } from "./networks/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
-import { pay as runPay } from "./payments/pay.ts";
-import type { PayParams, PayResult } from "./payments/pay.ts";
+import { withdrawLnurl } from "./payments/pay.ts";
+import type { WithdrawLnurlParams } from "./payments/pay.ts";
 import { resolvePayment } from "./payments/resolve.ts";
-import { payZap, prepareZap } from "./payments/zap.ts";
-import type { PrepareZapParams, PreparedZap, PayZapOptions } from "./payments/zap.ts";
+import { prepareZap } from "./payments/zap.ts";
+import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
 import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
@@ -66,22 +65,21 @@ export type WalletEngine = {
   readonly assets: AssetsController;
   readonly transactions: TransactionController;
   readonly requests: RequestController;
-  readonly spark: SparkController;
+  /** Read and receive surface; every payment goes through `requests`. */
+  readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
   readonly metaSync: MetaSyncController;
   readonly backup: BackupController;
   readonly zaps: {
     readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
-    readonly pay: (
-      account: SparkAccountRef,
-      prepared: PreparedZap,
-      options: Omit<PayZapOptions, "now">,
-    ) => Promise<LightningPayment>;
   };
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
     readonly resolve: (input: string, network: SparkNetwork) => Promise<PaymentParse>;
-    readonly pay: (params: PayParams) => Promise<PayResult>;
+    /** Receives funds from an LNURL-withdraw service; needs no verification factor. */
+    readonly withdrawLnurl: (
+      params: WithdrawLnurlParams,
+    ) => Promise<{ readonly kind: "lnurl-withdraw"; readonly invoice: LightningInvoice }>;
   };
   readonly unsubscribe: () => void;
 };
@@ -150,6 +148,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const requests = new RequestController({
     transactions,
+    spark: controller,
+    fetch: options.fetch,
     random: options.random,
     now: options.now,
     setTimer:
@@ -269,15 +269,13 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     backup,
     zaps: {
       prepare: async (params) => prepareZap(params, { fetch: options.fetch, now: options.now }),
-      pay: async (account, prepared, payOptions) =>
-        payZap(controller, account, prepared, { ...payOptions, now: options.now }),
     },
     payments: {
       parse: (input, network) => parsePayment(input, { network, now: options.now() }),
       resolve: async (input, network) =>
         resolvePayment(input, { network, now: options.now(), fetch: options.fetch }),
-      pay: async (params) =>
-        runPay({ spark: controller, fetch: options.fetch, now: options.now }, params),
+      withdrawLnurl: async (params) =>
+        withdrawLnurl({ spark: controller, fetch: options.fetch, now: options.now }, params),
     },
     unsubscribe,
   };

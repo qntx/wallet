@@ -6,7 +6,7 @@ import type { Event, NostrSigner } from "@qntx/nostr";
 import { Keys, KeysSigner, verifyEvent } from "@qntx/nostr";
 import { encodeLnurl } from "@qntx/spark/lnurl";
 
-import { payZap, prepareZap } from "../src/payments/zap.ts";
+import { prepareZap, prepareZapAction } from "../src/payments/zap.ts";
 import type { PreparedZap, PrepareZapParams } from "../src/payments/zap.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
@@ -190,7 +190,14 @@ describe("prepareZap", () => {
   });
 });
 
-describe("payZap", () => {
+const ZAP_INVOICE = encodeTestBolt11({
+  network: "regtest",
+  amountMsat: 700_000n,
+  paymentHash: new Uint8Array(32).fill(4),
+  secretKey: SECRET,
+});
+
+describe("prepareZapAction", () => {
   const prepared = (over: Partial<PreparedZap> = {}): PreparedZap => ({
     zapRequest: {
       id: "cc".repeat(32),
@@ -201,7 +208,7 @@ describe("payZap", () => {
       tags: [],
       content: "",
     },
-    invoice: "lnbcrt1dummy",
+    invoice: ZAP_INVOICE,
     paymentHash: "ab".repeat(32),
     expiresAt: Date.now() + 600_000,
     amountSats: 700,
@@ -211,34 +218,61 @@ describe("payZap", () => {
     ...over,
   });
 
-  test("rejects a near-expiry invoice before approval — zero payInvoice calls", async () => {
+  const account = { walletId: "w", groupIndex: 0, network: "regtest" } as const;
+  const verify = { kind: "password", password: "p" } as const;
+
+  test("refuses a near-expiry invoice at prepare — nothing is ever paid", () => {
     paid.length = 0;
-    await expect(
-      payZap(
-        fakeSpark,
-        { walletId: "w", groupIndex: 0, network: "regtest" },
-        prepared({
-          expiresAt: Date.now() + 30_000,
-        }),
-        { maxFeeSats: 50, verify: { kind: "password", password: "p" }, now: () => Date.now() },
-      ),
-    ).rejects.toMatchObject({ category: "rejected" });
+    expect(() =>
+      prepareZapAction(account, prepared({ expiresAt: Date.now() + 30_000 }), {
+        maxFeeSats: 50,
+        now: () => Date.now(),
+      }),
+    ).toThrow("zap invoice expired");
     expect(paid).toHaveLength(0);
+  });
+
+  test("goes stale when the invoice nears expiry after prepare", () => {
+    const soon = Date.now() + 120_000;
+    const action = prepareZapAction(account, prepared({ expiresAt: soon }), {
+      maxFeeSats: 50,
+      now: () => Date.now(),
+    });
+    expect(action.staleReason(soon - 61_000)).toBeUndefined();
+    expect(action.staleReason(soon - 60_000)).toBe("zap invoice expired");
+  });
+
+  test("display mirrors the zap: amount, fee ceiling, payee and comment", () => {
+    const action = prepareZapAction(account, prepared({ comment: "gm" }), {
+      maxFeeSats: 50,
+      now: () => Date.now(),
+    });
+    expect(action.display).toMatchObject({
+      family: "spark",
+      kind: "lightning",
+      network: "regtest",
+      amountSats: 700,
+      maxFeeSats: 50,
+      description: "gm",
+    });
+    expect(action.display.receiver).toMatch(/^0[23][0-9a-f]{64}$/);
+    expect(action.checks).toStrictEqual([]);
+    const tight = prepareZapAction(account, prepared(), { maxFeeSats: 700, now: () => Date.now() });
+    expect(tight.checks).toStrictEqual(["fee-exceeds-amount"]);
   });
 
   test("pays through the controller with the full zap note", async () => {
     paid.length = 0;
-    const account = { walletId: "w", groupIndex: 0, network: "regtest" } as const;
-    const out = await payZap(
-      fakeSpark,
+    const action = prepareZapAction(
       account,
       prepared({ eventId: "ff".repeat(32), comment: "gm" }),
-      { maxFeeSats: 50, verify: { kind: "password", password: "p" }, now: () => Date.now() },
+      { maxFeeSats: 50, now: () => Date.now() },
     );
-    expect(out).toMatchObject({ state: "succeeded" });
+    const out = await action.execute(fakeSpark, verify);
+    expect(out).toMatchObject({ kind: "lightning", payment: { state: "succeeded" } });
     expect(paid).toHaveLength(1);
     expect(paid[0]).toMatchObject({
-      invoice: "lnbcrt1dummy",
+      invoice: ZAP_INVOICE,
       maxFeeSats: 50,
       note: {
         kind: "zap",

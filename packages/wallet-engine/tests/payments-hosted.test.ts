@@ -26,7 +26,9 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
+import type { WalletEngine } from "../src/engine.ts";
 import type { PaymentParse } from "../src/payments/parse.ts";
+import type { PayInput } from "../src/requests/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
@@ -162,11 +164,24 @@ async function sweep(
   if (balance === 0) {
     return;
   }
-  await engine.spark.send(ref, {
-    receiver: encodeSparkAddress({ network: "regtest", identityPublicKey: funderIdentity }),
+  const request = await engine.requests.prepare({
+    method: "pay",
+    account: ref,
+    option: {
+      kind: "spark",
+      address: encodeSparkAddress({ network: "regtest", identityPublicKey: funderIdentity }),
+    },
     amountSats: balance,
-    verify: VERIFY,
   });
+  await engine.requests.approve(request.id, "pay", VERIFY);
+}
+
+async function payViaRequest(
+  engine: WalletEngine,
+  params: Omit<PayInput, "method">,
+): Promise<void> {
+  const request = await engine.requests.prepare({ method: "pay", ...params });
+  await engine.requests.approve(request.id, "pay", VERIFY);
 }
 
 async function sweepClient(client: SparkClient, funderIdentity: Uint8Array): Promise<void> {
@@ -318,11 +333,10 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
         });
         const sparkOption = requestOf(engine.payments.parse(aAddress, "regtest")).options[0]!;
         expect(sparkOption.kind).toBe("spark");
-        await engine.payments.pay({
+        await payViaRequest(engine, {
           account: refB,
           option: sparkOption,
           amountSats: 500,
-          verify: VERIFY,
         });
         await expect(
           poll(() => balanceOf(engine, keyFor(created.walletId, 0)) >= 5500, deadline),
@@ -340,11 +354,10 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
           requestOf(engine.payments.parse(uri, "regtest")),
           "lightning",
         );
-        await engine.payments.pay({
+        await payViaRequest(engine, {
           account: refB,
           option: lightningOption,
           maxFeeSats: 100,
-          verify: VERIFY,
         });
         await expect(
           poll(() => balanceOf(engine, keyFor(created.walletId, 0)) >= 5800, deadline),
@@ -361,12 +374,11 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
         });
         const resolved = await engine.payments.resolve(`${username}@${DOMAIN}`, "regtest");
         const lnurlPay = optionOf(requestOf(resolved), "lnurl-pay");
-        await engine.payments.pay({
+        await payViaRequest(engine, {
           account: refB,
           option: lnurlPay,
           amountSats: 200,
           maxFeeSats: 100,
-          verify: VERIFY,
         });
         await expect(
           poll(() => balanceOf(engine, keyFor(created.walletId, 0)) >= 6000, deadline),
@@ -381,11 +393,10 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
         const withdrawOption = optionOf(requestOf(resolvedW), "lnurl-withdraw");
         const beforeA = balanceOf(engine, keyFor(created.walletId, 0));
         const approvalsBefore = approvals.length;
-        await engine.payments.pay({
+        await payViaRequest(engine, {
           account: refA,
           option: withdrawOption,
           amountSats: 400,
-          verify: VERIFY,
         });
         await expect(
           poll(() => balanceOf(engine, keyFor(created.walletId, 0)) >= beforeA + 400, deadline),

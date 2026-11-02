@@ -3,5 +3,6 @@ export { parsePayment } from "./parse.ts";
 export type { PaymentOption, PaymentParse, PaymentRequest, ParseOptions } from "./parse.ts";
 export { resolvePayment } from "./resolve.ts";
 export type { ResolveOptions } from "./resolve.ts";
-export { pay } from "./pay.ts";
-export type { PayContext, PayParams, PayResult } from "./pay.ts";
+export { preparePay, withdrawLnurl } from "./pay.ts";
+export type { PayContext, PayParams, WithdrawLnurlParams } from "./pay.ts";
+export type { PreparedSparkAction, SparkDisplay, SparkResult } from "./action.ts";

@@ -4,13 +4,13 @@ import { signedMatchesUnsigned, verifyEvent } from "@qntx/nostr";
 import type { Event, NostrSigner } from "@qntx/nostr";
 import { makeZapRequest } from "@qntx/nostr/nips/nip57";
 import { SparkInputError, decodeBolt11 } from "@qntx/spark";
-import type { LightningPayment, SparkNetwork } from "@qntx/spark";
+import type { SparkNetwork } from "@qntx/spark";
 import { encodeLnurl, lightningAddressUrl, requestInvoice, resolveLnurl } from "@qntx/spark/lnurl";
-import type { UnlockFactor } from "@qntx/wallet";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
-import type { SparkController } from "../spark/controller.ts";
 import { categorize } from "../spark/errors.ts";
+import { INVOICE_EXPIRY_GRACE_MS, feeCheck } from "./action.ts";
+import type { PreparedSparkAction } from "./action.ts";
 import { PaymentError } from "./errors.ts";
 
 /** A profile zap names the recipient pubkey; an event zap carries the event it zaps. */
@@ -49,12 +49,6 @@ export type PreparedZap = {
   readonly comment?: string;
   /** The lud16 or LNURL as given. */
   readonly lightning: string;
-};
-
-export type PayZapOptions = {
-  readonly maxFeeSats: number;
-  readonly verify: UnlockFactor;
-  readonly now: () => number;
 };
 
 /** Everything up to payment: resolve LNURL, sign the 9734, request the invoice. */
@@ -119,7 +113,7 @@ export async function prepareZap(
     });
     const decoded = decodeBolt11(invoice);
     const expiresAt = (decoded.timestamp + decoded.expirySeconds) * 1000;
-    if (expiresAt <= context.now() + 60_000) {
+    if (expiresAt <= context.now() + INVOICE_EXPIRY_GRACE_MS) {
       throw new PaymentError("rejected", "zap invoice expires too soon");
     }
     const eventId = "event" in params.recipient ? params.recipient.event.id : undefined;
@@ -151,31 +145,54 @@ export async function prepareZap(
 }
 
 /**
- * Pays a prepared zap through the controller's approve-first path. A nearly-expired invoice is
- * rejected before approval — the user may have sat on the confirm screen since `prepareZap`.
+ * Fixes a prepared zap for approval: the invoice (fetched by {@link prepareZap}) is paid as-is, and
+ * the zap note is written under the payment's transfer id afterwards. A nearly-expired invoice is
+ * refused here and again at approval — the user may sit on the confirm screen.
  */
-export async function payZap(
-  spark: SparkController,
+export function prepareZapAction(
   account: SparkAccountRef,
   prepared: PreparedZap,
-  options: PayZapOptions,
-): Promise<LightningPayment> {
-  if (prepared.expiresAt <= options.now() + 60_000) {
+  options: { readonly maxFeeSats: number; readonly now: () => number },
+): PreparedSparkAction {
+  if (prepared.expiresAt <= options.now() + INVOICE_EXPIRY_GRACE_MS) {
     throw new PaymentError("rejected", "zap invoice expired");
   }
-  return spark.payInvoice(account, {
-    invoice: prepared.invoice,
-    maxFeeSats: options.maxFeeSats,
-    verify: options.verify,
-    note: {
-      kind: "zap",
-      recipientPubkey: prepared.recipientPubkey,
-      ...(prepared.eventId === undefined ? {} : { eventId: prepared.eventId }),
-      ...(prepared.comment === undefined ? {} : { comment: prepared.comment }),
-      lightning: prepared.lightning,
+  const { maxFeeSats } = options;
+  const { payee } = lightningInvoiceDetails(prepared.invoice);
+  return {
+    display: {
+      family: "spark",
+      network: account.network,
+      kind: "lightning",
+      amountSats: prepared.amountSats,
+      maxFeeSats,
+      receiver: payee,
+      ...(prepared.comment === undefined ? {} : { description: prepared.comment }),
     },
-  });
+    checks: feeCheck(prepared.amountSats, maxFeeSats),
+    staleReason: (now) =>
+      prepared.expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "zap invoice expired" : undefined,
+    execute: async (spark, verify) => ({
+      kind: "lightning",
+      payment: await spark.payInvoice(account, {
+        invoice: prepared.invoice,
+        maxFeeSats,
+        verify,
+        note: {
+          kind: "zap",
+          recipientPubkey: prepared.recipientPubkey,
+          ...(prepared.eventId === undefined ? {} : { eventId: prepared.eventId }),
+          ...(prepared.comment === undefined ? {} : { comment: prepared.comment }),
+          lightning: prepared.lightning,
+        },
+      }),
+    }),
+  };
 }
+
+const lightningInvoiceDetails = (invoice: string): { readonly payee: string } => ({
+  payee: bytesToHex(decodeBolt11(invoice).payee),
+});
 
 function categorizePayment(error: unknown): "network" | "rejected" {
   const category = categorize(error);

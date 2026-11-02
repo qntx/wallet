@@ -16,8 +16,17 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
+import type { PaymentOption, PaymentParse } from "../src/payments/parse.ts";
 import { sparkStore } from "../src/spark/store.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+
+const lightningOptionOf = (parsed: PaymentParse): PaymentOption => {
+  const option = parsed.kind === "request" ? parsed.request.options[0] : undefined;
+  if (option === undefined) {
+    throw new Error("not a payable invoice");
+  }
+  return option;
+};
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const PASSWORD = "correct horse battery staple";
@@ -75,11 +84,16 @@ async function sweepEngine(engine: Engine, ref: never, funderIdentity: Uint8Arra
   if (balance === 0) {
     return;
   }
-  await engine.spark.send(ref, {
-    receiver: encodeSparkAddress({ network: "regtest", identityPublicKey: funderIdentity }),
+  const request = await engine.requests.prepare({
+    method: "pay",
+    account: ref,
+    option: {
+      kind: "spark",
+      address: encodeSparkAddress({ network: "regtest", identityPublicKey: funderIdentity }),
+    },
     amountSats: balance,
-    verify: VERIFY,
   });
+  await engine.requests.approve(request.id, "pay", VERIFY);
 }
 
 describe.skipIf(!HOSTED)("hosted engine e2e", () => {
@@ -176,11 +190,13 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
 
         // B pays a Lightning invoice created by A — the engine approves before the client.
         const createdInvoice = await clientA.lightning.createInvoice({ amountSats: 300 });
-        await engine.spark.payInvoice(refB, {
-          invoice: createdInvoice.invoice,
+        const paid = await engine.requests.prepare({
+          method: "pay",
+          account: refB,
+          option: lightningOptionOf(engine.payments.parse(createdInvoice.invoice, "regtest")),
           maxFeeSats: 100,
-          verify: VERIFY,
         });
+        await engine.requests.approve(paid.id, "pay", VERIFY);
 
         // Exit chains survive a store reopen (the same backing collections).
         const colName = `spark-exit-chains:${keyB}`;

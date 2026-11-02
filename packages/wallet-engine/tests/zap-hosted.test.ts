@@ -163,11 +163,16 @@ async function sweep(
   if (balance === 0) {
     return;
   }
-  await engine.spark.send(ref, {
-    receiver: encodeSparkAddress({ network: "regtest", identityPublicKey: funderIdentity }),
+  const request = await engine.requests.prepare({
+    method: "pay",
+    account: ref,
+    option: {
+      kind: "spark",
+      address: encodeSparkAddress({ network: "regtest", identityPublicKey: funderIdentity }),
+    },
     amountSats: balance,
-    verify: VERIFY,
   });
+  await engine.requests.approve(request.id, "pay", VERIFY);
 }
 
 /** Returns the server wallet's leftovers to the funder; best-effort. */
@@ -323,8 +328,14 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
           network: "regtest",
         });
         expect(prepared.receiptPubkey).toBe(receiptPubkey);
-        const zap = await engine.zaps.pay(refB, prepared, { maxFeeSats: 50, verify: VERIFY });
-        expect(zap.amountSats).toBe(700);
+        const zapRequest = await engine.requests.prepare({
+          method: "zap",
+          account: refB,
+          zap: prepared,
+          maxFeeSats: 50,
+        });
+        const zap = await engine.requests.approve(zapRequest.id, "zap", VERIFY);
+        expect(zap).toMatchObject({ kind: "lightning", payment: { amountSats: 700 } });
 
         // The server settles once the SSP verifies the preimage; A sees the credit.
         const settled = await pollSettled(server, deadline);
