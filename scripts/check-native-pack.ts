@@ -35,6 +35,8 @@ const REQUIRED = [
   "cpp/host/HybridKernelHost.cpp",
   "dist/index.mjs",
   "dist/index.d.mts",
+  "LICENSE-MIT",
+  "LICENSE-APACHE",
 ] as const;
 
 const FORBIDDEN: ReadonlyArray<{ test: (path: string) => boolean; label: string }> = [

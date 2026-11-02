@@ -17,6 +17,8 @@ function asRecord(value: unknown): JsonObject {
   return isRecord(value) ? value : {};
 }
 
+const REPOSITORY_URL = "git+https://github.com/qntx/wallet.git";
+
 export type PackageEntry = { path: string; pkg: unknown };
 
 /**
@@ -82,6 +84,22 @@ export function checkVersion(packages: PackageEntry[], bunLock: unknown): string
   // The kernel's runtime dependencies are the enclave's protocol attack surface: every one must
   // be an exact pin, and bun.lock must resolve that exact version (workspace deps are covered by
   // the internal-pin rule above).
+  // npm provenance rejects a publish whose repository does not match the building repository, so
+  // every published package declares it, down to its own directory.
+  for (const { path, pkg } of packages) {
+    const manifest = asRecord(pkg);
+    if (manifest["private"] === true) {
+      continue;
+    }
+    const repository = asRecord(manifest["repository"]);
+    const directory = path.replace(/\/package\.json$/, "");
+    if (repository["url"] !== REPOSITORY_URL || repository["directory"] !== directory) {
+      errors.push(
+        `${path}: repository must be { url: "${REPOSITORY_URL}", directory: "${directory}" }`,
+      );
+    }
+  }
+
   const kernel = packages.find(({ pkg }) => asRecord(pkg)["name"] === "@qntx/wallet-kernel");
   if (kernel === undefined) {
     errors.push("packages: @qntx/wallet-kernel not found");

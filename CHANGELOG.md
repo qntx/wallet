@@ -9,6 +9,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Fixed
+
+- `@qntx/wallet-native` 0.5.1 was rejected by npm (`E422`): its manifest had no `repository`, and
+  npm provenance requires it to match the publishing repository. It now declares the repository
+  and its directory, ships `LICENSE-MIT` and `LICENSE-APACHE`, and `check-version` fails any
+  published package whose `repository` does not name this repository and its own directory.
+
 ## [0.5.1] - 2026-11-02
 
 Completes the 0.5.0 release: only `@qntx/wallet` and `@qntx/wallet-worker` reached npm at 0.5.0.
