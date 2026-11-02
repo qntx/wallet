@@ -19,6 +19,15 @@ export function endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType>(
   return { method, path, request, response };
 }
 
+/** `value` typed by `schema`, or `undefined` when it does not satisfy it. */
+export function parseWith<S extends z.ZodMiniType>(
+  schema: S,
+  value: unknown,
+): z.output<S> | undefined {
+  const result = z.safeParse(schema, value);
+  return result.success ? result.data : undefined;
+}
+
 /** Whether `value` satisfies `schema` — lets consumers validate without importing zod. */
 export function accepts(schema: z.ZodMiniType, value: unknown): boolean {
   return z.safeParse(schema, value).success;

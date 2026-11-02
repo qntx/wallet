@@ -98,3 +98,6 @@ export const jsonRpcResponse = z.union([successResponse, errorResponse]);
 export const rpcResponse = z.union([jsonRpcResponse, z.array(jsonRpcResponse)]);
 
 export const rpc = endpoint("POST", "/v1/rpc/:caip2", rpcRequest, rpcResponse);
+
+/** The JSON-RPC URL path for one network. */
+export const rpcPath = (caip2: string): string => rpc.path.replace(":caip2", caip2);

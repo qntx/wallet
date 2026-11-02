@@ -22,4 +22,8 @@ export const esploraPathAllowed = (method: string, path: string): boolean =>
   ESPLORA_ROUTES.some((route) => route.method === method && route.pattern.test(path));
 
 export const esploraGet = endpoint("GET", "/v1/esplora/:caip2/*", z.undefined(), z.unknown());
+
+/** The Esplora base path for one network; allow-listed paths are appended to it. */
+export const esploraBasePath = (caip2: string): string =>
+  esploraGet.path.replace(":caip2", caip2).replace(/\/\*$/, "");
 export const esploraPost = endpoint("POST", "/v1/esplora/:caip2/tx", z.string(), z.string());

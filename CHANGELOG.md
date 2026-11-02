@@ -11,6 +11,11 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine`: the `gateway` engine option (`{ url, installId }`). At each unlock the
+  engine reads `GET /v1/networks` and, for the networks the gateway serves, tries it before the
+  host endpoints (EVM and Solana JSON-RPC, Bitcoin Esplora); a network with custom endpoints never
+  uses the gateway, and the install id goes only to the gateway's origin. The gateway contract gains
+  `/v1/networks` and the `rpcPath` / `esploraBasePath` path helpers.
 - `@qntx/wallet-engine/gateway/contract`: the wallet gateway's `/v1` contract (health, JSON-RPC
   forwarding with per-family method allowlists, the Esplora paths the engine uses) as `zod/mini`
   schemas, shared by the engine and the gateway. `apps/gateway` (private) is the Cloudflare
