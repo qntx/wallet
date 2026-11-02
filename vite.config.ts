@@ -162,6 +162,10 @@ const config: UserConfig = defineConfig({
       // apps/harness is a standalone Expo project with its own toolchain and
       // RN types; it is deliberately outside the root lint/typecheck gates.
       "apps/harness/**",
+      // The consumer template is likewise a standalone Expo scaffold: it is
+      // copied to a temp dir and installed against npm/tarballs, so its imports
+      // do not resolve inside the repo.
+      "packages/wallet-native/tests/consumer/**",
     ],
     jsPlugins: [{ name: "vite-plus", specifier: "vite-plus/oxlint-plugin" }],
     rules: {
