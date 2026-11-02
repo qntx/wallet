@@ -9,6 +9,12 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-11-02
+
+Completes the 0.5.0 release: only `@qntx/wallet` and `@qntx/wallet-worker` reached npm at 0.5.0.
+All five packages publish at 0.5.1; 0.5.0 of `@qntx/wallet-native`, `@qntx/wallet-engine` and
+`@qntx/wallet-chains` does not exist.
+
 ### Fixed
 
 - `@qntx/wallet-native` 0.5.0 never reached npm: the publish job runs each package's own
@@ -17,6 +23,8 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   allowlist no longer carries `!` exclusions (the publish workflow requires every entry to exist);
   `android/.npmignore` keeps local Gradle and CMake output out, and `check-native-pack` now reads
   `npm pack`, the packer the publish workflow uses.
+- `@qntx/wallet-engine` and `@qntx/wallet-chains` 0.5.0 were rejected by npm (`E404` on publish):
+  neither package had a trusted publisher for this repository's `publish-npm.yml`.
 
 ## [0.5.0] - 2026-11-02
 
@@ -208,7 +216,8 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/qntx/wallet/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/qntx/wallet/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/qntx/wallet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/qntx/wallet/compare/v0.2.0...v0.3.0
