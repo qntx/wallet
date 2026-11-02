@@ -9,6 +9,12 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Fixed
+
+- `@qntx/wallet-native`: the Android library no longer applies the React Native Gradle plugin.
+  With another `react-native` resolvable from the library directory, the plugin regenerated the
+  React Native core specs inside the library and the app build failed with duplicate classes.
+
 ### Changed
 
 - **BREAKING** `@qntx/wallet-engine`: every Spark, Lightning and cooperative-exit payment now goes

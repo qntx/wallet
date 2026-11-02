@@ -57,7 +57,9 @@ in-memory state.
 ## React Native hosts
 
 The engine runs on the RN main runtime (Hermes) with no polyfills. Verified on 2026-11-02 in an
-iOS simulator Release build (RN 0.88.0, Expo 58, Hermes) with a hardware-factor wallet: engine
+iOS simulator Release build and on 2026-11-03 in an Android API 30 emulator Release build (both
+RN 0.88.0, Expo 58, Hermes), with and without `react-native-quick-crypto`'s `install()`, using a
+hardware-factor wallet: engine
 creation, the gateway's `/v1/networks`, a Sepolia balance read, a send request prepared and
 rejected, signet and Solana devnet reads through the gateway, `payments.parse`, and a lock that
 invalidates open requests.
