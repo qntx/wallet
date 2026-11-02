@@ -40,7 +40,7 @@
     },
     "packages/wallet": {
       "name": "@qntx/wallet",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@scure/base": "^2.4.0",
       },
@@ -71,7 +71,7 @@
     },
     "packages/wallet-chains": {
       "name": "@qntx/wallet-chains",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
@@ -107,7 +107,7 @@
     },
     "packages/wallet-engine": {
       "name": "@qntx/wallet-engine",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@noble/ciphers": "^2.4.0",
         "@noble/hashes": "^2.4.0",
@@ -126,9 +126,9 @@
         "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
-        "@qntx/wallet": "0.4.0",
-        "@qntx/wallet-chains": "0.4.0",
-        "@qntx/wallet-worker": "0.4.0",
+        "@qntx/wallet": "0.5.0",
+        "@qntx/wallet-chains": "0.5.0",
+        "@qntx/wallet-worker": "0.5.0",
         "@solana-program/token-2022": "0.20.0",
         "fake-indexeddb": "6.2.6",
         "publint": "0.3.25",
@@ -136,21 +136,21 @@
       "peerDependencies": {
         "@qntx/nostr": "^0.15.0",
         "@qntx/spark": "^0.5.0",
-        "@qntx/wallet": "0.4.0",
-        "@qntx/wallet-chains": "0.4.0",
+        "@qntx/wallet": "0.5.0",
+        "@qntx/wallet-chains": "0.5.0",
       },
     },
     "packages/wallet-kernel": {
       "name": "@qntx/wallet-kernel",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@noble/ciphers": "2.4.0",
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
         "@qntx/nostr": "0.15.3",
         "@qntx/spark": "0.5.2",
-        "@qntx/wallet": "0.4.0",
-        "@qntx/wallet-chains": "0.4.0",
+        "@qntx/wallet": "0.5.0",
+        "@qntx/wallet-chains": "0.5.0",
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
@@ -166,7 +166,7 @@
     },
     "packages/wallet-native": {
       "name": "@qntx/wallet-native",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "cborg": "6.1.4",
       },
@@ -185,14 +185,14 @@
       "peerDependencies": {
         "@qntx/nostr-native": "0.15.3",
         "@qntx/spark-native": "0.5.2",
-        "@qntx/wallet": "0.4.0",
+        "@qntx/wallet": "0.5.0",
         "react-native": "~0.88.0",
         "react-native-nitro-modules": "~0.37.1",
       },
     },
     "packages/wallet-worker": {
       "name": "@qntx/wallet-worker",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "dependencies": {
         "@noble/hashes": "^2.4.0",
         "@scure/base": "^2.4.0",
@@ -205,8 +205,8 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/wallet": "0.4.0",
-        "@qntx/wallet-kernel": "0.4.0",
+        "@qntx/wallet": "0.5.0",
+        "@qntx/wallet-kernel": "0.5.0",
         "@scure/base": "2.4.0",
         "@scure/btc-signer": "2.4.1",
         "@types/node": "26.6.5",
@@ -215,7 +215,7 @@
         "vite-plus": "1.3.0",
       },
       "peerDependencies": {
-        "@qntx/wallet": "0.4.0",
+        "@qntx/wallet": "0.5.0",
       },
     },
   },
@@ -1300,6 +1300,8 @@
     "@noble/post-quantum/@noble/curves": ["@noble/curves@2.2.0", "", { "dependencies": { "@noble/hashes": "2.2.0" } }, "sha512-T/BoHgFXirb0ENSPBquzX0rcjXeM6Lo892a2jlYJkqk83LqZx0l1Of7DzlKJ6jkpvMrkHSnAcgb5JegL8SeIkQ=="],
 
     "@noble/post-quantum/@noble/hashes": ["@noble/hashes@2.2.0", "", {}, "sha512-IYqDGiTXab6FniAgnSdZwgWbomxpy9FtYvLKs7wCUs2a8RkITG+DFGO1DM9cr+E3/RgADRpFjrKVaJ1z6sjtEg=="],
+
+    "@qntx/wallet/@qntx/wallet-chains": ["@qntx/wallet-chains@0.4.0", "", { "dependencies": { "@scure/bip32": "2.4.0", "@scure/btc-signer": "2.4.1", "@solana/addresses": "8.5.0", "@solana/codecs": "8.5.0", "@solana/transaction-messages": "8.5.0", "@solana/transactions": "8.5.0", "ox": "1.8.9" } }, "sha512-+vcSqLAhu4K4oChMs3vFsMxs9yGRkvY5nJfs7gKr4PGyqy2vEEa2gWUM3rA2OgD1XykbQEdkEwVZBRNucgYBtA=="],
 
     "@react-native/codegen/yargs": ["yargs@17.7.3", "", { "dependencies": { "cliui": "^8.0.1", "escalade": "^3.1.1", "get-caller-file": "^2.0.5", "require-directory": "^2.1.1", "string-width": "^4.2.3", "y18n": "^5.0.5", "yargs-parser": "^21.1.1" } }, "sha512-GZtjxm/J/4TSxuL3FNYjCmLktBTnIw/rVmKSIyKeYAZpmJB2ig9VauCC5xsa82GNKVKDAqpOn3KVzNt0zmrU0g=="],
 
