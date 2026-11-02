@@ -79,10 +79,10 @@ export type SendParams = {
 
 export type PrepareParams = Omit<SendParams, "verify">;
 
-export type RequestMethod = "send" | "speed-up" | "cancel" | "cpfp";
+export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
-export type RequestInput =
+export type ChainRequestInput =
   | ({ readonly method: "send" } & PrepareParams)
   | { readonly method: "speed-up" | "cancel"; readonly txId: string }
   | { readonly method: "cpfp"; readonly txId: string; readonly feeRate: number };

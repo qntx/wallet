@@ -8,8 +8,11 @@ export type { EngineCollection, EngineStore } from "./store/port.ts";
 export { createMemoryEngineStore } from "./store/memory.ts";
 export { RequestController, REQUEST_TTL_MS } from "./requests/controller.ts";
 export type {
+  PayInput,
   PendingRequest,
   RequestCheckCode,
+  RequestInput,
+  RequestMethod,
   RequestControllerState,
   RequestStage,
 } from "./requests/controller.ts";
@@ -43,15 +46,20 @@ export { MetaSyncError } from "./meta/errors.ts";
 export type { MetaDoc, MetaDocGroup, MetaDocWallet } from "./meta/doc.ts";
 export { PaymentError } from "./payments/errors.ts";
 export { parsePayment, resolvePayment } from "./payments/index.ts";
-export type { PayParams, PayResult } from "./payments/index.ts";
+export type {
+  PayParams,
+  PreparedSparkAction,
+  SparkDisplay,
+  SparkResult,
+  WithdrawLnurlParams,
+} from "./payments/index.ts";
 export type { PaymentOption, PaymentParse, PaymentRequest } from "./payments/parse.ts";
 export type { SparkErrorCategory } from "./spark/errors.ts";
 export { sparkStore } from "./spark/store.ts";
 export type { PaymentNote, SparkActivity } from "./spark/notes.ts";
 export { decodeExitChain, encodeExitChain } from "./spark/exit-chain-codec.ts";
-export { payZap, prepareZap } from "./payments/zap.ts";
+export { prepareZap } from "./payments/zap.ts";
 export type {
-  PayZapOptions,
   PrepareZapContext,
   PrepareZapParams,
   PreparedZap,

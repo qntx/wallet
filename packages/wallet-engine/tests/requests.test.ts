@@ -6,6 +6,7 @@ import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
 import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
+import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type {
@@ -108,6 +109,8 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   };
   const controller = new RequestController({
     transactions,
+    spark: {} as SparkController,
+    fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => now,
     setTimer: (ms, fn) => {
@@ -383,6 +386,8 @@ function evmWorld(options: {
   };
   const requests = new RequestController({
     transactions,
+    spark: {} as SparkController,
+    fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => 0,
     setTimer: () => () => undefined,
@@ -449,7 +454,7 @@ describe("EVM pipeline", () => {
     const b = await w.requests.prepare(PARAMS);
     const tracked = Object.values(w.transactions.getState().txs);
     expect(tracked.every((t) => t.state === "rejected")).toBe(true);
-    expect(b.display.summary).toBe("transfer");
+    expect(b.display).toMatchObject({ summary: "transfer" });
     expect(w.requests.getState().requests[b.id]?.stage).toBe("awaiting-approval");
   });
 

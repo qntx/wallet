@@ -1,7 +1,19 @@
 import { RequestController } from "../src/requests/controller.ts";
+import type { SparkController } from "../src/spark/controller.ts";
 import type { BitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type { RouteContext, SendParams, TrackedTransaction } from "../src/transactions/route.ts";
+
+const isSparkController = (_value: unknown): _value is SparkController => true;
+
+/** Chain-only tests never reach the Spark controller; any object stands in for it. */
+const noSpark = ((): SparkController => {
+  const stub: unknown = {};
+  if (isSparkController(stub)) {
+    return stub;
+  }
+  throw new Error("unreachable");
+})();
 
 let counter = 0;
 const nextCounter = (): number => {
@@ -20,6 +32,8 @@ export const requestsFor = async (
   }
   const created = new RequestController({
     transactions,
+    spark: noSpark,
+    fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter() % 251),
     now: () => 0,
     setTimer: () => () => undefined,

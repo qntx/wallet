@@ -5,15 +5,23 @@
  * that has not finished. The unsigned content stays in a private table, never in the state
  * snapshot, and cannot change after prepare.
  */
+import { WalletError } from "@qntx/wallet";
+import type { SparkAccountRef } from "@qntx/wallet/protocol";
+
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import type { PreparedSparkAction, SparkDisplay, SparkResult } from "../payments/action.ts";
+import { preparePay } from "../payments/pay.ts";
+import type { PayParams } from "../payments/pay.ts";
+import { prepareZapAction } from "../payments/zap.ts";
+import type { PreparedZap } from "../payments/zap.ts";
+import type { SparkController } from "../spark/controller.ts";
 import type { TransactionController } from "../transactions/controller.ts";
 import type {
   AccountRef,
+  ChainRequestInput,
+  ChainRequestMethod,
   DisplayIntent,
-  PreparedRequest,
-  RequestInput,
-  RequestMethod,
   SendParams,
   TrackedTransaction,
 } from "../transactions/route.ts";
@@ -22,7 +30,21 @@ import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 
 export type { RequestCheckCode } from "./checks.ts";
-export type { RequestInput, RequestMethod } from "../transactions/route.ts";
+export type { SparkDisplay, SparkResult } from "../payments/action.ts";
+
+/** A Spark, Lightning (including LNURL-pay and lightning addresses) or cooperative-exit payment. */
+export type PayInput = { readonly method: "pay" } & PayParams;
+
+/** A prepared zap; its invoice was fetched by `engine.zaps.prepare` and is paid as-is. */
+export type ZapInput = {
+  readonly method: "zap";
+  readonly account: SparkAccountRef;
+  readonly zap: PreparedZap;
+  readonly maxFeeSats: number;
+};
+
+export type RequestMethod = ChainRequestMethod | "pay" | "zap";
+export type RequestInput = ChainRequestInput | PayInput | ZapInput;
 
 export type RequestStage =
   | "awaiting-approval"
@@ -37,11 +59,11 @@ export type PendingRequest = {
   readonly id: string;
   readonly origin: { readonly kind: "internal" };
   readonly method: RequestMethod;
-  readonly account: AccountRef;
+  readonly account: AccountRef | SparkAccountRef;
   readonly network: string;
   readonly stage: RequestStage;
-  /** Decoded locally from the exact content that will be signed. */
-  readonly display: DisplayIntent;
+  /** Decoded locally from the exact content that will be signed; `family` tells the shapes apart. */
+  readonly display: DisplayIntent | SparkDisplay;
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -60,6 +82,9 @@ export type RequestControllerState = {
 
 export type RequestControllerOptions = {
   readonly transactions: TransactionController;
+  /** The full controller: its payment methods are reachable only through this pipeline. */
+  readonly spark: SparkController;
+  readonly fetch: typeof globalThis.fetch;
   readonly random: (n: number) => Uint8Array;
   readonly now: () => number;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
@@ -69,10 +94,30 @@ export type RequestControllerOptions = {
 /** Requests expire this long after creation. */
 export const REQUEST_TTL_MS = 10 * 60 * 1000;
 
+/** What approval needs from a prepared request, whichever kind it is. */
+type Run = {
+  /** The tracked transaction `submit` creates (chain requests only). */
+  readonly txId?: string;
+  readonly staleReason: () => string | undefined | Promise<string | undefined>;
+  readonly submit: (verify: SendParams["verify"]) => Promise<TrackedTransaction | SparkResult>;
+  readonly release: () => void;
+};
+
+type Built = {
+  readonly account: AccountRef | SparkAccountRef;
+  readonly network: string;
+  readonly display: DisplayIntent | SparkDisplay;
+  readonly checks: ReadonlyArray<RequestCheckCode>;
+  readonly run: Run;
+};
+
 type Entry = {
-  readonly prepared: PreparedRequest;
+  readonly prepared: Run;
   readonly stopTimer: () => void;
 };
+
+const isSparkInput = (input: RequestInput): input is PayInput | ZapInput =>
+  input.method === "pay" || input.method === "zap";
 
 const LIVE: ReadonlySet<RequestStage> = new Set(["awaiting-approval", "signing"]);
 
@@ -126,42 +171,36 @@ export class RequestController extends Controller<RequestControllerState> {
     const id = newRequestId(this.options.random);
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
-    const target = input.method === "send" ? undefined : input.txId;
+    const target = input.method === "send" || isSparkInput(input) ? undefined : input.txId;
     if (target !== undefined) {
       if (this.targets.has(target)) {
         throw new Error(`transaction ${target} already has an unfinished replacement request`);
       }
       this.targets.set(target, id);
     }
-    let prepared: PreparedRequest;
+    let built: Built;
     try {
-      prepared =
-        input.method === "send"
-          ? await this.options.transactions.prepareSend(input, id)
-          : await this.options.transactions.prepareReplacement(input, id);
+      built = await this.build(input, id);
     } catch (error) {
       this.unclaim(id);
       throw error;
     }
     if (session !== this.session) {
-      prepared.release();
+      built.run.release();
       this.unclaim(id);
       throw new Error("the vault was locked while the request was being prepared");
     }
-    const checks = collectChecks([
-      prepared.intent.verifiability === "full" ? undefined : "decode-partial",
-      ...prepared.checks,
-    ]);
+    const { checks } = built;
     const createdAt = this.options.now();
     const request: PendingRequest = {
       id,
       origin: { kind: "internal" },
       method: input.method,
-      account: prepared.account,
-      network: prepared.network,
+      account: built.account,
+      network: built.network,
       ...(target === undefined ? {} : { target }),
       stage: "awaiting-approval",
-      display: prepared.intent,
+      display: built.display,
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
       createdAt,
@@ -172,9 +211,46 @@ export class RequestController extends Controller<RequestControllerState> {
         this.finish(id, "expired");
       }
     });
-    this.entries.set(id, { prepared, stopTimer });
+    this.entries.set(id, { prepared: built.run, stopTimer });
     this.put(request);
     return request;
+  }
+
+  private async build(input: RequestInput, id: string): Promise<Built> {
+    if (input.method === "pay" || input.method === "zap") {
+      const action: PreparedSparkAction =
+        input.method === "pay"
+          ? await preparePay({ fetch: this.options.fetch, now: this.options.now }, input)
+          : prepareZapAction(input.account, input.zap, {
+              maxFeeSats: input.maxFeeSats,
+              now: this.options.now,
+            });
+      return {
+        account: input.account,
+        network: action.display.network,
+        display: action.display,
+        checks: collectChecks(action.checks),
+        run: {
+          staleReason: () => action.staleReason(this.options.now()),
+          submit: async (verify) => action.execute(this.options.spark, verify),
+          release: () => undefined,
+        },
+      };
+    }
+    const prepared =
+      input.method === "send"
+        ? await this.options.transactions.prepareSend(input, id)
+        : await this.options.transactions.prepareReplacement(input, id);
+    return {
+      account: prepared.account,
+      network: prepared.network,
+      display: prepared.intent,
+      checks: collectChecks([
+        prepared.intent.verifiability === "full" ? undefined : "decode-partial",
+        ...prepared.checks,
+      ]),
+      run: prepared,
+    };
   }
 
   /**
@@ -183,9 +259,19 @@ export class RequestController extends Controller<RequestControllerState> {
    */
   async approve(
     id: string,
+    method: ChainRequestMethod,
+    verify: SendParams["verify"],
+  ): Promise<TrackedTransaction>;
+  async approve(
+    id: string,
+    method: "pay" | "zap",
+    verify: SendParams["verify"],
+  ): Promise<SparkResult>;
+  async approve(
+    id: string,
     method: RequestMethod,
     verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> {
+  ): Promise<TrackedTransaction | SparkResult> {
     const request = this.getState().requests[id];
     if (request === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -218,21 +304,38 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new Error(stale);
     }
     try {
-      const tx = await entry.prepared.submit(verify);
+      const result = await entry.prepared.submit(verify);
       if (session === this.session) {
         entry.stopTimer();
         this.entries.delete(id);
         this.unclaim(id);
-        this.put({ ...this.requireRequest(id), stage: "submitted", txId: tx.id });
+        this.put({
+          ...this.requireRequest(id),
+          stage: "submitted",
+          ...("id" in result ? { txId: result.id } : {}),
+        });
       }
-      return tx;
+      return result;
     } catch (error) {
       if (session === this.session) {
-        const tracked = this.options.transactions.getState().txs[entry.prepared.txId];
-        this.finish(id, tracked?.state === "rejected" ? "rejected" : "failed", errorMessage(error));
+        this.finish(id, this.failureStage(entry.prepared, error), errorMessage(error));
       }
       throw error;
     }
+  }
+
+  /**
+   * A cancelled or refused verification is `rejected`; anything after it is `failed`. Chain
+   * requests record which step failed on the tracked transaction; for Spark, the approval round is
+   * the only source of `WalletError`.
+   */
+  private failureStage(run: Run, error: unknown): "rejected" | "failed" {
+    if (run.txId === undefined) {
+      return error instanceof WalletError ? "rejected" : "failed";
+    }
+    return this.options.transactions.getState().txs[run.txId]?.state === "rejected"
+      ? "rejected"
+      : "failed";
   }
 
   reject(id: string): void {

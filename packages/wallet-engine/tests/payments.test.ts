@@ -12,11 +12,23 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { PaymentError } from "../src/payments/errors.ts";
 import { parsePayment } from "../src/payments/parse.ts";
 import type { PaymentOption, PaymentParse } from "../src/payments/parse.ts";
-import { pay } from "../src/payments/pay.ts";
-import type { PayContext } from "../src/payments/pay.ts";
+import { preparePay, withdrawLnurl } from "../src/payments/pay.ts";
+import type { PayContext, PayParams } from "../src/payments/pay.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
 import { mulberry32 } from "./support/mulberry32.ts";
+
+type TestContext = PayContext & { readonly spark: SparkController };
+
+/** Prepare, then execute with the given factor — what the request pipeline does around approval. */
+const pay = async (
+  ctx: TestContext,
+  params: PayParams & { readonly verify: unknown },
+): Promise<unknown> => {
+  const { verify, ...rest } = params;
+  const action = await preparePay(ctx, rest);
+  return action.execute(ctx.spark, verify as never);
+};
 
 const NOW = 1_800_000_000_000;
 const SECRET = new Uint8Array(32).fill(7);
@@ -419,7 +431,7 @@ describe("payments.pay", () => {
       }
       return Response.json({ status: "OK" }, { status: 200 });
     }) as typeof globalThis.fetch;
-    const ctx: PayContext = { spark, fetch, now: () => NOW };
+    const ctx: TestContext = { spark, fetch, now: () => NOW };
     return { ctx, calls, fetchCalls };
   }
 
@@ -446,15 +458,24 @@ describe("payments.pay", () => {
 
   it("spark-invoice delegates to paySparkInvoice", async () => {
     const { ctx, calls } = context();
+    const invoice = encodeSparkAddress({
+      network: "regtest",
+      identityPublicKey: PUBKEY,
+      invoice: {
+        version: 1,
+        id: "01936f00-0000-7000-8000-000000000001",
+        payment: { type: "sats" },
+      },
+    });
     await pay(ctx, {
       account: REF,
-      option: { kind: "spark-invoice", invoice: "spark1inv" },
+      option: { kind: "spark-invoice", invoice },
       amountSats: 7,
       verify: VERIFY,
     });
     expect(calls[0]).toStrictEqual({
       method: "paySparkInvoice",
-      params: { invoice: "spark1inv", amountSats: 7, verify: VERIFY },
+      params: { invoice, amountSats: 7, verify: VERIFY },
     });
   });
 
@@ -465,7 +486,7 @@ describe("payments.pay", () => {
         account: REF,
         option: {
           kind: "lightning",
-          invoice: "lnbcrt1",
+          invoice: REGTEST_BOLT11,
           amountSats: 5,
           paymentHash: "h",
           expiresAt: NOW + 120_000,
@@ -479,7 +500,7 @@ describe("payments.pay", () => {
       account: REF,
       option: {
         kind: "lightning",
-        invoice: "lnbcrt1",
+        invoice: REGTEST_BOLT11,
         amountSats: 5,
         paymentHash: "h",
         expiresAt: NOW + 120_000,
@@ -490,7 +511,7 @@ describe("payments.pay", () => {
     // the declared option amount is not forwarded — the kernel derives it from the invoice.
     expect(calls[0]).toStrictEqual({
       method: "payInvoice",
-      params: { invoice: "lnbcrt1", maxFeeSats: 3, verify: VERIFY },
+      params: { invoice: REGTEST_BOLT11, maxFeeSats: 3, verify: VERIFY },
     });
   });
 
@@ -542,11 +563,10 @@ describe("payments.pay", () => {
 
   it("lnurl-withdraw creates an invoice and submits — never approving", async () => {
     const { ctx, calls, fetchCalls } = context();
-    await pay(ctx, {
+    await withdrawLnurl(ctx, {
       account: REF,
       option: { kind: "lnurl-withdraw", request: WITHDRAW_REQUEST },
       amountSats: 50,
-      verify: VERIFY,
     });
     expect(calls.map((c) => c.method)).toStrictEqual(["createInvoice"]);
     expect(fetchCalls[0]).toContain("https://service.io/withdraw");
@@ -559,11 +579,10 @@ describe("payments.pay", () => {
   it("lnurl-withdraw rejects an out-of-range amount", async () => {
     const { ctx, calls } = context();
     await expect(
-      pay(ctx, {
+      withdrawLnurl(ctx, {
         account: REF,
         option: { kind: "lnurl-withdraw", request: WITHDRAW_REQUEST },
         amountSats: 500,
-        verify: VERIFY,
       }),
     ).rejects.toThrow(/outside the service's range/);
     expect(calls).toHaveLength(0);
@@ -633,7 +652,7 @@ describe("review fixes", () => {
         throw new Error("should not reach payInvoice");
       },
     } as unknown as SparkController;
-    const ctx: PayContext = {
+    const ctx: TestContext = {
       spark,
       fetch: async () => {
         await Promise.resolve();
@@ -646,7 +665,7 @@ describe("review fixes", () => {
         account: REF,
         option: {
           kind: "lightning",
-          invoice: "lnbcrt1",
+          invoice: REGTEST_BOLT11,
           amountSats: 5,
           paymentHash: "h",
           expiresAt: NOW + 120_000,
@@ -664,7 +683,7 @@ describe("review fixes", () => {
         throw new Error("should not reach payInvoice");
       },
     } as unknown as SparkController;
-    const ctx: PayContext = {
+    const ctx: TestContext = {
       spark,
       fetch: async () => {
         await Promise.resolve();
@@ -677,7 +696,7 @@ describe("review fixes", () => {
         account: REF,
         option: {
           kind: "lightning",
-          invoice: "lnbcrt1",
+          invoice: REGTEST_BOLT11,
           amountSats: 5,
           paymentHash: "h",
           expiresAt: NOW + 30_000,
@@ -694,7 +713,7 @@ describe("review fixes", () => {
         throw new Error("should not reach paySparkInvoice");
       },
     } as unknown as SparkController;
-    const ctx: PayContext = {
+    const ctx: TestContext = {
       spark,
       fetch: async () => {
         await Promise.resolve();
@@ -717,7 +736,7 @@ describe("review fixes", () => {
         throw new Error("should not reach paySparkInvoice");
       },
     } as unknown as SparkController;
-    const ctx: PayContext = {
+    const ctx: TestContext = {
       spark,
       fetch: async () => {
         await Promise.resolve();
@@ -749,7 +768,7 @@ describe("review fixes", () => {
         return {};
       },
     } as unknown as SparkController;
-    const ctx: PayContext = {
+    const ctx: TestContext = {
       spark,
       fetch: async () => {
         await Promise.resolve();
