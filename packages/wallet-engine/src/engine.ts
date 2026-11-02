@@ -11,6 +11,7 @@ import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
+import { AddressBookController } from "./addresses/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
@@ -65,6 +66,7 @@ export type WalletEngine = {
   readonly assets: AssetsController;
   readonly transactions: TransactionController;
   readonly requests: RequestController;
+  readonly addressBook: AddressBookController;
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
@@ -146,8 +148,17 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
   });
 
+  const addressBook = new AddressBookController({
+    openStore: options.openStore,
+    random: options.random,
+    now: options.now,
+    logger: options.logger,
+  });
+
   const requests = new RequestController({
     transactions,
+    addressBook,
+    openStore: options.openStore,
     spark: controller,
     fetch: options.fetch,
     random: options.random,
@@ -212,10 +223,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await networks.init();
       await assets.init();
       await transactions.init();
+      await addressBook.init();
       await requests.init();
     } else if (!unlocked && started) {
       started = false;
       requests.lock();
+      addressBook.lock();
       transactions.lock();
       assets.lock();
       networks.lock();
@@ -263,6 +276,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     assets,
     transactions,
     requests,
+    addressBook,
     spark: controller,
     accounts,
     metaSync,

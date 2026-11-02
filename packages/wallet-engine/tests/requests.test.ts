@@ -16,6 +16,7 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
+import { bookDeps } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -109,6 +110,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   };
   const controller = new RequestController({
     transactions,
+    ...bookDeps(),
     spark: {} as SparkController,
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
@@ -386,6 +388,7 @@ function evmWorld(options: {
   };
   const requests = new RequestController({
     transactions,
+    ...bookDeps(),
     spark: {} as SparkController,
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),

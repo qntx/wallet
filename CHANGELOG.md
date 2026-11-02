@@ -41,6 +41,15 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine`: `engine.addressBook` (`AddressBookController`): named recipients per chain
+  family (`evm`, `solana`, `bitcoin`, `spark`), validated and normalized (EIP-55 for EVM; bitcoin
+  accepted on any known network), persisted in the engine store and cleared on lock.
+  `PendingRequest.risk` (`RiskFinding`) flags a first-time recipient (`first-recipient`, warning) and
+  a lookalike of a known address with the same first and last four characters
+  (`address-poisoning`, danger) for sends and Spark transfers; the known set is the address book plus
+  recipients of tracked sends. `requests.signLog()` and `requests.clearSignLog()` expose the
+  signature record (`SignLogEntry`): one entry per request that reached a final stage, newest 1000
+  kept, without signature bytes.
 - `@qntx/wallet-engine`: Spark requests. `PendingRequest.display` is a `SparkDisplay`
   (`family: "spark"`: kind, amount, fee ceiling, receiver, description) for payments, prepared
   before approval with every input check and the LNURL invoice fetch done once; approval refuses

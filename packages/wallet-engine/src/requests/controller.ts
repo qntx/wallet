@@ -8,6 +8,8 @@
 import { WalletError } from "@qntx/wallet";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
+import type { AddressBookController } from "../addresses/controller.ts";
+import { normalizeAddress } from "../addresses/normalize.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { PreparedSparkAction, SparkDisplay, SparkResult } from "../payments/action.ts";
@@ -16,6 +18,7 @@ import type { PayParams } from "../payments/pay.ts";
 import { prepareZapAction } from "../payments/zap.ts";
 import type { PreparedZap } from "../payments/zap.ts";
 import type { SparkController } from "../spark/controller.ts";
+import type { EngineStore } from "../store/port.ts";
 import type { TransactionController } from "../transactions/controller.ts";
 import type {
   AccountRef,
@@ -28,8 +31,14 @@ import type {
 import { newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
+import { assessRecipients } from "./risk.ts";
+import type { RiskFinding } from "./risk.ts";
+import { createSignLog } from "./sign-log.ts";
+import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
 
 export type { RequestCheckCode } from "./checks.ts";
+export type { RiskFinding } from "./risk.ts";
+export type { SignLogEntry, SignLogOutcome } from "./sign-log.ts";
 export type { SparkDisplay, SparkResult } from "../payments/action.ts";
 
 /** A Spark, Lightning (including LNURL-pay and lightning addresses) or cooperative-exit payment. */
@@ -67,6 +76,11 @@ export type PendingRequest = {
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
+  /**
+   * Recipient risk; independent of `verification`. A `danger` needs the user's explicit
+   * acknowledgement.
+   */
+  readonly risk: ReadonlyArray<RiskFinding>;
   readonly createdAt: number;
   readonly expiresAt: number;
   /** The transaction being replaced or accelerated; absent for a plain send. */
@@ -84,6 +98,8 @@ export type RequestControllerOptions = {
   readonly transactions: TransactionController;
   /** The full controller: its payment methods are reachable only through this pipeline. */
   readonly spark: SparkController;
+  readonly addressBook: AddressBookController;
+  readonly openStore: () => Promise<EngineStore>;
   readonly fetch: typeof globalThis.fetch;
   readonly random: (n: number) => Uint8Array;
   readonly now: () => number;
@@ -108,6 +124,7 @@ type Built = {
   readonly network: string;
   readonly display: DisplayIntent | SparkDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
+  readonly risk: ReadonlyArray<RiskFinding>;
   readonly run: Run;
 };
 
@@ -127,6 +144,7 @@ const errorMessage = (error: unknown): string =>
 export class RequestController extends Controller<RequestControllerState> {
   private readonly options: RequestControllerOptions;
   private readonly entries = new Map<string, Entry>();
+  private readonly log: SignLog;
   /** Original transaction id → the unfinished request replacing or accelerating it. */
   private readonly targets = new Map<string, string>();
   private locked = true;
@@ -136,6 +154,7 @@ export class RequestController extends Controller<RequestControllerState> {
   constructor(options: RequestControllerOptions) {
     super({ name: "requests", defaultState: () => ({ requests: {} }) });
     this.options = options;
+    this.log = createSignLog(options.logger);
   }
 
   async init(): Promise<void> {
@@ -144,7 +163,7 @@ export class RequestController extends Controller<RequestControllerState> {
     this.entries.clear();
     this.targets.clear();
     this.update(() => ({ requests: {} }));
-    await Promise.resolve();
+    this.log.open(await this.options.openStore());
   }
 
   async destroy(): Promise<void> {
@@ -161,6 +180,16 @@ export class RequestController extends Controller<RequestControllerState> {
         this.finish(id, "invalidated");
       }
     }
+    this.log.close();
+  }
+
+  /** The signature record, newest first. */
+  async signLog(): Promise<ReadonlyArray<SignLogEntry>> {
+    return this.log.list();
+  }
+
+  async clearSignLog(): Promise<void> {
+    await this.log.clear();
   }
 
   async prepare(input: RequestInput): Promise<PendingRequest> {
@@ -203,6 +232,7 @@ export class RequestController extends Controller<RequestControllerState> {
       display: built.display,
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
+      risk: built.risk,
       createdAt,
       expiresAt: createdAt + REQUEST_TTL_MS,
     };
@@ -230,6 +260,7 @@ export class RequestController extends Controller<RequestControllerState> {
         network: action.display.network,
         display: action.display,
         checks: collectChecks(action.checks),
+        risk: this.sparkRisk(action.display),
         run: {
           staleReason: () => action.staleReason(this.options.now()),
           submit: async (verify) => action.execute(this.options.spark, verify),
@@ -249,6 +280,7 @@ export class RequestController extends Controller<RequestControllerState> {
         prepared.intent.verifiability === "full" ? undefined : "decode-partial",
         ...prepared.checks,
       ]),
+      risk: input.method === "send" ? this.chainRisk(prepared.intent) : [],
       run: prepared,
     };
   }
@@ -309,16 +341,22 @@ export class RequestController extends Controller<RequestControllerState> {
         entry.stopTimer();
         this.entries.delete(id);
         this.unclaim(id);
-        this.put({
+        const done: PendingRequest = {
           ...this.requireRequest(id),
           stage: "submitted",
           ...("id" in result ? { txId: result.id } : {}),
-        });
+        };
+        this.put(done);
+        this.record(done, "submitted");
+      } else {
+        this.record(request, "submitted");
       }
       return result;
     } catch (error) {
       if (session === this.session) {
         this.finish(id, this.failureStage(entry.prepared, error), errorMessage(error));
+      } else {
+        this.record(request, "failed", errorMessage(error));
       }
       throw error;
     }
@@ -388,7 +426,79 @@ export class RequestController extends Controller<RequestControllerState> {
     }
     const request = this.getState().requests[id];
     if (request !== undefined) {
-      this.put({ ...request, stage, ...(error === undefined ? {} : { error }) });
+      const ended: PendingRequest = {
+        ...request,
+        stage,
+        ...(error === undefined ? {} : { error }),
+      };
+      this.put(ended);
+      this.record(ended, stage, error);
     }
+  }
+
+  /** Appends the final stage to the signature record; a failed write is a warning, not an error. */
+  private record(request: PendingRequest, outcome: SignLogOutcome, error?: string): void {
+    const { display } = request;
+    const entry: SignLogEntry = {
+      id: request.id,
+      at: this.options.now(),
+      origin: request.origin,
+      method: request.method,
+      account: request.account,
+      network: request.network,
+      summary: "summary" in display ? display.summary : `${display.kind} ${display.amountSats}`,
+      verification: request.verification,
+      checks: request.checks,
+      risk: request.risk,
+      outcome,
+      ...(error === undefined ? {} : { error }),
+    };
+    void this.appendLog(entry);
+  }
+
+  private async appendLog(entry: SignLogEntry): Promise<void> {
+    try {
+      await this.log.append(entry);
+    } catch (error) {
+      this.options.logger.warn("sign log write failed", error);
+    }
+  }
+
+  /**
+   * Addresses the wallet already knows for a family: contacts, plus recipients of tracked chain
+   * sends (Spark payments are not tracked).
+   */
+  private knownAddresses(family: string): ReadonlyArray<string> {
+    const contacts = Object.values(this.options.addressBook.getState().entries)
+      .filter((e) => e.family === family)
+      .map((e) => e.address);
+    if (family === "spark") {
+      return contacts;
+    }
+    const paid = Object.values(this.options.transactions.getState().txs)
+      .filter(
+        (tx) =>
+          tx.family === family &&
+          (tx.state === "submitted" || tx.state === "pending" || tx.state === "confirmed"),
+      )
+      .flatMap((tx) => tx.intent?.outflows.map((o) => o.to) ?? []);
+    return [...contacts, ...paid];
+  }
+
+  private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {
+    return assessRecipients(
+      intent.family,
+      intent.outflows.map((o) => o.to),
+      this.knownAddresses(intent.family),
+    );
+  }
+
+  /** Only a Spark transfer has a recipient to check; Lightning and exits are not assessed. */
+  private sparkRisk(display: SparkDisplay): ReadonlyArray<RiskFinding> {
+    if (display.kind !== "transfer") {
+      return [];
+    }
+    const receiver = normalizeAddress("spark", display.receiver) ?? display.receiver;
+    return assessRecipients("spark", [receiver], this.knownAddresses("spark"));
   }
 }
