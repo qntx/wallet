@@ -9,15 +9,22 @@ import {
   RPC_BATCH_MAX,
   SOLANA_RPC_METHODS,
   caip2,
+  esploraBasePath,
+  esploraGet,
   esploraPathAllowed,
+  esploraPost,
   evmRpcRequest,
   gatewayError,
   health,
   installId,
   networkById,
+  networksPath,
   rpc,
+  rpcPath,
   rpcRequest,
   rpcResponse,
+  servedNetworks,
+  servedNetworksResponse,
   solanaRpcRequest,
 } from "../src/gateway/contract/index.ts";
 
@@ -220,5 +227,39 @@ describe("esplora allow-list", () => {
     expect(esploraPathAllowed("POST", "/fee-estimates")).toBe(false);
     expect(esploraPathAllowed("GET", "/tx/")).toBe(false);
     expect(esploraPathAllowed("DELETE", "/tx")).toBe(false);
+  });
+});
+
+describe("served networks", () => {
+  it("answers with a list of CAIP-2 ids", () => {
+    expect(servedNetworks.method).toBe("GET");
+    expect(ok(servedNetworksResponse, { networks: [] })).toBe(true);
+    expect(
+      ok(servedNetworksResponse, {
+        networks: ["eip155:1", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects malformed answers", () => {
+    expect(ok(servedNetworksResponse, {})).toBe(false);
+    expect(ok(servedNetworksResponse, { networks: "eip155:1" })).toBe(false);
+    expect(ok(servedNetworksResponse, { networks: ["not a caip2"] })).toBe(false);
+    expect(ok(servedNetworksResponse, ["eip155:1"])).toBe(false);
+  });
+});
+
+describe("path helpers", () => {
+  it("match the endpoint templates", () => {
+    const id = "eip155:11155111";
+    expect(rpcPath(id)).toBe("/v1/rpc/eip155:11155111");
+    expect(rpc.path.replace(":caip2", id)).toBe(rpcPath(id));
+    expect(esploraBasePath("bip122:00000008819873e925422c1ff0f99f7c")).toBe(
+      "/v1/esplora/bip122:00000008819873e925422c1ff0f99f7c",
+    );
+    expect(`${esploraBasePath(id)}/*`).toBe(esploraGet.path.replace(":caip2", id));
+    expect(esploraPost.path.replace(":caip2", id)).toBe(`${esploraBasePath(id)}/tx`);
+    expect(networksPath).toBe(servedNetworks.path);
+    expect(networksPath).toBe("/v1/networks");
   });
 });

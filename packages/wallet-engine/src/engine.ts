@@ -42,8 +42,16 @@ export type EngineOptions = {
   readonly openStore: () => Promise<EngineStore>;
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
-  /** RPC endpoints per network (CAIP-2), ordered by preference for the viem fallback transport. */
+  /**
+   * Host endpoints per network (CAIP-2), ordered by preference, for all three chain families: EVM
+   * and Solana JSON-RPC URLs, and for Bitcoin the Esplora base URL.
+   */
   readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
+  /**
+   * The wallet gateway: tried first for the networks it serves (read at each unlock) unless a
+   * network has custom endpoints. The install id is sent only to the gateway's origin.
+   */
+  readonly gateway?: { readonly url: string; readonly installId: string };
   /** Injected timer for transaction polling; defaults to setTimeout. */
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → every wallet reports `unavailable`. */
@@ -104,6 +112,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     rpc: options.rpc ?? {},
     openStore: options.openStore,
     logger: options.logger,
+    gateway: options.gateway,
   });
 
   const assets = new AssetsController({

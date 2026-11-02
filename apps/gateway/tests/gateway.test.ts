@@ -5,6 +5,7 @@ import {
   gatewayError,
   health,
   rpcResponse,
+  servedNetworksResponse,
 } from "@qntx/wallet-engine/gateway/contract";
 
 import { ipPrefix } from "../src/middleware/rate-limit.ts";
@@ -64,6 +65,39 @@ describe("health and identity", () => {
     const res = await app.request("/v1/nope", { headers: headers() });
     expect(res.status).toBe(404);
     await expectContract(res, gatewayError);
+  });
+});
+
+describe("served networks", () => {
+  it("lists the configured networks in order and matches the contract", async () => {
+    const res = await gateway({ fetch: fakeFetch({}).fetch }).request("/v1/networks", {
+      headers: headers(),
+    });
+    expect(res.status).toBe(200);
+    await expect(expectContract(res, servedNetworksResponse)).resolves.toStrictEqual({
+      networks: [SEPOLIA, DEVNET, SIGNET],
+    });
+  });
+
+  it("requires an install id and counts against the default limiter", async () => {
+    const rpc = recordingLimiter();
+    const dflt = recordingLimiter();
+    const app = gateway({ fetch: fakeFetch({}).fetch, limiters: { rpc, default: dflt } });
+    const anonymous = await app.request("/v1/networks");
+    const identified = await app.request("/v1/networks", { headers: headers() });
+    expect(anonymous.status).toBe(400);
+    expect(identified.status).toBe(200);
+    expect(dflt.keys).toHaveLength(1);
+    expect(rpc.keys).toHaveLength(0);
+  });
+
+  it("answers 429 when the default limiter refuses", async () => {
+    const app = gateway({
+      fetch: fakeFetch({}).fetch,
+      limiters: { rpc: denyAll, default: denyAll },
+    });
+    const res = await app.request("/v1/networks", { headers: headers() });
+    expect(res.status).toBe(429);
   });
 });
 

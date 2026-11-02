@@ -12,6 +12,14 @@ import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import {
+  INSTALL_ID_HEADER,
+  parseWith,
+  esploraBasePath,
+  networksPath,
+  rpcPath,
+  servedNetworksResponse,
+} from "../gateway/contract/index.ts";
 import type { EngineStore } from "../store/port.ts";
 import { networkById } from "./registry.ts";
 import type { NetworkInfo } from "./registry.ts";
@@ -20,6 +28,9 @@ const esploraSleep = async (ms: number) =>
   new Promise<void>((resolve) => {
     setTimeout(resolve, ms);
   });
+
+/** Bound on the unlock-time `/v1/networks` read so a dead gateway cannot stall unlocking. */
+const GATEWAY_PROBE_TIMEOUT_MS = 5000;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -38,21 +49,35 @@ type Options = {
   readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly openStore: () => Promise<EngineStore>;
   readonly logger: EngineLogger;
+  readonly gateway?: { readonly url: string; readonly installId: string } | undefined;
 };
 
 export class NetworkController extends Controller<NetworkControllerState> {
   private readonly options: Options;
   private engineStore?: StoreOrUndefined;
   private readonly clients = new Map<string, PublicClient>();
+  private readonly gatewayBase: string | undefined;
+  private readonly gatewayOrigin: string | undefined;
+  /** Networks the gateway reported at unlock; empty while locked or when the read failed. */
+  private gatewayServed: ReadonlySet<string> = new Set();
 
   constructor(options: Options) {
     super({ name: "networks", defaultState: () => ({ customRpc: {} }) });
     this.options = options;
+    if (options.gateway !== undefined) {
+      this.gatewayBase = options.gateway.url.replace(/\/+$/, "");
+      this.gatewayOrigin = new URL(options.gateway.url).origin;
+    }
   }
 
   async init(): Promise<void> {
     this.engineStore = await this.options.openStore();
-    const raw = await this.engineStore.collection("networks").get("customRpc");
+    await this.loadCustomRpc(this.engineStore);
+    await this.loadGatewayNetworks();
+  }
+
+  private async loadCustomRpc(store: EngineStore): Promise<void> {
+    const raw = await store.collection("networks").get("customRpc");
     if (raw === undefined) {
       return;
     }
@@ -68,18 +93,70 @@ export class NetworkController extends Controller<NetworkControllerState> {
     }
   }
 
+  /** Reads the gateway's served networks; any failure leaves the gateway unused until next unlock. */
+  private async loadGatewayNetworks(): Promise<void> {
+    if (this.gatewayBase === undefined) {
+      return;
+    }
+    const url = `${this.gatewayBase}${networksPath}`;
+    try {
+      const res = await this.gatewayFetch(url, {
+        signal: AbortSignal.timeout(GATEWAY_PROBE_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        throw new Error(`status ${res.status}`);
+      }
+      const body: unknown = await res.json();
+      const served = parseWith(servedNetworksResponse, body);
+      if (served === undefined) {
+        throw new Error("malformed response");
+      }
+      this.gatewayServed = new Set(served.networks);
+    } catch {
+      this.gatewayServed = new Set();
+      this.options.logger.warn(`gateway unavailable, not used for this session: ${url}`);
+    }
+  }
+
+  /** `fetch` that adds the install id to requests bound for the gateway's origin only. */
+  private readonly gatewayFetch: typeof globalThis.fetch = async (input, init) => {
+    const { gateway } = this.options;
+    const target = input instanceof Request ? input.url : String(input);
+    if (gateway === undefined || new URL(target).origin !== this.gatewayOrigin) {
+      return this.options.fetch(input, init);
+    }
+    const headers = new Headers(init?.headers);
+    headers.set(INSTALL_ID_HEADER, gateway.installId);
+    return this.options.fetch(input, { ...init, headers });
+  };
+
   async destroy(): Promise<void> {
     this.lock();
     await Promise.resolve();
   }
 
   lock(): void {
+    this.gatewayServed = new Set();
     this.clients.clear();
     this.engineStore = undefined;
   }
 
+  /**
+   * Ordered endpoints: a network with custom endpoints uses custom → host and never the gateway;
+   * otherwise a gateway-served network uses gateway → host; else host only.
+   */
   endpoints(network: string): ReadonlyArray<string> {
-    return [...(this.getState().customRpc[network] ?? []), ...(this.options.rpc[network] ?? [])];
+    const custom = this.getState().customRpc[network] ?? [];
+    const host = this.options.rpc[network] ?? [];
+    if (custom.length > 0) {
+      return [...custom, ...host];
+    }
+    if (this.gatewayBase !== undefined && this.gatewayServed.has(network)) {
+      const path =
+        networkById(network)?.family === "bitcoin" ? esploraBasePath(network) : rpcPath(network);
+      return [`${this.gatewayBase}${path}`, ...host];
+    }
+    return host;
   }
 
   info(network: string): NetworkInfo {
@@ -107,20 +184,19 @@ export class NetworkController extends Controller<NetworkControllerState> {
         nativeCurrency: { name: info.symbol, symbol: info.symbol, decimals: info.decimals },
         rpcUrls: { default: { http: urls } },
       },
-      transport: fallback(urls.map((url) => http(url, { fetchFn: this.options.fetch }))),
+      transport: fallback(urls.map((url) => http(url, { fetchFn: this.gatewayFetch }))),
       batch: { multicall: true },
     });
     this.clients.set(network, client);
     return client;
   }
 
-  /** Validate a custom endpoint's reported chain id, then persist it first in the list. */
-  /** Solana JSON-RPC over the ordered endpoint list — kit's transport is single-endpoint. */
-  /** Networks with at least one configured endpoint, filtered by family. */
+  /** Networks with at least one configured endpoint or served by the gateway, by family. */
   enabled(family: "evm" | "solana" | "bitcoin"): ReadonlyArray<string> {
     const ids = new Set([
       ...Object.keys(this.options.rpc),
       ...Object.keys(this.getState().customRpc),
+      ...this.gatewayServed,
     ]);
     return [...ids].filter((id) => {
       const info = networkById(id);
@@ -128,6 +204,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     });
   }
 
+  /** Solana JSON-RPC over the ordered endpoint list — kit's transport is single-endpoint. */
   solanaRpc(network: string): SolanaRpc {
     const urls = this.endpoints(network);
     if (urls.length === 0) {
@@ -143,7 +220,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
               : new Error(typeof last === "string" ? last : method);
           }
           try {
-            const res = await this.options.fetch(url, {
+            const res = await this.gatewayFetch(url, {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
@@ -175,7 +252,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     return esplora(
       urls,
       async (url, init) => {
-        const r = await this.options.fetch(url, init);
+        const r = await this.gatewayFetch(url, init);
         return {
           ok: r.ok,
           status: r.status,
@@ -188,6 +265,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     );
   }
 
+  /** Validate a custom endpoint's reported chain id, then persist it first in the list. */
   async addRpc(network: string, url: string): Promise<void> {
     const info = this.info(network);
     if (info.family === "bitcoin") {
