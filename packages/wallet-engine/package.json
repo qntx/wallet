@@ -23,6 +23,11 @@
       "default": "./dist/index.mjs"
     },
     "./package.json": "./package.json",
+    "./gateway/contract": {
+      "types": "./dist/gateway-contract.d.mts",
+      "import": "./dist/gateway-contract.mjs",
+      "default": "./dist/gateway-contract.mjs"
+    },
     "./idb": {
       "types": "./dist/idb.d.mts",
       "import": "./dist/idb.mjs",
@@ -48,6 +53,7 @@
     "@solana-program/token": "0.18.0",
     "@solana/kit": "8.5.0",
     "viem": "2.57.8",
+    "zod": "^4.6.7",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
