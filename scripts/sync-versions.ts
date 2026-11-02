@@ -57,9 +57,6 @@ if (import.meta.main) {
   const version = manifests.get("packages/wallet/package.json")?.["version"];
   if (typeof version === "string") {
     for (const [path, pkg] of manifests) {
-      if (path === "packages/wallet/package.json") {
-        continue;
-      }
       syncInternalDeps(pkg, version, internalNames);
       writeFileSync(path, `${JSON.stringify(pkg, null, 2)}\n`);
     }

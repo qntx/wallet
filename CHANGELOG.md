@@ -9,46 +9,79 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
-### Added
+## [0.5.0] - 2026-11-02
 
-- `@qntx/wallet-native` is publish-ready: public `publishConfig`, exact peers
-  (`react-native ~0.88.0`, `react-native-nitro-modules ~0.37.1`), a clean
-  tarball verified by `check-native-pack`, a README covering Expo config,
-  passkey domains, vault storage and per-request verification, and a
-  `native:consumer` out-of-repo acceptance script (tarball install with no
-  Nitro patches → iOS simulator Release smoke, vault backup-exclusion xattr,
-  Android Release APK native libs).
-
-### Removed
-
-- **BREAKING** `NativeWalletOptions.ceremony`: the hardware factor mode always
-  runs passkey ceremonies inside the kernel (`ceremony: "kernel"`); a host
-  `PasskeyCeremony` was never invoked on this platform.
-
-### Fixed
-
-- `@qntx/wallet-chains` no longer bundles `@noble/curves`, `@noble/hashes` and
-  `@scure/base` into `dist`: they are declared as exact-pinned dependencies so
-  consumers resolve one deduplicated copy. `@qntx/wallet-engine` and
-  `@qntx/wallet-worker` declare `@noble/hashes`/`@scure/base` for the same reason,
-  and every published package's `vp pack` now externals all imports
-  (`deps.onlyBundle: []`) with a `check-dist-deps` gate that fails `check:pkg`
-  on any undeclared dist import.
+The React Native host and the three chain families: `@qntx/wallet-native` ships through the
+release workflow, the kernel signs EVM, Solana and Bitcoin requests with a fresh system verification per
+request, and the engine sends, tracks and replaces transactions on all three chains.
 
 ### Added
 
-- `@qntx/wallet-native` injects the native Spark backend into the kernel: the host binds
-  `@qntx/spark-native`'s `qs_*` C ABI as frozen `__qntx.backends.spark`, and
-  `spark(wallet).signer(ref)` works on iOS and Android with the manifest's
-  `backends.spark.abiVersion` integrity check.
+- `@qntx/wallet-native` (its first release through the tag workflow; 0.4.0 was a manual
+  bootstrap publish for trusted publishing): `createNativeWallet` runs the kernel on its own Hermes
+  runtime and thread behind the Nitro `KernelHost`, with a native vault file, kernel bytecode
+  compiled by the app's own `hermesc` at native build time (manifest SHA-256 checked by the
+  build), the background lock, and the native Nostr and Spark backends bound to their C ABIs.
+  Secret-bearing capabilities (keystore, passkey, store) are JSI host objects inside the kernel
+  runtime and are never registered with Nitro; no Nitro patch is needed in the app. The README
+  covers the Expo configuration, passkey domains and vault storage.
+- Hardware vault factor: Secure Enclave on iOS and Android Keystore with BiometricPrompt on
+  Android (API 30) seal a per-factor KEK. Every unlock, export, deletion, reset, backup enable and
+  every `chain.sign` / `spark.approve` opens one system verification whose text the kernel writes
+  (zh-Hans or en, from the device locale); ceremonies are serialized, and `vault.reset` verifies
+  the device owner first.
+- Native passkeys (Android, Credential Manager with the Play services provider): passkey wallet
+  creation and restore and the cloud-backup passkey factor run inside the native kernel, so no PRF
+  output crosses the main runtime. The backup protection credential is named by the kernel
+  (`Cloud backup key` / `云备份密钥`). iOS reports `factor-unavailable` until native iOS passkeys
+  land.
+- `@qntx/wallet-chains` (bootstrapped on npm at 0.4.0; first release through the tag workflow):
+  addresses, request normalization, display decoding,
+  verifiability and signing for EVM (transactions, `personal_sign`, EIP-712), Solana
+  (transactions, messages, Token-2022 mint extensions) and Bitcoin (PSBT for P2WPKH, P2TR,
+  P2SH-P2WPKH and P2PKH; BIP-322 and legacy messages), with built-in Circle USDC and Tether USDT
+  token tables.
+- `@qntx/wallet/chains`: `chains(wallet).account(...)` derives chain accounts in the kernel
+  (`evm.bip44`, `solana.bip44-change`, `btc.bip84`, `btc.bip86`, `btc.bip49`, `btc.bip44`), and
+  `chains(wallet).sign(...)` signs after normalization, decoding and a per-request verification;
+  the host re-verifies every signature against the account address and rejects forged results
+  as `integrity`.
+- `@qntx/wallet-engine`: `engine.networks` (EVM, Solana and Bitcoin registries, custom endpoints
+  validated by chain id, genesis hash or block 0, ordered failover), `engine.transactions` (EVM
+  native and ERC-20 sends with speed-up and cancel; SOL, SPL and Token-2022 sends; Bitcoin sends
+  with UTXO locking, RBF speed-up and cancel, and CPFP; persisted lifecycle resumed on unlock),
+  `engine.assets` (native and token balances, Multicall3 where deployed, custom tokens marked
+  unverified) and account-group discovery across all chain families.
 
 ### Changed
 
-- `@qntx/wallet-engine` is published to npm with the other packages: 0.4.0 was the first
-  release, and every `vX.Y.Z` tag now publishes it through trusted publishing.
-- `@qntx/spark`, `@qntx/spark-wasm` and `@qntx/spark-native` are pinned at 0.5.1 — the
-  release that fixes the native C++ linkage (`extern "C"` header guard), the Android
-  `DT_SONAME`, and the broken prefab publishing (qntx/spark#105).
+- **BREAKING:** on React Native the hardware factor is the only vault factor; password and
+  passkey factors are rejected with `factor-unavailable` (the web and Node hosts keep passkey
+  and password factors).
+- **BREAKING:** `wallet.createWithPasskey`, `wallet.restoreWithPasskey`, `backup.enable` and
+  `backup.restore` passkey factors take one of two protocol shapes, `ceremony: "host"` (web) or
+  `ceremony: "kernel"` (React Native); the kernel accepts only its platform's shape.
+- **BREAKING:** the kernel policy has no foreground idle lock on React Native; the native host
+  locks after `autoLock.backgroundSeconds` (0, 60, 300 or 900) in the background.
+- `@qntx/spark*` are pinned at 0.5.2 and `@qntx/nostr*` at 0.15.3.
+- `@qntx/wallet-engine` and `@qntx/wallet-chains` publish on every release tag through trusted
+  publishing, as does `@qntx/wallet-native`.
+
+### Removed
+
+- **BREAKING:** `NativeWalletOptions.ceremony`: the hardware factor mode runs every passkey
+  ceremony inside the kernel, so a host `PasskeyCeremony` was never invoked.
+
+### Fixed
+
+- `@qntx/wallet-engine`: Bitcoin account discovery could deadlock. A request that received HTTP
+  429 retried while still holding its Esplora concurrency slot, and with all four slots
+  throttled every retry waited on itself; the slot is now released before backing off. Esplora
+  requests are also bounded by a timeout.
+- `@qntx/wallet-chains` no longer bundles `@noble/curves`, `@noble/hashes` and `@scure/base`;
+  they are exact-pinned dependencies, and every published package's `vp pack` externals all
+  imports with a `check-dist-deps` gate in `check:pkg`.
+- Playground: UI clicks queue behind the wallet boot.
 
 ## [0.4.0] - 2026-10-29
 
@@ -166,7 +199,8 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/qntx/wallet/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/qntx/wallet/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/qntx/wallet/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/qntx/wallet/compare/v0.1.0...v0.2.0
