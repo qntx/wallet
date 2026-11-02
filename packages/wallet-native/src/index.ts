@@ -1,6 +1,6 @@
 import { WalletError } from "@qntx/wallet";
 import type { AutoLockPolicy, PasskeyConfig, Wallet } from "@qntx/wallet";
-import type { PasskeyCeremony, SetTimer } from "@qntx/wallet/host";
+import type { SetTimer } from "@qntx/wallet/host";
 /**
  * `@qntx/wallet-native`: the RN host entry. `createNativeWallet` adapts a `KernelHost` (Nitro
  * hybrid from W2b, or any object with the same shape) to the wallet `connectKernel` entry — the
@@ -20,7 +20,6 @@ export type NativeWalletOptions = {
    * `NitroModules.createHybridObject("KernelHost")` — the only Nitro-registered object.
    */
   readonly host?: KernelHostLike;
-  readonly ceremony?: PasskeyCeremony;
 };
 
 const setTimer: SetTimer = (delayMs, fn) => {
@@ -50,7 +49,7 @@ export async function createNativeWallet(options: NativeWalletOptions): Promise<
     spawn: () => spawnFromHost(host, autoLock.backgroundSeconds),
     factors: "hardware",
     passkey: options.passkey,
-    ceremony: options.ceremony,
+    ceremony: undefined,
     setTimer,
   });
 }

@@ -5,9 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/wallet-worker` and `packages/wallet-engine` via npm trusted publishing / OIDC). `@qntx/wallet-kernel` is private and only bundled into the host packages.
+A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/wallet-worker`, `packages/wallet-engine`, `packages/wallet-chains` and `packages/wallet-native` via npm trusted publishing / OIDC). `@qntx/wallet-kernel` is private and only bundled into the host packages.
 
 ## [Unreleased]
+
+### Added
+
+- `@qntx/wallet-native` is publish-ready: public `publishConfig`, exact peers
+  (`react-native ~0.88.0`, `react-native-nitro-modules ~0.37.1`), a clean
+  tarball verified by `check-native-pack`, a README covering Expo config,
+  passkey domains, vault storage and per-request verification, and a
+  `native:consumer` out-of-repo acceptance script (tarball install with no
+  Nitro patches → iOS simulator Release smoke, vault backup-exclusion xattr,
+  Android Release APK native libs).
+
+### Removed
+
+- **BREAKING** `NativeWalletOptions.ceremony`: the hardware factor mode always
+  runs passkey ceremonies inside the kernel (`ceremony: "kernel"`); a host
+  `PasskeyCeremony` was never invoked on this platform.
 
 ### Fixed
 
