@@ -9,7 +9,6 @@
  * report channel.
  */
 import { AppState, Platform } from "react-native";
-import { NitroModules } from "react-native-nitro-modules";
 
 import { report } from "@qntx/v1-probe";
 import { verifyEvent } from "@qntx/nostr";
@@ -18,7 +17,6 @@ import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
-import type { KernelHostLike } from "@qntx/wallet-native";
 import { createNativeWallet } from "@qntx/wallet-native";
 
 const PASSKEY: PasskeyConfig = {
@@ -42,18 +40,15 @@ const result = (name: string, ok: boolean, detail: string): void => {
   report(`smoke-${name}`, "release", ok, JSON.stringify(detail));
 };
 
-const host = (): KernelHostLike =>
-  NitroModules.createHybridObject<KernelHostLike>("KernelHost");
-
 /** Resolve the vault status on a fresh boot — picks create vs unlock phase. */
 export async function smokePhase(): Promise<"create" | "unlock"> {
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
+  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
   return wallet.getSnapshot().vault === "uninitialized" ? "create" : "unlock";
 }
 
 /** First boot: create the vault, run the ceremony, sign, lock. */
 export async function smokeCreate(): Promise<void> {
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
+  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
   const draft = await wallet.wallets.createMnemonic({ words: 12 });
   const words = new TextDecoder().decode(draft.words.read()).split(" ");
   const { walletId } = await draft.confirm(draft.quiz.map((i) => words[i]!));
@@ -79,7 +74,7 @@ export async function smokeCreate(): Promise<void> {
 
 /** Relaunch: cancel the first unlock prompt, approve the second, then the guarded prompts. */
 export async function smokeUnlock(): Promise<void> {
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host() });
+  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
   let cancelled = false;
   let outcome = "approved";
   try {

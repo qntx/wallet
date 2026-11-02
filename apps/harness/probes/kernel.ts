@@ -96,7 +96,9 @@ function boot(pbkdf2: Pbkdf2): Kernel {
     setTimer: (ms, fn) => __qntx.setTimer(ms, fn),
     pbkdf2,
     store,
-    policy: { idleMs: 15 * 60_000, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18 },
+    keystore: undefined,
+    passkey: undefined,
+    policy: { idle: { ms: 15 * 60_000, activity: "presence" }, maxSessionMs: 12 * 3_600_000, maxScryptLogN: 18 },
     backends: {
       nostr: nobleBackend,
       // The probe never reaches a spark call — a missing backend must fail loudly.
