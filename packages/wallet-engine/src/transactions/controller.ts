@@ -10,15 +10,24 @@ import { createEvmRoute } from "./evm.ts";
 import type {
   DisplayIntent,
   Options,
+  PrepareParams,
+  PreparedSend,
   RouteContext,
   SendParams,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
 import { newId } from "./route.ts";
-import { pollSolana, sendSolana } from "./solana.ts";
+import { pollSolana, prepareSolana } from "./solana.ts";
 
-export type { SendParams, TrackedTransaction, TxState } from "./route.ts";
+export type {
+  AccountRef,
+  PrepareParams,
+  PreparedSend,
+  SendParams,
+  TrackedTransaction,
+  TxState,
+} from "./route.ts";
 export type { Options } from "./route.ts";
 
 export type TransactionControllerState = {
@@ -132,7 +141,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private engineStore?: EngineStore | undefined;
   private readonly timers = new Map<string, () => void>();
   private evmRoute = createEvmRoute();
-  private readonly bitcoinRoute = createBitcoinRoute();
+  private bitcoinRoute = createBitcoinRoute();
   private locked = true;
 
   constructor(options: Options) {
@@ -143,6 +152,7 @@ export class TransactionController extends Controller<TransactionControllerState
   async init(): Promise<void> {
     this.locked = false;
     this.engineStore = await this.options.openStore();
+    await this.bitcoinRoute.unlock(this.engineStore);
     const collection = this.engineStore.collection("transactions");
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
@@ -171,13 +181,17 @@ export class TransactionController extends Controller<TransactionControllerState
     this.timers.clear();
     this.engineStore = undefined;
     this.evmRoute = createEvmRoute();
+    this.bitcoinRoute.lock();
+    this.bitcoinRoute = createBitcoinRoute();
   }
 
   private async persist(tx: TrackedTransaction): Promise<void> {
     const store = this.engineStore;
-    if (store !== undefined) {
-      await store.collection("transactions").put(tx.id, encode(tx));
+    if (store === undefined) {
+      this.options.logger.warn(`transaction ${tx.id} (${tx.state}) not persisted: vault locked`);
+      return;
     }
+    await store.collection("transactions").put(tx.id, encode(tx));
   }
 
   private async transition(
@@ -199,7 +213,12 @@ export class TransactionController extends Controller<TransactionControllerState
     };
   }
 
-  async send(params: SendParams): Promise<TrackedTransaction> {
+  /**
+   * Internal entry for the request pipeline: builds, estimates and cross-checks a send without
+   * signing it. Bitcoin outputs it selects stay locked under `requestId` until the returned
+   * `release` runs or the broadcast moves them to the transaction.
+   */
+  async prepareSend(params: PrepareParams, requestId: string): Promise<PreparedSend> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
@@ -210,12 +229,12 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const ctx = this.routeCtx();
     if (info.family === "solana") {
-      return sendSolana(ctx, params);
+      return prepareSolana(ctx, params);
     }
     if (info.family === "bitcoin") {
-      return this.bitcoinRoute.send(ctx, params);
+      return this.bitcoinRoute.prepare(ctx, params, requestId);
     }
-    return this.evmRoute.send(ctx, params);
+    return this.evmRoute.prepare(ctx, params);
   }
 
   /**
@@ -272,6 +291,12 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   private track(id: string, hash: string): void {
+    if (this.locked) {
+      this.options.logger.warn(
+        `transaction ${id} was broadcast after the vault locked; it is neither persisted nor tracked`,
+      );
+      return;
+    }
     if (this.timers.has(id) || hash === "") {
       return;
     }

@@ -18,7 +18,7 @@ const client = (handlers: Record<string, unknown>): PublicClient =>
 const rpc = (h: Record<string, unknown>) => client(h);
 
 describe("EvmChainAdapter", () => {
-  it("allocates nonces serially per (network, from)", async () => {
+  it("reserves nothing until a broadcast is committed", async () => {
     const a = new EvmChainAdapter();
     const c = rpc({ eth_getTransactionCount: "0x5", eth_estimateGas: "0x5208" });
     const t1 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
@@ -32,7 +32,16 @@ describe("EvmChainAdapter", () => {
       value: 1n,
     });
     expect(t1.nonce).toBe(5);
-    expect(t2.nonce).toBe(6);
+    expect(t2.nonce).toBe(5);
+    expect(a.nonceConsumed("eip155:1", `0x${"1".repeat(40)}`, 5)).toBe(false);
+    a.commitNonce("eip155:1", `0x${"1".repeat(40)}`, 5);
+    expect(a.nonceConsumed("eip155:1", `0x${"1".repeat(40)}`, 5)).toBe(true);
+    const t3 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
+      kind: "native",
+      to: `0x${"2".repeat(40)}`,
+      value: 1n,
+    });
+    expect(t3.nonce).toBe(6);
     expect(t1.gas).toBe(25200n);
   });
 

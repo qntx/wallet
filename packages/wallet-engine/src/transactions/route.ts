@@ -10,6 +10,7 @@ import type { EvmFeeTier } from "../chains/evm.ts";
 import type { SolanaFeeTier } from "../chains/solana.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import type { RequestCheckCode } from "../requests/checks.ts";
 import type { EngineStore } from "../store/port.ts";
 
 export type SignParams = Parameters<ReturnType<typeof chains>["sign"]>[0];
@@ -76,6 +77,25 @@ export type SendParams = {
   readonly verify: SignParams["verify"];
 };
 
+export type PrepareParams = Omit<SendParams, "verify">;
+
+/**
+ * A fully built, estimated and cross-checked send that has not been signed. The unsigned content
+ * lives in the closures and cannot change after `prepare` returns.
+ */
+export type PreparedSend = {
+  /** Id of the tracked transaction `submit` creates. */
+  readonly txId: string;
+  readonly intent: DisplayIntent;
+  readonly checks: ReadonlyArray<RequestCheckCode>;
+  /** Why the build can no longer be signed (nonce taken, blockhash expired), if so. */
+  readonly staleReason: () => string | undefined | Promise<string | undefined>;
+  /** Signs, finalizes, broadcasts and hands the transaction to tracking. */
+  readonly submit: (verify: SendParams["verify"]) => Promise<TrackedTransaction>;
+  /** Frees what `prepare` reserved; safe to call more than once. */
+  readonly release: () => void;
+};
+
 export type Options = {
   readonly wallet: Wallet;
   readonly networks: NetworkController;
@@ -99,8 +119,12 @@ export type RouteContext = {
   readonly newId: () => string;
 };
 
-export const newId = (random: (n: number) => Uint8Array): string =>
-  `tx-${[...random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+const hexId = (prefix: string, random: (n: number) => Uint8Array): string =>
+  `${prefix}-${[...random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+
+export const newId = (random: (n: number) => Uint8Array): string => hexId("tx", random);
+
+export const newRequestId = (random: (n: number) => Uint8Array): string => hexId("req", random);
 
 export const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);

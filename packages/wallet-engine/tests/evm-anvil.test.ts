@@ -17,6 +17,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { send } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
 
@@ -335,7 +336,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
     try {
       const url = `http://127.0.0.1:${port}`;
       const { ctl, acct } = await rig(url, timers);
-      const original = await ctl.send({
+      const original = await send(ctl, {
         account: acct,
         network: "eip155:1",
         to: RECIPIENT,
@@ -369,7 +370,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
     try {
       const url = `http://127.0.0.1:${port}`;
       const { ctl, acct } = await rig(url, timers);
-      const original = await ctl.send({
+      const original = await send(ctl, {
         account: acct,
         network: "eip155:1",
         to: RECIPIENT,

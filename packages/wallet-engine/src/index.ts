@@ -6,6 +6,13 @@ export { EngineStoreError } from "./errors.ts";
 export type { EngineErrorCode } from "./errors.ts";
 export type { EngineCollection, EngineStore } from "./store/port.ts";
 export { createMemoryEngineStore } from "./store/memory.ts";
+export { RequestController, REQUEST_TTL_MS } from "./requests/controller.ts";
+export type {
+  PendingRequest,
+  RequestCheckCode,
+  RequestControllerState,
+  RequestStage,
+} from "./requests/controller.ts";
 export { createWalletEngine } from "./engine.ts";
 export type { EngineOptions, WalletEngine } from "./engine.ts";
 export { BackupController } from "./backup/controller.ts";

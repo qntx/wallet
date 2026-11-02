@@ -321,6 +321,11 @@ export class BtcUtxoStore {
     void this.persist();
   }
 
+  /** True while a pending request or an unconfirmed transaction holds this output. */
+  isLocked(u: { txid: string; vout: number }): boolean {
+    return this.utxos.get(BtcUtxoStore.key(u))?.status === "locked";
+  }
+
   /** Released on failed/rejected/dropped; spent-removed on confirmed. */
   endTx(txId: string, final: "confirmed" | "failed" | "rejected" | "dropped"): void {
     if (final === "confirmed") {

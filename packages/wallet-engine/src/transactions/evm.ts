@@ -3,8 +3,22 @@ import { decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { EvmChainAdapter } from "../chains/evm.ts";
+import {
+  collectChecks,
+  exceedsNetworkCap,
+  feeReachesAmount,
+  mergeEvmQuote,
+} from "../requests/checks.ts";
+import type { RequestCheckCode } from "../requests/checks.ts";
 import { errorMessage, newId } from "./route.ts";
-import type { RouteContext, SendParams, TrackedTransaction, TxState } from "./route.ts";
+import type {
+  PrepareParams,
+  PreparedSend,
+  RouteContext,
+  SendParams,
+  TrackedTransaction,
+  TxState,
+} from "./route.ts";
 
 type PendingBuild = {
   readonly unsigned: Awaited<ReturnType<EvmChainAdapter["build"]>>;
@@ -16,7 +30,7 @@ type PendingBuild = {
 const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
 export type EvmRoute = {
-  readonly send: (ctx: RouteContext, params: SendParams) => Promise<TrackedTransaction>;
+  readonly prepare: (ctx: RouteContext, params: PrepareParams) => Promise<PreparedSend>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
   readonly replace: (
     ctx: RouteContext,
@@ -32,14 +46,15 @@ export const createEvmRoute = (): EvmRoute => {
   /** In-memory build context keyed by tx id — the inputs a replace rebuilds from. */
   const pending = new Map<string, PendingBuild>();
 
-  const send = async (ctx: RouteContext, params: SendParams): Promise<TrackedTransaction> => {
-    const { account, network, to, amount, fee, verify } = params;
+  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedSend> => {
+    const { account, network, to, amount, fee } = params;
     const { networks } = ctx.options;
     if (account.kind !== "hd") {
       throw new Error("imported accounts are not yet supported");
     }
     const info = networks.info(network);
     const client = networks.client(network);
+    const independent = networks.independentClient(network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const evmAccount = await apis.account({
       walletId: account.walletId,
@@ -48,6 +63,23 @@ export const createEvmRoute = (): EvmRoute => {
       network,
     });
     const from = "address" in evmAccount ? evmAccount.address : "";
+    const flags: Array<RequestCheckCode | undefined> = [
+      independent.kind === "unavailable" ? "reads-unverified" : undefined,
+    ];
+
+    let nonce = await evm.nextNonce(client, network, from);
+    if (independent.kind === "available") {
+      try {
+        const [primary, other] = await Promise.all([
+          evm.pendingCount(client, from),
+          evm.pendingCount(independent.client, from),
+        ]);
+        nonce = Math.max(nonce, other);
+        flags.push(primary === other ? undefined : "nonce-mismatch");
+      } catch {
+        flags.push("reads-unverified");
+      }
+    }
     const unsigned = await evm.build(
       client,
       network,
@@ -55,53 +87,97 @@ export const createEvmRoute = (): EvmRoute => {
       params.token === undefined
         ? { kind: "native", to, value: amount }
         : { kind: "erc20", token: params.token, to, value: amount },
+      nonce,
     );
     const quotes = await evm.estimateFee(client);
-    const quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
+    let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
     if (quote === undefined) {
       throw new Error("no fee quote");
     }
+    if (independent.kind === "available") {
+      try {
+        const others = await evm.estimateFee(independent.client);
+        const other = others.find((q) => q.tier === quote?.tier);
+        if (other === undefined) {
+          flags.push("reads-unverified");
+        } else {
+          const merged = mergeEvmQuote(quote, other);
+          ({ quote } = merged);
+          flags.push(
+            merged.mismatch ? "fee-mismatch" : undefined,
+            exceedsNetworkCap(quote.maxFeePerGas, other.maxFeePerGas)
+              ? "fee-above-network"
+              : undefined,
+          );
+        }
+      } catch {
+        flags.push("reads-unverified");
+      }
+    }
     const feed = evm.applyFee(unsigned, quote);
+    if (
+      params.token === undefined &&
+      feeReachesAmount(feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n), amount)
+    ) {
+      flags.push("fee-exceeds-amount");
+    }
     const request = evm.toSignRequest(feed, account, info.chainId);
     const intent = decodeEvm(request);
-    const id = newId(ctx.options.random);
-    pending.set(id, { unsigned: feed, request, quote, chainId: info.chainId });
-    let tx: TrackedTransaction = {
-      id,
-      family: "evm",
-      network,
-      account: account.walletId,
-      hash: undefined,
-      state: "draft",
-      intent,
-      nonce: unsigned.nonce,
-      submittedAt: ctx.options.now(),
-      error: undefined,
-    };
-    tx = await ctx.transition(tx, {});
-    let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
-    try {
-      const result = await apis.sign({ request, verify });
-      tx = await ctx.transition(tx, { state: "signed" });
-      signed = result;
-    } catch (error) {
-      await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
-      throw error;
-    }
-    try {
-      const raw = evm.finalize(feed, signed);
-      const hash = await evm.broadcast(client, raw);
-      tx = await ctx.transition(tx, {
-        state: "submitted",
-        hash,
+    const txId = newId(ctx.options.random);
+    const chosen = quote;
+
+    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+      pending.set(txId, { unsigned: feed, request, quote: chosen, chainId: info.chainId });
+      let tx: TrackedTransaction = {
+        id: txId,
+        family: "evm",
+        network,
+        account: account.walletId,
+        hash: undefined,
+        state: "draft",
+        intent,
+        nonce: unsigned.nonce,
         submittedAt: ctx.options.now(),
-      });
-      ctx.track(tx.id, hash);
-      return tx;
-    } catch (error) {
-      await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
-      throw error;
-    }
+        error: undefined,
+      };
+      tx = await ctx.transition(tx, {});
+      let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
+      try {
+        const result = await apis.sign({ request, verify });
+        tx = await ctx.transition(tx, { state: "signed" });
+        signed = result;
+      } catch (error) {
+        await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
+        throw error;
+      }
+      try {
+        const raw = evm.finalize(feed, signed);
+        const hash = await evm.broadcast(client, raw);
+        evm.commitNonce(network, from, unsigned.nonce);
+        tx = await ctx.transition(tx, {
+          state: "submitted",
+          hash,
+          submittedAt: ctx.options.now(),
+        });
+        ctx.track(tx.id, hash);
+        return tx;
+      } catch (error) {
+        await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
+        throw error;
+      }
+    };
+
+    return {
+      txId,
+      intent,
+      checks: collectChecks(flags),
+      staleReason: () =>
+        evm.nonceConsumed(network, from, unsigned.nonce)
+          ? "nonce already used by a newer transaction — start over"
+          : undefined,
+      submit,
+      release: () => undefined,
+    };
   };
 
   /**
@@ -208,5 +284,5 @@ export const createEvmRoute = (): EvmRoute => {
     return state === "finalized" ? "confirmed" : state;
   };
 
-  return { send, poll, replace };
+  return { prepare, poll, replace };
 };

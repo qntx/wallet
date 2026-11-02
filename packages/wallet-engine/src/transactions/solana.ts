@@ -11,14 +11,26 @@ import type { MintExtensionSummary } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 
 import { SolanaChainAdapter } from "../chains/solana.ts";
+import {
+  collectChecks,
+  exceedsNetworkCap,
+  feeReachesAmount,
+  mergeSolanaQuote,
+} from "../requests/checks.ts";
+import type { RequestCheckCode } from "../requests/checks.ts";
 import type {
   DisplayIntent,
+  PrepareParams,
+  PreparedSend,
   RouteContext,
   SendParams,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
 import { errorMessage, newId } from "./route.ts";
+
+/** The network's base signature fee, lamports per signature. */
+const BASE_FEE_LAMPORTS = 5000n;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
@@ -29,15 +41,16 @@ const solana = new SolanaChainAdapter();
 /** Signed wire transactions kept for re-broadcast until the tx confirms or drops. */
 const wires = new Map<string, Uint8Array>();
 
-export const sendSolana = async (
+export const prepareSolana = async (
   ctx: RouteContext,
-  params: SendParams,
-): Promise<TrackedTransaction> => {
-  const { account, network, to, amount, fee, verify } = params;
+  params: PrepareParams,
+): Promise<PreparedSend> => {
+  const { account, network, to, amount, fee } = params;
   if (account.kind !== "hd") {
     throw new Error("imported accounts are not yet supported");
   }
   const rpc = ctx.options.networks.solanaRpc(network);
+  const independent = ctx.options.networks.independentSolanaRpc(network);
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
   const solAccount = await apis.account({
     walletId: account.walletId,
@@ -88,9 +101,39 @@ export const sendSolana = async (
         },
   );
   const quotes = await solana.estimateFee(rpc, unsigned.writable);
-  const quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
+  let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
   if (quote === undefined) {
     throw new Error("no fee quote");
+  }
+  const flags: Array<RequestCheckCode | undefined> = [
+    independent.kind === "unavailable" ? "reads-unverified" : undefined,
+  ];
+  if (independent.kind === "available") {
+    try {
+      const others = await solana.estimateFee(independent.client, unsigned.writable);
+      const other = others.find((q) => q.tier === quote?.tier);
+      if (other === undefined) {
+        flags.push("reads-unverified");
+      } else {
+        const merged = mergeSolanaQuote(quote, other);
+        ({ quote } = merged);
+        flags.push(
+          merged.mismatch ? "fee-mismatch" : undefined,
+          exceedsNetworkCap(quote.microLamportsPerCu, other.microLamportsPerCu)
+            ? "fee-above-network"
+            : undefined,
+        );
+      }
+    } catch {
+      flags.push("reads-unverified");
+    }
+  }
+  if (params.token === undefined) {
+    const units = BigInt(
+      Math.ceil((unsigned.unitsConsumed === 0 ? 1_400_000 : unsigned.unitsConsumed) * 1.1),
+    );
+    const maxFee = BASE_FEE_LAMPORTS + (units * quote.microLamportsPerCu + 999_999n) / 1_000_000n;
+    flags.push(feeReachesAmount(maxFee, amount) ? "fee-exceeds-amount" : undefined);
   }
   const messageBytes = solana.applyFee(unsigned, quote);
   const request = {
@@ -104,41 +147,56 @@ export const sendSolana = async (
       ? decodeSolana(request, from)
       : token2022Intent(decodeSolana(request, from), ext, params.token, amount);
   const id = newId(ctx.options.random);
-  let tx: TrackedTransaction = {
-    id,
-    family: "solana",
-    network,
-    account: account.walletId,
-    hash: undefined,
-    state: "draft",
-    intent,
-    nonce: 0,
-    lastValidBlockHeight: Number(unsigned.lastValidBlockHeight),
-    submittedAt: ctx.options.now(),
-    error: undefined,
-  };
-  tx = await ctx.transition(tx, {});
-  try {
-    const result = await apis.sign({ request, verify });
-    tx = await ctx.transition(tx, { state: "signed" });
-    if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
-      throw new Error("unexpected solana sign result");
-    }
-    const wire = solana.finalize(messageBytes, [result.signature]);
-    const hash = await solana.broadcast(rpc, wire);
-    wires.set(id, wire);
-    tx = await ctx.transition(tx, {
-      state: "submitted",
-      hash,
+
+  const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    let tx: TrackedTransaction = {
+      id,
+      family: "solana",
+      network,
+      account: account.walletId,
+      hash: undefined,
+      state: "draft",
+      intent,
+      nonce: 0,
+      lastValidBlockHeight: Number(unsigned.lastValidBlockHeight),
       submittedAt: ctx.options.now(),
-    });
-    ctx.track(tx.id, hash);
-    return tx;
-  } catch (error) {
-    const failed = tx.state === "signed" ? "failed" : "rejected";
-    await ctx.transition(tx, { state: failed, error: errorMessage(error) });
-    throw error;
-  }
+      error: undefined,
+    };
+    tx = await ctx.transition(tx, {});
+    try {
+      const result = await apis.sign({ request, verify });
+      tx = await ctx.transition(tx, { state: "signed" });
+      if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
+        throw new Error("unexpected solana sign result");
+      }
+      const wire = solana.finalize(messageBytes, [result.signature]);
+      const hash = await solana.broadcast(rpc, wire);
+      wires.set(id, wire);
+      tx = await ctx.transition(tx, {
+        state: "submitted",
+        hash,
+        submittedAt: ctx.options.now(),
+      });
+      ctx.track(tx.id, hash);
+      return tx;
+    } catch (error) {
+      const failed = tx.state === "signed" ? "failed" : "rejected";
+      await ctx.transition(tx, { state: failed, error: errorMessage(error) });
+      throw error;
+    }
+  };
+
+  return {
+    txId: id,
+    intent,
+    checks: collectChecks(flags),
+    staleReason: async () =>
+      (await solana.blockHeight(rpc)) > unsigned.lastValidBlockHeight
+        ? "blockhash expired — start over"
+        : undefined,
+    submit,
+    release: () => undefined,
+  };
 };
 
 /** Returns the terminal state, `dropped` on blockhash expiry, or `undefined` to keep polling. */

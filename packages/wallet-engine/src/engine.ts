@@ -26,6 +26,7 @@ import type { PayParams, PayResult } from "./payments/pay.ts";
 import { resolvePayment } from "./payments/resolve.ts";
 import { payZap, prepareZap } from "./payments/zap.ts";
 import type { PrepareZapParams, PreparedZap, PayZapOptions } from "./payments/zap.ts";
+import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import type { EngineStore } from "./store/port.ts";
@@ -64,6 +65,7 @@ export type WalletEngine = {
   readonly networks: NetworkController;
   readonly assets: AssetsController;
   readonly transactions: TransactionController;
+  readonly requests: RequestController;
   readonly spark: SparkController;
   readonly accounts: AccountTreeController;
   readonly metaSync: MetaSyncController;
@@ -146,6 +148,21 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
   });
 
+  const requests = new RequestController({
+    transactions,
+    random: options.random,
+    now: options.now,
+    setTimer:
+      options.setTimer ??
+      ((ms, fn) => {
+        const id = setTimeout(() => {
+          void fn();
+        }, ms);
+        return () => clearTimeout(id);
+      }),
+    logger: options.logger,
+  });
+
   const accounts = new AccountTreeController({
     wallet: options.wallet,
     spark: controller,
@@ -195,8 +212,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await networks.init();
       await assets.init();
       await transactions.init();
+      await requests.init();
     } else if (!unlocked && started) {
       started = false;
+      requests.lock();
       transactions.lock();
       assets.lock();
       networks.lock();
@@ -243,6 +262,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     networks,
     assets,
     transactions,
+    requests,
     spark: controller,
     accounts,
     metaSync,
