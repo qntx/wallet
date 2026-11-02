@@ -1,5 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // The gateway contract exports inferred zod schemas, which cannot be annotated; the dts
+    // generator is tsgo, so declarations do not depend on isolatedDeclarations.
+    "isolatedDeclarations": false
+  },
   "include": ["src", "tests", "vite.config.ts"],
   "exclude": ["src/idb", "tests/idb"]
 }

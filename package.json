@@ -10,7 +10,8 @@
   },
   "workspaces": [
     "packages/*",
-    "apps/playground"
+    "apps/playground",
+    "apps/gateway"
   ],
   "type": "module",
   "scripts": {

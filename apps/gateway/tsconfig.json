@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023"],
+    "types": [],
+    "isolatedDeclarations": false
+  },
+  "include": ["src", "tests", "worker-configuration.d.ts", "vite.config.ts"]
+}

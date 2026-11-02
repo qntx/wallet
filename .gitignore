@@ -27,3 +27,6 @@ packages/wallet-chains/.hermes-chains.iife.js
 # Android CMake/Gradle build outputs
 **/.cxx/
 **/android/build/
+
+# Wrangler local state
+.wrangler/

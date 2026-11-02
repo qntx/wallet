@@ -9,10 +9,22 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Added
+
+- `@qntx/wallet-engine/gateway/contract`: the wallet gateway's `/v1` contract (health, JSON-RPC
+  forwarding with per-family method allowlists, the Esplora paths the engine uses) as `zod/mini`
+  schemas, shared by the engine and the gateway. `apps/gateway` (private) is the Cloudflare
+  Workers reference gateway; staging serves testnets only.
+
+### Fixed
+
+- `@qntx/wallet-engine`: the Solana network registry carried malformed genesis hashes, so
+  `NetworkController.addRpc` rejected every custom Solana RPC.
+
 ## [0.5.2] - 2026-11-02
 
-`@qntx/wallet-native` reaches npm. At 0.5.1 only `@qntx/wallet` and `@qntx/wallet-worker` were
-published.
+`@qntx/wallet-native` reaches npm. `@qntx/wallet-engine` and `@qntx/wallet-chains` are still rejected
+(`E404`) until their npm trusted publishers are configured; their latest npm release stays 0.4.0.
 
 ### Fixed
 
@@ -23,9 +35,7 @@ published.
 
 ## [0.5.1] - 2026-11-02
 
-Completes the 0.5.0 release: only `@qntx/wallet` and `@qntx/wallet-worker` reached npm at 0.5.0.
-All five packages publish at 0.5.1; 0.5.0 of `@qntx/wallet-native`, `@qntx/wallet-engine` and
-`@qntx/wallet-chains` does not exist.
+Only `@qntx/wallet` and `@qntx/wallet-worker` reached npm at 0.5.0 and at 0.5.1; see 0.5.2.
 
 ### Fixed
 
