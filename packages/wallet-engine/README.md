@@ -54,6 +54,25 @@ in-memory state.
   group-0 Nostr identity; pull before publish, per-entry last-writer-wins.
 - `engine.backup` — `BackupController` over an injected `CloudStore`.
 
+## React Native hosts
+
+The engine runs on the RN main runtime (Hermes) with no polyfills. Verified on 2026-11-02 in an
+iOS simulator Release build (RN 0.88.0, Expo 58, Hermes) with a hardware-factor wallet: engine
+creation, the gateway's `/v1/networks`, a Sepolia balance read, a send request prepared and
+rejected, signet and Solana devnet reads through the gateway, `payments.parse`, and a lock that
+invalidates open requests.
+
+What the host must provide:
+
+- `random`: a CSPRNG, injected as an option. Hermes has no `crypto.getRandomValues`, so use a native
+  source such as `react-native-quick-crypto`'s `randomBytes`:
+  `random: (n) => new Uint8Array(randomBytes(n))`.
+- Nothing else. `globalThis.crypto`, `crypto.subtle` and `Buffer` are all absent in that run and
+  not needed; `fetch`, `TextEncoder`, `URL`, `AbortSignal.timeout` and `structuredClone` are built in.
+
+A host that already calls `install()` from `react-native-quick-crypto` (as Meowl does) also works;
+the same smoke passes with those globals installed.
+
 ## License
 
 MIT OR Apache-2.0
