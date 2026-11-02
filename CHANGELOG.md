@@ -9,6 +9,15 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Fixed
+
+- `@qntx/wallet-native` 0.5.0 never reached npm: the publish job runs each package's own
+  `build` then `test`, and the package's build did not build `@qntx/wallet`, so its tests could
+  not resolve `@qntx/wallet/nostr`. The build now builds `@qntx/wallet` first. The `files`
+  allowlist no longer carries `!` exclusions (the publish workflow requires every entry to exist);
+  `android/.npmignore` keeps local Gradle and CMake output out, and `check-native-pack` now reads
+  `npm pack`, the packer the publish workflow uses.
+
 ## [0.5.0] - 2026-11-02
 
 The React Native host and the three chain families: `@qntx/wallet-native` ships through the

@@ -2,18 +2,24 @@
 import { spawnSync } from "node:child_process";
 
 /**
- * `bun pm pack --dry-run` prints `packed <size><unit> <path>`; the path is everything after the
- * size.
+ * The file paths of `npm pack --dry-run --json` — npm is what the publish workflow packs with, so
+ * its view of `files` plus nested `.npmignore` files is the one that ships.
  */
 export function packList(output: string): string[] {
-  const files: string[] = [];
-  for (const line of output.split("\n")) {
-    const match = /^packed \S+\s+(.+)$/.exec(line);
-    if (match?.[1] !== undefined) {
-      files.push(match[1]);
-    }
+  const parsed: unknown = JSON.parse(output);
+  const first: unknown = Array.isArray(parsed) ? parsed.at(0) : undefined;
+  if (typeof first !== "object" || first === null || !("files" in first)) {
+    return [];
   }
-  return files;
+  const { files } = first;
+  if (!Array.isArray(files)) {
+    return [];
+  }
+  return files.flatMap((file: unknown) =>
+    typeof file === "object" && file !== null && "path" in file && typeof file.path === "string"
+      ? [file.path]
+      : [],
+  );
 }
 
 const REQUIRED = [
@@ -68,7 +74,7 @@ export function checkNativePack(files: string[]): string[] {
 
 if (import.meta.main) {
   const dir = process.argv[2] ?? ".";
-  const result = spawnSync("bun", ["pm", "pack", "--dry-run"], {
+  const result = spawnSync("npm", ["pack", "--dry-run", "--json"], {
     cwd: dir,
     encoding: "utf8",
   });
@@ -83,7 +89,7 @@ if (import.meta.main) {
       console.log("check-native-pack: tarball contents verified");
     }
   } else {
-    console.error(`check-native-pack: bun pm pack --dry-run failed\n${result.stderr}`);
+    console.error(`check-native-pack: npm pack --dry-run failed\n${result.stderr}`);
     process.exitCode = 1;
   }
 }

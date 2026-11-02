@@ -12,11 +12,7 @@
     "nitrogen",
     "scripts",
     "react-native.config.js",
-    "WalletNative.podspec",
-    "!android/build",
-    "!android/.cxx",
-    "!**/.gradle",
-    "!tests"
+    "WalletNative.podspec"
   ],
   "type": "module",
   "main": "dist/index.mjs",
@@ -32,7 +28,7 @@
     "access": "public"
   },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp run @qntx/wallet#build && vp pack",
     "test": "vp test",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "codegen": "nitrogen",
