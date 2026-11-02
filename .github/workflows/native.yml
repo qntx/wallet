@@ -23,7 +23,7 @@ jobs:
       - run: bun install
       - run: bun install
         working-directory: apps/harness
-      - run: bunx vp run @qntx/wallet#build && bunx vp run @qntx/wallet-chains#build && bunx vp run @qntx/wallet-engine#build && bunx vp run @qntx/wallet-worker#build
+      - run: bunx vp run @qntx/wallet#build && bunx vp run @qntx/wallet-chains#build && bunx vp run @qntx/wallet-engine#build && bunx vp run @qntx/wallet-worker#build && bunx vp run @qntx/wallet-native#build
       - run: bun run typecheck
         working-directory: apps/harness
       - run: bunx expo prebuild --platform ios --no-install
