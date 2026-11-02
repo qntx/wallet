@@ -11,9 +11,9 @@ import type {
   DisplayIntent,
   Options,
   PrepareParams,
-  PreparedSend,
+  PreparedRequest,
+  RequestInput,
   RouteContext,
-  SendParams,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
@@ -23,7 +23,9 @@ import { pollSolana, prepareSolana } from "./solana.ts";
 export type {
   AccountRef,
   PrepareParams,
-  PreparedSend,
+  PreparedRequest,
+  RequestInput,
+  RequestMethod,
   SendParams,
   TrackedTransaction,
   TxState,
@@ -209,6 +211,7 @@ export class TransactionController extends Controller<TransactionControllerState
       options: this.options,
       transition: async (tx, next) => this.transition(tx, next),
       track: (id, hash) => this.track(id, hash),
+      txs: () => this.getState().txs,
       newId: () => newId(this.options.random),
     };
   }
@@ -218,7 +221,7 @@ export class TransactionController extends Controller<TransactionControllerState
    * signing it. Bitcoin outputs it selects stay locked under `requestId` until the returned
    * `release` runs or the broadcast moves them to the transaction.
    */
-  async prepareSend(params: PrepareParams, requestId: string): Promise<PreparedSend> {
+  async prepareSend(params: PrepareParams, requestId: string): Promise<PreparedRequest> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
@@ -238,56 +241,37 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /**
-   * Speed up or cancel a pending/submitted EVM transaction at the same nonce — a fresh signature is
-   * required and a rejection leaves the original untouched.
+   * Internal entry for replacements and CPFP: builds, cross-checks and reserves what the
+   * replacement needs without signing it. The original must be `submitted` or `pending`.
    */
-  async replace(
-    id: string,
-    mode: "speed-up" | "cancel",
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> {
+  async prepareReplacement(
+    input: Exclude<RequestInput, { method: "send" }>,
+    requestId: string,
+  ): Promise<PreparedRequest> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    const old = this.getState().txs[id];
+    const old = this.getState().txs[input.txId];
     if (old === undefined) {
-      throw new Error(`unknown transaction ${id}`);
+      throw new Error(`unknown transaction ${input.txId}`);
+    }
+    if (old.state !== "pending" && old.state !== "submitted") {
+      throw new Error(`cannot ${input.method} a ${old.state} transaction`);
+    }
+    const ctx = this.routeCtx();
+    if (input.method === "cpfp") {
+      if (old.family !== "bitcoin") {
+        throw new Error("cpfp is Bitcoin-only");
+      }
+      return this.bitcoinRoute.prepareCpfp(ctx, old, input.feeRate, requestId);
     }
     if (old.family === "bitcoin") {
-      return this.bitcoinRoute.replace(this.routeCtx(), old, mode, verify);
+      return this.bitcoinRoute.prepareReplace(ctx, old, input.method, requestId);
     }
-    if (old.family !== "evm") {
-      throw new Error("replace is EVM-only in this layer");
+    if (old.family === "evm") {
+      return this.evmRoute.prepareReplace(ctx, old, input.method);
     }
-    if (old.state !== "pending" && old.state !== "submitted") {
-      throw new Error(`cannot replace a ${old.state} transaction`);
-    }
-    return this.evmRoute.replace(this.routeCtx(), old, mode, verify);
-  }
-
-  /**
-   * CPFP — spend an unconfirmed tx's own outputs into a higher-fee child so the package mines.
-   * Bitcoin only; the child is linked via `parentId`.
-   */
-  async bumpChild(
-    id: string,
-    targetRate: number,
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> {
-    if (this.locked) {
-      throw new Error("transactions require an unlocked vault");
-    }
-    const old = this.getState().txs[id];
-    if (old === undefined) {
-      throw new Error(`unknown transaction ${id}`);
-    }
-    if (old.family !== "bitcoin") {
-      throw new Error("bumpChild is Bitcoin-only in this layer");
-    }
-    if (old.state !== "pending" && old.state !== "submitted") {
-      throw new Error(`cannot bump a ${old.state} transaction`);
-    }
-    return this.bitcoinRoute.bumpChild(this.routeCtx(), old, targetRate, verify);
+    throw new Error(`${input.method} is EVM and Bitcoin only`);
   }
 
   private track(id: string, hash: string): void {

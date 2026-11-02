@@ -27,7 +27,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send } from "./send-helpers.ts";
+import { cpfpVia, replaceVia, send } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -425,7 +425,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
     expect(original.state).toBe("submitted");
 
     if (mode === "cpfp") {
-      const child = await ctl.bumpChild(original.id, 10, BVERIFY);
+      const child = await cpfpVia(ctl, original.id, 10, BVERIFY);
       expect(child.state).toBe("submitted");
       rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
       await waitFor(
@@ -445,7 +445,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
       return;
     }
 
-    const bumped = await ctl.replace(original.id, mode, BVERIFY);
+    const bumped = await replaceVia(ctl, original.id, mode, BVERIFY);
     expect(bumped.state).toBe("submitted");
     rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
     await waitFor(

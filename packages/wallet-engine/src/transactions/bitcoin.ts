@@ -22,10 +22,10 @@ import {
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { EngineStore } from "../store/port.ts";
-import { errorMessage, newId } from "./route.ts";
+import { errorMessage, newId, replacementStaleReason } from "./route.ts";
 import type {
   PrepareParams,
-  PreparedSend,
+  PreparedRequest,
   RouteContext,
   SendParams,
   SignParams,
@@ -126,7 +126,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     ctx: RouteContext,
     params: PrepareParams,
     requestId: string,
-  ): Promise<PreparedSend> => {
+  ): Promise<PreparedRequest> => {
     const { account, network, to, amount, fee } = params;
     if (account.kind !== "hd") {
       throw new Error("imported accounts are not yet supported");
@@ -374,6 +374,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
 
     return {
       txId: id0,
+      account,
+      network,
       intent,
       checks: collectChecks(flags),
       staleReason: () => undefined,
@@ -386,7 +388,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
 
   /** Esplora `/tx/:txid/status` → terminal state or `undefined` to keep polling. */
 
-  const finish = async (
+  /**
+   * Builds the approval-ready request for a replacement or CPFP child. `held` are the extra outputs
+   * it spends beyond the original's own inputs; they are reserved in memory here and only locked
+   * persistently, under the new transaction id, once the broadcast succeeds.
+   */
+  const prepareFinish = (
     ctx: RouteContext,
     stash: BtcStash,
     es: ReturnType<NetworkController["esplora"]>,
@@ -395,8 +402,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     psbt: Uint8Array,
     record: NonNullable<TrackedTransaction["btc"]>,
     link: { readonly replaces?: string; readonly parentId?: string },
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> => {
+    requestId: string,
+    held: ReadonlyArray<string>,
+    flags: ReadonlyArray<RequestCheckCode | undefined>,
+  ): PreparedRequest => {
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const txP = Transaction.fromPSBT(psbt);
     const request = {
@@ -412,58 +421,88 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       ),
     );
     const intent = decodeBitcoinPsbt(request, ownScripts);
-    let tx: TrackedTransaction = {
-      id: newId(ctx.options.random),
-      family: "bitcoin",
-      network: old.network,
-      account: old.account,
-      hash: undefined,
-      state: "draft",
-      intent,
-      nonce: 0,
-      btc: record,
-      submittedAt: ctx.options.now(),
-      error: undefined,
-      ...link,
-    };
-    tx = await ctx.transition(tx, {});
-    try {
-      const result = await apis.sign({ request, verify });
-      tx = await ctx.transition(tx, { state: "signed" });
-      if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
-        throw new Error("unexpected bitcoin sign result");
-      }
-      bitcoinUtxos.endTx(old.id, "dropped");
-      const signed = Transaction.fromPSBT(result.signedPsbt);
-      signed.finalize();
-      const raw = signed.extract();
-      const hash = String(await es.post("/tx", hex.encode(raw)));
-      bitcoinUtxos.lock(
-        record.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 0 })),
-        tx.id,
-      );
-      tx = await ctx.transition(tx, { state: "submitted", hash, submittedAt: ctx.options.now() });
-      ctx.track(tx.id, hash);
-      return tx;
-    } catch (error) {
-      const failed = tx.state === "signed" ? "failed" : "rejected";
-      await ctx.transition(tx, { state: failed, error: errorMessage(error) });
-      throw error;
+    const txId = newId(ctx.options.random);
+    for (const key of held) {
+      reserved.set(key, requestId);
     }
+
+    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+      let tx: TrackedTransaction = {
+        id: txId,
+        family: "bitcoin",
+        network: old.network,
+        account: old.account,
+        hash: undefined,
+        state: "draft",
+        intent,
+        nonce: 0,
+        btc: record,
+        submittedAt: ctx.options.now(),
+        error: undefined,
+        ...link,
+      };
+      tx = await ctx.transition(tx, {});
+      try {
+        const result = await apis.sign({ request, verify });
+        tx = await ctx.transition(tx, { state: "signed" });
+        if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
+          throw new Error("unexpected bitcoin sign result");
+        }
+        const signed = Transaction.fromPSBT(result.signedPsbt);
+        signed.finalize();
+        const raw = signed.extract();
+        const hash = String(await es.post("/tx", hex.encode(raw)));
+        if (link.replaces !== undefined) {
+          bitcoinUtxos.endTx(old.id, "dropped");
+        }
+        bitcoinUtxos.lock(
+          record.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 0 })),
+          tx.id,
+        );
+        releaseReservation(requestId);
+        tx = await ctx.transition(tx, {
+          state: "submitted",
+          hash,
+          submittedAt: ctx.options.now(),
+        });
+        ctx.track(tx.id, hash);
+        return tx;
+      } catch (error) {
+        const failed = tx.state === "signed" ? "failed" : "rejected";
+        await ctx.transition(tx, { state: failed, error: errorMessage(error) });
+        throw error;
+      }
+    };
+
+    return {
+      txId,
+      account,
+      network: old.network,
+      target: old.id,
+      intent,
+      checks: collectChecks(flags),
+      staleReason: () =>
+        link.replaces === undefined ? undefined : replacementStaleReason(ctx, old.id),
+      submit,
+      release: () => {
+        releaseReservation(requestId);
+      },
+    };
   };
 
-  const replace = async (
+  const prepareReplace = async (
     ctx: RouteContext,
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> => {
+    requestId: string,
+  ): Promise<PreparedRequest> => {
     const stash = pending.get(old.id);
     const { btc } = old;
     if (stash === undefined || btc === undefined) {
       throw new Error("the original build context is gone — cannot replace after restart");
     }
     const es = ctx.options.networks.esplora(old.network);
+    const independent = ctx.options.networks.independentEsplora(old.network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const { template } = stash;
     const btcAccount = await apis.account({
@@ -478,7 +517,28 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
     const tiers = await feeTiers(es);
     const tierQuote = tiers.find((t) => t.tier === stash.tier) ?? tiers[1];
-    const rate = tierQuote === undefined ? 1 : tierQuote.satPerByte;
+    let rate = tierQuote === undefined ? 1 : tierQuote.satPerByte;
+    const flags: Array<RequestCheckCode | undefined> = [
+      independent.kind === "unavailable" ? "reads-unverified" : undefined,
+    ];
+    let independentRate: number | undefined;
+    if (independent.kind === "available") {
+      try {
+        const others = await feeTiers(independent.client);
+        independentRate = others.find((q) => q.tier === tierQuote?.tier)?.satPerByte;
+        if (independentRate === undefined) {
+          flags.push("reads-unverified");
+        } else {
+          const merged = mergeSatPerByte(rate, independentRate);
+          ({ rate } = merged);
+          flags.push(merged.mismatch ? "fee-mismatch" : undefined);
+        }
+      } catch {
+        flags.push("reads-unverified");
+      }
+    }
+    // The BIP-125 floor (rule 4: pay for the replacement's own relay) applies after the merge, so
+    // a low quote cannot push the replacement under it.
     const newFee = Math.max(btc.fee + btc.vsize, Math.ceil(btc.vsize * rate));
     const [changeAddr] = stash.changeAddresses;
     if (changeAddr === undefined) {
@@ -491,7 +551,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       .filter((o) => !o.own)
       .map((o) => ({ address: o.address, amount: BigInt(o.value) }));
     const usedKeys = new Set(btc.inputs.map((i) => `${i.txid}:${i.vout}`));
-    const spare = stash.allUtxos.filter((u) => !usedKeys.has(`${u.txid}:${u.vout}`));
+    const spare = stash.allUtxos.filter(
+      (u) => !usedKeys.has(`${u.txid}:${u.vout}`) && !isHeld(`${u.txid}:${u.vout}`),
+    );
     const extraInputs: ReturnType<typeof bitcoin.toInputs> = [];
     const extraUtxos: typeof spare = [];
     const feeNeeded = (o: ReadonlyArray<{ amount: bigint }>): bigint =>
@@ -586,26 +648,71 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       fee: newFee,
       feeRate: Math.ceil(newFee / vsize),
     };
-    return finish(ctx, stash, es, account, old, psbt, record, { replaces: old.id }, verify);
+    if (independentRate !== undefined) {
+      flags.push(
+        exceedsNetworkCap(BigInt(record.feeRate), BigInt(Math.ceil(independentRate)))
+          ? "fee-above-network"
+          : undefined,
+      );
+    }
+    return prepareFinish(
+      ctx,
+      stash,
+      es,
+      account,
+      old,
+      psbt,
+      record,
+      { replaces: old.id },
+      requestId,
+      extraUtxos.map((u) => `${u.txid}:${u.vout}`),
+      flags,
+    );
   };
 
-  const bumpChild = async (
+  const prepareCpfp = async (
     ctx: RouteContext,
     old: TrackedTransaction,
     targetRate: number,
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> => {
+    requestId: string,
+  ): Promise<PreparedRequest> => {
     const stash = pending.get(old.id);
     const { btc } = old;
     if (stash === undefined || btc === undefined) {
       throw new Error("the parent build context is gone — cannot bump after restart");
     }
     const es = ctx.options.networks.esplora(old.network);
+    const independent = ctx.options.networks.independentEsplora(old.network);
     const { template } = stash;
     const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
     const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
     if (own.length === 0) {
       throw new Error("parent has no own outputs to bump");
+    }
+    const parentKeys = own.map((o) => `${old.hash ?? ""}:${o.vout}`);
+    if (parentKeys.some((key) => isHeld(key))) {
+      throw new Error("the parent's outputs are already reserved by another request");
+    }
+    const flags: Array<RequestCheckCode | undefined> = [
+      independent.kind === "unavailable" ? "reads-unverified" : undefined,
+    ];
+    if (independent.kind === "available") {
+      try {
+        const others = await feeTiers(independent.client);
+        const fastest = others.find((q) => q.tier === "fast");
+        flags.push(
+          fastest === undefined
+            ? "reads-unverified"
+            : exceedsNetworkCap(
+                  BigInt(Math.ceil(targetRate)),
+                  BigInt(Math.ceil(fastest.satPerByte)),
+                )
+              ? "fee-above-network"
+              : undefined,
+        );
+      } catch {
+        flags.push("reads-unverified");
+      }
     }
     const childInputs = bitcoin.toInputs(
       own.map((o) => ({
@@ -643,9 +750,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       net.params,
     );
     const record = {
-      inputs: own.map((o, i) => ({
+      inputs: own.map((o) => ({
         txid: old.hash ?? "",
-        vout: i,
+        vout: o.vout,
         value: o.value,
         address: o.address,
       })),
@@ -654,7 +761,19 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       fee: childFee,
       feeRate: Math.ceil(childFee / vsize),
     };
-    return finish(ctx, stash, es, account, old, psbt, record, { parentId: old.id }, verify);
+    return prepareFinish(
+      ctx,
+      stash,
+      es,
+      account,
+      old,
+      psbt,
+      record,
+      { parentId: old.id },
+      requestId,
+      parentKeys,
+      flags,
+    );
   };
 
   const pollAndRelease = async (
@@ -671,8 +790,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
   return {
     prepare,
     poll: pollAndRelease,
-    replace,
-    bumpChild,
+    prepareReplace,
+    prepareCpfp,
     unlock: async (store) => bitcoinUtxos.unlock(store),
     lock: () => {
       reserved.clear();
@@ -686,20 +805,20 @@ export type BitcoinRoute = {
     ctx: RouteContext,
     params: PrepareParams,
     requestId: string,
-  ) => Promise<PreparedSend>;
+  ) => Promise<PreparedRequest>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
-  readonly replace: (
+  readonly prepareReplace: (
     ctx: RouteContext,
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
-    verify: SendParams["verify"],
-  ) => Promise<TrackedTransaction>;
+    requestId: string,
+  ) => Promise<PreparedRequest>;
   readonly unlock: (store: EngineStore) => Promise<void>;
   readonly lock: () => void;
-  readonly bumpChild: (
+  readonly prepareCpfp: (
     ctx: RouteContext,
     old: TrackedTransaction,
     targetRate: number,
-    verify: SendParams["verify"],
-  ) => Promise<TrackedTransaction>;
+    requestId: string,
+  ) => Promise<PreparedRequest>;
 };

@@ -7,7 +7,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send } from "./send-helpers.ts";
+import { replaceVia, send } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -185,7 +185,7 @@ describe("TransactionController.replace", () => {
     await ctl.init();
     const original = await send(ctl, SEND);
     expect(original.state).toBe("submitted");
-    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
     expect(bumped.state).toBe("submitted");
     expect(bumped.replaces).toBe(original.id);
     expect(bumped.nonce).toBe(original.nonce);
@@ -205,7 +205,7 @@ describe("TransactionController.replace", () => {
     const ctl = ctlWith(recordCancelSign(seen));
     await ctl.init();
     const original = await send(ctl, SEND);
-    const cancelled = await ctl.replace(original.id, "cancel", SEND.verify);
+    const cancelled = await replaceVia(ctl, original.id, "cancel", SEND.verify);
     expect(cancelled.replaces).toBe(original.id);
     const last = seen.at(-1)!;
     expect(last.to).toBe(ADDR);
@@ -224,7 +224,7 @@ describe("TransactionController.replace", () => {
     const [original] = Object.values(ctl.getState().txs);
     expect(original?.state).toBe("rejected");
     expect(calls).toBe(1);
-    await expect(ctl.replace("tx-missing", "speed-up", SEND.verify)).rejects.toThrow(
+    await expect(replaceVia(ctl, "tx-missing", "speed-up", SEND.verify)).rejects.toThrow(
       "unknown transaction",
     );
   });
@@ -234,8 +234,8 @@ describe("TransactionController.replace", () => {
     await ctl.init();
     await expect(send(ctl, SEND)).rejects.toThrow("wrong-password");
     const [original] = Object.values(ctl.getState().txs);
-    await expect(ctl.replace(original!.id, "cancel", SEND.verify)).rejects.toThrow(
-      "cannot replace",
+    await expect(replaceVia(ctl, original!.id, "cancel", SEND.verify)).rejects.toThrow(
+      "cannot cancel a rejected",
     );
   });
 });
@@ -251,7 +251,7 @@ describe("TransactionController.replace — state resolution", () => {
     );
     await ctl.init();
     const original = await send(ctl, SEND);
-    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
     await Promise.all(
       timers.map(async (fn) => {
         await fn();
@@ -272,7 +272,7 @@ describe("TransactionController.replace — state resolution", () => {
     );
     await ctl.init();
     const original = await send(ctl, SEND);
-    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
     await Promise.all(
       timers.map(async (fn) => {
         await fn();
@@ -306,7 +306,7 @@ describe("TransactionController.replace — state resolution", () => {
     );
     await ctl.init();
     const original = await send(ctl, SEND);
-    const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
+    const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
     const next = await send(ctl, SEND);
     expect(bumped.nonce).toBe(original.nonce);
     expect(next.nonce).toBe(original.nonce + 1);

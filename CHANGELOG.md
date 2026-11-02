@@ -11,6 +11,14 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Changed
 
+- **BREAKING** `@qntx/wallet-engine`: `transactions.replace` and `transactions.bumpChild` are
+  removed, and `requests.prepare` now takes a discriminated input: `{ method: "send", ... }`,
+  `{ method: "speed-up" | "cancel", txId }` or `{ method: "cpfp", txId, feeRate }`.
+  `requests.approve(id, method, verify)` takes the request's own method. A `PendingRequest` carries
+  its `target` (the transaction being replaced or accelerated). Replacement fees are cross-checked
+  and merged like a send's, and the replacement floor (+10%, BIP-125 rule 4) is applied after the
+  merge; the original must still be unconfirmed at approval, and a transaction can have one
+  unfinished replacement request at a time. `fee-exceeds-amount` applies to sends only.
 - **BREAKING** `@qntx/wallet-engine`: `transactions.send` is removed. Internal sends go through the
   request pipeline: `engine.requests.prepare(params)` builds, estimates and cross-checks without
   signing and returns a `PendingRequest`; `engine.requests.approve(id, "send", verify)` signs and

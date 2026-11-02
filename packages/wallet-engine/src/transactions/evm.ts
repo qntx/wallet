@@ -10,10 +10,10 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
-import { errorMessage, newId } from "./route.ts";
+import { errorMessage, newId, replacementStaleReason } from "./route.ts";
 import type {
   PrepareParams,
-  PreparedSend,
+  PreparedRequest,
   RouteContext,
   SendParams,
   TrackedTransaction,
@@ -30,14 +30,13 @@ type PendingBuild = {
 const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
 export type EvmRoute = {
-  readonly prepare: (ctx: RouteContext, params: PrepareParams) => Promise<PreparedSend>;
+  readonly prepare: (ctx: RouteContext, params: PrepareParams) => Promise<PreparedRequest>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
-  readonly replace: (
+  readonly prepareReplace: (
     ctx: RouteContext,
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
-    verify: SendParams["verify"],
-  ) => Promise<TrackedTransaction>;
+  ) => Promise<PreparedRequest>;
 };
 
 /** Per-controller route — the adapter's nonce queue and the replace stash are engine state. */
@@ -46,7 +45,7 @@ export const createEvmRoute = (): EvmRoute => {
   /** In-memory build context keyed by tx id — the inputs a replace rebuilds from. */
   const pending = new Map<string, PendingBuild>();
 
-  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedSend> => {
+  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedRequest> => {
     const { account, network, to, amount, fee } = params;
     const { networks } = ctx.options;
     if (account.kind !== "hd") {
@@ -169,6 +168,8 @@ export const createEvmRoute = (): EvmRoute => {
 
     return {
       txId,
+      account,
+      network,
       intent,
       checks: collectChecks(flags),
       staleReason: () =>
@@ -182,27 +183,49 @@ export const createEvmRoute = (): EvmRoute => {
 
   /**
    * EVM speed-up/cancel — replaces a pending tx at the same nonce with a bumped fee (cancel = a
-   * 0-value transfer to self). The new tx carries `replaces` and needs a fresh signature; a
-   * rejected one never reaches the network and leaves the original.
+   * 0-value transfer to self). The fee is cross-checked and merged first, then the replacement
+   * floor (+10% on both fee fields, never below the merged estimate) is applied on top, so a low
+   * quote can never push the replacement under the node's replacement rule. A rejected signature
+   * never reaches the network and leaves the original.
    */
-  const replace = async (
+  const prepareReplace = async (
     ctx: RouteContext,
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction> => {
+  ): Promise<PreparedRequest> => {
     const stash = pending.get(old.id);
     if (stash === undefined) {
       throw new Error("the original build context is gone — cannot replace after restart");
     }
     const { networks } = ctx.options;
     const client = networks.client(old.network);
+    const independent = networks.independentClient(old.network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const { tier } = stash.quote;
     const estimates = await evm.estimateFee(client);
-    const estimate = estimates.find((q) => q.tier === tier) ?? estimates[1];
+    let estimate = estimates.find((q) => q.tier === tier) ?? estimates[1];
     if (estimate === undefined) {
       throw new Error("no fee quote");
+    }
+    const flags: Array<RequestCheckCode | undefined> = [
+      independent.kind === "unavailable" ? "reads-unverified" : undefined,
+    ];
+    let independentCap: bigint | undefined;
+    if (independent.kind === "available") {
+      try {
+        const others = await evm.estimateFee(independent.client);
+        const other = others.find((q) => q.tier === estimate?.tier);
+        if (other === undefined) {
+          flags.push("reads-unverified");
+        } else {
+          const merged = mergeEvmQuote(estimate, other);
+          ({ quote: estimate } = merged);
+          independentCap = other.maxFeePerGas;
+          flags.push(merged.mismatch ? "fee-mismatch" : undefined);
+        }
+      } catch {
+        flags.push("reads-unverified");
+      }
     }
     const oldFee = stash.unsigned;
     const bumpedFee = bump(oldFee.maxFeePerGas ?? oldFee.gasPrice ?? 0n);
@@ -217,6 +240,9 @@ export const createEvmRoute = (): EvmRoute => {
       priorityBump === undefined
         ? { maxFeePerGas }
         : { maxFeePerGas, maxPriorityFeePerGas: priorityBump };
+    if (independentCap !== undefined) {
+      flags.push(exceedsNetworkCap(maxFeePerGas, independentCap) ? "fee-above-network" : undefined);
+    }
     const unsigned =
       mode === "cancel"
         ? {
@@ -230,45 +256,60 @@ export const createEvmRoute = (): EvmRoute => {
         : { ...stash.unsigned, ...feeFields };
     const request = evm.toSignRequest(unsigned, stash.request.account, stash.chainId);
     const intent = decodeEvm(request);
-    const id = newId(ctx.options.random);
-    pending.set(id, { unsigned, request, quote: stash.quote, chainId: stash.chainId });
-    let tx: TrackedTransaction = {
-      id,
-      family: "evm",
-      network: old.network,
-      account: old.account,
-      hash: undefined,
-      state: "draft",
-      intent,
-      nonce: old.nonce,
-      replaces: old.id,
-      submittedAt: ctx.options.now(),
-      error: undefined,
-    };
-    tx = await ctx.transition(tx, {});
-    let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
-    try {
-      const result = await apis.sign({ request, verify });
-      tx = await ctx.transition(tx, { state: "signed" });
-      signed = result;
-    } catch (error) {
-      await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
-      throw error;
-    }
-    try {
-      const raw = evm.finalize(unsigned, signed);
-      const hash = await evm.broadcast(client, raw);
-      tx = await ctx.transition(tx, {
-        state: "submitted",
-        hash,
+    const txId = newId(ctx.options.random);
+
+    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+      pending.set(txId, { unsigned, request, quote: stash.quote, chainId: stash.chainId });
+      let tx: TrackedTransaction = {
+        id: txId,
+        family: "evm",
+        network: old.network,
+        account: old.account,
+        hash: undefined,
+        state: "draft",
+        intent,
+        nonce: old.nonce,
+        replaces: old.id,
         submittedAt: ctx.options.now(),
-      });
-      ctx.track(tx.id, hash);
-      return tx;
-    } catch (error) {
-      await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
-      throw error;
-    }
+        error: undefined,
+      };
+      tx = await ctx.transition(tx, {});
+      let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
+      try {
+        const result = await apis.sign({ request, verify });
+        tx = await ctx.transition(tx, { state: "signed" });
+        signed = result;
+      } catch (error) {
+        await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
+        throw error;
+      }
+      try {
+        const raw = evm.finalize(unsigned, signed);
+        const hash = await evm.broadcast(client, raw);
+        tx = await ctx.transition(tx, {
+          state: "submitted",
+          hash,
+          submittedAt: ctx.options.now(),
+        });
+        ctx.track(tx.id, hash);
+        return tx;
+      } catch (error) {
+        await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
+        throw error;
+      }
+    };
+
+    return {
+      txId,
+      account: stash.request.account,
+      network: old.network,
+      target: old.id,
+      intent,
+      checks: collectChecks(flags),
+      staleReason: () => replacementStaleReason(ctx, old.id),
+      submit,
+      release: () => undefined,
+    };
   };
 
   /** Returns the terminal state once the receipt lands, or `undefined` to keep polling. */
@@ -284,5 +325,5 @@ export const createEvmRoute = (): EvmRoute => {
     return state === "finalized" ? "confirmed" : state;
   };
 
-  return { prepare, poll, replace };
+  return { prepare, poll, prepareReplace };
 };

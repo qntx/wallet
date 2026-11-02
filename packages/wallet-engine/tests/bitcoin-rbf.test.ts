@@ -6,7 +6,7 @@ import { scripthash } from "../src/chains/bitcoin-scan.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { createBitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { RouteContext, TrackedTransaction, SignParams } from "../src/transactions/route.ts";
-import { routeSend } from "./send-helpers.ts";
+import { routeCpfp, routeReplace, routeSend } from "./send-helpers.ts";
 
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
 const PUB = HD.deriveChild(0).deriveChild(0);
@@ -60,6 +60,10 @@ const esploraStub = {
 
 const signedCalls: SignParams[] = [];
 let route = createBitcoinRoute();
+let independentMode:
+  | { kind: "not-needed" }
+  | { kind: "unavailable" }
+  | { kind: "available"; client: typeof esploraStub } = { kind: "not-needed" };
 let id = 0;
 const nextId = (): string => {
   id += 1;
@@ -81,7 +85,7 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
   options: {
     networks: {
       esplora: () => esploraStub,
-      independentEsplora: () => ({ kind: "not-needed" }),
+      independentEsplora: () => independentMode,
     } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
@@ -123,6 +127,7 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
     return Promise.resolve(out);
   },
   track: () => {},
+  txs: () => ({}),
   newId: nextId,
 });
 
@@ -140,13 +145,14 @@ const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransacti
 
 describe("bitcoin rbf", () => {
   beforeEach(() => {
+    independentMode = { kind: "not-needed" };
     route = createBitcoinRoute();
   });
 
   it("cancel sends all inputs to the next change address", async () => {
     const c = ctx();
     const original = await send(c);
-    const cancelled = await route.replace(c, original, "cancel", {
+    const cancelled = await routeReplace(route, c, original, "cancel", {
       kind: "password",
       password: "pw",
     });
@@ -162,7 +168,7 @@ describe("bitcoin rbf", () => {
   it("speed-up bumps the fee (BIP-125 rule 4: fee + vsize) and keeps payee outputs", async () => {
     const c = ctx();
     const original = await send(c);
-    const bumped = await route.replace(c, original, "speed-up", {
+    const bumped = await routeReplace(route, c, original, "speed-up", {
       kind: "password",
       password: "pw",
     });
@@ -176,7 +182,7 @@ describe("bitcoin rbf", () => {
   it("bumpChild builds a CPFP child spending our own outputs", async () => {
     const c = ctx();
     const parent = await send(c);
-    const child = await route.bumpChild(c, parent, 10, { kind: "password", password: "pw" });
+    const child = await routeCpfp(route, c, parent, 10, { kind: "password", password: "pw" });
     expect(child.parentId).toBe(parent.id);
     const childBtc = btcOf(child);
     const parentBtc = btcOf(parent);
@@ -190,7 +196,7 @@ describe("bitcoin rbf", () => {
   it("shrinks only the change output when the bump fits", async () => {
     const c = ctx();
     const original = await send(c);
-    const bumped = await route.replace(c, original, "speed-up", {
+    const bumped = await routeReplace(route, c, original, "speed-up", {
       kind: "password",
       password: "pw",
     });
@@ -208,7 +214,7 @@ describe("bitcoin rbf", () => {
     ]);
     const c = ctx();
     const original = await send(c, 49_400n);
-    const bumped = await route.replace(c, original, "speed-up", {
+    const bumped = await routeReplace(route, c, original, "speed-up", {
       kind: "password",
       password: "pw",
     });
@@ -228,7 +234,7 @@ describe("bitcoin rbf", () => {
     });
     const before = signedCalls.length;
     await expect(
-      route.replace(c, original, "speed-up", { kind: "password", password: "pw" }),
+      routeReplace(route, c, original, "speed-up", { kind: "password", password: "pw" }),
     ).rejects.toThrow("insufficient");
     expect(signedCalls).toHaveLength(before);
   });
@@ -328,6 +334,76 @@ describe("bitcoin rbf", () => {
       expect(tx.state).toBe("submitted");
       prepared.release();
       await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
+    });
+  });
+
+  describe("request-time checks and reservations", () => {
+    const verify = { kind: "password" as const, password: "pw" };
+    const independentFees = (fast: number) => ({
+      get: async (u: string) =>
+        Promise.resolve(
+          u === "/fee-estimates" ? { "1": fast, "3": fast, "6": fast, "144": 1 } : [],
+        ),
+      post: async () => Promise.resolve(TXID(9)),
+    });
+
+    it("cpfp records fee-above-network past 2x the independent fastest estimate", async () => {
+      const c = ctx();
+      const parent = await send(c);
+      independentMode = { kind: "available", client: independentFees(5) };
+      const high = await route.prepareCpfp(c, parent, 11, "req-high");
+      expect(high.checks).toContain("fee-above-network");
+      high.release();
+      const ok = await route.prepareCpfp(c, parent, 10, "req-ok");
+      expect(ok.checks).not.toContain("fee-above-network");
+      expect(ok.target).toBe(parent.id);
+    });
+
+    it("cpfp without an independent endpoint records reads-unverified", async () => {
+      const c = ctx();
+      const parent = await send(c);
+      independentMode = { kind: "unavailable" };
+      const prepared = await route.prepareCpfp(c, parent, 10, "req-1");
+      expect(prepared.checks).toStrictEqual(["reads-unverified"]);
+    });
+
+    it("cpfp reserves the parent's outputs until released; a lock clears the reservation", async () => {
+      const c = ctx();
+      const parent = await send(c);
+      const first = await route.prepareCpfp(c, parent, 10, "req-1");
+      await expect(route.prepareCpfp(c, parent, 10, "req-2")).rejects.toThrow("already reserved");
+      first.release();
+      await route.prepareCpfp(c, parent, 10, "req-3");
+      route.lock();
+      await expect(route.prepareCpfp(c, parent, 10, "req-4")).resolves.toBeDefined();
+    });
+
+    it("a replacement reserves its extra inputs in memory; release frees them", async () => {
+      setUtxos([
+        { txid: TXID(1), vout: 0, value: 50_000 },
+        { txid: TXID(2), vout: 0, value: 30_000 },
+      ]);
+      const c = ctx();
+      const original = await send(c, 49_400n);
+      const first = await route.prepareReplace(c, original, "speed-up", "req-1");
+      const second = await route
+        .prepareReplace(c, original, "speed-up", "req-2")
+        .catch((error: unknown) => error);
+      expect(second).toBeInstanceOf(Error);
+      first.release();
+      const third = await route.prepareReplace(c, original, "speed-up", "req-3");
+      expect(third.target).toBe(original.id);
+    });
+
+    it("a replacement's fee floor applies after the independent merge", async () => {
+      const c = ctx();
+      const original = await send(c);
+      independentMode = { kind: "available", client: independentFees(1) };
+      const prepared = await route.prepareReplace(c, original, "speed-up", "req-1");
+      expect(prepared.checks).toContain("fee-mismatch");
+      const bumped = await prepared.submit(verify);
+      const old = btcOf(original);
+      expect(btcOf(bumped).fee).toBeGreaterThanOrEqual(old.fee + old.vsize);
     });
   });
 });

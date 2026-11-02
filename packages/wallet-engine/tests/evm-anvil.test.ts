@@ -17,7 +17,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send } from "./send-helpers.ts";
+import { replaceVia, send } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
 
@@ -345,7 +345,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
         verify: VERIFY,
       });
       expect(original.state).toBe("submitted");
-      const bumped = await ctl.replace(original.id, "speed-up", VERIFY);
+      const bumped = await replaceVia(ctl, original.id, "speed-up", VERIFY);
       expect(bumped.state).toBe("submitted");
       expect(bumped.nonce).toBe(original.nonce);
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
@@ -378,7 +378,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
         fee: "slow",
         verify: VERIFY,
       });
-      const cancelled = await ctl.replace(original.id, "cancel", VERIFY);
+      const cancelled = await replaceVia(ctl, original.id, "cancel", VERIFY);
       expect(cancelled.state).toBe("submitted");
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
       await Promise.all(
