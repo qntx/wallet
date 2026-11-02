@@ -15,6 +15,7 @@ import type { PayInput } from "../src/requests/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
+import { bookDeps } from "./send-helpers.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
 
 const NOW = 1_800_000_000_000;
@@ -78,6 +79,7 @@ function world() {
   let counter = 0;
   const requests = new RequestController({
     transactions: {} as TransactionController,
+    ...bookDeps(),
     spark,
     fetch: fetchImpl,
     random: (n) => {

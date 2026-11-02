@@ -1,5 +1,7 @@
+import { AddressBookController } from "../src/addresses/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { BitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type { RouteContext, SendParams, TrackedTransaction } from "../src/transactions/route.ts";
@@ -14,6 +16,30 @@ const noSpark = ((): SparkController => {
   }
   throw new Error("unreachable");
 })();
+
+/** An address book and the store factory a `RequestController` needs, over one shared backing. */
+export const bookDeps = (): {
+  addressBook: AddressBookController;
+  openStore: () => Promise<ReturnType<typeof createMemoryEngineStore>>;
+} => {
+  const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
+  const openStore = async () => {
+    await Promise.resolve();
+    return createMemoryEngineStore(backing);
+  };
+  let n = 0;
+  const next = (): number => {
+    n += 1;
+    return n % 251;
+  };
+  const addressBook = new AddressBookController({
+    openStore,
+    random: (len) => new Uint8Array(len).fill(next()),
+    now: () => 0,
+    logger: { warn: () => undefined },
+  });
+  return { addressBook, openStore };
+};
 
 let counter = 0;
 const nextCounter = (): number => {
@@ -32,6 +58,7 @@ export const requestsFor = async (
   }
   const created = new RequestController({
     transactions,
+    ...bookDeps(),
     spark: noSpark,
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter() % 251),

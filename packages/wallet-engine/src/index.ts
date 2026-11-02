@@ -6,6 +6,10 @@ export { EngineStoreError } from "./errors.ts";
 export type { EngineErrorCode } from "./errors.ts";
 export type { EngineCollection, EngineStore } from "./store/port.ts";
 export { createMemoryEngineStore } from "./store/memory.ts";
+export { AddressBookController } from "./addresses/controller.ts";
+export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";
+export { AddressBookError } from "./addresses/errors.ts";
+export type { AddressBookErrorCategory } from "./addresses/errors.ts";
 export { RequestController, REQUEST_TTL_MS } from "./requests/controller.ts";
 export type {
   PayInput,
@@ -15,6 +19,9 @@ export type {
   RequestMethod,
   RequestControllerState,
   RequestStage,
+  RiskFinding,
+  SignLogEntry,
+  SignLogOutcome,
 } from "./requests/controller.ts";
 export { createWalletEngine } from "./engine.ts";
 export type { EngineOptions, WalletEngine } from "./engine.ts";
