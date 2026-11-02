@@ -7,6 +7,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { send } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -96,7 +97,7 @@ describe("TransactionController", () => {
       ),
     });
     await ctl.init();
-    const tx = await ctl.send(SEND);
+    const tx = await send(ctl, SEND);
     expect(tx.state).toBe("submitted");
     expect(tx.intent?.summary).toBe("transfer");
     expect(timers).toHaveLength(1);
@@ -124,7 +125,7 @@ describe("TransactionController", () => {
       chains: apis(async () => Promise.reject(new Error("wrong-password"))),
     });
     await ctl.init();
-    await expect(ctl.send(SEND)).rejects.toThrow("wrong-password");
+    await expect(send(ctl, SEND)).rejects.toThrow("wrong-password");
     expect(broadcast).toBe(false);
     expect(Object.values(ctl.getState().txs)[0]?.state).toBe("rejected");
   });

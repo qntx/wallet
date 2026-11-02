@@ -1,10 +1,12 @@
 import { HDKey } from "@scure/bip32";
 import { NETWORK, p2wpkh, Transaction } from "@scure/btc-signer";
-import { describe, expect, it } from "vite-plus/test";
+import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { scripthash } from "../src/chains/bitcoin-scan.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { createBitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { RouteContext, TrackedTransaction, SignParams } from "../src/transactions/route.ts";
+import { routeSend } from "./send-helpers.ts";
 
 const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
 const PUB = HD.deriveChild(0).deriveChild(0);
@@ -57,7 +59,7 @@ const esploraStub = {
 };
 
 const signedCalls: SignParams[] = [];
-const route = createBitcoinRoute();
+let route = createBitcoinRoute();
 let id = 0;
 const nextId = (): string => {
   id += 1;
@@ -77,7 +79,10 @@ const valueOf = (o: { readonly value: number } | undefined): number => {
 };
 const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
   options: {
-    networks: { esplora: () => esploraStub } as never,
+    networks: {
+      esplora: () => esploraStub,
+      independentEsplora: () => ({ kind: "not-needed" }),
+    } as never,
     wallet: {} as never,
     openStore: async () => Promise.resolve({} as never),
     random: (n: number) => new Uint8Array(n).fill(0xaa),
@@ -123,7 +128,7 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
 
 const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransaction> => {
   setUtxos(DEFAULT_UTXOS);
-  return route.send(c, {
+  return routeSend(route, c, {
     account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
     network: "bip122:000000000019d6689c085ae165831e93",
     to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
@@ -134,6 +139,10 @@ const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransacti
 };
 
 describe("bitcoin rbf", () => {
+  beforeEach(() => {
+    route = createBitcoinRoute();
+  });
+
   it("cancel sends all inputs to the next change address", async () => {
     const c = ctx();
     const original = await send(c);
@@ -209,7 +218,7 @@ describe("bitcoin rbf", () => {
   it("fails before signing when the bump is unfundable", async () => {
     setUtxos([{ txid: TXID(1), vout: 0, value: 6000 }]);
     const c = ctx();
-    const original = await route.send(c, {
+    const original = await routeSend(route, c, {
       account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
       network: "bip122:000000000019d6689c085ae165831e93",
       to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
@@ -222,5 +231,103 @@ describe("bitcoin rbf", () => {
       route.replace(c, original, "speed-up", { kind: "password", password: "pw" }),
     ).rejects.toThrow("insufficient");
     expect(signedCalls).toHaveLength(before);
+  });
+
+  describe("utxo reservation", () => {
+    const params = {
+      account: {
+        kind: "hd" as const,
+        walletId: "w",
+        groupIndex: 0,
+        template: "btc.bip84" as const,
+      },
+      network: "bip122:000000000019d6689c085ae165831e93",
+      to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+      amount: 10_000n,
+      fee: "slow" as const,
+    };
+    const verify = { kind: "password" as const, password: "pw" };
+
+    it("prepare locks the selected outputs under the request id; release frees them", async () => {
+      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      const c = ctx();
+      const first = await route.prepare(c, params, "req-1");
+      await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
+      first.release();
+      await expect(route.prepare(c, params, "req-3")).resolves.toBeDefined();
+    });
+
+    it("a reservation is memory only: after a lock and a fresh unlock the outputs are selectable again", async () => {
+      const store = createMemoryEngineStore();
+      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      const c = ctx();
+      await route.unlock(store);
+      await route.prepare(c, params, "req-1");
+      route.lock();
+
+      route = createBitcoinRoute();
+      await route.unlock(store);
+      await expect(route.prepare(c, params, "req-2")).resolves.toBeDefined();
+      await expect(store.collection("btc-utxos").get("state")).resolves.toBeUndefined();
+    });
+
+    it("a broadcast persists the lock under the transaction id", async () => {
+      const store = createMemoryEngineStore();
+      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      const c = ctx();
+      await route.unlock(store);
+      const prepared = await route.prepare(c, params, "req-1");
+      const tx = await prepared.submit(verify);
+      await new Promise((resolve) => {
+        setTimeout(resolve);
+      });
+      const raw = await store.collection("btc-utxos").get("state");
+      const saved = JSON.parse(new TextDecoder().decode(raw)) as Record<
+        string,
+        { status: string; txId: string }
+      >;
+      expect(Object.values(saved).map((u) => [u.status, u.txId])).toStrictEqual([
+        ["locked", tx.id],
+      ]);
+
+      route.lock();
+      route = createBitcoinRoute();
+      await route.unlock(store);
+      await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
+    });
+
+    it("concurrent prepares never select the same output", async () => {
+      setUtxos([
+        { txid: TXID(1), vout: 0, value: 50_000 },
+        { txid: TXID(2), vout: 0, value: 50_000 },
+      ]);
+      const c = ctx();
+      const [a, b] = await Promise.all([
+        route.prepare(c, params, "req-1"),
+        route.prepare(c, params, "req-2"),
+      ]);
+      await expect(route.prepare(c, params, "req-3")).rejects.toThrow("insufficient");
+      a.release();
+      b.release();
+      const again = await route.prepare(c, params, "req-4");
+      again.release();
+
+      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      const results = await Promise.allSettled([
+        route.prepare(c, params, "req-5"),
+        route.prepare(c, params, "req-6"),
+      ]);
+      expect(results.map((r) => r.status).toSorted()).toStrictEqual(["fulfilled", "rejected"]);
+    });
+
+    it("a broadcast moves the lock to the transaction: the outputs stay reserved", async () => {
+      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      const c = ctx();
+      const prepared = await route.prepare(c, params, "req-1");
+      const tx = await prepared.submit(verify);
+      expect(tx.state).toBe("submitted");
+      prepared.release();
+      await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
+    });
   });
 });

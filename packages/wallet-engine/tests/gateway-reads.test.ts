@@ -13,6 +13,7 @@ import {
   solanaRpcRequest,
 } from "../src/gateway/contract/index.ts";
 import { NetworkController } from "../src/networks/controller.ts";
+import type { Independent } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 
 const GATEWAY = "https://gw.test";
@@ -128,6 +129,13 @@ function defaultAnswer(url: URL, body: string, via: "gateway" | "host" = "gatewa
   }
   return rpcResult(via === "gateway" ? "from-gateway" : "from-host");
 }
+
+const available = <T>(independent: Independent<T>): T => {
+  if (independent.kind !== "available") {
+    throw new Error(`expected an available independent client, got ${independent.kind}`);
+  }
+  return independent.client;
+};
 
 const openStore = async () => Promise.resolve(createMemoryEngineStore());
 
@@ -298,5 +306,57 @@ describe("engine reads through the gateway", () => {
     await n.init();
     expect(n.endpoints(SEPOLIA)).toStrictEqual([`${HOST}/evm`]);
     expect(w.gatewayCalls).toHaveLength(0);
+  });
+});
+
+describe("independent clients", () => {
+  it("are not needed when the gateway is not the first endpoint", async () => {
+    const w = world();
+    const { n } = controller(w);
+    await n.init();
+    expect(n.independentClient(BASE_SEPOLIA)).toStrictEqual({ kind: "not-needed" });
+    n.lock();
+    expect(n.independentSolanaRpc(DEVNET)).toStrictEqual({ kind: "not-needed" });
+    await n.init();
+    await n.addRpc(SEPOLIA, "https://custom.test/rpc");
+    expect(n.independentClient(SEPOLIA)).toStrictEqual({ kind: "not-needed" });
+    expect(controller(w).n.independentEsplora(SIGNET)).toStrictEqual({ kind: "not-needed" });
+  });
+
+  it("are unavailable when a gateway-served network has no host endpoint", async () => {
+    const w = world();
+    const { n } = controller(w, { rpc: {} });
+    await n.init();
+    expect(n.independentClient(SEPOLIA)).toStrictEqual({ kind: "unavailable" });
+    expect(n.independentSolanaRpc(DEVNET)).toStrictEqual({ kind: "unavailable" });
+    expect(n.independentEsplora(SIGNET)).toStrictEqual({ kind: "unavailable" });
+  });
+
+  it("read only from host endpoints and never send the install id", async () => {
+    const w = world();
+    const { n } = controller(w);
+    await n.init();
+    const evm = n.independentClient(SEPOLIA);
+    const sol = n.independentSolanaRpc(DEVNET);
+    const btc = n.independentEsplora(SIGNET);
+    await available(evm).getChainId();
+    await available(sol).call("getSlot", []);
+    await available(btc).get("/block-height/0");
+    const afterInit = w.gatewayCalls.filter((c) => new URL(c.url).pathname !== networksPath);
+    expect(afterInit).toHaveLength(0);
+    expect(w.hostCalls.map((c) => c.url)).toStrictEqual([
+      `${HOST}/evm`,
+      `${HOST}/sol`,
+      `${HOST}/btc/block-height/0`,
+    ]);
+    expect(w.hostCalls.every((c) => !c.headers.has(INSTALL_ID_HEADER))).toBe(true);
+  });
+
+  it("are not needed after lock, when the gateway list is forgotten", async () => {
+    const w = world();
+    const { n } = controller(w);
+    await n.init();
+    n.lock();
+    expect(n.independentClient(SEPOLIA)).toStrictEqual({ kind: "not-needed" });
   });
 });

@@ -27,6 +27,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { send } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -413,7 +414,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
     );
 
     const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
-    const original = await ctl.send({
+    const original = await send(ctl, {
       account: { kind: "hd", walletId, groupIndex: 0, template: "btc.bip84" },
       network: NETWORK,
       to: external,
@@ -625,7 +626,7 @@ const legacyFlow = async (): Promise<void> => {
       );
       // oxlint-disable-next-line eslint/no-await-in-loop -- sequential per template
       const tx = await step(`${template} send`, async () =>
-        txCtl.send({
+        send(txCtl, {
           account: { kind: "hd", walletId, groupIndex: 0, template },
           network: NETWORK,
           to: external,

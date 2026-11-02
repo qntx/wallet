@@ -7,6 +7,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { send } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -182,7 +183,7 @@ describe("TransactionController.replace", () => {
     const seen: Array<{ nonce: number; maxFeePerGas: string; maxPriorityFeePerGas: string }> = [];
     const ctl = ctlWith(recordEvmSign(seen));
     await ctl.init();
-    const original = await ctl.send(SEND);
+    const original = await send(ctl, SEND);
     expect(original.state).toBe("submitted");
     const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
     expect(bumped.state).toBe("submitted");
@@ -203,7 +204,7 @@ describe("TransactionController.replace", () => {
     const seen: Array<{ to: string | undefined; value: string; gas: string }> = [];
     const ctl = ctlWith(recordCancelSign(seen));
     await ctl.init();
-    const original = await ctl.send(SEND);
+    const original = await send(ctl, SEND);
     const cancelled = await ctl.replace(original.id, "cancel", SEND.verify);
     expect(cancelled.replaces).toBe(original.id);
     const last = seen.at(-1)!;
@@ -219,7 +220,7 @@ describe("TransactionController.replace", () => {
       return Promise.reject(new Error("wrong-password"));
     });
     await ctl.init();
-    await expect(ctl.send(SEND)).rejects.toThrow("wrong-password");
+    await expect(send(ctl, SEND)).rejects.toThrow("wrong-password");
     const [original] = Object.values(ctl.getState().txs);
     expect(original?.state).toBe("rejected");
     expect(calls).toBe(1);
@@ -231,7 +232,7 @@ describe("TransactionController.replace", () => {
   it("refuses to replace a rejected transaction", async () => {
     const ctl = ctlWith(async () => Promise.reject(new Error("wrong-password")));
     await ctl.init();
-    await expect(ctl.send(SEND)).rejects.toThrow("wrong-password");
+    await expect(send(ctl, SEND)).rejects.toThrow("wrong-password");
     const [original] = Object.values(ctl.getState().txs);
     await expect(ctl.replace(original!.id, "cancel", SEND.verify)).rejects.toThrow(
       "cannot replace",
@@ -249,7 +250,7 @@ describe("TransactionController.replace — state resolution", () => {
       timers,
     );
     await ctl.init();
-    const original = await ctl.send(SEND);
+    const original = await send(ctl, SEND);
     const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
     await Promise.all(
       timers.map(async (fn) => {
@@ -270,7 +271,7 @@ describe("TransactionController.replace — state resolution", () => {
       timers,
     );
     await ctl.init();
-    const original = await ctl.send(SEND);
+    const original = await send(ctl, SEND);
     const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
     await Promise.all(
       timers.map(async (fn) => {
@@ -289,8 +290,8 @@ describe("TransactionController.replace — state resolution", () => {
     const b = ctlWith(sign);
     await a.init();
     await b.init();
-    const txA = await a.send(SEND);
-    const txB = await b.send(SEND);
+    const txA = await send(a, SEND);
+    const txB = await send(b, SEND);
     expect(txA.nonce).toBe(0);
     expect(txB.nonce).toBe(0);
   });
@@ -304,9 +305,9 @@ describe("TransactionController.replace — state resolution", () => {
       timers,
     );
     await ctl.init();
-    const original = await ctl.send(SEND);
+    const original = await send(ctl, SEND);
     const bumped = await ctl.replace(original.id, "speed-up", SEND.verify);
-    const next = await ctl.send(SEND);
+    const next = await send(ctl, SEND);
     expect(bumped.nonce).toBe(original.nonce);
     expect(next.nonce).toBe(original.nonce + 1);
   });

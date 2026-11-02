@@ -9,8 +9,25 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** `@qntx/wallet-engine`: `transactions.send` is removed. Internal sends go through the
+  request pipeline: `engine.requests.prepare(params)` builds, estimates and cross-checks without
+  signing and returns a `PendingRequest`; `engine.requests.approve(id, "send", verify)` signs and
+  submits it, `engine.requests.reject(id)` drops it. `replace` and `bumpChild` are unchanged.
+- `@qntx/wallet-engine`: an EVM nonce is only recorded after a successful broadcast, and Bitcoin
+  outputs already held by a pending request or an unconfirmed transaction are no longer selected.
+
 ### Added
 
+- `@qntx/wallet-engine`: `RequestController` (`engine.requests`). A request carries the locally
+  decoded `display`, a `verification` of `verified` or `unverifiable` with its `checks`, and expires
+  after 10 minutes; locking invalidates unfinished requests and frees what they reserved. When the
+  gateway heads a network's endpoint list, nonce, EVM fees, Solana priority fees and Bitcoin fee
+  rates are read a second time from the host endpoints (`NetworkController.independentClient`,
+  `independentSolanaRpc`, `independentEsplora`): the larger nonce and the lower fees are used, and a
+  disagreement over 25%, an unreachable second endpoint, a fee ceiling over 2x the independent
+  estimate, or a fee not below the amount sent is recorded as a check.
 - `@qntx/wallet-engine`: the `gateway` engine option (`{ url, installId }`). At each unlock the
   engine reads `GET /v1/networks` and, for the networks the gateway serves, tries it before the
   host endpoints (EVM and Solana JSON-RPC, Bitcoin Esplora); a network with custom endpoints never
@@ -23,6 +40,9 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Fixed
 
+- `@qntx/wallet-engine`: Bitcoin UTXO locks were never persisted (the lock store was never
+  opened on unlock), so a broadcast but unconfirmed transaction's inputs could be selected again
+  after a restart. Locks are now persisted under the transaction id after broadcast.
 - `@qntx/wallet-engine`: the Solana network registry carried malformed genesis hashes, so
   `NetworkController.addRpc` rejected every custom Solana RPC.
 

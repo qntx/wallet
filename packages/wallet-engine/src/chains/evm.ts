@@ -2,8 +2,9 @@
  * EVM chain adapter: native transfers through a viem PublicClient injected by NetworkController.
  * Fee tiers come from eth_feeHistory (20 blocks, p10/p50/p90 → slow/normal/fast, maxFee = 2×baseFee +
  * priority); networks that cannot answer feeHistory fall back to eth_gasPrice. gas = estimateGas ×
- * 1.2 (ceil). Nonces are allocated on a per-(network, from) serial queue as max(pending count, last
- * submitted + 1). Finalization uses the `finalized` block tag; receipts with status 0 fail.
+ * 1.2 (ceil). The next nonce is read on a per-(network, from) serial queue as max(pending count,
+ * last broadcast + 1) and is only recorded once a broadcast succeeds. Finalization uses the
+ * `finalized` block tag; receipts with status 0 fail.
  */
 import { encodeFunctionData, isAddress, numberToHex } from "viem";
 import type { PublicClient } from "viem";
@@ -115,18 +116,34 @@ export class EvmChainAdapter {
     return result;
   }
 
-  /** Allocate the next nonce for (network, from) — serial per key. */
-  private async nonce(client: PublicClient, network: string, from: string): Promise<number> {
+  /** The endpoint's pending transaction count for `from`. */
+  async pendingCount(client: PublicClient, from: string): Promise<number> {
+    return Number(await this.rpcHex(client, "eth_getTransactionCount", [from, "pending"]));
+  }
+
+  /**
+   * The next nonce for (network, from): the larger of the endpoint's pending count and one past the
+   * highest nonce this engine already broadcast. Reading it reserves nothing — only
+   * {@link commitNonce} after a successful broadcast advances the local record.
+   */
+  async nextNonce(client: PublicClient, network: string, from: string): Promise<number> {
     const key = `${network}:${from}`;
     return this.serial(key, async () => {
-      const pending = Number(
-        await this.rpcHex(client, "eth_getTransactionCount", [from, "pending"]),
-      );
+      const pending = await this.pendingCount(client, from);
       const local = this.lastNonce.get(key);
-      const nonce = Math.max(pending, local === undefined ? 0 : local + 1);
-      this.lastNonce.set(key, nonce);
-      return nonce;
+      return Math.max(pending, local === undefined ? 0 : local + 1);
     });
+  }
+
+  /** True once a broadcast at `nonce` or later is recorded for (network, from). */
+  nonceConsumed(network: string, from: string, nonce: number): boolean {
+    const local = this.lastNonce.get(`${network}:${from}`);
+    return local !== undefined && local >= nonce;
+  }
+
+  commitNonce(network: string, from: string, nonce: number): void {
+    const key = `${network}:${from}`;
+    this.lastNonce.set(key, Math.max(this.lastNonce.get(key) ?? nonce, nonce));
   }
 
   /** ERC-20 gas is buffered ×1.1 instead of the native ×1.2 (chains.mdx "EVM"). */
@@ -142,8 +159,9 @@ export class EvmChainAdapter {
           readonly to: string;
           readonly value: bigint;
         },
+    nonceOverride?: number,
   ): Promise<EvmUnsignedTransaction> {
-    const nonce = await this.nonce(client, network, from);
+    const nonce = nonceOverride ?? (await this.nextNonce(client, network, from));
     const erc20 = intent.kind === "erc20";
     const to = checksumEvmAddress(erc20 ? intent.token : intent.to);
     const value = erc20 ? 0n : intent.value;

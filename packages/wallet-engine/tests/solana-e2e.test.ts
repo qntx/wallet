@@ -33,6 +33,7 @@ import { NetworkController } from "../src/networks/controller.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { send as sendTx } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_SOLANA"] === "1";
 // Official Agave release binary on PATH (or SOLANA_TEST_VALIDATOR); CI installs v3.1.11
@@ -509,7 +510,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       await ctl.init();
 
       const feeMint = await t22MintSetup(r, payer, from, "transferFee");
-      const tx = await ctl.send({
+      const tx = await sendTx(ctl, {
         account: { kind: "hd", walletId, groupIndex: 0, template: "solana.bip44-change" },
         network: NETWORK,
         to: recipient.address,
@@ -537,7 +538,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
 
       const ntMint = await t22MintSetup(r, payer, from, "nonTransferable");
       await expect(
-        ctl.send({
+        sendTx(ctl, {
           account: { kind: "hd", walletId, groupIndex: 0, template: "solana.bip44-change" },
           network: NETWORK,
           to: recipient.address,

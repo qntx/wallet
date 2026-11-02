@@ -38,6 +38,16 @@ export type SolanaRpc = {
   readonly call: (method: string, params: unknown[]) => Promise<unknown>;
 };
 
+/**
+ * A host-endpoint-only client for cross-checking pre-signing reads. `not-needed`: the gateway is
+ * not this network's first endpoint, so the primary reads already come from the host.
+ * `unavailable`: a cross-check is needed but the network has no host endpoint.
+ */
+export type Independent<T> =
+  | { readonly kind: "not-needed" }
+  | { readonly kind: "unavailable" }
+  | { readonly kind: "available"; readonly client: T };
+
 type StoreOrUndefined = EngineStore | undefined;
 
 export type NetworkControllerState = {
@@ -51,6 +61,71 @@ type Options = {
   readonly logger: EngineLogger;
   readonly gateway?: { readonly url: string; readonly installId: string } | undefined;
 };
+
+const makeClient = (
+  info: NetworkInfo,
+  urls: ReadonlyArray<string>,
+  fetchFn: typeof globalThis.fetch,
+): PublicClient =>
+  createPublicClient({
+    chain: {
+      id: info.chainId,
+      name: info.name,
+      nativeCurrency: { name: info.symbol, symbol: info.symbol, decimals: info.decimals },
+      rpcUrls: { default: { http: [...urls] } },
+    },
+    transport: fallback(urls.map((url) => http(url, { fetchFn }))),
+    batch: { multicall: true },
+  });
+
+const esploraClient = (urls: ReadonlyArray<string>, fetchFn: typeof globalThis.fetch): Esplora =>
+  esplora(
+    urls,
+    async (url, init) => {
+      const r = await fetchFn(url, init);
+      return {
+        ok: r.ok,
+        status: r.status,
+        headers: { get: (h: string) => r.headers.get(h) ?? undefined },
+        json: async () => r.json(),
+        text: async () => r.text(),
+      };
+    },
+    esploraSleep,
+  );
+
+const solanaCaller = (
+  urls: ReadonlyArray<string>,
+  fetchFn: typeof globalThis.fetch,
+): SolanaRpc => ({
+  call: async (method, params) => {
+    const attempt = async (rest: ReadonlyArray<string>, last: unknown): Promise<unknown> => {
+      const [url, ...next] = rest;
+      if (url === undefined) {
+        throw last instanceof Error ? last : new Error(typeof last === "string" ? last : method);
+      }
+      try {
+        const res = await fetchFn(url, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        });
+        const body: unknown = await res.json();
+        if (!isObject(body)) {
+          return await attempt(next, new Error(`malformed response from ${url}`));
+        }
+        if (body["error"] !== undefined) {
+          const msg = isObject(body["error"]) ? body["error"]["message"] : undefined;
+          return await attempt(next, new Error(typeof msg === "string" ? msg : method));
+        }
+        return body["result"];
+      } catch (error) {
+        return attempt(next, error);
+      }
+    };
+    return attempt(urls, undefined);
+  },
+});
 
 export class NetworkController extends Controller<NetworkControllerState> {
   private readonly options: Options;
@@ -177,18 +252,46 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
     }
-    const client = createPublicClient({
-      chain: {
-        id: info.chainId,
-        name: info.name,
-        nativeCurrency: { name: info.symbol, symbol: info.symbol, decimals: info.decimals },
-        rpcUrls: { default: { http: urls } },
-      },
-      transport: fallback(urls.map((url) => http(url, { fetchFn: this.gatewayFetch }))),
-      batch: { multicall: true },
-    });
+    const client = makeClient(info, urls, this.gatewayFetch);
     this.clients.set(network, client);
     return client;
+  }
+
+  /** True when the gateway heads this network's endpoint list (no custom endpoints, gateway-served). */
+  private gatewayFirst(network: string): boolean {
+    return (
+      (this.getState().customRpc[network] ?? []).length === 0 &&
+      this.gatewayBase !== undefined &&
+      this.gatewayServed.has(network)
+    );
+  }
+
+  private independent<T>(
+    network: string,
+    make: (hosts: ReadonlyArray<string>) => T,
+  ): Independent<T> {
+    if (!this.gatewayFirst(network)) {
+      return { kind: "not-needed" };
+    }
+    const hosts = this.options.rpc[network] ?? [];
+    return hosts.length === 0
+      ? { kind: "unavailable" }
+      : { kind: "available", client: make(hosts) };
+  }
+
+  /** Host-endpoint EVM client for cross-checking reads; never sends the install id. */
+  independentClient(network: string): Independent<PublicClient> {
+    return this.independent(network, (hosts) =>
+      makeClient(this.info(network), hosts, this.options.fetch),
+    );
+  }
+
+  independentSolanaRpc(network: string): Independent<SolanaRpc> {
+    return this.independent(network, (hosts) => solanaCaller(hosts, this.options.fetch));
+  }
+
+  independentEsplora(network: string): Independent<Esplora> {
+    return this.independent(network, (hosts) => esploraClient(hosts, this.options.fetch));
   }
 
   /** Networks with at least one configured endpoint or served by the gateway, by family. */
@@ -210,37 +313,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
     }
-    return {
-      call: async (method, params) => {
-        const attempt = async (rest: ReadonlyArray<string>, last: unknown): Promise<unknown> => {
-          const [url, ...next] = rest;
-          if (url === undefined) {
-            throw last instanceof Error
-              ? last
-              : new Error(typeof last === "string" ? last : method);
-          }
-          try {
-            const res = await this.gatewayFetch(url, {
-              method: "POST",
-              headers: { "content-type": "application/json" },
-              body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-            });
-            const body: unknown = await res.json();
-            if (!isObject(body)) {
-              return await attempt(next, new Error(`malformed response from ${url}`));
-            }
-            if (body["error"] !== undefined) {
-              const msg = isObject(body["error"]) ? body["error"]["message"] : undefined;
-              return await attempt(next, new Error(typeof msg === "string" ? msg : method));
-            }
-            return body["result"];
-          } catch (error) {
-            return attempt(next, error);
-          }
-        };
-        return attempt(urls, undefined);
-      },
-    };
+    return solanaCaller(urls, this.gatewayFetch);
   }
 
   /** Bounded-concurrency + 429-aware ordered-failover Esplora client. */
@@ -249,20 +322,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (urls.length === 0) {
       throw new Error(`no esplora endpoint for ${network}`);
     }
-    return esplora(
-      urls,
-      async (url, init) => {
-        const r = await this.gatewayFetch(url, init);
-        return {
-          ok: r.ok,
-          status: r.status,
-          headers: { get: (h: string) => r.headers.get(h) ?? undefined },
-          json: async () => r.json(),
-          text: async () => r.text(),
-        };
-      },
-      esploraSleep,
-    );
+    return esploraClient(urls, this.gatewayFetch);
   }
 
   /** Validate a custom endpoint's reported chain id, then persist it first in the list. */
