@@ -9,7 +9,7 @@ import { scanChain } from "../chains/bitcoin-scan.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
-import type { MetaDoc, MetaDocGroup } from "../meta/doc.ts";
+import type { MetaDocGroup, MetaDocTree } from "../meta/doc.ts";
 import type { SparkController } from "../spark/controller.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 import { errorMessage } from "../transactions/route.ts";
@@ -540,11 +540,11 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   }
 
   /** The wallet's metadata document — every group, hidden included. */
-  exportMeta(walletId: string): MetaDoc {
+  exportMeta(walletId: string): MetaDocTree {
     this.mustWallet(walletId);
     const s = this.getState();
     const w = s.wallets.find((x) => x.walletId === walletId);
-    const wallet: MetaDoc["wallet"] = {
+    const wallet: MetaDocTree["wallet"] = {
       updatedAt: w?.updatedAt ?? 0,
       ...(w?.name === undefined ? {} : { name: w.name }),
     };
@@ -558,7 +558,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
         ...(g.boundPubkey === undefined ? {} : { boundPubkey: g.boundPubkey }),
       });
     }
-    return { v: 1, wallet, groups };
+    return { wallet, groups };
   }
 
   /**
@@ -567,7 +567,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
    * merge hides the selected group it is re-selected, and a merge may never leave every group
    * hidden (the selected one stays visible and is re-stamped so the fix propagates).
    */
-  mergeMeta(walletId: string, doc: MetaDoc): { changed: boolean; localNewer: boolean } {
+  mergeMeta(walletId: string, doc: MetaDocTree): { changed: boolean; localNewer: boolean } {
     this.mustWallet(walletId);
     let changed = false;
     let localNewer = false;

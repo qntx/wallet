@@ -1,4 +1,9 @@
-export type AddressBookErrorCategory = "invalid-input" | "duplicate" | "not-found" | "locked";
+export type AddressBookErrorCategory =
+  | "invalid-input"
+  | "duplicate"
+  | "not-found"
+  | "locked"
+  | "limit";
 
 export class AddressBookError extends Error {
   readonly category: AddressBookErrorCategory;

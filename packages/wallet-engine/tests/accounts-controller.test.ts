@@ -208,7 +208,6 @@ describe("AccountTreeController", () => {
     const localStamp = updatedAtOf(groupsOf(r.accounts.getState(), first.walletId)[0]);
     // A remote doc for the second wallet carries the same pubkey with a newer stamp.
     const doc = {
-      v: 1 as const,
       wallet: { updatedAt: 0 },
       groups: [{ index: 0, hidden: false, boundPubkey: pk, updatedAt: localStamp + 1 }],
     };
@@ -219,7 +218,6 @@ describe("AccountTreeController", () => {
     });
     // An older remote stamp loses — the local binding keeps ownership.
     const stale = {
-      v: 1 as const,
       wallet: { updatedAt: 0 },
       groups: [{ index: 0, hidden: false, boundPubkey: pk, updatedAt: localStamp - 1 }],
     };
@@ -289,7 +287,6 @@ describe("AccountTreeController", () => {
     r.accounts.renameGroup(w, 0, "local");
     const localStamp = updatedAtOf(groupsOf(r.accounts.getState(), w)[0]);
     const doc = {
-      v: 1 as const,
       wallet: { name: "remote", updatedAt: localStamp + 100 },
       groups: [
         { index: 0, name: "remote-won", hidden: false, updatedAt: localStamp + 50 },
@@ -305,7 +302,6 @@ describe("AccountTreeController", () => {
     expect(s.groups[w]?.[1]?.hidden).toBe(true);
     // Tie → local stays.
     const doc2 = {
-      v: 1 as const,
       wallet: { updatedAt: localStamp + 100 },
       groups: [
         { index: 0, name: "ignored", hidden: false, updatedAt: localStamp + 50 },
@@ -316,7 +312,7 @@ describe("AccountTreeController", () => {
     expect(r.accounts.getState().groups[w]?.[1]?.name).toBe("remote-new");
     expect(m2.localNewer).toBe(false);
     // Older remote loses → localNewer.
-    const stale = { v: 1 as const, wallet: { updatedAt: 1 }, groups: [] };
+    const stale = { wallet: { updatedAt: 1 }, groups: [] };
     expect(r.accounts.mergeMeta(w, stale).localNewer).toBe(true);
     await r.accounts.destroy();
     await r.wallet.destroy();
@@ -329,7 +325,6 @@ describe("AccountTreeController", () => {
     await r.accounts.init();
     const w = created.walletId;
     const doc = {
-      v: 1 as const,
       wallet: { updatedAt: Date.now() + 60_000 },
       groups: [{ index: 0, hidden: true, updatedAt: Date.now() + 60_000 }],
     };

@@ -186,6 +186,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const metaSync = new MetaSyncController({
     wallet: options.wallet,
     accounts,
+    addressBook,
     nostr: { signer: (ref) => nostr(options.wallet).signer(ref) },
     metaSync: options.metaSync,
     logger: options.logger,
@@ -219,11 +220,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await accounts.init();
       await controller.init();
       // Pull → merge → maybe publish for every wallet with a group-0 identity.
+      await addressBook.init();
       await metaSync.init();
       await networks.init();
       await assets.init();
       await transactions.init();
-      await addressBook.init();
       await requests.init();
     } else if (!unlocked && started) {
       started = false;

@@ -7,6 +7,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { nostr } from "@qntx/wallet/nostr";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
+import { AddressBookController } from "../src/addresses/controller.ts";
 import { MetaSyncController } from "../src/meta/controller.ts";
 import { decodeMetaDocBytes, encodeMetaDoc } from "../src/meta/doc.ts";
 import { SparkController } from "../src/spark/controller.ts";
@@ -54,7 +55,8 @@ function fakeRelay(): FakeRelay {
       );
       if (at === -1) {
         relay.events.push(event);
-      } else {
+      } else if ((relay.events[at]?.created_at ?? 0) < event.created_at) {
+        // Replaceable events: a relay keeps the newest `created_at`, so a stale echo cannot win.
         relay.events[at] = event;
       }
       await Promise.resolve();
@@ -66,6 +68,7 @@ function fakeRelay(): FakeRelay {
 type Rig = {
   readonly wallet: Wallet;
   readonly accounts: AccountTreeController;
+  readonly addressBook: AddressBookController;
   readonly metaSync: MetaSyncController;
   readonly relay: FakeRelay;
   setNow: (t: number) => void;
@@ -96,9 +99,16 @@ async function rig(opts: { relay?: FakeRelay } = {}): Promise<Rig> {
   });
   accounts.setStore(createMemoryEngineStore());
   const relay = opts.relay ?? fakeRelay();
+  const addressBook = new AddressBookController({
+    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    random: (n) => randomBytes(n),
+    now: () => t,
+    logger: LOGGER,
+  });
   const metaSync = new MetaSyncController({
     wallet,
     accounts,
+    addressBook,
     nostr: nostr(wallet),
     metaSync: { tag: TAG, relays: relay },
     logger: LOGGER,
@@ -107,6 +117,7 @@ async function rig(opts: { relay?: FakeRelay } = {}): Promise<Rig> {
   return {
     wallet,
     accounts,
+    addressBook,
     metaSync,
     relay,
     setNow: (v: number) => {
@@ -143,6 +154,7 @@ async function start(r: Rig): Promise<WalletInfo> {
   const created = await vaultWithMnemonic(r.wallet);
   await nostr(r.wallet).deriveKey(created.walletId, 0);
   await r.accounts.init();
+  await r.addressBook.init();
   await r.metaSync.init();
   return created;
 }
@@ -161,6 +173,7 @@ describe("MetaSyncController", () => {
     const r = await rig();
     await vaultWithMnemonic(r.wallet);
     await r.accounts.init();
+    await r.addressBook.init();
     await r.metaSync.init();
     const s = r.metaSync.getState().wallets;
     expect(Object.values(s).every((w) => w.status === "unavailable")).toBe(true);
@@ -178,6 +191,7 @@ describe("MetaSyncController", () => {
     await r.accounts.init();
     // An edit stamps updatedAt > 0 — without it a fresh device publishes nothing.
     r.accounts.renameGroup(created.walletId, 0, "local");
+    await r.addressBook.init();
     await r.metaSync.init();
     await waitPublished(r.relay, 1);
     expect(r.relay.published).toHaveLength(1);
@@ -243,6 +257,7 @@ describe("MetaSyncController", () => {
     r.relay.events.push(wrongTag, wrongAuthor, forged);
     await r.accounts.init();
     r.accounts.renameGroup(created.walletId, 0, "local");
+    await r.addressBook.init();
     await r.metaSync.init();
     await waitPublished(r.relay, 1);
     // All three remote events were rejected; no merge happened — the local name survives.
@@ -268,12 +283,14 @@ describe("MetaSyncController", () => {
     const metaSync = new MetaSyncController({
       wallet: r.wallet,
       accounts: r.accounts,
+      addressBook: r.addressBook,
       nostr: nostr(r.wallet),
       metaSync: { tag: TAG, relays: broken },
       logger: LOGGER,
       now: () => Date.now(),
     });
     await r.accounts.init();
+    await r.addressBook.init();
     await metaSync.init();
     expect(metaSync.getState().wallets[created.walletId]?.status).toBe("error");
     r.accounts.renameGroup(created.walletId, 0, "changed");
@@ -301,7 +318,8 @@ describe("MetaSyncController", () => {
       const pubkey = await signer.getPublicKey();
       // Seed a remote doc far in the future — created_at must exceed it.
       const remoteDoc = encodeMetaDoc({
-        v: 1,
+        v: 2,
+        contacts: [],
         wallet: { name: "remote-name", updatedAt: 1_700_000_000_000 },
         groups: [{ index: 0, name: "remote", hidden: false, updatedAt: 1_700_000_000_000 }],
       });
@@ -315,6 +333,7 @@ describe("MetaSyncController", () => {
       });
       r.relay.events.push(remoteEvent);
       await r.accounts.init();
+      await r.addressBook.init();
       await r.metaSync.init();
       // Remote doc wins group 0's name (local updatedAt = 0).
       expect(r.accounts.getState().groups[created.walletId]?.[0]?.name).toBe("remote");
@@ -345,8 +364,10 @@ describe("MetaSyncController", () => {
       });
       await nostr(b.wallet).deriveKey(createdB.walletId, 0);
       await a.accounts.init();
+      await a.addressBook.init();
       await a.metaSync.init();
       await b.accounts.init();
+      await b.addressBook.init();
       await b.metaSync.init();
       a.setNow(1_700_100_000_000);
       b.setNow(1_700_100_000_000);
@@ -394,6 +415,7 @@ describe("MetaSyncController", () => {
       }),
     );
     await r.accounts.init();
+    await r.addressBook.init();
     await r.metaSync.init();
     expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("error");
     expect(r.metaSync.getState().wallets[created.walletId]?.error).toBe("corrupt");
@@ -408,7 +430,7 @@ describe("MetaSyncController", () => {
     await r.wallet.destroy();
   });
 
-  it("a v: 2 doc sets unsupported and never publishes", async () => {
+  it("a v: 3 doc sets unsupported and never publishes", async () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);
     await nostr(r.wallet).deriveKey(created.walletId, 0);
@@ -420,7 +442,7 @@ describe("MetaSyncController", () => {
     const pubkey = await signer.getPublicKey();
     const encrypted = await signer.nip44Encrypt!(
       pubkey,
-      JSON.stringify({ v: 2, wallet: { updatedAt: 5 }, groups: [] }),
+      JSON.stringify({ v: 3, wallet: { updatedAt: 5 }, groups: [], contacts: [] }),
     );
     r.relay.events.push(
       await signer.signEvent({
@@ -432,6 +454,7 @@ describe("MetaSyncController", () => {
       }),
     );
     await r.accounts.init();
+    await r.addressBook.init();
     await r.metaSync.init();
     expect(r.metaSync.getState().wallets[created.walletId]?.error).toBe("unsupported");
     r.accounts.renameGroup(created.walletId, 0, "local");
@@ -481,4 +504,106 @@ describe("MetaSyncController", () => {
       await r.wallet.destroy();
     },
   );
+
+  describe("address book sync", () => {
+    const EVM_A = "0x52908400098527886E0F7030069857D2E4169EE7";
+
+    /** Pulls on `device` until `check` holds — publishes are debounced and signed asynchronously. */
+    async function syncUntil(device: Rig, check: () => boolean): Promise<void> {
+      await vi.waitFor(
+        async () => {
+          await device.metaSync.sync();
+          expect(check()).toBe(true);
+        },
+        { timeout: 15_000, interval: 200 },
+      );
+    }
+
+    /** Two devices sharing one wallet and one relay, both started and pulled. */
+    async function twoDevices() {
+      const relay = fakeRelay();
+      const a = await rig({ relay });
+      const b = await rig({ relay });
+      const { info: createdA, mnemonic } = await vaultWithFixedMnemonic(a.wallet);
+      await nostr(a.wallet).deriveKey(createdA.walletId, 0);
+      const createdB = await b.wallet.wallets.importMnemonic({
+        mnemonic,
+        factor: { kind: "password", password: PASSWORD },
+      });
+      await nostr(b.wallet).deriveKey(createdB.walletId, 0);
+      await Promise.all(
+        [a, b].map(async (device) => {
+          await device.accounts.init();
+          await device.addressBook.init();
+          await device.metaSync.init();
+          device.setNow(1_700_100_000_000);
+        }),
+      );
+      const stop = async () => {
+        await Promise.all(
+          [a, b].map(async (device) => {
+            await device.metaSync.destroy();
+            await device.accounts.destroy();
+            await device.wallet.destroy();
+          }),
+        );
+      };
+      return { relay, a, b, stop };
+    }
+
+    it(
+      "an entry added and renamed on A reaches B; a delete on A removes it on B",
+      { timeout: 20_000 },
+      async () => {
+        const { a, b, stop } = await twoDevices();
+        vi.useFakeTimers();
+        const added = await a.addressBook.add({
+          name: "Alice",
+          family: "evm",
+          address: EVM_A,
+          note: "friend",
+        });
+        await syncUntil(b, () => b.addressBook.getState().entries[added.id] !== undefined);
+        expect(b.addressBook.getState().entries[added.id]).toStrictEqual(added);
+
+        a.setNow(1_700_200_000_000);
+        await a.addressBook.rename(added.id, "Alice B");
+        await syncUntil(b, () => b.addressBook.getState().entries[added.id]?.name === "Alice B");
+
+        a.setNow(1_700_300_000_000);
+        await a.addressBook.remove(added.id);
+        await syncUntil(b, () => b.addressBook.getState().entries[added.id] === undefined);
+        expect(b.addressBook.getState().entries).toStrictEqual({});
+        expect(b.addressBook.syncEntries()).toMatchObject([{ id: added.id, deleted: true }]);
+        vi.useRealTimers();
+        await stop();
+      },
+    );
+
+    it(
+      "concurrent edits of one entry converge to the same deterministic result",
+      { timeout: 25_000 },
+      async () => {
+        const { relay, a, b, stop } = await twoDevices();
+        vi.useFakeTimers();
+        const added = await a.addressBook.add({ name: "Alice", family: "evm", address: EVM_A });
+        await syncUntil(b, () => b.addressBook.getState().entries[added.id] !== undefined);
+
+        a.setNow(1_700_400_000_000);
+        b.setNow(1_700_400_000_000);
+        await a.addressBook.rename(added.id, "alpha");
+        await b.addressBook.rename(added.id, "beta");
+        await syncUntil(a, () => relay.published.length >= 3);
+        await b.metaSync.sync();
+        await a.metaSync.sync();
+        await b.metaSync.sync();
+        const nameA = a.addressBook.getState().entries[added.id]?.name;
+        const nameB = b.addressBook.getState().entries[added.id]?.name;
+        expect(nameA).toBe(nameB);
+        expect(nameA).toBe("beta");
+        vi.useRealTimers();
+        await stop();
+      },
+    );
+  });
 });

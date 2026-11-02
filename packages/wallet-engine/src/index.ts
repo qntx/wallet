@@ -50,7 +50,7 @@ export type {
   MetaSyncWalletStatus,
 } from "./meta/controller.ts";
 export { MetaSyncError } from "./meta/errors.ts";
-export type { MetaDoc, MetaDocGroup, MetaDocWallet } from "./meta/doc.ts";
+export type { MetaDoc, MetaDocGroup, MetaDocTree, MetaDocWallet } from "./meta/doc.ts";
 export { PaymentError } from "./payments/errors.ts";
 export { parsePayment, resolvePayment } from "./payments/index.ts";
 export type {

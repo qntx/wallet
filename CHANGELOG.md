@@ -9,6 +9,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING** `@qntx/wallet-engine`: the wallet metadata document is now `v: 2`
+  (`{ v, wallet, groups, contacts }`) and `v: 1` documents are no longer read. A remote `v: 1`
+  document is reported as unreadable (`corrupt`) and the wallet will not overwrite it. Entries are
+  validated strictly; one invalid contact rejects the whole document.
+
 ### Fixed
 
 - `@qntx/wallet-native`: the Android library no longer applies the React Native Gradle plugin.
@@ -41,6 +48,12 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine`: address-book sync. Every wallet's metadata document carries the whole
+  address book; documents merge per entry id, last writer wins (a tie goes to the larger
+  serialization, so every device converges). Deletions travel as tombstones, dropped after 90 days;
+  entries plus tombstones are capped at 128 (`add` evicts the oldest tombstone, then fails with
+  `AddressBookError("limit")`). Entries gain an optional `note` (at most 120 characters), set with
+  `add` or `setNote`.
 - `@qntx/wallet-engine`: `engine.addressBook` (`AddressBookController`): named recipients per chain
   family (`evm`, `solana`, `bitcoin`, `spark`), validated and normalized (EIP-55 for EVM; bitcoin
   accepted on any known network), persisted in the engine store and cleared on lock.

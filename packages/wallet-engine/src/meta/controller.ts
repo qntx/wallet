@@ -4,9 +4,11 @@ import type { Wallet } from "@qntx/wallet";
 import type { NostrKeyRef, WalletSigner } from "@qntx/wallet/nostr";
 
 import type { AccountTreeController } from "../accounts/controller.ts";
+import type { AddressBookRecord } from "../addresses/record.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import { decodeMetaDocBytes, encodeMetaDoc } from "./doc.ts";
+import type { MetaDoc } from "./doc.ts";
 import type { MetaSyncErrorCategory } from "./errors.ts";
 import { MetaSyncError } from "./errors.ts";
 
@@ -33,9 +35,19 @@ export type MetaSyncState = {
   readonly wallets: Readonly<Record<string, MetaSyncWalletStatus>>;
 };
 
+/** What the sync needs from the address book: its records, a merge, and a change subscription. */
+export type AddressBookSync = {
+  readonly syncEntries: () => ReadonlyArray<AddressBookRecord>;
+  readonly merge: (
+    remote: ReadonlyArray<AddressBookRecord>,
+  ) => Promise<{ readonly changed: boolean; readonly localNewer: boolean }>;
+  readonly store: { readonly subscribe: (listener: () => void) => () => void };
+};
+
 export type MetaSyncControllerOptions = {
   readonly wallet: Wallet;
   readonly accounts: AccountTreeController;
+  readonly addressBook: AddressBookSync;
   /** `nostr(wallet)` — the signer is requested per wallet for its group-0 derived key. */
   readonly nostr: { readonly signer: (ref: NostrKeyRef) => WalletSigner };
   readonly metaSync: MetaSyncConfig | undefined;
@@ -58,6 +70,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly inflight = new Set<string>();
   private accountsUnsubscribe: (() => void) | undefined;
+  private addressBookUnsubscribe: (() => void) | undefined;
 
   constructor(options: MetaSyncControllerOptions) {
     super({ name: "metaSync", defaultState: () => ({ wallets: {} }) });
@@ -68,6 +81,9 @@ export class MetaSyncController extends Controller<MetaSyncState> {
   async init(): Promise<void> {
     const gen = ++this.generation;
     this.accountsUnsubscribe = this.options.accounts.store.subscribe(() => {
+      this.onTreeChange();
+    });
+    this.addressBookUnsubscribe = this.options.addressBook.store.subscribe(() => {
       this.onTreeChange();
     });
     // pullAll covers every snapshot wallet at init — reconcile() is for additions later.
@@ -83,6 +99,8 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     this.generation += 1;
     this.accountsUnsubscribe?.();
     this.accountsUnsubscribe = undefined;
+    this.addressBookUnsubscribe?.();
+    this.addressBookUnsubscribe = undefined;
     for (const timer of this.timers.values()) {
       clearTimeout(timer);
     }
@@ -177,8 +195,11 @@ export class MetaSyncController extends Controller<MetaSyncState> {
       if (remote === undefined) {
         // No doc on the relay: publish only when the local tree holds a real edit
         // (updatedAt > 0) — a fresh device must not replace nothing with empty defaults.
-        const local = this.options.accounts.exportMeta(walletId);
-        const hasEdits = local.wallet.updatedAt > 0 || local.groups.some((g) => g.updatedAt > 0);
+        const local = this.exportDoc(walletId);
+        const hasEdits =
+          local.wallet.updatedAt > 0 ||
+          local.groups.some((g) => g.updatedAt > 0) ||
+          local.contacts.length > 0;
         if (gen !== this.generation) {
           return;
         }
@@ -211,6 +232,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
           return; // not in `pulled` — debounced publishes stay blocked too
         }
         const merge = this.options.accounts.mergeMeta(walletId, doc);
+        const contacts = await this.options.addressBook.merge(doc.contacts);
         if (gen !== this.generation) {
           return;
         }
@@ -218,7 +240,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
         this.pulled.add(walletId);
         this.rememberExport(walletId);
         this.setStatus(walletId, { status: "synced" });
-        if (merge.localNewer) {
+        if (merge.localNewer || contacts.localNewer) {
           await this.publishNow(walletId, gen);
         }
       }
@@ -233,6 +255,15 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     } finally {
       this.inflight.delete(walletId);
     }
+  }
+
+  /** The wallet's tree plus the shared address book — every wallet's document carries both. */
+  private exportDoc(walletId: string): MetaDoc {
+    return {
+      v: 2,
+      ...this.options.accounts.exportMeta(walletId),
+      contacts: this.options.addressBook.syncEntries(),
+    };
   }
 
   private filterFor(pubkey: string, tag: string): Filter {
@@ -250,8 +281,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
   /** Snapshot the wallet's exported doc — the debounce publishes only on a real change. */
   private rememberExport(walletId: string): void {
     try {
-      const doc = this.options.accounts.exportMeta(walletId);
-      this.lastExported.set(walletId, JSON.stringify(doc));
+      this.lastExported.set(walletId, JSON.stringify(this.exportDoc(walletId)));
     } catch {
       // Wallet not in the tree — nothing to remember.
     }
@@ -264,7 +294,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     for (const walletId of this.pulled) {
       let current: string | undefined;
       try {
-        current = JSON.stringify(this.options.accounts.exportMeta(walletId));
+        current = JSON.stringify(this.exportDoc(walletId));
       } catch {
         continue;
       }
@@ -298,8 +328,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
       return;
     }
     try {
-      const doc = this.options.accounts.exportMeta(walletId);
-      const bytes = encodeMetaDoc(doc);
+      const bytes = encodeMetaDoc(this.exportDoc(walletId));
       if (bytes === undefined) {
         throw new MetaSyncError("internal", "meta doc exceeds 64 KB");
       }
@@ -335,7 +364,7 @@ function categorizeSync(error: unknown): MetaSyncErrorCategory {
   return error instanceof MetaSyncError ? error.category : "network";
 }
 
-/** A decrypted doc that parses as JSON with a numeric `v` above 1 is a newer schema, not garbage. */
+/** A decrypted doc that parses as JSON with a numeric `v` above 2 is a newer schema, not garbage. */
 function isUnsupportedDoc(plaintext: string): boolean {
   try {
     const doc: unknown = JSON.parse(plaintext);
@@ -344,7 +373,7 @@ function isUnsupportedDoc(plaintext: string): boolean {
       doc !== null &&
       "v" in doc &&
       typeof doc.v === "number" &&
-      doc.v > 1
+      doc.v > 2
     );
   } catch {
     return false;
