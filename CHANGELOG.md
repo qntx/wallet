@@ -23,8 +23,9 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [0.5.2] - 2026-11-02
 
-`@qntx/wallet-native` reaches npm. `@qntx/wallet-engine` and `@qntx/wallet-chains` are still rejected
-(`E404`) until their npm trusted publishers are configured; their latest npm release stays 0.4.0.
+All five packages are on npm with provenance. `@qntx/wallet-engine` and `@qntx/wallet-chains` were
+first rejected (`E404`, no trusted publisher) and published by re-running their jobs once the
+trusted publishers were configured.
 
 ### Fixed
 
