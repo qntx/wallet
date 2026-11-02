@@ -1,3 +1,7 @@
+import { ADDRESS_BOOK_LIMIT } from "../addresses/merge.ts";
+import { decodeRecord } from "../addresses/record.ts";
+import type { AddressBookRecord } from "../addresses/record.ts";
+
 /**
  * Wallet metadata document — the plaintext exchanged over kind-30078 events between this wallet's
  * own devices. One document per wallet; entry-level last-writer-wins on `updatedAt`.
@@ -16,17 +20,23 @@ export type MetaDocGroup = {
   readonly updatedAt: number;
 };
 
-export type MetaDoc = {
-  readonly v: 1;
+/** The per-wallet part of the document: this wallet's name and account groups. */
+export type MetaDocTree = {
   readonly wallet: MetaDocWallet;
   readonly groups: ReadonlyArray<MetaDocGroup>;
+};
+
+/** Every wallet's document also carries the whole address book, which is shared across wallets. */
+export type MetaDoc = MetaDocTree & {
+  readonly v: 2;
+  readonly contacts: ReadonlyArray<AddressBookRecord>;
 };
 
 export const META_DOC_MAX_BYTES = 65536;
 
 const NAME_MAX = 24;
 const PUBKEY_RE = /^[0-9a-f]{64}$/;
-const KNOWN_DOC_KEYS = new Set(["v", "wallet", "groups"]);
+const KNOWN_DOC_KEYS = new Set(["v", "wallet", "groups", "contacts"]);
 const KNOWN_WALLET_KEYS = new Set(["name", "updatedAt"]);
 const KNOWN_GROUP_KEYS = new Set(["index", "name", "hidden", "boundPubkey", "updatedAt"]);
 
@@ -42,7 +52,10 @@ const validName = (v: unknown): boolean =>
 const trimmedName = (v: unknown): string | undefined =>
   typeof v === "string" ? v.trim() : undefined;
 
-/** Strict decode — any malformed shape, unknown key or duplicate index returns `undefined`. */
+/**
+ * Strict decode — any malformed shape, unknown key, duplicate index or id, or invalid contact
+ * returns `undefined`; only `v: 2` is read.
+ */
 export function decodeMetaDoc(value: unknown): MetaDoc | undefined {
   if (!isObject(value)) {
     return undefined;
@@ -52,7 +65,7 @@ export function decodeMetaDoc(value: unknown): MetaDoc | undefined {
       return undefined;
     }
   }
-  if (value["v"] !== 1) {
+  if (value["v"] !== 2) {
     return undefined;
   }
   const { wallet } = value;
@@ -110,9 +123,22 @@ export function decodeMetaDoc(value: unknown): MetaDoc | undefined {
     });
   }
   out.sort((a, b) => a.index - b.index);
+  const { contacts } = value;
+  if (!Array.isArray(contacts) || contacts.length > ADDRESS_BOOK_LIMIT) {
+    return undefined;
+  }
+  const records = new Map<string, AddressBookRecord>();
+  for (const item of contacts) {
+    const record = decodeRecord(item);
+    if (record === undefined || records.has(record.id)) {
+      return undefined;
+    }
+    records.set(record.id, record);
+  }
   const name = trimmedName(wallet["name"]);
   return {
-    v: 1,
+    v: 2,
+    contacts: [...records.values()].sort((a, b) => (a.id < b.id ? -1 : 1)),
     wallet: {
       updatedAt: wallet["updatedAt"],
       ...(name === undefined ? {} : { name }),
