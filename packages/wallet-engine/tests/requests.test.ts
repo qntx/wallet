@@ -11,7 +11,7 @@ import { TransactionController } from "../src/transactions/controller.ts";
 import type {
   DisplayIntent,
   PrepareParams,
-  PreparedSend,
+  PreparedRequest,
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
@@ -28,12 +28,13 @@ const GATEWAY = "https://gw.test";
 const HOST = "https://host.test/evm";
 const VERIFY = { kind: "password" as const, password: "pw" };
 const ONE_ETH = 10n ** 18n;
-const PARAMS: PrepareParams = {
+const PARAMS = {
+  method: "send" as const,
   account: ACCOUNT,
   network: SEPOLIA,
   to: "0x00000000000000000000000000000000deadbeef",
   amount: ONE_ETH,
-  fee: "normal",
+  fee: "normal" as const,
 };
 
 const intent = (verifiability: DisplayIntent["verifiability"]): DisplayIntent => ({
@@ -65,12 +66,14 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   const txs: Record<string, TrackedTransaction> = {};
   const transactions = {
     getState: () => ({ txs }),
-    prepareSend: async (_p: PrepareParams, requestId: string): Promise<PreparedSend> => {
+    prepareSend: async (_p: PrepareParams, requestId: string): Promise<PreparedRequest> => {
       events.push(`prepare ${requestId}`);
       return Promise.resolve({
         txId: `tx-${requestId}`,
+        account: ACCOUNT,
+        network: SEPOLIA,
         intent: intent(options.verifiability ?? "full"),
-        checks: (options.checks ?? []) as PreparedSend["checks"],
+        checks: (options.checks ?? []) as PreparedRequest["checks"],
         staleReason: async () => Promise.resolve(stale),
         submit: async (verify: SendParams["verify"]) => {
           events.push(`sign ${verify.kind}`);
@@ -302,6 +305,15 @@ function evmWorld(options: {
     eth_getBlockByNumber: { number: "0x2" },
   };
   const calls: Array<{ url: string; method: string }> = [];
+  const gatewayTable: Rpc = options.gateway ?? {};
+  const hostTable: Rpc = options.host ?? {};
+  const timers: Array<() => unknown> = [];
+  const signedRequests: unknown[] = [];
+  let txCounter = 100;
+  const nextTx = (): number => {
+    txCounter += 1;
+    return txCounter;
+  };
   const answer = (table: Rpc, body: { method: string }): Response =>
     body.method in table
       ? Response.json({ jsonrpc: "2.0", id: 1, result: table[body.method] })
@@ -316,8 +328,8 @@ function evmWorld(options: {
     };
     calls.push({ url, method: body.method });
     const table = url.startsWith(GATEWAY)
-      ? { ...base, ...options.gateway }
-      : { ...base, ...options.host };
+      ? { ...base, ...gatewayTable }
+      : { ...base, ...hostTable };
     return Promise.resolve(answer(table, body));
   };
   const warnings: string[] = [];
@@ -336,8 +348,9 @@ function evmWorld(options: {
   const apis = {
     account: async () =>
       Promise.resolve({ template: "evm.bip44", network: SEPOLIA, address: ADDR }),
-    sign: async () => {
+    sign: async ({ request }: { request: unknown }) => {
       signed += 1;
+      signedRequests.push(request);
       if (options.lockDuringSign === true) {
         lockTransactions();
       }
@@ -350,10 +363,14 @@ function evmWorld(options: {
     wallet: {} as Wallet,
     networks,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
-    random: (n) => new Uint8Array(n).fill(1),
-    setTimer: () => () => undefined,
+    random: (n) => new Uint8Array(n).fill(nextTx()),
+    setTimer: (_ms, fn) => {
+      timers.push(fn);
+      return () => undefined;
+    },
     now: () => 0,
     logger: warn,
+    pollMs: 1,
     chains: apis,
   });
   lockTransactions = () => {
@@ -386,6 +403,10 @@ function evmWorld(options: {
     calls,
     start,
     signCount: () => signed,
+    gatewayTable,
+    hostTable,
+    timers,
+    signedRequests,
     warnings,
     rejectSigning: () => {
       rejectSign = true;
@@ -516,5 +537,131 @@ describe("EVM pipeline", () => {
     await w.start();
     const r = await w.requests.prepare(PARAMS);
     expect(r.checks).toStrictEqual(expect.arrayContaining(["fee-mismatch", "fee-above-network"]));
+  });
+});
+
+describe("EVM speed-up and cancel through the pipeline", () => {
+  const sendAndPrepare = async (w: ReturnType<typeof evmWorld>) => {
+    await w.start();
+    const first = await w.requests.prepare(PARAMS);
+    const original = await w.requests.approve(first.id, "send", VERIFY);
+    return original;
+  };
+
+  it("speed-up: target recorded, original untouched until the replacement lands", async () => {
+    const w = evmWorld({});
+    const original = await sendAndPrepare(w);
+    const r = await w.requests.prepare({ method: "speed-up", txId: original.id });
+    expect(r).toMatchObject({
+      method: "speed-up",
+      target: original.id,
+      stage: "awaiting-approval",
+    });
+    const tx = await w.requests.approve(r.id, "speed-up", VERIFY);
+    expect(tx).toMatchObject({ replaces: original.id, nonce: original.nonce });
+  });
+
+  it("approving with the wrong method never signs", async () => {
+    const w = evmWorld({});
+    const original = await sendAndPrepare(w);
+    const r = await w.requests.prepare({ method: "cancel", txId: original.id });
+    const before = w.signCount();
+    await expect(w.requests.approve(r.id, "speed-up", VERIFY)).rejects.toThrow("not speed-up");
+    expect(w.signCount()).toBe(before);
+  });
+
+  it("the original confirming before approval fails the request without signing", async () => {
+    const w = evmWorld({});
+    const original = await sendAndPrepare(w);
+    const r = await w.requests.prepare({ method: "speed-up", txId: original.id });
+    await w.timers[0]?.();
+    expect(w.transactions.getState().txs[original.id]?.state).toBe("confirmed");
+    const before = w.signCount();
+    await expect(w.requests.approve(r.id, "speed-up", VERIFY)).rejects.toThrow("already finished");
+    expect(w.requests.getState().requests[r.id]).toMatchObject({ stage: "failed" });
+    expect(w.signCount()).toBe(before);
+  });
+
+  it("a second unfinished replacement of the same transaction is refused", async () => {
+    const w = evmWorld({});
+    const original = await sendAndPrepare(w);
+    const first = await w.requests.prepare({ method: "speed-up", txId: original.id });
+    await expect(w.requests.prepare({ method: "cancel", txId: original.id })).rejects.toThrow(
+      "unfinished replacement",
+    );
+    await expect(
+      Promise.all([
+        w.requests.prepare({ method: "speed-up", txId: original.id }),
+        w.requests.prepare({ method: "speed-up", txId: original.id }),
+      ]),
+    ).rejects.toThrow("unfinished replacement");
+    w.requests.reject(first.id);
+    await expect(
+      w.requests.prepare({ method: "cancel", txId: original.id }),
+    ).resolves.toMatchObject({ method: "cancel" });
+  });
+
+  it("an original already replaced by an earlier request cannot be replaced again", async () => {
+    const w = evmWorld({});
+    const original = await sendAndPrepare(w);
+    const a = await w.requests.prepare({ method: "speed-up", txId: original.id });
+    await w.requests.approve(a.id, "speed-up", VERIFY);
+    const b = await w.requests.prepare({ method: "cancel", txId: original.id });
+    const before = w.signCount();
+    await expect(w.requests.approve(b.id, "cancel", VERIFY)).rejects.toThrow("already replaced");
+    expect(w.signCount()).toBe(before);
+  });
+
+  it("cancel never records fee-exceeds-amount, although the send did", async () => {
+    const w = evmWorld({});
+    await w.start();
+    const first = await w.requests.prepare({ ...PARAMS, amount: 1n });
+    expect(first.checks).toContain("fee-exceeds-amount");
+    const original = await w.requests.approve(first.id, "send", VERIFY);
+    const cancel = await w.requests.prepare({ method: "cancel", txId: original.id });
+    expect(cancel.checks).not.toContain("fee-exceeds-amount");
+  });
+
+  it("only submitted or pending transactions can be replaced", async () => {
+    const w = evmWorld({});
+    await w.start();
+    await expect(w.requests.prepare({ method: "speed-up", txId: "tx-missing" })).rejects.toThrow(
+      "unknown transaction",
+    );
+    w.rejectSigning();
+    const first = await w.requests.prepare(PARAMS);
+    await expect(w.requests.approve(first.id, "send", VERIFY)).rejects.toThrow("cancelled");
+    const rejected = Object.values(w.transactions.getState().txs).map((t) => t.id);
+    await expect(
+      w.requests.prepare({ method: "speed-up", txId: String(rejected[0]) }),
+    ).rejects.toThrow("cannot speed-up a rejected");
+  });
+
+  it("the replacement floor holds when the gateway reports a low fee", async () => {
+    const w = evmWorld({
+      gateway: { eth_feeHistory: feeHistory("0x3e8", "0x3e8") },
+      host: { eth_feeHistory: feeHistory("0x3e8", "0x3e8") },
+    });
+    await w.start();
+    const first = await w.requests.prepare(PARAMS);
+    const original = await w.requests.approve(first.id, "send", VERIFY);
+    const oldRequest = w.signedRequests[0] as {
+      tx: { maxFeePerGas: string; maxPriorityFeePerGas: string };
+    };
+    const oldMax = BigInt(oldRequest.tx.maxFeePerGas);
+    const oldPriority = BigInt(oldRequest.tx.maxPriorityFeePerGas);
+
+    w.gatewayTable["eth_feeHistory"] = feeHistory("0x1", "0x1");
+    w.hostTable["eth_feeHistory"] = feeHistory("0x3e8", "0x3e8");
+    const r = await w.requests.prepare({ method: "speed-up", txId: original.id });
+    expect(r.checks).toContain("fee-mismatch");
+    await w.requests.approve(r.id, "speed-up", VERIFY);
+    const bumped = w.signedRequests[1] as {
+      tx: { maxFeePerGas: string; maxPriorityFeePerGas: string };
+    };
+    const newMax = BigInt(bumped.tx.maxFeePerGas);
+    const newPriority = BigInt(bumped.tx.maxPriorityFeePerGas);
+    expect(newMax * 10n).toBeGreaterThanOrEqual(oldMax * 11n);
+    expect(newPriority * 10n).toBeGreaterThanOrEqual(oldPriority * 11n);
   });
 });

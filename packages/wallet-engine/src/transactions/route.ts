@@ -79,13 +79,25 @@ export type SendParams = {
 
 export type PrepareParams = Omit<SendParams, "verify">;
 
+export type RequestMethod = "send" | "speed-up" | "cancel" | "cpfp";
+
+/** What a request asks for; replacements and CPFP name the original transaction. */
+export type RequestInput =
+  | ({ readonly method: "send" } & PrepareParams)
+  | { readonly method: "speed-up" | "cancel"; readonly txId: string }
+  | { readonly method: "cpfp"; readonly txId: string; readonly feeRate: number };
+
 /**
  * A fully built, estimated and cross-checked send that has not been signed. The unsigned content
  * lives in the closures and cannot change after `prepare` returns.
  */
-export type PreparedSend = {
+export type PreparedRequest = {
   /** Id of the tracked transaction `submit` creates. */
   readonly txId: string;
+  readonly account: AccountRef;
+  readonly network: string;
+  /** The transaction being replaced or accelerated; absent for a plain send. */
+  readonly target?: string;
   readonly intent: DisplayIntent;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   /** Why the build can no longer be signed (nonce taken, blockhash expired), if so. */
@@ -116,6 +128,8 @@ export type RouteContext = {
     next: Partial<TrackedTransaction>,
   ) => Promise<TrackedTransaction>;
   readonly track: (id: string, hash: string) => void;
+  /** Every tracked transaction, for approval-time checks on a replacement's original. */
+  readonly txs: () => Readonly<Record<string, TrackedTransaction>>;
   readonly newId: () => string;
 };
 
@@ -128,3 +142,29 @@ export const newRequestId = (random: (n: number) => Uint8Array): string => hexId
 
 export const errorMessage = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
+
+const LIVE_REPLACEMENT_STATES: ReadonlySet<TxState> = new Set([
+  "draft",
+  "signed",
+  "submitted",
+  "pending",
+]);
+
+/**
+ * Approval-time check for a replacement: the original must still be unconfirmed and no other
+ * replacement of it may already be on its way.
+ */
+export const replacementStaleReason = (
+  ctx: RouteContext,
+  originalId: string,
+): string | undefined => {
+  const txs = ctx.txs();
+  const original = txs[originalId];
+  if (original?.state !== "submitted" && original?.state !== "pending") {
+    return "original transaction already finished — nothing to replace";
+  }
+  const replaced = Object.values(txs).some(
+    (t) => t.replaces === originalId && LIVE_REPLACEMENT_STATES.has(t.state),
+  );
+  return replaced ? "original transaction was already replaced — start over" : undefined;
+};

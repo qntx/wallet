@@ -21,7 +21,7 @@ import type { RequestCheckCode } from "../requests/checks.ts";
 import type {
   DisplayIntent,
   PrepareParams,
-  PreparedSend,
+  PreparedRequest,
   RouteContext,
   SendParams,
   TrackedTransaction,
@@ -44,7 +44,7 @@ const wires = new Map<string, Uint8Array>();
 export const prepareSolana = async (
   ctx: RouteContext,
   params: PrepareParams,
-): Promise<PreparedSend> => {
+): Promise<PreparedRequest> => {
   const { account, network, to, amount, fee } = params;
   if (account.kind !== "hd") {
     throw new Error("imported accounts are not yet supported");
@@ -188,6 +188,8 @@ export const prepareSolana = async (
 
   return {
     txId: id,
+    account,
+    network,
     intent,
     checks: collectChecks(flags),
     staleReason: async () =>
