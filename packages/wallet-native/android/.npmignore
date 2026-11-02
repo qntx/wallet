@@ -1,0 +1,5 @@
+# Local Gradle/CMake output never ships (npm honours a subdirectory
+# .npmignore under the root "files" allowlist).
+build/
+.cxx/
+.gradle/
