@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Self-custodial wallet SDK: Wallet host entry, protocol and types",
   "keywords": [
     "sdk",
@@ -84,7 +84,7 @@
     "@qntx/nostr": "0.15.3",
     "@qntx/spark": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
-    "@qntx/wallet-chains": "0.5.1",
+    "@qntx/wallet-chains": "0.5.2",
     "@scure/bip32": "2.4.0",
     "@scure/bip39": "2.4.0",
     "@scure/btc-signer": "2.4.1",
@@ -96,7 +96,7 @@
   "peerDependencies": {
     "@qntx/nostr": "^0.15.0",
     "@qntx/spark": "^0.5.0",
-    "@qntx/wallet-chains": "0.5.1"
+    "@qntx/wallet-chains": "0.5.2"
   },
   "peerDependenciesMeta": {
     "@qntx/nostr": {
