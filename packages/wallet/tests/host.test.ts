@@ -25,10 +25,8 @@ const PUBLIC_KEY = getPublicKey(SECRET_KEY);
 const SIGNER = new KeysSigner(SECRET_KEY);
 
 const NOSTR_KEY: NostrKeyInfo = {
-  ref: { kind: "standalone", id: PUBLIC_KEY },
+  ref: { kind: "derived", walletId: "0123456789abcdef", index: 0 },
   publicKey: PUBLIC_KEY,
-  origin: "nsec",
-  backedUp: true,
   createdAt: 1,
 };
 
@@ -1138,20 +1136,17 @@ describe("unwrapGiftWraps chunking", () => {
 
 describe("nostr api methods", () => {
   const KEY: NostrKeyInfo = {
-    ref: { kind: "standalone", id: PUBLIC_KEY },
+    ref: { kind: "derived", walletId: "0123456789abcdef", index: 0 },
     publicKey: PUBLIC_KEY,
-    origin: "nsec",
-    backedUp: true,
     createdAt: 1,
   };
-  const SESSION = "0a".repeat(16);
 
   it("discover returns the kernel's keys", async () => {
     const { wallet, kernel } = await connectFake(unlockedStatus());
     kernel.handlers.set("nostr.discover", () => ({
       ok: { keys: [{ index: 0, publicKey: PUBLIC_KEY }] },
     }));
-    const got = await nostr(wallet).discover("wid", 0, 5);
+    const got = await nostr(wallet).discover("0123456789abcdef", 0, 5);
     expect(got).toStrictEqual([{ index: 0, publicKey: PUBLIC_KEY }]);
     expect(kernel.received).toContain("nostr.discover");
   });
@@ -1159,46 +1154,7 @@ describe("nostr api methods", () => {
   it("deriveKey returns the kernel's key info", async () => {
     const { wallet, kernel } = await connectFake(unlockedStatus());
     kernel.handlers.set("nostr.deriveKey", () => ({ ok: KEY }));
-    await expect(nostr(wallet).deriveKey("wid", 0)).resolves.toStrictEqual(KEY);
-  });
-
-  it("importKey (nsec) forwards the wired input and returns the key", async () => {
-    const { wallet, kernel } = await connectFake(unlockedStatus());
-    kernel.handlers.set("nostr.importKey", () => ({ ok: { key: KEY, session: SESSION } }));
-    await expect(nostr(wallet).importKey({ nsec: "nsec1deadbeef" })).resolves.toStrictEqual(KEY);
-    expect(kernel.received).toContain("nostr.importKey");
-  });
-
-  it("importKey (ncryptsec) forwards the wired input", async () => {
-    const { wallet, kernel } = await connectFake(unlockedStatus());
-    kernel.handlers.set("nostr.importKey", () => ({ ok: { key: KEY, session: SESSION } }));
-    await expect(
-      nostr(wallet).importKey({ ncryptsec: "ncryptsec1deadbeef", password: "pw" }),
-    ).resolves.toStrictEqual(KEY);
-  });
-
-  it("generateKey returns the kernel's key", async () => {
-    const { wallet, kernel } = await connectFake(unlockedStatus());
-    kernel.handlers.set("nostr.generateKey", () => ({ ok: { key: KEY, session: SESSION } }));
-    await expect(nostr(wallet).generateKey()).resolves.toStrictEqual(KEY);
-  });
-
-  it("createNip46ClientKey returns the kernel's key", async () => {
-    const { wallet, kernel } = await connectFake(unlockedStatus());
-    kernel.handlers.set("nostr.createNip46ClientKey", () => ({ ok: KEY }));
-    await expect(nostr(wallet).createNip46ClientKey()).resolves.toStrictEqual(KEY);
-  });
-
-  it("removeKey requires verification for a non-nip46 key and forwards the call", async () => {
-    const { wallet, kernel } = await connectFake(unlockedStatus());
-    kernel.handlers.set("nostr.removeKey", () => ({ ok: null }));
-    await expect(nostr(wallet).removeKey(NOSTR_KEY.ref)).rejects.toSatisfy(
-      (e) => walletError(e).code === "invalid-input",
-    );
-    await expect(
-      nostr(wallet).removeKey(NOSTR_KEY.ref, { kind: "password", password: "pw" }),
-    ).resolves.toBeUndefined();
-    expect(kernel.received).toContain("nostr.removeKey");
+    await expect(nostr(wallet).deriveKey("0123456789abcdef", 0)).resolves.toStrictEqual(KEY);
   });
 
   it("exportKey wraps the kernel's bytes in a one-shot secret", async () => {

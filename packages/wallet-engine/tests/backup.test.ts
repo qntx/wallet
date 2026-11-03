@@ -8,7 +8,6 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
-import { nostr } from "@qntx/wallet/nostr";
 
 import { BackupControllerError } from "../src/backup/errors.ts";
 import { createMemoryCloudStore } from "../src/backup/memory.ts";
@@ -271,20 +270,12 @@ describe("BackupController", () => {
       let { header } = listed[0]!;
       expect(header.wallets).toHaveLength(2);
 
-      // Import a standalone nostr key → count goes to 1.
-      const key = await nostr(r.wallet).generateKey();
-      await settle(r);
-      listed = await r.engine.backup.list();
-      ({ header } = listed[0]!);
-      expect(header.importedNostrKeyCount).toBe(1);
-
       // Delete the wallet → back to 1 wallet.
       await r.wallet.wallets.delete(draft.walletId, PW);
       await settle(r);
       listed = await r.engine.backup.list();
       ({ header } = listed[0]!);
       expect(header.wallets).toHaveLength(1);
-      expect(key.publicKey).toMatch(/^[0-9a-f]{64}$/);
       expect(remoteName(r.files)).toBe(name); // same file, rewritten
     } finally {
       await r.close();

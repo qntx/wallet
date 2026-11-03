@@ -3,7 +3,7 @@
 // ceremony. `backup.enable` still re-verifies and wraps the new BEK under each backup factor;
 // `backup.restore` adopts the envelope's BEK only when the restore establishes the vault — a
 // forged envelope must never hijack an existing vault's future backups. The payload is compact
-// binary secrets only — per wallet `origin(1) ‖ len(1) ‖ entropy`, per imported Nostr key
+// binary secrets only — per wallet `origin(1) ‖ len(1) ‖ entropy`;
 // `secretKey(32)`, per chain key `family(1) ‖ secretKey(32)` — sealed under the BEK with the
 // vault envelope v1 format; each sealedBek rides the same seal under the factor's KEK.
 
@@ -51,7 +51,7 @@ import {
 
 const PASSWORD_ITERATIONS = 600_000;
 
-/** Payload tag bytes: wallet entry, imported nostr key, chain key. */
+/** Payload tag byte: wallet entry. */
 const ORIGIN_BYTE: Readonly<Record<"passkey" | "mnemonic", number>> = {
   mnemonic: 1,
   passkey: 2,
@@ -118,21 +118,17 @@ function parseHeader(text: string): BackupHeaderWire {
 }
 
 const PAYLOAD_WALLET = 0x01;
-const PAYLOAD_NOSTR = 0x02;
-const PAYLOAD_CHAIN = 0x03;
 
 function encodePayload(
   wallets: ReadonlyArray<{
     origin: "passkey" | "mnemonic";
     entropy: Uint8Array;
   }>,
-  nostrSecrets: ReadonlyArray<Uint8Array>,
 ): Uint8Array {
-  const size =
-    1 + wallets.reduce((acc, w) => acc + 3 + w.entropy.length, 0) + nostrSecrets.length * 33;
+  const size = 1 + wallets.reduce((acc, w) => acc + 3 + w.entropy.length, 0);
   const out = new Uint8Array(size);
   let off = 0;
-  out[off++] = 1; // payload version
+  out[off++] = 2; // payload version
   for (const w of wallets) {
     out[off++] = PAYLOAD_WALLET;
     out[off++] = ORIGIN_BYTE[w.origin] ?? 0;
@@ -140,23 +136,16 @@ function encodePayload(
     out.set(w.entropy, off);
     off += w.entropy.length;
   }
-  for (const s of nostrSecrets) {
-    out[off++] = PAYLOAD_NOSTR;
-    out.set(s, off);
-    off += s.length;
-  }
   return out;
 }
 
 function decodePayload(bytes: Uint8Array): {
   wallets: Array<{ origin: "passkey" | "mnemonic"; entropy: Uint8Array }>;
-  nostrSecrets: Uint8Array[];
 } {
-  if (bytes.length === 0 || bytes[0] !== 1) {
+  if (bytes.length === 0 || bytes[0] !== 2) {
     throw new KernelError("integrity", "backup: bad payload version");
   }
   const wallets: Array<{ origin: "passkey" | "mnemonic"; entropy: Uint8Array }> = [];
-  const nostrSecrets: Uint8Array[] = [];
   let off = 1;
   while (off < bytes.length) {
     const tag = bytes[off++];
@@ -176,17 +165,6 @@ function decodePayload(bytes: Uint8Array): {
       }
       wallets.push({ origin, entropy: bytes.slice(off, off + len) });
       off += len;
-    } else if (tag === PAYLOAD_NOSTR) {
-      if (off + 32 > bytes.length) {
-        throw new KernelError("integrity", "backup: truncated payload");
-      }
-      nostrSecrets.push(bytes.slice(off, off + 32));
-      off += 32;
-    } else if (tag === PAYLOAD_CHAIN) {
-      if (off + 33 > bytes.length) {
-        throw new KernelError("integrity", "backup: truncated payload");
-      }
-      off += 33; // family(1) ‖ secretKey(32) — chain keys are not restorable yet
     } else {
       throw new KernelError("integrity", "backup: unknown payload tag");
     }
@@ -194,13 +172,12 @@ function decodePayload(bytes: Uint8Array): {
   if (off !== bytes.length) {
     throw new KernelError("integrity", "backup: payload length mismatch");
   }
-  return { wallets, nostrSecrets };
+  return { wallets };
 }
 
 /** The vault's public backup header plus the payload plaintexts — caller wipes via wipeContents. */
 type BackupContents = {
   readonly wallets: ReadonlyArray<BackupHeaderWallet & { readonly entropy: Uint8Array }>;
-  readonly nostrSecrets: ReadonlyArray<Uint8Array>;
   readonly header: string;
 };
 
@@ -225,13 +202,10 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
         throw error;
       }
     }
-    const nostrSecrets = ctx.modules.flatMap((module) => module.backupSecrets(ctx.image, dek));
     const header = JSON.stringify({
       wallets: wallets.map(({ walletId, origin, words }) => ({ walletId, origin, words })),
-      importedNostrKeyCount: nostrSecrets.length,
-      importedChainKeyCount: 0,
     } satisfies BackupHeaderWire);
-    return { wallets, nostrSecrets, header };
+    return { wallets, header };
   } catch (error) {
     for (const wallet of wallets) {
       wallet.entropy.fill(0);
@@ -243,9 +217,6 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
 function wipeContents(contents: BackupContents): void {
   for (const wallet of contents.wallets) {
     wallet.entropy.fill(0);
-  }
-  for (const secretKey of contents.nostrSecrets) {
-    secretKey.fill(0);
   }
 }
 
@@ -456,7 +427,7 @@ export function updateBackup(
   const bek = openRecord(dek, record);
   const contents = collectContents(ctx, dek);
   try {
-    const plaintext = encodePayload(contents.wallets, contents.nostrSecrets);
+    const plaintext = encodePayload(contents.wallets);
     // Exactly one random draw in the whole command: the payload seal nonce.
     const sealedPayload = seal(
       bek,
@@ -548,8 +519,8 @@ async function bekFromFactor(
 }
 
 /**
- * Restore is a merge, never an overwrite: existing wallet and imported-key ids are skipped,
- * everything else goes down in one commit so a torn restore can't leave half the secrets.
+ * Restore is a merge, never an overwrite: existing wallet ids are skipped, everything else goes
+ * down in one commit so a torn restore can't leave half the secrets.
  */
 export async function restoreBackup(
   ctx: KernelContext,
@@ -575,10 +546,7 @@ export async function restoreBackup(
     }
     const header = parseHeader(envelope.header);
     const decoded = decodePayload(plaintext);
-    if (
-      decoded.nostrSecrets.length !== header.importedNostrKeyCount ||
-      decoded.wallets.length !== header.wallets.length
-    ) {
+    if (decoded.wallets.length !== header.wallets.length) {
       plaintext.fill(0);
       throw new KernelError("integrity", "backup: payload does not match header");
     }
@@ -616,11 +584,6 @@ export async function restoreBackup(
           records.push(record);
           restored.push(walletInfoOf(material, backup, now));
         }
-        for (const module of ctx.modules) {
-          records.push(
-            ...module.backupRecords(ctx.platform, ctx.image, gated.dek, decoded.nostrSecrets, now),
-          );
-        }
         if (gated.uninitialized) {
           // Adoption — only while the vault is being established, inside the same atomic
           // commit: a forged envelope merging into an existing vault can never hijack its
@@ -642,9 +605,6 @@ export async function restoreBackup(
       plaintext.fill(0);
       for (const wallet of decoded.wallets) {
         wallet.entropy.fill(0);
-      }
-      for (const secretKey of decoded.nostrSecrets) {
-        secretKey.fill(0);
       }
     }
   } finally {

@@ -9,6 +9,16 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Removed
+
+- `nostr.importKey`, `nostr.generateKey` and `nostr.createNip46ClientKey` are gone (WD-076):
+  Nostr identities are seed-derived only — `nostr.deriveKey` / `nostr.discover` against a wallet's
+  identity index are the sole way to add one. `NostrKeyRef` has only the `derived` variant,
+  `NostrKeyInfo` drops `origin`/`backedUp`, and `nostr.removeKey` takes `{ publicKey }` with no
+  factor verification. The backup payload carries wallet entropy only (payload version 2): the
+  `importedNostrKeyCount`/`importedChainKeyCount` header fields and the standalone-key restore path
+  are removed.
+
 ### Fixed
 
 - BIP-86 (Taproot) sends failed at two points: `@qntx/wallet-engine` built the PSBT inputs with a

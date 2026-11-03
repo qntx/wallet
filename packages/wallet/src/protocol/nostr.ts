@@ -16,13 +16,12 @@ import {
   MAX_TEXT,
   publicKey,
   safeTime,
-  sessionId,
   walletErrorCode,
   walletId,
 } from "./core.ts";
 import type { Factor, MethodSpec } from "./core.ts";
 import type { NullValue, Validator } from "./validate.ts";
-import { arr, bool, bytes, int, literal, nullValue, obj, opt, str, union } from "./validate.ts";
+import { arr, bytes, int, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 
 /**
  * The unsigned event input the kernel signs. `pubkey` is optional: callers may omit it and the
@@ -57,51 +56,26 @@ export type Rumor = {
   readonly content: string;
 };
 
-export type NostrImportInput =
-  | { readonly kind: "nsec"; readonly nsec: Uint8Array }
-  | { readonly kind: "ncryptsec"; readonly ncryptsec: string; readonly password: Uint8Array };
-
 export type NostrExportFormat =
   | { readonly kind: "nsec" }
   | { readonly kind: "ncryptsec"; readonly password: Uint8Array };
-
-/** One "import/generate a key" result: the key's public info plus the session it may have opened. */
-export type KeyResult = { readonly key: NostrKeyInfo; readonly session: string };
 
 export type UnwrapResult = { readonly ok: Rumor } | { readonly err: WalletErrorCode };
 
 const hex128: Validator<string> = str(128, /^[0-9a-f]{128}$/);
 
-const nostrKeyRef = union(
-  obj({ kind: literal("derived"), walletId, index: identityIndex }),
-  obj({ kind: literal("standalone"), id: publicKey }),
-  obj({ kind: literal("nip46-client"), id: publicKey }),
-);
+const nostrKeyRef = obj({ kind: literal("derived"), walletId, index: identityIndex });
 
-// `backedUp` exists only on the standalone origins — the kernel never emits it for derived or
-// nip46-client keys, and a peer that does is untrustworthy.
-export const nostrKeyInfo: Validator<NostrKeyInfo> = union(
-  obj({
-    ref: nostrKeyRef,
-    publicKey,
-    origin: union(literal("nsec"), literal("ncryptsec"), literal("generated")),
-    backedUp: bool,
-    createdAt: safeTime,
-  }),
-  obj({
-    ref: nostrKeyRef,
-    publicKey,
-    origin: union(literal("derived"), literal("nip46-client")),
-    createdAt: safeTime,
-  }),
-);
+export const nostrKeyInfo: Validator<NostrKeyInfo> = obj({
+  ref: nostrKeyRef,
+  publicKey,
+  createdAt: safeTime,
+});
 
 /** The nostr section of the status payload, composed by protocol/index.ts. */
 export const nostrStatus: Validator<{ readonly keys: ReadonlyArray<NostrKeyInfo> }> = obj({
   keys: arr(nostrKeyInfo, MAX_SNAPSHOT_ITEMS),
 });
-
-const keyResult: Validator<KeyResult> = obj({ key: nostrKeyInfo, session: sessionId });
 
 const derivedNostrKey: Validator<DerivedNostrKey> = obj({ index: identityIndex, publicKey });
 
@@ -137,11 +111,6 @@ const rumor: Validator<Rumor> = obj({
   content: str(MAX_TEXT),
 });
 
-const nostrImportInput: Validator<NostrImportInput> = union(
-  obj({ kind: literal("nsec"), nsec: bytes(1, 256) }),
-  obj({ kind: literal("ncryptsec"), ncryptsec: str(512, /^ncryptsec1/), password: bytes(1, 1024) }),
-);
-
 const nostrExportFormat: Validator<NostrExportFormat> = union(
   obj({ kind: literal("nsec") }),
   obj({ kind: literal("ncryptsec"), password: bytes(1, 1024) }),
@@ -159,16 +128,7 @@ export const NOSTR_METHODS: {
     { readonly walletId: string; readonly index: number },
     NostrKeyInfo
   >;
-  readonly "nostr.importKey": MethodSpec<
-    { readonly input: NostrImportInput; readonly factor?: Factor },
-    KeyResult
-  >;
-  readonly "nostr.generateKey": MethodSpec<{ readonly factor?: Factor }, KeyResult>;
-  readonly "nostr.createNip46ClientKey": MethodSpec<NullValue, NostrKeyInfo>;
-  readonly "nostr.removeKey": MethodSpec<
-    { readonly publicKey: string; readonly verify?: Factor },
-    NullValue
-  >;
+  readonly "nostr.removeKey": MethodSpec<{ readonly publicKey: string }, NullValue>;
   readonly "nostr.exportKey": MethodSpec<
     { readonly verify: Factor; readonly publicKey: string; readonly format: NostrExportFormat },
     Uint8Array
@@ -210,28 +170,10 @@ export const NOSTR_METHODS: {
     params: obj({ walletId, index: identityIndex }),
     result: nostrKeyInfo,
   },
-  "nostr.importKey": {
-    session: false,
-    presence: true,
-    params: obj({ input: nostrImportInput, factor: opt(factor) }),
-    result: keyResult,
-  },
-  "nostr.generateKey": {
-    session: false,
-    presence: true,
-    params: obj({ factor: opt(factor) }),
-    result: keyResult,
-  },
-  "nostr.createNip46ClientKey": {
-    session: true,
-    presence: false,
-    params: nullValue,
-    result: nostrKeyInfo,
-  },
   "nostr.removeKey": {
     session: true,
     presence: true,
-    params: obj({ publicKey, verify: opt(factor) }),
+    params: obj({ publicKey }),
     result: nullValue,
   },
   "nostr.exportKey": {

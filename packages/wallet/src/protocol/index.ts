@@ -246,9 +246,7 @@ export type {
   BackupInfo,
 } from "./backup.ts";
 export type {
-  KeyResult,
   NostrExportFormat,
-  NostrImportInput,
   Rumor,
   SignedEvent,
   UnsignedEventInput,

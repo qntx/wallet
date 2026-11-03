@@ -4,7 +4,13 @@ import { join } from "node:path";
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { isProtocolValue, kernelEvent, METHODS, responseError } from "../src/protocol/index.ts";
+import {
+  isProtocolValue,
+  kernelEvent,
+  METHODS,
+  PROTOCOL_VERSION,
+  responseError,
+} from "../src/protocol/index.ts";
 import type { ProtocolValue } from "../src/protocol/index.ts";
 
 type Sample = {
@@ -53,7 +59,7 @@ function checkRequest(message: unknown): void {
     throw new Error("malformed request");
   }
   const request = message as Record<string, unknown>;
-  if (request["v"] !== 1) {
+  if (request["v"] !== PROTOCOL_VERSION) {
     throw new Error("protocol version mismatch");
   }
   const { id, method, session } = request;

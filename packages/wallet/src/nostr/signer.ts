@@ -20,14 +20,7 @@ import type { WalletSigner } from "./types.ts";
 export function keyInfoOf(internals: WalletInternals, ref: NostrKeyRef): NostrKeyInfo {
   const info = internals.snapshot().nostr.keys.find((key) => {
     const k = key.ref;
-    return (
-      (ref.kind === "derived" &&
-        k.kind === "derived" &&
-        k.walletId === ref.walletId &&
-        k.index === ref.index) ||
-      (ref.kind === "nip46-client" && k.kind === "nip46-client" && k.id === ref.id) ||
-      (ref.kind === "standalone" && k.kind === "standalone" && k.id === ref.id)
-    );
+    return ref.kind === "derived" && k.walletId === ref.walletId && k.index === ref.index;
   });
   if (info === undefined) {
     throw new WalletError("not-found", "no such nostr key");

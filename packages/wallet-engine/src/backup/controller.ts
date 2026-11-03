@@ -36,7 +36,6 @@ export type BackupControllerState = {
   readonly uploadedAt: number | undefined;
   readonly unprotected: {
     readonly walletIds: ReadonlyArray<string>;
-    readonly nostrKeyIds: ReadonlyArray<string>;
   };
   readonly error: BackupErrorCategory | undefined;
 };
@@ -47,7 +46,6 @@ type BackupRecord = {
   readonly digest: string | undefined;
   readonly uploadedAt: number | undefined;
   readonly walletIds: ReadonlyArray<string>;
-  readonly nostrKeyIds: ReadonlyArray<string>;
 };
 
 const COLLECTION = "backup";
@@ -91,7 +89,6 @@ function parseRecord(bytes: Uint8Array | undefined): BackupRecord | undefined {
     const { digest } = o;
     const { uploadedAt } = o;
     const { walletIds } = o;
-    const { nostrKeyIds } = o;
     if (typeof id !== "string" || !/^[0-9a-f]{32}$/.test(id)) {
       return undefined;
     }
@@ -104,10 +101,10 @@ function parseRecord(bytes: Uint8Array | undefined): BackupRecord | undefined {
     ) {
       return undefined;
     }
-    if (!isStringArray(walletIds) || !isStringArray(nostrKeyIds)) {
+    if (!isStringArray(walletIds)) {
       return undefined;
     }
-    return { id, digest, uploadedAt, walletIds, nostrKeyIds };
+    return { id, digest, uploadedAt, walletIds };
   } catch {
     return undefined;
   }
@@ -264,7 +261,6 @@ export class BackupController extends Controller<BackupControllerState> {
         digest: digestOf(text),
         uploadedAt: previous?.uploadedAt,
         walletIds: [],
-        nostrKeyIds: [],
       });
     }
     // Converge now — the commit's snapshot trigger may have run before the baseline landed.
@@ -315,27 +311,17 @@ export class BackupController extends Controller<BackupControllerState> {
       record.id === snapshot.backup.id &&
       record.digest !== undefined;
     const wallets = snapshot.wallets.filter((w) => w.backup !== "mnemonic");
-    const keys = snapshot.nostr.keys.filter(
-      (k) => k.ref.kind === "standalone" && k.backedUp === false,
-    );
     const walletIds = wallets
       .map((w) => w.walletId)
       .filter((id) => !covered || !record.walletIds.includes(id));
-    const nostrKeyIds = keys
-      .map((k) => k.publicKey)
-      .filter((id) => !covered || !record.nostrKeyIds.includes(id));
-    return { walletIds: sorted(walletIds), nostrKeyIds: sorted(nostrKeyIds) };
+    return { walletIds: sorted(walletIds) };
   }
 
   private coverage(snapshot: WalletSnapshot): {
     readonly walletIds: ReadonlyArray<string>;
-    readonly nostrKeyIds: ReadonlyArray<string>;
   } {
     return {
       walletIds: sorted(snapshot.wallets.map((w) => w.walletId)),
-      nostrKeyIds: sorted(
-        snapshot.nostr.keys.filter((k) => k.ref.kind === "standalone").map((k) => k.publicKey),
-      ),
     };
   }
 
@@ -408,7 +394,6 @@ export class BackupController extends Controller<BackupControllerState> {
           digest: adoption.digest,
           uploadedAt: undefined,
           walletIds: [],
-          nostrKeyIds: [],
         };
         if (generation !== this.generation) {
           return;
@@ -450,8 +435,7 @@ export class BackupController extends Controller<BackupControllerState> {
     if (
       baseline !== undefined &&
       record !== undefined &&
-      sameSet(cov.walletIds, record.walletIds) &&
-      sameSet(cov.nostrKeyIds, record.nostrKeyIds)
+      sameSet(cov.walletIds, record.walletIds)
     ) {
       this.setStatus(generation, "synced", undefined, record);
       return;
@@ -484,7 +468,6 @@ export class BackupController extends Controller<BackupControllerState> {
         digest,
         uploadedAt: this.now(),
         walletIds: cov.walletIds,
-        nostrKeyIds: cov.nostrKeyIds,
       };
       if (generation !== this.generation) {
         return;
@@ -516,7 +499,7 @@ function defaultState(): BackupControllerState {
     status: "locked",
     backup: null,
     uploadedAt: undefined,
-    unprotected: { walletIds: [], nostrKeyIds: [] },
+    unprotected: { walletIds: [] },
     error: undefined,
   };
 }

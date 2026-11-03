@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-9m7HA3C9.mjs
+	// packages/wallet/dist/core-Cq5h9X0X.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -888,7 +888,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-CUDpUHPJ.mjs
+	// packages/wallet/dist/protocol-COq-r8lV.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -917,15 +917,11 @@
 		factors: arr(backupEnvelopeFactor, 5, 1),
 		payload: str(MAX_PAYLOAD_CHARS)
 	});
-	var backupHeader = obj({
-		wallets: arr(obj({
-			walletId: str(128),
-			origin: union(literal("mnemonic"), literal("passkey")),
-			words: union(literal(12), literal(15), literal(18), literal(21), literal(24))
-		}), 1e3),
-		importedNostrKeyCount: int(0, 1e4),
-		importedChainKeyCount: int(0, 1e4)
-	});
+	var backupHeader = obj({ wallets: arr(obj({
+		walletId: str(128),
+		origin: union(literal("mnemonic"), literal("passkey")),
+		words: union(literal(12), literal(15), literal(18), literal(21), literal(24))
+	}), 1e3) });
 	var backupInfo = obj({
 		id: str(32, /^[0-9a-f]{32}$/),
 		factors: arr(union(literal("passkey"), literal("password")), 5, 1),
@@ -1070,35 +1066,17 @@
 		}
 	};
 	var hex128 = str(128, /^[0-9a-f]{128}$/);
-	var nostrKeyRef = union(obj({
-		kind: literal("derived"),
-		walletId,
-		index: identityIndex
-	}), obj({
-		kind: literal("standalone"),
-		id: publicKey
-	}), obj({
-		kind: literal("nip46-client"),
-		id: publicKey
-	}));
-	var nostrKeyInfo$1 = union(obj({
-		ref: nostrKeyRef,
+	var nostrKeyInfo$1 = obj({
+		ref: obj({
+			kind: literal("derived"),
+			walletId,
+			index: identityIndex
+		}),
 		publicKey,
-		origin: union(literal("nsec"), literal("ncryptsec"), literal("generated")),
-		backedUp: bool,
 		createdAt: safeTime
-	}), obj({
-		ref: nostrKeyRef,
-		publicKey,
-		origin: union(literal("derived"), literal("nip46-client")),
-		createdAt: safeTime
-	}));
+	});
 	/** The nostr section of the status payload, composed by protocol/index.ts. */
 	var nostrStatus$1 = obj({ keys: arr(nostrKeyInfo$1, MAX_SNAPSHOT_ITEMS) });
-	var keyResult = obj({
-		key: nostrKeyInfo$1,
-		session: sessionId
-	});
 	var derivedNostrKey = obj({
 		index: identityIndex,
 		publicKey
@@ -1128,14 +1106,6 @@
 		tags,
 		content: str(MAX_TEXT)
 	});
-	var nostrImportInput = union(obj({
-		kind: literal("nsec"),
-		nsec: bytes(1, 256)
-	}), obj({
-		kind: literal("ncryptsec"),
-		ncryptsec: str(512, /^ncryptsec1/),
-		password: bytes(1, 1024)
-	}));
 	var nostrExportFormat = union(obj({ kind: literal("nsec") }), obj({
 		kind: literal("ncryptsec"),
 		password: bytes(1, 1024)
@@ -1166,34 +1136,10 @@
 			}),
 			result: nostrKeyInfo$1
 		},
-		"nostr.importKey": {
-			session: false,
-			presence: true,
-			params: obj({
-				input: nostrImportInput,
-				factor: opt(factor)
-			}),
-			result: keyResult
-		},
-		"nostr.generateKey": {
-			session: false,
-			presence: true,
-			params: obj({ factor: opt(factor) }),
-			result: keyResult
-		},
-		"nostr.createNip46ClientKey": {
-			session: true,
-			presence: false,
-			params: nullValue,
-			result: nostrKeyInfo$1
-		},
 		"nostr.removeKey": {
 			session: true,
 			presence: true,
-			params: obj({
-				publicKey,
-				verify: opt(factor)
-			}),
+			params: obj({ publicKey }),
 			result: nullValue
 		},
 		"nostr.exportKey": {
@@ -7467,10 +7413,6 @@
 		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 2147483646) throw headerFailure();
 		return value;
 	}
-	function asBoolean(value) {
-		if (typeof value !== "boolean") throw headerFailure();
-		return value;
-	}
 	function asCreatedAt(value) {
 		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw headerFailure();
 		return value;
@@ -12919,7 +12861,7 @@ zoo`.split("\n"));
 	init_utils$2();
 	init_base();
 	var PASSWORD_ITERATIONS = 6e5;
-	/** Payload tag bytes: wallet entry, imported nostr key, chain key. */
+	/** Payload tag byte: wallet entry. */
 	var ORIGIN_BYTE = {
 		mnemonic: 1,
 		passkey: 2
@@ -12973,13 +12915,11 @@ zoo`.split("\n"));
 		return header;
 	}
 	var PAYLOAD_WALLET = 1;
-	var PAYLOAD_NOSTR = 2;
-	var PAYLOAD_CHAIN = 3;
-	function encodePayload(wallets, nostrSecrets) {
-		const size = 1 + wallets.reduce((acc, w) => acc + 3 + w.entropy.length, 0) + nostrSecrets.length * 33;
+	function encodePayload(wallets) {
+		const size = 1 + wallets.reduce((acc, w) => acc + 3 + w.entropy.length, 0);
 		const out = new Uint8Array(size);
 		let off = 0;
-		out[off++] = 1;
+		out[off++] = 2;
 		for (const w of wallets) {
 			var _ORIGIN_BYTE$w$origin;
 			out[off++] = PAYLOAD_WALLET;
@@ -12988,47 +12928,28 @@ zoo`.split("\n"));
 			out.set(w.entropy, off);
 			off += w.entropy.length;
 		}
-		for (const s of nostrSecrets) {
-			out[off++] = PAYLOAD_NOSTR;
-			out.set(s, off);
-			off += s.length;
-		}
 		return out;
 	}
 	function decodePayload$1(bytes) {
-		if (bytes.length === 0 || bytes[0] !== 1) throw new KernelError("integrity", "backup: bad payload version");
+		if (bytes.length === 0 || bytes[0] !== 2) throw new KernelError("integrity", "backup: bad payload version");
 		const wallets = [];
-		const nostrSecrets = [];
 		let off = 1;
-		while (off < bytes.length) {
-			const tag = bytes[off++];
-			if (tag === PAYLOAD_WALLET) {
-				if (off + 2 > bytes.length) break;
-				const ob = bytes[off];
-				const len = bytes[off + 1];
-				if (ob === void 0 || len === void 0 || off + 2 + len > bytes.length) throw new KernelError("integrity", "backup: truncated payload");
-				off += 2;
-				const origin = ORIGIN_NAME[ob];
-				if (origin === void 0) throw new KernelError("integrity", "backup: unknown origin byte");
-				wallets.push({
-					origin,
-					entropy: bytes.slice(off, off + len)
-				});
-				off += len;
-			} else if (tag === PAYLOAD_NOSTR) {
-				if (off + 32 > bytes.length) throw new KernelError("integrity", "backup: truncated payload");
-				nostrSecrets.push(bytes.slice(off, off + 32));
-				off += 32;
-			} else if (tag === PAYLOAD_CHAIN) {
-				if (off + 33 > bytes.length) throw new KernelError("integrity", "backup: truncated payload");
-				off += 33;
-			} else throw new KernelError("integrity", "backup: unknown payload tag");
-		}
+		while (off < bytes.length) if (bytes[off++] === PAYLOAD_WALLET) {
+			if (off + 2 > bytes.length) break;
+			const ob = bytes[off];
+			const len = bytes[off + 1];
+			if (ob === void 0 || len === void 0 || off + 2 + len > bytes.length) throw new KernelError("integrity", "backup: truncated payload");
+			off += 2;
+			const origin = ORIGIN_NAME[ob];
+			if (origin === void 0) throw new KernelError("integrity", "backup: unknown origin byte");
+			wallets.push({
+				origin,
+				entropy: bytes.slice(off, off + len)
+			});
+			off += len;
+		} else throw new KernelError("integrity", "backup: unknown payload tag");
 		if (off !== bytes.length) throw new KernelError("integrity", "backup: payload length mismatch");
-		return {
-			wallets,
-			nostrSecrets
-		};
+		return { wallets };
 	}
 	function collectContents(ctx, dek) {
 		const wallets = [];
@@ -13049,19 +12970,13 @@ zoo`.split("\n"));
 					throw error;
 				}
 			}
-			const nostrSecrets = ctx.modules.flatMap((module) => module.backupSecrets(ctx.image, dek));
 			return {
 				wallets,
-				nostrSecrets,
-				header: JSON.stringify({
-					wallets: wallets.map(({ walletId, origin, words }) => ({
-						walletId,
-						origin,
-						words
-					})),
-					importedNostrKeyCount: nostrSecrets.length,
-					importedChainKeyCount: 0
-				})
+				header: JSON.stringify({ wallets: wallets.map(({ walletId, origin, words }) => ({
+					walletId,
+					origin,
+					words
+				})) })
 			};
 		} catch (error) {
 			for (const wallet of wallets) wallet.entropy.fill(0);
@@ -13070,7 +12985,6 @@ zoo`.split("\n"));
 	}
 	function wipeContents(contents) {
 		for (const wallet of contents.wallets) wallet.entropy.fill(0);
-		for (const secretKey of contents.nostrSecrets) secretKey.fill(0);
 	}
 	var PURPOSE_PROTECTION = 2;
 	/**
@@ -13206,7 +13120,7 @@ zoo`.split("\n"));
 		const bek = openRecord(dek, record);
 		const contents = collectContents(ctx, dek);
 		try {
-			const plaintext = encodePayload(contents.wallets, contents.nostrSecrets);
+			const plaintext = encodePayload(contents.wallets);
 			const sealedPayload = seal(bek, plaintext, payloadContext(contents.header), "", ctx.platform.random);
 			try {
 				const envelope = {
@@ -13263,8 +13177,8 @@ zoo`.split("\n"));
 		}
 	}
 	/**
-	* Restore is a merge, never an overwrite: existing wallet and imported-key ids are skipped,
-	* everything else goes down in one commit so a torn restore can't leave half the secrets.
+	* Restore is a merge, never an overwrite: existing wallet ids are skipped, everything else goes
+	* down in one commit so a torn restore can't leave half the secrets.
 	*/
 	async function restoreBackup(ctx, params, requestSession) {
 		const envelope = parseEnvelope(params.envelope);
@@ -13279,7 +13193,7 @@ zoo`.split("\n"));
 			}
 			const header = parseHeader(envelope.header);
 			const decoded = decodePayload$1(plaintext);
-			if (decoded.nostrSecrets.length !== header.importedNostrKeyCount || decoded.wallets.length !== header.wallets.length) {
+			if (decoded.wallets.length !== header.wallets.length) {
 				plaintext.fill(0);
 				throw new KernelError("integrity", "backup: payload does not match header");
 			}
@@ -13303,7 +13217,6 @@ zoo`.split("\n"));
 						records.push(record);
 						restored.push(walletInfoOf(material, backup, now));
 					}
-					for (const module of ctx.modules) records.push(...module.backupRecords(ctx.platform, ctx.image, gated.dek, decoded.nostrSecrets, now));
 					if (gated.uninitialized) records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
 					const session = await commitRecords(ctx, gated, params.factor, records);
 					committed = true;
@@ -13318,7 +13231,6 @@ zoo`.split("\n"));
 			} finally {
 				plaintext.fill(0);
 				for (const wallet of decoded.wallets) wallet.entropy.fill(0);
-				for (const secretKey of decoded.nostrSecrets) secretKey.fill(0);
 			}
 		} finally {
 			bek.fill(0);
@@ -21709,7 +21621,7 @@ zoo`.split("\n"));
 	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
 	init_defineProperty();
-	function decode$3(parameters, data, options = {}) {
+	function decode$2(parameters, data, options = {}) {
 		const { as = "Array", checksumAddress = true } = options;
 		const bytes = typeof data === "string" ? fromHex$2(data) : data;
 		const cursor = create$1(bytes);
@@ -23362,7 +23274,7 @@ zoo`.split("\n"));
 			size: Math.max(0, size$1(data) - 4)
 		});
 		if (size$1(data) <= 4) return void 0;
-		return decode$3(item.inputs, slice$2(data, 4), options);
+		return decode$2(item.inputs, slice$2(data, 4), options);
 	}
 	function encodeData(...parameters) {
 		const [abiFunction, args] = (() => {
@@ -27684,8 +27596,6 @@ zoo`.split("\n"));
 				claimUnlocked: (records) => records,
 				forget: () => void 0,
 				lock: () => void 0,
-				backupSecrets: () => [],
-				backupRecords: () => [],
 				walletDeleteOps: () => []
 			},
 			handlers: {
@@ -27704,10 +27614,6 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "NostrError");
 		}
 	};
-	/** `error.message` for Error instances, `String(error)` otherwise. */
-	function errorMessage(error) {
-		return error instanceof Error ? error.message : String(error);
-	}
 	/** Invalid hex encoding or length. */
 	var HexError = class extends NostrError {
 		constructor(..._args2) {
@@ -28218,7 +28124,7 @@ zoo`.split("\n"));
 			s3: xk[k++] ^ applySbox(sbox2, s3, s0, s1, s2)
 		};
 	}
-	function decrypt$3(xk, s0, s1, s2, s3) {
+	function decrypt$2(xk, s0, s1, s2, s3) {
 		const { sbox2, T01, T23 } = tableDecoding;
 		let k = 0;
 		s0 ^= xk[k++], s1 ^= xk[k++], s2 ^= xk[k++], s3 ^= xk[k++];
@@ -28370,7 +28276,7 @@ zoo`.split("\n"));
 				for (let i = 0; i + 4 <= b.length;) {
 					const ps0 = s0, ps1 = s1, ps2 = s2, ps3 = s3;
 					s0 = b[i + 0], s1 = b[i + 1], s2 = b[i + 2], s3 = b[i + 3];
-					const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt$3(xk, s0, s1, s2, s3);
+					const { s0: o0, s1: o1, s2: o2, s3: o3 } = decrypt$2(xk, s0, s1, s2, s3);
 					o[i++] = o0 ^ ps0, o[i++] = o1 ^ ps1, o[i++] = o2 ^ ps2, o[i++] = o3 ^ ps3;
 				}
 				swap32IfBE$1(o);
@@ -28401,7 +28307,7 @@ zoo`.split("\n"));
 		return `${base64$1.encode(ciphertext)}?iv=${base64$1.encode(iv)}`;
 	}
 	/** Decrypt a NIP-04 payload with the raw 32-byte ECDH x-coordinate. */
-	function decrypt$2(payload, sharedSecret) {
+	function decrypt$1(payload, sharedSecret) {
 		assertByteLength(sharedSecret, 32, "shared secret");
 		const [ciphertextPart, ivPart] = splitPayload(payload);
 		try {
@@ -28429,7 +28335,7 @@ zoo`.split("\n"));
 		splitPayload(payload);
 		const sharedSecret = normalizeSharedSecret(secretKey, peerPubkey, backend);
 		try {
-			return decrypt$2(payload, sharedSecret);
+			return decrypt$1(payload, sharedSecret);
 		} finally {
 			sharedSecret.fill(0);
 		}
@@ -28555,7 +28461,7 @@ zoo`.split("\n"));
 		const mac = hmacAad(hmac_key, ciphertext, nonce);
 		return base64$1.encode(concatBytes$3(new Uint8Array([2]), nonce, ciphertext, mac));
 	}
-	function decrypt$1(payload, conversationKey, opts) {
+	function decrypt(payload, conversationKey, opts) {
 		var _opts$maxPayloadChars;
 		const { nonce, ciphertext, mac } = decodePayload(payload, (_opts$maxPayloadChars = opts === null || opts === void 0 ? void 0 : opts.maxPayloadChars) !== null && _opts$maxPayloadChars !== void 0 ? _opts$maxPayloadChars : DEFAULT_MAX_PAYLOAD_CHARS);
 		const { chacha_key, chacha_nonce, hmac_key } = getMessageKeys(conversationKey, nonce);
@@ -28692,7 +28598,7 @@ zoo`.split("\n"));
 		}
 		async nip44Decrypt(peer, payload) {
 			_assertClassBrand(_Class_brand2, this, _assertUsable2).call(this);
-			return decrypt$1(payload, _assertClassBrand(_Class_brand2, this, _conversationKey2).call(this, peer));
+			return decrypt(payload, _assertClassBrand(_Class_brand2, this, _conversationKey2).call(this, peer));
 		}
 		/** Unwraps each gift wrap independently — a bad wrap yields an Error, never fails the batch. */
 		async unwrapGiftWraps(events) {
@@ -28734,38 +28640,9 @@ zoo`.split("\n"));
 		return key;
 	}
 	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip19.mjs
-	init_secp256k1();
 	init_base();
-	init_defineProperty();
 	/** Maximum bech32 string length accepted by {@link decode} (NIP-19). */
 	var Bech32MaxSize = 5e3;
-	/** Error thrown by NIP-19 encoding/decoding failures. */
-	var Nip19Error = class extends NostrError {
-		constructor(..._args) {
-			super(..._args);
-			_defineProperty(this, "name", "Nip19Error");
-		}
-	};
-	function parseTLV(data) {
-		const result = {};
-		let rest = data;
-		while (rest.length > 0) {
-			var _result$t;
-			if (rest.length < 2) throw new Nip19Error("not enough data to read TLV");
-			const t = rest.at(0);
-			const l = rest.at(1);
-			if (t === void 0 || l === void 0) throw new Nip19Error("not enough data to read TLV");
-			const v = rest.slice(2, 2 + l);
-			rest = rest.slice(2 + l);
-			if (v.length < l) throw new Nip19Error(`not enough data to read on TLV ${t}`);
-			result[t] = (_result$t = result[t]) !== null && _result$t !== void 0 ? _result$t : [];
-			result[t].push(v);
-		}
-		return result;
-	}
-	function assertNip19Kind(kind) {
-		if (!Number.isInteger(kind) || kind < 0 || kind > 65535) throw new Nip19Error(`invalid kind: ${kind}`);
-	}
 	function encodeBech32(prefix, data) {
 		const words = bech32.toWords(data);
 		return bech32.encode(prefix, words, Bech32MaxSize);
@@ -28777,94 +28654,6 @@ zoo`.split("\n"));
 	function nsecEncode(key) {
 		assertByteLength(key, 32, "secret key");
 		return encodeBytes$1("nsec", key);
-	}
-	function readUint32$1(bytes) {
-		return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(0);
-	}
-	/** Decode a NIP-19 bech32 entity; throws {@link Nip19Error} on bad input or unknown prefix. */
-	function decode$2(code) {
-		let prefix;
-		let data;
-		try {
-			const { prefix: hrp, words } = bech32.decode(code, Bech32MaxSize);
-			prefix = hrp;
-			data = new Uint8Array(bech32.fromWords(words));
-		} catch (error) {
-			throw new Nip19Error(`invalid bech32: ${errorMessage(error)}`, { cause: error });
-		}
-		switch (prefix) {
-			case "nprofile": {
-				var _tlv$;
-				const tlv = parseTLV(data);
-				if (!((_tlv$ = tlv[0]) === null || _tlv$ === void 0 ? void 0 : _tlv$[0])) throw new Nip19Error("missing TLV 0 for nprofile");
-				if (tlv[0][0].length !== 32) throw new Nip19Error("TLV 0 should be 32 bytes");
-				return {
-					type: "nprofile",
-					data: {
-						pubkey: bytesToHex$1(tlv[0][0]),
-						relays: tlv[1] ? tlv[1].map((d) => utf8Decoder.decode(d)) : []
-					}
-				};
-			}
-			case "nevent": {
-				var _tlv$2, _tlv$3, _tlv$4, _tlv$5, _tlv$6;
-				const tlv = parseTLV(data);
-				if (!((_tlv$2 = tlv[0]) === null || _tlv$2 === void 0 ? void 0 : _tlv$2[0])) throw new Nip19Error("missing TLV 0 for nevent");
-				if (tlv[0][0].length !== 32) throw new Nip19Error("TLV 0 should be 32 bytes");
-				if (((_tlv$3 = tlv[2]) === null || _tlv$3 === void 0 ? void 0 : _tlv$3[0]) && tlv[2][0].length !== 32) throw new Nip19Error("TLV 2 should be 32 bytes");
-				if (((_tlv$4 = tlv[3]) === null || _tlv$4 === void 0 ? void 0 : _tlv$4[0]) && tlv[3][0].length !== 4) throw new Nip19Error("TLV 3 should be 4 bytes");
-				const pointer = {
-					id: bytesToHex$1(tlv[0][0]),
-					relays: tlv[1] ? tlv[1].map((d) => utf8Decoder.decode(d)) : []
-				};
-				const author = (_tlv$5 = tlv[2]) === null || _tlv$5 === void 0 ? void 0 : _tlv$5[0];
-				if (author !== void 0) pointer.author = bytesToHex$1(author);
-				const kind = (_tlv$6 = tlv[3]) === null || _tlv$6 === void 0 ? void 0 : _tlv$6[0];
-				if (kind !== void 0) {
-					pointer.kind = readUint32$1(kind);
-					assertNip19Kind(pointer.kind);
-				}
-				return {
-					type: "nevent",
-					data: pointer
-				};
-			}
-			case "naddr": {
-				var _tlv$7, _tlv$8, _tlv$9;
-				const tlv = parseTLV(data);
-				if (!((_tlv$7 = tlv[0]) === null || _tlv$7 === void 0 ? void 0 : _tlv$7[0])) throw new Nip19Error("missing TLV 0 for naddr");
-				if (!((_tlv$8 = tlv[2]) === null || _tlv$8 === void 0 ? void 0 : _tlv$8[0])) throw new Nip19Error("missing TLV 2 for naddr");
-				if (tlv[2][0].length !== 32) throw new Nip19Error("TLV 2 should be 32 bytes");
-				if (!((_tlv$9 = tlv[3]) === null || _tlv$9 === void 0 ? void 0 : _tlv$9[0])) throw new Nip19Error("missing TLV 3 for naddr");
-				if (tlv[3][0].length !== 4) throw new Nip19Error("TLV 3 should be 4 bytes");
-				const naddrKind = readUint32$1(tlv[3][0]);
-				assertNip19Kind(naddrKind);
-				return {
-					type: "naddr",
-					data: {
-						identifier: utf8Decoder.decode(tlv[0][0]),
-						pubkey: bytesToHex$1(tlv[2][0]),
-						kind: naddrKind,
-						relays: tlv[1] ? tlv[1].map((d) => utf8Decoder.decode(d)) : []
-					}
-				};
-			}
-			case "nsec":
-				if (data.length !== 32) throw new Nip19Error("nsec must be 32 bytes");
-				if (!secp256k1.utils.isValidSecretKey(data)) throw new Nip19Error("invalid nsec secret key");
-				return {
-					type: "nsec",
-					data
-				};
-			case "npub":
-			case "note":
-				if (data.length !== 32) throw new Nip19Error(`${prefix} must be 32 bytes`);
-				return {
-					type: prefix,
-					data: bytesToHex$1(data)
-				};
-			default: throw new Nip19Error(`unknown prefix ${prefix}`);
-		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/derive.ts
 	/** The NIP-06 derivation path; `i` is the identity index segment. */
@@ -29088,8 +28877,6 @@ zoo`.split("\n"));
 	}
 	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip49.mjs
 	init_utils$2();
-	init_secp256k1();
-	init_base();
 	init_defineProperty();
 	init_objectSpread2();
 	/**
@@ -29100,7 +28887,6 @@ zoo`.split("\n"));
 	var VERSION$1 = 2;
 	var SALT_LEN = 16;
 	var NONCE_LEN = 24;
-	var PAYLOAD_LEN = 91;
 	var LOGN_MIN = 1;
 	var LOGN_MAX = 22;
 	var SCRYPT_R = 8;
@@ -29143,56 +28929,8 @@ zoo`.split("\n"));
 		const ciphertext = xchacha20poly1305(key, nonce, aad).encrypt(secretKey);
 		return encodeBytes$1("ncryptsec", concatBytes$3(Uint8Array.from([VERSION$1]), Uint8Array.from([logn]), salt, nonce, aad, ciphertext));
 	}
-	/** Decrypt an `ncryptsec` bech32 string to a 32-byte secret key. */
-	async function decrypt(ncryptsec, password, opts) {
-		const { maxLogN } = opts;
-		if (!Number.isInteger(maxLogN) || maxLogN < LOGN_MIN || maxLogN > LOGN_MAX) throw new Nip49Error(`invalid maxLogN ${maxLogN}, expected integer ${LOGN_MIN}..${LOGN_MAX}`);
-		let prefix;
-		let b;
-		try {
-			const decoded = bech32.decode(ncryptsec, Bech32MaxSize);
-			({prefix} = decoded);
-			b = new Uint8Array(bech32.fromWords(decoded.words));
-		} catch (error) {
-			throw new Nip49Error("invalid ncryptsec", { cause: error });
-		}
-		if (prefix !== "ncryptsec") throw new Nip49Error(`invalid prefix ${prefix}, expected 'ncryptsec'`);
-		if (b.length !== PAYLOAD_LEN) throw new Nip49Error("invalid ncryptsec length");
-		const version = b.at(0);
-		if (version === void 0) throw new Nip49Error("invalid ncryptsec length");
-		if (version !== VERSION$1) throw new Nip49Error(`invalid version ${version}, expected 0x02`);
-		const logn = b.at(1);
-		if (logn === void 0) throw new Nip49Error("invalid ncryptsec length");
-		if (logn > maxLogN) throw new Nip49Error(`logn ${logn} exceeds maxLogN ${maxLogN}`);
-		const salt = b.subarray(2, 18);
-		const nonce = b.subarray(18, 42);
-		const ksb = b.at(42);
-		if (ksb === void 0) throw new Nip49Error("invalid ncryptsec length");
-		if (ksb !== 0 && ksb !== 1 && ksb !== 2) throw new Nip49Error(`invalid key security byte ${ksb}, expected 0x00, 0x01, or 0x02`);
-		const aad = Uint8Array.from([ksb]);
-		const ciphertext = b.subarray(43);
-		try {
-			var _opts$scrypt2;
-			const key = await deriveKey$1(password, salt, logn, (_opts$scrypt2 = opts.scrypt) !== null && _opts$scrypt2 !== void 0 ? _opts$scrypt2 : nobleScrypt);
-			try {
-				const secret = xchacha20poly1305(key, nonce, aad).decrypt(ciphertext);
-				if (!secp256k1.utils.isValidSecretKey(secret)) {
-					secret.fill(0);
-					throw new Nip49Error("invalid secret key");
-				}
-				return secret;
-			} finally {
-				key.fill(0);
-			}
-		} catch (error) {
-			if (error instanceof Nip49Error) throw error;
-			throw new Nip49Error("failed to decrypt", { cause: error });
-		}
-	}
 	// packages/wallet-kernel/src/modules/nostr/pool.ts
-	init_base();
 	init_defineProperty();
-	init_objectSpread2();
 	/**
 	* Signer pool: one KeysSigner per nostr-key record, keyed by public key. Built at unlock from the
 	* authenticated record plaintexts; disposed at lock so secrets die with the session.
@@ -29237,29 +28975,7 @@ zoo`.split("\n"));
 		}
 	};
 	/** A fresh valid secp256k1 scalar from the platform RNG (retries on the ~2^-128 invalid draws). */
-	function generateSecretKey(random, backend) {
-		for (;;) {
-			const candidate = random(32);
-			try {
-				Keys.fromSecretKey(candidate, backend);
-				return candidate;
-			} catch (_unused) {
-				wipe(candidate);
-			}
-		}
-	}
 	/** Decodes a UTF-8 `nsec1…` bech32 payload; the input bytes are wiped. */
-	function secretKeyFromNsec(nsec) {
-		const text = decodeUtf8Secret(nsec);
-		try {
-			const decoded = decode$2(text);
-			if (decoded.type !== "nsec") throw new KernelError("invalid-input", "expected an nsec bech32 string");
-			return new Uint8Array(decoded.data);
-		} catch (error) {
-			if (error instanceof KernelError) throw error;
-			throw new KernelError("invalid-input", "invalid nsec");
-		}
-	}
 	/**
 	* Decrypts an `ncryptsec` with the UTF-8 `password` bytes (wiped after use). The payload is decoded
 	* and shape-checked before scrypt ever runs: malformed input is `invalid-input`, a logN above
@@ -29267,26 +28983,6 @@ zoo`.split("\n"));
 	* cause) is `unavailable`, and every other decrypt failure is `wrong-password`. `scrypt` is a
 	* kernel-internal test seam — hosts never inject it.
 	*/
-	async function secretKeyFromNcryptsec(ncryptsec, password, maxLogN, scrypt) {
-		var _payload$at;
-		const text = decodeUtf8Secret(password);
-		let payload;
-		try {
-			const decoded = bech32.decode(ncryptsec, Bech32MaxSize);
-			payload = new Uint8Array(bech32.fromWords(decoded.words));
-			if (decoded.prefix !== "ncryptsec" || payload.length !== 91 || payload.at(0) !== 2) throw new KernelError("invalid-input", "malformed ncryptsec");
-		} catch (error) {
-			if (error instanceof KernelError) throw error;
-			throw new KernelError("invalid-input", "malformed ncryptsec");
-		}
-		if (((_payload$at = payload.at(1)) !== null && _payload$at !== void 0 ? _payload$at : 0) > maxLogN) throw new KernelError("unsupported", "ncryptsec scrypt logN exceeds the policy limit");
-		try {
-			return await decrypt(ncryptsec, text, _objectSpread2({ maxLogN }, scrypt === void 0 ? {} : { scrypt }));
-		} catch (error) {
-			if (error instanceof Nip49Error && error.cause instanceof RangeError) throw new KernelError("unavailable", "ncryptsec scrypt allocation failed");
-			throw new KernelError("wrong-password", "invalid ncryptsec or wrong password");
-		}
-	}
 	function nsecFromSecretKey(secretKey) {
 		return new TextEncoder().encode(nsecEncode(secretKey));
 	}
@@ -29325,102 +29021,48 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/record.ts
-	init_objectSpread2();
 	/** The record kind this module owns: one sealed nostr secret key per record, keyed by public key. */
 	var NOSTR_KEY_KIND = "nostr-key";
 	function encodeNostrKeyHeader(header) {
-		if (header.origin === "derived") return JSON.stringify({
+		return JSON.stringify({
 			publicKey: header.publicKey,
-			origin: header.origin,
 			walletId: header.walletId,
 			index: header.index,
-			createdAt: header.createdAt
-		});
-		return header.origin === "nip46-client" ? JSON.stringify({
-			publicKey: header.publicKey,
-			origin: header.origin,
-			createdAt: header.createdAt
-		}) : JSON.stringify({
-			publicKey: header.publicKey,
-			origin: header.origin,
-			backedUp: header.backedUp,
 			createdAt: header.createdAt
 		});
 	}
 	function parseNostrKeyHeader(text) {
 		const object = headerObject(text);
-		const publicKey = asPublicKey(object["publicKey"]);
-		const createdAt = asCreatedAt(object["createdAt"]);
-		if (object["origin"] === "derived") {
-			expectKeys(object, [
-				"publicKey",
-				"origin",
-				"walletId",
-				"index",
-				"createdAt"
-			]);
-			return {
-				publicKey,
-				origin: "derived",
-				walletId: asWalletId(object["walletId"]),
-				index: asIdentityIndex(object["index"]),
-				createdAt
-			};
-		}
-		if (object["origin"] === "nip46-client") {
-			expectKeys(object, [
-				"publicKey",
-				"origin",
-				"createdAt"
-			]);
-			return {
-				publicKey,
-				origin: "nip46-client",
-				createdAt
-			};
-		}
 		expectKeys(object, [
 			"publicKey",
-			"origin",
-			"backedUp",
+			"walletId",
+			"index",
 			"createdAt"
 		]);
-		const { origin } = object;
-		if (origin !== "nsec" && origin !== "ncryptsec" && origin !== "generated") throw headerFailure();
 		return {
-			publicKey,
-			origin,
-			backedUp: asBoolean(object["backedUp"]),
-			createdAt
+			publicKey: asPublicKey(object["publicKey"]),
+			walletId: asWalletId(object["walletId"]),
+			index: asIdentityIndex(object["index"]),
+			createdAt: asCreatedAt(object["createdAt"])
 		};
 	}
 	/** The `NostrKeyInfo` a nostr-key record's public header reports. */
 	function nostrKeyInfo(header) {
-		const standalone = header.origin !== "derived" && header.origin !== "nip46-client";
-		return _objectSpread2(_objectSpread2({
-			ref: header.origin === "derived" ? {
+		return {
+			ref: {
 				kind: "derived",
 				walletId: header.walletId,
 				index: header.index
-			} : header.origin === "nip46-client" ? {
-				kind: "nip46-client",
-				id: header.publicKey
-			} : {
-				kind: "standalone",
-				id: header.publicKey
 			},
 			publicKey: header.publicKey,
-			origin: header.origin
-		}, standalone ? { backedUp: header.backedUp } : {}), {}, { createdAt: header.createdAt });
+			createdAt: header.createdAt
+		};
 	}
-	/**
-	* The module's status section over the records it owns. A record whose header fails the strict
-	* parser reports `corrupted` — the row is never silently dropped.
-	*/
+	/** The `nostr.keys` section of the status snapshot — one `NostrKeyInfo` per owned record. */
 	function nostrStatus(records) {
 		const keys = [];
 		let corrupted = false;
-		for (const record of records) try {
+		for (const record of records) if (record.kind === "nostr-key") try {
 			keys.push(nostrKeyInfo(parseNostrKeyHeader(record.header)));
 		} catch (_unused) {
 			corrupted = true;
@@ -29431,71 +29073,11 @@ zoo`.split("\n"));
 		};
 	}
 	// packages/wallet-kernel/src/modules/nostr/keys.ts
-	init_objectSpread2();
 	function keyRecord(ctx, dek, secretKey, header) {
 		return sealRecord(ctx.platform, dek, NOSTR_KEY_KIND, header.publicKey, encodeNostrKeyHeader(header), new Uint8Array(secretKey));
 	}
 	function ensureNewKey(ctx, publicKey) {
 		if (ctx.image.records.some((r) => r.kind === "nostr-key" && r.id === publicKey)) throw new KernelError("already-exists", "nostr key already exists");
-	}
-	/**
-	* Adds a standalone nostr key. Same create/import gate as wallets: on an uninitialized vault the
-	* `factor` establishes it (meta + factor + record in one guarded commit); otherwise a session is
-	* required and `factor` must be absent. The signer goes live when the committed image reconciles —
-	* command handlers never touch the pool.
-	*/
-	async function addKey(ctx, secretKey, origin, backedUp, factor, requestSession) {
-		const gated = gate(ctx, factor, requestSession);
-		const publicKey = getPublicKey(secretKey);
-		ensureNewKey(ctx, publicKey);
-		const header = {
-			publicKey,
-			origin,
-			backedUp,
-			createdAt: ctx.platform.now()
-		};
-		const session = await commitRecords(ctx, gated, factor, [keyRecord(ctx, gated.dek, secretKey, header)]);
-		return {
-			key: nostrKeyInfo(header),
-			session
-		};
-	}
-	async function importKey(ctx, params, requestSession) {
-		const { input } = params;
-		const secretKey = input.kind === "nsec" ? secretKeyFromNsec(input.nsec) : await secretKeyFromNcryptsec(input.ncryptsec, input.password, ctx.platform.policy.maxScryptLogN);
-		try {
-			return await addKey(ctx, secretKey, input.kind, true, params.factor, requestSession);
-		} finally {
-			wipe(secretKey);
-		}
-	}
-	async function generateKey(ctx, params, requestSession) {
-		const secretKey = generateSecretKey(ctx.platform.random, ctx.platform.backends.nostr);
-		try {
-			return await addKey(ctx, secretKey, "generated", false, params.factor, requestSession);
-		} finally {
-			wipe(secretKey);
-		}
-	}
-	async function createNip46ClientKey(ctx, requestSession) {
-		const { dek } = ctx.session.require(requestSession);
-		const secretKey = generateSecretKey(ctx.platform.random, ctx.platform.backends.nostr);
-		try {
-			const publicKey = getPublicKey(secretKey);
-			ensureNewKey(ctx, publicKey);
-			const header = {
-				publicKey,
-				origin: "nip46-client",
-				createdAt: ctx.platform.now()
-			};
-			await ctx.commit([{
-				op: "put-record",
-				record: keyRecord(ctx, dek, secretKey, header)
-			}]);
-			return nostrKeyInfo(header);
-		} finally {
-			wipe(secretKey);
-		}
 	}
 	async function deriveKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
@@ -29509,7 +29091,6 @@ zoo`.split("\n"));
 					ensureNewKey(ctx, publicKey);
 					const header = {
 						publicKey,
-						origin: "derived",
 						walletId: params.walletId,
 						index: params.index,
 						createdAt: ctx.platform.now()
@@ -29551,11 +29132,8 @@ zoo`.split("\n"));
 		});
 	}
 	async function removeKey(ctx, params, requestSession) {
-		const { dek } = ctx.session.require(requestSession);
-		if (parseNostrKeyHeader(findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey).header).origin !== "nip46-client") {
-			if (params.verify === void 0) throw new KernelError("invalid-input", "factor verification is required");
-			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "remove-key"));
-		}
+		ctx.session.require(requestSession);
+		findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey);
 		await ctx.commit([{
 			op: "delete-record",
 			kind: NOSTR_KEY_KIND,
@@ -29566,19 +29144,9 @@ zoo`.split("\n"));
 	async function exportKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-key"));
-		const record = findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey);
-		const header = parseNostrKeyHeader(record.header);
-		const secretKey = openRecord(dek, record);
+		const secretKey = openRecord(dek, findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey));
 		try {
-			const exported = params.format.kind === "nsec" ? nsecFromSecretKey(secretKey) : await ncryptsecFromSecretKey(secretKey, params.format.password);
-			if (header.origin !== "derived" && header.origin !== "nip46-client" && !header.backedUp) {
-				const updated = _objectSpread2(_objectSpread2({}, header), {}, { backedUp: true });
-				await ctx.commit([{
-					op: "put-record",
-					record: keyRecord(ctx, dek, secretKey, updated)
-				}]);
-			}
-			return exported;
+			return params.format.kind === "nsec" ? nsecFromSecretKey(secretKey) : await ncryptsecFromSecretKey(secretKey, params.format.password);
 		} finally {
 			wipe(secretKey);
 		}
@@ -29633,46 +29201,18 @@ zoo`.split("\n"));
 					const ops = [];
 					for (const record of image.records) {
 						if (record.kind !== "nostr-key") continue;
-						const header = parseNostrKeyHeader(record.header);
-						if (header.origin === "derived" && header.walletId === walletId) ops.push({
+						if (parseNostrKeyHeader(record.header).walletId === walletId) ops.push({
 							op: "delete-record",
 							kind: NOSTR_KEY_KIND,
 							id: record.id
 						});
 					}
 					return ops;
-				},
-				backupSecrets: (image, dek) => {
-					const secrets = [];
-					for (const record of image.records) {
-						if (record.kind !== "nostr-key") continue;
-						const header = parseNostrKeyHeader(record.header);
-						if (header.origin === "derived" || header.origin === "nip46-client") continue;
-						secrets.push(openRecord(dek, record));
-					}
-					return secrets;
-				},
-				backupRecords: (platform, image, dek, secrets, now) => {
-					const records = [];
-					for (const secretKey of secrets) {
-						const publicKey = getPublicKey(secretKey);
-						if (image.records.some((r) => r.kind === "nostr-key" && r.id === publicKey)) continue;
-						records.push(sealRecord(platform, dek, NOSTR_KEY_KIND, publicKey, encodeNostrKeyHeader({
-							publicKey,
-							origin: "nsec",
-							backedUp: true,
-							createdAt: now
-						}), secretKey));
-					}
-					return records;
 				}
 			},
 			handlers: {
 				"nostr.discover": async (ctx, params, session) => discover(ctx, params, session),
 				"nostr.deriveKey": async (ctx, params, session) => deriveKey(ctx, params, session),
-				"nostr.importKey": async (ctx, params, session) => importKey(ctx, params, session),
-				"nostr.generateKey": async (ctx, params, session) => generateKey(ctx, params, session),
-				"nostr.createNip46ClientKey": async (ctx, _params, session) => createNip46ClientKey(ctx, session),
 				"nostr.removeKey": async (ctx, params, session) => removeKey(ctx, params, session),
 				"nostr.exportKey": async (ctx, params, session) => exportKey(ctx, params, session),
 				"nostr.signEvent": async (ctx, params, session) => sign(ctx, pool, params, session),
@@ -39431,8 +38971,6 @@ zoo`.split("\n"));
 				lock: () => {
 					disposeAll(state);
 				},
-				backupSecrets: () => [],
-				backupRecords: () => [],
 				walletDeleteOps: (_image, walletId) => {
 					disposeWallet(state, walletId);
 					return [];

@@ -1,21 +1,13 @@
-import { bech32 } from "@scure/base";
-
 import { createEventVerifier, Keys, KeysSigner } from "@qntx/nostr";
 import type { Event, NostrBackend, UnsignedEvent } from "@qntx/nostr";
-import { Bech32MaxSize, decode as nip19Decode, nsecEncode } from "@qntx/nostr/nips/nip19";
-import {
-  decrypt as nip49Decrypt,
-  encrypt as nip49Encrypt,
-  Nip49Error,
-} from "@qntx/nostr/nips/nip49";
-import type { Scrypt } from "@qntx/nostr/nips/nip49";
+import { nsecEncode } from "@qntx/nostr/nips/nip19";
+import { encrypt as nip49Encrypt } from "@qntx/nostr/nips/nip49";
 import { isGiftWrapKind, unwrap as nip59Unwrap } from "@qntx/nostr/nips/nip59";
 import type { Rumor } from "@qntx/nostr/nips/nip59";
 import type { UnwrapResult } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import { KernelError } from "../../errors.ts";
-import type { KernelPlatform } from "../../platform.ts";
 import { decodeUtf8Secret, wipe } from "../../secret/secret.ts";
 
 /**
@@ -73,37 +65,8 @@ export class SignerPool {
 }
 
 /** A fresh valid secp256k1 scalar from the platform RNG (retries on the ~2^-128 invalid draws). */
-export function generateSecretKey(
-  random: KernelPlatform["random"],
-  backend: NostrBackend,
-): Uint8Array {
-  for (;;) {
-    const candidate = random(32);
-    try {
-      Keys.fromSecretKey(candidate, backend);
-      return candidate;
-    } catch {
-      wipe(candidate);
-    }
-  }
-}
 
 /** Decodes a UTF-8 `nsec1…` bech32 payload; the input bytes are wiped. */
-export function secretKeyFromNsec(nsec: Uint8Array): Uint8Array {
-  const text = decodeUtf8Secret(nsec); // wipes `nsec`
-  try {
-    const decoded = nip19Decode(text);
-    if (decoded.type !== "nsec") {
-      throw new KernelError("invalid-input", "expected an nsec bech32 string");
-    }
-    return new Uint8Array(decoded.data);
-  } catch (error) {
-    if (error instanceof KernelError) {
-      throw error;
-    }
-    throw new KernelError("invalid-input", "invalid nsec");
-  }
-}
 
 /**
  * Decrypts an `ncryptsec` with the UTF-8 `password` bytes (wiped after use). The payload is decoded
@@ -112,43 +75,6 @@ export function secretKeyFromNsec(nsec: Uint8Array): Uint8Array {
  * cause) is `unavailable`, and every other decrypt failure is `wrong-password`. `scrypt` is a
  * kernel-internal test seam — hosts never inject it.
  */
-export async function secretKeyFromNcryptsec(
-  ncryptsec: string,
-  password: Uint8Array,
-  maxLogN: number,
-  scrypt?: Scrypt,
-): Promise<Uint8Array> {
-  const text = decodeUtf8Secret(password); // wipes `password`
-  let payload: Uint8Array;
-  try {
-    const decoded = bech32.decode(ncryptsec, Bech32MaxSize);
-    payload = new Uint8Array(bech32.fromWords(decoded.words));
-    if (decoded.prefix !== "ncryptsec" || payload.length !== 91 || payload.at(0) !== 0x02) {
-      throw new KernelError("invalid-input", "malformed ncryptsec");
-    }
-  } catch (error) {
-    if (error instanceof KernelError) {
-      throw error;
-    }
-    throw new KernelError("invalid-input", "malformed ncryptsec");
-  }
-  const logN = payload.at(1) ?? 0;
-  if (logN > maxLogN) {
-    throw new KernelError("unsupported", "ncryptsec scrypt logN exceeds the policy limit");
-  }
-  try {
-    // nip49 derives with NFKC internally; the salt nonce comes from the library's own RNG.
-    return await nip49Decrypt(ncryptsec, text, {
-      maxLogN,
-      ...(scrypt === undefined ? {} : { scrypt }),
-    });
-  } catch (error) {
-    if (error instanceof Nip49Error && error.cause instanceof RangeError) {
-      throw new KernelError("unavailable", "ncryptsec scrypt allocation failed");
-    }
-    throw new KernelError("wrong-password", "invalid ncryptsec or wrong password");
-  }
-}
 
 export function nsecFromSecretKey(secretKey: Uint8Array): Uint8Array {
   return new TextEncoder().encode(nsecEncode(secretKey));

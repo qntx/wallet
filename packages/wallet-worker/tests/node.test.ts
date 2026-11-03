@@ -193,14 +193,11 @@ describe("node host end to end", () => {
       "npub1zutzeysacnf9rru6zqwmxd54mud0k44tst6l70ja5mhv8jjumytsd2x7nu",
     );
 
-    // The second NIP-06 vector's key — the first vector's nsec is the derived group-0 key.
-    const imported = await nostr(wallet).importKey({
-      nsec: "nsec1c9wh8xy5eqdzln7n5t0ctgxjcrdug73gp5yj0x03gntn67h83twssdfhel",
-    });
-    expect(imported.origin).toBe("nsec");
-    expect(imported.publicKey).toBe(
-      "d41b22899549e1f3d335a31002cfd382174006e166d3e658e3a5eecdb6463573",
-    );
+    // Identity index 1 of the same wallet — a distinct derived key.
+    const second = await nostr(wallet).deriveKey(created.walletId, 1);
+    expect(second.ref.index).toBe(1);
+    expect(second.publicKey).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.publicKey).not.toBe(derived.publicKey);
 
     const exported = await wallet.wallets.exportMnemonic(created.walletId, {
       kind: "password",
@@ -211,13 +208,11 @@ describe("node host end to end", () => {
     );
 
     const nsec = await nostr(wallet).exportKey(
-      imported.ref,
+      second.ref,
       { kind: "nsec" },
       { kind: "password", password: PASSWORD },
     );
-    expect(new TextDecoder().decode(nsec.read())).toBe(
-      "nsec1c9wh8xy5eqdzln7n5t0ctgxjcrdug73gp5yj0x03gntn67h83twssdfhel",
-    );
+    expect(new TextDecoder().decode(nsec.read())).toMatch(/^nsec1[0-9a-z]+$/);
     await wallet.destroy();
   }, 120_000);
 
