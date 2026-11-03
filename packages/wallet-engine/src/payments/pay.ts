@@ -20,6 +20,8 @@ export type PayParams = {
   readonly comment?: string;
   readonly maxFeeSats?: number;
   readonly speed?: "FAST" | "MEDIUM" | "SLOW";
+  /** `amountSats` came from the service's minimum (WebLN `lnurl`), not an explicit amount. */
+  readonly amountFromServiceMinimum?: boolean;
 };
 
 export type PayContext = {
@@ -154,6 +156,7 @@ export async function preparePay(
           kind: "lightning",
           amountSats,
           maxFeeSats,
+          ...(params.amountFromServiceMinimum === true ? { amountFromServiceMinimum: true } : {}),
           receiver: payee,
           ...(option.description === undefined ? {} : { description: option.description }),
         },
@@ -213,6 +216,7 @@ export async function preparePay(
           kind: "lightning",
           amountSats,
           maxFeeSats,
+          ...(params.amountFromServiceMinimum === true ? { amountFromServiceMinimum: true } : {}),
           receiver: payee,
           description: request.description,
         },
