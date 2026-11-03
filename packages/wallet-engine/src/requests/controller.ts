@@ -52,7 +52,7 @@ export type { SignatureResult } from "../transactions/route.ts";
 export type { SparkDisplay, SparkResult } from "../payments/action.ts";
 
 /** A Spark, Lightning (including LNURL-pay and lightning addresses) or cooperative-exit payment. */
-export type PayInput = { readonly method: "pay" } & PayParams;
+export type PayInput = { readonly method: "pay"; readonly origin?: BrowserOrigin } & PayParams;
 
 /** A prepared zap; its invoice was fetched by `engine.zaps.prepare` and is paid as-is. */
 export type ZapInput = {
@@ -108,12 +108,26 @@ export type NostrSignInput = {
   readonly event: UnsignedEvent;
 };
 
+/**
+ * A WebLN `makeInvoice` confirmation: no factor (it only asks the user to confirm generating an
+ * invoice — WD-065 does not apply; the factor-free rule mirrors `nostr-sign`), `display` carries
+ * the requested amount and memo.
+ */
+export type WeblnInvoiceInput = {
+  readonly method: "webln-invoice";
+  readonly origin: BrowserOrigin;
+  readonly ref: SparkAccountRef;
+  readonly amountSats: number;
+  readonly memo?: string;
+};
+
 export type RequestInput =
   | ChainRequestInput
   | PayInput
   | ZapInput
   | EvmSignInput
   | NostrSignInput
+  | WeblnInvoiceInput
   | SparkDepositInput
   | SparkExitInput;
 
@@ -129,6 +143,19 @@ export type NostrDisplay = {
   readonly eventKind: number;
   readonly preview: string;
   readonly tagCount: number;
+};
+
+/** `approve` of a `webln-invoice` request: the created invoice's BOLT11 payment request. */
+export type WeblnInvoiceResult = {
+  readonly kind: "lightning.invoice";
+  readonly paymentRequest: string;
+};
+
+/** `webln-invoice` display: the requested amount and memo. */
+export type LightningInvoiceDisplay = {
+  readonly kind: "lightning.invoice";
+  readonly amountSats: number;
+  readonly memo?: string;
 };
 
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
@@ -166,7 +193,7 @@ export type PendingRequest = {
   readonly network: string;
   readonly stage: RequestStage;
   /** Decoded locally from the exact content that will be signed; `family` tells the shapes apart. */
-  readonly display: DisplayIntent | SparkDisplay | NostrDisplay;
+  readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay;
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -224,23 +251,30 @@ type Run =
       readonly factor: "none";
       readonly txId?: string;
       readonly staleReason: () => string | undefined | Promise<string | undefined>;
-      readonly submit: () => Promise<NostrSignResult>;
+      readonly submit: () => Promise<NostrSignResult | WeblnInvoiceResult>;
       readonly release: () => void;
     };
 
 type Built = {
   readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
   readonly network: string;
-  readonly display: DisplayIntent | SparkDisplay | NostrDisplay;
+  readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
   readonly run: Run;
 };
 
 type Settler = {
-  readonly promise: Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult>;
+  readonly promise: Promise<
+    TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+  >;
   readonly resolve: (
-    value: TrackedTransaction | SparkResult | SignatureResult | NostrSignResult,
+    value:
+      | TrackedTransaction
+      | SparkResult
+      | SignatureResult
+      | NostrSignResult
+      | WeblnInvoiceResult,
   ) => void;
   readonly reject: (error: Error) => void;
 };
@@ -251,6 +285,10 @@ type Entry = {
 };
 
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
+
+/** The input's browser origin, when it carries one (`evm-sign`/`nostr-sign`/`webln-invoice`/`pay`). */
+const browserOriginOf = (input: RequestInput): BrowserOrigin | undefined =>
+  "origin" in input ? input.origin : undefined;
 
 const LIVE: ReadonlySet<RequestStage> = new Set(["awaiting-approval", "signing"]);
 
@@ -332,10 +370,11 @@ export class RequestController extends Controller<RequestControllerState> {
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
     const target = "txId" in input ? input.txId : undefined;
-    if (input.method === "evm-sign") {
-      const key = originKey(input.origin);
+    const browserOrigin = browserOriginOf(input);
+    if (browserOrigin !== undefined) {
+      const key = originKey(browserOrigin);
       if (this.targets.has(key)) {
-        throw new OriginBusyError(input.origin.origin);
+        throw new OriginBusyError(browserOrigin.origin);
       }
       this.targets.set(key, id);
     }
@@ -361,7 +400,7 @@ export class RequestController extends Controller<RequestControllerState> {
     const createdAt = this.options.now();
     const request: PendingRequest = {
       id,
-      origin: input.method === "evm-sign" ? input.origin : { kind: "internal" },
+      origin: browserOrigin ?? { kind: "internal" },
       method: input.method,
       account: built.account,
       network: built.network,
@@ -391,7 +430,9 @@ export class RequestController extends Controller<RequestControllerState> {
    */
   async outcome(
     id: string,
-  ): Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult> {
+  ): Promise<
+    TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+  > {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -402,7 +443,7 @@ export class RequestController extends Controller<RequestControllerState> {
   private openSettler(id: string): void {
     const holder: { resolve?: Settler["resolve"]; reject?: Settler["reject"] } = {};
     const promise = new Promise<
-      TrackedTransaction | SparkResult | SignatureResult | NostrSignResult
+      TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
     >((resolve, reject) => {
       holder.resolve = resolve;
       holder.reject = reject;
@@ -418,7 +459,13 @@ export class RequestController extends Controller<RequestControllerState> {
 
   private settle(
     id: string,
-    result: TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | Error,
+    result:
+      | TrackedTransaction
+      | SparkResult
+      | SignatureResult
+      | NostrSignResult
+      | WeblnInvoiceResult
+      | Error,
   ): void {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
@@ -528,6 +575,31 @@ export class RequestController extends Controller<RequestControllerState> {
         run: { ...prepared, factor: "required" },
       };
     }
+    if (input.method === "webln-invoice") {
+      return {
+        account: input.ref,
+        network: "",
+        display: {
+          kind: "lightning.invoice",
+          amountSats: input.amountSats,
+          ...(input.memo === undefined ? {} : { memo: input.memo }),
+        },
+        checks: [],
+        risk: [],
+        run: {
+          factor: "none",
+          staleReason: () => undefined,
+          submit: async () => {
+            const invoice = await this.options.spark.createInvoice(input.ref, {
+              amountSats: input.amountSats,
+              ...(input.memo === undefined ? {} : { memo: input.memo }),
+            });
+            return { kind: "lightning.invoice" as const, paymentRequest: invoice.invoice };
+          },
+          release: () => undefined,
+        },
+      };
+    }
     if (input.method === "nostr-sign") {
       return {
         account: input.ref,
@@ -588,11 +660,14 @@ export class RequestController extends Controller<RequestControllerState> {
     verify?: SendParams["verify"],
   ): Promise<TrackedTransaction | SignatureResult>;
   async approve(id: string, method: "nostr-sign"): Promise<NostrSignResult>;
+  async approve(id: string, method: "webln-invoice"): Promise<WeblnInvoiceResult>;
   async approve(
     id: string,
     method: RequestMethod,
     verify?: SendParams["verify"],
-  ): Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult> {
+  ): Promise<
+    TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+  > {
     const request = this.getState().requests[id];
     if (request === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -743,7 +818,12 @@ export class RequestController extends Controller<RequestControllerState> {
     request: PendingRequest,
     outcome: SignLogOutcome,
     error?: string,
-    result?: TrackedTransaction | SparkResult | SignatureResult | NostrSignResult,
+    result?:
+      | TrackedTransaction
+      | SparkResult
+      | SignatureResult
+      | NostrSignResult
+      | WeblnInvoiceResult,
   ): void {
     const { display } = request;
     const eventId =
@@ -753,9 +833,11 @@ export class RequestController extends Controller<RequestControllerState> {
     const summary =
       "kind" in display && display.kind === "nostr.event"
         ? `nostr kind ${display.eventKind}${eventId === undefined ? "" : ` ${eventId}`}`
-        : "summary" in display
-          ? display.summary
-          : `${display.kind} ${display.amountSats}`;
+        : "kind" in display && display.kind === "lightning.invoice"
+          ? `lightning invoice ${display.amountSats} sats`
+          : "summary" in display
+            ? display.summary
+            : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
       at: this.options.now(),

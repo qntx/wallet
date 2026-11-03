@@ -15,5 +15,6 @@ export type RequestMethod =
   | "zap"
   | "evm-sign"
   | "nostr-sign"
+  | "webln-invoice"
   | "spark-deposit"
   | "spark-exit";

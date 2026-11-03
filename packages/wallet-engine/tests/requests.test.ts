@@ -121,7 +121,16 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   const controller = new RequestController({
     transactions,
     ...bookDeps(),
-    spark: {} as SparkController,
+    spark: {
+      createInvoice: async () =>
+        Promise.resolve({
+          id: "inv-1",
+          invoice: "lnbc1fake",
+          paymentHash: new Uint8Array(32),
+          amountSats: 100,
+          expiresAtMs: 999,
+        }),
+    } as unknown as SparkController,
     nostrSign: async () => {
       nostrSignCalls.push("sign");
       return Promise.resolve(nostrSigned);
@@ -405,7 +414,16 @@ function evmWorld(options: {
   const requests = new RequestController({
     transactions,
     ...bookDeps(),
-    spark: {} as SparkController,
+    spark: {
+      createInvoice: async () =>
+        Promise.resolve({
+          id: "inv-1",
+          invoice: "lnbc1fake",
+          paymentHash: new Uint8Array(32),
+          amountSats: 100,
+          expiresAtMs: 999,
+        }),
+    } as unknown as SparkController,
     nostrSign: async () => {
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
@@ -727,5 +745,40 @@ describe("nostr-sign approval", () => {
     await expect(f.controller.approve(request.id, "send")).rejects.toMatchObject({
       code: "invalid-input",
     });
+  });
+});
+
+describe("webln-invoice and browser-origin pay", () => {
+  it("approve(id, webln-invoice) creates the invoice and returns the payment request", async () => {
+    const f = fake();
+    await f.controller.init();
+    const pending = await f.controller.prepare({
+      method: "webln-invoice",
+      origin: { kind: "browser", origin: "https://dapp.example" },
+      ref: { walletId: "w", groupIndex: 0, network: "mainnet" },
+      amountSats: 100,
+      memo: "test",
+    });
+    const result = await f.controller.approve(pending.id, "webln-invoice");
+    expect(result).toMatchObject({
+      kind: "lightning.invoice",
+      paymentRequest: expect.any(String),
+    });
+    expect(result.paymentRequest).not.toBe("");
+    expect(f.nostrSignCalls).toHaveLength(0);
+  });
+
+  it("a pay request carrying a browser origin lands it on the pending request", async () => {
+    const f = fake();
+    await f.controller.init();
+    const origin = { kind: "browser", origin: "https://dapp.example" } as const;
+    const pending = await f.controller.prepare({
+      method: "pay",
+      origin,
+      account: { walletId: "w", groupIndex: 0, network: "mainnet" },
+      option: { kind: "bitcoin", address: "bc1qexampleaddress0000" },
+      amountSats: 100,
+    });
+    expect(pending.origin).toStrictEqual(origin);
   });
 });

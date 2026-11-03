@@ -186,6 +186,12 @@ async function openConnect(context: BrowserContext) {
   const bridge = createBrowserBridge({
     eip1193: rig.eip1193,
     nip07: rig.nip07,
+    webln: {
+      handle: async () => {
+        await Promise.resolve();
+        return null;
+      },
+    },
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),
