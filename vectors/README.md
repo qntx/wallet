@@ -12,10 +12,11 @@ it for funds.**
 | `envelope.json`  | Fixed key/nonce/context/header → sealed envelope (record and factor contexts)                      | `bun scripts/vectors/envelope.ts` — spells the format out byte by byte, no kernel imports                                              |
 | `passkey.json`   | PRF `00..1f` → entropy → mnemonic → seed → NIP-06 group 0 key → `walletId`                         | `bun scripts/vectors/passkey.ts` — uses the libraries directly, no kernel imports                                                      |
 | `factor-wrap.json` | KEK → factor public key; fixed DEK/eph/nonce → factor wrap v2 `sealed` (`0x02 ‖ ephPk ‖ binding ‖ envelope`) | `bun scripts/vectors/factor-wrap.ts` — uses noble directly, no kernel imports |
-| `records.json`     | Exact public-header texts (entropy, data-key, nostr-key all origins, both factors) and the vault meta object | `bun scripts/vectors/records.ts` — `JSON.stringify` in the documented key order, no kernel imports |
+| `records.json`     | Exact public-header texts (entropy, data-key, nostr derived + sync key, both factors) and the vault meta object | `bun scripts/vectors/records.ts` — `JSON.stringify` in the documented key order, no kernel imports |
 | `protocol.json`    | PROTOCOL_VERSION 2 request envelopes, ok/err responses and events (`{"$bytes": hex}` marks Uint8Array), plus near-miss rejects | `bun scripts/vectors/protocol.ts` — wire shapes spelled out literally, no `@qntx/wallet` imports |
 | `native-vault-image.json` | File RecordStore vault images: empty, initialized, records/factors, malformed rejects | `bun scripts/vectors/native-vault-image.ts` — raw cborg, no kernel imports |
 | `native-frames.json`  | Kernel-channel CBOR frames: accepted values and rejected encodings | `bun scripts/vectors/native-frames.ts` — raw cborg, no package imports |
+| `sync-key.json`      | The test mnemonic's metadata sync key: `m/44'/1237'/2147483647'/0/0` private + x-only public key | `bun scripts/vectors/sync-key.ts` — `@scure/bip32` + noble schnorr, no kernel imports |
 | `spark-accounts.json` | Spark identity public keys for account groups 0/1 on mainnet/regtest under the public test mnemonic | `bun scripts/spark-accounts-vector.ts` from `packages/wallet-worker` — real `createSparkSigner` on the shipped spark.wasm |
 
 ## factor vectors

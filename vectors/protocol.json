@@ -408,6 +408,71 @@
       }
     },
     {
+      "name": "request-nostr.syncKey",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 23,
+        "method": "nostr.syncKey",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "walletId": "0011223344556677"
+        }
+      }
+    },
+    {
+      "name": "request-nostr.syncSign",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 24,
+        "method": "nostr.syncSign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "walletId": "0011223344556677",
+          "event": {
+            "kind": 30078,
+            "created_at": 1767225600,
+            "tags": [
+              [
+                "d",
+                "meta/tag"
+              ]
+            ],
+            "content": "sealed-doc"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-nostr.syncEncrypt",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 25,
+        "method": "nostr.syncEncrypt",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "walletId": "0011223344556677",
+          "text": "wallet metadata"
+        }
+      }
+    },
+    {
+      "name": "request-nostr.syncDecrypt",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 26,
+        "method": "nostr.syncDecrypt",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "walletId": "0011223344556677",
+          "text": "ciphertext?iv=1"
+        }
+      }
+    },
+    {
       "name": "request-spark.identityPublicKey",
       "check": "request",
       "message": {
@@ -1011,6 +1076,58 @@
         "v": 2,
         "id": 21,
         "ok": "ciphertext?iv=1"
+      }
+    },
+    {
+      "name": "response-ok-nostr.syncKey",
+      "check": "response:nostr.syncKey",
+      "message": {
+        "v": 1,
+        "id": 23,
+        "ok": {
+          "publicKey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917"
+        }
+      }
+    },
+    {
+      "name": "response-ok-nostr.syncSign",
+      "check": "response:nostr.syncSign",
+      "message": {
+        "v": 1,
+        "id": 24,
+        "ok": {
+          "id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "pubkey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
+          "sig": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "kind": 1,
+          "created_at": 1767225600,
+          "tags": [
+            [
+              "p",
+              "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
+              "wss://relay.example"
+            ]
+          ],
+          "content": "gm"
+        }
+      }
+    },
+    {
+      "name": "response-ok-nostr.syncEncrypt",
+      "check": "response:nostr.syncEncrypt",
+      "message": {
+        "v": 1,
+        "id": 25,
+        "ok": "ciphertext?iv=1"
+      }
+    },
+    {
+      "name": "response-ok-nostr.syncDecrypt",
+      "check": "response:nostr.syncDecrypt",
+      "message": {
+        "v": 1,
+        "id": 26,
+        "ok": "wallet metadata"
       }
     },
     {

@@ -3,7 +3,7 @@
  *
  * @qntx/nostr. Secret data never appears here.
  */
-import type { Event, NostrSigner } from "@qntx/nostr";
+import type { Event, NostrSigner, UnsignedEvent } from "@qntx/nostr";
 import type { Rumor } from "@qntx/nostr/nips/nip59";
 
 import type {
@@ -24,9 +24,18 @@ export type WalletSigner = {
   readonly unwrapGiftWraps: (events: ReadonlyArray<Event>) => Promise<ReadonlyArray<Rumor | Error>>;
 } & NostrSigner;
 
-export type NostrImportKeyInput =
-  | { readonly nsec: string }
-  | { readonly ncryptsec: string; readonly password: string };
+/**
+ * The wallet metadata sync signer (WD-076): one dedicated key per wallet, derived at the reserved
+ * NIP-06 segment `m/44'/1237'/2147483647'/0/0`. It authors and seals only kind-30078 metadata
+ * events; `getPublicKey`/`signEvent`/`encrypt`/`decrypt` go through the kernel's nostr.sync*
+ * methods with the same forged-event checks as a `WalletSigner`.
+ */
+export type WalletSyncSigner = {
+  readonly getPublicKey: () => Promise<string>;
+  readonly signEvent: (unsigned: UnsignedEvent) => Promise<Event>;
+  readonly encrypt: (text: string) => Promise<string>;
+  readonly decrypt: (payload: string) => Promise<string>;
+};
 
 export type NostrExportKeyFormat =
   | { readonly kind: "nsec" }
@@ -34,6 +43,8 @@ export type NostrExportKeyFormat =
 
 export type NostrApi = {
   readonly signer: (ref: NostrKeyRef) => WalletSigner;
+  /** The wallet's dedicated metadata sync signer — seed-derived, never in `nostr.keys`. */
+  readonly syncSigner: (walletId: string) => WalletSyncSigner;
   /** Public keys a wallet's identity indices derive — discovery before deriveKey. */
   readonly discover: (
     walletId: string,

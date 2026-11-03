@@ -195,7 +195,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     wallet: options.wallet,
     accounts,
     addressBook,
-    nostr: { signer: (ref) => nostr(options.wallet).signer(ref) },
+    nostr: { syncSigner: (walletId) => nostr(options.wallet).syncSigner(walletId) },
     metaSync: options.metaSync,
     logger: options.logger,
     now: options.now,

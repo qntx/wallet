@@ -701,12 +701,13 @@ describe("backup enable/update/disable", () => {
   });
 
   it("a locked snapshot still reports the backup id; a tampered header corrupts", async () => {
-    const h = createHarness({ seed: 93 });
+    const h = createHarness({ seed: 93, idleMs: 60_000 });
     await h.settle();
     const { session } = await createPasskeyWallet(h);
     await createBackupEnvelope(h, session, [backupPassword()]);
     const id = strField(await statusBackup(h, session), "id");
-    await h.call("vault.lock", null, session);
+    h.advance(61_000);
+    await h.settle();
     const locked = await statusBackup(h);
     expect(strField(locked, "id")).toBe(id);
 

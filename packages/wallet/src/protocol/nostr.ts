@@ -153,6 +153,22 @@ export const NOSTR_METHODS: {
     { readonly publicKey: string; readonly peer: string; readonly text: string },
     string
   >;
+  readonly "nostr.syncKey": MethodSpec<
+    { readonly walletId: string },
+    { readonly publicKey: string }
+  >;
+  readonly "nostr.syncSign": MethodSpec<
+    { readonly walletId: string; readonly event: UnsignedEventInput },
+    SignedEvent
+  >;
+  readonly "nostr.syncEncrypt": MethodSpec<
+    { readonly walletId: string; readonly text: string },
+    string
+  >;
+  readonly "nostr.syncDecrypt": MethodSpec<
+    { readonly walletId: string; readonly text: string },
+    string
+  >;
   readonly "nostr.unwrapGiftWraps": MethodSpec<
     { readonly publicKey: string; readonly events: ReadonlyArray<SignedEvent> },
     { readonly results: ReadonlyArray<UnwrapResult> }
@@ -199,5 +215,29 @@ export const NOSTR_METHODS: {
     result: obj({
       results: arr(union(obj({ ok: rumor }), obj({ err: walletErrorCode })), MAX_BATCH),
     }),
+  },
+  "nostr.syncKey": {
+    session: true,
+    presence: false,
+    params: obj({ walletId }),
+    result: obj({ publicKey }),
+  },
+  "nostr.syncSign": {
+    session: true,
+    presence: false,
+    params: obj({ walletId, event: signEventInput }),
+    result: signedEvent,
+  },
+  "nostr.syncEncrypt": {
+    session: true,
+    presence: false,
+    params: obj({ walletId, text: str(MAX_TEXT) }),
+    result: textResult,
+  },
+  "nostr.syncDecrypt": {
+    session: true,
+    presence: false,
+    params: obj({ walletId, text: str(MAX_TEXT * 4) }),
+    result: textResult,
   },
 };

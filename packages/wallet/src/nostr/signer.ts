@@ -14,7 +14,7 @@ import { MAX_BATCH } from "../protocol/core.ts";
 import type { UnsignedEventInput } from "../protocol/index.ts";
 import { WalletError } from "../types.ts";
 import type { NostrKeyInfo, NostrKeyRef } from "../types.ts";
-import type { WalletSigner } from "./types.ts";
+import type { WalletSigner, WalletSyncSigner } from "./types.ts";
 
 /** Resolves a public ref to its stored key record; missing refs are `not-found`. */
 export function keyInfoOf(internals: WalletInternals, ref: NostrKeyRef): NostrKeyInfo {
@@ -116,5 +116,51 @@ export function proxySigner(ref: NostrKeyRef, internals: WalletInternals): Walle
       }
       return results;
     },
+  };
+}
+
+/**
+ * The wallet metadata sync signer (WD-076): the key lives at the reserved NIP-06 segment and is
+ * sealed by `nostr.syncKey` on first use, so `getPublicKey` both returns and creates it. Signed
+ * events pass the same forged-event check as `proxySigner`.
+ */
+export function syncSigner(walletId: string, internals: WalletInternals): WalletSyncSigner {
+  let cached: string | undefined;
+  const publicKey = async (): Promise<string> => {
+    if (cached === undefined) {
+      const resolved = await internals.call("nostr.syncKey", { walletId });
+      cached = resolved.publicKey;
+    }
+    return cached;
+  };
+  return {
+    getPublicKey: publicKey,
+    signEvent: async (unsigned) => {
+      const expected = await publicKey();
+      const event: UnsignedEventInput = {
+        kind: unsigned.kind,
+        created_at: unsigned.created_at,
+        tags: unsigned.tags,
+        content: unsigned.content,
+      };
+      const signed = await internals.call("nostr.syncSign", { walletId, event });
+      const requested: UnsignedEvent = {
+        kind: unsigned.kind,
+        created_at: unsigned.created_at,
+        tags: unsigned.tags,
+        content: unsigned.content,
+        pubkey: expected,
+      };
+      if (
+        signed.pubkey !== expected ||
+        !signedMatchesUnsigned(signed, requested) ||
+        !verifyEvent(signed)
+      ) {
+        throw integrity("the kernel returned a forged event");
+      }
+      return signed;
+    },
+    encrypt: async (text) => internals.call("nostr.syncEncrypt", { walletId, text }),
+    decrypt: async (payload) => internals.call("nostr.syncDecrypt", { walletId, text: payload }),
   };
 }

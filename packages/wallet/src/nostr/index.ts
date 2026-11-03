@@ -16,8 +16,8 @@ import type {
   UnlockFactor,
   Wallet,
 } from "../types.ts";
-import { keyInfoOf, proxySigner } from "./signer.ts";
-import type { NostrApi, NostrExportKeyFormat, WalletSigner } from "./types.ts";
+import { keyInfoOf, proxySigner, syncSigner } from "./signer.ts";
+import type { NostrApi, NostrExportKeyFormat, WalletSigner, WalletSyncSigner } from "./types.ts";
 
 export type {
   DerivedNostrKey,
@@ -27,11 +27,14 @@ export type {
   NostrKeyRef,
   NostrUnwrapResult,
   WalletSigner,
+  WalletSyncSigner,
 } from "./types.ts";
 
 function createNostrApi(internals: WalletInternals): NostrApi {
   return {
     signer: (ref: NostrKeyRef): WalletSigner => proxySigner(ref, internals),
+
+    syncSigner: (walletId: string): WalletSyncSigner => syncSigner(walletId, internals),
 
     discover: async (
       walletId: string,

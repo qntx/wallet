@@ -15,7 +15,14 @@ import type { OpenedRecord } from "../../vault/vault.ts";
 import * as keys from "./keys.ts";
 import * as ops from "./ops.ts";
 import { SignerPool } from "./pool.ts";
-import { NOSTR_KEY_KIND, nostrStatus, parseNostrKeyHeader } from "./record.ts";
+import {
+  NOSTR_KEY_KIND,
+  NOSTR_SYNC_KEY_KIND,
+  nostrStatus,
+  parseNostrKeyHeader,
+  parseSyncKeyHeader,
+} from "./record.ts";
+import * as sync from "./sync.ts";
 
 export type NostrModule = {
   readonly vault: VaultHooks;
@@ -32,9 +39,10 @@ export type NostrModule = {
 
 export function createNostrModule(backend: NostrBackend): NostrModule {
   const pool = new SignerPool(backend);
+  const syncPool = new SignerPool(backend);
 
   const vault: VaultHooks = {
-    ownsRecord: (kind) => kind === NOSTR_KEY_KIND,
+    ownsRecord: (kind) => kind === NOSTR_KEY_KIND || kind === NOSTR_SYNC_KEY_KIND,
 
     claimUnlocked: (records) => {
       const unclaimed: OpenedRecord[] = [];
@@ -52,6 +60,16 @@ export function createNostrModule(backend: NostrBackend): NostrModule {
               true,
             );
           }
+        } else if (record.kind === NOSTR_SYNC_KEY_KIND) {
+          const claimed = syncPool.add(record.plaintext);
+          if (claimed !== record.id) {
+            throw new KernelError(
+              "integrity",
+              "sync key does not match its record",
+              undefined,
+              true,
+            );
+          }
         } else {
           unclaimed.push(record);
         }
@@ -62,22 +80,29 @@ export function createNostrModule(backend: NostrBackend): NostrModule {
     forget: (kind, id) => {
       if (kind === NOSTR_KEY_KIND) {
         pool.remove(id);
+      } else if (kind === NOSTR_SYNC_KEY_KIND) {
+        syncPool.remove(id);
       }
     },
 
     lock: () => {
       pool.dispose();
+      syncPool.dispose();
     },
 
     walletDeleteOps: (image, walletId) => {
       const ops: StoreOp[] = [];
       for (const record of image.records) {
-        if (record.kind !== NOSTR_KEY_KIND) {
-          continue;
-        }
-        const header = parseNostrKeyHeader(record.header);
-        if (header.walletId === walletId) {
-          ops.push({ op: "delete-record", kind: NOSTR_KEY_KIND, id: record.id });
+        if (record.kind === NOSTR_KEY_KIND) {
+          const header = parseNostrKeyHeader(record.header);
+          if (header.walletId === walletId) {
+            ops.push({ op: "delete-record", kind: NOSTR_KEY_KIND, id: record.id });
+          }
+        } else if (record.kind === NOSTR_SYNC_KEY_KIND) {
+          const header = parseSyncKeyHeader(record.header);
+          if (header.walletId === walletId) {
+            ops.push({ op: "delete-record", kind: NOSTR_SYNC_KEY_KIND, id: record.id });
+          }
         }
       }
       return ops;
@@ -100,6 +125,12 @@ export function createNostrModule(backend: NostrBackend): NostrModule {
       ops.nip44Decrypt(ctx, pool, params, session),
     "nostr.unwrapGiftWraps": async (ctx, params, session) =>
       ops.unwrapGiftWraps(ctx, pool, params, session),
+    "nostr.syncKey": async (ctx, params, session) => sync.syncKey(ctx, params, session),
+    "nostr.syncSign": async (ctx, params, session) => sync.syncSign(ctx, syncPool, params, session),
+    "nostr.syncEncrypt": async (ctx, params, session) =>
+      sync.syncEncrypt(ctx, syncPool, params, session),
+    "nostr.syncDecrypt": async (ctx, params, session) =>
+      sync.syncDecrypt(ctx, syncPool, params, session),
   };
 
   return {

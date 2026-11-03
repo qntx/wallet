@@ -64,7 +64,44 @@ export function nostrStatus(records: ReadonlyArray<StoredRecord>): {
       } catch {
         corrupted = true;
       }
+    } else if (record.kind === NOSTR_SYNC_KEY_KIND) {
+      try {
+        parseSyncKeyHeader(record.header);
+      } catch {
+        corrupted = true;
+      }
     }
   }
   return { keys, corrupted };
+}
+
+/** The record kind the wallet metadata sync key uses — one per wallet, keyed by public key. */
+export const NOSTR_SYNC_KEY_KIND = "nostr-sync-key";
+
+/**
+ * The sync key's public header: which wallet it belongs to and when it was sealed. It is never in
+ * the `nostr.keys` status section — `nostrStatus` only parses it for the corrupted latch.
+ */
+export type SyncKeyHeader = {
+  readonly publicKey: string; // 64 lowercase hex
+  readonly walletId: string;
+  readonly createdAt: number;
+};
+
+export function encodeSyncKeyHeader(header: SyncKeyHeader): string {
+  return JSON.stringify({
+    publicKey: header.publicKey,
+    walletId: header.walletId,
+    createdAt: header.createdAt,
+  });
+}
+
+export function parseSyncKeyHeader(text: string): SyncKeyHeader {
+  const object = headerObject(text);
+  expectKeys(object, ["publicKey", "walletId", "createdAt"]);
+  return {
+    publicKey: asPublicKey(object["publicKey"]),
+    walletId: asWalletId(object["walletId"]),
+    createdAt: asCreatedAt(object["createdAt"]),
+  };
 }

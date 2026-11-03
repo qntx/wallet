@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { encodeNostrKeyHeader, parseNostrKeyHeader } from "../src/modules/nostr/record.ts";
+import {
+  encodeNostrKeyHeader,
+  encodeSyncKeyHeader,
+  parseNostrKeyHeader,
+  parseSyncKeyHeader,
+} from "../src/modules/nostr/record.ts";
 import type { NostrKeyHeader } from "../src/modules/nostr/record.ts";
 import {
   encodeHeader,
@@ -56,6 +61,15 @@ describe("header round trip", () => {
     expect(parseNostrKeyHeader(encodeNostrKeyHeader(nostrDerived))).toStrictEqual(nostrDerived);
   });
 
+  it("nostr-sync-key", () => {
+    const sync = {
+      publicKey: nostrDerived.publicKey,
+      walletId: nostrDerived.walletId,
+      createdAt: nostrDerived.createdAt,
+    };
+    expect(parseSyncKeyHeader(encodeSyncKeyHeader(sync))).toStrictEqual(sync);
+  });
+
   it("data-key", () => {
     expect(parseDataKeyHeader(encodeHeader(dataKey))).toStrictEqual(dataKey);
   });
@@ -107,6 +121,22 @@ describe("header rejection", () => {
         ),
       ),
     ).toBe("integrity");
+  });
+
+  it("a sync-key header is strict about its own three fields", () => {
+    const sync = {
+      publicKey: nostrDerived.publicKey,
+      walletId: nostrDerived.walletId,
+      createdAt: nostrDerived.createdAt,
+    };
+    expect(kernelError(() => parseSyncKeyHeader(JSON.stringify({ ...sync, index: 0 })))).toBe(
+      "integrity",
+    );
+    expect(kernelError(() => parseSyncKeyHeader(JSON.stringify({ ...sync, origin: "nsec" })))).toBe(
+      "integrity",
+    );
+    const { walletId: _w, ...withoutWallet } = sync;
+    expect(kernelError(() => parseSyncKeyHeader(JSON.stringify(withoutWallet)))).toBe("integrity");
   });
 
   it("a legacy standalone or nip46 header is rejected", () => {

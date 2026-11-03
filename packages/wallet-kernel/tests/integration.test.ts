@@ -45,6 +45,9 @@ const passkeyVector = loadVectors("passkey.json") as {
     walletId: string;
   };
 };
+const syncKeyVector = loadVectors("sync-key.json") as {
+  vector: { path: string; privateKey: string; publicKey: string };
+};
 const nip06 = loadVectors("nip06.json") as {
   vectors: Array<{ mnemonic: string; privateKey: string; publicKey: string; nsec: string }>;
 };
@@ -279,6 +282,19 @@ async function createPasskeyWallet(h: ReturnType<typeof createHarness>) {
 }
 
 /** Creation no longer derives keys: tests get the group-0 key explicitly. */
+async function importNip06Wallet(h: ReturnType<typeof createHarness>) {
+  const res = ok(
+    await h.call("wallet.importMnemonic", {
+      mnemonic: utf8ToBytes(nip06.vectors[0]!.mnemonic),
+      factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+    }),
+  );
+  return {
+    session: strField(res, "session"),
+    walletId: strField(field(res, "wallet"), "walletId"),
+  };
+}
+
 async function deriveKey(
   h: ReturnType<typeof createHarness>,
   session: string,
@@ -706,6 +722,144 @@ describe("nostr operations", () => {
     );
     expect(ok(await h.call("nostr.removeKey", { publicKey: key }, session))).toBeNull();
     expect(errCode(await h.call("nostr.removeKey", { publicKey: key }, session))).toBe("not-found");
+  });
+});
+
+describe("nostr sync key", () => {
+  const syncEvent = () => ({ kind: 30078, created_at: 1, tags: [["d", "meta"]], content: "x" });
+
+  async function syncPub(h: ReturnType<typeof createHarness>, session: string, walletId: string) {
+    return strField(ok(await h.call("nostr.syncKey", { walletId }, session)), "publicKey");
+  }
+
+  it("derives and seals a dedicated key, idempotent and independent of identities", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session, walletId } = await createPasskeyWallet(h);
+    const pub = await syncPub(h, session, walletId);
+    expect(pub).toMatch(/^[0-9a-f]{64}$/);
+    // A second call answers the same record, never a second derivation.
+    await expect(syncPub(h, session, walletId)).resolves.toBe(pub);
+    // It differs from every identity index — identity 0 is not the sync key.
+    expect(pub).not.toBe(await deriveKey(h, session, walletId, 0));
+  });
+
+  it("matches the independent m/44'/1237'/2147483647'/0/0 vector", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session, walletId } = await importNip06Wallet(h);
+    await expect(syncPub(h, session, walletId)).resolves.toBe(syncKeyVector.vector.publicKey);
+  });
+
+  it("is absent from the status snapshot and from the backup payload", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session, walletId } = await createPasskeyWallet(h);
+    // Backup still enables on a fresh vault — the sync record below must not change that.
+    const pub = await syncPub(h, session, walletId);
+    expect(lastStatus(h).nostr.keys).toHaveLength(0); // sync keys never list
+    const image = await h.store.load();
+    expect(image.records.some((r) => r.kind === "nostr-sync-key")).toBe(true);
+    ok(
+      await h.call(
+        "backup.enable",
+        {
+          verify: passkeyFactor(),
+          factors: [
+            {
+              kind: "passkey",
+              ceremony: "host",
+              credentialId: CREDENTIAL_ID,
+              prfBackup: new Uint8Array(32).fill(0x33),
+            },
+          ],
+        },
+        session,
+      ),
+    );
+    expect(lastStatus(h).nostr.keys.map((k) => k.publicKey)).not.toContain(pub);
+  });
+
+  it("signs only kind-30078 events and encrypts to itself", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session, walletId } = await createPasskeyWallet(h);
+    const pub = await syncPub(h, session, walletId);
+    expect(
+      errCode(
+        await h.call(
+          "nostr.syncSign",
+          { walletId, event: { kind: 1, created_at: 1, tags: [], content: "x" } },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    const signed = ok(await h.call("nostr.syncSign", { walletId, event: syncEvent() }, session));
+    expect(strField(signed, "pubkey")).toBe(pub);
+    const sealed = ok(await h.call("nostr.syncEncrypt", { walletId, text: "meta" }, session));
+    expect(sealed).toMatch(/^[0-9a-z+/=_-]+$/i);
+    const plain = ok(
+      await h.call("nostr.syncDecrypt", { walletId, text: sealed as string }, session),
+    );
+    expect(plain).toBe("meta");
+    // A NIP-44 payload sealed by another sender does not decrypt.
+    const foreign = await new KeysSigner(Keys.generate()).nip44Encrypt(pub, "foreign");
+    expect(
+      errCode(await h.call("nostr.syncDecrypt", { walletId, text: foreign }, session)),
+    ).toBeDefined();
+  });
+
+  it("is not exportable, is forgotten on wallet delete and disposed on lock", async () => {
+    const h = createHarness({ idleMs: 60_000 });
+    await h.settle();
+    const { session, walletId } = await createPasskeyWallet(h);
+    const pub = await syncPub(h, session, walletId);
+    // exportKey only reaches nostr-key records — the sync key is not-found there.
+    expect(
+      errCode(
+        await h.call(
+          "nostr.exportKey",
+          {
+            verify: {
+              kind: "passkey",
+              credentialId: CREDENTIAL_ID,
+              prf: new Uint8Array(PRF_VAULT),
+            },
+            publicKey: pub,
+            format: { kind: "nsec" },
+          },
+          session,
+        ),
+      ),
+    ).toBe("not-found");
+    // The idle timer disposes the pooled signer; a sign after re-unlock claims it again.
+    h.advance(61_000);
+    await h.settle();
+    expect(lastStatus(h).vault).toBe("locked");
+    expect(errCode(await h.call("nostr.syncSign", { walletId, event: syncEvent() }, session))).toBe(
+      "locked",
+    );
+    const unlocked = strField(
+      ok(
+        await h.call("vault.unlock", {
+          factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+        }),
+      ),
+      "session",
+    );
+    // Deleting the wallet removes its sync record atomically.
+    ok(
+      await h.call(
+        "wallet.delete",
+        {
+          verify: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+          walletId,
+        },
+        unlocked,
+      ),
+    );
+    const after = await h.store.load();
+    expect(after.records.some((r) => r.kind === "nostr-sync-key")).toBe(false);
   });
 });
 

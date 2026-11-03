@@ -318,6 +318,54 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "nostr.syncKey",
+    message: {
+      v: 2,
+      id: 23,
+      method: "nostr.syncKey",
+      session: SESSION,
+      params: { walletId: WALLET_ID },
+    },
+  },
+  {
+    name: "nostr.syncSign",
+    message: {
+      v: 2,
+      id: 24,
+      method: "nostr.syncSign",
+      session: SESSION,
+      params: {
+        walletId: WALLET_ID,
+        event: {
+          kind: 30078,
+          created_at: EVENT_TIME,
+          tags: [["d", "meta/tag"]],
+          content: "sealed-doc",
+        },
+      },
+    },
+  },
+  {
+    name: "nostr.syncEncrypt",
+    message: {
+      v: 2,
+      id: 25,
+      method: "nostr.syncEncrypt",
+      session: SESSION,
+      params: { walletId: WALLET_ID, text: "wallet metadata" },
+    },
+  },
+  {
+    name: "nostr.syncDecrypt",
+    message: {
+      v: 2,
+      id: 26,
+      method: "nostr.syncDecrypt",
+      session: SESSION,
+      params: { walletId: WALLET_ID, text: "ciphertext?iv=1" },
+    },
+  },
+  {
     name: "spark.identityPublicKey",
     message: {
       v: 2,
@@ -600,6 +648,26 @@ const accept = [
     name: "response-ok-nostr.nip44Encrypt",
     check: "response:nostr.nip44Encrypt",
     message: { v: 2, id: 21, ok: "ciphertext?iv=1" },
+  },
+  {
+    name: "response-ok-nostr.syncKey",
+    check: "response:nostr.syncKey",
+    message: { v: 1, id: 23, ok: { publicKey: PUBLIC_KEY } },
+  },
+  {
+    name: "response-ok-nostr.syncSign",
+    check: "response:nostr.syncSign",
+    message: { v: 1, id: 24, ok: signedEvent },
+  },
+  {
+    name: "response-ok-nostr.syncEncrypt",
+    check: "response:nostr.syncEncrypt",
+    message: { v: 1, id: 25, ok: "ciphertext?iv=1" },
+  },
+  {
+    name: "response-ok-nostr.syncDecrypt",
+    check: "response:nostr.syncDecrypt",
+    message: { v: 1, id: 26, ok: "wallet metadata" },
   },
   {
     name: "response-ok-spark.identityPublicKey",
