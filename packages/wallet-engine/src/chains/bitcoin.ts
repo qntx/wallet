@@ -243,10 +243,9 @@ export class BitcoinChainAdapter {
           entry.nonWitnessUtxo = raw;
         }
         if (template === "btc.bip86") {
-          entry.tapInternalKey = pub.subarray(1);
-          entry.tapBip32Derivation = [
-            [pub.subarray(1), { hashes: [], der: { fingerprint, path: pathOf(u) } }],
-          ];
+          // `pubkeyOf` already returns the x-only internal key for bip86.
+          entry.tapInternalKey = pub;
+          entry.tapBip32Derivation = [[pub, { hashes: [], der: { fingerprint, path: pathOf(u) } }]];
         } else {
           entry.bip32Derivation = [[pub, { fingerprint, path: pathOf(u) }]];
           if (template === "btc.bip49") {

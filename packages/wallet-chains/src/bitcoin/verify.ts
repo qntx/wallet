@@ -6,8 +6,9 @@
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
 import { base64 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
-import { Address, OutScript } from "@scure/btc-signer/payment.js";
+import { Address, OutScript, p2tr } from "@scure/btc-signer/payment.js";
 import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
+import { taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 
 import type { BitcoinAccountTemplate } from "./account.ts";
 import { bip322ToSpendTxid } from "./message.ts";
@@ -131,7 +132,9 @@ export const verifyBitcoinPsbtSignatures = (
         if (
           !eq(claimed.pubkey, xonly) ||
           !(rawSig instanceof Uint8Array) ||
-          (rawSig.length !== 64 && rawSig.length !== 65)
+          (rawSig.length !== 64 && rawSig.length !== 65) ||
+          (input.tapInternalKey !== undefined && !eq(input.tapInternalKey, xonly)) ||
+          !eq(prevScript, p2tr(xonly).script)
         ) {
           return false;
         }
@@ -150,9 +153,11 @@ export const verifyBitcoinPsbtSignatures = (
           scripts.push(w.script);
           amounts.push(w.amount);
         }
+        // BIP-341 key-path signatures commit to the tweaked output key, not the internal key.
+        const [outputKey] = taprootTweakPubkey(xonly, new Uint8Array());
         if (
           !complete ||
-          !schnorr.verify(sig, tx.preimageWitnessV1(idx, scripts, sighashType, amounts), xonly)
+          !schnorr.verify(sig, tx.preimageWitnessV1(idx, scripts, sighashType, amounts), outputKey)
         ) {
           return false;
         }
