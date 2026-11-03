@@ -29297,7 +29297,7 @@ zoo`.split("\n"));
 		});
 	}
 	function requireSyncSigner(ctx, pool, walletId) {
-		const publicKey = parseSyncKeyHeader(syncRecord(ctx, walletId).header).publicKey;
+		const { publicKey } = parseSyncKeyHeader(syncRecord(ctx, walletId).header);
 		return pool.get(publicKey);
 	}
 	async function syncSign(ctx, pool, params, requestSession) {

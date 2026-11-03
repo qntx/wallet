@@ -13,6 +13,7 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 - BREAKING: wallet metadata documents are now authored by the wallet's dedicated sync key
   (`m/44'/1237'/2147483647'/0/0`); documents authored by identity 0's Nostr key are no longer read.
+  `MetaSyncWalletStatus` no longer has an `unavailable` state — every wallet owns a sync key.
 
 ### Removed
 

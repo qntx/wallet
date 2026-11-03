@@ -180,7 +180,7 @@ describe("MetaSyncController", () => {
     expect(pubkey).toMatch(/^[0-9a-f]{64}$/);
     expect(r.relay.fetchCalls).toBeGreaterThan(0);
     const s = r.metaSync.getState().wallets;
-    expect(s[created.walletId]?.status).not.toBe("unavailable");
+    expect(s[created.walletId]?.status).toBe("synced");
     await r.metaSync.destroy();
     await r.accounts.destroy();
     await r.wallet.destroy();
