@@ -1,7 +1,7 @@
 import type { Event, Filter } from "@qntx/nostr";
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
-import type { NostrKeyRef, WalletSigner } from "@qntx/wallet/nostr";
+import type { WalletSyncSigner } from "@qntx/wallet/nostr";
 
 import type { AccountTreeController } from "../accounts/controller.ts";
 import type { AddressBookRecord } from "../addresses/record.ts";
@@ -48,8 +48,8 @@ export type MetaSyncControllerOptions = {
   readonly wallet: Wallet;
   readonly accounts: AccountTreeController;
   readonly addressBook: AddressBookSync;
-  /** `nostr(wallet)` — the signer is requested per wallet for its group-0 derived key. */
-  readonly nostr: { readonly signer: (ref: NostrKeyRef) => WalletSigner };
+  /** `nostr(wallet).syncSigner` — each wallet signs metadata with its dedicated sync key. */
+  readonly nostr: { readonly syncSigner: (walletId: string) => WalletSyncSigner };
   readonly metaSync: MetaSyncConfig | undefined;
   readonly logger: EngineLogger;
   readonly now: () => number;
@@ -57,9 +57,10 @@ export type MetaSyncControllerOptions = {
 
 /**
  * Wallet-metadata sync over kind-30078 addressable events: one NIP-44-encrypted document per
- * wallet, authored by its group-0 derived key. Pull always precedes publish in an unlock session —
- * replaceable events would otherwise let a stale local tree overwrite a newer remote document.
- * Debounced publishes are per wallet; a generation counter cancels in-flight write-backs on lock.
+ * wallet, authored by its dedicated sync key (WD-070). Pull always precedes publish in an unlock
+ * session — replaceable events would otherwise let a stale local tree overwrite a newer remote
+ * document. Debounced publishes are per wallet; a generation counter cancels in-flight write-backs
+ * on lock.
  */
 export class MetaSyncController extends Controller<MetaSyncState> {
   private readonly options: MetaSyncControllerOptions;
@@ -144,20 +145,12 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     await Promise.all(snap.wallets.map(async (w) => this.pullOne(w.walletId, gen)));
   }
 
-  private async pubkeyFor(signer: WalletSigner): Promise<string> {
+  private async pubkeyFor(signer: WalletSyncSigner): Promise<string> {
     return signer.getPublicKey();
   }
 
-  private signerFor(walletId: string): WalletSigner | undefined {
-    const snap = this.options.wallet.getSnapshot();
-    const ref = { kind: "derived" as const, walletId, index: 0 };
-    const hasKey = snap.nostr.keys.some(
-      (k) => k.ref.kind === "derived" && k.ref.walletId === walletId && k.ref.index === 0,
-    );
-    if (!hasKey) {
-      return undefined;
-    }
-    return this.options.nostr.signer(ref);
+  private signerFor(walletId: string): WalletSyncSigner {
+    return this.options.nostr.syncSigner(walletId);
   }
 
   private setStatus(walletId: string, status: MetaSyncWalletStatus): void {
@@ -212,11 +205,8 @@ export class MetaSyncController extends Controller<MetaSyncState> {
       } else {
         // A verified event we cannot read must never be overwritten — a newer app version
         // (e.g. v: 2) is the most likely cause; decode failure is data corruption.
-        const decrypt = signer.nip44Decrypt;
-        const plaintext =
-          decrypt === undefined
-            ? undefined
-            : await decrypt.call(signer, pubkey, remote.content).catch(() => undefined);
+        const { decrypt } = signer;
+        const plaintext = await decrypt.call(signer, remote.content).catch(() => undefined);
         const doc =
           plaintext === undefined
             ? undefined
@@ -323,21 +313,13 @@ export class MetaSyncController extends Controller<MetaSyncState> {
       return;
     }
     const signer = this.signerFor(walletId);
-    if (signer === undefined) {
-      this.setStatus(walletId, { status: "unavailable" });
-      return;
-    }
     try {
       const bytes = encodeMetaDoc(this.exportDoc(walletId));
       if (bytes === undefined) {
         throw new MetaSyncError("internal", "meta doc exceeds 64 KB");
       }
-      const encrypt = signer.nip44Encrypt;
-      if (encrypt === undefined) {
-        throw new MetaSyncError("internal", "signer lacks nip44 encryption");
-      }
       const pubkey = await this.pubkeyFor(signer);
-      const content = await encrypt.call(signer, pubkey, new TextDecoder().decode(bytes));
+      const content = await signer.encrypt(new TextDecoder().decode(bytes));
       const lastRemote = this.lastRemoteCreatedAt.get(walletId) ?? 0;
       const created_at = Math.max(Math.floor(this.options.now() / 1000), lastRemote + 1);
       const event = await signer.signEvent({

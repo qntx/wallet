@@ -9,6 +9,11 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Changed
+
+- BREAKING: wallet metadata documents are now authored by the wallet's dedicated sync key
+  (`m/44'/1237'/2147483647'/0/0`); documents authored by identity 0's Nostr key are no longer read.
+
 ### Removed
 
 - `nostr.importKey`, `nostr.generateKey` and `nostr.createNip46ClientKey` are gone (WD-076):
@@ -28,6 +33,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `nostr(wallet).syncSigner(walletId)` and the `nostr.syncKey` / `nostr.syncSign` /
+  `nostr.syncEncrypt` / `nostr.syncDecrypt` kernel methods: every wallet owns a dedicated metadata
+  sync key derived at the reserved NIP-06 segment `m/44'/1237'/2147483647'/0/0`, sealed under a
+  `nostr-sync-key` record, claimed into its own signer pool on unlock and disposed on lock. It is
+  never listed in `nostr.keys`, never exportable and never in the backup payload.
+- `@qntx/wallet-engine` metadata sync now authors kind-30078 documents with the wallet's sync key
+  rather than its identity-0 Nostr key; a wallet with no derived identity still syncs.
 - `@qntx/wallet-native`: iOS native passkeys with the PRF extension through `ASAuthorization`
   platform credentials (iOS 18+). The kernel now reads a registration's authenticator data from
   the CBOR attestation object iOS returns, keeps the PRF results of that single ceremony, and

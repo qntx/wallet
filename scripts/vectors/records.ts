@@ -9,6 +9,7 @@
  * - Entropy: walletId, origin, words, backup, createdAt
  * - Data-key: purpose, createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
+ * - Nostr sync key: publicKey, walletId, createdAt
  * - Password factor: salt, iterations, publicKey, createdAt
  * - Passkey factor: credentialId, publicKey, createdAt
  * - Hardware factor: sealedKek, publicKey, createdAt
@@ -44,6 +45,12 @@ function textOf(kind: string, input: Input): string {
         publicKey: i["publicKey"],
         walletId: i["walletId"],
         index: i["index"],
+        createdAt: i["createdAt"],
+      });
+    case "nostr-sync-key":
+      return JSON.stringify({
+        publicKey: i["publicKey"],
+        walletId: i["walletId"],
         createdAt: i["createdAt"],
       });
     case "factor-password":
@@ -130,6 +137,15 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       publicKey: PUBLIC_KEY,
       walletId: WALLET_ID,
       index: 0,
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "nostr-sync-key",
+    kind: "nostr-sync-key",
+    input: {
+      publicKey: PUBLIC_KEY,
+      walletId: WALLET_ID,
       createdAt: CREATED_AT,
     },
   },

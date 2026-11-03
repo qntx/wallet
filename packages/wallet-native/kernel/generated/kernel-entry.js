@@ -888,7 +888,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-COq-r8lV.mjs
+	// packages/wallet/dist/protocol-DbpLncEB.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1193,6 +1193,39 @@
 				events: arr(signedEvent, 64)
 			}),
 			result: obj({ results: arr(union(obj({ ok: rumor }), obj({ err: walletErrorCode })), 64) })
+		},
+		"nostr.syncKey": {
+			session: true,
+			presence: false,
+			params: obj({ walletId }),
+			result: obj({ publicKey })
+		},
+		"nostr.syncSign": {
+			session: true,
+			presence: false,
+			params: obj({
+				walletId,
+				event: signEventInput
+			}),
+			result: signedEvent
+		},
+		"nostr.syncEncrypt": {
+			session: true,
+			presence: false,
+			params: obj({
+				walletId,
+				text: str(MAX_TEXT)
+			}),
+			result: textResult
+		},
+		"nostr.syncDecrypt": {
+			session: true,
+			presence: false,
+			params: obj({
+				walletId,
+				text: str(MAX_TEXT * 4)
+			}),
+			result: textResult
 		}
 	};
 	/**
@@ -29067,9 +29100,36 @@ zoo`.split("\n"));
 		} catch (_unused) {
 			corrupted = true;
 		}
+		else if (record.kind === "nostr-sync-key") try {
+			parseSyncKeyHeader(record.header);
+		} catch (_unused2) {
+			corrupted = true;
+		}
 		return {
 			keys,
 			corrupted
+		};
+	}
+	/** The record kind the wallet metadata sync key uses — one per wallet, keyed by public key. */
+	var NOSTR_SYNC_KEY_KIND = "nostr-sync-key";
+	function encodeSyncKeyHeader(header) {
+		return JSON.stringify({
+			publicKey: header.publicKey,
+			walletId: header.walletId,
+			createdAt: header.createdAt
+		});
+	}
+	function parseSyncKeyHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, [
+			"publicKey",
+			"walletId",
+			"createdAt"
+		]);
+		return {
+			publicKey: asPublicKey(object["publicKey"]),
+			walletId: asWalletId(object["walletId"]),
+			createdAt: asCreatedAt(object["createdAt"])
 		};
 	}
 	// packages/wallet-kernel/src/modules/nostr/keys.ts
@@ -29178,32 +29238,121 @@ zoo`.split("\n"));
 		for (const event of params.events) results.push(await unwrapGiftWrap(pool, params.publicKey, event, ctx.platform.backends.nostr));
 		return { results };
 	}
+	// packages/wallet-kernel/src/modules/nostr/sync.ts
+	/**
+	* Wallet metadata sync — WD-076/WD-070. Every wallet owns one dedicated signing key at the NIP-06
+	* segment `m/44'/1237'/2147483647'/0/0` — above every identity index — used only to author and
+	* encrypt its kind-30078 metadata events. The record is seed-derived, so backups stay wallets-only
+	* and the key is never exportable.
+	*/
+	var SYNC_INDEX = 2147483647;
+	/** The vault's one sync-key record for `walletId`, or `not-found`. */
+	function syncRecord(ctx, walletId) {
+		findRecord(ctx.image, "entropy", walletId);
+		for (const record of ctx.image.records) if (record.kind === "nostr-sync-key") {
+			if (parseSyncKeyHeader(record.header).walletId === walletId) return record;
+		}
+		throw new KernelError("not-found", "no sync key for this wallet");
+	}
+	/**
+	* Returns the wallet's sync key, deriving and sealing it on first use. The guarded commit makes a
+	* concurrent first use an `already-exists`, after which the re-read answers the winner's record.
+	*/
+	async function syncKey(ctx, params, requestSession) {
+		const { dek } = ctx.session.require(requestSession);
+		try {
+			return { publicKey: parseSyncKeyHeader(syncRecord(ctx, params.walletId).header).publicKey };
+		} catch (error) {
+			if (!(error instanceof KernelError && error.code === "not-found")) throw error;
+		}
+		const wallet = findRecord(ctx.image, "entropy", params.walletId);
+		return withWalletSeed(ctx.platform.pbkdf2, dek, wallet, async (seed) => {
+			const master = masterKey(seed);
+			try {
+				const secretKey = nostrKeyAt(master, SYNC_INDEX);
+				try {
+					const publicKey = getPublicKey(secretKey);
+					const header = {
+						publicKey,
+						walletId: params.walletId,
+						createdAt: ctx.platform.now()
+					};
+					const record = sealRecord(ctx.platform, dek, NOSTR_SYNC_KEY_KIND, publicKey, encodeSyncKeyHeader(header), new Uint8Array(secretKey));
+					try {
+						await ctx.commit([{
+							op: "put-record",
+							record
+						}]);
+					} catch (error) {
+						if (!(error instanceof KernelError && error.code === "conflict")) throw error;
+						return { publicKey: parseSyncKeyHeader(syncRecord(ctx, params.walletId).header).publicKey };
+					}
+					return { publicKey };
+				} finally {
+					wipe(secretKey);
+				}
+			} finally {
+				master.wipePrivateData();
+			}
+		});
+	}
+	function requireSyncSigner(ctx, pool, walletId) {
+		const publicKey = parseSyncKeyHeader(syncRecord(ctx, walletId).header).publicKey;
+		return pool.get(publicKey);
+	}
+	async function syncSign(ctx, pool, params, requestSession) {
+		ctx.session.require(requestSession);
+		if (params.event.kind !== 30078) throw new KernelError("invalid-input", "sync signer authors kind-30078 events only");
+		return signEvent(pool, requireSyncSigner(ctx, pool, params.walletId).keys.publicKey, params.event);
+	}
+	async function syncEncrypt(ctx, pool, params, requestSession) {
+		ctx.session.require(requestSession);
+		const signer = requireSyncSigner(ctx, pool, params.walletId);
+		const { publicKey } = signer.keys;
+		return signer.nip44Encrypt(publicKey, params.text);
+	}
+	async function syncDecrypt(ctx, pool, params, requestSession) {
+		ctx.session.require(requestSession);
+		const signer = requireSyncSigner(ctx, pool, params.walletId);
+		const { publicKey } = signer.keys;
+		return signer.nip44Decrypt(publicKey, params.text);
+	}
 	// packages/wallet-kernel/src/modules/nostr/index.ts
 	function createNostrModule(backend) {
 		const pool = new SignerPool(backend);
+		const syncPool = new SignerPool(backend);
 		return {
 			vault: {
-				ownsRecord: (kind) => kind === NOSTR_KEY_KIND,
+				ownsRecord: (kind) => kind === "nostr-key" || kind === "nostr-sync-key",
 				claimUnlocked: (records) => {
 					const unclaimed = [];
 					for (const record of records) if (record.kind === "nostr-key") {
 						if (pool.add(record.plaintext) !== record.id) throw new KernelError("integrity", "nostr key does not match its record", void 0, true);
+					} else if (record.kind === "nostr-sync-key") {
+						if (syncPool.add(record.plaintext) !== record.id) throw new KernelError("integrity", "sync key does not match its record", void 0, true);
 					} else unclaimed.push(record);
 					return unclaimed;
 				},
 				forget: (kind, id) => {
 					if (kind === "nostr-key") pool.remove(id);
+					else if (kind === "nostr-sync-key") syncPool.remove(id);
 				},
 				lock: () => {
 					pool.dispose();
+					syncPool.dispose();
 				},
 				walletDeleteOps: (image, walletId) => {
 					const ops = [];
-					for (const record of image.records) {
-						if (record.kind !== "nostr-key") continue;
+					for (const record of image.records) if (record.kind === "nostr-key") {
 						if (parseNostrKeyHeader(record.header).walletId === walletId) ops.push({
 							op: "delete-record",
 							kind: NOSTR_KEY_KIND,
+							id: record.id
+						});
+					} else if (record.kind === "nostr-sync-key") {
+						if (parseSyncKeyHeader(record.header).walletId === walletId) ops.push({
+							op: "delete-record",
+							kind: NOSTR_SYNC_KEY_KIND,
 							id: record.id
 						});
 					}
@@ -29220,7 +29369,11 @@ zoo`.split("\n"));
 				"nostr.nip04Decrypt": async (ctx, params, session) => nip04Decrypt(ctx, pool, params, session),
 				"nostr.nip44Encrypt": async (ctx, params, session) => nip44Encrypt(ctx, pool, params, session),
 				"nostr.nip44Decrypt": async (ctx, params, session) => nip44Decrypt(ctx, pool, params, session),
-				"nostr.unwrapGiftWraps": async (ctx, params, session) => unwrapGiftWraps(ctx, pool, params, session)
+				"nostr.unwrapGiftWraps": async (ctx, params, session) => unwrapGiftWraps(ctx, pool, params, session),
+				"nostr.syncKey": async (ctx, params, session) => syncKey(ctx, params, session),
+				"nostr.syncSign": async (ctx, params, session) => syncSign(ctx, syncPool, params, session),
+				"nostr.syncEncrypt": async (ctx, params, session) => syncEncrypt(ctx, syncPool, params, session),
+				"nostr.syncDecrypt": async (ctx, params, session) => syncDecrypt(ctx, syncPool, params, session)
 			},
 			status: (records) => nostrStatus(records)
 		};

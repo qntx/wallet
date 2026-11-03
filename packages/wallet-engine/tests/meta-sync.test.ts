@@ -109,7 +109,7 @@ async function rig(opts: { relay?: FakeRelay } = {}): Promise<Rig> {
     wallet,
     accounts,
     addressBook,
-    nostr: nostr(wallet),
+    nostr: { syncSigner: (walletId) => nostr(wallet).syncSigner(walletId) },
     metaSync: { tag: TAG, relays: relay },
     logger: LOGGER,
     now: () => t,
@@ -169,16 +169,18 @@ async function waitPublished(relay: FakeRelay, count: number): Promise<void> {
 }
 
 describe("MetaSyncController", () => {
-  it("wallet without a group-0 key is unavailable and makes no relay calls", async () => {
+  it("a wallet with no derived identity still syncs on its dedicated key", async () => {
     const r = await rig();
-    await vaultWithMnemonic(r.wallet);
+    const created = await vaultWithMnemonic(r.wallet);
     await r.accounts.init();
     await r.addressBook.init();
     await r.metaSync.init();
+    const pubkey = await nostr(r.wallet).syncSigner(created.walletId).getPublicKey();
+    // The sync key authors the wallet's doc — it is never a nostr.keys identity.
+    expect(pubkey).toMatch(/^[0-9a-f]{64}$/);
+    expect(r.relay.fetchCalls).toBeGreaterThan(0);
     const s = r.metaSync.getState().wallets;
-    expect(Object.values(s).every((w) => w.status === "unavailable")).toBe(true);
-    expect(r.relay.fetchCalls).toBe(0);
-    expect(r.relay.published).toHaveLength(0);
+    expect(s[created.walletId]?.status).not.toBe("unavailable");
     await r.metaSync.destroy();
     await r.accounts.destroy();
     await r.wallet.destroy();
@@ -187,7 +189,7 @@ describe("MetaSyncController", () => {
   it("pull with no remote doc then publishes the local tree", async () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);
-    await nostr(r.wallet).deriveKey(created.walletId, 0);
+    const identity0 = await nostr(r.wallet).deriveKey(created.walletId, 0);
     await r.accounts.init();
     // An edit stamps updatedAt > 0 — without it a fresh device publishes nothing.
     r.accounts.renameGroup(created.walletId, 0, "local");
@@ -198,12 +200,12 @@ describe("MetaSyncController", () => {
     const e = r.relay.published[0]!;
     expect(e.kind).toBe(30078);
     expect(e.tags).toStrictEqual([["d", TAG]]);
-    const signer = nostr(r.wallet).signer({
-      kind: "derived",
-      walletId: created.walletId,
-      index: 0,
-    });
-    const plain = await signer.nip44Decrypt!(e.pubkey, e.content);
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
+    // The author is the wallet's dedicated sync key — distinct from every identity index.
+    const syncPub = await signer.getPublicKey();
+    expect(e.pubkey).toBe(syncPub);
+    expect(e.pubkey).not.toBe(identity0.publicKey);
+    const plain = await signer.decrypt(e.content);
     const doc = decodeMetaDocBytes(new TextEncoder().encode(plain));
     expect(doc?.groups[0]?.index).toBe(0);
     expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("synced");
@@ -216,11 +218,7 @@ describe("MetaSyncController", () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);
     await nostr(r.wallet).deriveKey(created.walletId, 0);
-    const signer = nostr(r.wallet).signer({
-      kind: "derived",
-      walletId: created.walletId,
-      index: 0,
-    });
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
     const pubkey = await signer.getPublicKey();
     // 1) wrong d tag
     const wrongTag = await signer.signEvent({
@@ -230,7 +228,7 @@ describe("MetaSyncController", () => {
       tags: [["d", "other/tag"]],
       content: "x",
     });
-    // 2) wrong author (the same wallet's group-1 key signs)
+    // 2) wrong author (the same wallet's identity-1 key signs)
     await nostr(r.wallet).deriveKey(created.walletId, 1);
     const signer2 = nostr(r.wallet).signer({
       kind: "derived",
@@ -284,7 +282,7 @@ describe("MetaSyncController", () => {
       wallet: r.wallet,
       accounts: r.accounts,
       addressBook: r.addressBook,
-      nostr: nostr(r.wallet),
+      nostr: { syncSigner: (walletId) => nostr(r.wallet).syncSigner(walletId) },
       metaSync: { tag: TAG, relays: broken },
       logger: LOGGER,
       now: () => Date.now(),
@@ -310,11 +308,7 @@ describe("MetaSyncController", () => {
       const r = await rig();
       const created = await vaultWithMnemonic(r.wallet);
       await nostr(r.wallet).deriveKey(created.walletId, 0);
-      const signer = nostr(r.wallet).signer({
-        kind: "derived",
-        walletId: created.walletId,
-        index: 0,
-      });
+      const signer = nostr(r.wallet).syncSigner(created.walletId);
       const pubkey = await signer.getPublicKey();
       // Seed a remote doc far in the future — created_at must exceed it.
       const remoteDoc = encodeMetaDoc({
@@ -323,7 +317,7 @@ describe("MetaSyncController", () => {
         wallet: { name: "remote-name", updatedAt: 1_700_000_000_000 },
         groups: [{ index: 0, name: "remote", hidden: false, updatedAt: 1_700_000_000_000 }],
       });
-      const encrypted = await signer.nip44Encrypt!(pubkey, new TextDecoder().decode(remoteDoc));
+      const encrypted = await signer.encrypt(new TextDecoder().decode(remoteDoc));
       const remoteEvent = await signer.signEvent({
         pubkey,
         kind: 30078,
@@ -398,11 +392,7 @@ describe("MetaSyncController", () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);
     await nostr(r.wallet).deriveKey(created.walletId, 0);
-    const signer = nostr(r.wallet).signer({
-      kind: "derived",
-      walletId: created.walletId,
-      index: 0,
-    });
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
     const pubkey = await signer.getPublicKey();
     // Verified event, correct author/kind/d — but the content is not our NIP-44 doc.
     r.relay.events.push(
@@ -434,14 +424,9 @@ describe("MetaSyncController", () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);
     await nostr(r.wallet).deriveKey(created.walletId, 0);
-    const signer = nostr(r.wallet).signer({
-      kind: "derived",
-      walletId: created.walletId,
-      index: 0,
-    });
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
     const pubkey = await signer.getPublicKey();
-    const encrypted = await signer.nip44Encrypt!(
-      pubkey,
+    const encrypted = await signer.encrypt(
       JSON.stringify({ v: 3, wallet: { updatedAt: 5 }, groups: [], contacts: [] }),
     );
     r.relay.events.push(

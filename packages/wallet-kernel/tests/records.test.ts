@@ -3,7 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { nobleBackend } from "@qntx/nostr";
 
-import { encodeNostrKeyHeader, parseNostrKeyHeader } from "../src/modules/nostr/record.ts";
+import {
+  encodeNostrKeyHeader,
+  encodeSyncKeyHeader,
+  parseNostrKeyHeader,
+  parseSyncKeyHeader,
+} from "../src/modules/nostr/record.ts";
 import type { KernelPlatform } from "../src/platform.ts";
 import {
   encodeHeader,
@@ -41,14 +46,17 @@ describe("record and factor header vectors", () => {
     expect(encodeHeader(parsed)).toBe(vector.text);
   });
 
-  it.each(vectors.filter((v) => v.kind.startsWith("nostr-")))(
-    "$name encodes and parses byte-for-byte",
-    (vector) => {
-      const parsed = parseNostrKeyHeader(vector.text);
-      expect(parsed).toStrictEqual(vector.input);
-      expect(encodeNostrKeyHeader(parsed)).toBe(vector.text);
-    },
-  );
+  it.each(byKind("nostr-derived"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseNostrKeyHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeNostrKeyHeader(parsed)).toBe(vector.text);
+  });
+
+  it.each(byKind("nostr-sync-key"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseSyncKeyHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeSyncKeyHeader(parsed)).toBe(vector.text);
+  });
 
   it.each(byKind("factor-password"))("$name encodes and parses byte-for-byte", (vector) => {
     const parsed = parsePasswordFactorHeader(vector.text);
