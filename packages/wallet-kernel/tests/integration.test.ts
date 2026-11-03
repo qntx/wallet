@@ -54,18 +54,11 @@ const PRF_VAULT = hexToBytes("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca4
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PASSWORD = utf8ToBytes("correct horse battery");
 
-// NIP-49 spec vector: password "nostr", logN 16.
-const NIP49_NCRYPTSEC =
-  "ncryptsec1qgg9947rlpvqu76pj5ecreduf9jxhselq2nae2kghhvd5g7dgjtcxfqtd67p9m0w57lspw8gsq6yphnm8623nsl8xn9j4jdzz84zm3frztj3z7s35vpzmqf6ksu8r89qk5z2zxfmu5gv8th8wclt0h4p";
-
 function ncryptsecPayload(encoded: string): Uint8Array {
   return new Uint8Array(bech32.fromWords(bech32.decode(encoded, 5000).words));
 }
 
 /** Re-encodes a mutated NIP-49 payload — builds malformed or over-limit import inputs. */
-function ncryptsecWith(payload: Uint8Array): string {
-  return bech32.encode("ncryptsec", bech32.toWords(payload), 5000);
-}
 
 /** The NIP-49 key security byte of an exported `ncryptsec` (offset 42 of the 91-byte payload). */
 function exportedKsb(ncryptsecBytes: ProtocolValue): number {
@@ -116,12 +109,6 @@ function field(value: ProtocolValue, key: string): ProtocolValue {
 }
 
 /** Whether a plain-object protocol value carries `key` as an own property. */
-function hasOwn(value: ProtocolValue, key: string): boolean {
-  if (typeof value !== "object" || value === null || Symbol.iterator in value) {
-    throw new Error("expected object");
-  }
-  return Object.hasOwn(value, key);
-}
 
 function strField(value: ProtocolValue, key: string): string {
   const v = field(value, key);
@@ -358,55 +345,6 @@ describe("create / import", () => {
     expect(publicKey).toBe(nip06.vectors[0]!.publicKey);
   });
 
-  it("imports nsec and ncryptsec keys", { timeout: 30_000 }, async () => {
-    const h = createHarness();
-    await h.settle();
-    const { session } = await createPasskeyWallet(h);
-    const imported = ok(
-      await h.call(
-        "nostr.importKey",
-        { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
-        session,
-      ),
-    );
-    expect(strField(field(imported, "key"), "publicKey")).toBe(nip06.vectors[0]!.publicKey);
-
-    const imported2 = ok(
-      await h.call(
-        "nostr.importKey",
-        {
-          input: { kind: "ncryptsec", ncryptsec: NIP49_NCRYPTSEC, password: utf8ToBytes("nostr") },
-        },
-        session,
-      ),
-    );
-    const pk = strField(field(imported2, "key"), "publicKey");
-    const sk = hexToBytes("3501454135014541350145413501453fefb02227e449e57cf4d3a3ce05378683");
-    expect(pk).toBe(Keys.fromSecretKey(sk).publicKey);
-  });
-});
-
-describe("wallet backup state", () => {
-  it("a synced passkey wallet reports 'passkey', a device-bound one 'none'", async () => {
-    const synced = createHarness();
-    await synced.settle();
-    const { session } = await createPasskeyWallet(synced); // synced: true
-    expect(lastStatus(synced).wallets[0]?.backup).toBe("passkey");
-    ok(await synced.call("vault.reset", null, session));
-
-    const res = ok(
-      await synced.call("wallet.createWithPasskey", {
-        ceremony: "host",
-        credentialId: CREDENTIAL_ID,
-        prfWallet: new Uint8Array(PRF_WALLET),
-        synced: false,
-        factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
-      }),
-    );
-    expect(strField(field(res, "wallet"), "backup")).toBe("none");
-    expect(lastStatus(synced).wallets[0]?.backup).toBe("none");
-  });
-
   it("restore reports the credential's sync state", async () => {
     const h = createHarness();
     await h.settle();
@@ -537,7 +475,7 @@ describe("wrong passkey errors", () => {
   it("verifyFactor with a wrong passkey is wrong-passkey", async () => {
     const h = createHarness();
     await h.settle();
-    const { session, walletId } = await createPasskeyWallet(h);
+    const { session } = await createPasskeyWallet(h);
     expect(
       errCode(
         await h.call(
@@ -548,7 +486,7 @@ describe("wrong passkey errors", () => {
               credentialId: CREDENTIAL_ID,
               prf: new Uint8Array(32).fill(9),
             },
-            walletId,
+            walletId: "0f".repeat(8),
           },
           session,
         ),
@@ -562,7 +500,7 @@ describe("nostr record integrity", () => {
   it("a record whose key does not match its id latches the vault corrupted", async () => {
     const h = createHarness();
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     // Rebuild the DEK through the stored passkey factor, then seal a standalone-key record
     // under an id that is not the key's public key. The seal authenticates fine — only the
     // id/public-key check can catch it.
@@ -578,8 +516,8 @@ describe("nostr record integrity", () => {
       expect(publicKey).not.toBe(wrongId);
       const header = encodeNostrKeyHeader({
         publicKey,
-        origin: "generated",
-        backedUp: false,
+        walletId: "0f".repeat(8),
+        index: 0,
         createdAt: 1,
       });
       const sealed = dek.use((bytes) =>
@@ -596,7 +534,9 @@ describe("nostr record integrity", () => {
       ]);
       await h.settle();
       expect(lastStatus(h).vault).toBe("corrupted");
-      expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("integrity");
+      expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+        "integrity",
+      );
     } finally {
       dek.wipe();
     }
@@ -703,7 +643,7 @@ describe("nostr operations", () => {
     const { session, walletId } = await createPasskeyWallet(h);
     const alice = await deriveKey(h, session, walletId);
     const bob = strField(
-      field(ok(await h.call("nostr.generateKey", {}, session)), "key"),
+      ok(await h.call("nostr.deriveKey", { walletId, index: 7 }, session)),
       "publicKey",
     );
     const c44 = ok(
@@ -756,39 +696,16 @@ describe("nostr operations", () => {
     expect(second).toHaveProperty("err");
   });
 
-  it("creates a nip46-client key and removes it without verification", async () => {
+  it("removes a derived key by public key", async () => {
     const h = createHarness();
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     const key = strField(
-      ok(await h.call("nostr.createNip46ClientKey", null, session)),
+      ok(await h.call("nostr.deriveKey", { walletId, index: 9 }, session)),
       "publicKey",
     );
     expect(ok(await h.call("nostr.removeKey", { publicKey: key }, session))).toBeNull();
-
-    const generated = strField(
-      field(ok(await h.call("nostr.generateKey", {}, session)), "key"),
-      "publicKey",
-    );
-    expect(errCode(await h.call("nostr.removeKey", { publicKey: generated }, session))).toBe(
-      "invalid-input",
-    );
-    expect(
-      ok(
-        await h.call(
-          "nostr.removeKey",
-          {
-            publicKey: generated,
-            verify: {
-              kind: "passkey",
-              credentialId: CREDENTIAL_ID,
-              prf: new Uint8Array(PRF_VAULT),
-            },
-          },
-          session,
-        ),
-      ),
-    ).toBeNull();
+    expect(errCode(await h.call("nostr.removeKey", { publicKey: key }, session))).toBe("not-found");
   });
 });
 
@@ -1016,12 +933,14 @@ describe("factors, lock, reset", () => {
   it("locks via the injected idle timer with no request in flight", async () => {
     const h = createHarness({ idleMs: 60_000 });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     h.advance(61_000);
     await h.settle();
     expect(lastStatus(h).vault).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
-    expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("locked");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "locked",
+    );
   });
 
   it("no idle policy: stays unlocked past any idle window and expires at max session", async () => {
@@ -1043,12 +962,14 @@ describe("factors, lock, reset", () => {
   it("a respawned kernel starts locked and rejects a stale session id", async () => {
     const h = createHarness();
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     // Lock is host-side now: the worker is terminated and a fresh kernel respawns on the store.
     const h2 = respawn(h);
     await h2.settle();
     expect(lastStatus(h2).vault).toBe("locked");
-    expect(errCode(await h2.call("nostr.createNip46ClientKey", null, session))).toBe("locked");
+    expect(errCode(await h2.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "locked",
+    );
     // A stale session id is rejected even after re-unlock.
     const unlocked = ok(
       await h2.call("vault.unlock", {
@@ -1073,9 +994,17 @@ describe("factors, lock, reset", () => {
     const { session, walletId } = await createPasskeyWallet(h);
     const derivedPk = await deriveKey(h, session, walletId, 0);
     ok(await h.call("nostr.deriveKey", { walletId, index: 5 }, session));
-    // A standalone key is not the wallet's: it survives the deletion.
+    // A key derived from another wallet is not this wallet's: it survives the deletion.
+    const other = ok(
+      await h.call(
+        "wallet.importMnemonic",
+        { mnemonic: utf8ToBytes(nip06.vectors[0]!.mnemonic) },
+        session,
+      ),
+    );
+    const walletId2 = strField(field(other, "wallet"), "walletId");
     const standalone = strField(
-      field(ok(await h.call("nostr.generateKey", {}, session)), "key"),
+      ok(await h.call("nostr.deriveKey", { walletId: walletId2, index: 0 }, session)),
       "publicKey",
     );
     expect(lastStatus(h).nostr.keys).toHaveLength(3);
@@ -1096,7 +1025,7 @@ describe("factors, lock, reset", () => {
       ),
     ).toBeNull();
     const status = lastStatus(h);
-    expect(status.wallets).toHaveLength(0);
+    expect(status.wallets.map((w) => w.walletId)).toStrictEqual([walletId2]);
     expect(status.nostr.keys.map((k) => k.publicKey)).toStrictEqual([standalone]);
     // The delete committed atomically: no derived row survived, no signer is left in the pool.
     expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 6 }, session))).toBe(
@@ -1121,44 +1050,50 @@ describe("session expiry and rate limiting", () => {
   it("locks on idle expiry", async () => {
     const h = createHarness({ idleMs: 60_000 });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     h.advance(61_000);
-    expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("locked");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "locked",
+    );
     expect(lockReasons(h.events)).toContain("idle");
   });
 
   it("locks on max-session expiry", async () => {
     const h = createHarness({ maxSessionMs: 3_600_000, idleMs: 10 * 3_600_000 });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     h.advance(3_700_000);
     // status does not need a session; the vault field now reports locked.
     expect(field(ok(await h.call("status")), "vault")).toBe("locked");
-    expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("locked");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "locked",
+    );
     expect(lockReasons(h.events)).toContain("expired");
   });
 
   it("a backward wall-clock jump never extends the session", async () => {
     const h = createHarness({ idleMs: 60_000 });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     // The wall clock jumps an hour backwards: session deadlines ride the monotonic clock.
     h.advanceWall(-3_600_000);
     h.advance(61_000);
     await h.settle();
     expect(lastStatus(h).vault).toBe("locked");
     expect(lockReasons(h.events)).toContain("idle");
-    expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("locked");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "locked",
+    );
   });
 
   it("a forward wall-clock jump never shortens the session", async () => {
     const h = createHarness({ idleMs: 60_000 });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     h.advanceWall(10 * 3_600_000); // the wall clock leaps forward ten hours
     // Elapsed time is what counts: still unlocked a second later, idle-locked at 60 s.
     h.advance(1000);
-    expect("ok" in (await h.call("nostr.createNip46ClientKey", null, session))).toBe(true);
+    expect("ok" in (await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(true);
     h.advance(61_000);
     await h.settle();
     expect(lastStatus(h).vault).toBe("locked");
@@ -1224,12 +1159,12 @@ describe("presence activity", () => {
   it("session.touch extends the idle deadline", async () => {
     const h = createHarness({ idleMs: 60_000 });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     h.advance(59_000);
     expect(ok(await h.call("session.touch", null, session))).toBeNull();
     // The deadline moved to t=119 s: still unlocked at 110 s, idle-locked after.
     h.advance(51_000);
-    expect("ok" in (await h.call("nostr.createNip46ClientKey", null, session))).toBe(true);
+    expect("ok" in (await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(true);
     h.advance(10_000);
     await h.settle();
     expect(lastStatus(h).vault).toBe("locked");
@@ -1253,7 +1188,8 @@ describe("presence activity", () => {
       ),
     );
     h.advance(51_000);
-    expect("ok" in (await h.call("nostr.createNip46ClientKey", null, session))).toBe(true);
+    // A session-only (non-presence) request still works past the original deadline.
+    expect("ok" in (await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(true);
     h.advance(10_000);
     await h.settle();
     expect(lastStatus(h).vault).toBe("locked");
@@ -1300,7 +1236,7 @@ describe("presence activity", () => {
     // The successful sign moved the deadline to t=119 s — and this probe (also a successful
     // request, as every request counts in request mode) moved it again to t=170 s.
     h.advance(51_000);
-    expect("ok" in (await h.call("nostr.createNip46ClientKey", null, session))).toBe(true);
+    ok(await h.call("nostr.removeKey", { publicKey }, session)); // every request counts
     h.advance(61_000);
     await h.settle();
     expect(lastStatus(h).vault).toBe("locked");
@@ -1504,7 +1440,9 @@ describe("integrity", () => {
     // The DEK opened but a record failed authentication: the vault is corrupted.
     expect(lastStatus(h).vault).toBe("corrupted");
     // While corrupted only status and vault.reset are served — no session opens.
-    expect(errCode(await h.call("nostr.generateKey", {}))).toBe("integrity");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId: "0f".repeat(8), index: 7 }))).toBe(
+      "integrity",
+    );
     expect(
       errCode(
         await h.call("vault.unlock", {
@@ -1572,7 +1510,7 @@ describe("integrity", () => {
   it("a stored record of an unknown kind is unsupported — the vault locks and stays untouched", async () => {
     const h = createHarness();
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     const before = await h.store.load();
     // Simulate a vault written by a newer build: a record kind this kernel does not own.
     await h.store.commit([
@@ -1599,7 +1537,9 @@ describe("integrity", () => {
         }),
       ),
     ).toBe("unsupported");
-    expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("unsupported");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "unsupported",
+    );
     const untouched = await h.store.load();
     expect(untouched.records).toHaveLength(before.records.length + 1);
     expect(untouched.records.some((r) => r.kind === "spark-key")).toBe(true);
@@ -1657,7 +1597,9 @@ describe("integrity", () => {
         }),
       ),
     ).toBe("integrity");
-    expect(errCode(await h.call("nostr.generateKey", {}))).toBe("integrity");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId: "0f".repeat(8), index: 7 }))).toBe(
+      "integrity",
+    );
     expect(field(ok(await h.call("status")), "vault")).toBe("corrupted");
     // vault.reset is the recovery path: its commit re-establishes the store.
     broken = false;
@@ -1739,7 +1681,7 @@ describe("vault health", () => {
   it("a malformed header of a known kind while unlocked is corrupted and locks at once", async () => {
     const h = createHarness();
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
+    const { session, walletId } = await createPasskeyWallet(h);
     await h.store.commit([
       {
         op: "put-factor",
@@ -1755,7 +1697,9 @@ describe("vault health", () => {
     expect(lastStatus(h).vault).toBe("corrupted");
     // The unlocked session is invalidated immediately — DEK and drafts are wiped.
     expect(lockReasons(h.events)).toContain("invalidated");
-    expect(errCode(await h.call("nostr.createNip46ClientKey", null, session))).toBe("integrity");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 9 }, session))).toBe(
+      "integrity",
+    );
     expect(ok(await h.call("vault.reset"))).toBeNull();
     expect(lastStatus(h).vault).toBe("uninitialized");
   });
@@ -1783,7 +1727,9 @@ describe("vault health", () => {
     const h = createHarness({ wrapStore: (store) => flakyLoad(store, broken) });
     await h.settle();
     expect(lastStatus(h).vault).toBe("unavailable");
-    expect(errCode(await h.call("nostr.generateKey", {}))).toBe("unavailable");
+    expect(errCode(await h.call("nostr.deriveKey", { walletId: "0f".repeat(8), index: 7 }))).toBe(
+      "unavailable",
+    );
     broken.current = false;
     // The next request's reload restores health without any reset.
     const created = await h.call("wallet.createMnemonic", {
@@ -2021,11 +1967,8 @@ describe("public-key factor wrapping and DEK rotation", () => {
   it("a planted factor row invalidates an unlocked session at once", async () => {
     const h = createHarness();
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
-    const pk = strField(
-      field(ok(await h.call("nostr.generateKey", {}, session)), "key"),
-      "publicKey",
-    );
+    const { session, walletId } = await createPasskeyWallet(h);
+    const publicKey = await deriveKey(h, session, walletId);
     await h.store.commit([{ op: "put-factor", factor: plantedFactor() }]);
     await h.settle();
     expect(lastStatus(h).vault).toBe("corrupted");
@@ -2034,7 +1977,7 @@ describe("public-key factor wrapping and DEK rotation", () => {
       errCode(
         await h.call(
           "nostr.signEvent",
-          { publicKey: pk, event: { kind: 1, created_at: 1, tags: [], content: "x" } },
+          { publicKey, event: { kind: 1, created_at: 1, tags: [], content: "x" } },
           session,
         ),
       ),
@@ -2190,10 +2133,9 @@ describe("live-state reconciliation across kernels", () => {
     );
 
   it("a key deleted in A is forgotten in B at once; a key imported in A signs in B", async () => {
-    const { b, sessionB, sessionA, a } = await pair();
-    // nip46-client keys need no re-verification on removal.
+    const { b, sessionB, sessionA, a, walletId } = await pair();
     const pk = strField(
-      ok(await a.call("nostr.createNip46ClientKey", null, sessionA)),
+      ok(await a.call("nostr.deriveKey", { walletId, index: 9 }, sessionA)),
       "publicKey",
     );
     await b.settle();
@@ -2206,16 +2148,10 @@ describe("live-state reconciliation across kernels", () => {
     expect(errCode(await signWith(b, sessionB, pk))).toBe("not-found");
   });
 
-  it("an imported nsec is live in B without a re-unlock", async () => {
-    const { a, b, sessionA, sessionB } = await pair();
-    const imported = ok(
-      await a.call(
-        "nostr.importKey",
-        { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
-        sessionA,
-      ),
-    );
-    const pk = strField(field(imported, "key"), "publicKey");
+  it("a key derived in A is live in B without a re-unlock", async () => {
+    const { a, b, sessionA, sessionB, walletId } = await pair();
+    const derived = ok(await a.call("nostr.deriveKey", { walletId, index: 11 }, sessionA));
+    const pk = strField(derived, "publicKey");
     await b.settle();
     const signed = ok(await signWith(b, sessionB, pk));
     expect(strField(signed, "pubkey")).toBe(pk);
@@ -2351,99 +2287,9 @@ describe("nostr backup state", () => {
     return ok(await h.call("nostr.exportKey", { verify: verify(), publicKey, format }, session));
   }
 
-  function statusBackedUp(h: ReturnType<typeof createHarness>, publicKey: string): unknown {
-    return lastStatus(h).nostr.keys.find((k) => k.publicKey === publicKey)?.backedUp;
-  }
-
-  it(
-    "generated keys start unbacked; export in either format marks them backed up",
-    { timeout: 30_000 },
-    async () => {
-      const h = createHarness();
-      await h.settle();
-      const { session } = await createPasskeyWallet(h);
-
-      const key = field(ok(await h.call("nostr.generateKey", {}, session)), "key");
-      const publicKey = strField(key, "publicKey");
-      expect(field(key, "backedUp")).toBe(false);
-      expect(statusBackedUp(h, publicKey)).toBe(false);
-
-      await exportKey(h, session, publicKey, { kind: "nsec" });
-      expect(statusBackedUp(h, publicKey)).toBe(true);
-      const record = must(recordOf(await h.store.load(), "nostr-key", publicKey));
-      expect(record.header).toContain('"backedUp":true');
-
-      const key2 = field(ok(await h.call("nostr.generateKey", {}, session)), "key");
-      const publicKey2 = strField(key2, "publicKey");
-      await exportKey(h, session, publicKey2, {
-        kind: "ncryptsec",
-        password: utf8ToBytes("export-pw"),
-      });
-      expect(statusBackedUp(h, publicKey2)).toBe(true);
-
-      // The flag is in the public header: it shows in the locked snapshot and survives a re-unlock.
-      const h2 = respawn(h);
-      await h2.settle();
-      expect(lastStatus(h2).vault).toBe("locked");
-      expect(statusBackedUp(h2, publicKey)).toBe(true);
-      expect(statusBackedUp(h2, publicKey2)).toBe(true);
-      ok(
-        await h2.call("vault.unlock", {
-          factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
-        }),
-      );
-      expect(statusBackedUp(h2, publicKey)).toBe(true);
-    },
-  );
-
-  it(
-    "imported keys report backedUp immediately; derived and nip46 keys omit it",
-    { timeout: 15_000 },
-    async () => {
-      const h = createHarness();
-      await h.settle();
-      const { session, walletId } = await createPasskeyWallet(h);
-
-      const nsecKey = field(
-        ok(
-          await h.call(
-            "nostr.importKey",
-            { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
-            session,
-          ),
-        ),
-        "key",
-      );
-      expect(field(nsecKey, "backedUp")).toBe(true);
-
-      const ncryptKey = field(
-        ok(
-          await h.call(
-            "nostr.importKey",
-            {
-              input: {
-                kind: "ncryptsec",
-                ncryptsec: NIP49_NCRYPTSEC,
-                password: utf8ToBytes("nostr"),
-              },
-            },
-            session,
-          ),
-        ),
-        "key",
-      );
-      expect(field(ncryptKey, "backedUp")).toBe(true);
-
-      const derived = ok(await h.call("nostr.deriveKey", { walletId, index: 0 }, session));
-      expect(hasOwn(derived, "backedUp")).toBe(false);
-      const nip46 = ok(await h.call("nostr.createNip46ClientKey", null, session));
-      expect(hasOwn(nip46, "backedUp")).toBe(false);
-    },
-  );
-
   // Four sequential scrypt exports — under coverage instrumentation they can exceed 5 s.
   it(
-    "exports ncryptsec with key security byte 0x02 for every origin",
+    "exports ncryptsec with key security byte 0x02 for derived keys",
     { timeout: 30_000 },
     async () => {
       const h = createHarness();
@@ -2451,28 +2297,11 @@ describe("nostr backup state", () => {
       const { session, walletId } = await createPasskeyWallet(h);
 
       const derived = await deriveKey(h, session, walletId);
-      const generated = strField(
-        field(ok(await h.call("nostr.generateKey", {}, session)), "key"),
+      const second = strField(
+        ok(await h.call("nostr.deriveKey", { walletId, index: 7 }, session)),
         "publicKey",
       );
-      const imported = strField(
-        field(
-          ok(
-            await h.call(
-              "nostr.importKey",
-              { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
-              session,
-            ),
-          ),
-          "key",
-        ),
-        "publicKey",
-      );
-      const nip46 = strField(
-        ok(await h.call("nostr.createNip46ClientKey", null, session)),
-        "publicKey",
-      );
-      for (const publicKey of [derived, generated, imported, nip46]) {
+      for (const publicKey of [derived, second]) {
         // oxlint-disable-next-line eslint/no-await-in-loop -- sequential exports through one kernel
         const encoded = await exportKey(h, session, publicKey, {
           kind: "ncryptsec",
@@ -2482,57 +2311,6 @@ describe("nostr backup state", () => {
       }
     },
   );
-});
-
-describe("ncryptsec import hardening", () => {
-  async function importNcryptsec(
-    h: ReturnType<typeof createHarness>,
-    session: string,
-    ncryptsec: string,
-    password = "nostr",
-  ): Promise<KernelResponse> {
-    return h.call(
-      "nostr.importKey",
-      { input: { kind: "ncryptsec", ncryptsec, password: utf8ToBytes(password) } },
-      session,
-    );
-  }
-
-  it("rejects malformed payloads with invalid-input before decrypting", async () => {
-    const h = createHarness();
-    await h.settle();
-    const { session } = await createPasskeyWallet(h);
-    // Not bech32 at all, a truncated payload, and the wrong version byte all fail shape checks.
-    expect(errCode(await importNcryptsec(h, session, "ncryptsec1!!"))).toBe("invalid-input");
-    expect(errCode(await importNcryptsec(h, session, ncryptsecWith(new Uint8Array(10))))).toBe(
-      "invalid-input",
-    );
-    const badVersion = ncryptsecPayload(NIP49_NCRYPTSEC);
-    badVersion[0] = 0x03;
-    expect(errCode(await importNcryptsec(h, session, ncryptsecWith(badVersion)))).toBe(
-      "invalid-input",
-    );
-  });
-
-  it("rejects a logN above the policy maximum with unsupported, before scrypt runs", async () => {
-    const h = createHarness(); // maxScryptLogN 20
-    await h.settle();
-    const { session } = await createPasskeyWallet(h);
-    const overLimit = ncryptsecPayload(NIP49_NCRYPTSEC);
-    overLimit[1] = 21;
-    expect(errCode(await importNcryptsec(h, session, ncryptsecWith(overLimit)))).toBe(
-      "unsupported",
-    );
-  });
-
-  it("maps a wrong password to wrong-password", { timeout: 30_000 }, async () => {
-    const h = createHarness();
-    await h.settle();
-    const { session } = await createPasskeyWallet(h);
-    expect(errCode(await importNcryptsec(h, session, NIP49_NCRYPTSEC, "nope"))).toBe(
-      "wrong-password",
-    );
-  });
 });
 
 describe("backend routing (WD-054)", () => {
@@ -2557,15 +2335,9 @@ describe("backend routing (WD-054)", () => {
       },
     });
     await h.settle();
-    const { session } = await createPasskeyWallet(h);
-    const imported = ok(
-      await h.call(
-        "nostr.importKey",
-        { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
-        session,
-      ),
-    );
-    const publicKey = strField(field(imported, "key"), "publicKey");
+    const { session, walletId } = await createPasskeyWallet(h);
+    const derived = ok(await h.call("nostr.deriveKey", { walletId, index: 13 }, session));
+    const publicKey = strField(derived, "publicKey");
     expect(counts.publicKey).toBeGreaterThan(0);
     ok(
       await h.call(

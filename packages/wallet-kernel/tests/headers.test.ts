@@ -27,22 +27,8 @@ const entropy: EntropyHeader = {
 
 const nostrDerived: NostrKeyHeader = {
   publicKey: "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
-  origin: "derived",
   walletId: "6e0d11a50c03aa4f",
   index: 0,
-  createdAt: 1_767_225_600_000,
-};
-
-const nostrStandalone: NostrKeyHeader = {
-  publicKey: nostrDerived.publicKey,
-  origin: "generated",
-  backedUp: false,
-  createdAt: 1_767_225_600_000,
-};
-
-const nostrNip46: NostrKeyHeader = {
-  publicKey: nostrDerived.publicKey,
-  origin: "nip46-client",
   createdAt: 1_767_225_600_000,
 };
 
@@ -66,12 +52,8 @@ describe("header round trip", () => {
     expect(parseEntropyHeader(encodeHeader(entropy))).toStrictEqual(entropy);
   });
 
-  it("nostr-key derived, standalone and nip46-client", () => {
+  it("nostr-key derived", () => {
     expect(parseNostrKeyHeader(encodeNostrKeyHeader(nostrDerived))).toStrictEqual(nostrDerived);
-    expect(parseNostrKeyHeader(encodeNostrKeyHeader(nostrStandalone))).toStrictEqual(
-      nostrStandalone,
-    );
-    expect(parseNostrKeyHeader(encodeNostrKeyHeader(nostrNip46))).toStrictEqual(nostrNip46);
   });
 
   it("data-key", () => {
@@ -119,42 +101,26 @@ describe("header rejection", () => {
       kernelError(() =>
         parseNostrKeyHeader(
           JSON.stringify({
-            ...nostrStandalone,
-            publicKey: nostrStandalone.publicKey.toUpperCase(),
+            ...nostrDerived,
+            publicKey: nostrDerived.publicKey.toUpperCase(),
           }),
         ),
       ),
     ).toBe("integrity");
   });
 
-  it("walletId or index on a non-derived nostr key", () => {
+  it("a legacy standalone or nip46 header is rejected", () => {
+    // WD-076: only the seed-derived shape survives — origin/backedUp are unknown keys.
     expect(
-      kernelError(() =>
-        parseNostrKeyHeader(JSON.stringify({ ...nostrStandalone, walletId: entropy.walletId })),
-      ),
+      kernelError(() => parseNostrKeyHeader(JSON.stringify({ ...nostrDerived, origin: "nsec" }))),
     ).toBe("integrity");
-    expect(
-      kernelError(() => parseNostrKeyHeader(JSON.stringify({ ...nostrStandalone, index: 0 }))),
-    ).toBe("integrity");
-  });
-
-  it("backedUp is required on standalone keys and forbidden elsewhere", () => {
-    const { backedUp: _omitted, ...withoutBackedUp } = nostrStandalone;
-    expect(kernelError(() => parseNostrKeyHeader(JSON.stringify(withoutBackedUp)))).toBe(
-      "integrity",
-    );
-    expect(
-      kernelError(() =>
-        parseNostrKeyHeader(JSON.stringify({ ...nostrStandalone, backedUp: "yes" })),
-      ),
-    ).toBe("integrity");
-    // Derived and nip46-client headers have an exact key set: backedUp is an unknown key.
     expect(
       kernelError(() => parseNostrKeyHeader(JSON.stringify({ ...nostrDerived, backedUp: true }))),
     ).toBe("integrity");
-    expect(
-      kernelError(() => parseNostrKeyHeader(JSON.stringify({ ...nostrNip46, backedUp: true }))),
-    ).toBe("integrity");
+    const { walletId: _w, index: _i, ...standaloneLike } = nostrDerived;
+    expect(kernelError(() => parseNostrKeyHeader(JSON.stringify(standaloneLike)))).toBe(
+      "integrity",
+    );
   });
 
   it("an own key named after an Object.prototype member is still unknown", () => {
@@ -175,9 +141,7 @@ describe("header rejection", () => {
       encodeHeader(dataKey),
       encodeHeader(passwordFactor),
       encodeHeader(passkeyFactor),
-      encodeNostrKeyHeader(nostrStandalone),
       encodeNostrKeyHeader(nostrDerived),
-      encodeNostrKeyHeader(nostrNip46),
     ]) {
       const object = JSON.parse(valid) as Record<string, unknown>;
       const withProto = JSON.parse(protoKeys) as Record<string, unknown>;

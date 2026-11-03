@@ -5,8 +5,6 @@ import { WalletError } from "../src/types.ts";
 
 const header = JSON.stringify({
   wallets: [{ walletId: "95fea534ed0f2996", origin: "mnemonic", words: 24 }],
-  importedNostrKeyCount: 2,
-  importedChainKeyCount: 0,
 });
 
 const envelope = JSON.stringify({
@@ -31,7 +29,6 @@ describe("parseBackupHeader", () => {
     expect(parsed.version).toBe(1);
     expect(parsed.wallets[0]?.walletId).toBe("95fea534ed0f2996");
     expect(parsed.wallets[0]?.origin).toBe("mnemonic");
-    expect(parsed.importedNostrKeyCount).toBe(2);
     expect(parsed.factorKinds).toStrictEqual(["password", "passkey"]);
   });
 

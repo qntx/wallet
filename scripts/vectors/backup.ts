@@ -3,7 +3,7 @@
  * Regenerates vectors/backup.json with fixed byte constants — no kernel imports. Layout
  * (design/backup.mdx + wallet-spark.mdx E1-d-3b):
  *
- * Payload = version(0x01) ‖ walletEntry…, walletEntry = 0x01 ‖ origin(1) ‖ len(1) ‖ entropy
+ * Payload = version(0x02) ‖ walletEntry…, walletEntry = 0x01 ‖ origin(1) ‖ len(1) ‖ entropy
  * sealed(X) = 0x01 ‖ nonce(24) ‖ XChaCha20-Poly1305(key, nonce, aad).encrypt(plaintext) aad = 0x01
  * ‖ u16be(len(UTF-8(context))) ‖ UTF-8(context) ‖ UTF-8(header) payload.context =
  * "qntx-wallet/backup/v1/payload/" + hex(SHA-256(headerText)) factor.context =
@@ -171,10 +171,8 @@ const backupKeyHeader = JSON.stringify({ id, factors, createdAt: START });
 
 const header = JSON.stringify({
   wallets: [{ walletId, origin: "passkey", words: 12 }],
-  importedNostrKeyCount: 0,
-  importedChainKeyCount: 0,
 });
-const payload = concatBytes(new Uint8Array([0x01, 0x01, 0x02, 16]), entropy);
+const payload = concatBytes(new Uint8Array([0x02, 0x01, 0x02, 16]), entropy);
 const payloadContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}`;
 
 const envelopeOf = (nonce: Uint8Array): string =>

@@ -186,8 +186,6 @@ export function createChainsModule(): ChainsModule {
     claimUnlocked: (records) => records,
     forget: () => undefined,
     lock: () => undefined,
-    backupSecrets: () => [],
-    backupRecords: () => [],
     walletDeleteOps: () => [],
   };
 

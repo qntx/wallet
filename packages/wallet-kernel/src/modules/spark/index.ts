@@ -568,8 +568,6 @@ export function createSparkModule(): SparkModule {
     lock: () => {
       disposeAll(state);
     },
-    backupSecrets: () => [],
-    backupRecords: () => [],
     walletDeleteOps: (_image, walletId) => {
       // The entropy record's removal is committed by the core; the live signers die here. A later
       // call would catch the missing record anyway — this keeps no secret state past the delete.

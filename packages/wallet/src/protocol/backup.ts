@@ -62,8 +62,6 @@ export type BackupHeaderWallet = {
 
 export type BackupHeaderWire = {
   readonly wallets: ReadonlyArray<BackupHeaderWallet>;
-  readonly importedNostrKeyCount: number;
-  readonly importedChainKeyCount: number;
 };
 
 export const backupHeader: Validator<BackupHeaderWire> = obj({
@@ -75,8 +73,6 @@ export const backupHeader: Validator<BackupHeaderWire> = obj({
     }),
     1000,
   ),
-  importedNostrKeyCount: int(0, 10_000),
-  importedChainKeyCount: int(0, 10_000),
 });
 
 /** The whole-envelope text bound — `backup.update` results and `backup.restore` params use it. */

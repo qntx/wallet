@@ -5,7 +5,7 @@
       "name": "request-status",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "method": "status",
         "params": null
@@ -15,7 +15,7 @@
       "name": "request-session.touch",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 24,
         "method": "session.touch",
         "session": "00112233445566778899aabbccddeeff",
@@ -26,7 +26,7 @@
       "name": "request-vault.unlock",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "method": "vault.unlock",
         "params": {
@@ -43,7 +43,7 @@
       "name": "request-vault.unlock-hardware",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "method": "vault.unlock",
         "params": {
@@ -57,7 +57,7 @@
       "name": "request-vault.reset",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 3,
         "method": "vault.reset",
         "session": "00112233445566778899aabbccddeeff",
@@ -68,7 +68,7 @@
       "name": "request-vault.addFactor",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 4,
         "method": "vault.addFactor",
         "session": "00112233445566778899aabbccddeeff",
@@ -95,7 +95,7 @@
       "name": "request-vault.removeFactor",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 5,
         "method": "vault.removeFactor",
         "session": "00112233445566778899aabbccddeeff",
@@ -114,7 +114,7 @@
       "name": "request-wallet.createWithPasskey",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 6,
         "method": "wallet.createWithPasskey",
         "params": {
@@ -133,7 +133,7 @@
       "name": "request-wallet.createWithPasskey-kernel",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 6,
         "method": "wallet.createWithPasskey",
         "params": {
@@ -152,7 +152,7 @@
       "name": "request-wallet.restoreWithPasskey-kernel",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 7,
         "method": "wallet.restoreWithPasskey",
         "params": {
@@ -166,7 +166,7 @@
       "name": "request-wallet.restoreWithPasskey",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 7,
         "method": "wallet.restoreWithPasskey",
         "params": {
@@ -191,7 +191,7 @@
       "name": "request-wallet.createMnemonic",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 8,
         "method": "wallet.createMnemonic",
         "params": {
@@ -203,7 +203,7 @@
       "name": "request-wallet.confirmMnemonic",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 9,
         "method": "wallet.confirmMnemonic",
         "params": {
@@ -226,7 +226,7 @@
       "name": "request-wallet.discardMnemonic",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 10,
         "method": "wallet.discardMnemonic",
         "params": {
@@ -238,7 +238,7 @@
       "name": "request-wallet.importMnemonic",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 11,
         "method": "wallet.importMnemonic",
         "params": {
@@ -252,7 +252,7 @@
       "name": "request-wallet.exportMnemonic",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 12,
         "method": "wallet.exportMnemonic",
         "session": "00112233445566778899aabbccddeeff",
@@ -271,7 +271,7 @@
       "name": "request-wallet.delete",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 13,
         "method": "wallet.delete",
         "session": "00112233445566778899aabbccddeeff",
@@ -290,7 +290,7 @@
       "name": "request-dataKeys.get",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 14,
         "method": "dataKeys.get",
         "session": "00112233445566778899aabbccddeeff",
@@ -300,48 +300,10 @@
       }
     },
     {
-      "name": "request-nostr.importKey",
-      "check": "request",
-      "message": {
-        "v": 1,
-        "id": 15,
-        "method": "nostr.importKey",
-        "params": {
-          "input": {
-            "kind": "nsec",
-            "nsec": {
-              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "request-nostr.generateKey",
-      "check": "request",
-      "message": {
-        "v": 1,
-        "id": 16,
-        "method": "nostr.generateKey",
-        "params": {}
-      }
-    },
-    {
-      "name": "request-nostr.createNip46ClientKey",
-      "check": "request",
-      "message": {
-        "v": 1,
-        "id": 17,
-        "method": "nostr.createNip46ClientKey",
-        "session": "00112233445566778899aabbccddeeff",
-        "params": null
-      }
-    },
-    {
       "name": "request-nostr.removeKey",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 18,
         "method": "nostr.removeKey",
         "session": "00112233445566778899aabbccddeeff",
@@ -354,7 +316,7 @@
       "name": "request-nostr.exportKey",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 19,
         "method": "nostr.exportKey",
         "session": "00112233445566778899aabbccddeeff",
@@ -379,7 +341,7 @@
       "name": "request-nostr.signEvent",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 20,
         "method": "nostr.signEvent",
         "session": "00112233445566778899aabbccddeeff",
@@ -404,7 +366,7 @@
       "name": "request-nostr.nip44Encrypt",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 21,
         "method": "nostr.nip44Encrypt",
         "session": "00112233445566778899aabbccddeeff",
@@ -419,7 +381,7 @@
       "name": "request-nostr.unwrapGiftWraps",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 22,
         "method": "nostr.unwrapGiftWraps",
         "session": "00112233445566778899aabbccddeeff",
@@ -449,7 +411,7 @@
       "name": "request-spark.identityPublicKey",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 30,
         "method": "spark.identityPublicKey",
         "session": "00112233445566778899aabbccddeeff",
@@ -466,7 +428,7 @@
       "name": "request-spark.publicKeys",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 31,
         "method": "spark.publicKeys",
         "session": "00112233445566778899aabbccddeeff",
@@ -493,7 +455,7 @@
       "name": "request-spark.receivedPublicKeys",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 32,
         "method": "spark.receivedPublicKeys",
         "session": "00112233445566778899aabbccddeeff",
@@ -515,7 +477,7 @@
       "name": "request-spark.newCommitments",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 33,
         "method": "spark.newCommitments",
         "session": "00112233445566778899aabbccddeeff",
@@ -533,7 +495,7 @@
       "name": "request-spark.signFrost",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 34,
         "method": "spark.signFrost",
         "session": "00112233445566778899aabbccddeeff",
@@ -596,7 +558,7 @@
       "name": "request-spark.aggregateFrost",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 35,
         "method": "spark.aggregateFrost",
         "session": "00112233445566778899aabbccddeeff",
@@ -668,7 +630,7 @@
       "name": "request-spark.signIdentity",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 36,
         "method": "spark.signIdentity",
         "session": "00112233445566778899aabbccddeeff",
@@ -691,7 +653,7 @@
       "name": "request-spark.signKeySpend",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 37,
         "method": "spark.signKeySpend",
         "session": "00112233445566778899aabbccddeeff",
@@ -728,7 +690,7 @@
       "name": "request-spark.signHtlcTimeout",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 38,
         "method": "spark.signHtlcTimeout",
         "session": "00112233445566778899aabbccddeeff",
@@ -758,7 +720,7 @@
       "name": "request-spark.prepareTransfer",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 39,
         "method": "spark.prepareTransfer",
         "session": "00112233445566778899aabbccddeeff",
@@ -790,7 +752,7 @@
       "name": "request-spark.prepareClaim",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 40,
         "method": "spark.prepareClaim",
         "session": "00112233445566778899aabbccddeeff",
@@ -818,7 +780,7 @@
       "name": "request-spark.prepareLightningReceive",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 41,
         "method": "spark.prepareLightningReceive",
         "session": "00112233445566778899aabbccddeeff",
@@ -835,7 +797,7 @@
       "name": "request-spark.claimStaticDeposit",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 42,
         "method": "spark.claimStaticDeposit",
         "session": "00112233445566778899aabbccddeeff",
@@ -867,7 +829,7 @@
       "name": "response-ok-status",
       "check": "response:status",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "ok": {
           "protocol": 2,
@@ -892,12 +854,11 @@
             "keys": [
               {
                 "ref": {
-                  "kind": "standalone",
-                  "id": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917"
+                  "kind": "derived",
+                  "walletId": "0011223344556677",
+                  "index": 0
                 },
-                "publicKey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
-                "origin": "generated",
-                "backedUp": false,
+                "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
                 "createdAt": 1767225600000
               },
               {
@@ -907,7 +868,6 @@
                   "index": 0
                 },
                 "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
-                "origin": "derived",
                 "createdAt": 1767225600000
               }
             ]
@@ -926,7 +886,7 @@
       "name": "response-ok-vault.unlock",
       "check": "response:vault.unlock",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "ok": {
           "session": "00112233445566778899aabbccddeeff"
@@ -937,7 +897,7 @@
       "name": "response-ok-vault.reset",
       "check": "response:vault.reset",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 3,
         "ok": null
       }
@@ -946,7 +906,7 @@
       "name": "response-ok-vault.addFactor",
       "check": "response:vault.addFactor",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 4,
         "ok": {
           "kind": "passkey",
@@ -960,7 +920,7 @@
       "name": "response-ok-wallet.createMnemonic",
       "check": "response:wallet.createMnemonic",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 8,
         "ok": {
           "draft": "ffeeddccbbaa99887766554433221100",
@@ -979,7 +939,7 @@
       "name": "response-ok-wallet.importMnemonic",
       "check": "response:wallet.importMnemonic",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 11,
         "ok": {
           "wallet": {
@@ -997,7 +957,7 @@
       "name": "response-ok-dataKeys.get",
       "check": "response:dataKeys.get",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 14,
         "ok": {
           "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
@@ -1008,7 +968,7 @@
       "name": "response-ok-nostr.deriveKey",
       "check": "response:nostr.deriveKey",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 23,
         "ok": {
           "ref": {
@@ -1017,7 +977,6 @@
             "index": 0
           },
           "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
-          "origin": "derived",
           "createdAt": 1767225600000
         }
       }
@@ -1026,7 +985,7 @@
       "name": "response-ok-nostr.signEvent",
       "check": "response:nostr.signEvent",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 20,
         "ok": {
           "id": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -1049,7 +1008,7 @@
       "name": "response-ok-nostr.nip44Encrypt",
       "check": "response:nostr.nip44Encrypt",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 21,
         "ok": "ciphertext?iv=1"
       }
@@ -1058,7 +1017,7 @@
       "name": "response-ok-spark.identityPublicKey",
       "check": "response:spark.identityPublicKey",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 30,
         "ok": {
           "$bytes": "02abababababababababababababababababababababababababababababababab"
@@ -1069,7 +1028,7 @@
       "name": "response-ok-spark.newCommitments",
       "check": "response:spark.newCommitments",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 33,
         "ok": [
           {
@@ -1095,7 +1054,7 @@
       "name": "response-ok-spark.prepareLightningReceive",
       "check": "response:spark.prepareLightningReceive",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 41,
         "ok": {
           "paymentHash": {
@@ -1113,7 +1072,7 @@
       "name": "response-ok-spark.prepareTransfer",
       "check": "response:spark.prepareTransfer",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 39,
         "ok": {
           "operatorPackages": {
@@ -1142,7 +1101,7 @@
       "name": "response-ok-spark.claimStaticDeposit",
       "check": "response:spark.claimStaticDeposit",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 42,
         "ok": {
           "encryptedSecretKey": {
@@ -1158,7 +1117,7 @@
       "name": "response-err-wrong-password",
       "check": "responseError",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "err": {
           "code": "wrong-password"
@@ -1169,7 +1128,7 @@
       "name": "response-err-rate-limited",
       "check": "responseError",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "err": {
           "code": "rate-limited",
@@ -1206,12 +1165,11 @@
             "keys": [
               {
                 "ref": {
-                  "kind": "standalone",
-                  "id": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917"
+                  "kind": "derived",
+                  "walletId": "0011223344556677",
+                  "index": 0
                 },
-                "publicKey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
-                "origin": "generated",
-                "backedUp": false,
+                "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
                 "createdAt": 1767225600000
               },
               {
@@ -1221,7 +1179,6 @@
                   "index": 0
                 },
                 "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
-                "origin": "derived",
                 "createdAt": 1767225600000
               }
             ]
@@ -1265,12 +1222,11 @@
             "keys": [
               {
                 "ref": {
-                  "kind": "standalone",
-                  "id": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917"
+                  "kind": "derived",
+                  "walletId": "0011223344556677",
+                  "index": 0
                 },
-                "publicKey": "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
-                "origin": "generated",
-                "backedUp": false,
+                "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
                 "createdAt": 1767225600000
               },
               {
@@ -1280,7 +1236,6 @@
                   "index": 0
                 },
                 "publicKey": "9ba1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d5e6f708192a3b4c5d6e7f",
-                "origin": "derived",
                 "createdAt": 1767225600000
               }
             ]
@@ -1313,7 +1268,7 @@
       "name": "request-extra-envelope-key",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "method": "status",
         "params": null,
@@ -1324,7 +1279,7 @@
       "name": "request-prototype-named-envelope-key",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "method": "status",
         "params": null,
@@ -1335,7 +1290,7 @@
       "name": "request-wrong-version",
       "check": "request",
       "message": {
-        "v": 2,
+        "v": 1,
         "id": 1,
         "method": "status",
         "params": null
@@ -1345,7 +1300,7 @@
       "name": "request-id-not-an-integer",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": "1",
         "method": "status",
         "params": null
@@ -1355,7 +1310,7 @@
       "name": "request-unknown-method",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "method": "vault.nuke",
         "params": null
@@ -1365,7 +1320,7 @@
       "name": "request-missing-params",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "method": "status"
       }
@@ -1374,7 +1329,7 @@
       "name": "request-non-integer-number",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 1,
         "method": "nostr.signEvent",
         "session": "00112233445566778899aabbccddeeff",
@@ -1393,7 +1348,7 @@
       "name": "params-unknown-key",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "method": "vault.unlock",
         "params": {
@@ -1411,7 +1366,7 @@
       "name": "params-prototype-named-key",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "method": "vault.unlock",
         "params": {
@@ -1429,7 +1384,7 @@
       "name": "params-kernel-ceremony-with-evidence",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 7,
         "method": "wallet.restoreWithPasskey",
         "params": {
@@ -1446,7 +1401,7 @@
       "name": "params-kernel-ceremony-bad-rp-id",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 7,
         "method": "wallet.restoreWithPasskey",
         "params": {
@@ -1460,7 +1415,7 @@
       "name": "params-hardware-with-material",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "method": "vault.unlock",
         "params": {
@@ -1477,7 +1432,7 @@
       "name": "params-wrong-type",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "method": "vault.unlock",
         "params": {
@@ -1492,7 +1447,7 @@
       "name": "params-over-length-string",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 14,
         "method": "dataKeys.get",
         "session": "00112233445566778899aabbccddeeff",
@@ -1505,7 +1460,7 @@
       "name": "params-spark-batch-over-cap",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 31,
         "method": "spark.publicKeys",
         "session": "00112233445566778899aabbccddeeff",
@@ -1784,7 +1739,7 @@
       "name": "params-spark-count-out-of-range",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 33,
         "method": "spark.newCommitments",
         "session": "00112233445566778899aabbccddeeff",
@@ -1802,7 +1757,7 @@
       "name": "params-spark-bad-identifier",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 34,
         "method": "spark.signFrost",
         "session": "00112233445566778899aabbccddeeff",
@@ -1865,7 +1820,7 @@
       "name": "params-spark-extra-field",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 30,
         "method": "spark.identityPublicKey",
         "session": "00112233445566778899aabbccddeeff",
@@ -1883,7 +1838,7 @@
       "name": "response-spark-record-proto-key",
       "check": "response:spark.prepareLightningReceive",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 41,
         "ok": {
           "paymentHash": {
@@ -1901,7 +1856,7 @@
       "name": "params-session-wrong-type",
       "check": "request",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 14,
         "method": "dataKeys.get",
         "session": 42,
@@ -1914,7 +1869,7 @@
       "name": "response-wrong-result-shape",
       "check": "response:vault.unlock",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "ok": {
           "session": 42
@@ -1925,7 +1880,7 @@
       "name": "response-err-unknown-code",
       "check": "responseError",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "err": {
           "code": "nope"
@@ -1936,7 +1891,7 @@
       "name": "response-err-extra-key",
       "check": "responseError",
       "message": {
-        "v": 1,
+        "v": 2,
         "id": 2,
         "err": {
           "code": "wrong-password",
@@ -1948,7 +1903,7 @@
       "name": "event-unknown-field",
       "check": "event",
       "message": {
-        "v": 1,
+        "v": 2,
         "event": "locked",
         "reason": "idle",
         "extra": true
@@ -1958,7 +1913,7 @@
       "name": "event-unknown-reason",
       "check": "event",
       "message": {
-        "v": 1,
+        "v": 2,
         "event": "locked",
         "reason": "forgotten"
       }

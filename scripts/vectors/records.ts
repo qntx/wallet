@@ -8,9 +8,7 @@
  *
  * - Entropy: walletId, origin, words, backup, createdAt
  * - Data-key: purpose, createdAt
- * - Nostr derived: publicKey, origin, walletId, index, createdAt
- * - Nostr standalone (nsec, ncryptsec, generated): publicKey, origin, backedUp, createdAt
- * - Nostr nip46-client: publicKey, origin, createdAt (never carries backedUp)
+ * - Nostr derived: publicKey, walletId, index, createdAt
  * - Password factor: salt, iterations, publicKey, createdAt
  * - Passkey factor: credentialId, publicKey, createdAt
  * - Hardware factor: sealedKek, publicKey, createdAt
@@ -44,22 +42,8 @@ function textOf(kind: string, input: Input): string {
     case "nostr-derived":
       return JSON.stringify({
         publicKey: i["publicKey"],
-        origin: i["origin"],
         walletId: i["walletId"],
         index: i["index"],
-        createdAt: i["createdAt"],
-      });
-    case "nostr-standalone":
-      return JSON.stringify({
-        publicKey: i["publicKey"],
-        origin: i["origin"],
-        backedUp: i["backedUp"],
-        createdAt: i["createdAt"],
-      });
-    case "nostr-nip46-client":
-      return JSON.stringify({
-        publicKey: i["publicKey"],
-        origin: i["origin"],
         createdAt: i["createdAt"],
       });
     case "factor-password":
@@ -144,36 +128,10 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     kind: "nostr-derived",
     input: {
       publicKey: PUBLIC_KEY,
-      origin: "derived",
       walletId: WALLET_ID,
       index: 0,
       createdAt: CREATED_AT,
     },
-  },
-  {
-    name: "nostr-nsec-backed-up",
-    kind: "nostr-standalone",
-    input: { publicKey: PUBLIC_KEY, origin: "nsec", backedUp: true, createdAt: CREATED_AT },
-  },
-  {
-    name: "nostr-ncryptsec-unbacked",
-    kind: "nostr-standalone",
-    input: { publicKey: PUBLIC_KEY, origin: "ncryptsec", backedUp: false, createdAt: CREATED_AT },
-  },
-  {
-    name: "nostr-generated-unbacked",
-    kind: "nostr-standalone",
-    input: { publicKey: PUBLIC_KEY, origin: "generated", backedUp: false, createdAt: CREATED_AT },
-  },
-  {
-    name: "nostr-generated-backed-up",
-    kind: "nostr-standalone",
-    input: { publicKey: PUBLIC_KEY, origin: "generated", backedUp: true, createdAt: CREATED_AT },
-  },
-  {
-    name: "nostr-nip46-client",
-    kind: "nostr-nip46-client",
-    input: { publicKey: PUBLIC_KEY, origin: "nip46-client", createdAt: CREATED_AT },
   },
   {
     name: "factor-password",

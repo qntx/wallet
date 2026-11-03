@@ -9,7 +9,6 @@ import type { Rumor } from "@qntx/nostr/nips/nip59";
 import type {
   DerivedNostrKey,
   ExportedSecret,
-  InitialFactor,
   NostrKeyInfo,
   NostrKeyRef,
   UnlockFactor,
@@ -42,13 +41,7 @@ export type NostrApi = {
     count: number,
   ) => Promise<ReadonlyArray<DerivedNostrKey>>;
   readonly deriveKey: (walletId: string, index: number) => Promise<NostrKeyInfo>;
-  readonly importKey: (
-    input: NostrImportKeyInput,
-    options?: { readonly factor?: InitialFactor },
-  ) => Promise<NostrKeyInfo>;
-  readonly generateKey: (options?: { readonly factor?: InitialFactor }) => Promise<NostrKeyInfo>;
-  readonly createNip46ClientKey: () => Promise<NostrKeyInfo>;
-  readonly removeKey: (ref: NostrKeyRef, verify?: UnlockFactor) => Promise<void>;
+  readonly removeKey: (ref: NostrKeyRef) => Promise<void>;
   /** One-shot key export; requires re-verification every call. */
   readonly exportKey: (
     ref: NostrKeyRef,

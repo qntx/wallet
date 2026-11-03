@@ -33,20 +33,15 @@ export type WalletInfo = {
   readonly createdAt: number;
 };
 
-export type NostrKeyRef =
-  | { readonly kind: "derived"; readonly walletId: string; readonly index: number }
-  | { readonly kind: "standalone"; readonly id: string }
-  | { readonly kind: "nip46-client"; readonly id: string };
+export type NostrKeyRef = {
+  readonly kind: "derived";
+  readonly walletId: string;
+  readonly index: number;
+};
 
 export type NostrKeyInfo = {
   readonly ref: NostrKeyRef;
   readonly publicKey: string; // 64 lowercase hex
-  readonly origin: "derived" | "nsec" | "ncryptsec" | "generated" | "nip46-client";
-  /**
-   * Only standalone keys carry it: derived keys recover from the wallet, nip46-client keys are
-   * ephemeral.
-   */
-  readonly backedUp?: boolean;
   readonly createdAt: number;
 };
 

@@ -14,12 +14,6 @@ import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { loadVectors } from "./helpers.ts";
 
-const NSEC = (
-  loadVectors("nip06.json") as {
-    vectors: Array<{ readonly nsec: string; readonly publicKey: string }>;
-  }
-).vectors[0] ?? { nsec: "", publicKey: "" };
-
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("11".repeat(32));
 const PRF_WALLET = hexToBytes("22".repeat(32));
@@ -609,23 +603,13 @@ describe("backup enable/update/disable", () => {
         session,
       ),
     );
-    const nsecRes = ok(
-      await a.call(
-        "nostr.importKey",
-        { input: { kind: "nsec", nsec: utf8ToBytes(NSEC.nsec) } },
-        session,
-      ),
-    );
-    const keyId = strField(field(nsecRes, "key"), "publicKey");
     const updated = ok(await a.call("backup.update", null, session));
     const envelope = strField(updated, "envelope");
     const parsed = JSON.parse(envelope) as { header: string };
     const header = JSON.parse(parsed.header) as {
       wallets: Array<Record<string, unknown>>;
-      importedNostrKeyCount: number;
     };
     expect(header.wallets).toHaveLength(2);
-    expect(header.importedNostrKeyCount).toBe(1);
 
     const b = createHarness({ seed: 85 });
     await b.settle();
@@ -637,8 +621,6 @@ describe("backup enable/update/disable", () => {
       }),
     );
     expect(arrField(restored, "wallets")).toHaveLength(2);
-    const keys = arrField(field(ok(await b.call("status")), "nostr"), "keys");
-    expect(strField(at(keys, 0), "publicKey")).toBe(keyId);
   });
 
   it("merge restore never adopts the envelope's backup key", async () => {

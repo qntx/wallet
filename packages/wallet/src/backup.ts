@@ -13,8 +13,6 @@ export type BackupHeader = {
   readonly version: 1;
   readonly createdAt: number;
   readonly wallets: ReadonlyArray<BackupHeaderWallet>;
-  readonly importedNostrKeyCount: number;
-  readonly importedChainKeyCount: number;
   /** The factor kinds the envelope can be unwrapped with. */
   readonly factorKinds: ReadonlyArray<"passkey" | "password">;
 };
@@ -52,8 +50,6 @@ export function parseBackupHeader(envelope: string): BackupHeader {
     version: 1,
     createdAt: parsed.createdAt,
     wallets: header.wallets,
-    importedNostrKeyCount: header.importedNostrKeyCount,
-    importedChainKeyCount: header.importedChainKeyCount,
     factorKinds,
   };
 }
