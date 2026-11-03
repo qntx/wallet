@@ -11,9 +11,11 @@ import type { ConnectionController } from "./controller.ts";
 import type { Eip1193Event, Eip1193Handler } from "./eip1193.ts";
 import { ProviderError } from "./errors.ts";
 import { PROVIDER_SCRIPT } from "./inject.generated.ts";
+import type { Nip07Handler } from "./nip07.ts";
 
 export type { ConnectionController, ConnectionSession } from "./controller.ts";
 export type { Eip1193Handler, Eip1193Request, Eip1193Event } from "./eip1193.ts";
+export type { Nip07Handler, Nip07Request } from "./nip07.ts";
 export { ProviderError } from "./errors.ts";
 
 /** The EIP-6963 provider identity the host stamps into the injected script. */
@@ -92,6 +94,7 @@ export type BrowserBridge = {
 
 export type BrowserBridgeOptions = {
   readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
+  readonly nip07: Pick<Nip07Handler, "handle">;
   readonly connections: Pick<ConnectionController, "checkOrigin" | "invalidateOrigin">;
   /** The host's `webview.injectJavaScript`. */
   readonly inject: (script: string) => void;
@@ -123,7 +126,7 @@ const errorData = (error: unknown): { code: number; message: string } =>
     : { code: -32603, message: "internal error" };
 
 export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridge {
-  const { eip1193, connections, inject, now } = options;
+  const { eip1193, nip07, connections, inject, now } = options;
   let topOrigin: string | undefined;
   let disposed = false;
   /** Per-origin request timestamps in the current window, for the 120/min cap. */
@@ -180,7 +183,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     if (!isObject(parsed)) {
       return;
     }
-    const { id, method, params, qntx } = parsed;
+    const { id, method, params, qntx, provider } = parsed;
     if (
       qntx !== 1 ||
       typeof id !== "number" ||
@@ -190,13 +193,18 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     ) {
       return;
     }
+    // `provider` selects the handler; an unknown or missing value is a malformed message.
+    const handler = provider === "eip1193" ? eip1193 : provider === "nostr" ? nip07 : undefined;
+    if (handler === undefined) {
+      return;
+    }
     if (rateLimited(origin)) {
       receive({ id, error: DISCONNECT });
       return;
     }
     void (async (): Promise<void> => {
       try {
-        const result = await eip1193.handle(
+        const result = await handler.handle(
           origin,
           params === undefined ? { method } : { method, params },
         );
