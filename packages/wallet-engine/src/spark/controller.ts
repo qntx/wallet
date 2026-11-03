@@ -4,6 +4,7 @@ import {
   encodeSparkAddress,
   parseSparkInvoice,
   SparkInputError,
+  SparkRequestError,
   uuidv7,
 } from "@qntx/spark";
 import type {
@@ -343,10 +344,9 @@ export class SparkController extends Controller<SparkControllerState> {
           note = undefined;
         }
         if (note === undefined) {
-          this.options.logger.warn(
-            `spark note record for ${payment.id} ignored: malformed`,
-            new Error("malformed payment note"),
-          );
+          // A stored note that fails to parse is store corruption — surface it, but the payment
+          // id and the note bytes stay out of the log.
+          this.options.logger.warn("spark note record ignored: malformed");
           return payment;
         }
         return { ...payment, note };
@@ -499,9 +499,16 @@ export class SparkController extends Controller<SparkControllerState> {
     try {
       return await registerLightningAddress({ ...params, fetch: this.options.fetch, signer });
     } catch (error) {
-      throw error instanceof SparkControllerError
-        ? error
-        : new SparkControllerError("internal", "registration failed");
+      if (error instanceof SparkControllerError) {
+        throw error;
+      }
+      // A request error (lnurl_error / http_*) is a network failure — the engine surfaces the
+      // category and keeps the upstream error as cause instead of flattening it to internal.
+      throw new SparkControllerError(
+        error instanceof SparkRequestError ? "network" : "internal",
+        "registration failed",
+        error,
+      );
     }
   }
 
@@ -513,9 +520,14 @@ export class SparkController extends Controller<SparkControllerState> {
     try {
       await unregisterLightningAddress({ ...params, fetch: this.options.fetch, signer });
     } catch (error) {
-      throw error instanceof SparkControllerError
-        ? error
-        : new SparkControllerError("internal", "unregistration failed");
+      if (error instanceof SparkControllerError) {
+        throw error;
+      }
+      throw new SparkControllerError(
+        error instanceof SparkRequestError ? "network" : "internal",
+        "unregistration failed",
+        error,
+      );
     }
   }
 

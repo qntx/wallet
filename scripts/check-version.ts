@@ -170,6 +170,63 @@ export function checkViteAliases(manifests: PackageEntry[]): string[] {
   return errors;
 }
 
+/**
+ * Every dependency spec across dependencies, devDependencies and peerDependencies is exact — a
+ * semver range (`^`, `~`, `>=`, `*`, a bare major) lets a different version slip in against a
+ * release built and manifested for one. Allowed forms: a literal `x.y.z` (with optional
+ * prerelease), `workspace:*`/`catalog:`/`file:`/`link:` (not version specs at all), and an `npm:`
+ * alias whose target is itself exact (`npm:name@x.y.z`).
+ */
+const EXACT_SPEC = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+const TILDE_SPEC = /^~\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/;
+
+const exactTarget = (spec: string): boolean => {
+  if (spec.startsWith("npm:")) {
+    const target = spec.slice("npm:".length);
+    return EXACT_SPEC.test(target.slice(target.lastIndexOf("@") + 1));
+  }
+  return EXACT_SPEC.test(spec);
+};
+
+const isSpecForm = (spec: string): boolean =>
+  spec.startsWith("workspace:") ||
+  spec.startsWith("catalog:") ||
+  spec.startsWith("file:") ||
+  spec.startsWith("link:");
+
+/**
+ * Dependency and devDependency specs are exact pins; a semver range lets a different version slip
+ * in against a release built and manifested for one. peerDependencies are different: the
+ * `@qntx/wallet*` packages released together from this repo must be exact peers, but any other peer
+ * (`@qntx/nostr`, `@qntx/spark`, react-native…) may carry a tilde range — an exact peer would force
+ * every consumer onto one patch and npm would refuse the install. A caret is never allowed
+ * anywhere. `npm:` aliases are exact when their target is.
+ */
+export function checkExactDeps(manifests: PackageEntry[]): string[] {
+  const errors: string[] = [];
+  for (const { path, pkg } of manifests) {
+    const manifest = asRecord(pkg);
+    for (const section of ["dependencies", "devDependencies", "peerDependencies"] as const) {
+      for (const [name, spec] of Object.entries(asRecord(manifest[section]))) {
+        if (typeof spec !== "string" || isSpecForm(spec)) {
+          continue;
+        }
+        if (
+          section === "peerDependencies" &&
+          !name.startsWith("@qntx/wallet") &&
+          TILDE_SPEC.test(spec)
+        ) {
+          continue; // a peer released elsewhere may pin a compatible patch line.
+        }
+        if (!exactTarget(spec)) {
+          errors.push(`${path}: ${section}["${name}"] must be exact, got ${JSON.stringify(spec)}`);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 if (import.meta.main) {
   // Only directories with a package.json are workspaces; bare leftovers may
   // exist under packages/.
@@ -180,7 +237,7 @@ if (import.meta.main) {
     ...packages,
     ...scanDir("apps"),
   ];
-  errors.push(...checkViteAliases(manifests));
+  errors.push(...checkViteAliases(manifests), ...checkExactDeps(manifests));
   for (const error of errors) {
     console.error(`check-version: ${error}`);
   }

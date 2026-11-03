@@ -8,7 +8,7 @@
  * any .js/.wasm request answered with the SPA fallback's text/html is the bundler-entry bug.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,8 +109,23 @@ const walletTgz = pack("wallet", app);
 const workerTgz = pack("wallet-worker", app);
 console.log("packed:", walletTgz, workerTgz);
 
-// npm does not auto-install peers of local tarballs: name the published peers exactly as a
-// consumer would after reading the README (@qntx/wallet peers on nostr + spark).
+// npm does not auto-install peers of local tarballs: name the published peers as a consumer would
+// after reading the README (@qntx/wallet peers on nostr + spark). Versions come from the manifests
+// so the smoke never drifts from what the packages declare.
+const specOf = (path: string, section: string, name: string): string => {
+  const parsed: unknown = JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
+  const deps: unknown =
+    typeof parsed === "object" && parsed !== null ? Reflect.get(parsed, section) : undefined;
+  const spec: unknown =
+    typeof deps === "object" && deps !== null ? Reflect.get(deps, name) : undefined;
+  if (typeof spec !== "string") {
+    throw new TypeError(`${path}: no ${section}["${name}"]`);
+  }
+  return spec;
+};
+const peer = (name: string): string =>
+  `${name}@${specOf("../../wallet/package.json", "peerDependencies", name).replace(/^~/, "")}`;
+const vite = specOf("../../../package.json", "devDependencies", "vite");
 run(
   "npm",
   [
@@ -119,9 +134,9 @@ run(
     "--no-fund",
     walletTgz,
     workerTgz,
-    "@qntx/nostr@0.15.1",
-    "@qntx/spark@0.5.0",
-    "vite@npm:@voidzero-dev/vite-plus-core@1.3.0",
+    peer("@qntx/nostr"),
+    peer("@qntx/spark"),
+    `vite@${vite}`,
   ],
   app,
 );

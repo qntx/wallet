@@ -81,10 +81,10 @@
     "@solana-program/token-2022": "0.20.0",
     "@solana/kit": "8.5.0",
     "@types/node": "26.6.5",
-    "bitcoinjs-lib": "^7.0.5",
-    "ecpair": "^3.0.2",
+    "bitcoinjs-lib": "7.0.5",
+    "ecpair": "3.0.2",
     "publint": "0.3.25",
-    "tiny-secp256k1": "^2.2.5",
+    "tiny-secp256k1": "2.2.5",
     "typescript": "7.0.2",
     "viem": "2.57.12",
     "vite-plus": "1.4.0"

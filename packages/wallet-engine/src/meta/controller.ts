@@ -190,18 +190,18 @@ export class MetaSyncController extends Controller<MetaSyncState> {
         }
       } else {
         // A verified event we cannot read must never be overwritten — a newer app version
-        // (e.g. v: 2) is the most likely cause; decode failure is data corruption.
-        const plaintext = await signer.decrypt(remote.content).catch(() => undefined);
-        const doc =
-          plaintext === undefined
-            ? undefined
-            : decodeMetaDocBytes(new TextEncoder().encode(plaintext));
+        // (e.g. v: 2) is the most likely cause; decode failure is data corruption. A failed
+        // decrypt (unreachable key, kernel error) is a sync failure, not a corrupt doc — it
+        // falls through to the outer catch so the wallet is `error`, not stuck `corrupt`.
+        const plaintext = await signer.decrypt(remote.content);
+        const doc = decodeMetaDocBytes(new TextEncoder().encode(plaintext));
         if (doc === undefined) {
           if (gen !== this.generation) {
             return;
           }
-          const error: MetaSyncErrorCategory =
-            plaintext !== undefined && isUnsupportedDoc(plaintext) ? "unsupported" : "corrupt";
+          const error: MetaSyncErrorCategory = isUnsupportedDoc(plaintext)
+            ? "unsupported"
+            : "corrupt";
           this.setStatus(walletId, { status: "error", error });
           this.options.logger.warn(`meta sync: unreadable remote doc (${error})`);
           return; // not in `pulled` — debounced publishes stay blocked too

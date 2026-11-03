@@ -5,6 +5,7 @@ import type { Event, Filter } from "@qntx/nostr";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { nostr } from "@qntx/wallet/nostr";
+import type { WalletSyncSigner } from "@qntx/wallet/nostr";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
 import { AddressBookController } from "../src/addresses/controller.ts";
@@ -74,7 +75,9 @@ type Rig = {
   setNow: (t: number) => void;
 };
 
-async function rig(opts: { relay?: FakeRelay } = {}): Promise<Rig> {
+async function rig(
+  opts: { relay?: FakeRelay; syncSignerWrap?: (s: WalletSyncSigner) => WalletSyncSigner } = {},
+): Promise<Rig> {
   const wallet = await createNodeWallet({
     passkey: PASSKEY_CONFIG,
     autoLock: { platform: "web", idleMinutes: 15 },
@@ -109,7 +112,12 @@ async function rig(opts: { relay?: FakeRelay } = {}): Promise<Rig> {
     wallet,
     accounts,
     addressBook,
-    nostr: { syncSigner: (walletId) => nostr(wallet).syncSigner(walletId) },
+    nostr: {
+      syncSigner: (walletId) => {
+        const inner = nostr(wallet).syncSigner(walletId);
+        return opts.syncSignerWrap === undefined ? inner : opts.syncSignerWrap(inner);
+      },
+    },
     metaSync: { tag: TAG, relays: relay },
     logger: LOGGER,
     now: () => t,
@@ -394,14 +402,16 @@ describe("MetaSyncController", () => {
     await nostr(r.wallet).deriveKey(created.walletId, 0);
     const signer = nostr(r.wallet).syncSigner(created.walletId);
     const pubkey = await signer.getPublicKey();
-    // Verified event, correct author/kind/d — but the content is not our NIP-44 doc.
+    // Verified event, correct author/kind/d — and it decrypts fine — but the plaintext is not a
+    // meta doc: that is the corrupt-data path (a decrypt that THREW would be a sync failure).
+    const garbage = await signer.encrypt("not-a-meta-doc");
     r.relay.events.push(
       await signer.signEvent({
         pubkey,
         kind: 30078,
         created_at: 1_700_000_500,
         tags: [["d", TAG]],
-        content: "not-a-nip44-payload",
+        content: garbage,
       }),
     );
     await r.accounts.init();
@@ -415,6 +425,54 @@ describe("MetaSyncController", () => {
     await vi.advanceTimersByTimeAsync(3000);
     vi.useRealTimers();
     expect(r.relay.published).toHaveLength(0);
+    await r.metaSync.destroy();
+    await r.accounts.destroy();
+    await r.wallet.destroy();
+  });
+
+  it("a transient decrypt failure is a sync error, not corrupt, and recovers", async () => {
+    // `impl` is the decrypt the wrapper delegates to — it survives across syncSigner calls, so a
+    // transient failure can be armed and then healed without a conditional inside the test.
+    let impl: WalletSyncSigner["decrypt"] = async () =>
+      Promise.reject(new Error("syncDecrypt blew up (transient)"));
+    let innerDecrypt: WalletSyncSigner["decrypt"] = async () =>
+      Promise.reject(new Error("signer not armed"));
+    const r = await rig({
+      syncSignerWrap: (inner): WalletSyncSigner => {
+        innerDecrypt = inner.decrypt.bind(inner);
+        return {
+          getPublicKey: async () => inner.getPublicKey(),
+          signEvent: async (e) => inner.signEvent(e),
+          encrypt: async (text) => inner.encrypt(text),
+          decrypt: async (payload) => impl(payload),
+        };
+      },
+    });
+    const created = await vaultWithMnemonic(r.wallet);
+    const signer = nostr(r.wallet).syncSigner(created.walletId);
+    const pubkey = await signer.getPublicKey();
+    // A perfectly good remote doc — the signer just cannot decrypt it while the failure is armed.
+    const good = await signer.signEvent({
+      pubkey,
+      kind: 30078,
+      created_at: 1_700_000_500,
+      tags: [["d", TAG]],
+      content: await signer.encrypt(
+        JSON.stringify({ v: 2, wallet: { updatedAt: 5 }, groups: [], contacts: [] }),
+      ),
+    });
+    r.relay.events.push(good);
+    await r.accounts.init();
+    await r.addressBook.init();
+    await r.metaSync.init();
+    // The thrown decrypt is a sync failure (`network`), not a corrupt doc — and the wallet can
+    // recover instead of latching `corrupt`.
+    expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("error");
+    expect(r.metaSync.getState().wallets[created.walletId]?.error).toBe("network");
+    expect(r.metaSync.getState().wallets[created.walletId]?.error).not.toBe("corrupt");
+    impl = async (payload) => innerDecrypt(payload);
+    await r.metaSync.sync();
+    expect(r.metaSync.getState().wallets[created.walletId]?.status).toBe("synced");
     await r.metaSync.destroy();
     await r.accounts.destroy();
     await r.wallet.destroy();
