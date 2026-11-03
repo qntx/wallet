@@ -334,6 +334,8 @@ ASAuthorizationPlatformPublicKeyCredentialAssertionRequest* _Nullable assertionR
 
 // Claims the single in-flight slot and runs the ceremony (main thread). A nil
 // request means the JSON was malformed, a busy slot a second concurrent call.
+// AuthenticationServices may deliver the delegate callback synchronously, so
+// the mutex never spans a call into it — or into `done`.
 void run(ASAuthorizationRequest* _Nullable request, qntx::PasskeyDone done)
     API_AVAILABLE(ios(18.0)) {
   if (request == nil) {
@@ -341,23 +343,33 @@ void run(ASAuthorizationRequest* _Nullable request, qntx::PasskeyDone done)
     return;
   }
   ASPresentationAnchor anchor = keyWindow();
-  std::lock_guard<std::mutex> lock(g_mutex);
-  if (g_controller != nil) {
-    done(qntx::PasskeyResult{qntx::PasskeyStatus::failed, {}});
+  ASAuthorizationController* controller = nil;
+  qntx::PasskeyStatus rejected = qntx::PasskeyStatus::ok;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    if (g_controller != nil) {
+      rejected = qntx::PasskeyStatus::failed;
+    } else if (anchor == nil) {
+      rejected = qntx::PasskeyStatus::unavailable;
+    } else {
+      controller = [[ASAuthorizationController alloc]
+          initWithAuthorizationRequests:@[ request ]];
+      if (controller == nil) {
+        rejected = qntx::PasskeyStatus::failed;
+      } else {
+        QntxPasskeySession* session = [[QntxPasskeySession alloc] initWithDone:std::move(done)
+                                                                      anchor:anchor];
+        controller.delegate = session;
+        controller.presentationContextProvider = session;
+        g_session = session;
+        g_controller = controller;
+      }
+    }
+  }
+  if (controller == nil) {
+    done(qntx::PasskeyResult{rejected, {}});
     return;
   }
-  if (anchor == nil) {
-    done(qntx::PasskeyResult{qntx::PasskeyStatus::unavailable, {}});
-    return;
-  }
-  QntxPasskeySession* session = [[QntxPasskeySession alloc] initWithDone:std::move(done)
-                                                                anchor:anchor];
-  ASAuthorizationController* controller = [[ASAuthorizationController alloc]
-      initWithAuthorizationRequests:@[ request ]];
-  controller.delegate = session;
-  controller.presentationContextProvider = session;
-  g_session = session;
-  g_controller = controller;
   [controller performRequests];
 }
 
@@ -392,8 +404,13 @@ void passkeyGet(std::string requestJson, PasskeyDone done) {
 void passkeyCancel() {
   dispatch_async(dispatch_get_main_queue(), ^{
     if (@available(iOS 16.0, *)) {
-      std::lock_guard<std::mutex> lock(g_mutex);
-      [g_controller cancel];
+      ASAuthorizationController* controller;
+      {
+        std::lock_guard<std::mutex> lock(g_mutex);
+        controller = g_controller;
+      }
+      // cancel may answer the delegate synchronously, so it runs off the lock.
+      [controller cancel];
     }
   });
 }
