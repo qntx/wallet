@@ -203,6 +203,7 @@ export class WeblnHandler {
       option,
       amountSats,
       maxFeeSats,
+      amountFromServiceMinimum: true,
     });
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {

@@ -27,7 +27,9 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   to a new `WeblnHandler` (`engine.webln`). A `lightning` connection namespace carries the active
   group's Spark account and a per-origin `LightningPolicy`; `sendPayment`/`lnurl` pay through the
   `pay` request pipeline and poll the settled preimage via `SparkController.paymentStatus`,
-  `makeInvoice` goes through the factor-free `webln-invoice` request, and `getBalance` additionally
+  `lnurl` pays the service's minimum amount (`minSendableMsat`) — the approval display marks
+  it with `amountFromServiceMinimum`. `makeInvoice` goes through the factor-free `webln-invoice`
+  request, and `getBalance` additionally
   needs the `balance` grant.
 
 ## [0.7.0] - 2026-11-03
