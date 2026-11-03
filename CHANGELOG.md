@@ -21,6 +21,14 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   per-origin `NostrPolicy`; `signEvent` signs directly when the policy allows, otherwise a
   `nostr-sign` request through the pipeline (forced confirmation for kinds 0, 3, 5 and 10002) and
   `decrypt` additionally needs the `decrypt` grant.
+- `@qntx/wallet-engine/connect`: a WebLN `window.webln` in the injected provider — `enable`,
+  `getInfo`, `sendPayment`, `makeInvoice`, `lnurl` and `getBalance` (`keysend`, `signMessage`,
+  `verifyMessage` and `request` reject in-page as `NotSupported`) — routed through the same bridge
+  to a new `WeblnHandler` (`engine.webln`). A `lightning` connection namespace carries the active
+  group's Spark account and a per-origin `LightningPolicy`; `sendPayment`/`lnurl` pay through the
+  `pay` request pipeline and poll the settled preimage via `SparkController.paymentStatus`,
+  `makeInvoice` goes through the factor-free `webln-invoice` request, and `getBalance` additionally
+  needs the `balance` grant.
 
 ## [0.7.0] - 2026-11-03
 

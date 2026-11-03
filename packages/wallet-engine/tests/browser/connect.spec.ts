@@ -23,6 +23,7 @@ import { Eip1193Handler } from "../../src/connect/eip1193.ts";
 import { createBrowserBridge, injectedScript } from "../../src/connect/index.ts";
 import type { ProviderInfo } from "../../src/connect/index.ts";
 import { Nip07Handler } from "../../src/connect/nip07.ts";
+import { WeblnHandler } from "../../src/connect/webln.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import { RequestController } from "../../src/requests/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
@@ -138,8 +139,19 @@ async function engineRig() {
   const requests = new RequestController({
     transactions,
     ...bookDeps(),
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- EVM requests never reach spark
-    spark: {} as SparkController,
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a createInvoice stub suffices
+    spark: {
+      createInvoice: async () => {
+        await Promise.resolve();
+        return {
+          id: "inv-1",
+          invoice: "lnbc1testinvoice",
+          paymentHash: new Uint8Array(32),
+          amountSats: 100,
+          expiresAtMs: 9999,
+        };
+      },
+    } as unknown as SparkController,
     nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
     fetch: globalThis.fetch,
     random,
@@ -176,8 +188,29 @@ async function engineRig() {
     requests,
     signerFor: () => walletSigner,
   });
+  const webln = new WeblnHandler({
+    connections,
+    requests,
+    spark: {
+      accountBalance: () => 42000,
+      paymentStatus: async () => {
+        await Promise.resolve();
+        return {
+          status: "succeeded",
+          outcome: "succeeded",
+          preimage: new Uint8Array(32).fill(1),
+        };
+      },
+    },
+    sparkAccount: () => ({ walletId, groupIndex: 0, network: "regtest" }),
+    alias: "qntx-test",
+    lightningMaxFee: () => 10,
+    sleep: async () => {
+      await Promise.resolve();
+    },
+  });
   await connections.setActiveIdentity(NOSTR_REF);
-  return { connections, requests, eip1193, nip07, addressAt };
+  return { connections, requests, eip1193, nip07, webln, addressAt };
 }
 
 async function openConnect(context: BrowserContext) {
@@ -186,12 +219,7 @@ async function openConnect(context: BrowserContext) {
   const bridge = createBrowserBridge({
     eip1193: rig.eip1193,
     nip07: rig.nip07,
-    webln: {
-      handle: async () => {
-        await Promise.resolve();
-        return null;
-      },
-    },
+    webln: rig.webln,
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),
@@ -324,4 +352,51 @@ test("policy 'always' signs a kind-1 event without an approval", async ({ contex
   );
   expect(Object.values(rig.requests.getState().requests)).toHaveLength(0);
   expect(verifyEvent(signed)).toBe(true);
+});
+
+test("window.webln enable → getInfo → makeInvoice approved through the pipeline", async ({
+  context,
+}) => {
+  const { page, rig } = await openConnect(context);
+
+  const enablePromise = page.evaluate(`window.webln.enable()`);
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  await rig.connections.approveConnection(pending?.id ?? "", {
+    accounts: [],
+    network: "",
+    lightning: { policy: { balance: true } },
+  });
+  expect(await enablePromise).toBe(true);
+
+  const info = await page.evaluate(`window.webln.getInfo()`);
+  expect(info).toMatchObject({ node: { alias: "qntx-test" } });
+
+  const invoicePromise = page.evaluate(
+    `window.webln.makeInvoice({ amount: 100, defaultMemo: "hi" })`,
+  );
+  await expect
+    .poll(
+      () =>
+        Object.values(rig.requests.getState().requests).some(
+          (r) => r.stage === "awaiting-approval",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  const pendingInvoice = Object.values(rig.requests.getState().requests).find(
+    (r) => r.stage === "awaiting-approval",
+  );
+  await rig.requests.approve(pendingInvoice?.id ?? "", "webln-invoice");
+  const invoice = await invoicePromise;
+  expect(invoice).toStrictEqual({ paymentRequest: "lnbc1testinvoice" });
+});
+
+test("window.webln keysend rejects in-page with NotSupported and posts nothing", async ({
+  context,
+}) => {
+  const { page, rig } = await openConnect(context);
+  const error = await page.evaluate(`window.webln.keysend().catch((e) => e.message)`);
+  expect(error).toBe("NotSupported");
+  expect(rig.connections.pending()).toHaveLength(0);
 });

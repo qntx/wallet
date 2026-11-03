@@ -53,6 +53,11 @@ const errorOf = (value: unknown): ProviderRpcError =>
     ? new ProviderRpcError(value["code"], value["message"])
     : new ProviderRpcError(-32603, "internal error");
 
+const unsupported = async (): Promise<never> => {
+  await Promise.resolve();
+  throw new Error("NotSupported");
+};
+
 /**
  * Installs `window.ethereum` (EIP-1193) and the EIP-6963 announcer for `info`. `id` increments per
  * request; the pending map settles on the host's reply.
@@ -152,6 +157,39 @@ export function install(info: ProviderInfo): void {
     }),
   });
 
+  // WebLN: the same machinery, `provider: "webln"`. keysend/signMessage/verifyMessage/request
+  // reject in-page (they never reach the bridge) — the wallet does not support them.
+  const webln = Object.freeze({
+    enable: async () => {
+      const result = await request("webln", { method: "enable" });
+      return result;
+    },
+    getInfo: async () => {
+      const result = await request("webln", { method: "getInfo" });
+      return result;
+    },
+    sendPayment: async (invoice: string) => {
+      const result = await request("webln", { method: "sendPayment", params: invoice });
+      return result;
+    },
+    makeInvoice: async (args: unknown) => {
+      const result = await request("webln", { method: "makeInvoice", params: args });
+      return result;
+    },
+    lnurl: async (lnurl: string) => {
+      const result = await request("webln", { method: "lnurl", params: lnurl });
+      return result;
+    },
+    getBalance: async () => {
+      const result = await request("webln", { method: "getBalance" });
+      return result;
+    },
+    keysend: unsupported,
+    signMessage: unsupported,
+    verifyMessage: unsupported,
+    request: unsupported,
+  });
+
   const receive = (json: string): void => {
     let message: unknown;
     try {
@@ -193,6 +231,11 @@ export function install(info: ProviderInfo): void {
   });
   Object.defineProperty(globalThis, "nostr", {
     value: nostr,
+    writable: false,
+    configurable: false,
+  });
+  Object.defineProperty(globalThis, "webln", {
+    value: webln,
     writable: false,
     configurable: false,
   });
