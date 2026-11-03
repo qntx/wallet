@@ -15,7 +15,7 @@
   ],
   "type": "module",
   "scripts": {
-    "lint": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp check && bun scripts/check-version.ts",
+    "lint": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp check && bun scripts/check-version.ts && bun scripts/check-cycles.ts",
     "typecheck": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r typecheck && tsc --noEmit",
     "test": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test",
     "test:coverage": "vp run @qntx/wallet-engine#build && vp run @qntx/playground#build && vp run --concurrency-limit 1 -r test:coverage",
@@ -44,12 +44,10 @@
     "@vitest/coverage-v8": "5.0.5",
     "bumpp": "12.3.0",
     "cborg": "6.1.5",
+    "madge": "8.0.0",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
     "vite-plus": "1.4.0"
-  },
-  "overrides": {
-    "vite": "npm:@voidzero-dev/vite-plus-core@1.0.0"
   },
   "devEngines": {
     "packageManager": {

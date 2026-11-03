@@ -12,9 +12,9 @@ import { startKernel } from "@qntx/wallet-kernel";
 import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
 
 import { MAX_SESSION_MS, idleMsOf, isNodeWorkerData } from "../shared.ts";
+import { basePlatform } from "./platform.ts";
 import { loadSparkBackend } from "./spark.ts";
 import { createStoreClient } from "./store-client.ts";
-import { subtlePbkdf2 } from "./subtle.ts";
 
 export type NodeWorkerData = {
   readonly idleMinutes: 5 | 15 | 60;
@@ -37,18 +37,7 @@ const data: NodeWorkerData = {
 data.storePort.start();
 
 const platform: KernelPlatform = {
-  random: (length) => crypto.getRandomValues(new Uint8Array(length)),
-  now: () => Date.now(),
-  elapsed: () => performance.now(),
-  setTimer: (delayMs, fn) => {
-    const timer = setTimeout(fn, delayMs);
-    return () => {
-      clearTimeout(timer);
-    };
-  },
-  pbkdf2: subtlePbkdf2,
-  keystore: undefined,
-  passkey: undefined,
+  ...basePlatform(),
   store: createStoreClient({
     post: (message) => {
       // oxlint-disable-next-line unicorn/require-post-message-target-origin -- worker_threads port, not window.postMessage

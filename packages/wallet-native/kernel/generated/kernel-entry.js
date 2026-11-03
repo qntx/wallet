@@ -497,8 +497,13 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-xBib1U6w.mjs
+	// packages/wallet/dist/core-CiU8Xx2X.mjs
 	init_defineProperty();
+	/**
+	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
+	* validates every request, the host validates every response. Anything that does not match is a
+	* `ValidationError` — never a partially-accepted value.
+	*/
 	var ValidationError = class extends Error {
 		constructor(..._args) {
 			super(..._args);
@@ -881,7 +886,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DUzKi8JS.mjs
+	// packages/wallet/dist/protocol-BV7ey12_.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1434,6 +1439,27 @@
 		if (typeof value !== "string" || value.length > 39 || !/^(?:0|[1-9][0-9]*)$/.test(value) || BigInt(value) > U128_MAX) throw new ValidationError();
 		return value;
 	};
+	var outflowIntents = [
+		obj({
+			kind: literal("exit"),
+			address: str(128),
+			amountSats: satsAmount(),
+			maxFeeSats: satsAmount()
+		}),
+		obj({
+			kind: literal("onchain"),
+			address: str(128),
+			maxFeeSats: satsAmount()
+		}),
+		obj({
+			kind: literal("token"),
+			tokenIdentifier: bytes(32),
+			receivers: arr(obj({
+				ownerPublicKey: bytes(33),
+				amount: decimalU128
+			}), 256, 1)
+		})
+	];
 	var approveIntent = union(obj({
 		kind: literal("transfer"),
 		receivers: arr(obj({
@@ -1445,23 +1471,7 @@
 		invoice: str(4096),
 		amountSats: opt(satsAmount()),
 		maxFeeSats: satsAmount()
-	}), obj({
-		kind: literal("exit"),
-		address: str(128),
-		amountSats: satsAmount(),
-		maxFeeSats: satsAmount()
-	}), obj({
-		kind: literal("onchain"),
-		address: str(128),
-		maxFeeSats: satsAmount()
-	}), obj({
-		kind: literal("token"),
-		tokenIdentifier: bytes(32),
-		receivers: arr(obj({
-			ownerPublicKey: bytes(33),
-			amount: decimalU128
-		}), 256, 1)
-	}));
+	}), ...outflowIntents);
 	var approvalSummary = union(obj({
 		kind: literal("transfer"),
 		receivers: arr(obj({
@@ -1473,23 +1483,7 @@
 		paymentHash: bytes(32),
 		invoiceAmountSats: opt(satsAmount()),
 		maxFeeSats: satsAmount()
-	}), obj({
-		kind: literal("exit"),
-		address: str(128),
-		amountSats: satsAmount(),
-		maxFeeSats: satsAmount()
-	}), obj({
-		kind: literal("onchain"),
-		address: str(128),
-		maxFeeSats: satsAmount()
-	}), obj({
-		kind: literal("token"),
-		tokenIdentifier: bytes(32),
-		receivers: arr(obj({
-			ownerPublicKey: bytes(33),
-			amount: decimalU128
-		}), 256, 1)
-	}));
+	}), ...outflowIntents);
 	var SPARK_METHODS = {
 		"spark.identityPublicKey": {
 			session: true,
@@ -12282,6 +12276,18 @@ zoo`.split("\n"));
 	async function seedFromEntropy(entropy, pbkdf2) {
 		return seedFromMnemonic(mnemonicFromEntropy(entropy), "", pbkdf2);
 	}
+	/**
+	* Derives the BIP-39 seed of `entropy`, runs `use`, wipes the seed on every path. Does not own
+	* `entropy`.
+	*/
+	async function withSeed(pbkdf2, entropy, use) {
+		const seed = await seedFromEntropy(entropy, pbkdf2);
+		try {
+			return await use(seed);
+		} finally {
+			wipe(seed);
+		}
+	}
 	// packages/wallet-kernel/src/session/session.ts
 	init_utils$2();
 	init_defineProperty();
@@ -12448,6 +12454,15 @@ zoo`.split("\n"));
 		}
 	};
 	// packages/wallet-kernel/src/commands/vault.ts
+	/** Opens a wallet's sealed entropy record, then withSeed; wipes the entropy on every path. */
+	async function withWalletSeed(pbkdf2, dek, record, use) {
+		const entropy = openRecord(dek, record);
+		try {
+			return await withSeed(pbkdf2, entropy, use);
+		} finally {
+			wipe(entropy);
+		}
+	}
 	var EMPTY_IMAGE$1 = {
 		meta: void 0,
 		records: [],
@@ -12535,16 +12550,13 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/commands/wallets.ts
 	init_utils$2();
 	async function deriveWalletMaterial(platform, entropy) {
-		const seed = await seedFromEntropy(entropy, platform.pbkdf2);
-		try {
+		return withSeed(platform.pbkdf2, entropy, (seed) => {
 			const master = masterKey(seed);
 			return {
 				master,
 				walletId: walletIdOf(master)
 			};
-		} finally {
-			wipe(seed);
-		}
+		});
 	}
 	/** Entropy → master → walletId. `entropy` is not consumed. */
 	async function walletMaterial(platform, entropy, origin, words) {
@@ -14730,6 +14742,187 @@ zoo`.split("\n"));
 			});
 		};
 	}));
+	// node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/utils.js
+	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
+	/**
+	* Asserts something is a string.
+	* @param value - Value to validate.
+	* @param title - Label included in thrown errors.
+	* @returns The validated string.
+	* @throws On wrong argument types. {@link TypeError}
+	* @example
+	* Validate a label string.
+	*
+	* ```ts
+	* astring('example', 'label');
+	* ```
+	*/
+	function astring$1(value, title = "") {
+		if (typeof value !== "string") {
+			const prefix = title && `"${title}" `;
+			throw new TypeError(prefix + "expected string, got type=" + typeof value);
+		}
+		return value;
+	}
+	// node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/slip10.js
+	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
+	/**
+	* Allows to work with SLIP-0010 HD keys.
+	* @module
+	*/
+	init_utils$1();
+	init_hmac();
+	init_legacy();
+	init_sha2();
+	init_utils$2();
+	init_defineProperty();
+	/** SLIP-0010 master secret label for ed25519 keys. */
+	var MASTER_SECRET = /* @__PURE__ */ (() => utf8ToBytes$1("ed25519 seed"))();
+	/** Hardened child index offset. */
+	var HARDENED_OFFSET$1 = 2147483648;
+	var ZERO$1 = /* @__PURE__ */ (() => Uint8Array.of(0))();
+	var toU32 = (n, title = "number") => {
+		anumber$2(n, title);
+		if (!Number.isSafeInteger(n) || n < 0 || n > 2 ** 32 - 1) throw new RangeError(`"${title}" expected integer in range 0..2**32-1, got ${n}`);
+		const buf = /* @__PURE__ */ new Uint8Array(4);
+		createView$1(buf).setUint32(0, n, false);
+		return buf;
+	};
+	/**
+	* HD key for ed25519, SLIP-0010 format.
+	* This surface is the ed25519 private-only, hardened-only subset of SLIP-0010,
+	* not a full BIP-0032 xpub/xprv implementation.
+	* @param opt - Internal {@link HDKeyOpt} constructor options for derived keys:
+	* depth, child index, parent fingerprint, chain code, and private key.
+	* @example
+	* Start from a master seed, derive the hardened child path you need, then
+	* recreate the child from stored private key material and chain code.
+	* ```ts
+	* import { randomBytes } from '@noble/hashes/utils.js';
+	* import { HDKey } from 'micro-key-producer/slip10.js';
+	* const seed = randomBytes(32);
+	* const child = HDKey.fromMasterSeed(seed).derive("m/0'");
+	* const restored = new HDKey({
+	*   privateKey: child.privateKey,
+	*   chainCode: child.chainCode,
+	* });
+	* restored.fingerprintHex;
+	* ```
+	*/
+	var HDKey = class HDKey {
+		get publicKeyRaw() {
+			return ed25519.getPublicKey(this.privateKey);
+		}
+		get publicKey() {
+			return concatBytes$3(ZERO$1, this.publicKeyRaw);
+		}
+		get pubHash() {
+			return ripemd160(sha256$1(this.publicKey));
+		}
+		get fingerprint() {
+			return createView$1(this.pubHash).getUint32(0, false);
+		}
+		get fingerprintHex() {
+			return bytesToHex$4(toU32(this.fingerprint));
+		}
+		get parentFingerprintHex() {
+			return bytesToHex$4(toU32(this.parentFingerprint));
+		}
+		static fromMasterSeed(seed) {
+			seed = abytes$2(seed, void 0, "seed");
+			if (8 * seed.length < 128 || 8 * seed.length > 512) throw new Error(`HDKey: wrong seed length=${seed.length}. Should be between 128 and 512 bits; 256 bits is advised)`);
+			const I = hmac(sha512, MASTER_SECRET, seed);
+			return new HDKey({
+				privateKey: I.slice(0, 32),
+				chainCode: I.slice(32)
+			});
+		}
+		constructor(opt) {
+			_defineProperty(this, "depth", 0);
+			_defineProperty(this, "index", 0);
+			_defineProperty(this, "chainCode", void 0);
+			_defineProperty(this, "parentFingerprint", 0);
+			_defineProperty(this, "privateKey", void 0);
+			if (!opt || typeof opt !== "object") throw new Error("HDKey.constructor must not be called directly");
+			abytes$2(opt.privateKey, 32, "privateKey");
+			abytes$2(opt.chainCode, 32, "chainCode");
+			this.depth = opt.depth || 0;
+			this.index = opt.index || 0;
+			this.parentFingerprint = opt.parentFingerprint || 0;
+			if (!this.depth) {
+				if (this.parentFingerprint || this.index) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
+			}
+			this.chainCode = opt.chainCode;
+			this.privateKey = opt.privateKey;
+		}
+		derive(path, forceHardened = false) {
+			path = astring$1(path, "path");
+			forceHardened = abool(forceHardened, "forceHardened");
+			if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
+			if (/^[mM]'?$/.test(path)) return this;
+			const parts = path.replace(/^[mM]'?\//, "").split("/");
+			let child = this;
+			for (const c of parts) {
+				const m = /^(\d+)('?)$/.exec(c);
+				if (!m || m.length !== 3) throw new Error(`Invalid child index: ${c}`);
+				let idx = +m[1];
+				if (!Number.isSafeInteger(idx) || idx >= 2147483648) throw new Error("Invalid index");
+				if (forceHardened || m[2] === "'") idx += HARDENED_OFFSET$1;
+				child = child.deriveChild(idx);
+			}
+			return child;
+		}
+		deriveChild(index) {
+			const indexBytes = toU32(index, "index");
+			if (index < 2147483648) throw new Error(`Non-hardened child derivation not possible for Ed25519 (index=${index})`);
+			const data = concatBytes$3(ZERO$1, this.privateKey, indexBytes);
+			const I = hmac(sha512, this.chainCode, data);
+			return new HDKey({
+				chainCode: I.slice(32),
+				depth: this.depth + 1,
+				parentFingerprint: this.fingerprint,
+				index,
+				privateKey: I.slice(0, 32)
+			});
+		}
+		sign(message) {
+			message = abytes$2(message, void 0, "message");
+			return ed25519.sign(message, this.privateKey);
+		}
+		verify(message, signature) {
+			message = abytes$2(message, void 0, "message");
+			signature = abytes$2(signature, 64, "signature");
+			return ed25519.verify(signature, message, this.publicKeyRaw);
+		}
+	};
+	// packages/wallet-chains/dist/index.mjs
+	init_defineProperty();
+	var ChainError = class extends Error {
+		constructor(code, message) {
+			super(message);
+			_defineProperty(this, "code", void 0);
+			this.name = "ChainError";
+			this.code = code;
+		}
+	};
+	// packages/wallet-chains/dist/account-ref-C2qrDbVT.mjs
+	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isAccountRef = (value) => {
+		if (!isRecord$3(value) || typeof value["kind"] !== "string") return false;
+		if (value["kind"] === "hd") return typeof value["walletId"] === "string" && typeof value["groupIndex"] === "number" && typeof value["template"] === "string";
+		return value["kind"] === "imported" && typeof value["keyId"] === "string" && typeof value["family"] === "string";
+	};
+	/** The network/account head every SignRequest shares; per-family checks follow it. */
+	var requestBase = (request) => {
+		if (!isRecord$3(request)) throw new ChainError("invalid-request", "request must be an object");
+		const { network, account } = request;
+		if (typeof network !== "string") throw new ChainError("invalid-request", "request.network must be a string");
+		if (!isAccountRef(account)) throw new ChainError("invalid-request", "request.account must be an AccountRef");
+		return {
+			network,
+			account
+		};
+	};
 	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
 	* Validates that a value is a non-negative bigint.
@@ -14766,7 +14959,7 @@ zoo`.split("\n"));
 	* astring('example', 'label');
 	* ```
 	*/
-	function astring$1(value, title = "") {
+	function astring(value, title = "") {
 		if (typeof value !== "string") {
 			const prefix = title && `"${title}" `;
 			throw new TypeError(prefix + "expected string, got type=" + typeof value);
@@ -15996,7 +16189,7 @@ zoo`.split("\n"));
 					c = void 0;
 				}
 				if (c !== void 0) {
-					if (!astring$1(c.type, "c.type").startsWith("tr_")) throw new Error(`P2TR: invalid custom type=${c.type}`);
+					if (!astring(c.type, "c.type").startsWith("tr_")) throw new Error(`P2TR: invalid custom type=${c.type}`);
 					return;
 				}
 			}
@@ -16178,7 +16371,7 @@ zoo`.split("\n"));
 			encode(from) {
 				validateObject(from, {}, {}, "from");
 				const { type } = from;
-				astring$1(type, "from.type");
+				astring(type, "from.type");
 				if (type === "wpkh") return programToWitness(0, from.hash, network);
 				else if (type === "wsh") return programToWitness(0, from.hash, network);
 				else if (type === "tr") return programToWitness(1, from.pubkey, network);
@@ -16188,7 +16381,7 @@ zoo`.split("\n"));
 				throw new Error(`Unknown address type=${type}`);
 			},
 			decode(address) {
-				astring$1(address, "address");
+				astring(address, "address");
 				if (address.length < 14 || address.length > 74) throw new Error("Invalid address length");
 				if (network.bech32 && address.toLowerCase().startsWith(`${network.bech32}1`)) {
 					let res;
@@ -17903,173 +18096,10 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/utils.js
-	init_transaction();
-	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
-	/**
-	* Asserts something is a string.
-	* @param value - Value to validate.
-	* @param title - Label included in thrown errors.
-	* @returns The validated string.
-	* @throws On wrong argument types. {@link TypeError}
-	* @example
-	* Validate a label string.
-	*
-	* ```ts
-	* astring('example', 'label');
-	* ```
-	*/
-	function astring(value, title = "") {
-		if (typeof value !== "string") {
-			const prefix = title && `"${title}" `;
-			throw new TypeError(prefix + "expected string, got type=" + typeof value);
-		}
-		return value;
-	}
-	// node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/slip10.js
-	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
-	/**
-	* Allows to work with SLIP-0010 HD keys.
-	* @module
-	*/
-	init_utils$1();
-	init_hmac();
-	init_legacy();
-	init_sha2();
-	init_utils$2();
-	init_defineProperty();
-	/** SLIP-0010 master secret label for ed25519 keys. */
-	var MASTER_SECRET = /* @__PURE__ */ (() => utf8ToBytes$1("ed25519 seed"))();
-	/** Hardened child index offset. */
-	var HARDENED_OFFSET$1 = 2147483648;
-	var ZERO$1 = /* @__PURE__ */ (() => Uint8Array.of(0))();
-	var toU32 = (n, title = "number") => {
-		anumber$2(n, title);
-		if (!Number.isSafeInteger(n) || n < 0 || n > 2 ** 32 - 1) throw new RangeError(`"${title}" expected integer in range 0..2**32-1, got ${n}`);
-		const buf = /* @__PURE__ */ new Uint8Array(4);
-		createView$1(buf).setUint32(0, n, false);
-		return buf;
-	};
-	/**
-	* HD key for ed25519, SLIP-0010 format.
-	* This surface is the ed25519 private-only, hardened-only subset of SLIP-0010,
-	* not a full BIP-0032 xpub/xprv implementation.
-	* @param opt - Internal {@link HDKeyOpt} constructor options for derived keys:
-	* depth, child index, parent fingerprint, chain code, and private key.
-	* @example
-	* Start from a master seed, derive the hardened child path you need, then
-	* recreate the child from stored private key material and chain code.
-	* ```ts
-	* import { randomBytes } from '@noble/hashes/utils.js';
-	* import { HDKey } from 'micro-key-producer/slip10.js';
-	* const seed = randomBytes(32);
-	* const child = HDKey.fromMasterSeed(seed).derive("m/0'");
-	* const restored = new HDKey({
-	*   privateKey: child.privateKey,
-	*   chainCode: child.chainCode,
-	* });
-	* restored.fingerprintHex;
-	* ```
-	*/
-	var HDKey = class HDKey {
-		get publicKeyRaw() {
-			return ed25519.getPublicKey(this.privateKey);
-		}
-		get publicKey() {
-			return concatBytes$3(ZERO$1, this.publicKeyRaw);
-		}
-		get pubHash() {
-			return ripemd160(sha256$1(this.publicKey));
-		}
-		get fingerprint() {
-			return createView$1(this.pubHash).getUint32(0, false);
-		}
-		get fingerprintHex() {
-			return bytesToHex$4(toU32(this.fingerprint));
-		}
-		get parentFingerprintHex() {
-			return bytesToHex$4(toU32(this.parentFingerprint));
-		}
-		static fromMasterSeed(seed) {
-			seed = abytes$2(seed, void 0, "seed");
-			if (8 * seed.length < 128 || 8 * seed.length > 512) throw new Error(`HDKey: wrong seed length=${seed.length}. Should be between 128 and 512 bits; 256 bits is advised)`);
-			const I = hmac(sha512, MASTER_SECRET, seed);
-			return new HDKey({
-				privateKey: I.slice(0, 32),
-				chainCode: I.slice(32)
-			});
-		}
-		constructor(opt) {
-			_defineProperty(this, "depth", 0);
-			_defineProperty(this, "index", 0);
-			_defineProperty(this, "chainCode", void 0);
-			_defineProperty(this, "parentFingerprint", 0);
-			_defineProperty(this, "privateKey", void 0);
-			if (!opt || typeof opt !== "object") throw new Error("HDKey.constructor must not be called directly");
-			abytes$2(opt.privateKey, 32, "privateKey");
-			abytes$2(opt.chainCode, 32, "chainCode");
-			this.depth = opt.depth || 0;
-			this.index = opt.index || 0;
-			this.parentFingerprint = opt.parentFingerprint || 0;
-			if (!this.depth) {
-				if (this.parentFingerprint || this.index) throw new Error("HDKey: zero depth with non-zero index/parent fingerprint");
-			}
-			this.chainCode = opt.chainCode;
-			this.privateKey = opt.privateKey;
-		}
-		derive(path, forceHardened = false) {
-			path = astring(path, "path");
-			forceHardened = abool(forceHardened, "forceHardened");
-			if (!/^[mM]'?/.test(path)) throw new Error("Path must start with \"m\" or \"M\"");
-			if (/^[mM]'?$/.test(path)) return this;
-			const parts = path.replace(/^[mM]'?\//, "").split("/");
-			let child = this;
-			for (const c of parts) {
-				const m = /^(\d+)('?)$/.exec(c);
-				if (!m || m.length !== 3) throw new Error(`Invalid child index: ${c}`);
-				let idx = +m[1];
-				if (!Number.isSafeInteger(idx) || idx >= 2147483648) throw new Error("Invalid index");
-				if (forceHardened || m[2] === "'") idx += HARDENED_OFFSET$1;
-				child = child.deriveChild(idx);
-			}
-			return child;
-		}
-		deriveChild(index) {
-			const indexBytes = toU32(index, "index");
-			if (index < 2147483648) throw new Error(`Non-hardened child derivation not possible for Ed25519 (index=${index})`);
-			const data = concatBytes$3(ZERO$1, this.privateKey, indexBytes);
-			const I = hmac(sha512, this.chainCode, data);
-			return new HDKey({
-				chainCode: I.slice(32),
-				depth: this.depth + 1,
-				parentFingerprint: this.fingerprint,
-				index,
-				privateKey: I.slice(0, 32)
-			});
-		}
-		sign(message) {
-			message = abytes$2(message, void 0, "message");
-			return ed25519.sign(message, this.privateKey);
-		}
-		verify(message, signature) {
-			message = abytes$2(message, void 0, "message");
-			signature = abytes$2(signature, 64, "signature");
-			return ed25519.verify(signature, message, this.publicKeyRaw);
-		}
-	};
-	// packages/wallet-chains/dist/index.mjs
-	init_defineProperty();
-	var ChainError = class extends Error {
-		constructor(code, message) {
-			super(message);
-			_defineProperty(this, "code", void 0);
-			this.name = "ChainError";
-			this.code = code;
-		}
-	};
 	// packages/wallet-chains/dist/message-DuJ5KSRT.mjs
 	init_secp256k1();
 	init_utils();
+	init_transaction();
 	init_sha2();
 	init_objectSpread2();
 	/**
@@ -18247,18 +18277,18 @@ zoo`.split("\n"));
 	* binds PSBT metadata to the requested network — the raw output scripts themselves carry no network
 	* marker.
 	*/
-	var isRecord$2$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isRecord$1$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	/**
 	* Bip32Derivation values are [pubkey, { fingerprint, path }] tuples; tapBip32Derivation values are
 	* { hashes, der: { fingerprint, path } }.
 	*/
 	var derivationPaths = (map) => {
-		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$2$2(map) ? Object.values(map) : [];
+		const entries = map instanceof Map ? [...map.values()] : Array.isArray(map) ? map : isRecord$1$1(map) ? Object.values(map) : [];
 		const paths = [];
 		for (const entry of entries) {
 			const value = Array.isArray(entry) ? entry[1] : entry;
-			if (!isRecord$2$2(value)) continue;
-			const { path } = isRecord$2$2(value["der"]) ? value["der"] : value;
+			if (!isRecord$1$1(value)) continue;
+			const { path } = isRecord$1$1(value["der"]) ? value["der"] : value;
 			if (Array.isArray(path) && path.every((p) => typeof p === "number")) paths.push(path);
 		}
 		return paths;
@@ -18395,22 +18425,10 @@ zoo`.split("\n"));
 			verifiability
 		};
 	};
-	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	var isAccountRef$2 = (value) => {
-		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
-		if (value["kind"] === "hd") return typeof value["walletId"] === "string" && typeof value["groupIndex"] === "number" && typeof value["template"] === "string";
-		return value["kind"] === "imported" && typeof value["keyId"] === "string" && typeof value["family"] === "string";
-	};
 	var common = (request) => {
-		const { network } = request;
-		const { account } = request;
-		if (typeof network !== "string") throw new ChainError("invalid-request", "request.network must be a string");
-		if (!isAccountRef$2(account)) throw new ChainError("invalid-request", "request.account must be an AccountRef");
-		bitcoinNetwork(network);
-		return {
-			network,
-			account
-		};
+		const base = requestBase(request);
+		bitcoinNetwork(base.network);
+		return base;
 	};
 	var messageTarget = (address, network, format) => {
 		if (typeof address !== "string") throw new ChainError("invalid-request", "address must be a string");
@@ -18439,7 +18457,7 @@ zoo`.split("\n"));
 	* re-serialization.
 	*/
 	var normalizeBitcoin = (request) => {
-		if (!isRecord$4(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
+		if (!isRecord$3(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
 		const { network, account } = common(request);
 		if (request["kind"] === "bitcoin.psbt") {
 			const { psbt } = request;
@@ -18475,29 +18493,6 @@ zoo`.split("\n"));
 	};
 	/** Decodes the message `address` into the scriptPubKey the signer needs. */
 	var decodeMessageTarget = (request) => messageTarget(request.address, request.network, request.format);
-	// packages/wallet-chains/dist/bitcoin-sign.mjs
-	init_payment();
-	init_transaction();
-	/**
-	* /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
-	* (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`
-	* first. No key caching.
-	*/
-	var signBitcoinPsbt = (psbt, inputs, auxRand) => {
-		const tx = Transaction.fromPSBT(psbt);
-		for (const { index, privateKey } of inputs) {
-			if (privateKey.length !== 32) throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
-			if (!tx.signIdx(privateKey, index, void 0, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
-		}
-		return tx.toPSBT(0);
-	};
-	/** Returns the signature string: `smp…` base64 witness for bip322-simple, compact base64 for legacy. */
-	var signBitcoinMessage = (request, privateKey, auxRand) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		if (request.format === "legacy") return signLegacyMessage(request.message, privateKey);
-		const scriptPubKey = OutScript.encode(Address(bitcoinNetwork(request.network).params).decode(request.address));
-		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
-	};
 	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha3.js
 	init__u64();
 	init_utils$2();
@@ -22671,7 +22666,7 @@ zoo`.split("\n"));
 	function assertHex$1(value, field) {
 		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
 	}
-	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
 	var canonicalHex = (value) => `0x${value.toString(16)}`;
 	var safeInteger = (value, field) => {
@@ -22691,7 +22686,7 @@ zoo`.split("\n"));
 	var accessList = (value) => {
 		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
 		return value.map((entry) => {
-			if (!isRecord$3(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
+			if (!isRecord$1(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
 			const keys = Object.keys(entry).sort();
 			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
 			const { address, storageKeys } = entry;
@@ -22758,7 +22753,7 @@ zoo`.split("\n"));
 	* canonical quantities, EIP-55 addresses. Idempotent.
 	*/
 	var normalizeEvmTransaction = (tx) => {
-		if (!isRecord$3(tx)) throw new ChainError("invalid-request", "tx must be an object");
+		if (!isRecord$1(tx)) throw new ChainError("invalid-request", "tx must be an object");
 		const { type } = tx;
 		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930 and eip1559 only)`);
 		rejectUnknown(tx, type);
@@ -22796,14 +22791,14 @@ zoo`.split("\n"));
 			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
 		});
 	};
-	var isField = (value) => isRecord$3(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
+	var isField = (value) => isRecord$1(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
 	var isTypedDataInput = (value) => {
-		if (!isRecord$3(value)) return false;
+		if (!isRecord$1(value)) return false;
 		const { types, primaryType, domain, message } = value;
-		if (!isRecord$3(types)) return false;
+		if (!isRecord$1(types)) return false;
 		if (typeof primaryType !== "string" || primaryType === "") return false;
-		if (!isRecord$3(domain)) return false;
-		if (!isRecord$3(message)) return false;
+		if (!isRecord$1(domain)) return false;
+		if (!isRecord$1(message)) return false;
 		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
 	};
 	/** Parses the EIP-712 JSON source and validates its shape with ox. */
@@ -25409,18 +25404,9 @@ zoo`.split("\n"));
 	* Normalizes a SignRequest for the EVM family: exact key sets, chainId vs the CAIP-2 `network`,
 	* canonical quantities and EIP-55 addresses. Idempotent.
 	*/
-	var isAccountRef$1 = (value) => {
-		if (!isRecord$3(value) || typeof value["kind"] !== "string") return false;
-		if (value["kind"] === "hd") return typeof value["walletId"] === "string" && typeof value["groupIndex"] === "number" && typeof value["template"] === "string";
-		if (value["kind"] === "imported") return typeof value["keyId"] === "string" && typeof value["family"] === "string";
-		return false;
-	};
 	var normalizeEvm = (request) => {
-		if (!isRecord$3(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
-		const { network } = request;
-		const { account } = request;
-		if (typeof network !== "string") throw new ChainError("invalid-request", "request.network must be a string");
-		if (!isAccountRef$1(account)) throw new ChainError("invalid-request", "request.account must be an AccountRef");
+		if (!isRecord$1(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
+		const { network, account } = requestBase(request);
 		const chainId = networkChainId(network);
 		if (request["kind"] === "evm.transaction") {
 			const tx = normalizeEvmTransaction(request["tx"]);
@@ -25454,79 +25440,6 @@ zoo`.split("\n"));
 			};
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
-	};
-	// packages/wallet-chains/dist/evm-sign.mjs
-	init_objectSpread2();
-	/**
-	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
-	* must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
-	* key caching; the caller wipes key bytes.
-	*/
-	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
-	function assertHex(value, field) {
-		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-	}
-	var hex$1 = (value, field) => {
-		assertHex(value, field);
-		return value;
-	};
-	var key = (privateKey) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		return fromBytes$1(privateKey);
-	};
-	var accessEntry = (entry) => ({
-		address: hex$1(entry.address, "accessList.address"),
-		storageKeys: entry.storageKeys.map((k) => hex$1(k, "accessList.storageKeys"))
-	});
-	var sign$1 = (payload, privateKey) => sign$2({
-		payload,
-		privateKey,
-		as: "Object"
-	});
-	/** Signs a normalized transaction; returns the serialized signed envelope. */
-	var signEvmTransaction = (tx, privateKey) => {
-		const privateKeyHex = key(privateKey);
-		const base = {
-			chainId: tx.chainId,
-			to: tx.to === void 0 ? void 0 : hex$1(tx.to, "to"),
-			data: hex$1(tx.data, "data"),
-			value: BigInt(tx.value),
-			nonce: BigInt(tx.nonce),
-			gas: BigInt(tx.gas)
-		};
-		if (tx.type === "legacy") {
-			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-				type: "legacy",
-				gasPrice: BigInt(tx.gasPrice)
-			});
-			return toBytes$1(serialize$1(envelope, { signature: sign$1(getSignPayload$1(envelope), privateKeyHex) }));
-		}
-		if (tx.type === "eip2930") {
-			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-				type: "eip2930",
-				gasPrice: BigInt(tx.gasPrice),
-				accessList: tx.accessList.map(accessEntry)
-			});
-			return toBytes$1(serialize$2(envelope, { signature: sign$1(getSignPayload$2(envelope), privateKeyHex) }));
-		}
-		const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-			type: "eip1559",
-			accessList: tx.accessList.map(accessEntry),
-			maxFeePerGas: BigInt(tx.maxFeePerGas),
-			maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas)
-		});
-		return toBytes$1(serialize(envelope, { signature: sign$1(getSignPayload(envelope), privateKeyHex) }));
-	};
-	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */
-	var rs_v = (signature) => toBytes(signature);
-	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signEvmPersonalMessage = (message, privateKey) => {
-		return rs_v(from$1(sign$1(getSignPayload$3(fromBytes$1(message)), key(privateKey))));
-	};
-	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
-	var signEvmTypedData = (typedData, privateKey) => {
-		const { json } = parseTypedData(typedData, "eip155:1");
-		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
 	};
 	// node_modules/.bun/@solana+errors@8.5.0+ff0372d108591aba/node_modules/@solana/errors/dist/index.browser.mjs
 	init_objectSpread2();
@@ -26920,14 +26833,14 @@ zoo`.split("\n"));
 			lookupAddresses: lookups.map((l) => l.lookupTableAddress)
 		};
 	};
-	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var isRecord$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isStringArray = (value) => Array.isArray(value) && value.every((v) => typeof v === "string");
 	var isNumberArray = (value) => Array.isArray(value) && value.every((v) => typeof v === "number");
-	var isArrayLike = (value) => isRecord$1(value) && typeof value["length"] === "number";
-	var isIx = (value) => isRecord$1(value) && typeof value["programAddressIndex"] === "number" && (value["accountIndices"] === void 0 || isNumberArray(value["accountIndices"]) || isArrayLike(value["accountIndices"])) && value["data"] instanceof Uint8Array;
-	var isLookup = (value) => isRecord$1(value) && typeof value["lookupTableAddress"] === "string" && (isNumberArray(value["readonlyIndexes"]) || value["readonlyIndexes"] instanceof Uint8Array) && (isNumberArray(value["writableIndexes"]) || value["writableIndexes"] instanceof Uint8Array);
+	var isArrayLike = (value) => isRecord$2(value) && typeof value["length"] === "number";
+	var isIx = (value) => isRecord$2(value) && typeof value["programAddressIndex"] === "number" && (value["accountIndices"] === void 0 || isNumberArray(value["accountIndices"]) || isArrayLike(value["accountIndices"])) && value["data"] instanceof Uint8Array;
+	var isLookup = (value) => isRecord$2(value) && typeof value["lookupTableAddress"] === "string" && (isNumberArray(value["readonlyIndexes"]) || value["readonlyIndexes"] instanceof Uint8Array) && (isNumberArray(value["writableIndexes"]) || value["writableIndexes"] instanceof Uint8Array);
 	var asCompiledMessage = (value) => {
-		if (!isRecord$1(value) || !isRecord$1(value["header"])) throw new ChainError("invalid-request", "compiled message failed to decode");
+		if (!isRecord$2(value) || !isRecord$2(value["header"])) throw new ChainError("invalid-request", "compiled message failed to decode");
 		const { header } = value;
 		const { staticAccounts } = value;
 		const { instructions } = value;
@@ -27141,12 +27054,6 @@ zoo`.split("\n"));
 		};
 	};
 	var decodeSolana = (request, signer, table = solanaTokenTable) => decodeTransaction(request, signer, table);
-	var isRecord$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	var isAccountRef = (value) => {
-		if (!isRecord$2(value) || typeof value["kind"] !== "string") return false;
-		if (value["kind"] === "hd") return typeof value["walletId"] === "string" && typeof value["groupIndex"] === "number" && typeof value["template"] === "string";
-		return value["kind"] === "imported" && typeof value["keyId"] === "string" && typeof value["family"] === "string";
-	};
 	var solanaNetwork = (network) => {
 		if (!SOLANA_NETWORKS.includes(network)) throw new ChainError("unsupported", `unknown Solana network: ${network}`);
 	};
@@ -27154,7 +27061,7 @@ zoo`.split("\n"));
 		if (tables === void 0) return;
 		if (!Array.isArray(tables)) throw new ChainError("unknown-field", "lookupTables must be an array");
 		const parsed = tables.map((t) => {
-			if (!isRecord$2(t) || typeof t["address"] !== "string" || !Array.isArray(t["addresses"])) throw new ChainError("unknown-field", "lookupTables entries must be { address, addresses }");
+			if (!isRecord$3(t) || typeof t["address"] !== "string" || !Array.isArray(t["addresses"])) throw new ChainError("unknown-field", "lookupTables entries must be { address, addresses }");
 			const addresses = t["addresses"].map((a) => {
 				if (typeof a !== "string") throw new ChainError("invalid-address", "lookup table addresses must be strings");
 				return a;
@@ -27174,11 +27081,8 @@ zoo`.split("\n"));
 	* is a wallet-drainer). Idempotent.
 	*/
 	var normalizeSolana = (request, signer) => {
-		if (!isRecord$2(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
-		const { network } = request;
-		const { account } = request;
-		if (typeof network !== "string") throw new ChainError("invalid-request", "request.network must be a string");
-		if (!isAccountRef(account)) throw new ChainError("invalid-request", "request.account must be an AccountRef");
+		if (!isRecord$3(request) || typeof request["kind"] !== "string") throw new ChainError("invalid-request", "request must be an object with a kind");
+		const { network, account } = requestBase(request);
 		solanaNetwork(network);
 		if (!isSolanaAddress(signer)) throw new ChainError("invalid-address", "signer is not a base58 address");
 		const { message } = request;
@@ -27217,19 +27121,28 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	// packages/wallet-chains/dist/solana-sign.mjs
+	// packages/wallet-chains/dist/bitcoin-sign.mjs
+	init_payment();
+	init_transaction();
 	/**
-	* /solana/sign — deterministic Ed25519 signing over the compiled message or raw offchain bytes.
-	* Inputs must already be normalized: the kernel calls `normalizeSolana` first. No key caching; the
-	* caller wipes key bytes.
+	* /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
+	* (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`
+	* first. No key caching.
 	*/
-	/** Signs `message` with a 32-byte Ed25519 seed; returns the 64-byte signature. */
-	var signSolanaMessage = (message, privateKey) => {
-		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be a 32-byte seed");
-		if (message.length === 0) throw new ChainError("invalid-request", "message must not be empty");
-		const signature = ed25519.sign(message, privateKey);
-		if (signature.length !== 64) throw new ChainError("invalid-request", "ed25519 produced a malformed signature");
-		return signature;
+	var signBitcoinPsbt = (psbt, inputs, auxRand) => {
+		const tx = Transaction.fromPSBT(psbt);
+		for (const { index, privateKey } of inputs) {
+			if (privateKey.length !== 32) throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
+			if (!tx.signIdx(privateKey, index, void 0, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
+		}
+		return tx.toPSBT(0);
+	};
+	/** Returns the signature string: `smp…` base64 witness for bip322-simple, compact base64 for legacy. */
+	var signBitcoinMessage = (request, privateKey, auxRand) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+		if (request.format === "legacy") return signLegacyMessage(request.message, privateKey);
+		const scriptPubKey = OutScript.encode(Address(bitcoinNetwork(request.network).params).decode(request.address));
+		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
 	};
 	// packages/wallet-kernel/src/modules/chains/prompt.ts
 	/** Off-chain messages carry no decodable value flow. */
@@ -27302,23 +27215,370 @@ zoo`.split("\n"));
 			description: joinLines(lines.length === 0 ? [catalog.generic] : lines)
 		};
 	}
-	// packages/wallet-kernel/src/modules/chains/index.ts
+	// packages/wallet-kernel/src/modules/chains/shared.ts
 	/**
-	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
-	* index, derived from the wallet's entropy record. No records, no cache: seed and every node are
-	* wiped in `finally` on every path. Signing is not in this module — `chain.sign` arrives in E2-b.
+	* Shared types and helpers for the chains module's per-family sign executors — kept in a leaf file
+	* so `index.ts` can import the family executors without an import cycle.
 	*/
-	init_bip32();
-	init_payment();
-	init_transaction();
 	var BTC_PURPOSE = {
 		"btc.bip44": 44,
 		"btc.bip49": 49,
 		"btc.bip84": 84,
 		"btc.bip86": 86
 	};
+	var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array);
+	/** Order-insensitive deep equality over wire values (Uint8Array, arrays, plain objects, scalars). */
+	var deepEqual = (a, b) => {
+		if (a === b) return true;
+		if (a instanceof Uint8Array || b instanceof Uint8Array) return a instanceof Uint8Array && b instanceof Uint8Array && a.length === b.length && a.every((byte, i) => byte === b[i]);
+		if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+		if (!isObj(a) || !isObj(b)) return false;
+		const ka = Object.keys(a);
+		const kb = new Set(Object.keys(b));
+		return ka.length === kb.size && ka.every((k) => kb.has(k) && deepEqual(a[k], b[k]));
+	};
+	function mapChainError(error) {
+		if (error instanceof ChainError) throw new KernelError("invalid-input", "invalid sign request");
+		throw error;
+	}
+	// packages/wallet-kernel/src/modules/chains/bitcoin.ts
+	init_bip32();
+	init_payment();
+	init_transaction();
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
-	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+	var hex$1 = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+	/** The PSBT derivation entry that claims this account's fingerprint and path, if any. */
+	var derivationOf = (owner, fingerprint, purpose) => {
+		var _owner$bip32Derivatio;
+		if (purpose === 86) {
+			var _owner$tapBip32Deriva;
+			const claimed = (der) => der.fingerprint === fingerprint && isPath(der.path);
+			for (const [key, value] of (_owner$tapBip32Deriva = owner.tapBip32Derivation) !== null && _owner$tapBip32Deriva !== void 0 ? _owner$tapBip32Deriva : []) if (claimed(value.der)) return {
+				pubkey: key,
+				fingerprint: value.der.fingerprint,
+				path: value.der.path
+			};
+			return;
+		}
+		for (const [key, value] of (_owner$bip32Derivatio = owner.bip32Derivation) !== null && _owner$bip32Derivatio !== void 0 ? _owner$bip32Derivatio : []) if (value.fingerprint === fingerprint) return {
+			pubkey: key,
+			fingerprint: value.fingerprint,
+			path: value.path
+		};
+	};
+	var expectedPub = (purpose, pub) => purpose === 86 ? pub.slice(1) : pub;
+	var expectedScript = (purpose, pub) => purpose === 86 ? p2tr(pub.slice(1)).script : purpose === 49 ? p2sh(p2wpkh(pub)).script : purpose === 44 ? p2pkh(pub).script : p2wpkh(pub).script;
+	/** Derives `m/purpose'/coin'/group'/change/index` — the only path shape this account may sign. */
+	var childAt = (b, path) => {
+		const [purposePath, coinPath, groupPath, change, index] = path;
+		if (path.length !== 5 || purposePath !== b.purpose + b.hardened || coinPath !== b.coinType + b.hardened || groupPath !== b.account.groupIndex + b.hardened || change === void 0 || index === void 0 || change !== 0 && change !== 1 || index < 0 || index >= b.hardened) throw new KernelError("invalid-input", "derivation path is not this account's");
+		const child = b.accountNode.deriveChild(change).deriveChild(index);
+		b.children.push(child);
+		return child;
+	};
+	/**
+	* Ownership check for one `request.sign` input: the derivation entry must be this account's, the
+	* claimed pubkey the derived child's, and the prevout script (witnessUtxo, or nonWitnessUtxo for
+	* P2PKH, plus redeemScript for P2SH-P2WPKH) the script of that key.
+	*/
+	var bitcoinInput = (b, tx, idx) => {
+		const input = tx.getInput(idx);
+		const entry = derivationOf(input, b.master.fingerprint, b.purpose);
+		if (entry === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
+		const child = childAt(b, entry.path);
+		const pub = child.publicKey;
+		const priv = child.privateKey;
+		if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+		if (!deepEqual(entry.pubkey, expectedPub(b.purpose, pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
+		if (b.purpose === 44) {
+			var _outs$vout;
+			if (input.nonWitnessUtxo === void 0) throw new KernelError("invalid-input", `input ${idx}: P2PKH spend requires nonWitnessUtxo`);
+			const vout = input.index;
+			const outs = input.nonWitnessUtxo.outputs;
+			const prevScript = vout === void 0 ? void 0 : (_outs$vout = outs[vout]) === null || _outs$vout === void 0 ? void 0 : _outs$vout.script;
+			if (prevScript === void 0 || !deepEqual(prevScript, expectedScript(b.purpose, pub))) throw new KernelError("invalid-input", `input ${idx}: nonWitnessUtxo prevout is not this key's`);
+		} else {
+			const prevout = input.witnessUtxo;
+			if (prevout === void 0 || !deepEqual(prevout.script, expectedScript(b.purpose, pub))) throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
+			if (b.purpose === 49 && (input.redeemScript === void 0 || !deepEqual(input.redeemScript, p2wpkh(pub).script))) throw new KernelError("invalid-input", `input ${idx}: redeemScript is not this key's`);
+		}
+		return {
+			index: idx,
+			privateKey: priv
+		};
+	};
+	/** Output binding: the scripts of outputs that look like this account's (its change addresses). */
+	var bitcoinOwnScripts = (b, tx) => {
+		const ownScripts = /* @__PURE__ */ new Set();
+		for (let i = 0; i < tx.outputsLength; i++) {
+			const output = tx.getOutput(i);
+			if (output.script === void 0) continue;
+			const entry = derivationOf(output, b.master.fingerprint, b.purpose);
+			if (entry === void 0) continue;
+			try {
+				const pub = childAt(b, entry.path).publicKey;
+				if (pub !== null && deepEqual(output.script, expectedScript(b.purpose, pub))) ownScripts.add(hex$1(output.script));
+			} catch (_unused) {
+				continue;
+			}
+		}
+		return ownScripts;
+	};
+	/** The PSBT path: input ownership, output binding, normalize, decode intent or sign. */
+	var executeBitcoinPsbt = (b, request, random, intentOnly) => {
+		const tx = Transaction.fromPSBT(request.psbt);
+		const inputs = request.sign.map((idx) => bitcoinInput(b, tx, idx));
+		const ownScripts = bitcoinOwnScripts(b, tx);
+		let normalized;
+		try {
+			normalized = normalizeBitcoin(request);
+		} catch (error) {
+			mapChainError(error);
+		}
+		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+		let intent;
+		try {
+			intent = decodeBitcoinPsbt(request, ownScripts);
+		} catch (error) {
+			mapChainError(error);
+		}
+		if (intentOnly) return { prompt: intent };
+		return {
+			kind: "bitcoin.psbt",
+			signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => random(32))
+		};
+	};
+	/** The message path: the declared change/index must derive this address, then normalize/sign. */
+	var executeBitcoinMessage = (b, request, random, intentOnly) => {
+		if (request.format === "legacy" && b.account.template !== "btc.bip44") throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
+		const child = childAt(b, [
+			b.purpose + b.hardened,
+			b.coinType + b.hardened,
+			b.account.groupIndex + b.hardened,
+			request.change,
+			request.index
+		]);
+		const pub = child.publicKey;
+		const priv = child.privateKey;
+		if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
+		if ((b.purpose === 86 ? p2tr(pub.slice(1), void 0, b.net.params).address : b.purpose === 49 ? p2sh(p2wpkh(pub, b.net.params), b.net.params).address : b.purpose === 44 ? p2pkh(pub, b.net.params).address : p2wpkh(pub, b.net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
+		let normalized;
+		try {
+			normalized = normalizeBitcoin(request);
+		} catch (error) {
+			mapChainError(error);
+		}
+		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+		try {
+			decodeMessageTarget(request);
+		} catch (error) {
+			mapChainError(error);
+		}
+		if (intentOnly) return { prompt: MESSAGE_INTENT };
+		return {
+			kind: "bitcoin.message",
+			signature: signBitcoinMessage(request, priv, () => random(32))
+		};
+	};
+	var executeBitcoin = (random, request, account, seed, intentOnly) => {
+		const net = bitcoinNetwork(request.network);
+		const master = HDKey$1.fromMasterSeed(seed, net.bip32);
+		try {
+			var _BTC_PURPOSE$account$;
+			const purpose = (_BTC_PURPOSE$account$ = BTC_PURPOSE[account.template]) !== null && _BTC_PURPOSE$account$ !== void 0 ? _BTC_PURPOSE$account$ : 84;
+			const { coinType } = net;
+			const hardened = 2147483648;
+			const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
+			const children = [];
+			const b = {
+				master,
+				accountNode,
+				children,
+				purpose,
+				coinType,
+				hardened,
+				account,
+				net
+			};
+			try {
+				if (request.kind === "bitcoin.psbt") return executeBitcoinPsbt(b, request, random, intentOnly);
+				return executeBitcoinMessage(b, request, random, intentOnly);
+			} finally {
+				for (const child of children) child.wipePrivateData();
+				accountNode.wipePrivateData();
+			}
+		} finally {
+			master.wipePrivateData();
+		}
+	};
+	// packages/wallet-chains/dist/evm-sign.mjs
+	init_objectSpread2();
+	/**
+	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
+	* must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
+	* key caching; the caller wipes key bytes.
+	*/
+	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
+	function assertHex(value, field) {
+		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+	}
+	var hex = (value, field) => {
+		assertHex(value, field);
+		return value;
+	};
+	var key = (privateKey) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
+		return fromBytes$1(privateKey);
+	};
+	var accessEntry = (entry) => ({
+		address: hex(entry.address, "accessList.address"),
+		storageKeys: entry.storageKeys.map((k) => hex(k, "accessList.storageKeys"))
+	});
+	var sign$1 = (payload, privateKey) => sign$2({
+		payload,
+		privateKey,
+		as: "Object"
+	});
+	/** Signs a normalized transaction; returns the serialized signed envelope. */
+	var signEvmTransaction = (tx, privateKey) => {
+		const privateKeyHex = key(privateKey);
+		const base = {
+			chainId: tx.chainId,
+			to: tx.to === void 0 ? void 0 : hex(tx.to, "to"),
+			data: hex(tx.data, "data"),
+			value: BigInt(tx.value),
+			nonce: BigInt(tx.nonce),
+			gas: BigInt(tx.gas)
+		};
+		if (tx.type === "legacy") {
+			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+				type: "legacy",
+				gasPrice: BigInt(tx.gasPrice)
+			});
+			return toBytes$1(serialize$1(envelope, { signature: sign$1(getSignPayload$1(envelope), privateKeyHex) }));
+		}
+		if (tx.type === "eip2930") {
+			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+				type: "eip2930",
+				gasPrice: BigInt(tx.gasPrice),
+				accessList: tx.accessList.map(accessEntry)
+			});
+			return toBytes$1(serialize$2(envelope, { signature: sign$1(getSignPayload$2(envelope), privateKeyHex) }));
+		}
+		const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+			type: "eip1559",
+			accessList: tx.accessList.map(accessEntry),
+			maxFeePerGas: BigInt(tx.maxFeePerGas),
+			maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas)
+		});
+		return toBytes$1(serialize(envelope, { signature: sign$1(getSignPayload(envelope), privateKeyHex) }));
+	};
+	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */
+	var rs_v = (signature) => toBytes(signature);
+	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+	var signEvmPersonalMessage = (message, privateKey) => {
+		return rs_v(from$1(sign$1(getSignPayload$3(fromBytes$1(message)), key(privateKey))));
+	};
+	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
+	var signEvmTypedData = (typedData, privateKey) => {
+		const { json } = parseTypedData(typedData, "eip155:1");
+		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
+	};
+	// packages/wallet-kernel/src/modules/chains/evm.ts
+	init_bip32();
+	var executeEvm = (request, account, seed, intentOnly) => {
+		const master = HDKey$1.fromMasterSeed(seed);
+		try {
+			const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
+			try {
+				const priv = child.privateKey;
+				if (priv === null) throw new KernelError("integrity", "no private key at account path");
+				let normalized;
+				try {
+					normalized = normalizeEvm(request);
+				} catch (error) {
+					mapChainError(error);
+				}
+				if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+				let intent;
+				try {
+					intent = decodeEvm(request);
+				} catch (error) {
+					mapChainError(error);
+				}
+				if (intentOnly) return { prompt: intent };
+				if (request.kind === "evm.transaction") return {
+					kind: "evm.transaction",
+					signedTransaction: signEvmTransaction(request.tx, priv)
+				};
+				if (request.kind === "evm.personal-message") return {
+					kind: "evm.personal-message",
+					signature: signEvmPersonalMessage(request.message, priv)
+				};
+				return {
+					kind: "evm.typed-data",
+					signature: signEvmTypedData(request.typedData, priv)
+				};
+			} finally {
+				child.wipePrivateData();
+			}
+		} finally {
+			master.wipePrivateData();
+		}
+	};
+	// packages/wallet-chains/dist/solana-sign.mjs
+	/**
+	* /solana/sign — deterministic Ed25519 signing over the compiled message or raw offchain bytes.
+	* Inputs must already be normalized: the kernel calls `normalizeSolana` first. No key caching; the
+	* caller wipes key bytes.
+	*/
+	/** Signs `message` with a 32-byte Ed25519 seed; returns the 64-byte signature. */
+	var signSolanaMessage = (message, privateKey) => {
+		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be a 32-byte seed");
+		if (message.length === 0) throw new ChainError("invalid-request", "message must not be empty");
+		const signature = ed25519.sign(message, privateKey);
+		if (signature.length !== 64) throw new ChainError("invalid-request", "ed25519 produced a malformed signature");
+		return signature;
+	};
+	// packages/wallet-kernel/src/modules/chains/solana.ts
+	/** Solana signing for `chain.sign` — the slip10 path, normalize, decode, sign or intent. */
+	var executeSolana = (request, account, seed, intentOnly) => {
+		const root = HDKey.fromMasterSeed(seed);
+		const child = root.derive(`m/44'/501'/${account.groupIndex}'/0'`);
+		try {
+			const priv = child.privateKey;
+			const signer = solanaAddressFromPublicKey(ed25519.getPublicKey(priv));
+			let normalized;
+			try {
+				normalized = normalizeSolana(request, signer);
+			} catch (error) {
+				mapChainError(error);
+			}
+			if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+			let intent = MESSAGE_INTENT;
+			if (request.kind === "solana.transaction") try {
+				intent = decodeSolana(request, signer);
+			} catch (error) {
+				mapChainError(error);
+			}
+			if (intentOnly) return { prompt: intent };
+			return {
+				kind: request.kind,
+				signature: signSolanaMessage(request.message, priv)
+			};
+		} finally {
+			wipe(child.privateKey);
+			wipe(root.privateKey);
+		}
+	};
+	// packages/wallet-kernel/src/modules/chains/index.ts
+	/**
+	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
+	* index, derived from the wallet's entropy record. No records, no cache: seed and every node are
+	* wiped in `finally` on every path. `chain.sign` prepares, verifies and signs through the
+	* per-family executors in `./evm.ts`, `./bitcoin.ts` and `./solana.ts`.
+	*/
+	init_bip32();
 	var checkNetwork = (template, network) => {
 		if (template.startsWith("evm.") && !network.startsWith("eip155:")) throw new KernelError("invalid-input", "evm.bip44 requires an eip155 network");
 		if (template.startsWith("solana.") && !SOLANA_NETWORKS.includes(network)) throw new KernelError("invalid-input", `unknown solana network ${network}`);
@@ -27369,21 +27629,51 @@ zoo`.split("\n"));
 			account.wipePrivateData();
 		}
 	};
-	var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v) && !(v instanceof Uint8Array);
-	/** Order-insensitive deep equality over wire values (Uint8Array, arrays, plain objects, scalars). */
-	var deepEqual = (a, b) => {
-		if (a === b) return true;
-		if (a instanceof Uint8Array || b instanceof Uint8Array) return a instanceof Uint8Array && b instanceof Uint8Array && a.length === b.length && a.every((byte, i) => byte === b[i]);
-		if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
-		if (!isObj(a) || !isObj(b)) return false;
-		const ka = Object.keys(a);
-		const kb = new Set(Object.keys(b));
-		return ka.length === kb.size && ka.every((k) => kb.has(k) && deepEqual(a[k], b[k]));
+	var walletAccounts = async (ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.walletId);
+		if (record === void 0) throw new KernelError("not-found", "no such wallet");
+		checkNetwork(params.template, params.network);
+		return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
+			const master = HDKey$1.fromMasterSeed(seed, params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : void 0);
+			try {
+				return accountFor(master, seed, params.template, params.network, params.groupIndex);
+			} finally {
+				master.wipePrivateData();
+			}
+		});
 	};
-	function mapChainError(error) {
-		if (error instanceof ChainError) throw new KernelError("invalid-input", "invalid sign request");
-		throw error;
-	}
+	var chainSign = async (ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		const { request, verify } = params;
+		const { account } = request;
+		if (account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
+		const [family] = request.kind.split(".", 1);
+		if (!(family === "evm" ? ["evm.bip44"] : family === "solana" ? ["solana.bip44-change"] : [
+			"btc.bip44",
+			"btc.bip49",
+			"btc.bip84",
+			"btc.bip86"
+		]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
+		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
+		if (record === void 0) throw new KernelError("not-found", "no such wallet");
+		const execute = (seed, intentOnly) => {
+			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") return executeEvm(request, account, seed, intentOnly);
+			if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
+			return executeSolana(request, account, seed, intentOnly);
+		};
+		const withSeed = async (run) => withWalletSeed(ctx.platform.pbkdf2, dek, record, run);
+		const prepared = await withSeed((seed) => execute(seed, true));
+		if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
+		await verifyFactor(ctx.platform, ctx.image, verify, dek, () => {
+			var _ctx$platform$keystor, _ctx$platform$keystor2;
+			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
+		});
+		ctx.session.require(session);
+		const signed = await withSeed((seed) => execute(seed, false));
+		if ("prompt" in signed) throw new KernelError("integrity", "unreachable: sign pass did not sign");
+		return signed;
+	};
 	function createChainsModule() {
 		return {
 			vault: {
@@ -27396,273 +27686,8 @@ zoo`.split("\n"));
 				walletDeleteOps: () => []
 			},
 			handlers: {
-				"wallet.accounts": async (ctx, params, session) => {
-					const { dek } = ctx.session.require(session);
-					const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.walletId);
-					if (record === void 0) throw new KernelError("not-found", "no such wallet");
-					checkNetwork(params.template, params.network);
-					const entropy = openRecord(dek, record);
-					let seed;
-					try {
-						seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-					} finally {
-						wipe(entropy);
-					}
-					try {
-						const master = HDKey$1.fromMasterSeed(seed, params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : void 0);
-						try {
-							return accountFor(master, seed, params.template, params.network, params.groupIndex);
-						} finally {
-							master.wipePrivateData();
-						}
-					} finally {
-						wipe(seed);
-					}
-				},
-				"chain.sign": async (ctx, params, session) => {
-					const { dek } = ctx.session.require(session);
-					const { request, verify } = params;
-					const { account } = request;
-					if (account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
-					const [family] = request.kind.split(".", 1);
-					if (!(family === "evm" ? ["evm.bip44"] : family === "solana" ? ["solana.bip44-change"] : [
-						"btc.bip44",
-						"btc.bip49",
-						"btc.bip84",
-						"btc.bip86"
-					]).includes(account.template)) throw new KernelError("invalid-input", "account template does not match the request family");
-					const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
-					if (record === void 0) throw new KernelError("not-found", "no such wallet");
-					const execute = (seed, intentOnly) => {
-						if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") {
-							const master = HDKey$1.fromMasterSeed(seed);
-							try {
-								const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
-								try {
-									const priv = child.privateKey;
-									if (priv === null) throw new KernelError("integrity", "no private key at account path");
-									let normalized;
-									try {
-										normalized = normalizeEvm(request);
-									} catch (error) {
-										mapChainError(error);
-									}
-									if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-									let intent;
-									try {
-										intent = decodeEvm(request);
-									} catch (error) {
-										mapChainError(error);
-									}
-									if (intentOnly) return { prompt: intent };
-									if (request.kind === "evm.transaction") return {
-										kind: "evm.transaction",
-										signedTransaction: signEvmTransaction(request.tx, priv)
-									};
-									if (request.kind === "evm.personal-message") return {
-										kind: "evm.personal-message",
-										signature: signEvmPersonalMessage(request.message, priv)
-									};
-									return {
-										kind: "evm.typed-data",
-										signature: signEvmTypedData(request.typedData, priv)
-									};
-								} finally {
-									child.wipePrivateData();
-								}
-							} finally {
-								master.wipePrivateData();
-							}
-						}
-						if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
-							const net = bitcoinNetwork(request.network);
-							const master = HDKey$1.fromMasterSeed(seed, net.bip32);
-							try {
-								var _BTC_PURPOSE$account$;
-								const purpose = (_BTC_PURPOSE$account$ = BTC_PURPOSE[account.template]) !== null && _BTC_PURPOSE$account$ !== void 0 ? _BTC_PURPOSE$account$ : 84;
-								const { coinType } = net;
-								const hardened = 2147483648;
-								const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
-								const children = [];
-								const derivation = (owner) => {
-									var _owner$bip32Derivatio;
-									if (purpose === 86) {
-										var _owner$tapBip32Deriva;
-										const claimed = (der) => der.fingerprint === master.fingerprint && isPath(der.path);
-										for (const [key, value] of (_owner$tapBip32Deriva = owner.tapBip32Derivation) !== null && _owner$tapBip32Deriva !== void 0 ? _owner$tapBip32Deriva : []) if (claimed(value.der)) return {
-											pubkey: key,
-											fingerprint: value.der.fingerprint,
-											path: value.der.path
-										};
-										return;
-									}
-									for (const [key, value] of (_owner$bip32Derivatio = owner.bip32Derivation) !== null && _owner$bip32Derivatio !== void 0 ? _owner$bip32Derivatio : []) if (value.fingerprint === master.fingerprint) return {
-										pubkey: key,
-										fingerprint: value.fingerprint,
-										path: value.path
-									};
-								};
-								const childAt = (path) => {
-									const [purposePath, coinPath, groupPath, change, index] = path;
-									if (path.length !== 5 || purposePath !== purpose + hardened || coinPath !== coinType + hardened || groupPath !== account.groupIndex + hardened || change === void 0 || index === void 0 || change !== 0 && change !== 1 || index < 0 || index >= hardened) throw new KernelError("invalid-input", "derivation path is not this account's");
-									const child = accountNode.deriveChild(change).deriveChild(index);
-									children.push(child);
-									return child;
-								};
-								const expectedPub = (pub) => purpose === 86 ? pub.slice(1) : pub;
-								const expectedScript = (pub) => purpose === 86 ? p2tr(pub.slice(1)).script : purpose === 49 ? p2sh(p2wpkh(pub)).script : purpose === 44 ? p2pkh(pub).script : p2wpkh(pub).script;
-								try {
-									if (request.kind === "bitcoin.psbt") {
-										const tx = Transaction.fromPSBT(request.psbt);
-										const inputs = [];
-										for (const idx of request.sign) {
-											const input = tx.getInput(idx);
-											const entry = derivation(input);
-											if (entry === void 0) throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
-											const child = childAt(entry.path);
-											const pub = child.publicKey;
-											const priv = child.privateKey;
-											if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
-											if (!deepEqual(entry.pubkey, expectedPub(pub))) throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
-											if (purpose === 44) {
-												var _outs$vout;
-												if (input.nonWitnessUtxo === void 0) throw new KernelError("invalid-input", `input ${idx}: P2PKH spend requires nonWitnessUtxo`);
-												const vout = input.index;
-												const outs = input.nonWitnessUtxo.outputs;
-												const prevScript = vout === void 0 ? void 0 : (_outs$vout = outs[vout]) === null || _outs$vout === void 0 ? void 0 : _outs$vout.script;
-												if (prevScript === void 0 || !deepEqual(prevScript, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: nonWitnessUtxo prevout is not this key's`);
-											} else {
-												const prevout = input.witnessUtxo;
-												if (prevout === void 0 || !deepEqual(prevout.script, expectedScript(pub))) throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
-												if (purpose === 49 && (input.redeemScript === void 0 || !deepEqual(input.redeemScript, p2wpkh(pub).script))) throw new KernelError("invalid-input", `input ${idx}: redeemScript is not this key's`);
-											}
-											inputs.push({
-												index: idx,
-												privateKey: priv
-											});
-										}
-										const ownScripts = /* @__PURE__ */ new Set();
-										for (let i = 0; i < tx.outputsLength; i++) {
-											const output = tx.getOutput(i);
-											if (output.script === void 0) continue;
-											const entry = derivation(output);
-											if (entry === void 0) continue;
-											try {
-												const pub = childAt(entry.path).publicKey;
-												if (pub !== null && deepEqual(output.script, expectedScript(pub))) ownScripts.add(hex(output.script));
-											} catch (_unused) {
-												continue;
-											}
-										}
-										let normalized;
-										try {
-											normalized = normalizeBitcoin(request);
-										} catch (error) {
-											mapChainError(error);
-										}
-										if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-										let intent;
-										try {
-											intent = decodeBitcoinPsbt(request, ownScripts);
-										} catch (error) {
-											mapChainError(error);
-										}
-										if (intentOnly) return { prompt: intent };
-										return {
-											kind: "bitcoin.psbt",
-											signedPsbt: signBitcoinPsbt(request.psbt, inputs, () => ctx.platform.random(32))
-										};
-									}
-									if (request.format === "legacy" && account.template !== "btc.bip44") throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
-									const child = childAt([
-										purpose + hardened,
-										coinType + hardened,
-										account.groupIndex + hardened,
-										request.change,
-										request.index
-									]);
-									const pub = child.publicKey;
-									const priv = child.privateKey;
-									if (pub === null || priv === null) throw new KernelError("integrity", "no key at derivation path");
-									if ((purpose === 86 ? p2tr(pub.slice(1), void 0, net.params).address : purpose === 49 ? p2sh(p2wpkh(pub, net.params), net.params).address : purpose === 44 ? p2pkh(pub, net.params).address : p2wpkh(pub, net.params).address) !== request.address) throw new KernelError("invalid-input", "address is not ours");
-									let normalized;
-									try {
-										normalized = normalizeBitcoin(request);
-									} catch (error) {
-										mapChainError(error);
-									}
-									if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-									try {
-										decodeMessageTarget(request);
-									} catch (error) {
-										mapChainError(error);
-									}
-									if (intentOnly) return { prompt: MESSAGE_INTENT };
-									return {
-										kind: "bitcoin.message",
-										signature: signBitcoinMessage(request, priv, () => ctx.platform.random(32))
-									};
-								} finally {
-									for (const child of children) child.wipePrivateData();
-									accountNode.wipePrivateData();
-								}
-							} finally {
-								master.wipePrivateData();
-							}
-						}
-						const root = HDKey.fromMasterSeed(seed);
-						const child = root.derive(`m/44'/501'/${account.groupIndex}'/0'`);
-						try {
-							const priv = child.privateKey;
-							const signer = solanaAddressFromPublicKey(ed25519.getPublicKey(priv));
-							let normalized;
-							try {
-								normalized = normalizeSolana(request, signer);
-							} catch (error) {
-								mapChainError(error);
-							}
-							if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-							let intent = MESSAGE_INTENT;
-							if (request.kind === "solana.transaction") try {
-								intent = decodeSolana(request, signer);
-							} catch (error) {
-								mapChainError(error);
-							}
-							if (intentOnly) return { prompt: intent };
-							return {
-								kind: request.kind,
-								signature: signSolanaMessage(request.message, priv)
-							};
-						} finally {
-							wipe(child.privateKey);
-							wipe(root.privateKey);
-						}
-					};
-					const withSeed = async (run) => {
-						const entropy = openRecord(dek, record);
-						let seed;
-						try {
-							seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-						} finally {
-							wipe(entropy);
-						}
-						try {
-							return run(seed);
-						} finally {
-							wipe(seed);
-						}
-					};
-					const prepared = await withSeed((seed) => execute(seed, true));
-					if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
-					await verifyFactor(ctx.platform, ctx.image, verify, dek, () => {
-						var _ctx$platform$keystor, _ctx$platform$keystor2;
-						return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
-					});
-					ctx.session.require(session);
-					const signed = await withSeed((seed) => execute(seed, false));
-					if ("prompt" in signed) throw new KernelError("integrity", "unreachable: sign pass did not sign");
-					return signed;
-				}
+				"wallet.accounts": walletAccounts,
+				"chain.sign": chainSign
 			}
 		};
 	}
@@ -29468,57 +29493,55 @@ zoo`.split("\n"));
 	}
 	async function deriveKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		const entropy = openRecord(dek, findRecord(ctx.image, "entropy", params.walletId));
-		const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-		wipe(entropy);
-		const master = masterKey(seed);
-		wipe(seed);
-		try {
-			const secretKey = nostrKeyAt(master, params.groupIndex);
+		const record = findRecord(ctx.image, "entropy", params.walletId);
+		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+			const master = masterKey(seed);
 			try {
-				const publicKey = getPublicKey(secretKey);
-				ensureNewKey(ctx, publicKey);
-				const header = {
-					publicKey,
-					origin: "derived",
-					walletId: params.walletId,
-					groupIndex: params.groupIndex,
-					createdAt: ctx.platform.now()
-				};
-				await ctx.commit([{
-					op: "put-record",
-					record: keyRecord(ctx, dek, secretKey, header)
-				}]);
-				return nostrKeyInfo(header);
+				const secretKey = nostrKeyAt(master, params.groupIndex);
+				try {
+					const publicKey = getPublicKey(secretKey);
+					ensureNewKey(ctx, publicKey);
+					const header = {
+						publicKey,
+						origin: "derived",
+						walletId: params.walletId,
+						groupIndex: params.groupIndex,
+						createdAt: ctx.platform.now()
+					};
+					await ctx.commit([{
+						op: "put-record",
+						record: keyRecord(ctx, dek, secretKey, header)
+					}]);
+					return nostrKeyInfo(header);
+				} finally {
+					wipe(secretKey);
+				}
 			} finally {
-				wipe(secretKey);
+				master.wipePrivateData();
 			}
-		} finally {
-			master.wipePrivateData();
-		}
+		});
 	}
 	async function discover(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		const entropy = openRecord(dek, findRecord(ctx.image, "entropy", params.walletId));
+		const record = findRecord(ctx.image, "entropy", params.walletId);
 		const keys = [];
-		const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-		wipe(entropy);
-		const master = masterKey(seed);
-		wipe(seed);
-		try {
-			for (let i = 0; i < params.count; i++) {
-				const groupIndex = params.from + i;
-				const secretKey = nostrKeyAt(master, groupIndex);
-				keys.push({
-					groupIndex,
-					publicKey: getPublicKey(secretKey)
-				});
-				wipe(secretKey);
+		return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
+			const master = masterKey(seed);
+			try {
+				for (let i = 0; i < params.count; i++) {
+					const groupIndex = params.from + i;
+					const secretKey = nostrKeyAt(master, groupIndex);
+					keys.push({
+						groupIndex,
+						publicKey: getPublicKey(secretKey)
+					});
+					wipe(secretKey);
+				}
+				return { keys };
+			} finally {
+				master.wipePrivateData();
 			}
-			return { keys };
-		} finally {
-			master.wipePrivateData();
-		}
+		});
 	}
 	async function removeKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
@@ -39193,191 +39216,205 @@ zoo`.split("\n"));
 		}
 		return result;
 	};
+	/** The memoized runtime chunk; a failed load is not cached, so the next spark call retries. */
+	var sparkRuntime = async (state) => {
+		var _state$runtimePromise;
+		(_state$runtimePromise = state.runtimePromise) !== null && _state$runtimePromise !== void 0 || (state.runtimePromise = (async () => {
+			try {
+				return await loadSparkRuntime();
+			} catch (error) {
+				state.runtimePromise = void 0;
+				throw error instanceof KernelError ? error : new KernelError("unavailable", "spark runtime failed to load");
+			}
+		})());
+		return state.runtimePromise;
+	};
+	var liveApprovals = (state, ctx, key) => {
+		var _state$approvals$get;
+		const now = ctx.platform.elapsed();
+		const live = ((_state$approvals$get = state.approvals.get(key)) !== null && _state$approvals$get !== void 0 ? _state$approvals$get : []).filter((approval) => approval.deadline > now);
+		if (live.length === 0) state.approvals.delete(key);
+		else state.approvals.set(key, live);
+		return live;
+	};
+	/** The memoized backend promise; host KernelErrors (e.g. wasm integrity) pass through. */
+	var backend = async (state, ctx) => {
+		var _state$backendPromise;
+		(_state$backendPromise = state.backendPromise) !== null && _state$backendPromise !== void 0 || (state.backendPromise = (async () => {
+			try {
+				return await ctx.platform.backends.spark();
+			} catch (error) {
+				state.backendPromise = void 0;
+				throw error instanceof KernelError ? error : new KernelError("unavailable", "spark backend failed to load");
+			}
+		})());
+		return state.backendPromise;
+	};
+	var disposeAll = (state) => {
+		for (const signer of state.signers.values()) signer.dispose();
+		state.signers.clear();
+		state.approvals.clear();
+	};
+	var disposeWallet = (state, walletId) => {
+		for (const [key, signer] of state.signers) if (key.startsWith(`${walletId}/`)) {
+			signer.dispose();
+			state.signers.delete(key);
+		}
+		for (const key of state.approvals.keys()) if (key.startsWith(`${walletId}/`)) state.approvals.delete(key);
+	};
+	/**
+	* The poisoned-backend path: the instance is dropped (the host promise is re-requested next call)
+	* and every signer is disposed — nonce state held against a corrupted instance cannot be trusted.
+	* The call itself reports `unavailable`.
+	*/
+	var poison = (state) => {
+		state.backendPromise = void 0;
+		disposeAll(state);
+		return new KernelError("unavailable", "spark backend was disposed after a wasm fault");
+	};
+	/** Signer-call error mapping: never include request bytes in the message. */
+	var mapError = (state, error) => {
+		if (error instanceof KernelError) return error;
+		if (isNamed(error, "WasmPoisonedError")) return poison(state);
+		if (isNamed(error, "SparkInputError")) return new KernelError("invalid-input", "spark signer rejected the request");
+		return new KernelError("integrity", "spark signer call failed");
+	};
+	/**
+	* The pooled signer for an account, created on first use. The wallet's entropy record must still
+	* exist — a deleted wallet's signers are disposed and the call reports `not-found`. Seed and
+	* accountKey copies are wiped on every path; `openKeys` slices the account key into its own buffers
+	* (verified), so the kernel's copy is safe to wipe once `createSparkSigner` returns.
+	*/
+	var signerFor = async (state, ctx, account, requestSession) => {
+		const { dek } = ctx.session.require(requestSession);
+		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
+		if (record === void 0) {
+			disposeWallet(state, account.walletId);
+			throw new KernelError("not-found", "no such wallet");
+		}
+		const existing = state.signers.get(poolKey(account));
+		if (existing !== void 0) return existing;
+		let accountKey;
+		const rt = await sparkRuntime(state);
+		try {
+			accountKey = await withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => rt.sparkAccountKey(seed, account.network, account.network === "mainnet" ? account.groupIndex + 1 : account.groupIndex));
+		} catch (error) {
+			throw mapError(state, error);
+		}
+		const crypto = await backend(state, ctx);
+		try {
+			const signer = rt.createSparkSigner({
+				crypto,
+				accountKey,
+				network: account.network,
+				random: ctx.platform.random,
+				authorize: async (outflow) => authorizeWithCtx(state, ctx, account, outflow)
+			});
+			state.signers.set(poolKey(account), signer);
+			return signer;
+		} catch (error) {
+			throw mapError(state, error);
+		} finally {
+			wipe(accountKey);
+		}
+	};
+	/**
+	* The per-signer `authorize`: `swap` always passes; every other outflow needs a live approval
+	* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
+	* cumulative budget deduped by leaf public key.
+	*/
+	var transferCovered = (outflow, intent) => outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$3(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
+	var lightningCovered = async (state, rt, key, network, outflow, approval, intent) => {
+		const signer = state.signers.get(key);
+		const { paymentHash } = approval.decoded;
+		const budget = approval.decoded.invoiceAmountSats;
+		if (signer === void 0 || paymentHash === void 0 || budget === void 0) return false;
+		if (!equalBytes$3(rt.lightningSendHtlcScript({
+			paymentHash,
+			sspIdentityPublicKey: rt.sparkNetworkConfig(network).ssp.identityPublicKey,
+			identityPublicKey: await signer.identityPublicKey()
+		}), outflow.htlcOutputScript)) return false;
+		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > budget + intent.maxFeeSats) return false;
+		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+		return true;
+	};
+	var exitCovered = (outflow, approval, intent) => {
+		const { addressScript } = approval.decoded;
+		if (addressScript === void 0) return false;
+		if (!outflow.exitOutputs.some((output) => equalBytes$3(output.script, addressScript) && output.amountSats >= intent.amountSats)) return false;
+		const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
+		if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) return false;
+		for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
+		return true;
+	};
+	var onchainCovered = (rt, outflow, approval, intent) => {
+		const { addressScript } = approval.decoded;
+		if (addressScript === void 0) return false;
+		if (!outflow.outputs.every((output) => equalBytes$3(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$3(output.script, addressScript))) return false;
+		return outflow.inputSats - outflow.totalSats <= intent.maxFeeSats;
+	};
+	var tokenCovered = async (state, key, outflow, intent) => {
+		const signer = state.signers.get(key);
+		if (signer === void 0) return false;
+		const identity = await signer.identityPublicKey();
+		return outflow.outputs.every((output) => {
+			if (equalBytes$3(output.ownerPublicKey, identity)) return true;
+			if (!equalBytes$3(output.tokenIdentifier, intent.tokenIdentifier)) return false;
+			return intent.receivers.some((wanted) => equalBytes$3(wanted.ownerPublicKey, output.ownerPublicKey) && output.amount <= BigInt(wanted.amount));
+		});
+	};
+	var authorizeWithCtx = async (state, ctx, account, outflow) => {
+		const rt = await sparkRuntime(state);
+		if (outflow.kind === "swap") return;
+		const key = poolKey(account);
+		const live = liveApprovals(state, ctx, key);
+		for (const approval of live) {
+			const { intent } = approval;
+			if (outflow.kind === "transfer" && intent.kind === "transfer" ? transferCovered(outflow, intent) : outflow.kind === "lightning" && intent.kind === "lightning" ? await lightningCovered(state, rt, key, account.network, outflow, approval, intent) : outflow.kind === "exit" && intent.kind === "exit" ? exitCovered(outflow, approval, intent) : outflow.kind === "onchain" && intent.kind === "onchain" ? onchainCovered(rt, outflow, approval, intent) : outflow.kind === "token" && intent.kind === "token" ? await tokenCovered(state, key, outflow, intent) : false) {
+				live.splice(live.indexOf(approval), 1);
+				return;
+			}
+		}
+		throw approvalRequired();
+	};
+	var call$2 = async (state, ctx, account, requestSession, run) => {
+		const signer = await signerFor(state, ctx, account, requestSession);
+		try {
+			return await run(signer);
+		} catch (error) {
+			throw mapError(state, error);
+		}
+	};
+	var sparkApprove = async (state, ctx, params, session) => {
+		const { dek } = ctx.session.require(session);
+		if (ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.account.walletId) === void 0) throw new KernelError("not-found", "no such wallet");
+		const key = poolKey(params.account);
+		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
+		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, () => {
+			var _ctx$platform$keystor, _ctx$platform$keystor2;
+			return sparkPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), summary);
+		});
+		ctx.session.require(session);
+		const live = liveApprovals(state, ctx, key);
+		if (live.length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
+		live.push({
+			intent: params.intent,
+			deadline: ctx.platform.elapsed() + APPROVAL_TTL_MS,
+			decoded,
+			summary,
+			spentLeaves: /* @__PURE__ */ new Map()
+		});
+		state.approvals.set(key, live);
+		return summary;
+	};
 	function createSparkModule() {
-		const signers = /* @__PURE__ */ new Map();
-		const approvals = /* @__PURE__ */ new Map();
-		let backendPromise;
-		let runtimePromise;
-		/** The memoized runtime chunk; a failed load is not cached, so the next spark call retries. */
-		const sparkRuntime = async () => {
-			var _runtimePromise;
-			(_runtimePromise = runtimePromise) !== null && _runtimePromise !== void 0 || (runtimePromise = (async () => {
-				try {
-					return await loadSparkRuntime();
-				} catch (error) {
-					runtimePromise = void 0;
-					throw error instanceof KernelError ? error : new KernelError("unavailable", "spark runtime failed to load");
-				}
-			})());
-			return runtimePromise;
-		};
-		const liveApprovals = (ctx, key) => {
-			var _approvals$get;
-			const now = ctx.platform.elapsed();
-			const live = ((_approvals$get = approvals.get(key)) !== null && _approvals$get !== void 0 ? _approvals$get : []).filter((approval) => approval.deadline > now);
-			if (live.length === 0) approvals.delete(key);
-			else approvals.set(key, live);
-			return live;
-		};
-		/** The memoized backend promise; host KernelErrors (e.g. wasm integrity) pass through. */
-		const backend = async (ctx) => {
-			var _backendPromise;
-			(_backendPromise = backendPromise) !== null && _backendPromise !== void 0 || (backendPromise = (async () => {
-				try {
-					return await ctx.platform.backends.spark();
-				} catch (error) {
-					backendPromise = void 0;
-					throw error instanceof KernelError ? error : new KernelError("unavailable", "spark backend failed to load");
-				}
-			})());
-			return backendPromise;
-		};
-		const disposeAll = () => {
-			for (const signer of signers.values()) signer.dispose();
-			signers.clear();
-			approvals.clear();
-		};
-		const disposeWallet = (walletId) => {
-			for (const [key, signer] of signers) if (key.startsWith(`${walletId}/`)) {
-				signer.dispose();
-				signers.delete(key);
-			}
-			for (const key of approvals.keys()) if (key.startsWith(`${walletId}/`)) approvals.delete(key);
-		};
-		/**
-		* The poisoned-backend path: the instance is dropped (the host promise is re-requested next call)
-		* and every signer is disposed — nonce state held against a corrupted instance cannot be trusted.
-		* The call itself reports `unavailable`.
-		*/
-		const poison = () => {
-			backendPromise = void 0;
-			disposeAll();
-			return new KernelError("unavailable", "spark backend was disposed after a wasm fault");
-		};
-		/** Signer-call error mapping: never include request bytes in the message. */
-		const mapError = (error) => {
-			if (error instanceof KernelError) return error;
-			if (isNamed(error, "WasmPoisonedError")) return poison();
-			if (isNamed(error, "SparkInputError")) return new KernelError("invalid-input", "spark signer rejected the request");
-			return new KernelError("integrity", "spark signer call failed");
-		};
-		/**
-		* The pooled signer for an account, created on first use. The wallet's entropy record must still
-		* exist — a deleted wallet's signers are disposed and the call reports `not-found`. Seed and
-		* accountKey copies are wiped on every path; `openKeys` slices the account key into its own
-		* buffers (verified), so the kernel's copy is safe to wipe once `createSparkSigner` returns.
-		*/
-		const signerFor = async (ctx, account, requestSession) => {
-			const { dek } = ctx.session.require(requestSession);
-			const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
-			if (record === void 0) {
-				disposeWallet(account.walletId);
-				throw new KernelError("not-found", "no such wallet");
-			}
-			const existing = signers.get(poolKey(account));
-			if (existing !== void 0) return existing;
-			const entropy = openRecord(dek, record);
-			const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-			wipe(entropy);
-			let accountKey;
-			const rt = await sparkRuntime();
-			try {
-				accountKey = rt.sparkAccountKey(seed, account.network, account.network === "mainnet" ? account.groupIndex + 1 : account.groupIndex);
-			} catch (error) {
-				throw mapError(error);
-			} finally {
-				wipe(seed);
-			}
-			const crypto = await backend(ctx);
-			try {
-				const signer = rt.createSparkSigner({
-					crypto,
-					accountKey,
-					network: account.network,
-					random: ctx.platform.random,
-					authorize: async (outflow) => authorizeWithCtx(ctx, account, outflow)
-				});
-				signers.set(poolKey(account), signer);
-				return signer;
-			} catch (error) {
-				throw mapError(error);
-			} finally {
-				wipe(accountKey);
-			}
-		};
-		/**
-		* The per-signer `authorize`: `swap` always passes; every other outflow needs a live approval
-		* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
-		* cumulative budget deduped by leaf public key.
-		*/
-		const authorizeWithCtx = async (ctx, account, outflow) => {
-			const rt = await sparkRuntime();
-			if (outflow.kind === "swap") return;
-			const key = poolKey(account);
-			const live = liveApprovals(ctx, key);
-			for (const approval of live) {
-				const { intent } = approval;
-				if (outflow.kind === "transfer" && intent.kind === "transfer") {
-					if (outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$3(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats))) {
-						live.splice(live.indexOf(approval), 1);
-						return;
-					}
-					continue;
-				}
-				if (outflow.kind === "lightning" && intent.kind === "lightning") {
-					const signer = signers.get(key);
-					const { paymentHash } = approval.decoded;
-					const budget = approval.decoded.invoiceAmountSats;
-					if (signer === void 0 || paymentHash === void 0 || budget === void 0) continue;
-					if (!equalBytes$3(rt.lightningSendHtlcScript({
-						paymentHash,
-						sspIdentityPublicKey: rt.sparkNetworkConfig(account.network).ssp.identityPublicKey,
-						identityPublicKey: await signer.identityPublicKey()
-					}), outflow.htlcOutputScript)) continue;
-					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
-					if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > budget + intent.maxFeeSats) continue;
-					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
-					return;
-				}
-				if (outflow.kind === "exit" && intent.kind === "exit") {
-					const { addressScript } = approval.decoded;
-					if (addressScript === void 0) continue;
-					if (!outflow.exitOutputs.some((output) => equalBytes$3(output.script, addressScript) && output.amountSats >= intent.amountSats)) continue;
-					const fresh = outflow.leaves.filter((leaf) => !approval.spentLeaves.has(bytesToHex$4(leaf.publicKey)));
-					if (fresh.reduce((sum, leaf) => sum + leaf.amountSats, 0) + [...approval.spentLeaves.values()].reduce((sum, v) => sum + v, 0) > intent.amountSats + intent.maxFeeSats) continue;
-					for (const leaf of fresh) approval.spentLeaves.set(bytesToHex$4(leaf.publicKey), leaf.amountSats);
-					return;
-				}
-				if (outflow.kind === "onchain" && intent.kind === "onchain") {
-					const { addressScript } = approval.decoded;
-					if (addressScript === void 0) continue;
-					if (!outflow.outputs.every((output) => equalBytes$3(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$3(output.script, addressScript))) continue;
-					if (outflow.inputSats - outflow.totalSats > intent.maxFeeSats) continue;
-					live.splice(live.indexOf(approval), 1);
-					return;
-				}
-				if (outflow.kind === "token" && intent.kind === "token") {
-					const signer = signers.get(key);
-					if (signer === void 0) continue;
-					const identity = await signer.identityPublicKey();
-					if (!outflow.outputs.every((output) => {
-						if (equalBytes$3(output.ownerPublicKey, identity)) return true;
-						if (!equalBytes$3(output.tokenIdentifier, intent.tokenIdentifier)) return false;
-						return intent.receivers.some((wanted) => equalBytes$3(wanted.ownerPublicKey, output.ownerPublicKey) && output.amount <= BigInt(wanted.amount));
-					})) continue;
-					live.splice(live.indexOf(approval), 1);
-					return;
-				}
-			}
-			throw approvalRequired();
-		};
-		const call = async (ctx, account, requestSession, run) => {
-			const signer = await signerFor(ctx, account, requestSession);
-			try {
-				return await run(signer);
-			} catch (error) {
-				throw mapError(error);
-			}
+		const state = {
+			signers: /* @__PURE__ */ new Map(),
+			approvals: /* @__PURE__ */ new Map(),
+			backendPromise: void 0,
+			runtimePromise: void 0
 		};
 		return {
 			vault: {
@@ -39385,52 +39422,30 @@ zoo`.split("\n"));
 				claimUnlocked: (records) => records,
 				forget: () => void 0,
 				lock: () => {
-					disposeAll();
+					disposeAll(state);
 				},
 				backupSecrets: () => [],
 				backupRecords: () => [],
 				walletDeleteOps: (_image, walletId) => {
-					disposeWallet(walletId);
+					disposeWallet(state, walletId);
 					return [];
 				}
 			},
 			handlers: {
-				"spark.identityPublicKey": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.identityPublicKey()),
-				"spark.publicKeys": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.publicKeys(params.keys)),
-				"spark.receivedPublicKeys": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.receivedPublicKeys(params.ciphertexts)),
-				"spark.newCommitments": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.newCommitments(params.count)),
-				"spark.signFrost": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.signFrost(params.jobs)),
-				"spark.aggregateFrost": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.aggregateFrost(params.jobs)),
-				"spark.signIdentity": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.signIdentity(params.statement)),
-				"spark.signKeySpend": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.signKeySpend(params.key, params.target)),
-				"spark.signHtlcTimeout": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.signHtlcTimeout(params.request)),
-				"spark.prepareTransfer": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.prepareTransfer(params.request)),
-				"spark.prepareClaim": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.prepareClaim(params.request)),
-				"spark.prepareLightningReceive": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.prepareLightningReceive()),
-				"spark.claimStaticDeposit": async (ctx, params, session) => call(ctx, params.account, session, async (signer) => signer.claimStaticDeposit(params.request)),
-				"spark.approve": async (ctx, params, session) => {
-					const { dek } = ctx.session.require(session);
-					if (ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.account.walletId) === void 0) throw new KernelError("not-found", "no such wallet");
-					const key = poolKey(params.account);
-					if (liveApprovals(ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
-					const { summary, decoded } = decodeIntent(await sparkRuntime(), params.account, params.intent);
-					await verifyFactor(ctx.platform, ctx.image, params.verify, dek, () => {
-						var _ctx$platform$keystor, _ctx$platform$keystor2;
-						return sparkPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), summary);
-					});
-					ctx.session.require(session);
-					const live = liveApprovals(ctx, key);
-					if (live.length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
-					live.push({
-						intent: params.intent,
-						deadline: ctx.platform.elapsed() + APPROVAL_TTL_MS,
-						decoded,
-						summary,
-						spentLeaves: /* @__PURE__ */ new Map()
-					});
-					approvals.set(key, live);
-					return summary;
-				}
+				"spark.identityPublicKey": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.identityPublicKey()),
+				"spark.publicKeys": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.publicKeys(params.keys)),
+				"spark.receivedPublicKeys": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.receivedPublicKeys(params.ciphertexts)),
+				"spark.newCommitments": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.newCommitments(params.count)),
+				"spark.signFrost": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.signFrost(params.jobs)),
+				"spark.aggregateFrost": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.aggregateFrost(params.jobs)),
+				"spark.signIdentity": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.signIdentity(params.statement)),
+				"spark.signKeySpend": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.signKeySpend(params.key, params.target)),
+				"spark.signHtlcTimeout": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.signHtlcTimeout(params.request)),
+				"spark.prepareTransfer": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.prepareTransfer(params.request)),
+				"spark.prepareClaim": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.prepareClaim(params.request)),
+				"spark.prepareLightningReceive": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.prepareLightningReceive()),
+				"spark.claimStaticDeposit": async (ctx, params, session) => call$2(state, ctx, params.account, session, async (signer) => signer.claimStaticDeposit(params.request)),
+				"spark.approve": async (ctx, params, session) => sparkApprove(state, ctx, params, session)
 			}
 		};
 	}

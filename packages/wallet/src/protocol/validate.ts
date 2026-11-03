@@ -3,7 +3,6 @@
  * validates every request, the host validates every response. Anything that does not match is a
  * `ValidationError` — never a partially-accepted value.
  */
-import type { NullValue } from "./index.ts";
 
 export class ValidationError extends Error {
   override name = "ValidationError";
@@ -14,6 +13,9 @@ export type Validator<T> = (value: unknown) => T;
 function fail(): never {
   throw new ValidationError();
 }
+
+// oxlint-disable-next-line typescript/no-restricted-types -- JSON null is a protocol value
+export type NullValue = null;
 
 export function literal<T extends NullValue | boolean | number | string>(
   expected: T,

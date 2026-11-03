@@ -85,6 +85,21 @@ const checkedAddress = (v: string): `0x${string}` => {
 
 const hex = (v: bigint | number): string => numberToHex(v);
 
+const evmRpc = async (client: PublicClient, method: string, params: unknown[]): Promise<unknown> =>
+  client.transport.request({ method, params });
+
+export const evmRpcHex = async (
+  client: PublicClient,
+  method: string,
+  params: unknown[],
+): Promise<string> => {
+  const result: unknown = await evmRpc(client, method, params);
+  if (typeof result !== "string") {
+    throw new TypeError(`${method} returned a malformed result`);
+  }
+  return result;
+};
+
 export class EvmChainAdapter {
   readonly family = "evm";
   private readonly nonces = new Map<string, Promise<unknown>>();
@@ -104,21 +119,9 @@ export class EvmChainAdapter {
     return next;
   }
 
-  private async rpc(client: PublicClient, method: string, params: unknown[]): Promise<unknown> {
-    return client.transport.request({ method, params });
-  }
-
-  private async rpcHex(client: PublicClient, method: string, params: unknown[]): Promise<string> {
-    const result: unknown = await this.rpc(client, method, params);
-    if (typeof result !== "string") {
-      throw new TypeError(`${method} returned a malformed result`);
-    }
-    return result;
-  }
-
   /** The endpoint's pending transaction count for `from`. */
   async pendingCount(client: PublicClient, from: string): Promise<number> {
-    return Number(await this.rpcHex(client, "eth_getTransactionCount", [from, "pending"]));
+    return Number(await evmRpcHex(client, "eth_getTransactionCount", [from, "pending"]));
   }
 
   /**
@@ -183,7 +186,7 @@ export class EvmChainAdapter {
         ? intent.data
         : "0x";
     const estimate = BigInt(
-      await this.rpcHex(client, "eth_estimateGas", [{ from, to, value: hex(value), data }]),
+      await evmRpcHex(client, "eth_estimateGas", [{ from, to, value: hex(value), data }]),
     );
     const scale = erc20 ? 11n : 12n;
     const buffered = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
@@ -194,7 +197,7 @@ export class EvmChainAdapter {
 
   async estimateFee(client: PublicClient): Promise<ReadonlyArray<EvmFeeQuote>> {
     try {
-      const history: unknown = await this.rpc(client, "eth_feeHistory", [
+      const history: unknown = await evmRpc(client, "eth_feeHistory", [
         "0x14",
         "latest",
         [10, 50, 90],
@@ -227,7 +230,7 @@ export class EvmChainAdapter {
       };
       return [tier(0, "slow"), tier(1, "normal"), tier(2, "fast")];
     } catch {
-      const price = BigInt(await this.rpcHex(client, "eth_gasPrice", []));
+      const price = BigInt(await evmRpcHex(client, "eth_gasPrice", []));
       return (["slow", "normal", "fast"] as const).map((name) => ({
         tier: name,
         wei: price,
@@ -286,11 +289,11 @@ export class EvmChainAdapter {
   }
 
   async broadcast(client: PublicClient, raw: string): Promise<string> {
-    return this.rpcHex(client, "eth_sendRawTransaction", [raw]);
+    return evmRpcHex(client, "eth_sendRawTransaction", [raw]);
   }
 
   async status(client: PublicClient, hash: string): Promise<ChainTxStatus> {
-    const receipt: unknown = await this.rpc(client, "eth_getTransactionReceipt", [hash]);
+    const receipt: unknown = await evmRpc(client, "eth_getTransactionReceipt", [hash]);
     if (receipt === null || typeof receipt !== "object") {
       return "pending";
     }
@@ -302,10 +305,7 @@ export class EvmChainAdapter {
       return "failed";
     }
     try {
-      const finalized: unknown = await this.rpc(client, "eth_getBlockByNumber", [
-        "finalized",
-        false,
-      ]);
+      const finalized: unknown = await evmRpc(client, "eth_getBlockByNumber", ["finalized", false]);
       if (
         finalized !== null &&
         typeof finalized === "object" &&

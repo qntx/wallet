@@ -28,13 +28,14 @@ import {
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { EngineStore } from "../store/port.ts";
-import { errorMessage, newId, replacementStaleReason } from "./route.ts";
+import { failTx, newId, replacementStaleReason, submitTx } from "./route.ts";
 import type {
   PrepareParams,
   PreparedRequest,
   RouteContext,
   SendParams,
-  SignParams,
+  AccountRef,
+  SignResult,
   SparkDepositTag,
   TrackedTransaction,
   TxState,
@@ -59,6 +60,19 @@ type BtcStash = {
   readonly template: ChainTemplate;
   readonly network: string;
   readonly fp: number;
+};
+
+const broadcastPsbt = async (
+  es: { post: (path: string, body: string) => Promise<unknown> },
+  result: SignResult,
+): Promise<string> => {
+  if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
+    throw new Error("unexpected bitcoin sign result");
+  }
+  const signed = Transaction.fromPSBT(result.signedPsbt);
+  signed.finalize();
+  const raw = signed.extract();
+  return String(await es.post("/tx", hex.encode(raw)));
 };
 
 const fetchRawTxes = async (
@@ -387,25 +401,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       try {
         const result = await apis.sign({ request, verify });
         tx = await ctx.transition(tx, { state: "signed" });
-        if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
-          throw new Error("unexpected bitcoin sign result");
-        }
-        const signed = Transaction.fromPSBT(result.signedPsbt);
-        signed.finalize();
-        const raw = signed.extract();
-        const hash = String(await es.post("/tx", hex.encode(raw)));
+        const hash = await broadcastPsbt(es, result);
         bitcoinUtxos.lock(selectedUtxos, tx.id);
         releaseReservation(requestId);
-        tx = await ctx.transition(tx, {
-          state: "submitted",
-          hash,
-          submittedAt: ctx.options.now(),
-        });
-        ctx.track(tx.id, hash);
-        return tx;
+        return await submitTx(ctx, tx, hash);
       } catch (error) {
-        const failed = tx.state === "signed" ? "failed" : "rejected";
-        await ctx.transition(tx, { state: failed, error: errorMessage(error) });
+        await failTx(ctx, tx, error);
         throw error;
       }
     };
@@ -435,7 +436,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     ctx: RouteContext,
     stash: BtcStash,
     es: ReturnType<NetworkController["esplora"]>,
-    account: SignParams["request"]["account"],
+    account: AccountRef,
     old: TrackedTransaction,
     psbt: Uint8Array,
     record: NonNullable<TrackedTransaction["btc"]>,
@@ -483,13 +484,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       try {
         const result = await apis.sign({ request, verify });
         tx = await ctx.transition(tx, { state: "signed" });
-        if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
-          throw new Error("unexpected bitcoin sign result");
-        }
-        const signed = Transaction.fromPSBT(result.signedPsbt);
-        signed.finalize();
-        const raw = signed.extract();
-        const hash = String(await es.post("/tx", hex.encode(raw)));
+        const hash = await broadcastPsbt(es, result);
         if (link.replaces !== undefined) {
           bitcoinUtxos.endTx(old.id, "dropped");
         }
@@ -498,16 +493,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
           tx.id,
         );
         releaseReservation(requestId);
-        tx = await ctx.transition(tx, {
-          state: "submitted",
-          hash,
-          submittedAt: ctx.options.now(),
-        });
-        ctx.track(tx.id, hash);
-        return tx;
+        return await submitTx(ctx, tx, hash);
       } catch (error) {
-        const failed = tx.state === "signed" ? "failed" : "rejected";
-        await ctx.transition(tx, { state: failed, error: errorMessage(error) });
+        await failTx(ctx, tx, error);
         throw error;
       }
     };

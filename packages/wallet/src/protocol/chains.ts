@@ -6,9 +6,8 @@
  *
  * @qntx/wallet-chains imports; template names and path shapes are declared here.
  */
-import type { Factor } from "./core.ts";
+import type { Factor, MethodSpec } from "./core.ts";
 import { factor, groupIndex, walletId } from "./core.ts";
-import type { MethodSpec } from "./index.ts";
 import type { Validator } from "./validate.ts";
 import { arr, bytes, int, literal, obj, opt, str, union } from "./validate.ts";
 

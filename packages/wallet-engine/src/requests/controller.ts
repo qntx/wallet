@@ -39,6 +39,9 @@ import { assessRecipients } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
+import type { BrowserOrigin, RequestMethod, RequestOrigin } from "./types.ts";
+
+export type { BrowserOrigin, RequestMethod, RequestOrigin } from "./types.ts";
 
 export type { RequestCheckCode } from "./checks.ts";
 export type { RiskFinding } from "./risk.ts";
@@ -56,11 +59,6 @@ export type ZapInput = {
   readonly zap: PreparedZap;
   readonly maxFeeSats: number;
 };
-
-/** A web page; `origin` is `scheme://host[:port]`, computed by the host from the top-level URL. */
-export type BrowserOrigin = { readonly kind: "browser"; readonly origin: string };
-
-export type RequestOrigin = { readonly kind: "internal" } | BrowserOrigin;
 
 /**
  * A dApp's EVM request: a transaction (rebuilt here with fresh nonce and fees), a personal message
@@ -95,13 +93,6 @@ export type SparkExitInput = {
   readonly speed?: "FAST" | "MEDIUM" | "SLOW";
 };
 
-export type RequestMethod =
-  | ChainRequestMethod
-  | "pay"
-  | "zap"
-  | "evm-sign"
-  | "spark-deposit"
-  | "spark-exit";
 export type RequestInput =
   | ChainRequestInput
   | PayInput

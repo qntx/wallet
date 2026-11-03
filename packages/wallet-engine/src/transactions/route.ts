@@ -14,7 +14,9 @@ import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { EngineStore } from "../store/port.ts";
 
-export type SignParams = Parameters<ReturnType<typeof chains>["sign"]>[0];
+export type ChainApis = ReturnType<typeof chains>;
+export type SignParams = Parameters<ChainApis["sign"]>[0];
+export type SignResult = Awaited<ReturnType<ChainApis["sign"]>>;
 export type AccountRef = SignParams["request"]["account"];
 export type DisplayIntent = ReturnType<typeof decodeEvm>;
 
@@ -188,4 +190,27 @@ export const replacementStaleReason = (
     (t) => t.replaces === originalId && LIVE_REPLACEMENT_STATES.has(t.state),
   );
   return replaced ? "original transaction was already replaced — start over" : undefined;
+};
+
+export const submitTx = async (
+  ctx: RouteContext,
+  tx: TrackedTransaction,
+  hash: string,
+): Promise<TrackedTransaction> => {
+  const tracked = await ctx.transition(tx, {
+    state: "submitted",
+    hash,
+    submittedAt: ctx.options.now(),
+  });
+  ctx.track(tracked.id, hash);
+  return tracked;
+};
+
+export const failTx = async (
+  ctx: RouteContext,
+  tx: TrackedTransaction,
+  error: unknown,
+): Promise<void> => {
+  const failed = tx.state === "signed" ? "failed" : "rejected";
+  await ctx.transition(tx, { state: failed, error: errorMessage(error) });
 };

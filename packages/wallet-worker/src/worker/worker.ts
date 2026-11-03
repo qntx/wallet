@@ -10,8 +10,8 @@ import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
 
 import { MAX_SESSION_MS, idleMsOf, isBrowserWorkerInit } from "../shared.ts";
 import { createIndexedDbStore } from "./indexeddb.ts";
+import { basePlatform } from "./platform.ts";
 import { loadSparkBackend } from "./spark.ts";
-import { subtlePbkdf2 } from "./subtle.ts";
 
 const onInit = (event: MessageEvent<unknown>): void => {
   const { data } = event;
@@ -21,19 +21,8 @@ const onInit = (event: MessageEvent<unknown>): void => {
   removeEventListener("message", onInit);
 
   const platform: KernelPlatform = {
-    random: (length) => crypto.getRandomValues(new Uint8Array(length)),
-    now: () => Date.now(),
-    elapsed: () => performance.now(),
-    setTimer: (delayMs, fn) => {
-      const timer = setTimeout(fn, delayMs);
-      return () => {
-        clearTimeout(timer);
-      };
-    },
-    pbkdf2: subtlePbkdf2,
+    ...basePlatform(),
     store: createIndexedDbStore(),
-    keystore: undefined,
-    passkey: undefined,
     // Session limits are owned here, not by the page: idle from the validated init message,
     // the fixed maximum, and the scrypt ceiling for this platform. Only presence-bearing
     // methods refresh the idle timer — request traffic does not keep a session alive.

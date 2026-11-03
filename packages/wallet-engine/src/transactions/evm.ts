@@ -12,17 +12,20 @@ import {
 import type { RequestCheckCode } from "../requests/checks.ts";
 import { errorMessage, newId, replacementStaleReason } from "./route.ts";
 import type {
+  ChainApis,
   PrepareParams,
   PreparedRequest,
   RouteContext,
   SendParams,
+  SignParams,
+  SignResult,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
 
 type PendingBuild = {
   readonly unsigned: Awaited<ReturnType<EvmChainAdapter["build"]>>;
-  readonly request: Parameters<ReturnType<typeof chains>["sign"]>[0]["request"];
+  readonly request: SignParams["request"];
   readonly quote: { readonly tier: string };
   readonly chainId: number;
 };
@@ -50,6 +53,39 @@ export type EvmRoute = {
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
   ) => Promise<PreparedRequest>;
+};
+
+const signSubmit = async (
+  ctx: RouteContext,
+  tx: TrackedTransaction,
+  apis: ChainApis,
+  request: SignParams["request"],
+  verify: SignParams["verify"],
+  broadcast: (signed: SignResult) => Promise<string>,
+): Promise<TrackedTransaction> => {
+  let signed: SignResult;
+  let tracked = tx;
+  try {
+    const result = await apis.sign({ request, verify });
+    tracked = await ctx.transition(tracked, { state: "signed" });
+    signed = result;
+  } catch (error) {
+    await ctx.transition(tracked, { state: "rejected", error: errorMessage(error) });
+    throw error;
+  }
+  try {
+    const hash = await broadcast(signed);
+    tracked = await ctx.transition(tracked, {
+      state: "submitted",
+      hash,
+      submittedAt: ctx.options.now(),
+    });
+    ctx.track(tracked.id, hash);
+    return tracked;
+  } catch (error) {
+    await ctx.transition(tracked, { state: "failed", error: errorMessage(error) });
+    throw error;
+  }
 };
 
 /** Per-controller route — the adapter's nonce queue and the replace stash are engine state. */
@@ -155,30 +191,12 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
-      try {
-        const result = await apis.sign({ request, verify });
-        tx = await ctx.transition(tx, { state: "signed" });
-        signed = result;
-      } catch (error) {
-        await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
-        throw error;
-      }
-      try {
+      return signSubmit(ctx, tx, apis, request, verify, async (signed) => {
         const raw = evm.finalize(feed, signed);
         const hash = await evm.broadcast(client, raw);
         evm.commitNonce(network, from, unsigned.nonce);
-        tx = await ctx.transition(tx, {
-          state: "submitted",
-          hash,
-          submittedAt: ctx.options.now(),
-        });
-        ctx.track(tx.id, hash);
-        return tx;
-      } catch (error) {
-        await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
-        throw error;
-      }
+        return hash;
+      });
     };
 
     return {
@@ -332,29 +350,9 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      let signed: Awaited<ReturnType<ReturnType<typeof chains>["sign"]>>;
-      try {
-        const result = await apis.sign({ request, verify });
-        tx = await ctx.transition(tx, { state: "signed" });
-        signed = result;
-      } catch (error) {
-        await ctx.transition(tx, { state: "rejected", error: errorMessage(error) });
-        throw error;
-      }
-      try {
-        const raw = evm.finalize(unsigned, signed);
-        const hash = await evm.broadcast(client, raw);
-        tx = await ctx.transition(tx, {
-          state: "submitted",
-          hash,
-          submittedAt: ctx.options.now(),
-        });
-        ctx.track(tx.id, hash);
-        return tx;
-      } catch (error) {
-        await ctx.transition(tx, { state: "failed", error: errorMessage(error) });
-        throw error;
-      }
+      return signSubmit(ctx, tx, apis, request, verify, async (signed) =>
+        evm.broadcast(client, evm.finalize(unsigned, signed)),
+      );
     };
 
     return {

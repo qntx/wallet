@@ -20,7 +20,7 @@ import { decodeUtf8Secret, Secret, wipe } from "../secret/secret.ts";
 import { randomEntropy } from "../seed/entropy.ts";
 import { entropyFromMnemonic, mnemonicFromEntropy } from "../seed/mnemonic.ts";
 import { entropyFromPrf } from "../seed/passkey.ts";
-import { seedFromEntropy } from "../seed/seed.ts";
+import { withSeed } from "../seed/seed.ts";
 import { wipePendingFactor } from "../session/session.ts";
 import type { PendingFactor } from "../session/session.ts";
 import { factorPublicKey, wrapDek } from "../vault/factors.ts";
@@ -46,13 +46,10 @@ async function deriveWalletMaterial(
   platform: KernelPlatform,
   entropy: Uint8Array,
 ): Promise<{ master: HDKey; walletId: string }> {
-  const seed = await seedFromEntropy(entropy, platform.pbkdf2);
-  try {
+  return withSeed(platform.pbkdf2, entropy, (seed) => {
     const master = masterKey(seed);
     return { master, walletId: walletIdOf(master) };
-  } finally {
-    wipe(seed);
-  }
+  });
 }
 
 type WalletMaterial = {

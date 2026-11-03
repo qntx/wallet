@@ -9,8 +9,7 @@
  * can reuse them — `protocol/nostr.ts` imports only from this file.
  */
 import type { FactorInfo, WalletErrorCode, WalletInfo } from "../types.ts";
-import type { NullValue } from "./index.ts";
-import type { Validator } from "./validate.ts";
+import type { NullValue, Validator } from "./validate.ts";
 import { arr, bool, bytes, int, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 
 export type MethodSpec<P, R> = {

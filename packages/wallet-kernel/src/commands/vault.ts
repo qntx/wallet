@@ -3,11 +3,36 @@ import type { FactorInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
 import { assertFactorKindAvailable } from "../platform.ts";
+import type { Pbkdf2 } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
+import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
-import type { VaultImage } from "../vault/store.ts";
-import { factorInfo, makeFactor, rotateVault, unlock, verifyFactor } from "../vault/vault.ts";
+import { withSeed } from "../seed/seed.ts";
+import type { VaultImage, StoredRecord } from "../vault/store.ts";
+import {
+  factorInfo,
+  makeFactor,
+  openRecord,
+  rotateVault,
+  unlock,
+  verifyFactor,
+} from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
+
+/** Opens a wallet's sealed entropy record, then withSeed; wipes the entropy on every path. */
+export async function withWalletSeed<R>(
+  pbkdf2: Pbkdf2,
+  dek: Secret,
+  record: StoredRecord,
+  use: (seed: Uint8Array) => R | Promise<R>,
+): Promise<R> {
+  const entropy = openRecord(dek, record);
+  try {
+    return await withSeed(pbkdf2, entropy, use);
+  } finally {
+    wipe(entropy);
+  }
+}
 
 const EMPTY_IMAGE: VaultImage = { meta: undefined, records: [], factors: [] };
 

@@ -24,7 +24,7 @@ import { NOSTR_METHODS, nostrStatus } from "./nostr.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { SPARK_METHODS } from "./spark.ts";
 import { arr, literal, nullValue, obj, opt, union } from "./validate.ts";
-import type { Validator } from "./validate.ts";
+import type { NullValue, Validator } from "./validate.ts";
 
 export type { WalletErrorCode } from "../types.ts";
 
@@ -36,8 +36,7 @@ export const PROTOCOL_VERSION = 1;
  */
 export const UNATTRIBUTED_ID = 0;
 
-// oxlint-disable-next-line typescript/no-restricted-types -- JSON null is a protocol value
-export type NullValue = null;
+export type { NullValue } from "./validate.ts";
 
 export type ProtocolValue =
   | NullValue

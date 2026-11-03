@@ -11,7 +11,7 @@ import type { PublicClient } from "viem";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 
 import { BtcUtxoStore, scanChain, scanUtxos } from "../chains/bitcoin-scan.ts";
-import { ERC20_ABI } from "../chains/evm.ts";
+import { ERC20_ABI, evmRpcHex } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
@@ -192,7 +192,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     }
     const client = this.options.networks.client(network);
     const native = BigInt(
-      await this.rpcHex(client, "eth_getBalance", [address, "latest"]),
+      await evmRpcHex(client, "eth_getBalance", [address, "latest"]),
     ).toString();
     const custom = this.customTokens.get(network) ?? [];
     const tokens = await this.readTokens(
@@ -269,8 +269,8 @@ export class AssetsController extends Controller<AssetsControllerState> {
     return Promise.all(
       tokens.map(async (t, i) => ({
         address: t.address,
-        symbol: (await this.callString(client, t.address, "symbol")) ?? "?",
-        decimals: (await this.callNumber(client, t.address, "decimals")) ?? 18,
+        symbol: (await this.callToken(client, t.address, "symbol")) ?? "?",
+        decimals: (await this.callToken(client, t.address, "decimals")) ?? 18,
         balance: balances[i]?.toString() ?? "0",
         verified: t.verified,
       })),
@@ -298,7 +298,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         })),
       ],
     });
-    const result = await this.rpcHex(client, "eth_call", [{ to: multicall3, data }, "latest"]);
+    const result = await evmRpcHex(client, "eth_call", [{ to: multicall3, data }, "latest"]);
     if (!isHex(result)) {
       throw new TypeError("eth_call returned malformed data");
     }
@@ -328,7 +328,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
       functionName: "balanceOf",
       args: [checked(owner)],
     });
-    const result = await this.rpcHex(client, "eth_call", [{ to: token, data }, "latest"]);
+    const result = await evmRpcHex(client, "eth_call", [{ to: token, data }, "latest"]);
     if (!isHex(result)) {
       throw new TypeError("eth_call returned malformed data");
     }
@@ -339,30 +339,23 @@ export class AssetsController extends Controller<AssetsControllerState> {
     });
   }
 
-  private async callString(
+  private async callToken(
     client: PublicClient,
     token: string,
     fn: "symbol",
-  ): Promise<string | undefined> {
-    const data = encodeFunctionData({ abi: ERC20_ABI, functionName: fn });
-    const result = await this.rpcHex(client, "eth_call", [{ to: token, data }, "latest"]);
-    if (!isHex(result)) {
-      return undefined;
-    }
-    try {
-      return decodeFunctionResult({ abi: ERC20_ABI, functionName: fn, data: result });
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async callNumber(
+  ): Promise<string | undefined>;
+  private async callToken(
     client: PublicClient,
     token: string,
     fn: "decimals",
-  ): Promise<number | undefined> {
+  ): Promise<number | undefined>;
+  private async callToken(
+    client: PublicClient,
+    token: string,
+    fn: "symbol" | "decimals",
+  ): Promise<string | number | undefined> {
     const data = encodeFunctionData({ abi: ERC20_ABI, functionName: fn });
-    const result = await this.rpcHex(client, "eth_call", [{ to: token, data }, "latest"]);
+    const result = await evmRpcHex(client, "eth_call", [{ to: token, data }, "latest"]);
     if (!isHex(result)) {
       return undefined;
     }
@@ -387,8 +380,8 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return;
     }
     const client = this.options.networks.client(network);
-    await this.callString(client, address, "symbol");
-    await this.callNumber(client, address, "decimals");
+    await this.callToken(client, address, "symbol");
+    await this.callToken(client, address, "decimals");
     await this.persistToken(network, address);
   }
 
@@ -412,18 +405,6 @@ export class AssetsController extends Controller<AssetsControllerState> {
         .collection(COLLECTION)
         .put("customTokens", new TextEncoder().encode(JSON.stringify(merged)));
     }
-  }
-
-  private async rpc(client: PublicClient, method: string, params: unknown[]): Promise<unknown> {
-    return client.transport.request({ method, params });
-  }
-
-  private async rpcHex(client: PublicClient, method: string, params: unknown[]): Promise<string> {
-    const result: unknown = await this.rpc(client, method, params);
-    if (typeof result !== "string") {
-      throw new TypeError(`${method} returned a malformed result`);
-    }
-    return result;
   }
 
   /** BTC balance = confirmed spendable + own unconfirmed change; frozen 546/330 shown separately. */
