@@ -11,15 +11,18 @@ import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
 
+import { Keys, KeysSigner, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
-import type { Wallet } from "@qntx/wallet";
+import type { NostrKeyRef, Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
+import type { WalletSigner } from "@qntx/wallet/nostr";
 
 import { ConnectionController } from "../../src/connect/controller.ts";
 import { Eip1193Handler } from "../../src/connect/eip1193.ts";
 import { createBrowserBridge, injectedScript } from "../../src/connect/index.ts";
 import type { ProviderInfo } from "../../src/connect/index.ts";
+import { Nip07Handler } from "../../src/connect/nip07.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import { RequestController } from "../../src/requests/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
@@ -36,7 +39,40 @@ const PAGE_URL = "http://localhost:4176/connect.html";
 const ORIGIN = "http://localhost:4176";
 const logger = { warn: () => undefined };
 
-const NOSTR_PUBKEY = "a".repeat(64);
+const NOSTR_KEYS = Keys.generate();
+const NOSTR_PUBKEY = NOSTR_KEYS.publicKey;
+const NOSTR_REF: NostrKeyRef = { kind: "derived", walletId: "w", index: 0 };
+const nostrSigner = new KeysSigner(NOSTR_KEYS);
+const walletSigner: WalletSigner = {
+  getPublicKey: async () => {
+    const r = await nostrSigner.getPublicKey();
+    return r;
+  },
+  signEvent: async (e) => {
+    const r = await nostrSigner.signEvent(e);
+    return r;
+  },
+  nip04Encrypt: async (p, t) => {
+    const r = await nostrSigner.nip04Encrypt(p, t);
+    return r;
+  },
+  nip04Decrypt: async (p, t) => {
+    const r = await nostrSigner.nip04Decrypt(p, t);
+    return r;
+  },
+  nip44Encrypt: async (p, t) => {
+    const r = await nostrSigner.nip44Encrypt(p, t);
+    return r;
+  },
+  nip44Decrypt: async (p, t) => {
+    const r = await nostrSigner.nip44Decrypt(p, t);
+    return r;
+  },
+  unwrapGiftWraps: async () => {
+    await Promise.resolve();
+    return [];
+  },
+};
 
 const INFO: ProviderInfo = {
   uuid: "550e8400-e29b-41d4-a716-446655440000",
@@ -104,10 +140,7 @@ async function engineRig() {
     ...bookDeps(),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- EVM requests never reach spark
     spark: {} as SparkController,
-    nostrSign: async (_ref, _event): Promise<Event> => {
-      await Promise.resolve();
-      throw new Error("nostr-sign is not wired in this test");
-    },
+    nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
     fetch: globalThis.fetch,
     random,
     now: () => 1000,
@@ -138,7 +171,13 @@ async function engineRig() {
     networks,
     defaultNetwork: () => MAINNET,
   });
-  return { connections, requests, eip1193, addressAt };
+  const nip07 = new Nip07Handler({
+    connections,
+    requests,
+    signerFor: () => walletSigner,
+  });
+  await connections.setActiveIdentity(NOSTR_REF);
+  return { connections, requests, eip1193, nip07, addressAt };
 }
 
 async function openConnect(context: BrowserContext) {
@@ -146,11 +185,7 @@ async function openConnect(context: BrowserContext) {
   const page = await context.newPage();
   const bridge = createBrowserBridge({
     eip1193: rig.eip1193,
-    nip07: {
-      handle: () => {
-        throw new Error("nip07 not wired in this test");
-      },
-    },
+    nip07: rig.nip07,
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),
@@ -229,4 +264,58 @@ test("connect → accountsChanged → personal_sign recovers the approved accoun
   );
   await rig.requests.approve(sign?.id ?? "", "evm-sign", VERIFY);
   expect(String(await recover).toLowerCase()).toBe(account.toLowerCase());
+});
+
+test("window.nostr getPublicKey → approve → signEvent verifies", async ({ context }) => {
+  const { page, rig } = await openConnect(context);
+
+  const pubkeyPromise = page.evaluate(`window.nostr.getPublicKey()`);
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  await rig.connections.approveConnection(pending?.id ?? "", {
+    accounts: [],
+    network: "",
+    nostr: { pubkey: NOSTR_PUBKEY, policy: { signing: "ask", decrypt: false } },
+  });
+  expect(await pubkeyPromise).toBe(NOSTR_PUBKEY);
+
+  const sign = page.evaluate<Event>(
+    `window.nostr.signEvent({ kind: 1, content: "hello qntx", created_at: ${Math.floor(Date.now() / 1000)}, tags: [] })`,
+  );
+  await expect
+    .poll(
+      () =>
+        Object.values(rig.requests.getState().requests).some(
+          (r) => r.stage === "awaiting-approval",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  const pendingSign = Object.values(rig.requests.getState().requests).find(
+    (r) => r.stage === "awaiting-approval",
+  );
+  await rig.requests.approve(pendingSign?.id ?? "", "nostr-sign");
+  const signed: Event = await sign;
+  expect(verifyEvent(signed)).toBe(true);
+  expect(signed.id).toMatch(/^[0-9a-f]{64}$/);
+});
+
+test("policy 'always' signs a kind-1 event without an approval", async ({ context }) => {
+  const { page, rig } = await openConnect(context);
+
+  const pubkeyPromise = page.evaluate(`window.nostr.getPublicKey()`);
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  await rig.connections.approveConnection(pending?.id ?? "", {
+    accounts: [],
+    network: "",
+    nostr: { pubkey: NOSTR_PUBKEY, policy: { signing: "always", decrypt: false } },
+  });
+  expect(await pubkeyPromise).toBe(NOSTR_PUBKEY);
+
+  const signed = await page.evaluate<Event>(
+    `window.nostr.signEvent({ kind: 1, content: "hello qntx", created_at: ${Math.floor(Date.now() / 1000)}, tags: [] })`,
+  );
+  expect(Object.values(rig.requests.getState().requests)).toHaveLength(0);
+  expect(verifyEvent(signed)).toBe(true);
 });

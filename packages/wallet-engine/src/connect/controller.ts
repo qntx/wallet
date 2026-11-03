@@ -333,19 +333,6 @@ export class ConnectionController extends Controller<ConnectionState> {
     if (entry.kind === "network" && entry.network !== grant.network) {
       throw new Error(`connection request ${id} is for ${String(entry.network)}`);
     }
-    const chainId = evmChainId(grant.network);
-    if (chainId === undefined || !this.options.enabledNetworks().includes(grant.network)) {
-      throw invalidParams(`${grant.network} is not an enabled EVM network`);
-    }
-    const group = this.activeGroup();
-    if (group === undefined) {
-      throw new Error("no account group is selected");
-    }
-    const derived = await this.options.evmAddress(group, grant.network);
-    const own = derived.toLowerCase();
-    if (grant.accounts.length === 0 || grant.accounts.some((a) => a.toLowerCase() !== own)) {
-      throw invalidParams("only the active group's account can be granted");
-    }
     const scopes: Record<string, ConnectionScope> = {};
     if (entry.namespace === "nostr") {
       if (grant.nostr === undefined) {
@@ -366,6 +353,19 @@ export class ConnectionController extends Controller<ConnectionState> {
         notifications: [],
       };
     } else {
+      const chainId = evmChainId(grant.network);
+      if (chainId === undefined || !this.options.enabledNetworks().includes(grant.network)) {
+        throw invalidParams(`${grant.network} is not an enabled EVM network`);
+      }
+      const group = this.activeGroup();
+      if (group === undefined) {
+        throw new Error("no account group is selected");
+      }
+      const derived = await this.options.evmAddress(group, grant.network);
+      const own = derived.toLowerCase();
+      if (grant.accounts.length === 0 || grant.accounts.some((a) => a.toLowerCase() !== own)) {
+        throw invalidParams("only the active group's account can be granted");
+      }
       scopes[grant.network] = {
         accounts: [caip10(grant.network, own)],
         methods: SESSION_METHODS,
