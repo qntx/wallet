@@ -87,6 +87,8 @@ export async function engineSmoke(): Promise<void> {
       fetch: globalThis.fetch,
       random: (n) => new Uint8Array(randomBytes(n)),
       now: () => Date.now(),
+      weblnAlias: "qntx-smoke",
+      lightningMaxFee: () => 0,
       logger: { warn: (message) => warnings.push(message) },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       rpc: {
