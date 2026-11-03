@@ -10,7 +10,13 @@ import {
 import { chains } from "@qntx/wallet/chains";
 import type { ChainTemplate } from "@qntx/wallet/protocol";
 
-import { BtcUtxoStore, scanChain, scanUtxos, scriptPubKey } from "../chains/bitcoin-scan.ts";
+import {
+  BitcoinScanStore,
+  BtcUtxoStore,
+  scanChain,
+  scanUtxos,
+  scriptPubKey,
+} from "../chains/bitcoin-scan.ts";
 import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
 import { BitcoinChainAdapter, feeTiers } from "../chains/bitcoin.ts";
 import type { NetworkController } from "../networks/controller.ts";
@@ -29,6 +35,7 @@ import type {
   RouteContext,
   SendParams,
   SignParams,
+  SparkDepositTag,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
@@ -99,6 +106,35 @@ const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxState 
   return "confirmed";
 };
 
+const nextReceiveAddress = async (
+  ctx: RouteContext,
+  walletId: string,
+  groupIndex: number,
+  network: string,
+): Promise<string> => {
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const account = await apis.account({ walletId, groupIndex, template: "btc.bip84", network });
+  if (!("xpub" in account) || account.xpub === undefined) {
+    throw new Error("bitcoin account carries no xpub");
+  }
+  const receive = await scanChain(
+    ctx.options.networks.esplora(network),
+    account.xpub,
+    "btc.bip84",
+    network,
+    bitcoinNetwork(network).params,
+    0,
+  );
+  const next = new BitcoinScanStore().nextUnused(
+    { addresses: receive, utxos: [], scannedAt: ctx.options.now() },
+    0,
+  );
+  if (next === undefined) {
+    throw new Error("no unused receive address");
+  }
+  return next.address;
+};
+
 /** Per-controller route — the UTXO store and the build stash are engine state. */
 export const createBitcoinRoute = (): BitcoinRoute => {
   const bitcoin = new BitcoinChainAdapter();
@@ -126,6 +162,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     ctx: RouteContext,
     params: PrepareParams,
     requestId: string,
+    sparkDeposit?: SparkDepositTag,
   ): Promise<PreparedRequest> => {
     const { account, network, to, amount, fee } = params;
     if (account.kind !== "hd") {
@@ -342,6 +379,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         intent,
         nonce: 0,
         btc: record,
+        ...(sparkDeposit === undefined ? {} : { sparkDeposit }),
         submittedAt: ctx.options.now(),
         error: undefined,
       };
@@ -789,6 +827,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
 
   return {
     prepare,
+    nextReceiveAddress,
     poll: pollAndRelease,
     prepareReplace,
     prepareCpfp,
@@ -805,7 +844,15 @@ export type BitcoinRoute = {
     ctx: RouteContext,
     params: PrepareParams,
     requestId: string,
+    sparkDeposit?: SparkDepositTag,
   ) => Promise<PreparedRequest>;
+  /** The group's next unused `btc.bip84` receive address. */
+  readonly nextReceiveAddress: (
+    ctx: RouteContext,
+    walletId: string,
+    groupIndex: number,
+    network: string,
+  ) => Promise<string>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
   readonly prepareReplace: (
     ctx: RouteContext,

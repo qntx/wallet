@@ -20,6 +20,7 @@ import type {
   PreparedRequest,
   ChainRequestInput,
   RouteContext,
+  SparkDepositTag,
   TrackedTransaction,
   TxState,
 } from "./route.ts";
@@ -90,6 +91,13 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   );
 };
 
+const isSparkDeposit = (v: unknown): v is SparkDepositTag =>
+  isObject(v) &&
+  typeof v["walletId"] === "string" &&
+  typeof v["groupIndex"] === "number" &&
+  (v["network"] === "mainnet" || v["network"] === "regtest") &&
+  (v["claimed"] === undefined || typeof v["claimed"] === "boolean");
+
 const isIntent = (v: unknown): v is DisplayIntent =>
   isObject(v) &&
   typeof v["summary"] === "string" &&
@@ -113,6 +121,7 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     replaces,
     parentId,
     btc,
+    sparkDeposit,
     submittedAt,
     error,
   } = parsed;
@@ -139,6 +148,7 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
     ...(isBtcRecord(btc) ? { btc } : {}),
+    ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
     error: typeof error === "string" ? error : undefined,
   };
@@ -227,7 +237,11 @@ export class TransactionController extends Controller<TransactionControllerState
    * signing it. Bitcoin outputs it selects stay locked under `requestId` until the returned
    * `release` runs or the broadcast moves them to the transaction.
    */
-  async prepareSend(params: PrepareParams, requestId: string): Promise<PreparedRequest> {
+  async prepareSend(
+    params: PrepareParams,
+    requestId: string,
+    sparkDeposit?: SparkDepositTag,
+  ): Promise<PreparedRequest> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
@@ -241,9 +255,26 @@ export class TransactionController extends Controller<TransactionControllerState
       return prepareSolana(ctx, params);
     }
     if (info.family === "bitcoin") {
-      return this.bitcoinRoute.prepare(ctx, params, requestId);
+      return this.bitcoinRoute.prepare(ctx, params, requestId, sparkDeposit);
     }
     return this.evmRoute.prepare(ctx, params);
+  }
+
+  /** The group's next unused `btc.bip84` receive address on a bitcoin `network`. */
+  async nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return this.bitcoinRoute.nextReceiveAddress(this.routeCtx(), walletId, groupIndex, network);
+  }
+
+  /** Records that a Spark deposit was credited; persisted with the transaction. */
+  async markDepositClaimed(id: string): Promise<void> {
+    const tx = this.getState().txs[id];
+    if (tx?.sparkDeposit === undefined) {
+      throw new Error(`transaction ${id} is not a Spark deposit`);
+    }
+    await this.transition(tx, { sparkDeposit: { ...tx.sparkDeposit, claimed: true } });
   }
 
   /**

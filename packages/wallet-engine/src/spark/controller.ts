@@ -86,7 +86,7 @@ async function resync(
 }
 
 /** Abortable backoff — resolves early when the signal aborts; removes its listener. */
-async function eventsBackoff(failures: number, signal: AbortSignal): Promise<void> {
+export async function eventsBackoff(failures: number, signal: AbortSignal): Promise<void> {
   await new Promise<void>((resolve) => {
     const timer = setTimeout(
       () => {
@@ -639,6 +639,16 @@ export class SparkController extends Controller<SparkControllerState> {
         ...(params.memo === undefined ? {} : { memo: params.memo }),
       }),
     );
+  }
+
+  /** A fresh single-use L1 deposit address (with the SO's proof of possession). */
+  async newDepositAddress(ref: SparkAccountRef): Promise<string> {
+    return this.guarded(async () => this.clientFor(ref).deposits.newAddress());
+  }
+
+  /** Claims a confirmed L1 deposit paying one of the account's unused deposit addresses. */
+  async claimDeposit(ref: SparkAccountRef, transaction: Uint8Array): Promise<void> {
+    await this.guarded(async () => this.clientFor(ref).deposits.claim({ transaction }));
   }
 
   async receiveAddress(ref: SparkAccountRef): Promise<string | undefined> {

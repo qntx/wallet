@@ -41,6 +41,8 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "pay",
   "zap",
   "evm-sign",
+  "spark-deposit",
+  "spark-exit",
 ]);
 const OUTCOMES: ReadonlySet<unknown> = new Set([
   "submitted",
