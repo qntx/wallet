@@ -7,6 +7,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { SparkController } from "../src/spark/controller.ts";
+import { SparkControllerError } from "../src/spark/errors.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { encodePaymentNote } from "../src/spark/notes.ts";
 import type { PaymentNote } from "../src/spark/notes.ts";
@@ -150,6 +151,79 @@ function controller(calls: string[], approvals: unknown[]) {
   });
   return { c, client, aborters, sendArgs };
 }
+
+describe("lightning-address registration errors", () => {
+  const PARAMS = {
+    serverUrl: "https://ln.example",
+    domain: "ln.example",
+    username: "alice",
+    description: "d",
+  };
+
+  // A signer that lets registerLightningAddress reach the network call.
+  const SIGNER = {
+    identityPublicKey: async () => Promise.resolve(new Uint8Array(32)),
+    signIdentity: async () => Promise.resolve(new Uint8Array(64)),
+  };
+  const withFetch = (fetch: (input: unknown, init?: unknown) => Promise<unknown>) => {
+    const { client } = fakeClient([], []);
+    return new SparkController({
+      spark: { signer: () => SIGNER as never, approve: async () => Promise.resolve({}) },
+      fetch: fetch as never,
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => 0,
+      logger: LOGGER,
+      createClient: () => client,
+    });
+  };
+
+  it("a request failure maps to network and keeps the upstream error as cause", async () => {
+    const c = withFetch(async () => Promise.resolve(new Response("boom", { status: 500 })));
+    const failure = await c.registerLightningAddress(REF, PARAMS).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    const sparkError = failure as SparkControllerError;
+    expect(sparkError.category).toBe("network");
+    expect(sparkError.cause).toBeInstanceOf(SparkRequestError);
+    expect(sparkError.message).toBe("registration failed");
+  });
+
+  it("a non-request failure maps to internal and keeps the original error as cause", async () => {
+    const original = new Error("signer unavailable");
+    const { client } = fakeClient([], []);
+    const c = new SparkController({
+      spark: {
+        signer: () =>
+          ({
+            identityPublicKey: async () => Promise.reject(original),
+            signIdentity: async () => Promise.resolve(new Uint8Array(64)),
+          }) as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () => Promise.reject(new Error("no fetch")),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => 0,
+      logger: LOGGER,
+      createClient: () => client,
+    });
+    const failure = await c
+      .unregisterLightningAddress(REF, {
+        serverUrl: "https://ln.example",
+        domain: "ln.example",
+        username: "alice",
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    const sparkError = failure as SparkControllerError;
+    expect(sparkError.category).toBe("internal");
+    expect(sparkError.cause).toBe(original);
+  });
+});
 
 describe("SparkController", () => {
   it("init starts the account, send approves first, lockAll resets", async () => {
