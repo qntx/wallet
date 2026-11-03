@@ -9,6 +9,7 @@ import { KernelError } from "../errors.ts";
 import { assertFactorKindAvailable, requireKeystore } from "../platform.ts";
 import type { KernelPlatform, KeystorePrompt } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
+import { withSeed } from "../seed/seed.ts";
 import { Secret, wipe } from "../secret/secret.ts";
 import { open, recordContext, seal } from "./envelope.ts";
 import {
@@ -478,6 +479,21 @@ export function sealRecord(
     seal(bytes, plaintext, recordContext(kind, id), header, platform.random),
   );
   return { kind, id, header, sealed };
+}
+
+/** Opens a wallet's sealed entropy record, then withSeed; wipes the entropy on every path. */
+export async function withWalletSeed<R>(
+  pbkdf2: KernelPlatform["pbkdf2"],
+  dek: Secret,
+  record: StoredRecord,
+  use: (seed: Uint8Array) => R | Promise<R>,
+): Promise<R> {
+  const entropy = openRecord(dek, record);
+  try {
+    return await withSeed(pbkdf2, entropy, use);
+  } finally {
+    wipe(entropy);
+  }
 }
 
 export function openRecord(dek: Secret, record: StoredRecord): Uint8Array {

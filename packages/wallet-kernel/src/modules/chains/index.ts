@@ -44,8 +44,7 @@ import type { Handler, VaultHooks } from "../../commands/context.ts";
 import { KernelError } from "../../errors.ts";
 import { promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
-import { seedFromEntropy } from "../../seed/seed.ts";
-import { openRecord, verifyFactor } from "../../vault/vault.ts";
+import { verifyFactor, withWalletSeed } from "../../vault/vault.ts";
 import { chainPrompt, MESSAGE_INTENT } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 
@@ -191,14 +190,7 @@ export function createChainsModule(): ChainsModule {
         throw new KernelError("not-found", "no such wallet");
       }
       checkNetwork(params.template, params.network);
-      const entropy = openRecord(dek, record);
-      let seed: Uint8Array;
-      try {
-        seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-      } finally {
-        wipe(entropy);
-      }
-      try {
+      return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
         // Bitcoin account keys serialize with the network's version bytes (xpub or tpub).
         const master = HDKey.fromMasterSeed(
           seed,
@@ -209,9 +201,7 @@ export function createChainsModule(): ChainsModule {
         } finally {
           master.wipePrivateData();
         }
-      } finally {
-        wipe(seed);
-      }
+      });
     },
     "chain.sign": async (ctx, params, session) => {
       const { dek } = ctx.session.require(session);
@@ -577,20 +567,8 @@ export function createChainsModule(): ChainsModule {
       // Two passes over the seed: `prepare` checks ownership, normalizes and decodes, returning
       // only the intent; the seed and every key are wiped before the (possibly long) system
       // verification prompt. `sign` re-derives and signs only after verification passed.
-      const withSeed = async <R>(run: (seed: Uint8Array) => R): Promise<R> => {
-        const entropy = openRecord(dek, record);
-        let seed: Uint8Array;
-        try {
-          seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-        } finally {
-          wipe(entropy);
-        }
-        try {
-          return run(seed);
-        } finally {
-          wipe(seed);
-        }
-      };
+      const withSeed = <R>(run: (seed: Uint8Array) => R): Promise<R> =>
+        withWalletSeed(ctx.platform.pbkdf2, dek, record, run);
       const prepared = await withSeed((seed) => execute(seed, true));
       if (!("prompt" in prepared)) {
         throw new KernelError("integrity", "unreachable: prepare pass signed");

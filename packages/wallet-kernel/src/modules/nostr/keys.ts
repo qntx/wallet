@@ -9,9 +9,8 @@ import { KernelError } from "../../errors.ts";
 import { corePromptFor } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { Secret } from "../../secret/secret.ts";
-import { seedFromEntropy } from "../../seed/seed.ts";
 import type { StoredRecord } from "../../vault/store.ts";
-import { findRecord, openRecord, sealRecord, verifyFactor } from "../../vault/vault.ts";
+import { findRecord, openRecord, sealRecord, verifyFactor, withWalletSeed } from "../../vault/vault.ts";
 import { nostrKeyAt } from "./derive.ts";
 import {
   generateSecretKey,
@@ -143,13 +142,10 @@ export async function deriveKey(
 ): Promise<NostrKeyInfo> {
   const { dek } = ctx.session.require(requestSession);
   const record = findRecord(ctx.image, "entropy", params.walletId);
-  const entropy = openRecord(dek, record);
-  const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-  wipe(entropy);
-  const master = masterKey(seed);
-  wipe(seed);
-  try {
-    const secretKey = nostrKeyAt(master, params.groupIndex);
+  return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
+    const master = masterKey(seed);
+    try {
+      const secretKey = nostrKeyAt(master, params.groupIndex);
     try {
       const publicKey = getPublicKey(secretKey);
       ensureNewKey(ctx, publicKey);
@@ -160,14 +156,15 @@ export async function deriveKey(
         groupIndex: params.groupIndex,
         createdAt: ctx.platform.now(),
       };
-      await ctx.commit([{ op: "put-record", record: keyRecord(ctx, dek, secretKey, header) }]);
-      return nostrKeyInfo(header);
+        await ctx.commit([{ op: "put-record", record: keyRecord(ctx, dek, secretKey, header) }]);
+        return nostrKeyInfo(header);
+      } finally {
+        wipe(secretKey);
+      }
     } finally {
-      wipe(secretKey);
+      master.wipePrivateData();
     }
-  } finally {
-    master.wipePrivateData();
-  }
+  });
 }
 
 export async function discover(
@@ -177,23 +174,21 @@ export async function discover(
 ): Promise<{ keys: Array<{ groupIndex: number; publicKey: string }> }> {
   const { dek } = ctx.session.require(requestSession);
   const record = findRecord(ctx.image, "entropy", params.walletId);
-  const entropy = openRecord(dek, record);
   const keys: Array<{ groupIndex: number; publicKey: string }> = [];
-  const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-  wipe(entropy);
-  const master = masterKey(seed);
-  wipe(seed);
-  try {
-    for (let i = 0; i < params.count; i++) {
-      const groupIndex = params.from + i;
-      const secretKey = nostrKeyAt(master, groupIndex);
-      keys.push({ groupIndex, publicKey: getPublicKey(secretKey) });
-      wipe(secretKey);
+  return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
+    const master = masterKey(seed);
+    try {
+      for (let i = 0; i < params.count; i++) {
+        const groupIndex = params.from + i;
+        const secretKey = nostrKeyAt(master, groupIndex);
+        keys.push({ groupIndex, publicKey: getPublicKey(secretKey) });
+        wipe(secretKey);
+      }
+      return { keys };
+    } finally {
+      master.wipePrivateData();
     }
-    return { keys };
-  } finally {
-    master.wipePrivateData();
-  }
+  });
 }
 
 export async function removeKey(

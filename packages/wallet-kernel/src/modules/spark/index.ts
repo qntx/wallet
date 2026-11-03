@@ -15,8 +15,7 @@ import type { Handler, KernelContext, VaultHooks } from "../../commands/context.
 import { KernelError } from "../../errors.ts";
 import { promptLocale } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
-import { seedFromEntropy } from "../../seed/seed.ts";
-import { openRecord, verifyFactor } from "../../vault/vault.ts";
+import { verifyFactor, withWalletSeed } from "../../vault/vault.ts";
 /**
  * The spark module: the SparkSigner pool and every spark.* command. The module keeps no records —
  * signers are derived lazily per walletId/groupIndex/network from the wallet's entropy record and
@@ -290,22 +289,19 @@ export function createSparkModule(): SparkModule {
     if (existing !== undefined) {
       return existing;
     }
-    const entropy = openRecord(dek, record);
-    const seed = await seedFromEntropy(entropy, ctx.platform.pbkdf2);
-    wipe(entropy);
     let accountKey: Uint8Array;
     const rt = await sparkRuntime();
     try {
-      // Upstream defaults: mainnet accounts start at 1, regtest at 0.
-      accountKey = rt.sparkAccountKey(
-        seed,
-        account.network,
-        account.network === "mainnet" ? account.groupIndex + 1 : account.groupIndex,
+      accountKey = await withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) =>
+        // Upstream defaults: mainnet accounts start at 1, regtest at 0.
+        rt.sparkAccountKey(
+          seed,
+          account.network,
+          account.network === "mainnet" ? account.groupIndex + 1 : account.groupIndex,
+        ),
       );
     } catch (error) {
       throw mapError(error);
-    } finally {
-      wipe(seed);
     }
     const crypto = await backend(ctx);
     try {
