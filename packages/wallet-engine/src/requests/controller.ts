@@ -1,3 +1,4 @@
+import { WalletError } from "@qntx/wallet";
 /**
  * Request pipeline for internal sends, speed-ups, cancellations and CPFP: `prepare` builds,
  * estimates and cross-checks without signing; `approve(id, method, verify)` is the only way to
@@ -5,7 +6,7 @@
  * that has not finished. The unsigned content stays in a private table, never in the state
  * snapshot, and cannot change after prepare.
  */
-import { WalletError } from "@qntx/wallet";
+import type { SignRequest } from "@qntx/wallet-chains";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
@@ -26,6 +27,7 @@ import type {
   ChainRequestMethod,
   DisplayIntent,
   SendParams,
+  SignatureResult,
   TrackedTransaction,
 } from "../transactions/route.ts";
 import { newRequestId } from "../transactions/route.ts";
@@ -39,6 +41,7 @@ import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
 export type { RequestCheckCode } from "./checks.ts";
 export type { RiskFinding } from "./risk.ts";
 export type { SignLogEntry, SignLogOutcome } from "./sign-log.ts";
+export type { SignatureResult } from "../transactions/route.ts";
 export type { SparkDisplay, SparkResult } from "../payments/action.ts";
 
 /** A Spark, Lightning (including LNURL-pay and lightning addresses) or cooperative-exit payment. */
@@ -52,8 +55,43 @@ export type ZapInput = {
   readonly maxFeeSats: number;
 };
 
-export type RequestMethod = ChainRequestMethod | "pay" | "zap";
-export type RequestInput = ChainRequestInput | PayInput | ZapInput;
+/** A web page; `origin` is `scheme://host[:port]`, computed by the host from the top-level URL. */
+export type BrowserOrigin = { readonly kind: "browser"; readonly origin: string };
+
+export type RequestOrigin = { readonly kind: "internal" } | BrowserOrigin;
+
+/**
+ * A dApp's EVM request: a transaction (rebuilt here with fresh nonce and fees), a personal message
+ * or EIP-712 typed data.
+ */
+export type EvmSignInput = {
+  readonly method: "evm-sign";
+  readonly origin: BrowserOrigin;
+  readonly account: AccountRef;
+  readonly network: string;
+  readonly request: SignRequest;
+};
+
+export type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign";
+export type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput;
+
+/** A request that ended without a result: `stage` says how, `message` is the failure if any. */
+export class RequestEndedError extends Error {
+  readonly stage: "rejected" | "failed" | "expired" | "invalidated";
+  constructor(stage: RequestEndedError["stage"], message: string | undefined) {
+    super(message ?? `request ${stage}`);
+    this.name = "RequestEndedError";
+    this.stage = stage;
+  }
+}
+
+/** The origin already has a request in flight; a dApp gets one at a time. */
+export class OriginBusyError extends Error {
+  constructor(origin: string) {
+    super(`${origin} already has an unfinished request`);
+    this.name = "OriginBusyError";
+  }
+}
 
 export type RequestStage =
   | "awaiting-approval"
@@ -66,7 +104,7 @@ export type RequestStage =
 
 export type PendingRequest = {
   readonly id: string;
-  readonly origin: { readonly kind: "internal" };
+  readonly origin: RequestOrigin;
   readonly method: RequestMethod;
   readonly account: AccountRef | SparkAccountRef;
   readonly network: string;
@@ -115,7 +153,9 @@ type Run = {
   /** The tracked transaction `submit` creates (chain requests only). */
   readonly txId?: string;
   readonly staleReason: () => string | undefined | Promise<string | undefined>;
-  readonly submit: (verify: SendParams["verify"]) => Promise<TrackedTransaction | SparkResult>;
+  readonly submit: (
+    verify: SendParams["verify"],
+  ) => Promise<TrackedTransaction | SparkResult | SignatureResult>;
   readonly release: () => void;
 };
 
@@ -128,6 +168,12 @@ type Built = {
   readonly run: Run;
 };
 
+type Settler = {
+  readonly promise: Promise<TrackedTransaction | SparkResult | SignatureResult>;
+  readonly resolve: (value: TrackedTransaction | SparkResult | SignatureResult) => void;
+  readonly reject: (error: Error) => void;
+};
+
 type Entry = {
   readonly prepared: Run;
   readonly stopTimer: () => void;
@@ -135,6 +181,8 @@ type Entry = {
 
 const isSparkInput = (input: RequestInput): input is PayInput | ZapInput =>
   input.method === "pay" || input.method === "zap";
+
+const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
 
 const LIVE: ReadonlySet<RequestStage> = new Set(["awaiting-approval", "signing"]);
 
@@ -145,6 +193,7 @@ export class RequestController extends Controller<RequestControllerState> {
   private readonly options: RequestControllerOptions;
   private readonly entries = new Map<string, Entry>();
   private readonly log: SignLog;
+  private readonly settlers = new Map<string, Settler>();
   /** Original transaction id → the unfinished request replacing or accelerating it. */
   private readonly targets = new Map<string, string>();
   private locked = true;
@@ -162,6 +211,7 @@ export class RequestController extends Controller<RequestControllerState> {
     this.locked = false;
     this.entries.clear();
     this.targets.clear();
+    this.settlers.clear();
     this.update(() => ({ requests: {} }));
     this.log.open(await this.options.openStore());
   }
@@ -183,6 +233,19 @@ export class RequestController extends Controller<RequestControllerState> {
     this.log.close();
   }
 
+  /** A page navigated away, was revoked or changed network: its unfinished requests are void. */
+  invalidateOrigin(origin: string): void {
+    for (const [id, request] of Object.entries(this.getState().requests)) {
+      if (
+        LIVE.has(request.stage) &&
+        request.origin.kind === "browser" &&
+        request.origin.origin === origin
+      ) {
+        this.finish(id, "invalidated");
+      }
+    }
+  }
+
   /** The signature record, newest first. */
   async signLog(): Promise<ReadonlyArray<SignLogEntry>> {
     return this.log.list();
@@ -200,7 +263,17 @@ export class RequestController extends Controller<RequestControllerState> {
     const id = newRequestId(this.options.random);
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
-    const target = input.method === "send" || isSparkInput(input) ? undefined : input.txId;
+    const target =
+      input.method === "send" || input.method === "evm-sign" || isSparkInput(input)
+        ? undefined
+        : input.txId;
+    if (input.method === "evm-sign") {
+      const key = originKey(input.origin);
+      if (this.targets.has(key)) {
+        throw new OriginBusyError(input.origin.origin);
+      }
+      this.targets.set(key, id);
+    }
     if (target !== undefined) {
       if (this.targets.has(target)) {
         throw new Error(`transaction ${target} already has an unfinished replacement request`);
@@ -223,7 +296,7 @@ export class RequestController extends Controller<RequestControllerState> {
     const createdAt = this.options.now();
     const request: PendingRequest = {
       id,
-      origin: { kind: "internal" },
+      origin: input.method === "evm-sign" ? input.origin : { kind: "internal" },
       method: input.method,
       account: built.account,
       network: built.network,
@@ -243,7 +316,52 @@ export class RequestController extends Controller<RequestControllerState> {
     });
     this.entries.set(id, { prepared: built.run, stopTimer });
     this.put(request);
+    this.openSettler(id);
     return request;
+  }
+
+  /**
+   * Resolves with what `approve` returned, or rejects with `RequestEndedError` when the request
+   * ends any other way — how a dApp's pending call learns the outcome.
+   */
+  async outcome(id: string): Promise<TrackedTransaction | SparkResult | SignatureResult> {
+    const settler = this.settlers.get(id);
+    if (settler === undefined) {
+      throw new Error(`unknown request ${id}`);
+    }
+    return settler.promise;
+  }
+
+  private openSettler(id: string): void {
+    const holder: { resolve?: Settler["resolve"]; reject?: Settler["reject"] } = {};
+    const promise = new Promise<TrackedTransaction | SparkResult | SignatureResult>(
+      (resolve, reject) => {
+        holder.resolve = resolve;
+        holder.reject = reject;
+      },
+    );
+    // The caller may never ask; marking it observed keeps a rejection from surfacing.
+    void Promise.allSettled([promise]);
+    this.settlers.set(id, {
+      promise,
+      resolve: (value) => holder.resolve?.(value),
+      reject: (error) => holder.reject?.(error),
+    });
+  }
+
+  private settle(
+    id: string,
+    result: TrackedTransaction | SparkResult | SignatureResult | Error,
+  ): void {
+    const settler = this.settlers.get(id);
+    if (settler === undefined) {
+      return;
+    }
+    if (result instanceof Error) {
+      settler.reject(result);
+    } else {
+      settler.resolve(result);
+    }
   }
 
   private async build(input: RequestInput, id: string): Promise<Built> {
@@ -266,6 +384,21 @@ export class RequestController extends Controller<RequestControllerState> {
           submit: async (verify) => action.execute(this.options.spark, verify),
           release: () => undefined,
         },
+      };
+    }
+    if (input.method === "evm-sign") {
+      const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
+      const isTransaction = input.request.kind === "evm.transaction";
+      return {
+        account: prepared.account,
+        network: prepared.network,
+        display: prepared.intent,
+        checks: collectChecks([
+          isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
+          ...prepared.checks,
+        ]),
+        risk: isTransaction ? this.chainRisk(prepared.intent) : [],
+        run: prepared,
       };
     }
     const prepared =
@@ -301,9 +434,14 @@ export class RequestController extends Controller<RequestControllerState> {
   ): Promise<SparkResult>;
   async approve(
     id: string,
+    method: "evm-sign",
+    verify: SendParams["verify"],
+  ): Promise<TrackedTransaction | SignatureResult>;
+  async approve(
+    id: string,
     method: RequestMethod,
     verify: SendParams["verify"],
-  ): Promise<TrackedTransaction | SparkResult> {
+  ): Promise<TrackedTransaction | SparkResult | SignatureResult> {
     const request = this.getState().requests[id];
     if (request === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -351,6 +489,7 @@ export class RequestController extends Controller<RequestControllerState> {
       } else {
         this.record(request, "submitted");
       }
+      this.settle(id, result);
       return result;
     } catch (error) {
       if (session === this.session) {
@@ -433,6 +572,7 @@ export class RequestController extends Controller<RequestControllerState> {
       };
       this.put(ended);
       this.record(ended, stage, error);
+      this.settle(id, new RequestEndedError(stage, error));
     }
   }
 

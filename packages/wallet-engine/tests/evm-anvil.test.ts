@@ -13,11 +13,15 @@ import { chains } from "@qntx/wallet/chains";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
 import { EvmChainAdapter } from "../src/chains/evm.ts";
+import { ConnectionController } from "../src/connect/controller.ts";
+import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
+import { RequestController } from "../src/requests/controller.ts";
+import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { replaceVia, send } from "./send-helpers.ts";
+import { bookDeps, replaceVia, send } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
 
@@ -467,3 +471,154 @@ describe.runIf(RUN)("anvil e2e: account discovery", () => {
     }
   });
 });
+
+describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
+  it("rebuilds nonce and fees, keeps the dApp's gas as a floor, and broadcasts after approval", async () => {
+    const port = 18552;
+    const proc = execFile(anvil(), ["--port", String(port), "--silent", "--chain-id", "1"]);
+    await sleep(1500);
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { wallet, walletId } = await realWallet();
+      const evmAccount = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: "eip155:1",
+      });
+      const from = addressOfAccount(evmAccount);
+      await rpcCall(url, "anvil_setBalance", [from, "0xde0b6b3a7640000"]);
+      const random = taggedRandom();
+      const networks = new NetworkController({
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { "eip155:1": [url] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: anvilLogger,
+      });
+      const transactions = new TransactionController({
+        wallet,
+        networks,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random,
+        setTimer: () => () => {},
+        now: () => 1000,
+        logger: anvilLogger,
+        pollMs: 1,
+      });
+      await transactions.init();
+      const requests = new RequestController({
+        transactions,
+        ...bookDeps(),
+        spark: {} as SparkController,
+        fetch: globalThis.fetch.bind(globalThis),
+        random,
+        now: () => 1000,
+        setTimer: () => () => {},
+        logger: anvilLogger,
+      });
+      await requests.init();
+      const connections = new ConnectionController({
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random,
+        now: () => 1000,
+        logger: anvilLogger,
+        allowLocalhost: false,
+        selectedGroup: () => ({ walletId, groupIndex: 0 }),
+        evmAddress: async () => Promise.resolve(from),
+        enabledNetworks: () => ["eip155:1"],
+        invalidate: (origin) => {
+          requests.invalidateOrigin(origin);
+        },
+      });
+      await connections.init();
+      const handler = new Eip1193Handler({
+        connections,
+        requests,
+        networks,
+        defaultNetwork: () => "eip155:1",
+      });
+      const site = "https://app.example";
+      const connecting = handler.handle(site, { method: "eth_requestAccounts" });
+      await waitUntil(() => connections.pending().length === 1);
+      await connections.approveConnection(soleId(connections.pending()), {
+        accounts: [from],
+        network: "eip155:1",
+      });
+      await connecting;
+
+      const before = BigInt(
+        (await rpcCall(url, "eth_getBalance", [RECIPIENT, "latest"])) as string,
+      );
+      const sending = handler.handle(site, {
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from,
+            to: RECIPIENT,
+            value: "0x38d7ea4c68000",
+            gas: "0x30d40",
+            nonce: "0x63",
+            maxFeePerGas: "0x1",
+            maxPriorityFeePerGas: "0x1",
+          },
+        ],
+      });
+      await waitUntil(() => Object.values(requests.getState().requests).length === 1);
+      const pending = soleRequest(requests.getState().requests);
+      expect(pending.origin).toStrictEqual({ kind: "browser", origin: site });
+      await requests.approve(pending.id, "evm-sign", VERIFY);
+      const hash = (await sending) as string;
+
+      const state = await waitFor(
+        new EvmChainAdapter(),
+        createPublicClient({ transport: http(url) }),
+        hash,
+        Date.now() + 15_000,
+      );
+      expect(["confirmed", "finalized"]).toContain(state);
+      const mined = (await rpcCall(url, "eth_getTransactionByHash", [hash])) as {
+        nonce: string;
+        gas: string;
+        maxFeePerGas: string;
+      };
+      expect(BigInt(mined.nonce)).toBe(0n);
+      expect(BigInt(mined.gas)).toBeGreaterThanOrEqual(0x30d40n);
+      expect(BigInt(mined.maxFeePerGas)).toBeGreaterThan(1n);
+      const after = BigInt((await rpcCall(url, "eth_getBalance", [RECIPIENT, "latest"])) as string);
+      expect(after - before).toBe(0x38d7ea4c68000n);
+      await wallet.destroy();
+    } finally {
+      proc.kill();
+    }
+  }, 60_000);
+});
+
+const addressOfAccount = (account: object): string =>
+  "address" in account && typeof account.address === "string" ? account.address : "";
+
+const soleId = (list: ReadonlyArray<{ readonly id: string }>): string => {
+  const [first] = list;
+  if (first === undefined) {
+    throw new Error("nothing pending");
+  }
+  return first.id;
+};
+
+const soleRequest = <T extends { readonly id: string }>(requests: Record<string, T>): T => {
+  const [first] = Object.values(requests);
+  if (first === undefined) {
+    throw new Error("no request");
+  }
+  return first;
+};
+
+const waitUntil = async (check: () => boolean, deadline = Date.now() + 10_000): Promise<void> => {
+  if (check()) {
+    return;
+  }
+  if (Date.now() >= deadline) {
+    throw new Error("timed out");
+  }
+  await sleep(50);
+  return waitUntil(check, deadline);
+};

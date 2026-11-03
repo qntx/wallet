@@ -3,14 +3,20 @@
  * through its own module (`evm.ts`, `solana.ts`, `bitcoin.ts`). A rejected signature (wrong
  * password, cancelled presence) never broadcasts.
  */
+import type { SignRequest } from "@qntx/wallet-chains";
+import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
+import { chains } from "@qntx/wallet/chains";
+
 import { Controller } from "../controller.ts";
 import type { EngineStore } from "../store/port.ts";
 import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
+  AccountRef,
   DisplayIntent,
   Options,
   PrepareParams,
+  PreparedMessage,
   PreparedRequest,
   ChainRequestInput,
   RouteContext,
@@ -238,6 +244,57 @@ export class TransactionController extends Controller<TransactionControllerState
       return this.bitcoinRoute.prepare(ctx, params, requestId);
     }
     return this.evmRoute.prepare(ctx, params);
+  }
+
+  /**
+   * Internal entry for a dApp's EVM signature request: the request is normalized first, a
+   * transaction is rebuilt with fresh nonce and fees (the dApp's own are discarded), and a message
+   * is decoded and signed as is.
+   */
+  async prepareDapp(
+    account: AccountRef,
+    request: SignRequest,
+  ): Promise<PreparedRequest | PreparedMessage> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    const normalized = normalizeEvm(request);
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
+    if (normalized.kind === "evm.transaction") {
+      return this.evmRoute.prepareCall(this.routeCtx(), {
+        account,
+        network: normalized.network,
+        tx: normalized.tx,
+      });
+    }
+    if (normalized.kind !== "evm.personal-message" && normalized.kind !== "evm.typed-data") {
+      throw new Error(`unsupported dApp request ${normalized.kind}`);
+    }
+    const { kind, network } = normalized;
+    const apis = this.options.chains ?? chains(this.options.wallet);
+    return {
+      account,
+      network,
+      intent: decodeEvm(normalized),
+      checks: [],
+      staleReason: () => undefined,
+      release: () => undefined,
+      submit: async (verify) => {
+        const result = await apis.sign({
+          request:
+            normalized.kind === "evm.personal-message"
+              ? { kind: normalized.kind, network, account, message: normalized.message }
+              : { kind: normalized.kind, network, account, typedData: normalized.typedData },
+          verify,
+        });
+        if (result.kind !== kind || !("signature" in result)) {
+          throw new Error("unexpected sign result");
+        }
+        return { kind, signature: result.signature };
+      },
+    };
   }
 
   /**

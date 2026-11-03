@@ -8,7 +8,7 @@ import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
-import type { RequestMethod } from "./controller.ts";
+import type { RequestMethod, RequestOrigin } from "./controller.ts";
 import type { RiskFinding } from "./risk.ts";
 
 export type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "invalidated";
@@ -16,7 +16,7 @@ export type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "
 export type SignLogEntry = {
   readonly id: string;
   readonly at: number;
-  readonly origin: { readonly kind: "internal" };
+  readonly origin: RequestOrigin;
   readonly method: RequestMethod;
   readonly account: AccountRef | SparkAccountRef;
   readonly network: string;
@@ -33,7 +33,15 @@ const COLLECTION = "sign-log";
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
-const METHODS: ReadonlySet<unknown> = new Set(["send", "speed-up", "cancel", "cpfp", "pay", "zap"]);
+const METHODS: ReadonlySet<unknown> = new Set([
+  "send",
+  "speed-up",
+  "cancel",
+  "cpfp",
+  "pay",
+  "zap",
+  "evm-sign",
+]);
 const OUTCOMES: ReadonlySet<unknown> = new Set([
   "submitted",
   "rejected",
@@ -65,10 +73,16 @@ const isAccount = (value: unknown): value is AccountRef | SparkAccountRef => {
   );
 };
 
+const isOrigin = (value: unknown): boolean =>
+  isObject(value) &&
+  (value["kind"] === "internal" ||
+    (value["kind"] === "browser" && typeof value["origin"] === "string"));
+
 const isEntry = (value: unknown): value is SignLogEntry =>
   isObject(value) &&
   typeof value["id"] === "string" &&
   typeof value["at"] === "number" &&
+  isOrigin(value["origin"]) &&
   METHODS.has(value["method"]) &&
   OUTCOMES.has(value["outcome"]) &&
   isAccount(value["account"]);

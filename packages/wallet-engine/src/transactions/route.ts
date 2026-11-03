@@ -108,6 +108,16 @@ export type PreparedRequest = {
   readonly release: () => void;
 };
 
+export type SignatureResult = {
+  readonly kind: "evm.personal-message" | "evm.typed-data";
+  readonly signature: Uint8Array;
+};
+
+/** A prepared message signature: nothing is broadcast or tracked, `submit` returns the signature. */
+export type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
+  readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
+};
+
 export type Options = {
   readonly wallet: Wallet;
   readonly networks: NetworkController;
