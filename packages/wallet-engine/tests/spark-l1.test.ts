@@ -3,6 +3,7 @@ import { hex } from "@scure/base";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { createStore } from "zustand/vanilla";
 
+import type { Event } from "@qntx/nostr";
 import { encodeSparkAddress } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
@@ -103,6 +104,10 @@ function rig() {
     transactions,
     ...bookDeps(),
     spark,
+    nostrSign: async (_ref, _event): Promise<Event> => {
+      await Promise.resolve();
+      throw new Error("nostr-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random: (n) => {
       counter += 1;

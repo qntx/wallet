@@ -1,4 +1,6 @@
+import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
+import type { NostrKeyRef } from "@qntx/wallet";
 /**
  * Request pipeline for internal sends, speed-ups, cancellations and CPFP: `prepare` builds,
  * estimates and cross-checks without signing; `approve(id, method, verify)` is the only way to
@@ -93,13 +95,41 @@ export type SparkExitInput = {
   readonly speed?: "FAST" | "MEDIUM" | "SLOW";
 };
 
+/**
+ * A NIP-07 `signEvent` that the policy sends through the pipeline: no factor on approval (Nostr
+ * events are not per-event verifiable, WD-065); the display is the kind, a short content preview
+ * and the tag count — the sign log records kind and event id only.
+ */
+export type NostrSignInput = {
+  readonly method: "nostr-sign";
+  readonly origin: BrowserOrigin;
+  /** The active identity — the signer the page's pubkey must match. */
+  readonly ref: NostrKeyRef;
+  readonly event: UnsignedEvent;
+};
+
 export type RequestInput =
   | ChainRequestInput
   | PayInput
   | ZapInput
   | EvmSignInput
+  | NostrSignInput
   | SparkDepositInput
   | SparkExitInput;
+
+/** `approve` of a `nostr-sign` request: the signed event. */
+export type NostrSignResult = {
+  readonly kind: "nostr.event";
+  readonly event: Event;
+};
+
+/** `nostr-sign` display: the kind, a content preview and the tag count — nothing else is shown. */
+export type NostrDisplay = {
+  readonly kind: "nostr.event";
+  readonly eventKind: number;
+  readonly preview: string;
+  readonly tagCount: number;
+};
 
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
 export class RequestEndedError extends Error {
@@ -132,11 +162,11 @@ export type PendingRequest = {
   readonly id: string;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
   readonly network: string;
   readonly stage: RequestStage;
   /** Decoded locally from the exact content that will be signed; `family` tells the shapes apart. */
-  readonly display: DisplayIntent | SparkDisplay;
+  readonly display: DisplayIntent | SparkDisplay | NostrDisplay;
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -169,10 +199,18 @@ export type RequestControllerOptions = {
   readonly now: () => number;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
   readonly logger: EngineLogger;
+  /** Signs a Nostr event for `nostr-sign` — `nostr(wallet).signer(ref).signEvent`. */
+  readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event>;
 };
 
 /** Requests expire this long after creation. */
 export const REQUEST_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * A `nostr-sign` approval needs no factor (Nostr events are not per-event verifiable, WD-065) — its
+ * `submit` ignores `verify`, so a placeholder satisfies the `Run` signature.
+ */
+const NO_FACTOR: SendParams["verify"] = { kind: "password", password: "" };
 
 /** What approval needs from a prepared request, whichever kind it is. */
 type Run = {
@@ -181,22 +219,24 @@ type Run = {
   readonly staleReason: () => string | undefined | Promise<string | undefined>;
   readonly submit: (
     verify: SendParams["verify"],
-  ) => Promise<TrackedTransaction | SparkResult | SignatureResult>;
+  ) => Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult>;
   readonly release: () => void;
 };
 
 type Built = {
-  readonly account: AccountRef | SparkAccountRef;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
   readonly network: string;
-  readonly display: DisplayIntent | SparkDisplay;
+  readonly display: DisplayIntent | SparkDisplay | NostrDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
   readonly run: Run;
 };
 
 type Settler = {
-  readonly promise: Promise<TrackedTransaction | SparkResult | SignatureResult>;
-  readonly resolve: (value: TrackedTransaction | SparkResult | SignatureResult) => void;
+  readonly promise: Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult>;
+  readonly resolve: (
+    value: TrackedTransaction | SparkResult | SignatureResult | NostrSignResult,
+  ) => void;
   readonly reject: (error: Error) => void;
 };
 
@@ -344,7 +384,9 @@ export class RequestController extends Controller<RequestControllerState> {
    * Resolves with what `approve` returned, or rejects with `RequestEndedError` when the request
    * ends any other way — how a dApp's pending call learns the outcome.
    */
-  async outcome(id: string): Promise<TrackedTransaction | SparkResult | SignatureResult> {
+  async outcome(
+    id: string,
+  ): Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult> {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -354,12 +396,12 @@ export class RequestController extends Controller<RequestControllerState> {
 
   private openSettler(id: string): void {
     const holder: { resolve?: Settler["resolve"]; reject?: Settler["reject"] } = {};
-    const promise = new Promise<TrackedTransaction | SparkResult | SignatureResult>(
-      (resolve, reject) => {
-        holder.resolve = resolve;
-        holder.reject = reject;
-      },
-    );
+    const promise = new Promise<
+      TrackedTransaction | SparkResult | SignatureResult | NostrSignResult
+    >((resolve, reject) => {
+      holder.resolve = resolve;
+      holder.reject = reject;
+    });
     // The caller may never ask; marking it observed keeps a rejection from surfacing.
     void Promise.allSettled([promise]);
     this.settlers.set(id, {
@@ -371,7 +413,7 @@ export class RequestController extends Controller<RequestControllerState> {
 
   private settle(
     id: string,
-    result: TrackedTransaction | SparkResult | SignatureResult | Error,
+    result: TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | Error,
   ): void {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
@@ -480,6 +522,28 @@ export class RequestController extends Controller<RequestControllerState> {
         run: prepared,
       };
     }
+    if (input.method === "nostr-sign") {
+      return {
+        account: input.ref,
+        network: "",
+        display: {
+          kind: "nostr.event",
+          eventKind: input.event.kind,
+          preview: input.event.content.slice(0, 280),
+          tagCount: input.event.tags.length,
+        },
+        checks: [],
+        risk: [],
+        run: {
+          staleReason: () => undefined,
+          submit: async () => ({
+            kind: "nostr.event" as const,
+            event: await this.options.nostrSign(input.ref, input.event),
+          }),
+          release: () => undefined,
+        },
+      };
+    }
     const prepared =
       input.method === "send"
         ? await this.options.transactions.prepareSend(input, id)
@@ -516,11 +580,12 @@ export class RequestController extends Controller<RequestControllerState> {
     method: "evm-sign",
     verify: SendParams["verify"],
   ): Promise<TrackedTransaction | SignatureResult>;
+  async approve(id: string, method: "nostr-sign"): Promise<NostrSignResult>;
   async approve(
     id: string,
     method: RequestMethod,
-    verify: SendParams["verify"],
-  ): Promise<TrackedTransaction | SparkResult | SignatureResult> {
+    verify?: SendParams["verify"],
+  ): Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult> {
     const request = this.getState().requests[id];
     if (request === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -553,7 +618,9 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new Error(stale);
     }
     try {
-      const result = await entry.prepared.submit(verify);
+      const result = await entry.prepared.submit(
+        request.method === "nostr-sign" ? NO_FACTOR : this.requireVerify(verify),
+      );
       if (session === this.session) {
         entry.stopTimer();
         this.entries.delete(id);
@@ -564,7 +631,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...("id" in result ? { txId: result.id } : {}),
         };
         this.put(done);
-        this.record(done, "submitted");
+        this.record(done, "submitted", undefined, result);
       } else {
         this.record(request, "submitted");
       }
@@ -603,6 +670,14 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new Error(`request ${id} is ${request.stage}, not awaiting approval`);
     }
     this.finish(id, "rejected");
+  }
+
+  /** `approve` for a factor-requiring method: a missing factor is a programming error. */
+  private requireVerify(verify: SendParams["verify"] | undefined): SendParams["verify"] {
+    if (verify === undefined) {
+      throw new Error("a verification factor is required");
+    }
+    return verify;
   }
 
   private requireRequest(id: string): PendingRequest {
@@ -656,8 +731,23 @@ export class RequestController extends Controller<RequestControllerState> {
   }
 
   /** Appends the final stage to the signature record; a failed write is a warning, not an error. */
-  private record(request: PendingRequest, outcome: SignLogOutcome, error?: string): void {
+  private record(
+    request: PendingRequest,
+    outcome: SignLogOutcome,
+    error?: string,
+    result?: TrackedTransaction | SparkResult | SignatureResult | NostrSignResult,
+  ): void {
     const { display } = request;
+    const eventId =
+      result !== undefined && "kind" in result && result.kind === "nostr.event"
+        ? result.event.id
+        : undefined;
+    const summary =
+      "kind" in display && display.kind === "nostr.event"
+        ? `nostr kind ${display.eventKind}${eventId === undefined ? "" : ` ${eventId}`}`
+        : "summary" in display
+          ? display.summary
+          : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
       at: this.options.now(),
@@ -665,7 +755,7 @@ export class RequestController extends Controller<RequestControllerState> {
       method: request.method,
       account: request.account,
       network: request.network,
-      summary: "summary" in display ? display.summary : `${display.kind} ${display.amountSats}`,
+      summary,
       verification: request.verification,
       checks: request.checks,
       risk: request.risk,

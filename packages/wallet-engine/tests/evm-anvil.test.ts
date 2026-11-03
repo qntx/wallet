@@ -511,6 +511,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         transactions,
         ...bookDeps(),
         spark: {} as SparkController,
+        nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
         fetch: globalThis.fetch.bind(globalThis),
         random,
         now: () => 1000,

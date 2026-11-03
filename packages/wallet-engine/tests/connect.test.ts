@@ -108,6 +108,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     transactions,
     ...bookDeps(),
     spark: {} as SparkController,
+    nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
     fetch: globalThis.fetch,
     random,
     now: () => 1000,

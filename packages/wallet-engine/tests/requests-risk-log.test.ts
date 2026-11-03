@@ -110,6 +110,7 @@ function world() {
   const requests = new RequestController({
     transactions,
     spark: {} as unknown as SparkController,
+    nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
     addressBook,
     openStore,
     fetch: globalThis.fetch,
