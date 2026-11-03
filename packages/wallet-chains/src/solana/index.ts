@@ -1,5 +1,6 @@
+import { isRecord, requestBase } from "../account-ref.ts";
 import { ChainError } from "../index.ts";
-import type { AccountRef, SignRequest } from "../index.ts";
+import type { SignRequest } from "../index.ts";
 import { SOLANA_NETWORKS, isSolanaAddress } from "./ids.ts";
 import { parseCompiledMessage, validateLookupTables } from "./message.ts";
 
@@ -16,27 +17,6 @@ export { parseCompiledMessage } from "./message.ts";
 export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";
 export { solanaTokenTable } from "./tokens.ts";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
-
-const isAccountRef = (value: unknown): value is AccountRef => {
-  if (!isRecord(value) || typeof value["kind"] !== "string") {
-    return false;
-  }
-  if (value["kind"] === "hd") {
-    return (
-      typeof value["walletId"] === "string" &&
-      typeof value["groupIndex"] === "number" &&
-      typeof value["template"] === "string"
-    );
-  }
-  return (
-    value["kind"] === "imported" &&
-    typeof value["keyId"] === "string" &&
-    typeof value["family"] === "string"
-  );
-};
 
 const solanaNetwork = (network: string): void => {
   if (!SOLANA_NETWORKS.includes(network)) {
@@ -82,14 +62,7 @@ export const normalizeSolana = (request: unknown, signer: string): SignRequest =
   if (!isRecord(request) || typeof request["kind"] !== "string") {
     throw new ChainError("invalid-request", "request must be an object with a kind");
   }
-  const { network } = request;
-  const { account } = request;
-  if (typeof network !== "string") {
-    throw new ChainError("invalid-request", "request.network must be a string");
-  }
-  if (!isAccountRef(account)) {
-    throw new ChainError("invalid-request", "request.account must be an AccountRef");
-  }
+  const { network, account } = requestBase(request);
   solanaNetwork(network);
   if (!isSolanaAddress(signer)) {
     throw new ChainError("invalid-address", "signer is not a base58 address");

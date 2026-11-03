@@ -5,19 +5,7 @@ import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { ChainError } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
-export type BitcoinAccountTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
-
-/**
- * Derive the address at `change`/`index` under an account-level xpub (`m/84'/c'/i'` or
- * `m/86'/c'/i'`) — P2WPKH for `btc.bip84`, P2TR key-path for `btc.bip86`.
- */
-export function bitcoinAddressFromXpub(
-  xpub: string,
-  template: BitcoinAccountTemplate,
-  network: string,
-  change: 0 | 1,
-  index: number,
-): string {
+const xpubChild = (xpub: string, network: string, change: 0 | 1, index: number): Uint8Array => {
   if (!Number.isInteger(index) || index < 0) {
     throw new ChainError("invalid-request", "index must be a non-negative integer");
   }
@@ -36,6 +24,24 @@ export function bitcoinAddressFromXpub(
   if (pub === null) {
     throw new ChainError("invalid-request", "xpub carries no public key");
   }
+  return pub;
+};
+
+export type BitcoinAccountTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+
+/**
+ * Derive the address at `change`/`index` under an account-level xpub (`m/84'/c'/i'` or
+ * `m/86'/c'/i'`) — P2WPKH for `btc.bip84`, P2TR key-path for `btc.bip86`.
+ */
+export function bitcoinAddressFromXpub(
+  xpub: string,
+  template: BitcoinAccountTemplate,
+  network: string,
+  change: 0 | 1,
+  index: number,
+): string {
+  const net = bitcoinNetwork(network);
+  const pub = xpubChild(xpub, network, change, index);
   const address =
     template === "btc.bip84"
       ? p2wpkh(pub, net.params).address
@@ -62,23 +68,7 @@ export function bitcoinPubkeyFromXpub(
   change: 0 | 1,
   index: number,
 ): Uint8Array {
-  if (!Number.isInteger(index) || index < 0) {
-    throw new ChainError("invalid-request", "index must be a non-negative integer");
-  }
-  const net = bitcoinNetwork(network);
-  let node: HDKey;
-  try {
-    node = HDKey.fromExtendedKey(xpub, net.bip32);
-  } catch (error) {
-    throw new ChainError(
-      "invalid-request",
-      `xpub: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  const pub = node.derive(`m/${change}/${index}`).publicKey;
-  if (pub === null) {
-    throw new ChainError("invalid-request", "xpub carries no public key");
-  }
+  const pub = xpubChild(xpub, network, change, index);
   // bip44/bip49 keep the compressed key — the signing kernel needs it for
   // redeemScript/scriptSig; only bip86 derives to the x-only key.
   return template === "btc.bip86" ? pub.subarray(1) : pub;

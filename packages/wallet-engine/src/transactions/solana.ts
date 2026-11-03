@@ -27,7 +27,7 @@ import type {
   TrackedTransaction,
   TxState,
 } from "./route.ts";
-import { errorMessage, newId } from "./route.ts";
+import { newId, failTx, submitTx } from "./route.ts";
 
 /** The network's base signature fee, lamports per signature. */
 const BASE_FEE_LAMPORTS = 5000n;
@@ -172,16 +172,9 @@ export const prepareSolana = async (
       const wire = solana.finalize(messageBytes, [result.signature]);
       const hash = await solana.broadcast(rpc, wire);
       wires.set(id, wire);
-      tx = await ctx.transition(tx, {
-        state: "submitted",
-        hash,
-        submittedAt: ctx.options.now(),
-      });
-      ctx.track(tx.id, hash);
-      return tx;
+      return await submitTx(ctx, tx, hash);
     } catch (error) {
-      const failed = tx.state === "signed" ? "failed" : "rejected";
-      await ctx.transition(tx, { state: failed, error: errorMessage(error) });
+      await failTx(ctx, tx, error);
       throw error;
     }
   };

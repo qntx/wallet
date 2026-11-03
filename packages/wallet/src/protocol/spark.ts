@@ -389,20 +389,7 @@ const staticDepositClaimResult: Validator<StaticDepositClaimResult> = obj({
  * The intent a `spark.approve` registers — kernel-decoded before the host ever displays it. `token`
  * receivers' amounts are canonical decimal strings in the u128 range.
  */
-export type SparkApproveIntent =
-  | {
-      readonly kind: "transfer";
-      readonly receivers: ReadonlyArray<{
-        readonly identityPublicKey: Uint8Array;
-        readonly amountSats: number;
-      }>;
-    }
-  | {
-      readonly kind: "lightning";
-      readonly invoice: string;
-      readonly amountSats?: number;
-      readonly maxFeeSats: number;
-    }
+type SparkOutflowIntent =
   | {
       readonly kind: "exit";
       readonly address: string;
@@ -422,6 +409,22 @@ export type SparkApproveIntent =
         readonly amount: string;
       }>;
     };
+
+export type SparkApproveIntent =
+  | {
+      readonly kind: "transfer";
+      readonly receivers: ReadonlyArray<{
+        readonly identityPublicKey: Uint8Array;
+        readonly amountSats: number;
+      }>;
+    }
+  | {
+      readonly kind: "lightning";
+      readonly invoice: string;
+      readonly amountSats?: number;
+      readonly maxFeeSats: number;
+    }
+  | SparkOutflowIntent;
 
 /**
  * What `spark.approve` returns: the kernel's own decode of the intent — receivers and amounts, the
@@ -441,25 +444,7 @@ export type SparkApprovalSummary =
       readonly invoiceAmountSats?: number;
       readonly maxFeeSats: number;
     }
-  | {
-      readonly kind: "exit";
-      readonly address: string;
-      readonly amountSats: number;
-      readonly maxFeeSats: number;
-    }
-  | {
-      readonly kind: "onchain";
-      readonly address: string;
-      readonly maxFeeSats: number;
-    }
-  | {
-      readonly kind: "token";
-      readonly tokenIdentifier: Uint8Array;
-      readonly receivers: ReadonlyArray<{
-        readonly ownerPublicKey: Uint8Array;
-        readonly amount: string;
-      }>;
-    };
+  | SparkOutflowIntent;
 
 // sats amounts are bounded by the protocol's safe-integer contract; u128 token amounts
 // travel as canonical decimal strings.
@@ -477,17 +462,7 @@ const decimalU128: Validator<string> = (value) => {
   }
   return value;
 };
-const approveIntent: Validator<SparkApproveIntent> = union(
-  obj({
-    kind: literal("transfer"),
-    receivers: arr(obj({ identityPublicKey: bytes(33), amountSats: satsAmount() }), 256, 1),
-  }),
-  obj({
-    kind: literal("lightning"),
-    invoice: str(4096),
-    amountSats: opt(satsAmount()),
-    maxFeeSats: satsAmount(),
-  }),
+const outflowIntents = [
   obj({
     kind: literal("exit"),
     address: str(128),
@@ -504,6 +479,20 @@ const approveIntent: Validator<SparkApproveIntent> = union(
     tokenIdentifier: bytes(32),
     receivers: arr(obj({ ownerPublicKey: bytes(33), amount: decimalU128 }), 256, 1),
   }),
+] as const;
+
+const approveIntent: Validator<SparkApproveIntent> = union(
+  obj({
+    kind: literal("transfer"),
+    receivers: arr(obj({ identityPublicKey: bytes(33), amountSats: satsAmount() }), 256, 1),
+  }),
+  obj({
+    kind: literal("lightning"),
+    invoice: str(4096),
+    amountSats: opt(satsAmount()),
+    maxFeeSats: satsAmount(),
+  }),
+  ...outflowIntents,
 );
 
 const approvalSummary: Validator<SparkApprovalSummary> = union(
@@ -517,22 +506,7 @@ const approvalSummary: Validator<SparkApprovalSummary> = union(
     invoiceAmountSats: opt(satsAmount()),
     maxFeeSats: satsAmount(),
   }),
-  obj({
-    kind: literal("exit"),
-    address: str(128),
-    amountSats: satsAmount(),
-    maxFeeSats: satsAmount(),
-  }),
-  obj({
-    kind: literal("onchain"),
-    address: str(128),
-    maxFeeSats: satsAmount(),
-  }),
-  obj({
-    kind: literal("token"),
-    tokenIdentifier: bytes(32),
-    receivers: arr(obj({ ownerPublicKey: bytes(33), amount: decimalU128 }), 256, 1),
-  }),
+  ...outflowIntents,
 );
 
 export const SPARK_METHODS: {

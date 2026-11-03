@@ -21,7 +21,7 @@ import {
   resolveBackupUnlockFactor,
   defaultUnlockFactor,
 } from "./factors.ts";
-import type { FactorMode, FactorSource, PasskeyCeremony } from "./factors.ts";
+import type { FactorMode, FactorSource, PasskeyCeremony, PrfResult } from "./factors.ts";
 import { registerInternals } from "./internal.ts";
 import type { Factor } from "./protocol/index.ts";
 import { SingleUseSecret } from "./secret.ts";
@@ -166,6 +166,28 @@ export class KernelWallet implements Wallet {
     const wallet = new KernelWallet(options);
     await wallet.channel.start();
     return wallet;
+  }
+
+  /** Runs a host-ceremony passkey call and adopts the returned session and wallet info. */
+  private async hostPasskeyWallet(
+    method: "wallet.createWithPasskey" | "wallet.restoreWithPasskey",
+    result: PrfResult,
+    factor: Factor | undefined,
+    transfer: ArrayBuffer[],
+  ): Promise<WalletInfo> {
+    const created = await this.channel.call(
+      method,
+      {
+        ceremony: "host",
+        credentialId: wireBytes(result.credentialId, transfer),
+        prfWallet: wireBytes(result.first, transfer, true),
+        synced: result.synced,
+        ...(factor === undefined ? {} : { factor }),
+      },
+      transfer,
+    );
+    this.sessionOf(created);
+    return created.wallet;
   }
 
   /**
@@ -388,19 +410,7 @@ export class KernelWallet implements Wallet {
         } else {
           factor = await resolveInitialFactor(this.factorSource, options.factor, transfer, result);
         }
-        const created = await this.channel.call(
-          "wallet.createWithPasskey",
-          {
-            ceremony: "host",
-            credentialId: wireBytes(result.credentialId, transfer),
-            prfWallet: wireBytes(result.first, transfer, true),
-            synced: result.synced,
-            ...(factor === undefined ? {} : { factor }),
-          },
-          transfer,
-        );
-        this.sessionOf(created);
-        return created.wallet;
+        return this.hostPasskeyWallet("wallet.createWithPasskey", result, factor, transfer);
       }),
     restoreWithPasskey: async (options?: {
       readonly factor?: InitialFactor;
@@ -445,19 +455,7 @@ export class KernelWallet implements Wallet {
         } else {
           factor = await resolveInitialFactor(this.factorSource, options?.factor, transfer, result);
         }
-        const created = await this.channel.call(
-          "wallet.restoreWithPasskey",
-          {
-            ceremony: "host",
-            credentialId: wireBytes(result.credentialId, transfer),
-            prfWallet: wireBytes(result.first, transfer, true),
-            synced: result.synced,
-            ...(factor === undefined ? {} : { factor }),
-          },
-          transfer,
-        );
-        this.sessionOf(created);
-        return created.wallet;
+        return this.hostPasskeyWallet("wallet.restoreWithPasskey", result, factor, transfer);
       }),
     createMnemonic: async (options: {
       readonly words: 12 | 24;

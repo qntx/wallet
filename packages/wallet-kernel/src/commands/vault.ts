@@ -3,14 +3,20 @@ import type { FactorInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
 import { assertFactorKindAvailable } from "../platform.ts";
-import { corePromptFor } from "../prompts.ts";
 import type { Pbkdf2 } from "../platform.ts";
+import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { withSeed } from "../seed/seed.ts";
-import type { VaultImage } from "../vault/store.ts";
-import type { StoredRecord } from "../vault/store.ts";
-import { factorInfo, makeFactor, openRecord, rotateVault, unlock, verifyFactor } from "../vault/vault.ts";
+import type { VaultImage, StoredRecord } from "../vault/store.ts";
+import {
+  factorInfo,
+  makeFactor,
+  openRecord,
+  rotateVault,
+  unlock,
+  verifyFactor,
+} from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
 
 /** Opens a wallet's sealed entropy record, then withSeed; wipes the entropy on every path. */

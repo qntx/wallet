@@ -4,10 +4,10 @@
  * live secret bytes behind.
  */
 import { describe, expect, it, vi } from "vite-plus/test";
-import type * as seedModule from "../src/seed/seed.ts";
 
 import type { KernelPlatform } from "../src/platform.ts";
 import { Secret } from "../src/secret/secret.ts";
+import type * as seedModule from "../src/seed/seed.ts";
 
 const captured = vi.hoisted(() => ({
   entropy: undefined as Uint8Array | undefined,
@@ -42,11 +42,9 @@ const platform = {
   random: (n: number) => new Uint8Array(n).fill(9),
 } as unknown as KernelPlatform;
 
-const pbkdf2: KernelPlatform["pbkdf2"] = () =>
-  Promise.resolve(new Uint8Array(64).fill(7));
-const throwingPbkdf2: KernelPlatform["pbkdf2"] = async () => {
-  throw new Error("pbkdf2 blew up");
-};
+const pbkdf2: KernelPlatform["pbkdf2"] = async () => Promise.resolve(new Uint8Array(64).fill(7));
+const throwingPbkdf2: KernelPlatform["pbkdf2"] = async () =>
+  Promise.reject(new Error("pbkdf2 blew up"));
 
 const dek = Secret.take(new Uint8Array(32).fill(1));
 const entropy = (): Uint8Array => new Uint8Array(32).fill(3);

@@ -3,6 +3,7 @@ import type { Factor, NostrExportFormat, NostrImportInput, NullValue } from "@qn
 import type { NostrKeyInfo } from "@qntx/wallet/types";
 
 import type { KernelContext } from "../../commands/context.ts";
+import { withWalletSeed } from "../../commands/vault.ts";
 import { commitRecords, gate } from "../../commands/wallets.ts";
 import { masterKey } from "../../derive/hd.ts";
 import { KernelError } from "../../errors.ts";
@@ -10,13 +11,7 @@ import { corePromptFor } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { Secret } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
-import { withWalletSeed } from "../../commands/vault.ts";
-import {
-  findRecord,
-  openRecord,
-  sealRecord,
-  verifyFactor,
-} from "../../vault/vault.ts";
+import { findRecord, openRecord, sealRecord, verifyFactor } from "../../vault/vault.ts";
 import { nostrKeyAt } from "./derive.ts";
 import {
   generateSecretKey,
