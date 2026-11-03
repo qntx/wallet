@@ -271,6 +271,8 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
       const approvals: unknown[] = [];
       const realSparkApis = spark(wallet);
       const engine = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet,
         sparkNetwork: "regtest",
         fetch: testFetch(server, () => withdrawPayerClient),

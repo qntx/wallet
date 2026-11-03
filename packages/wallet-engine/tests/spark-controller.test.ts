@@ -636,6 +636,8 @@ describe("lock transition serialization", () => {
     const client = fakeClient(calls);
     const clientCount = 0;
     const engine = createWalletEngine({
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
       wallet: w as never,
       sparkNetwork: "regtest",
       sparkApis: {
@@ -668,6 +670,8 @@ describe("lock transition serialization", () => {
     let opens = 0;
     const warnings: unknown[] = [];
     const engine = createWalletEngine({
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
       wallet: w as never,
       sparkNetwork: "regtest",
       sparkApis: {
@@ -713,6 +717,8 @@ describe("createWalletEngine lifecycle", () => {
       },
     };
     const engine = createWalletEngine({
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
       wallet: wallet as never,
       sparkNetwork: "regtest",
       sparkApis: {

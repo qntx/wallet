@@ -18,6 +18,7 @@ export type { ConnectionController, ConnectionSession } from "./controller.ts";
 export type { Eip1193Handler, Eip1193Request, Eip1193Event } from "./eip1193.ts";
 export type { Nip07Request } from "./nip07.ts";
 export type { WeblnRequest } from "./webln.ts";
+export { WeblnHandler } from "./webln.ts";
 export { Nip07Handler } from "./nip07.ts";
 export type { NostrPolicy } from "./controller.ts";
 export { ProviderError } from "./errors.ts";

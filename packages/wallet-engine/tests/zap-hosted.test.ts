@@ -266,6 +266,8 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
       const created = await draft.confirm(draft.quiz.map((p) => words[p]!));
 
       const engine = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet,
         sparkNetwork: "regtest",
         fetch: serverFetch(server),

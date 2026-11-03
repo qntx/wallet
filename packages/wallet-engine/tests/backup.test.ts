@@ -119,6 +119,8 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
   };
   const storeBacking = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
+    weblnAlias: "test",
+    lightningMaxFee: () => 0,
     wallet,
     sparkNetwork: "regtest",
     fetch: async () => Promise.reject(new Error("offline")),
@@ -298,6 +300,8 @@ describe("BackupController", () => {
         kernelUrl: KERNEL_URL,
       });
       const engine2 = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet: wallet2,
         sparkNetwork: "regtest",
         fetch: async () => Promise.reject(new Error("offline")),
@@ -392,6 +396,8 @@ describe("BackupController", () => {
         kernelUrl: KERNEL_URL,
       });
       const engine2 = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet: wallet2,
         sparkNetwork: "regtest",
         fetch: async () => Promise.reject(new Error("offline")),
@@ -513,6 +519,8 @@ describe("BackupController", () => {
       const inner2 = createMemoryCloudStore(files2);
       const corruptRead = corruptFirstRead(inner2);
       const engine2 = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet: wallet2,
         sparkNetwork: "regtest",
         fetch: async () => Promise.reject(new Error("offline")),
