@@ -517,7 +517,7 @@ describe("nostr record integrity", () => {
     const h = createHarness();
     await h.settle();
     const { session, walletId } = await createPasskeyWallet(h);
-    // Rebuild the DEK through the stored passkey factor, then seal a standalone-key record
+    // Rebuild the DEK through the stored passkey factor, then seal a derived-key record
     // under an id that is not the key's public key. The seal authenticates fine — only the
     // id/public-key check can catch it.
     const image = await h.store.load();
@@ -1157,7 +1157,7 @@ describe("factors, lock, reset", () => {
       ),
     );
     const walletId2 = strField(field(other, "wallet"), "walletId");
-    const standalone = strField(
+    const derived = strField(
       ok(await h.call("nostr.deriveKey", { walletId: walletId2, index: 0 }, session)),
       "publicKey",
     );
@@ -1180,7 +1180,7 @@ describe("factors, lock, reset", () => {
     ).toBeNull();
     const status = lastStatus(h);
     expect(status.wallets.map((w) => w.walletId)).toStrictEqual([walletId2]);
-    expect(status.nostr.keys.map((k) => k.publicKey)).toStrictEqual([standalone]);
+    expect(status.nostr.keys.map((k) => k.publicKey)).toStrictEqual([derived]);
     // The delete committed atomically: no derived row survived, no signer is left in the pool.
     expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 6 }, session))).toBe(
       "not-found",
