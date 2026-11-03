@@ -42435,7 +42435,6 @@ zoo`.split("\n"));
 	//#endregion
 	//#region packages/wallet-native/kernel/passkey.ts
 	init_base();
-	init_objectSpread2();
 	var TIMEOUT_MS = 12e4;
 	var FLAGS_OFFSET = 32;
 	var FLAG_UV = 4;
@@ -42484,7 +42483,7 @@ zoo`.split("\n"));
 		if (prf === void 0) return {};
 		const { enabled, results } = objectOf(prf);
 		if (enabled !== void 0 && typeof enabled !== "boolean") throw malformed();
-		const parsed = _objectSpread2({}, enabled === void 0 ? {} : { enabled });
+		const parsed = enabled === void 0 ? {} : { enabled };
 		if (results === void 0) return parsed;
 		const { first, second } = objectOf(results);
 		if (first !== void 0) parsed.first = bytesOf(first);
