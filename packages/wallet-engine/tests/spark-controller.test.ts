@@ -814,6 +814,8 @@ describe("history and notes", () => {
     const { items } = await c.history(REF);
     expect(items[0]).not.toMatchObject({ note: expect.anything() });
     expect(warns.some((w) => w.includes("malformed"))).toBe(true);
+    // The warn never names the payment or echoes the note bytes — the id could link to a tx.
+    expect(warns.every((w) => !w.includes("t1"))).toBe(true);
   });
 
   it("refreshes recent after send and refresh failures keep the previous page", async () => {

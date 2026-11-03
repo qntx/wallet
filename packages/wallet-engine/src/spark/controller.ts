@@ -344,10 +344,9 @@ export class SparkController extends Controller<SparkControllerState> {
           note = undefined;
         }
         if (note === undefined) {
-          this.options.logger.warn(
-            `spark note record for ${payment.id} ignored: malformed`,
-            new Error("malformed payment note"),
-          );
+          // A stored note that fails to parse is store corruption — surface it, but the payment
+          // id and the note bytes stay out of the log.
+          this.options.logger.warn("spark note record ignored: malformed");
           return payment;
         }
         return { ...payment, note };
