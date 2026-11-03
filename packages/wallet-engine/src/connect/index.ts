@@ -118,6 +118,10 @@ const DISCONNECT = { code: 4900, message: "disconnected" };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
+/** `Uint8Array` carries over the JSON wire as `{ __bytes: hex }`; the injected reviver restores it. */
+const bytesReplacer = (_key: string, value: unknown): unknown =>
+  value instanceof Uint8Array ? { __bytes: bytesToHex(value) } : value;
+
 /** The EIP-1193 listener payload of an engine event. */
 const eventData = (event: Eip1193Event): unknown => {
   if (event.name === "connect") {
@@ -154,8 +158,10 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
 
   const receive = (payload: unknown): void => {
     // __qntxReceive takes a JSON *string* (it parses it): embed the payload double-encoded, so the
-    // injected script is `globalThis.__qntxReceive("<json>")`, not an object argument.
-    inject(`globalThis.__qntxReceive(${JSON.stringify(JSON.stringify(payload))})`);
+    // injected script is `globalThis.__qntxReceive("<json>")`, not an object argument. Uint8Array
+    // fields (solana signatures/accounts) carry as `{ __bytes: hex }`; the injected reviver
+    // restores them.
+    inject(`globalThis.__qntxReceive(${JSON.stringify(JSON.stringify(payload, bytesReplacer))})`);
   };
 
   const rateLimited = (origin: string): boolean => {

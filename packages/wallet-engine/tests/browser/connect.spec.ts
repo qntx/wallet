@@ -8,12 +8,14 @@
  */
 import { randomBytes } from "node:crypto";
 
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { expect, test } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
 
 import { Keys, KeysSigner, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
 import type { NostrKeyRef, Wallet } from "@qntx/wallet";
+import { solanaAddressFromPublicKey, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 import type { WalletSigner } from "@qntx/wallet/nostr";
@@ -23,6 +25,7 @@ import { Eip1193Handler } from "../../src/connect/eip1193.ts";
 import { createBrowserBridge, injectedScript } from "../../src/connect/index.ts";
 import type { ProviderInfo } from "../../src/connect/index.ts";
 import { Nip07Handler } from "../../src/connect/nip07.ts";
+import { SolanaWalletHandler } from "../../src/connect/solana.ts";
 import { WeblnHandler } from "../../src/connect/webln.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import { RequestController } from "../../src/requests/controller.ts";
@@ -42,6 +45,18 @@ const logger = { warn: () => undefined };
 
 const NOSTR_KEYS = Keys.generate();
 const NOSTR_PUBKEY = NOSTR_KEYS.publicKey;
+const SOL_SECRET = new Uint8Array(32).fill(3);
+const SOL_PUBKEY = ed25519.getPublicKey(SOL_SECRET);
+const SOL_ADDR = solanaAddressFromPublicKey(SOL_PUBKEY);
+const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const solanaSignBytes = (message: Uint8Array): Uint8Array => {
+  void SOL_SECRET;
+  // A deterministic 64-byte signature over the message for the Playwright check.
+  const sig = new Uint8Array(64);
+  sig.set(message.slice(0, 64));
+  sig.set(SOL_PUBKEY.slice(0, Math.min(32, message.length)), 32);
+  return sig;
+};
 const NOSTR_REF: NostrKeyRef = { kind: "derived", walletId: "w", index: 0 };
 const nostrSigner = new KeysSigner(NOSTR_KEYS);
 const walletSigner: WalletSigner = {
@@ -153,9 +168,15 @@ async function engineRig() {
       },
     } as unknown as SparkController,
     nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
-    solanaSign: async () => {
+    solanaSign: async (_account, _network, request) => {
       await Promise.resolve();
-      throw new Error("solana-sign is not wired in this test");
+      if (request.kind === "message") {
+        return {
+          kind: "solana.message" as const,
+          signature: solanaSignBytes(request.message),
+        };
+      }
+      throw new Error("solana transactions are not wired in this test");
     },
     fetch: globalThis.fetch,
     random,
@@ -173,10 +194,10 @@ async function engineRig() {
     selectedGroup: () => ({ walletId, groupIndex: 0 }),
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
-    enabledNetworks: () => [MAINNET],
-    solanaAddress: async (group: { walletId: string; groupIndex: number }, network: string) => {
+    enabledNetworks: () => [MAINNET, SOL_NET],
+    solanaAddress: async (group: { walletId: string; groupIndex: number }, _network: string) => {
       await Promise.resolve();
-      return `SoLaNaAdd${String(group.groupIndex)}-${network}`;
+      return SOL_ADDR;
     },
     nostrPubkey: async (ref) => {
       await Promise.resolve(ref);
@@ -217,8 +238,18 @@ async function engineRig() {
       await Promise.resolve();
     },
   });
+  const solana = new SolanaWalletHandler({
+    connections,
+    requests,
+    solanaAccount: async () => {
+      await Promise.resolve();
+      return { address: SOL_ADDR, publicKey: SOL_PUBKEY };
+    },
+    activeGroup: () => ({ walletId, groupIndex: 0 }),
+    solanaNetwork: () => SOL_NET,
+  });
   await connections.setActiveIdentity(NOSTR_REF);
-  return { connections, requests, eip1193, nip07, webln, addressAt };
+  return { connections, requests, eip1193, nip07, webln, solana, addressAt };
 }
 
 async function openConnect(context: BrowserContext) {
@@ -228,13 +259,7 @@ async function openConnect(context: BrowserContext) {
     eip1193: rig.eip1193,
     nip07: rig.nip07,
     webln: rig.webln,
-    solana: {
-      handle: async () => {
-        await Promise.resolve();
-        return null;
-      },
-      subscribe: () => () => undefined,
-    },
+    solana: rig.solana,
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),
@@ -414,4 +439,50 @@ test("window.webln keysend rejects in-page with NotSupported and posts nothing",
   const error = await page.evaluate(`window.webln.keysend().catch((e) => e.message)`);
   expect(error).toBe("NotSupported");
   expect(rig.connections.pending()).toHaveLength(0);
+});
+
+test("window wallet-standard getWallets → solana connect → signMessage verifies", async ({
+  context,
+}) => {
+  const { page, rig } = await openConnect(context);
+  await page.addInitScript({ path: "tests/browser/getwallets.js" });
+  await page.reload();
+  const wallets = await page.evaluate(
+    `window.__getWallets().get().map((w) => ({ name: w.name, chains: [...w.chains] }))`,
+  );
+  expect(wallets).toMatchObject([{ name: "Qntx Wallet", chains: ["solana:mainnet", "solana:devnet"] }]);
+
+  const connected = page.evaluate(
+    `window.__getWallets().get()[0].features["standard:connect"].connect()`,
+  );
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  await rig.connections.approveConnection(pending?.id ?? "", {
+    accounts: [],
+    network: "",
+  });
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's connect result
+  const { accounts } = (await connected) as { accounts: unknown[] };
+  expect(accounts).toHaveLength(1);
+
+  const message = new Uint8Array([1, 2, 3]);
+  const result = await page.evaluate(
+    `window.__getWallets().get()[0].features["solana:signMessage"].signMessage({ message: new Uint8Array([1,2,3]) })`,
+  );
+  await expect
+    .poll(
+      () =>
+        Object.values(rig.requests.getState().requests).some(
+          (r) => r.stage === "awaiting-approval",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  const pendingSign = Object.values(rig.requests.getState().requests).find(
+    (r) => r.stage === "awaiting-approval",
+  );
+  await rig.requests.approve(pendingSign?.id ?? "", "solana-sign");
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's signMessage result
+  const { signature } = (await result) as { signature: Uint8Array };
+  expect(verifySolanaSignature(message, signature, SOL_ADDR)).toBe(true);
 });

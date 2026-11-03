@@ -11,6 +11,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `packages/wallet-engine` registers a Solana Wallet Standard wallet in the
+  injected script (`@wallet-standard/wallet` `registerWallet`), exposing
+  `standard:connect`, `standard:disconnect`, `standard:events` change,
+  `solana:signTransaction`, `solana:signAndSendTransaction` and
+  `solana:signMessage` over the `solana` provider. `Uint8Array`
+  fields carry as `{ __bytes: hex }` on the JSON wire.
+
 - `@qntx/wallet-engine/connect`: the in-app-browser EIP-1193/EIP-6963 provider — `injectedScript`
   produces the fixed injected script plus a `__qntxInstall(<ProviderInfo>)` call, and
   `createBrowserBridge` runs in the host's main runtime to carry page `postMessage` requests to a
