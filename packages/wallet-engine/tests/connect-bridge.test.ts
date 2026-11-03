@@ -20,6 +20,7 @@ import type {
   Eip1193Request,
   Nip07Request,
   WeblnRequest,
+  SolanaRequest,
   ProviderInfo,
 } from "../src/connect/index.ts";
 import { PROVIDER_SCRIPT } from "../src/connect/inject.generated.ts";
@@ -56,6 +57,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const handled: Array<{ origin: string; request: Eip1193Request }> = [];
   const handledNostr: Array<{ origin: string; request: Nip07Request }> = [];
   const handledWebln: Array<{ origin: string; request: WeblnRequest }> = [];
+  const handledSolana: Array<{ origin: string; request: SolanaRequest }> = [];
   let now = 0;
   const options: BrowserBridgeOptions = {
     inject: (script) => {
@@ -86,6 +88,12 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
         return Promise.resolve("webln-result");
       },
     },
+    solana: {
+      handle: async (origin, req) => {
+        handledSolana.push({ origin, request: req });
+        return Promise.resolve("solana-result");
+      },
+    },
     connections: {
       checkOrigin: (origin) => {
         if (!origin.startsWith("https://")) {
@@ -107,7 +115,17 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const advance = (ms: number): void => {
     now += ms;
   };
-  return { bridge, injections, invalidated, handled, handledNostr, handledWebln, emit, advance };
+  return {
+    bridge,
+    injections,
+    invalidated,
+    handled,
+    handledNostr,
+    handledWebln,
+    handledSolana,
+    emit,
+    advance,
+  };
 }
 
 /** Decodes one `globalThis.__qntxReceive("<json>")` injection (the argument is a JSON string). */
@@ -313,4 +331,18 @@ it("routes provider: webln to the webln handler", async () => {
   expect(handledNostr).toHaveLength(0);
   expect(handledWebln).toStrictEqual([{ origin: SITE, request: { method: "enable", params: [] } }]);
   expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 3, result: "webln-result" });
+});
+
+it("routes provider: solana to the solana handler", async () => {
+  const { bridge, handled, handledNostr, handledWebln, handledSolana, injections } = rig();
+  bridge.navigated(PAGE);
+  bridge.message(PAGE, request(4, "solana:signMessage", "solana", { params: [] }));
+  await tick();
+  expect(handled).toHaveLength(0);
+  expect(handledNostr).toHaveLength(0);
+  expect(handledWebln).toHaveLength(0);
+  expect(handledSolana).toStrictEqual([
+    { origin: SITE, request: { method: "solana:signMessage", params: [] } },
+  ]);
+  expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 4, result: "solana-result" });
 });

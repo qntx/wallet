@@ -128,6 +128,10 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SEPOLIA],
+    solanaAddress: async (group: { walletId: string; groupIndex: number }, network: string) => {
+      await Promise.resolve();
+      return `SoLaNaAdd${String(group.groupIndex)}-${network}`;
+    },
     nostrPubkey: async (ref: { index: number }) =>
       Promise.resolve(NOSTR_PUBKEYS[ref.index] ?? NOSTR_PUBKEYS[0]),
     invalidate: (origin: string) => {
