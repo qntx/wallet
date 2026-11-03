@@ -18,7 +18,6 @@ the `webcredentials:wallet-harness.qntx.org` associated domain provisions; the
 AASA and asset-links files are served by `apps/harness/relying-party`, which
 also hosts the built playground on the same rpId for Web↔iOS comparison.
 
-
 Expo/React Native harness app that runs the V1 gate measurements for the isolated
 Hermes kernel runtime (`modules/v1-probe` (probe entry) + `packages/wallet-native` (kernel runtime)). It bundles the wallet kernel and a set
 of probe scripts into `cpp/generated/probes.hpp`, drives them from a Nitro
