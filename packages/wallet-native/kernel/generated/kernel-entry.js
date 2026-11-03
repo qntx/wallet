@@ -40085,350 +40085,6 @@ zoo`.split("\n"));
 		};
 	}
 	//#endregion
-	//#region packages/wallet-native/kernel/passkey.ts
-	init_base();
-	init_objectSpread2();
-	var TIMEOUT_MS = 12e4;
-	var FLAGS_OFFSET = 32;
-	var FLAG_UV = 4;
-	var FLAG_BE = 8;
-	var FLAG_BS = 16;
-	/** Whether bit `flag` (a power of two) is set in the authenticator-data flags byte. */
-	var hasFlag = (flags, flag) => Math.floor(flags / flag) % 2 === 1;
-	function failure(code) {
-		return code === "cancelled" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform passkey ceremony did not complete") : new KernelError("unavailable", "the platform passkey ceremony reported no outcome");
-	}
-	var malformed = () => new KernelError("unavailable", "the platform returned a malformed passkey response");
-	var b64 = (bytes) => base64urlnopad.encode(bytes);
-	/** WebAuthn JSON is base64url; tolerate the padding some providers emit. */
-	function bytesOf(value) {
-		if (typeof value !== "string") throw malformed();
-		try {
-			return base64urlnopad.decode(value.replace(/=+$/, ""));
-		} catch (_unused) {
-			throw malformed();
-		}
-	}
-	function objectOf(value) {
-		if (typeof value !== "object" || value === null || Array.isArray(value)) throw malformed();
-		return Object.fromEntries(Object.entries(value));
-	}
-	function prfEval(salts) {
-		return salts.second === void 0 ? { first: b64(salts.first) } : {
-			first: b64(salts.first),
-			second: b64(salts.second)
-		};
-	}
-	/** PRF outputs from `clientExtensionResults.prf.results`, absent when the provider gave none. */
-	function prfResults(extensions) {
-		if (extensions === void 0) return {};
-		const { prf } = objectOf(extensions);
-		if (prf === void 0) return {};
-		const { results } = objectOf(prf);
-		if (results === void 0) return {};
-		const { first, second } = objectOf(results);
-		return _objectSpread2(_objectSpread2({}, first === void 0 ? {} : { first: bytesOf(first) }), second === void 0 ? {} : { second: bytesOf(second) });
-	}
-	/**
-	* Parses a registration (`assertion: false`) or authentication response. Without authenticator data
-	* a registration carries no trustworthy flags, so its PRF results are dropped and the kernel falls
-	* back to an assertion that does carry them.
-	*/
-	function parseResponse(json, assertion) {
-		let parsed;
-		try {
-			parsed = JSON.parse(json);
-		} catch (_unused2) {
-			throw malformed();
-		}
-		const credential = objectOf(parsed);
-		const response = objectOf(credential["response"]);
-		const credentialId = bytesOf(credential["rawId"]);
-		const { first, second } = prfResults(credential["clientExtensionResults"]);
-		const rawAuthData = response["authenticatorData"];
-		if (rawAuthData === void 0 && !assertion) {
-			first === null || first === void 0 || first.fill(0);
-			second === null || second === void 0 || second.fill(0);
-			return {
-				credentialId,
-				first: void 0,
-				second: void 0,
-				userHandle: void 0,
-				synced: false,
-				userVerified: false
-			};
-		}
-		const flags = bytesOf(rawAuthData)[FLAGS_OFFSET];
-		if (flags === void 0) throw malformed();
-		const handle = response["userHandle"];
-		return {
-			credentialId,
-			first,
-			second,
-			userHandle: assertion && typeof handle === "string" ? bytesOf(handle) : void 0,
-			synced: hasFlag(flags, FLAG_BE) && hasFlag(flags, FLAG_BS),
-			userVerified: hasFlag(flags, FLAG_UV)
-		};
-	}
-	async function run(start, request, assertion) {
-		return parseResponse(await new Promise((resolve, reject) => {
-			start(JSON.stringify(request), (responseJson, code) => {
-				if (responseJson === void 0) {
-					reject(failure(code));
-					return;
-				}
-				resolve(responseJson);
-			});
-		}), assertion);
-	}
-	function bindNativePasskey(raw, random) {
-		return {
-			create: async (input) => run(raw.create, {
-				challenge: b64(random(32)),
-				rp: {
-					id: input.rpId,
-					name: input.rpName
-				},
-				user: {
-					id: b64(input.userId),
-					name: input.userName,
-					displayName: input.userName
-				},
-				pubKeyCredParams: [{
-					type: "public-key",
-					alg: -7
-				}, {
-					type: "public-key",
-					alg: -257
-				}],
-				authenticatorSelection: {
-					residentKey: "required",
-					requireResidentKey: true,
-					userVerification: "required"
-				},
-				attestation: "none",
-				timeout: TIMEOUT_MS,
-				extensions: { prf: { eval: prfEval(input.salts) } }
-			}, false),
-			get: async (input) => {
-				var _input$allowCredentia;
-				return run(raw.get, {
-					challenge: b64(random(32)),
-					rpId: input.rpId,
-					allowCredentials: ((_input$allowCredentia = input.allowCredentials) !== null && _input$allowCredentia !== void 0 ? _input$allowCredentia : []).map((id) => ({
-						type: "public-key",
-						id: b64(id)
-					})),
-					userVerification: "required",
-					timeout: TIMEOUT_MS,
-					extensions: { prf: { eval: prfEval(input.salts) } }
-				}, true);
-			}
-		};
-	}
-	//#endregion
-	//#region packages/wallet-native/kernel/spark.ts
-	init_crypto();
-	function call(invoke) {
-		try {
-			return invoke();
-		} catch (error) {
-			if (error instanceof Error) {
-				var _exec;
-				const code = (_exec = /^qntx_spark:(\d+)$/.exec(error.message)) === null || _exec === void 0 ? void 0 : _exec[1];
-				if (code !== void 0) throw new SparkCryptoError(Number(code));
-			}
-			throw error;
-		}
-	}
-	function bindNativeSpark(raw) {
-		if (raw.abiVersion !== 1) throw new KernelError("integrity", `spark-native ABI version ${raw.abiVersion} does not match SPARK_ABI_VERSION 1`);
-		return {
-			abiVersion: raw.abiVersion,
-			frostCommit: (hedge, random) => call(() => raw.frostCommit(hedge, random)),
-			frostSign: (request) => call(() => raw.frostSign(request)),
-			frostAggregate: (request) => call(() => raw.frostAggregate(request)),
-			eciesEncrypt: (publicKey, plaintext, random) => call(() => raw.eciesEncrypt(publicKey, plaintext, random)),
-			eciesDecrypt: (privateKey, ciphertext) => call(() => raw.eciesDecrypt(privateKey, ciphertext)),
-			splitSecretWithProofs: (secret, threshold, shares, random) => call(() => raw.splitSecretWithProofs(secret, threshold, shares, random))
-		};
-	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/memory.ts
-	init_objectSpread2();
-	function cloneRecord(record) {
-		return _objectSpread2(_objectSpread2({}, record), {}, { sealed: Uint8Array.from(record.sealed) });
-	}
-	function cloneFactor(factor) {
-		return _objectSpread2(_objectSpread2({}, factor), {}, { sealed: Uint8Array.from(factor.sealed) });
-	}
-	function cloneMeta(meta) {
-		return _objectSpread2({}, meta);
-	}
-	function cloneImage(image) {
-		return {
-			meta: image.meta === void 0 ? void 0 : cloneMeta(image.meta),
-			records: image.records.map(cloneRecord),
-			factors: image.factors.map(cloneFactor)
-		};
-	}
-	function conflict(message) {
-		return new KernelError("conflict", `vault store: ${message}`);
-	}
-	function requireMeta(meta) {
-		if (meta === void 0) throw conflict("vault is not initialized");
-		return meta;
-	}
-	/**
-	* In-memory RecordStore for the Node host and kernel tests. Loads and commits deep-copy every
-	* Uint8Array, so callers can never mutate stored state. `commit` applies ops to a clone and swaps
-	* atomically: a failing precondition (`init`, `expect-revision`, a counter op on an empty store)
-	* leaves the store untouched. Content ops bump `meta.revision` once per commit; an `init` commit
-	* writes its meta verbatim (revision stays as the initializer set it).
-	*/
-	/**
-	* Applies a commit's ops to a vault image and returns the next image — the single implementation of
-	* record/factor op semantics shared by the memory store and the file-backed store in
-	*
-	* @qntx/wallet-native.
-	*/
-	function applyStoreOps(image, ops) {
-		let { meta } = image;
-		let { records } = image;
-		let { factors } = image;
-		let bump = false;
-		let initialized = false;
-		for (const op of ops) switch (op.op) {
-			case "init":
-				if (meta !== void 0 || records.length > 0 || factors.length > 0) throw conflict("vault already initialized");
-				meta = cloneMeta(op.meta);
-				initialized = true;
-				break;
-			case "expect-revision":
-				if (meta === void 0 || meta.revision !== op.revision) throw conflict("vault changed underneath");
-				break;
-			case "set-key-id":
-				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, { keyId: op.keyId });
-				bump = true;
-				break;
-			case "record-failure": {
-				const current = requireMeta(meta);
-				meta = _objectSpread2(_objectSpread2({}, current), {}, {
-					failedAttempts: current.failedAttempts + 1,
-					lastFailureAt: op.at
-				});
-				break;
-			}
-			case "reset-failures":
-				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, {
-					failedAttempts: 0,
-					lastFailureAt: 0
-				});
-				break;
-			case "put-record":
-				records = [...records.filter((record) => !(record.kind === op.record.kind && record.id === op.record.id)), cloneRecord(op.record)];
-				bump = true;
-				break;
-			case "delete-record":
-				records = records.filter((record) => !(record.kind === op.kind && record.id === op.id));
-				bump = true;
-				break;
-			case "put-factor":
-				factors = [...factors.filter((factor) => factor.id !== op.factor.id), cloneFactor(op.factor)];
-				bump = true;
-				break;
-			case "delete-factor":
-				factors = factors.filter((factor) => factor.id !== op.id);
-				bump = true;
-				break;
-			case "clear":
-				meta = void 0;
-				records = [];
-				factors = [];
-		}
-		if (bump && !initialized && meta !== void 0) meta = _objectSpread2(_objectSpread2({}, meta), {}, { revision: meta.revision + 1 });
-		return {
-			meta,
-			records,
-			factors
-		};
-	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/validate.ts
-	/**
-	* Strict shape validation for a vault image read back from an untrusted store — shared by every
-	* host store (IndexedDB, the native file store, the Node host). Throws KernelError "integrity" on
-	* any structural violation so a tampered or wrong-shaped file fails closed.
-	*/
-	var MAX_ID = 128;
-	var MAX_HEADER = 4096;
-	var MIN_SEALED = 16;
-	var MAX_SEALED = 8192;
-	var MAX_ROWS = 4096;
-	var HEX_32 = /^[0-9a-f]{32}$/;
-	function bad(what) {
-		return new KernelError("integrity", `vault store: ${what}`);
-	}
-	function plainObject(value) {
-		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bad("row is not an object");
-		if (Object.getPrototypeOf(value) !== Object.prototype) throw bad("row is not a plain object");
-		return value;
-	}
-	function exactKeys(row, keys) {
-		if (Object.keys(row).sort().join(",") !== keys) throw bad("row has unexpected fields");
-	}
-	function boundedString(value, max, what) {
-		if (typeof value !== "string" || value.length > max) throw bad(`${what} is not a string within ${max} chars`);
-	}
-	function safeNonNegative(value, what) {
-		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw bad(`${what} is not a safe non-negative integer`);
-	}
-	function sealedBytes(value) {
-		if (!(value instanceof Uint8Array) || value.byteLength < MIN_SEALED || value.byteLength > MAX_SEALED) throw bad("sealed is not a Uint8Array within sane bounds");
-	}
-	/**
-	* Strict shape check for a vault image. Returns the input typed as VaultImage; throws KernelError
-	* "integrity" on any structural violation so a tampered store fails closed. `meta.format` is
-	* checked before anything else: a non-integer is integrity, a different format is "unsupported"
-	* (data written by another build — left untouched).
-	*/
-	function assertVaultImage(value) {
-		const image = plainObject(value);
-		exactKeys(image, "factors,meta,records");
-		const { meta, records, factors } = image;
-		if (meta !== void 0 && meta !== null) {
-			const metaRow = plainObject(meta);
-			const { format } = metaRow;
-			if (typeof format !== "number" || !Number.isSafeInteger(format)) throw bad("meta format is not a safe integer");
-			if (format !== 2) throw new KernelError("unsupported", "vault store: meta format needs a newer build");
-			exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
-			if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) throw bad("meta keyId is not 32 lowercase hex");
-			if (typeof metaRow["revision"] !== "number" || !Number.isSafeInteger(metaRow["revision"]) || metaRow["revision"] < 1) throw bad("meta revision is not a safe integer ≥ 1");
-			safeNonNegative(metaRow["failedAttempts"], "meta failedAttempts");
-			safeNonNegative(metaRow["lastFailureAt"], "meta lastFailureAt");
-		}
-		if (!Array.isArray(records) || records.length > MAX_ROWS) throw bad("records is not a bounded array");
-		for (const entry of records) {
-			const row = plainObject(entry);
-			exactKeys(row, "header,id,kind,sealed");
-			if (typeof row["kind"] !== "string" || !isRecordKind(row["kind"])) throw bad("record kind is not a valid kind string");
-			boundedString(row["id"], MAX_ID, "record id");
-			boundedString(row["header"], MAX_HEADER, "record header");
-			sealedBytes(row["sealed"]);
-		}
-		if (!Array.isArray(factors) || factors.length > MAX_ROWS) throw bad("factors is not a bounded array");
-		for (const entry of factors) {
-			const row = plainObject(entry);
-			exactKeys(row, "header,id,kind,sealed");
-			if (typeof row["kind"] !== "string" || !isRecordKind(row["kind"])) throw bad("factor kind is not a valid kind string");
-			if (typeof row["id"] !== "string" || !HEX_32.test(row["id"])) throw bad("factor id is not 32 lowercase hex");
-			boundedString(row["header"], MAX_HEADER, "factor header");
-			sealedBytes(row["sealed"]);
-		}
-		return image;
-	}
-	/** The idle-timeout choices a host may request; the worker maps them to milliseconds. */
-	//#endregion
 	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/is.js
 	var objectTypeNames = [
 		"Object",
@@ -42776,6 +42432,388 @@ zoo`.split("\n"));
 			return tags;
 		}
 	}.prototype, Symbol.toStringTag, { value: "Tagged" });
+	//#endregion
+	//#region packages/wallet-native/kernel/passkey.ts
+	init_base();
+	var TIMEOUT_MS = 12e4;
+	var FLAGS_OFFSET = 32;
+	var FLAG_UV = 4;
+	var FLAG_BE = 8;
+	var FLAG_BS = 16;
+	var ATTESTATION_OPTIONS = {
+		strict: true,
+		useMaps: false,
+		rejectDuplicateMapKeys: true,
+		allowUndefined: false,
+		allowIndefinite: false,
+		allowNaN: false,
+		allowInfinity: false,
+		allowBigInt: false
+	};
+	/** Whether bit `flag` (a power of two) is set in the authenticator-data flags byte. */
+	var hasFlag = (flags, flag) => Math.floor(flags / flag) % 2 === 1;
+	function failure(code) {
+		return code === "cancelled" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform passkey ceremony did not complete") : new KernelError("unavailable", "the platform passkey ceremony reported no outcome");
+	}
+	var malformed = () => new KernelError("unavailable", "the platform returned a malformed passkey response");
+	var b64 = (bytes) => base64urlnopad.encode(bytes);
+	/** WebAuthn JSON is base64url; tolerate the padding some providers emit. */
+	function bytesOf(value) {
+		if (typeof value !== "string") throw malformed();
+		try {
+			return base64urlnopad.decode(value.replace(/=+$/, ""));
+		} catch (_unused) {
+			throw malformed();
+		}
+	}
+	function objectOf(value) {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw malformed();
+		return Object.fromEntries(Object.entries(value));
+	}
+	function prfEval(salts) {
+		return salts.second === void 0 ? { first: b64(salts.first) } : {
+			first: b64(salts.first),
+			second: b64(salts.second)
+		};
+	}
+	/** PRF outputs from `clientExtensionResults.prf.results`, absent when the provider gave none. */
+	function prfResults(extensions) {
+		if (extensions === void 0) return {};
+		const { prf } = objectOf(extensions);
+		if (prf === void 0) return {};
+		const { enabled, results } = objectOf(prf);
+		if (enabled !== void 0 && typeof enabled !== "boolean") throw malformed();
+		const parsed = enabled === void 0 ? {} : { enabled };
+		if (results === void 0) return parsed;
+		const { first, second } = objectOf(results);
+		if (first !== void 0) parsed.first = bytesOf(first);
+		if (second !== void 0) parsed.second = bytesOf(second);
+		return parsed;
+	}
+	/**
+	* The `authData` byte string of a CBOR attestation object, long enough to carry the flags byte —
+	* iOS hands back an attestation object instead of bare authenticator data.
+	*/
+	function attestationAuthData(attestationObject) {
+		let decoded;
+		try {
+			decoded = decode(attestationObject, ATTESTATION_OPTIONS);
+		} catch (_unused2) {
+			throw malformed();
+		}
+		const { authData } = objectOf(decoded);
+		if (!(authData instanceof Uint8Array) || authData.length < 37) throw malformed();
+		return authData;
+	}
+	/**
+	* Parses a registration (`assertion: false`) or authentication response. A registration that
+	* carries authenticator data — directly or inside an attestation object — keeps its PRF results:
+	* the single registration ceremony already verified the user. Without authenticator data its PRF
+	* results are dropped and the kernel falls back to an assertion that does carry them.
+	*/
+	function parseResponse(json, assertion) {
+		let parsed;
+		try {
+			parsed = JSON.parse(json);
+		} catch (_unused3) {
+			throw malformed();
+		}
+		const credential = objectOf(parsed);
+		const response = objectOf(credential["response"]);
+		const credentialId = bytesOf(credential["rawId"]);
+		const { enabled, first, second } = prfResults(credential["clientExtensionResults"]);
+		if (!assertion && enabled === false) {
+			first === null || first === void 0 || first.fill(0);
+			second === null || second === void 0 || second.fill(0);
+			throw new KernelError("factor-unavailable", "the passkey does not support the PRF extension");
+		}
+		const rawAuthData = response["authenticatorData"];
+		let authData;
+		if (rawAuthData !== void 0) authData = bytesOf(rawAuthData);
+		else if (!assertion && response["attestationObject"] !== void 0) authData = attestationAuthData(bytesOf(response["attestationObject"]));
+		if (authData === void 0) {
+			if (assertion) throw malformed();
+			first === null || first === void 0 || first.fill(0);
+			second === null || second === void 0 || second.fill(0);
+			return {
+				credentialId,
+				first: void 0,
+				second: void 0,
+				userHandle: void 0,
+				synced: false,
+				userVerified: false
+			};
+		}
+		const flags = authData[FLAGS_OFFSET];
+		if (flags === void 0) throw malformed();
+		const handle = response["userHandle"];
+		return {
+			credentialId,
+			first,
+			second,
+			userHandle: assertion && typeof handle === "string" ? bytesOf(handle) : void 0,
+			synced: hasFlag(flags, FLAG_BE) && hasFlag(flags, FLAG_BS),
+			userVerified: hasFlag(flags, FLAG_UV)
+		};
+	}
+	async function run(start, request, assertion) {
+		return parseResponse(await new Promise((resolve, reject) => {
+			start(JSON.stringify(request), (responseJson, code) => {
+				if (responseJson === void 0) {
+					reject(failure(code));
+					return;
+				}
+				resolve(responseJson);
+			});
+		}), assertion);
+	}
+	function bindNativePasskey(raw, random) {
+		return {
+			create: async (input) => run(raw.create, {
+				challenge: b64(random(32)),
+				rp: {
+					id: input.rpId,
+					name: input.rpName
+				},
+				user: {
+					id: b64(input.userId),
+					name: input.userName,
+					displayName: input.userName
+				},
+				pubKeyCredParams: [{
+					type: "public-key",
+					alg: -7
+				}, {
+					type: "public-key",
+					alg: -257
+				}],
+				authenticatorSelection: {
+					residentKey: "required",
+					requireResidentKey: true,
+					userVerification: "required"
+				},
+				attestation: "none",
+				timeout: TIMEOUT_MS,
+				extensions: { prf: { eval: prfEval(input.salts) } }
+			}, false),
+			get: async (input) => {
+				var _input$allowCredentia;
+				return run(raw.get, {
+					challenge: b64(random(32)),
+					rpId: input.rpId,
+					allowCredentials: ((_input$allowCredentia = input.allowCredentials) !== null && _input$allowCredentia !== void 0 ? _input$allowCredentia : []).map((id) => ({
+						type: "public-key",
+						id: b64(id)
+					})),
+					userVerification: "required",
+					timeout: TIMEOUT_MS,
+					extensions: { prf: { eval: prfEval(input.salts) } }
+				}, true);
+			}
+		};
+	}
+	//#endregion
+	//#region packages/wallet-native/kernel/spark.ts
+	init_crypto();
+	function call(invoke) {
+		try {
+			return invoke();
+		} catch (error) {
+			if (error instanceof Error) {
+				var _exec;
+				const code = (_exec = /^qntx_spark:(\d+)$/.exec(error.message)) === null || _exec === void 0 ? void 0 : _exec[1];
+				if (code !== void 0) throw new SparkCryptoError(Number(code));
+			}
+			throw error;
+		}
+	}
+	function bindNativeSpark(raw) {
+		if (raw.abiVersion !== 1) throw new KernelError("integrity", `spark-native ABI version ${raw.abiVersion} does not match SPARK_ABI_VERSION 1`);
+		return {
+			abiVersion: raw.abiVersion,
+			frostCommit: (hedge, random) => call(() => raw.frostCommit(hedge, random)),
+			frostSign: (request) => call(() => raw.frostSign(request)),
+			frostAggregate: (request) => call(() => raw.frostAggregate(request)),
+			eciesEncrypt: (publicKey, plaintext, random) => call(() => raw.eciesEncrypt(publicKey, plaintext, random)),
+			eciesDecrypt: (privateKey, ciphertext) => call(() => raw.eciesDecrypt(privateKey, ciphertext)),
+			splitSecretWithProofs: (secret, threshold, shares, random) => call(() => raw.splitSecretWithProofs(secret, threshold, shares, random))
+		};
+	}
+	//#endregion
+	//#region packages/wallet-kernel/src/vault/memory.ts
+	init_objectSpread2();
+	function cloneRecord(record) {
+		return _objectSpread2(_objectSpread2({}, record), {}, { sealed: Uint8Array.from(record.sealed) });
+	}
+	function cloneFactor(factor) {
+		return _objectSpread2(_objectSpread2({}, factor), {}, { sealed: Uint8Array.from(factor.sealed) });
+	}
+	function cloneMeta(meta) {
+		return _objectSpread2({}, meta);
+	}
+	function cloneImage(image) {
+		return {
+			meta: image.meta === void 0 ? void 0 : cloneMeta(image.meta),
+			records: image.records.map(cloneRecord),
+			factors: image.factors.map(cloneFactor)
+		};
+	}
+	function conflict(message) {
+		return new KernelError("conflict", `vault store: ${message}`);
+	}
+	function requireMeta(meta) {
+		if (meta === void 0) throw conflict("vault is not initialized");
+		return meta;
+	}
+	/**
+	* In-memory RecordStore for the Node host and kernel tests. Loads and commits deep-copy every
+	* Uint8Array, so callers can never mutate stored state. `commit` applies ops to a clone and swaps
+	* atomically: a failing precondition (`init`, `expect-revision`, a counter op on an empty store)
+	* leaves the store untouched. Content ops bump `meta.revision` once per commit; an `init` commit
+	* writes its meta verbatim (revision stays as the initializer set it).
+	*/
+	/**
+	* Applies a commit's ops to a vault image and returns the next image — the single implementation of
+	* record/factor op semantics shared by the memory store and the file-backed store in
+	*
+	* @qntx/wallet-native.
+	*/
+	function applyStoreOps(image, ops) {
+		let { meta } = image;
+		let { records } = image;
+		let { factors } = image;
+		let bump = false;
+		let initialized = false;
+		for (const op of ops) switch (op.op) {
+			case "init":
+				if (meta !== void 0 || records.length > 0 || factors.length > 0) throw conflict("vault already initialized");
+				meta = cloneMeta(op.meta);
+				initialized = true;
+				break;
+			case "expect-revision":
+				if (meta === void 0 || meta.revision !== op.revision) throw conflict("vault changed underneath");
+				break;
+			case "set-key-id":
+				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, { keyId: op.keyId });
+				bump = true;
+				break;
+			case "record-failure": {
+				const current = requireMeta(meta);
+				meta = _objectSpread2(_objectSpread2({}, current), {}, {
+					failedAttempts: current.failedAttempts + 1,
+					lastFailureAt: op.at
+				});
+				break;
+			}
+			case "reset-failures":
+				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, {
+					failedAttempts: 0,
+					lastFailureAt: 0
+				});
+				break;
+			case "put-record":
+				records = [...records.filter((record) => !(record.kind === op.record.kind && record.id === op.record.id)), cloneRecord(op.record)];
+				bump = true;
+				break;
+			case "delete-record":
+				records = records.filter((record) => !(record.kind === op.kind && record.id === op.id));
+				bump = true;
+				break;
+			case "put-factor":
+				factors = [...factors.filter((factor) => factor.id !== op.factor.id), cloneFactor(op.factor)];
+				bump = true;
+				break;
+			case "delete-factor":
+				factors = factors.filter((factor) => factor.id !== op.id);
+				bump = true;
+				break;
+			case "clear":
+				meta = void 0;
+				records = [];
+				factors = [];
+		}
+		if (bump && !initialized && meta !== void 0) meta = _objectSpread2(_objectSpread2({}, meta), {}, { revision: meta.revision + 1 });
+		return {
+			meta,
+			records,
+			factors
+		};
+	}
+	//#endregion
+	//#region packages/wallet-kernel/src/vault/validate.ts
+	/**
+	* Strict shape validation for a vault image read back from an untrusted store — shared by every
+	* host store (IndexedDB, the native file store, the Node host). Throws KernelError "integrity" on
+	* any structural violation so a tampered or wrong-shaped file fails closed.
+	*/
+	var MAX_ID = 128;
+	var MAX_HEADER = 4096;
+	var MIN_SEALED = 16;
+	var MAX_SEALED = 8192;
+	var MAX_ROWS = 4096;
+	var HEX_32 = /^[0-9a-f]{32}$/;
+	function bad(what) {
+		return new KernelError("integrity", `vault store: ${what}`);
+	}
+	function plainObject(value) {
+		if (typeof value !== "object" || value === null || Array.isArray(value)) throw bad("row is not an object");
+		if (Object.getPrototypeOf(value) !== Object.prototype) throw bad("row is not a plain object");
+		return value;
+	}
+	function exactKeys(row, keys) {
+		if (Object.keys(row).sort().join(",") !== keys) throw bad("row has unexpected fields");
+	}
+	function boundedString(value, max, what) {
+		if (typeof value !== "string" || value.length > max) throw bad(`${what} is not a string within ${max} chars`);
+	}
+	function safeNonNegative(value, what) {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw bad(`${what} is not a safe non-negative integer`);
+	}
+	function sealedBytes(value) {
+		if (!(value instanceof Uint8Array) || value.byteLength < MIN_SEALED || value.byteLength > MAX_SEALED) throw bad("sealed is not a Uint8Array within sane bounds");
+	}
+	/**
+	* Strict shape check for a vault image. Returns the input typed as VaultImage; throws KernelError
+	* "integrity" on any structural violation so a tampered store fails closed. `meta.format` is
+	* checked before anything else: a non-integer is integrity, a different format is "unsupported"
+	* (data written by another build — left untouched).
+	*/
+	function assertVaultImage(value) {
+		const image = plainObject(value);
+		exactKeys(image, "factors,meta,records");
+		const { meta, records, factors } = image;
+		if (meta !== void 0 && meta !== null) {
+			const metaRow = plainObject(meta);
+			const { format } = metaRow;
+			if (typeof format !== "number" || !Number.isSafeInteger(format)) throw bad("meta format is not a safe integer");
+			if (format !== 2) throw new KernelError("unsupported", "vault store: meta format needs a newer build");
+			exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
+			if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) throw bad("meta keyId is not 32 lowercase hex");
+			if (typeof metaRow["revision"] !== "number" || !Number.isSafeInteger(metaRow["revision"]) || metaRow["revision"] < 1) throw bad("meta revision is not a safe integer ≥ 1");
+			safeNonNegative(metaRow["failedAttempts"], "meta failedAttempts");
+			safeNonNegative(metaRow["lastFailureAt"], "meta lastFailureAt");
+		}
+		if (!Array.isArray(records) || records.length > MAX_ROWS) throw bad("records is not a bounded array");
+		for (const entry of records) {
+			const row = plainObject(entry);
+			exactKeys(row, "header,id,kind,sealed");
+			if (typeof row["kind"] !== "string" || !isRecordKind(row["kind"])) throw bad("record kind is not a valid kind string");
+			boundedString(row["id"], MAX_ID, "record id");
+			boundedString(row["header"], MAX_HEADER, "record header");
+			sealedBytes(row["sealed"]);
+		}
+		if (!Array.isArray(factors) || factors.length > MAX_ROWS) throw bad("factors is not a bounded array");
+		for (const entry of factors) {
+			const row = plainObject(entry);
+			exactKeys(row, "header,id,kind,sealed");
+			if (typeof row["kind"] !== "string" || !isRecordKind(row["kind"])) throw bad("factor kind is not a valid kind string");
+			if (typeof row["id"] !== "string" || !HEX_32.test(row["id"])) throw bad("factor id is not 32 lowercase hex");
+			boundedString(row["header"], MAX_HEADER, "factor header");
+			sealedBytes(row["sealed"]);
+		}
+		return image;
+	}
+	/** The idle-timeout choices a host may request; the worker maps them to milliseconds. */
 	//#endregion
 	//#region packages/wallet-native/src/cbor.ts
 	/**

@@ -3,5 +3,8 @@
   "main": "worker.js",
   "compatibility_date": "2026-10-01",
   "workers_dev": false,
-  "routes": [{ "pattern": "wallet-harness.qntx.org", "custom_domain": true }]
+  "routes": [{ "pattern": "wallet-harness.qntx.org", "custom_domain": true }],
+  // The built playground, served as static assets on the same rpId origin; the
+  // worker only answers the two .well-known paths no asset matches.
+  "assets": { "directory": "../../playground/dist" }
 }

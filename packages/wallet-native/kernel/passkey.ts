@@ -2,11 +2,14 @@
  * Binds the native `__qntx.passkey` object to the kernel's `PasskeyAuthenticator`. The platform
  * only runs the system ceremony; this module builds the WebAuthn options JSON (discoverable,
  * user-verified, PRF eval) and parses the response JSON strictly — credential id, PRF results, the
- * user handle, and the UV/BE/BS flags from the authenticator data. A registration response without
- * authenticator data or PRF results reports no `first`, so the kernel asserts once. Failure codes
- * from the native side are already kernel error codes.
+ * user handle, and the UV/BE/BS flags from the authenticator data — which a registration may carry
+ * inside an attestation object (iOS). A registration response with no authenticator data at all
+ * reports no `first`, so the kernel asserts once. Failure codes from the native side are already
+ * kernel error codes.
  */
 import { base64urlnopad } from "@scure/base";
+import { decode } from "cborg";
+import type { DecodeOptions } from "cborg";
 
 import { KernelError } from "../../wallet-kernel/src/errors.ts";
 import type {
@@ -30,6 +33,19 @@ const FLAGS_OFFSET = 32;
 const FLAG_UV = 0x04;
 const FLAG_BE = 0x08;
 const FLAG_BS = 0x10;
+
+// The strict map/bytes subset the attestation object needs — same option set
+// as the channel CBOR framing (src/cbor.ts).
+const ATTESTATION_OPTIONS: DecodeOptions = {
+  strict: true,
+  useMaps: false,
+  rejectDuplicateMapKeys: true,
+  allowUndefined: false,
+  allowIndefinite: false,
+  allowNaN: false,
+  allowInfinity: false,
+  allowBigInt: false,
+};
 
 /** Whether bit `flag` (a power of two) is set in the authenticator-data flags byte. */
 const hasFlag = (flags: number, flag: number): boolean => Math.floor(flags / flag) % 2 === 1;
@@ -71,7 +87,11 @@ function prfEval(salts: PrfSalts): Record<string, string> {
 }
 
 /** PRF outputs from `clientExtensionResults.prf.results`, absent when the provider gave none. */
-function prfResults(extensions: unknown): { first?: Uint8Array; second?: Uint8Array } {
+function prfResults(extensions: unknown): {
+  enabled?: boolean;
+  first?: Uint8Array;
+  second?: Uint8Array;
+} {
   if (extensions === undefined) {
     return {};
   }
@@ -79,21 +99,48 @@ function prfResults(extensions: unknown): { first?: Uint8Array; second?: Uint8Ar
   if (prf === undefined) {
     return {};
   }
-  const { results } = objectOf(prf);
+  const { enabled, results } = objectOf(prf);
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw malformed();
+  }
+  const parsed: { enabled?: boolean; first?: Uint8Array; second?: Uint8Array } =
+    enabled === undefined ? {} : { enabled };
   if (results === undefined) {
-    return {};
+    return parsed;
   }
   const { first, second } = objectOf(results);
-  return {
-    ...(first === undefined ? {} : { first: bytesOf(first) }),
-    ...(second === undefined ? {} : { second: bytesOf(second) }),
-  };
+  if (first !== undefined) {
+    parsed.first = bytesOf(first);
+  }
+  if (second !== undefined) {
+    parsed.second = bytesOf(second);
+  }
+  return parsed;
 }
 
 /**
- * Parses a registration (`assertion: false`) or authentication response. Without authenticator data
- * a registration carries no trustworthy flags, so its PRF results are dropped and the kernel falls
- * back to an assertion that does carry them.
+ * The `authData` byte string of a CBOR attestation object, long enough to carry the flags byte —
+ * iOS hands back an attestation object instead of bare authenticator data.
+ */
+function attestationAuthData(attestationObject: Uint8Array): Uint8Array {
+  let decoded: unknown;
+  try {
+    decoded = decode(attestationObject, ATTESTATION_OPTIONS);
+  } catch {
+    throw malformed();
+  }
+  const { authData } = objectOf(decoded);
+  if (!(authData instanceof Uint8Array) || authData.length < 37) {
+    throw malformed();
+  }
+  return authData;
+}
+
+/**
+ * Parses a registration (`assertion: false`) or authentication response. A registration that
+ * carries authenticator data — directly or inside an attestation object — keeps its PRF results:
+ * the single registration ceremony already verified the user. Without authenticator data its PRF
+ * results are dropped and the kernel falls back to an assertion that does carry them.
  */
 function parseResponse(json: string, assertion: boolean): PasskeyResult {
   let parsed: unknown;
@@ -105,9 +152,24 @@ function parseResponse(json: string, assertion: boolean): PasskeyResult {
   const credential = objectOf(parsed);
   const response = objectOf(credential["response"]);
   const credentialId = bytesOf(credential["rawId"]);
-  const { first, second } = prfResults(credential["clientExtensionResults"]);
+  const { enabled, first, second } = prfResults(credential["clientExtensionResults"]);
+  if (!assertion && enabled === false) {
+    // The authenticator has no PRF — a follow-up assertion would fail the same way.
+    first?.fill(0);
+    second?.fill(0);
+    throw new KernelError("factor-unavailable", "the passkey does not support the PRF extension");
+  }
   const rawAuthData = response["authenticatorData"];
-  if (rawAuthData === undefined && !assertion) {
+  let authData: Uint8Array | undefined;
+  if (rawAuthData !== undefined) {
+    authData = bytesOf(rawAuthData);
+  } else if (!assertion && response["attestationObject"] !== undefined) {
+    authData = attestationAuthData(bytesOf(response["attestationObject"]));
+  }
+  if (authData === undefined) {
+    if (assertion) {
+      throw malformed();
+    }
     first?.fill(0);
     second?.fill(0);
     return {
@@ -119,7 +181,7 @@ function parseResponse(json: string, assertion: boolean): PasskeyResult {
       userVerified: false,
     };
   }
-  const flags = bytesOf(rawAuthData)[FLAGS_OFFSET];
+  const flags = authData[FLAGS_OFFSET];
   if (flags === undefined) {
     throw malformed();
   }

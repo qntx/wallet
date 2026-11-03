@@ -7,19 +7,14 @@
 import { randomBytes } from "react-native-quick-crypto";
 
 import { report } from "@qntx/v1-probe";
-import type { AutoLockPolicy, PasskeyConfig } from "@qntx/wallet";
+import type { AutoLockPolicy } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
 import { createMemoryEngineStore, createWalletEngine } from "@qntx/wallet-engine";
 import type { WalletEngine } from "@qntx/wallet-engine";
 import { createNativeWallet } from "@qntx/wallet-native";
 
-const PASSKEY: PasskeyConfig = {
-  rpId: "wallet-harness.qntx.org",
-  rpName: "QNTX Wallet Harness",
-  walletSalt: "wallet",
-  vaultSalt: "vault",
-  backupSalt: "backup",
-};
+import { PASSKEY } from "./passkey";
+
 const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 0 };
 
 const GATEWAY_URL = "https://wallet-gateway-staging.qntx.org";

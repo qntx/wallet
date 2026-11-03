@@ -3,6 +3,7 @@
  * strict parsing of registration/authentication responses (PRF results, user handle, UV/BE/BS).
  */
 import { base64urlnopad } from "@scure/base";
+import { encode } from "cborg";
 import { describe, expect, it } from "vite-plus/test";
 
 import { bindNativePasskey } from "../kernel/passkey.ts";
@@ -12,6 +13,7 @@ const b64 = (bytes: Uint8Array): string => base64urlnopad.encode(bytes);
 const random = (length: number): Uint8Array => new Uint8Array(length).fill(0xaa);
 const CREDENTIAL = new Uint8Array([1, 2, 3, 4]);
 const PRF = new Uint8Array(32).fill(5);
+const PRF2 = new Uint8Array(32).fill(6);
 const SALT = new TextEncoder().encode("harness/wallet/v1");
 
 /** Authenticator data with the given flags byte (rpIdHash ‖ flags ‖ signCount). */
@@ -20,6 +22,10 @@ const authData = (flags: number): Uint8Array => {
   data[32] = flags;
   return data;
 };
+
+/** A CBOR attestation object whose authData carries the given flags byte (iOS shape). */
+const attestation = (flags: number): string =>
+  b64(encode({ fmt: "none", attStmt: {}, authData: authData(flags) }));
 
 /** A native stand-in that records the request JSON and answers with `reply`. */
 function native(reply: { json?: unknown; code?: string }) {
@@ -115,23 +121,79 @@ describe("passkey binding: responses", () => {
     expect(result.synced).toBe(false);
   });
 
-  it("a registration without authenticator data defers PRF to an assertion", async () => {
-    const { raw } = native({
-      json: {
-        rawId: b64(CREDENTIAL),
-        response: { attestationObject: "o2NmbXRkbm9uZQ" },
-        clientExtensionResults: { prf: { enabled: true, results: { first: b64(PRF) } } },
-      },
-    });
-    const result = await bindNativePasskey(raw, random).create({
+  const create = async (reply: { json?: unknown; code?: string }) =>
+    bindNativePasskey(native(reply).raw, random).create({
       rpId: "wallet-harness.qntx.org",
       rpName: "Harness",
       userId: new Uint8Array([1]),
       userName: "alice",
       salts: { first: SALT },
     });
+
+  it("a registration without authenticator data defers PRF to an assertion", async () => {
+    const result = await create({
+      json: {
+        rawId: b64(CREDENTIAL),
+        response: {},
+        clientExtensionResults: { prf: { enabled: true, results: { first: b64(PRF) } } },
+      },
+    });
     expect(result.first).toBeUndefined();
     expect(result.credentialId).toStrictEqual(CREDENTIAL);
+  });
+
+  it("a registration via attestationObject returns PRF results and flags", async () => {
+    const result = await create({
+      json: {
+        rawId: b64(CREDENTIAL),
+        response: { attestationObject: attestation(0x1d) },
+        clientExtensionResults: {
+          prf: { enabled: true, results: { first: b64(PRF), second: b64(PRF2) } },
+        },
+      },
+    });
+    expect(result.credentialId).toStrictEqual(CREDENTIAL);
+    expect(result.first).toStrictEqual(PRF);
+    expect(result.second).toStrictEqual(PRF2);
+    expect(result.userVerified).toBe(true);
+    expect(result.synced).toBe(true);
+  });
+
+  it("a registration via attestationObject without PRF results reads flags", async () => {
+    const result = await create({
+      json: {
+        rawId: b64(CREDENTIAL),
+        response: { attestationObject: attestation(0x05) },
+        clientExtensionResults: { prf: { enabled: true } },
+      },
+    });
+    expect(result.first).toBeUndefined();
+    expect(result.userVerified).toBe(true);
+    expect(result.synced).toBe(false);
+  });
+
+  it("a registration with prf.enabled false is factor-unavailable", async () => {
+    await expect(
+      create({
+        json: {
+          rawId: b64(CREDENTIAL),
+          response: { attestationObject: attestation(0x1d) },
+          clientExtensionResults: { prf: { enabled: false, results: { first: b64(PRF) } } },
+        },
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: "factor-unavailable" }));
+  });
+
+  it.each([
+    ["not CBOR", b64(new Uint8Array([0xff]))],
+    ["no authData", b64(encode({ fmt: "none", attStmt: {} }))],
+    ["short authData", b64(encode({ fmt: "none", attStmt: {}, authData: new Uint8Array(10) }))],
+  ])("a malformed attestationObject (%s) is unavailable", async (_name, object) => {
+    await expect(
+      create({
+        json: { rawId: b64(CREDENTIAL), response: { attestationObject: object } },
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: "unavailable" }));
   });
 
   it("a response that is not JSON is unavailable", async () => {

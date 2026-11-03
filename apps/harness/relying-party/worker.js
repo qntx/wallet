@@ -1,11 +1,13 @@
-// Relying-party association files for the harness's native passkey tests (W6):
-// wallet-harness.qntx.org is the harness's WebAuthn rpId. iOS reads the
-// webcredentials app list, Android Credential Manager reads the asset links
-// (Google's Digital Asset Links service fetches it, so it must be public).
-// The Android fingerprint is the harness's release signing key — the shared
-// React Native debug keystore, test builds only.
+// Relying-party site for the harness's native passkey tests (W6):
+// wallet-harness.qntx.org is the harness's WebAuthn rpId and also hosts the
+// built playground (apps/playground/dist) as Workers static assets, so the
+// same rpId works in Safari. iOS reads the webcredentials app list, Android
+// Credential Manager reads the asset links (Google's Digital Asset Links
+// service fetches it, so it must be public). The AASA app id is the paid
+// Apple team + bundle id; the Android fingerprint is the harness's release
+// signing key — the shared React Native debug keystore, test builds only.
 const AASA = {
-  webcredentials: { apps: ["6Z33CD4837.org.qntx.wallet.harness"] },
+  webcredentials: { apps: ["RU84U75XZM.org.qntx.wallet.harness.ios"] },
 };
 
 const ASSET_LINKS = [
