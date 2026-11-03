@@ -1,3 +1,5 @@
+import { hexToBytes } from "@noble/hashes/utils.js";
+
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { BrowserOrigin } from "../requests/types.ts";
@@ -254,6 +256,9 @@ export class SolanaWalletHandler implements SolanaHandler {
   }
 }
 
+const isBytesEnvelope = (v: unknown): v is { __bytes: string } =>
+  typeof v === "object" && v !== null && typeof (v as { __bytes?: unknown }).__bytes === "string";
+
 const transactionsOf = (params: unknown): Uint8Array[] => {
   const raw =
     typeof params === "object" && params !== null
@@ -263,10 +268,16 @@ const transactionsOf = (params: unknown): Uint8Array[] => {
     throw invalidParams("solana:signTransaction needs a transactions array");
   }
   return raw.map((tx) => {
-    if (!(tx instanceof Uint8Array)) {
-      throw invalidParams("each transaction must be Uint8Array bytes");
+    if (tx instanceof Uint8Array) {
+      return tx;
     }
-    return tx;
+    if (typeof tx === "string" && /^[0-9a-fA-F]+$/.test(tx)) {
+      return hexToBytes(tx);
+    }
+    if (isBytesEnvelope(tx)) {
+      return hexToBytes(tx.__bytes);
+    }
+    throw invalidParams("each transaction must be Uint8Array bytes or hex");
   });
 };
 
@@ -275,10 +286,16 @@ const messageOf = (params: unknown): Uint8Array => {
     typeof params === "object" && params !== null
       ? (params as { message?: unknown }).message
       : undefined;
-  if (!(message instanceof Uint8Array)) {
-    throw invalidParams("solana:signMessage needs Uint8Array bytes");
+  if (message instanceof Uint8Array) {
+    return message;
   }
-  return message;
+  if (typeof message === "string" && /^[0-9a-fA-F]+$/.test(message)) {
+    return hexToBytes(message);
+  }
+  if (isBytesEnvelope(message)) {
+    return hexToBytes(message.__bytes);
+  }
+  throw invalidParams("solana:signMessage needs Uint8Array bytes or hex");
 };
 
 const byOrigin = (
