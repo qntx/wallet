@@ -68,7 +68,7 @@ export type PendingConnection = {
    * Which namespace the connection is for — `eip155` (EVM), `nostr` (NIP-07) or `lightning`
    * (WebLN).
    */
-  readonly namespace: "eip155" | "nostr" | "lightning";
+  readonly namespace: "eip155" | "nostr" | "lightning" | "solana";
   readonly network?: string;
   readonly createdAt: number;
 };
@@ -91,6 +91,8 @@ export type ConnectionControllerOptions = {
   readonly selectedGroup: () => AccountGroup | undefined;
   /** The group's EVM address on `network`. */
   readonly evmAddress: (group: AccountGroup, network: string) => Promise<string>;
+  /** The group's Solana address on `network` (a CAIP-2 `solana:<genesis>` chain). */
+  readonly solanaAddress: (group: AccountGroup, network: string) => Promise<string>;
   readonly enabledNetworks: () => ReadonlyArray<string>;
   /** A Nostr identity's public key — `nostr(wallet).signer(ref).getPublicKey()`. */
   readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
@@ -131,6 +133,16 @@ export const LIGHTNING_METHODS: ReadonlyArray<string> = [
   "makeInvoice",
   "lnurl",
   "getBalance",
+];
+
+/** The `solana` namespace scope's granted methods — the Wallet Standard surface. */
+export const SOLANA_METHODS: ReadonlyArray<string> = [
+  "standard:connect",
+  "standard:disconnect",
+  "standard:events",
+  "solana:signTransaction",
+  "solana:signAndSendTransaction",
+  "solana:signMessage",
 ];
 
 /** `eip155:1` → 1; `undefined` for anything that is not an EVM network. */
@@ -381,6 +393,26 @@ export class ConnectionController extends Controller<ConnectionState> {
         methods: NOSTR_METHODS,
         notifications: [],
       };
+    } else if (entry.namespace === "solana") {
+      const group = this.activeGroup();
+      if (group === undefined) {
+        throw new Error("no account group is selected");
+      }
+      const solanaNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("solana:"));
+      const solanaEntries = await Promise.all(
+        solanaNetworks.map(async (network): Promise<[string, ConnectionScope]> => {
+          const address = await this.options.solanaAddress(group, network);
+          return [
+            network,
+            {
+              accounts: [caip10(network, address)],
+              methods: SOLANA_METHODS,
+              notifications: ["change"],
+            },
+          ];
+        }),
+      );
+      Object.assign(scopes, Object.fromEntries(solanaEntries));
     } else if (entry.namespace === "lightning") {
       if (grant.lightning === undefined) {
         throw invalidParams("a lightning connection needs the origin's policy");
@@ -511,6 +543,13 @@ export class ConnectionController extends Controller<ConnectionState> {
                 return [network, scope];
               }
               try {
+                if (network === "nostr" || network === "lightning") {
+                  return [network, scope];
+                }
+                if (network.startsWith("solana:")) {
+                  const address = await this.options.solanaAddress(group, network);
+                  return [network, { ...scope, accounts: [caip10(network, address)] }];
+                }
                 const address = await this.options.evmAddress(group, network);
                 return [network, { ...scope, accounts: [caip10(network, address.toLowerCase())] }];
               } catch (error) {
@@ -544,6 +583,12 @@ export class ConnectionController extends Controller<ConnectionState> {
   /** The origin's persisted Lightning policy — `undefined` until it is lightning-authorized. */
   lightningPolicy(origin: string): LightningPolicy | undefined {
     return this.session(origin)?.lightningPolicy;
+  }
+
+  /** The origin's `solana` scope's address on `network`, or `undefined` when not authorized. */
+  solanaAccount(origin: string, network: string): string | undefined {
+    const account = this.session(origin)?.scopes[network]?.accounts[0];
+    return account === undefined ? undefined : addressOf(account);
   }
 
   /**

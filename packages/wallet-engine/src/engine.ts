@@ -234,6 +234,17 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
       return account.address;
     },
+    solanaAddress: async (group, network) => {
+      const account = await chains(options.wallet).account({
+        ...group,
+        template: "solana.bip44-change",
+        network,
+      });
+      if (!("address" in account)) {
+        throw new Error("no Solana address for the group");
+      }
+      return account.address;
+    },
     enabledNetworks: () => networks.enabled("evm"),
     nostrPubkey: async (ref) => nostr(options.wallet).signer(ref).getPublicKey(),
     invalidate: (origin) => {

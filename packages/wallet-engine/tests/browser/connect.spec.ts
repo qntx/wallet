@@ -170,6 +170,10 @@ async function engineRig() {
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET],
+    solanaAddress: async (group: { walletId: string; groupIndex: number }, network: string) => {
+      await Promise.resolve();
+      return `SoLaNaAdd${String(group.groupIndex)}-${network}`;
+    },
     nostrPubkey: async (ref) => {
       await Promise.resolve(ref);
       return NOSTR_PUBKEY;
@@ -220,6 +224,12 @@ async function openConnect(context: BrowserContext) {
     eip1193: rig.eip1193,
     nip07: rig.nip07,
     webln: rig.webln,
+    solana: {
+      handle: async () => {
+        await Promise.resolve();
+        return null;
+      },
+    },
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),

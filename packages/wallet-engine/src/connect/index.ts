@@ -12,12 +12,14 @@ import type { Eip1193Event, Eip1193Handler } from "./eip1193.ts";
 import { ProviderError } from "./errors.ts";
 import { PROVIDER_SCRIPT } from "./inject.generated.ts";
 import type { Nip07Handler } from "./nip07.ts";
+import type { SolanaHandler } from "./solana.ts";
 import type { WeblnHandler } from "./webln.ts";
 
 export type { ConnectionController, ConnectionSession } from "./controller.ts";
 export type { Eip1193Handler, Eip1193Request, Eip1193Event } from "./eip1193.ts";
 export type { Nip07Request } from "./nip07.ts";
 export type { WeblnRequest } from "./webln.ts";
+export type { SolanaRequest } from "./solana.ts";
 export { WeblnHandler } from "./webln.ts";
 export { Nip07Handler } from "./nip07.ts";
 export type { NostrPolicy } from "./controller.ts";
@@ -101,6 +103,7 @@ export type BrowserBridgeOptions = {
   readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
   readonly nip07: Pick<Nip07Handler, "handle">;
   readonly webln: Pick<WeblnHandler, "handle">;
+  readonly solana: Pick<SolanaHandler, "handle">;
   readonly connections: Pick<ConnectionController, "checkOrigin" | "invalidateOrigin">;
   /** The host's `webview.injectJavaScript`. */
   readonly inject: (script: string) => void;
@@ -132,7 +135,7 @@ const errorData = (error: unknown): { code: number; message: string } =>
     : { code: -32603, message: "internal error" };
 
 export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridge {
-  const { eip1193, nip07, webln, connections, inject, now } = options;
+  const { eip1193, nip07, webln, solana, connections, inject, now } = options;
   let topOrigin: string | undefined;
   let disposed = false;
   /** Per-origin request timestamps in the current window, for the 120/min cap. */
@@ -207,7 +210,9 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
           ? nip07
           : provider === "webln"
             ? webln
-            : undefined;
+            : provider === "solana"
+              ? solana
+              : undefined;
     if (handler === undefined) {
       return;
     }
