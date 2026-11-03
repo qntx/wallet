@@ -67,7 +67,6 @@
     "@solana/addresses": "8.5.0",
     "@solana/codecs": "8.5.0",
     "@solana/transaction-messages": "8.5.0",
-    "@solana/transactions": "8.5.0",
     "ox": "1.8.12"
   },
   "devDependencies": {
