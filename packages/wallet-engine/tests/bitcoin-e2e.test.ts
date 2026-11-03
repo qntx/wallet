@@ -307,6 +307,78 @@ describe.runIf(RUN)("bitcoin e2e: regtest esplora", () => {
   });
 });
 
+describe.runIf(RUN)("bitcoin e2e: taproot engine send", () => {
+  it("sends from a btc.bip86 account through the engine path", { timeout: 300_000 }, async () => {
+    expect.hasAssertions();
+    await taprootFlow();
+  });
+});
+
+const taprootFlow = async (): Promise<void> => {
+  const base = startEsplora(`${NAME}-tr`);
+  const timers: Array<() => unknown> = [];
+  try {
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logsOf(`${NAME}-tr`)}`);
+    });
+    try {
+      rpc(`${NAME}-tr`, "createwallet", ["e2e-tr"]);
+    } catch {
+      // wallet exists
+    }
+    const { ctl, walletId, xpub } = await ctlRig(base, timers, "btc.bip86");
+    const recv = bitcoinAddressFromXpub(xpub, "btc.bip86", NETWORK, 0, 0);
+    const walletAddr = rpc(`${NAME}-tr`, "getnewaddress") as string;
+    rpc(`${NAME}-tr`, "generatetoaddress", [101, walletAddr]);
+    rpc(`${NAME}-tr`, "sendtoaddress", [recv, "0.00050000"]);
+    rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
+    await waitFor(
+      async () => {
+        const es = esploraClient(base);
+        const scanned = await scanChain(
+          es,
+          xpub,
+          "btc.bip86",
+          NETWORK,
+          bitcoinNetwork(NETWORK).params,
+          0,
+        );
+        return scanned.some((s) => s.address === recv && s.used);
+      },
+      3000,
+      Date.now() + 120_000,
+      () => {
+        throw new Error("scan never saw the funded taproot address");
+      },
+    );
+
+    const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
+    const tx = await send(ctl, {
+      account: { kind: "hd", walletId, groupIndex: 0, template: "btc.bip86" },
+      network: NETWORK,
+      to: external,
+      amount: 10_000n,
+      fee: "slow",
+      verify: BVERIFY,
+    });
+    expect(tx.state).toBe("submitted");
+    rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
+    await waitFor(
+      async () => {
+        await Promise.all(timers.map((fn) => fn()));
+        return ctl.getState().txs[tx.id]?.state === "confirmed";
+      },
+      3000,
+      Date.now() + 120_000,
+      () => {
+        throw new Error("taproot send never confirmed");
+      },
+    );
+  } finally {
+    spawnSync("docker", ["rm", "-f", `${NAME}-tr`]);
+  }
+};
+
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const BPASSWORD = "correct horse battery staple";
 const BVERIFY = { kind: "password" as const, password: BPASSWORD };
@@ -344,12 +416,13 @@ const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
 const ctlRig = async (
   base: string,
   timers: Array<() => unknown>,
+  template: "btc.bip84" | "btc.bip86" = "btc.bip84",
 ): Promise<{ ctl: TransactionController; walletId: string; xpub: string }> => {
   const { wallet, walletId } = await realWallet();
   const acct = await chains(wallet).account({
     walletId,
     groupIndex: 0,
-    template: "btc.bip84",
+    template,
     network: NETWORK,
   });
   const xpub = "xpub" in acct ? acct.xpub : "";
