@@ -1,3 +1,5 @@
+import type { Event } from "@qntx/nostr";
+
 import { AddressBookController } from "../src/addresses/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
@@ -60,6 +62,10 @@ export const requestsFor = async (
     transactions,
     ...bookDeps(),
     spark: noSpark,
+    nostrSign: async (_ref, _event): Promise<Event> => {
+      await Promise.resolve();
+      throw new Error("nostr-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter() % 251),
     now: () => 0,

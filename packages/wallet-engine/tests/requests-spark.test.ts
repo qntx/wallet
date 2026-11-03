@@ -3,6 +3,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, expectTypeOf, it } from "vite-plus/test";
 
+import type { Event } from "@qntx/nostr";
 import { encodeSparkAddress } from "@qntx/spark";
 import type { LnurlPayRequest } from "@qntx/spark/lnurl";
 import { WalletError } from "@qntx/wallet";
@@ -78,6 +79,10 @@ function world() {
   let now = NOW;
   let counter = 0;
   const requests = new RequestController({
+    nostrSign: async (_ref, _event): Promise<Event> => {
+      await Promise.resolve();
+      throw new Error("nostr-sign is not wired in this test");
+    },
     transactions: {} as TransactionController,
     ...bookDeps(),
     spark,

@@ -2,6 +2,7 @@
  * The signature record: one entry per request that reached a final stage, newest 1000 kept in the
  * engine store. Entries carry a summary only — never signature bytes or the full signable content.
  */
+import type { NostrKeyRef } from "@qntx/wallet";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { EngineLogger } from "../events.ts";
@@ -18,7 +19,7 @@ export type SignLogEntry = {
   readonly at: number;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
   readonly network: string;
   readonly summary: string;
   readonly verification: "verified" | "unverifiable";
@@ -41,6 +42,7 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "pay",
   "zap",
   "evm-sign",
+  "nostr-sign",
   "spark-deposit",
   "spark-exit",
 ]);
@@ -66,6 +68,9 @@ const isAccount = (value: unknown): value is AccountRef | SparkAccountRef => {
   }
   if (value["kind"] === "imported") {
     return typeof value["keyId"] === "string" && FAMILIES.has(value["family"]);
+  }
+  if (value["kind"] === "derived") {
+    return typeof value["walletId"] === "string" && typeof value["index"] === "number";
   }
   return (
     value["kind"] === undefined &&

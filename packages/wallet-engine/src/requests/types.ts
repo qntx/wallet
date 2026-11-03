@@ -14,5 +14,6 @@ export type RequestMethod =
   | "pay"
   | "zap"
   | "evm-sign"
+  | "nostr-sign"
   | "spark-deposit"
   | "spark-exit";

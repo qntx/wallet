@@ -11,6 +11,7 @@ import { randomBytes } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
 
+import type { Event } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
@@ -103,6 +104,10 @@ async function engineRig() {
     ...bookDeps(),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- EVM requests never reach spark
     spark: {} as SparkController,
+    nostrSign: async (_ref, _event): Promise<Event> => {
+      await Promise.resolve();
+      throw new Error("nostr-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random,
     now: () => 1000,

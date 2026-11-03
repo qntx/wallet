@@ -18,6 +18,7 @@ import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
+import { Nip07Handler } from "./connect/nip07.ts";
 import type { EngineLogger } from "./events.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
@@ -75,6 +76,7 @@ export type WalletEngine = {
   readonly addressBook: AddressBookController;
   readonly connections: ConnectionController;
   readonly eip1193: Eip1193Handler;
+  readonly nip07: Nip07Handler;
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
@@ -168,6 +170,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     addressBook,
     openStore: options.openStore,
     spark: controller,
+    nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
     fetch: options.fetch,
     random: options.random,
     now: options.now,
@@ -236,6 +239,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     requests,
     networks,
     defaultNetwork: () => networks.enabled("evm")[0] ?? "eip155:1",
+  });
+  const nip07 = new Nip07Handler({
+    connections,
+    requests,
+    signerFor: (ref) => nostr(options.wallet).signer(ref),
   });
 
   // The transition chain: every status change queues behind the previous one, so a late lock
@@ -329,6 +337,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     addressBook,
     connections,
     eip1193,
+    nip07,
     spark: controller,
     accounts,
     metaSync,
