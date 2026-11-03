@@ -9,6 +9,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Fixed
+
+- BIP-86 (Taproot) sends failed at two points: `@qntx/wallet-engine` built the PSBT inputs with a
+  31-byte `tapInternalKey`, throwing before signing, and `@qntx/wallet-chains` verified the
+  key-path signature against the untweaked internal key instead of the tweaked output key, so the
+  host signature check rejected the signed transaction.
+
 ### Added
 
 - `@qntx/wallet-native`: iOS native passkeys with the PRF extension through `ASAuthorization`
