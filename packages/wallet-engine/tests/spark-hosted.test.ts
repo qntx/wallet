@@ -144,6 +144,8 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
 
       const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
       const engine = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet,
         sparkNetwork: "regtest",
         fetch: globalThis.fetch,

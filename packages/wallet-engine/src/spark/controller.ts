@@ -11,6 +11,7 @@ import type {
   CooperativeExitResult,
   LightningInvoice,
   LightningPayment,
+  LightningSendStatus,
   SparkClient,
   SparkPayment,
   SparkTransfer,
@@ -661,6 +662,19 @@ export class SparkController extends Controller<SparkControllerState> {
   /** Claims a confirmed L1 deposit paying one of the account's unused deposit addresses. */
   async claimDeposit(ref: SparkAccountRef, transaction: Uint8Array): Promise<void> {
     await this.guarded(async () => this.clientFor(ref).deposits.claim({ transaction }));
+  }
+
+  /** The account's last-synced balance — a cached snapshot, not a fresh query. */
+  accountBalance(ref: SparkAccountRef): number | undefined {
+    return this.getState().accounts[key(ref)]?.balanceSats;
+  }
+
+  /** A payment's settle status — `payInvoice` resolves the send; `sendStatus` reports its preimage. */
+  async paymentStatus(
+    ref: SparkAccountRef,
+    request: { readonly requestId: string; readonly paymentHash: Uint8Array },
+  ): Promise<LightningSendStatus> {
+    return this.guarded(async () => this.clientFor(ref).lightning.sendStatus(request));
   }
 
   async receiveAddress(ref: SparkAccountRef): Promise<string | undefined> {

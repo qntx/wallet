@@ -19,6 +19,7 @@ import type { CloudStore } from "./backup/port.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
 import { Nip07Handler } from "./connect/nip07.ts";
+import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
@@ -44,6 +45,10 @@ export type EngineOptions = {
   readonly fetch: typeof globalThis.fetch;
   readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
+  /** The WebLN node's display alias — `getInfo` never exposes a pubkey. */
+  readonly weblnAlias: string;
+  /** The host's lightning fee cap for WebLN sends — validated to a non-negative safe integer. */
+  readonly lightningMaxFee: (amountSats: number) => number;
   readonly logger: EngineLogger;
   readonly openStore: () => Promise<EngineStore>;
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
@@ -77,6 +82,7 @@ export type WalletEngine = {
   readonly connections: ConnectionController;
   readonly eip1193: Eip1193Handler;
   readonly nip07: Nip07Handler;
+  readonly webln: WeblnHandler;
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
@@ -245,6 +251,36 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     requests,
     signerFor: (ref) => nostr(options.wallet).signer(ref),
   });
+  const webln = new WeblnHandler({
+    connections,
+    requests,
+    spark: controller,
+    sparkAccount: () => {
+      const group = connections.activeGroup();
+      return group === undefined
+        ? undefined
+        : {
+            walletId: group.walletId,
+            groupIndex: group.groupIndex,
+            network: options.sparkNetwork,
+          };
+    },
+    alias: options.weblnAlias,
+    lightningMaxFee: options.lightningMaxFee,
+    sleep: async (ms) => {
+      const setTimer =
+        options.setTimer ??
+        ((ms_, fn) => {
+          const timer = setTimeout(fn, ms_);
+          return () => {
+            clearTimeout(timer);
+          };
+        });
+      await new Promise<void>((resolve) => {
+        setTimer(ms, resolve);
+      });
+    },
+  });
 
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
@@ -338,6 +374,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     eip1193,
     nip07,
+    webln,
     spark: controller,
     accounts,
     metaSync,

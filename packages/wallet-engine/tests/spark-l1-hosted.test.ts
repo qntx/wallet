@@ -100,6 +100,8 @@ describe.skipIf(!HOSTED || esplora === "")("hosted spark exit", () => {
       const created = await draft.confirm(draft.quiz.map((p) => words[p]!));
       const l1 = SPARK_L1_NETWORK.regtest;
       const engine = createWalletEngine({
+        weblnAlias: "test",
+        lightningMaxFee: () => 0,
         wallet,
         sparkNetwork: "regtest",
         fetch: globalThis.fetch,
