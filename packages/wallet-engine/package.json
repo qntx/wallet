@@ -44,21 +44,21 @@
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only"
   },
   "dependencies": {
-    "@noble/ciphers": "^2.4.0",
-    "@noble/hashes": "^2.4.0",
-    "@scure/base": "^2.4.0",
+    "@noble/ciphers": "2.4.0",
+    "@noble/hashes": "2.4.0",
+    "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@solana-program/compute-budget": "0.20.0",
     "@solana-program/system": "0.16.0",
     "@solana-program/token": "0.18.0",
     "@solana/kit": "8.5.0",
     "viem": "2.57.12",
-    "zod": "^4.6.7",
-    "zustand": "^5.0.16"
+    "zod": "4.6.7",
+    "zustand": "5.0.16"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@noble/hashes": "^2.0.1",
+    "@noble/hashes": "2.4.0",
     "@qntx/nostr": "0.15.3",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",
@@ -70,8 +70,8 @@
     "publint": "0.3.25"
   },
   "peerDependencies": {
-    "@qntx/nostr": "^0.15.0",
-    "@qntx/spark": "^0.5.0",
+    "@qntx/nostr": "0.15.3",
+    "@qntx/spark": "0.5.2",
     "@qntx/wallet": "0.7.0",
     "@qntx/wallet-chains": "0.7.0"
   },

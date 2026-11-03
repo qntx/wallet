@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { checkViteAliases } from "./check-version.ts";
+import { checkExactDeps, checkViteAliases } from "./check-version.ts";
 
 const manifest = (pkg: unknown): { path: string; pkg: unknown } => ({
   path: "package.json",
@@ -47,5 +47,51 @@ describe("checkViteAliases", () => {
       }),
     ]);
     expect(errors).toStrictEqual([]);
+  });
+});
+
+describe("checkExactDeps", () => {
+  it("accepts the forms the repo actually uses", () => {
+    const errors = checkExactDeps([
+      manifest({
+        dependencies: {
+          exact: "2.4.0",
+          prerelease: "1.0.0-rc.1",
+          alias: "npm:@voidzero-dev/vite-plus-core@1.4.0",
+          ws: "workspace:*",
+          cat: "catalog:tools",
+          file: "file:../x",
+          link: "link:../../packages/wallet",
+        },
+      }),
+    ]);
+    expect(errors).toStrictEqual([]);
+  });
+
+  it("accepts a tilde third-party peer but not a caret or a tilde @qntx peer", () => {
+    expect(
+      checkExactDeps([manifest({ peerDependencies: { "react-native": "~0.88.0" } })]),
+    ).toStrictEqual([]);
+    expect(
+      checkExactDeps([manifest({ peerDependencies: { "react-native": "^0.88.0" } })]),
+    ).toHaveLength(1);
+    expect(
+      checkExactDeps([manifest({ peerDependencies: { "@qntx/nostr": "~0.15.3" } })]),
+    ).toHaveLength(1);
+  });
+
+  it.each([
+    ["dependencies", { dependencies: { dep: "^2.4.0" } }],
+    ["devDependencies", { devDependencies: { dep: "~1.0.0" } }],
+    ["peerDependencies", { peerDependencies: { dep: ">=1.0.0" } }],
+    ["a caret third-party peer", { peerDependencies: { dep: "^1.0.0" } }],
+    ["a tilde @qntx peer", { peerDependencies: { "@qntx/x": "~1.0.0" } }],
+    ["a bare major", { dependencies: { dep: "1" } }],
+    ["a wildcard", { dependencies: { dep: "*" } }],
+    ["a non-exact npm alias", { dependencies: { dep: "npm:other@^1.0.0" } }],
+  ] as const)("fails on %s", (_label, pkg) => {
+    const errors = checkExactDeps([manifest(pkg)]);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('must be exact');
   });
 });
