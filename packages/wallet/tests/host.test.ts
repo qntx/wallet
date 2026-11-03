@@ -23,6 +23,11 @@ import { connectKernel } from "../src/wallet.ts";
 const SECRET_KEY = hexToBytes("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
 const PUBLIC_KEY = getPublicKey(SECRET_KEY);
 const SIGNER = new KeysSigner(SECRET_KEY);
+const FORGED_SECRET = hexToBytes(
+  "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+);
+const FORGED_PUBLIC_KEY = getPublicKey(FORGED_SECRET);
+const FORGED_SIGNER = new KeysSigner(FORGED_SECRET);
 
 const NOSTR_KEY: NostrKeyInfo = {
   ref: { kind: "derived", walletId: "0123456789abcdef", index: 0 },
@@ -552,6 +557,161 @@ describe("connect lifecycle", () => {
   });
 });
 
+describe("sync signer", () => {
+  const SYNC_WALLET = "0123456789abcdef";
+
+  const connect = async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    kernel.handlers.set("nostr.syncKey", () => ({ ok: { publicKey: PUBLIC_KEY } }));
+    return { wallet, kernel };
+  };
+
+  it("getPublicKey calls nostr.syncKey once and memoizes", async () => {
+    const { wallet, kernel } = await connect();
+    const signer = nostr(wallet).syncSigner(SYNC_WALLET);
+    const calls: number[] = [];
+    kernel.handlers.set("nostr.syncKey", () => {
+      calls.push(1);
+      return { ok: { publicKey: PUBLIC_KEY } };
+    });
+    await expect(signer.getPublicKey()).resolves.toBe(PUBLIC_KEY);
+    await expect(signer.getPublicKey()).resolves.toBe(PUBLIC_KEY);
+    expect(calls).toHaveLength(1);
+    expect(kernel.received.filter((m) => m.startsWith("nostr."))).toStrictEqual(["nostr.syncKey"]);
+  });
+
+  it("signEvent sends nostr.syncSign and returns the signed event", async () => {
+    const { wallet, kernel } = await connect();
+    kernel.handlers.set("nostr.syncSign", async (request) => {
+      const params = request.params as {
+        walletId: string;
+        event: { kind: number; created_at: number; tags: string[][]; content: string };
+      };
+      expect(params.walletId).toBe(SYNC_WALLET);
+      expect(params.event.kind).toBe(30078);
+      const unsigned: UnsignedEvent = {
+        pubkey: PUBLIC_KEY,
+        kind: params.event.kind,
+        created_at: params.event.created_at,
+        tags: params.event.tags,
+        content: params.event.content,
+      };
+      return { ok: await SIGNER.signEvent(unsigned) };
+    });
+    const signer = nostr(wallet).syncSigner(SYNC_WALLET);
+    const signed = await signer.signEvent({
+      kind: 30078,
+      created_at: 1767225600,
+      tags: [["d", "metadata"]],
+      content: '{"v":2}',
+      pubkey: "",
+    });
+    expect(signed.pubkey).toBe(PUBLIC_KEY);
+    expect(signed.kind).toBe(30078);
+    expect(kernel.received.filter((m) => m.startsWith("nostr."))).toStrictEqual([
+      "nostr.syncKey",
+      "nostr.syncSign",
+    ]);
+  });
+
+  it("rejects a forged pubkey from the kernel with integrity", async () => {
+    const { wallet, kernel } = await connect();
+    kernel.handlers.set("nostr.syncSign", async () => {
+      // The kernel signs honestly but with a different key — the returned pubkey is not the sync
+      // key, so the host's forged-event check rejects it.
+      const unsigned: UnsignedEvent = {
+        pubkey: FORGED_PUBLIC_KEY,
+        kind: 30078,
+        created_at: 1767225600,
+        tags: [],
+        content: '{"v":2}',
+      };
+      return { ok: await FORGED_SIGNER.signEvent(unsigned) };
+    });
+    const signer = nostr(wallet).syncSigner(SYNC_WALLET);
+    await expect(
+      signer.signEvent({
+        kind: 30078,
+        created_at: 1767225600,
+        tags: [],
+        content: '{"v":2}',
+        pubkey: "",
+      }),
+    ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+  });
+
+  it("rejects a valid signature over different content with integrity", async () => {
+    const { wallet, kernel } = await connect();
+    kernel.handlers.set("nostr.syncSign", async () => {
+      const unsigned: UnsignedEvent = {
+        pubkey: PUBLIC_KEY,
+        kind: 30078,
+        created_at: 1767225600,
+        tags: [],
+        content: "forged metadata",
+      };
+      return { ok: await SIGNER.signEvent(unsigned) };
+    });
+    const signer = nostr(wallet).syncSigner(SYNC_WALLET);
+    await expect(
+      signer.signEvent({
+        kind: 30078,
+        created_at: 1767225600,
+        tags: [],
+        content: '{"v":2}',
+        pubkey: "",
+      }),
+    ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+  });
+
+  it("rejects a malformed signature with integrity", async () => {
+    const { wallet, kernel } = await connect();
+    kernel.handlers.set("nostr.syncSign", () => ({
+      ok: {
+        id: "e".repeat(64),
+        pubkey: PUBLIC_KEY,
+        sig: "00".repeat(64),
+        kind: 30078,
+        created_at: 1767225600,
+        tags: [],
+        content: '{"v":2}',
+      },
+    }));
+    const signer = nostr(wallet).syncSigner(SYNC_WALLET);
+    await expect(
+      signer.signEvent({
+        kind: 30078,
+        created_at: 1767225600,
+        tags: [],
+        content: '{"v":2}',
+        pubkey: "",
+      }),
+    ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
+  });
+
+  it("encrypt and decrypt forward { walletId, text }", async () => {
+    const { wallet, kernel } = await connect();
+    const seen: string[] = [];
+    kernel.handlers.set("nostr.syncEncrypt", (request) => {
+      const params = request.params as { walletId: string; text: string };
+      seen.push(`enc:${params.walletId}:${params.text}`);
+      return { ok: `payload:${params.text}` };
+    });
+    kernel.handlers.set("nostr.syncDecrypt", (request) => {
+      const params = request.params as { walletId: string; text: string };
+      seen.push(`dec:${params.walletId}:${params.text}`);
+      return { ok: params.text.replace("payload:", "") };
+    });
+    const signer = nostr(wallet).syncSigner(SYNC_WALLET);
+    await expect(signer.encrypt("clear")).resolves.toBe("payload:clear");
+    await expect(signer.decrypt("payload:clear")).resolves.toBe("clear");
+    expect(seen).toStrictEqual([`enc:${SYNC_WALLET}:clear`, `dec:${SYNC_WALLET}:payload:clear`]);
+    expect(kernel.received.filter((m) => m.startsWith("nostr."))).toStrictEqual([
+      "nostr.syncEncrypt",
+      "nostr.syncDecrypt",
+    ]);
+  });
+});
 describe("proxy signer", () => {
   it("survives lock/unlock and verifies real signatures", async () => {
     const { wallet, kernel } = await connectFake(unlockedStatus());
