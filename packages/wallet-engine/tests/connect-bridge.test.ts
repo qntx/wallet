@@ -19,6 +19,7 @@ import type {
   Eip1193Event,
   Eip1193Request,
   Nip07Request,
+  WeblnRequest,
   ProviderInfo,
 } from "../src/connect/index.ts";
 import { PROVIDER_SCRIPT } from "../src/connect/inject.generated.ts";
@@ -54,6 +55,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const invalidated: string[] = [];
   const handled: Array<{ origin: string; request: Eip1193Request }> = [];
   const handledNostr: Array<{ origin: string; request: Nip07Request }> = [];
+  const handledWebln: Array<{ origin: string; request: WeblnRequest }> = [];
   let now = 0;
   const options: BrowserBridgeOptions = {
     inject: (script) => {
@@ -78,6 +80,12 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
         return Promise.resolve("nostr-result");
       },
     },
+    webln: {
+      handle: async (origin, req) => {
+        handledWebln.push({ origin, request: req });
+        return Promise.resolve("webln-result");
+      },
+    },
     connections: {
       checkOrigin: (origin) => {
         if (!origin.startsWith("https://")) {
@@ -99,7 +107,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const advance = (ms: number): void => {
     now += ms;
   };
-  return { bridge, injections, invalidated, handled, handledNostr, emit, advance };
+  return { bridge, injections, invalidated, handled, handledNostr, handledWebln, emit, advance };
 }
 
 /** Decodes one `globalThis.__qntxReceive("<json>")` injection (the argument is a JSON string). */
@@ -294,4 +302,15 @@ describe("injectedScript", () => {
   it("PROVIDER_SCRIPT_SHA256 is the sha256 of the generated script", () => {
     expect(PROVIDER_SCRIPT_SHA256).toBe(bytesToHex(sha256(utf8ToBytes(PROVIDER_SCRIPT))));
   });
+});
+
+it("routes provider: webln to the webln handler", async () => {
+  const { bridge, handled, handledNostr, handledWebln, injections } = rig();
+  bridge.navigated(PAGE);
+  bridge.message(PAGE, request(3, "enable", "webln", { params: [] }));
+  await tick();
+  expect(handled).toHaveLength(0);
+  expect(handledNostr).toHaveLength(0);
+  expect(handledWebln).toStrictEqual([{ origin: SITE, request: { method: "enable", params: [] } }]);
+  expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 3, result: "webln-result" });
 });
