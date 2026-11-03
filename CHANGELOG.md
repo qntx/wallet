@@ -9,20 +9,19 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-03
+
+The request pipeline and the wallet gateway: every fund-moving action in `@qntx/wallet-engine` is
+prepared, reviewed and then approved through `engine.requests`; the engine reads chains through the
+wallet gateway and cross-checks pre-signing reads against the host endpoints; an address book with
+recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` builds cleanly on Android.
+
 ### Changed
 
 - **BREAKING** `@qntx/wallet-engine`: the wallet metadata document is now `v: 2`
   (`{ v, wallet, groups, contacts }`) and `v: 1` documents are no longer read. A remote `v: 1`
   document is reported as unreadable (`corrupt`) and the wallet will not overwrite it. Entries are
   validated strictly; one invalid contact rejects the whole document.
-
-### Fixed
-
-- `@qntx/wallet-native`: the Android library no longer applies the React Native Gradle plugin.
-  With another `react-native` resolvable from the library directory, the plugin regenerated the
-  React Native core specs inside the library and the app build failed with duplicate classes.
-
-### Changed
 
 - **BREAKING** `@qntx/wallet-engine`: every Spark, Lightning and cooperative-exit payment now goes
   through the request pipeline. `engine.payments.pay` and `engine.zaps.pay` are removed, and
@@ -87,6 +86,10 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   Workers reference gateway; staging serves testnets only.
 
 ### Fixed
+
+- `@qntx/wallet-native`: the Android library no longer applies the React Native Gradle plugin.
+  With another `react-native` resolvable from the library directory, the plugin regenerated the
+  React Native core specs inside the library and the app build failed with duplicate classes.
 
 - `@qntx/wallet-engine`: Bitcoin UTXO locks were never persisted (the lock store was never
   opened on unlock), so a broadcast but unconfirmed transaction's inputs could be selected again
@@ -312,7 +315,8 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/qntx/wallet/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/qntx/wallet/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/qntx/wallet/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/qntx/wallet/compare/v0.4.0...v0.5.0
