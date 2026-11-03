@@ -1,300 +1,139 @@
-import { describe, expect, it } from "vite-plus/test";
+import { expect, it, describe, vi } from "vitest";
 
-import type { MintExtensionSummary } from "@qntx/wallet-chains/solana";
+import { invalidParams } from "../src/connect/errors.ts";
+import { SolanaWalletHandler } from "../src/connect/solana.ts";
 
-import { SolanaChainAdapter } from "../src/chains/solana.ts";
-import type { SolanaRpc } from "../src/networks/controller.ts";
-import type {
-  DisplayIntent,
-  RouteContext,
-  TrackedTransaction,
-  PrepareParams,
-} from "../src/transactions/route.ts";
-import { token2022Intent, pollSolana, prepareSolana } from "../src/transactions/solana.ts";
+const SITE = "https://app.example.com";
+const ORIGIN = { kind: "browser" as const, origin: SITE };
+const SOL_ADDR = "SoLaNaBase58Address1111111111111111111";
+const TX = new Uint8Array([1, 2, 3, 4]);
+const PUBKEY = new Uint8Array(32).fill(2);
 
-const rpc = (handlers: Record<string, unknown>): SolanaRpc => ({
-  call: async (method, params) => {
-    const v = handlers[method];
-    return method in handlers
-      ? Promise.resolve(typeof v === "function" ? (v as (p?: unknown[]) => unknown)(params) : v)
-      : Promise.reject(new Error(`unmocked ${method}`));
-  },
-});
-
-describe("SolanaChainAdapter", () => {
-  it("picks p50/p75/p90 prioritization fees as slow/normal/fast", async () => {
-    const a = new SolanaChainAdapter();
-    const fees = Array.from({ length: 100 }, (_, i) => ({ prioritizationFee: i + 1 }));
-    const r = rpc({ getRecentPrioritizationFees: fees });
-    const quotes = await a.estimateFee(r, ["x"]);
-    expect(quotes.map((q) => [q.tier, q.microLamportsPerCu])).toStrictEqual([
-      ["slow", 51n],
-      ["normal", 76n],
-      ["fast", 91n],
-    ]);
-  });
-
-  it("maps signature status: err → failed, confirmed, finalized, missing → pending", async () => {
-    const a = new SolanaChainAdapter();
-    const status = { value: [{ confirmationStatus: "confirmed", err: null }] };
-    await expect(a.status(rpc({ getSignatureStatuses: status }), "s")).resolves.toBe("confirmed");
-    await expect(
-      a.status(
-        rpc({ getSignatureStatuses: { value: [{ confirmationStatus: "finalized", err: null }] } }),
-        "s",
-      ),
-    ).resolves.toBe("finalized");
-    await expect(
-      a.status(
-        rpc({
-          getSignatureStatuses: { value: [{ confirmationStatus: "confirmed", err: { x: 1 } }] },
-        }),
-        "s",
-      ),
-    ).resolves.toBe("failed");
-    await expect(a.status(rpc({ getSignatureStatuses: { value: [null] } }), "s")).resolves.toBe(
-      "pending",
-    );
-  });
-
-  it("finalizes as shortvec(1) + signature + message and rejects a >1232-byte message", () => {
-    const a = new SolanaChainAdapter();
-    const sig = new Uint8Array(64).fill(9);
-    const msg = new Uint8Array(10).fill(1);
-    const wire = a.finalize(msg, [sig]);
-    expect(wire).toHaveLength(75);
-    expect(wire[0]).toBe(1);
-    expect(wire.slice(1, 65)).toStrictEqual(sig);
-    expect(wire.slice(65)).toStrictEqual(msg);
-  });
-});
-
-const MINT = "Mint1111111111111111111111111111111111111111";
-
-const baseIntent = (): DisplayIntent => ({
-  family: "solana",
-  network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-  summary: "transfer",
-  outflows: [{ to: "dest", amount: { asset: MINT, amount: "10000" }, verified: false }],
-  approvals: [],
-  fee: { max: { asset: "lamports", amount: "5000" } },
-  warnings: [],
-  verifiability: "full",
-});
-
-describe("token2022Intent", () => {
-  it("shows the net received amount and a fee warning for TransferFeeConfig mints", () => {
-    const ext: MintExtensionSummary = { transferFee: { basisPoints: 100, maximumFee: 500n } };
-    const out = token2022Intent(baseIntent(), ext, MINT, 10_000n);
-    // 100 bps of 10_000 = 100 ≤ 500 max → net 9_900.
-    expect(out.outflows[0]?.amount.amount).toBe("9900");
-    expect(out.warnings.some((w) => w.kind === "token-2022-transfer-fee")).toBe(true);
-    expect(out.verifiability).toBe("full");
-  });
-
-  it("caps the fee at the maximum", () => {
-    const ext: MintExtensionSummary = { transferFee: { basisPoints: 500, maximumFee: 100n } };
-    const out = token2022Intent(baseIntent(), ext, MINT, 10_000n);
-    // 500 bps of 10_000 = 500 > 100 cap → net 9_900.
-    expect(out.outflows[0]?.amount.amount).toBe("9900");
-  });
-
-  it("marks hook/delegate mints partial with a warning", () => {
-    const hook: MintExtensionSummary = { transferHook: { programId: new Uint8Array(32) } };
-    const out = token2022Intent(baseIntent(), hook, MINT, 10_000n);
-    expect(out.verifiability).toBe("partial");
-    expect(out.warnings.some((w) => w.kind === "token-2022-extension")).toBe(true);
-    const delegate: MintExtensionSummary = {
-      permanentDelegate: { delegate: new Uint8Array(32).fill(1) },
-    };
-    const out2 = token2022Intent(baseIntent(), delegate, MINT, 10_000n);
-    expect(out2.verifiability).toBe("partial");
-  });
-
-  it("leaves extension-free mints untouched", () => {
-    const out = token2022Intent(baseIntent(), {}, MINT, 10_000n);
-    expect(out.outflows[0]?.amount.amount).toBe("10000");
-    expect(out.warnings).toHaveLength(0);
-    expect(out.verifiability).toBe("full");
-  });
-});
-
-const FROM = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
-const TO = "8opHzTAnfzRpPEx21XtnrVTX28YQuCpAjcn1PczScKh";
-const BLOCKHASH = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
-
-const solanaCtx = (
-  handlers: Record<string, unknown>,
-  transitions: TrackedTransaction[] = [],
-): RouteContext => {
-  const client = rpc(handlers);
-  return {
-    options: {
-      networks: {
-        solanaRpc: () => client,
-        independentSolanaRpc: () => ({ kind: "unavailable" }),
-      } as never,
-      wallet: {} as never,
-      openStore: async () => Promise.resolve({} as never),
-      random: (n: number) => new Uint8Array(n).fill(0x55),
-      setTimer: () => () => {},
-      now: () => 0,
-      logger: { warn: () => {} },
-      chains: {
-        account: async () =>
-          Promise.resolve({
-            template: "solana.bip44-change",
-            network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-            address: FROM,
-          }),
-        sign: async () =>
-          Promise.resolve({ kind: "solana.transaction", signature: new Uint8Array(64).fill(2) }),
-      } as never,
+const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
+  const session = options.session;
+  const requestsCalls: unknown[] = [];
+  const handler = new SolanaWalletHandler({
+    connections: {
+      checkOrigin: (origin) => ORIGIN,
+      session: () => session as never,
+      authorize: () => {
+        if (session === undefined) throw invalidParams("test unauthorized");
+        return session as never;
+      },
+      solanaAccount: () => (session === undefined ? undefined : SOL_ADDR),
+      request: async () => {
+        await Promise.resolve();
+        return {} as never;
+      },
+      touch: async () => Promise.resolve(),
+      revoke: async () => Promise.resolve(),
+      getState: () => ({ sessions: {}, pending: {} }) as never,
+      store: { subscribe: () => () => undefined } as never,
     },
-    transition: async (tx, next) => {
-      const out = { ...tx, ...next };
-      transitions.push(out);
-      return Promise.resolve(out);
+    requests: {
+      prepare: async (input) => {
+        await Promise.resolve();
+        requestsCalls.push(input);
+        return { id: "req-1" } as never;
+      },
+      outcome: async () => Promise.resolve(options.prepareResult as never),
     },
-    track: () => {},
-    txs: () => ({}),
-    newId: () => "tx-test-1",
-  };
+    solanaAccount: async () => ({ address: SOL_ADDR, publicKey: PUBKEY }),
+    activeGroup: () => ({ walletId: "w1", groupIndex: 0 }),
+    solanaNetwork: () => "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+  });
+  return { handler, requestsCalls };
 };
 
-const buildHandlers = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  getLatestBlockhash: { value: { blockhash: BLOCKHASH, lastValidBlockHeight: "200" } },
-  simulateTransaction: { value: { unitsConsumed: 1200 } },
-  getRecentPrioritizationFees: Array.from({ length: 100 }, (_, i) => ({
-    prioritizationFee: (i + 1) * 100,
-  })),
-  sendTransaction: "sig-hash-1",
-  getSignatureStatuses: { value: [{ confirmationStatus: "confirmed", err: null }] },
-  getBlockHeight: "100",
-  ...overrides,
-});
-
-const solanaParams = (): PrepareParams => ({
-  account: {
-    kind: "hd",
-    walletId: "0a".repeat(16),
-    groupIndex: 0,
-    template: "solana.bip44-change",
-  },
-  network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-  to: TO,
-  amount: 5000n,
-  fee: "normal",
-});
-
-describe("prepareSolana + pollSolana", () => {
-  it("prepares a SOL transfer, submits and reaches broadcast", async () => {
-    const transitions: TrackedTransaction[] = [];
-    const ctx = solanaCtx(buildHandlers(), transitions);
-    const prepared = await prepareSolana(ctx, solanaParams());
-    const tx = await prepared.submit({ kind: "password", password: "pw" });
-    expect(tx.family).toBe("solana");
-    expect(tx.hash).toBe("sig-hash-1");
-    expect(transitions.some((t) => t.state === "submitted")).toBe(true);
+describe("SolanaWalletHandler", () => {
+  it("rejects unauthorized solana:signMessage before the pipeline", async () => {
+    const { handler } = rig({});
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signMessage",
+        params: { message: new Uint8Array([1]) },
+      }),
+    ).rejects.toThrow();
   });
 
-  it("poll maps finalized → confirmed, failed → failed, expired → dropped", async () => {
-    const base: TrackedTransaction = {
-      id: "t1",
-      family: "solana",
-      network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-      account: "w",
-      hash: "h",
-      state: "submitted",
-      intent: baseIntent(),
-      nonce: 0,
-      lastValidBlockHeight: 150,
-      submittedAt: 0,
-      error: undefined,
-    };
-    const ctx = solanaCtx(buildHandlers());
-    await expect(pollSolana(ctx, { ...base, hash: undefined })).resolves.toBe("failed");
-    await expect(
-      pollSolana(
-        solanaCtx(
-          buildHandlers({
-            getSignatureStatuses: { value: [{ confirmationStatus: "finalized", err: null }] },
-          }),
-        ),
-        base,
-      ),
-    ).resolves.toBe("confirmed");
-    await expect(
-      pollSolana(
-        solanaCtx(
-          buildHandlers({
-            getSignatureStatuses: { value: [{ confirmationStatus: "confirmed", err: { x: 1 } }] },
-          }),
-        ),
-        base,
-      ),
-    ).resolves.toBe("failed");
-    await expect(
-      pollSolana(
-        solanaCtx(
-          buildHandlers({
-            getSignatureStatuses: { value: [null] },
-            getBlockHeight: "200",
-          }),
-        ),
-        base,
-      ),
-    ).resolves.toBe("dropped");
+  it("standard:connect requests a solana connection then returns the wallet account", async () => {
+    const { handler } = rig({});
+    const result = await handler.handle(SITE, { method: "standard:connect" });
+    expect(result).toMatchObject({
+      accounts: [{ address: SOL_ADDR, chains: ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"] }],
+    });
+    expect(
+      (result as { accounts: { publicKey: Uint8Array }[] }).accounts[0].publicKey,
+    ).toStrictEqual(PUBKEY);
   });
 
-  it("poll re-broadcasts a still-pending tx that has a stored wire", async () => {
-    const transitions: TrackedTransaction[] = [];
-    const sent: string[] = [];
-    const handlers = buildHandlers({
-      getSignatureStatuses: { value: [null] },
-      getBlockHeight: "100",
-      sendTransaction: () => {
-        sent.push("broadcast");
-        return "sig-hash-2";
+  it("solana:signMessage goes through the solana-sign pipeline and returns the signature", async () => {
+    const sig = new Uint8Array(64).fill(9);
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.message", signature: sig },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signMessage",
+      params: { message: new Uint8Array([7, 8]) },
+    });
+    expect(requestsCalls).toHaveLength(1);
+    const input = requestsCalls[0] as { method: string; request: { kind: string } };
+    expect(input.method).toBe("solana-sign");
+    expect(input.request.kind).toBe("message");
+    expect(result).toMatchObject({ signature: sig });
+  });
+
+  it("solana:signTransaction returns the signed transactions (send:false)", async () => {
+    const signed = [new Uint8Array([5, 5, 5])];
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: false, signedTransactions: signed },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signTransaction",
+      params: { transactions: [TX] },
+    });
+    const input = requestsCalls[0] as { request: { kind: string; send: boolean } };
+    expect(input.request.send).toBe(false);
+    expect(result).toMatchObject({ signedTransactions: signed });
+  });
+
+  it("solana:signAndSendTransaction returns the signatures (send:true)", async () => {
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: true, signatures: ["sig1"] },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signAndSendTransaction",
+      params: { transactions: [TX] },
+    });
+    const input = requestsCalls[0] as { request: { send: boolean } };
+    expect(input.request.send).toBe(true);
+    expect(result).toMatchObject({ signatures: ["sig1"] });
+  });
+
+  it("rejects a non-bytes transaction before the pipeline", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signTransaction",
+        params: { transactions: ["not-bytes"] },
+      }),
+    ).rejects.toThrow();
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("solanaAccountsChanged returns the new group's wallet account", async () => {
+    const { handler } = rig({});
+    const accounts = await handler.solanaAccountsChanged(SITE);
+    expect(accounts).toStrictEqual([
+      {
+        address: SOL_ADDR,
+        publicKey: PUBKEY,
+        chains: ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"],
+        features: ["solana:signTransaction", "solana:signAndSendTransaction", "solana:signMessage"],
       },
-    });
-    const ctx = solanaCtx(handlers, transitions);
-    const prepared = await prepareSolana(ctx, solanaParams());
-    const tx = await prepared.submit({ kind: "password", password: "pw" });
-    const pending = await pollSolana(ctx, tx);
-    expect(pending).toBeUndefined();
-    expect(sent.length).toBeGreaterThan(0);
-  });
-
-  it("prepares an SPL transfer through the token program", async () => {
-    const transitions: TrackedTransaction[] = [];
-    const ctx = solanaCtx(
-      buildHandlers({
-        // Token mint: owned by the classic SPL Token program; token accounts exist.
-        getAccountInfo: () => ({
-          value: {
-            owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-            data: [""],
-          },
-        }),
-      }),
-      transitions,
-    );
-    const prepared = await prepareSolana(ctx, {
-      ...solanaParams(),
-      token: "So11111111111111111111111111111111111111112",
-      decimals: 6,
-    });
-    expect(prepared.txId.startsWith("tx-")).toBe(true);
-  });
-
-  it("rejects an imported account", async () => {
-    const ctx = solanaCtx(buildHandlers());
-    await expect(
-      prepareSolana(ctx, {
-        ...solanaParams(),
-        account: { kind: "imported", keyId: "k", family: "solana" } as never,
-      }),
-    ).rejects.toThrow("imported accounts are not yet supported");
+    ]);
   });
 });

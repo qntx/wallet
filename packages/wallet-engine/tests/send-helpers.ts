@@ -66,6 +66,10 @@ export const requestsFor = async (
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
     },
+    solanaSign: async () => {
+      await Promise.resolve();
+      throw new Error("solana-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter() % 251),
     now: () => 0,

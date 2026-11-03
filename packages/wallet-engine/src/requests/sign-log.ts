@@ -9,6 +9,7 @@ import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
+import type { SolanaAccount } from "./controller.ts";
 import type { RiskFinding } from "./risk.ts";
 import type { RequestMethod, RequestOrigin } from "./types.ts";
 
@@ -19,7 +20,7 @@ export type SignLogEntry = {
   readonly at: number;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
   readonly network: string;
   readonly summary: string;
   readonly verification: "verified" | "unverifiable";
@@ -56,7 +57,7 @@ const OUTCOMES: ReadonlySet<unknown> = new Set([
 ]);
 const FAMILIES: ReadonlySet<unknown> = new Set(["evm", "solana", "bitcoin"]);
 
-const isAccount = (value: unknown): value is AccountRef | SparkAccountRef => {
+const isAccount = (value: unknown): value is AccountRef | SparkAccountRef | SolanaAccount => {
   if (!isObject(value)) {
     return false;
   }
@@ -72,6 +73,14 @@ const isAccount = (value: unknown): value is AccountRef | SparkAccountRef => {
   }
   if (value["kind"] === "derived") {
     return typeof value["walletId"] === "string" && typeof value["index"] === "number";
+  }
+  if (
+    value["kind"] === undefined &&
+    typeof value["walletId"] === "string" &&
+    typeof value["groupIndex"] === "number" &&
+    typeof value["address"] === "string"
+  ) {
+    return true;
   }
   return (
     value["kind"] === undefined &&

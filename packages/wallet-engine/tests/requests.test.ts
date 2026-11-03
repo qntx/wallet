@@ -135,6 +135,10 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
       nostrSignCalls.push("sign");
       return Promise.resolve(nostrSigned);
     },
+    solanaSign: async () => {
+      await Promise.resolve();
+      throw new Error("solana-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => now,
@@ -427,6 +431,10 @@ function evmWorld(options: {
     nostrSign: async () => {
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
+    },
+    solanaSign: async () => {
+      await Promise.resolve();
+      throw new Error("solana-sign is not wired in this test");
     },
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),

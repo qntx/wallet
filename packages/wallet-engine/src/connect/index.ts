@@ -12,14 +12,15 @@ import type { Eip1193Event, Eip1193Handler } from "./eip1193.ts";
 import { ProviderError } from "./errors.ts";
 import { PROVIDER_SCRIPT } from "./inject.generated.ts";
 import type { Nip07Handler } from "./nip07.ts";
-import type { SolanaHandler } from "./solana.ts";
+import type { SolanaEvent, SolanaHandler } from "./solana.ts";
 import type { WeblnHandler } from "./webln.ts";
 
 export type { ConnectionController, ConnectionSession } from "./controller.ts";
 export type { Eip1193Handler, Eip1193Request, Eip1193Event } from "./eip1193.ts";
 export type { Nip07Request } from "./nip07.ts";
 export type { WeblnRequest } from "./webln.ts";
-export type { SolanaRequest } from "./solana.ts";
+export type { SolanaRequest, SolanaEvent, SolanaWalletAccount } from "./solana.ts";
+export { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./solana.ts";
 export { WeblnHandler } from "./webln.ts";
 export { Nip07Handler } from "./nip07.ts";
 export type { NostrPolicy } from "./controller.ts";
@@ -103,7 +104,7 @@ export type BrowserBridgeOptions = {
   readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
   readonly nip07: Pick<Nip07Handler, "handle">;
   readonly webln: Pick<WeblnHandler, "handle">;
-  readonly solana: Pick<SolanaHandler, "handle">;
+  readonly solana: Pick<SolanaHandler, "handle" | "subscribe">;
   readonly connections: Pick<ConnectionController, "checkOrigin" | "invalidateOrigin">;
   /** The host's `webview.injectJavaScript`. */
   readonly inject: (script: string) => void;
@@ -173,6 +174,15 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
       return;
     }
     receive({ event: event.name, data: eventData(event) });
+  });
+  const unsubscribeSolana = solana.subscribe((event: SolanaEvent) => {
+    if (disposed || topOrigin === undefined || event.origin !== topOrigin) {
+      return;
+    }
+    receive({
+      event: "standard:events",
+      data: { event: "change", params: { accounts: event.accounts } },
+    });
   });
 
   const message = (topUrl: string, data: string): void => {
@@ -258,6 +268,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     }
     disposed = true;
     unsubscribe();
+    unsubscribeSolana();
     if (topOrigin !== undefined) {
       connections.invalidateOrigin(topOrigin);
       topOrigin = undefined;
