@@ -9,6 +9,15 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-03
+
+Seed-only Nostr identities and native iOS passkeys: identities are indexed independently of
+account groups, imported and NIP-46 client keys are gone, and wallet metadata is authored by a
+dedicated per-wallet sync key (WD-076, Meowl ADR-060). `@qntx/wallet-native` runs passkey
+ceremonies with the PRF extension on iOS 18+. Taproot (BIP-86) sends are fixed, and the engine gains dApp
+connections with an EIP-1193 provider and Spark to bitcoin L1 transfers. Vaults, the wire protocol
+and backups change format with no migration: recreate existing vaults.
+
 ### Changed
 
 - BREAKING: `NostrKeyRef`, `nostr.deriveKey`, `nostr.discover` and the `nostr-key` record header
@@ -47,6 +56,29 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   never listed in `nostr.keys`, never exportable and never in the backup payload.
 - `@qntx/wallet-engine` metadata sync now authors kind-30078 documents with the wallet's sync key
   rather than its identity-0 Nostr key; a wallet with no derived identity still syncs.
+- `@qntx/wallet-engine`: Spark and bitcoin L1 transfers through the request pipeline.
+  `{ method: "spark-deposit", account, from, amountSats, fee }` sends from a bitcoin account of the
+  same wallet to a fresh Spark deposit address, with the full bitcoin send checks; the broadcast
+  transaction carries `sparkDeposit` (persisted) and is claimed automatically once confirmed, with
+  backoff, resuming after a restart. `{ method: "spark-exit", account, amountSats, maxFeeSats }`
+  exits to the group's next unused `btc.bip84` receive address. Neither is assessed for recipient
+  risk, and the Spark network must map to its bitcoin network (`mainnet`, `regtest`).
+- `@qntx/wallet-engine`: dApp connections for EVM. `engine.connections` (`ConnectionController`)
+  keeps one CAIP-25-style session per `https` origin (network, account and method scopes,
+  persisted, dropped after 90 days unused, bound to the active account group through
+  `setActiveGroup`) and approves connections by id from a pending queue. `engine.eip1193`
+  (`Eip1193Handler`) is the platform-neutral provider: accounts and permissions, `eth_chainId` and
+  `wallet_switchEthereumChain`, `eth_sendTransaction`, `personal_sign`, `eth_signTypedData_v4` and
+  the read-only RPC list, with EIP-1193 error codes (`ProviderError`) and `accountsChanged`,
+  `chainChanged`, `connect` and `disconnect` events. `eth_sign`, `eth_signTypedData` (v1, v3),
+  `eth_signTransaction`, `eth_sendRawTransaction` and the deferred `wallet_addEthereumChain`,
+  `wallet_watchAsset` and EIP-5792 methods answer `4200`. The request pipeline accepts them as
+  `{ method: "evm-sign", origin, ... }` with a `browser` origin: a dApp transaction is rebuilt with
+  fresh nonce and fees (its gas only raises the floor), each origin has one request at a time,
+  and revoking or switching network voids the origin's unfinished requests. Sign-log entries carry
+  the browser origin. A `personal_sign` whose bytes are not UTF-8 text is blind signing, which is
+  off by default: it answers `4200` without entering the pipeline. New engine option
+  `allowLocalhostOrigins` for development.
 - `@qntx/wallet-native`: iOS native passkeys with the PRF extension through `ASAuthorization`
   platform credentials (iOS 18+). The kernel now reads a registration's authenticator data from
   the CBOR attestation object iOS returns, keeps the PRF results of that single ceremony, and
@@ -60,7 +92,6 @@ wallet gateway and cross-checks pre-signing reads against the host endpoints; an
 recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` builds cleanly on Android.
 
 ### Changed
-
 
 - **BREAKING** `@qntx/wallet-engine`: the wallet metadata document is now `v: 2`
   (`{ v, wallet, groups, contacts }`) and `v: 1` documents are no longer read. A remote `v: 1`
@@ -91,29 +122,6 @@ recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` build
 
 ### Added
 
-- `@qntx/wallet-engine`: Spark and bitcoin L1 transfers through the request pipeline.
-  `{ method: "spark-deposit", account, from, amountSats, fee }` sends from a bitcoin account of the
-  same wallet to a fresh Spark deposit address, with the full bitcoin send checks; the broadcast
-  transaction carries `sparkDeposit` (persisted) and is claimed automatically once confirmed, with
-  backoff, resuming after a restart. `{ method: "spark-exit", account, amountSats, maxFeeSats }`
-  exits to the group's next unused `btc.bip84` receive address. Neither is assessed for recipient
-  risk, and the Spark network must map to its bitcoin network (`mainnet`, `regtest`).
-- `@qntx/wallet-engine`: dApp connections for EVM. `engine.connections` (`ConnectionController`)
-  keeps one CAIP-25-style session per `https` origin (network, account and method scopes,
-  persisted, dropped after 90 days unused, bound to the active account group through
-  `setActiveGroup`) and approves connections by id from a pending queue. `engine.eip1193`
-  (`Eip1193Handler`) is the platform-neutral provider: accounts and permissions, `eth_chainId` and
-  `wallet_switchEthereumChain`, `eth_sendTransaction`, `personal_sign`, `eth_signTypedData_v4` and
-  the read-only RPC list, with EIP-1193 error codes (`ProviderError`) and `accountsChanged`,
-  `chainChanged`, `connect` and `disconnect` events. `eth_sign`, `eth_signTypedData` (v1, v3),
-  `eth_signTransaction`, `eth_sendRawTransaction` and the deferred `wallet_addEthereumChain`,
-  `wallet_watchAsset` and EIP-5792 methods answer `4200`. The request pipeline accepts them as
-  `{ method: "evm-sign", origin, ... }` with a `browser` origin: a dApp transaction is rebuilt with
-  fresh nonce and fees (its gas only raises the floor), each origin has one request at a time,
-  and revoking or switching network voids the origin's unfinished requests. Sign-log entries carry
-  the browser origin. A `personal_sign` whose bytes are not UTF-8 text is blind signing, which is
-  off by default: it answers `4200` without entering the pipeline. New engine option
-  `allowLocalhostOrigins` for development.
 - `@qntx/wallet-engine`: address-book sync. Every wallet's metadata document carries the whole
   address book; documents merge per entry id, last writer wins (a tie goes to the larger
   serialization, so every device converges). Deletions travel as tombstones, dropped after 90 days;
@@ -382,7 +390,8 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/qntx/wallet/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/qntx/wallet/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/qntx/wallet/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/qntx/wallet/compare/v0.5.0...v0.5.1
