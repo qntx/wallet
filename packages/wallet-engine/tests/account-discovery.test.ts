@@ -12,7 +12,12 @@ const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'"
 const LOGGER: EngineLogger = { warn: () => {} };
 
 const walletStub = (): Wallet =>
-  ({ getSnapshot: () => ({ wallets: [{ walletId: W }] }) }) as unknown as Wallet;
+  ({
+    getSnapshot: () => ({
+      wallets: [{ walletId: W }],
+      nostr: { keys: [] as unknown[] },
+    }),
+  }) as unknown as Wallet;
 
 type Rig = {
   ctl: AccountTreeController;
@@ -149,6 +154,21 @@ describe("account discovery", () => {
     for (const fam of ["spark", "evm", "solana", "bitcoin"]) {
       expect(r.calls).toContain(fam);
     }
+  });
+
+  it("account-group discovery never derives or records a nostr key", async () => {
+    // WD-076: identity indices are independent of account groups — a group scan probes the
+    // four chain families only, and the wallet's nostr section stays empty.
+    const r = rig();
+    await init(r);
+    await r.ctl.discoverGroups(W);
+    expect([...new Set(r.calls)].toSorted()).toStrictEqual(["bitcoin", "evm", "solana", "spark"]);
+    expect(r.ctl.getState().groups[W]?.[0]?.used).toStrictEqual({
+      bitcoin: false,
+      evm: false,
+      solana: false,
+      spark: false,
+    });
   });
 
   it("marks the group's used map per family", async () => {

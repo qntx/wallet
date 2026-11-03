@@ -26,7 +26,7 @@ export type StoredFactor = {
 };
 
 /** The vault format this build reads and writes. Anything else is `unsupported`. */
-export const VAULT_FORMAT = 2;
+export const VAULT_FORMAT = 3;
 
 export type VaultMeta = {
   readonly format: number; // this build reads only VAULT_FORMAT

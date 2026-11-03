@@ -35,13 +35,13 @@ export type NostrExportKeyFormat =
 
 export type NostrApi = {
   readonly signer: (ref: NostrKeyRef) => WalletSigner;
-  /** Public keys a wallet's account groups would derive — discovery before deriveKey. */
+  /** Public keys a wallet's identity indices derive — discovery before deriveKey. */
   readonly discover: (
     walletId: string,
     from: number,
     count: number,
   ) => Promise<ReadonlyArray<DerivedNostrKey>>;
-  readonly deriveKey: (walletId: string, groupIndex: number) => Promise<NostrKeyInfo>;
+  readonly deriveKey: (walletId: string, index: number) => Promise<NostrKeyInfo>;
   readonly importKey: (
     input: NostrImportKeyInput,
     options?: { readonly factor?: InitialFactor },

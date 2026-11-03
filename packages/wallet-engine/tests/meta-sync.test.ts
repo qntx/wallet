@@ -201,7 +201,7 @@ describe("MetaSyncController", () => {
     const signer = nostr(r.wallet).signer({
       kind: "derived",
       walletId: created.walletId,
-      groupIndex: 0,
+      index: 0,
     });
     const plain = await signer.nip44Decrypt!(e.pubkey, e.content);
     const doc = decodeMetaDocBytes(new TextEncoder().encode(plain));
@@ -219,7 +219,7 @@ describe("MetaSyncController", () => {
     const signer = nostr(r.wallet).signer({
       kind: "derived",
       walletId: created.walletId,
-      groupIndex: 0,
+      index: 0,
     });
     const pubkey = await signer.getPublicKey();
     // 1) wrong d tag
@@ -235,7 +235,7 @@ describe("MetaSyncController", () => {
     const signer2 = nostr(r.wallet).signer({
       kind: "derived",
       walletId: created.walletId,
-      groupIndex: 1,
+      index: 1,
     });
     const wrongAuthor = await signer2.signEvent({
       pubkey: await signer2.getPublicKey(),
@@ -313,7 +313,7 @@ describe("MetaSyncController", () => {
       const signer = nostr(r.wallet).signer({
         kind: "derived",
         walletId: created.walletId,
-        groupIndex: 0,
+        index: 0,
       });
       const pubkey = await signer.getPublicKey();
       // Seed a remote doc far in the future — created_at must exceed it.
@@ -401,7 +401,7 @@ describe("MetaSyncController", () => {
     const signer = nostr(r.wallet).signer({
       kind: "derived",
       walletId: created.walletId,
-      groupIndex: 0,
+      index: 0,
     });
     const pubkey = await signer.getPublicKey();
     // Verified event, correct author/kind/d — but the content is not our NIP-44 doc.
@@ -437,7 +437,7 @@ describe("MetaSyncController", () => {
     const signer = nostr(r.wallet).signer({
       kind: "derived",
       walletId: created.walletId,
-      groupIndex: 0,
+      index: 0,
     });
     const pubkey = await signer.getPublicKey();
     const encrypted = await signer.nip44Encrypt!(

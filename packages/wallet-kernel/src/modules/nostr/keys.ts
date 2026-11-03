@@ -138,7 +138,7 @@ export async function createNip46ClientKey(
 
 export async function deriveKey(
   ctx: KernelContext,
-  params: { walletId: string; groupIndex: number },
+  params: { walletId: string; index: number },
   requestSession: string | undefined,
 ): Promise<NostrKeyInfo> {
   const { dek } = ctx.session.require(requestSession);
@@ -146,7 +146,7 @@ export async function deriveKey(
   return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
     const master = masterKey(seed);
     try {
-      const secretKey = nostrKeyAt(master, params.groupIndex);
+      const secretKey = nostrKeyAt(master, params.index);
       try {
         const publicKey = getPublicKey(secretKey);
         ensureNewKey(ctx, publicKey);
@@ -154,7 +154,7 @@ export async function deriveKey(
           publicKey,
           origin: "derived",
           walletId: params.walletId,
-          groupIndex: params.groupIndex,
+          index: params.index,
           createdAt: ctx.platform.now(),
         };
         await ctx.commit([{ op: "put-record", record: keyRecord(ctx, dek, secretKey, header) }]);
@@ -172,17 +172,20 @@ export async function discover(
   ctx: KernelContext,
   params: { walletId: string; from: number; count: number },
   requestSession: string | undefined,
-): Promise<{ keys: Array<{ groupIndex: number; publicKey: string }> }> {
+): Promise<{ keys: Array<{ index: number; publicKey: string }> }> {
   const { dek } = ctx.session.require(requestSession);
   const record = findRecord(ctx.image, "entropy", params.walletId);
-  const keys: Array<{ groupIndex: number; publicKey: string }> = [];
+  if (params.from + params.count - 1 > 0x7ffffffe) {
+    throw new KernelError("invalid-input", "identity range exceeds 0x7ffffffe");
+  }
+  const keys: Array<{ index: number; publicKey: string }> = [];
   return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
     const master = masterKey(seed);
     try {
       for (let i = 0; i < params.count; i++) {
-        const groupIndex = params.from + i;
-        const secretKey = nostrKeyAt(master, groupIndex);
-        keys.push({ groupIndex, publicKey: getPublicKey(secretKey) });
+        const index = params.from + i;
+        const secretKey = nostrKeyAt(master, index);
+        keys.push({ index, publicKey: getPublicKey(secretKey) });
         wipe(secretKey);
       }
       return { keys };

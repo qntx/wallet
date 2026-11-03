@@ -28,7 +28,7 @@ import type { NullValue, Validator } from "./validate.ts";
 
 export type { WalletErrorCode } from "../types.ts";
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 /**
  * Responses to requests whose `id` cannot be parsed (malformed envelope) carry id 0. Main-side
@@ -48,7 +48,7 @@ export type ProtocolValue =
   | { readonly [key: string]: ProtocolValue };
 
 export type Request = {
-  readonly v: 1;
+  readonly v: typeof PROTOCOL_VERSION;
   readonly id: number;
   readonly method: string;
   readonly session?: string;
@@ -61,12 +61,16 @@ export type ErrorPayload = {
 };
 
 export type Response =
-  | { readonly v: 1; readonly id: number; readonly ok: ProtocolValue }
-  | { readonly v: 1; readonly id: number; readonly err: ErrorPayload };
+  | { readonly v: typeof PROTOCOL_VERSION; readonly id: number; readonly ok: ProtocolValue }
+  | { readonly v: typeof PROTOCOL_VERSION; readonly id: number; readonly err: ErrorPayload };
 
 export type KernelEvent =
-  | { readonly v: 1; readonly event: "status"; readonly status: StatusPayload }
-  | { readonly v: 1; readonly event: "locked"; readonly reason: LockReason };
+  | {
+      readonly v: typeof PROTOCOL_VERSION;
+      readonly event: "status";
+      readonly status: StatusPayload;
+    }
+  | { readonly v: typeof PROTOCOL_VERSION; readonly event: "locked"; readonly reason: LockReason };
 
 /**
  * The worst-case encoded size of one request, enforced by both sides: the host refuses to post a
@@ -139,7 +143,7 @@ export function isProtocolValue(value: unknown): value is ProtocolValue {
 
 /** The status payload: core sections plus one object section per protocol module. */
 const statusPayload: Validator<StatusPayload> = obj({
-  protocol: literal(1),
+  protocol: literal(PROTOCOL_VERSION),
   vault: union(
     literal("uninitialized"),
     literal("locked"),
@@ -201,8 +205,8 @@ const errorPayload = obj({ code: walletErrorCode, retryAt: opt(safeTime) });
 
 /** Host-side validators: `kernelEvent` covers the two push messages. */
 export const kernelEvent: Validator<KernelEvent> = union(
-  obj({ v: literal(1), event: literal("status"), status: statusPayload }),
-  obj({ v: literal(1), event: literal("locked"), reason: lockReason }),
+  obj({ v: literal(PROTOCOL_VERSION), event: literal("status"), status: statusPayload }),
+  obj({ v: literal(PROTOCOL_VERSION), event: literal("locked"), reason: lockReason }),
 );
 
 /** Validates the `err` payload of a response; `ok` is checked against `METHODS[m].result`. */

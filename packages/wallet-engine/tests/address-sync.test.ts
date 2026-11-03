@@ -183,7 +183,7 @@ describe("metadata document v2", () => {
   });
 
   it("rejects v1 and any other version", () => {
-    expect(decodeMetaDoc({ v: 1, wallet: { updatedAt: 0 }, groups: [] })).toBeUndefined();
+    expect(decodeMetaDoc({ v: 2, wallet: { updatedAt: 0 }, groups: [] })).toBeUndefined();
     expect(decodeMetaDoc({ ...doc([]), v: 3 })).toBeUndefined();
   });
 

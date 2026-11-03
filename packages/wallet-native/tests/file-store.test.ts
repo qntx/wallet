@@ -24,7 +24,7 @@ const fakeFile = (initial?: Uint8Array): KernelFile & { image: () => unknown } =
 };
 
 const META = {
-  format: 2,
+  format: 3,
   revision: 1,
   keyId: "0123456789abcdef0123456789abcdef",
   failedAttempts: 0,

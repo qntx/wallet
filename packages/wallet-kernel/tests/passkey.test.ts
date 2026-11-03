@@ -17,7 +17,7 @@ type PasskeyVector = {
   mnemonic: string;
   seed: string;
   masterPublicKey: string;
-  groupIndex: number;
+  index: number;
   privateKey: string;
   publicKey: string;
   walletId: string;
@@ -46,7 +46,7 @@ describe("passkey wallet vector", () => {
     expect(bytesToHex(seed)).toBe(vector.seed);
     const master = masterKey(seed);
     expect(bytesToHex(master.publicKey!)).toBe(vector.masterPublicKey);
-    const privateKey = nostrKeyAt(master, vector.groupIndex);
+    const privateKey = nostrKeyAt(master, vector.index);
     expect(bytesToHex(privateKey)).toBe(vector.privateKey);
     expect(bytesToHex(schnorr.getPublicKey(privateKey))).toBe(vector.publicKey);
     expect(walletIdOf(master)).toBe(vector.walletId);

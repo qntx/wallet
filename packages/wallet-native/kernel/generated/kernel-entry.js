@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-CiU8Xx2X.mjs
+	// packages/wallet/dist/core-9m7HA3C9.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -636,6 +636,8 @@
 	var credentialId = str(1364, /^[A-Za-z0-9_-]+$/);
 	var safeTime = int(0, Number.MAX_SAFE_INTEGER);
 	var groupIndex = int(0, 2147483647);
+	/** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
+	var identityIndex = int(0, 2147483646);
 	var factor = union(obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
 		password: bytes(1, 1024)
@@ -886,7 +888,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-BV7ey12_.mjs
+	// packages/wallet/dist/protocol-CUDpUHPJ.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1071,7 +1073,7 @@
 	var nostrKeyRef = union(obj({
 		kind: literal("derived"),
 		walletId,
-		groupIndex
+		index: identityIndex
 	}), obj({
 		kind: literal("standalone"),
 		id: publicKey
@@ -1098,7 +1100,7 @@
 		session: sessionId
 	});
 	var derivedNostrKey = obj({
-		groupIndex,
+		index: identityIndex,
 		publicKey
 	});
 	var tags = arr(arr(str(MAX_TAG_ITEM), 64), MAX_TAGS);
@@ -1150,7 +1152,7 @@
 			presence: false,
 			params: obj({
 				walletId,
-				from: groupIndex,
+				from: identityIndex,
 				count: int(1, 20)
 			}),
 			result: obj({ keys: arr(derivedNostrKey, 20) })
@@ -1160,7 +1162,7 @@
 			presence: false,
 			params: obj({
 				walletId,
-				groupIndex
+				index: identityIndex
 			}),
 			result: nostrKeyInfo$1
 		},
@@ -1650,7 +1652,7 @@
 	}
 	/** The status payload: core sections plus one object section per protocol module. */
 	var statusPayload$1 = obj({
-		protocol: literal(1),
+		protocol: literal(2),
 		vault: union(literal("uninitialized"), literal("locked"), literal("unlocked"), literal("corrupted"), literal("unsupported"), literal("unavailable")),
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
 		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
@@ -1669,11 +1671,11 @@
 		retryAt: opt(safeTime)
 	});
 	obj({
-		v: literal(1),
+		v: literal(2),
 		event: literal("status"),
 		status: statusPayload$1
 	}), obj({
-		v: literal(1),
+		v: literal(2),
 		event: literal("locked"),
 		reason: lockReason
 	});
@@ -7460,8 +7462,9 @@
 		if (typeof value !== "string" || !/^[0-9a-f]{64}$/.test(value)) throw headerFailure();
 		return value;
 	}
-	function asGroupIndex(value) {
-		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 2147483647) throw headerFailure();
+	/** Identity indices stop below 2^31 - 1: the top segment derives the wallet sync key. */
+	function asIdentityIndex(value) {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > 2147483646) throw headerFailure();
 		return value;
 	}
 	function asBoolean(value) {
@@ -8165,7 +8168,7 @@
 				{
 					op: "init",
 					meta: {
-						format: 2,
+						format: 3,
 						revision: 1,
 						keyId,
 						failedAttempts: 0,
@@ -28864,12 +28867,15 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/modules/nostr/derive.ts
-	/** The NIP-06 derivation path; `i` is the account-group index segment. */
+	/** The NIP-06 derivation path; `i` is the identity index segment. */
 	var NIP06_PATH = "m/44'/1237'/i'/0/0";
-	/** NIP-06 private key of account group `groupIndex` (m/44'/1237'/i'/0/0). */
-	function nostrKeyAt(master, groupIndex) {
-		if (!Number.isSafeInteger(groupIndex) || groupIndex < 0 || groupIndex > 2147483647) throw new KernelError("invalid-input", "group index out of range");
-		const path = NIP06_PATH.split("/").map((segment) => segment === "i'" ? `${groupIndex}'` : segment).join("/");
+	/**
+	* NIP-06 private key of identity index `index` (m/44'/1237'/i'/0/0). The full 31-bit range is legal
+	* here: identity indices stop at 0x7ffffffe and the highest segment derives the wallet sync key.
+	*/
+	function nostrKeyAt(master, index) {
+		if (!Number.isSafeInteger(index) || index < 0 || index > 2147483647) throw new KernelError("invalid-input", "identity index out of range");
+		const path = NIP06_PATH.split("/").map((segment) => segment === "i'" ? `${index}'` : segment).join("/");
 		const node = master.derive(path);
 		try {
 			const key = node.privateKey;
@@ -29327,7 +29333,7 @@ zoo`.split("\n"));
 			publicKey: header.publicKey,
 			origin: header.origin,
 			walletId: header.walletId,
-			groupIndex: header.groupIndex,
+			index: header.index,
 			createdAt: header.createdAt
 		});
 		return header.origin === "nip46-client" ? JSON.stringify({
@@ -29350,14 +29356,14 @@ zoo`.split("\n"));
 				"publicKey",
 				"origin",
 				"walletId",
-				"groupIndex",
+				"index",
 				"createdAt"
 			]);
 			return {
 				publicKey,
 				origin: "derived",
 				walletId: asWalletId(object["walletId"]),
-				groupIndex: asGroupIndex(object["groupIndex"]),
+				index: asIdentityIndex(object["index"]),
 				createdAt
 			};
 		}
@@ -29395,7 +29401,7 @@ zoo`.split("\n"));
 			ref: header.origin === "derived" ? {
 				kind: "derived",
 				walletId: header.walletId,
-				groupIndex: header.groupIndex
+				index: header.index
 			} : header.origin === "nip46-client" ? {
 				kind: "nip46-client",
 				id: header.publicKey
@@ -29497,7 +29503,7 @@ zoo`.split("\n"));
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, async (seed) => {
 			const master = masterKey(seed);
 			try {
-				const secretKey = nostrKeyAt(master, params.groupIndex);
+				const secretKey = nostrKeyAt(master, params.index);
 				try {
 					const publicKey = getPublicKey(secretKey);
 					ensureNewKey(ctx, publicKey);
@@ -29505,7 +29511,7 @@ zoo`.split("\n"));
 						publicKey,
 						origin: "derived",
 						walletId: params.walletId,
-						groupIndex: params.groupIndex,
+						index: params.index,
 						createdAt: ctx.platform.now()
 					};
 					await ctx.commit([{
@@ -29524,15 +29530,16 @@ zoo`.split("\n"));
 	async function discover(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		const record = findRecord(ctx.image, "entropy", params.walletId);
+		if (params.from + params.count - 1 > 2147483646) throw new KernelError("invalid-input", "identity range exceeds 0x7ffffffe");
 		const keys = [];
 		return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
 			const master = masterKey(seed);
 			try {
 				for (let i = 0; i < params.count; i++) {
-					const groupIndex = params.from + i;
-					const secretKey = nostrKeyAt(master, groupIndex);
+					const index = params.from + i;
+					const secretKey = nostrKeyAt(master, index);
 					keys.push({
-						groupIndex,
+						index,
 						publicKey: getPublicKey(secretKey)
 					});
 					wipe(secretKey);
@@ -39454,7 +39461,7 @@ zoo`.split("\n"));
 		const { meta } = image;
 		if (meta === void 0) return image.records.length > 0 || image.factors.length > 0 ? "corrupted" : "ok";
 		if (!Number.isSafeInteger(meta.format)) return "corrupted";
-		if (meta.format !== 2) return "unsupported";
+		if (meta.format !== 3) return "unsupported";
 		if (!Number.isSafeInteger(meta.revision) || meta.revision < 1 || typeof meta.keyId !== "string" || !/^[0-9a-f]{32}$/.test(meta.keyId) || !Number.isSafeInteger(meta.failedAttempts) || meta.failedAttempts < 0 || !Number.isSafeInteger(meta.lastFailureAt) || meta.lastFailureAt < 0) return "corrupted";
 	}
 	var FACTOR_KINDS = /* @__PURE__ */ new Set([
@@ -39521,7 +39528,7 @@ zoo`.split("\n"));
 	function statusPayload(ctx, nostr) {
 		const { factors, wallets, keys, backup } = statusContents(ctx.image, ctx.modules, nostr);
 		return {
-			protocol: 1,
+			protocol: 2,
 			vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
 			factors,
 			wallets,
@@ -39653,7 +39660,7 @@ zoo`.split("\n"));
 		};
 		const postStatus = () => {
 			const event = {
-				v: 1,
+				v: 2,
 				event: "status",
 				status: statusPayload(ctx, nostr)
 			};
@@ -39666,7 +39673,7 @@ zoo`.split("\n"));
 				return;
 			}
 			post({
-				v: 1,
+				v: 2,
 				event: "locked",
 				reason
 			});
@@ -39745,7 +39752,7 @@ zoo`.split("\n"));
 			const lockedReason = pendingLock;
 			pendingLock = void 0;
 			if (lockedReason !== void 0) post({
-				v: 1,
+				v: 2,
 				event: "locked",
 				reason: lockedReason
 			});
@@ -39758,7 +39765,7 @@ zoo`.split("\n"));
 				if (Object.getPrototypeOf(raw) !== Object.prototype) throw new KernelError("integrity", "malformed request");
 				const request = raw;
 				const { v, id: requestId, method, session: sessionField } = request;
-				if (v !== 1) throw new KernelError("integrity", "protocol version mismatch");
+				if (v !== 2) throw new KernelError("integrity", "protocol version mismatch");
 				if (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId < 0) throw new KernelError("integrity", "malformed request id");
 				id = requestId;
 				for (const key of Object.keys(request)) if (key !== "v" && key !== "id" && key !== "method" && key !== "session" && key !== "params") throw new KernelError("integrity", "unexpected request field");
@@ -39778,7 +39785,7 @@ zoo`.split("\n"));
 				const result = await dispatch(method, params, typeof sessionField === "string" ? sessionField : void 0);
 				if (ctx.session.unlocked && (METHODS[method].presence || ((_platform$policy$idle = platform.policy.idle) === null || _platform$policy$idle === void 0 ? void 0 : _platform$policy$idle.activity) === "request")) ctx.session.touch();
 				return {
-					v: 1,
+					v: 2,
 					id,
 					ok: result
 				};
@@ -39792,7 +39799,7 @@ zoo`.split("\n"));
 					retryAt: error.retryAt
 				} : { code: "integrity" };
 				return {
-					v: 1,
+					v: 2,
 					id,
 					err
 				};
@@ -42565,7 +42572,7 @@ zoo`.split("\n"));
 			const metaRow = plainObject(meta);
 			const { format } = metaRow;
 			if (typeof format !== "number" || !Number.isSafeInteger(format)) throw bad("meta format is not a safe integer");
-			if (format !== 2) throw new KernelError("unsupported", "vault store: meta format needs a newer build");
+			if (format !== 3) throw new KernelError("unsupported", "vault store: meta format needs a newer build");
 			exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
 			if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) throw bad("meta keyId is not 32 lowercase hex");
 			if (typeof metaRow["revision"] !== "number" || !Number.isSafeInteger(metaRow["revision"]) || metaRow["revision"] < 1) throw bad("meta revision is not a safe integer ≥ 1");

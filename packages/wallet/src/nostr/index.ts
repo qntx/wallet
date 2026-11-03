@@ -45,8 +45,8 @@ function createNostrApi(internals: WalletInternals): NostrApi {
       return result.keys;
     },
 
-    deriveKey: async (walletId: string, groupIndex: number): Promise<NostrKeyInfo> =>
-      internals.call("nostr.deriveKey", { walletId, groupIndex }),
+    deriveKey: async (walletId: string, index: number): Promise<NostrKeyInfo> =>
+      internals.call("nostr.deriveKey", { walletId, index }),
 
     importKey: async (
       input: NostrImportKeyInput,

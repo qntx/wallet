@@ -150,9 +150,9 @@ export class MetaSyncController extends Controller<MetaSyncState> {
 
   private signerFor(walletId: string): WalletSigner | undefined {
     const snap = this.options.wallet.getSnapshot();
-    const ref = { kind: "derived" as const, walletId, groupIndex: 0 };
+    const ref = { kind: "derived" as const, walletId, index: 0 };
     const hasKey = snap.nostr.keys.some(
-      (k) => k.ref.kind === "derived" && k.ref.walletId === walletId && k.ref.groupIndex === 0,
+      (k) => k.ref.kind === "derived" && k.ref.walletId === walletId && k.ref.index === 0,
     );
     if (!hasKey) {
       return undefined;

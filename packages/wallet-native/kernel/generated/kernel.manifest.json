@@ -1,6 +1,6 @@
 {
-  "protocol": 1,
-  "vaultFormat": 2,
+  "protocol": 2,
+  "vaultFormat": 3,
   "backends": {
     "spark": {
       "abiVersion": 1
@@ -74,7 +74,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "ca1b8751b91b5de9fea334b7fc11fbc3871507300bc273c9fc3e68908366d157"
+      "sha256": "67e1b277cc634c33f03178894d19f70ef922716fa571f886cdc7065dc220a4f9"
     }
   ]
 }

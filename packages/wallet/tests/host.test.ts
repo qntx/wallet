@@ -77,7 +77,7 @@ export class FakeKernel {
     this.active = port;
     // A real kernel delivers its first status asynchronously (the worker has to boot).
     setTimeout(() => {
-      port.send({ v: 1, event: "status", status: this.status });
+      port.send({ v: 2, event: "status", status: this.status });
     });
   }
 
@@ -91,7 +91,7 @@ export class FakeKernel {
     this.received.push(request.method);
     const handler = this.handlers.get(request.method);
     const respond = (reply: Reply): void => {
-      port.send({ v: 1, id: request.id, ...reply });
+      port.send({ v: 2, id: request.id, ...reply });
     };
     if (handler === undefined) {
       respond({ err: { code: "integrity" } });
@@ -102,12 +102,12 @@ export class FakeKernel {
 
   lock(reason: LockReason): void {
     this.status = { ...this.status, vault: "locked" };
-    this.active?.send({ v: 1, event: "locked", reason });
-    this.active?.send({ v: 1, event: "status", status: this.status });
+    this.active?.send({ v: 2, event: "locked", reason });
+    this.active?.send({ v: 2, event: "status", status: this.status });
   }
 
   pushStatus(): void {
-    this.active?.send({ v: 1, event: "status", status: this.status });
+    this.active?.send({ v: 2, event: "status", status: this.status });
   }
 
   /** A raw kernel → host message (e.g. the trailing locked event of an in-request lock). */
@@ -176,7 +176,7 @@ export class ScriptedPort implements MainPort {
 
 export function unlockedStatus(): StatusPayload {
   return {
-    protocol: 1,
+    protocol: 2,
     vault: "unlocked",
     factors: [{ kind: "passkey", id: "f".repeat(32), credentialId: "Y3JlZA", createdAt: 1 }],
     wallets: [],
@@ -390,7 +390,7 @@ describe("response validation", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     }); // let the request reach the kernel
-    spawned.at(0)?.send({ v: 1, id: 0, ok: null }); // UNATTRIBUTED_ID — cannot be a live request
+    spawned.at(0)?.send({ v: 2, id: 0, ok: null }); // UNATTRIBUTED_ID — cannot be a live request
     await expect(pending).rejects.toSatisfy((e) => walletError(e).code === "integrity");
     // Poison is terminal: the port is terminated, nothing respawns, every later call fails
     // integrity, and the snapshot is untouched.
@@ -514,7 +514,11 @@ describe("connect lifecycle", () => {
         spawned.push(port);
         // A kernel speaking a different protocol version: the status event fails validation.
         setTimeout(() => {
-          port.send({ v: 2, event: "status", status: kernel.status });
+          port.send({
+            v: 2,
+            event: "status",
+            status: { ...kernel.status, protocol: 1 },
+          });
         });
         return port;
       },
@@ -674,7 +678,7 @@ describe("message ordering", () => {
       kernel.status = { ...kernel.status, vault: "uninitialized" };
       kernel.pushStatus();
       setTimeout(() => {
-        kernel.send({ v: 1, event: "locked", reason: "user" });
+        kernel.send({ v: 2, event: "locked", reason: "user" });
       });
       return { ok: null };
     });
@@ -1145,10 +1149,10 @@ describe("nostr api methods", () => {
   it("discover returns the kernel's keys", async () => {
     const { wallet, kernel } = await connectFake(unlockedStatus());
     kernel.handlers.set("nostr.discover", () => ({
-      ok: { keys: [{ groupIndex: 0, publicKey: PUBLIC_KEY }] },
+      ok: { keys: [{ index: 0, publicKey: PUBLIC_KEY }] },
     }));
     const got = await nostr(wallet).discover("wid", 0, 5);
-    expect(got).toStrictEqual([{ groupIndex: 0, publicKey: PUBLIC_KEY }]);
+    expect(got).toStrictEqual([{ index: 0, publicKey: PUBLIC_KEY }]);
     expect(kernel.received).toContain("nostr.discover");
   });
 

@@ -296,9 +296,9 @@ async function deriveKey(
   h: ReturnType<typeof createHarness>,
   session: string,
   walletId: string,
-  groupIndex = 0,
+  index = 0,
 ): Promise<string> {
-  const res = ok(await h.call("nostr.deriveKey", { walletId, groupIndex }, session));
+  const res = ok(await h.call("nostr.deriveKey", { walletId, index }, session));
   return strField(res, "publicKey");
 }
 
@@ -666,17 +666,15 @@ describe("nostr operations", () => {
     );
     expect(discovered).toHaveLength(3);
     expect(strField(must(discovered[0]), "publicKey")).toBe(pk0);
-    expect(numField(must(discovered[1]), "groupIndex")).toBe(1);
+    expect(numField(must(discovered[1]), "index")).toBe(1);
 
-    const derived = ok(await h.call("nostr.deriveKey", { walletId, groupIndex: 1 }, session));
+    const derived = ok(await h.call("nostr.deriveKey", { walletId, index: 1 }, session));
     expect(strField(derived, "publicKey")).toBe(strField(must(discovered[1]), "publicKey"));
-    expect(errCode(await h.call("nostr.deriveKey", { walletId, groupIndex: 1 }, session))).toBe(
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 1 }, session))).toBe(
       "already-exists",
     );
     expect(
-      errCode(
-        await h.call("nostr.deriveKey", { walletId: "0000000000000000", groupIndex: 0 }, session),
-      ),
+      errCode(await h.call("nostr.deriveKey", { walletId: "0000000000000000", index: 0 }, session)),
     ).toBe("not-found");
   });
 
@@ -1074,7 +1072,7 @@ describe("factors, lock, reset", () => {
     await h.settle();
     const { session, walletId } = await createPasskeyWallet(h);
     const derivedPk = await deriveKey(h, session, walletId, 0);
-    ok(await h.call("nostr.deriveKey", { walletId, groupIndex: 5 }, session));
+    ok(await h.call("nostr.deriveKey", { walletId, index: 5 }, session));
     // A standalone key is not the wallet's: it survives the deletion.
     const standalone = strField(
       field(ok(await h.call("nostr.generateKey", {}, session)), "key"),
@@ -1101,7 +1099,7 @@ describe("factors, lock, reset", () => {
     expect(status.wallets).toHaveLength(0);
     expect(status.nostr.keys.map((k) => k.publicKey)).toStrictEqual([standalone]);
     // The delete committed atomically: no derived row survived, no signer is left in the pool.
-    expect(errCode(await h.call("nostr.deriveKey", { walletId, groupIndex: 6 }, session))).toBe(
+    expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 6 }, session))).toBe(
       "not-found",
     );
     expect(
@@ -1181,9 +1179,7 @@ it("a re-unlock on the same vault keeps the session and its max-session deadline
 
   // The second unlock did not reset the clock: the max measured from the first still applies.
   h.advance(61_000); // t=121s > 120s max
-  expect(errCode(await h.call("nostr.deriveKey", { walletId, groupIndex: 0 }, session))).toBe(
-    "locked",
-  );
+  expect(errCode(await h.call("nostr.deriveKey", { walletId, index: 0 }, session))).toBe("locked");
   expect(lockReasons(h.events)).toContain("expired");
 });
 
@@ -1641,7 +1637,7 @@ describe("integrity", () => {
     await h.settle();
     expect(errCode(await h.call("no.such.method"))).toBe("integrity");
     expect(errCode(await h.call("status", { unexpected: 1 }))).toBe("integrity");
-    expect(field(ok(await h.call("status")), "protocol")).toBe(1);
+    expect(field(ok(await h.call("status")), "protocol")).toBe(2);
   });
 
   it("a store that fails to load reports corrupted until reset re-establishes it", async () => {
@@ -1683,13 +1679,13 @@ describe("vault health", () => {
     const h = createHarness();
     await h.settle();
     // A newer build initialized this vault.
-    await h.store.commit([{ op: "init", meta: metaOf({ format: 3 }) }]);
+    await h.store.commit([{ op: "init", meta: metaOf({ format: 4 }) }]);
     await h.settle();
     expect(lastStatus(h).vault).toBe("unsupported");
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
     // Nothing is rewritten and reset still recovers.
     const metaAfter = await storedMeta(h.store);
-    expect(metaAfter.format).toBe(3);
+    expect(metaAfter.format).toBe(4);
     expect(ok(await h.call("vault.reset"))).toBeNull();
     expect(lastStatus(h).vault).toBe("uninitialized");
   });
@@ -2291,7 +2287,7 @@ describe("live-state reconciliation across kernels", () => {
     const passkeyId = strField(added, "id");
     const [rotated, write] = await Promise.all([
       a.call("vault.removeFactor", { verify: passwordFactor(), id: passkeyId }, sessionA),
-      b.call("nostr.deriveKey", { walletId, groupIndex: 7 }, sessionB),
+      b.call("nostr.deriveKey", { walletId, index: 7 }, sessionB),
     ]);
     const codes = [rotated, write].map(codeOf).toSorted();
     expect(codes).toStrictEqual(["conflict", "ok"]);
@@ -2313,7 +2309,7 @@ describe("request size cap", () => {
     const h = createHarness();
     await h.settle();
     const res = await h.sendRaw({
-      v: 1,
+      v: 2,
       id: 7,
       method: "nostr.signEvent",
       params: {
@@ -2330,7 +2326,7 @@ describe("request size cap", () => {
     const { session, walletId } = await createPasskeyWallet(h);
     const publicKey = await deriveKey(h, session, walletId);
     const res = await h.sendRaw({
-      v: 1,
+      v: 2,
       id: 8,
       method: "nostr.signEvent",
       session,
@@ -2438,7 +2434,7 @@ describe("nostr backup state", () => {
       );
       expect(field(ncryptKey, "backedUp")).toBe(true);
 
-      const derived = ok(await h.call("nostr.deriveKey", { walletId, groupIndex: 0 }, session));
+      const derived = ok(await h.call("nostr.deriveKey", { walletId, index: 0 }, session));
       expect(hasOwn(derived, "backedUp")).toBe(false);
       const nip46 = ok(await h.call("nostr.createNip46ClientKey", null, session));
       expect(hasOwn(nip46, "backedUp")).toBe(false);

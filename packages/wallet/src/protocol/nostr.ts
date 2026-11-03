@@ -7,7 +7,7 @@
 import type { DerivedNostrKey, NostrKeyInfo, WalletErrorCode } from "../types.ts";
 import {
   factor,
-  groupIndex,
+  identityIndex,
   MAX_BATCH,
   MAX_SNAPSHOT_ITEMS,
   MAX_TAG_ITEM,
@@ -73,7 +73,7 @@ export type UnwrapResult = { readonly ok: Rumor } | { readonly err: WalletErrorC
 const hex128: Validator<string> = str(128, /^[0-9a-f]{128}$/);
 
 const nostrKeyRef = union(
-  obj({ kind: literal("derived"), walletId, groupIndex }),
+  obj({ kind: literal("derived"), walletId, index: identityIndex }),
   obj({ kind: literal("standalone"), id: publicKey }),
   obj({ kind: literal("nip46-client"), id: publicKey }),
 );
@@ -103,7 +103,7 @@ export const nostrStatus: Validator<{ readonly keys: ReadonlyArray<NostrKeyInfo>
 
 const keyResult: Validator<KeyResult> = obj({ key: nostrKeyInfo, session: sessionId });
 
-const derivedNostrKey: Validator<DerivedNostrKey> = obj({ groupIndex, publicKey });
+const derivedNostrKey: Validator<DerivedNostrKey> = obj({ index: identityIndex, publicKey });
 
 const tags: Validator<ReadonlyArray<ReadonlyArray<string>>> = arr(
   arr(str(MAX_TAG_ITEM), MAX_TAG_ITEMS),
@@ -156,7 +156,7 @@ export const NOSTR_METHODS: {
     { readonly keys: ReadonlyArray<DerivedNostrKey> }
   >;
   readonly "nostr.deriveKey": MethodSpec<
-    { readonly walletId: string; readonly groupIndex: number },
+    { readonly walletId: string; readonly index: number },
     NostrKeyInfo
   >;
   readonly "nostr.importKey": MethodSpec<
@@ -201,13 +201,13 @@ export const NOSTR_METHODS: {
   "nostr.discover": {
     session: true,
     presence: false,
-    params: obj({ walletId, from: groupIndex, count: int(1, 20) }),
+    params: obj({ walletId, from: identityIndex, count: int(1, 20) }),
     result: obj({ keys: arr(derivedNostrKey, 20) }),
   },
   "nostr.deriveKey": {
     session: true,
     presence: false,
-    params: obj({ walletId, groupIndex }),
+    params: obj({ walletId, index: identityIndex }),
     result: nostrKeyInfo,
   },
   "nostr.importKey": {
