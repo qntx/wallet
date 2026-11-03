@@ -15,6 +15,8 @@ npm install @qntx/wallet-engine @qntx/wallet @qntx/wallet-worker @qntx/spark @qn
 
 ```ts
 import { createWalletEngine } from "@qntx/wallet-engine";
+// in-app-browser provider injection and the WebView bridge:
+import { injectedScript, createBrowserBridge } from "@qntx/wallet-engine/connect";
 import { openIndexedDbEngineStore } from "@qntx/wallet-engine/idb";
 
 const random = (n: number) => crypto.getRandomValues(new Uint8Array(n));

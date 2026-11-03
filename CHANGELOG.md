@@ -9,6 +9,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Added
+
+- `@qntx/wallet-engine/connect`: the in-app-browser EIP-1193/EIP-6963 provider — `injectedScript`
+  produces the fixed injected script plus a `__qntxInstall(<ProviderInfo>)` call, and
+  `createBrowserBridge` runs in the host's main runtime to carry page `postMessage` requests to a
+  real `Eip1193Handler`, with per-origin rate limiting, message bounds and navigation invalidation.
+
 ## [0.7.0] - 2026-11-03
 
 Seed-only Nostr identities and native iOS passkeys: identities are indexed independently of

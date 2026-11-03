@@ -412,6 +412,12 @@ function diffSessions(
   for (const [origin, session] of next) {
     if (!prev.has(origin)) {
       events.push({ name: "connect", origin, chainId: hexChainId(session.currentNetwork) });
+      const accounts = currentAccounts(session);
+      if (accounts.length > 0) {
+        // A fresh session's accounts went from [] to the granted set — an accountsChanged, so a
+        // page listening for it (standard EIP-1193 on-connect behavior) is notified too.
+        events.push({ name: "accountsChanged", origin, accounts });
+      }
     }
   }
   return events;

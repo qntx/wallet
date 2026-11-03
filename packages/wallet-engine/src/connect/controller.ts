@@ -170,6 +170,26 @@ export class ConnectionController extends Controller<ConnectionState> {
     this.update(() => ({ sessions: {}, pending: {} }));
   }
 
+  /**
+   * A page navigated away (or the bridge is being disposed): the origin's pending connection
+   * requests are rejected and its unfinished pipeline requests voided — the live session survives
+   * (a refresh is not a revocation).
+   */
+  invalidateOrigin(origin: string): void {
+    for (const entry of this.pending()) {
+      if (entry.origin.origin !== origin) {
+        continue;
+      }
+      this.waiters.get(entry.id)?.reject(userRejectedRequest("the page navigated away"));
+      this.waiters.delete(entry.id);
+      this.update((s) => ({
+        ...s,
+        pending: Object.fromEntries(Object.entries(s.pending).filter(([id]) => id !== entry.id)),
+      }));
+    }
+    this.options.invalidate(origin);
+  }
+
   /** Throws `4100` unless `origin` is `https://host[:port]` (or localhost in development). */
   checkOrigin(origin: string): ConnectionOrigin {
     let url: URL;

@@ -1,0 +1,10 @@
+{
+  // The Playwright test page is DOM code; the spec files one level up stay in the package
+  // program (Node types, @playwright/test).
+  "extends": "../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["."]
+}

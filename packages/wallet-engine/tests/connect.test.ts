@@ -314,11 +314,14 @@ describe("connection sessions", () => {
 
   it("switching account group moves the accounts and emits accountsChanged", async () => {
     const r = await rig();
-    await r.connect();
+    const [first] = await r.connect();
     const second = await lower(r.addressAt(1));
     await r.connections.setActiveGroup(r.walletId, 1);
     expect(r.connections.accounts(SITE)).toStrictEqual([second]);
+    // A fresh session's accounts go [] → [first] (connect emits accountsChanged), then the group
+    // switch emits accountsChanged([second]).
     expect(r.events.filter((e) => e.name === "accountsChanged")).toStrictEqual([
+      { name: "accountsChanged", origin: SITE, accounts: [first] },
       { name: "accountsChanged", origin: SITE, accounts: [second] },
     ]);
     await r.destroy();
