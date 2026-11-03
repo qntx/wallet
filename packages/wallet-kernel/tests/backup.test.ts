@@ -593,7 +593,7 @@ describe("backup enable/update/disable", () => {
     await a.settle();
     const { session } = await createPasskeyWallet(a);
     await createBackupEnvelope(a, session, [backupPassword()]);
-    // Add a mnemonic wallet + a standalone nostr key, then update again.
+    // Add a mnemonic wallet + a derived nostr key, then update again.
     ok(
       await a.call(
         "wallet.importMnemonic",

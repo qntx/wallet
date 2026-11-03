@@ -112,13 +112,6 @@ describe("leak check", () => {
     const draftId = (draft as Record<string, ProtocolValue>)["draft"] as string;
     await h.call("wallet.discardMnemonic", { draft: draftId }, session);
 
-    await h.call(
-      "nostr.importKey",
-      { input: { kind: "nsec", nsec: utf8ToBytes(nip06.vectors[0]!.nsec) } },
-      session,
-    );
-    await h.call("nostr.generateKey", {}, session);
-    await h.call("nostr.createNip46ClientKey", null, session);
     exempt(await h.call("dataKeys.get", { purpose: "leak-test" }, session));
     exempt(
       await h.call(

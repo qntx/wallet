@@ -214,8 +214,8 @@ const api = {
       }),
     );
   },
-  async deriveKey(walletId: string, groupIndex: number): Promise<unknown> {
-    return attempt(async () => nostr(current()).deriveKey(walletId, groupIndex));
+  async deriveKey(walletId: string, index: number): Promise<unknown> {
+    return attempt(async () => nostr(current()).deriveKey(walletId, index));
   },
   async sparkIdentity(walletId: string, groupIndex: number, network: string): Promise<unknown> {
     return attempt(async () => {
