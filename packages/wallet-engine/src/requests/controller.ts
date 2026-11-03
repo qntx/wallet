@@ -206,22 +206,27 @@ export type RequestControllerOptions = {
 /** Requests expire this long after creation. */
 export const REQUEST_TTL_MS = 10 * 60 * 1000;
 
-/**
- * A `nostr-sign` approval needs no factor (Nostr events are not per-event verifiable, WD-065) — its
- * `submit` ignores `verify`, so a placeholder satisfies the `Run` signature.
- */
-const NO_FACTOR: SendParams["verify"] = { kind: "password", password: "" };
-
 /** What approval needs from a prepared request, whichever kind it is. */
-type Run = {
-  /** The tracked transaction `submit` creates (chain requests only). */
-  readonly txId?: string;
-  readonly staleReason: () => string | undefined | Promise<string | undefined>;
-  readonly submit: (
-    verify: SendParams["verify"],
-  ) => Promise<TrackedTransaction | SparkResult | SignatureResult | NostrSignResult>;
-  readonly release: () => void;
-};
+type Run =
+  | {
+      /** A funds or signature request needs the unlock factor at `submit`. */
+      readonly factor: "required";
+      /** The tracked transaction `submit` creates (chain requests only). */
+      readonly txId?: string;
+      readonly staleReason: () => string | undefined | Promise<string | undefined>;
+      readonly submit: (
+        verify: SendParams["verify"],
+      ) => Promise<TrackedTransaction | SparkResult | SignatureResult>;
+      readonly release: () => void;
+    }
+  | {
+      /** `nostr-sign` is not per-event verifiable (WD-065) — `submit` takes no factor. */
+      readonly factor: "none";
+      readonly txId?: string;
+      readonly staleReason: () => string | undefined | Promise<string | undefined>;
+      readonly submit: () => Promise<NostrSignResult>;
+      readonly release: () => void;
+    };
 
 type Built = {
   readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
@@ -443,6 +448,7 @@ export class RequestController extends Controller<RequestControllerState> {
       checks: collectChecks(action.checks),
       risk: this.sparkRisk(action.display),
       run: {
+        factor: "required",
         staleReason: () => action.staleReason(this.options.now()),
         submit: async (verify) => action.execute(this.options.spark, verify),
         release: () => undefined,
@@ -485,7 +491,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...prepared.checks,
         ]),
         risk: [],
-        run: prepared,
+        run: { ...prepared, factor: "required" },
       };
     }
     if (input.method === "spark-exit") {
@@ -519,7 +525,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...prepared.checks,
         ]),
         risk: isTransaction ? this.chainRisk(prepared.intent) : [],
-        run: prepared,
+        run: { ...prepared, factor: "required" },
       };
     }
     if (input.method === "nostr-sign") {
@@ -535,6 +541,7 @@ export class RequestController extends Controller<RequestControllerState> {
         checks: [],
         risk: [],
         run: {
+          factor: "none",
           staleReason: () => undefined,
           submit: async () => ({
             kind: "nostr.event" as const,
@@ -557,7 +564,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ...prepared.checks,
       ]),
       risk: input.method === "send" ? this.chainRisk(prepared.intent) : [],
-      run: prepared,
+      run: { ...prepared, factor: "required" },
     };
   }
 
@@ -568,17 +575,17 @@ export class RequestController extends Controller<RequestControllerState> {
   async approve(
     id: string,
     method: ChainRequestMethod | "spark-deposit",
-    verify: SendParams["verify"],
+    verify?: SendParams["verify"],
   ): Promise<TrackedTransaction>;
   async approve(
     id: string,
     method: "pay" | "zap" | "spark-exit",
-    verify: SendParams["verify"],
+    verify?: SendParams["verify"],
   ): Promise<SparkResult>;
   async approve(
     id: string,
     method: "evm-sign",
-    verify: SendParams["verify"],
+    verify?: SendParams["verify"],
   ): Promise<TrackedTransaction | SignatureResult>;
   async approve(id: string, method: "nostr-sign"): Promise<NostrSignResult>;
   async approve(
@@ -618,9 +625,10 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new Error(stale);
     }
     try {
-      const result = await entry.prepared.submit(
-        request.method === "nostr-sign" ? NO_FACTOR : this.requireVerify(verify),
-      );
+      const result =
+        entry.prepared.factor === "none"
+          ? await entry.prepared.submit()
+          : await entry.prepared.submit(this.requireVerify(verify));
       if (session === this.session) {
         entry.stopTimer();
         this.entries.delete(id);
@@ -672,10 +680,10 @@ export class RequestController extends Controller<RequestControllerState> {
     this.finish(id, "rejected");
   }
 
-  /** `approve` for a factor-requiring method: a missing factor is a programming error. */
+  /** `approve` for a factor-required run: a missing factor is invalid input. */
   private requireVerify(verify: SendParams["verify"] | undefined): SendParams["verify"] {
     if (verify === undefined) {
-      throw new Error("a verification factor is required");
+      throw new WalletError("invalid-input", "a verification factor is required");
     }
     return verify;
   }

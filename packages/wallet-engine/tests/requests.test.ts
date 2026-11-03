@@ -102,6 +102,16 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     },
   } as unknown as TransactionController;
   let now = 1000;
+  const nostrSignCalls: string[] = [];
+  const nostrSigned = {
+    id: "e".repeat(64),
+    sig: "f".repeat(128),
+    pubkey: "a".repeat(64),
+    kind: 1,
+    content: "",
+    created_at: 0,
+    tags: [],
+  };
   const timers: Array<{ ms: number; fn: () => unknown; stopped: boolean }> = [];
   let counter = 0;
   const nextCounter = (): number => {
@@ -112,7 +122,10 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     transactions,
     ...bookDeps(),
     spark: {} as SparkController,
-    nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
+    nostrSign: async () => {
+      nostrSignCalls.push("sign");
+      return Promise.resolve(nostrSigned);
+    },
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => now,
@@ -130,6 +143,8 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     events,
     txs,
     timers,
+    nostrSignCalls,
+    nostrSigned,
     advance: (ms: number) => {
       now += ms;
     },
@@ -391,7 +406,10 @@ function evmWorld(options: {
     transactions,
     ...bookDeps(),
     spark: {} as SparkController,
-    nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
+    nostrSign: async () => {
+      await Promise.resolve();
+      throw new Error("nostr-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => 0,
@@ -673,5 +691,41 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     const newPriority = BigInt(bumped.tx.maxPriorityFeePerGas);
     expect(newMax * 10n).toBeGreaterThanOrEqual(oldMax * 11n);
     expect(newPriority * 10n).toBeGreaterThanOrEqual(oldPriority * 11n);
+  });
+});
+
+describe("nostr-sign approval", () => {
+  it("approve(id, nostr-sign) submits with no factor and resolves the signed event", async () => {
+    const f = fake();
+    await f.controller.init();
+    const ref = { kind: "derived", walletId: "w", index: 0 } as const;
+    const event = {
+      kind: 1,
+      content: "hi",
+      created_at: 1,
+      tags: [],
+      pubkey: f.nostrSigned.pubkey,
+    };
+    const pending = await f.controller.prepare({
+      method: "nostr-sign",
+      origin: { kind: "browser", origin: "https://dapp.example" },
+      ref,
+      event,
+    });
+    const result = await f.controller.approve(pending.id, "nostr-sign");
+    expect(result).toMatchObject({
+      kind: "nostr.event",
+      event: { id: f.nostrSigned.id },
+    });
+    expect(f.nostrSignCalls).toHaveLength(1);
+  });
+
+  it("a factor-required run approved without a factor is rejected invalid-input", async () => {
+    const f = fake();
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS);
+    await expect(f.controller.approve(request.id, "send")).rejects.toMatchObject({
+      code: "invalid-input",
+    });
   });
 });
