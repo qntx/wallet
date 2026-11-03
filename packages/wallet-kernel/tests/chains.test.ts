@@ -51,7 +51,7 @@ function field(value: ProtocolValue, key: string): ProtocolValue {
 function bytesField(value: ProtocolValue, key: string): Uint8Array {
   const v = field(value, key);
   if (!(v instanceof Uint8Array)) {
-    throw new Error("expected bytes");
+    throw new TypeError("expected bytes");
   }
   return v;
 }
