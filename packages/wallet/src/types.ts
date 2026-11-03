@@ -34,7 +34,7 @@ export type WalletInfo = {
 };
 
 export type NostrKeyRef =
-  | { readonly kind: "derived"; readonly walletId: string; readonly groupIndex: number }
+  | { readonly kind: "derived"; readonly walletId: string; readonly index: number }
   | { readonly kind: "standalone"; readonly id: string }
   | { readonly kind: "nip46-client"; readonly id: string };
 
@@ -50,8 +50,8 @@ export type NostrKeyInfo = {
   readonly createdAt: number;
 };
 
-/** One entry of a `nostr.discover` result: the public key an account group would produce. */
-export type DerivedNostrKey = { readonly groupIndex: number; readonly publicKey: string };
+/** One entry of a `nostr.discover` result: the public key an identity index produces. */
+export type DerivedNostrKey = { readonly index: number; readonly publicKey: string };
 
 export type WalletErrorCode =
   | "locked"
@@ -90,7 +90,7 @@ export type VaultState =
  * Each protocol module contributes one section (here: `nostr`).
  */
 export type StatusPayload = {
-  readonly protocol: 1;
+  readonly protocol: 2; // PROTOCOL_VERSION — literal to keep types.ts import-free
   readonly vault: VaultState;
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;

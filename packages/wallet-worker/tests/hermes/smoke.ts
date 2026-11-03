@@ -146,7 +146,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
       new Promise((resolve) => {
         const id = nextId++;
         pending.set(id, resolve);
-        handler?.({ v: 1, id, method, session, params: params ?? null });
+        handler?.({ v: 2, id, method, session, params: params ?? null });
       }),
   };
 }
@@ -190,9 +190,7 @@ export async function main(): Promise<void> {
   const walletId = field(field(imported, "wallet"), "walletId");
   const sessionValue = field(imported, "session");
   assert(typeof sessionValue === "string" && sessionValue.length === 32, "importMnemonic session");
-  const derived = ok(
-    await kernel.call("nostr.deriveKey", { walletId, groupIndex: 0 }, sessionValue),
-  );
+  const derived = ok(await kernel.call("nostr.deriveKey", { walletId, index: 0 }, sessionValue));
   eq(field(derived, "publicKey"), EXPECTED_PUBLIC_KEY, "deriveKey public key");
 
   // 2./3. A lock is host-side (the worker dies and respawns): booting a fresh kernel over the
@@ -347,7 +345,7 @@ export async function main(): Promise<void> {
     {
       op: "init",
       meta: {
-        format: 2,
+        format: 3,
         revision: 1,
         keyId: "0123456789abcdef0123456789abcdef",
         failedAttempts: 0,

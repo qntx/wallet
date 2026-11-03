@@ -29,7 +29,7 @@ const nostrDerived: NostrKeyHeader = {
   publicKey: "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917",
   origin: "derived",
   walletId: "6e0d11a50c03aa4f",
-  groupIndex: 0,
+  index: 0,
   createdAt: 1_767_225_600_000,
 };
 
@@ -127,14 +127,14 @@ describe("header rejection", () => {
     ).toBe("integrity");
   });
 
-  it("walletId or groupIndex on a non-derived nostr key", () => {
+  it("walletId or index on a non-derived nostr key", () => {
     expect(
       kernelError(() =>
         parseNostrKeyHeader(JSON.stringify({ ...nostrStandalone, walletId: entropy.walletId })),
       ),
     ).toBe("integrity");
     expect(
-      kernelError(() => parseNostrKeyHeader(JSON.stringify({ ...nostrStandalone, groupIndex: 0 }))),
+      kernelError(() => parseNostrKeyHeader(JSON.stringify({ ...nostrStandalone, index: 0 }))),
     ).toBe("integrity");
   });
 
@@ -195,11 +195,9 @@ describe("header rejection", () => {
     }
   });
 
-  it("derived nostr key missing groupIndex", () => {
-    const { groupIndex: _omitted, ...withoutGroupIndex } = nostrDerived;
-    expect(kernelError(() => parseNostrKeyHeader(JSON.stringify(withoutGroupIndex)))).toBe(
-      "integrity",
-    );
+  it("derived nostr key missing index", () => {
+    const { index: _omitted, ...withoutIndex } = nostrDerived;
+    expect(kernelError(() => parseNostrKeyHeader(JSON.stringify(withoutIndex)))).toBe("integrity");
   });
 
   it("iterations other than 600000 is unsupported; a non-integer is integrity", () => {

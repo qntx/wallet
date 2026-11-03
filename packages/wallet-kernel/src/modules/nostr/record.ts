@@ -3,7 +3,7 @@ import type { NostrKeyInfo } from "@qntx/wallet/types";
 import {
   asBoolean,
   asCreatedAt,
-  asGroupIndex,
+  asIdentityIndex,
   asPublicKey,
   asWalletId,
   expectKeys,
@@ -25,7 +25,7 @@ export type NostrKeyHeader =
       readonly publicKey: string; // 64 lowercase hex
       readonly origin: "derived";
       readonly walletId: string;
-      readonly groupIndex: number;
+      readonly index: number;
       readonly createdAt: number;
     }
   | {
@@ -46,7 +46,7 @@ export function encodeNostrKeyHeader(header: NostrKeyHeader): string {
       publicKey: header.publicKey,
       origin: header.origin,
       walletId: header.walletId,
-      groupIndex: header.groupIndex,
+      index: header.index,
       createdAt: header.createdAt,
     });
   }
@@ -69,12 +69,12 @@ export function parseNostrKeyHeader(text: string): NostrKeyHeader {
   const publicKey = asPublicKey(object["publicKey"]);
   const createdAt = asCreatedAt(object["createdAt"]);
   if (object["origin"] === "derived") {
-    expectKeys(object, ["publicKey", "origin", "walletId", "groupIndex", "createdAt"]);
+    expectKeys(object, ["publicKey", "origin", "walletId", "index", "createdAt"]);
     return {
       publicKey,
       origin: "derived",
       walletId: asWalletId(object["walletId"]),
-      groupIndex: asGroupIndex(object["groupIndex"]),
+      index: asIdentityIndex(object["index"]),
       createdAt,
     };
   }
@@ -96,7 +96,7 @@ export function nostrKeyInfo(header: NostrKeyHeader): NostrKeyInfo {
   return {
     ref:
       header.origin === "derived"
-        ? { kind: "derived", walletId: header.walletId, groupIndex: header.groupIndex }
+        ? { kind: "derived", walletId: header.walletId, index: header.index }
         : header.origin === "nip46-client"
           ? { kind: "nip46-client", id: header.publicKey }
           : { kind: "standalone", id: header.publicKey },

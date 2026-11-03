@@ -39,19 +39,19 @@ function randomMalformed(next: () => number): unknown {
     case 0:
       return malformedScalar(); // not even an object
     case 1:
-      return { v: pick(2) + 2, id: pick(100), method, params: null }; // bad version
+      return { v: pick(2) + 3, id: pick(100), method, params: null }; // bad version
     case 2:
-      return { v: 1, id: "nope", method, params: null }; // bad id type
+      return { v: 2, id: "nope", method, params: null }; // bad id type
     case 3:
-      return { v: 1, id: pick(100), method, params: malformedScalar() };
+      return { v: 2, id: pick(100), method, params: malformedScalar() };
     case 4:
-      return { v: 1, id: pick(100), method, params: null, extra: "field" };
+      return { v: 2, id: pick(100), method, params: null, extra: "field" };
     case 5:
-      return { v: 1, id: pick(100), method }; // missing params
+      return { v: 2, id: pick(100), method }; // missing params
     case 6:
-      return { v: 1, id: pick(100), method, params: { factor: malformedScalar() } };
+      return { v: 2, id: pick(100), method, params: { factor: malformedScalar() } };
     default:
-      return { v: 1, id: pick(100), method: "no.such.method", params: null };
+      return { v: 2, id: pick(100), method: "no.such.method", params: null };
   }
 }
 

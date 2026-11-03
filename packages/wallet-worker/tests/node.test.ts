@@ -95,7 +95,7 @@ describe("node host end to end", () => {
     expect(key.ref).toStrictEqual({
       kind: "derived",
       walletId: created.walletId,
-      groupIndex: 0,
+      index: 0,
     });
     expect(npubEncode(key.publicKey)).toMatch(/^npub1/);
 

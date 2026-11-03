@@ -36,6 +36,8 @@ export const publicKey: Validator<string> = str(64, /^[0-9a-f]{64}$/);
 export const credentialId: Validator<string> = str(1364, /^[A-Za-z0-9_-]+$/);
 export const safeTime: Validator<number> = int(0, Number.MAX_SAFE_INTEGER);
 export const groupIndex: Validator<number> = int(0, 0x7fffffff);
+/** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
+export const identityIndex: Validator<number> = int(0, 0x7ffffffe);
 
 /**
  * Vault factor material on the wire. `hardware` carries nothing: the kernel runs the platform

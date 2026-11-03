@@ -24,7 +24,7 @@ export function keyInfoOf(internals: WalletInternals, ref: NostrKeyRef): NostrKe
       (ref.kind === "derived" &&
         k.kind === "derived" &&
         k.walletId === ref.walletId &&
-        k.groupIndex === ref.groupIndex) ||
+        k.index === ref.index) ||
       (ref.kind === "nip46-client" && k.kind === "nip46-client" && k.id === ref.id) ||
       (ref.kind === "standalone" && k.kind === "standalone" && k.id === ref.id)
     );

@@ -264,7 +264,7 @@ describe("hardware factor: guarded commands", () => {
     const fake = fakeKeystore();
     const h = createHarness({ keystore: fake.keystore });
     const { session, walletId } = await importHardware(h);
-    const derived = ok(await h.call("nostr.deriveKey", { walletId, groupIndex: 0 }, session));
+    const derived = ok(await h.call("nostr.deriveKey", { walletId, index: 0 }, session));
     const publicKey = str(derived, "publicKey");
     ok(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session));
     ok(

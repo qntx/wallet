@@ -60,6 +60,19 @@ export function asGroupIndex(value: unknown): number {
   return value;
 }
 
+/** Identity indices stop below 2^31 - 1: the top segment derives the wallet sync key. */
+export function asIdentityIndex(value: unknown): number {
+  if (
+    typeof value !== "number" ||
+    !Number.isSafeInteger(value) ||
+    value < 0 ||
+    value > 0x7ffffffe
+  ) {
+    throw headerFailure();
+  }
+  return value;
+}
+
 export function asBoolean(value: unknown): boolean {
   if (typeof value !== "boolean") {
     throw headerFailure();

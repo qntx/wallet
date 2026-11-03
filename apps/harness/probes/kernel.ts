@@ -114,7 +114,7 @@ function boot(pbkdf2: Pbkdf2): Kernel {
       new Promise((resolve) => {
         const id = nextId++;
         pending.set(id, resolve);
-        handler?.({ v: 1, id, method, session, params: params ?? null });
+        handler?.({ v: 2, id, method, session, params: params ?? null });
       }),
   };
 }
@@ -239,7 +239,7 @@ async function main(): Promise<void> {
   assert(typeof sessionValue === "string" && sessionValue.length === 32, "importMnemonic session");
   let session = sessionValue;
   const derived = ok(
-    await kernel.call("nostr.deriveKey", { walletId, groupIndex: 0 }, session),
+    await kernel.call("nostr.deriveKey", { walletId, index: 0 }, session),
     "nostr.deriveKey",
   );
   eq(field(derived, "publicKey"), EXPECTED_PUBLIC_KEY, "deriveKey public key");
