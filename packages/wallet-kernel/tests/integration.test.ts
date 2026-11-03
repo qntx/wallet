@@ -134,7 +134,7 @@ function strField(value: ProtocolValue, key: string): string {
 function bytesField(value: ProtocolValue, key: string): Uint8Array {
   const v = field(value, key);
   if (!(v instanceof Uint8Array)) {
-    throw new Error(`field ${key}: not bytes`);
+    throw new TypeError(`field ${key}: not bytes`);
   }
   return v;
 }

@@ -1,5 +1,5 @@
 (function() {
-	//#region \0rolldown/runtime.js
+	// \0rolldown/runtime.js
 	var __defProp = Object.defineProperty;
 	var __esmMin = (fn, res, err) => () => {
 		if (err) throw err[0];
@@ -18,8 +18,7 @@
 		if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
 		return target;
 	};
-	//#endregion
-	//#region node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/utils.js
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/utils.js
 	/*! noble-ciphers - MIT License (c) 2023 Paul Miller (paulmillr.com) */
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
@@ -453,8 +452,7 @@
 	function copyBytes$1(bytes) {
 		return Uint8Array.from(abytes$3(bytes));
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/typeof.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/typeof.js
 	function _typeof(o) {
 		"@babel/helpers - typeof";
 		return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o) {
@@ -464,8 +462,7 @@
 		}, _typeof(o);
 	}
 	var init_typeof = __esmMin((() => {}));
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/toPrimitive.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/toPrimitive.js
 	function toPrimitive(t, r) {
 		if ("object" != _typeof(t) || !t) return t;
 		var e = t[Symbol.toPrimitive];
@@ -479,8 +476,7 @@
 	var init_toPrimitive = __esmMin((() => {
 		init_typeof();
 	}));
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/toPropertyKey.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/toPropertyKey.js
 	function toPropertyKey(t) {
 		var i = toPrimitive(t, "string");
 		return "symbol" == _typeof(i) ? i : i + "";
@@ -489,8 +485,7 @@
 		init_typeof();
 		init_toPrimitive();
 	}));
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/defineProperty.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/defineProperty.js
 	function _defineProperty(e, r, t) {
 		return (r = toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
 			value: t,
@@ -502,8 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	//#endregion
-	//#region packages/wallet/dist/core-Dmz5SbyJ.mjs
+	// packages/wallet/dist/core-xBib1U6w.mjs
 	init_defineProperty();
 	var ValidationError = class extends Error {
 		constructor(..._args) {
@@ -862,8 +856,7 @@
 			result: bytes(32)
 		}
 	};
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/objectSpread2.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/objectSpread2.js
 	function ownKeys(e, r) {
 		var t = Object.keys(e);
 		if (Object.getOwnPropertySymbols) {
@@ -888,8 +881,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	//#endregion
-	//#region packages/wallet/dist/protocol-DvzlUKB8.mjs
+	// packages/wallet/dist/protocol-DUzKi8JS.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1691,8 +1683,7 @@
 		event: literal("locked"),
 		reason: lockReason
 	});
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/utils.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/utils.js
 	/**
 	* Checks if something is Uint8Array. Be careful: nodejs Buffer will return true.
 	* @param a - value to test
@@ -2192,8 +2183,7 @@
 			suffix
 		]) });
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/hmac.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/hmac.js
 	var _HMAC, hmac;
 	var init_hmac = __esmMin((() => {
 		init_utils$2();
@@ -2271,8 +2261,7 @@
 			return hmac_;
 		})();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/hkdf.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/hkdf.js
 	init_hmac();
 	init_utils$2();
 	/**
@@ -2389,8 +2378,7 @@
 		const HMAC = hmac.create(hash, salt).update(ikm);
 		return expand(hash, HMAC.digest(), info, length, HMAC);
 	};
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/_u64.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/_u64.js
 	function fromBig(n, le = false) {
 		if (le) return {
 			h: Number(n & U32_MASK64),
@@ -2443,8 +2431,7 @@
 		add5L = (Al, Bl, Cl, Dl, El) => (Al >>> 0) + (Bl >>> 0) + (Cl >>> 0) + (Dl >>> 0) + (El >>> 0);
 		add5H = (low, Ah, Bh, Ch, Dh, Eh) => Ah + Bh + Ch + Dh + Eh + (low / 2 ** 32 | 0) | 0;
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/_md.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/_md.js
 	/**
 	* Shared 32-bit conditional boolean primitive reused by SHA-256, SHA-1, and MD5 `F`.
 	* Returns bits from `b` when `a` is set, otherwise from `c`.
@@ -2602,8 +2589,7 @@
 			327033209
 		]);
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha2.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha2.js
 	var SHA256_K, SHA256_W, SHA2_32B, _SHA256, K512, SHA512_Kh, SHA512_Kl, SHA512_W_H, SHA512_W_L, SHA2_64B, _SHA512, sha256$1, sha512;
 	var init_sha2 = __esmMin((() => {
 		init__md();
@@ -3012,8 +2998,7 @@
 		sha256$1 = /* @__PURE__ */ createHasher(() => new _SHA256(), /* @__PURE__ */ oidNist(1));
 		sha512 = /* @__PURE__ */ createHasher(() => new _SHA512(), /* @__PURE__ */ oidNist(3));
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+base@2.4.0/node_modules/@scure/base/index.js
+	// node_modules/.bun/@scure+base@2.4.0/node_modules/@scure/base/index.js
 	/*! scure-base - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	function isBytes$3(a) {
 		return a instanceof Uint8Array || ArrayBuffer.isView(a) && a.constructor.name === "Uint8Array" && "BYTES_PER_ELEMENT" in a && a.BYTES_PER_ELEMENT === 1;
@@ -3631,8 +3616,7 @@
 		};
 		hex$2 = /* @__PURE__ */ freeze(() => hasHexBuiltin ? hexBuiltin : hexFallback);
 	}));
-	//#endregion
-	//#region packages/wallet-kernel/src/errors.ts
+	// packages/wallet-kernel/src/errors.ts
 	init_sha2();
 	init_base();
 	init_defineProperty();
@@ -3661,8 +3645,7 @@
 			this.corrupted = corrupted;
 		}
 	};
-	//#endregion
-	//#region packages/wallet-kernel/src/platform.ts
+	// packages/wallet-kernel/src/platform.ts
 	init_objectSpread2();
 	/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
 	function requirePasskey(platform) {
@@ -3718,8 +3701,7 @@
 		if (platform.keystore === void 0) throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
 		return platform.keystore;
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/prompts.ts
+	// packages/wallet-kernel/src/prompts.ts
 	function promptLocale(tag) {
 		return tag.toLowerCase().startsWith("zh") ? "zh-Hans" : "en";
 	}
@@ -3836,8 +3818,7 @@
 	function joinLines(lines) {
 		return lines.join("\n");
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/_arx.js
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/_arx.js
 	/**
 	* Basic utils for ARX (add-rotate-xor) salsa and chacha ciphers.
 	
@@ -4019,8 +4000,7 @@
 			}
 		};
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/_poly1305.js
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/_poly1305.js
 	/**
 	* Poly1305 ({@link https://cr.yp.to/mac/poly1305-20050329.pdf | PDF},
 	* {@link https://en.wikipedia.org/wiki/Poly1305 | wiki})
@@ -4314,8 +4294,7 @@
 	* ```
 	*/
 	var poly1305 = /* @__PURE__ */ wrapMacConstructor(32, (key) => new Poly1305(key));
-	//#endregion
-	//#region node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/chacha.js
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/chacha.js
 	/**
 	* ChaCha stream cipher, released
 	* in 2008. Developed after Salsa20, ChaCha aims to increase diffusion per round.
@@ -4607,8 +4586,7 @@
 		tagLength: 16,
 		withAAD: true
 	}, /* @__PURE__ */ _poly1305_aead(xchacha20));
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/envelope.ts
+	// packages/wallet-kernel/src/vault/envelope.ts
 	init_utils$2();
 	/**
 	* Envelope v1:
@@ -4653,8 +4631,7 @@
 			throw failure;
 		}
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/utils.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/utils.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates that a value is an array, optionally validating each element.
@@ -5140,8 +5117,7 @@
 			throw new Error("not implemented");
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/modular.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/modular.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* @param a - Dividend value.
@@ -5800,8 +5776,7 @@
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/curve.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/curve.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* Validates the static surface of a point constructor.
@@ -6302,8 +6277,7 @@
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/edwards.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/edwards.js
 	init_utils$1();
 	init_curve();
 	init_modular();
@@ -6870,8 +6844,7 @@
 			lengths
 		});
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/montgomery.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/montgomery.js
 	init_utils$1();
 	init_curve();
 	init_modular();
@@ -7120,8 +7093,7 @@
 			lengths
 		});
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/ed25519.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/ed25519.js
 	/**
 	* ed25519 Twisted Edwards curve with following addons:
 	* - X25519 ECDH
@@ -7381,34 +7353,28 @@
 	_defineProperty(_RistrettoPoint, "Fn", /* @__PURE__ */ (() => {
 		return Fn$2;
 	})());
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/checkPrivateRedeclaration.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/checkPrivateRedeclaration.js
 	function _checkPrivateRedeclaration(e, t) {
 		if (t.has(e)) throw new TypeError("Cannot initialize the same private elements twice on an object");
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/classPrivateFieldInitSpec.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateFieldInitSpec.js
 	function _classPrivateFieldInitSpec(e, t, a) {
 		_checkPrivateRedeclaration(e, t), t.set(e, a);
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/assertClassBrand.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/assertClassBrand.js
 	function _assertClassBrand(e, t, n) {
 		if ("function" == typeof e ? e === t : e.has(t)) return arguments.length < 3 ? t : n;
 		throw new TypeError("Private element is not present on this object");
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/classPrivateFieldSet2.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateFieldSet2.js
 	function _classPrivateFieldSet2(s, a, r) {
 		return s.set(_assertClassBrand(s, a), r), r;
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/classPrivateFieldGet2.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateFieldGet2.js
 	function _classPrivateFieldGet2(s, a) {
 		return s.get(_assertClassBrand(s, a));
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/secret/secret.ts
+	// packages/wallet-kernel/src/secret/secret.ts
 	/** Overwrites buffers with zeros. The only "zeroing" we can rely on. */
 	function wipe(...buffers) {
 		for (const buffer of buffers) buffer.fill(0);
@@ -7469,8 +7435,7 @@
 			throw new KernelError("integrity", "secret is not a string");
 		}
 	};
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/header-codec.ts
+	// packages/wallet-kernel/src/vault/header-codec.ts
 	/**
 	* The strict-JSON helpers every vault header parser shares. Public headers are stored as raw JSON
 	* text and enter the envelope AAD verbatim, so encoders fix the key order and parsers are strict:
@@ -7525,8 +7490,7 @@
 		if (decoded.length < min || decoded.length > max || base64urlnopad.encode(decoded) !== value) throw headerFailure();
 		return value;
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/headers.ts
+	// packages/wallet-kernel/src/vault/headers.ts
 	var PURPOSE_PATTERN = /^[a-z0-9-]{1,32}$/;
 	var PASSWORD_ITERATIONS$2 = 6e5;
 	function encodeHeader(header) {
@@ -7667,8 +7631,7 @@
 			createdAt: asCreatedAt(object["createdAt"])
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/factors.ts
+	// packages/wallet-kernel/src/vault/factors.ts
 	init_hmac();
 	init_sha2();
 	init_utils$2();
@@ -7850,8 +7813,7 @@
 			wipe(factorSk);
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/store.ts
+	// packages/wallet-kernel/src/vault/store.ts
 	/**
 	* A record kind names the module that owns the record's header and plaintext format. The store and
 	* the envelope are kind-agnostic: any string matching the pattern is a valid kind, and a stored
@@ -7862,8 +7824,7 @@
 	function isRecordKind(kind) {
 		return RECORD_KIND_PATTERN.test(kind);
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/vault.ts
+	// packages/wallet-kernel/src/vault/vault.ts
 	init_utils$2();
 	init_base();
 	/** Consecutive password failures → enforced wait: 30 s, 60 s, then 300 s from the 5th failure. */
@@ -8258,8 +8219,7 @@
 			createdAt: header.createdAt
 		};
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/der.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/der.js
 	var _0n$8, DERErr, _DER, DER;
 	var init_der = __esmMin((() => {
 		init_utils$1();
@@ -8366,8 +8326,7 @@
 			return Object.freeze(_DER);
 		})();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/weierstrass.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/weierstrass.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/** Splits scalar for GLV endomorphism. */
 	function _splitEndoScalar(k, basis, n) {
@@ -9300,8 +9259,7 @@
 		_3n = /* @__PURE__ */ BigInt(3);
 		_4n = /* @__PURE__ */ BigInt(4);
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/secp256k1.js
+	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/secp256k1.js
 	/*! noble-curves - MIT License (c) 2022 Paul Miller (paulmillr.com) */
 	/**
 	* √n = n^((p+1)/4) for fields p = 3 mod 4. We unwrap the loop and multiply bit-by-bit.
@@ -9477,8 +9435,7 @@
 			});
 		})();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/legacy.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/legacy.js
 	function ripemd_f(group, x, y, z) {
 		if (group === 0) return x ^ y ^ z;
 		if (group === 1) return x & y | ~x & z;
@@ -9687,8 +9644,7 @@
 		};
 		ripemd160 = /* @__PURE__ */ createHasher(() => new _RIPEMD160());
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+bip32@2.4.0/node_modules/@scure/bip32/index.js
+	// node_modules/.bun/@scure+bip32@2.4.0/node_modules/@scure/bip32/index.js
 	var Point$1, Fn$1, base58check$1, MASTER_SECRET$1, BITCOIN_VERSIONS, HARDENED_OFFSET$2, MAX_DEPTH, hash160$1, fromU32, toU32$1, validateVersions, HDKey$1;
 	var init_bip32 = __esmMin((() => {
 		init_secp256k1();
@@ -9920,15 +9876,13 @@
 			}
 		};
 	}));
-	//#endregion
-	//#region packages/wallet-kernel/src/derive/hd.ts
+	// packages/wallet-kernel/src/derive/hd.ts
 	init_bip32();
 	/** BIP-32 master key. The caller owns it and must `wipePrivateData()`. */
 	function masterKey(seed) {
 		return HDKey$1.fromMasterSeed(seed);
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/derive/wallet-id.ts
+	// packages/wallet-kernel/src/derive/wallet-id.ts
 	init_sha2();
 	init_utils$2();
 	/**
@@ -9941,8 +9895,7 @@
 		if (publicKey === null || publicKey.length !== 33) throw new KernelError("integrity", "master key has no compressed public key");
 		return bytesToHex$4(sha256$1(concatBytes$3(utf8ToBytes$1("qntx-wallet/wallet-id/v1"), publicKey)).slice(0, 8));
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/seed/entropy.ts
+	// packages/wallet-kernel/src/seed/entropy.ts
 	/** 12 words → 16 bytes, 24 words → 32 bytes of fresh entropy. */
 	function randomEntropy(words, random) {
 		const length = words === 12 ? 16 : 32;
@@ -9950,8 +9903,7 @@
 		if (entropy.length !== length) throw new KernelError("integrity", "random source returned a wrong-length buffer");
 		return entropy;
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/pbkdf2.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/pbkdf2.js
 	init_hmac();
 	init_utils$2();
 	function pbkdf2Init(hash, _password, _salt, _opts) {
@@ -10045,8 +9997,7 @@
 		}
 		return eng.output(DK);
 	}
-	//#endregion
-	//#region node_modules/.bun/@scure+bip39@2.4.0/node_modules/@scure/bip39/index.js
+	// node_modules/.bun/@scure+bip39@2.4.0/node_modules/@scure/bip39/index.js
 	init_sha2();
 	init_utils$2();
 	/*! scure-bip39 - MIT License (c) 2022 Patricio Palladino, Paul Miller (paulmillr.com) */
@@ -10222,8 +10173,7 @@
 		}
 		return true;
 	}
-	//#endregion
-	//#region node_modules/.bun/@scure+bip39@2.4.0/node_modules/@scure/bip39/wordlists/english.js
+	// node_modules/.bun/@scure+bip39@2.4.0/node_modules/@scure/bip39/wordlists/english.js
 	/** English BIP39 wordlist. */
 	var wordlist = /* @__PURE__ */ Object.freeze(`abandon
 ability
@@ -12273,8 +12223,7 @@ zebra
 zero
 zone
 zoo`.split("\n"));
-	//#endregion
-	//#region packages/wallet-kernel/src/seed/mnemonic.ts
+	// packages/wallet-kernel/src/seed/mnemonic.ts
 	var WORD_COUNTS = /* @__PURE__ */ new Set([
 		12,
 		15,
@@ -12305,8 +12254,7 @@ zoo`.split("\n"));
 		if (!ENTROPY_LENGTHS.has(entropy.length)) throw new KernelError("invalid-input", "entropy must be 16, 20, 24, 28 or 32 bytes");
 		return entropyToMnemonic(entropy, wordlist);
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/seed/passkey.ts
+	// packages/wallet-kernel/src/seed/passkey.ts
 	/**
 	* Passkey wallet entropy is the first 16 bytes of the WebAuthn PRF output (qntx/wallet's own
 	* convention). Wipes `prf` in every case.
@@ -12319,8 +12267,7 @@ zoo`.split("\n"));
 			wipe(prf);
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/seed/seed.ts
+	// packages/wallet-kernel/src/seed/seed.ts
 	init_utils$2();
 	/** BIP-39 seed: PBKDF2-HMAC-SHA512, 2048 rounds, 64 bytes. */
 	async function seedFromMnemonic(mnemonic, passphrase, pbkdf2) {
@@ -12335,8 +12282,7 @@ zoo`.split("\n"));
 	async function seedFromEntropy(entropy, pbkdf2) {
 		return seedFromMnemonic(mnemonicFromEntropy(entropy), "", pbkdf2);
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/session/session.ts
+	// packages/wallet-kernel/src/session/session.ts
 	init_utils$2();
 	init_defineProperty();
 	init_objectSpread2();
@@ -12501,8 +12447,7 @@ zoo`.split("\n"));
 			});
 		}
 	};
-	//#endregion
-	//#region packages/wallet-kernel/src/commands/vault.ts
+	// packages/wallet-kernel/src/commands/vault.ts
 	var EMPTY_IMAGE$1 = {
 		meta: void 0,
 		records: [],
@@ -12587,8 +12532,7 @@ zoo`.split("\n"));
 		} });
 		return null;
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/commands/wallets.ts
+	// packages/wallet-kernel/src/commands/wallets.ts
 	init_utils$2();
 	async function deriveWalletMaterial(platform, entropy) {
 		const seed = await seedFromEntropy(entropy, platform.pbkdf2);
@@ -12955,8 +12899,7 @@ zoo`.split("\n"));
 		}, ...extras]);
 		return null;
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/commands/backup.ts
+	// packages/wallet-kernel/src/commands/backup.ts
 	init_sha2();
 	init_utils$2();
 	init_base();
@@ -13366,8 +13309,7 @@ zoo`.split("\n"));
 			bek.fill(0);
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/commands/secrets.ts
+	// packages/wallet-kernel/src/commands/secrets.ts
 	init_utils$2();
 	init_objectSpread2();
 	/** One-shot export: the mnemonic as UTF-8 bytes (the host wraps it in a wipeable buffer). */
@@ -13412,8 +13354,7 @@ zoo`.split("\n"));
 		}]);
 		return new Uint8Array(plaintext);
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/commands/index.ts
+	// packages/wallet-kernel/src/commands/index.ts
 	/**
 	* One typed entry per core protocol method; `ParamsOf`/`ResultOf` come from the METHODS validators,
 	* so a handler whose shape drifts from the table fails to typecheck. kernel.ts composes this with
@@ -13442,8 +13383,7 @@ zoo`.split("\n"));
 		"wallet.exportMnemonic": async (ctx, params, session) => exportMnemonic(ctx, params, session),
 		"dataKeys.get": async (ctx, params, session) => getDataKey(ctx, params, session)
 	};
-	//#endregion
-	//#region node_modules/.bun/micro-packed@0.11.1/node_modules/micro-packed/index.js
+	// node_modules/.bun/micro-packed@0.11.1/node_modules/micro-packed/index.js
 	/** Checks if two Uint8Arrays are equal. Not constant-time. */
 	function equalBytes$1(a, b) {
 		if (a.length !== b.length) return false;
@@ -14790,8 +14730,7 @@ zoo`.split("\n"));
 			});
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
+	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/utils.js
 	/**
 	* Validates that a value is a non-negative bigint.
 	* @param n - Value to validate.
@@ -15058,8 +14997,7 @@ zoo`.split("\n"));
 			wif: 239
 		});
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
+	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/script.js
 	/**
 	* Coder for Bitcoin Script numbers.
 	* bytesLimit only constrains decode. encode still serializes any bigint in
@@ -15404,8 +15342,7 @@ zoo`.split("\n"));
 			lockTime: U32LE
 		})))();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/psbt.js
+	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/psbt.js
 	function PSBTKeyInfo(info) {
 		const [type, kc, vc, reqInc, allowInc, silentIgnore] = info;
 		return {
@@ -15988,8 +15925,7 @@ zoo`.split("\n"));
 		RawPSBTV0 = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawPSBTV0, validatePSBT)))();
 		RawPSBTV2 = /* @__PURE__ */ (() => Object.freeze(validate$4(_RawPSBTV2, validatePSBT)))();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/payment.js
+	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/payment.js
 	function isValidPubkey(pub, type) {
 		try {
 			validatePubkey(pub, type);
@@ -16621,8 +16557,7 @@ zoo`.split("\n"));
 		tapLeafHash = (script, version = 192) => tagSchnorr("TapLeaf", new Uint8Array([tapLeafVersion(version)]), VarBytes.encode(script));
 		base58check = /* @__PURE__ */ createBase58check(sha256);
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/transaction.js
+	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/transaction.js
 	/**
 	* Deep-clones plain transaction data structures.
 	* @param obj - value to clone
@@ -17968,8 +17903,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/utils.js
+	// node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/utils.js
 	init_transaction();
 	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
 	/**
@@ -17992,8 +17926,7 @@ zoo`.split("\n"));
 		}
 		return value;
 	}
-	//#endregion
-	//#region node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/slip10.js
+	// node_modules/.bun/micro-key-producer@0.10.2/node_modules/micro-key-producer/slip10.js
 	/*! micro-key-producer - MIT License (c) 2024 Paul Miller (paulmillr.com) */
 	/**
 	* Allows to work with SLIP-0010 HD keys.
@@ -18124,8 +18057,7 @@ zoo`.split("\n"));
 			return ed25519.verify(signature, message, this.publicKeyRaw);
 		}
 	};
-	//#endregion
-	//#region packages/wallet-chains/dist/index.mjs
+	// packages/wallet-chains/dist/index.mjs
 	init_defineProperty();
 	var ChainError = class extends Error {
 		constructor(code, message) {
@@ -18135,8 +18067,7 @@ zoo`.split("\n"));
 			this.code = code;
 		}
 	};
-	//#endregion
-	//#region packages/wallet-chains/dist/message-DtIS0ZWB.mjs
+	// packages/wallet-chains/dist/message-DuJ5KSRT.mjs
 	init_secp256k1();
 	init_utils();
 	init_sha2();
@@ -18308,8 +18239,7 @@ zoo`.split("\n"));
 		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
 		return base64(concat$2(Uint8Array.of(header), recovered.slice(1)));
 	};
-	//#endregion
-	//#region packages/wallet-chains/dist/bitcoin.mjs
+	// packages/wallet-chains/dist/bitcoin.mjs
 	init_payment();
 	init_transaction();
 	/**
@@ -18545,8 +18475,7 @@ zoo`.split("\n"));
 	};
 	/** Decodes the message `address` into the scriptPubKey the signer needs. */
 	var decodeMessageTarget = (request) => messageTarget(request.address, request.network, request.format);
-	//#endregion
-	//#region packages/wallet-chains/dist/bitcoin-sign.mjs
+	// packages/wallet-chains/dist/bitcoin-sign.mjs
 	init_payment();
 	init_transaction();
 	/**
@@ -18569,8 +18498,7 @@ zoo`.split("\n"));
 		const scriptPubKey = OutScript.encode(Address(bitcoinNetwork(request.network).params).decode(request.address));
 		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
 	};
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha3.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha3.js
 	init__u64();
 	init_utils$2();
 	init_defineProperty();
@@ -18822,18 +18750,15 @@ zoo`.split("\n"));
 	* ```
 	*/
 	var keccak_256 = /* @__PURE__ */ genKeccak(1, 136, 32);
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/version.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/version.js
 	/** @internal */
 	var version = "0.1.1";
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/errors.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/errors.js
 	/** @internal */
 	function getVersion() {
 		return version;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Errors.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Errors.js
 	init_defineProperty();
 	var _BaseError;
 	/**
@@ -18917,8 +18842,7 @@ zoo`.split("\n"));
 		if (err && typeof err === "object" && "cause" in err && err.cause) return walk(err.cause, fn);
 		return fn ? null : err;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/bytes.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/bytes.js
 	/** @internal */
 	function assertSize$1(bytes, size_) {
 		if (size(bytes) > size_) throw new SizeOverflowError({
@@ -18979,8 +18903,7 @@ zoo`.split("\n"));
 		else while (end > start && value[end - 1] === 0) end--;
 		return start === 0 && end === value.length ? value : value.slice(start, end);
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/codec/hex.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/codec/hex.js
 	init_defineProperty();
 	/** @internal */
 	var hexes$1 = /*#__PURE__*/ Array.from({ length: 256 }, (_v, i) => i.toString(16).padStart(2, "0"));
@@ -19060,7 +18983,7 @@ zoo`.split("\n"));
 	function hexToBytes(value) {
 		if (typeof value !== "string" || value.length < 2 || value.charCodeAt(0) !== 48 || value.charCodeAt(1) !== 120) throw new InvalidHexValueError$1(value);
 		const nibbles = value.length - 2;
-		if ((nibbles & 1) !== 0) throw new InvalidLengthError(value);
+		if ((nibbles & 1) !== 0) throw new InvalidLengthError$1(value);
 		const length = nibbles >> 1;
 		if (length <= loopDecodeMaxBytes) return hexToBytesLoop(value, length);
 		if (hexToBytesBuffer) return hexToBytesBuffer(value, length);
@@ -19113,14 +19036,13 @@ zoo`.split("\n"));
 		}
 	};
 	/** Thrown when a hex string has an odd nibble count. */
-	var InvalidLengthError = class extends BaseError {
+	var InvalidLengthError$1 = class extends BaseError {
 		constructor(value) {
 			super(`Hex value \`"${value}"\` is an odd length (${value.length - 2} nibbles).`, { metaMessages: ["It must be an even length."] });
 			_defineProperty(this, "name", "Hex.InvalidLengthError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/codec/int.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/codec/int.js
 	init_defineProperty();
 	/**
 	* Decodes a big-endian unsigned `Uint8Array` into a `bigint`. When `signed` is
@@ -19183,8 +19105,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Hex.IntegerOutOfRangeError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/codec/utf8.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/codec/utf8.js
 	/**
 	* Shared `TextEncoder` / `TextDecoder` singletons used by primitive and codec
 	* modules. Centralizing them avoids constructing redundant instances per
@@ -19195,8 +19116,7 @@ zoo`.split("\n"));
 	var encoder = /*#__PURE__*/ new TextEncoder();
 	/** @internal */
 	var decoder$2 = /*#__PURE__*/ new TextDecoder();
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Json.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Json.js
 	var bigIntSuffix = "#__bigint";
 	/**
 	* Stringifies a value to its JSON representation, with support for `bigint`.
@@ -19224,8 +19144,7 @@ zoo`.split("\n"));
 			return value;
 		}, space);
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Hex.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Hex.js
 	init_defineProperty();
 	/**
 	* Asserts if the given value is {@link ox#Hex.Hex}.
@@ -19244,12 +19163,13 @@ zoo`.split("\n"));
 	* @param options - Options.
 	*/
 	function assert$7(value, options = {}) {
-		const { strict = false } = options;
+		const { even = false, strict = false } = options;
 		if (typeof value !== "string") throw new InvalidHexTypeError(value);
 		if (strict) {
 			if (!/^0x[0-9a-fA-F]*$/.test(value)) throw new InvalidHexValueError(value);
 		}
 		if (!value.startsWith("0x")) throw new InvalidHexValueError(value);
+		if (even && value.length % 2 !== 0) throw new InvalidLengthError(value);
 	}
 	/**
 	* Concatenates two or more {@link ox#Hex.Hex}.
@@ -19593,9 +19513,12 @@ zoo`.split("\n"));
 	* @returns `true` if the value is a {@link ox#Hex.Hex}, `false` otherwise.
 	*/
 	function validate$3(value, options = {}) {
-		const { strict = false } = options;
+		const { even = false, strict = false } = options;
 		try {
-			assert$7(value, { strict });
+			assert$7(value, {
+				even,
+				strict
+			});
 			return true;
 		} catch (_unused) {
 			return false;
@@ -19630,6 +19553,12 @@ zoo`.split("\n"));
 	* Re-exported from `internal/codec/hex.ts` to break the `Bytes` <-> `Hex` runtime cycle.
 	*/
 	var InvalidHexValueError = InvalidHexValueError$1;
+	/**
+	* Thrown when the provided hex value is an odd length.
+	*
+	* Re-exported from `internal/codec/hex.ts` to break the `Bytes` <-> `Hex` runtime cycle.
+	*/
+	var InvalidLengthError = InvalidLengthError$1;
 	/**
 	* Thrown when the size of the value exceeds the expected max size.
 	*
@@ -19684,8 +19613,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Hex.SizeExceedsPaddingSizeError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/hex.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/hex.js
 	/** @internal */
 	function assertSize(hex, size_) {
 		const size = hex.length - 2 + 1 >> 1;
@@ -19739,8 +19667,7 @@ zoo`.split("\n"));
 		if (dir === "right" && (end - start) % 2 === 1) return `0x${data.slice(start, end)}0`;
 		return `0x${data.slice(start, end)}`;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Bytes.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Bytes.js
 	init_defineProperty();
 	/**
 	* Instantiates a {@link ox#Bytes.Bytes} value from a `Uint8Array`, a hex string, or an array of unsigned 8-bit integers.
@@ -20116,8 +20043,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Bytes.SizeExceedsPaddingSizeError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/lru.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/lru.js
 	init_defineProperty();
 	/**
 	* Map with a bounded FIFO eviction policy. Cheaper than {@link LruMap} on hot
@@ -20141,8 +20067,7 @@ zoo`.split("\n"));
 		}
 	};
 	var checksum$1 = { checksum: /*#__PURE__*/ new BoundedMap(32768) }.checksum;
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/engine.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/engine.js
 	/**
 	* The installed overrides. Empty by default -- a bare object literal, so
 	* bundlers treat it as side-effect free.
@@ -20150,16 +20075,14 @@ zoo`.split("\n"));
 	* @internal
 	*/
 	var overrides = {};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/hash.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/hash.js
 	var keccak256Default = (input) => keccak_256(input);
 	/** @internal */
 	var keccak256$1 = (input) => {
 		var _overrides$Hash$kecca, _overrides$Hash8;
 		return ((_overrides$Hash$kecca = (_overrides$Hash8 = overrides.Hash) === null || _overrides$Hash8 === void 0 ? void 0 : _overrides$Hash8.keccak256) !== null && _overrides$Hash$kecca !== void 0 ? _overrides$Hash$kecca : keccak256Default)(input);
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Hash.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Hash.js
 	init_defineProperty();
 	/**
 	* Calculates the [Keccak256](https://en.wikipedia.org/wiki/SHA-3) hash of a {@link ox#Bytes.Bytes} or {@link ox#Hex.Hex} value.
@@ -20277,8 +20200,7 @@ zoo`.split("\n"));
 		}
 		return String.fromCharCode.apply(null, out);
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Address.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Address.js
 	init_defineProperty();
 	/**
 	* Asserts that the given value is a valid {@link ox#Address.Address}.
@@ -20421,8 +20343,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Address.InvalidChecksumError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/regex.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/regex.js
 	/** @internal */
 	function execTyped(regex, string) {
 		const match = regex.exec(string);
@@ -20434,8 +20355,7 @@ zoo`.split("\n"));
 	var integerRegex$1 = /^u?int(8|16|24|32|40|48|56|64|72|80|88|96|104|112|120|128|136|144|152|160|168|176|184|192|200|208|216|224|232|240|248|256)?$/;
 	/** @internal */
 	var isTupleRegex = /^\(.+?\).*?$/;
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiParameter.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiParameter.js
 	init_objectSpread2();
 	var tupleRegex = new RegExp("^tuple(?<array>(\\[(\\d*)\\])*)$", "");
 	/**
@@ -20462,8 +20382,7 @@ zoo`.split("\n"));
 		if (abiParameter.name) return `${type} ${abiParameter.name}`;
 		return type;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiParameters.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiParameters.js
 	/**
 	* Formats `AbiParameter`s to human-readable ABI parameters.
 	*
@@ -20480,8 +20399,7 @@ zoo`.split("\n"));
 		}
 		return params;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/errors.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/errors.js
 	init_defineProperty();
 	var InvalidAbiItemError = class extends BaseError {
 		constructor({ signature }) {
@@ -20582,8 +20500,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Abi.CircularReferenceError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/signatures.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/signatures.js
 	var errorSignatureRegex = new RegExp("^error (?<name>[a-zA-Z$_][a-zA-Z0-9$_]*)\\((?<parameters>.*?)\\)$", "");
 	function isErrorSignature(signature) {
 		return errorSignatureRegex.test(signature);
@@ -20636,8 +20553,7 @@ zoo`.split("\n"));
 		"memory",
 		"storage"
 	]);
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/cache.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/cache.js
 	/**
 	* Gets the parameter cache key namespaced by `type` and `structs`. This prevents
 	* parameters from being accessible to types that don't allow them (e.g.
@@ -20776,8 +20692,7 @@ zoo`.split("\n"));
 			indexed: true
 		}]
 	]);
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/utils.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/utils.js
 	init_objectSpread2();
 	function parseSignature(signature, structs = {}) {
 		if (isFunctionSignature(signature)) return parseFunctionSignature(signature, structs);
@@ -20979,8 +20894,7 @@ zoo`.split("\n"));
 	function isValidDataLocation(type, isArray) {
 		return isArray || type === "bytes" || type === "string" || type === "tuple";
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/structs.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/runtime/structs.js
 	init_objectSpread2();
 	function parseStructs(signatures) {
 		const shallowStructs = {};
@@ -21037,8 +20951,7 @@ zoo`.split("\n"));
 		}
 		return components;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Solidity.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Solidity.js
 	var arrayRegex = /^(.*)\[([0-9]*)\]$/;
 	var bytesRegex = /^bytes([1-9]|1[0-9]|2[0-9]|3[0-2])?$/;
 	var integerRegex = /^(u?int)(8|16|24|32|40|48|56|64|72|80|88|96|104|112|120|128|136|144|152|160|168|176|184|192|200|208|216|224|232|240|248|256)?$/;
@@ -21107,8 +21020,7 @@ zoo`.split("\n"));
 	-(2n ** (248n - 1n));
 	-(2n ** (256n - 1n));
 	var maxUint256 = 2n ** 256n - 1n;
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/abiParameters.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/abiParameters.js
 	init_objectSpread2();
 	/** @internal */
 	function decodeParameter(cursor, param, options) {
@@ -21609,8 +21521,7 @@ zoo`.split("\n"));
 		if (arrayComponents && hasDynamicChild(_objectSpread2(_objectSpread2({}, param), {}, { type: arrayComponents[1] }))) return true;
 		return false;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/cursor.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cursor.js
 	init_defineProperty();
 	var staticCursor = {
 		bytes: /* @__PURE__ */ new Uint8Array(),
@@ -21798,8 +21709,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Cursor.RecursiveReadLimitExceededError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
 	init_defineProperty();
 	function decode$3(parameters, data, options = {}) {
 		const { as = "Array", checksumAddress = true } = options;
@@ -22179,8 +22089,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "AbiParameters.InvalidTypeError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/TypedData.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TypedData.js
 	init_objectSpread2();
 	init_defineProperty();
 	/**
@@ -22425,7 +22334,7 @@ zoo`.split("\n"));
 				name: "name",
 				type: "string"
 			},
-			(domain === null || domain === void 0 ? void 0 : domain.version) && {
+			typeof (domain === null || domain === void 0 ? void 0 : domain.version) === "string" && {
 				name: "version",
 				type: "string"
 			},
@@ -22740,8 +22649,7 @@ zoo`.split("\n"));
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	//#endregion
-	//#region packages/wallet-chains/dist/typed-data-C6XANSQF.mjs
+	// packages/wallet-chains/dist/typed-data-Cf1g7JVv.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -22923,8 +22831,7 @@ zoo`.split("\n"));
 		kind: "chain-id-mismatch",
 		message: "typed-data domain.chainId does not match the request network"
 	}] : [];
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiItem.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiItem.js
 	/**
 	* Formats ABI item (e.g. error, event, function) into human-readable ABI item
 	*
@@ -22940,8 +22847,7 @@ zoo`.split("\n"));
 		if (abiItem.type === "fallback") return `fallback() external${abiItem.stateMutability === "payable" ? " payable" : ""}`;
 		return "receive() external payable";
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/parseAbiItem.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/parseAbiItem.js
 	/**
 	* Parses human-readable ABI item (e.g. error, event, function) into `Abi` item.
 	*
@@ -22964,8 +22870,7 @@ zoo`.split("\n"));
 		if (!abiItem) throw new InvalidAbiItemError({ signature });
 		return abiItem;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/abiItem.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/abiItem.js
 	init_objectSpread2();
 	/** @internal */
 	function normalizeSignature(signature) {
@@ -23027,18 +22932,6 @@ zoo`.split("\n"));
 	* @internal
 	*/
 	var fixedBytesTypeRegex = /^bytes([1-9]|1[0-9]|2[0-9]|3[0-2])?$/;
-	/**
-	* Fixed-length (`<type>[M]`) / dynamic (`<type>[]`) array regex.
-	*
-	* @internal
-	*/
-	var arrayTypeRegex = /[a-z]+[1-9]{0,3}(\[[0-9]{0,}\])+$/;
-	/**
-	* Strips a single trailing `[...]` array suffix from a type.
-	*
-	* @internal
-	*/
-	var arraySuffixStripRegex = /(\[[0-9]{0,}\])$/;
 	/** @internal */
 	function isArgOfType(arg, abiParameter) {
 		const argType = typeof arg;
@@ -23048,14 +22941,19 @@ zoo`.split("\n"));
 			case "bool": return argType === "boolean";
 			case "function": return argType === "string";
 			case "string": return argType === "string";
-			default:
+			default: {
 				if (abiParameterType === "tuple" && "components" in abiParameter) return Object.values(abiParameter.components).every((component, index) => {
-					return isArgOfType(Object.values(arg)[index], component);
+					return argType === "object" && isArgOfType(getComponentValue(arg, component, index), component);
 				});
 				if (integerTypeRegex.test(abiParameterType)) return argType === "number" || argType === "bigint";
 				if (fixedBytesTypeRegex.test(abiParameterType)) return argType === "string" || arg instanceof Uint8Array;
-				if (arrayTypeRegex.test(abiParameterType)) return Array.isArray(arg) && arg.every((x) => isArgOfType(x, _objectSpread2(_objectSpread2({}, abiParameter), {}, { type: abiParameterType.replace(arraySuffixStripRegex, "") })));
+				const arrayComponents = getArrayComponents(abiParameterType);
+				if (arrayComponents) {
+					const [length, type] = arrayComponents;
+					return Array.isArray(arg) && (length === null || arg.length === length) && arg.every((x) => isArgOfType(x, _objectSpread2(_objectSpread2({}, abiParameter), {}, { type })));
+				}
 				return false;
+			}
 		}
 	}
 	/** @internal */
@@ -23063,18 +22961,35 @@ zoo`.split("\n"));
 		for (let parameterIndex = 0; parameterIndex < sourceParameters.length; parameterIndex++) {
 			const sourceParameter = sourceParameters[parameterIndex];
 			const targetParameter = targetParameters[parameterIndex];
-			if (sourceParameter.type === "tuple" && targetParameter.type === "tuple" && "components" in sourceParameter && "components" in targetParameter) return getAmbiguousTypes(sourceParameter.components, targetParameter.components, args[parameterIndex]);
+			if (!targetParameter) continue;
+			if (sourceParameter.type === "tuple" && targetParameter.type === "tuple" && "components" in sourceParameter && "components" in targetParameter) {
+				const value = args[parameterIndex];
+				const types = getAmbiguousTypes(sourceParameter.components, targetParameter.components, sourceParameter.components.map((component, index) => getComponentValue(value, component, index)));
+				if (types) return types;
+				continue;
+			}
+			const sourceArray = getArrayComponents(sourceParameter.type);
+			const targetArray = getArrayComponents(targetParameter.type);
+			if (sourceArray && targetArray) {
+				var _args$parameterIndex;
+				const types = getAmbiguousTypes([_objectSpread2(_objectSpread2({}, sourceParameter), {}, { type: sourceArray[1] })], [_objectSpread2(_objectSpread2({}, targetParameter), {}, { type: targetArray[1] })], [(_args$parameterIndex = args[parameterIndex]) === null || _args$parameterIndex === void 0 ? void 0 : _args$parameterIndex[0]]);
+				if (types) return types;
+				continue;
+			}
 			const sourceType = sourceParameter.type;
 			const targetType = targetParameter.type;
 			const arg = args[parameterIndex];
 			let ambiguous = false;
 			if (sourceType === "address" && targetType === "bytes20" || sourceType === "bytes20" && targetType === "address") ambiguous = true;
-			else if (sourceType === "address" && targetType === "string" || sourceType === "string" && targetType === "address" || sourceType === "address" && targetType === "bytes" || sourceType === "bytes" && targetType === "address") ambiguous = validate$2(arg, { strict: false });
+			else if (sourceType === "address" && targetType === "string" || sourceType === "string" && targetType === "address" || sourceType === "address" && targetType === "bytes" || sourceType === "bytes" && targetType === "address") ambiguous = arg === void 0 || validate$2(arg, { strict: false });
 			if (ambiguous) return [sourceType, targetType];
 		}
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/AbiItem.js
+	function getComponentValue(arg, component, index) {
+		if (Array.isArray(arg)) return arg[index];
+		return arg === null || arg === void 0 ? void 0 : arg[component.name];
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiItem.js
 	init_objectSpread2();
 	init_defineProperty();
 	/**
@@ -23417,8 +23332,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "AbiItem.InvalidSelectorSizeError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/AbiFunction.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiFunction.js
 	function decodeData(...parameters) {
 		var _abiFunction$inputs;
 		const [abiFunction, data, options] = (() => {
@@ -23629,8 +23543,7 @@ zoo`.split("\n"));
 	function getSelector(abiItem) {
 		return getSelector$1(abiItem);
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
 	/**
 	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
 	* of the ERC-191 v0x45 envelope). Concatenated with the per-message
@@ -23683,8 +23596,7 @@ zoo`.split("\n"));
 	function getSignPayload$3(data) {
 		return keccak256(encode$1(data));
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Signature.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Signature.js
 	init_objectSpread2();
 	init_defineProperty();
 	/**
@@ -24014,9 +23926,7 @@ zoo`.split("\n"));
 	*/
 	function toHex(signature) {
 		assert$4(signature);
-		const r = signature.r;
-		const s = signature.s;
-		return concat$1(r, s, typeof signature.yParity === "number" ? fromNumber(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$1(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -24125,8 +24035,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Signature.InvalidVError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/cryptoIo.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cryptoIo.js
 	/**
 	* Formats a structured {@link ox#Signature.Signature} as the requested
 	* representation: the structured object (`'Object'`), serialized hex
@@ -24139,8 +24048,7 @@ zoo`.split("\n"));
 		if (as === "Bytes") return toBytes(signature);
 		return signature;
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/secp256k1.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/secp256k1.js
 	init_secp256k1();
 	init_objectSpread2();
 	var signDefault = (payload, privateKey, options) => secp256k1.sign(payload, privateKey, _objectSpread2(_objectSpread2({}, options), {}, {
@@ -24152,11 +24060,9 @@ zoo`.split("\n"));
 		var _overrides$Secp256k1$5, _overrides$Secp256k5;
 		return ((_overrides$Secp256k1$5 = (_overrides$Secp256k5 = overrides.Secp256k1) === null || _overrides$Secp256k5 === void 0 ? void 0 : _overrides$Secp256k5.sign) !== null && _overrides$Secp256k1$5 !== void 0 ? _overrides$Secp256k1$5 : signDefault)(payload, privateKey, options);
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/entropy.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/entropy.js
 	var extraEntropy = false;
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Secp256k1.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Secp256k1.js
 	init_defineProperty();
 	/**
 	* Signs the payload with the provided private key.
@@ -24184,8 +24090,7 @@ zoo`.split("\n"));
 	}
 	fromString$1("ox.secp256k1.fromPrf.v1");
 	fromString$1("ox.secp256k1.fromSeed.v1");
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
 	init_defineProperty();
 	/**
 	* Converts a structured Access List into a list of tuples.
@@ -24234,8 +24139,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
 	/**
 	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
 	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
@@ -24249,8 +24153,7 @@ zoo`.split("\n"));
 		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
 		return fromNumber(value);
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
 	init_defineProperty();
 	/**
 	* Encodes a {@link ox#Bytes.Bytes} or {@link ox#Hex.Hex} value into a Recursive-Length Prefix (RLP) value.
@@ -24558,8 +24461,7 @@ zoo`.split("\n"));
 	function invalidNibble(hex) {
 		return new BaseError(`Invalid hex string \`${hex}\`.`);
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/objectWithoutPropertiesLoose.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/objectWithoutPropertiesLoose.js
 	function _objectWithoutPropertiesLoose(r, e) {
 		if (null == r) return {};
 		var t = {};
@@ -24570,8 +24472,7 @@ zoo`.split("\n"));
 		return t;
 	}
 	var init_objectWithoutPropertiesLoose = __esmMin((() => {}));
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/objectWithoutProperties.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/objectWithoutProperties.js
 	function _objectWithoutProperties(e, t) {
 		if (null == e) return {};
 		var o, r, i = _objectWithoutPropertiesLoose(e, t);
@@ -24584,8 +24485,7 @@ zoo`.split("\n"));
 	var init_objectWithoutProperties = __esmMin((() => {
 		init_objectWithoutPropertiesLoose();
 	}));
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip2930.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip2930.js
 	init_objectSpread2();
 	/**
 	* Asserts a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930} is valid.
@@ -24755,8 +24655,7 @@ zoo`.split("\n"));
 			...signature ? toTuple(signature) : []
 		]));
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeLegacy.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeLegacy.js
 	init_objectSpread2();
 	/**
 	* Asserts a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy} is valid.
@@ -24960,8 +24859,7 @@ zoo`.split("\n"));
 		];
 		return fromHex(serialized);
 	}
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/Value.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Value.js
 	init_defineProperty();
 	/** @see https://ethereum.github.io/yellowpaper/paper.pdf */
 	var exponents = {
@@ -25031,8 +24929,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "Value.InvalidDecimalsError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelope.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelope.js
 	init_defineProperty();
 	/**
 	* Thrown when a fee cap is too high.
@@ -25112,8 +25009,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "TransactionEnvelope.TipAboveFeeCapError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/ox@1.8.9+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip1559.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip1559.js
 	init_objectSpread2();
 	var serializedType = "0x02";
 	/**
@@ -25291,8 +25187,7 @@ zoo`.split("\n"));
 			...signature ? toTuple(signature) : []
 		]));
 	}
-	//#endregion
-	//#region packages/wallet-chains/dist/evm.mjs
+	// packages/wallet-chains/dist/evm.mjs
 	init_objectSpread2();
 	var USDC$1 = Object.freeze({
 		symbol: "USDC",
@@ -25560,8 +25455,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	//#endregion
-	//#region packages/wallet-chains/dist/evm-sign.mjs
+	// packages/wallet-chains/dist/evm-sign.mjs
 	init_objectSpread2();
 	/**
 	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
@@ -25634,8 +25528,7 @@ zoo`.split("\n"));
 		const { json } = parseTypedData(typedData, "eip155:1");
 		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
 	};
-	//#endregion
-	//#region node_modules/.bun/@solana+errors@8.5.0+ff0372d108591aba/node_modules/@solana/errors/dist/index.browser.mjs
+	// node_modules/.bun/@solana+errors@8.5.0+ff0372d108591aba/node_modules/@solana/errors/dist/index.browser.mjs
 	init_objectSpread2();
 	init_defineProperty();
 	var SOLANA_ERROR__JSON_RPC__PARSE_ERROR = -32700;
@@ -26423,8 +26316,7 @@ zoo`.split("\n"));
 			this.name = "SolanaError";
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/@solana+codecs-core@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-core/dist/index.browser.mjs
+	// node_modules/.bun/@solana+codecs-core@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-core/dist/index.browser.mjs
 	init_objectSpread2();
 	function padBytes(bytes, length) {
 		if (bytes.length >= length) return bytes;
@@ -26505,8 +26397,7 @@ zoo`.split("\n"));
 			return [map(value, bytes, offset), newOffset];
 		} }));
 	}
-	//#endregion
-	//#region node_modules/.bun/@solana+codecs-strings@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-strings/dist/index.browser.mjs
+	// node_modules/.bun/@solana+codecs-strings@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-strings/dist/index.browser.mjs
 	var getBaseXDecoder$1 = (alphabet4) => {
 		return createDecoder({ read(rawBytes, offset) {
 			const bytes = offset === 0 || offset <= -rawBytes.byteLength ? rawBytes : rawBytes.slice(offset);
@@ -26531,8 +26422,7 @@ zoo`.split("\n"));
 	var getBase58Decoder$1 = () => getBaseXDecoder$1(alphabet2$1);
 	globalThis.TextDecoder;
 	globalThis.TextEncoder;
-	//#endregion
-	//#region node_modules/.bun/@solana+addresses@8.5.0+ff0372d108591aba/node_modules/@solana/addresses/dist/index.browser.mjs
+	// node_modules/.bun/@solana+addresses@8.5.0+ff0372d108591aba/node_modules/@solana/addresses/dist/index.browser.mjs
 	var memoizedBase58Decoder;
 	function getMemoizedBase58Decoder() {
 		if (!memoizedBase58Decoder) memoizedBase58Decoder = getBase58Decoder$1();
@@ -26541,8 +26431,7 @@ zoo`.split("\n"));
 	function getAddressDecoder() {
 		return fixDecoderSize(getMemoizedBase58Decoder(), 32);
 	}
-	//#endregion
-	//#region node_modules/.bun/@solana+codecs-numbers@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-numbers/dist/index.browser.mjs
+	// node_modules/.bun/@solana+codecs-numbers@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-numbers/dist/index.browser.mjs
 	function assertNumberIsBetweenForCodec(codecDescription, min, max, value) {
 		if (value < min || value > max) throw new SolanaError(SOLANA_ERROR__CODECS__NUMBER_OUT_OF_RANGE, {
 			codecDescription,
@@ -26612,8 +26501,7 @@ zoo`.split("\n"));
 		name: "u8",
 		size: 1
 	});
-	//#endregion
-	//#region node_modules/.bun/@solana+codecs-data-structures@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-data-structures/dist/index.browser.mjs
+	// node_modules/.bun/@solana+codecs-data-structures@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-data-structures/dist/index.browser.mjs
 	init_objectSpread2();
 	function maxCodecSizes(sizes) {
 		return sizes.reduce((all, size) => all === null || size === null ? null : Math.max(all, size), 0);
@@ -26783,8 +26671,7 @@ zoo`.split("\n"));
 			return [struct, offset];
 		} }));
 	}
-	//#endregion
-	//#region node_modules/.bun/@solana+transaction-messages@8.5.0+ff0372d108591aba/node_modules/@solana/transaction-messages/dist/index.browser.mjs
+	// node_modules/.bun/@solana+transaction-messages@8.5.0+ff0372d108591aba/node_modules/@solana/transaction-messages/dist/index.browser.mjs
 	init_objectSpread2();
 	init_objectWithoutProperties();
 	var _excluded = ["accountIndices", "data"];
@@ -26983,8 +26870,7 @@ zoo`.split("\n"));
 			]).read(bytes, offset);
 		} });
 	}
-	//#endregion
-	//#region packages/wallet-chains/dist/solana.mjs
+	// packages/wallet-chains/dist/solana.mjs
 	init_objectSpread2();
 	/** Well-known Solana program ids (base58, 32 bytes) — frozen constants. */
 	var PROGRAM_IDS = Object.freeze({
@@ -27331,8 +27217,7 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
-	//#endregion
-	//#region packages/wallet-chains/dist/solana-sign.mjs
+	// packages/wallet-chains/dist/solana-sign.mjs
 	/**
 	* /solana/sign — deterministic Ed25519 signing over the compiled message or raw offchain bytes.
 	* Inputs must already be normalized: the kernel calls `normalizeSolana` first. No key caching; the
@@ -27346,8 +27231,7 @@ zoo`.split("\n"));
 		if (signature.length !== 64) throw new ChainError("invalid-request", "ed25519 produced a malformed signature");
 		return signature;
 	};
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/chains/prompt.ts
+	// packages/wallet-kernel/src/modules/chains/prompt.ts
 	/** Off-chain messages carry no decodable value flow. */
 	var MESSAGE_INTENT = {
 		summary: "message",
@@ -27418,8 +27302,7 @@ zoo`.split("\n"));
 			description: joinLines(lines.length === 0 ? [catalog.generic] : lines)
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/chains/index.ts
+	// packages/wallet-kernel/src/modules/chains/index.ts
 	/**
 	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
 	* index, derived from the wallet's entropy record. No records, no cache: seed and every node are
@@ -27783,8 +27666,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/util-BcRBO6o-.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/util-BcRBO6o-.mjs
 	init_utils$2();
 	init_defineProperty();
 	/** Base error for all @qntx/nostr failures. */
@@ -27886,8 +27768,7 @@ zoo`.split("\n"));
 		}
 		return false;
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/kind-I2Tvbe82.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/kind-I2Tvbe82.mjs
 	/** Kind numbers used by this package. */
 	var Kind = {
 		Metadata: 0,
@@ -27919,8 +27800,7 @@ zoo`.split("\n"));
 		EmojiSet: 30030,
 		StarterPack: 39089
 	};
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/event-DHtcm0jM.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/event-DHtcm0jM.mjs
 	init_sha2();
 	/** Type guard: a non-empty array of strings. */
 	function isTag(value) {
@@ -28000,8 +27880,7 @@ zoo`.split("\n"));
 		const serialized = serializeEvent(event);
 		return bytesToHex$1(sha256$1(utf8Encoder.encode(serialized)));
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/key-Bt0ow7mI.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/key-Bt0ow7mI.mjs
 	init_utils$2();
 	init_sha2();
 	init_secp256k1();
@@ -28148,8 +28027,7 @@ zoo`.split("\n"));
 		markVerified(event);
 		return event;
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/verifier-DBSPHzGg.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/verifier-DBSPHzGg.mjs
 	/**
 	* Build an event verifier with exactly the semantics of {@link verifyEvent}, delegating the hash and
 	* signature check to `backend`. Verified/failed results share `verifyEvent`'s WeakSet caches, so
@@ -28171,8 +28049,7 @@ zoo`.split("\n"));
 	}
 	/** Verify event id and BIP-340 signature. Uses WeakSet cache (does not mutate the event). */
 	var verifyEvent = createEventVerifier(nobleBackend);
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/error-CoP2myne.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/error-CoP2myne.mjs
 	init_defineProperty();
 	/** Thrown when a method is called on a signer after {@link NostrSigner dispose}. */
 	var SignerDisposedError = class extends NostrError {
@@ -28181,8 +28058,7 @@ zoo`.split("\n"));
 			_defineProperty(this, "name", "SignerDisposedError");
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/aes.js
+	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/aes.js
 	var BLOCK_SIZE = 16;
 	var POLY = 283;
 	function validateKeyLength(key) {
@@ -28475,8 +28351,7 @@ zoo`.split("\n"));
 			}
 		};
 	});
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip04.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip04.mjs
 	init_utils$2();
 	init_base();
 	/** NIP-04 legacy encrypted direct messages. Prefer NIP-44 for new applications. */
@@ -28537,8 +28412,7 @@ zoo`.split("\n"));
 		if (parts.length !== 2 || ciphertext === void 0 || ciphertext === "" || iv === void 0 || iv === "") throw new CryptoError("invalid NIP-04 payload: missing iv");
 		return [ciphertext, iv];
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip44.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip44.mjs
 	init_utils$2();
 	init_sha2();
 	init_base();
@@ -28660,8 +28534,7 @@ zoo`.split("\n"));
 		if (!equalBytes$3(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
 		return unpad(chacha20(chacha_key, chacha_nonce, ciphertext));
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip59.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip59.mjs
 	init_defineProperty();
 	init_objectSpread2();
 	/**
@@ -28729,16 +28602,13 @@ zoo`.split("\n"));
 		if (sealRaw.pubkey !== rumor.pubkey) throw new Nip59Error("seal pubkey does not match rumor pubkey");
 		return rumor;
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip46.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip46.mjs
 	init_defineProperty();
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/classPrivateMethodInitSpec.js
+	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateMethodInitSpec.js
 	function _classPrivateMethodInitSpec(e, a) {
 		_checkPrivateRedeclaration(e, a), a.add(e);
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/signer-DQzjm3pt.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/signer-DQzjm3pt.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var _keys;
@@ -28835,8 +28705,7 @@ zoo`.split("\n"));
 		}
 		return key;
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip19.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip19.mjs
 	init_secp256k1();
 	init_base();
 	init_defineProperty();
@@ -28969,8 +28838,7 @@ zoo`.split("\n"));
 			default: throw new Nip19Error(`unknown prefix ${prefix}`);
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/nostr/derive.ts
+	// packages/wallet-kernel/src/modules/nostr/derive.ts
 	/** The NIP-06 derivation path; `i` is the account-group index segment. */
 	var NIP06_PATH = "m/44'/1237'/i'/0/0";
 	/** NIP-06 private key of account group `groupIndex` (m/44'/1237'/i'/0/0). */
@@ -28986,8 +28854,7 @@ zoo`.split("\n"));
 			node.wipePrivateData();
 		}
 	}
-	//#endregion
-	//#region node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/scrypt.js
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/scrypt.js
 	/**
 	* RFC 7914 Scrypt KDF. Can be used to create a key from password and salt.
 	* @module
@@ -29188,8 +29055,7 @@ zoo`.split("\n"));
 		swap32IfBE(B32);
 		return scryptOutput(password, dkLen, B, V, tmp);
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip49.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip49.mjs
 	init_utils$2();
 	init_secp256k1();
 	init_base();
@@ -29292,8 +29158,7 @@ zoo`.split("\n"));
 			throw new Nip49Error("failed to decrypt", { cause: error });
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/nostr/pool.ts
+	// packages/wallet-kernel/src/modules/nostr/pool.ts
 	init_base();
 	init_defineProperty();
 	init_objectSpread2();
@@ -29428,8 +29293,7 @@ zoo`.split("\n"));
 			return { err: error instanceof KernelError ? error.code : "integrity" };
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/nostr/record.ts
+	// packages/wallet-kernel/src/modules/nostr/record.ts
 	init_objectSpread2();
 	/** The record kind this module owns: one sealed nostr secret key per record, keyed by public key. */
 	var NOSTR_KEY_KIND = "nostr-key";
@@ -29535,8 +29399,7 @@ zoo`.split("\n"));
 			corrupted
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/nostr/keys.ts
+	// packages/wallet-kernel/src/modules/nostr/keys.ts
 	init_objectSpread2();
 	function keyRecord(ctx, dek, secretKey, header) {
 		return sealRecord(ctx.platform, dek, NOSTR_KEY_KIND, header.publicKey, encodeNostrKeyHeader(header), new Uint8Array(secretKey));
@@ -29690,8 +29553,7 @@ zoo`.split("\n"));
 			wipe(secretKey);
 		}
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/nostr/ops.ts
+	// packages/wallet-kernel/src/modules/nostr/ops.ts
 	async function sign(ctx, pool, params, requestSession) {
 		ctx.session.require(requestSession);
 		return signEvent(pool, params.publicKey, params.event);
@@ -29718,8 +29580,7 @@ zoo`.split("\n"));
 		for (const event of params.events) results.push(await unwrapGiftWrap(pool, params.publicKey, event, ctx.platform.backends.nostr));
 		return { results };
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/nostr/index.ts
+	// packages/wallet-kernel/src/modules/nostr/index.ts
 	function createNostrModule(backend) {
 		const pool = new SignerPool(backend);
 		return {
@@ -29794,8 +29655,7 @@ zoo`.split("\n"));
 			status: (records) => nostrStatus(records)
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/spark/prompt.ts
+	// packages/wallet-kernel/src/modules/spark/prompt.ts
 	init_utils$2();
 	var CATALOGS = {
 		"zh-Hans": {
@@ -29849,8 +29709,7 @@ zoo`.split("\n"));
 			description: joinLines(lines(catalog, summary))
 		};
 	}
-	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/errors-5xLkExNL.mjs
+	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/errors-5xLkExNL.mjs
 	var SparkError, SparkCryptoError, SparkInputError;
 	var init_errors_5xLkExNL = __esmMin((() => {
 		init_defineProperty();
@@ -29875,8 +29734,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/names.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/names.js
 	/**
 	* Converts snake_case to protoCamelCase according to the convention
 	* used by protoc to convert a field name to a JSON name.
@@ -29934,8 +29792,7 @@ zoo`.split("\n"));
 			"valueOf"
 		]);
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/varint.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/varint.js
 	/**
 	* Read a 64 bit varint as two JS numbers.
 	*
@@ -30148,8 +30005,7 @@ zoo`.split("\n"));
 			return "0000000".slice(partial.length) + partial;
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/proto-int64.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/proto-int64.js
 	function makeInt64Support() {
 		const dv = /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(8));
 		if (typeof BigInt === "function" && typeof dv.getBigInt64 === "function" && typeof dv.getBigUint64 === "function" && typeof dv.setBigInt64 === "function" && typeof dv.setBigUint64 === "function" && (!!globalThis.Deno || !!globalThis.Bun || typeof process != "object" || typeof process.env != "object" || process.env.BUF_BIGINT_DISABLE !== "1")) {
@@ -30238,8 +30094,7 @@ zoo`.split("\n"));
 		init_varint();
 		protoInt64 = /*@__PURE__*/ makeInt64Support();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/descriptors.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/descriptors.js
 	var ScalarType;
 	var init_descriptors = __esmMin((() => {
 		(function(ScalarType) {
@@ -30260,8 +30115,7 @@ zoo`.split("\n"));
 			ScalarType[ScalarType["SINT64"] = 18] = "SINT64";
 		})(ScalarType || (ScalarType = {}));
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/scalar.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/scalar.js
 	/**
 	* Returns the zero value for the given scalar type, the value a field of this
 	* type has when unset: 0 for numeric types, "" for strings, false for
@@ -30315,8 +30169,7 @@ zoo`.split("\n"));
 		init_proto_int64();
 		init_descriptors();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/unsafe.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/unsafe.js
 	/**
 	* Return the selected field of a oneof group.
 	*
@@ -30430,8 +30283,7 @@ zoo`.split("\n"));
 		IMPLICIT$3 = 2;
 		unsafeLocal = Symbol.for("reflect unsafe local");
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/restore-json-names.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/restore-json-names.js
 	/**
 	* @private
 	*/
@@ -30443,8 +30295,7 @@ zoo`.split("\n"));
 		init_names();
 		init_unsafe();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/text-format.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/text-format.js
 	/**
 	* Parse an enum value from the Protobuf text format.
 	*
@@ -30593,8 +30444,7 @@ zoo`.split("\n"));
 		init_descriptors();
 		init_proto_int64();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/nested-types.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/nested-types.js
 	/**
 	* Iterate over all types - enumerations, extensions, services, messages -
 	* and enumerations, extensions and messages nested in messages.
@@ -30620,8 +30470,7 @@ zoo`.split("\n"));
 		}
 	}
 	var init_nested_types = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/text-encoding.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/text-encoding.js
 	/**
 	* Protobuf-ES requires the Text Encoding API to convert UTF-8 from and to
 	* binary. This WHATWG API is widely available, but it is not part of the
@@ -30696,8 +30545,7 @@ zoo`.split("\n"));
 	}
 	var te;
 	var init_text_encoding = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/binary-encoding.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/binary-encoding.js
 	/**
 	* Number of bytes needed to encode `value` as an unsigned 32-bit varint.
 	*/
@@ -31270,8 +31118,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/registry.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/registry.js
 	function createFileRegistry(...args) {
 		const registry = createBaseRegistry();
 		if (!args.length) return registry;
@@ -32015,8 +31862,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/boot.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/boot.js
 	/**
 	* Hydrate a file descriptor for google/protobuf/descriptor.proto from a plain
 	* object.
@@ -32111,11 +31957,9 @@ zoo`.split("\n"));
 		init_restore_json_names();
 		init_registry();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/fields.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/fields.js
 	var init_fields = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/base64-encoding.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wire/base64-encoding.js
 	/**
 	* Decodes a base64 string to a byte array.
 	*
@@ -32199,8 +32043,7 @@ zoo`.split("\n"));
 		nativeSetFromBase64 = Uint8Array.prototype.setFromBase64;
 		Uint8Array.prototype.toBase64;
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/error.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/error.js
 	var FieldError;
 	var init_error = __esmMin((() => {
 		FieldError = class extends Error {
@@ -32211,8 +32054,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/is-message.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/is-message.js
 	/**
 	* Determine whether the given `arg` is a message.
 	* If `desc` is set, determine whether `arg` is this specific message.
@@ -32223,8 +32065,7 @@ zoo`.split("\n"));
 		return schema.typeName === arg.$typeName;
 	}
 	var init_is_message = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/guard.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/guard.js
 	function isObject(arg) {
 		return arg !== null && typeof arg == "object" && !Array.isArray(arg);
 	}
@@ -32257,8 +32098,7 @@ zoo`.split("\n"));
 	var init_guard = __esmMin((() => {
 		init_unsafe();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/wrappers.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/wrappers.js
 	function isWrapper(arg) {
 		return isWrapperTypeName(arg.$typeName);
 	}
@@ -32283,8 +32123,7 @@ zoo`.split("\n"));
 			"google.protobuf.BytesValue"
 		]);
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/create.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/create.js
 	/**
 	* Create a new message instance.
 	*
@@ -32486,8 +32325,7 @@ zoo`.split("\n"));
 		INIT_MAP = 2;
 		INIT_ONEOF = 3;
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/message.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/message.js
 	/**
 	* Return the conversions between the local representation of the field
 	* value and the message it represents.
@@ -32611,8 +32449,7 @@ zoo`.split("\n"));
 		init_wrappers();
 		NULL_VALUE = 0;
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/to-binary.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/to-binary.js
 	function makeWriteOptions(options) {
 		return options ? Object.assign(Object.assign({}, writeDefaults), options) : writeDefaults;
 	}
@@ -32928,8 +32765,7 @@ zoo`.split("\n"));
 		writeDefaults = { writeUnknownFields: true };
 		compiledWriters = /* @__PURE__ */ new WeakMap();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/reflect-check.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/reflect-check.js
 	/**
 	* Check whether the given field value is valid for the reflect API.
 	*/
@@ -33101,8 +32937,7 @@ zoo`.split("\n"));
 		init_text_encoding();
 		init_proto_int64();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/reflect.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/reflect.js
 	/**
 	* Create a ReflectMessage.
 	*/
@@ -33392,11 +33227,9 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/clone.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/clone.js
 	var init_clone = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/message.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/message.js
 	/**
 	* Hydrate a message descriptor.
 	*
@@ -33406,11 +33239,9 @@ zoo`.split("\n"));
 		return paths.reduce((acc, cur) => acc.nestedMessages[cur], file.messages[path]);
 	}
 	var init_message = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/enum.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/enum.js
 	var init_enum = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/descriptor_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/descriptor_pb.js
 	var file_google_protobuf_descriptor, FileDescriptorProtoSchema, ExtensionRangeOptions_VerificationState, FieldDescriptorProto_Type, FieldDescriptorProto_Label, FileOptions_OptimizeMode, FieldOptions_CType, FieldOptions_JSType, FieldOptions_OptionRetention, FieldOptions_OptionTargetType, MethodOptions_IdempotencyLevel, FeatureSet_VisibilityFeature_DefaultSymbolVisibility, FeatureSet_ProtoLimitsFeature_EnforceProtoLimits, FeatureSet_FieldPresence, FeatureSet_EnumType, FeatureSet_RepeatedFieldEncoding, FeatureSet_Utf8Validation, FeatureSet_MessageEncoding, FeatureSet_JsonFormat, FeatureSet_EnforceNamingStyle, GeneratedCodeInfo_Annotation_Semantic, Edition, SymbolVisibility;
 	var init_descriptor_pb = __esmMin((() => {
 		init_boot();
@@ -36013,14 +35844,11 @@ zoo`.split("\n"));
 			SymbolVisibility[SymbolVisibility["VISIBILITY_EXPORT"] = 2] = "VISIBILITY_EXPORT";
 		})(SymbolVisibility || (SymbolVisibility = {}));
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/embed.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/embed.js
 	var init_embed = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/extension.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/extension.js
 	var init_extension = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/from-binary.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/from-binary.js
 	/**
 	* @private Only exported for getExtension()
 	*/
@@ -36338,8 +36166,7 @@ zoo`.split("\n"));
 		init_varint();
 		compiledReaders = /* @__PURE__ */ new WeakMap();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/file.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/file.js
 	/**
 	* Hydrate a file descriptor.
 	*
@@ -36359,20 +36186,15 @@ zoo`.split("\n"));
 		init_restore_json_names();
 		init_from_binary();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/service.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/service.js
 	var init_service = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/symbols.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/symbols.js
 	var init_symbols = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/scalar.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/scalar.js
 	var init_scalar = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/types.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/types.js
 	var init_types$1 = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/index.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/codegenv2/index.js
 	var init_codegenv2 = __esmMin((() => {
 		init_boot();
 		init_embed();
@@ -36385,71 +36207,53 @@ zoo`.split("\n"));
 		init_scalar();
 		init_types$1();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/timestamp_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/timestamp_pb.js
 	var file_google_protobuf_timestamp;
 	var init_timestamp_pb = __esmMin((() => {
 		init_file();
 		file_google_protobuf_timestamp = /*@__PURE__*/ fileDesc("Ch9nb29nbGUvcHJvdG9idWYvdGltZXN0YW1wLnByb3RvEg9nb29nbGUucHJvdG9idWYiKwoJVGltZXN0YW1wEg8KB3NlY29uZHMYASABKAMSDQoFbmFub3MYAiABKAVChQEKE2NvbS5nb29nbGUucHJvdG9idWZCDlRpbWVzdGFtcFByb3RvUAFaMmdvb2dsZS5nb2xhbmcub3JnL3Byb3RvYnVmL3R5cGVzL2tub3duL3RpbWVzdGFtcHBi+AEBogIDR1BCqgIeR29vZ2xlLlByb3RvYnVmLldlbGxLbm93blR5cGVzYgZwcm90bzM");
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/timestamp.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/timestamp.js
 	var init_timestamp = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/duration_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/duration_pb.js
 	var file_google_protobuf_duration;
 	var init_duration_pb = __esmMin((() => {
 		init_file();
 		file_google_protobuf_duration = /*@__PURE__*/ fileDesc("Ch5nb29nbGUvcHJvdG9idWYvZHVyYXRpb24ucHJvdG8SD2dvb2dsZS5wcm90b2J1ZiIqCghEdXJhdGlvbhIPCgdzZWNvbmRzGAEgASgDEg0KBW5hbm9zGAIgASgFQoMBChNjb20uZ29vZ2xlLnByb3RvYnVmQg1EdXJhdGlvblByb3RvUAFaMWdvb2dsZS5nb2xhbmcub3JnL3Byb3RvYnVmL3R5cGVzL2tub3duL2R1cmF0aW9ucGL4AQGiAgNHUEKqAh5Hb29nbGUuUHJvdG9idWYuV2VsbEtub3duVHlwZXNiBnByb3RvMw");
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/duration.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/duration.js
 	var init_duration = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/any_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/any_pb.js
 	var init_any_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/any.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/any.js
 	var init_any = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/source_context_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/source_context_pb.js
 	var init_source_context_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/type_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/type_pb.js
 	var init_type_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/api_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/api_pb.js
 	var init_api_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/cpp_features_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/cpp_features_pb.js
 	var init_cpp_features_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/empty_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/empty_pb.js
 	var file_google_protobuf_empty;
 	var init_empty_pb = __esmMin((() => {
 		init_file();
 		file_google_protobuf_empty = /*@__PURE__*/ fileDesc("Chtnb29nbGUvcHJvdG9idWYvZW1wdHkucHJvdG8SD2dvb2dsZS5wcm90b2J1ZiIHCgVFbXB0eUJ9ChNjb20uZ29vZ2xlLnByb3RvYnVmQgpFbXB0eVByb3RvUAFaLmdvb2dsZS5nb2xhbmcub3JnL3Byb3RvYnVmL3R5cGVzL2tub3duL2VtcHR5cGL4AQGiAgNHUEKqAh5Hb29nbGUuUHJvdG9idWYuV2VsbEtub3duVHlwZXNiBnByb3RvMw");
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/field_mask_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/field_mask_pb.js
 	var init_field_mask_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/go_features_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/go_features_pb.js
 	var init_go_features_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/java_features_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/java_features_pb.js
 	var init_java_features_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/struct_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/struct_pb.js
 	var init_struct_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/wrappers_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/wrappers_pb.js
 	var init_wrappers_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/compiler/plugin_pb.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/google/protobuf/compiler/plugin_pb.js
 	var init_plugin_pb = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/index.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/wkt/index.js
 	var init_wkt = __esmMin((() => {
 		init_timestamp();
 		init_duration();
@@ -36471,26 +36275,19 @@ zoo`.split("\n"));
 		init_wrappers_pb();
 		init_plugin_pb();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/types.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/types.js
 	var init_types = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/equals.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/equals.js
 	var init_equals = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/to-json.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/to-json.js
 	var init_to_json = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/from-json.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/from-json.js
 	var init_from_json = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/merge.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/merge.js
 	var init_merge = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/unknown-enum.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/unknown-enum.js
 	var init_unknown_enum = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/index.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/index.js
 	var init_esm = __esmMin((() => {
 		init_types();
 		init_is_message();
@@ -36513,8 +36310,7 @@ zoo`.split("\n"));
 		init_proto_int64();
 		init_unknown_enum();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/index.js
+	// node_modules/.bun/@scure+btc-signer@2.4.1/node_modules/@scure/btc-signer/index.js
 	var init_btc_signer = __esmMin((() => {
 		init_payment();
 		init_script();
@@ -36526,14 +36322,11 @@ zoo`.split("\n"));
 		init_objectSpread2();
 		init_defineProperty();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/reflect-types.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/reflect-types.js
 	var init_reflect_types = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/path.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/path.js
 	var init_path = __esmMin((() => {}));
-	//#endregion
-	//#region node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/index.js
+	// node_modules/.bun/@bufbuild+protobuf@2.16.0/node_modules/@bufbuild/protobuf/dist/esm/reflect/index.js
 	var init_reflect = __esmMin((() => {
 		init_error();
 		init_names();
@@ -36544,8 +36337,7 @@ zoo`.split("\n"));
 		init_path();
 		init_guard();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/token-C3vqRH-k.mjs
+	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/token-C3vqRH-k.mjs
 	/**
 	* Static network parameters for `network`. Each call builds a fresh config — fresh `Uint8Array`
 	* keys — so callers can never corrupt shared module state. Throws {@link SparkInputError} on an
@@ -37503,8 +37295,7 @@ zoo`.split("\n"));
 			ScalarType.FIXED64
 		]);
 	}));
-	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/bolt11-rfxnyLcb.mjs
+	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/bolt11-rfxnyLcb.mjs
 	function fail$1(message) {
 		throw new SparkInputError(`invoice: ${message}`);
 	}
@@ -37803,8 +37594,7 @@ zoo`.split("\n"));
 		]);
 		UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 	}));
-	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/lightning-address-CZrb8x4p.mjs
+	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/lightning-address-CZrb8x4p.mjs
 	function fail(message) {
 		throw new SparkInputError(`lightning address: ${message}`);
 	}
@@ -37878,13 +37668,11 @@ zoo`.split("\n"));
 		LIGHTNING_ADDRESS_USERNAME_PATTERN = /^[a-z0-9\-_.+]{1,64}$/u;
 		HOST_LABEL$1 = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/u;
 	}));
-	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/crypto.mjs
+	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/crypto.mjs
 	var init_crypto = __esmMin((() => {
 		init_errors_5xLkExNL();
 	}));
-	//#endregion
-	//#region node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/signer.mjs
+	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/signer.mjs
 	var signer_exports = /* @__PURE__ */ __exportAll({
 		EPHEMERAL_ANCHOR_SCRIPT: () => EPHEMERAL_ANCHOR_SCRIPT,
 		bitcoinAddressScript: () => bitcoinAddressScript,
@@ -39271,8 +39059,7 @@ zoo`.split("\n"));
 		HOST_LABEL = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 		SECRET_KEY_LENGTH = 32;
 	}));
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/spark/runtime.ts
+	// packages/wallet-kernel/src/modules/spark/runtime.ts
 	/** Loads the runtime chunk; the spark module memoizes it per kernel and retries after a failure. */
 	async function loadSparkRuntime() {
 		const signer = await Promise.resolve().then(() => (init_signer(), signer_exports));
@@ -39286,8 +39073,7 @@ zoo`.split("\n"));
 			sparkNetworkConfig: signer.sparkNetworkConfig
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/modules/spark/index.ts
+	// packages/wallet-kernel/src/modules/spark/index.ts
 	/**
 	* The spark module: the SparkSigner pool and every spark.* command. The module keeps no records —
 	* signers are derived lazily per walletId/groupIndex/network from the wallet's entropy record and
@@ -39648,8 +39434,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/status.ts
+	// packages/wallet-kernel/src/status.ts
 	function metaHealth(image) {
 		const { meta } = image;
 		if (meta === void 0) return image.records.length > 0 || image.factors.length > 0 ? "corrupted" : "ok";
@@ -39729,8 +39514,7 @@ zoo`.split("\n"));
 			backup
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/kernel.ts
+	// packages/wallet-kernel/src/kernel.ts
 	init_objectSpread2();
 	var EMPTY_IMAGE = {
 		meta: void 0,
@@ -40017,8 +39801,7 @@ zoo`.split("\n"));
 		});
 		enqueue(reloadAndPost);
 	}
-	//#endregion
-	//#region packages/wallet-native/kernel/keystore.ts
+	// packages/wallet-native/kernel/keystore.ts
 	/**
 	* Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
 	* completes each call with `(bytes, code)`; a failure code is already the kernel error code
@@ -40084,8 +39867,7 @@ zoo`.split("\n"));
 			ecdhX: (secretKey, publicKeyX) => call$1(() => raw.ecdhX(secretKey, publicKeyX))
 		};
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/is.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/is.js
 	var objectTypeNames = [
 		"Object",
 		"RegExp",
@@ -40139,8 +39921,7 @@ zoo`.split("\n"));
 		const objectTypeName = Object.prototype.toString.call(value).slice(8, -1);
 		if (objectTypeNames.includes(objectTypeName)) return objectTypeName;
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/token.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/token.js
 	var Type = class {
 		/**
 		* @param {number} major
@@ -40207,8 +39988,7 @@ zoo`.split("\n"));
 			return `Token[${this.type}].${this.value}`;
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/byte-utils.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/byte-utils.js
 	var useBuffer = globalThis.process && !globalThis.process.browser && globalThis.Buffer && typeof globalThis.Buffer.isBuffer === "function";
 	var textEncoder = new TextEncoder();
 	/**
@@ -40331,8 +40111,7 @@ zoo`.split("\n"));
 		}
 		return out;
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/bl.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/bl.js
 	/**
 	* Bl is a list of byte chunks, similar to https://github.com/rvagg/bl but for
 	* writing rather than reading.
@@ -40484,8 +40263,7 @@ zoo`.split("\n"));
 			return byts;
 		}
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/common.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/common.js
 	var decodeErrPrefix = "CBOR decode error:";
 	var encodeErrPrefix = "CBOR encode error:";
 	var uintMinorPrefixBytes = [];
@@ -40502,8 +40280,7 @@ zoo`.split("\n"));
 	function assertEnoughData(data, pos, need) {
 		if (data.length - pos < need) throw new Error(`${decodeErrPrefix} not enough data for type`);
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/0uint.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/0uint.js
 	var uintBoundaries = [
 		24,
 		256,
@@ -40701,8 +40478,7 @@ zoo`.split("\n"));
 	encodeUint.compareTokens = function compareTokens(tok1, tok2) {
 		return tok1.value < tok2.value ? -1 : tok1.value > tok2.value ? 1 : 0;
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/1negint.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/1negint.js
 	/**
 	* @typedef {import('../interface.js').ByteWriter} ByteWriter
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
@@ -40785,8 +40561,7 @@ zoo`.split("\n"));
 	encodeNegint.compareTokens = function compareTokens(tok1, tok2) {
 		return tok1.value < tok2.value ? 1 : tok1.value > tok2.value ? -1 : 0;
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/2bytes.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/2bytes.js
 	/**
 	* @typedef {import('../interface.js').ByteWriter} ByteWriter
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
@@ -40898,8 +40673,7 @@ zoo`.split("\n"));
 	function compareBytes(b1, b2) {
 		return b1.length < b2.length ? -1 : b1.length > b2.length ? 1 : compare(b1, b2);
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/3string.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/3string.js
 	var textDecoder = new TextDecoder();
 	var ASCII_THRESHOLD = 32;
 	/**
@@ -40994,8 +40768,7 @@ zoo`.split("\n"));
 		return toToken$2(data, pos, 9, l, options);
 	}
 	var encodeString = encodeBytes;
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/4array.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/4array.js
 	/**
 	* @typedef {import('../interface.js').ByteWriter} ByteWriter
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
@@ -41088,8 +40861,7 @@ zoo`.split("\n"));
 	encodeArray.encodedSize = function encodedSize(token) {
 		return encodeUintValue.encodedSize(token.value);
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/5map.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/5map.js
 	/**
 	* @typedef {import('../interface.js').ByteWriter} ByteWriter
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
@@ -41182,8 +40954,7 @@ zoo`.split("\n"));
 	encodeMap.encodedSize = function encodedSize(token) {
 		return encodeUintValue.encodedSize(token.value);
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/6tag.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/6tag.js
 	/**
 	* @typedef {import('../interface.js').ByteWriter} ByteWriter
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
@@ -41524,8 +41295,7 @@ zoo`.split("\n"));
 		if (b1.length !== b2.length) return b1.length < b2.length ? -1 : 1;
 		return compare(b1, b2);
 	};
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/jump.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/jump.js
 	/**
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
 	* @typedef {import('../interface.js').AllocatedByteView} AllocatedByteView
@@ -41663,8 +41433,7 @@ zoo`.split("\n"));
 			case Type.negint: if (token.value >= -24) return fromArray([31 - Number(token.value)]);
 		}
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/encode.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/encode.js
 	/**
 	* @typedef {import('../interface.js').EncodeOptions} EncodeOptions
 	* @typedef {import('../interface.js').OptionalTypeEncoder} OptionalTypeEncoder
@@ -42188,8 +41957,7 @@ zoo`.split("\n"));
 		}
 		return encodeCustom(data, cborEncoders, options);
 	}
-	//#endregion
-	//#region node_modules/.bun/cborg@6.1.4/node_modules/cborg/lib/decode.js
+	// node_modules/.bun/cborg@6.1.5/node_modules/cborg/lib/decode.js
 	/**
 	* @typedef {import('./token.js').Token} Token
 	* @typedef {import('../interface.js').DecodeOptions} DecodeOptions
@@ -42432,8 +42200,7 @@ zoo`.split("\n"));
 			return tags;
 		}
 	}.prototype, Symbol.toStringTag, { value: "Tagged" });
-	//#endregion
-	//#region packages/wallet-native/kernel/passkey.ts
+	// packages/wallet-native/kernel/passkey.ts
 	init_base();
 	var TIMEOUT_MS = 12e4;
 	var FLAGS_OFFSET = 32;
@@ -42612,8 +42379,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	//#endregion
-	//#region packages/wallet-native/kernel/spark.ts
+	// packages/wallet-native/kernel/spark.ts
 	init_crypto();
 	function call(invoke) {
 		try {
@@ -42639,8 +42405,7 @@ zoo`.split("\n"));
 			splitSecretWithProofs: (secret, threshold, shares, random) => call(() => raw.splitSecretWithProofs(secret, threshold, shares, random))
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/memory.ts
+	// packages/wallet-kernel/src/vault/memory.ts
 	init_objectSpread2();
 	function cloneRecord(record) {
 		return _objectSpread2(_objectSpread2({}, record), {}, { sealed: Uint8Array.from(record.sealed) });
@@ -42739,8 +42504,7 @@ zoo`.split("\n"));
 			factors
 		};
 	}
-	//#endregion
-	//#region packages/wallet-kernel/src/vault/validate.ts
+	// packages/wallet-kernel/src/vault/validate.ts
 	/**
 	* Strict shape validation for a vault image read back from an untrusted store — shared by every
 	* host store (IndexedDB, the native file store, the Node host). Throws KernelError "integrity" on
@@ -42814,8 +42578,7 @@ zoo`.split("\n"));
 		return image;
 	}
 	/** The idle-timeout choices a host may request; the worker maps them to milliseconds. */
-	//#endregion
-	//#region packages/wallet-native/src/cbor.ts
+	// packages/wallet-native/src/cbor.ts
 	/**
 	* CBOR framing for the kernel channel. `ProtocolValue` travels main-side ↔ kernel-side as CBOR; the
 	* C++ layer moves bytes only. Decode is deliberately strict: floats, unsafe integers, undefined,
@@ -42897,8 +42660,7 @@ zoo`.split("\n"));
 			throw classify(error);
 		}
 	}
-	//#endregion
-	//#region packages/wallet-native/kernel/store.ts
+	// packages/wallet-native/kernel/store.ts
 	/**
 	* File-backed `RecordStore` for the kernel runtime. The whole vault image is one strict-CBOR frame
 	* in a single fixed file; the native layer gives only whole-file read and atomic replace (temp file +
@@ -42948,8 +42710,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	//#endregion
-	//#region packages/wallet-native/kernel/transport.ts
+	// packages/wallet-native/kernel/transport.ts
 	function createKernelPort(pipe) {
 		pipe.onMessage((frame) => {
 			let message;
@@ -43001,5 +42762,4 @@ zoo`.split("\n"));
 			spark: async () => bindNativeSpark(__qntx.backends.spark)
 		}
 	}, createKernelPort(__qntx.frames));
-	//#endregion
 })();
