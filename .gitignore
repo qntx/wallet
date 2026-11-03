@@ -16,6 +16,9 @@ dist
 # Local design documents (never committed)
 /design/
 
+# Coverage reports (vp test --coverage)
+coverage/
+
 # Playwright artifacts
 test-results/
 playwright-report/
