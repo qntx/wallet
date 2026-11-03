@@ -2,9 +2,11 @@
 // PRF extension (iOS 18+). The kernel builds the WebAuthn request JSON and
 // parses the response JSON itself; this file only reads the fields the system
 // ceremony needs, runs one ASAuthorizationController at a time and repacks the
-// credential into the browser `toJSON()` shape the kernel parses. PRF outputs
-// are encoded straight into the response JSON — no copies are kept and they
-// are never logged.
+// credential into the browser `toJSON()` shape the kernel parses. A ceremony
+// requested while the scene is still activating — e.g. right after a system
+// Face ID prompt resigns it — waits for UISceneDidActivateNotification instead
+// of failing before any sheet appears. PRF outputs are encoded straight into
+// the response JSON — no copies are kept and they are never logged.
 #include "../host/Passkey.hpp"
 
 #import <AuthenticationServices/AuthenticationServices.h>
@@ -25,11 +27,12 @@ os_log_t passkeyLog() {
   return log;
 }
 
-// The controller and its delegate stay alive only while a ceremony is in
-// flight (controller.delegate is weak). Both are touched on the main thread
-// only; the mutex pairs the one-in-flight check with the clear on completion.
+// The session — and the controller it owns once the ceremony actually runs —
+// stays alive only while a call is in flight (controller.delegate is weak).
+// It is touched on the main thread only; the mutex pairs the one-in-flight
+// check with the clear on completion. A parked session (scene not yet active)
+// has no controller yet, so the busy check looks at the session.
 std::mutex g_mutex;
-ASAuthorizationController* g_controller = nil;
 QntxPasskeySession* g_session = nil;
 
 // Strict base64url decode (padding restored); nil on any invalid character.
@@ -107,7 +110,7 @@ ASAuthorizationPublicKeyCredentialPRFAssertionInputValues* _Nullable prfEval(
               saltInput2:second];
 }
 
-ASPresentationAnchor _Nullable keyWindow() {
+ASPresentationAnchor _Nullable activeKeyWindow() {
   for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
     if ([scene isKindOfClass:UIWindowScene.class] &&
         scene.activationState == UISceneActivationStateForegroundActive) {
@@ -118,6 +121,20 @@ ASPresentationAnchor _Nullable keyWindow() {
     }
   }
   return nil;
+}
+
+// A window scene on its way to the foreground — e.g. right after a system
+// Face ID prompt resigns the app's scene. Once it activates, its key window
+// can anchor the passkey sheet.
+BOOL hasInactiveWindowScene() {
+  for (UIScene* scene in UIApplication.sharedApplication.connectedScenes) {
+    if ([scene isKindOfClass:UIWindowScene.class] &&
+        scene.activationState == UISceneActivationStateForegroundInactive &&
+        ((UIWindowScene*)scene).keyWindow != nil) {
+      return YES;
+    }
+  }
+  return NO;
 }
 
 std::string jsonString(NSDictionary<NSString*, id>* json) {
@@ -133,26 +150,88 @@ std::string jsonString(NSDictionary<NSString*, id>* json) {
 API_AVAILABLE(ios(18.0))
 @interface QntxPasskeySession : NSObject <ASAuthorizationControllerDelegate,
                                           ASAuthorizationControllerPresentationContextProviding>
-- (instancetype)initWithDone:(qntx::PasskeyDone)done anchor:(ASPresentationAnchor)anchor;
+- (instancetype)initWithDone:(qntx::PasskeyDone)done
+                     request:(ASAuthorizationRequest*)request;
+// Runs the ceremony now, or parks it until the window scene activates.
+- (void)start;
+// Cancels a parked wait or the running ceremony; completes through finish:.
+- (void)cancelCeremony;
 - (void)finish:(qntx::PasskeyResult)result;
 @end
 
 @implementation QntxPasskeySession {
   qntx::PasskeyDone _done;
+  ASAuthorizationRequest* _request;
   ASPresentationAnchor _anchor;
+  ASAuthorizationController* _controller;
+  NSObject* _observer;
 }
 
-- (instancetype)initWithDone:(qntx::PasskeyDone)done anchor:(ASPresentationAnchor)anchor {
+- (instancetype)initWithDone:(qntx::PasskeyDone)done
+                     request:(ASAuthorizationRequest*)request {
   self = [super init];
   if (self != nil) {
     _done = std::move(done);
-    _anchor = anchor;
+    _request = request;
   }
   return self;
 }
 
-// Runs exactly once per session; clears the in-flight pair before invoking
-// the kernel completion.
+// A ceremony started while the scene is still activating fails before any
+// sheet appears — like Keystore.kt's whenResumed, park on an inactive window
+// scene and run it at UISceneDidActivateNotification. A scene that is fully
+// absent still reports `unavailable`.
+- (void)start {
+  ASPresentationAnchor anchor = activeKeyWindow();
+  if (anchor != nil) {
+    [self performWithAnchor:anchor];
+    return;
+  }
+  if (hasInactiveWindowScene()) {
+    _observer = [NSNotificationCenter.defaultCenter
+        addObserverForName:UISceneDidActivateNotification
+                    object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(NSNotification*) {
+                  [self sceneActivated];
+                }];
+    return;
+  }
+  [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::unavailable, {}}];
+}
+
+- (void)sceneActivated {
+  [NSNotificationCenter.defaultCenter removeObserver:_observer];
+  _observer = nil;
+  ASPresentationAnchor anchor = activeKeyWindow();
+  if (anchor == nil) {
+    [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::unavailable, {}}];
+    return;
+  }
+  [self performWithAnchor:anchor];
+}
+
+- (void)performWithAnchor:(ASPresentationAnchor)anchor {
+  _anchor = anchor;
+  _controller =
+      [[ASAuthorizationController alloc] initWithAuthorizationRequests:@[ _request ]];
+  _controller.delegate = self;
+  _controller.presentationContextProvider = self;
+  [_controller performRequests];
+}
+
+- (void)cancelCeremony {
+  if (_observer != nil) {
+    [NSNotificationCenter.defaultCenter removeObserver:_observer];
+    _observer = nil;
+    [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::cancelled, {}}];
+    return;
+  }
+  [_controller cancel];
+}
+
+// Runs exactly once per session; clears the in-flight session before
+// invoking the kernel completion.
 - (void)finish:(qntx::PasskeyResult)result {
   qntx::PasskeyDone done;
   {
@@ -160,10 +239,13 @@ API_AVAILABLE(ios(18.0))
     if (g_session != self) {
       return;
     }
-    g_controller = nil;
     g_session = nil;
     done = std::move(_done);
     _done = nullptr;
+  }
+  if (_observer != nil) {
+    [NSNotificationCenter.defaultCenter removeObserver:_observer];
+    _observer = nil;
   }
   done(std::move(result));
 }
@@ -342,35 +424,21 @@ void run(ASAuthorizationRequest* _Nullable request, qntx::PasskeyDone done)
     done(qntx::PasskeyResult{qntx::PasskeyStatus::failed, {}});
     return;
   }
-  ASPresentationAnchor anchor = keyWindow();
-  ASAuthorizationController* controller = nil;
-  qntx::PasskeyStatus rejected = qntx::PasskeyStatus::ok;
+  QntxPasskeySession* session;
   {
     std::lock_guard<std::mutex> lock(g_mutex);
-    if (g_controller != nil) {
-      rejected = qntx::PasskeyStatus::failed;
-    } else if (anchor == nil) {
-      rejected = qntx::PasskeyStatus::unavailable;
+    if (g_session == nil) {
+      session = g_session = [[QntxPasskeySession alloc] initWithDone:std::move(done)
+                                                            request:request];
     } else {
-      controller = [[ASAuthorizationController alloc]
-          initWithAuthorizationRequests:@[ request ]];
-      if (controller == nil) {
-        rejected = qntx::PasskeyStatus::failed;
-      } else {
-        QntxPasskeySession* session = [[QntxPasskeySession alloc] initWithDone:std::move(done)
-                                                                      anchor:anchor];
-        controller.delegate = session;
-        controller.presentationContextProvider = session;
-        g_session = session;
-        g_controller = controller;
-      }
+      session = nil;
     }
   }
-  if (controller == nil) {
-    done(qntx::PasskeyResult{rejected, {}});
+  if (session == nil) {
+    done(qntx::PasskeyResult{qntx::PasskeyStatus::failed, {}});
     return;
   }
-  [controller performRequests];
+  [session start];
 }
 
 } // namespace
@@ -403,14 +471,15 @@ void passkeyGet(std::string requestJson, PasskeyDone done) {
 
 void passkeyCancel() {
   dispatch_async(dispatch_get_main_queue(), ^{
-    if (@available(iOS 16.0, *)) {
-      ASAuthorizationController* controller;
+    if (@available(iOS 18.0, *)) {
+      QntxPasskeySession* session;
       {
         std::lock_guard<std::mutex> lock(g_mutex);
-        controller = g_controller;
+        session = g_session;
       }
-      // cancel may answer the delegate synchronously, so it runs off the lock.
-      [controller cancel];
+      // A parked wait completes `cancelled`; a running ceremony is cancelled —
+      // both answer through finish:, so this runs off the lock.
+      [session cancelCeremony];
     }
   });
 }
