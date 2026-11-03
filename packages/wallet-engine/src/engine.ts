@@ -7,6 +7,7 @@
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
+import { normalizeSolana } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
@@ -16,9 +17,11 @@ import { AddressBookController } from "./addresses/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
+import { SolanaChainAdapter } from "./chains/solana.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
 import { Nip07Handler } from "./connect/nip07.ts";
+import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
 import { MetaSyncController } from "./meta/controller.ts";
@@ -83,6 +86,7 @@ export type WalletEngine = {
   readonly eip1193: Eip1193Handler;
   readonly nip07: Nip07Handler;
   readonly webln: WeblnHandler;
+  readonly solanaWallet: SolanaWalletHandler;
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
@@ -177,6 +181,79 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
+    solanaSign: async (account, network, request, verify) => {
+      const rpc = networks.solanaRpc(network);
+      const adapter = new SolanaChainAdapter();
+      const hdAccount = {
+        kind: "hd" as const,
+        walletId: account.walletId,
+        groupIndex: account.groupIndex,
+        template: "solana.bip44-change" as const,
+      };
+      if (request.kind === "transactions") {
+        const signatures: string[] = [];
+        const signedTransactions: Uint8Array[] = [];
+        for (const messageBytes of request.transactions) {
+          // normalizeSolana validates the fee payer; chains.sign then verifies/signs it.
+          normalizeSolana(
+            {
+              kind: "solana.transaction",
+              network,
+              account: hdAccount,
+              message: messageBytes,
+            },
+            account.address,
+          );
+          // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
+          const result = await chains(options.wallet).sign({
+            request: {
+              kind: "solana.transaction",
+              network,
+              account: hdAccount,
+              message: messageBytes,
+            },
+            verify,
+          });
+          if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
+            throw new Error("unexpected solana sign result");
+          }
+          const wire = adapter.finalize(messageBytes, [result.signature]);
+          if (request.send) {
+            // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
+            signatures.push(await adapter.broadcast(rpc, wire));
+          } else {
+            signedTransactions.push(wire);
+          }
+        }
+        return request.send
+          ? { kind: "solana.transactions" as const, send: true, signatures }
+          : { kind: "solana.transactions" as const, send: false, signedTransactions };
+      }
+      normalizeSolana(
+        {
+          kind: "solana.message",
+          format: "raw",
+          network,
+          account: hdAccount,
+          message: request.message,
+        },
+        account.address,
+      );
+      const result = await chains(options.wallet).sign({
+        request: {
+          kind: "solana.message",
+          format: "raw",
+          network,
+          account: hdAccount,
+          message: request.message,
+        },
+        verify,
+      });
+      if (result.kind !== "solana.message" || !(result.signature instanceof Uint8Array)) {
+        throw new Error("unexpected solana sign result");
+      }
+      return { kind: "solana.message" as const, signature: result.signature };
+    },
     fetch: options.fetch,
     random: options.random,
     now: options.now,
@@ -292,6 +369,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       });
     },
   });
+  const solanaWallet = new SolanaWalletHandler({
+    connections,
+    requests,
+    solanaAccount: async (group, network) => {
+      const account = await chains(options.wallet).account({
+        ...group,
+        template: "solana.bip44-change",
+        network,
+      });
+      if (
+        !("address" in account) ||
+        !("publicKey" in account) ||
+        !(account.publicKey instanceof Uint8Array)
+      ) {
+        throw new Error("no Solana account for the group");
+      }
+      return { address: account.address, publicKey: account.publicKey };
+    },
+    activeGroup: () => connections.activeGroup(),
+    solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",
+  });
 
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
@@ -386,6 +484,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     eip1193,
     nip07,
     webln,
+    solanaWallet,
     spark: controller,
     accounts,
     metaSync,

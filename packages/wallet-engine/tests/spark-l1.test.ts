@@ -108,6 +108,10 @@ function rig() {
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
     },
+    solanaSign: async () => {
+      await Promise.resolve();
+      throw new Error("solana-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random: (n) => {
       counter += 1;

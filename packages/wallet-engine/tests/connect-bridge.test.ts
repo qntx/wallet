@@ -93,6 +93,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
         handledSolana.push({ origin, request: req });
         return Promise.resolve("solana-result");
       },
+      subscribe: () => () => undefined,
     },
     connections: {
       checkOrigin: (origin) => {

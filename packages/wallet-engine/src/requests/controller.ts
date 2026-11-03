@@ -9,6 +9,7 @@ import type { NostrKeyRef } from "@qntx/wallet";
  * snapshot, and cannot change after prepare.
  */
 import type { SignRequest } from "@qntx/wallet-chains";
+import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
@@ -121,6 +122,30 @@ export type WeblnInvoiceInput = {
   readonly memo?: string;
 };
 
+/**
+ * A dApp's Solana request: one `solana-sign` covers a batch of transactions (signed sequentially —
+ * each prompts) or a `solana.message` raw-message signature.
+ */
+export type SolanaAccount = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  readonly address: string;
+};
+
+export type SolanaSignInput = {
+  readonly method: "solana-sign";
+  readonly origin: BrowserOrigin;
+  readonly account: SolanaAccount;
+  readonly network: string;
+  readonly request:
+    | {
+        readonly kind: "transactions";
+        readonly transactions: ReadonlyArray<Uint8Array>;
+        readonly send: boolean;
+      }
+    | { readonly kind: "message"; readonly message: Uint8Array };
+};
+
 export type RequestInput =
   | ChainRequestInput
   | PayInput
@@ -128,6 +153,7 @@ export type RequestInput =
   | EvmSignInput
   | NostrSignInput
   | WeblnInvoiceInput
+  | SolanaSignInput
   | SparkDepositInput
   | SparkExitInput;
 
@@ -150,6 +176,24 @@ export type WeblnInvoiceResult = {
   readonly kind: "lightning.invoice";
   readonly paymentRequest: string;
 };
+
+/** `solana-sign` display: each transaction's decode (fee payer + transfers) or the raw message. */
+export type SolanaDisplay = {
+  readonly kind: "solana.sign";
+  readonly send: boolean;
+  readonly count: number;
+  readonly transactions: ReadonlyArray<unknown>;
+};
+
+/** `approve` of a `solana-sign` request: the signatures (or signed transactions) per input. */
+export type SolanaSignResult =
+  | {
+      readonly kind: "solana.transactions";
+      readonly send: boolean;
+      readonly signatures?: ReadonlyArray<string>;
+      readonly signedTransactions?: ReadonlyArray<Uint8Array>;
+    }
+  | { readonly kind: "solana.message"; readonly signature: Uint8Array };
 
 /** `webln-invoice` display: the requested amount and memo. */
 export type LightningInvoiceDisplay = {
@@ -189,11 +233,16 @@ export type PendingRequest = {
   readonly id: string;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
   readonly network: string;
   readonly stage: RequestStage;
   /** Decoded locally from the exact content that will be signed; `family` tells the shapes apart. */
-  readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay;
+  readonly display:
+    | DisplayIntent
+    | SparkDisplay
+    | NostrDisplay
+    | LightningInvoiceDisplay
+    | SolanaDisplay;
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -228,6 +277,13 @@ export type RequestControllerOptions = {
   readonly logger: EngineLogger;
   /** Signs a Nostr event for `nostr-sign` — `nostr(wallet).signer(ref).signEvent`. */
   readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event>;
+  /** Signs/broadcasts a `solana-sign` request — `chains.sign` per tx, then the Solana adapter. */
+  readonly solanaSign: (
+    account: { readonly walletId: string; readonly groupIndex: number; readonly address: string },
+    network: string,
+    request: SolanaSignInput["request"],
+    verify: SendParams["verify"],
+  ) => Promise<SolanaSignResult>;
 };
 
 /** Requests expire this long after creation. */
@@ -243,7 +299,7 @@ type Run =
       readonly staleReason: () => string | undefined | Promise<string | undefined>;
       readonly submit: (
         verify: SendParams["verify"],
-      ) => Promise<TrackedTransaction | SparkResult | SignatureResult>;
+      ) => Promise<TrackedTransaction | SparkResult | SignatureResult | SolanaSignResult>;
       readonly release: () => void;
     }
   | {
@@ -256,9 +312,14 @@ type Run =
     };
 
 type Built = {
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
   readonly network: string;
-  readonly display: DisplayIntent | SparkDisplay | NostrDisplay | LightningInvoiceDisplay;
+  readonly display:
+    | DisplayIntent
+    | SparkDisplay
+    | NostrDisplay
+    | LightningInvoiceDisplay
+    | SolanaDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
   readonly run: Run;
@@ -266,7 +327,12 @@ type Built = {
 
 type Settler = {
   readonly promise: Promise<
-    TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+    | TrackedTransaction
+    | SparkResult
+    | SignatureResult
+    | NostrSignResult
+    | WeblnInvoiceResult
+    | SolanaSignResult
   >;
   readonly resolve: (
     value:
@@ -274,7 +340,8 @@ type Settler = {
       | SparkResult
       | SignatureResult
       | NostrSignResult
-      | WeblnInvoiceResult,
+      | WeblnInvoiceResult
+      | SolanaSignResult,
   ) => void;
   readonly reject: (error: Error) => void;
 };
@@ -287,6 +354,31 @@ type Entry = {
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
 
 /** The input's browser origin, when it carries one (`evm-sign`/`nostr-sign`/`webln-invoice`/`pay`). */
+const solanaDecode = (account: SolanaAccount, network: string, message: Uint8Array): unknown => {
+  try {
+    const request = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network,
+        account: {
+          kind: "hd",
+          walletId: account.walletId,
+          groupIndex: account.groupIndex,
+          template: "solana.bip44-change",
+        },
+        message,
+      },
+      account.address,
+    );
+    if (request.kind === "solana.transaction") {
+      return decodeSolana(request, account.address, undefined);
+    }
+    return undefined;
+  } catch (error) {
+    return { error: errorMessage(error) };
+  }
+};
+
 const browserOriginOf = (input: RequestInput): BrowserOrigin | undefined =>
   "origin" in input ? input.origin : undefined;
 
@@ -431,7 +523,12 @@ export class RequestController extends Controller<RequestControllerState> {
   async outcome(
     id: string,
   ): Promise<
-    TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+    | TrackedTransaction
+    | SparkResult
+    | SignatureResult
+    | NostrSignResult
+    | WeblnInvoiceResult
+    | SolanaSignResult
   > {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
@@ -443,7 +540,12 @@ export class RequestController extends Controller<RequestControllerState> {
   private openSettler(id: string): void {
     const holder: { resolve?: Settler["resolve"]; reject?: Settler["reject"] } = {};
     const promise = new Promise<
-      TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+      | TrackedTransaction
+      | SparkResult
+      | SignatureResult
+      | NostrSignResult
+      | WeblnInvoiceResult
+      | SolanaSignResult
     >((resolve, reject) => {
       holder.resolve = resolve;
       holder.reject = reject;
@@ -465,6 +567,7 @@ export class RequestController extends Controller<RequestControllerState> {
       | SignatureResult
       | NostrSignResult
       | WeblnInvoiceResult
+      | SolanaSignResult
       | Error,
   ): void {
     const settler = this.settlers.get(id);
@@ -575,6 +678,28 @@ export class RequestController extends Controller<RequestControllerState> {
         run: { ...prepared, factor: "required" },
       };
     }
+    if (input.method === "solana-sign") {
+      const txs = input.request.kind === "transactions" ? input.request.transactions : [];
+      return {
+        account: input.account,
+        network: input.network,
+        display: {
+          kind: "solana.sign" as const,
+          send: input.request.kind === "transactions" ? input.request.send : false,
+          count: txs.length === 0 ? 1 : txs.length,
+          transactions: txs.map((tx) => solanaDecode(input.account, input.network, tx)),
+        },
+        checks: [],
+        risk: [],
+        run: {
+          factor: "required",
+          staleReason: () => undefined,
+          submit: async (verify) =>
+            this.options.solanaSign(input.account, input.network, input.request, verify),
+          release: () => undefined,
+        },
+      };
+    }
     if (input.method === "webln-invoice") {
       return {
         account: input.ref,
@@ -663,10 +788,20 @@ export class RequestController extends Controller<RequestControllerState> {
   async approve(id: string, method: "webln-invoice"): Promise<WeblnInvoiceResult>;
   async approve(
     id: string,
+    method: "solana-sign",
+    verify?: SendParams["verify"],
+  ): Promise<SolanaSignResult>;
+  async approve(
+    id: string,
     method: RequestMethod,
     verify?: SendParams["verify"],
   ): Promise<
-    TrackedTransaction | SparkResult | SignatureResult | NostrSignResult | WeblnInvoiceResult
+    | TrackedTransaction
+    | SparkResult
+    | SignatureResult
+    | NostrSignResult
+    | WeblnInvoiceResult
+    | SolanaSignResult
   > {
     const request = this.getState().requests[id];
     if (request === undefined) {
@@ -823,7 +958,8 @@ export class RequestController extends Controller<RequestControllerState> {
       | SparkResult
       | SignatureResult
       | NostrSignResult
-      | WeblnInvoiceResult,
+      | WeblnInvoiceResult
+      | SolanaSignResult,
   ): void {
     const { display } = request;
     const eventId =
@@ -835,9 +971,13 @@ export class RequestController extends Controller<RequestControllerState> {
         ? `nostr kind ${display.eventKind}${eventId === undefined ? "" : ` ${eventId}`}`
         : "kind" in display && display.kind === "lightning.invoice"
           ? `lightning invoice ${display.amountSats} sats`
-          : "summary" in display
-            ? display.summary
-            : `${display.kind} ${display.amountSats}`;
+          : "kind" in display && display.kind === "solana.sign"
+            ? display.transactions.length === 0
+              ? "solana message"
+              : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
+            : "summary" in display
+              ? display.summary
+              : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
       at: this.options.now(),

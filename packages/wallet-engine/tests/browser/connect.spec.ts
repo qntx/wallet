@@ -153,6 +153,10 @@ async function engineRig() {
       },
     } as unknown as SparkController,
     nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
+    solanaSign: async () => {
+      await Promise.resolve();
+      throw new Error("solana-sign is not wired in this test");
+    },
     fetch: globalThis.fetch,
     random,
     now: () => 1000,
@@ -229,6 +233,7 @@ async function openConnect(context: BrowserContext) {
         await Promise.resolve();
         return null;
       },
+      subscribe: () => () => undefined,
     },
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
