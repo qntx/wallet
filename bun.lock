@@ -76,8 +76,8 @@
         "vite-plus": "1.4.0",
       },
       "peerDependencies": {
-        "@qntx/nostr": "0.15.3",
-        "@qntx/spark": "0.5.2",
+        "@qntx/nostr": "~0.15.3",
+        "@qntx/spark": "~0.5.2",
         "@qntx/wallet-chains": "0.7.0",
       },
       "optionalPeers": [
@@ -151,8 +151,8 @@
         "publint": "0.3.25",
       },
       "peerDependencies": {
-        "@qntx/nostr": "0.15.3",
-        "@qntx/spark": "0.5.2",
+        "@qntx/nostr": "~0.15.3",
+        "@qntx/spark": "~0.5.2",
         "@qntx/wallet": "0.7.0",
         "@qntx/wallet-chains": "0.7.0",
       },
@@ -203,8 +203,8 @@
         "@qntx/nostr-native": "0.15.3",
         "@qntx/spark-native": "0.5.2",
         "@qntx/wallet": "0.7.0",
-        "react-native": "0.88.1",
-        "react-native-nitro-modules": "0.37.1",
+        "react-native": "~0.88.0",
+        "react-native-nitro-modules": "~0.37.1",
       },
     },
     "packages/wallet-worker": {

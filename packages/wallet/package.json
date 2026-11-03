@@ -94,8 +94,8 @@
     "vite-plus": "1.4.0"
   },
   "peerDependencies": {
-    "@qntx/nostr": "0.15.3",
-    "@qntx/spark": "0.5.2",
+    "@qntx/nostr": "~0.15.3",
+    "@qntx/spark": "~0.5.2",
     "@qntx/wallet-chains": "0.7.0"
   },
   "peerDependenciesMeta": {

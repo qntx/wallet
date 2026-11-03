@@ -196,11 +196,11 @@ const isSpecForm = (spec: string): boolean =>
 
 /**
  * Dependency and devDependency specs are exact pins; a semver range lets a different version slip
- * in against a release built and manifested for one. peerDependencies are different: `@qntx/*`
- * peers must still be exact (a caret peer would let a different package version slip in against a
- * bundled kernel built for one protocol version), but a third-party peer may carry a tilde range —
- * an exact peer would force every consumer onto one patch (e.g. react-native 0.88.1). A caret is
- * never allowed anywhere. `npm:` aliases are exact when their target is.
+ * in against a release built and manifested for one. peerDependencies are different: the
+ * `@qntx/wallet*` packages released together from this repo must be exact peers, but any other peer
+ * (`@qntx/nostr`, `@qntx/spark`, react-native…) may carry a tilde range — an exact peer would force
+ * every consumer onto one patch and npm would refuse the install. A caret is never allowed
+ * anywhere. `npm:` aliases are exact when their target is.
  */
 export function checkExactDeps(manifests: PackageEntry[]): string[] {
   const errors: string[] = [];
@@ -211,8 +211,12 @@ export function checkExactDeps(manifests: PackageEntry[]): string[] {
         if (typeof spec !== "string" || isSpecForm(spec)) {
           continue;
         }
-        if (section === "peerDependencies" && !name.startsWith("@qntx/") && TILDE_SPEC.test(spec)) {
-          continue; // a third-party peer may pin a compatible patch line.
+        if (
+          section === "peerDependencies" &&
+          !name.startsWith("@qntx/wallet") &&
+          TILDE_SPEC.test(spec)
+        ) {
+          continue; // a peer released elsewhere may pin a compatible patch line.
         }
         if (!exactTarget(spec)) {
           errors.push(`${path}: ${section}["${name}"] must be exact, got ${JSON.stringify(spec)}`);

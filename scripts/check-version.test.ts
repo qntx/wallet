@@ -68,7 +68,7 @@ describe("checkExactDeps", () => {
     expect(errors).toStrictEqual([]);
   });
 
-  it("accepts a tilde third-party peer but not a caret or a tilde @qntx peer", () => {
+  it("accepts a tilde peer released elsewhere but not a caret or a tilde @qntx/wallet* peer", () => {
     expect(
       checkExactDeps([manifest({ peerDependencies: { "react-native": "~0.88.0" } })]),
     ).toStrictEqual([]);
@@ -77,6 +77,9 @@ describe("checkExactDeps", () => {
     ).toHaveLength(1);
     expect(
       checkExactDeps([manifest({ peerDependencies: { "@qntx/nostr": "~0.15.3" } })]),
+    ).toStrictEqual([]);
+    expect(
+      checkExactDeps([manifest({ peerDependencies: { "@qntx/wallet-chains": "~0.7.0" } })]),
     ).toHaveLength(1);
   });
 
@@ -85,13 +88,13 @@ describe("checkExactDeps", () => {
     ["devDependencies", { devDependencies: { dep: "~1.0.0" } }],
     ["peerDependencies", { peerDependencies: { dep: ">=1.0.0" } }],
     ["a caret third-party peer", { peerDependencies: { dep: "^1.0.0" } }],
-    ["a tilde @qntx peer", { peerDependencies: { "@qntx/x": "~1.0.0" } }],
+    ["a tilde @qntx/wallet* peer", { peerDependencies: { "@qntx/wallet-x": "~1.0.0" } }],
     ["a bare major", { dependencies: { dep: "1" } }],
     ["a wildcard", { dependencies: { dep: "*" } }],
     ["a non-exact npm alias", { dependencies: { dep: "npm:other@^1.0.0" } }],
   ] as const)("fails on %s", (_label, pkg) => {
     const errors = checkExactDeps([manifest(pkg)]);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain('must be exact');
+    expect(errors[0]).toContain("must be exact");
   });
 });

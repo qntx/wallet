@@ -119,7 +119,7 @@ run(
     "--no-fund",
     walletTgz,
     workerTgz,
-    "@qntx/nostr@0.15.1",
+    "@qntx/nostr@0.15.3",
     "@qntx/spark@0.5.0",
     "vite@npm:@voidzero-dev/vite-plus-core@1.3.0",
   ],
