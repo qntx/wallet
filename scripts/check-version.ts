@@ -21,6 +21,13 @@ const REPOSITORY_URL = "git+https://github.com/qntx/wallet.git";
 
 export type PackageEntry = { path: string; pkg: unknown };
 
+const scanDir = (dir: string): PackageEntry[] =>
+  readdirSync(dir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => join(dir, entry.name, "package.json"))
+    .filter((path) => existsSync(path))
+    .map((path) => ({ path, pkg: JSON.parse(readFileSync(path, "utf8")) as unknown }));
+
 /**
  * Consistency check: internal `@qntx/*` dependencies must be exact `<version>` pins in
  * dependencies, peerDependencies and devDependencies — a caret peer would let a different package
@@ -134,15 +141,46 @@ export function checkVersion(packages: PackageEntry[], bunLock: unknown): string
   return errors;
 }
 
+/**
+ * Every `vite` spec aliased to @voidzero-dev/vite-plus-core must match the manifest's own
+ * `vite-plus` version: vp resolves its vite command through the alias, and drift between the two is
+ * what broke CI on the vite-plus 1.4.0 bump.
+ */
+export function checkViteAliases(manifests: PackageEntry[]): string[] {
+  const errors: string[] = [];
+  for (const { path, pkg } of manifests) {
+    const manifest = asRecord(pkg);
+    const vitePlus = asRecord(manifest["devDependencies"])["vite-plus"];
+    if (typeof vitePlus !== "string") {
+      continue;
+    }
+    for (const section of ["dependencies", "devDependencies", "overrides"] as const) {
+      const spec = asRecord(manifest[section])["vite"];
+      const core =
+        typeof spec === "string"
+          ? /^npm:@voidzero-dev\/vite-plus-core@(.+)$/.exec(spec)?.[1]
+          : undefined;
+      if (core !== undefined && core !== vitePlus) {
+        errors.push(
+          `${path}: ${section}["vite"] resolves vite-plus-core ${core}, expected ${vitePlus} to match vite-plus`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
 if (import.meta.main) {
   // Only directories with a package.json are workspaces; bare leftovers may
   // exist under packages/.
-  const packages: PackageEntry[] = readdirSync("packages", { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => join("packages", entry.name, "package.json"))
-    .filter((path) => existsSync(path))
-    .map((path) => ({ path, pkg: JSON.parse(readFileSync(path, "utf8")) as unknown }));
+  const packages = scanDir("packages");
   const errors = checkVersion(packages, Bun.JSONC.parse(readFileSync("bun.lock", "utf8")));
+  const manifests: PackageEntry[] = [
+    { path: "package.json", pkg: JSON.parse(readFileSync("package.json", "utf8")) as unknown },
+    ...packages,
+    ...scanDir("apps"),
+  ];
+  errors.push(...checkViteAliases(manifests));
   for (const error of errors) {
     console.error(`check-version: ${error}`);
   }

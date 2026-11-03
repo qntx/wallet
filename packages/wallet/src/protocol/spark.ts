@@ -9,8 +9,7 @@
  * the leaf lists of prepareTransfer/prepareClaim are capped at the signer's own 256.
  */
 import { factor, groupIndex, MAX_BATCH, safeTime, walletId } from "./core.ts";
-import type { Factor } from "./core.ts";
-import type { MethodSpec } from "./index.ts";
+import type { Factor, MethodSpec } from "./core.ts";
 import type { Validator } from "./validate.ts";
 import {
   arr,

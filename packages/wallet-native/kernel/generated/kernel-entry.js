@@ -497,8 +497,13 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-xBib1U6w.mjs
+	// packages/wallet/dist/core-CiU8Xx2X.mjs
 	init_defineProperty();
+	/**
+	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
+	* validates every request, the host validates every response. Anything that does not match is a
+	* `ValidationError` — never a partially-accepted value.
+	*/
 	var ValidationError = class extends Error {
 		constructor(..._args) {
 			super(..._args);
@@ -881,7 +886,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DUzKi8JS.mjs
+	// packages/wallet/dist/protocol-OJZF9_Th.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and

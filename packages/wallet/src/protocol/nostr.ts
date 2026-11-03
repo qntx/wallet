@@ -20,9 +20,8 @@ import {
   walletErrorCode,
   walletId,
 } from "./core.ts";
-import type { Factor } from "./core.ts";
-import type { MethodSpec, NullValue } from "./index.ts";
-import type { Validator } from "./validate.ts";
+import type { Factor, MethodSpec } from "./core.ts";
+import type { NullValue, Validator } from "./validate.ts";
 import { arr, bool, bytes, int, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 
 /**
