@@ -5,7 +5,11 @@ const config: UserConfig = defineConfig({
   // Two programs: the platform-neutral entry and the DOM-scoped IndexedDB entry.
   pack: [
     {
-      entry: { index: "src/index.ts", "gateway-contract": "src/gateway/contract/index.ts" },
+      entry: {
+        index: "src/index.ts",
+        connect: "src/connect/index.ts",
+        "gateway-contract": "src/gateway/contract/index.ts",
+      },
       tsconfig: "tsconfig.src.json",
       deps: { onlyBundle: [] },
       dts: { generator: "tsgo" },

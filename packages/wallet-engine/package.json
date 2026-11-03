@@ -32,6 +32,11 @@
       "types": "./dist/idb.d.mts",
       "import": "./dist/idb.mjs",
       "default": "./dist/idb.mjs"
+    },
+    "./connect": {
+      "types": "./dist/connect.d.mts",
+      "import": "./dist/connect.mjs",
+      "default": "./dist/connect.mjs"
     }
   },
   "publishConfig": {
@@ -40,8 +45,10 @@
   "scripts": {
     "build": "vp run @qntx/wallet-worker#build && vp pack",
     "test": "vp test",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json",
-    "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.src.json && tsc --noEmit -p src/idb/tsconfig.json && tsc --noEmit -p src/connect/inject/tsconfig.json",
+    "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only",
+    "connect:provider": "bun ../../scripts/build-provider.ts",
+    "test:browser": "playwright test --config tests/browser/playwright.config.ts"
   },
   "dependencies": {
     "@noble/ciphers": "2.4.0",
@@ -59,6 +66,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@noble/hashes": "2.4.0",
+    "@playwright/test": "1.64.1",
     "@qntx/nostr": "0.15.3",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",

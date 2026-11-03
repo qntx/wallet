@@ -1,0 +1,10 @@
+{
+  // DOM code — the injected provider runs in a WebView and touches `window`/`CustomEvent`/
+  // `addEventListener`; checked without Node types (mirrors src/idb/tsconfig.json).
+  "extends": "../../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2022", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["."]
+}
