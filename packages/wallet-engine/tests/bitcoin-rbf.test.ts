@@ -149,6 +149,38 @@ describe("bitcoin rbf", () => {
     route = createBitcoinRoute();
   });
 
+  it("a Spark deposit tag lands on the tracked transaction", async () => {
+    setUtxos(DEFAULT_UTXOS);
+    const tag = { walletId: "w", groupIndex: 0, network: "mainnet" as const };
+    const prepared = await route.prepare(
+      ctx(),
+      {
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
+        network: "bip122:000000000019d6689c085ae165831e93",
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        amount: 10_000n,
+        fee: "slow",
+      },
+      "req-deposit",
+      tag,
+    );
+    const tx = await prepared.submit({ kind: "password", password: "pw" });
+    expect(tx.sparkDeposit).toStrictEqual(tag);
+    const plain = await send(ctx());
+    expect(plain).not.toHaveProperty("sparkDeposit");
+  });
+
+  it("nextReceiveAddress is the first unused bip84 receive address", async () => {
+    setUtxos(DEFAULT_UTXOS);
+    const next = await route.nextReceiveAddress(
+      ctx(),
+      "w",
+      0,
+      "bip122:000000000019d6689c085ae165831e93",
+    );
+    expect(next).toBe(p2wpkh(HD.deriveChild(0).deriveChild(1).publicKey!, NETWORK).address);
+  });
+
   it("cancel sends all inputs to the next change address", async () => {
     const c = ctx();
     const original = await send(c);

@@ -32,6 +32,7 @@ import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
 import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
+import { DepositClaimer } from "./spark/deposit-claim.ts";
 import type { EngineStore } from "./store/port.ts";
 import { TransactionController } from "./transactions/controller.ts";
 
@@ -200,6 +201,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     now: options.now,
   });
 
+  const depositClaimer = new DepositClaimer({
+    transactions,
+    spark: controller,
+    networks,
+    logger: options.logger,
+  });
   const connections = new ConnectionController({
     openStore: options.openStore,
     random: options.random,
@@ -264,8 +271,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await transactions.init();
       await requests.init();
       await connections.init();
+      depositClaimer.start();
     } else if (!unlocked && started) {
       started = false;
+      depositClaimer.stop();
       connections.lock();
       requests.lock();
       addressBook.lock();

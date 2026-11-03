@@ -2,6 +2,7 @@
  * Per-chain route interface: each family module owns build → sign → broadcast and its status poll;
  * the controller owns lifecycle, persistence and the polling timer.
  */
+import type { SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
 import type { decodeEvm } from "@qntx/wallet-chains/evm";
 import type { chains } from "@qntx/wallet/chains";
@@ -28,6 +29,14 @@ export type TxState =
   | "dropped"
   | "replaced";
 
+/** A bitcoin transaction that funds the wallet's own Spark account; it is claimed once confirmed. */
+export type SparkDepositTag = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  readonly network: SparkNetwork;
+  readonly claimed?: boolean;
+};
+
 export type TrackedTransaction = {
   readonly id: string;
   readonly family: "evm" | "solana" | "bitcoin";
@@ -43,6 +52,8 @@ export type TrackedTransaction = {
   readonly replaces?: string;
   /** CPFP — the unconfirmed parent this child pushes. */
   readonly parentId?: string;
+  /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
+  readonly sparkDeposit?: SparkDepositTag;
   /** Bitcoin build record persisted at send for RBF/CPFP rebuilds. */
   readonly btc?: {
     readonly inputs: ReadonlyArray<{

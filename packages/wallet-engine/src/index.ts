@@ -35,6 +35,8 @@ export type {
   RequestOrigin,
   RequestStage,
   RiskFinding,
+  SparkDepositInput,
+  SparkExitInput,
   SignatureResult,
   SignLogEntry,
   SignLogOutcome,

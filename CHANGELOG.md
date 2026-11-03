@@ -47,6 +47,13 @@ recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` build
 
 ### Added
 
+- `@qntx/wallet-engine`: Spark and bitcoin L1 transfers through the request pipeline.
+  `{ method: "spark-deposit", account, from, amountSats, fee }` sends from a bitcoin account of the
+  same wallet to a fresh Spark deposit address, with the full bitcoin send checks; the broadcast
+  transaction carries `sparkDeposit` (persisted) and is claimed automatically once confirmed, with
+  backoff, resuming after a restart. `{ method: "spark-exit", account, amountSats, maxFeeSats }`
+  exits to the group's next unused `btc.bip84` receive address. Neither is assessed for recipient
+  risk, and the Spark network must map to its bitcoin network (`mainnet`, `regtest`).
 - `@qntx/wallet-engine`: dApp connections for EVM. `engine.connections` (`ConnectionController`)
   keeps one CAIP-25-style session per `https` origin (network, account and method scopes,
   persisted, dropped after 90 days unused, bound to the active account group through

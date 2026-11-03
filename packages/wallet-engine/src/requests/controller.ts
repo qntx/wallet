@@ -19,6 +19,7 @@ import type { PayParams } from "../payments/pay.ts";
 import { prepareZapAction } from "../payments/zap.ts";
 import type { PreparedZap } from "../payments/zap.ts";
 import type { SparkController } from "../spark/controller.ts";
+import { SPARK_L1_NETWORK } from "../spark/l1.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { TransactionController } from "../transactions/controller.ts";
 import type {
@@ -26,6 +27,7 @@ import type {
   ChainRequestInput,
   ChainRequestMethod,
   DisplayIntent,
+  PrepareParams,
   SendParams,
   SignatureResult,
   TrackedTransaction,
@@ -72,8 +74,41 @@ export type EvmSignInput = {
   readonly request: SignRequest;
 };
 
-export type RequestMethod = ChainRequestMethod | "pay" | "zap" | "evm-sign";
-export type RequestInput = ChainRequestInput | PayInput | ZapInput | EvmSignInput;
+/**
+ * Funds the wallet's own Spark account from a bitcoin account of the same wallet; the transaction
+ * is an ordinary bitcoin send to a fresh Spark deposit address and is claimed once confirmed.
+ */
+export type SparkDepositInput = {
+  readonly method: "spark-deposit";
+  readonly account: SparkAccountRef;
+  readonly from: AccountRef;
+  readonly amountSats: number;
+  readonly fee: PrepareParams["fee"];
+};
+
+/** A cooperative exit to the group's own next unused `btc.bip84` receive address. */
+export type SparkExitInput = {
+  readonly method: "spark-exit";
+  readonly account: SparkAccountRef;
+  readonly amountSats: number;
+  readonly maxFeeSats: number;
+  readonly speed?: "FAST" | "MEDIUM" | "SLOW";
+};
+
+export type RequestMethod =
+  | ChainRequestMethod
+  | "pay"
+  | "zap"
+  | "evm-sign"
+  | "spark-deposit"
+  | "spark-exit";
+export type RequestInput =
+  | ChainRequestInput
+  | PayInput
+  | ZapInput
+  | EvmSignInput
+  | SparkDepositInput
+  | SparkExitInput;
 
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
 export class RequestEndedError extends Error {
@@ -179,9 +214,6 @@ type Entry = {
   readonly stopTimer: () => void;
 };
 
-const isSparkInput = (input: RequestInput): input is PayInput | ZapInput =>
-  input.method === "pay" || input.method === "zap";
-
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
 
 const LIVE: ReadonlySet<RequestStage> = new Set(["awaiting-approval", "signing"]);
@@ -263,10 +295,7 @@ export class RequestController extends Controller<RequestControllerState> {
     const id = newRequestId(this.options.random);
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
-    const target =
-      input.method === "send" || input.method === "evm-sign" || isSparkInput(input)
-        ? undefined
-        : input.txId;
+    const target = "txId" in input ? input.txId : undefined;
     if (input.method === "evm-sign") {
       const key = originKey(input.origin);
       if (this.targets.has(key)) {
@@ -364,6 +393,30 @@ export class RequestController extends Controller<RequestControllerState> {
     }
   }
 
+  /** The bitcoin network `account`'s Spark network settles on; any other pairing is refused. */
+  private l1Network(account: SparkAccountRef): string {
+    const network = SPARK_L1_NETWORK[account.network] as string | undefined;
+    if (network === undefined) {
+      throw new Error(`unknown Spark network ${account.network}`);
+    }
+    return network;
+  }
+
+  private sparkBuilt(account: SparkAccountRef, action: PreparedSparkAction): Built {
+    return {
+      account,
+      network: action.display.network,
+      display: action.display,
+      checks: collectChecks(action.checks),
+      risk: this.sparkRisk(action.display),
+      run: {
+        staleReason: () => action.staleReason(this.options.now()),
+        submit: async (verify) => action.execute(this.options.spark, verify),
+        release: () => undefined,
+      },
+    };
+  }
+
   private async build(input: RequestInput, id: string): Promise<Built> {
     if (input.method === "pay" || input.method === "zap") {
       const action: PreparedSparkAction =
@@ -373,18 +426,53 @@ export class RequestController extends Controller<RequestControllerState> {
               maxFeeSats: input.maxFeeSats,
               now: this.options.now,
             });
-      return {
-        account: input.account,
-        network: action.display.network,
-        display: action.display,
-        checks: collectChecks(action.checks),
-        risk: this.sparkRisk(action.display),
-        run: {
-          staleReason: () => action.staleReason(this.options.now()),
-          submit: async (verify) => action.execute(this.options.spark, verify),
-          release: () => undefined,
+      return this.sparkBuilt(input.account, action);
+    }
+    if (input.method === "spark-deposit") {
+      const l1 = this.l1Network(input.account);
+      if (input.from.kind !== "hd" || input.from.walletId !== input.account.walletId) {
+        throw new Error("a Spark deposit must come from the same wallet");
+      }
+      const to = await this.options.spark.newDepositAddress(input.account);
+      const prepared = await this.options.transactions.prepareSend(
+        { account: input.from, network: l1, to, amount: BigInt(input.amountSats), fee: input.fee },
+        id,
+        {
+          walletId: input.account.walletId,
+          groupIndex: input.account.groupIndex,
+          network: input.account.network,
         },
+      );
+      return {
+        account: prepared.account,
+        network: prepared.network,
+        display: prepared.intent,
+        checks: collectChecks([
+          prepared.intent.verifiability === "full" ? undefined : "decode-partial",
+          ...prepared.checks,
+        ]),
+        risk: [],
+        run: prepared,
       };
+    }
+    if (input.method === "spark-exit") {
+      const l1 = this.l1Network(input.account);
+      const address = await this.options.transactions.nextReceiveAddress(
+        input.account.walletId,
+        input.account.groupIndex,
+        l1,
+      );
+      const action = await preparePay(
+        { fetch: this.options.fetch, now: this.options.now },
+        {
+          account: input.account,
+          option: { kind: "bitcoin", address },
+          amountSats: input.amountSats,
+          maxFeeSats: input.maxFeeSats,
+          ...(input.speed === undefined ? {} : { speed: input.speed }),
+        },
+      );
+      return this.sparkBuilt(input.account, action);
     }
     if (input.method === "evm-sign") {
       const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
@@ -424,12 +512,12 @@ export class RequestController extends Controller<RequestControllerState> {
    */
   async approve(
     id: string,
-    method: ChainRequestMethod,
+    method: ChainRequestMethod | "spark-deposit",
     verify: SendParams["verify"],
   ): Promise<TrackedTransaction>;
   async approve(
     id: string,
-    method: "pay" | "zap",
+    method: "pay" | "zap" | "spark-exit",
     verify: SendParams["verify"],
   ): Promise<SparkResult>;
   async approve(
