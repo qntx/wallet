@@ -11,6 +11,12 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Changed
 
+- BREAKING: `NostrKeyRef`, `nostr.deriveKey`, `nostr.discover` and the `nostr-key` record header
+  now carry an `index` (a NIP-06 identity index) instead of `groupIndex`: identities derive
+  independently of account groups. `VAULT_FORMAT` 3, `PROTOCOL_VERSION` 2; no migration — existing
+  vaults must be recreated. The derived `NostrKeyRef`, `DerivedNostrKey` and the affected method
+  params are retyped accordingly.
+
 - BREAKING: wallet metadata documents are now authored by the wallet's dedicated sync key
   (`m/44'/1237'/2147483647'/0/0`); documents authored by identity 0's Nostr key are no longer read.
   `MetaSyncWalletStatus` no longer has an `unavailable` state — every wallet owns a sync key.
@@ -55,11 +61,6 @@ recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` build
 
 ### Changed
 
-- `NostrKeyRef`, `nostr.deriveKey`, `nostr.discover` and the `nostr-key` record header now carry an
-  `index` (a NIP-06 identity index) instead of `groupIndex`: identities derive independently of
-  account groups. `VAULT_FORMAT` 3, `PROTOCOL_VERSION` 2; no migration — existing vaults must be
-  recreated. The derived `NostrKeyRef`, `DerivedNostrKey` and the affected method params are
-  retyped accordingly.
 
 - **BREAKING** `@qntx/wallet-engine`: the wallet metadata document is now `v: 2`
   (`{ v, wallet, groups, contacts }`) and `v: 1` documents are no longer read. A remote `v: 1`
