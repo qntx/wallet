@@ -135,6 +135,11 @@ async function openConnect(context: BrowserContext) {
   const page = await context.newPage();
   const bridge = createBrowserBridge({
     eip1193: rig.eip1193,
+    nip07: {
+      handle: () => {
+        throw new Error("nip07 not wired in this test");
+      },
+    },
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),

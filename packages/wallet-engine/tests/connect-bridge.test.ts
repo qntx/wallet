@@ -18,6 +18,7 @@ import type {
   BrowserBridgeOptions,
   Eip1193Event,
   Eip1193Request,
+  Nip07Request,
   ProviderInfo,
 } from "../src/connect/index.ts";
 import { PROVIDER_SCRIPT } from "../src/connect/inject.generated.ts";
@@ -40,14 +41,19 @@ const tick = async (): Promise<void> =>
     setTimeout(resolve);
   });
 
-const request = (id: number, method = "eth_chainId", extra: object = {}): string =>
-  JSON.stringify({ qntx: 1, id, method, ...extra });
+const request = (
+  id: number,
+  method = "eth_chainId",
+  provider = "eip1193",
+  extra: object = {},
+): string => JSON.stringify({ qntx: 1, id, method, provider, ...extra });
 
 function rig(handle: Handle = async () => Promise.resolve("result")) {
   const injections: string[] = [];
   const listeners: Array<(event: Eip1193Event) => void> = [];
   const invalidated: string[] = [];
   const handled: Array<{ origin: string; request: Eip1193Request }> = [];
+  const handledNostr: Array<{ origin: string; request: Nip07Request }> = [];
   let now = 0;
   const options: BrowserBridgeOptions = {
     inject: (script) => {
@@ -64,6 +70,12 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
         return () => {
           listeners.splice(listeners.indexOf(listener), 1);
         };
+      },
+    },
+    nip07: {
+      handle: async (origin, req) => {
+        handledNostr.push({ origin, request: req });
+        return Promise.resolve("nostr-result");
       },
     },
     connections: {
@@ -87,7 +99,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const advance = (ms: number): void => {
     now += ms;
   };
-  return { bridge, injections, invalidated, handled, emit, advance };
+  return { bridge, injections, invalidated, handled, handledNostr, emit, advance };
 }
 
 /** Decodes one `globalThis.__qntxReceive("<json>")` injection (the argument is a JSON string). */
@@ -101,9 +113,21 @@ describe("createBrowserBridge", () => {
   it("takes the origin from topUrl only — a page-reported origin field is ignored", async () => {
     const { bridge, handled } = rig();
     bridge.navigated(PAGE);
-    bridge.message(PAGE, request(1, "eth_chainId", { origin: "https://evil.example" }));
+    bridge.message(PAGE, request(1, "eth_chainId", "eip1193", { origin: "https://evil.example" }));
     await tick();
     expect(handled).toStrictEqual([{ origin: SITE, request: { method: "eth_chainId" } }]);
+  });
+
+  it("routes provider: nostr to the nip07 handler", async () => {
+    const { bridge, handled, handledNostr, injections } = rig();
+    bridge.navigated(PAGE);
+    bridge.message(PAGE, request(2, "getPublicKey", "nostr", { params: [] }));
+    await tick();
+    expect(handled).toHaveLength(0);
+    expect(handledNostr).toStrictEqual([
+      { origin: SITE, request: { method: "getPublicKey", params: [] } },
+    ]);
+    expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 2, result: "nostr-result" });
   });
 
   it("drops a message whose topUrl is not the current top origin", async () => {
@@ -123,6 +147,8 @@ describe("createBrowserBridge", () => {
     ["id not a number", JSON.stringify({ qntx: 1, id: "1", method: "eth_chainId" })],
     ["negative id", request(-1)],
     ["fractional id", request(1.5)],
+    ["missing provider", JSON.stringify({ qntx: 1, id: 1, method: "x" })],
+    ["unknown provider", request(1, "x", "bogus")],
     ["over 128 KiB", "x".repeat(128 * 1024 + 1)],
   ])("drops a malformed message (%s) without replying", async (_label, data) => {
     const { bridge, injections, handled } = rig();
