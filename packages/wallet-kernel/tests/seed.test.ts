@@ -1,5 +1,5 @@
 /**
- * withSeed/withWalletSeed own the entropy→seed window: the seed is wiped on every path, and the
+ * WithSeed/withWalletSeed own the entropy→seed window: the seed is wiped on every path, and the
  * entropy is wiped even when derivation or `use` throws — the failure modes that previously left
  * live secret bytes behind.
  */
@@ -20,7 +20,7 @@ vi.mock("../src/seed/seed.ts", async (importOriginal) => {
     ...mod,
     // Passthrough that records the entropy buffer withWalletSeed opened, so the test can
     // assert the wipe landed on the very buffer openRecord returned.
-    withSeed: (
+    withSeed: async (
       pbkdf2: KernelPlatform["pbkdf2"],
       entropy: Uint8Array,
       use: (seed: Uint8Array) => unknown,
@@ -35,7 +35,8 @@ vi.mock("../src/seed/seed.ts", async (importOriginal) => {
 });
 
 const { withSeed } = await import("../src/seed/seed.ts");
-const { sealRecord, withWalletSeed } = await import("../src/vault/vault.ts");
+const { sealRecord } = await import("../src/vault/vault.ts");
+const { withWalletSeed } = await import("../src/commands/vault.ts");
 
 const platform = {
   random: (n: number) => new Uint8Array(n).fill(9),
@@ -78,9 +79,9 @@ describe("withSeed", () => {
 
   it("does not own the entropy when derivation throws", async () => {
     const bytes = entropy();
-    await expect(
-      withSeed(throwingPbkdf2, bytes, (seed: Uint8Array) => seed.length),
-    ).rejects.toThrow("pbkdf2 blew up");
+    await expect(withSeed(throwingPbkdf2, bytes, (seed) => seed.length)).rejects.toThrow(
+      "pbkdf2 blew up",
+    );
     expect(bytes.some((b) => b !== 0)).toBe(true);
   });
 });

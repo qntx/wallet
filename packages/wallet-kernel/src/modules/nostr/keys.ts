@@ -10,7 +10,13 @@ import { corePromptFor } from "../../prompts.ts";
 import { wipe } from "../../secret/secret.ts";
 import type { Secret } from "../../secret/secret.ts";
 import type { StoredRecord } from "../../vault/store.ts";
-import { findRecord, openRecord, sealRecord, verifyFactor, withWalletSeed } from "../../vault/vault.ts";
+import { withWalletSeed } from "../../commands/vault.ts";
+import {
+  findRecord,
+  openRecord,
+  sealRecord,
+  verifyFactor,
+} from "../../vault/vault.ts";
 import { nostrKeyAt } from "./derive.ts";
 import {
   generateSecretKey,
@@ -146,16 +152,16 @@ export async function deriveKey(
     const master = masterKey(seed);
     try {
       const secretKey = nostrKeyAt(master, params.groupIndex);
-    try {
-      const publicKey = getPublicKey(secretKey);
-      ensureNewKey(ctx, publicKey);
-      const header: NostrKeyHeader = {
-        publicKey,
-        origin: "derived",
-        walletId: params.walletId,
-        groupIndex: params.groupIndex,
-        createdAt: ctx.platform.now(),
-      };
+      try {
+        const publicKey = getPublicKey(secretKey);
+        ensureNewKey(ctx, publicKey);
+        const header: NostrKeyHeader = {
+          publicKey,
+          origin: "derived",
+          walletId: params.walletId,
+          groupIndex: params.groupIndex,
+          createdAt: ctx.platform.now(),
+        };
         await ctx.commit([{ op: "put-record", record: keyRecord(ctx, dek, secretKey, header) }]);
         return nostrKeyInfo(header);
       } finally {
