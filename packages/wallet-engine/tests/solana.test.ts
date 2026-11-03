@@ -4,8 +4,13 @@ import type { MintExtensionSummary } from "@qntx/wallet-chains/solana";
 
 import { SolanaChainAdapter } from "../src/chains/solana.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
-import type { DisplayIntent } from "../src/transactions/route.ts";
-import { token2022Intent } from "../src/transactions/solana.ts";
+import type {
+  DisplayIntent,
+  RouteContext,
+  TrackedTransaction,
+  PrepareParams,
+} from "../src/transactions/route.ts";
+import { token2022Intent, pollSolana, prepareSolana } from "../src/transactions/solana.ts";
 
 const rpc = (handlers: Record<string, unknown>): SolanaRpc => ({
   call: async (method, params) => {
@@ -118,10 +123,6 @@ const FROM = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
 const TO = "8opHzTAnfzRpPEx21XtnrVTX28YQuCpAjcn1PczScKh";
 const BLOCKHASH = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
 
-import type { RouteContext, TrackedTransaction } from "../src/transactions/route.ts";
-import { pollSolana, prepareSolana } from "../src/transactions/solana.ts";
-import type { PrepareParams } from "../src/transactions/route.ts";
-
 const solanaCtx = (
   handlers: Record<string, unknown>,
   transitions: TrackedTransaction[] = [],
@@ -174,7 +175,12 @@ const buildHandlers = (overrides: Record<string, unknown> = {}): Record<string, 
 });
 
 const solanaParams = (): PrepareParams => ({
-  account: { kind: "hd", walletId: "0a".repeat(16), groupIndex: 0 },
+  account: {
+    kind: "hd",
+    walletId: "0a".repeat(16),
+    groupIndex: 0,
+    template: "solana.bip44-change",
+  },
   network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   to: TO,
   amount: 5000n,
@@ -264,24 +270,13 @@ describe("prepareSolana + pollSolana", () => {
     const transitions: TrackedTransaction[] = [];
     const ctx = solanaCtx(
       buildHandlers({
-        getAccountInfo: (params?: unknown[]) => {
-          const key = (params?.[0] as string) ?? "";
-          // Token mint: owned by the classic SPL Token program; token accounts exist.
-          if (key === "So11111111111111111111111111111111111111112") {
-            return {
-              value: {
-                owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-                data: [""],
-              },
-            };
-          }
-          return {
-            value: {
-              owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-              data: [""],
-            },
-          };
-        },
+        // Token mint: owned by the classic SPL Token program; token accounts exist.
+        getAccountInfo: () => ({
+          value: {
+            owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+            data: [""],
+          },
+        }),
       }),
       transitions,
     );

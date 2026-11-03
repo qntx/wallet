@@ -7,12 +7,12 @@ import * as Address from "ox/Address";
 import * as Secp256k1 from "ox/Secp256k1";
 import { describe, expect, it } from "vite-plus/test";
 
-import type { SignRequest } from "../src/index.ts";
-import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "../src/evm/sign.ts";
 import { recoverEvmSigner } from "../src/evm/recover.ts";
+import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "../src/evm/sign.ts";
+import type { SignRequest } from "../src/index.ts";
 
 const KEY = new Uint8Array(32).fill(3);
-const ADDR = Address.fromPublicKey(Secp256k1.getPublicKey({ privateKey: KEY, isCompressed: false }));
+const ADDR = Address.fromPublicKey(Secp256k1.getPublicKey({ privateKey: KEY }));
 const EIP155 = "eip155:1";
 
 const personal: SignRequest = {
@@ -49,10 +49,40 @@ const txRequest = (type: "legacy" | "eip1559" | "eip2930"): SignRequest => ({
   account: { kind: "imported", keyId: "k", family: "evm" },
   tx:
     type === "legacy"
-      ? { type, chainId: 1, nonce: 0, gas: "0x5208", gasPrice: "0x1", to: "0x00000000000000000000000000000000DeaDBeef", value: "0x1", data: "0x" }
+      ? {
+          type,
+          chainId: 1,
+          nonce: 0,
+          gas: "0x5208",
+          gasPrice: "0x1",
+          to: "0x00000000000000000000000000000000DeaDBeef",
+          value: "0x1",
+          data: "0x",
+        }
       : type === "eip2930"
-        ? { type, chainId: 1, nonce: 0, gas: "0x5208", gasPrice: "0x1", to: "0x00000000000000000000000000000000DeaDBeef", value: "0x1", data: "0x", accessList: [] }
-        : { type, chainId: 1, nonce: 0, gas: "0x5208", maxFeePerGas: "0x59682f00", maxPriorityFeePerGas: "0x1", to: "0x00000000000000000000000000000000DeaDBeef", value: "0x1", data: "0x", accessList: [] },
+        ? {
+            type,
+            chainId: 1,
+            nonce: 0,
+            gas: "0x5208",
+            gasPrice: "0x1",
+            to: "0x00000000000000000000000000000000DeaDBeef",
+            value: "0x1",
+            data: "0x",
+            accessList: [],
+          }
+        : {
+            type,
+            chainId: 1,
+            nonce: 0,
+            gas: "0x5208",
+            maxFeePerGas: "0x59682f00",
+            maxPriorityFeePerGas: "0x1",
+            to: "0x00000000000000000000000000000000DeaDBeef",
+            value: "0x1",
+            data: "0x",
+            accessList: [],
+          },
 });
 
 describe("recoverEvmSigner", () => {
@@ -66,11 +96,17 @@ describe("recoverEvmSigner", () => {
     expect(recoverEvmSigner(typedData, { signature })).toBe(ADDR);
   });
 
-  it.each(["legacy", "eip2930", "eip1559"] as const)("recovers the signer of a %s transaction", (type) => {
-    const request = txRequest(type);
-    const signedTransaction = signEvmTransaction(request.tx as never, KEY);
-    expect(recoverEvmSigner(request, { signedTransaction })).toBe(ADDR);
-  });
+  it.each(["legacy", "eip2930", "eip1559"] as const)(
+    "recovers the signer of a %s transaction",
+    (type) => {
+      const request = txRequest(type);
+      const signedTransaction = signEvmTransaction(
+        (request as Extract<SignRequest, { kind: "evm.transaction" }>).tx,
+        KEY,
+      );
+      expect(recoverEvmSigner(request, { signedTransaction })).toBe(ADDR);
+    },
+  );
 
   it("rejects a missing signed transaction", () => {
     expect(() => recoverEvmSigner(txRequest("eip1559"), {})).toThrow(
@@ -79,16 +115,17 @@ describe("recoverEvmSigner", () => {
   });
 
   it("rejects missing and short signatures", () => {
-    for (const signature of [undefined, new Uint8Array(64)]) {
-      expect(() => recoverEvmSigner(personal, { signature })).toThrow(
-        expect.objectContaining({ code: "invalid-request" }),
-      );
-    }
+    expect(() => recoverEvmSigner(personal, {})).toThrow(
+      expect.objectContaining({ code: "invalid-request" }),
+    );
+    expect(() => recoverEvmSigner(personal, { signature: new Uint8Array(64) })).toThrow(
+      expect.objectContaining({ code: "invalid-request" }),
+    );
   });
 
   it("rejects an envelope that is not a signed transaction", () => {
-    expect(() => recoverEvmSigner(txRequest("eip1559"), { signedTransaction: new Uint8Array([0x42]) })).toThrow(
-      expect.objectContaining({ code: "invalid-request" }),
-    );
+    expect(() =>
+      recoverEvmSigner(txRequest("eip1559"), { signedTransaction: new Uint8Array([0x42]) }),
+    ).toThrow(expect.objectContaining({ code: "invalid-request" }));
   });
 });

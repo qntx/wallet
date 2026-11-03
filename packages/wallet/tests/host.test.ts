@@ -1200,15 +1200,19 @@ describe("nostr api methods", () => {
   it("exportKey wraps the kernel's bytes in a one-shot secret", async () => {
     const { wallet, kernel } = await connectFake(unlockedStatus());
     kernel.handlers.set("nostr.exportKey", () => ({ ok: new Uint8Array(16).fill(1) }));
-    const secret = await nostr(wallet).exportKey(NOSTR_KEY.ref, { kind: "nsec" }, {
-      kind: "password",
-      password: "pw",
-    });
+    const secret = await nostr(wallet).exportKey(
+      NOSTR_KEY.ref,
+      { kind: "nsec" },
+      {
+        kind: "password",
+        password: "pw",
+      },
+    );
     expect(secret).toBeDefined();
     expect(kernel.received).toContain("nostr.exportKey");
   });
 
   it("rejects a foreign wallet object", () => {
-    expect(() => nostr({} as never)).toThrow();
+    expect(() => nostr({} as never)).toThrow(WalletError);
   });
 });

@@ -15,26 +15,26 @@ const addressOf = (seed: Uint8Array): string =>
   getAddressDecoder().decode(ed25519.getPublicKey(seed));
 
 describe("verifySolanaSignature", () => {
-  it("verifies a signature made by the address's key", async () => {
+  it("verifies a signature made by the address's key", () => {
     const addr = addressOf(SEED);
     const sig = signSolanaMessage(MESSAGE, SEED);
     expect(verifySolanaSignature(MESSAGE, sig, addr)).toBe(true);
   });
 
-  it("rejects a signature made by a different key", async () => {
+  it("rejects a signature made by a different key", () => {
     const other = new Uint8Array(32).fill(4);
     const addr = addressOf(other);
     const sig = signSolanaMessage(MESSAGE, SEED);
     expect(verifySolanaSignature(MESSAGE, sig, addr)).toBe(false);
   });
 
-  it("rejects a tampered message", async () => {
+  it("rejects a tampered message", () => {
     const addr = addressOf(SEED);
     const sig = signSolanaMessage(MESSAGE, SEED);
     expect(verifySolanaSignature(new TextEncoder().encode("pay 22 sats"), sig, addr)).toBe(false);
   });
 
-  it("rejects wrong signature lengths and a malformed address", async () => {
+  it("rejects wrong signature lengths and a malformed address", () => {
     const addr = addressOf(SEED);
     const sig = signSolanaMessage(MESSAGE, SEED);
     expect(verifySolanaSignature(MESSAGE, sig.slice(0, 63), addr)).toBe(false);
