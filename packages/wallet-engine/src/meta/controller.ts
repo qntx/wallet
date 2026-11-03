@@ -27,7 +27,7 @@ export type MetaSyncConfig = {
 };
 
 export type MetaSyncWalletStatus = {
-  readonly status: "unavailable" | "syncing" | "synced" | "error";
+  readonly status: "syncing" | "synced" | "error";
   readonly error?: MetaSyncErrorCategory;
 };
 
@@ -145,14 +145,6 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     await Promise.all(snap.wallets.map(async (w) => this.pullOne(w.walletId, gen)));
   }
 
-  private async pubkeyFor(signer: WalletSyncSigner): Promise<string> {
-    return signer.getPublicKey();
-  }
-
-  private signerFor(walletId: string): WalletSyncSigner {
-    return this.options.nostr.syncSigner(walletId);
-  }
-
   private setStatus(walletId: string, status: MetaSyncWalletStatus): void {
     this.update((s) => ({ ...s, wallets: { ...s.wallets, [walletId]: status } }));
   }
@@ -162,17 +154,11 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     if (config === undefined || this.inflight.has(walletId)) {
       return;
     }
-    const signer = this.signerFor(walletId);
-    if (signer === undefined) {
-      if (gen === this.generation) {
-        this.setStatus(walletId, { status: "unavailable" });
-      }
-      return;
-    }
+    const signer = this.options.nostr.syncSigner(walletId);
     this.inflight.add(walletId);
     this.setStatus(walletId, { status: "syncing" });
     try {
-      const pubkey = await this.pubkeyFor(signer);
+      const pubkey = await signer.getPublicKey();
       const events = await config.relays.fetch(this.filterFor(pubkey, config.tag));
       let remote: Event | undefined;
       let remoteSkipped = 0;
@@ -205,8 +191,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
       } else {
         // A verified event we cannot read must never be overwritten — a newer app version
         // (e.g. v: 2) is the most likely cause; decode failure is data corruption.
-        const { decrypt } = signer;
-        const plaintext = await decrypt.call(signer, remote.content).catch(() => undefined);
+        const plaintext = await signer.decrypt(remote.content).catch(() => undefined);
         const doc =
           plaintext === undefined
             ? undefined
@@ -312,13 +297,13 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     if (config === undefined || !this.pulled.has(walletId)) {
       return;
     }
-    const signer = this.signerFor(walletId);
+    const signer = this.options.nostr.syncSigner(walletId);
     try {
       const bytes = encodeMetaDoc(this.exportDoc(walletId));
       if (bytes === undefined) {
         throw new MetaSyncError("internal", "meta doc exceeds 64 KB");
       }
-      const pubkey = await this.pubkeyFor(signer);
+      const pubkey = await signer.getPublicKey();
       const content = await signer.encrypt(new TextDecoder().decode(bytes));
       const lastRemote = this.lastRemoteCreatedAt.get(walletId) ?? 0;
       const created_at = Math.max(Math.floor(this.options.now() / 1000), lastRemote + 1);

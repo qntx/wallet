@@ -61,7 +61,7 @@ export type EngineOptions = {
   /** Development builds: also accept `http://localhost` as a dApp origin. */
   readonly allowLocalhostOrigins?: boolean;
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
-  /** Kind-30078 wallet-metadata sync; absent → every wallet reports `unavailable`. */
+  /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;
   /** Test seam — defaults to the wallet's real spark proxy. */
   readonly sparkApis?: SparkControllerOptions["spark"];
