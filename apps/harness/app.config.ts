@@ -7,7 +7,10 @@ const config = (): ExpoConfig => ({
   orientation: "portrait",
   userInterfaceStyle: "light",
   ios: {
-    bundleIdentifier: "org.qntx.wallet.harness",
+    // A different bundle id than Android: org.qntx.wallet.harness is already
+    // registered under the old free team and App IDs cannot be re-registered
+    // under the paid team.
+    bundleIdentifier: "org.qntx.wallet.harness.ios",
     supportsTablet: false,
     appleTeamId: "RU84U75XZM",
     // Native passkeys (W6c) need the associated domain; the relying party in

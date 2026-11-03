@@ -7,7 +7,7 @@
 // Apple team + bundle id; the Android fingerprint is the harness's release
 // signing key — the shared React Native debug keystore, test builds only.
 const AASA = {
-  webcredentials: { apps: ["RU84U75XZM.org.qntx.wallet.harness"] },
+  webcredentials: { apps: ["RU84U75XZM.org.qntx.wallet.harness.ios"] },
 };
 
 const ASSET_LINKS = [
