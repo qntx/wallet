@@ -3,6 +3,8 @@
  * account and method, persisted in the engine store and cleared from memory on lock. A connection
  * is approved from a pending queue, by id, like any other request; locking rejects all of it.
  */
+import type { NostrKeyRef } from "@qntx/wallet";
+
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -30,8 +32,21 @@ export type ConnectionSession = {
   readonly scopes: Readonly<Record<string, ConnectionScope>>;
   /** The session's current EVM network; only dApp sessions have one. */
   readonly currentNetwork: string;
+  /** The origin's Nostr policy — set when the host approves a `nostr` connection. */
+  readonly nostrPolicy?: NostrPolicy;
   readonly createdAt: number;
   readonly lastUsedAt: number;
+};
+
+/**
+ * How much a `nostr` session may do without per-call approval: `signing` is `"ask"` (every
+ * `signEvent` goes through the pipeline), `"always"` (any kind signs directly), or a kind list (`{
+ * kinds }` — only those kinds sign directly, the rest ask); `decrypt` gates `nip04/nip44 .decrypt`.
+ * The four forced-confirm kinds `{0,3,5,10002}` always ask regardless.
+ */
+export type NostrPolicy = {
+  readonly signing: "ask" | "always" | { readonly kinds: ReadonlyArray<number> };
+  readonly decrypt: boolean;
 };
 
 /** `connect` asks for accounts; `network` asks to add a network the session does not cover. */
@@ -39,6 +54,8 @@ export type PendingConnection = {
   readonly id: string;
   readonly origin: ConnectionOrigin;
   readonly kind: "connect" | "network";
+  /** Which namespace the connection is for — `eip155` (EVM accounts) or `nostr` (NIP-07). */
+  readonly namespace: "eip155" | "nostr";
   readonly network?: string;
   readonly createdAt: number;
 };
@@ -62,6 +79,8 @@ export type ConnectionControllerOptions = {
   /** The group's EVM address on `network`. */
   readonly evmAddress: (group: AccountGroup, network: string) => Promise<string>;
   readonly enabledNetworks: () => ReadonlyArray<string>;
+  /** A Nostr identity's public key — `nostr(wallet).signer(ref).getPublicKey()`. */
+  readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
   /** Voids a page's unfinished requests (revoked, or its network changed). */
   readonly invalidate: (origin: string) => void;
 };
@@ -81,6 +100,15 @@ export const SESSION_METHODS: ReadonlyArray<string> = [
   "eth_signTypedData_v4",
 ];
 export const SESSION_NOTIFICATIONS: ReadonlyArray<string> = ["accountsChanged", "chainChanged"];
+/** The `nostr` namespace scope's granted methods — the NIP-07 surface. */
+export const NOSTR_METHODS: ReadonlyArray<string> = [
+  "getPublicKey",
+  "signEvent",
+  "nip04.encrypt",
+  "nip04.decrypt",
+  "nip44.encrypt",
+  "nip44.decrypt",
+];
 
 /** `eip155:1` → 1; `undefined` for anything that is not an EVM network. */
 export const evmChainId = (network: string): number | undefined => {
@@ -105,9 +133,19 @@ const isSession = (value: unknown): value is ConnectionSession => {
     typeof value["origin"]["origin"] === "string" &&
     typeof value["currentNetwork"] === "string" &&
     typeof value["createdAt"] === "number" &&
-    typeof value["lastUsedAt"] === "number"
+    typeof value["lastUsedAt"] === "number" &&
+    (value["nostrPolicy"] === undefined || isNostrPolicy(value["nostrPolicy"]))
   );
 };
+
+const isNostrPolicy = (value: unknown): value is NostrPolicy =>
+  isObject(value) &&
+  typeof value["decrypt"] === "boolean" &&
+  (value["signing"] === "ask" ||
+    value["signing"] === "always" ||
+    (isObject(value["signing"]) &&
+      Array.isArray(value["signing"]["kinds"]) &&
+      (value["signing"]["kinds"] as unknown[]).every((k) => typeof k === "number")));
 
 type Waiter = {
   readonly resolve: (session: ConnectionSession) => void;
@@ -119,6 +157,7 @@ export class ConnectionController extends Controller<ConnectionState> {
   private engineStore: EngineStore | undefined;
   private readonly waiters = new Map<string, Waiter>();
   private group: AccountGroup | undefined;
+  private identity: NostrKeyRef | undefined;
 
   constructor(options: ConnectionControllerOptions) {
     super({ name: "connections", defaultState: () => ({ sessions: {}, pending: {} }) });
@@ -129,6 +168,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     const store = await this.options.openStore();
     this.engineStore = store;
     this.group = undefined;
+    this.identity = undefined;
     const collection = store.collection(COLLECTION);
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
@@ -247,6 +287,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     origin: string,
     kind: PendingConnection["kind"],
     network?: string,
+    namespace: PendingConnection["namespace"] = "eip155",
   ): Promise<ConnectionSession> {
     const store = this.engineStore;
     if (store === undefined) {
@@ -260,6 +301,7 @@ export class ConnectionController extends Controller<ConnectionState> {
       id,
       origin: { kind: "browser", origin },
       kind,
+      namespace,
       ...(network === undefined ? {} : { network }),
       createdAt: this.options.now(),
     };
@@ -275,7 +317,12 @@ export class ConnectionController extends Controller<ConnectionState> {
    */
   async approveConnection(
     id: string,
-    grant: { readonly accounts: ReadonlyArray<string>; readonly network: string },
+    grant: {
+      readonly accounts: ReadonlyArray<string>;
+      readonly network: string;
+      /** The `nostr` namespace's grant: the identity's pubkey and the origin's policy. */
+      readonly nostr?: { readonly pubkey: string; readonly policy: NostrPolicy };
+    },
   ): Promise<ConnectionSession> {
     const store = this.requireStore();
     const entry = this.getState().pending[id];
@@ -299,23 +346,45 @@ export class ConnectionController extends Controller<ConnectionState> {
     if (grant.accounts.length === 0 || grant.accounts.some((a) => a.toLowerCase() !== own)) {
       throw invalidParams("only the active group's account can be granted");
     }
+    const scopes: Record<string, ConnectionScope> = {};
+    if (entry.namespace === "nostr") {
+      if (grant.nostr === undefined) {
+        throw invalidParams("a nostr connection needs the identity's pubkey and policy");
+      }
+      const identity = this.activeIdentity();
+      if (identity === undefined) {
+        throw userRejectedRequest("no nostr identity is selected");
+      }
+      const identityRaw = await this.options.nostrPubkey(identity);
+      const identityPubkey = identityRaw.toLowerCase();
+      if (grant.nostr.pubkey.toLowerCase() !== identityPubkey) {
+        throw invalidParams("only the active identity can be granted");
+      }
+      scopes["nostr"] = {
+        accounts: [`nostr:${identityPubkey}`],
+        methods: NOSTR_METHODS,
+        notifications: [],
+      };
+    } else {
+      scopes[grant.network] = {
+        accounts: [caip10(grant.network, own)],
+        methods: SESSION_METHODS,
+        notifications: SESSION_NOTIFICATIONS,
+      };
+    }
     if (this.getState().pending[id] === undefined) {
       throw new Error(`connection request ${id} is no longer pending`);
     }
     const now = this.options.now();
     const existing = this.session(entry.origin.origin);
-    const scope: ConnectionScope = {
-      accounts: [caip10(grant.network, own)],
-      methods: SESSION_METHODS,
-      notifications: SESSION_NOTIFICATIONS,
-    };
     const session: ConnectionSession = {
       id:
         existing?.id ??
         `session-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
       origin: entry.origin,
-      scopes: { ...existing?.scopes, [grant.network]: scope },
+      scopes: { ...existing?.scopes, ...scopes },
       currentNetwork: grant.network,
+      ...(grant.nostr === undefined ? {} : { nostrPolicy: grant.nostr.policy }),
       createdAt: existing?.createdAt ?? now,
       lastUsedAt: now,
     };
@@ -409,6 +478,54 @@ export class ConnectionController extends Controller<ConnectionState> {
           ),
         );
         await this.persist(store, { ...session, scopes: Object.fromEntries(entries) });
+      }),
+    );
+  }
+
+  /** The active Nostr identity — `undefined` until the host picks one. */
+  activeIdentity(): NostrKeyRef | undefined {
+    return this.identity;
+  }
+
+  /** The origin's persisted Nostr policy — `undefined` until it is nostr-authorized. */
+  nostrPolicy(origin: string): NostrPolicy | undefined {
+    return this.session(origin)?.nostrPolicy;
+  }
+
+  /** The origin's `nostr` namespace scope's pubkey, or `undefined` when not nostr-authorized. */
+  nostrAccount(origin: string): string | undefined {
+    const account = this.session(origin)?.scopes["nostr"]?.accounts[0];
+    return account === undefined ? undefined : addressOf(account);
+  }
+
+  /**
+   * The host's Nostr identity selection: every authorized `nostr` session's account becomes the new
+   * identity's pubkey (or empties when the identity is cleared). No event — NIP-07 has none.
+   */
+  async setActiveIdentity(ref: NostrKeyRef | undefined): Promise<void> {
+    const store = this.requireStore();
+    this.identity = ref;
+    let pubkey: string | undefined;
+    if (ref !== undefined) {
+      const raw = await this.options.nostrPubkey(ref);
+      pubkey = raw.toLowerCase();
+    }
+    await Promise.all(
+      Object.values(this.getState().sessions).map(async (session) => {
+        const scope = session.scopes["nostr"];
+        if (scope === undefined || scope.accounts.length === 0) {
+          return;
+        }
+        await this.persist(store, {
+          ...session,
+          scopes: {
+            ...session.scopes,
+            nostr: {
+              ...scope,
+              accounts: pubkey === undefined ? [] : [`nostr:${pubkey}`],
+            },
+          },
+        });
       }),
     );
   }

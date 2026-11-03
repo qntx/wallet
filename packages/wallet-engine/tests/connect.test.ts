@@ -8,6 +8,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { chains } from "@qntx/wallet/chains";
 
 import { ConnectionController, SESSION_TTL_MS } from "../src/connect/controller.ts";
+import type { NostrPolicy } from "../src/connect/controller.ts";
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import type { Eip1193Event } from "../src/connect/eip1193.ts";
 import { ProviderError } from "../src/connect/errors.ts";
@@ -26,6 +27,7 @@ const VERIFY = { kind: "password" as const, password: PASSWORD };
 const SITE = "https://app.example";
 const OTHER_SITE = "https://other.example";
 const MAINNET = "eip155:1";
+const NOSTR_PUBKEYS = ["a".repeat(64), "b".repeat(64)] as const;
 const SEPOLIA = "eip155:11155111";
 
 const logger = { warn: () => undefined };
@@ -125,6 +127,8 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SEPOLIA],
+    nostrPubkey: async (ref: { index: number }) =>
+      Promise.resolve(NOSTR_PUBKEYS[ref.index] ?? NOSTR_PUBKEYS[0]),
     invalidate: (origin: string) => {
       requests.invalidateOrigin(origin);
     },
@@ -324,6 +328,80 @@ describe("connection sessions", () => {
       { name: "accountsChanged", origin: SITE, accounts: [first] },
       { name: "accountsChanged", origin: SITE, accounts: [second] },
     ]);
+    await r.destroy();
+  });
+});
+
+describe("nostr connections", () => {
+  const pendingNostrId = (r: Awaited<ReturnType<typeof rig>>, origin = SITE): string =>
+    r.connections.pending().find((p) => p.origin.origin === origin)?.id ?? "";
+
+  const nostrConnect = async (
+    r: Awaited<ReturnType<typeof rig>>,
+    pubkey: string,
+    policy: NostrPolicy,
+    origin = SITE,
+  ): Promise<void> => {
+    const pending = r.connections.request(origin, "connect", undefined, "nostr");
+    await vi.waitFor(() => {
+      expect(r.connections.pending().some((p) => p.origin.origin === origin)).toBe(true);
+    });
+    const id = pendingNostrId(r, origin);
+    await r.connections.approveConnection(id, {
+      accounts: [await r.addressAt(0)],
+      network: MAINNET,
+      nostr: { pubkey, policy },
+    });
+    await pending;
+  };
+
+  it("a nostr approval creates the nostr scope and persists the policy", async () => {
+    const r = await rig();
+    const [pubkey] = NOSTR_PUBKEYS;
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
+    const policy: NostrPolicy = { signing: "ask", decrypt: false };
+    await nostrConnect(r, pubkey, policy);
+    const session = r.connections.session(SITE);
+    expect(session?.scopes["nostr"]?.accounts).toStrictEqual([`nostr:${pubkey}`]);
+    expect(session?.scopes["nostr"]?.methods).toContain("signEvent");
+    expect(r.connections.nostrPolicy(SITE)).toStrictEqual(policy);
+    expect(r.connections.nostrAccount(SITE)).toBe(pubkey);
+    expect(r.connections.authorize(SITE, "nostr", "signEvent")).toBe(session);
+    await r.destroy();
+  });
+
+  it("approving a pubkey other than the active identity's is rejected", async () => {
+    const r = await rig();
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
+    const pending = r.connections.request(SITE, "connect", undefined, "nostr");
+    await vi.waitFor(() => {
+      expect(r.connections.pending().length).toBeGreaterThan(0);
+    });
+    const id = pendingNostrId(r);
+    await expect(
+      r.connections.approveConnection(id, {
+        accounts: [await r.addressAt(0)],
+        network: MAINNET,
+        nostr: { pubkey: "c".repeat(64), policy: { signing: "ask", decrypt: false } },
+      }),
+    ).rejects.toBeInstanceOf(ProviderError);
+    r.connections.rejectConnection(id);
+    await expect(pending).rejects.toBeInstanceOf(ProviderError);
+    await r.destroy();
+  });
+
+  it("setActiveIdentity re-points authorized nostr sessions' account", async () => {
+    const r = await rig();
+    const [first, second] = NOSTR_PUBKEYS;
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
+    await nostrConnect(r, first, { signing: "ask", decrypt: false });
+    expect(r.connections.nostrAccount(SITE)).toBe(first);
+    // Switching to index 1 re-points the session's nostr account.
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 1 });
+    expect(r.connections.nostrAccount(SITE)).toBe(second);
+    // Clearing the identity empties it.
+    await r.connections.setActiveIdentity(undefined);
+    expect(r.connections.nostrAccount(SITE)).toBeUndefined();
     await r.destroy();
   });
 });
