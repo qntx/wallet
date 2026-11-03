@@ -307,6 +307,12 @@ describe("signature record", () => {
     });
     await put("0000000000000004-bad-outcome", { ...good, id: "bad-outcome", at: 4, outcome: "ok" });
     await put("0000000000000005-junk", "not an entry");
+    await put("0000000000000006-bad-origin", {
+      ...good,
+      id: "bad-origin",
+      at: 6,
+      origin: { kind: "browser" },
+    });
     const entries = await log.list();
     expect(entries.map((e) => e.id)).toStrictEqual(["req-good"]);
   });

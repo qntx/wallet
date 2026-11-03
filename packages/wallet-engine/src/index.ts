@@ -6,20 +6,36 @@ export { EngineStoreError } from "./errors.ts";
 export type { EngineErrorCode } from "./errors.ts";
 export type { EngineCollection, EngineStore } from "./store/port.ts";
 export { createMemoryEngineStore } from "./store/memory.ts";
+export { ConnectionController } from "./connect/controller.ts";
+export type {
+  AccountGroup as ConnectionAccountGroup,
+  ConnectionOrigin,
+  ConnectionScope,
+  ConnectionSession,
+  ConnectionState,
+  PendingConnection,
+} from "./connect/controller.ts";
+export { Eip1193Handler } from "./connect/eip1193.ts";
+export type { Eip1193Event, Eip1193Request } from "./connect/eip1193.ts";
+export { ProviderError } from "./connect/errors.ts";
 export { AddressBookController } from "./addresses/controller.ts";
 export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";
 export { AddressBookError } from "./addresses/errors.ts";
 export type { AddressBookErrorCategory } from "./addresses/errors.ts";
 export { RequestController, REQUEST_TTL_MS } from "./requests/controller.ts";
 export type {
+  BrowserOrigin,
+  EvmSignInput,
   PayInput,
   PendingRequest,
   RequestCheckCode,
   RequestInput,
   RequestMethod,
   RequestControllerState,
+  RequestOrigin,
   RequestStage,
   RiskFinding,
+  SignatureResult,
   SignLogEntry,
   SignLogOutcome,
 } from "./requests/controller.ts";

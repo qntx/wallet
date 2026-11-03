@@ -31,6 +31,19 @@ const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
 export type EvmRoute = {
   readonly prepare: (ctx: RouteContext, params: PrepareParams) => Promise<PreparedRequest>;
+  readonly prepareCall: (
+    ctx: RouteContext,
+    request: {
+      readonly account: PrepareParams["account"];
+      readonly network: string;
+      readonly tx: {
+        readonly to?: string;
+        readonly value: string;
+        readonly data: string;
+        readonly gas: string;
+      };
+    },
+  ) => Promise<PreparedRequest>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
   readonly prepareReplace: (
     ctx: RouteContext,
@@ -45,8 +58,18 @@ export const createEvmRoute = (): EvmRoute => {
   /** In-memory build context keyed by tx id — the inputs a replace rebuilds from. */
   const pending = new Map<string, PendingBuild>();
 
-  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedRequest> => {
-    const { account, network, to, amount, fee } = params;
+  type BuildIntent = Parameters<EvmChainAdapter["build"]>[3];
+  type PrepareSpec = {
+    readonly account: PrepareParams["account"];
+    readonly network: string;
+    readonly intent: BuildIntent;
+    readonly fee: PrepareParams["fee"];
+    /** Native value moved; the worst-case fee reaching it is flagged. */
+    readonly nativeValue: bigint | undefined;
+  };
+
+  const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
+    const { account, network, fee } = spec;
     const { networks } = ctx.options;
     if (account.kind !== "hd") {
       throw new Error("imported accounts are not yet supported");
@@ -79,15 +102,7 @@ export const createEvmRoute = (): EvmRoute => {
         flags.push("reads-unverified");
       }
     }
-    const unsigned = await evm.build(
-      client,
-      network,
-      from,
-      params.token === undefined
-        ? { kind: "native", to, value: amount }
-        : { kind: "erc20", token: params.token, to, value: amount },
-      nonce,
-    );
+    const unsigned = await evm.build(client, network, from, spec.intent, nonce);
     const quotes = await evm.estimateFee(client);
     let quote = quotes.find((q) => q.tier === fee) ?? quotes[1];
     if (quote === undefined) {
@@ -115,8 +130,8 @@ export const createEvmRoute = (): EvmRoute => {
     }
     const feed = evm.applyFee(unsigned, quote);
     if (
-      params.token === undefined &&
-      feeReachesAmount(feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n), amount)
+      spec.nativeValue !== undefined &&
+      feeReachesAmount(feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n), spec.nativeValue)
     ) {
       flags.push("fee-exceeds-amount");
     }
@@ -179,6 +194,49 @@ export const createEvmRoute = (): EvmRoute => {
       submit,
       release: () => undefined,
     };
+  };
+
+  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedRequest> =>
+    prepareSpec(ctx, {
+      account: params.account,
+      network: params.network,
+      fee: params.fee,
+      intent:
+        params.token === undefined
+          ? { kind: "native", to: params.to, value: params.amount }
+          : { kind: "erc20", token: params.token, to: params.to, value: params.amount },
+      nativeValue: params.token === undefined ? params.amount : undefined,
+    });
+
+  /**
+   * A dApp transaction, already normalized: only `to`, `value` and `data` are kept; nonce and fees
+   * are read again and the dApp's `gas` only raises the floor under our own estimate.
+   */
+  const prepareCall = async (
+    ctx: RouteContext,
+    request: {
+      readonly account: PrepareParams["account"];
+      readonly network: string;
+      readonly tx: {
+        readonly to?: string;
+        readonly value: string;
+        readonly data: string;
+        readonly gas: string;
+      };
+    },
+  ): Promise<PreparedRequest> => {
+    const { tx } = request;
+    if (tx.to === undefined) {
+      throw new Error("contract creation is not supported");
+    }
+    const value = BigInt(tx.value);
+    return prepareSpec(ctx, {
+      account: request.account,
+      network: request.network,
+      fee: "normal",
+      intent: { kind: "call", to: tx.to, value, data: tx.data, minGas: BigInt(tx.gas) },
+      nativeValue: value > 0n ? value : undefined,
+    });
   };
 
   /**
@@ -325,5 +383,5 @@ export const createEvmRoute = (): EvmRoute => {
     return state === "finalized" ? "confirmed" : state;
   };
 
-  return { prepare, poll, prepareReplace };
+  return { prepare, prepareCall, poll, prepareReplace };
 };

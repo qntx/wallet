@@ -47,6 +47,22 @@ recipient risk checks, a sign log and metadata sync; `@qntx/wallet-native` build
 
 ### Added
 
+- `@qntx/wallet-engine`: dApp connections for EVM. `engine.connections` (`ConnectionController`)
+  keeps one CAIP-25-style session per `https` origin (network, account and method scopes,
+  persisted, dropped after 90 days unused, bound to the active account group through
+  `setActiveGroup`) and approves connections by id from a pending queue. `engine.eip1193`
+  (`Eip1193Handler`) is the platform-neutral provider: accounts and permissions, `eth_chainId` and
+  `wallet_switchEthereumChain`, `eth_sendTransaction`, `personal_sign`, `eth_signTypedData_v4` and
+  the read-only RPC list, with EIP-1193 error codes (`ProviderError`) and `accountsChanged`,
+  `chainChanged`, `connect` and `disconnect` events. `eth_sign`, `eth_signTypedData` (v1, v3),
+  `eth_signTransaction`, `eth_sendRawTransaction` and the deferred `wallet_addEthereumChain`,
+  `wallet_watchAsset` and EIP-5792 methods answer `4200`. The request pipeline accepts them as
+  `{ method: "evm-sign", origin, ... }` with a `browser` origin: a dApp transaction is rebuilt with
+  fresh nonce and fees (its gas only raises the floor), each origin has one request at a time,
+  and revoking or switching network voids the origin's unfinished requests. Sign-log entries carry
+  the browser origin. A `personal_sign` whose bytes are not UTF-8 text is blind signing, which is
+  off by default: it answers `4200` without entering the pipeline. New engine option
+  `allowLocalhostOrigins` for development.
 - `@qntx/wallet-engine`: address-book sync. Every wallet's metadata document carries the whole
   address book; documents merge per entry id, last writer wins (a tie goes to the larger
   serialization, so every device converges). Deletions travel as tombstones, dropped after 90 days;

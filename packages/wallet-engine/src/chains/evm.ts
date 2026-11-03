@@ -158,6 +158,14 @@ export class EvmChainAdapter {
           readonly token: string;
           readonly to: string;
           readonly value: bigint;
+        }
+      | {
+          /** An arbitrary call from a dApp; `minGas` is its own gas figure, a floor under ours. */
+          readonly kind: "call";
+          readonly to: string;
+          readonly value: bigint;
+          readonly data: string;
+          readonly minGas?: bigint;
         },
     nonceOverride?: number,
   ): Promise<EvmUnsignedTransaction> {
@@ -171,12 +179,16 @@ export class EvmChainAdapter {
           functionName: "transfer",
           args: [checkedAddress(intent.to), intent.value],
         })
-      : "0x";
+      : intent.kind === "call"
+        ? intent.data
+        : "0x";
     const estimate = BigInt(
       await this.rpcHex(client, "eth_estimateGas", [{ from, to, value: hex(value), data }]),
     );
     const scale = erc20 ? 11n : 12n;
-    const gas = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
+    const buffered = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
+    const minGas = intent.kind === "call" ? (intent.minGas ?? 0n) : 0n;
+    const gas = buffered > minGas ? buffered : minGas;
     return { family: "evm", network, from, to, value, data, nonce, gas };
   }
 

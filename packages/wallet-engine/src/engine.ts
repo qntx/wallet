@@ -7,6 +7,7 @@
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
+import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
@@ -15,6 +16,8 @@ import { AddressBookController } from "./addresses/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
+import { ConnectionController } from "./connect/controller.ts";
+import { Eip1193Handler } from "./connect/eip1193.ts";
 import type { EngineLogger } from "./events.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
@@ -54,6 +57,8 @@ export type EngineOptions = {
    */
   readonly gateway?: { readonly url: string; readonly installId: string };
   /** Injected timer for transaction polling; defaults to setTimeout. */
+  /** Development builds: also accept `http://localhost` as a dApp origin. */
+  readonly allowLocalhostOrigins?: boolean;
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → every wallet reports `unavailable`. */
   readonly metaSync?: MetaSyncConfig;
@@ -67,6 +72,8 @@ export type WalletEngine = {
   readonly transactions: TransactionController;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
+  readonly connections: ConnectionController;
+  readonly eip1193: Eip1193Handler;
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
@@ -193,6 +200,36 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     now: options.now,
   });
 
+  const connections = new ConnectionController({
+    openStore: options.openStore,
+    random: options.random,
+    now: options.now,
+    logger: options.logger,
+    allowLocalhost: options.allowLocalhostOrigins ?? false,
+    selectedGroup: () => accounts.getState().selected ?? undefined,
+    evmAddress: async (group, network) => {
+      const account = await chains(options.wallet).account({
+        ...group,
+        template: "evm.bip44",
+        network,
+      });
+      if (!("address" in account)) {
+        throw new Error("no EVM address for the group");
+      }
+      return account.address;
+    },
+    enabledNetworks: () => networks.enabled("evm"),
+    invalidate: (origin) => {
+      requests.invalidateOrigin(origin);
+    },
+  });
+  const eip1193 = new Eip1193Handler({
+    connections,
+    requests,
+    networks,
+    defaultNetwork: () => networks.enabled("evm")[0] ?? "eip155:1",
+  });
+
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
   let chain: Promise<void> = Promise.resolve();
@@ -226,8 +263,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       await assets.init();
       await transactions.init();
       await requests.init();
+      await connections.init();
     } else if (!unlocked && started) {
       started = false;
+      connections.lock();
       requests.lock();
       addressBook.lock();
       transactions.lock();
@@ -278,6 +317,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     transactions,
     requests,
     addressBook,
+    connections,
+    eip1193,
     spark: controller,
     accounts,
     metaSync,
