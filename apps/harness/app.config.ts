@@ -9,7 +9,10 @@ const config = (): ExpoConfig => ({
   ios: {
     bundleIdentifier: "org.qntx.wallet.harness",
     supportsTablet: false,
-    appleTeamId: "6Z33CD4837",
+    appleTeamId: "RU84U75XZM",
+    // Native passkeys (W6c) need the associated domain; the relying party in
+    // apps/harness/relying-party serves the AASA file for it.
+    associatedDomains: ["webcredentials:wallet-harness.qntx.org?mode=developer"],
     infoPlist: {
       NSFaceIDUsageDescription: "Face ID unlocks the wallet and approves each transaction.",
     },

@@ -12,6 +12,12 @@ and rejects a wrong one. Each step prints a machine-readable `SMOKE_RESULT
 
 Run the V1 probe suite instead with `EXPO_PUBLIC_V1_PROBES=1` at bundle time.
 
+The passkey steps (`smoke-passkey-*`) run the native WebAuthn ceremony on both
+platforms. iOS needs the paid Apple team (`RU84U75XZM` in `app.config.ts`) so
+the `webcredentials:wallet-harness.qntx.org` associated domain provisions; the
+AASA and asset-links files are served by `apps/harness/relying-party`, which
+also hosts the built playground on the same rpId for Web↔iOS comparison.
+
 
 Expo/React Native harness app that runs the V1 gate measurements for the isolated
 Hermes kernel runtime (`modules/v1-probe` (probe entry) + `packages/wallet-native` (kernel runtime)). It bundles the wallet kernel and a set

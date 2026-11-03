@@ -95,6 +95,32 @@ const enable = (ids: string[], on: boolean): void => {
   }
 };
 
+button("passkeyCreate").addEventListener("click", () => {
+  void (async () => {
+    try {
+      const wallet = await walletP;
+      const created = await wallet.wallets.createWithPasskey({ name: "qntx playground" });
+      ({ walletId } = created);
+      say(`passkey wallet ${walletId} created — unlock to connect`);
+    } catch (error) {
+      say(`passkey create failed: ${String(error)}`, true);
+    }
+  })();
+});
+
+button("passkeyRestore").addEventListener("click", () => {
+  void (async () => {
+    try {
+      const wallet = await walletP;
+      const restored = await wallet.wallets.restoreWithPasskey();
+      ({ walletId } = restored);
+      say(`passkey wallet ${walletId} restored — unlock to connect`);
+    } catch (error) {
+      say(`passkey restore failed: ${String(error)}`, true);
+    }
+  })();
+});
+
 button("create").addEventListener("click", () => {
   void (async () => {
     try {
@@ -243,7 +269,7 @@ action("withdrawBtn", "withdraw", async (engine) => {
 try {
   const wallet = await createWebWallet({
     passkey: {
-      rpId: "localhost",
+      rpId: location.hostname,
       rpName: "qntx playground",
       walletSalt: "qntx/wallet",
       vaultSalt: "qntx/vault",
