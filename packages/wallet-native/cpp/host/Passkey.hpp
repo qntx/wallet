@@ -7,10 +7,11 @@ namespace qntx {
 
 // The platform passkey authenticator behind `__qntx.passkey` (W6). The kernel
 // builds the WebAuthn request JSON and parses the response JSON itself; the
-// platform only runs the system ceremony. Android: Credential Manager. iOS:
-// not yet available (W6c needs an associated domain) — every call completes
-// `unavailable`. Each function has exactly one strong definition per platform
-// (PasskeyAndroid.cpp, PasskeyIos.mm); host tests link a fake.
+// platform only runs the system ceremony. Android: Credential Manager. iOS
+// (W6c): ASAuthorization platform passkeys with the PRF extension on iOS 18+,
+// unavailable below or without the associated domain. Each function has
+// exactly one strong definition per platform (PasskeyAndroid.cpp,
+// PasskeyIos.mm); host tests link a fake.
 
 // The binding maps each status to the kernel's error code: cancelled →
 // "cancelled", unavailable → "factor-unavailable", failed → "unavailable".

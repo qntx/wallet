@@ -59,7 +59,7 @@ Pod::Spec.new do |s|
 
   # The kernel's backends.spark binds the qs_* C ABI; the prebuilt
   # QntxSpark.xcframework ships inside the SparkNative pod.
-  s.frameworks = "LocalAuthentication", "Security"
+  s.frameworks = "LocalAuthentication", "Security", "AuthenticationServices", "UIKit"
 
   s.dependency 'NostrNative'
   s.dependency 'SparkNative'

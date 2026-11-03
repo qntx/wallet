@@ -9,6 +9,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Added
+
+- `@qntx/wallet-native`: iOS native passkeys with the PRF extension through `ASAuthorization`
+  platform credentials (iOS 18+). The kernel now reads a registration's authenticator data from
+  the CBOR attestation object iOS returns, keeps the PRF results of that single ceremony, and
+  reports `factor-unavailable` when the authenticator answers `prf.enabled = false`.
+
 ## [0.6.0] - 2026-11-03
 
 The request pipeline and the wallet gateway: every fund-moving action in `@qntx/wallet-engine` is
