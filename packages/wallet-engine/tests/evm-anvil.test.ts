@@ -23,6 +23,7 @@ import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { bookDeps, replaceVia, send } from "./send-helpers.ts";
 
+const NOSTR_PUBKEY = "a".repeat(64);
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
 
 const anvil = (): string => {
@@ -526,6 +527,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         selectedGroup: () => ({ walletId, groupIndex: 0 }),
         evmAddress: async () => Promise.resolve(from),
         enabledNetworks: () => ["eip155:1"],
+        nostrPubkey: async () => Promise.resolve(NOSTR_PUBKEY),
         invalidate: (origin) => {
           requests.invalidateOrigin(origin);
         },

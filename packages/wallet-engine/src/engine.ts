@@ -226,6 +226,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return account.address;
     },
     enabledNetworks: () => networks.enabled("evm"),
+    nostrPubkey: async (ref) => nostr(options.wallet).signer(ref).getPublicKey(),
     invalidate: (origin) => {
       requests.invalidateOrigin(origin);
     },

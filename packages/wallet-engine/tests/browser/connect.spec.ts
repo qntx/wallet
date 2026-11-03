@@ -35,6 +35,8 @@ const PAGE_URL = "http://localhost:4176/connect.html";
 const ORIGIN = "http://localhost:4176";
 const logger = { warn: () => undefined };
 
+const NOSTR_PUBKEY = "a".repeat(64);
+
 const INFO: ProviderInfo = {
   uuid: "550e8400-e29b-41d4-a716-446655440000",
   name: "Qntx Wallet",
@@ -118,6 +120,10 @@ async function engineRig() {
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET],
+    nostrPubkey: async (ref) => {
+      await Promise.resolve(ref);
+      return NOSTR_PUBKEY;
+    },
     invalidate: (origin) => requests.invalidateOrigin(origin),
   });
   await connections.init();
