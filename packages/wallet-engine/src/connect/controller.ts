@@ -34,6 +34,8 @@ export type ConnectionSession = {
   readonly currentNetwork: string;
   /** The origin's Nostr policy — set when the host approves a `nostr` connection. */
   readonly nostrPolicy?: NostrPolicy;
+  /** The origin's Lightning policy — set when the host approves a `lightning` connection. */
+  readonly lightningPolicy?: LightningPolicy;
   readonly createdAt: number;
   readonly lastUsedAt: number;
 };
@@ -49,13 +51,24 @@ export type NostrPolicy = {
   readonly decrypt: boolean;
 };
 
+/**
+ * How much a `lightning` session may do without per-call approval: `balance` gates `getBalance`
+ * (WebLN). Sending and invoicing always go through their own approvals.
+ */
+export type LightningPolicy = {
+  readonly balance: boolean;
+};
+
 /** `connect` asks for accounts; `network` asks to add a network the session does not cover. */
 export type PendingConnection = {
   readonly id: string;
   readonly origin: ConnectionOrigin;
   readonly kind: "connect" | "network";
-  /** Which namespace the connection is for — `eip155` (EVM accounts) or `nostr` (NIP-07). */
-  readonly namespace: "eip155" | "nostr";
+  /**
+   * Which namespace the connection is for — `eip155` (EVM), `nostr` (NIP-07) or `lightning`
+   * (WebLN).
+   */
+  readonly namespace: "eip155" | "nostr" | "lightning";
   readonly network?: string;
   readonly createdAt: number;
 };
@@ -110,6 +123,16 @@ export const NOSTR_METHODS: ReadonlyArray<string> = [
   "nip44.decrypt",
 ];
 
+/** The `lightning` namespace scope's granted methods — the WebLN surface. */
+export const LIGHTNING_METHODS: ReadonlyArray<string> = [
+  "enable",
+  "getInfo",
+  "sendPayment",
+  "makeInvoice",
+  "lnurl",
+  "getBalance",
+];
+
 /** `eip155:1` → 1; `undefined` for anything that is not an EVM network. */
 export const evmChainId = (network: string): number | undefined => {
   const match = /^eip155:(\d+)$/.exec(network);
@@ -134,9 +157,13 @@ const isSession = (value: unknown): value is ConnectionSession => {
     typeof value["currentNetwork"] === "string" &&
     typeof value["createdAt"] === "number" &&
     typeof value["lastUsedAt"] === "number" &&
-    (value["nostrPolicy"] === undefined || isNostrPolicy(value["nostrPolicy"]))
+    (value["nostrPolicy"] === undefined || isNostrPolicy(value["nostrPolicy"])) &&
+    (value["lightningPolicy"] === undefined || isLightningPolicy(value["lightningPolicy"]))
   );
 };
+
+const isLightningPolicy = (value: unknown): value is LightningPolicy =>
+  isObject(value) && typeof value["balance"] === "boolean";
 
 const isNostrPolicy = (value: unknown): value is NostrPolicy =>
   isObject(value) &&
@@ -322,6 +349,8 @@ export class ConnectionController extends Controller<ConnectionState> {
       readonly network: string;
       /** The `nostr` namespace's grant: the identity's pubkey and the origin's policy. */
       readonly nostr?: { readonly pubkey: string; readonly policy: NostrPolicy };
+      /** The `lightning` namespace's grant: the origin's policy. */
+      readonly lightning?: { readonly policy: LightningPolicy };
     },
   ): Promise<ConnectionSession> {
     const store = this.requireStore();
@@ -350,6 +379,19 @@ export class ConnectionController extends Controller<ConnectionState> {
       scopes["nostr"] = {
         accounts: [`nostr:${identityPubkey}`],
         methods: NOSTR_METHODS,
+        notifications: [],
+      };
+    } else if (entry.namespace === "lightning") {
+      if (grant.lightning === undefined) {
+        throw invalidParams("a lightning connection needs the origin's policy");
+      }
+      const group = this.activeGroup();
+      if (group === undefined) {
+        throw new Error("no account group is selected");
+      }
+      scopes["lightning"] = {
+        accounts: [`spark:${group.walletId}:${String(group.groupIndex)}`],
+        methods: LIGHTNING_METHODS,
         notifications: [],
       };
     } else {
@@ -385,6 +427,7 @@ export class ConnectionController extends Controller<ConnectionState> {
       scopes: { ...existing?.scopes, ...scopes },
       currentNetwork: grant.network,
       ...(grant.nostr === undefined ? {} : { nostrPolicy: grant.nostr.policy }),
+      ...(grant.lightning === undefined ? {} : { lightningPolicy: grant.lightning.policy }),
       createdAt: existing?.createdAt ?? now,
       lastUsedAt: now,
     };
@@ -496,6 +539,11 @@ export class ConnectionController extends Controller<ConnectionState> {
   nostrAccount(origin: string): string | undefined {
     const account = this.session(origin)?.scopes["nostr"]?.accounts[0];
     return account === undefined ? undefined : addressOf(account);
+  }
+
+  /** The origin's persisted Lightning policy — `undefined` until it is lightning-authorized. */
+  lightningPolicy(origin: string): LightningPolicy | undefined {
+    return this.session(origin)?.lightningPolicy;
   }
 
   /**

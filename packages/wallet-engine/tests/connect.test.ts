@@ -8,7 +8,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { chains } from "@qntx/wallet/chains";
 
 import { ConnectionController, SESSION_TTL_MS } from "../src/connect/controller.ts";
-import type { NostrPolicy } from "../src/connect/controller.ts";
+import type { LightningPolicy, NostrPolicy } from "../src/connect/controller.ts";
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import type { Eip1193Event } from "../src/connect/eip1193.ts";
 import { ProviderError } from "../src/connect/errors.ts";
@@ -610,6 +610,41 @@ describe("Eip1193Handler", () => {
       params: [{ eth_accounts: {} }],
     });
     await expect(r.handler.handle(SITE, { method: "eth_accounts" })).resolves.toStrictEqual([]);
+    await r.destroy();
+  });
+});
+
+describe("lightning connections", () => {
+  const pendingLightningId = (r: Awaited<ReturnType<typeof rig>>, origin = SITE): string =>
+    r.connections.pending().find((p) => p.origin.origin === origin)?.id ?? "";
+
+  const lightningConnect = async (
+    r: Awaited<ReturnType<typeof rig>>,
+    policy: LightningPolicy,
+    origin = SITE,
+  ): Promise<void> => {
+    const pending = r.connections.request(origin, "connect", undefined, "lightning");
+    await vi.waitFor(() => {
+      expect(r.connections.pending().some((p) => p.origin.origin === origin)).toBe(true);
+    });
+    const id = pendingLightningId(r, origin);
+    await r.connections.approveConnection(id, {
+      accounts: [],
+      network: "",
+      lightning: { policy },
+    });
+    await pending;
+  };
+
+  it("a lightning approval creates the lightning scope and persists the policy", async () => {
+    const r = await rig();
+    const policy: LightningPolicy = { balance: true };
+    await lightningConnect(r, policy);
+    const session = r.connections.session(SITE);
+    expect(session?.scopes["lightning"]?.accounts).toHaveLength(1);
+    expect(session?.scopes["lightning"]?.methods).toContain("sendPayment");
+    expect(r.connections.lightningPolicy(SITE)).toStrictEqual(policy);
+    expect(r.connections.authorize(SITE, "lightning", "sendPayment")).toBe(session);
     await r.destroy();
   });
 });
