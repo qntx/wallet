@@ -15,6 +15,12 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   produces the fixed injected script plus a `__qntxInstall(<ProviderInfo>)` call, and
   `createBrowserBridge` runs in the host's main runtime to carry page `postMessage` requests to a
   real `Eip1193Handler`, with per-origin rate limiting, message bounds and navigation invalidation.
+- `@qntx/wallet-engine/connect`: a NIP-07 `window.nostr` in the injected provider — `getPublicKey`,
+  `signEvent` and `nip04`/`nip44` encrypt/decrypt — routed through the same bridge to a new
+  `Nip07Handler` (`engine.nip07`). A `nostr` connection namespace carries the active identity and a
+  per-origin `NostrPolicy`; `signEvent` signs directly when the policy allows, otherwise a
+  `nostr-sign` request through the pipeline (forced confirmation for kinds 0, 3, 5 and 10002) and
+  `decrypt` additionally needs the `decrypt` grant.
 
 ## [0.7.0] - 2026-11-03
 
@@ -27,6 +33,9 @@ and backups change format with no migration: recreate existing vaults.
 
 ### Changed
 
+- BREAKING: the in-app-browser page→host message now requires a `provider` field —
+  `"eip1193"` for `window.ethereum` and `"nostr"` for `window.nostr` — and the bridge routes by it;
+  a message without it is dropped as malformed.
 - BREAKING: `NostrKeyRef`, `nostr.deriveKey`, `nostr.discover` and the `nostr-key` record header
   now carry an `index` (a NIP-06 identity index) instead of `groupIndex`: identities derive
   independently of account groups. `VAULT_FORMAT` 3, `PROTOCOL_VERSION` 2; no migration — existing
