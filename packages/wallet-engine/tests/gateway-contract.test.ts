@@ -7,6 +7,15 @@ import {
   EVM_RPC_METHODS,
   NETWORKS,
   RPC_BATCH_MAX,
+  accepts,
+  applyDiff,
+  contains,
+  decodeHashList,
+  difference,
+  encodeHashList,
+  hashCount,
+  hashList,
+  union,
   SOLANA_RPC_METHODS,
   caip2,
   esploraBasePath,
@@ -19,6 +28,12 @@ import {
   installId,
   networkById,
   networksPath,
+  PHISHING_MAX_PATH_SEGMENTS,
+  phishingCandidates,
+  phishingHash,
+  phishingKey,
+  phishingList,
+  phishingListResponse,
   rpc,
   rpcPath,
   rpcRequest,
@@ -27,6 +42,8 @@ import {
   servedNetworksResponse,
   solanaRpcRequest,
 } from "../src/gateway/contract/index.ts";
+import type { HashList } from "../src/gateway/contract/index.ts";
+import { listOf } from "./phishing-helpers.ts";
 
 const call = (method: string, id: number | string | null = 1, params: unknown[] = []) => ({
   jsonrpc: "2.0" as const,
@@ -261,5 +278,203 @@ describe("path helpers", () => {
     expect(esploraPost.path.replace(":caip2", id)).toBe(`${esploraBasePath(id)}/tx`);
     expect(networksPath).toBe(servedNetworks.path);
     expect(networksPath).toBe("/v1/networks");
+  });
+});
+
+describe("phishing list contract", () => {
+  it.each([
+    ["Example.COM", "example.com"],
+    ["  example.com  ", "example.com"],
+    ["*.example.com", "example.com"],
+    ["example.com.", "example.com"],
+    ["example.com/", "example.com"],
+    ["bücher.example", "xn--bcher-kva.example"],
+    ["coinbase_prologin1.godaddysites.com", "coinbase_prologin1.godaddysites.com"],
+    [
+      "sites.google.com/view/launch-trezor-desktop-app",
+      "sites.google.com/view/launch-trezor-desktop-app",
+    ],
+    ["Sites.Google.com/View/Case/", "sites.google.com/View/Case"],
+    ["a.com//b///c", "a.com/b/c"],
+  ])("normalizes %s to %s", (entry, key) => {
+    expect(phishingKey(entry)).toBe(key);
+  });
+
+  it.each([
+    "https://example.com",
+    "http://example.com",
+    "example.com:8080",
+    "example.com:443/path",
+    "example.com?x=1",
+    "example.com/path?x=1",
+    "example.com#top",
+    "user@example.com",
+    "exa mple.com",
+    String.raw`example.com\path`,
+    "localhost",
+    "",
+    "*.",
+    "a..com",
+    `example.com/${Array.from({ length: PHISHING_MAX_PATH_SEGMENTS + 1 }, () => "s").join("/")}`,
+  ])("drops the entry %j", (entry) => {
+    expect(phishingKey(entry)).toBeUndefined();
+  });
+
+  it("keeps a path of exactly the segment limit", () => {
+    const path = Array.from({ length: PHISHING_MAX_PATH_SEGMENTS }, () => "s").join("/");
+    expect(phishingKey(`example.com/${path}`)).toBe(`example.com/${path}`);
+  });
+
+  it("hashes to the first 8 bytes of SHA-256 over the key", () => {
+    expect(phishingHash("example.com")).toStrictEqual(
+      Uint8Array.from([0xa3, 0x79, 0xa6, 0xf6, 0xee, 0xaf, 0xb9, 0xa5]),
+    );
+    expect(phishingHash("sites.google.com/view/launch-trezor-desktop-app")).toStrictEqual(
+      Uint8Array.from([0x7b, 0x65, 0x7d, 0xc5, 0x38, 0x28, 0x1f, 0xe9]),
+    );
+  });
+
+  it("lists candidates from the deepest path to the registrable parents", () => {
+    expect(phishingCandidates("https://Sites.Google.com/view/x/y?q=1#f")).toStrictEqual([
+      "sites.google.com/view/x/y",
+      "sites.google.com/view/x",
+      "sites.google.com/view",
+      "sites.google.com",
+      "google.com",
+    ]);
+    expect(phishingCandidates("https://a.b.example.co.uk./")).toStrictEqual([
+      "a.b.example.co.uk",
+      "b.example.co.uk",
+      "example.co.uk",
+      "co.uk",
+    ]);
+    expect(phishingCandidates("http://example.com")).toStrictEqual(["example.com"]);
+  });
+
+  it("caps candidate paths at the segment limit", () => {
+    const segments = Array.from(
+      { length: PHISHING_MAX_PATH_SEGMENTS + 3 },
+      (_, i) => `s${String(i)}`,
+    );
+    const candidates = phishingCandidates(`https://example.com/${segments.join("/")}`);
+    expect(candidates[0]).toBe(
+      `example.com/${segments.slice(0, PHISHING_MAX_PATH_SEGMENTS).join("/")}`,
+    );
+    expect(candidates).toHaveLength(PHISHING_MAX_PATH_SEGMENTS + 1);
+  });
+
+  it("gives an IP address only its full host", () => {
+    expect(phishingCandidates("http://192.168.1.10/login")).toStrictEqual(["192.168.1.10"]);
+    expect(phishingCandidates("http://[2001:db8::1]/login")).toStrictEqual(["[2001:db8::1]"]);
+  });
+
+  it.each(["ftp://example.com", "file:///etc/hosts", "data:text/html,x", "not a url", ""])(
+    "gives %j no candidates",
+    (url) => {
+      expect(phishingCandidates(url)).toStrictEqual([]);
+    },
+  );
+
+  it("accepts the three response kinds and rejects malformed ones", () => {
+    const hashes = "AAAAAAAAAAA=";
+    const delta = { add: hashes, remove: "" };
+    for (const body of [
+      { kind: "current", version: 1 },
+      { kind: "diff", from: 1, version: 2, deny: delta, allow: delta },
+      { kind: "snapshot", version: 2, deny: hashes, allow: "" },
+    ]) {
+      expect(accepts(phishingListResponse, body)).toBe(true);
+    }
+    for (const body of [
+      { kind: "current" },
+      { kind: "current", version: -1 },
+      { kind: "current", version: 1.5 },
+      { kind: "snapshot", version: 1, deny: "not base64!", allow: "" },
+      { kind: "diff", from: 1, version: 2, deny: delta },
+      { kind: "other", version: 1 },
+    ]) {
+      expect(accepts(phishingListResponse, body)).toBe(false);
+    }
+  });
+
+  it("takes an optional decimal since", () => {
+    expect(accepts(phishingList.request, {})).toBe(true);
+    expect(accepts(phishingList.request, { since: "1700000000000" })).toBe(true);
+    for (const since of ["", "-1", "1.5", "abc", "1234567890123456"]) {
+      expect(accepts(phishingList.request, { since })).toBe(false);
+    }
+  });
+});
+
+const keysIn = (list: HashList, candidates: ReadonlyArray<string>): string[] =>
+  candidates.filter((key) => contains(list, phishingHash(key)));
+
+describe("hash lists", () => {
+  it("round-trips a sorted list through base64", () => {
+    const list = listOf(["a.com", "b.com", "c.com"]);
+    expect(decodeHashList(encodeHashList(list))).toStrictEqual(list);
+  });
+
+  it("treats the empty string as an empty list", () => {
+    expect(decodeHashList("")).toStrictEqual(new Uint8Array());
+    expect(contains(new Uint8Array(), phishingHash("a.com"))).toBe(false);
+  });
+
+  it("rejects a length that is not a multiple of 8", () => {
+    expect(decodeHashList(encodeHashList(new Uint8Array(12)))).toBeUndefined();
+    expect(decodeHashList(encodeHashList(new Uint8Array([1, 2, 3])))).toBeUndefined();
+  });
+
+  it("rejects unsorted, duplicated and non-base64 input", () => {
+    const sorted = listOf(["a.com", "b.com"]);
+    const swapped = new Uint8Array([...sorted.subarray(8), ...sorted.subarray(0, 8)]);
+    const duplicated = new Uint8Array([...sorted.subarray(0, 8), ...sorted.subarray(0, 8)]);
+    expect(decodeHashList(encodeHashList(swapped))).toBeUndefined();
+    expect(decodeHashList(encodeHashList(duplicated))).toBeUndefined();
+    expect(decodeHashList("not base64!")).toBeUndefined();
+  });
+
+  it("finds exactly the members", () => {
+    const keys = Array.from({ length: 200 }, (_, i) => `host${String(i)}.com`);
+    const list = listOf(keys);
+    expect(keysIn(list, keys)).toHaveLength(200);
+    expect(keysIn(list, ["other.com", "host200.com", "host.com"])).toStrictEqual([]);
+  });
+
+  it("applies a diff as (list - remove) + add, keeping order", () => {
+    const list = listOf(["a.com", "b.com", "c.com"]);
+    const next = applyDiff(list, listOf(["d.com", "b.com"]), listOf(["a.com", "missing.com"]));
+    expect(next).toStrictEqual(listOf(["b.com", "c.com", "d.com"]));
+    expect(decodeHashList(encodeHashList(next))).toStrictEqual(next);
+  });
+
+  it("builds a sorted, deduplicated set from any order", () => {
+    const hashes = ["c.com", "a.com", "b.com", "a.com"].map((key) => phishingHash(key));
+    const list = hashList(hashes);
+    expect(list).toHaveLength(24);
+    expect(hashCount(list)).toBe(3);
+    expect(decodeHashList(encodeHashList(list))).toStrictEqual(list);
+    expect(hashList([])).toStrictEqual(new Uint8Array());
+  });
+
+  it("takes the union of two sets", () => {
+    expect(union(listOf(["a.com", "b.com"]), listOf(["b.com", "c.com"]))).toStrictEqual(
+      listOf(["a.com", "b.com", "c.com"]),
+    );
+    expect(union(listOf(["a.com"]), new Uint8Array())).toStrictEqual(listOf(["a.com"]));
+  });
+
+  it("takes the difference of two sets", () => {
+    expect(
+      difference(listOf(["a.com", "b.com", "c.com"]), listOf(["b.com", "x.com"])),
+    ).toStrictEqual(listOf(["a.com", "c.com"]));
+    expect(difference(listOf(["a.com"]), listOf(["a.com"]))).toStrictEqual(new Uint8Array());
+    expect(difference(new Uint8Array(), listOf(["a.com"]))).toStrictEqual(new Uint8Array());
+  });
+
+  it("applies empty diffs as the identity", () => {
+    const list = listOf(["a.com"]);
+    expect(applyDiff(list, new Uint8Array(), new Uint8Array())).toStrictEqual(list);
+    expect(applyDiff(new Uint8Array(), listOf(["a.com"]), new Uint8Array())).toStrictEqual(list);
   });
 });
