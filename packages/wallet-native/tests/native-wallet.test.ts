@@ -305,13 +305,16 @@ describe("kernel restarts", () => {
     const { wallet, hosts } = await openWallet();
     await createMnemonicWallet(wallet);
     expect(hosts).toHaveLength(1);
-    for (const round of [2, 3]) {
-      await wallet.vault.lock();
-      expect(wallet.getSnapshot().vault).toBe("locked");
-      await wallet.vault.unlock();
-      expect(wallet.getSnapshot().vault).toBe("unlocked");
-      expect(hosts).toHaveLength(round);
-    }
+    await wallet.vault.lock();
+    expect(wallet.getSnapshot().vault).toBe("locked");
+    await wallet.vault.unlock();
+    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(hosts).toHaveLength(2);
+    await wallet.vault.lock();
+    expect(wallet.getSnapshot().vault).toBe("locked");
+    await wallet.vault.unlock();
+    expect(wallet.getSnapshot().vault).toBe("unlocked");
+    expect(hosts).toHaveLength(3);
     expect(hosts.slice(0, -1).every((host) => host.locked())).toBe(true);
   });
 
@@ -320,9 +323,7 @@ describe("kernel restarts", () => {
     const first = await createMnemonicWallet(wallet);
     await wallet.wallets.delete(first.walletId, { kind: "hardware" });
     expect(wallet.getSnapshot().wallets).toHaveLength(0);
-    if (wallet.getSnapshot().vault === "locked") {
-      await wallet.vault.unlock();
-    }
+    expect(wallet.getSnapshot().vault).toBe("unlocked");
     const imported = await wallet.wallets.importMnemonic({ mnemonic: first.phrase });
     expect(imported.walletId).toBe(first.walletId);
     expect(wallet.getSnapshot().vault).toBe("unlocked");
