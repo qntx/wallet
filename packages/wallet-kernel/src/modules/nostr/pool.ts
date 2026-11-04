@@ -83,8 +83,9 @@ export function nsecFromSecretKey(secretKey: Uint8Array): Uint8Array {
 /**
  * Export `ncryptsec` at logN 16 with key security byte 0x02 ("the client does not track this" in
  * NIP-49's terms): the kernel does not track a key's handling history and any key can be exported
- * as plaintext nsec, so 0x01 would never be honest. Salt and nonce come from the library's RNG
- * (noble randomBytes); not injectable in 0.14.
+ * as plaintext nsec, so 0x01 would never be honest. `nip49Encrypt` draws its salt and nonce from
+ * `crypto.getRandomValues`, which the kernel runtime installs natively (the same source as
+ * `__qntx.random`; in a Web Worker, the platform CSPRNG), so no API-level injection is needed.
  */
 export async function ncryptsecFromSecretKey(
   secretKey: Uint8Array,
