@@ -1,4 +1,4 @@
-import { expect, it, describe, vi } from "vitest";
+import { describe, expect, it } from "vite-plus/test";
 
 import { invalidParams } from "../src/connect/errors.ts";
 import { SolanaWalletHandler } from "../src/connect/solana.ts";
@@ -10,14 +10,16 @@ const TX = new Uint8Array([1, 2, 3, 4]);
 const PUBKEY = new Uint8Array(32).fill(2);
 
 const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
-  const session = options.session;
+  const { session } = options;
   const requestsCalls: unknown[] = [];
   const handler = new SolanaWalletHandler({
     connections: {
-      checkOrigin: (origin) => ORIGIN,
+      checkOrigin: (_origin) => ORIGIN,
       session: () => session as never,
       authorize: () => {
-        if (session === undefined) throw invalidParams("test unauthorized");
+        if (session === undefined) {
+          throw invalidParams("test unauthorized");
+        }
         return session as never;
       },
       solanaAccount: () => (session === undefined ? undefined : SOL_ADDR),
@@ -27,7 +29,7 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       },
       touch: async () => Promise.resolve(),
       revoke: async () => Promise.resolve(),
-      getState: () => ({ sessions: {}, pending: {} }) as never,
+      getState: () => ({ sessions: {}, pending: {} }),
       store: { subscribe: () => () => undefined } as never,
     },
     requests: {
@@ -38,7 +40,10 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       },
       outcome: async () => Promise.resolve(options.prepareResult as never),
     },
-    solanaAccount: async () => ({ address: SOL_ADDR, publicKey: PUBKEY }),
+    solanaAccount: async () => {
+      await Promise.resolve();
+      return { address: SOL_ADDR, publicKey: PUBKEY };
+    },
     activeGroup: () => ({ walletId: "w1", groupIndex: 0 }),
     solanaNetwork: () => "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   });
@@ -53,7 +58,7 @@ describe("SolanaWalletHandler", () => {
         method: "solana:signMessage",
         params: { message: new Uint8Array([1]) },
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("test unauthorized");
   });
 
   it("standard:connect requests a solana connection then returns the wallet account", async () => {
@@ -63,7 +68,7 @@ describe("SolanaWalletHandler", () => {
       accounts: [{ address: SOL_ADDR, chains: ["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp"] }],
     });
     expect(
-      (result as { accounts: { publicKey: Uint8Array }[] }).accounts[0].publicKey,
+      (result as { accounts: Array<{ publicKey: Uint8Array }> }).accounts[0]?.publicKey,
     ).toStrictEqual(PUBKEY);
   });
 
@@ -120,7 +125,7 @@ describe("SolanaWalletHandler", () => {
         method: "solana:signTransaction",
         params: { transactions: ["not-bytes"] },
       }),
-    ).rejects.toThrow();
+    ).rejects.toThrow("each transaction");
     expect(requestsCalls).toHaveLength(0);
   });
 
