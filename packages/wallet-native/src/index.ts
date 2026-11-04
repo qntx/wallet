@@ -14,10 +14,12 @@ import type { KernelHost } from "./specs/kernel-host.nitro.ts";
 
 export type NativeWalletOptions = WalletOptions & {
   /**
-   * The Nitro `KernelHost` hybrid object (or a like-shaped fake for tests). Defaults to
+   * Creates one `KernelHost` per kernel runtime (a Nitro hybrid object, or a like-shaped fake for
+   * tests). A host lives for a single runtime: after a lock or a crash it is spent, and the wallet
+   * asks for a new one for the next unlock. Defaults to
    * `NitroModules.createHybridObject("KernelHost")` — the only Nitro-registered object.
    */
-  readonly host?: KernelHostLike;
+  readonly createHost?: () => KernelHostLike;
 };
 
 const setTimer: SetTimer = (delayMs, fn) => {
@@ -27,24 +29,24 @@ const setTimer: SetTimer = (delayMs, fn) => {
   };
 };
 
-async function defaultHost(): Promise<KernelHostLike> {
+async function defaultHostFactory(): Promise<() => KernelHostLike> {
   const { NitroModules } = await import("react-native-nitro-modules");
-  return NitroModules.createHybridObject<KernelHost>("KernelHost");
+  return () => NitroModules.createHybridObject<KernelHost>("KernelHost");
 }
 
 export async function createNativeWallet(options: NativeWalletOptions): Promise<Wallet> {
   const { autoLock } = options;
-  const host = options.host ?? (await defaultHost());
   if (autoLock.platform !== "native") {
     throw new WalletError(
       "invalid-input",
       "createNativeWallet accepts only the native autoLock policy",
     );
   }
+  const createHost = options.createHost ?? (await defaultHostFactory());
   // The native host owns the auto-lock signal: the platform layer calls host.lock() on
   // background expiry — the kernel never sees a presence source here.
   return connectKernel({
-    spawn: () => spawnFromHost(host, autoLock.backgroundSeconds),
+    spawn: () => spawnFromHost(createHost(), autoLock.backgroundSeconds),
     factors: "hardware",
     passkey: options.passkey,
     verifyEvent: options.verifyEvent,

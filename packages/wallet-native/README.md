@@ -73,6 +73,9 @@ const wallet = await createNativeWallet({
   salt for the cloud-backup factor — a third, distinct permanent label.
 - `autoLock` — must be `{ platform: "native", backgroundSeconds }`. The native host owns the
   signal: it calls `host.lock()` when the app has spent `backgroundSeconds` in the background.
+- `createHost` — optional factory for the `KernelHost` (a like-shaped fake in tests). A host serves one
+  kernel runtime: after a lock, a wallet deletion or a crash it is spent, and the wallet calls the
+  factory again for the next unlock.
   A platform authentication prompt on screen does **not** count as background time.
 - `verifyEvent` — required. Checks every event the kernel signs before it is returned. There is no
   default: `@qntx/nostr`'s own verifier is the pure-JS noble backend, slow on Hermes. Pass the
