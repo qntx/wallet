@@ -22,12 +22,13 @@ provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is re
 
 ## Phishing list
 
-A cron trigger (`17 * * * *`) runs `buildPhishingList` every hour: it fetches every source, keeps
+`buildPhishingList` (the `scheduled` handler) fetches every source, keeps
 the entries `phishingKey` accepts, hashes them to 8 bytes, and — only when the merged deny or allow
 set changed — writes `phishing:snapshot` and then `phishing:journal` to the `RISK` KV namespace. The
 journal keeps 7 days and at most 168 entries; a request with `since` inside it gets one folded diff.
 A failing source, or a deny list that shrank by more than half, skips the build and logs one JSON
-line. Staging KV namespace: `wallet-gateway-staging-risk`.
+line. The build is not scheduled yet: staging has no cron trigger until its hosting is decided.
+Staging KV namespace: `wallet-gateway-staging-risk`.
 
 | Source                                                                                            | License                                                                                                                 | Used                                         |
 | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |

@@ -12,7 +12,6 @@
       "preview_urls": false,
       "routes": [{ "pattern": "wallet-gateway-staging.qntx.org", "custom_domain": true }],
       "vars": { "CORS_ORIGINS": "http://localhost:5173,http://localhost:8081" },
-      "triggers": { "crons": ["17 * * * *"] },
       "kv_namespaces": [
         {
           "binding": "RISK",
