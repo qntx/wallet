@@ -7,6 +7,8 @@ import type { NostrKeyRef } from "@qntx/wallet";
 
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import type { PhishingController } from "../phishing/controller.ts";
+import { PHISHING_BLOCKED_MESSAGE } from "../phishing/status.ts";
 import type { EngineStore } from "../store/port.ts";
 import {
   internalError,
@@ -98,6 +100,7 @@ export type ConnectionControllerOptions = {
   readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
   /** Voids a page's unfinished requests (revoked, or its network changed). */
   readonly invalidate: (origin: string) => void;
+  readonly phishing: Pick<PhishingController, "check">;
 };
 
 const COLLECTION = "connections";
@@ -269,7 +272,10 @@ export class ConnectionController extends Controller<ConnectionState> {
     this.options.invalidate(origin);
   }
 
-  /** Throws `4100` unless `origin` is `https://host[:port]` (or localhost in development). */
+  /**
+   * Throws `4100` unless `origin` is `https://host[:port]` (or localhost in development) and not on
+   * the phishing list.
+   */
   checkOrigin(origin: string): ConnectionOrigin {
     let url: URL;
     try {
@@ -283,6 +289,9 @@ export class ConnectionController extends Controller<ConnectionState> {
       (url.protocol !== "https:" && !(localhost && this.options.allowLocalhost))
     ) {
       throw unauthorized("origin not allowed");
+    }
+    if (this.options.phishing.check(origin) === "blocked") {
+      throw unauthorized(PHISHING_BLOCKED_MESSAGE);
     }
     return { kind: "browser", origin };
   }
@@ -370,6 +379,12 @@ export class ConnectionController extends Controller<ConnectionState> {
     const waiter = this.waiters.get(id);
     if (entry === undefined || waiter === undefined) {
       throw new Error(`unknown connection request ${id}`);
+    }
+    if (this.options.phishing.check(entry.origin.origin) === "blocked") {
+      const blocked = unauthorized(PHISHING_BLOCKED_MESSAGE);
+      this.dropPending(id);
+      waiter.reject(blocked);
+      throw blocked;
     }
     if (entry.kind === "network" && entry.network !== grant.network) {
       throw new Error(`connection request ${id} is for ${String(entry.network)}`);

@@ -59,6 +59,7 @@ export const requestsFor = async (
     return existing;
   }
   const created = new RequestController({
+    phishing: { check: () => "clear" },
     transactions,
     ...bookDeps(),
     spark: noSpark,

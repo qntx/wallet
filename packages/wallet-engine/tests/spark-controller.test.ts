@@ -7,13 +7,15 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
+import { PHISHING_REFRESH_MS } from "../src/phishing/controller.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { SparkControllerError } from "../src/spark/errors.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { encodePaymentNote } from "../src/spark/notes.ts";
 import type { PaymentNote } from "../src/spark/notes.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
+import { b64 } from "./phishing-helpers.ts";
 
 const PK = new Uint8Array(33).fill(2);
 const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest" };
@@ -600,6 +602,9 @@ describe("event claims", () => {
   }, 15_000);
 });
 
+const armedRefreshes = (timers: ReadonlyArray<{ ms: number; cancelled: boolean }>): number =>
+  timers.filter((t) => t.ms === PHISHING_REFRESH_MS && !t.cancelled).length;
+
 describe("lock transition serialization", () => {
   type FakeWallet = {
     vault: string;
@@ -637,6 +642,7 @@ describe("lock transition serialization", () => {
     const client = fakeClient(calls);
     const clientCount = 0;
     const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
       verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,
@@ -666,12 +672,51 @@ describe("lock transition serialization", () => {
     void clientCount;
   });
 
+  it("loads the phishing list while locked and stops refreshing on unsubscribe", async () => {
+    const w = wallet("locked");
+    const timers: Array<{ ms: number; cancelled: boolean }> = [];
+    const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
+      gateway: { url: "https://gateway.test", installId: "0123456789abcdef0123456789abcdef" },
+      verifyEvent,
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
+      wallet: w as never,
+      sparkNetwork: "regtest",
+      sparkApis: {
+        signer: () => null as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () =>
+        Promise.resolve(
+          Response.json({ kind: "snapshot", version: 1, deny: b64(["evil.com"]), allow: "" }),
+        ),
+      random: (n) => new Uint8Array(n),
+      now: () => 0,
+      setTimer: (ms) => {
+        const timer = { ms, cancelled: false };
+        timers.push(timer);
+        return () => {
+          timer.cancelled = true;
+        };
+      },
+      logger: LOGGER,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(engine.phishing.check("https://evil.com/")).toBe("blocked");
+    expect(armedRefreshes(timers)).toBe(1);
+    engine.unsubscribe();
+    expect(armedRefreshes(timers)).toBe(0);
+  });
+
   it("openStore failure resets and the next unlock retries", async () => {
     const w = wallet("locked");
     let failures = 0;
     let opens = 0;
     const warnings: unknown[] = [];
     const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
       verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,
@@ -720,6 +765,7 @@ describe("createWalletEngine lifecycle", () => {
       },
     };
     const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
       verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,

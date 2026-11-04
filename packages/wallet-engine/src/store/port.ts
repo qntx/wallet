@@ -15,4 +15,13 @@ export type EngineStore = {
   readonly close: () => Promise<void>;
 };
 
+/**
+ * Non-secret device data (the phishing list, the origins the user trusts): available while the
+ * wallet is locked, and the host may keep it unencrypted. Never put anything secret in it.
+ */
+export type PublicStore = {
+  readonly get: (key: string) => Promise<Uint8Array | undefined>;
+  readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
+};
+
 export { EngineStoreError } from "../errors.ts";

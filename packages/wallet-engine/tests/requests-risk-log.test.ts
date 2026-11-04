@@ -108,6 +108,7 @@ function world() {
   });
   let now = 1000;
   const requests = new RequestController({
+    phishing: { check: () => "clear" },
     transactions,
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),

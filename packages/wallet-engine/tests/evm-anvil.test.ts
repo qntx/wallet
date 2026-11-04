@@ -510,6 +510,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       });
       await transactions.init();
       const requests = new RequestController({
+        phishing: { check: () => "clear" },
         transactions,
         ...bookDeps(),
         spark: {} as SparkController,
@@ -526,6 +527,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       });
       await requests.init();
       const connections = new ConnectionController({
+        phishing: { check: () => "clear" },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random,
         now: () => 1000,

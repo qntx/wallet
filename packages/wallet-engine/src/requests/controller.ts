@@ -1,6 +1,3 @@
-import type { Event, UnsignedEvent } from "@qntx/nostr";
-import { WalletError } from "@qntx/wallet";
-import type { NostrKeyRef } from "@qntx/wallet";
 /**
  * Request pipeline for internal sends, speed-ups, cancellations and CPFP: `prepare` builds,
  * estimates and cross-checks without signing; `approve(id, method, verify)` is the only way to
@@ -8,6 +5,9 @@ import type { NostrKeyRef } from "@qntx/wallet";
  * that has not finished. The unsigned content stays in a private table, never in the state
  * snapshot, and cannot change after prepare.
  */
+import type { Event, UnsignedEvent } from "@qntx/nostr";
+import { WalletError } from "@qntx/wallet";
+import type { NostrKeyRef } from "@qntx/wallet";
 import type { SignRequest } from "@qntx/wallet-chains";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -21,6 +21,8 @@ import { preparePay } from "../payments/pay.ts";
 import type { PayParams } from "../payments/pay.ts";
 import { prepareZapAction } from "../payments/zap.ts";
 import type { PreparedZap } from "../payments/zap.ts";
+import type { PhishingController } from "../phishing/controller.ts";
+import { PHISHING_BLOCKED_MESSAGE } from "../phishing/status.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { SPARK_L1_NETWORK } from "../spark/l1.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -38,7 +40,7 @@ import type {
 import { newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
-import { assessRecipients } from "./risk.ts";
+import { assessRecipients, mergeRisk, originRisk } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
@@ -271,6 +273,7 @@ export type RequestControllerOptions = {
   readonly logger: EngineLogger;
   /** Signs a Nostr event for `nostr-sign` — `nostr(wallet).signer(ref).signEvent`. */
   readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event>;
+  readonly phishing: Pick<PhishingController, "check">;
   /** Signs/broadcasts a `solana-sign` request — `chains.sign` per tx, then the Solana adapter. */
   readonly solanaSign: (
     account: { readonly walletId: string; readonly groupIndex: number; readonly address: string },
@@ -319,24 +322,18 @@ type Built = {
   readonly run: Run;
 };
 
+/** What an approved request resolves with, whichever kind it is. */
+export type RequestResult =
+  | TrackedTransaction
+  | SparkResult
+  | SignatureResult
+  | NostrSignResult
+  | WeblnInvoiceResult
+  | SolanaSignResult;
+
 type Settler = {
-  readonly promise: Promise<
-    | TrackedTransaction
-    | SparkResult
-    | SignatureResult
-    | NostrSignResult
-    | WeblnInvoiceResult
-    | SolanaSignResult
-  >;
-  readonly resolve: (
-    value:
-      | TrackedTransaction
-      | SparkResult
-      | SignatureResult
-      | NostrSignResult
-      | WeblnInvoiceResult
-      | SolanaSignResult,
-  ) => void;
+  readonly promise: Promise<RequestResult>;
+  readonly resolve: (value: RequestResult) => void;
   readonly reject: (error: Error) => void;
 };
 
@@ -347,7 +344,6 @@ type Entry = {
 
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
 
-/** The input's browser origin, when it carries one (`evm-sign`/`nostr-sign`/`webln-invoice`/`pay`). */
 const solanaDecode = (account: SolanaAccount, network: string, message: Uint8Array): unknown => {
   try {
     const request = normalizeSolana(
@@ -373,6 +369,7 @@ const solanaDecode = (account: SolanaAccount, network: string, message: Uint8Arr
   }
 };
 
+/** The input's browser origin, when it carries one (`evm-sign`/`nostr-sign`/`webln-invoice`/`pay`). */
 const browserOriginOf = (input: RequestInput): BrowserOrigin | undefined =>
   "origin" in input ? input.origin : undefined;
 
@@ -457,6 +454,11 @@ export class RequestController extends Controller<RequestControllerState> {
     // concurrent prepares cannot both pass.
     const target = "txId" in input ? input.txId : undefined;
     const browserOrigin = browserOriginOf(input);
+    const originStatus =
+      browserOrigin === undefined ? "clear" : this.options.phishing.check(browserOrigin.origin);
+    if (originStatus === "blocked") {
+      throw new Error(PHISHING_BLOCKED_MESSAGE);
+    }
     if (browserOrigin !== undefined) {
       const key = originKey(browserOrigin);
       if (this.targets.has(key)) {
@@ -495,7 +497,7 @@ export class RequestController extends Controller<RequestControllerState> {
       display: built.display,
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
-      risk: built.risk,
+      risk: mergeRisk(built.risk, originRisk(originStatus)),
       createdAt,
       expiresAt: createdAt + REQUEST_TTL_MS,
     };
@@ -514,16 +516,7 @@ export class RequestController extends Controller<RequestControllerState> {
    * Resolves with what `approve` returned, or rejects with `RequestEndedError` when the request
    * ends any other way — how a dApp's pending call learns the outcome.
    */
-  async outcome(
-    id: string,
-  ): Promise<
-    | TrackedTransaction
-    | SparkResult
-    | SignatureResult
-    | NostrSignResult
-    | WeblnInvoiceResult
-    | SolanaSignResult
-  > {
+  async outcome(id: string): Promise<RequestResult> {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -533,14 +526,7 @@ export class RequestController extends Controller<RequestControllerState> {
 
   private openSettler(id: string): void {
     const holder: { resolve?: Settler["resolve"]; reject?: Settler["reject"] } = {};
-    const promise = new Promise<
-      | TrackedTransaction
-      | SparkResult
-      | SignatureResult
-      | NostrSignResult
-      | WeblnInvoiceResult
-      | SolanaSignResult
-    >((resolve, reject) => {
+    const promise = new Promise<RequestResult>((resolve, reject) => {
       holder.resolve = resolve;
       holder.reject = reject;
     });
@@ -553,17 +539,7 @@ export class RequestController extends Controller<RequestControllerState> {
     });
   }
 
-  private settle(
-    id: string,
-    result:
-      | TrackedTransaction
-      | SparkResult
-      | SignatureResult
-      | NostrSignResult
-      | WeblnInvoiceResult
-      | SolanaSignResult
-      | Error,
-  ): void {
+  private settle(id: string, result: RequestResult | Error): void {
     const settler = this.settlers.get(id);
     if (settler === undefined) {
       return;
@@ -789,14 +765,7 @@ export class RequestController extends Controller<RequestControllerState> {
     id: string,
     method: RequestMethod,
     verify?: SendParams["verify"],
-  ): Promise<
-    | TrackedTransaction
-    | SparkResult
-    | SignatureResult
-    | NostrSignResult
-    | WeblnInvoiceResult
-    | SolanaSignResult
-  > {
+  ): Promise<RequestResult> {
     const request = this.getState().requests[id];
     if (request === undefined) {
       throw new Error(`unknown request ${id}`);
@@ -811,6 +780,13 @@ export class RequestController extends Controller<RequestControllerState> {
     if (this.options.now() >= request.expiresAt) {
       this.finish(id, "expired");
       throw new Error(`request ${id} expired`);
+    }
+    if (
+      request.origin.kind === "browser" &&
+      this.options.phishing.check(request.origin.origin) === "blocked"
+    ) {
+      this.finish(id, "failed", PHISHING_BLOCKED_MESSAGE);
+      throw new Error(PHISHING_BLOCKED_MESSAGE);
     }
     const { session } = this;
     this.put({ ...request, stage: "signing" });
@@ -947,13 +923,7 @@ export class RequestController extends Controller<RequestControllerState> {
     request: PendingRequest,
     outcome: SignLogOutcome,
     error?: string,
-    result?:
-      | TrackedTransaction
-      | SparkResult
-      | SignatureResult
-      | NostrSignResult
-      | WeblnInvoiceResult
-      | SolanaSignResult,
+    result?: RequestResult,
   ): void {
     const { display } = request;
     const eventId =

@@ -146,6 +146,7 @@ async function engineRig() {
   });
   await transactions.init();
   const requests = new RequestController({
+    phishing: { check: () => "clear" },
     transactions,
     ...bookDeps(),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a createInvoice stub suffices
@@ -180,6 +181,7 @@ async function engineRig() {
   });
   await requests.init();
   const connections = new ConnectionController({
+    phishing: { check: () => "clear" },
     openStore: memoryStore,
     random,
     now: () => Date.now(),

@@ -1,12 +1,38 @@
+import type { PhishingStatus } from "../phishing/status.ts";
+
 /**
- * Recipient risk, pure: a recipient the wallet has never paid or saved is a `warning`; one that
- * looks like a known address (same first and last four characters, different address) is a `danger`
- * — the shape of an address-poisoning lookalike. Both can apply to one recipient.
+ * Request risk, pure. A recipient the wallet has never paid or saved is a `warning`; one that looks
+ * like a known address (same first and last four characters, different address) is a `danger` — the
+ * shape of an address-poisoning lookalike. Both can apply to one recipient. A page the user trusts
+ * despite the phishing list is a `danger`; one that could not be checked is a `warning`.
  */
 export type RiskFinding = {
-  readonly code: "first-recipient" | "address-poisoning";
+  readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked";
   readonly level: "warning" | "danger";
 };
+
+const byDanger = (findings: ReadonlyArray<RiskFinding>): ReadonlyArray<RiskFinding> =>
+  [...findings].sort((a, b) => Number(b.level === "danger") - Number(a.level === "danger"));
+
+/** The finding for a browser origin's phishing status, if any; `blocked` never reaches a request. */
+export function originRisk(status: PhishingStatus): ReadonlyArray<RiskFinding> {
+  if (status === "trusted") {
+    return [{ code: "phishing-origin", level: "danger" }];
+  }
+  return status === "unchecked" ? [{ code: "phishing-unchecked", level: "warning" }] : [];
+}
+
+/** `findings` plus `extra`, deduplicated by code, `danger` first. */
+export function mergeRisk(
+  findings: ReadonlyArray<RiskFinding>,
+  extra: ReadonlyArray<RiskFinding>,
+): ReadonlyArray<RiskFinding> {
+  const byCode = new Map<RiskFinding["code"], RiskFinding>();
+  for (const finding of [...findings, ...extra]) {
+    byCode.set(finding.code, finding);
+  }
+  return byDanger([...byCode.values()]);
+}
 
 /** Characters compared at each end of an address. */
 export const POISONING_EDGE = 4;
@@ -40,7 +66,5 @@ export function assessRecipients(
       found.set("address-poisoning", { code: "address-poisoning", level: "danger" });
     }
   }
-  return [...found.values()].sort(
-    (a, b) => Number(b.level === "danger") - Number(a.level === "danger"),
-  );
+  return byDanger([...found.values()]);
 }

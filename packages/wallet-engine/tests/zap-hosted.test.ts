@@ -33,7 +33,7 @@ import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
 import type { WalletEngine } from "../src/engine.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const PASSWORD = "correct horse battery staple";
@@ -267,6 +267,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
       const created = await draft.confirm(draft.quiz.map((p) => words[p]!));
 
       const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,

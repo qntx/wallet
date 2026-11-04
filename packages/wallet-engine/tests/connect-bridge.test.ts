@@ -58,6 +58,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const handledNostr: Array<{ origin: string; request: Nip07Request }> = [];
   const handledWebln: Array<{ origin: string; request: WeblnRequest }> = [];
   const handledSolana: Array<{ origin: string; request: SolanaRequest }> = [];
+  const phishing = new Set<string>();
   let now = 0;
   const options: BrowserBridgeOptions = {
     inject: (script) => {
@@ -100,6 +101,9 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
         if (!origin.startsWith("https://")) {
           throw new ProviderError(4100, "origin not allowed");
         }
+        if (phishing.has(origin)) {
+          throw new ProviderError(4100, "origin is on the phishing list");
+        }
         return { kind: "browser", origin };
       },
       invalidateOrigin: (origin) => {
@@ -124,6 +128,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
     handledNostr,
     handledWebln,
     handledSolana,
+    phishing,
     emit,
     advance,
   };
@@ -155,6 +160,21 @@ describe("createBrowserBridge", () => {
       { origin: SITE, request: { method: "getPublicKey", params: [] } },
     ]);
     expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 2, result: "nostr-result" });
+  });
+
+  it("drops the messages of an origin on the phishing list, whichever provider they address", async () => {
+    const { bridge, handled, handledNostr, handledWebln, handledSolana, injections, phishing } =
+      rig();
+    phishing.add(SITE);
+    bridge.navigated(PAGE);
+    for (const provider of ["eip1193", "nostr", "webln", "solana"]) {
+      bridge.message(PAGE, request(1, "eth_chainId", provider));
+    }
+    await tick();
+    expect([handled, handledNostr, handledWebln, handledSolana].map((h) => h.length)).toStrictEqual(
+      [0, 0, 0, 0],
+    );
+    expect(injections).toHaveLength(0);
   });
 
   it("drops a message whose topUrl is not the current top origin", async () => {

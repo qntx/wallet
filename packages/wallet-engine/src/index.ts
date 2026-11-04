@@ -4,8 +4,8 @@ export { createEventBus } from "./events.ts";
 export type { EngineLogger, EventBus } from "./events.ts";
 export { EngineStoreError } from "./errors.ts";
 export type { EngineErrorCode } from "./errors.ts";
-export type { EngineCollection, EngineStore } from "./store/port.ts";
-export { createMemoryEngineStore } from "./store/memory.ts";
+export type { EngineCollection, EngineStore, PublicStore } from "./store/port.ts";
+export { createMemoryEngineStore, createMemoryPublicStore } from "./store/memory.ts";
 export { ConnectionController } from "./connect/controller.ts";
 export type {
   AccountGroup as ConnectionAccountGroup,
@@ -22,6 +22,9 @@ export { AddressBookController } from "./addresses/controller.ts";
 export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";
 export { AddressBookError } from "./addresses/errors.ts";
 export type { AddressBookErrorCategory } from "./addresses/errors.ts";
+export { PhishingController, PHISHING_REFRESH_MS } from "./phishing/controller.ts";
+export type { PhishingControllerOptions, PhishingState } from "./phishing/controller.ts";
+export type { PhishingStatus } from "./phishing/status.ts";
 export { RequestController, REQUEST_TTL_MS } from "./requests/controller.ts";
 export type {
   BrowserOrigin,

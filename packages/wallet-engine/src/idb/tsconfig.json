@@ -6,5 +6,5 @@
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": []
   },
-  "include": ["indexeddb.ts", "../../tests/idb"]
+  "include": ["indexeddb.ts", "public-store.ts", "requests.ts", "../../tests/idb"]
 }

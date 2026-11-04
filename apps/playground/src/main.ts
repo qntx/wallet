@@ -2,7 +2,7 @@ import { verifyEvent } from "@qntx/nostr";
 import type { UnlockFactor } from "@qntx/wallet";
 import { createWalletEngine } from "@qntx/wallet-engine";
 import type { PaymentOption } from "@qntx/wallet-engine";
-import { openIndexedDbEngineStore } from "@qntx/wallet-engine/idb";
+import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "@qntx/wallet-engine/idb";
 import { createWebWallet } from "@qntx/wallet-worker/browser";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
@@ -291,6 +291,7 @@ try {
       weblnAlias: "qntx",
       lightningMaxFee: (amountSats) => Math.max(1, Math.ceil(amountSats / 50)),
       logger: { warn: (m: string, e?: unknown) => void [m, e] },
+      publicStore: await openIndexedDbPublicStore({ name: "playground-public" }),
       openStore: async () =>
         openIndexedDbEngineStore({
           name: "playground-engine",

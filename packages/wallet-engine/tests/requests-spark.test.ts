@@ -79,6 +79,7 @@ function world() {
   let now = NOW;
   let counter = 0;
   const requests = new RequestController({
+    phishing: { check: () => "clear" },
     nostrSign: async (_ref, _event): Promise<Event> => {
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
