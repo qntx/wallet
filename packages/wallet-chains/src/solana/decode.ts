@@ -7,13 +7,12 @@ import type {
   SignRequest,
   Verifiability,
 } from "../index.ts";
+import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { PROGRAM_IDS } from "./ids.ts";
 import { parseCompiledMessage, resolveAccountIndex } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
 import { lookupSolanaToken, solanaTokenTable } from "./tokens.ts";
 import type { SolanaTokenTable } from "./tokens.ts";
-
-const LAMPORTS_ASSET = "lamports";
 
 const u32 = getU32Decoder();
 const u64 = getU64Decoder();
@@ -117,7 +116,7 @@ const classify = (
   network: string,
   table: SolanaTokenTable,
 ): Verifiability => {
-  if (parsed.lookupCount > 0) {
+  if (parsed.lookups.length > 0) {
     return "partial";
   }
   let allFull = true;
@@ -179,7 +178,7 @@ const decodeTransaction = (
       if (source === signer) {
         outflows.push({
           to: call.to,
-          amount: { asset: LAMPORTS_ASSET, amount: (call.amount ?? 0n).toString(10) },
+          amount: { asset: SOLANA_NATIVE_ASSET, amount: (call.amount ?? 0n).toString(10) },
           verified: true,
         });
       }
@@ -214,7 +213,9 @@ const decodeTransaction = (
     outflows,
     approvals,
     fee:
-      fee === undefined ? undefined : { max: { asset: LAMPORTS_ASSET, amount: fee.toString(10) } },
+      fee === undefined
+        ? undefined
+        : { max: { asset: SOLANA_NATIVE_ASSET, amount: fee.toString(10) } },
     warnings: [],
     verifiability,
   };

@@ -4,6 +4,7 @@ import type { SignRequest } from "../index.ts";
 import { isRecord, networkChainId, normalizeEvmTransaction } from "./transaction.ts";
 import { parseTypedData } from "./typed-data.ts";
 
+export { EVM_NATIVE_ASSET } from "./assets.ts";
 export { isEvmAddress, checksumEvmAddress, evmAddressFromPublicKey } from "./address.ts";
 export {
   networkChainId,

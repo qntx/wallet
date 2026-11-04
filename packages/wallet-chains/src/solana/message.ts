@@ -16,8 +16,14 @@ export type ParsedSolanaMessage = {
   readonly numRequiredSignatures: number;
   readonly staticAccounts: ReadonlyArray<string>;
   readonly instructions: ReadonlyArray<CompiledIx>;
-  readonly lookupCount: number;
-  readonly lookupAddresses: ReadonlyArray<string>;
+  readonly lookups: ReadonlyArray<LookupReference>;
+};
+
+/** One address-table lookup: the table and which of its entries the message references. */
+export type LookupReference = {
+  readonly address: string;
+  readonly writableIndexes: ReadonlyArray<number>;
+  readonly readonlyIndexes: ReadonlyArray<number>;
 };
 
 const decoder = getCompiledTransactionMessageDecoder();
@@ -47,8 +53,11 @@ export const parseCompiledMessage = (bytes: Uint8Array): ParsedSolanaMessage => 
     numRequiredSignatures: message.numSignerAccounts,
     staticAccounts,
     instructions: message.instructions,
-    lookupCount: lookups.length,
-    lookupAddresses: lookups.map((l) => l.lookupTableAddress),
+    lookups: lookups.map((l) => ({
+      address: l.lookupTableAddress,
+      writableIndexes: l.writableIndexes,
+      readonlyIndexes: l.readonlyIndexes,
+    })),
   };
 };
 
