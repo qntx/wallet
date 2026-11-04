@@ -1,7 +1,7 @@
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
-import { getPublicKey, KeysSigner } from "@qntx/nostr";
+import { verifyEvent, getPublicKey, KeysSigner } from "@qntx/nostr";
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 
 import { Channel } from "../src/channel.ts";
@@ -240,6 +240,7 @@ async function connectFake(
   status: StatusPayload,
   setTimer: SetTimer = realtime,
   presence?: (onActivity: () => void) => () => void,
+  verify: (event: Event) => boolean = verifyEvent,
 ): Promise<{
   wallet: Awaited<ReturnType<typeof connectKernel>>;
   kernel: FakeKernel;
@@ -250,6 +251,7 @@ async function connectFake(
   );
   const spawned: ScriptedPort[] = [];
   const wallet = await connectKernel({
+    verifyEvent: verify,
     spawn: () => {
       const port = new ScriptedPort(kernel);
       spawned.push(port);
@@ -385,6 +387,32 @@ describe("response validation", () => {
     ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
   });
 
+  it("verifies each signed event exactly once with the injected verifier", async () => {
+    const seen: Event[] = [];
+    const { wallet, kernel } = await connectFake(unlockedStatus(), realtime, undefined, (event) => {
+      seen.push(event);
+      return verifyEvent(event);
+    });
+    const unsigned = { kind: 1, created_at: 1, tags: [], content: "x", pubkey: PUBLIC_KEY };
+    kernel.handlers.set("nostr.signEvent", async () => ({ ok: await SIGNER.signEvent(unsigned) }));
+    const signed = await nostr(wallet).signer(NOSTR_KEY.ref).signEvent(unsigned);
+    expect(seen).toStrictEqual([signed]);
+  });
+
+  it("rejects with integrity when the injected verifier refuses the event", async () => {
+    const { wallet, kernel } = await connectFake(
+      unlockedStatus(),
+      realtime,
+      undefined,
+      () => false,
+    );
+    const unsigned = { kind: 1, created_at: 1, tags: [], content: "x", pubkey: PUBLIC_KEY };
+    kernel.handlers.set("nostr.signEvent", async () => ({ ok: await SIGNER.signEvent(unsigned) }));
+    await expect(nostr(wallet).signer(NOSTR_KEY.ref).signEvent(unsigned)).rejects.toSatisfy(
+      (e) => walletError(e).code === "integrity",
+    );
+  });
+
   it("fails pending calls on an unattributed response and breaks the wallet", async () => {
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus());
     kernel.handlers.set("dataKeys.get", async () => new Promise<Reply>(() => undefined)); // never resolves
@@ -452,6 +480,7 @@ describe("port lifecycle", () => {
     const kernel = new FakeKernel(unlockedStatus());
     const spawned: ScriptedPort[] = [];
     const attempt = connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         spawned.push(port);
@@ -512,6 +541,7 @@ describe("connect lifecycle", () => {
     const kernel = new FakeKernel(unlockedStatus());
     const spawned: ScriptedPort[] = [];
     const attempt = connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         spawned.push(port);
@@ -539,6 +569,7 @@ describe("connect lifecycle", () => {
     const kernel = new FakeKernel(unlockedStatus());
     const spawned: ScriptedPort[] = [];
     const attempt = connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         spawned.push(port);
@@ -985,6 +1016,7 @@ describe("passkey restore purpose", () => {
   }> {
     const kernel = new FakeKernel({ ...unlockedStatus(), vault: "uninitialized" });
     const wallet = await connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         kernel.attach(port);
@@ -1064,6 +1096,7 @@ describe("kernel-run passkey ceremonies (hardware host)", () => {
       };
     });
     const wallet = await connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         kernel.attach(port);
@@ -1096,6 +1129,7 @@ describe("passkey config validation", () => {
     const kernel = new FakeKernel(unlockedStatus());
     const spawned: ScriptedPort[] = [];
     const attempt = connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         spawned.push(port);

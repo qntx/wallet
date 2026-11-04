@@ -195,7 +195,12 @@ describe("createNativeWallet", () => {
   it("rejects a non-native autoLock policy", async () => {
     const { host } = makePipe();
     await expect(
-      createNativeWallet({ passkey: PASSKEY, autoLock: { platform: "web", idleMinutes: 5 }, host }),
+      createNativeWallet({
+        verifyEvent,
+        passkey: PASSKEY,
+        autoLock: { platform: "web", idleMinutes: 5 },
+        host,
+      }),
     ).rejects.toThrow(expect.objectContaining({ code: "invalid-input" }));
   });
 
@@ -205,7 +210,12 @@ describe("createNativeWallet", () => {
     const keystore = fakeNativeKeystore();
     const bytes = { value: undefined as Uint8Array | undefined };
     const hostA = boot(fileStore(bytes), fakeNativeKeystore().native);
-    const walletA = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: hostA });
+    const walletA = await createNativeWallet({
+      verifyEvent,
+      passkey: PASSKEY,
+      autoLock: AUTOLOCK,
+      host: hostA,
+    });
     const draft = await walletA.wallets.createMnemonic({ words: 12 });
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
     await draft.confirm(draft.quiz.map((i) => words[i]!));
@@ -213,7 +223,12 @@ describe("createNativeWallet", () => {
 
     const bytesB = { value: undefined as Uint8Array | undefined };
     const host = boot(fileStore(bytesB), keystore.native);
-    const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host });
+    const wallet = await createNativeWallet({
+      verifyEvent,
+      passkey: PASSKEY,
+      autoLock: AUTOLOCK,
+      host,
+    });
     await expect(
       wallet.wallets.importMnemonic({
         mnemonic: words.join(" "),
@@ -238,7 +253,12 @@ describe("createNativeWallet", () => {
 
     // Simulated host crash: the runtime dies; a fresh host+kernel on the same store recovers.
     const host2 = boot(fileStore(bytesB), keystore.native);
-    const wallet2 = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK, host: host2 });
+    const wallet2 = await createNativeWallet({
+      verifyEvent,
+      passkey: PASSKEY,
+      autoLock: AUTOLOCK,
+      host: host2,
+    });
     keystore.failNext("cancelled");
     await expect(wallet2.vault.unlock()).rejects.toThrow(
       expect.objectContaining({ code: "cancelled" }),

@@ -27,6 +27,7 @@ const wallet = await createWebWallet({
     vaultSalt: "example/vault",
   },
   autoLock: { platform: "web", idleMinutes: 15 }, // 5 | 15 | 60; max session 12 h
+  verifyEvent, // verifies every event the kernel signs; pass your app's verifier
 });
 
 const created = await wallet.wallets.createWithPasskey({ name: "Example Wallet" });
@@ -50,6 +51,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 const wallet = await createNodeWallet({
   passkey: { rpId: "qntx.test", rpName: "test", walletSalt: "t/wallet", vaultSalt: "t/vault" },
   autoLock: { platform: "web", idleMinutes: 15 },
+  verifyEvent,
   authenticator: createSoftwarePasskey(seed),
 });
 ```

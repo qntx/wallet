@@ -7,7 +7,7 @@
 import { MessageChannel, Worker } from "node:worker_threads";
 
 import { WalletError } from "@qntx/wallet";
-import type { AutoLockPolicy, PasskeyConfig, Wallet } from "@qntx/wallet";
+import type { Wallet, WalletOptions } from "@qntx/wallet";
 import { createMemoryStore } from "@qntx/wallet-kernel";
 import { connectKernel } from "@qntx/wallet/host";
 import type { MainPort, PasskeyCeremony } from "@qntx/wallet/host";
@@ -18,9 +18,7 @@ import { serveStore } from "./store-server.ts";
 
 export { createSoftwarePasskey } from "./software-passkey.ts";
 
-export type NodeWalletOptions = {
-  readonly passkey: PasskeyConfig;
-  readonly autoLock: AutoLockPolicy;
+export type NodeWalletOptions = WalletOptions & {
   readonly authenticator?: PasskeyCeremony;
   /**
    * Test/debug hook: the worker file location and a spawn observer (count spawns, watch 'exit').
@@ -81,6 +79,7 @@ export async function createNodeWallet(options: NodeWalletOptions): Promise<Wall
     factors: "software",
     spawn,
     passkey: options.passkey,
+    verifyEvent: options.verifyEvent,
     ceremony: options.authenticator,
     setTimer: (delayMs, fn) => {
       const timer = setTimeout(fn, delayMs);

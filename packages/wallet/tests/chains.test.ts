@@ -9,6 +9,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
  */
 import { describe, expect, it } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
@@ -35,6 +36,7 @@ describe("chains(wallet)", () => {
     };
     kernel.handlers.set("wallet.accounts", () => ({ ok: RESULT }));
     const wallet = await connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         kernel.attach(port);
@@ -64,6 +66,7 @@ describe("chains(wallet)", () => {
       ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
     }));
     const wallet = await connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         kernel.attach(port);
@@ -163,6 +166,7 @@ describe("chains(wallet)", () => {
       },
     }));
     const wallet = await connectKernel({
+      verifyEvent,
       spawn: () => {
         const port = new ScriptedPort(kernel);
         kernel.attach(port);

@@ -11,7 +11,6 @@
 import { AppState } from "react-native";
 
 import { report } from "@qntx/v1-probe";
-import { verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, Wallet, WalletSnapshot } from "@qntx/wallet";
 import { WalletError } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
@@ -20,6 +19,7 @@ import { spark } from "@qntx/wallet/spark";
 import { createNativeWallet } from "@qntx/wallet-native";
 
 import { PASSKEY } from "./passkey";
+import { verifyEvent } from "./verify";
 // W7: the native host locks the enclave the moment the app backgrounds.
 // A system verification sheet must not count as backgrounding: every prompt
 // below runs with this policy armed.
@@ -35,13 +35,13 @@ const result = (name: string, ok: boolean, detail: string): void => {
 
 /** Resolve the vault status on a fresh boot — picks create vs unlock phase. */
 export async function smokePhase(): Promise<"create" | "unlock"> {
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
+  const wallet = await createNativeWallet({ verifyEvent, passkey: PASSKEY, autoLock: AUTOLOCK });
   return wallet.getSnapshot().vault === "uninitialized" ? "create" : "unlock";
 }
 
 /** First boot: create the vault, run the ceremony, sign, lock. */
 export async function smokeCreate(): Promise<void> {
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
+  const wallet = await createNativeWallet({ verifyEvent, passkey: PASSKEY, autoLock: AUTOLOCK });
   const draft = await wallet.wallets.createMnemonic({ words: 12 });
   const words = new TextDecoder().decode(draft.words.read()).split(" ");
   const { walletId } = await draft.confirm(draft.quiz.map((i) => words[i]!));
@@ -67,7 +67,7 @@ export async function smokeCreate(): Promise<void> {
 
 /** Relaunch: cancel the first unlock prompt, approve the second, then the guarded prompts. */
 export async function smokeUnlock(): Promise<void> {
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
+  const wallet = await createNativeWallet({ verifyEvent, passkey: PASSKEY, autoLock: AUTOLOCK });
   let cancelled = false;
   let outcome = "approved";
   try {

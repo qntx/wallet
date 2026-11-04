@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { recoverMessageAddress, recoverTypedDataAddress } from "viem";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
@@ -53,6 +54,7 @@ const codeOf = async (run: Promise<unknown>): Promise<number | string> =>
 
 async function rig(options: { allowLocalhost?: boolean } = {}) {
   const wallet: Wallet = await createNodeWallet({
+    verifyEvent,
     passkey: {
       rpId: "qntx.test",
       rpName: "qntx",

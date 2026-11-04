@@ -1,6 +1,7 @@
 import { randomBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import type { SparkClient, SparkNetwork } from "@qntx/spark";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
@@ -86,6 +87,7 @@ type Rig = {
 
 async function rig(opts: { inspects?: Rig["inspects"] } = {}): Promise<Rig> {
   const wallet = await createNodeWallet({
+    verifyEvent,
     passkey: PASSKEY_CONFIG,
     autoLock: { platform: "web", idleMinutes: 15 },
     authenticator: createSoftwarePasskey(randomBytes(32)),
@@ -233,6 +235,7 @@ describe("AccountTreeController", () => {
   it("updatedAt stamps every local change; reconcile-created group 0 is 0", async () => {
     let t = 1000;
     const wallet = await createNodeWallet({
+      verifyEvent,
       passkey: PASSKEY_CONFIG,
       autoLock: { platform: "web", idleMinutes: 15 },
       authenticator: createSoftwarePasskey(randomBytes(32)),
@@ -576,6 +579,7 @@ describe("AccountTreeController", () => {
 
   it("persists serialize — the final stored tree equals the final state", async () => {
     const wallet = await createNodeWallet({
+      verifyEvent,
       passkey: PASSKEY_CONFIG,
       autoLock: { platform: "web", idleMinutes: 15 },
       authenticator: createSoftwarePasskey(randomBytes(32)),

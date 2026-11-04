@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import { encodeSparkAddress, SparkInputError, SparkRequestError } from "@qntx/spark";
 import type { SparkClient, SparkEvent, SparkExitChain } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -636,6 +637,7 @@ describe("lock transition serialization", () => {
     const client = fakeClient(calls);
     const clientCount = 0;
     const engine = createWalletEngine({
+      verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,
       wallet: w as never,
@@ -670,6 +672,7 @@ describe("lock transition serialization", () => {
     let opens = 0;
     const warnings: unknown[] = [];
     const engine = createWalletEngine({
+      verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,
       wallet: w as never,
@@ -717,6 +720,7 @@ describe("createWalletEngine lifecycle", () => {
       },
     };
     const engine = createWalletEngine({
+      verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,
       wallet: wallet as never,

@@ -33,6 +33,7 @@ export async function runConsumerSmoke(): Promise<void> {
   };
   try {
     const wallet = await createNativeWallet({
+      verifyEvent,
       passkey: PASSKEY,
       autoLock: AUTOLOCK,
       host: host(),

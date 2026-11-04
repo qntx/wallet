@@ -106,6 +106,7 @@ export async function createWebWallet(options: WalletOptions): Promise<Wallet> {
     factors: "software",
     spawn,
     passkey: options.passkey,
+    verifyEvent: options.verifyEvent,
     ceremony,
     setTimer: (delayMs, fn) => {
       const timer = globalThis.setTimeout(fn, delayMs);

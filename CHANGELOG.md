@@ -39,6 +39,19 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
   request, and `getBalance` additionally
   needs the `balance` grant.
 
+### Changed
+
+- BREAKING: `createWebWallet`, `createNodeWallet` and `createNativeWallet` require a
+  `verifyEvent: (event) => boolean` option (added to `WalletOptions`), and `createWalletEngine`
+  requires the same `verifyEvent`. The wallet signer used to import `verifyEvent` from
+  `@qntx/nostr`, which is bound to the pure-JS noble backend (tens of milliseconds per event on
+  Hermes), and ran it on every event the kernel signed; the engine did the same for external-signer
+  zap requests and relay metadata documents. Each host now injects the verifier, so an app that
+  already verifies events natively checks a signature once. There is no default. Migration: pass
+  `verifyEvent` to `createWebWallet`/`createNodeWallet`/`createNativeWallet` and to
+  `createWalletEngine` (for example `createEventVerifier(signing)` with `signing` from
+  `@qntx/nostr-native`, or `verifyEvent` from `@qntx/nostr` in tests).
+
 ## [0.7.0] - 2026-11-03
 
 Seed-only Nostr identities and native iOS passkeys: identities are indexed independently of

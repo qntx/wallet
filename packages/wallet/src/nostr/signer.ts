@@ -4,7 +4,7 @@
  * against the request — a compromised kernel cannot make a valid signature over different content
  * pass as the requested event.
  */
-import { signedMatchesUnsigned, verifyEvent } from "@qntx/nostr";
+import { signedMatchesUnsigned } from "@qntx/nostr";
 import type { UnsignedEvent } from "@qntx/nostr";
 import type { Rumor } from "@qntx/nostr/nips/nip59";
 
@@ -66,7 +66,7 @@ export function proxySigner(ref: NostrKeyRef, internals: WalletInternals): Walle
       if (
         signed.pubkey !== publicKey ||
         !signedMatchesUnsigned(signed, requested) ||
-        !verifyEvent(signed)
+        !internals.verifyEvent(signed)
       ) {
         throw integrity("the kernel returned a forged event");
       }
@@ -154,7 +154,7 @@ export function syncSigner(walletId: string, internals: WalletInternals): Wallet
       if (
         signed.pubkey !== expected ||
         !signedMatchesUnsigned(signed, requested) ||
-        !verifyEvent(signed)
+        !internals.verifyEvent(signed)
       ) {
         throw integrity("the kernel returned a forged event");
       }

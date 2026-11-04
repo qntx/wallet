@@ -1,3 +1,10 @@
+import { appendFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
+import { describe, expect, it } from "vite-plus/test";
+
 /**
  * Hosted regtest end to end for zaps — opt-in (WALLET_E2E_HOSTED=1, SPARK_HOSTED_SEED). Runs the
  *
@@ -9,14 +16,7 @@
  * the test builds one from the settled zapRequest and runs validateZapReceipt. Do not run
  * 04:30–05:30 UTC — the nightly regtest workflow spends from the same seed.
  */
-import { appendFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
-import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
-import { describe, expect, it } from "vite-plus/test";
-
-import { Keys, KeysSigner, finalizeEvent } from "@qntx/nostr";
+import { Keys, KeysSigner, finalizeEvent, verifyEvent } from "@qntx/nostr";
 import { validateZapReceipt } from "@qntx/nostr/nips/nip57";
 import { createMemorySparkStore, createSparkClient, encodeSparkAddress } from "@qntx/spark";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
@@ -247,6 +247,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
       });
 
       const wallet = await createNodeWallet({
+        verifyEvent,
         passkey: {
           rpId: "qntx.test",
           rpName: "qntx",
@@ -266,6 +267,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
       const created = await draft.confirm(draft.quiz.map((p) => words[p]!));
 
       const engine = createWalletEngine({
+        verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
         wallet,

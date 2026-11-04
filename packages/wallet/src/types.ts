@@ -153,11 +153,6 @@ export type AutoLockPolicy =
   | { readonly platform: "native"; readonly backgroundSeconds: 0 | 60 | 300 | 900 }
   | { readonly platform: "web"; readonly idleMinutes: 5 | 15 | 60 };
 
-export type WalletOptions = {
-  readonly passkey: PasskeyConfig;
-  readonly autoLock: AutoLockPolicy;
-};
-
 export type WalletSnapshot = {
   readonly vault: VaultState;
   readonly lockReason: LockReason | undefined;

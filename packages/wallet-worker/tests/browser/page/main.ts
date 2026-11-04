@@ -1,5 +1,6 @@
 import { bytesToHex } from "@noble/hashes/utils.js";
 
+import { verifyEvent } from "@qntx/nostr";
 import type { UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { MnemonicDraft, NostrKeyRef, Wallet, WalletOptions } from "@qntx/wallet";
@@ -37,6 +38,7 @@ const OPTIONS: WalletOptions = {
     vaultSalt: "qntx/vault",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
+  verifyEvent,
 };
 
 let wallet: Wallet | undefined;

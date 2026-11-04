@@ -68,6 +68,7 @@ const toHex = (b: Uint8Array): string => [...b].map((x) => x.toString(16).padSta
 const OPTIONS = {
   passkey: { rpId: "localhost", rpName: "Smoke", walletSalt: "w", vaultSalt: "v", backupSalt: "b" },
   autoLock: { platform: "web", idleMinutes: 5 },
+  verifyEvent,
 } as const;
 
 declare global {

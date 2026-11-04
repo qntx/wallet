@@ -1,3 +1,4 @@
+import { verifyEvent } from "@qntx/nostr";
 import type { UnlockFactor } from "@qntx/wallet";
 import { createWalletEngine } from "@qntx/wallet-engine";
 import type { PaymentOption } from "@qntx/wallet-engine";
@@ -268,6 +269,7 @@ action("withdrawBtn", "withdraw", async (engine) => {
 // Boot resolves the deferreds; every handler registered above queues behind these promises.
 try {
   const wallet = await createWebWallet({
+    verifyEvent,
     passkey: {
       rpId: location.hostname,
       rpName: "qntx playground",
@@ -280,6 +282,7 @@ try {
   walletD.resolve(wallet);
   engineD.resolve(
     createWalletEngine({
+      verifyEvent,
       wallet,
       sparkNetwork: "regtest",
       fetch: globalThis.fetch.bind(globalThis),
