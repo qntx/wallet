@@ -23,10 +23,18 @@ const concat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array => {
   return out;
 };
 
-/** CompactSize length prefix (values here are always < 253). */
+/** CompactSize length prefix for the one-byte form. */
 const varint = (n: number): Uint8Array => Uint8Array.of(n);
 
-const pushData = (data: Uint8Array): Uint8Array => concat(varint(data.length), data);
+const COMPACT_SIZE_ONE_BYTE_MAX = 252;
+
+/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
+export const pushData = (data: Uint8Array): Uint8Array => {
+  if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) {
+    throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
+  }
+  return concat(varint(data.length), data);
+};
 
 const u32le = (n: number): Uint8Array =>
   Uint8Array.of(
