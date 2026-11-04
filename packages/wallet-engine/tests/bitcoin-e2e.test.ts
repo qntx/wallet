@@ -28,7 +28,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { cpfpVia, replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
+import { cpfpVia, replaceVia, send } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -441,7 +441,7 @@ const ctlRig = async (
   const ctl = new TransactionController({
     wallet,
     networks: new NetworkController({
-      ...idleNetworkDeps,
+      ...realDeps,
       fetch: globalThis.fetch.bind(globalThis),
       rpc: { [NETWORK]: [base] },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -664,7 +664,7 @@ const legacyFlow = async (): Promise<void> => {
       } as never,
       sparkNetwork: "regtest",
       networks: new NetworkController({
-        ...idleNetworkDeps,
+        ...realDeps,
         fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -688,7 +688,7 @@ const legacyFlow = async (): Promise<void> => {
     const txCtl = new TransactionController({
       wallet,
       networks: new NetworkController({
-        ...idleNetworkDeps,
+        ...realDeps,
         fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
