@@ -18044,7 +18044,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-DuJ5KSRT.mjs
+	// packages/wallet-chains/dist/message-Dv18g8ii.mjs
 	init_secp256k1();
 	init_utils();
 	init_transaction();
@@ -18116,9 +18116,14 @@ zoo`.split("\n"));
 		}
 		return out;
 	};
-	/** CompactSize length prefix (values here are always < 253). */
+	/** CompactSize length prefix for the one-byte form. */
 	var varint = (n) => Uint8Array.of(n);
-	var pushData = (data) => concat$2(varint(data.length), data);
+	var COMPACT_SIZE_ONE_BYTE_MAX = 252;
+	/** A length-prefixed push; longer data would need a multi-byte CompactSize this code never emits. */
+	var pushData = (data) => {
+		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
+		return concat$2(varint(data.length), data);
+	};
 	var u32le$1 = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
 	var u64le$1 = (n) => {
 		const out = /* @__PURE__ */ new Uint8Array(8);
@@ -29027,8 +29032,9 @@ zoo`.split("\n"));
 	/**
 	* Export `ncryptsec` at logN 16 with key security byte 0x02 ("the client does not track this" in
 	* NIP-49's terms): the kernel does not track a key's handling history and any key can be exported
-	* as plaintext nsec, so 0x01 would never be honest. Salt and nonce come from the library's RNG
-	* (noble randomBytes); not injectable in 0.14.
+	* as plaintext nsec, so 0x01 would never be honest. `nip49Encrypt` draws its salt and nonce from
+	* `crypto.getRandomValues`, which the kernel runtime installs natively (the same source as
+	* `__qntx.random`; in a Web Worker, the platform CSPRNG), so no API-level injection is needed.
 	*/
 	async function ncryptsecFromSecretKey(secretKey, password) {
 		const encoded = await encrypt(secretKey, decodeUtf8Secret(password), {
