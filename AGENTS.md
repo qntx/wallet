@@ -39,5 +39,11 @@ Local gate before a pull request:
 bun run lint && bun run typecheck && bun run test
 ```
 
+`vp` caches lint/typecheck/test results, so a green run can mask findings a
+fresh file edit introduced. To run the gate uncached before a PR:
+`bunx vp cache clean && bunx vp check && bun run lint && bun run typecheck && bun run test`
+(`bunx vp check` checks every file directly; `vp cache clean` clears the
+task cache so the subsequent `bun run` scripts re-evaluate).
+
 The root scripts build consumed workspace packages first; per-package scripts must stay
 build-free — never nest `vp run …#build` inside a package's own lint/typecheck/test script.
