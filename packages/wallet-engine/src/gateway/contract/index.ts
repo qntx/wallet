@@ -5,3 +5,5 @@ export * from "./rpc.ts";
 export * from "./esplora.ts";
 export * from "./networks.ts";
 export * from "./served.ts";
+export * from "./risk.ts";
+export * from "./hash-list.ts";
