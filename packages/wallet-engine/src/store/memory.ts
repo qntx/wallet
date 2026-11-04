@@ -1,6 +1,6 @@
 import { EngineStoreError } from "../errors.ts";
 import { checkName } from "./guard.ts";
-import type { EngineCollection, EngineStore } from "./port.ts";
+import type { EngineCollection, EngineStore, PublicStore } from "./port.ts";
 
 /** In-memory EngineStore: the Node/test implementation — same contract, no durability. */
 export function createMemoryEngineStore(backing?: {
@@ -47,6 +47,25 @@ export function createMemoryEngineStore(backing?: {
     close: async () => {
       closed = true;
       collections.clear();
+    },
+  };
+}
+
+/** In-memory PublicStore: the Node/test implementation — same contract, no durability. */
+export function createMemoryPublicStore(backing?: {
+  readonly values?: Map<string, Uint8Array>;
+}): PublicStore {
+  const values = backing?.values ?? new Map<string, Uint8Array>();
+  return {
+    get: async (key) => {
+      checkName("key", key);
+      const value = values.get(key);
+      return value === undefined ? undefined : new Uint8Array(value);
+    },
+    put: async (key, bytes) => {
+      checkName("key", key);
+      values.set(key, new Uint8Array(bytes));
+      await Promise.resolve();
     },
   };
 }

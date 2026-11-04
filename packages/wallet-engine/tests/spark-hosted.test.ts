@@ -19,7 +19,7 @@ import { spark } from "@qntx/wallet/spark";
 import { createWalletEngine } from "../src/engine.ts";
 import type { PaymentOption, PaymentParse } from "../src/payments/parse.ts";
 import { sparkStore } from "../src/spark/store.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 
 const lightningOptionOf = (parsed: PaymentParse): PaymentOption => {
   const option = parsed.kind === "request" ? parsed.request.options[0] : undefined;
@@ -146,6 +146,7 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
 
       const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
       const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,

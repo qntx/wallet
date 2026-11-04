@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { assessRecipients, comparable } from "../src/requests/risk.ts";
+import { assessRecipients, comparable, mergeRisk, originRisk } from "../src/requests/risk.ts";
 
 const KNOWN = "0x52908400098527886E0F7030069857D2E4169EE7";
 const LOOKALIKE = "0x5290aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9EE7";
@@ -55,5 +55,30 @@ describe("assessRecipients", () => {
 
   it("has nothing to say about no recipients", () => {
     expect(assessRecipients("evm", [], [KNOWN])).toStrictEqual([]);
+  });
+});
+
+describe("originRisk and mergeRisk", () => {
+  it("maps trusted to a danger, unchecked to a warning and the rest to nothing", () => {
+    expect(originRisk("trusted")).toStrictEqual([{ code: "phishing-origin", level: "danger" }]);
+    expect(originRisk("unchecked")).toStrictEqual([
+      { code: "phishing-unchecked", level: "warning" },
+    ]);
+    expect(originRisk("clear")).toStrictEqual([]);
+    expect(originRisk("blocked")).toStrictEqual([]);
+  });
+
+  it("merges findings deduplicated by code with danger first", () => {
+    const merged = mergeRisk(
+      [{ code: "first-recipient", level: "warning" }],
+      [
+        { code: "phishing-origin", level: "danger" },
+        { code: "first-recipient", level: "warning" },
+      ],
+    );
+    expect(merged).toStrictEqual([
+      { code: "phishing-origin", level: "danger" },
+      { code: "first-recipient", level: "warning" },
+    ]);
   });
 });

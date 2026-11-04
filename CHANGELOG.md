@@ -9,6 +9,32 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Added
+
+- `@qntx/wallet-engine`: a local phishing list. The gateway merges the MetaMask `eth-phishing-detect`
+  and Polkadot `phishing` lists hourly into hashed deny and allow sets served at
+  `GET /v1/risk/lists/phishing` (snapshot, net diff or `current`). The contract
+  (`gateway/contract/risk.ts` and `hash-list.ts`) exports `phishingKey`, `phishingHash`,
+  `phishingCandidates` and the sorted hash-set operations (`hashList`, `union`, `difference`,
+  `applyDiff`, `encodeHashList`, `decodeHashList`) the gateway and the engine share. The engine's new
+  `PhishingController` (`engine.phishing`) syncs it hourly, answers `check(url)` synchronously
+  (`blocked`, `trusted`, `clear`, `unchecked`) and keeps the origins the user trusts. A blocked
+  origin is refused with `4100` by `ConnectionController.checkOrigin`, so every handler and the
+  bridge drop its messages; `approveConnection` and request `approve` re-check it, and `prepare`
+  refuses it. A trusted origin adds a `phishing-origin` danger finding and an unchecked one a
+  `phishing-unchecked` warning to browser-origin requests.
+- `@qntx/wallet-engine`: the `publicStore` port for non-secret device data available while locked,
+  with `createMemoryPublicStore()` and `openIndexedDbPublicStore({ name })` (unencrypted IndexedDB,
+  from `@qntx/wallet-engine/idb`).
+- `@qntx/gateway` (staging): a `scheduled` handler and a `RISK` KV namespace for the list.
+
+### Changed
+
+- **Breaking:** `EngineOptions.publicStore` is required, and `ConnectionController` and
+  `RequestController` take a required `phishing` option.
+- `@qntx/wallet-engine`: `engine.unsubscribe()` also stops the phishing list refresh.
+- The install-id `fetch` for the gateway moved from `NetworkController` to `gateway/client.ts`.
+
 ## [0.8.0] - 2026-11-04
 
 The wallet and the engine no longer bind a signature verifier: hosts inject `verifyEvent`, so a

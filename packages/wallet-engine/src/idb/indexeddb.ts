@@ -10,6 +10,10 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { EngineStoreError } from "../errors.ts";
 import { checkName } from "../store/guard.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
+import { done, request } from "./requests.ts";
+
+export { openIndexedDbPublicStore } from "./public-store.ts";
+export type { IndexedDbPublicStoreOptions } from "./public-store.ts";
 
 export type Random = (length: number) => Uint8Array;
 
@@ -24,31 +28,6 @@ const STORE = "records";
 const id = (collection: string, recordKey: string): string => `${collection}\u0000${recordKey}`;
 const aad = (collection: string, recordKey: string): Uint8Array =>
   new TextEncoder().encode(`${collection}\u0000${recordKey}`);
-
-async function request<T>(req: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    req.addEventListener("success", () => {
-      resolve(req.result);
-    });
-    req.addEventListener("error", () => {
-      reject(new Error("indexeddb request failed", { cause: req.error }));
-    });
-  });
-}
-
-async function done(tx: IDBTransaction): Promise<void> {
-  return new Promise((resolve, reject) => {
-    tx.addEventListener("complete", () => {
-      resolve();
-    });
-    tx.addEventListener("error", () => {
-      reject(new Error("indexeddb transaction failed", { cause: tx.error }));
-    });
-    tx.addEventListener("abort", () => {
-      reject(new Error("indexeddb transaction aborted", { cause: tx.error }));
-    });
-  });
-}
 
 export async function openIndexedDbEngineStore(
   options: IndexedDbEngineStoreOptions,

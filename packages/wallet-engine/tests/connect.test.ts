@@ -14,6 +14,7 @@ import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import type { Eip1193Event } from "../src/connect/eip1193.ts";
 import { ProviderError } from "../src/connect/errors.ts";
 import { NetworkController } from "../src/networks/controller.ts";
+import type { PhishingStatus } from "../src/phishing/status.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -106,7 +107,10 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     logger,
   });
   await transactions.init();
+  let phishingStatus: PhishingStatus = "clear";
+  const phishing = { check: () => phishingStatus };
   const requests = new RequestController({
+    phishing,
     transactions,
     ...bookDeps(),
     spark: {} as SparkController,
@@ -125,6 +129,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
   let clock = 1_800_000_000_000;
   const connectionOptions = {
+    phishing,
     openStore: async () => Promise.resolve(createMemoryEngineStore(backing)),
     random,
     now: () => clock,
@@ -204,6 +209,9 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     approveNext,
     advance: (ms: number) => {
       clock += ms;
+    },
+    setPhishing: (status: PhishingStatus) => {
+      phishingStatus = status;
     },
     destroy: async () => wallet.destroy(),
   };
@@ -655,6 +663,106 @@ describe("lightning connections", () => {
     expect(session?.scopes["lightning"]?.methods).toContain("sendPayment");
     expect(r.connections.lightningPolicy(SITE)).toStrictEqual(policy);
     expect(r.connections.authorize(SITE, "lightning", "sendPayment")).toBe(session);
+    await r.destroy();
+  });
+});
+
+const idOf = (entry: { readonly id: string } | undefined): string => entry?.id ?? "";
+
+describe("phishing enforcement", () => {
+  const personalSign = async (r: Awaited<ReturnType<typeof rig>>) =>
+    r.handler.handle(SITE, {
+      method: "personal_sign",
+      params: [`0x${Buffer.from("hello").toString("hex")}`, await r.addressAt(0)],
+    });
+
+  const preparePersonalSign = async (r: Awaited<ReturnType<typeof rig>>) =>
+    r.requests.prepare({
+      method: "evm-sign",
+      origin: { kind: "browser", origin: SITE },
+      account: { kind: "hd", walletId: r.walletId, groupIndex: 0, template: "evm.bip44" },
+      network: MAINNET,
+      request: {
+        kind: "evm.personal-message",
+        network: MAINNET,
+        account: { kind: "hd", walletId: r.walletId, groupIndex: 0, template: "evm.bip44" },
+        message: new TextEncoder().encode("hello"),
+      },
+    });
+
+  const awaiting = (r: Awaited<ReturnType<typeof rig>>) =>
+    Object.values(r.requests.getState().requests).find((x) => x.stage === "awaiting-approval");
+
+  it("checkOrigin rejects a blocked origin with 4100 and lets a trusted one through", async () => {
+    const r = await rig();
+    r.setPhishing("blocked");
+    expect(() => r.connections.checkOrigin(SITE)).toThrow("origin is on the phishing list");
+    await expect(codeOf(r.handler.handle(SITE, { method: "eth_accounts" }))).resolves.toBe(4100);
+    r.setPhishing("trusted");
+    expect(r.connections.checkOrigin(SITE).origin).toBe(SITE);
+    r.setPhishing("unchecked");
+    expect(r.connections.checkOrigin(SITE).origin).toBe(SITE);
+    await r.destroy();
+  });
+
+  it("approving a connection fails with 4100 once the origin has been listed", async () => {
+    const r = await rig();
+    const accounts = r.handler.handle(SITE, { method: "eth_requestAccounts" });
+    const settled = codeOf(accounts);
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    const pending = r.connections.pending().find((p) => p.origin.origin === SITE);
+    r.setPhishing("blocked");
+    await expect(
+      r.connections.approveConnection(idOf(pending), {
+        accounts: [await r.addressAt(0)],
+        network: MAINNET,
+      }),
+    ).rejects.toMatchObject({ code: 4100 });
+    await expect(settled).resolves.toBe(4100);
+    expect(r.connections.pending()).toHaveLength(0);
+    expect(r.connections.session(SITE)).toBeUndefined();
+    await r.destroy();
+  });
+
+  it("prepare refuses a blocked browser origin before claiming anything", async () => {
+    const r = await rig();
+    r.setPhishing("blocked");
+    await expect(preparePersonalSign(r)).rejects.toThrow("origin is on the phishing list");
+    r.setPhishing("clear");
+    const pending = await preparePersonalSign(r);
+    expect(pending.risk).toStrictEqual([]);
+    await r.destroy();
+  });
+
+  it("marks a trusted origin as a danger and an unchecked one as a warning", async () => {
+    const r = await rig();
+    r.setPhishing("trusted");
+    const trusted = await preparePersonalSign(r);
+    expect(trusted.risk).toStrictEqual([{ code: "phishing-origin", level: "danger" }]);
+    r.requests.invalidateOrigin(SITE);
+
+    r.setPhishing("unchecked");
+    const unchecked = await preparePersonalSign(r);
+    expect(unchecked.risk).toStrictEqual([{ code: "phishing-unchecked", level: "warning" }]);
+    await r.destroy();
+  });
+
+  it("approve fails without signing when the origin was listed after prepare", async () => {
+    const r = await rig();
+    await r.connect();
+    const signature = codeOf(personalSign(r));
+    await vi.waitFor(() => {
+      expect(awaiting(r)).toBeDefined();
+    });
+    const request = awaiting(r);
+    r.setPhishing("blocked");
+    await expect(r.requests.approve(idOf(request), "evm-sign", VERIFY)).rejects.toThrow(
+      "origin is on the phishing list",
+    );
+    expect(r.requests.getState().requests[idOf(request)]?.stage).toBe("failed");
+    await expect(signature).resolves.toBe(-32_603);
     await r.destroy();
   });
 });

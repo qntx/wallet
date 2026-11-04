@@ -20,7 +20,7 @@ import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
 import { SPARK_L1_NETWORK } from "../src/spark/l1.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const ESPLORA = process.env["WALLET_E2E_ESPLORA"];
@@ -102,6 +102,7 @@ describe.skipIf(!HOSTED || esplora === "")("hosted spark exit", () => {
       const created = await draft.confirm(draft.quiz.map((p) => words[p]!));
       const l1 = SPARK_L1_NETWORK.regtest;
       const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,

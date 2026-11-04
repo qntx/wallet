@@ -2,7 +2,7 @@ import { IDBFactory } from "fake-indexeddb";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { EngineStoreError } from "../../src/errors.ts";
-import { openIndexedDbEngineStore } from "../../src/idb/indexeddb.ts";
+import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "../../src/idb/indexeddb.ts";
 import { contract, nulContract } from "../contract.ts";
 import { corruptByte, rawGet, rawPut } from "./raw.ts";
 
@@ -78,5 +78,33 @@ describe("indexeddb EngineStore", () => {
     const col = s.collection("a");
     await s.close();
     await expect(col.get("k")).rejects.toSatisfy((e) => (e as EngineStoreError).code === "closed");
+  });
+});
+
+describe("indexeddb PublicStore", () => {
+  it("stores plain bytes, survives a reopen and copies on read", async () => {
+    useFakeIdb();
+    const first = await openIndexedDbPublicStore({ name: "public" });
+    await expect(first.get("k")).resolves.toBeUndefined();
+    const bytes = new Uint8Array([1, 2, 3]);
+    await first.put("k", bytes);
+    bytes.fill(9);
+    const second = await openIndexedDbPublicStore({ name: "public" });
+    await expect(second.get("k")).resolves.toStrictEqual(new Uint8Array([1, 2, 3]));
+    await first.put("k", new Uint8Array([4]));
+    await expect(second.get("k")).resolves.toStrictEqual(new Uint8Array([4]));
+  });
+
+  it("keeps the bytes unencrypted in the database", async () => {
+    useFakeIdb();
+    const store = await openIndexedDbPublicStore({ name: "t" });
+    await store.put("k", new Uint8Array([1, 2, 3]));
+    await expect(rawGet("k")).resolves.toStrictEqual(new Uint8Array([1, 2, 3]));
+  });
+
+  it("rejects a key containing NUL", async () => {
+    useFakeIdb();
+    const store = await openIndexedDbPublicStore({ name: "public" });
+    await expect(store.get("a\u0000b")).rejects.toThrow("NUL");
   });
 });

@@ -119,6 +119,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     return counter;
   };
   const controller = new RequestController({
+    phishing: { check: () => "clear" },
     transactions,
     ...bookDeps(),
     spark: {
@@ -416,6 +417,7 @@ function evmWorld(options: {
     return counter;
   };
   const requests = new RequestController({
+    phishing: { check: () => "clear" },
     transactions,
     ...bookDeps(),
     spark: {

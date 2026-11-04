@@ -9,7 +9,11 @@ import { randomBytes } from "react-native-quick-crypto";
 import { report } from "@qntx/v1-probe";
 import type { AutoLockPolicy } from "@qntx/wallet";
 import { chains } from "@qntx/wallet/chains";
-import { createMemoryEngineStore, createWalletEngine } from "@qntx/wallet-engine";
+import {
+  createMemoryEngineStore,
+  createMemoryPublicStore,
+  createWalletEngine,
+} from "@qntx/wallet-engine";
 import type { WalletEngine } from "@qntx/wallet-engine";
 import { createNativeWallet } from "@qntx/wallet-native";
 
@@ -92,6 +96,7 @@ export async function engineSmoke(): Promise<void> {
       weblnAlias: "qntx-smoke",
       lightningMaxFee: () => 0,
       logger: { warn: (message) => warnings.push(message) },
+      publicStore: createMemoryPublicStore(),
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       rpc: {
         [SEPOLIA]: ["https://ethereum-sepolia-rpc.publicnode.com"],

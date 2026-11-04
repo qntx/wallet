@@ -101,6 +101,7 @@ function rig() {
   } as unknown as SparkController;
   let counter = 0;
   const requests = new RequestController({
+    phishing: { check: () => "clear" },
     transactions,
     ...bookDeps(),
     spark,

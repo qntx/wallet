@@ -12,8 +12,9 @@ import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import { gatewayFetch } from "../gateway/client.ts";
+import type { GatewayConfig } from "../gateway/client.ts";
 import {
-  INSTALL_ID_HEADER,
   parseWith,
   esploraBasePath,
   networksPath,
@@ -59,7 +60,7 @@ type Options = {
   readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
   readonly openStore: () => Promise<EngineStore>;
   readonly logger: EngineLogger;
-  readonly gateway?: { readonly url: string; readonly installId: string } | undefined;
+  readonly gateway?: GatewayConfig | undefined;
 };
 
 const makeClient = (
@@ -132,7 +133,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
   private engineStore?: StoreOrUndefined;
   private readonly clients = new Map<string, PublicClient>();
   private readonly gatewayBase: string | undefined;
-  private readonly gatewayOrigin: string | undefined;
+  private readonly gatewayFetch: typeof globalThis.fetch;
   /** Networks the gateway reported at unlock; empty while locked or when the read failed. */
   private gatewayServed: ReadonlySet<string> = new Set();
 
@@ -141,8 +142,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
     this.options = options;
     if (options.gateway !== undefined) {
       this.gatewayBase = options.gateway.url.replace(/\/+$/, "");
-      this.gatewayOrigin = new URL(options.gateway.url).origin;
     }
+    this.gatewayFetch = gatewayFetch(options.fetch, options.gateway);
   }
 
   async init(): Promise<void> {
@@ -192,18 +193,6 @@ export class NetworkController extends Controller<NetworkControllerState> {
       this.options.logger.warn(`gateway unavailable, not used for this session: ${url}`);
     }
   }
-
-  /** `fetch` that adds the install id to requests bound for the gateway's origin only. */
-  private readonly gatewayFetch: typeof globalThis.fetch = async (input, init) => {
-    const { gateway } = this.options;
-    const target = input instanceof Request ? input.url : String(input);
-    if (gateway === undefined || new URL(target).origin !== this.gatewayOrigin) {
-      return this.options.fetch(input, init);
-    }
-    const headers = new Headers(init?.headers);
-    headers.set(INSTALL_ID_HEADER, gateway.installId);
-    return this.options.fetch(input, { ...init, headers });
-  };
 
   async destroy(): Promise<void> {
     this.lock();

@@ -15,7 +15,7 @@ import { createMemoryCloudStore } from "../src/backup/memory.ts";
 import type { CloudStore } from "../src/backup/port.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -121,6 +121,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
   };
   const storeBacking = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
+    publicStore: createMemoryPublicStore(),
     verifyEvent,
     weblnAlias: "test",
     lightningMaxFee: () => 0,
@@ -304,6 +305,7 @@ describe("BackupController", () => {
         kernelUrl: KERNEL_URL,
       });
       const engine2 = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
@@ -402,6 +404,7 @@ describe("BackupController", () => {
         kernelUrl: KERNEL_URL,
       });
       const engine2 = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
@@ -528,6 +531,7 @@ describe("BackupController", () => {
       const inner2 = createMemoryCloudStore(files2);
       const corruptRead = corruptFirstRead(inner2);
       const engine2 = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,

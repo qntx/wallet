@@ -1,10 +1,10 @@
-import type { Event } from "@qntx/nostr";
 /**
  * Composition root: wires the Wallet's lock state to the SparkController's lifecycle. Unlocked →
  * open the EngineStore and start every declared account; locked → abort event loops, close every
  * client, close the store and reset account state. Transitions are serialized on one promise chain,
  * so an unlock→lock flip can never overlap a still-opening store.
  */
+import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
@@ -35,11 +35,12 @@ import type { WithdrawLnurlParams } from "./payments/pay.ts";
 import { resolvePayment } from "./payments/resolve.ts";
 import { prepareZap } from "./payments/zap.ts";
 import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
+import { PhishingController } from "./phishing/controller.ts";
 import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
-import type { EngineStore } from "./store/port.ts";
+import type { EngineStore, PublicStore } from "./store/port.ts";
 import { TransactionController } from "./transactions/controller.ts";
 
 export type EngineOptions = {
@@ -61,6 +62,11 @@ export type EngineOptions = {
   readonly lightningMaxFee: (amountSats: number) => number;
   readonly logger: EngineLogger;
   readonly openStore: () => Promise<EngineStore>;
+  /**
+   * Non-secret device data (the phishing list, the origins the user trusts), available while the
+   * wallet is locked: a page can be opened before the first unlock.
+   */
+  readonly publicStore: PublicStore;
   /** Cloud file transport for the backup controller; absent → `unavailable`. */
   readonly cloud?: CloudStore;
   /**
@@ -73,9 +79,9 @@ export type EngineOptions = {
    * network has custom endpoints. The install id is sent only to the gateway's origin.
    */
   readonly gateway?: { readonly url: string; readonly installId: string };
-  /** Injected timer for transaction polling; defaults to setTimeout. */
   /** Development builds: also accept `http://localhost` as a dApp origin. */
   readonly allowLocalhostOrigins?: boolean;
+  /** Injected timer for polling and refresh loops; defaults to setTimeout. */
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;
@@ -94,6 +100,8 @@ export type WalletEngine = {
   readonly nip07: Nip07Handler;
   readonly webln: WeblnHandler;
   readonly solanaWallet: SolanaWalletHandler;
+  /** The phishing list: lifecycle is independent of the lock state. */
+  readonly phishing: PhishingController;
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
@@ -110,10 +118,36 @@ export type WalletEngine = {
       params: WithdrawLnurlParams,
     ) => Promise<{ readonly kind: "lnurl-withdraw"; readonly invoice: LightningInvoice }>;
   };
+  /** Stops listening to the wallet and stops the phishing list refresh. */
   readonly unsubscribe: () => void;
 };
 
+const defaultSetTimer = (ms: number, fn: () => void): (() => void) => {
+  const id = setTimeout(fn, ms);
+  return () => {
+    clearTimeout(id);
+  };
+};
+
 export function createWalletEngine(options: EngineOptions): WalletEngine {
+  const setTimer = options.setTimer ?? defaultSetTimer;
+
+  const phishing = new PhishingController({
+    publicStore: options.publicStore,
+    gateway: options.gateway,
+    fetch: options.fetch,
+    now: options.now,
+    setTimer,
+    logger: options.logger,
+  });
+  const startPhishing = async (): Promise<void> => {
+    try {
+      await phishing.init();
+    } catch (error) {
+      options.logger.warn("phishing list failed to start", error);
+    }
+  };
+  void startPhishing();
   const backup = new BackupController({
     wallet: options.wallet,
     cloud: options.cloud,
@@ -147,14 +181,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const assets = new AssetsController({
     networks,
     openStore: options.openStore,
-    setTimer:
-      options.setTimer ??
-      ((ms, fn) => {
-        const id = setTimeout(() => {
-          void fn();
-        }, ms);
-        return () => clearTimeout(id);
-      }),
+    setTimer,
     logger: options.logger,
   });
 
@@ -163,14 +190,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     networks,
     openStore: options.openStore,
     random: options.random,
-    setTimer:
-      options.setTimer ??
-      ((ms, fn) => {
-        const id = setTimeout(() => {
-          void fn();
-        }, ms);
-        return () => clearTimeout(id);
-      }),
+    setTimer,
     now: options.now,
     logger: options.logger,
   });
@@ -183,6 +203,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   });
 
   const requests = new RequestController({
+    phishing,
     transactions,
     addressBook,
     openStore: options.openStore,
@@ -264,14 +285,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     fetch: options.fetch,
     random: options.random,
     now: options.now,
-    setTimer:
-      options.setTimer ??
-      ((ms, fn) => {
-        const id = setTimeout(() => {
-          void fn();
-        }, ms);
-        return () => clearTimeout(id);
-      }),
+    setTimer,
     logger: options.logger,
   });
 
@@ -302,6 +316,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
   });
   const connections = new ConnectionController({
+    phishing,
     openStore: options.openStore,
     random: options.random,
     now: options.now,
@@ -364,14 +379,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     alias: options.weblnAlias,
     lightningMaxFee: options.lightningMaxFee,
     sleep: async (ms) => {
-      const setTimer =
-        options.setTimer ??
-        ((ms_, fn) => {
-          const timer = setTimeout(fn, ms_);
-          return () => {
-            clearTimeout(timer);
-          };
-        });
       await new Promise<void>((resolve) => {
         setTimer(ms, resolve);
       });
@@ -512,6 +519,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       withdrawLnurl: async (params) =>
         withdrawLnurl({ spark: controller, fetch: options.fetch, now: options.now }, params),
     },
-    unsubscribe,
+    phishing,
+    unsubscribe: () => {
+      unsubscribe();
+      void phishing.destroy();
+    },
   };
 }

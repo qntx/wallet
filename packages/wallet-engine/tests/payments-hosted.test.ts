@@ -30,7 +30,7 @@ import { createWalletEngine } from "../src/engine.ts";
 import type { WalletEngine } from "../src/engine.ts";
 import type { PaymentParse } from "../src/payments/parse.ts";
 import type { PayInput } from "../src/requests/controller.ts";
-import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const PASSWORD = "correct horse battery staple";
@@ -273,6 +273,7 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
       const approvals: unknown[] = [];
       const realSparkApis = spark(wallet);
       const engine = createWalletEngine({
+        publicStore: createMemoryPublicStore(),
         verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
