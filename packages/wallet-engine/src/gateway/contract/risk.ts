@@ -11,6 +11,8 @@ const MAX_HOST_LENGTH = 253;
 const MIN_HOST_LABELS = 2;
 const FORBIDDEN_ENTRY = /:\/\/|[?#@\\\s]/;
 const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+/** Lowercase ASCII labels ending in a non-numeric label: `new URL` returns such a host unchanged. */
+const PLAIN_HOST = /^(?:[a-z0-9_-]+\.)+[a-z][a-z0-9_-]*\.?$/;
 
 const trimTrailingDot = (host: string): string => (host.endsWith(".") ? host.slice(0, -1) : host);
 
@@ -19,6 +21,10 @@ const pathSegments = (pathname: string): ReadonlyArray<string> =>
 
 /** One list entry as its lookup key, or `undefined` when the entry is not a usable host or path. */
 export function phishingKey(entry: string): string | undefined {
+  if (PLAIN_HOST.test(entry) && !entry.includes("xn--")) {
+    const host = trimTrailingDot(entry);
+    return host.length > MAX_HOST_LENGTH ? undefined : host;
+  }
   let raw = entry.trim();
   if (raw.startsWith("*.")) {
     raw = raw.slice(2);

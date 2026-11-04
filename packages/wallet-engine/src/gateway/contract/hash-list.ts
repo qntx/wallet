@@ -44,17 +44,57 @@ export function decodeHashList(encoded: string): HashList | undefined {
   return bytes.length % WIDTH === 0 && isStrictlyAscending(bytes) ? bytes : undefined;
 }
 
+const RADIX = 256;
+
+/** Indices of the `count` hashes in `flat`, ascending: an LSD radix sort, one pass per byte. */
+function sortedOrder(flat: Uint8Array, count: number): Uint32Array {
+  let order = new Uint32Array(count);
+  let scratch = new Uint32Array(count);
+  for (let i = 0; i < count; i += 1) {
+    order[i] = i;
+  }
+  const offsets = new Uint32Array(RADIX + 1);
+  for (let byte = WIDTH - 1; byte >= 0; byte -= 1) {
+    offsets.fill(0);
+    for (let i = 0; i < count; i += 1) {
+      const slot = (flat[i * WIDTH + byte] ?? 0) + 1;
+      offsets[slot] = (offsets[slot] ?? 0) + 1;
+    }
+    for (let bucket = 0; bucket < RADIX; bucket += 1) {
+      offsets[bucket + 1] = (offsets[bucket + 1] ?? 0) + (offsets[bucket] ?? 0);
+    }
+    for (let i = 0; i < count; i += 1) {
+      const index = order[i] ?? 0;
+      const bucket = flat[index * WIDTH + byte] ?? 0;
+      scratch[offsets[bucket] ?? 0] = index;
+      offsets[bucket] = (offsets[bucket] ?? 0) + 1;
+    }
+    [order, scratch] = [scratch, order];
+  }
+  return order;
+}
+
 /** The sorted set of `hashes`, duplicates removed. */
 export function hashList(hashes: Iterable<Uint8Array>): HashList {
-  const sorted = [...hashes].sort((a, b) => compareAt(a, 0, b, 0));
-  const out = new Uint8Array(sorted.length * WIDTH);
+  let flat = new Uint8Array(1024 * WIDTH);
+  let count = 0;
+  for (const hash of hashes) {
+    if ((count + 1) * WIDTH > flat.length) {
+      const grown = new Uint8Array(flat.length * 2);
+      grown.set(flat);
+      flat = grown;
+    }
+    flat.set(hash.subarray(0, WIDTH), count * WIDTH);
+    count += 1;
+  }
+  const order = sortedOrder(flat, count);
+  const out = new Uint8Array(count * WIDTH);
   let written = 0;
-  let previous: Uint8Array | undefined;
-  for (const hash of sorted) {
-    if (previous === undefined || compareAt(previous, 0, hash, 0) !== 0) {
-      out.set(hash, written);
+  for (let i = 0; i < count; i += 1) {
+    const at = (order[i] ?? 0) * WIDTH;
+    if (written === 0 || compareAt(out, written / WIDTH - 1, flat, at / WIDTH) !== 0) {
+      out.set(flat.subarray(at, at + WIDTH), written);
       written += WIDTH;
-      previous = hash;
     }
   }
   return out.slice(0, written);
