@@ -48,6 +48,7 @@ async function nodeWallet(
   const options: NodeWalletOptions = {
     passkey: PASSKEY_CONFIG,
     autoLock: { platform: "web", idleMinutes: 15 },
+    verifyEvent,
     authenticator,
     kernelUrl: KERNEL_URL,
     onSpawn: (worker) => {
@@ -270,6 +271,7 @@ describe("node host end to end", () => {
     const passkey = createSoftwarePasskey(hexToBytes("cc".repeat(32)));
     const workers: Worker[] = [];
     const attempt = createNodeWallet({
+      verifyEvent,
       passkey: PASSKEY_CONFIG,
       autoLock: { platform: "native", backgroundSeconds: 60 },
       authenticator: passkey,

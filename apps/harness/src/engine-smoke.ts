@@ -14,6 +14,7 @@ import type { WalletEngine } from "@qntx/wallet-engine";
 import { createNativeWallet } from "@qntx/wallet-native";
 
 import { PASSKEY } from "./passkey";
+import { verifyEvent } from "./verify";
 
 const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 0 };
 
@@ -68,7 +69,7 @@ export async function engineSmoke(): Promise<void> {
       `crypto=${typeof crypto} getRandomValues=${typeof crypto?.["getRandomValues"]} subtle=${typeof crypto?.["subtle"]} Buffer=${typeof g["Buffer"]} TextEncoder=${typeof g["TextEncoder"]} URL=${typeof g["URL"]} AbortSignal.timeout=${typeof AbortSignal.timeout} structuredClone=${typeof g["structuredClone"]}`,
     ),
   );
-  const wallet = await createNativeWallet({ passkey: PASSKEY, autoLock: AUTOLOCK });
+  const wallet = await createNativeWallet({ verifyEvent, passkey: PASSKEY, autoLock: AUTOLOCK });
   let walletId = "";
   await step("wallet", async () => {
     const draft = await wallet.wallets.createMnemonic({ words: 12 });
@@ -82,6 +83,7 @@ export async function engineSmoke(): Promise<void> {
   await step("create-engine", async () => {
     const installId = Array.from(randomBytes(16), (b) => b.toString(16).padStart(2, "0")).join("");
     engine = createWalletEngine({
+  verifyEvent,
       wallet,
       sparkNetwork: "regtest",
       fetch: globalThis.fetch,

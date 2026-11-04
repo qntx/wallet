@@ -1,5 +1,4 @@
 import type { Event, Filter } from "@qntx/nostr";
-import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import type { WalletSyncSigner } from "@qntx/wallet/nostr";
 
@@ -53,6 +52,7 @@ export type MetaSyncControllerOptions = {
   readonly metaSync: MetaSyncConfig | undefined;
   readonly logger: EngineLogger;
   readonly now: () => number;
+  readonly verifyEvent: (event: Event) => boolean;
 };
 
 /**
@@ -246,7 +246,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
   }
 
   private acceptableEvent(e: Event, pubkey: string, tag: string): boolean {
-    if (e.kind !== META_SYNC_KIND || e.pubkey !== pubkey || !verifyEvent(e)) {
+    if (e.kind !== META_SYNC_KIND || e.pubkey !== pubkey || !this.options.verifyEvent(e)) {
       return false;
     }
     const dTags = e.tags.filter((t) => t[0] === "d");

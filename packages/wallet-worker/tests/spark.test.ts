@@ -1,9 +1,3 @@
-/**
- * Spark enclave end to end on the real Node host with the real spark.wasm: the enclave's pooled
- * signer must match a locally-created signer byte-for-byte, signatures must verify with the right
- * public keys, lock/delete semantics must hold, and a tampered wasm must fail integrity while nostr
- * keeps working.
- */
 import { copyFile, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +9,13 @@ import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/
 import { SigHash, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
+/**
+ * Spark enclave end to end on the real Node host with the real spark.wasm: the enclave's pooled
+ * signer must match a locally-created signer byte-for-byte, signatures must verify with the right
+ * public keys, lock/delete semantics must hold, and a tampered wasm must fail integrity while nostr
+ * keeps working.
+ */
+import { verifyEvent } from "@qntx/nostr";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 import {
   bitcoinAddressScript,
@@ -98,6 +99,7 @@ async function localSigner(network: SparkNetwork, account: number): Promise<Spar
 
 async function nodeWallet(kernelUrl: URL = KERNEL_URL): Promise<Wallet> {
   return createNodeWallet({
+    verifyEvent,
     passkey: PASSKEY_CONFIG,
     autoLock: { platform: "web", idleMinutes: 15 },
     authenticator: createSoftwarePasskey(hexToBytes("cc".repeat(32))),

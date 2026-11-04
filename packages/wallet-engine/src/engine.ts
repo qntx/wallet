@@ -1,3 +1,4 @@
+import type { Event } from "@qntx/nostr";
 /**
  * Composition root: wires the Wallet's lock state to the SparkController's lifecycle. Unlocked →
  * open the EngineStore and start every declared account; locked → abort event loops, close every
@@ -43,6 +44,12 @@ import { TransactionController } from "./transactions/controller.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
+  /**
+   * Verifies events the engine checks itself (external-signer zap requests, relay metadata
+   * documents). Required, with no default: `@qntx/nostr`'s own `verifyEvent` is bound to the
+   * pure-JS noble backend — pass the host's native verifier, the same one given to the wallet.
+   */
+  readonly verifyEvent: (event: Event) => boolean;
   /** Every Spark account the engine touches lives on this network. */
   readonly sparkNetwork: SparkNetwork;
   readonly fetch: typeof globalThis.fetch;
@@ -285,6 +292,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     metaSync: options.metaSync,
     logger: options.logger,
     now: options.now,
+    verifyEvent: options.verifyEvent,
   });
 
   const depositClaimer = new DepositClaimer({
@@ -490,7 +498,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     metaSync,
     backup,
     zaps: {
-      prepare: async (params) => prepareZap(params, { fetch: options.fetch, now: options.now }),
+      prepare: async (params) =>
+        prepareZap(params, {
+          fetch: options.fetch,
+          now: options.now,
+          verifyEvent: options.verifyEvent,
+        }),
     },
     payments: {
       parse: (input, network) => parsePayment(input, { network, now: options.now() }),

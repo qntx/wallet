@@ -1,4 +1,4 @@
-import type { Factor, MethodName, ParamsOf, ResultOf } from "./protocol/index.ts";
+import type { Factor, MethodName, ParamsOf, ResultOf, SignedEvent } from "./protocol/index.ts";
 /**
  * Channel internals shared between the core Wallet and the protocol subpath modules
  * (@qntx/wallet/nostr, later spark/chains). This file is NOT a package subpath — modules look a
@@ -17,6 +17,8 @@ export type WalletInternals = {
   /** The live kernel port's first-status gate — re-read per call (a respawn replaces it). */
   readonly ready: () => Promise<void>;
   readonly snapshot: () => WalletSnapshot;
+  /** The host-injected event verifier: the wallet never binds a signing backend itself. */
+  readonly verifyEvent: (event: SignedEvent) => boolean;
   /** Marks a user verification in flight on the snapshot (`verifying`). */
   readonly withVerifying: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Public UnlockFactor → wire factor material (the passkey ceremony runs here). */

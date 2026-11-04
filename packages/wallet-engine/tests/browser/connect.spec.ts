@@ -98,6 +98,7 @@ const memoryStore = async () => {
 
 async function engineRig() {
   const wallet: Wallet = await createNodeWallet({
+    verifyEvent,
     passkey: {
       rpId: "qntx.test",
       rpName: "qntx",

@@ -44,6 +44,7 @@
       "name": "@qntx/playground",
       "version": "0.0.0",
       "dependencies": {
+        "@qntx/nostr": "0.15.3",
         "@qntx/wallet": "workspace:*",
         "@qntx/wallet-engine": "workspace:*",
         "@qntx/wallet-worker": "workspace:*",

@@ -63,6 +63,7 @@ const wallet = await createNativeWallet({
     backupSalt: "example/backup",
   },
   autoLock: { platform: "native", backgroundSeconds: 60 },
+  verifyEvent, // e.g. createEventVerifier(signing) from @qntx/nostr-native
 });
 ```
 
@@ -73,6 +74,10 @@ const wallet = await createNativeWallet({
 - `autoLock` — must be `{ platform: "native", backgroundSeconds }`. The native host owns the
   signal: it calls `host.lock()` when the app has spent `backgroundSeconds` in the background.
   A platform authentication prompt on screen does **not** count as background time.
+- `verifyEvent` — required. Checks every event the kernel signs before it is returned. There is no
+  default: `@qntx/nostr`'s own verifier is the pure-JS noble backend, slow on Hermes. Pass the
+  verifier the app already uses for relay events, e.g. `createEventVerifier(signing)` with
+  `signing` from `@qntx/nostr-native`.
 
 ## Passkey domains
 

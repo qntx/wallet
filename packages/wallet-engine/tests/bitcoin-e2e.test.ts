@@ -1,14 +1,15 @@
-/**
- * Regtest e2e: `blockstream/esplora` (bundles bitcoind + electrs + REST) mines to the derived
- * bip84/bip86 receive addresses; the scan finds the UTXOs; a send from each template confirms with
- * change landing on the change chain; a 546-sat UTXO stays frozen.
- */
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 
 import { HDKey } from "@scure/bip32";
 import { describe, expect, it } from "vite-plus/test";
 
+/**
+ * Regtest e2e: `blockstream/esplora` (bundles bitcoind + electrs + REST) mines to the derived
+ * bip84/bip86 receive addresses; the scan finds the UTXOs; a send from each template confirms with
+ * change landing on the change chain; a 546-sat UTXO stays frozen.
+ */
+import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import {
   bitcoinAddressFromXpub,
@@ -394,6 +395,7 @@ const taggedRandom = (): ((n: number) => Uint8Array) => {
 
 const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   const wallet = await createNodeWallet({
+    verifyEvent,
     passkey: {
       rpId: "qntx.test",
       rpName: "qntx",

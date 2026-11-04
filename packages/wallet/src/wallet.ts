@@ -5,6 +5,7 @@
  * (@qntx/wallet/nostr and future siblings) reach this wallet's channel through the registered
  * internals in internal.ts — never through the public type.
  */
+
 import { Channel } from "./channel.ts";
 import type { MainPort, SetTimer } from "./channel.ts";
 import {
@@ -23,7 +24,7 @@ import {
 } from "./factors.ts";
 import type { FactorMode, FactorSource, PasskeyCeremony, PrfResult } from "./factors.ts";
 import { registerInternals } from "./internal.ts";
-import type { Factor } from "./protocol/index.ts";
+import type { Factor, SignedEvent } from "./protocol/index.ts";
 import { SingleUseSecret } from "./secret.ts";
 import { WalletError } from "./types.ts";
 import type {
@@ -49,6 +50,7 @@ export type ConnectOptions = {
   /** Fixed by the host entry: `hardware` on React Native, `software` on web and node. */
   readonly factors: FactorMode;
   readonly passkey: PasskeyConfig;
+  readonly verifyEvent: (event: SignedEvent) => boolean;
   readonly ceremony: PasskeyCeremony | undefined;
   /** Timer source injected by the host package (globalThis timers on web/node). */
   readonly setTimer: SetTimer;
@@ -153,6 +155,7 @@ export class KernelWallet implements Wallet {
       call: async (method, params, transfer) => this.channel.call(method, params, transfer),
       ready: async () => this.channel.ready,
       snapshot: () => this.snapshotValue,
+      verifyEvent: options.verifyEvent,
       withVerifying: async (fn) => this.withVerifying(fn),
       resolveFactor: async (factor, transfer) => resolveFactor(this.factorSource, factor, transfer),
       createFactorParam: async (factor, transfer) => this.createFactorParam(factor, transfer),

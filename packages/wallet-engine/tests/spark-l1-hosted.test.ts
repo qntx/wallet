@@ -1,3 +1,9 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
+import { describe, expect, it } from "vite-plus/test";
+
 /**
  * Hosted regtest end to end for Spark → L1 — opt-in (WALLET_E2E_HOSTED=1, SPARK_HOSTED_SEED, and
  * WALLET_E2E_ESPLORA for a regtest Esplora whose chain the hosted SO watches). A funded Spark
@@ -5,12 +11,7 @@
  * direction needs regtest L1 funds and is covered by the fake-client tests. Do not run 04:30–05:30
  * UTC — the nightly regtest workflow spends from the same seed.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
-import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
-import { describe, expect, it } from "vite-plus/test";
-
+import { verifyEvent } from "@qntx/nostr";
 import { createMemorySparkStore, createSparkClient } from "@qntx/spark";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
 import { createSparkSigner, sparkAccountKey } from "@qntx/spark/signer";
@@ -81,6 +82,7 @@ describe.skipIf(!HOSTED || esplora === "")("hosted spark exit", () => {
         store: createMemorySparkStore(),
       });
       const wallet = await createNodeWallet({
+        verifyEvent,
         passkey: {
           rpId: "qntx.test",
           rpName: "qntx",
@@ -100,6 +102,7 @@ describe.skipIf(!HOSTED || esplora === "")("hosted spark exit", () => {
       const created = await draft.confirm(draft.quiz.map((p) => words[p]!));
       const l1 = SPARK_L1_NETWORK.regtest;
       const engine = createWalletEngine({
+        verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
         wallet,

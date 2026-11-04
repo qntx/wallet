@@ -1,3 +1,10 @@
+import { appendFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
+import { describe, expect, it } from "vite-plus/test";
+
 /**
  * Hosted regtest end to end for engine.payments — opt-in (WALLET_E2E_HOSTED=1, SPARK_HOSTED_SEED).
  * Runs the @qntx/spark/server lightning-address service in-process behind an injected fetch plus a
@@ -6,13 +13,7 @@
  * lnurl-withdraw which must not consume an approval. Do not run 04:30–05:30 UTC — the nightly
  * regtest workflow spends from the same seed.
  */
-import { appendFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
-import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
-import { describe, expect, it } from "vite-plus/test";
-
+import { verifyEvent } from "@qntx/nostr";
 import { createMemorySparkStore, createSparkClient, encodeSparkAddress, uuidv7 } from "@qntx/spark";
 import type { SparkClient } from "@qntx/spark";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
@@ -250,6 +251,7 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
       });
 
       const wallet = await createNodeWallet({
+        verifyEvent,
         passkey: {
           rpId: "qntx.test",
           rpName: "qntx",
@@ -271,6 +273,7 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
       const approvals: unknown[] = [];
       const realSparkApis = spark(wallet);
       const engine = createWalletEngine({
+        verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
         wallet,

@@ -1,6 +1,7 @@
 import { randomBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import type { Event, Filter } from "@qntx/nostr";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
@@ -79,6 +80,7 @@ async function rig(
   opts: { relay?: FakeRelay; syncSignerWrap?: (s: WalletSyncSigner) => WalletSyncSigner } = {},
 ): Promise<Rig> {
   const wallet = await createNodeWallet({
+    verifyEvent,
     passkey: PASSKEY_CONFIG,
     autoLock: { platform: "web", idleMinutes: 15 },
     authenticator: createSoftwarePasskey(randomBytes(32)),
@@ -109,6 +111,7 @@ async function rig(
     logger: LOGGER,
   });
   const metaSync = new MetaSyncController({
+    verifyEvent,
     wallet,
     accounts,
     addressBook,
@@ -287,6 +290,7 @@ describe("MetaSyncController", () => {
       },
     };
     const metaSync = new MetaSyncController({
+      verifyEvent,
       wallet: r.wallet,
       accounts: r.accounts,
       addressBook: r.addressBook,

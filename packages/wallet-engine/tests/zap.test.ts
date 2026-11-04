@@ -82,6 +82,7 @@ const zapFetch = (payBody: object) =>
 const context = (payBody: object = PAY_BODY) => ({
   fetch: zapFetch(payBody),
   now: () => Date.now(),
+  verifyEvent,
 });
 
 const badInvoiceFetch = (async (input: unknown) => {
@@ -184,7 +185,11 @@ describe("prepareZap", () => {
   test("a bad invoice from the service fails before payment, signed 9734 unchanged", async () => {
     const s2 = recordingSigner();
     await expect(
-      prepareZap(params({ signer: s2.signer }), { fetch: badInvoiceFetch, now: () => Date.now() }),
+      prepareZap(params({ signer: s2.signer }), {
+        fetch: badInvoiceFetch,
+        now: () => Date.now(),
+        verifyEvent,
+      }),
     ).rejects.toMatchObject({ category: "rejected" });
     expect(s2.signed).toHaveLength(1);
   });

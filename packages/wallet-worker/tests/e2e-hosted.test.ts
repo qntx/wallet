@@ -1,3 +1,9 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
+import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
+import { describe, expect, it } from "vite-plus/test";
+
 /**
  * Hosted regtest end to end — opt-in only (WALLET_E2E_HOSTED=1, seed from SPARK_HOSTED_SEED, never
  * printed). The funded funder is a LOCAL signer on account 0; wallet A is a fresh enclave wallet
@@ -10,12 +16,7 @@
  * (packages/spark/tests/support/hosted.ts). Do not run 04:30–05:30 UTC — the nightly regtest
  * workflow spends from the same seed.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
-import { hexToBytes, randomBytes } from "@noble/hashes/utils.js";
-import { describe, expect, it } from "vite-plus/test";
-
+import { verifyEvent } from "@qntx/nostr";
 import { createMemorySparkStore, createSparkClient } from "@qntx/spark";
 import type { SparkLeaf } from "@qntx/spark";
 import { loadSparkWasm } from "@qntx/spark-wasm/browser";
@@ -138,6 +139,7 @@ describe.skipIf(!HOSTED)("hosted regtest e2e", () => {
       // Wallet A: a fresh enclave wallet with a random mnemonic; the proxy signer is its
       // SparkSigner.
       const wallet = await createNodeWallet({
+        verifyEvent,
         passkey: PASSKEY_CONFIG,
         autoLock: { platform: "web", idleMinutes: 15 },
         authenticator: createSoftwarePasskey(randomBytes(32)),

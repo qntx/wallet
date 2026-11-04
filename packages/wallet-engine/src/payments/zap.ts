@@ -1,6 +1,6 @@
 import { bytesToHex } from "@noble/hashes/utils.js";
 
-import { signedMatchesUnsigned, verifyEvent } from "@qntx/nostr";
+import { signedMatchesUnsigned } from "@qntx/nostr";
 import type { Event, NostrSigner } from "@qntx/nostr";
 import { makeZapRequest } from "@qntx/nostr/nips/nip57";
 import { SparkInputError, decodeBolt11 } from "@qntx/spark";
@@ -29,6 +29,7 @@ export type PrepareZapParams = {
 };
 
 export type PrepareZapContext = {
+  readonly verifyEvent: (event: Event) => boolean;
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
 };
@@ -101,7 +102,7 @@ export async function prepareZap(
     const zapRequest = await params.signer.signEvent(unsigned);
     // External signers (NIP-07/46) are untrusted: the 9734 must be validly signed over exactly
     // the template, or the receipt would commit to content the user never approved.
-    if (!verifyEvent(zapRequest) || !signedMatchesUnsigned(zapRequest, unsigned)) {
+    if (!context.verifyEvent(zapRequest) || !signedMatchesUnsigned(zapRequest, unsigned)) {
       throw new PaymentError("rejected", "signer returned a zap request that does not match");
     }
     const { invoice } = await requestInvoice(resolved, {

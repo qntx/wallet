@@ -23,6 +23,8 @@ const wallet = await createWebWallet({
     vaultSalt: "example/vault",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
+  // Verifies every event the kernel signs; pass your app's native verifier where one exists.
+  verifyEvent,
 });
 
 // First run: create the wallet and register its passkey.

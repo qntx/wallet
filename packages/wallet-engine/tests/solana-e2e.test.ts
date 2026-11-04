@@ -24,6 +24,7 @@ import {
 import { address as solAddress, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
@@ -309,6 +310,7 @@ const txHashOf = (tx: { readonly hash: string | undefined }): string => tx.hash 
 
 const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   const wallet = await createNodeWallet({
+    verifyEvent,
     passkey: {
       rpId: "qntx.test",
       rpName: "qntx",

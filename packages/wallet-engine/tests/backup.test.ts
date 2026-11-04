@@ -1,11 +1,12 @@
-/**
- * BackupController over a REAL Node kernel + a memory CloudStore (wrapped to inject failures and
- * foreign writes). The kernel keeps the BEK; the engine only ever moves ciphertext.
- */
 import { randomBytes } from "node:crypto";
 
 import { describe, expect, it } from "vite-plus/test";
 
+/**
+ * BackupController over a REAL Node kernel + a memory CloudStore (wrapped to inject failures and
+ * foreign writes). The kernel keeps the BEK; the engine only ever moves ciphertext.
+ */
+import { verifyEvent } from "@qntx/nostr";
 import type { Wallet, WalletInfo } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
@@ -72,6 +73,7 @@ type Rig = {
 
 async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
   const wallet = await createNodeWallet({
+    verifyEvent,
     passkey: PASSKEY_CONFIG,
     autoLock: { platform: "web", idleMinutes: 15 },
     authenticator: createSoftwarePasskey(randomBytes(32)),
@@ -119,6 +121,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
   };
   const storeBacking = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
+    verifyEvent,
     weblnAlias: "test",
     lightningMaxFee: () => 0,
     wallet,
@@ -294,12 +297,14 @@ describe("BackupController", () => {
       // A second device: fresh vault restored from the same envelope — it adopts the BEK, adds
       // a wallet and uploads first. Device 1 then changes coverage and sees the foreign digest.
       const wallet2 = await createNodeWallet({
+        verifyEvent,
         passkey: PASSKEY_CONFIG,
         autoLock: { platform: "web", idleMinutes: 15 },
         authenticator: createSoftwarePasskey(randomBytes(32)),
         kernelUrl: KERNEL_URL,
       });
       const engine2 = createWalletEngine({
+        verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
         wallet: wallet2,
@@ -390,12 +395,14 @@ describe("BackupController", () => {
 
       // Second device, uninitialized vault: restore from the cloud file directly.
       const wallet2 = await createNodeWallet({
+        verifyEvent,
         passkey: PASSKEY_CONFIG,
         autoLock: { platform: "web", idleMinutes: 15 },
         authenticator: createSoftwarePasskey(randomBytes(32)),
         kernelUrl: KERNEL_URL,
       });
       const engine2 = createWalletEngine({
+        verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
         wallet: wallet2,
@@ -428,6 +435,7 @@ describe("BackupController", () => {
 
       // A third fresh vault restores the rewritten file with the original backup password.
       const wallet3 = await createNodeWallet({
+        verifyEvent,
         passkey: PASSKEY_CONFIG,
         autoLock: { platform: "web", idleMinutes: 15 },
         authenticator: createSoftwarePasskey(randomBytes(32)),
@@ -511,6 +519,7 @@ describe("BackupController", () => {
       await r.wallet.backup.enable({ verify: PW, factors: [BPW] });
       const files2 = new Map<string, string>();
       const wallet2 = await createNodeWallet({
+        verifyEvent,
         passkey: PASSKEY_CONFIG,
         autoLock: { platform: "web", idleMinutes: 15 },
         authenticator: createSoftwarePasskey(randomBytes(32)),
@@ -519,6 +528,7 @@ describe("BackupController", () => {
       const inner2 = createMemoryCloudStore(files2);
       const corruptRead = corruptFirstRead(inner2);
       const engine2 = createWalletEngine({
+        verifyEvent,
         weblnAlias: "test",
         lightningMaxFee: () => 0,
         wallet: wallet2,
