@@ -11,30 +11,16 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [0.9.0] - 2026-11-05
 
-Hardening from the 0.9 audit: contract-reported token text is shown only when it is safe, pending
-connection requests are bounded and expire, and the engine's timeouts and jitter run on the
-injected timer and random source. Closes #99, #100, #101 and #102.
+A local phishing list, transaction simulation and the remaining in-app browser methods
+(`wallet_addEthereumChain`, `wallet_watchAsset`, `solana:signIn`), plus hardening from the 0.9
+audit: contract-reported token text is shown only when it is safe, pending connection requests are
+bounded and expire, and the engine's timeouts and jitter run on the injected timer and random
+source. Closes #99, #100, #101 and #102. Includes the 0.8.1 native fix.
 
 ### Added
 
 - `@qntx/wallet-engine`: untrusted contract text is checked before it is shown: a watched token's symbol must be printable (no control, bidi or zero-width characters, at most 32 code points) and its decimals an integer in 0..36 or the request fails with `-32602`; a non-ASCII symbol adds a `token-symbol-unicode` warning; simulated asset changes keep an unverified token's `symbol` and `decimals` only when they pass the same checks.
 - `@qntx/wallet-engine`: pending connection requests are capped at 64 and expire after ten minutes (`ConnectionControllerOptions.setTimer`).
-
-### Changed
-
-- **Breaking:** `WeblnHandlerOptions.now`, `ConnectionControllerOptions.setTimer`, `NetworkController` options `setTimer` and `random` are required; `ConnectionController.request(origin, { kind, namespace?, network?, activate? })` takes an options object; `esplora(endpoints, fetch, { setTimer, random }, timeoutMs?)` takes injected timers and randomness. The engine no longer uses `AbortSignal.timeout` or `Math.random`.
-- `@qntx/wallet-chains`: BIP-322 script pushes longer than 252 bytes are rejected instead of mis-encoded.
-- `@qntx/wallet-engine`: the Solana and EIP-1193 handlers share one session-event helper and the Solana sign path one request method.
-
-## [0.8.1] - 2026-11-05
-
-A native wallet can unlock again after it locks, without restarting the app. This release also
-shipped the work merged since 0.8.0 — the local phishing list, transaction simulation and the
-remaining in-app browser methods — including the breaking engine changes listed below; they were
-missing from these notes when the release was cut.
-
-### Added
-
 - `@qntx/wallet-engine/connect`: the remaining browser methods.
   - `wallet_addEthereumChain` answers `4902` for a chain the wallet does not enable, otherwise `null`; a chain outside the session goes through the `network` connection approval without becoming current. The page's `rpcUrls` are validated for shape only and never used.
   - `wallet_watchAsset` (ERC-20) reads `symbol` and `decimals` on-chain in a new factor-free `watch-asset` request, shows them with a `token-impersonation` danger when another built-in token of the chain reports the same symbol, and adds the token on approval. `AssetsController` gains `isTracked` and `tokenMetadata`; `RequestControllerOptions` takes a required `tokens` and `Eip1193HandlerOptions` a required `isTracked`.
@@ -67,6 +53,26 @@ missing from these notes when the release was cut.
   from `@qntx/wallet-engine/idb`).
 - `@qntx/gateway` (staging): a `scheduled` handler and a `RISK` KV namespace for the list; the build is not scheduled until its hosting is decided.
 
+### Changed
+
+- **Breaking:** `WeblnHandlerOptions.now`, `ConnectionControllerOptions.setTimer`, `NetworkController` options `setTimer` and `random` are required; `ConnectionController.request(origin, { kind, namespace?, network?, activate? })` takes an options object; `esplora(endpoints, fetch, { setTimer, random }, timeoutMs?)` takes injected timers and randomness. The engine no longer uses `AbortSignal.timeout` or `Math.random`.
+- `@qntx/wallet-chains`: BIP-322 script pushes longer than 252 bytes are rejected instead of mis-encoded.
+- `@qntx/wallet-engine`: the Solana and EIP-1193 handlers share one session-event helper and the Solana sign path one request method.
+- `@qntx/wallet-engine/connect`: the injected Solana Wallet Standard wallet now conforms to `@wallet-standard/base` and `@solana/wallet-standard-features` (typed, no cast): every feature is versioned `1.0.0`, `solana:signTransaction` and `solana:signAndSendTransaction` declare `supportedTransactionVersions: ["legacy", 0]` and are variadic (N inputs become one host request, one approval), `signMessage` returns `[{ signedMessage, signature, signatureType }]`, `standard:events` `on` returns an unsubscribe function, and each input's `account` and `chain` are forwarded. The handler rejects an account other than the session's (`4100`), an unknown or mixed chain (`-32602`) and a chain the session is not authorized for (`4100`); sign-and-send needs a chain and returns raw signature bytes.
+- `@qntx/wallet-engine/connect`: Solana `signMessage` now refuses non-UTF-8 bytes with `4200` like `personal_sign`, and a Solana message request's display carries `message.text` (and `signIn`).
+- Sessions must be reconnected to use `wallet_watchAsset` and `solana:signIn`: they are new session methods.
+- **Breaking:** `RequestControllerOptions` takes a required `simulateSolana`, and
+  `@qntx/wallet-chains` `parseCompiledMessage` returns `lookups` (table address with writable and
+  readonly indexes) in place of `lookupCount`/`lookupAddresses`.
+- **Breaking:** `EngineOptions.publicStore` is required, and `ConnectionController` and
+  `RequestController` take a required `phishing` option.
+- `@qntx/wallet-engine`: `engine.unsubscribe()` also stops the phishing list refresh.
+- The install-id `fetch` for the gateway moved from `NetworkController` to `gateway/client.ts`.
+
+## [0.8.1] - 2026-11-05
+
+A native wallet can unlock again after it locks, without restarting the app.
+
 ### Fixed
 
 - `packages/wallet-native`: after a lock (manual or background auto-lock), a wallet deletion or a
@@ -79,16 +85,6 @@ missing from these notes when the release was cut.
 - `packages/wallet-native`: `NativeWalletOptions.host` is replaced by `createHost`, a factory called
   once per kernel runtime. Hosts that passed `host: fake` pass `createHost: () => fake`, creating
   a new fake per call when the test must survive a lock.
-- `@qntx/wallet-engine/connect`: the injected Solana Wallet Standard wallet now conforms to `@wallet-standard/base` and `@solana/wallet-standard-features` (typed, no cast): every feature is versioned `1.0.0`, `solana:signTransaction` and `solana:signAndSendTransaction` declare `supportedTransactionVersions: ["legacy", 0]` and are variadic (N inputs become one host request, one approval), `signMessage` returns `[{ signedMessage, signature, signatureType }]`, `standard:events` `on` returns an unsubscribe function, and each input's `account` and `chain` are forwarded. The handler rejects an account other than the session's (`4100`), an unknown or mixed chain (`-32602`) and a chain the session is not authorized for (`4100`); sign-and-send needs a chain and returns raw signature bytes.
-- `@qntx/wallet-engine/connect`: Solana `signMessage` now refuses non-UTF-8 bytes with `4200` like `personal_sign`, and a Solana message request's display carries `message.text` (and `signIn`).
-- Sessions must be reconnected to use `wallet_watchAsset` and `solana:signIn`: they are new session methods.
-- **Breaking:** `RequestControllerOptions` takes a required `simulateSolana`, and
-  `@qntx/wallet-chains` `parseCompiledMessage` returns `lookups` (table address with writable and
-  readonly indexes) in place of `lookupCount`/`lookupAddresses`.
-- **Breaking:** `EngineOptions.publicStore` is required, and `ConnectionController` and
-  `RequestController` take a required `phishing` option.
-- `@qntx/wallet-engine`: `engine.unsubscribe()` also stops the phishing list refresh.
-- The install-id `fetch` for the gateway moved from `NetworkController` to `gateway/client.ts`.
 
 ## [0.8.0] - 2026-11-04
 
