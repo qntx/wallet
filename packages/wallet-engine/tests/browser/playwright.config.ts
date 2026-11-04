@@ -2,6 +2,7 @@ import { defineConfig } from "@playwright/test";
 import type { PlaywrightTestConfig } from "@playwright/test";
 
 const config: PlaywrightTestConfig = defineConfig({
+  globalSetup: "./global-setup.ts",
   testDir: ".",
   testMatch: "*.spec.ts",
   timeout: 60_000,

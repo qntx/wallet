@@ -33,3 +33,4 @@ packages/wallet-chains/.hermes-chains.iife.js
 
 # Wrangler local state
 .wrangler/
+packages/wallet-engine/tests/browser/getwallets.js

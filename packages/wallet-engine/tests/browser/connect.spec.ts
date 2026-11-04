@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 /**
  * The injected EIP-1193/EIP-6963 provider against a real `Eip1193Handler`: the provider script is
  * installed via `addInitScript`, the page's `ReactNativeWebView.postMessage` forwards to a
@@ -6,7 +7,6 @@
  * typechecked against Node globals — the page's API is declared by the injected script and the test
  * page, not by this spec.
  */
-import { randomBytes } from "node:crypto";
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { expect, test } from "@playwright/test";
@@ -188,7 +188,7 @@ async function engineRig() {
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SOL_NET],
-    solanaAddress: async (group: { walletId: string; groupIndex: number }, _network: string) => {
+    solanaAddress: async (_group: { walletId: string; groupIndex: number }, _network: string) => {
       await Promise.resolve();
       return SOL_ADDR;
     },
