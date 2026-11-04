@@ -32,7 +32,7 @@ import { RequestController } from "../../src/requests/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
-import { bookDeps, simulateSolanaStub, tokensStub } from "../send-helpers.ts";
+import { bookDeps, simulateSolanaStub, tokensStub, idleNetworkDeps } from "../send-helpers.ts";
 
 const KERNEL_URL = new URL("../../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -125,6 +125,7 @@ async function engineRig() {
     return new Uint8Array(n).fill(counter % 251);
   };
   const networks = new NetworkController({
+    ...idleNetworkDeps,
     fetch: async (_input, init) => {
       await Promise.resolve();
       const body: unknown = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
@@ -184,6 +185,7 @@ async function engineRig() {
   await requests.init();
   const connections = new ConnectionController({
     phishing: { check: () => "clear" },
+    setTimer: () => () => undefined,
     openStore: memoryStore,
     random,
     now: () => Date.now(),
@@ -219,6 +221,7 @@ async function engineRig() {
   const webln = new WeblnHandler({
     connections,
     requests,
+    now: () => 1000,
     spark: {
       accountBalance: () => 42000,
       paymentStatus: async () => {

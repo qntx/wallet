@@ -34,6 +34,7 @@ export type WeblnHandlerOptions = {
   readonly spark: Pick<SparkController, "accountBalance" | "paymentStatus">;
   /** The active group's Spark account — `undefined` when no group is selected. */
   readonly sparkAccount: () => SparkAccountRef | undefined;
+  readonly now: () => number;
   /** The node's display alias — host-configured, never a pubkey. */
   readonly alias: string;
   /** The host's lightning fee cap — `pay`'s `maxFeeSats` comes from here. */
@@ -112,7 +113,7 @@ export class WeblnHandler {
   async handle(origin: string, request: WeblnRequest): Promise<unknown> {
     if (request.method === "enable") {
       if (this.options.connections.lightningPolicy(origin) === undefined) {
-        await this.options.connections.request(origin, "connect", undefined, "lightning");
+        await this.options.connections.request(origin, { kind: "connect", namespace: "lightning" });
       }
       await this.options.connections.touch(origin);
       return true;
@@ -183,7 +184,7 @@ export class WeblnHandler {
 
   private async lnurl(origin: string, ref: SparkAccountRef, params: unknown): Promise<unknown> {
     const text = checkString(params, "lnurl");
-    const parsed = parsePayment(text, { network: ref.network, now: Date.now() });
+    const parsed = parsePayment(text, { network: ref.network, now: this.options.now() });
     if (parsed.kind !== "request") {
       throw invalidParams("lnurl is not an LNURL-pay request");
     }
@@ -245,7 +246,7 @@ export class WeblnHandler {
     ref: SparkAccountRef,
     invoice: string,
   ): Extract<PaymentOption, { readonly kind: "lightning" }> {
-    const parsed = parsePayment(invoice, { network: ref.network, now: Date.now() });
+    const parsed = parsePayment(invoice, { network: ref.network, now: this.options.now() });
     if (parsed.kind !== "request") {
       throw invalidParams("sendPayment invoice is not a BOLT11 invoice");
     }

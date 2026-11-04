@@ -8,7 +8,12 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
-import { ConnectionController, SESSION_TTL_MS } from "../src/connect/controller.ts";
+import {
+  CONNECTION_REQUEST_TTL_MS,
+  ConnectionController,
+  MAX_PENDING_CONNECTIONS,
+  SESSION_TTL_MS,
+} from "../src/connect/controller.ts";
 import type { LightningPolicy, NostrPolicy } from "../src/connect/controller.ts";
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import type { Eip1193Event } from "../src/connect/eip1193.ts";
@@ -19,7 +24,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { bookDeps, simulateSolanaStub } from "./send-helpers.ts";
+import { bookDeps, simulateSolanaStub, idleNetworkDeps } from "./send-helpers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const MNEMONIC =
@@ -94,6 +99,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     tracked: new Set<string>(),
   };
   const networks = new NetworkController({
+    ...idleNetworkDeps,
     fetch: async (input, init) => {
       fetchedUrls.push(
         typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
@@ -145,8 +151,16 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
   await requests.init();
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
   let clock = 1_800_000_000_000;
+  const connectionTimers: Array<{ ms: number; fn: () => unknown; cancelled: boolean }> = [];
   const connectionOptions = {
     phishing,
+    setTimer: (ms: number, fn: () => unknown) => {
+      const timer = { ms, fn, cancelled: false };
+      connectionTimers.push(timer);
+      return () => {
+        timer.cancelled = true;
+      };
+    },
     openStore: async () => Promise.resolve(createMemoryEngineStore(backing)),
     random,
     now: () => clock,
@@ -230,6 +244,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
       clock += ms;
     },
     fetchedUrls,
+    connectionTimers,
     tokenState,
     setPhishing: (status: PhishingStatus) => {
       phishingStatus = status;
@@ -382,7 +397,7 @@ describe("nostr connections", () => {
     policy: NostrPolicy,
     origin = SITE,
   ): Promise<void> => {
-    const pending = r.connections.request(origin, "connect", undefined, "nostr");
+    const pending = r.connections.request(origin, { kind: "connect", namespace: "nostr" });
     await vi.waitFor(() => {
       expect(r.connections.pending().some((p) => p.origin.origin === origin)).toBe(true);
     });
@@ -413,7 +428,7 @@ describe("nostr connections", () => {
   it("approving a pubkey other than the active identity's is rejected", async () => {
     const r = await rig();
     await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
-    const pending = r.connections.request(SITE, "connect", undefined, "nostr");
+    const pending = r.connections.request(SITE, { kind: "connect", namespace: "nostr" });
     await vi.waitFor(() => {
       expect(r.connections.pending().length).toBeGreaterThan(0);
     });
@@ -660,7 +675,7 @@ describe("lightning connections", () => {
     policy: LightningPolicy,
     origin = SITE,
   ): Promise<void> => {
-    const pending = r.connections.request(origin, "connect", undefined, "lightning");
+    const pending = r.connections.request(origin, { kind: "connect", namespace: "lightning" });
     await vi.waitFor(() => {
       expect(r.connections.pending().some((p) => p.origin.origin === origin)).toBe(true);
     });
@@ -994,11 +1009,121 @@ describe("wallet_watchAsset", () => {
     await r.destroy();
   });
 
+  it.each([
+    ["a control character", "T\u0007K"],
+    ["a bidi override", "T\u202EK"],
+    ["a zero-width space", "T\u200BK"],
+    ["too long a symbol", "S".repeat(33)],
+    ["an empty symbol", " "],
+  ])("rejects %s in the on-chain symbol with -32602 before any approval", async (_name, symbol) => {
+    const r = await rig();
+    await r.connect();
+    r.tokenState.metadata = { symbol, decimals: 18 };
+    await expect(codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })))).resolves.toBe(-32_602);
+    expect(awaitingWatch(r)).toBeUndefined();
+    await r.destroy();
+  });
+
+  it.each([-1, 37, 1.5])("rejects decimals %s with -32602", async (decimals) => {
+    const r = await rig();
+    await r.connect();
+    r.tokenState.metadata = { symbol: "TKN", decimals };
+    await expect(codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })))).resolves.toBe(-32_602);
+    await r.destroy();
+  });
+
+  it("warns about a non-ASCII symbol such as a Cyrillic lookalike", async () => {
+    const r = await rig();
+    await r.connect();
+    r.tokenState.metadata = { symbol: "USDС", decimals: 6 };
+    const watching = codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })));
+    await vi.waitFor(() => {
+      expect(awaitingWatch(r)).toBeDefined();
+    });
+    const request = awaitingWatch(r);
+    expect(request?.risk).toContainEqual({ code: "token-symbol-unicode", level: "warning" });
+    r.requests.reject(idOf(request));
+    await watching;
+    await r.destroy();
+  });
+
   it("refuses a blocked origin before anything", async () => {
     const r = await rig();
     await r.connect();
     r.setPhishing("blocked");
     await expect(codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })))).resolves.toBe(4100);
+    await r.destroy();
+  });
+});
+
+describe("pending connection limits", () => {
+  const origin = (n: number): string => `https://site${String(n)}.example`;
+  const settle = async (run: Promise<unknown>): Promise<number | string> => codeOf(run);
+
+  it("caps pending requests at 64 across distinct origins", async () => {
+    const r = await rig();
+    const requests = Array.from({ length: MAX_PENDING_CONNECTIONS }, async (_, n) =>
+      settle(r.connections.request(origin(n), { kind: "connect" })),
+    );
+    expect(r.connections.pending()).toHaveLength(MAX_PENDING_CONNECTIONS);
+    await expect(
+      settle(r.connections.request(origin(MAX_PENDING_CONNECTIONS), { kind: "connect" })),
+    ).resolves.toBe(-32_002);
+    expect(r.connections.pending()).toHaveLength(MAX_PENDING_CONNECTIONS);
+    r.connections.lock();
+    await expect(Promise.all(requests)).resolves.toStrictEqual(
+      Array.from({ length: MAX_PENDING_CONNECTIONS }, () => 4001),
+    );
+    await r.destroy();
+  });
+
+  it("still dedupes by origin", async () => {
+    const r = await rig();
+    const first = settle(r.connections.request(SITE, { kind: "connect" }));
+    await expect(settle(r.connections.request(SITE, { kind: "connect" }))).resolves.toBe(-32_002);
+    expect(r.connections.pending()).toHaveLength(1);
+    r.connections.lock();
+    await first;
+    await r.destroy();
+  });
+
+  it("expires an unanswered request: rejects with 4001 and clears the entry", async () => {
+    const r = await rig();
+    const pending = settle(r.connections.request(SITE, { kind: "connect" }));
+    const timer = r.connectionTimers.find((t) => t.ms === CONNECTION_REQUEST_TTL_MS);
+    expect(timer).toBeDefined();
+    timer?.fn();
+    await expect(pending).resolves.toBe(4001);
+    expect(r.connections.pending()).toHaveLength(0);
+    await r.destroy();
+  });
+
+  it("cancels the timer on approve, reject, navigation and lock", async () => {
+    const r = await rig();
+    const cancelled = (): number => r.connectionTimers.filter((t) => t.cancelled).length;
+    const rejected = settle(r.connections.request(origin(1), { kind: "connect" }));
+    r.connections.rejectConnection(idOf(r.connections.pending()[0]));
+    await rejected;
+    expect(cancelled()).toBe(1);
+
+    const navigated = settle(r.connections.request(origin(2), { kind: "connect" }));
+    r.connections.invalidateOrigin(origin(2));
+    await navigated;
+    expect(cancelled()).toBe(2);
+
+    const approving = settle(r.connections.request(origin(3), { kind: "connect" }));
+    await r.connections.approveConnection(idOf(r.connections.pending()[0]), {
+      accounts: [await r.addressAt(0)],
+      network: MAINNET,
+    });
+    await approving;
+    expect(cancelled()).toBe(3);
+
+    const locked = settle(r.connections.request(origin(4), { kind: "connect" }));
+    r.connections.lock();
+    await locked;
+    expect(cancelled()).toBe(4);
+    expect(r.connections.pending()).toHaveLength(0);
     await r.destroy();
   });
 });

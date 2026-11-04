@@ -19,6 +19,7 @@ export type RiskFinding = {
     | "phishing-origin"
     | "phishing-unchecked"
     | "token-impersonation"
+    | "token-symbol-unicode"
     | "simulation-reverted"
     | "simulation-mismatch";
   readonly level: "warning" | "danger";

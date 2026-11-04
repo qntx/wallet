@@ -8,7 +8,7 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send, simulateV1Result } from "./send-helpers.ts";
+import { send, simulateV1Result, idleNetworkDeps } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -73,6 +73,7 @@ const apis = (sign: Sign): ReturnType<typeof chains> => {
 
 const nets = (fetchFn: typeof fetch) =>
   new NetworkController({
+    ...idleNetworkDeps,
     fetch: fetchFn,
     rpc: { "eip155:1": ["http://fake.local"] },
     openStore: async () => Promise.resolve(memoryStore()),

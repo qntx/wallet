@@ -9,6 +9,7 @@ import { SOLANA_METHODS } from "./controller.ts";
 import { ProviderError, invalidParams } from "./errors.ts";
 import { checkSignInInput, signInMessageText } from "./siws.ts";
 import type { SignInFields } from "./siws.ts";
+import { SessionEvents } from "./subscription.ts";
 import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
 /**
@@ -75,9 +76,11 @@ type SolanaConnections = Pick<
   | "store"
 >;
 
+type SolanaRequests = Pick<RequestController, "prepare" | "outcome">;
+
 type Options = {
   readonly connections: SolanaConnections;
-  readonly requests: Pick<RequestController, "prepare" | "outcome">;
+  readonly requests: SolanaRequests;
   /** The group's Solana address + public key on `network` (the `solana.bip44-change` account). */
   readonly solanaAccount: (
     group: { readonly walletId: string; readonly groupIndex: number },
@@ -96,45 +99,24 @@ type Options = {
  */
 export class SolanaWalletHandler implements SolanaHandler {
   readonly options: Options;
-  private readonly listeners = new Set<(event: SolanaEvent) => void>();
-  private unsubscribe: (() => void) | undefined;
+  private readonly events: SessionEvents<SolanaEvent>;
 
   constructor(options: Options) {
     this.options = options;
+    this.events = new SessionEvents(options.connections, async (before, after) =>
+      Promise.all(
+        diffSessions(before, after).map(async ({ origin }): Promise<SolanaEvent> => ({
+          name: "solanaAccountsChanged",
+          origin,
+          accounts: await this.solanaAccountsChanged(origin),
+        })),
+      ),
+    );
   }
 
   /** `standard:events` `change` per origin — derived from changes to the sessions. */
   subscribe(listener: (event: SolanaEvent) => void): () => void {
-    this.listeners.add(listener);
-    if (this.unsubscribe === undefined) {
-      let previous = this.options.connections.getState().sessions;
-      this.unsubscribe = this.options.connections.store.subscribe((state) => {
-        void (async () => {
-          const events = await Promise.all(
-            diffSessions(previous, state.sessions).map(
-              async ({ origin }): Promise<SolanaEvent> => ({
-                name: "solanaAccountsChanged",
-                origin,
-                accounts: await this.solanaAccountsChanged(origin),
-              }),
-            ),
-          );
-          for (const event of events) {
-            for (const l of this.listeners) {
-              l(event);
-            }
-          }
-        })();
-        previous = state.sessions;
-      });
-    }
-    return () => {
-      this.listeners.delete(listener);
-      if (this.listeners.size === 0) {
-        this.unsubscribe?.();
-        this.unsubscribe = undefined;
-      }
-    };
+    return this.events.subscribe(listener);
   }
 
   async handle(origin: string, request: SolanaRequest): Promise<unknown> {
@@ -173,7 +155,10 @@ export class SolanaWalletHandler implements SolanaHandler {
       if (silent) {
         throw new ProviderError(4100, "the wallet is not connected");
       }
-      await this.options.connections.request(checked.origin, "connect", undefined, "solana");
+      await this.options.connections.request(checked.origin, {
+        kind: "connect",
+        namespace: "solana",
+      });
     } else {
       await this.options.connections.touch(checked.origin);
     }
@@ -214,18 +199,11 @@ export class SolanaWalletHandler implements SolanaHandler {
     }
     checkAccounts(request.params, address);
     const txs = transactionsOf(request.params);
-    const group = this.options.activeGroup();
-    if (group === undefined) {
-      throw new ProviderError(4100, "no account group is selected");
-    }
-    const pending = await this.options.requests.prepare({
-      method: "solana-sign",
-      origin: checked,
-      account: { walletId: group.walletId, groupIndex: group.groupIndex, address },
-      network,
-      request: { kind: "transactions", transactions: txs, send },
+    const outcome = await this.signRequest(checked, network, address, {
+      kind: "transactions",
+      transactions: txs,
+      send,
     });
-    const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "solana.transactions") {
       throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
     }
@@ -314,6 +292,28 @@ export class SolanaWalletHandler implements SolanaHandler {
     if (address === undefined) {
       throw new ProviderError(4100, "no solana account for this origin");
     }
+    const outcome = await this.signRequest(checked, network, address, {
+      kind: "message",
+      message,
+      ...(signIn === undefined ? {} : { signIn }),
+    });
+    if (!("kind" in outcome) || outcome.kind !== "solana.message") {
+      throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
+    }
+    return outcome.signature;
+  }
+
+  /** One `solana-sign` request for the active group, resolved to its outcome. */
+  private async signRequest(
+    checked: BrowserOrigin,
+    network: string,
+    address: string,
+    request: Parameters<SolanaRequests["prepare"]>[0] extends infer I
+      ? I extends { method: "solana-sign"; request: infer R }
+        ? R
+        : never
+      : never,
+  ): Promise<Awaited<ReturnType<SolanaRequests["outcome"]>>> {
     const group = this.options.activeGroup();
     if (group === undefined) {
       throw new ProviderError(4100, "no account group is selected");
@@ -323,13 +323,9 @@ export class SolanaWalletHandler implements SolanaHandler {
       origin: checked,
       account: { walletId: group.walletId, groupIndex: group.groupIndex, address },
       network,
-      request: { kind: "message", message, ...(signIn === undefined ? {} : { signIn }) },
+      request,
     });
-    const outcome = await this.options.requests.outcome(pending.id);
-    if (!("kind" in outcome) || outcome.kind !== "solana.message") {
-      throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
-    }
-    return outcome.signature;
+    return this.options.requests.outcome(pending.id);
   }
 
   /** The `setActiveGroup` re-point: the solana session's new `WalletAccount[]` for `change`. */

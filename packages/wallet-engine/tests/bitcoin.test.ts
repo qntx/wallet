@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { dustFor, esplora, feeTiers, isFrozen, validateEndpoint } from "../src/chains/bitcoin.ts";
 import type { Esplora, EsploraFetch } from "../src/chains/bitcoin.ts";
+import { esploraDeps } from "./send-helpers.ts";
 
 const es = (handlers: Record<string, unknown>): Esplora => ({
   get: async (path) => {
@@ -99,7 +100,7 @@ describe("esplora 429 handling", () => {
 
   it("retries a 429 with exponential backoff and then succeeds", async () => {
     const { fetcher, calls } = failThen(2, '{"ok":true}');
-    const es = esplora(["https://a.test"], fetcher, sleep);
+    const es = esplora(["https://a.test"], fetcher, esploraDeps(sleep));
     const out = await es.get("/blocks/tip/height");
     expect(out).toStrictEqual({ ok: true });
     expect(calls()).toBe(3);
@@ -111,13 +112,13 @@ describe("esplora 429 handling", () => {
       delays.push(ms);
       return Promise.resolve();
     };
-    const es = esplora(["https://a.test"], raFetcher(), record);
+    const es = esplora(["https://a.test"], raFetcher(), esploraDeps(record));
     await es.get("/x");
     expect(delays).toStrictEqual([5000]);
   });
 
   it("fails over to the next endpoint after exhausting retries on 429", async () => {
-    const es = esplora(["https://a.test", "https://b.test"], byHost, sleep);
+    const es = esplora(["https://a.test", "https://b.test"], byHost, esploraDeps(sleep));
     const out = await es.get("/y");
     expect(out).toBe("healthy");
   });
@@ -138,7 +139,7 @@ describe("esplora 429 handling", () => {
   it("releases its slot before backing off a 429, so a throttled burst cannot deadlock", async () => {
     // Every request is throttled once, then served: with eight concurrent gets all four slots
     // are throttled at once — retrying inside the slot would wait on itself forever.
-    const es = esplora(["https://a.test"], throttledOnce(), sleep);
+    const es = esplora(["https://a.test"], throttledOnce(), esploraDeps(sleep));
     const paths = Array.from({ length: 8 }, (_, i) => `/p/${i}`);
     await expect(Promise.all(paths.map(async (p) => es.get(p)))).resolves.toStrictEqual(
       paths.map(() => "served"),
@@ -147,7 +148,7 @@ describe("esplora 429 handling", () => {
 
   it("caps in-flight requests at four", async () => {
     const { fetcher, max } = trackPeak();
-    const es = esplora(["https://a.test"], fetcher, sleep);
+    const es = esplora(["https://a.test"], fetcher, esploraDeps(sleep));
     await Promise.all([
       es.get("/a"),
       es.get("/b"),

@@ -25,6 +25,9 @@ beforeEach(() => {
   simulateCalls.mockReset();
 });
 
+const successChanges = (outcome: { status: string; changes?: ReadonlyArray<object> }) =>
+  outcome.changes ?? [];
+
 describe("EvmChainAdapter.simulate", () => {
   it("maps the native marker, skips zero diffs and reads the built-in token table", async () => {
     simulateCalls.mockResolvedValue({
@@ -65,6 +68,31 @@ describe("EvmChainAdapter.simulate", () => {
         { asset: USDC, amount: "1", verified: false },
       ],
     });
+  });
+
+  it("omits a contract-reported symbol or decimals that are unsafe to show", async () => {
+    simulateCalls.mockResolvedValue({
+      results: [{ status: "success" }],
+      assetChanges: [
+        diff(OTHER, 3n, { symbol: "DAI\u202E", decimals: 255 }),
+        diff(`0x${"33".repeat(20)}`, 4n, { symbol: "A".repeat(33), decimals: 1.5 }),
+        diff(`0x${"44".repeat(20)}`, 5n, { symbol: " OK ", decimals: 18 }),
+      ],
+    });
+    const outcome = await new EvmChainAdapter().simulate(client, 56, FROM, CALL, noTimer);
+    expect(outcome).toMatchObject({
+      status: "success",
+      changes: [
+        { amount: "3", verified: false },
+        { amount: "4", verified: false },
+        { amount: "5", symbol: "OK", decimals: 18, verified: false },
+      ],
+    });
+    const changes = successChanges(outcome);
+    expect(changes[0]).not.toHaveProperty("symbol");
+    expect(changes[0]).not.toHaveProperty("decimals");
+    expect(changes[1]).not.toHaveProperty("symbol");
+    expect(changes[1]).not.toHaveProperty("decimals");
   });
 
   it("reports a failed call as reverted", async () => {

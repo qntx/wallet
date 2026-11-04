@@ -19,6 +19,7 @@ function rig(options: {
   paymentStatus?: () => Promise<LightningSendStatus>;
   prepareResult?: unknown;
   sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
 }) {
   const sleeps: number[] = [];
   const requestsCalls: string[] = [];
@@ -56,6 +57,7 @@ function rig(options: {
           : options.paymentStatus(),
     },
     sparkAccount: () => REF,
+    now: options.now ?? (() => 0),
     alias: "qntx",
     lightningMaxFee: () => 10,
     sleep: async (ms) => {
@@ -127,6 +129,44 @@ describe("WeblnHandler", () => {
       balance: 42000,
       currency: "sats",
     });
+  });
+});
+
+describe("WeblnHandler clock", () => {
+  const TIMESTAMP = 1_700_000_000;
+  const invoice = encodeTestBolt11({
+    network: "mainnet",
+    amountMsat: 100_000n,
+    timestamp: TIMESTAMP,
+    expirySeconds: 600,
+    paymentHash: new Uint8Array(32).fill(9),
+    secretKey: new Uint8Array(32).fill(1),
+  });
+  const payment = {
+    kind: "lightning",
+    payment: { requestId: "r1", paymentHash: new Uint8Array(32), amountSats: 100 },
+  };
+
+  it("rejects an invoice that expired by the injected clock", async () => {
+    const { handler, requestsCalls } = rig({
+      prepareResult: payment,
+      now: () => (TIMESTAMP + 700) * 1000,
+    });
+    await expect(
+      handler.handle(SITE, { method: "sendPayment", params: invoice }),
+    ).rejects.toMatchObject({ code: -32_602 });
+    expect(requestsCalls).toStrictEqual([]);
+  });
+
+  it("accepts the same invoice while the injected clock is inside its expiry", async () => {
+    const { handler, requestsCalls } = rig({
+      prepareResult: payment,
+      paymentStatus: async () =>
+        Promise.resolve({ outcome: "succeeded", preimage: new Uint8Array(32) } as never),
+      now: () => (TIMESTAMP + 10) * 1000,
+    });
+    await handler.handle(SITE, { method: "sendPayment", params: invoice });
+    expect(requestsCalls).toStrictEqual(["pay"]);
   });
 });
 

@@ -10,7 +10,7 @@ import type { SignRequest } from "@qntx/wallet-chains";
 
 import { EVM_RPC_METHODS } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
-import { OriginBusyError, RequestEndedError } from "../requests/controller.ts";
+import { InvalidTokenError, OriginBusyError, RequestEndedError } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { AccountGroup, ConnectionController, ConnectionSession } from "./controller.ts";
 import { evmChainId } from "./controller.ts";
@@ -23,6 +23,7 @@ import {
   unsupportedMethod,
   userRejectedRequest,
 } from "./errors.ts";
+import { SessionEvents } from "./subscription.ts";
 import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
 export type Eip1193Request = { readonly method: string; readonly params?: unknown };
@@ -109,34 +110,16 @@ const quantityOf = (value: unknown, field: string, fallback: string): string => 
 
 export class Eip1193Handler {
   private readonly options: Eip1193HandlerOptions;
-  private readonly listeners = new Set<(event: Eip1193Event) => void>();
-  private unsubscribe: (() => void) | undefined;
+  private readonly events: SessionEvents<Eip1193Event>;
 
   constructor(options: Eip1193HandlerOptions) {
     this.options = options;
+    this.events = new SessionEvents(options.connections, diffSessions);
   }
 
   /** Events for the host to forward to pages; derived from changes to the sessions. */
   subscribe(listener: (event: Eip1193Event) => void): () => void {
-    this.listeners.add(listener);
-    if (this.unsubscribe === undefined) {
-      let previous = this.options.connections.getState().sessions;
-      this.unsubscribe = this.options.connections.store.subscribe((state) => {
-        for (const event of diffSessions(previous, state.sessions)) {
-          for (const l of this.listeners) {
-            l(event);
-          }
-        }
-        previous = state.sessions;
-      });
-    }
-    return () => {
-      this.listeners.delete(listener);
-      if (this.listeners.size === 0) {
-        this.unsubscribe?.();
-        this.unsubscribe = undefined;
-      }
-    };
+    return this.events.subscribe(listener);
   }
 
   async handle(origin: string, request: Eip1193Request): Promise<unknown> {
@@ -189,7 +172,7 @@ export class Eip1193Handler {
   private async requestAccounts(origin: string): Promise<ReadonlyArray<string>> {
     const { connections } = this.options;
     if (connections.accounts(origin).length === 0) {
-      await connections.request(origin, "connect");
+      await connections.request(origin, { kind: "connect" });
     }
     await connections.touch(origin);
     return connections.accounts(origin);
@@ -224,7 +207,7 @@ export class Eip1193Handler {
       throw unauthorized();
     }
     if (session.scopes[network] === undefined) {
-      await connections.request(origin, "network", network);
+      await connections.request(origin, { kind: "network", network });
     } else if (session.currentNetwork !== network) {
       await connections.setCurrentNetwork(origin, network);
     }
@@ -271,7 +254,7 @@ export class Eip1193Handler {
     }
     const session = connections.session(origin);
     if (session !== undefined && session.scopes[network] === undefined) {
-      await connections.request(origin, "network", network, "eip155", false);
+      await connections.request(origin, { kind: "network", network, activate: false });
     }
     return null;
   }
@@ -450,6 +433,9 @@ export class Eip1193Handler {
 function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {
     return error;
+  }
+  if (error instanceof InvalidTokenError) {
+    return invalidParams(error.message);
   }
   if (error instanceof OriginBusyError) {
     return userRejectedRequest(error.message);

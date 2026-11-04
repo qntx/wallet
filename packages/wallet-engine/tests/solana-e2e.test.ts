@@ -34,7 +34,7 @@ import { NetworkController } from "../src/networks/controller.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send as sendTx } from "./send-helpers.ts";
+import { send as sendTx, idleNetworkDeps } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_SOLANA"] === "1";
 // Official Agave release binary on PATH (or SOLANA_TEST_VALIDATOR); CI installs v3.1.11
@@ -528,6 +528,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       const ctl = new TransactionController({
         wallet,
         networks: new NetworkController({
+          ...idleNetworkDeps,
           fetch: globalThis.fetch.bind(globalThis),
           rpc: { [NETWORK]: [url] },
           openStore: async () => Promise.resolve(createMemoryEngineStore()),

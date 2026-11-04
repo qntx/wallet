@@ -13,6 +13,9 @@ import { p2wpkh } from "@scure/btc-signer/payment.js";
 import type { TransactionInputUpdate } from "@scure/btc-signer/psbt.js";
 import { selectUTXO } from "@scure/btc-signer/utxo.js";
 
+import { timeoutSignal } from "../timer.ts";
+import type { SetTimer } from "../timer.ts";
+
 const GAP_LIMIT = 20;
 export { GAP_LIMIT };
 const DUST: Record<string, number> = { p2wpkh: 294, p2tr: 330, p2pkh: 546 };
@@ -70,6 +73,12 @@ export class EsploraError extends Error {
   }
 }
 
+/** What the Esplora client needs from its host: timers and randomness are injected. */
+export type EsploraDeps = {
+  readonly setTimer: SetTimer;
+  readonly random: (length: number) => Uint8Array;
+};
+
 const MAX_IN_FLIGHT = 4;
 const MAX_RETRIES = 3;
 const MAX_BACKOFF_MS = 2000;
@@ -79,9 +88,14 @@ const REQUEST_TIMEOUT_MS = 10_000;
 export const esplora = (
   endpoints: ReadonlyArray<string>,
   fetchFn: EsploraFetch,
-  sleep: (ms: number) => Promise<void>,
+  deps: EsploraDeps,
   timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Esplora => {
+  const { setTimer, random } = deps;
+  const sleep = async (ms: number): Promise<void> =>
+    new Promise<void>((resolve) => {
+      setTimer(ms, resolve);
+    });
   let inFlight = 0;
   const waiters: Array<() => void> = [];
   const acquire = async (): Promise<void> => {
@@ -101,7 +115,7 @@ export const esplora = (
     const ra = headers.get("retry-after");
     const retryAfterMs =
       ra !== null && ra !== "" && !Number.isNaN(Number(ra)) ? Number(ra) * 1000 : undefined;
-    const jitter = Math.floor(Math.random() * 100);
+    const jitter = (random(1)[0] ?? 0) % 100;
     await sleep(retryAfterMs ?? Math.min(100 * 2 ** retry + jitter, MAX_BACKOFF_MS));
   };
   // One request inside a concurrency slot. A 429 releases the slot before anyone backs off:
@@ -112,6 +126,7 @@ export const esplora = (
     body: string | undefined,
   ): Promise<{ readonly value: unknown } | { readonly throttled: EsploraResponse["headers"] }> => {
     await acquire();
+    const bound = timeoutSignal(timeoutMs, setTimer);
     try {
       let res: EsploraResponse;
       try {
@@ -121,7 +136,7 @@ export const esplora = (
           ...(body === undefined
             ? { method: "GET" }
             : { method: "POST", headers: { "content-type": "text/plain" }, body }),
-          signal: AbortSignal.timeout(timeoutMs),
+          signal: bound.signal,
         });
       } catch (error) {
         throw new EsploraError(
@@ -142,6 +157,7 @@ export const esplora = (
         return { value: text };
       }
     } finally {
+      bound.cancel();
       release();
     }
   };

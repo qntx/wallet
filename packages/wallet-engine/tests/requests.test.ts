@@ -17,7 +17,13 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { bookDeps, simulateSolanaStub, tokensStub, simulateV1Result } from "./send-helpers.ts";
+import {
+  bookDeps,
+  simulateSolanaStub,
+  tokensStub,
+  simulateV1Result,
+  idleNetworkDeps,
+} from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -378,6 +384,7 @@ function evmWorld(options: {
   const warnings: string[] = [];
   const warn = { warn: (message: string) => warnings.push(message) };
   const networks = new NetworkController({
+    ...idleNetworkDeps,
     fetch: fetchImpl,
     rpc: options.hostEndpoints === false ? {} : { [SEPOLIA]: [HOST] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),

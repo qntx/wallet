@@ -77,6 +77,20 @@ export type PendingConnection = {
   readonly createdAt: number;
 };
 
+/** What a connection request asks for; `namespace` defaults to `eip155`, `activate` to `true`. */
+export type ConnectionRequest = {
+  readonly kind: PendingConnection["kind"];
+  readonly namespace?: PendingConnection["namespace"];
+  readonly network?: string;
+  readonly activate?: boolean;
+};
+
+/** Pending connection requests held at once; a further request is refused. */
+export const MAX_PENDING_CONNECTIONS = 64;
+
+/** A pending connection request that nobody answers is rejected after this long. */
+export const CONNECTION_REQUEST_TTL_MS = 10 * 60 * 1000;
+
 export type AccountGroup = { readonly walletId: string; readonly groupIndex: number };
 
 export type ConnectionState = {
@@ -103,6 +117,7 @@ export type ConnectionControllerOptions = {
   /** Voids a page's unfinished requests (revoked, or its network changed). */
   readonly invalidate: (origin: string) => void;
   readonly phishing: Pick<PhishingController, "check">;
+  readonly setTimer: (ms: number, fn: () => unknown) => () => void;
 };
 
 const COLLECTION = "connections";
@@ -202,6 +217,7 @@ export class ConnectionController extends Controller<ConnectionState> {
   private readonly options: ConnectionControllerOptions;
   private engineStore: EngineStore | undefined;
   private readonly waiters = new Map<string, Waiter>();
+  private readonly expiries = new Map<string, () => void>();
   private group: AccountGroup | undefined;
   private identity: NostrKeyRef | undefined;
 
@@ -253,6 +269,10 @@ export class ConnectionController extends Controller<ConnectionState> {
       waiter.reject(userRejectedRequest("the wallet was locked"));
     }
     this.waiters.clear();
+    for (const cancel of this.expiries.values()) {
+      cancel();
+    }
+    this.expiries.clear();
     this.update(() => ({ sessions: {}, pending: {} }));
   }
 
@@ -267,11 +287,7 @@ export class ConnectionController extends Controller<ConnectionState> {
         continue;
       }
       this.waiters.get(entry.id)?.reject(userRejectedRequest("the page navigated away"));
-      this.waiters.delete(entry.id);
-      this.update((s) => ({
-        ...s,
-        pending: Object.fromEntries(Object.entries(s.pending).filter(([id]) => id !== entry.id)),
-      }));
+      this.dropPending(entry.id);
     }
     this.options.invalidate(origin);
   }
@@ -337,10 +353,7 @@ export class ConnectionController extends Controller<ConnectionState> {
   /** Resolves with the session once the host approves; rejects with `4001` when it refuses. */
   async request(
     origin: string,
-    kind: PendingConnection["kind"],
-    network?: string,
-    namespace: PendingConnection["namespace"] = "eip155",
-    activate = true,
+    { kind, namespace = "eip155", network, activate = true }: ConnectionRequest,
   ): Promise<ConnectionSession> {
     const store = this.engineStore;
     if (store === undefined) {
@@ -348,6 +361,9 @@ export class ConnectionController extends Controller<ConnectionState> {
     }
     if (this.pending().some((p) => p.origin.origin === origin)) {
       throw requestPending("a connection request is already pending");
+    }
+    if (this.pending().length >= MAX_PENDING_CONNECTIONS) {
+      throw requestPending("too many pending connection requests");
     }
     const id = `conn-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
     const entry: PendingConnection = {
@@ -361,6 +377,13 @@ export class ConnectionController extends Controller<ConnectionState> {
     };
     return new Promise<ConnectionSession>((resolve, reject) => {
       this.waiters.set(id, { resolve, reject });
+      this.expiries.set(
+        id,
+        this.options.setTimer(CONNECTION_REQUEST_TTL_MS, () => {
+          this.waiters.get(id)?.reject(userRejectedRequest("the connection request expired"));
+          this.dropPending(id);
+        }),
+      );
       this.update((s) => ({ ...s, pending: { ...s.pending, [id]: entry } }));
     });
   }
@@ -647,6 +670,8 @@ export class ConnectionController extends Controller<ConnectionState> {
   }
 
   private dropPending(id: string): void {
+    this.expiries.get(id)?.();
+    this.expiries.delete(id);
     this.waiters.delete(id);
     this.update((s) => {
       const { [id]: _gone, ...pending } = s.pending;

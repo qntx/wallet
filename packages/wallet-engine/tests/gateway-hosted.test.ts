@@ -1,8 +1,3 @@
-/**
- * Hosted gateway read test — opt-in (WALLET_E2E_GATEWAY=1). Points a NetworkController with no host
- * endpoints at the staging gateway and reads Sepolia and Bitcoin signet through it with the real
- * fetch. WALLET_GATEWAY_URL overrides the default staging origin.
- */
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -10,6 +5,12 @@ import { PROVIDERS_HEADER, esploraBasePath, rpcPath } from "../src/gateway/contr
 import { NetworkController } from "../src/networks/controller.ts";
 import { networkById } from "../src/networks/registry.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+/**
+ * Hosted gateway read test — opt-in (WALLET_E2E_GATEWAY=1). Points a NetworkController with no host
+ * endpoints at the staging gateway and reads Sepolia and Bitcoin signet through it with the real
+ * fetch. WALLET_GATEWAY_URL overrides the default staging origin.
+ */
+import { idleNetworkDeps } from "./send-helpers.ts";
 
 const GATEWAY = process.env["WALLET_E2E_GATEWAY"] === "1";
 const URL_BASE = process.env["WALLET_GATEWAY_URL"] ?? "https://wallet-gateway-staging.qntx.org";
@@ -25,6 +26,7 @@ describe.skipIf(!GATEWAY)("hosted gateway e2e", () => {
       return res;
     };
     const networks = new NetworkController({
+      ...idleNetworkDeps,
       fetch: recordingFetch,
       rpc: {},
       openStore: async () => Promise.resolve(createMemoryEngineStore()),

@@ -11,6 +11,15 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine`: untrusted contract text is checked before it is shown: a watched token's symbol must be printable (no control, bidi or zero-width characters, at most 32 code points) and its decimals an integer in 0..36 or the request fails with `-32602`; a non-ASCII symbol adds a `token-symbol-unicode` warning; simulated asset changes keep an unverified token's `symbol` and `decimals` only when they pass the same checks.
+- `@qntx/wallet-engine`: pending connection requests are capped at 64 and expire after ten minutes (`ConnectionControllerOptions.setTimer`).
+
+### Changed
+
+- **Breaking:** `WeblnHandlerOptions.now`, `ConnectionControllerOptions.setTimer`, `NetworkController` options `setTimer` and `random` are required; `ConnectionController.request(origin, { kind, namespace?, network?, activate? })` takes an options object; `esplora(endpoints, fetch, { setTimer, random }, timeoutMs?)` takes injected timers and randomness. The engine no longer uses `AbortSignal.timeout` or `Math.random`.
+- `@qntx/wallet-chains`: BIP-322 script pushes longer than 252 bytes are rejected instead of mis-encoded.
+- `@qntx/wallet-engine`: the Solana and EIP-1193 handlers share one session-event helper and the Solana sign path one request method.
+
 - `@qntx/wallet-engine/connect`: the injected Solana Wallet Standard wallet now conforms to `@wallet-standard/base` and `@solana/wallet-standard-features` (typed, no cast): every feature is versioned `1.0.0`, `solana:signTransaction` and `solana:signAndSendTransaction` declare `supportedTransactionVersions: ["legacy", 0]` and are variadic (N inputs become one host request, one approval), `signMessage` returns `[{ signedMessage, signature, signatureType }]`, `standard:events` `on` returns an unsubscribe function, and each input's `account` and `chain` are forwarded. The handler rejects an account other than the session's (`4100`), an unknown or mixed chain (`-32602`) and a chain the session is not authorized for (`4100`); sign-and-send needs a chain and returns raw signature bytes.
 
 - `@qntx/wallet-engine/connect`: the remaining browser methods.
