@@ -4,11 +4,12 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to public providers with failover. Private, never published. It holds no secrets and signs
 nothing — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                 |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction` |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                          |
+| Route                            | Behavior                                                                                                                          |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                         |
+| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`          |
+| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                   |
+| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build |
 
 Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
@@ -18,6 +19,24 @@ Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Re
 Providers are tried in the order of `src/config/networks.ts`. A transport error, timeout (10 s), 5xx
 or 429, or a malformed body moves on to the next provider; five consecutive failures open that
 provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is returned as-is.
+
+## Phishing list
+
+A cron trigger (`17 * * * *`) runs `buildPhishingList` every hour: it fetches every source, keeps
+the entries `phishingKey` accepts, hashes them to 8 bytes, and — only when the merged deny or allow
+set changed — writes `phishing:snapshot` and then `phishing:journal` to the `RISK` KV namespace. The
+journal keeps 7 days and at most 168 entries; a request with `since` inside it gets one folded diff.
+A failing source, or a deny list that shrank by more than half, skips the build and logs one JSON
+line. Staging KV namespace: `wallet-gateway-staging-risk`.
+
+| Source                                                                                            | License                                                                                                                 | Used                                         |
+| ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
+| [MetaMask eth-phishing-detect](https://github.com/MetaMask/eth-phishing-detect) `src/config.json` | [DBAD 1.2](https://github.com/MetaMask/eth-phishing-detect/blob/main/LICENSE): attribution required, no verbatim resale | `blacklist` and `whitelist`; not `fuzzylist` |
+| [Polkadot phishing](https://github.com/polkadot-js/phishing) `all.json`                           | Apache-2.0                                                                                                              | `deny` and `allow`; not `denySub`            |
+
+The list is derived data: entries are normalized and truncated to 8-byte hashes, and the original
+lists are not redistributed. Attribution: phishing data from MetaMask eth-phishing-detect and
+polkadot-js/phishing.
 
 ## Layering
 

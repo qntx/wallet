@@ -3,6 +3,7 @@ import { expect } from "vite-plus/test";
 import { accepts } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
+import type { RiskStore } from "../src/risk/phishing.ts";
 import type { GatewayNetwork, Limiters, RateLimiter } from "../src/types.ts";
 
 export const INSTALL_ID = "0123456789abcdef0123456789abcdef";
@@ -80,8 +81,24 @@ export function recordingLimiter(): RateLimiter & { readonly keys: string[] } {
   };
 }
 
+export function memoryRiskStore(): RiskStore & { readonly data: Map<string, string> } {
+  const data = new Map<string, string>();
+  return {
+    data,
+    get: async (key) => {
+      await Promise.resolve();
+      return data.get(key);
+    },
+    put: async (key, value) => {
+      await Promise.resolve();
+      data.set(key, value);
+    },
+  };
+}
+
 export function gateway(options: {
   readonly fetch: typeof globalThis.fetch;
+  readonly risk?: RiskStore;
   readonly limiters?: Limiters;
   readonly log?: (line: string) => void;
 }): ReturnType<typeof createGateway> {
@@ -90,6 +107,7 @@ export function gateway(options: {
     networks: NETWORKS,
     limiters: options.limiters ?? { rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
+    risk: options.risk ?? memoryRiskStore(),
     log: options.log ?? (() => undefined),
   });
 }
