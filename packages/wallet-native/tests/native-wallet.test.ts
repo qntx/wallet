@@ -94,7 +94,11 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   let integCb: (() => void) | undefined;
   let locked = false;
   const pipe: KernelFramePipe = {
-    post: (frame) => hostCb?.(frame),
+    post: (frame) => {
+      if (!locked) {
+        hostCb?.(frame);
+      }
+    },
     onMessage: (cb) => {
       kernelCb = cb;
     },
@@ -105,7 +109,9 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   const host = {
     start: (_seconds: number) => {},
     post: (frame) => {
-      kernelCb?.(frame);
+      if (!locked) {
+        kernelCb?.(frame);
+      }
     },
     onMessage: (cb) => {
       hostCb = cb;
@@ -199,7 +205,7 @@ describe("createNativeWallet", () => {
         verifyEvent,
         passkey: PASSKEY,
         autoLock: { platform: "web", idleMinutes: 5 },
-        host,
+        createHost: () => host,
       }),
     ).rejects.toThrow(expect.objectContaining({ code: "invalid-input" }));
   });
@@ -214,7 +220,7 @@ describe("createNativeWallet", () => {
       verifyEvent,
       passkey: PASSKEY,
       autoLock: AUTOLOCK,
-      host: hostA,
+      createHost: () => hostA,
     });
     const draft = await walletA.wallets.createMnemonic({ words: 12 });
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
@@ -227,7 +233,7 @@ describe("createNativeWallet", () => {
       verifyEvent,
       passkey: PASSKEY,
       autoLock: AUTOLOCK,
-      host,
+      createHost: () => host,
     });
     await expect(
       wallet.wallets.importMnemonic({
@@ -257,7 +263,7 @@ describe("createNativeWallet", () => {
       verifyEvent,
       passkey: PASSKEY,
       autoLock: AUTOLOCK,
-      host: host2,
+      createHost: () => host2,
     });
     keystore.failNext("cancelled");
     await expect(wallet2.vault.unlock()).rejects.toThrow(
@@ -266,6 +272,60 @@ describe("createNativeWallet", () => {
     expect(wallet2.getSnapshot().vault).toBe("locked");
     await wallet2.vault.unlock();
     expect(wallet2.getSnapshot().vault).toBe("unlocked");
+  });
+});
+
+describe("kernel restarts", () => {
+  /** A wallet whose every kernel runtime gets a fresh host over one persistent vault. */
+  async function openWallet() {
+    const keystore = fakeNativeKeystore();
+    const bytes = { value: undefined as Uint8Array | undefined };
+    const hosts: FakeHost[] = [];
+    const wallet = await createNativeWallet({
+      verifyEvent,
+      passkey: PASSKEY,
+      autoLock: AUTOLOCK,
+      createHost: () => {
+        const host = boot(fileStore(bytes), keystore.native);
+        hosts.push(host);
+        return host;
+      },
+    });
+    return { wallet, hosts };
+  }
+
+  async function createMnemonicWallet(wallet: Awaited<ReturnType<typeof openWallet>>["wallet"]) {
+    const draft = await wallet.wallets.createMnemonic({ words: 12 });
+    const words = new TextDecoder().decode(draft.words.read()).split(" ");
+    const created = await draft.confirm(draft.quiz.map((i) => words[i]!));
+    return { walletId: created.walletId, phrase: words.join(" ") };
+  }
+
+  it("unlocks in the same process after a lock, twice in a row", async () => {
+    const { wallet, hosts } = await openWallet();
+    await createMnemonicWallet(wallet);
+    expect(hosts).toHaveLength(1);
+    for (const round of [2, 3]) {
+      await wallet.vault.lock();
+      expect(wallet.getSnapshot().vault).toBe("locked");
+      await wallet.vault.unlock();
+      expect(wallet.getSnapshot().vault).toBe("unlocked");
+      expect(hosts).toHaveLength(round);
+    }
+    expect(hosts.slice(0, -1).every((host) => host.locked())).toBe(true);
+  });
+
+  it("creates again after the last wallet is deleted", async () => {
+    const { wallet } = await openWallet();
+    const first = await createMnemonicWallet(wallet);
+    await wallet.wallets.delete(first.walletId, { kind: "hardware" });
+    expect(wallet.getSnapshot().wallets).toHaveLength(0);
+    if (wallet.getSnapshot().vault === "locked") {
+      await wallet.vault.unlock();
+    }
+    const imported = await wallet.wallets.importMnemonic({ mnemonic: first.phrase });
+    expect(imported.walletId).toBe(first.walletId);
+    expect(wallet.getSnapshot().vault).toBe("unlocked");
   });
 });
 
