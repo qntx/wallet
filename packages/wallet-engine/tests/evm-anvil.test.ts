@@ -22,7 +22,14 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { bookDeps, replaceVia, send, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
+import {
+  bookDeps,
+  replaceVia,
+  send,
+  simulateSolanaStub,
+  tokensStub,
+  idleNetworkDeps,
+} from "./send-helpers.ts";
 
 const NOSTR_PUBKEY = "a".repeat(64);
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
@@ -346,6 +353,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
     const ctl = new TransactionController({
       wallet,
       networks: new NetworkController({
+        ...idleNetworkDeps,
         fetch: globalThis.fetch.bind(globalThis),
         rpc: { "eip155:1": [url] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -487,6 +495,7 @@ describe.runIf(RUN)("anvil e2e: account discovery", () => {
         spark,
         sparkNetwork: "regtest",
         networks: new NetworkController({
+          ...idleNetworkDeps,
           fetch: globalThis.fetch.bind(globalThis),
           rpc: { "eip155:1": [url] },
           openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -523,6 +532,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       await rpcCall(url, "anvil_setBalance", [from, "0xde0b6b3a7640000"]);
       const random = taggedRandom();
       const networks = new NetworkController({
+        ...idleNetworkDeps,
         fetch: globalThis.fetch.bind(globalThis),
         rpc: { "eip155:1": [url] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -560,6 +570,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       await requests.init();
       const connections = new ConnectionController({
         phishing: { check: () => "clear" },
+        setTimer: () => () => {},
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random,
         now: () => 1000,

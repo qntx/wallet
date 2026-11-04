@@ -18,6 +18,7 @@ import {
   lookupEvmToken,
 } from "@qntx/wallet-chains/evm";
 
+import { TOKEN_SYMBOL_MAX, safeDecimals, safeDisplayText } from "../display.ts";
 import { errorMessage } from "../errors.ts";
 import { boundedSimulation } from "../requests/simulation.ts";
 import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
@@ -91,6 +92,20 @@ const checkedAddress = (v: string): `0x${string}` => {
     throw new TypeError(`malformed evm address: ${v}`);
   }
   return v;
+};
+
+/** A contract's own `symbol` and `decimals`, kept only when they are safe to show. */
+const unverifiedMetadata = (token: {
+  readonly symbol?: string | undefined;
+  readonly decimals?: number | undefined;
+}): { symbol?: string; decimals?: number } => {
+  const symbol =
+    token.symbol === undefined ? undefined : safeDisplayText(token.symbol, TOKEN_SYMBOL_MAX);
+  const decimals = token.decimals === undefined ? undefined : safeDecimals(token.decimals);
+  return {
+    ...(decimals === undefined ? {} : { decimals }),
+    ...(symbol === undefined ? {} : { symbol }),
+  };
 };
 
 const checkedHex = (v: string): `0x${string}` => {
@@ -357,8 +372,7 @@ export class EvmChainAdapter {
           amount: change.value.diff.toString(10),
           ...(known === undefined
             ? {
-                ...(change.token.decimals === undefined ? {} : { decimals: change.token.decimals }),
-                ...(change.token.symbol === undefined ? {} : { symbol: change.token.symbol }),
+                ...unverifiedMetadata(change.token),
                 verified: false,
               }
             : { decimals: known.decimals, symbol: known.symbol, verified: true }),

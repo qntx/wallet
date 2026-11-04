@@ -15,6 +15,7 @@ import {
 import { NetworkController } from "../src/networks/controller.ts";
 import type { Independent } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { idleNetworkDeps } from "./send-helpers.ts";
 
 const GATEWAY = "https://gw.test";
 const HOST = "https://host.test";
@@ -145,6 +146,7 @@ function controller(
 ) {
   const warnings: string[] = [];
   const n = new NetworkController({
+    ...idleNetworkDeps,
     fetch: w.fetch,
     rpc: options.rpc ?? HOST_RPC,
     openStore,
@@ -298,6 +300,7 @@ describe("engine reads through the gateway", () => {
   it("behaves exactly as before when no gateway is configured", async () => {
     const w = world();
     const n = new NetworkController({
+      ...idleNetworkDeps,
       fetch: w.fetch,
       rpc: HOST_RPC,
       openStore,

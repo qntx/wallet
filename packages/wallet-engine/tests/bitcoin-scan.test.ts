@@ -4,7 +4,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { scripthash, scanChain } from "../src/chains/bitcoin-scan.ts";
 import { esplora as esploraClient, EsploraError } from "../src/chains/bitcoin.ts";
-import type { Esplora, EsploraFetch, EsploraResponse } from "../src/chains/bitcoin.ts";
+import type { Esplora, EsploraDeps, EsploraFetch, EsploraResponse } from "../src/chains/bitcoin.ts";
+import { esploraDeps } from "./send-helpers.ts";
 
 const XPUB = HDKey.fromMasterSeed(new Uint8Array(64).fill(1));
 const ACCOUNT = XPUB.derive("m/84'/0'/0'");
@@ -72,7 +73,15 @@ describe("gap-20 scanning", () => {
   });
 });
 
-const noSleep = async (): Promise<void> => Promise.resolve();
+const realTimerDeps: EsploraDeps = {
+  setTimer: (ms, fn) => {
+    const id = setTimeout(fn, ms);
+    return () => {
+      clearTimeout(id);
+    };
+  },
+  random: (n) => new Uint8Array(n),
+};
 
 const resp = (status: number): EsploraResponse => ({
   ok: status >= 200 && status < 300,
@@ -96,7 +105,7 @@ const hang: EsploraFetch = async (_url, init) => {
 
 describe("esplora client timeout", () => {
   it("rejects a stalled request with a transient EsploraError", async () => {
-    const es = esploraClient(["http://electrs.test"], hang, noSleep, 20);
+    const es = esploraClient(["http://electrs.test"], hang, realTimerDeps, 20);
     await expect(es.get("/blocks/tip/height")).rejects.toThrow(EsploraError);
     await expect(es.get("/blocks/tip/height")).rejects.toMatchObject({ transient: true });
   });
@@ -105,13 +114,13 @@ describe("esplora client timeout", () => {
     const es500 = esploraClient(
       ["http://electrs.test"],
       async () => Promise.resolve(resp(500)),
-      noSleep,
+      esploraDeps(),
     );
     await expect(es500.get("/x")).rejects.toMatchObject({ transient: true });
     const es404 = esploraClient(
       ["http://electrs.test"],
       async () => Promise.resolve(resp(404)),
-      noSleep,
+      esploraDeps(),
     );
     await expect(es404.get("/x")).rejects.toMatchObject({ transient: false });
   });

@@ -331,7 +331,7 @@ describe("solana:signIn", () => {
     const { handler, connectRequests, requestsCalls } = rig({ prepareResult: signed });
     await signIn(handler, {});
     expect(connectRequests).toHaveLength(1);
-    expect(connectRequests[0]).toStrictEqual([SITE, "connect", undefined, "solana"]);
+    expect(connectRequests[0]).toStrictEqual([SITE, { kind: "connect", namespace: "solana" }]);
     expect(requestsCalls).toHaveLength(1);
   });
 

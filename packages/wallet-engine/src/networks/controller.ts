@@ -9,7 +9,7 @@ import type { PublicClient } from "viem";
  * and persisted in the EngineStore.
  */
 import { esplora } from "../chains/bitcoin.ts";
-import type { Esplora } from "../chains/bitcoin.ts";
+import type { Esplora, EsploraDeps } from "../chains/bitcoin.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import { gatewayFetch } from "../gateway/client.ts";
@@ -22,13 +22,10 @@ import {
   servedNetworksResponse,
 } from "../gateway/contract/index.ts";
 import type { EngineStore } from "../store/port.ts";
+import { timeoutSignal } from "../timer.ts";
+import type { SetTimer } from "../timer.ts";
 import { networkById } from "./registry.ts";
 import type { NetworkInfo } from "./registry.ts";
-
-const esploraSleep = async (ms: number) =>
-  new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
 
 /** Bound on the unlock-time `/v1/networks` read so a dead gateway cannot stall unlocking. */
 const GATEWAY_PROBE_TIMEOUT_MS = 5000;
@@ -61,6 +58,8 @@ type Options = {
   readonly openStore: () => Promise<EngineStore>;
   readonly logger: EngineLogger;
   readonly gateway?: GatewayConfig | undefined;
+  readonly setTimer: SetTimer;
+  readonly random: (length: number) => Uint8Array;
 };
 
 const makeClient = (
@@ -79,7 +78,11 @@ const makeClient = (
     batch: { multicall: true },
   });
 
-const esploraClient = (urls: ReadonlyArray<string>, fetchFn: typeof globalThis.fetch): Esplora =>
+const esploraClient = (
+  urls: ReadonlyArray<string>,
+  fetchFn: typeof globalThis.fetch,
+  deps: EsploraDeps,
+): Esplora =>
   esplora(
     urls,
     async (url, init) => {
@@ -92,7 +95,7 @@ const esploraClient = (urls: ReadonlyArray<string>, fetchFn: typeof globalThis.f
         text: async () => r.text(),
       };
     },
-    esploraSleep,
+    deps,
   );
 
 const solanaCaller = (
@@ -175,9 +178,10 @@ export class NetworkController extends Controller<NetworkControllerState> {
       return;
     }
     const url = `${this.gatewayBase}${networksPath}`;
+    const probe = timeoutSignal(GATEWAY_PROBE_TIMEOUT_MS, this.options.setTimer);
     try {
       const res = await this.gatewayFetch(url, {
-        signal: AbortSignal.timeout(GATEWAY_PROBE_TIMEOUT_MS),
+        signal: probe.signal,
       });
       if (!res.ok) {
         throw new Error(`status ${res.status}`);
@@ -191,6 +195,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
     } catch {
       this.gatewayServed = new Set();
       this.options.logger.warn(`gateway unavailable, not used for this session: ${url}`);
+    } finally {
+      probe.cancel();
     }
   }
 
@@ -280,7 +286,12 @@ export class NetworkController extends Controller<NetworkControllerState> {
   }
 
   independentEsplora(network: string): Independent<Esplora> {
-    return this.independent(network, (hosts) => esploraClient(hosts, this.options.fetch));
+    return this.independent(network, (hosts) =>
+      esploraClient(hosts, this.options.fetch, {
+        setTimer: this.options.setTimer,
+        random: this.options.random,
+      }),
+    );
   }
 
   /** Networks with at least one configured endpoint or served by the gateway, by family. */
@@ -311,7 +322,10 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (urls.length === 0) {
       throw new Error(`no esplora endpoint for ${network}`);
     }
-    return esploraClient(urls, this.gatewayFetch);
+    return esploraClient(urls, this.gatewayFetch, {
+      setTimer: this.options.setTimer,
+      random: this.options.random,
+    });
   }
 
   /** Validate a custom endpoint's reported chain id, then persist it first in the list. */

@@ -7,7 +7,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { replaceVia, send } from "./send-helpers.ts";
+import { replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -134,6 +134,7 @@ const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: Array<() => unk
   return new TransactionController({
     wallet: {} as Wallet,
     networks: new NetworkController({
+      ...idleNetworkDeps,
       fetch: fetchFn,
       rpc: { "eip155:1": ["http://fake.local"] },
       openStore: async () => Promise.resolve(memoryStore()),
@@ -164,6 +165,7 @@ const ctlWith = (sign: Sign): TransactionController =>
   new TransactionController({
     wallet: {} as Wallet,
     networks: new NetworkController({
+      ...idleNetworkDeps,
       fetch: rpcFetch(),
       rpc: { "eip155:1": ["http://fake.local"] },
       openStore: async () => Promise.resolve(memoryStore()),

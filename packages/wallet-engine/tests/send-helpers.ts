@@ -1,6 +1,7 @@
 import type { Event } from "@qntx/nostr";
 
 import { AddressBookController } from "../src/addresses/controller.ts";
+import type { EsploraDeps } from "../src/chains/bitcoin.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -205,4 +206,39 @@ export const tokensStub = {
     await Promise.resolve();
     throw new Error("tokens are not wired in this test");
   },
+};
+
+/**
+ * `EsploraDeps` whose timers run `sleep` for backoff delays; the request-timeout timer never fires.
+ * `random` is all zeros, so jitter is 0.
+ */
+export function esploraDeps(
+  sleep: (ms: number) => Promise<void> = async () => {
+    await Promise.resolve();
+  },
+): EsploraDeps {
+  return {
+    setTimer: (ms, fn) => {
+      if (ms === 10_000) {
+        return () => undefined;
+      }
+      let live = true;
+      void (async () => {
+        await sleep(ms);
+        if (live) {
+          fn();
+        }
+      })();
+      return () => {
+        live = false;
+      };
+    },
+    random: (n) => new Uint8Array(n),
+  };
+}
+
+/** `setTimer` and `random` for a `NetworkController` that never waits. */
+export const idleNetworkDeps = {
+  setTimer: (): (() => void) => () => undefined,
+  random: (n: number): Uint8Array => new Uint8Array(n),
 };

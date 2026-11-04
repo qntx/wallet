@@ -144,7 +144,7 @@ export class Nip07Handler {
   private async publicKey(origin: string, pubkey: string | undefined): Promise<string> {
     const { connections } = this.options;
     if (pubkey === undefined) {
-      await connections.request(origin, "connect", undefined, "nostr");
+      await connections.request(origin, { kind: "connect", namespace: "nostr" });
     }
     await connections.touch(origin);
     const granted = connections.nostrAccount(origin);

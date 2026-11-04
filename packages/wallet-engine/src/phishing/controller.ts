@@ -17,6 +17,7 @@ import {
 } from "../gateway/contract/index.ts";
 import type { HashList } from "../gateway/contract/index.ts";
 import type { PublicStore } from "../store/port.ts";
+import { timeoutSignal } from "../timer.ts";
 import type { PhishingStatus } from "./status.ts";
 
 export const PHISHING_REFRESH_MS = 3_600_000;
@@ -69,7 +70,7 @@ export class PhishingController extends Controller<PhishingState> {
   private deny: HashList | undefined;
   private allow: HashList | undefined;
   private inflight: Promise<void> | undefined;
-  private abort: AbortController | undefined;
+  private abort: { readonly abort: () => void } | undefined;
   private cancelTimer: (() => void) | undefined;
   private epoch = 0;
   private destroyed = false;
@@ -225,13 +226,11 @@ export class PhishingController extends Controller<PhishingState> {
     const base = gateway.url.replace(/\/+$/, "");
     const url = `${base}${phishingListPath}${version === null ? "" : `?since=${String(version)}`}`;
     const { epoch } = this;
-    const controller = new AbortController();
-    this.abort = controller;
-    const cancel = this.options.setTimer(SYNC_TIMEOUT_MS, () => {
-      controller.abort();
-    });
+    const bound = timeoutSignal(SYNC_TIMEOUT_MS, this.options.setTimer);
+    const { cancel } = bound;
+    this.abort = bound;
     try {
-      const response = await this.fetchGateway(url, { signal: controller.signal });
+      const response = await this.fetchGateway(url, { signal: bound.signal });
       if (!response.ok) {
         throw new Error(`status ${String(response.status)}`);
       }

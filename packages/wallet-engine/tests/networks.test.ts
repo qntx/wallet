@@ -4,6 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { NetworkController } from "../src/networks/controller.ts";
 import { BITCOIN_NETWORKS, SOLANA_NETWORKS } from "../src/networks/registry.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { idleNetworkDeps } from "./send-helpers.ts";
 
 const logger = { warn: () => {} };
 const openStore = async () => Promise.resolve(createMemoryEngineStore());
@@ -39,6 +40,7 @@ describe("network registry", () => {
 describe("NetworkController", () => {
   it("accepts a Solana endpoint that reports the registry genesis hash", async () => {
     const n = new NetworkController({
+      ...idleNetworkDeps,
       fetch: genesisFetch(DEVNET_GENESIS),
       rpc: {},
       openStore,
@@ -51,21 +53,39 @@ describe("NetworkController", () => {
 
   it("rejects a Solana endpoint that reports another genesis hash", async () => {
     const mainnet = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
-    const n = new NetworkController({ fetch: genesisFetch(mainnet), rpc: {}, openStore, logger });
+    const n = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: genesisFetch(mainnet),
+      rpc: {},
+      openStore,
+      logger,
+    });
     await n.init();
     await expect(n.addRpc(DEVNET, "https://wrong.example")).rejects.toThrow("genesis hash");
     expect(n.endpoints(DEVNET)).toStrictEqual([]);
   });
 
   it("accepts a custom endpoint whose eth_chainId matches the registry", async () => {
-    const n = new NetworkController({ fetch: chainIdFetch("0x1"), rpc: {}, openStore, logger });
+    const n = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: chainIdFetch("0x1"),
+      rpc: {},
+      openStore,
+      logger,
+    });
     await n.init();
     await n.addRpc("eip155:1", "https://custom.example");
     expect(n.endpoints("eip155:1")).toStrictEqual(["https://custom.example"]);
   });
 
   it("rejects a custom endpoint on chain id mismatch", async () => {
-    const n = new NetworkController({ fetch: chainIdFetch("0x38"), rpc: {}, openStore, logger });
+    const n = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: chainIdFetch("0x38"),
+      rpc: {},
+      openStore,
+      logger,
+    });
     await n.init();
     await expect(n.addRpc("eip155:1", "https://wrong.example")).rejects.toThrow("chain id 56");
     expect(n.endpoints("eip155:1")).toStrictEqual([]);
@@ -74,6 +94,7 @@ describe("NetworkController", () => {
   it("persists and reloads custom endpoints", async () => {
     const store = createMemoryEngineStore();
     const a = new NetworkController({
+      ...idleNetworkDeps,
       fetch: chainIdFetch("0x1"),
       rpc: {},
       openStore: async () => Promise.resolve(store),
@@ -82,6 +103,7 @@ describe("NetworkController", () => {
     await a.init();
     await a.addRpc("eip155:1", "https://saved.example");
     const b = new NetworkController({
+      ...idleNetworkDeps,
       fetch: chainIdFetch("0x1"),
       rpc: { "eip155:1": ["https://host.example"] },
       openStore: async () => Promise.resolve(store),

@@ -22,13 +22,13 @@ import { chains } from "@qntx/wallet/chains";
 import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
-import type { Esplora, EsploraResponse } from "../src/chains/bitcoin.ts";
+import type { Esplora, EsploraDeps, EsploraResponse } from "../src/chains/bitcoin.ts";
 import { esplora, BitcoinChainAdapter, EsploraError, feeTiers } from "../src/chains/bitcoin.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { cpfpVia, replaceVia, send } from "./send-helpers.ts";
+import { cpfpVia, replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -114,6 +114,16 @@ const sleep = async (ms: number) =>
     setTimeout(resolve, ms);
   });
 
+const realDeps: EsploraDeps = {
+  setTimer: (ms, fn) => {
+    const id = setTimeout(fn, ms);
+    return () => {
+      clearTimeout(id);
+    };
+  },
+  random: (n) => new Uint8Array(n),
+};
+
 const esploraClient = (base: string): Esplora =>
   esplora(
     [base],
@@ -127,7 +137,7 @@ const esploraClient = (base: string): Esplora =>
         text: async () => r.text(),
       };
     },
-    sleep,
+    realDeps,
   );
 
 const rpc = (container: string, method: string, params: ReadonlyArray<unknown> = []): unknown => {
@@ -431,6 +441,7 @@ const ctlRig = async (
   const ctl = new TransactionController({
     wallet,
     networks: new NetworkController({
+      ...idleNetworkDeps,
       fetch: globalThis.fetch.bind(globalThis),
       rpc: { [NETWORK]: [base] },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -653,6 +664,7 @@ const legacyFlow = async (): Promise<void> => {
       } as never,
       sparkNetwork: "regtest",
       networks: new NetworkController({
+        ...idleNetworkDeps,
         fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -676,6 +688,7 @@ const legacyFlow = async (): Promise<void> => {
     const txCtl = new TransactionController({
       wallet,
       networks: new NetworkController({
+        ...idleNetworkDeps,
         fetch: trackedFetch,
         rpc: { [NETWORK]: [base] },
         openStore: async () => Promise.resolve(createMemoryEngineStore()),

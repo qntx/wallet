@@ -18,6 +18,7 @@ import { normalizeAddress } from "../addresses/normalize.ts";
 import type { SignInFields } from "../connect/siws.ts";
 import { utf8Text } from "../connect/text.ts";
 import { Controller } from "../controller.ts";
+import { TOKEN_SYMBOL_MAX, isAscii, safeDecimals, safeDisplayText } from "../display.ts";
 import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { PreparedSparkAction, SparkDisplay, SparkResult } from "../payments/action.ts";
@@ -242,6 +243,14 @@ export type LightningInvoiceDisplay = {
   readonly amountSats: number;
   readonly memo?: string;
 };
+
+/** A token the page asked to watch whose on-chain metadata cannot be shown; the dApp's bad input. */
+export class InvalidTokenError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InvalidTokenError";
+  }
+}
 
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
 export class RequestEndedError extends Error {
@@ -830,7 +839,15 @@ export class RequestController extends Controller<RequestControllerState> {
     }
     if (input.method === "watch-asset") {
       const address = checksumEvmAddress(input.address);
-      const { symbol, decimals } = await this.options.tokens.metadata(input.network, address);
+      const metadata = await this.options.tokens.metadata(input.network, address);
+      const symbol = safeDisplayText(metadata.symbol, TOKEN_SYMBOL_MAX);
+      const decimals = safeDecimals(metadata.decimals);
+      if (symbol === undefined) {
+        throw new InvalidTokenError("the token symbol cannot be displayed safely");
+      }
+      if (decimals === undefined) {
+        throw new InvalidTokenError("the token decimals are out of range");
+      }
       const chainId = Number(input.network.slice("eip155:".length));
       return {
         account: input.account,
@@ -844,9 +861,14 @@ export class RequestController extends Controller<RequestControllerState> {
           verified: lookupEvmToken(evmTokenTable, chainId, address) !== undefined,
         },
         checks: [],
-        risk: impersonatesBuiltIn(chainId, address, symbol)
-          ? [{ code: "token-impersonation", level: "danger" }]
-          : [],
+        risk: [
+          ...(impersonatesBuiltIn(chainId, address, symbol)
+            ? [{ code: "token-impersonation" as const, level: "danger" as const }]
+            : []),
+          ...(isAscii(symbol)
+            ? []
+            : [{ code: "token-symbol-unicode" as const, level: "warning" as const }]),
+        ],
         run: {
           factor: "none",
           staleReason: () => undefined,

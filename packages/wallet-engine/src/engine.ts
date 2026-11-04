@@ -176,6 +176,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     logger: options.logger,
     gateway: options.gateway,
+    setTimer,
+    random: options.random,
   });
 
   const assets = new AssetsController({
@@ -329,6 +331,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   });
   const connections = new ConnectionController({
     phishing,
+    setTimer,
     openStore: options.openStore,
     random: options.random,
     now: options.now,
@@ -389,6 +392,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
             network: options.sparkNetwork,
           };
     },
+    now: options.now,
     alias: options.weblnAlias,
     lightningMaxFee: options.lightningMaxFee,
     sleep: async (ms) => {
