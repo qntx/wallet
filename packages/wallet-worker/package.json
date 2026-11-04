@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet-worker",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Web Worker and worker_threads hosts for @qntx/wallet",
   "keywords": [
     "nostr",
@@ -67,8 +67,8 @@
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
-    "@qntx/wallet": "0.7.0",
-    "@qntx/wallet-kernel": "0.7.0",
+    "@qntx/wallet": "0.8.0",
+    "@qntx/wallet-kernel": "0.8.0",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@types/node": "26.6.5",
@@ -77,7 +77,7 @@
     "vite-plus": "1.4.0"
   },
   "peerDependencies": {
-    "@qntx/wallet": "0.7.0"
+    "@qntx/wallet": "0.8.0"
   },
   "devEngines": {
     "packageManager": {

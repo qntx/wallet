@@ -9,6 +9,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-04
+
+The wallet and the engine no longer bind a signature verifier: hosts inject `verifyEvent`, so a
+native verifier checks each signed event once instead of the pure-JS noble default running first.
+The engine registers a Solana Wallet Standard wallet in the injected script, and the WebLN and
+NIP-07 providers are in.
+
 ### Added
 
 - `packages/wallet-engine` registers a Solana Wallet Standard wallet in the
