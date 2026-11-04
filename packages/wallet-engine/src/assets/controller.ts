@@ -9,6 +9,7 @@ import { encodeFunctionData, decodeFunctionResult, isAddress, isHex } from "viem
 import type { PublicClient } from "viem";
 
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
+import { evmTokenTable } from "@qntx/wallet-chains/evm";
 
 import { BtcUtxoStore, scanChain, scanUtxos } from "../chains/bitcoin-scan.ts";
 import { ERC20_ABI, evmRpcHex } from "../chains/evm.ts";
@@ -364,6 +365,32 @@ export class AssetsController extends Controller<AssetsControllerState> {
     } catch {
       return undefined;
     }
+  }
+
+  /** Whether `address` is in the built-in token table of `network` or among the custom tokens. */
+  isTracked(network: string, address: string): boolean {
+    const wanted = address.toLowerCase();
+    const builtIn = Object.keys(
+      evmTokenTable[String(this.options.networks.info(network).chainId)] ?? {},
+    );
+    return (
+      builtIn.some((known) => known.toLowerCase() === wanted) ||
+      (this.customTokens.get(network) ?? []).some((t) => t.address.toLowerCase() === wanted)
+    );
+  }
+
+  /** The token's own `symbol` and `decimals` (EVM only); throws when either read fails. */
+  async tokenMetadata(
+    network: string,
+    address: string,
+  ): Promise<{ readonly symbol: string; readonly decimals: number }> {
+    const client = this.options.networks.client(network);
+    const symbol = await this.callToken(client, address, "symbol");
+    const decimals = await this.callToken(client, address, "decimals");
+    if (symbol === undefined || decimals === undefined) {
+      throw new TypeError(`${address} is not a readable ERC-20 token on ${network}`);
+    }
+    return { symbol, decimals };
   }
 
   /** Reads symbol/decimals on-chain, marks unverified, persists; throws when the calls fail. */

@@ -4,6 +4,7 @@ import {
   assessRecipients,
   assessSimulation,
   comparable,
+  impersonatesBuiltIn,
   mergeRisk,
   originRisk,
 } from "../src/requests/risk.ts";
@@ -158,5 +159,26 @@ describe("assessSimulation", () => {
 
   it("never compares Solana lamports", () => {
     expect(assessSimulation(intent("full"), change("lamports", "-5000")).risk).toStrictEqual([]);
+  });
+});
+
+describe("impersonatesBuiltIn", () => {
+  const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const OTHER_TOKEN = "0x1111111111111111111111111111111111111111";
+
+  it("flags another address reporting a built-in symbol, in any case", () => {
+    expect(impersonatesBuiltIn(1, OTHER_TOKEN, "USDC")).toBe(true);
+    expect(impersonatesBuiltIn(1, OTHER_TOKEN, "usdt")).toBe(true);
+  });
+
+  it("does not flag the built-in token itself, an unrelated symbol or an unknown chain", () => {
+    expect(impersonatesBuiltIn(1, USDC, "USDC")).toBe(false);
+    expect(impersonatesBuiltIn(1, USDC.toLowerCase(), "USDC")).toBe(false);
+    expect(impersonatesBuiltIn(1, OTHER_TOKEN, "DAI")).toBe(false);
+    expect(impersonatesBuiltIn(999_999, OTHER_TOKEN, "USDC")).toBe(false);
+  });
+
+  it("only compares within the same chain", () => {
+    expect(impersonatesBuiltIn(10, OTHER_TOKEN, "USDT")).toBe(false);
   });
 });

@@ -9,11 +9,14 @@ import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
 import type { SignRequest } from "@qntx/wallet-chains";
+import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
 import { normalizeAddress } from "../addresses/normalize.ts";
+import type { SignInFields } from "../connect/siws.ts";
+import { utf8Text } from "../connect/text.ts";
 import { Controller } from "../controller.ts";
 import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
@@ -41,7 +44,13 @@ import type {
 import { newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
-import { assessRecipients, assessSimulation, mergeRisk, originRisk } from "./risk.ts";
+import {
+  assessRecipients,
+  assessSimulation,
+  impersonatesBuiltIn,
+  mergeRisk,
+  originRisk,
+} from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
@@ -127,6 +136,18 @@ export type WeblnInvoiceInput = {
 };
 
 /**
+ * A dApp's `wallet_watchAsset`: confirm adding an ERC-20 token to the tracked list. No factor;
+ * `symbol` and `decimals` are read on-chain by the pipeline, never taken from the page.
+ */
+export type WatchAssetInput = {
+  readonly method: "watch-asset";
+  readonly origin: BrowserOrigin;
+  readonly account: AccountRef;
+  readonly network: string;
+  readonly address: string;
+};
+
+/**
  * A dApp's Solana request: one `solana-sign` covers a batch of transactions (signed sequentially —
  * each prompts) or a `solana.message` raw-message signature.
  */
@@ -141,7 +162,12 @@ export type SolanaSignInput = {
         readonly transactions: ReadonlyArray<Uint8Array>;
         readonly send: boolean;
       }
-    | { readonly kind: "message"; readonly message: Uint8Array };
+    | {
+        readonly kind: "message";
+        readonly message: Uint8Array;
+        /** Set for a Sign In With Solana request; `message` is its text. */
+        readonly signIn?: SignInFields;
+      };
 };
 
 export type RequestInput =
@@ -151,6 +177,7 @@ export type RequestInput =
   | EvmSignInput
   | NostrSignInput
   | WeblnInvoiceInput
+  | WatchAssetInput
   | SolanaSignInput
   | SparkDepositInput
   | SparkExitInput;
@@ -181,6 +208,9 @@ export type SolanaDisplay = {
   readonly send: boolean;
   readonly count: number;
   readonly transactions: ReadonlyArray<unknown>;
+  /** A message request's text (always valid UTF-8). */
+  readonly message?: { readonly text: string };
+  readonly signIn?: SignInFields;
 };
 
 /** `approve` of a `solana-sign` request: the signatures (or signed transactions) per input. */
@@ -192,6 +222,19 @@ export type SolanaSignResult =
       readonly signedTransactions?: ReadonlyArray<Uint8Array>;
     }
   | { readonly kind: "solana.message"; readonly signature: Uint8Array };
+
+/** `approve` of a `watch-asset` request: the token was added. */
+export type TokenWatchResult = { readonly kind: "token.watch" };
+
+/** `watch-asset` display: the token as read on-chain; `verified` means it is in the built-in table. */
+export type TokenWatchDisplay = {
+  readonly kind: "token.watch";
+  readonly network: string;
+  readonly address: string;
+  readonly symbol: string;
+  readonly decimals: number;
+  readonly verified: boolean;
+};
 
 /** `webln-invoice` display: the requested amount and memo. */
 export type LightningInvoiceDisplay = {
@@ -240,6 +283,7 @@ export type PendingRequest = {
     | SparkDisplay
     | NostrDisplay
     | LightningInvoiceDisplay
+    | TokenWatchDisplay
     | SolanaDisplay;
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
@@ -278,6 +322,14 @@ export type RequestControllerOptions = {
   /** Signs a Nostr event for `nostr-sign` — `nostr(wallet).signer(ref).signEvent`. */
   readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event>;
   readonly phishing: Pick<PhishingController, "check">;
+  /** Reads a token's metadata and adds it to the tracked list, for `watch-asset`. */
+  readonly tokens: {
+    readonly metadata: (
+      network: string,
+      address: string,
+    ) => Promise<{ readonly symbol: string; readonly decimals: number }>;
+    readonly add: (network: string, address: string) => Promise<void>;
+  };
   /** Simulates one `solana-sign` transaction for display; failures are the caller's `unavailable`. */
   readonly simulateSolana: (
     account: SolanaAccount,
@@ -314,7 +366,7 @@ type Run =
       readonly factor: "none";
       readonly txId?: string;
       readonly staleReason: () => string | undefined | Promise<string | undefined>;
-      readonly submit: () => Promise<NostrSignResult | WeblnInvoiceResult>;
+      readonly submit: () => Promise<NostrSignResult | WeblnInvoiceResult | TokenWatchResult>;
       readonly release: () => void;
     };
 
@@ -326,6 +378,7 @@ type Built = {
     | SparkDisplay
     | NostrDisplay
     | LightningInvoiceDisplay
+    | TokenWatchDisplay
     | SolanaDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
@@ -340,6 +393,7 @@ export type RequestResult =
   | SignatureResult
   | NostrSignResult
   | WeblnInvoiceResult
+  | TokenWatchResult
   | SolanaSignResult;
 
 type Settler = {
@@ -354,6 +408,14 @@ type Entry = {
 };
 
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
+
+const messageText = (message: Uint8Array): string => {
+  const text = utf8Text(message);
+  if (text === undefined) {
+    throw new Error("a solana message request must be UTF-8 text");
+  }
+  return text;
+};
 
 type SolanaDecoded = DisplayIntent | { readonly error: string };
 
@@ -711,6 +773,12 @@ export class RequestController extends Controller<RequestControllerState> {
           send: input.request.kind === "transactions" ? input.request.send : false,
           count: txs.length === 0 ? 1 : txs.length,
           transactions: intents,
+          ...(input.request.kind === "message"
+            ? {
+                message: { text: messageText(input.request.message) },
+                ...(input.request.signIn === undefined ? {} : { signIn: input.request.signIn }),
+              }
+            : {}),
         },
         checks: [],
         risk: [],
@@ -755,6 +823,36 @@ export class RequestController extends Controller<RequestControllerState> {
               ...(input.memo === undefined ? {} : { memo: input.memo }),
             });
             return { kind: "lightning.invoice" as const, paymentRequest: invoice.invoice };
+          },
+          release: () => undefined,
+        },
+      };
+    }
+    if (input.method === "watch-asset") {
+      const address = checksumEvmAddress(input.address);
+      const { symbol, decimals } = await this.options.tokens.metadata(input.network, address);
+      const chainId = Number(input.network.slice("eip155:".length));
+      return {
+        account: input.account,
+        network: input.network,
+        display: {
+          kind: "token.watch",
+          network: input.network,
+          address,
+          symbol,
+          decimals,
+          verified: lookupEvmToken(evmTokenTable, chainId, address) !== undefined,
+        },
+        checks: [],
+        risk: impersonatesBuiltIn(chainId, address, symbol)
+          ? [{ code: "token-impersonation", level: "danger" }]
+          : [],
+        run: {
+          factor: "none",
+          staleReason: () => undefined,
+          submit: async () => {
+            await this.options.tokens.add(input.network, address);
+            return { kind: "token.watch" as const };
           },
           release: () => undefined,
         },
@@ -824,6 +922,7 @@ export class RequestController extends Controller<RequestControllerState> {
   ): Promise<TrackedTransaction | SignatureResult>;
   async approve(id: string, method: "nostr-sign"): Promise<NostrSignResult>;
   async approve(id: string, method: "webln-invoice"): Promise<WeblnInvoiceResult>;
+  async approve(id: string, method: "watch-asset"): Promise<TokenWatchResult>;
   async approve(
     id: string,
     method: "solana-sign",
@@ -1001,15 +1100,19 @@ export class RequestController extends Controller<RequestControllerState> {
     const summary =
       "kind" in display && display.kind === "nostr.event"
         ? `nostr kind ${display.eventKind}${eventId === undefined ? "" : ` ${eventId}`}`
-        : "kind" in display && display.kind === "lightning.invoice"
-          ? `lightning invoice ${display.amountSats} sats`
-          : "kind" in display && display.kind === "solana.sign"
-            ? display.transactions.length === 0
-              ? "solana message"
-              : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
-            : "summary" in display
-              ? display.summary
-              : `${display.kind} ${display.amountSats}`;
+        : "kind" in display && display.kind === "token.watch"
+          ? `watch token ${display.symbol}`
+          : "kind" in display && display.kind === "lightning.invoice"
+            ? `lightning invoice ${display.amountSats} sats`
+            : "kind" in display && display.kind === "solana.sign"
+              ? display.signIn === undefined
+                ? display.transactions.length === 0
+                  ? "solana message"
+                  : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
+                : `solana sign-in ${display.signIn.domain}`
+              : "summary" in display
+                ? display.summary
+                : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
       at: this.options.now(),

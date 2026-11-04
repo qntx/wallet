@@ -7,6 +7,19 @@
  * event, data }`. `__qntxReceive` is defined as a non-writable, non-configurable property so a
  * hostile page cannot replace the host's reply channel.
  */
+import type {
+  SolanaSignAndSendTransactionFeature,
+  SolanaSignInFeature,
+  SolanaSignInOutput,
+  SolanaSignMessageFeature,
+  SolanaSignTransactionFeature,
+} from "@solana/wallet-standard-features";
+import type { IdentifierString, Wallet, WalletAccount, WalletIcon } from "@wallet-standard/base";
+import type {
+  StandardConnectFeature,
+  StandardDisconnectFeature,
+  StandardEventsFeature,
+} from "@wallet-standard/features";
 import { registerWallet } from "@wallet-standard/wallet";
 
 const bytesToHex = (bytes: Uint8Array): string =>
@@ -28,6 +41,9 @@ const isBytesEnvelope = (v: unknown): v is { __bytes: string } =>
 
 const bytesReviver = (_key: string, value: unknown): unknown =>
   isBytesEnvelope(value) ? hexToBytes(value.__bytes) : value;
+
+const isWalletIcon = (value: string): value is WalletIcon =>
+  /^data:image\/(?:svg\+xml|webp|png|gif);base64,/.test(value);
 
 type ProviderInfo = {
   readonly uuid: string;
@@ -267,84 +283,141 @@ export function install(info: ProviderInfo): void {
 
   // Wallet Standard (Solana): the same machinery, `provider: "solana"`. The wallet is registered
   // into the page's `getWallets()` registry rather than exposed as a global.
-  const wsAccounts: unknown[] = [];
-  const wsWallet = Object.freeze({
+  const wsAccounts: WalletAccount[] = [];
+  const setAccounts = (accounts: ReadonlyArray<WalletAccount>): void => {
+    wsAccounts.length = 0;
+    wsAccounts.push(...accounts);
+  };
+  const signTransactions = async (
+    method: string,
+    inputs: ReadonlyArray<{
+      readonly account: WalletAccount;
+      readonly transaction: Uint8Array;
+      readonly chain?: string | undefined;
+    }>,
+  ): Promise<unknown> =>
+    request("solana", {
+      method,
+      params: {
+        transactions: inputs.map((input) => input.transaction),
+        accounts: inputs.map((input) => input.account.address),
+        chains: inputs.map((input) => input.chain),
+      },
+    });
+  const wsFeatures: StandardConnectFeature &
+    StandardDisconnectFeature &
+    StandardEventsFeature &
+    SolanaSignTransactionFeature &
+    SolanaSignAndSendTransactionFeature &
+    SolanaSignMessageFeature &
+    SolanaSignInFeature = {
+    "standard:connect": {
+      version: "1.0.0",
+      connect: async (input) => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        const result = (await request("solana", {
+          method: "standard:connect",
+          params: input,
+        })) as { accounts: WalletAccount[] };
+        setAccounts(result.accounts);
+        return { accounts: [...wsAccounts] };
+      },
+    },
+    "standard:disconnect": {
+      version: "1.0.0",
+      disconnect: async () => {
+        await request("solana", { method: "standard:disconnect" });
+        setAccounts([]);
+      },
+    },
+    "standard:events": {
+      version: "1.0.0",
+      on: (event, cb) => {
+        const listener = (data: unknown): void => {
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's event shape
+          const d = data as { event?: string; params?: { accounts?: WalletAccount[] } };
+          if (d.event === event) {
+            setAccounts(d.params?.accounts ?? []);
+            cb({ accounts: [...wsAccounts] });
+          }
+        };
+        on("standard:events", listener);
+        return () => {
+          removeListener("standard:events", listener);
+        };
+      },
+    },
+    "solana:signTransaction": {
+      version: "1.0.0",
+      supportedTransactionVersions: ["legacy", 0],
+      signTransaction: async (...inputs) => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        const result = (await signTransactions("solana:signTransaction", inputs)) as {
+          signedTransactions: Uint8Array[];
+        };
+        return result.signedTransactions.map((signedTransaction) => ({ signedTransaction }));
+      },
+    },
+    "solana:signAndSendTransaction": {
+      version: "1.0.0",
+      supportedTransactionVersions: ["legacy", 0],
+      signAndSendTransaction: async (...inputs) => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        const result = (await signTransactions("solana:signAndSendTransaction", inputs)) as {
+          signatures: Uint8Array[];
+        };
+        return result.signatures.map((signature) => ({ signature }));
+      },
+    },
+    "solana:signMessage": {
+      version: "1.0.0",
+      signMessage: async (...inputs) => {
+        if (inputs.length !== 1 || inputs[0] === undefined) {
+          throw new Error("solana:signMessage accepts one input at a time");
+        }
+        const [input] = inputs;
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        const result = (await request("solana", {
+          method: "solana:signMessage",
+          params: { message: input.message, accounts: [input.account.address] },
+        })) as { signature: Uint8Array; signedMessage: Uint8Array };
+        return [
+          {
+            signedMessage: result.signedMessage,
+            signature: result.signature,
+            signatureType: "ed25519",
+          },
+        ];
+      },
+    },
+    "solana:signIn": {
+      version: "1.0.0",
+      signIn: async (...inputs) => {
+        if (inputs.length > 1) {
+          throw new Error("solana:signIn accepts one input at a time");
+        }
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        return (await request("solana", {
+          method: "solana:signIn",
+          params: { input: inputs[0] ?? {} },
+        })) as SolanaSignInOutput[];
+      },
+    },
+  };
+  if (!isWalletIcon(info.icon)) {
+    throw new Error("the provider icon is not a data URI image");
+  }
+  const wsWallet: Wallet = Object.freeze({
     version: "1.0.0",
     name: info.name,
     icon: info.icon,
-    chains: Object.freeze(["solana:mainnet", "solana:devnet"]),
-    features: Object.freeze({
-      "standard:connect": {
-        connect: async (input?: { silent?: boolean }) => {
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
-          const result = (await request("solana", {
-            method: "standard:connect",
-            params: input,
-          })) as { accounts: ReadonlyArray<Record<string, unknown>> };
-          wsAccounts.length = 0;
-          wsAccounts.push(...result.accounts);
-          return { accounts: [...wsAccounts] };
-        },
-      },
-      "standard:disconnect": {
-        disconnect: async () => {
-          await request("solana", { method: "standard:disconnect" });
-          wsAccounts.length = 0;
-        },
-      },
-      "standard:events": {
-        on: (event: string, cb: (params: unknown) => void) => {
-          on("standard:events", (data) => {
-            // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's event shape
-            const d = data as { event?: string; params?: unknown };
-            if (d.event === event) {
-              if (event === "change" && typeof d.params === "object" && d.params !== null) {
-                const accounts = (d.params as { accounts?: unknown[] }).accounts ?? [];
-                wsAccounts.length = 0;
-                wsAccounts.push(...accounts);
-                cb({ accounts: [...wsAccounts] });
-              } else {
-                cb(d.params);
-              }
-            }
-          });
-        },
-      },
-      "solana:signTransaction": {
-        signTransaction: async (input: { transaction: Uint8Array }) => {
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
-          const result = (await request("solana", {
-            method: "solana:signTransaction",
-            params: { transactions: [input.transaction] },
-          })) as { signedTransactions: ReadonlyArray<Uint8Array> };
-          return { signedTransaction: result.signedTransactions[0] };
-        },
-      },
-      "solana:signAndSendTransaction": {
-        signAndSendTransaction: async (input: { transaction: Uint8Array }) => {
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
-          const result = (await request("solana", {
-            method: "solana:signAndSendTransaction",
-            params: { transactions: [input.transaction] },
-          })) as { signatures: ReadonlyArray<Uint8Array> };
-          return { signature: result.signatures[0] };
-        },
-      },
-      "solana:signMessage": {
-        signMessage: async (input: { message: Uint8Array }) => {
-          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
-          const result = (await request("solana", {
-            method: "solana:signMessage",
-            params: { message: input.message },
-          })) as { signature: Uint8Array; signedMessage: Uint8Array };
-          return { signature: result.signature, signedMessage: result.signedMessage };
-        },
-      },
-    }),
-    accounts: wsAccounts,
+    chains: Object.freeze<IdentifierString[]>(["solana:mainnet", "solana:devnet"]),
+    features: Object.freeze(wsFeatures),
+    get accounts(): ReadonlyArray<WalletAccount> {
+      return wsAccounts;
+    },
   });
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the object IS a Wallet Standard wallet
-  registerWallet(wsWallet as Parameters<typeof registerWallet>[0]);
+  registerWallet(wsWallet);
 
   // EIP-6963: announce at install and on every requestProvider, with a frozen { info, provider }.
   const detail = Object.freeze({ info: Object.freeze({ ...info }), provider });

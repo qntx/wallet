@@ -44,6 +44,7 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "evm-sign",
   "nostr-sign",
   "webln-invoice",
+  "watch-asset",
   "spark-deposit",
   "spark-exit",
 ]);
