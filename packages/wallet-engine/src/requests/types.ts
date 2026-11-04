@@ -19,3 +19,10 @@ export type RequestMethod =
   | "solana-sign"
   | "spark-deposit"
   | "spark-exit";
+
+/** A Solana chain account the `solana-sign` request signs for. */
+export type SolanaAccount = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  readonly address: string;
+};
