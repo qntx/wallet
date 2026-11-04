@@ -58,6 +58,23 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 - `@qntx/wallet-engine`: `engine.unsubscribe()` also stops the phishing list refresh.
 - The install-id `fetch` for the gateway moved from `NetworkController` to `gateway/client.ts`.
 
+## [0.8.1] - 2026-11-05
+
+A native wallet can unlock again after it locks, without restarting the app.
+
+### Fixed
+
+- `packages/wallet-native`: after a lock (manual or background auto-lock), a wallet deletion or a
+  kernel crash, the next `vault.unlock()` hung forever. A `KernelHost` serves one kernel runtime —
+  once it exits, `start()` returns without creating a new one — but `createNativeWallet` passed the
+  channel the same host for every respawn. The channel now gets a new host for each spawn.
+
+### Changed
+
+- `packages/wallet-native`: `NativeWalletOptions.host` is replaced by `createHost`, a factory called
+  once per kernel runtime. Hosts that passed `host: fake` pass `createHost: () => fake`, creating
+  a new fake per call when the test must survive a lock.
+
 ## [0.8.0] - 2026-11-04
 
 The wallet and the engine no longer bind a signature verifier: hosts inject `verifyEvent`, so a

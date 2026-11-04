@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet-chains",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "qntx/wallet chain semantics: SignRequest codecs, display decoding, verifiability and signing for EVM, Solana and Bitcoin",
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
