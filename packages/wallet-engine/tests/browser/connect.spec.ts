@@ -32,7 +32,7 @@ import { RequestController } from "../../src/requests/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
-import { bookDeps } from "../send-helpers.ts";
+import { bookDeps, simulateSolanaStub } from "../send-helpers.ts";
 
 const KERNEL_URL = new URL("../../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -147,6 +147,7 @@ async function engineRig() {
   await transactions.init();
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    simulateSolana: simulateSolanaStub,
     transactions,
     ...bookDeps(),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a createInvoice stub suffices

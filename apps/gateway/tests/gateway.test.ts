@@ -297,6 +297,16 @@ describe("rpc forwarding", () => {
     expect(up.callsTo("https://b.test")).toHaveLength(0);
   });
 
+  it("forwards eth_simulateV1 as a read", async () => {
+    const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_simulateV1", [{ blockStateCalls: [] }, "latest"])),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("a");
+  });
+
   it("forwards eth_sendRawTransaction and fails over like any read", async () => {
     const up = fakeFetch({
       "https://a.test/evm": () => new Response("", { status: 503 }),

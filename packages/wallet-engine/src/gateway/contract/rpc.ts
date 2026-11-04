@@ -31,6 +31,7 @@ export const EVM_RPC_METHODS = [
   "eth_getTransactionReceipt",
   "eth_maxPriorityFeePerGas",
   "eth_sendRawTransaction",
+  "eth_simulateV1",
   "net_version",
   "web3_clientVersion",
 ] as const;

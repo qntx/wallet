@@ -25,20 +25,97 @@ import {
   compileTransactionMessage,
   createNoopSigner,
   createTransactionMessage,
+  getAddressDecoder,
   getCompiledTransactionMessageEncoder,
+  getU64Decoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
 import type { Instruction } from "@solana/kit";
 
-import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
+import {
+  PROGRAM_IDS,
+  SOLANA_NATIVE_ASSET,
+  parseCompiledMessage,
+  solanaTokenTable,
+} from "@qntx/wallet-chains/solana";
 
 import type { SolanaRpc } from "../networks/controller.ts";
+import { boundedSimulation } from "../requests/simulation.ts";
+import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 
 /** Token-2022 program id — the mint's owner for extension mints. */
 export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
 const MAX_MESSAGE_BYTES = 1232;
+const LOOKUP_TABLE_HEADER_BYTES = 56;
+const ADDRESS_BYTES = 32;
+const TOKEN_ACCOUNT_MIN_BYTES = 72;
+const TOKEN_ACCOUNT_OWNER_OFFSET = 32;
+const TOKEN_ACCOUNT_AMOUNT_OFFSET = 64;
+
+const addressDecoder = getAddressDecoder();
+
+type RawAccount = {
+  readonly lamports: bigint;
+  readonly owner: string;
+  readonly data: Uint8Array;
+};
+
+const parseAccount = (value: unknown): RawAccount | undefined => {
+  const record = obj(value);
+  const data = record?.["data"];
+  if (
+    record === undefined ||
+    !Array.isArray(data) ||
+    typeof data[0] !== "string" ||
+    typeof record["owner"] !== "string"
+  ) {
+    return undefined;
+  }
+  return {
+    lamports: BigInt(str(record["lamports"])),
+    owner: record["owner"],
+    data: base64.decode(data[0]),
+  };
+};
+
+const accountList = (value: unknown): ReadonlyArray<RawAccount | undefined> => {
+  const list = Array.isArray(value) ? (value as unknown[]) : [];
+  return list.map(parseAccount);
+};
+
+const u64Decoder = getU64Decoder();
+const readU64 = (data: Uint8Array, offset: number): bigint => u64Decoder.decode(data, offset);
+
+/** Token and Token-2022 accounts owned by `owner`: balance per mint. */
+const tokenBalances = (
+  watch: ReadonlyArray<string>,
+  accounts: ReadonlyArray<RawAccount | undefined>,
+  owner: string,
+): Map<string, bigint> => {
+  const balances = new Map<string, bigint>();
+  for (const [index, account] of accounts.entries()) {
+    if (
+      watch[index] === undefined ||
+      account === undefined ||
+      (account.owner !== PROGRAM_IDS.token && account.owner !== PROGRAM_IDS.token2022) ||
+      account.data.length < TOKEN_ACCOUNT_MIN_BYTES ||
+      addressDecoder.decode(
+        account.data.slice(TOKEN_ACCOUNT_OWNER_OFFSET, TOKEN_ACCOUNT_OWNER_OFFSET + ADDRESS_BYTES),
+      ) !== owner
+    ) {
+      continue;
+    }
+    const mint = addressDecoder.decode(account.data.slice(0, ADDRESS_BYTES));
+    balances.set(
+      mint,
+      (balances.get(mint) ?? 0n) + readU64(account.data, TOKEN_ACCOUNT_AMOUNT_OFFSET),
+    );
+  }
+  return balances;
+};
+
 const CU_SIMULATE_LIMIT = 1_400_000;
 
 export type SolanaIntent =
@@ -168,7 +245,7 @@ export class SolanaChainAdapter {
     const blockhashValue = typeof value?.["blockhash"] === "string" ? value["blockhash"] : "";
     const lastValidBlockHeight = BigInt(str(value?.["lastValidBlockHeight"], "0"));
     const compiled = this.compile(from, instructions, blockhashValue, lastValidBlockHeight);
-    const units = await this.simulate(rpc, compiled.messageBytes);
+    const units = await this.simulateUnits(rpc, compiled.messageBytes);
     return {
       family: "solana",
       network,
@@ -199,15 +276,16 @@ export class SolanaChainAdapter {
     return [...out];
   }
 
-  /** Unsigned wire bytes: shortvec(1) sig count + 64-byte zero sig + message (for simulate). */
+  /** Unsigned wire bytes: one zeroed signature per required signer, then the message. */
   private wireBytes(messageBytes: Uint8Array): Uint8Array {
-    const out = new Uint8Array(1 + 64 + messageBytes.length);
-    out[0] = 1;
-    out.set(messageBytes, 65);
-    return out;
+    const { numRequiredSignatures } = parseCompiledMessage(messageBytes);
+    return this.finalize(
+      messageBytes,
+      Array.from({ length: numRequiredSignatures }, () => new Uint8Array(64)),
+    );
   }
 
-  private async simulate(rpc: SolanaRpc, messageBytes: Uint8Array): Promise<number> {
+  private async simulateUnits(rpc: SolanaRpc, messageBytes: Uint8Array): Promise<number> {
     const result = obj(
       await this.rpc(rpc, "simulateTransaction", [
         b64(this.wireBytes(messageBytes)),
@@ -277,6 +355,121 @@ export class SolanaChainAdapter {
       tx.lastValidBlockHeight,
     );
     return compiled.messageBytes;
+  }
+
+  /**
+   * Simulates `message` for `owner`: lamports and Token/Token-2022 balance changes of the owner's
+   * accounts from account state read before and returned after `simulateTransaction`. The two reads
+   * are not atomic. A node error or the 10 s timeout is `unavailable`.
+   */
+  async simulate(
+    rpc: SolanaRpc,
+    network: string,
+    owner: string,
+    message: Uint8Array,
+    setTimer: (ms: number, fn: () => unknown) => () => void,
+  ): Promise<SimulationOutcome> {
+    return boundedSimulation(
+      async () => this.simulateAccounts(rpc, network, owner, message),
+      setTimer,
+    );
+  }
+
+  private async lookupWritable(
+    rpc: SolanaRpc,
+    lookups: ReturnType<typeof parseCompiledMessage>["lookups"],
+  ): Promise<string[]> {
+    if (lookups.length === 0) {
+      return [];
+    }
+    const result = obj(
+      await this.rpc(rpc, "getMultipleAccounts", [
+        lookups.map((lookup) => lookup.address),
+        { encoding: "base64", commitment: "confirmed" },
+      ]),
+    );
+    const tables = accountList(result?.["value"]);
+    const writable: string[] = [];
+    for (const [index, lookup] of lookups.entries()) {
+      const data = tables[index]?.data;
+      if (data === undefined) {
+        throw new Error(`lookup table ${lookup.address} not found`);
+      }
+      for (const entry of lookup.writableIndexes) {
+        const start = LOOKUP_TABLE_HEADER_BYTES + entry * ADDRESS_BYTES;
+        if (start + ADDRESS_BYTES > data.length) {
+          throw new Error("lookup table index out of range");
+        }
+        writable.push(addressDecoder.decode(data.slice(start, start + ADDRESS_BYTES)));
+      }
+    }
+    return writable;
+  }
+
+  private async simulateAccounts(
+    rpc: SolanaRpc,
+    network: string,
+    owner: string,
+    message: Uint8Array,
+  ): Promise<SimulationOutcome> {
+    const parsed = parseCompiledMessage(message);
+    const watch = [
+      ...new Set([...parsed.staticAccounts, ...(await this.lookupWritable(rpc, parsed.lookups))]),
+    ];
+    const before = obj(
+      await this.rpc(rpc, "getMultipleAccounts", [
+        watch,
+        { encoding: "base64", commitment: "confirmed" },
+      ]),
+    );
+    const result = obj(
+      await this.rpc(rpc, "simulateTransaction", [
+        b64(this.wireBytes(message)),
+        {
+          encoding: "base64",
+          sigVerify: false,
+          replaceRecentBlockhash: true,
+          commitment: "confirmed",
+          accounts: { addresses: watch, encoding: "base64" },
+        },
+      ]),
+    );
+    const value = obj(result?.["value"]);
+    if (value?.["err"] !== null && value?.["err"] !== undefined) {
+      const logs = Array.isArray(value["logs"]) ? (value["logs"] as unknown[]) : [];
+      const last = logs.at(-1);
+      return {
+        status: "reverted",
+        error: `${JSON.stringify(value["err"])}${typeof last === "string" ? ` (${last})` : ""}`,
+      };
+    }
+    const pre = accountList(before?.["value"]);
+    const post = accountList(value?.["accounts"]);
+    const changes: AssetChange[] = [];
+    const ownerIndex = watch.indexOf(owner);
+    if (ownerIndex !== -1) {
+      const delta = (post[ownerIndex]?.lamports ?? 0n) - (pre[ownerIndex]?.lamports ?? 0n);
+      if (delta !== 0n) {
+        changes.push({ asset: SOLANA_NATIVE_ASSET, amount: delta.toString(10), verified: true });
+      }
+    }
+    const was = tokenBalances(watch, pre, owner);
+    const now = tokenBalances(watch, post, owner);
+    for (const mint of new Set([...was.keys(), ...now.keys()])) {
+      const delta = (now.get(mint) ?? 0n) - (was.get(mint) ?? 0n);
+      if (delta === 0n) {
+        continue;
+      }
+      const known = solanaTokenTable[network]?.[mint];
+      changes.push({
+        asset: mint,
+        amount: delta.toString(10),
+        ...(known === undefined
+          ? { verified: false }
+          : { decimals: known.decimals, symbol: known.symbol, verified: true }),
+      });
+    }
+    return { status: "success", changes };
   }
 
   /** Wire transaction bytes — sigCount shortvec + each 64-byte sig + message. */

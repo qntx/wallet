@@ -19,7 +19,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { bookDeps } from "./send-helpers.ts";
+import { bookDeps, simulateSolanaStub } from "./send-helpers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const MNEMONIC =
@@ -111,6 +111,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
   const phishing = { check: () => phishingStatus };
   const requests = new RequestController({
     phishing,
+    simulateSolana: simulateSolanaStub,
     transactions,
     ...bookDeps(),
     spark: {} as SparkController,

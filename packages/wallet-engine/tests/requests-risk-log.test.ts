@@ -8,6 +8,7 @@ import { AddressBookController } from "../src/addresses/controller.ts";
 import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
 import { SIGN_LOG_LIMIT, createSignLog } from "../src/requests/sign-log.ts";
 import type { SignLogEntry } from "../src/requests/sign-log.ts";
+import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
@@ -16,6 +17,7 @@ import type {
   PreparedRequest,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
+import { simulateSolanaStub } from "./send-helpers.ts";
 
 const SEPOLIA = "eip155:11155111";
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" } as const;
@@ -67,6 +69,7 @@ function world() {
     recipient: OTHER,
     stale: undefined as string | undefined,
     submitFails: undefined as Error | undefined,
+    simulation: undefined as SimulationOutcome | undefined,
     gate: undefined as Promise<void> | undefined,
   };
   let counter = 0;
@@ -79,6 +82,7 @@ function world() {
         network: SEPOLIA,
         intent: intentTo(state.recipient),
         checks: [],
+        ...(state.simulation === undefined ? {} : { simulation: state.simulation }),
         staleReason: () => state.stale,
         submit: async () => {
           await state.gate;
@@ -109,6 +113,7 @@ function world() {
   let now = 1000;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    simulateSolana: simulateSolanaStub,
     transactions,
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
@@ -219,6 +224,60 @@ describe("recipient risk", () => {
       amountSats: 1000,
     });
     expect(exit.risk).toStrictEqual([]);
+  });
+});
+
+describe("simulation", () => {
+  const NATIVE_OUT = (amount: string): SimulationOutcome => ({
+    status: "success",
+    changes: [{ asset: "native", amount, verified: true }],
+  });
+
+  it("a request without a simulation has none and keeps its checks", async () => {
+    const w = world();
+    await w.start();
+    const request = await w.requests.prepare(send());
+    expect(request.simulation).toBeUndefined();
+    expect(request.checks).toStrictEqual([]);
+  });
+
+  it("an unavailable simulation makes the request unverifiable", async () => {
+    const w = world();
+    w.state.simulation = { status: "unavailable", error: "timeout" };
+    await w.start();
+    const request = await w.requests.prepare(send());
+    expect(request.checks).toStrictEqual(["simulation-unavailable"]);
+    expect(request.verification).toBe("unverifiable");
+    expect(request.simulation).toStrictEqual({ status: "unavailable", error: "timeout" });
+  });
+
+  it("a revert is a danger, ahead of the first-recipient warning", async () => {
+    const w = world();
+    w.state.simulation = { status: "reverted", error: "execution reverted" };
+    await w.start();
+    const request = await w.requests.prepare(send());
+    expect(request.risk).toStrictEqual([
+      { code: "simulation-reverted", level: "danger" },
+      { code: "first-recipient", level: "warning" },
+    ]);
+    expect(request.verification).toBe("verified");
+  });
+
+  it("an outflow above the declared one is a mismatch danger", async () => {
+    const w = world();
+    w.state.simulation = NATIVE_OUT("-2");
+    await w.start();
+    const request = await w.requests.prepare(send());
+    expect(request.risk).toContainEqual({ code: "simulation-mismatch", level: "danger" });
+  });
+
+  it("an outflow equal to the declared one adds nothing", async () => {
+    const w = world();
+    w.state.simulation = NATIVE_OUT("-1");
+    await w.start();
+    const request = await w.requests.prepare(send());
+    expect(request.risk.map((r) => r.code)).toStrictEqual(["first-recipient"]);
+    expect(request.simulation).toStrictEqual(NATIVE_OUT("-1"));
   });
 });
 

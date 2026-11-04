@@ -15,6 +15,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import type { AddressBookController } from "../addresses/controller.ts";
 import { normalizeAddress } from "../addresses/normalize.ts";
 import { Controller } from "../controller.ts";
+import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { PreparedSparkAction, SparkDisplay, SparkResult } from "../payments/action.ts";
 import { preparePay } from "../payments/pay.ts";
@@ -40,10 +41,11 @@ import type {
 import { newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
-import { assessRecipients, mergeRisk, originRisk } from "./risk.ts";
+import { assessRecipients, assessSimulation, mergeRisk, originRisk } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
+import type { SimulationOutcome } from "./simulation.ts";
 import type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
 
 export type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
@@ -247,6 +249,8 @@ export type PendingRequest = {
    * acknowledgement.
    */
   readonly risk: ReadonlyArray<RiskFinding>;
+  /** Present for simulated requests: sends and dApp transactions; absent otherwise. */
+  readonly simulation?: SimulationOutcome;
   readonly createdAt: number;
   readonly expiresAt: number;
   /** The transaction being replaced or accelerated; absent for a plain send. */
@@ -274,6 +278,12 @@ export type RequestControllerOptions = {
   /** Signs a Nostr event for `nostr-sign` — `nostr(wallet).signer(ref).signEvent`. */
   readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event>;
   readonly phishing: Pick<PhishingController, "check">;
+  /** Simulates one `solana-sign` transaction for display; failures are the caller's `unavailable`. */
+  readonly simulateSolana: (
+    account: SolanaAccount,
+    network: string,
+    message: Uint8Array,
+  ) => Promise<SimulationOutcome>;
   /** Signs/broadcasts a `solana-sign` request — `chains.sign` per tx, then the Solana adapter. */
   readonly solanaSign: (
     account: { readonly walletId: string; readonly groupIndex: number; readonly address: string },
@@ -319,6 +329,7 @@ type Built = {
     | SolanaDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
+  readonly simulation?: SimulationOutcome;
   readonly run: Run;
 };
 
@@ -344,7 +355,13 @@ type Entry = {
 
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
 
-const solanaDecode = (account: SolanaAccount, network: string, message: Uint8Array): unknown => {
+type SolanaDecoded = DisplayIntent | { readonly error: string };
+
+const solanaIntent = (
+  account: SolanaAccount,
+  network: string,
+  message: Uint8Array,
+): SolanaDecoded => {
   try {
     const request = normalizeSolana(
       {
@@ -360,13 +377,35 @@ const solanaDecode = (account: SolanaAccount, network: string, message: Uint8Arr
       },
       account.address,
     );
-    if (request.kind === "solana.transaction") {
-      return decodeSolana(request, account.address, undefined);
-    }
-    return undefined;
+    return request.kind === "solana.transaction"
+      ? decodeSolana(request, account.address, undefined)
+      : { error: "not a transaction" };
   } catch (error) {
     return { error: errorMessage(error) };
   }
+};
+
+/** Nothing declared and nothing checkable: what a transaction that did not decode counts as. */
+const OPAQUE_INTENT: Pick<DisplayIntent, "outflows" | "verifiability"> = {
+  outflows: [],
+  verifiability: "opaque",
+};
+
+const withSimulation = (
+  built: Built,
+  intent: Pick<DisplayIntent, "outflows" | "verifiability">,
+  simulation: SimulationOutcome | undefined,
+): Built => {
+  if (simulation === undefined) {
+    return built;
+  }
+  const assessed = assessSimulation(intent, simulation);
+  return {
+    ...built,
+    checks: collectChecks([...built.checks, ...assessed.checks]),
+    risk: mergeRisk(built.risk, assessed.risk),
+    simulation,
+  };
 };
 
 /** The input's browser origin, when it carries one (`evm-sign`/`nostr-sign`/`webln-invoice`/`pay`). */
@@ -374,9 +413,6 @@ const browserOriginOf = (input: RequestInput): BrowserOrigin | undefined =>
   "origin" in input ? input.origin : undefined;
 
 const LIVE: ReadonlySet<RequestStage> = new Set(["awaiting-approval", "signing"]);
-
-const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
 
 export class RequestController extends Controller<RequestControllerState> {
   private readonly options: RequestControllerOptions;
@@ -498,6 +534,7 @@ export class RequestController extends Controller<RequestControllerState> {
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
       risk: mergeRisk(built.risk, originRisk(originStatus)),
+      ...(built.simulation === undefined ? {} : { simulation: built.simulation }),
       createdAt,
       expiresAt: createdAt + REQUEST_TTL_MS,
     };
@@ -576,6 +613,18 @@ export class RequestController extends Controller<RequestControllerState> {
     };
   }
 
+  private async simulateOne(
+    account: SolanaAccount,
+    network: string,
+    message: Uint8Array,
+  ): Promise<SimulationOutcome> {
+    try {
+      return await this.options.simulateSolana(account, network, message);
+    } catch (error) {
+      return { status: "unavailable", error: errorMessage(error) };
+    }
+  }
+
   private async build(input: RequestInput, id: string): Promise<Built> {
     if (input.method === "pay" || input.method === "zap") {
       const action: PreparedSparkAction =
@@ -636,7 +685,7 @@ export class RequestController extends Controller<RequestControllerState> {
     if (input.method === "evm-sign") {
       const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
       const isTransaction = input.request.kind === "evm.transaction";
-      return {
+      const built: Built = {
         account: prepared.account,
         network: prepared.network,
         display: prepared.intent,
@@ -647,17 +696,21 @@ export class RequestController extends Controller<RequestControllerState> {
         risk: isTransaction ? this.chainRisk(prepared.intent) : [],
         run: { ...prepared, factor: "required" },
       };
+      return isTransaction ? withSimulation(built, prepared.intent, prepared.simulation) : built;
     }
     if (input.method === "solana-sign") {
       const txs = input.request.kind === "transactions" ? input.request.transactions : [];
-      return {
+      const [only] = txs;
+      const intents = txs.map((tx) => solanaIntent(input.account, input.network, tx));
+      const [decoded] = intents;
+      const built: Built = {
         account: input.account,
         network: input.network,
         display: {
           kind: "solana.sign" as const,
           send: input.request.kind === "transactions" ? input.request.send : false,
           count: txs.length === 0 ? 1 : txs.length,
-          transactions: txs.map((tx) => solanaDecode(input.account, input.network, tx)),
+          transactions: intents,
         },
         checks: [],
         risk: [],
@@ -669,6 +722,18 @@ export class RequestController extends Controller<RequestControllerState> {
           release: () => undefined,
         },
       };
+      if (only === undefined) {
+        return built;
+      }
+      const simulation: SimulationOutcome =
+        txs.length > 1
+          ? { status: "unavailable", error: "batch" }
+          : await this.simulateOne(input.account, input.network, only);
+      return withSimulation(
+        built,
+        decoded !== undefined && "verifiability" in decoded ? decoded : OPAQUE_INTENT,
+        simulation,
+      );
     }
     if (input.method === "webln-invoice") {
       return {
@@ -722,7 +787,7 @@ export class RequestController extends Controller<RequestControllerState> {
       input.method === "send"
         ? await this.options.transactions.prepareSend(input, id)
         : await this.options.transactions.prepareReplacement(input, id);
-    return {
+    const built: Built = {
       account: prepared.account,
       network: prepared.network,
       display: prepared.intent,
@@ -733,6 +798,9 @@ export class RequestController extends Controller<RequestControllerState> {
       risk: input.method === "send" ? this.chainRisk(prepared.intent) : [],
       run: { ...prepared, factor: "required" },
     };
+    return input.method === "send"
+      ? withSimulation(built, prepared.intent, prepared.simulation)
+      : built;
   }
 
   /**

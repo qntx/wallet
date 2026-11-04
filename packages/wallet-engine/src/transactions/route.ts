@@ -9,9 +9,11 @@ import type { chains } from "@qntx/wallet/chains";
 
 import type { EvmFeeTier } from "../chains/evm.ts";
 import type { SolanaFeeTier } from "../chains/solana.ts";
+import { errorMessage } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import type { SimulationOutcome } from "../requests/simulation.ts";
 import type { EngineStore } from "../store/port.ts";
 
 export type ChainApis = ReturnType<typeof chains>;
@@ -113,6 +115,8 @@ export type PreparedRequest = {
   readonly target?: string;
   readonly intent: DisplayIntent;
   readonly checks: ReadonlyArray<RequestCheckCode>;
+  /** Absent when the request is not simulated (replacements, Bitcoin). */
+  readonly simulation?: SimulationOutcome;
   /** Why the build can no longer be signed (nonce taken, blockhash expired), if so. */
   readonly staleReason: () => string | undefined | Promise<string | undefined>;
   /** Signs, finalizes, broadcasts and hands the transaction to tracking. */
@@ -163,8 +167,7 @@ export const newId = (random: (n: number) => Uint8Array): string => hexId("tx", 
 
 export const newRequestId = (random: (n: number) => Uint8Array): string => hexId("req", random);
 
-export const errorMessage = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
+export { errorMessage } from "../errors.ts";
 
 const LIVE_REPLACEMENT_STATES: ReadonlySet<TxState> = new Set([
   "draft",

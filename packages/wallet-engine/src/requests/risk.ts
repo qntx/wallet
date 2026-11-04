@@ -1,4 +1,9 @@
+import type { DisplayIntent } from "@qntx/wallet-chains";
+import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
+
 import type { PhishingStatus } from "../phishing/status.ts";
+import type { RequestCheckCode } from "./checks.ts";
+import type { SimulationOutcome } from "./simulation.ts";
 
 /**
  * Request risk, pure. A recipient the wallet has never paid or saved is a `warning`; one that looks
@@ -7,7 +12,13 @@ import type { PhishingStatus } from "../phishing/status.ts";
  * despite the phishing list is a `danger`; one that could not be checked is a `warning`.
  */
 export type RiskFinding = {
-  readonly code: "first-recipient" | "address-poisoning" | "phishing-origin" | "phishing-unchecked";
+  readonly code:
+    | "first-recipient"
+    | "address-poisoning"
+    | "phishing-origin"
+    | "phishing-unchecked"
+    | "simulation-reverted"
+    | "simulation-mismatch";
   readonly level: "warning" | "danger";
 };
 
@@ -67,4 +78,49 @@ export function assessRecipients(
     }
   }
   return byDanger([...found.values()]);
+}
+
+const sameAsset = (a: string, b: string): boolean =>
+  a === b || (a.startsWith("0x") && a.toLowerCase() === b.toLowerCase());
+
+type DecodedIntent = Pick<DisplayIntent, "outflows" | "verifiability">;
+
+const declaredOutflow = (intent: DecodedIntent, asset: string): bigint =>
+  intent.outflows
+    .filter((flow) => sameAsset(flow.amount.asset, asset))
+    .reduce((sum, flow) => sum + BigInt(flow.amount.amount), 0n);
+
+/**
+ * What a simulation adds to a request. `unavailable` blocks silent approval; `reverted` is a
+ * danger; an outflow above what the decode declares for that asset is a danger too — but only
+ * against a decode that is not `opaque`, and never for Solana lamports (fees and rent always exceed
+ * the declared amount).
+ */
+export function assessSimulation(
+  intent: DecodedIntent,
+  outcome: SimulationOutcome | undefined,
+): { readonly checks: ReadonlyArray<RequestCheckCode>; readonly risk: ReadonlyArray<RiskFinding> } {
+  if (outcome === undefined) {
+    return { checks: [], risk: [] };
+  }
+  if (outcome.status === "unavailable") {
+    return { checks: ["simulation-unavailable"], risk: [] };
+  }
+  if (outcome.status === "reverted") {
+    return { checks: [], risk: [{ code: "simulation-reverted", level: "danger" }] };
+  }
+  const mismatch =
+    intent.verifiability !== "opaque" &&
+    outcome.changes.some((change) => {
+      const amount = BigInt(change.amount);
+      return (
+        amount < 0n &&
+        change.asset !== SOLANA_NATIVE_ASSET &&
+        -amount > declaredOutflow(intent, change.asset)
+      );
+    });
+  return {
+    checks: [],
+    risk: mismatch ? [{ code: "simulation-mismatch", level: "danger" }] : [],
+  };
 }

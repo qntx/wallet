@@ -12,7 +12,8 @@ export type RequestCheckCode =
   | "fee-mismatch"
   | "reads-unverified"
   | "fee-above-network"
-  | "fee-exceeds-amount";
+  | "fee-exceeds-amount"
+  | "simulation-unavailable";
 
 /** Two reads of one fee differ by more than this share of the smaller one. */
 export const FEE_MISMATCH_PERCENT = 25n;
