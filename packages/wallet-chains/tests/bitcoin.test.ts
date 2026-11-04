@@ -11,7 +11,7 @@ import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeBitcoinPsbt, normalizeBitcoin } from "../src/bitcoin/index.ts";
-import { bip322ToSpendTxid } from "../src/bitcoin/message.ts";
+import { bip322ToSpendTxid, pushData } from "../src/bitcoin/message.ts";
 import { signBitcoinMessage, signBitcoinPsbt } from "../src/bitcoin/sign.ts";
 import { ChainError } from "../src/index.ts";
 
@@ -543,5 +543,14 @@ describe("bitcoinjs oracle", () => {
       ],
     });
     expect(ourSig(psbt, priv)).toStrictEqual(await theirSig(psbt, priv));
+  });
+});
+
+describe("BIP-322 pushData", () => {
+  it("encodes up to 252 bytes with a one-byte length and rejects 253", () => {
+    expect(pushData(new Uint8Array(252))).toHaveLength(253);
+    expect(pushData(new Uint8Array(252))[0]).toBe(252);
+    expect(() => pushData(new Uint8Array(253))).toThrow("exceeds 252 bytes");
+    expect(pushData(new Uint8Array())).toStrictEqual(Uint8Array.of(0));
   });
 });
