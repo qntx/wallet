@@ -13,6 +13,7 @@ import { createForwarder } from "./providers/forward.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
 import { networksRoutes } from "./routes/networks.ts";
+import { riskRoutes } from "./routes/risk.ts";
 import { rpcRoutes } from "./routes/rpc.ts";
 import type { GatewayOptions } from "./types.ts";
 
@@ -42,6 +43,7 @@ export function createGateway(options: GatewayOptions): Hono<{ Variables: Instal
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
   app.route("/", esploraRoutes(deps));
+  app.route("/", riskRoutes(options.risk));
   app.onError(mapError);
   app.notFound(notFound);
   return app;

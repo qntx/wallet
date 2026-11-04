@@ -1,3 +1,5 @@
+import type { RiskStore } from "./risk/phishing.ts";
+
 export type RateLimiter = {
   limit: (options: { key: string }) => Promise<{ success: boolean }>;
 };
@@ -24,6 +26,7 @@ export type GatewayOptions = {
   readonly networks: ReadonlyArray<GatewayNetwork>;
   readonly limiters: Limiters;
   readonly corsOrigins: ReadonlyArray<string>;
+  readonly risk: RiskStore;
   /** One JSON line per request; defaults to `console.log`. */
   readonly log?: (line: string) => void;
 };
