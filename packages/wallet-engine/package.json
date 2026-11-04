@@ -1,6 +1,6 @@
 {
   "name": "@qntx/wallet-engine",
-  "version": "0.8.1",
+  "version": "0.9.0",
   "description": "qntx/wallet engine primitives: controllers, events and encrypted engine storage",
   "license": "MIT OR Apache-2.0",
   "author": "QuantX <x@qntx.org>",
@@ -69,9 +69,9 @@
     "@qntx/nostr": "0.15.3",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",
-    "@qntx/wallet": "0.8.1",
-    "@qntx/wallet-chains": "0.8.1",
-    "@qntx/wallet-worker": "0.8.1",
+    "@qntx/wallet": "0.9.0",
+    "@qntx/wallet-chains": "0.9.0",
+    "@qntx/wallet-worker": "0.9.0",
     "@solana-program/token-2022": "0.20.0",
     "@solana/wallet-standard-features": "1.5.0",
     "@solana/wallet-standard-util": "1.2.0",
@@ -85,8 +85,8 @@
   "peerDependencies": {
     "@qntx/nostr": "~0.15.3",
     "@qntx/spark": "~0.5.2",
-    "@qntx/wallet": "0.8.1",
-    "@qntx/wallet-chains": "0.8.1"
+    "@qntx/wallet": "0.9.0",
+    "@qntx/wallet-chains": "0.9.0"
   },
   "devEngines": {
     "packageManager": {
