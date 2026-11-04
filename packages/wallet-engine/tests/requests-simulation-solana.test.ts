@@ -6,6 +6,7 @@ import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
+import { tokensStub } from "./send-helpers.ts";
 
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const ACCOUNT = { walletId: "w", groupIndex: 0, address: "11111111111111111111111111111112" };
@@ -17,6 +18,7 @@ function rig(simulate: (message: Uint8Array) => Promise<SimulationOutcome>) {
   const logger = { warn: () => undefined };
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    tokens: tokensStub,
     simulateSolana: async (_account, _network, message) => {
       calls.push(message);
       return simulate(message);
@@ -102,5 +104,47 @@ describe("solana-sign simulation", () => {
     });
     expect(calls).toHaveLength(0);
     expect(request.simulation).toBeUndefined();
+  });
+
+  it("shows a message request's text and a sign-in's fields", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    const plain = await requests.prepare({
+      method: "solana-sign",
+      origin: ORIGIN,
+      account: ACCOUNT,
+      network: NETWORK,
+      request: { kind: "message", message: new TextEncoder().encode("hello") },
+    });
+    expect(plain.display).toMatchObject({ kind: "solana.sign", message: { text: "hello" } });
+    expect(plain.display).not.toHaveProperty("signIn");
+  });
+
+  it("carries the sign-in fields in the display", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    const signIn = { domain: "app.example", address: ACCOUNT.address, nonce: "n" };
+    const request = await requests.prepare({
+      method: "solana-sign",
+      origin: ORIGIN,
+      account: ACCOUNT,
+      network: NETWORK,
+      request: { kind: "message", message: new TextEncoder().encode("text"), signIn },
+    });
+    expect(request.display).toMatchObject({ message: { text: "text" }, signIn });
+  });
+
+  it("rejects non-UTF-8 message bytes at the pipeline too", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    await expect(
+      requests.prepare({
+        method: "solana-sign",
+        origin: ORIGIN,
+        account: ACCOUNT,
+        network: NETWORK,
+        request: { kind: "message", message: new Uint8Array([0xff]) },
+      }),
+    ).rejects.toThrow("must be UTF-8 text");
   });
 });

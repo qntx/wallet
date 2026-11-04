@@ -1,4 +1,5 @@
 import type { DisplayIntent } from "@qntx/wallet-chains";
+import { evmTokenTable } from "@qntx/wallet-chains/evm";
 import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
 import type { PhishingStatus } from "../phishing/status.ts";
@@ -17,6 +18,7 @@ export type RiskFinding = {
     | "address-poisoning"
     | "phishing-origin"
     | "phishing-unchecked"
+    | "token-impersonation"
     | "simulation-reverted"
     | "simulation-mismatch";
   readonly level: "warning" | "danger";
@@ -123,4 +125,16 @@ export function assessSimulation(
     checks: [],
     risk: mismatch ? [{ code: "simulation-mismatch", level: "danger" }] : [],
   };
+}
+
+/**
+ * A token on `chainId` that reports the symbol of a different, built-in token of the same chain —
+ * the shape of a lookalike token. Symbols compare case-insensitively.
+ */
+export function impersonatesBuiltIn(chainId: number, address: string, symbol: string): boolean {
+  const wanted = symbol.toLowerCase();
+  return Object.entries(evmTokenTable[String(chainId)] ?? {}).some(
+    ([known, token]) =>
+      known.toLowerCase() !== address.toLowerCase() && token.symbol.toLowerCase() === wanted,
+  );
 }

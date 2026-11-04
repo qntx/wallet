@@ -11,6 +11,15 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine/connect`: the injected Solana Wallet Standard wallet now conforms to `@wallet-standard/base` and `@solana/wallet-standard-features` (typed, no cast): every feature is versioned `1.0.0`, `solana:signTransaction` and `solana:signAndSendTransaction` declare `supportedTransactionVersions: ["legacy", 0]` and are variadic (N inputs become one host request, one approval), `signMessage` returns `[{ signedMessage, signature, signatureType }]`, `standard:events` `on` returns an unsubscribe function, and each input's `account` and `chain` are forwarded. The handler rejects an account other than the session's (`4100`), an unknown or mixed chain (`-32602`) and a chain the session is not authorized for (`4100`); sign-and-send needs a chain and returns raw signature bytes.
+
+- `@qntx/wallet-engine/connect`: the remaining browser methods.
+  - `wallet_addEthereumChain` answers `4902` for a chain the wallet does not enable, otherwise `null`; a chain outside the session goes through the `network` connection approval without becoming current. The page's `rpcUrls` are validated for shape only and never used.
+  - `wallet_watchAsset` (ERC-20) reads `symbol` and `decimals` on-chain in a new factor-free `watch-asset` request, shows them with a `token-impersonation` danger when another built-in token of the chain reports the same symbol, and adds the token on approval. `AssetsController` gains `isTracked` and `tokenMetadata`; `RequestControllerOptions` takes a required `tokens` and `Eip1193HandlerOptions` a required `isTracked`.
+  - `solana:signIn` (Sign In With Solana) is registered in the injected Wallet Standard wallet; the message text from `connect/siws.ts` is byte-identical to `@solana/wallet-standard-util` 1.2.0 and bound to the page's host.
+- `@qntx/wallet-engine/connect`: Solana `signMessage` now refuses non-UTF-8 bytes with `4200` like `personal_sign`, and a Solana message request's display carries `message.text` (and `signIn`).
+- Sessions must be reconnected to use `wallet_watchAsset` and `solana:signIn`: they are new session methods.
+
 - `@qntx/wallet-engine`: transaction simulation for display. Internal EVM and Solana sends, dApp
   `evm.transaction` requests and single-transaction `solana-sign` requests carry a
   `simulation: SimulationOutcome` (`success` with signed `AssetChange`s, `reverted` or

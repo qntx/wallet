@@ -16,6 +16,7 @@ export type RequestMethod =
   | "evm-sign"
   | "nostr-sign"
   | "webln-invoice"
+  | "watch-asset"
   | "solana-sign"
   | "spark-deposit"
   | "spark-exit";

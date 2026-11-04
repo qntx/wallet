@@ -87,8 +87,17 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     return new Uint8Array(n).fill(counter % 251);
   };
   const rpcCalls: string[] = [];
+  const fetchedUrls: string[] = [];
+  const tokenState = {
+    metadata: { symbol: "TKN", decimals: 18 },
+    added: [] as string[],
+    tracked: new Set<string>(),
+  };
   const networks = new NetworkController({
-    fetch: async (_input, init) => {
+    fetch: async (input, init) => {
+      fetchedUrls.push(
+        typeof input === "string" ? input : input instanceof URL ? input.href : input.url,
+      );
       const body = JSON.parse(String(init?.body)) as { id: number; method: string };
       rpcCalls.push(body.method);
       return Promise.resolve(Response.json({ jsonrpc: "2.0", id: body.id, result: "0x10" }));
@@ -112,6 +121,13 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
   const requests = new RequestController({
     phishing,
     simulateSolana: simulateSolanaStub,
+    tokens: {
+      metadata: async () => Promise.resolve(tokenState.metadata),
+      add: async (_network, address) => {
+        await Promise.resolve();
+        tokenState.added.push(address);
+      },
+    },
     transactions,
     ...bookDeps(),
     spark: {} as SparkController,
@@ -157,6 +173,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     requests,
     networks,
     defaultNetwork: () => MAINNET,
+    isTracked: (_network, address) => tokenState.tracked.has(address.toLowerCase()),
   });
   const events: Eip1193Event[] = [];
   handler.subscribe((event) => events.push(event));
@@ -203,6 +220,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     connectionOptions,
     backing,
     requests,
+    networks,
     handler,
     events,
     rpcCalls,
@@ -211,6 +229,8 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
     advance: (ms: number) => {
       clock += ms;
     },
+    fetchedUrls,
+    tokenState,
     setPhishing: (status: PhishingStatus) => {
       phishingStatus = status;
     },
@@ -534,8 +554,6 @@ describe("Eip1193Handler", () => {
       "eth_signTypedData_v3",
       "eth_signTransaction",
       "eth_sendRawTransaction",
-      "wallet_addEthereumChain",
-      "wallet_watchAsset",
       "wallet_sendCalls",
     ]) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
@@ -764,6 +782,223 @@ describe("phishing enforcement", () => {
     );
     expect(r.requests.getState().requests[idOf(request)]?.stage).toBe("failed");
     await expect(signature).resolves.toBe(-32_603);
+    await r.destroy();
+  });
+});
+
+const DAPP_RPC = "https://dapp-rpc.example/evil";
+const chain = (overrides: Record<string, unknown> = {}) => ({
+  chainId: "0xaa36a7",
+  chainName: "Sepolia",
+  nativeCurrency: { name: "Sepolia Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: [DAPP_RPC],
+  blockExplorerUrls: ["https://explorer.example"],
+  ...overrides,
+});
+const addChain = async (r: Awaited<ReturnType<typeof rig>>, param: unknown) =>
+  r.handler.handle(SITE, { method: "wallet_addEthereumChain", params: [param] });
+const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const TOKEN_ADDRESS = "0x1111111111111111111111111111111111111111";
+const watch = async (r: Awaited<ReturnType<typeof rig>>, params: unknown, origin = SITE) =>
+  r.handler.handle(origin, { method: "wallet_watchAsset", params });
+const erc20 = (options: Record<string, unknown>) => ({ type: "ERC20", options });
+
+describe("wallet_addEthereumChain", () => {
+  it.each([
+    ["not an object", "x"],
+    ["no chainId", chain({ chainId: undefined })],
+    ["leading zero", chain({ chainId: "0x01" })],
+    ["zero", chain({ chainId: "0x0" })],
+    ["decimal chainId", chain({ chainId: "11155111" })],
+    ["empty chainName", chain({ chainName: "" })],
+    ["chainName not a string", chain({ chainName: 5 })],
+    ["no nativeCurrency", chain({ nativeCurrency: undefined })],
+    ["empty currency name", chain({ nativeCurrency: { name: "", symbol: "ETH", decimals: 18 } })],
+    ["short symbol", chain({ nativeCurrency: { name: "E", symbol: "E", decimals: 18 } })],
+    ["long symbol", chain({ nativeCurrency: { name: "E", symbol: "ETHERUM", decimals: 18 } })],
+    ["decimals not 18", chain({ nativeCurrency: { name: "E", symbol: "ETH", decimals: 6 } })],
+    ["no rpcUrls", chain({ rpcUrls: undefined })],
+    ["empty rpcUrls", chain({ rpcUrls: [] })],
+    ["rpcUrls not strings", chain({ rpcUrls: [1] })],
+  ])("rejects %s with -32602", async (_name, param) => {
+    const r = await rig();
+    await expect(codeOf(addChain(r, param))).resolves.toBe(-32_602);
+    await r.destroy();
+  });
+
+  it("accepts an upper-case chainId and ignores other keys", async () => {
+    const r = await rig();
+    await expect(addChain(r, chain({ chainId: "0xAA36A7", iconUrls: [1] }))).resolves.toBeNull();
+    await r.destroy();
+  });
+
+  it("answers 4902 for a chain the wallet does not enable", async () => {
+    const r = await rig();
+    await expect(codeOf(addChain(r, chain({ chainId: "0x539" })))).resolves.toBe(4902);
+    await r.destroy();
+  });
+
+  it("answers null without a session", async () => {
+    const r = await rig();
+    await expect(addChain(r, chain())).resolves.toBeNull();
+    expect(r.connections.pending()).toHaveLength(0);
+    await r.destroy();
+  });
+
+  it("answers null for a chain already in the session without asking", async () => {
+    const r = await rig();
+    await r.connect();
+    await expect(addChain(r, chain({ chainId: "0x1" }))).resolves.toBeNull();
+    expect(r.connections.pending()).toHaveLength(0);
+    await r.destroy();
+  });
+
+  it("asks for approval for an enabled chain outside the session, then answers null", async () => {
+    const r = await rig();
+    await r.connect();
+    const adding = addChain(r, chain());
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    const [pending] = r.connections.pending();
+    expect(pending).toMatchObject({ kind: "network", network: SEPOLIA });
+    await r.connections.approveConnection(idOf(pending), {
+      accounts: [await r.addressAt(0, SEPOLIA)],
+      network: SEPOLIA,
+    });
+    await expect(adding).resolves.toBeNull();
+    expect(r.connections.session(SITE)?.currentNetwork).toBe(MAINNET);
+    await r.destroy();
+  });
+
+  it("never fetches or stores the dApp's rpcUrls", async () => {
+    const r = await rig();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    await r.connect();
+    const adding = addChain(r, chain());
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    r.connections.rejectConnection(idOf(r.connections.pending()[0]));
+    await adding.catch(() => undefined);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(r.fetchedUrls.some((url) => url.includes("dapp-rpc.example"))).toBe(false);
+    expect(r.networks.endpoints(SEPOLIA)).not.toContain(DAPP_RPC);
+    expect(r.networks.getState().customRpc).toStrictEqual({});
+    fetchSpy.mockRestore();
+    await r.destroy();
+  });
+});
+
+describe("wallet_watchAsset", () => {
+  const awaitingWatch = (r: Awaited<ReturnType<typeof rig>>) =>
+    Object.values(r.requests.getState().requests).find(
+      (x) => x.method === "watch-asset" && x.stage === "awaiting-approval",
+    );
+
+  it("rejects an unauthorized origin with 4100", async () => {
+    const r = await rig();
+    await expect(codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })))).resolves.toBe(4100);
+    await r.destroy();
+  });
+
+  it.each([
+    ["array params", [erc20({ address: TOKEN_ADDRESS })]],
+    ["no type", { options: { address: TOKEN_ADDRESS } }],
+    ["ERC721", { type: "ERC721", options: { address: TOKEN_ADDRESS } }],
+    ["no options", { type: "ERC20" }],
+    ["no address", erc20({})],
+    ["short address", erc20({ address: "0x1234" })],
+    ["address not hex", erc20({ address: `0x${"zz".repeat(20)}` })],
+    ["chainId of another network", erc20({ address: TOKEN_ADDRESS, chainId: 11_155_111 })],
+  ])("rejects %s with -32602", async (_name, params) => {
+    const r = await rig();
+    await r.connect();
+    await expect(codeOf(watch(r, params))).resolves.toBe(-32_602);
+    await r.destroy();
+  });
+
+  it("answers true without asking for a token that is already tracked", async () => {
+    const r = await rig();
+    await r.connect();
+    r.tokenState.tracked.add(USDC_ADDRESS.toLowerCase());
+    await expect(watch(r, erc20({ address: USDC_ADDRESS.toLowerCase() }))).resolves.toBe(true);
+    expect(awaitingWatch(r)).toBeUndefined();
+    expect(r.tokenState.added).toStrictEqual([]);
+    await r.destroy();
+  });
+
+  it("shows the on-chain token, adds it on approval and answers true", async () => {
+    const r = await rig();
+    await r.connect();
+    const watching = watch(
+      r,
+      erc20({
+        address: TOKEN_ADDRESS,
+        symbol: "LIE",
+        decimals: 2,
+        image: "https://img.example/x.png",
+        chainId: "0x1",
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(awaitingWatch(r)).toBeDefined();
+    });
+    const request = awaitingWatch(r);
+    expect(request?.display).toStrictEqual({
+      kind: "token.watch",
+      network: MAINNET,
+      address: TOKEN_ADDRESS,
+      symbol: "TKN",
+      decimals: 18,
+      verified: false,
+    });
+    expect(request?.risk).toStrictEqual([]);
+    await r.requests.approve(idOf(request), "watch-asset");
+    await expect(watching).resolves.toBe(true);
+    expect(r.tokenState.added).toStrictEqual([TOKEN_ADDRESS]);
+    const log = await r.requests.signLog();
+    expect(log[0]).toMatchObject({
+      method: "watch-asset",
+      outcome: "submitted",
+      summary: "watch token TKN",
+    });
+    await r.destroy();
+  });
+
+  it("answers 4001 when the user rejects", async () => {
+    const r = await rig();
+    await r.connect();
+    const watching = codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })));
+    await vi.waitFor(() => {
+      expect(awaitingWatch(r)).toBeDefined();
+    });
+    r.requests.reject(idOf(awaitingWatch(r)));
+    await expect(watching).resolves.toBe(4001);
+    expect(r.tokenState.added).toStrictEqual([]);
+    await r.destroy();
+  });
+
+  it("marks a lookalike of a built-in symbol as a danger", async () => {
+    const r = await rig();
+    await r.connect();
+    r.tokenState.metadata = { symbol: "usdc", decimals: 6 };
+    const watching = codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })));
+    await vi.waitFor(() => {
+      expect(awaitingWatch(r)).toBeDefined();
+    });
+    const request = awaitingWatch(r);
+    expect(request?.risk).toContainEqual({ code: "token-impersonation", level: "danger" });
+    r.requests.reject(idOf(request));
+    await watching;
+    await r.destroy();
+  });
+
+  it("refuses a blocked origin before anything", async () => {
+    const r = await rig();
+    await r.connect();
+    r.setPhishing("blocked");
+    await expect(codeOf(watch(r, erc20({ address: TOKEN_ADDRESS })))).resolves.toBe(4100);
     await r.destroy();
   });
 });

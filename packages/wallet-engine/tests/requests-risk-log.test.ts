@@ -17,7 +17,7 @@ import type {
   PreparedRequest,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { simulateSolanaStub } from "./send-helpers.ts";
+import { simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const SEPOLIA = "eip155:11155111";
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" } as const;
@@ -114,6 +114,7 @@ function world() {
   const requests = new RequestController({
     phishing: { check: () => "clear" },
     simulateSolana: simulateSolanaStub,
+    tokens: tokensStub,
     transactions,
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),

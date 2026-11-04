@@ -61,6 +61,7 @@ export const requestsFor = async (
   const created = new RequestController({
     phishing: { check: () => "clear" },
     simulateSolana: simulateSolanaStub,
+    tokens: tokensStub,
     transactions,
     ...bookDeps(),
     spark: noSpark,
@@ -193,3 +194,15 @@ export function simulateV1Result(params: unknown): unknown {
     };
   });
 }
+
+/** `tokens` for rigs that never watch an asset. */
+export const tokensStub = {
+  metadata: async (): Promise<{ symbol: string; decimals: number }> => {
+    await Promise.resolve();
+    throw new Error("tokens are not wired in this test");
+  },
+  add: async (): Promise<void> => {
+    await Promise.resolve();
+    throw new Error("tokens are not wired in this test");
+  },
+};

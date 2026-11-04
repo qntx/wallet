@@ -204,6 +204,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const requests = new RequestController({
     phishing,
+    tokens: {
+      metadata: async (network, address) => assets.tokenMetadata(network, address),
+      add: async (network, address) => assets.addToken(network, address),
+    },
     simulateSolana: async (account, network, message) =>
       new SolanaChainAdapter().simulate(
         networks.solanaRpc(network),
@@ -364,6 +368,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     requests,
     networks,
     defaultNetwork: () => networks.enabled("evm")[0] ?? "eip155:1",
+    isTracked: (network, address) => assets.isTracked(network, address),
   });
   const nip07 = new Nip07Handler({
     connections,

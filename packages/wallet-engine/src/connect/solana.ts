@@ -1,4 +1,5 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
+import { base58 } from "@scure/base";
 
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
 import type { RequestController } from "../requests/controller.ts";
@@ -6,6 +7,9 @@ import type { BrowserOrigin } from "../requests/types.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
 import { SOLANA_METHODS } from "./controller.ts";
 import { ProviderError, invalidParams } from "./errors.ts";
+import { checkSignInInput, signInMessageText } from "./siws.ts";
+import type { SignInFields } from "./siws.ts";
+import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
 /**
  * The Wallet Standard (`window.solana` / `registerWallet`) handler — the bridge routes `provider:
@@ -37,6 +41,10 @@ export const SOLANA_CHAIN_IDS: Readonly<Record<string, string>> = Object.freeze(
   "solana:mainnet": solanaId("Solana"),
   "solana:devnet": solanaId("Solana Devnet"),
 });
+
+/** The Wallet Standard short id of a registry network, or `undefined` when it has none. */
+export const walletStandardChain = (network: string): string | undefined =>
+  Object.entries(SOLANA_CHAIN_IDS).find(([, id]) => id === network)?.[0];
 
 /** The Wallet Standard `WalletAccount` shape `standard:connect` returns per account. */
 export type SolanaWalletAccount = {
@@ -147,6 +155,9 @@ export class SolanaWalletHandler implements SolanaHandler {
     if (request.method === "solana:signMessage") {
       return this.signMessage(checked, request);
     }
+    if (request.method === "solana:signIn") {
+      return this.signIn(checked, request);
+    }
     throw invalidParams(`unsupported solana method ${request.method}`);
   }
 
@@ -178,10 +189,14 @@ export class SolanaWalletHandler implements SolanaHandler {
     account: { readonly address: string; readonly publicKey: Uint8Array },
     network: string,
   ): SolanaWalletAccount {
+    const chain = walletStandardChain(network);
+    if (chain === undefined) {
+      throw new ProviderError(-32603, `network ${network} has no Wallet Standard chain id`);
+    }
     return {
       address: account.address,
       publicKey: account.publicKey,
-      chains: [network],
+      chains: [chain],
       features: SOLANA_METHODS.filter((m) => m.startsWith("solana:")),
     };
   }
@@ -191,12 +206,13 @@ export class SolanaWalletHandler implements SolanaHandler {
     request: SolanaRequest,
     send: boolean,
   ): Promise<unknown> {
-    const network = this.options.solanaNetwork();
+    const network = this.networkOf(request.params, send);
     this.options.connections.authorize(checked.origin, network, request.method);
     const address = this.options.connections.solanaAccount(checked.origin, network);
     if (address === undefined) {
       throw new ProviderError(4100, "no solana account for this origin");
     }
+    checkAccounts(request.params, address);
     const txs = transactionsOf(request.params);
     const group = this.options.activeGroup();
     if (group === undefined) {
@@ -214,18 +230,90 @@ export class SolanaWalletHandler implements SolanaHandler {
       throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
     }
     return send
-      ? { signatures: outcome.signatures }
+      ? { signatures: (outcome.signatures ?? []).map((signature) => base58.decode(signature)) }
       : { signedTransactions: outcome.signedTransactions };
+  }
+
+  /**
+   * The network a transaction call targets: the wallet's default when no input names a chain,
+   * otherwise the one chain every input agrees on (`chain` is required for sign-and-send).
+   */
+  private networkOf(params: unknown, requireChain: boolean): string {
+    const chains = paramList(params, "chains");
+    if (requireChain && (chains.length === 0 || chains.some((chain) => chain === undefined))) {
+      throw invalidParams("chain is required for solana:signAndSendTransaction");
+    }
+    const named = new Set(chains.filter((chain) => chain !== undefined));
+    if (named.size === 0) {
+      return this.options.solanaNetwork();
+    }
+    if (named.size > 1 || chains.some((chain) => chain === undefined)) {
+      throw invalidParams("every input must use the same chain");
+    }
+    const [chain] = [...named];
+    const network = typeof chain === "string" ? SOLANA_CHAIN_IDS[chain] : undefined;
+    if (network === undefined) {
+      throw invalidParams("unknown chain");
+    }
+    return network;
   }
 
   private async signMessage(checked: BrowserOrigin, request: SolanaRequest): Promise<unknown> {
     const network = this.options.solanaNetwork();
     this.options.connections.authorize(checked.origin, network, "solana:signMessage");
     const address = this.options.connections.solanaAccount(checked.origin, network);
+    if (address !== undefined) {
+      checkAccounts(request.params, address);
+    }
+    const message = messageOf(request.params);
+    if (utf8Text(message) === undefined) {
+      throw new ProviderError(4200, BLIND_SIGNING_MESSAGE);
+    }
+    const signature = await this.signMessageRequest(checked, network, message);
+    return { signature, signedMessage: message };
+  }
+
+  /**
+   * Sign In With Solana: connects first when needed, binds the message to the page's host and the
+   * session's account, and signs the exact text the user is shown.
+   */
+  private async signIn(checked: BrowserOrigin, request: SolanaRequest): Promise<unknown> {
+    const params =
+      typeof request.params === "object" && request.params !== null ? request.params : {};
+    const { input: raw } = params as { input?: unknown };
+    const input = checkSignInInput(raw === undefined ? {} : raw);
+    const { host } = new URL(checked.origin);
+    if (input.domain !== undefined && input.domain !== host) {
+      throw invalidParams("domain does not match the page");
+    }
+    const { accounts } = await this.connect(checked, { method: "standard:connect" });
+    const [walletAccount] = accounts;
+    const network = this.options.solanaNetwork();
+    this.options.connections.authorize(checked.origin, network, "solana:signIn");
+    if (walletAccount === undefined) {
+      throw new ProviderError(4100, "no solana account for this origin");
+    }
+    if (input.address !== undefined && input.address !== walletAccount.address) {
+      throw new ProviderError(4100, "address is not the connected account");
+    }
+    const fields: SignInFields = { ...input, domain: host, address: walletAccount.address };
+    const message = new TextEncoder().encode(signInMessageText(fields));
+    const signature = await this.signMessageRequest(checked, network, message, fields);
+    return [
+      { account: walletAccount, signedMessage: message, signature, signatureType: "ed25519" },
+    ];
+  }
+
+  private async signMessageRequest(
+    checked: BrowserOrigin,
+    network: string,
+    message: Uint8Array,
+    signIn?: SignInFields,
+  ): Promise<Uint8Array> {
+    const address = this.options.connections.solanaAccount(checked.origin, network);
     if (address === undefined) {
       throw new ProviderError(4100, "no solana account for this origin");
     }
-    const message = messageOf(request.params);
     const group = this.options.activeGroup();
     if (group === undefined) {
       throw new ProviderError(4100, "no account group is selected");
@@ -235,13 +323,13 @@ export class SolanaWalletHandler implements SolanaHandler {
       origin: checked,
       account: { walletId: group.walletId, groupIndex: group.groupIndex, address },
       network,
-      request: { kind: "message", message },
+      request: { kind: "message", message, ...(signIn === undefined ? {} : { signIn }) },
     });
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "solana.message") {
       throw new ProviderError(-32603, "the solana-sign request settled unexpectedly");
     }
-    return { signature: outcome.signature, signedMessage: message };
+    return outcome.signature;
   }
 
   /** The `setActiveGroup` re-point: the solana session's new `WalletAccount[]` for `change`. */
@@ -255,6 +343,27 @@ export class SolanaWalletHandler implements SolanaHandler {
     return [this.walletAccount(account, network)];
   }
 }
+
+const paramList = (params: unknown, name: string): ReadonlyArray<unknown> => {
+  const value: unknown =
+    typeof params === "object" && params !== null
+      ? new Map<string, unknown>(Object.entries(params)).get(name)
+      : undefined;
+  if (value === undefined) {
+    return [];
+  }
+  if (!Array.isArray(value)) {
+    throw invalidParams(`${name} must be an array`);
+  }
+  return value as unknown[];
+};
+
+/** Every account the page names must be the session's Solana account. */
+const checkAccounts = (params: unknown, address: string): void => {
+  if (paramList(params, "accounts").some((account) => account !== address)) {
+    throw new ProviderError(4100, "account is not the connected account");
+  }
+};
 
 const isBytesEnvelope = (v: unknown): v is { __bytes: string } =>
   typeof v === "object" && v !== null && typeof (v as { __bytes?: unknown }).__bytes === "string";

@@ -23,6 +23,7 @@ import {
   unsupportedMethod,
   userRejectedRequest,
 } from "./errors.ts";
+import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
 export type Eip1193Request = { readonly method: string; readonly params?: unknown };
 
@@ -42,6 +43,8 @@ export type Eip1193HandlerOptions = {
   readonly networks: NetworkController;
   /** The network an unconnected page sees. */
   readonly defaultNetwork: () => string;
+  /** Whether a token is already in the built-in table or the user's custom tokens. */
+  readonly isTracked: (network: string, address: string) => boolean;
 };
 
 /** Refused outright, whatever the session. */
@@ -55,8 +58,6 @@ const REFUSED: ReadonlySet<string> = new Set([
 
 /** Planned for later layers; answered `4200` until then. */
 const DEFERRED: ReadonlySet<string> = new Set([
-  "wallet_addEthereumChain",
-  "wallet_watchAsset",
   "wallet_sendCalls",
   "wallet_getCallsStatus",
   "wallet_getCapabilities",
@@ -88,10 +89,8 @@ const textBytes = (value: unknown): Uint8Array => {
   }
   if (/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
     const bytes = hexToBytes(value.slice(2));
-    try {
-      new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    } catch {
-      throw new ProviderError(4200, "blind signing is not enabled: the message is not UTF-8 text");
+    if (utf8Text(bytes) === undefined) {
+      throw new ProviderError(4200, BLIND_SIGNING_MESSAGE);
     }
     return bytes;
   }
@@ -144,6 +143,9 @@ export class Eip1193Handler {
     const { connections } = this.options;
     connections.checkOrigin(origin);
     const { method } = request;
+    if (method === "wallet_watchAsset") {
+      return this.watchAsset(origin, request.params);
+    }
     const params = paramList(request.params);
     if (REFUSED.has(method) || DEFERRED.has(method)) {
       throw unsupportedMethod(method);
@@ -167,6 +169,8 @@ export class Eip1193Handler {
         return null;
       case "wallet_switchEthereumChain":
         return this.switchChain(origin, params[0]);
+      case "wallet_addEthereumChain":
+        return this.addChain(origin, params[0]);
       case "personal_sign":
         return this.personalSign(origin, params);
       case "eth_signTypedData_v4":
@@ -225,6 +229,90 @@ export class Eip1193Handler {
       await connections.setCurrentNetwork(origin, network);
     }
     return null;
+  }
+
+  /**
+   * EIP-3085. The chain must already be a network the wallet enables; the page's `rpcUrls` are
+   * validated for shape and never read or used — custom endpoints are the user's setting.
+   */
+  private async addChain(origin: string, arg: unknown): Promise<unknown> {
+    const { connections } = this.options;
+    if (!isObject(arg)) {
+      throw invalidParams("the chain parameter must be an object");
+    }
+    const { chainId, chainName, nativeCurrency, rpcUrls } = arg;
+    if (typeof chainId !== "string" || !/^0x[1-9a-f][0-9a-f]*$/i.test(chainId)) {
+      throw invalidParams("chainId must be a 0x quantity without leading zeros");
+    }
+    if (typeof chainName !== "string" || chainName === "") {
+      throw invalidParams("chainName must be a non-empty string");
+    }
+    if (
+      !isObject(nativeCurrency) ||
+      typeof nativeCurrency["name"] !== "string" ||
+      nativeCurrency["name"] === "" ||
+      typeof nativeCurrency["symbol"] !== "string" ||
+      nativeCurrency["symbol"].length < 2 ||
+      nativeCurrency["symbol"].length > 6 ||
+      nativeCurrency["decimals"] !== 18
+    ) {
+      throw invalidParams("nativeCurrency must be { name, symbol (2-6 characters), decimals: 18 }");
+    }
+    if (
+      !Array.isArray(rpcUrls) ||
+      rpcUrls.length === 0 ||
+      !rpcUrls.every((url) => typeof url === "string")
+    ) {
+      throw invalidParams("rpcUrls must be a non-empty array of strings");
+    }
+    const network = `eip155:${Number.parseInt(chainId, 16)}`;
+    if (!connections.isEnabled(network)) {
+      throw unrecognizedChain(`chain ${chainId} is not enabled`);
+    }
+    const session = connections.session(origin);
+    if (session !== undefined && session.scopes[network] === undefined) {
+      await connections.request(origin, "network", network, "eip155", false);
+    }
+    return null;
+  }
+
+  /** EIP-747 (ERC-20 only): `symbol`, `decimals` and `image` from the page are never used. */
+  private async watchAsset(origin: string, arg: unknown): Promise<boolean> {
+    const { connections, requests } = this.options;
+    const session = this.signingSession(origin, "wallet_watchAsset");
+    if (!isObject(arg) || arg["type"] !== "ERC20" || !isObject(arg["options"])) {
+      throw invalidParams("params must be { type: 'ERC20', options: { address } }");
+    }
+    const { options } = arg;
+    const { address, chainId } = options;
+    if (typeof address !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(address)) {
+      throw invalidParams("options.address must be an EVM address");
+    }
+    const { currentNetwork: network } = session;
+    if (chainId !== undefined && Number(chainId) !== evmChainId(network)) {
+      throw invalidParams("options.chainId does not match the session network");
+    }
+    if (this.options.isTracked(network, address)) {
+      return true;
+    }
+    const group: AccountGroup | undefined = connections.activeGroup();
+    if (group === undefined) {
+      throw internalError("no account group is selected");
+    }
+    try {
+      const pending = await requests.prepare({
+        method: "watch-asset",
+        origin: { kind: "browser", origin },
+        account: { kind: "hd", ...group, template: "evm.bip44" },
+        network,
+        address,
+      });
+      await requests.outcome(pending.id);
+      await connections.touch(origin);
+      return true;
+    } catch (error) {
+      throw toProviderError(error);
+    }
   }
 
   private authorizedAccount(session: ConnectionSession, address: unknown): string {

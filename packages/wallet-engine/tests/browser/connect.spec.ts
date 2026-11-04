@@ -32,7 +32,7 @@ import { RequestController } from "../../src/requests/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
-import { bookDeps, simulateSolanaStub } from "../send-helpers.ts";
+import { bookDeps, simulateSolanaStub, tokensStub } from "../send-helpers.ts";
 
 const KERNEL_URL = new URL("../../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -148,6 +148,7 @@ async function engineRig() {
   const requests = new RequestController({
     phishing: { check: () => "clear" },
     simulateSolana: simulateSolanaStub,
+    tokens: tokensStub,
     transactions,
     ...bookDeps(),
     // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a createInvoice stub suffices
@@ -208,6 +209,7 @@ async function engineRig() {
     requests,
     networks,
     defaultNetwork: () => MAINNET,
+    isTracked: () => false,
   });
   const nip07 = new Nip07Handler({
     connections,
@@ -451,6 +453,37 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
     { name: "Qntx Wallet", chains: ["solana:mainnet", "solana:devnet"] },
   ]);
 
+  // The standard shapes: every feature is versioned and the signing features are variadic.
+  const shape = await page.evaluate(`(() => {
+    const wallet = window.__getWallets().get()[0];
+    const features = wallet.features;
+    const off = features["standard:events"].on("change", () => undefined);
+    const unsubscribe = typeof off;
+    off();
+    return {
+      versions: Object.fromEntries(Object.entries(features).map(([id, f]) => [id, f.version])),
+      txVersions: features["solana:signTransaction"].supportedTransactionVersions,
+      sendVersions: features["solana:signAndSendTransaction"].supportedTransactionVersions,
+      unsubscribe,
+      accountsLive: wallet.accounts === wallet.accounts,
+    };
+  })()`);
+  expect(shape).toStrictEqual({
+    versions: {
+      "standard:connect": "1.0.0",
+      "standard:disconnect": "1.0.0",
+      "standard:events": "1.0.0",
+      "solana:signTransaction": "1.0.0",
+      "solana:signAndSendTransaction": "1.0.0",
+      "solana:signMessage": "1.0.0",
+      "solana:signIn": "1.0.0",
+    },
+    txVersions: ["legacy", 0],
+    sendVersions: ["legacy", 0],
+    unsubscribe: "function",
+    accountsLive: true,
+  });
+
   const connected = page.evaluate(
     `window.__getWallets().get()[0].features["standard:connect"].connect()`,
   );
@@ -463,11 +496,21 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's connect result
   const { accounts } = (await connected) as { accounts: unknown[] };
   expect(accounts).toHaveLength(1);
+  await expect(page.evaluate(`window.__getWallets().get()[0].accounts.length`)).resolves.toBe(1);
+  const subset = `(() => {
+    const wallet = window.__getWallets().get()[0];
+    return wallet.accounts.every((a) => a.chains.every((c) => wallet.chains.includes(c)));
+  })()`;
+  await expect(page.evaluate(subset)).resolves.toBe(true);
 
   const message = new Uint8Array([1, 2, 3]);
-  const result = page.evaluate(
-    `window.__getWallets().get()[0].features["solana:signMessage"].signMessage({ message: new Uint8Array([1,2,3]) })`,
-  );
+  const result = page.evaluate(`(() => {
+    const wallet = window.__getWallets().get()[0];
+    return wallet.features["solana:signMessage"].signMessage({
+      account: wallet.accounts[0],
+      message: new Uint8Array([1, 2, 3]),
+    });
+  })()`);
   await expect
     .poll(
       () =>
@@ -482,6 +525,46 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   );
   await rig.requests.approve(pendingSign?.id ?? "", "solana-sign", VERIFY);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's signMessage result
-  const { signature } = (await result) as { signature: Uint8Array };
-  expect(verifySolanaSignature(message, signature, SOL_ADDR)).toBe(true);
+  const outputs = (await result) as Array<{ signature: Uint8Array; signatureType: string }>;
+  expect(outputs).toHaveLength(1);
+  expect(outputs[0]?.signatureType).toBe("ed25519");
+  expect(verifySolanaSignature(message, outputs[0]?.signature ?? new Uint8Array(), SOL_ADDR)).toBe(
+    true,
+  );
+});
+
+test("window wallet-standard solana:signIn verifies with verifySignIn in the page", async ({
+  context,
+}) => {
+  const { page, rig } = await openConnect(context);
+  await page.addInitScript({ path: "tests/browser/getwallets.js" });
+  await page.reload();
+  const signedIn = page.evaluate(`(async () => {
+    const wallet = window.__getWallets().get()[0];
+    const input = { statement: "Sign in to the test page", nonce: "n-123", uri: "http://localhost" };
+    const [output] = await wallet.features["solana:signIn"].signIn(input);
+    return { ok: window.__verifySignIn(input, output), type: output.signatureType };
+  })()`);
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  await rig.connections.approveConnection(pending?.id ?? "", { accounts: [], network: "" });
+  await expect
+    .poll(
+      () =>
+        Object.values(rig.requests.getState().requests).some(
+          (r) => r.stage === "awaiting-approval",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  const sign = Object.values(rig.requests.getState().requests).find(
+    (r) => r.stage === "awaiting-approval",
+  );
+  expect(sign?.display).toMatchObject({ signIn: { nonce: "n-123" } });
+  await rig.requests.approve(sign?.id ?? "", "solana-sign", VERIFY);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's result
+  expect((await signedIn) as { ok: boolean; type: string }).toStrictEqual({
+    ok: true,
+    type: "ed25519",
+  });
 });

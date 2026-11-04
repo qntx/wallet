@@ -72,6 +72,8 @@ export type PendingConnection = {
    */
   readonly namespace: "eip155" | "nostr" | "lightning" | "solana";
   readonly network?: string;
+  /** `false` for a `network` request that adds the network without making it current. */
+  readonly activate?: boolean;
   readonly createdAt: number;
 };
 
@@ -116,6 +118,7 @@ export const SESSION_METHODS: ReadonlyArray<string> = [
   "eth_sendTransaction",
   "personal_sign",
   "eth_signTypedData_v4",
+  "wallet_watchAsset",
 ];
 export const SESSION_NOTIFICATIONS: ReadonlyArray<string> = ["accountsChanged", "chainChanged"];
 /** The `nostr` namespace scope's granted methods — the NIP-07 surface. */
@@ -146,6 +149,7 @@ export const SOLANA_METHODS: ReadonlyArray<string> = [
   "solana:signTransaction",
   "solana:signAndSendTransaction",
   "solana:signMessage",
+  "solana:signIn",
 ];
 
 /** `eip155:1` → 1; `undefined` for anything that is not an EVM network. */
@@ -336,6 +340,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     kind: PendingConnection["kind"],
     network?: string,
     namespace: PendingConnection["namespace"] = "eip155",
+    activate = true,
   ): Promise<ConnectionSession> {
     const store = this.engineStore;
     if (store === undefined) {
@@ -351,6 +356,7 @@ export class ConnectionController extends Controller<ConnectionState> {
       kind,
       namespace,
       ...(network === undefined ? {} : { network }),
+      ...(activate ? {} : { activate }),
       createdAt: this.options.now(),
     };
     return new Promise<ConnectionSession>((resolve, reject) => {
@@ -466,13 +472,15 @@ export class ConnectionController extends Controller<ConnectionState> {
     }
     const now = this.options.now();
     const existing = this.session(entry.origin.origin);
+    const currentNetwork =
+      entry.activate === false && existing !== undefined ? existing.currentNetwork : grant.network;
     const session: ConnectionSession = {
       id:
         existing?.id ??
         `session-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
       origin: entry.origin,
       scopes: { ...existing?.scopes, ...scopes },
-      currentNetwork: grant.network,
+      currentNetwork,
       ...(grant.nostr === undefined ? {} : { nostrPolicy: grant.nostr.policy }),
       ...(grant.lightning === undefined ? {} : { lightningPolicy: grant.lightning.policy }),
       createdAt: existing?.createdAt ?? now,
@@ -480,7 +488,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     };
     await this.persist(store, session);
     this.dropPending(id);
-    if (existing !== undefined && existing.currentNetwork !== grant.network) {
+    if (existing !== undefined && existing.currentNetwork !== currentNetwork) {
       this.options.invalidate(entry.origin.origin);
     }
     waiter.resolve(session);

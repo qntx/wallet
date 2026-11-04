@@ -75,7 +75,10 @@
     "@qntx/wallet-worker": "0.8.0",
     "@solana-program/token-2022": "0.20.0",
     "@solana/wallet-standard-features": "1.5.0",
+    "@solana/wallet-standard-util": "1.2.0",
     "@wallet-standard/app": "1.1.1",
+    "@wallet-standard/base": "1.1.1",
+    "@wallet-standard/features": "1.1.1",
     "@wallet-standard/wallet": "1.1.1",
     "fake-indexeddb": "6.2.6",
     "publint": "0.3.25"

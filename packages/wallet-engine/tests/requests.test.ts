@@ -17,7 +17,7 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { bookDeps, simulateSolanaStub, simulateV1Result } from "./send-helpers.ts";
+import { bookDeps, simulateSolanaStub, tokensStub, simulateV1Result } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -122,6 +122,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   const controller = new RequestController({
     phishing: { check: () => "clear" },
     simulateSolana: simulateSolanaStub,
+    tokens: tokensStub,
     transactions,
     ...bookDeps(),
     spark: {
@@ -428,6 +429,7 @@ function evmWorld(options: {
   const requests = new RequestController({
     phishing: { check: () => "clear" },
     simulateSolana: simulateSolanaStub,
+    tokens: tokensStub,
     transactions,
     ...bookDeps(),
     spark: {

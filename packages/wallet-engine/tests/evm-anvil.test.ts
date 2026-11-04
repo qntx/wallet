@@ -22,7 +22,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { bookDeps, replaceVia, send, simulateSolanaStub } from "./send-helpers.ts";
+import { bookDeps, replaceVia, send, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const NOSTR_PUBKEY = "a".repeat(64);
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
@@ -542,6 +542,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       const requests = new RequestController({
         phishing: { check: () => "clear" },
         simulateSolana: simulateSolanaStub,
+        tokens: tokensStub,
         transactions,
         ...bookDeps(),
         spark: {} as SparkController,
@@ -579,6 +580,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         requests,
         networks,
         defaultNetwork: () => "eip155:1",
+        isTracked: () => false,
       });
       const site = "https://app.example";
       const connecting = handler.handle(site, { method: "eth_requestAccounts" });

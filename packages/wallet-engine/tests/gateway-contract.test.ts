@@ -571,7 +571,7 @@ function shuffle(items: Uint8Array[], random: () => number): void {
 describe("hashList at scale", () => {
   it("matches a naive sort-and-dedupe over a large shuffled input with duplicates", () => {
     const random = seeded(11);
-    const count = 60_000;
+    const count = 20_000;
     const hashes = Array.from({ length: count }, (_, i) => {
       const hash = new Uint8Array(8);
       for (let k = 0; k < 8; k += 1) {

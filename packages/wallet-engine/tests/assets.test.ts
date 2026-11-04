@@ -208,6 +208,55 @@ const balancesOf = (ctl: AssetsController, k: string) => {
   return entry;
 };
 
+describe("AssetsController token tracking", () => {
+  const symbolCall = encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" });
+  const decimalsCall = encodeFunctionData({ abi: ERC20_ABI, functionName: "decimals" });
+  const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+
+  it("tracks built-in tokens case-insensitively, custom tokens once added, and nothing else", async () => {
+    const c = client({
+      eth_call: ethCall({
+        [symbolCall]: encodeFunctionResult({
+          abi: ERC20_ABI,
+          functionName: "symbol",
+          result: "TST",
+        }),
+        [decimalsCall]: enc(6n),
+      }),
+    });
+    const ctl = controller(c);
+    expect(ctl.isTracked("eip155:1", USDC)).toBe(true);
+    expect(ctl.isTracked("eip155:1", USDC.toLowerCase())).toBe(true);
+    expect(ctl.isTracked("eip155:1", TOKEN)).toBe(false);
+    await ctl.addToken("eip155:1", TOKEN);
+    expect(ctl.isTracked("eip155:1", TOKEN.toUpperCase().replace("0X", "0x"))).toBe(true);
+  });
+
+  it("reads symbol and decimals on-chain", async () => {
+    const c = client({
+      eth_call: ethCall({
+        [symbolCall]: encodeFunctionResult({
+          abi: ERC20_ABI,
+          functionName: "symbol",
+          result: "TST",
+        }),
+        [decimalsCall]: enc(6n),
+      }),
+    });
+    await expect(controller(c).tokenMetadata("eip155:1", TOKEN)).resolves.toStrictEqual({
+      symbol: "TST",
+      decimals: 6,
+    });
+  });
+
+  it("throws when either read does not decode", async () => {
+    const c = client({ eth_call: "0x" });
+    await expect(controller(c).tokenMetadata("eip155:1", TOKEN)).rejects.toThrow(
+      "not a readable ERC-20",
+    );
+  });
+});
+
 describe("AssetsController solana", () => {
   it("reports a Token-2022 token account in balances (mint-filtered query covers it)", async () => {
     const r = solRpc({
