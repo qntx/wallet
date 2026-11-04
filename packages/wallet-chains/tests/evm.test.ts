@@ -11,6 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   checksumEvmAddress,
+  EVM_NATIVE_ASSET,
   decodeEvm,
   isEvmAddress,
   networkChainId,
@@ -277,5 +278,13 @@ describe("verifiability + decode", () => {
   it("parses CAIP-2 chain ids", () => {
     expect(networkChainId("eip155:56")).toBe(56);
     expect(() => networkChainId("solana:4sg")).toThrow(ChainError);
+  });
+});
+
+describe("EVM_NATIVE_ASSET", () => {
+  it("is the asset id the decode uses for the native coin", () => {
+    expect(EVM_NATIVE_ASSET).toBe("native");
+    const intent = decodeEvm(txReq({ type: "eip1559", value: "0x1" }) as never);
+    expect(intent.outflows[0]?.amount.asset).toBe(EVM_NATIVE_ASSET);
   });
 });

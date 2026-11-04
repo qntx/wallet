@@ -10,6 +10,7 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
+import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { assertHex, networkChainId } from "./transaction.ts";
@@ -30,7 +31,6 @@ const ERC1155_SAFE_FROM = AbiFunction.from(
   "function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)",
 );
 
-const NATIVE_ASSET = "native";
 const MAX_UINT256 = 2n ** 256n - 1n;
 
 const argAddress = (args: ReadonlyArray<unknown>, index: number): string => {
@@ -73,7 +73,7 @@ const tryCall = (fn: AbiFunction.AbiFunction, data: string): ReadonlyArray<unkno
 };
 
 const weiAmount = (wei: bigint, symbol?: string, decimals?: number) => ({
-  asset: NATIVE_ASSET,
+  asset: EVM_NATIVE_ASSET,
   amount: wei.toString(10),
   ...(symbol === undefined ? {} : { symbol }),
   ...(decimals === undefined ? {} : { decimals }),

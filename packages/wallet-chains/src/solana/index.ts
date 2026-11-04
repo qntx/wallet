@@ -13,7 +13,9 @@ export {
 export { decodeSolana, verifiabilitySolana } from "./decode.ts";
 export { EXT, parseMintExtensions, netAfterTransferFee } from "./token2022.ts";
 export type { MintExtensionSummary } from "./token2022.ts";
+export { SOLANA_NATIVE_ASSET } from "./assets.ts";
 export { parseCompiledMessage } from "./message.ts";
+export type { LookupReference, ParsedSolanaMessage } from "./message.ts";
 export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";
 export { solanaTokenTable } from "./tokens.ts";

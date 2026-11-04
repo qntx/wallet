@@ -34,7 +34,9 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { ChainError } from "../src/index.ts";
 import {
+  SOLANA_NATIVE_ASSET,
   decodeSolana,
+  parseCompiledMessage,
   isSolanaAddress,
   normalizeSolana,
   verifiabilitySolana,
@@ -368,6 +370,21 @@ describe("verifiability + decode", () => {
       FEE_PAYER,
     );
     expect(verifiabilitySolana(n as never, FEE_PAYER)).toBe("partial");
+  });
+
+  it("parseCompiledMessage returns each lookup's writable and readonly indexes", () => {
+    const message = compile([transferIx()], 0, { [LOOKUP_TABLE]: [DEST] });
+    const parsed = parseCompiledMessage(message);
+    expect(parsed.lookups).toStrictEqual([
+      { address: LOOKUP_TABLE, writableIndexes: [0], readonlyIndexes: [] },
+    ]);
+    expect(parseCompiledMessage(compile([transferIx()])).lookups).toStrictEqual([]);
+  });
+
+  it("exports the native asset ids the decode uses", () => {
+    expect(SOLANA_NATIVE_ASSET).toBe("lamports");
+    const intent = decodeSolana(req(compile([transferIx()])) as never, FEE_PAYER);
+    expect(intent.outflows[0]?.amount.asset).toBe(SOLANA_NATIVE_ASSET);
   });
 
   it("unknown program → opaque", () => {

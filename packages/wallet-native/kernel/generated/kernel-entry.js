@@ -25132,6 +25132,8 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-chains/dist/evm.mjs
 	init_objectSpread2();
+	/** The native asset id in `AssetFlow` and simulated asset changes. */
+	var EVM_NATIVE_ASSET = "native";
 	var USDC$1 = Object.freeze({
 		symbol: "USDC",
 		decimals: 6,
@@ -25168,7 +25170,6 @@ zoo`.split("\n"));
 	var ERC721_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
 	var ERC721_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
 	var ERC1155_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)");
-	var NATIVE_ASSET = "native";
 	var MAX_UINT256 = 2n ** 256n - 1n;
 	var argAddress = (args, index) => {
 		const value = args[index];
@@ -25198,7 +25199,7 @@ zoo`.split("\n"));
 		}
 	};
 	var weiAmount = (wei, symbol, decimals) => _objectSpread2(_objectSpread2({
-		asset: NATIVE_ASSET,
+		asset: EVM_NATIVE_ASSET,
 		amount: wei.toString(10)
 	}, symbol === void 0 ? {} : { symbol }), decimals === void 0 ? {} : { decimals });
 	var feeWei = (tx) => BigInt(tx.gas) * (tx.type === "eip1559" ? BigInt(tx.maxFeePerGas) : BigInt(tx.gasPrice));
@@ -26777,8 +26778,11 @@ zoo`.split("\n"));
 			numRequiredSignatures: message.numSignerAccounts,
 			staticAccounts,
 			instructions: message.instructions,
-			lookupCount: lookups.length,
-			lookupAddresses: lookups.map((l) => l.lookupTableAddress)
+			lookups: lookups.map((l) => ({
+				address: l.lookupTableAddress,
+				writableIndexes: l.writableIndexes,
+				readonlyIndexes: l.readonlyIndexes
+			}))
 		};
 	};
 	var isRecord$2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
@@ -26838,6 +26842,8 @@ zoo`.split("\n"));
 		if (tables === void 0) return;
 		for (const table of tables) if (!isSolanaAddress(table.address) || !table.addresses.every(isSolanaAddress)) throw new ChainError("invalid-address", "lookup table entries must be base58 32-byte addresses");
 	};
+	/** The native asset id in `AssetFlow` and simulated asset changes. */
+	var SOLANA_NATIVE_ASSET = "lamports";
 	var USDC = Object.freeze({
 		symbol: "USDC",
 		decimals: 6,
@@ -26856,7 +26862,6 @@ zoo`.split("\n"));
 		var _table$network;
 		return (_table$network = table[network]) === null || _table$network === void 0 ? void 0 : _table$network[mint];
 	};
-	var LAMPORTS_ASSET = "lamports";
 	var u32 = getU32Decoder();
 	var u64$1 = getU64Decoder();
 	var u32le = (data, offset) => u32.decode(data, offset);
@@ -26920,7 +26925,7 @@ zoo`.split("\n"));
 		"ata-create-idempotent"
 	]);
 	var classify$1 = (parsed, calls, network, table) => {
-		if (parsed.lookupCount > 0) return "partial";
+		if (parsed.lookups.length > 0) return "partial";
 		let allFull = true;
 		for (const call of calls) {
 			var _call$mint;
@@ -26957,7 +26962,7 @@ zoo`.split("\n"));
 				if (source === signer) outflows.push({
 					to: call.to,
 					amount: {
-						asset: LAMPORTS_ASSET,
+						asset: SOLANA_NATIVE_ASSET,
 						amount: ((_call$amount = call.amount) !== null && _call$amount !== void 0 ? _call$amount : 0n).toString(10)
 					},
 					verified: true
@@ -26994,7 +26999,7 @@ zoo`.split("\n"));
 			outflows,
 			approvals,
 			fee: fee === void 0 ? void 0 : { max: {
-				asset: LAMPORTS_ASSET,
+				asset: SOLANA_NATIVE_ASSET,
 				amount: fee.toString(10)
 			} },
 			warnings: [],
