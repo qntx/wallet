@@ -478,3 +478,117 @@ describe("hash lists", () => {
     expect(applyDiff(new Uint8Array(), listOf(["a.com"]), new Uint8Array())).toStrictEqual(list);
   });
 });
+
+const hexOf = (bytes: Uint8Array): string =>
+  Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+
+/** The pre-fast-path normalization: every entry through `new URL`. */
+function referenceKey(entry: string): string | undefined {
+  let raw = entry.trim();
+  if (raw.startsWith("*.")) {
+    raw = raw.slice(2);
+  }
+  if (raw === "" || /:\/\/|[?#@\\\s]/.test(raw)) {
+    return undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(`https://${raw}`);
+  } catch {
+    return undefined;
+  }
+  if ((raw.split("/")[0] ?? "").includes(":")) {
+    return undefined;
+  }
+  const host = url.hostname.toLowerCase().replace(/\.$/, "");
+  const labels = host.split(".");
+  if (host.length > 253 || labels.length < 2 || labels.includes("")) {
+    return undefined;
+  }
+  const segments = url.pathname.split("/").filter((segment) => segment !== "");
+  if (segments.length === 0) {
+    return host;
+  }
+  return segments.length > PHISHING_MAX_PATH_SEGMENTS ? undefined : `${host}/${segments.join("/")}`;
+}
+
+function seeded(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) % 4_294_967_296;
+    return Math.abs(state) / 4_294_967_296;
+  };
+}
+
+describe("phishingKey fast path", () => {
+  it("returns exactly what the URL parser path returns", () => {
+    const random = seeded(7);
+    const alphabet = "abcdeXYZ019-_.. :/*~xn";
+    const pick = (): string => alphabet.charAt(Math.floor(random() * alphabet.length));
+    const generated = Array.from({ length: 20_000 }, () =>
+      Array.from({ length: 1 + Math.floor(random() * 24) }, pick).join(""),
+    );
+    const fixed = [
+      "example.com",
+      "a.b.c.example.co.uk",
+      "example.com.",
+      "EXAMPLE.com",
+      "1.2.3.4",
+      "1.2.3",
+      "0x7f.1",
+      "999.1.1.1",
+      "a.1",
+      "1.example",
+      "xn--bcher-kva.example",
+      "xn--zz.example",
+      "-a-.com",
+      "a_b.com",
+      "a..com",
+      ".com",
+      "com",
+      `${"x".repeat(250)}.com`,
+      `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(63)}.com`,
+      "tld-with-hyphen.a-b",
+      "coinbase_prologin1.godaddysites.com",
+    ];
+    const mismatches = [...fixed, ...generated].filter(
+      (entry) => phishingKey(entry) !== referenceKey(entry),
+    );
+    expect(mismatches).toStrictEqual([]);
+  });
+});
+
+function shuffle(items: Uint8Array[], random: () => number): void {
+  for (let i = items.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(random() * (i + 1));
+    const swap = items[i]!;
+    items[i] = items[j]!;
+    items[j] = swap;
+  }
+}
+
+describe("hashList at scale", () => {
+  it("matches a naive sort-and-dedupe over a large shuffled input with duplicates", () => {
+    const random = seeded(11);
+    const count = 60_000;
+    const hashes = Array.from({ length: count }, (_, i) => {
+      const hash = new Uint8Array(8);
+      for (let k = 0; k < 8; k += 1) {
+        hash[k] = Math.floor(random() * 256);
+      }
+      // Force collisions on the high bytes so the radix passes see long equal runs.
+      hash[0] = i % 7;
+      hash[1] = i % 3;
+      return hash;
+    });
+    const duplicated = [...hashes, ...hashes.filter((_, i) => i % 5 === 0)];
+    shuffle(duplicated, random);
+    const expected = [...new Set(duplicated.map(hexOf))].toSorted();
+    const list = hashList(duplicated);
+    expect(hashCount(list)).toBe(expected.length);
+    expect(
+      Array.from({ length: hashCount(list) }, (_, i) => hexOf(list.subarray(i * 8, i * 8 + 8))),
+    ).toStrictEqual(expected);
+    expect(decodeHashList(encodeHashList(list))).toStrictEqual(list);
+  });
+});

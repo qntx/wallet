@@ -40,16 +40,14 @@ export type PhishingBuildOptions = {
   readonly sources: ReadonlyArray<PhishingSource>;
 };
 
-const hashesOf = (entries: ReadonlyArray<string>): HashList => {
-  const hashes: Uint8Array[] = [];
+function* hashedKeys(entries: ReadonlyArray<string>): Generator<Uint8Array> {
   for (const entry of entries) {
     const key = phishingKey(entry);
     if (key !== undefined) {
-      hashes.push(phishingHash(key));
+      yield phishingHash(key);
     }
   }
-  return hashList(hashes);
-};
+}
 
 const delta = (before: HashList, after: HashList) => ({
   add: encodeHashList(difference(after, before)),
@@ -141,8 +139,8 @@ export async function buildPhishingList(options: PhishingBuildOptions): Promise<
     skip("source-failed", { error: error instanceof Error ? error.message : "unknown" });
     return;
   }
-  const deny = hashesOf(fetched.flatMap((entries) => entries.deny));
-  const allow = hashesOf(fetched.flatMap((entries) => entries.allow));
+  const deny = hashList(hashedKeys(fetched.flatMap((entries) => entries.deny)));
+  const allow = hashList(hashedKeys(fetched.flatMap((entries) => entries.allow)));
   const denyB64 = encodeHashList(deny);
   const allowB64 = encodeHashList(allow);
 

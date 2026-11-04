@@ -13,7 +13,13 @@
       "routes": [{ "pattern": "wallet-gateway-staging.qntx.org", "custom_domain": true }],
       "vars": { "CORS_ORIGINS": "http://localhost:5173,http://localhost:8081" },
       "triggers": { "crons": ["17 * * * *"] },
-      "kv_namespaces": [{ "binding": "RISK", "id": "8193c99055c942898a62239dc0252837" }],
+      "kv_namespaces": [
+        {
+          "binding": "RISK",
+          "id": "8193c99055c942898a62239dc0252837",
+          "preview_id": "41f33427d52a480784d01947ef604d7a",
+        },
+      ],
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
