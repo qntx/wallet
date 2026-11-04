@@ -42,9 +42,9 @@ import { assessRecipients } from "./risk.ts";
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
-import type { BrowserOrigin, RequestMethod, RequestOrigin } from "./types.ts";
+import type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
 
-export type { BrowserOrigin, RequestMethod, RequestOrigin } from "./types.ts";
+export type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
 
 export type { RequestCheckCode } from "./checks.ts";
 export type { RiskFinding } from "./risk.ts";
@@ -126,12 +126,6 @@ export type WeblnInvoiceInput = {
  * A dApp's Solana request: one `solana-sign` covers a batch of transactions (signed sequentially —
  * each prompts) or a `solana.message` raw-message signature.
  */
-export type SolanaAccount = {
-  readonly walletId: string;
-  readonly groupIndex: number;
-  readonly address: string;
-};
-
 export type SolanaSignInput = {
   readonly method: "solana-sign";
   readonly origin: BrowserOrigin;

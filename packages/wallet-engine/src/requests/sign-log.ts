@@ -9,9 +9,8 @@ import type { EngineLogger } from "../events.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
-import type { SolanaAccount } from "./controller.ts";
 import type { RiskFinding } from "./risk.ts";
-import type { RequestMethod, RequestOrigin } from "./types.ts";
+import type { RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
 
 export type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "invalidated";
 
