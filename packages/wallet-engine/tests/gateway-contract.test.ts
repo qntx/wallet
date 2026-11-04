@@ -142,6 +142,7 @@ describe("rpc requests", () => {
       expect(ok(evmRpcRequest, call(m))).toBe(false);
     }
     expect(EVM_RPC_METHODS).toContain("eth_sendRawTransaction");
+    expect(EVM_RPC_METHODS).toContain("eth_simulateV1");
   });
 
   it("solana allow-list: every listed method passes, others fail", () => {

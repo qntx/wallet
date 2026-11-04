@@ -204,6 +204,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const requests = new RequestController({
     phishing,
+    simulateSolana: async (account, network, message) =>
+      new SolanaChainAdapter().simulate(
+        networks.solanaRpc(network),
+        network,
+        account.address,
+        message,
+        setTimer,
+      ),
     transactions,
     addressBook,
     openStore: options.openStore,

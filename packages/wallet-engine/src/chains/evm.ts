@@ -6,11 +6,21 @@
  * last broadcast + 1) and is only recorded once a broadcast succeeds. Finalization uses the
  * `finalized` block tag; receipts with status 0 fail.
  */
-import { encodeFunctionData, isAddress, numberToHex } from "viem";
+import { encodeFunctionData, isAddress, isHex, numberToHex } from "viem";
 import type { PublicClient } from "viem";
+import { simulateCalls } from "viem/actions";
 
 import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
-import { checksumEvmAddress } from "@qntx/wallet-chains/evm";
+import {
+  EVM_NATIVE_ASSET,
+  checksumEvmAddress,
+  evmTokenTable,
+  lookupEvmToken,
+} from "@qntx/wallet-chains/evm";
+
+import { errorMessage } from "../errors.ts";
+import { boundedSimulation } from "../requests/simulation.ts";
+import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 
 export type EvmSignRequest = Extract<SignRequest, { kind: "evm.transaction" }>;
 export type EvmSignResult = {
@@ -83,6 +93,13 @@ const checkedAddress = (v: string): `0x${string}` => {
   return v;
 };
 
+const checkedHex = (v: string): `0x${string}` => {
+  if (!isHex(v, { strict: true }) || v.length % 2 !== 0) {
+    throw new TypeError("malformed hex data");
+  }
+  return v;
+};
+
 const hex = (v: bigint | number): string => numberToHex(v);
 
 const evmRpc = async (client: PublicClient, method: string, params: unknown[]): Promise<unknown> =>
@@ -98,6 +115,15 @@ export const evmRpcHex = async (
     throw new TypeError(`${method} returned a malformed result`);
   }
   return result;
+};
+
+/** Viem's marker for the chain's native asset in traced asset changes. */
+const NATIVE_MARKER = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+export type EvmSimulationCall = {
+  readonly to: string;
+  readonly value: bigint;
+  readonly data: string;
 };
 
 export class EvmChainAdapter {
@@ -286,6 +312,60 @@ export class EvmChainAdapter {
       throw new Error(`unexpected sign result ${signed.kind}`);
     }
     return `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
+  }
+
+  /**
+   * Simulates one call from `from` with traced asset changes. A revert is `reverted`; an
+   * unsupported method, any thrown error or the timeout is `unavailable`. The result is for display
+   * only.
+   */
+  async simulate(
+    client: PublicClient,
+    chainId: number,
+    from: string,
+    call: EvmSimulationCall,
+    setTimer: (ms: number, fn: () => unknown) => () => void,
+  ): Promise<SimulationOutcome> {
+    return boundedSimulation(async () => {
+      const result = await simulateCalls(client, {
+        account: checkedAddress(from),
+        calls: [{ to: checkedAddress(call.to), value: call.value, data: checkedHex(call.data) }],
+        traceAssetChanges: true,
+      });
+      const [first] = result.results;
+      if (first?.status === "failure") {
+        return { status: "reverted", error: errorMessage(first.error) };
+      }
+      const changes: AssetChange[] = [];
+      for (const change of result.assetChanges) {
+        if (change.value.diff === 0n) {
+          continue;
+        }
+        const address = change.token.address.toLowerCase();
+        if (address === NATIVE_MARKER) {
+          changes.push({
+            asset: EVM_NATIVE_ASSET,
+            amount: change.value.diff.toString(10),
+            verified: true,
+          });
+          continue;
+        }
+        const asset = checksumEvmAddress(address);
+        const known = lookupEvmToken(evmTokenTable, chainId, asset);
+        changes.push({
+          asset,
+          amount: change.value.diff.toString(10),
+          ...(known === undefined
+            ? {
+                ...(change.token.decimals === undefined ? {} : { decimals: change.token.decimals }),
+                ...(change.token.symbol === undefined ? {} : { symbol: change.token.symbol }),
+                verified: false,
+              }
+            : { decimals: known.decimals, symbol: known.symbol, verified: true }),
+        });
+      }
+      return { status: "success", changes };
+    }, setTimer);
   }
 
   async broadcast(client: PublicClient, raw: string): Promise<string> {

@@ -175,6 +175,13 @@ export const createEvmRoute = (): EvmRoute => {
     const intent = decodeEvm(request);
     const txId = newId(ctx.options.random);
     const chosen = quote;
+    const simulation = await evm.simulate(
+      client,
+      info.chainId,
+      from,
+      { to: feed.to, value: feed.value, data: feed.data },
+      ctx.options.setTimer,
+    );
 
     const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
       pending.set(txId, { unsigned: feed, request, quote: chosen, chainId: info.chainId });
@@ -205,6 +212,7 @@ export const createEvmRoute = (): EvmRoute => {
       network,
       intent,
       checks: collectChecks(flags),
+      simulation,
       staleReason: () =>
         evm.nonceConsumed(network, from, unsigned.nonce)
           ? "nonce already used by a newer transaction — start over"

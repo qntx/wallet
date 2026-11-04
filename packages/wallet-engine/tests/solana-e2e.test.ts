@@ -132,6 +132,13 @@ const send = async (
   return a.broadcast(r, wire);
 };
 
+const realTimer = (ms: number, fn: () => unknown): (() => void) => {
+  const id = setTimeout(fn, ms);
+  return () => {
+    clearTimeout(id);
+  };
+};
+
 const balance = (v: unknown): number => {
   const o = typeof v === "object" && v !== null ? (v as { value?: unknown }).value : undefined;
   return typeof o === "number" ? o : 0;
@@ -196,6 +203,18 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
         recipient.address,
         Date.now() + 60_000,
       );
+      const solSimulation = await a.simulate(
+        r,
+        NETWORK,
+        payer.address,
+        a.applyFee(unsigned, { tier: "normal", microLamportsPerCu: 0n }),
+        realTimer,
+      );
+      // The simulation deducts the 5000-lamport base fee: -(amount + fee).
+      expect(solSimulation).toStrictEqual({
+        status: "success",
+        changes: [{ asset: "lamports", amount: "-1005000", verified: true }],
+      });
       const solHash = await send(a, r, payer, unsigned);
       await waitConfirmed(a, r, solHash, Date.now() + 60_000);
       await expect(a.status(r, solHash)).resolves.toMatch(/confirmed|finalized/);
@@ -267,6 +286,21 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
         to: recipient.address,
         amount: 500_000n,
         decimals: 6,
+      });
+      const splSimulation = await a.simulate(
+        r,
+        NETWORK,
+        payer.address,
+        a.applyFee(splUnsigned, { tier: "normal", microLamportsPerCu: 0n }),
+        realTimer,
+      );
+      // Lamports: the base fee plus the recipient token account's rent; the token: -amount.
+      expect(splSimulation).toStrictEqual({
+        status: "success",
+        changes: [
+          { asset: "lamports", amount: "-2044280", verified: true },
+          { asset: mint.address, amount: "-500000", verified: false },
+        ],
       });
       const splHash = await send(a, r, payer, splUnsigned);
       await waitConfirmed(a, r, splHash, Date.now() + 60_000);

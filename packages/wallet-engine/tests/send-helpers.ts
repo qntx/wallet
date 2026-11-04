@@ -60,6 +60,7 @@ export const requestsFor = async (
   }
   const created = new RequestController({
     phishing: { check: () => "clear" },
+    simulateSolana: simulateSolanaStub,
     transactions,
     ...bookDeps(),
     spark: noSpark,
@@ -156,3 +157,39 @@ export const routeCpfp = async (
   const prepared = await route.prepareCpfp(ctx, parent, feeRate, `req-cpfp-${routeCounter}`);
   return prepared.submit(verify);
 };
+
+/** `simulateSolana` for rigs that never simulate. */
+export async function simulateSolanaStub(): Promise<{ status: "unavailable"; error: string }> {
+  await Promise.resolve();
+  return { status: "unavailable", error: "not wired in this test" };
+}
+
+/** A permissive `eth_simulateV1` answer: every simulated call succeeds with empty return data. */
+export function simulateV1Result(params: unknown): unknown {
+  const first: unknown = Array.isArray(params) ? params[0] : undefined;
+  const states: unknown =
+    typeof first === "object" && first !== null && "blockStateCalls" in first
+      ? first.blockStateCalls
+      : [];
+  return (Array.isArray(states) ? (states as unknown[]) : []).map((state, index) => {
+    const calls: unknown =
+      typeof state === "object" && state !== null && "calls" in state ? state.calls : [];
+    return {
+      number: `0x${(index + 1).toString(16)}`,
+      hash: `0x${"00".repeat(32)}`,
+      parentHash: `0x${"00".repeat(32)}`,
+      timestamp: "0x1",
+      gasLimit: "0x1c9c380",
+      gasUsed: "0x0",
+      baseFeePerGas: "0x1",
+      miner: `0x${"00".repeat(20)}`,
+      transactions: [],
+      calls: (Array.isArray(calls) ? (calls as unknown[]) : []).map(() => ({
+        status: "0x1",
+        returnData: "0x",
+        gasUsed: "0x0",
+        logs: [],
+      })),
+    };
+  });
+}

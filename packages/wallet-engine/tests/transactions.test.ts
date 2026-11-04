@@ -5,9 +5,10 @@ import type { chains } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
+import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send } from "./send-helpers.ts";
+import { send, simulateV1Result } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -21,7 +22,7 @@ const memoryStore = () => createMemoryEngineStore();
 
 const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
   (async (_url: unknown, init: { body?: string } | undefined) => {
-    const body = JSON.parse(init?.body ?? "{}") as { method: string };
+    const body = JSON.parse(init?.body ?? "{}") as { method: string; params?: unknown };
     const table: Record<string, unknown> = {
       eth_getTransactionCount: "0x0",
       eth_estimateGas: "0x5208",
@@ -35,6 +36,9 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
       eth_sendRawTransaction: `0x${"ab".repeat(32)}`,
       eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" },
       eth_getBlockByNumber: { number: "0x2" },
+      eth_blockNumber: "0x1",
+      eth_call: `0x${"00".repeat(32)}`,
+      eth_simulateV1: simulateV1Result(body.params),
       ...overrides,
     };
     return Promise.resolve(
@@ -43,6 +47,16 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
         : Response.json({ error: { message: `unmocked ${body.method}` } }, { status: 500 }),
     );
   }) as typeof fetch;
+
+/** Records poll timers; the simulation's own timeout is not one. */
+const pollTimers =
+  (timers: Array<() => unknown>) =>
+  (ms: number, fn: () => unknown): (() => void) => {
+    if (ms !== SIMULATION_TIMEOUT_MS) {
+      timers.push(fn);
+    }
+    return () => {};
+  };
 
 const logger: EngineLogger = { warn: () => {} };
 
@@ -82,10 +96,7 @@ describe("TransactionController", () => {
       networks: nets(rpcFetch()),
       openStore: async () => Promise.resolve(memoryStore()),
       random: (n) => new Uint8Array(n).fill(1),
-      setTimer: (_ms, fn) => {
-        timers.push(fn);
-        return () => {};
-      },
+      setTimer: pollTimers(timers),
       now: () => 1000,
       logger,
       pollMs: 1,
@@ -154,10 +165,7 @@ describe("TransactionController", () => {
       networks: nets(rpcFetch()),
       openStore: async () => Promise.resolve(store),
       random: (n) => new Uint8Array(n),
-      setTimer: (_ms, fn) => {
-        timers.push(fn);
-        return () => {};
-      },
+      setTimer: pollTimers(timers),
       now: () => 0,
       logger,
       pollMs: 1,

@@ -147,6 +147,7 @@ export const prepareSolana = async (
       ? decodeSolana(request, from)
       : token2022Intent(decodeSolana(request, from), ext, params.token, amount);
   const id = newId(ctx.options.random);
+  const simulation = await solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer);
 
   const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
     let tx: TrackedTransaction = {
@@ -185,6 +186,7 @@ export const prepareSolana = async (
     network,
     intent,
     checks: collectChecks(flags),
+    simulation,
     staleReason: async () =>
       (await solana.blockHeight(rpc)) > unsigned.lastValidBlockHeight
         ? "blockhash expired — start over"

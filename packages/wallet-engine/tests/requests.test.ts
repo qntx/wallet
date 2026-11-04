@@ -6,6 +6,7 @@ import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
 import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
+import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -16,7 +17,7 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { bookDeps } from "./send-helpers.ts";
+import { bookDeps, simulateSolanaStub, simulateV1Result } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -120,6 +121,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   };
   const controller = new RequestController({
     phishing: { check: () => "clear" },
+    simulateSolana: simulateSolanaStub,
     transactions,
     ...bookDeps(),
     spark: {
@@ -332,6 +334,8 @@ function evmWorld(options: {
 }) {
   const base: Rpc = {
     eth_chainId: "0xaa36a7",
+    eth_blockNumber: "0x1",
+    eth_call: `0x${"00".repeat(32)}`,
     eth_getTransactionCount: "0x0",
     eth_estimateGas: "0x5208",
     eth_feeHistory: feeHistory("0x2"),
@@ -349,10 +353,12 @@ function evmWorld(options: {
     txCounter += 1;
     return txCounter;
   };
-  const answer = (table: Rpc, body: { method: string }): Response =>
-    body.method in table
-      ? Response.json({ jsonrpc: "2.0", id: 1, result: table[body.method] })
-      : Response.json({ jsonrpc: "2.0", id: 1, error: { code: -1, message: body.method } });
+  const answer = (table: Rpc, body: { method: string; params?: unknown }): Response =>
+    body.method === "eth_simulateV1" && !(body.method in table)
+      ? Response.json({ jsonrpc: "2.0", id: 1, result: simulateV1Result(body.params) })
+      : body.method in table
+        ? Response.json({ jsonrpc: "2.0", id: 1, result: table[body.method] })
+        : Response.json({ jsonrpc: "2.0", id: 1, error: { code: -1, message: body.method } });
   const fetchImpl: typeof globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url === `${GATEWAY}/v1/networks`) {
@@ -360,6 +366,7 @@ function evmWorld(options: {
     }
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
       method: string;
+      params?: unknown;
     };
     calls.push({ url, method: body.method });
     const table = url.startsWith(GATEWAY)
@@ -399,8 +406,10 @@ function evmWorld(options: {
     networks,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random: (n) => new Uint8Array(n).fill(nextTx()),
-    setTimer: (_ms, fn) => {
-      timers.push(fn);
+    setTimer: (ms, fn) => {
+      if (ms !== SIMULATION_TIMEOUT_MS) {
+        timers.push(fn);
+      }
       return () => undefined;
     },
     now: () => 0,
@@ -418,6 +427,7 @@ function evmWorld(options: {
   };
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    simulateSolana: simulateSolanaStub,
     transactions,
     ...bookDeps(),
     spark: {

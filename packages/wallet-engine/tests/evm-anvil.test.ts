@@ -22,7 +22,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { bookDeps, replaceVia, send } from "./send-helpers.ts";
+import { bookDeps, replaceVia, send, simulateSolanaStub } from "./send-helpers.ts";
 
 const NOSTR_PUBKEY = "a".repeat(64);
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
@@ -50,6 +50,13 @@ const rpcCall = async (url: string, method: string, params: unknown[]): Promise<
 };
 
 const sleep = async (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const realTimer = (ms: number, fn: () => unknown): (() => void) => {
+  const id = setTimeout(fn, ms);
+  return () => {
+    clearTimeout(id);
+  };
+};
 
 const waitFor = async (
   adapter: EvmChainAdapter,
@@ -102,6 +109,18 @@ describe.runIf(RUN)("anvil e2e: native transfer", () => {
       const client = createPublicClient({ transport: http(url) });
       const adapter = new EvmChainAdapter();
       const amount = 10n ** 15n;
+      await expect(
+        adapter.simulate(
+          client,
+          31337,
+          account.address,
+          { to: RECIPIENT, value: amount, data: "0x" },
+          realTimer,
+        ),
+      ).resolves.toStrictEqual({
+        status: "success",
+        changes: [{ asset: "native", amount: (-amount).toString(), verified: true }],
+      });
       await sendOne(adapter, client, 0, amount);
       await sendOne(adapter, client, 1, amount);
       const balance = BigInt(
@@ -172,6 +191,17 @@ describe.runIf(RUN)("anvil e2e: erc20 transfer", () => {
       expect(tx.to).toBe(getAddress(token));
       expect(tx.value).toBe(0n);
       expect(tx.data.startsWith("0xa9059cbb")).toBe(true);
+      const simulated = await adapter.simulate(
+        client,
+        31337,
+        account.address,
+        { to: token, value: 0n, data: tx.data },
+        realTimer,
+      );
+      expect(simulated).toMatchObject({
+        status: "success",
+        changes: [{ asset: getAddress(token), amount: (-amount).toString(), verified: false }],
+      });
       const signed = await account.signTransaction({
         chainId: 31337,
         nonce: tx.nonce,
@@ -511,6 +541,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       await transactions.init();
       const requests = new RequestController({
         phishing: { check: () => "clear" },
+        simulateSolana: simulateSolanaStub,
         transactions,
         ...bookDeps(),
         spark: {} as SparkController,
@@ -578,6 +609,11 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       await waitUntil(() => Object.values(requests.getState().requests).length === 1);
       const pending = soleRequest(requests.getState().requests);
       expect(pending.origin).toStrictEqual({ kind: "browser", origin: site });
+      expect(pending.simulation).toStrictEqual({
+        status: "success",
+        changes: [{ asset: "native", amount: (-0x38d7ea4c68000n).toString(), verified: true }],
+      });
+      expect(pending.checks).not.toContain("simulation-unavailable");
       await requests.approve(pending.id, "evm-sign", VERIFY);
       const hash = (await sending) as string;
 

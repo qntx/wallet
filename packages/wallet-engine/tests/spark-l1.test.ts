@@ -21,7 +21,7 @@ import type {
   SparkDepositTag,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { bookDeps } from "./send-helpers.ts";
+import { bookDeps, simulateSolanaStub } from "./send-helpers.ts";
 
 const MAINNET_L1 = "bip122:000000000019d6689c085ae165831e93";
 const REGTEST_L1 = "bip122:0f9188f13cb7b2c71f2a335e3a4fc328";
@@ -102,6 +102,7 @@ function rig() {
   let counter = 0;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    simulateSolana: simulateSolanaStub,
     transactions,
     ...bookDeps(),
     spark,

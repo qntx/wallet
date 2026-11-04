@@ -11,6 +11,17 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ### Added
 
+- `@qntx/wallet-engine`: transaction simulation for display. Internal EVM and Solana sends, dApp
+  `evm.transaction` requests and single-transaction `solana-sign` requests carry a
+  `simulation: SimulationOutcome` (`success` with signed `AssetChange`s, `reverted` or
+  `unavailable`). EVM uses viem `simulateCalls` with traced asset changes (`eth_simulateV1`, now on
+  the gateway allow-list); Solana reads the watched accounts before and after `simulateTransaction`,
+  including writable address-lookup-table entries. An `unavailable` result adds the
+  `simulation-unavailable` check, a revert the `simulation-reverted` danger, and an outflow above
+  what the local decode declares (non-`opaque` decodes only, never Solana lamports) the
+  `simulation-mismatch` danger. Token symbols and decimals are `verified` only from the built-in
+  tables.
+- `@qntx/wallet-chains`: `EVM_NATIVE_ASSET` and `SOLANA_NATIVE_ASSET`.
 - `@qntx/wallet-engine`: a local phishing list. The gateway merges the MetaMask `eth-phishing-detect`
   and Polkadot `phishing` lists hourly into hashed deny and allow sets served at
   `GET /v1/risk/lists/phishing` (snapshot, net diff or `current`). The contract
@@ -26,10 +37,13 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 - `@qntx/wallet-engine`: the `publicStore` port for non-secret device data available while locked,
   with `createMemoryPublicStore()` and `openIndexedDbPublicStore({ name })` (unencrypted IndexedDB,
   from `@qntx/wallet-engine/idb`).
-- `@qntx/gateway` (staging): a `scheduled` handler and a `RISK` KV namespace for the list.
+- `@qntx/gateway` (staging): a `scheduled` handler and a `RISK` KV namespace for the list; the build is not scheduled until its hosting is decided.
 
 ### Changed
 
+- **Breaking:** `RequestControllerOptions` takes a required `simulateSolana`, and
+  `@qntx/wallet-chains` `parseCompiledMessage` returns `lookups` (table address with writable and
+  readonly indexes) in place of `lookupCount`/`lookupAddresses`.
 - **Breaking:** `EngineOptions.publicStore` is required, and `ConnectionController` and
   `RequestController` take a required `phishing` option.
 - `@qntx/wallet-engine`: `engine.unsubscribe()` also stops the phishing list refresh.

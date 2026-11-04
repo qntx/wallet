@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { assessRecipients, comparable, mergeRisk, originRisk } from "../src/requests/risk.ts";
+import {
+  assessRecipients,
+  assessSimulation,
+  comparable,
+  mergeRisk,
+  originRisk,
+} from "../src/requests/risk.ts";
 
 const KNOWN = "0x52908400098527886E0F7030069857D2E4169EE7";
 const LOOKALIKE = "0x5290aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa9EE7";
@@ -80,5 +86,77 @@ describe("originRisk and mergeRisk", () => {
       { code: "phishing-origin", level: "danger" },
       { code: "first-recipient", level: "warning" },
     ]);
+  });
+});
+
+describe("assessSimulation", () => {
+  const TOKEN = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const intent = (
+    verifiability: "full" | "partial" | "opaque",
+    outflows: Array<{ asset: string; amount: string }> = [],
+  ) => ({
+    verifiability,
+    outflows: outflows.map((amount) => ({ to: "0xto", amount, verified: true })),
+  });
+  const change = (asset: string, amount: string) => ({
+    status: "success" as const,
+    changes: [{ asset, amount, verified: true }],
+  });
+
+  it("does nothing without a simulation", () => {
+    expect(assessSimulation(intent("full"), undefined)).toStrictEqual({ checks: [], risk: [] });
+  });
+
+  it("turns unavailable into the simulation-unavailable check only", () => {
+    expect(
+      assessSimulation(intent("full"), { status: "unavailable", error: "timeout" }),
+    ).toStrictEqual({ checks: ["simulation-unavailable"], risk: [] });
+  });
+
+  it("turns a revert into a danger", () => {
+    expect(assessSimulation(intent("full"), { status: "reverted", error: "x" })).toStrictEqual({
+      checks: [],
+      risk: [{ code: "simulation-reverted", level: "danger" }],
+    });
+  });
+
+  it("accepts an outflow equal to what the decode declares", () => {
+    const declared = intent("full", [{ asset: "native", amount: "100" }]);
+    expect(assessSimulation(declared, change("native", "-100")).risk).toStrictEqual([]);
+    expect(assessSimulation(declared, change("native", "-99")).risk).toStrictEqual([]);
+  });
+
+  it("flags an outflow above the declared amount", () => {
+    const declared = intent("full", [{ asset: "native", amount: "100" }]);
+    expect(assessSimulation(declared, change("native", "-101")).risk).toStrictEqual([
+      { code: "simulation-mismatch", level: "danger" },
+    ]);
+  });
+
+  it("flags an outflow of an asset the decode does not declare", () => {
+    expect(assessSimulation(intent("partial"), change(TOKEN, "-1")).risk).toStrictEqual([
+      { code: "simulation-mismatch", level: "danger" },
+    ]);
+  });
+
+  it("compares EVM token addresses case-insensitively and sums repeated flows", () => {
+    const declared = intent("full", [
+      { asset: TOKEN, amount: "40" },
+      { asset: TOKEN.toLowerCase(), amount: "60" },
+    ]);
+    expect(assessSimulation(declared, change(TOKEN, "-100")).risk).toStrictEqual([]);
+    expect(assessSimulation(declared, change(TOKEN, "-101")).risk).toHaveLength(1);
+  });
+
+  it("ignores inflows", () => {
+    expect(assessSimulation(intent("full"), change(TOKEN, "500")).risk).toStrictEqual([]);
+  });
+
+  it("does not compare against an opaque decode", () => {
+    expect(assessSimulation(intent("opaque"), change("native", "-1")).risk).toStrictEqual([]);
+  });
+
+  it("never compares Solana lamports", () => {
+    expect(assessSimulation(intent("full"), change("lamports", "-5000")).risk).toStrictEqual([]);
   });
 });
