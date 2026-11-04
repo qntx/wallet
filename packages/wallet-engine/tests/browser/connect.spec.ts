@@ -49,14 +49,7 @@ const SOL_SECRET = new Uint8Array(32).fill(3);
 const SOL_PUBKEY = ed25519.getPublicKey(SOL_SECRET);
 const SOL_ADDR = solanaAddressFromPublicKey(SOL_PUBKEY);
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
-const solanaSignBytes = (message: Uint8Array): Uint8Array => {
-  void SOL_SECRET;
-  // A deterministic 64-byte signature over the message for the Playwright check.
-  const sig = new Uint8Array(64);
-  sig.set(message.slice(0, 64));
-  sig.set(SOL_PUBKEY.slice(0, Math.min(32, message.length)), 32);
-  return sig;
-};
+const solanaSignBytes = (message: Uint8Array): Uint8Array => ed25519.sign(message, SOL_SECRET);
 const NOSTR_REF: NostrKeyRef = { kind: "derived", walletId: "w", index: 0 };
 const nostrSigner = new KeysSigner(NOSTR_KEYS);
 const walletSigner: WalletSigner = {
@@ -450,7 +443,9 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   const wallets = await page.evaluate(
     `window.__getWallets().get().map((w) => ({ name: w.name, chains: [...w.chains] }))`,
   );
-  expect(wallets).toMatchObject([{ name: "Qntx Wallet", chains: ["solana:mainnet", "solana:devnet"] }]);
+  expect(wallets).toMatchObject([
+    { name: "Qntx Wallet", chains: ["solana:mainnet", "solana:devnet"] },
+  ]);
 
   const connected = page.evaluate(
     `window.__getWallets().get()[0].features["standard:connect"].connect()`,
@@ -466,7 +461,7 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   expect(accounts).toHaveLength(1);
 
   const message = new Uint8Array([1, 2, 3]);
-  const result = await page.evaluate(
+  const result = page.evaluate(
     `window.__getWallets().get()[0].features["solana:signMessage"].signMessage({ message: new Uint8Array([1,2,3]) })`,
   );
   await expect
@@ -481,7 +476,7 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   const pendingSign = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(pendingSign?.id ?? "", "solana-sign");
+  await rig.requests.approve(pendingSign?.id ?? "", "solana-sign", VERIFY);
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's signMessage result
   const { signature } = (await result) as { signature: Uint8Array };
   expect(verifySolanaSignature(message, signature, SOL_ADDR)).toBe(true);
