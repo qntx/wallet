@@ -65,9 +65,21 @@ import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
 import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
-import type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
+import type {
+  BitcoinAccount,
+  BrowserOrigin,
+  RequestMethod,
+  RequestOrigin,
+  SolanaAccount,
+} from "./types.ts";
 
-export type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
+export type {
+  BitcoinAccount,
+  BrowserOrigin,
+  RequestMethod,
+  RequestOrigin,
+  SolanaAccount,
+} from "./types.ts";
 
 export type { RequestCheckCode } from "./checks.ts";
 export type { RiskFinding } from "./risk.ts";
@@ -180,6 +192,18 @@ export type SolanaSignInput = {
       };
 };
 
+/**
+ * A dApp's Bitcoin request: a BIP-322 simple message signature (PSBT signing is added with
+ * `bitcoin:signTransaction`).
+ */
+export type BitcoinSignInput = {
+  readonly method: "bitcoin-sign";
+  readonly origin: BrowserOrigin;
+  readonly account: BitcoinAccount;
+  readonly network: string;
+  readonly request: { readonly kind: "message"; readonly message: string };
+};
+
 export type RequestInput =
   | ChainRequestInput
   | PayInput
@@ -189,6 +213,7 @@ export type RequestInput =
   | WeblnInvoiceInput
   | WatchAssetInput
   | SolanaSignInput
+  | BitcoinSignInput
   | SparkDepositInput
   | SparkExitInput;
 
@@ -232,6 +257,15 @@ export type SolanaSignResult =
       readonly signedTransactions?: ReadonlyArray<Uint8Array>;
     }
   | { readonly kind: "solana.message"; readonly signature: Uint8Array };
+
+/** `bitcoin-sign` display: the message text the user signs. */
+export type BitcoinDisplay = {
+  readonly kind: "bitcoin.sign";
+  readonly message: MessageContent;
+};
+
+/** `approve` of a `bitcoin-sign` request: the BIP-322 simple signature, base64 of the witness. */
+export type BitcoinSignResult = { readonly kind: "bitcoin.message"; readonly signature: string };
 
 /** `approve` of a `watch-asset` request: the token was added. */
 export type TokenWatchResult = { readonly kind: "token.watch" };
@@ -319,7 +353,7 @@ export type PendingRequest = {
   readonly id: string;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount;
   readonly network: string;
   readonly stage: RequestStage;
   /** Decoded locally from the exact content that will be signed; `family` tells the shapes apart. */
@@ -329,7 +363,8 @@ export type PendingRequest = {
     | NostrDisplay
     | LightningInvoiceDisplay
     | TokenWatchDisplay
-    | SolanaDisplay;
+    | SolanaDisplay
+    | BitcoinDisplay;
   /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -392,6 +427,13 @@ export type RequestControllerOptions = {
     request: SolanaSignInput["request"],
     verify: SendParams["verify"],
   ) => Promise<SolanaSignResult>;
+  /** Signs a `bitcoin-sign` request — `chains.sign` with the account's template. */
+  readonly bitcoinSign: (
+    account: BitcoinAccount,
+    network: string,
+    request: BitcoinSignInput["request"],
+    verify: SendParams["verify"],
+  ) => Promise<BitcoinSignResult>;
 };
 
 /** Requests expire this long after creation. */
@@ -410,7 +452,9 @@ type Run =
       readonly staleReason: () => string | undefined | Promise<string | undefined>;
       readonly submit: (
         verify: SendParams["verify"],
-      ) => Promise<TrackedTransaction | SparkResult | SignatureResult | SolanaSignResult>;
+      ) => Promise<
+        TrackedTransaction | SparkResult | SignatureResult | SolanaSignResult | BitcoinSignResult
+      >;
       readonly release: () => void;
     }
   | {
@@ -434,7 +478,7 @@ type Resimulation = {
 };
 
 type Built = {
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount;
   readonly network: string;
   readonly display:
     | DisplayIntent
@@ -442,7 +486,8 @@ type Built = {
     | NostrDisplay
     | LightningInvoiceDisplay
     | TokenWatchDisplay
-    | SolanaDisplay;
+    | SolanaDisplay
+    | BitcoinDisplay;
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
   readonly simulation?: SimulationOutcome;
@@ -459,7 +504,8 @@ export type RequestResult =
   | NostrSignResult
   | WeblnInvoiceResult
   | TokenWatchResult
-  | SolanaSignResult;
+  | SolanaSignResult
+  | BitcoinSignResult;
 
 type Settler = {
   readonly promise: Promise<RequestResult>;
@@ -935,6 +981,25 @@ export class RequestController extends Controller<RequestControllerState> {
         single ? async () => this.simulateOne(input.account, input.network, only) : undefined,
       );
     }
+    if (input.method === "bitcoin-sign") {
+      return {
+        account: input.account,
+        network: input.network,
+        display: {
+          kind: "bitcoin.sign" as const,
+          message: { kind: "text" as const, text: input.request.message },
+        },
+        checks: [],
+        risk: [],
+        run: {
+          factor: "required",
+          staleReason: () => undefined,
+          submit: async (verify) =>
+            this.options.bitcoinSign(input.account, input.network, input.request, verify),
+          release: () => undefined,
+        },
+      };
+    }
     if (input.method === "webln-invoice") {
       return {
         account: input.ref,
@@ -1073,6 +1138,11 @@ export class RequestController extends Controller<RequestControllerState> {
     method: "solana-sign",
     verify?: SendParams["verify"],
   ): Promise<SolanaSignResult>;
+  async approve(
+    id: string,
+    method: "bitcoin-sign",
+    verify?: SendParams["verify"],
+  ): Promise<BitcoinSignResult>;
   async approve(
     id: string,
     method: RequestMethod,
@@ -1280,31 +1350,35 @@ export class RequestController extends Controller<RequestControllerState> {
           ? `watch token ${display.symbol}`
           : "kind" in display && display.kind === "lightning.invoice"
             ? `lightning invoice ${display.amountSats} sats`
-            : "kind" in display && display.kind === "solana.sign"
-              ? display.signIn === undefined
-                ? display.transactions.length === 0
+            : "kind" in display && display.kind === "bitcoin.sign"
+              ? "bitcoin message"
+              : "kind" in display && display.kind === "solana.sign"
+                ? display.signIn === undefined
+                  ? display.transactions.length === 0
+                    ? display.message?.kind === "bytes"
+                      ? "blind message"
+                      : display.message?.kind === "text" &&
+                          display.message.signIn?.status === "valid"
+                        ? `sign-in ${display.message.signIn.fields.domain}`
+                        : "solana message"
+                    : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
+                  : `solana sign-in ${display.signIn.domain}`
+                : "summary" in display
                   ? display.message?.kind === "bytes"
                     ? "blind message"
                     : display.message?.kind === "text" && display.message.signIn?.status === "valid"
                       ? `sign-in ${display.message.signIn.fields.domain}`
-                      : "solana message"
-                  : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
-                : `solana sign-in ${display.signIn.domain}`
-              : "summary" in display
-                ? display.message?.kind === "bytes"
-                  ? "blind message"
-                  : display.message?.kind === "text" && display.message.signIn?.status === "valid"
-                    ? `sign-in ${display.message.signIn.fields.domain}`
-                    : display.message?.kind === "typed-data" &&
-                        display.message.seaport !== undefined
-                      ? "seaport order"
-                      : display.message?.kind === "typed-data" && display.message.safe !== undefined
-                        ? `safe tx ${display.message.safe.nonce}`
+                      : display.message?.kind === "typed-data" &&
+                          display.message.seaport !== undefined
+                        ? "seaport order"
                         : display.message?.kind === "typed-data" &&
-                            display.approvals[0]?.kind === "allowance"
-                          ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
-                          : display.summary
-                : `${display.kind} ${display.amountSats}`;
+                            display.message.safe !== undefined
+                          ? `safe tx ${display.message.safe.nonce}`
+                          : display.message?.kind === "typed-data" &&
+                              display.approvals[0]?.kind === "allowance"
+                            ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
+                            : display.summary
+                  : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
       at: this.options.now(),

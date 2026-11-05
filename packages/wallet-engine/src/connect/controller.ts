@@ -70,7 +70,7 @@ export type PendingConnection = {
    * Which namespace the connection is for — `eip155` (EVM), `nostr` (NIP-07) or `lightning`
    * (WebLN).
    */
-  readonly namespace: "eip155" | "nostr" | "lightning" | "solana";
+  readonly namespace: "eip155" | "nostr" | "lightning" | "solana" | "bip122";
   readonly network?: string;
   /** `false` for a `network` request that adds the network without making it current. */
   readonly activate?: boolean;
@@ -111,6 +111,12 @@ export type ConnectionControllerOptions = {
   readonly evmAddress: (group: AccountGroup, network: string) => Promise<string>;
   /** The group's Solana address on `network` (a CAIP-2 `solana:<genesis>` chain). */
   readonly solanaAddress: (group: AccountGroup, network: string) => Promise<string>;
+  /** The group's fixed dApp-facing Bitcoin address of `purpose` on `network` (`bip122:<genesis>`). */
+  readonly bitcoinAddress: (
+    group: AccountGroup,
+    network: string,
+    purpose: BitcoinPurpose,
+  ) => Promise<string>;
   readonly enabledNetworks: () => ReadonlyArray<string>;
   /** A Nostr identity's public key — `nostr(wallet).signer(ref).getPublicKey()`. */
   readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
@@ -166,6 +172,20 @@ export const SOLANA_METHODS: ReadonlyArray<string> = [
   "solana:signMessage",
   "solana:signIn",
 ];
+
+/** The `bip122` namespace scope's granted methods — the Bitcoin Wallet Standard surface. */
+export const BITCOIN_METHODS: ReadonlyArray<string> = [
+  "bitcoin:connect",
+  "standard:disconnect",
+  "bitcoin:events",
+  "bitcoin:signMessage",
+];
+
+/** `payment` is the group's `btc.bip84` address, `ordinals` its `btc.bip86` one. */
+export type BitcoinPurpose = "payment" | "ordinals";
+
+/** The order of a `bip122` scope's two accounts. */
+export const BITCOIN_PURPOSES: ReadonlyArray<BitcoinPurpose> = ["payment", "ordinals"];
 
 /** `eip155:1` → 1; `undefined` for anything that is not an EVM network. */
 export const evmChainId = (network: string): number | undefined => {
@@ -457,6 +477,19 @@ export class ConnectionController extends Controller<ConnectionState> {
         }),
       );
       Object.assign(scopes, Object.fromEntries(solanaEntries));
+    } else if (entry.namespace === "bip122") {
+      const group = this.activeGroup();
+      if (group === undefined) {
+        throw new Error("no account group is selected");
+      }
+      const bitcoinNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("bip122:"));
+      const bitcoinEntries = await Promise.all(
+        bitcoinNetworks.map(async (network): Promise<[string, ConnectionScope]> => [
+          network,
+          await this.bitcoinScope(group, network),
+        ]),
+      );
+      Object.assign(scopes, Object.fromEntries(bitcoinEntries));
     } else if (entry.namespace === "lightning") {
       if (grant.lightning === undefined) {
         throw invalidParams("a lightning connection needs the origin's policy");
@@ -592,6 +625,9 @@ export class ConnectionController extends Controller<ConnectionState> {
                 if (network === "nostr" || network === "lightning") {
                   return [network, scope];
                 }
+                if (network.startsWith("bip122:")) {
+                  return [network, await this.bitcoinScope(group, network)];
+                }
                 if (network.startsWith("solana:")) {
                   const address = await this.options.solanaAddress(group, network);
                   return [network, { ...scope, accounts: [caip10(network, address)] }];
@@ -635,6 +671,28 @@ export class ConnectionController extends Controller<ConnectionState> {
   solanaAccount(origin: string, network: string): string | undefined {
     const account = this.session(origin)?.scopes[network]?.accounts[0];
     return account === undefined ? undefined : addressOf(account);
+  }
+
+  /**
+   * The origin's `bip122` scope accounts on `network`, in `BITCOIN_PURPOSES` order, or `undefined`
+   * when not authorized.
+   */
+  bitcoinAccounts(origin: string, network: string): Record<BitcoinPurpose, string> | undefined {
+    const [payment, ordinals] = this.session(origin)?.scopes[network]?.accounts ?? [];
+    return payment === undefined || ordinals === undefined
+      ? undefined
+      : { payment: addressOf(payment), ordinals: addressOf(ordinals) };
+  }
+
+  private async bitcoinScope(group: AccountGroup, network: string): Promise<ConnectionScope> {
+    const addresses = await Promise.all(
+      BITCOIN_PURPOSES.map(async (purpose) => this.options.bitcoinAddress(group, network, purpose)),
+    );
+    return {
+      accounts: addresses.map((address) => caip10(network, address)),
+      methods: BITCOIN_METHODS,
+      notifications: ["change"],
+    };
   }
 
   /**

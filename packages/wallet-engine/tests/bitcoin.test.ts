@@ -1,162 +1,316 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { dustFor, esplora, feeTiers, isFrozen, validateEndpoint } from "../src/chains/bitcoin.ts";
-import type { Esplora, EsploraFetch } from "../src/chains/bitcoin.ts";
-import { esploraDeps } from "./send-helpers.ts";
+import { BitcoinWalletHandler, bitcoinStandardChain } from "../src/connect/bitcoin.ts";
+import type { BitcoinEvent } from "../src/connect/bitcoin.ts";
+import { invalidParams } from "../src/connect/errors.ts";
 
-const es = (handlers: Record<string, unknown>): Esplora => ({
-  get: async (path) => {
-    const v = handlers[path];
-    return v === undefined ? Promise.reject(new Error(`unmocked ${path}`)) : Promise.resolve(v);
-  },
-  post: async () => Promise.reject(new Error("unmocked")),
-});
+const SITE = "https://app.example.com";
+const ORIGIN = { kind: "browser" as const, origin: SITE };
+const NETWORK = "bip122:000000000019d6689c085ae165831e93";
+const PAYMENT = "bc1qpayment";
+const ORDINALS = "bc1pordinals";
+const PAYMENT_KEY = new Uint8Array(33).fill(2);
+const ORDINALS_KEY = new Uint8Array(32).fill(3);
+const SIGNATURE = new Uint8Array([2, 71, 48, 68, 2, 32, 9, 9, 9]);
+const SIGNATURE_BASE64 = `smp${Buffer.from(SIGNATURE).toString("base64")}`;
 
-describe("bitcoin adapter", () => {
-  it("fee tiers pick 1/3/6/144 with a 1 sat/vB floor", async () => {
-    const quotes = await feeTiers(
-      es({ "/fee-estimates": { "1": 12.4, "3": 5, "6": 2, "144": 0.4 } }),
-    );
-    expect(quotes.map((q) => [q.tier, q.satPerByte])).toStrictEqual([
-      ["fast", 13],
-      ["normal", 5],
-      ["slow", 2],
-      ["economy", 1],
-    ]);
-  });
-
-  it("dust floors per output type and the 546/330-sat freeze", () => {
-    expect(dustFor("p2wpkh")).toBe(294);
-    expect(dustFor("p2tr")).toBe(330);
-    expect(dustFor("p2pkh")).toBe(546);
-    expect(isFrozen(546)).toBe(true);
-    expect(isFrozen(330)).toBe(true);
-    expect(isFrozen(1000)).toBe(false);
-  });
-
-  it("rejects an endpoint whose genesis hash mismatches the registry", async () => {
-    await expect(validateEndpoint(es({ "/block-height/0": "deadbeef" }), "0000aa")).rejects.toThrow(
-      "genesis",
-    );
-    await expect(
-      validateEndpoint(es({ "/block-height/0": "0000aa" }), "0000aa"),
-    ).resolves.toBeUndefined();
-  });
-});
-
-describe("esplora 429 handling", () => {
-  const sleep = async () => Promise.resolve();
-  const resp = (status: number, body: string, ra?: string) => ({
-    ok: status >= 200 && status < 300,
-    status,
-    headers: { get: (n: string) => (n === "retry-after" ? ra : undefined) },
-    json: async () => Promise.resolve(JSON.parse(body) as unknown),
-    text: async () => Promise.resolve(body),
-  });
-  const failThen = (fails: number, okBody: string) => {
-    let calls = 0;
-    const status = () => (calls <= fails ? 429 : 200);
-    const body = () => (calls <= fails ? "" : okBody);
-    return {
-      calls: () => calls,
-      fetcher: async () => {
-        calls += 1;
-        return Promise.resolve(resp(status(), body()));
-      },
-    };
-  };
-  const raFetcher = () => {
-    let calls = 0;
-    const build = () => (calls === 1 ? resp(429, "", "5") : resp(200, "ok"));
-    return async () => {
-      calls += 1;
-      return Promise.resolve(build());
-    };
-  };
-  const byHost = async (url: string) => {
-    const healthy = url.includes("b.test");
-    const status = healthy ? 200 : 429;
-    const body = healthy ? '"healthy"' : "";
-    return Promise.resolve(resp(status, body));
-  };
-  const trackPeak = () => {
-    let inFlight = 0;
-    let max = 0;
-    return {
-      max: () => max,
-      fetcher: async () => {
-        inFlight += 1;
-        if (inFlight > max) {
-          max = inFlight;
+const rig = (options: { connected?: boolean; outcome?: unknown; network?: string } = {}) => {
+  let connected = options.connected === true;
+  let group = { walletId: "w1", groupIndex: 0 };
+  const requestsCalls: unknown[] = [];
+  const connectRequests: unknown[][] = [];
+  const revoked: string[] = [];
+  const sessionListeners: Array<(state: { sessions: unknown }) => void> = [];
+  let sessions: Record<string, unknown> = {};
+  const handler = new BitcoinWalletHandler({
+    connections: {
+      checkOrigin: () => ORIGIN,
+      session: () => (connected ? ({} as never) : undefined),
+      authorize: () => {
+        if (!connected) {
+          throw invalidParams("test unauthorized");
         }
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 10);
-        });
-        inFlight -= 1;
-        return resp(200, "[]");
+        return {} as never;
       },
-    };
-  };
-
-  it("retries a 429 with exponential backoff and then succeeds", async () => {
-    const { fetcher, calls } = failThen(2, '{"ok":true}');
-    const es = esplora(["https://a.test"], fetcher, esploraDeps(sleep));
-    const out = await es.get("/blocks/tip/height");
-    expect(out).toStrictEqual({ ok: true });
-    expect(calls()).toBe(3);
-  });
-
-  it("honours the Retry-After header", async () => {
-    const delays: number[] = [];
-    const record = async (ms: number) => {
-      delays.push(ms);
-      return Promise.resolve();
-    };
-    const es = esplora(["https://a.test"], raFetcher(), esploraDeps(record));
-    await es.get("/x");
-    expect(delays).toStrictEqual([5000]);
-  });
-
-  it("fails over to the next endpoint after exhausting retries on 429", async () => {
-    const es = esplora(["https://a.test", "https://b.test"], byHost, esploraDeps(sleep));
-    const out = await es.get("/y");
-    expect(out).toBe("healthy");
-  });
-
-  /** Answers each URL's first request with 429 and every later one with a body. */
-  const throttledOnce = (): EsploraFetch => {
-    const seen = new Set<string>();
-    return async (url) => {
+      bitcoinAccounts: () => (connected ? { payment: PAYMENT, ordinals: ORDINALS } : undefined),
+      request: async (...args: unknown[]) => {
+        await Promise.resolve();
+        connectRequests.push(args);
+        connected = true;
+        return {} as never;
+      },
+      touch: async () => Promise.resolve(),
+      revoke: async (origin: string) => {
+        await Promise.resolve();
+        revoked.push(origin);
+      },
+      getState: () => ({ sessions: sessions as never, pending: {} }),
+      store: {
+        subscribe: (listener: (state: { sessions: unknown }) => void) => {
+          sessionListeners.push(listener);
+          return () => undefined;
+        },
+      } as never,
+    },
+    requests: {
+      prepare: async (input) => {
+        await Promise.resolve();
+        requestsCalls.push(input);
+        return { id: "req-1" } as never;
+      },
+      outcome: async () => Promise.resolve(options.outcome as never),
+    },
+    bitcoinAccount: async (_group, _network, purpose) => {
       await Promise.resolve();
-      if (seen.has(url)) {
-        return resp(200, '"served"');
+      return purpose === "payment"
+        ? { address: PAYMENT, publicKey: PAYMENT_KEY }
+        : { address: ORDINALS, publicKey: ORDINALS_KEY };
+    },
+    activeGroup: () => group,
+    bitcoinNetwork: () => options.network ?? NETWORK,
+  });
+  return {
+    handler,
+    requestsCalls,
+    connectRequests,
+    revoked,
+    switchGroup: (next: { walletId: string; groupIndex: number }) => {
+      group = next;
+    },
+    setSessions: (next: Record<string, unknown>) => {
+      sessions = next;
+      for (const listener of sessionListeners) {
+        listener({ sessions: next });
       }
-      seen.add(url);
-      return resp(429, "");
-    };
+    },
   };
+};
 
-  it("releases its slot before backing off a 429, so a throttled burst cannot deadlock", async () => {
-    // Every request is throttled once, then served: with eight concurrent gets all four slots
-    // are throttled at once — retrying inside the slot would wait on itself forever.
-    const es = esplora(["https://a.test"], throttledOnce(), esploraDeps(sleep));
-    const paths = Array.from({ length: 8 }, (_, i) => `/p/${i}`);
-    await expect(Promise.all(paths.map(async (p) => es.get(p)))).resolves.toStrictEqual(
-      paths.map(() => "served"),
-    );
+const message = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+describe("BitcoinWalletHandler", () => {
+  it("maps the Wallet Standard chains to the registry networks", () => {
+    expect(bitcoinStandardChain(NETWORK)).toBe("bitcoin:mainnet");
+    expect(bitcoinStandardChain("bip122:00000000da84f2bafbbc53dee25a72ae")).toBe("bitcoin:testnet");
+    expect(bitcoinStandardChain("bip122:0f9188f13cb7b2c71f2a335e3a4fc328")).toBeUndefined();
   });
 
-  it("caps in-flight requests at four", async () => {
-    const { fetcher, max } = trackPeak();
-    const es = esplora(["https://a.test"], fetcher, esploraDeps(sleep));
-    await Promise.all([
-      es.get("/a"),
-      es.get("/b"),
-      es.get("/c"),
-      es.get("/d"),
-      es.get("/e"),
-      es.get("/f"),
+  it("bitcoin:connect requests a bip122 connection and returns accounts in purposes order", async () => {
+    const { handler, connectRequests } = rig();
+    const result = await handler.handle(SITE, {
+      method: "bitcoin:connect",
+      params: { purposes: ["ordinals", "payment"] },
+    });
+    expect(connectRequests).toStrictEqual([[SITE, { kind: "connect", namespace: "bip122" }]]);
+    const { accounts } = result as {
+      accounts: Array<{ address: string; publicKey: Uint8Array; chains: string[] }>;
+    };
+    expect(accounts.map((a) => a.address)).toStrictEqual([ORDINALS, PAYMENT]);
+    expect(accounts[0]?.publicKey).toStrictEqual(ORDINALS_KEY);
+    expect(accounts[1]?.publicKey).toStrictEqual(PAYMENT_KEY);
+    expect(accounts[0]?.chains).toStrictEqual(["bitcoin:mainnet"]);
+  });
+
+  it("an already connected origin is not asked again", async () => {
+    const { handler, connectRequests } = rig({ connected: true });
+    await handler.handle(SITE, { method: "bitcoin:connect", params: { purposes: ["payment"] } });
+    expect(connectRequests).toHaveLength(0);
+  });
+
+  it("rejects an unknown or missing purpose before asking the user", async () => {
+    const { handler, connectRequests } = rig();
+    for (const params of [
+      { purposes: ["stacks"] },
+      { purposes: [] },
+      { purposes: "payment" },
+      {},
+      undefined,
+    ]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
+      await expect(
+        handler.handle(SITE, { method: "bitcoin:connect", params }),
+      ).rejects.toMatchObject({ code: -32_602 });
+    }
+    expect(connectRequests).toHaveLength(0);
+  });
+
+  it("standard:disconnect revokes the origin", async () => {
+    const { handler, revoked } = rig({ connected: true });
+    await expect(handler.handle(SITE, { method: "standard:disconnect" })).resolves.toStrictEqual(
+      {},
+    );
+    expect(revoked).toStrictEqual([SITE]);
+  });
+
+  it("rejects an unsupported method", async () => {
+    const { handler } = rig({ connected: true });
+    await expect(
+      handler.handle(SITE, { method: "bitcoin:signTransaction", params: {} }),
+    ).rejects.toMatchObject({ code: -32_602 });
+  });
+
+  it("bitcoin:signMessage goes through bitcoin-sign and returns the witness bytes", async () => {
+    const { handler, requestsCalls } = rig({
+      connected: true,
+      outcome: { kind: "bitcoin.message", signature: SIGNATURE_BASE64 },
+    });
+    const bytes = message("hello bitcoin");
+    const result = await handler.handle(SITE, {
+      method: "bitcoin:signMessage",
+      params: { account: ORDINALS, message: bytes },
+    });
+    expect(requestsCalls).toStrictEqual([
+      {
+        method: "bitcoin-sign",
+        origin: ORIGIN,
+        account: { walletId: "w1", groupIndex: 0, address: ORDINALS, template: "btc.bip86" },
+        network: NETWORK,
+        request: { kind: "message", message: "hello bitcoin" },
+      },
     ]);
-    expect(max()).toBeLessThanOrEqual(4);
+    expect(result).toStrictEqual({ signedMessage: bytes, signature: SIGNATURE });
+  });
+
+  it("signs for the payment account with the bip84 template", async () => {
+    const { handler, requestsCalls } = rig({
+      connected: true,
+      outcome: { kind: "bitcoin.message", signature: SIGNATURE_BASE64 },
+    });
+    await handler.handle(SITE, {
+      method: "bitcoin:signMessage",
+      params: { account: PAYMENT, message: { __bytes: "6869" } },
+    });
+    expect(requestsCalls[0]).toMatchObject({
+      account: { address: PAYMENT, template: "btc.bip84" },
+      request: { message: "hi" },
+    });
+  });
+
+  it("rejects an account that is not the session's with 4100, and no session too", async () => {
+    const connected = rig({ connected: true });
+    await expect(
+      connected.handler.handle(SITE, {
+        method: "bitcoin:signMessage",
+        params: { account: "bc1qother", message: message("x") },
+      }),
+    ).rejects.toMatchObject({ code: 4100 });
+    expect(connected.requestsCalls).toHaveLength(0);
+    const disconnected = rig();
+    await expect(
+      disconnected.handler.handle(SITE, {
+        method: "bitcoin:signMessage",
+        params: { account: PAYMENT, message: message("x") },
+      }),
+    ).rejects.toThrow("test unauthorized");
+  });
+
+  it("non-UTF-8 message bytes are 4200 with the blind-signing message", async () => {
+    const { handler, requestsCalls } = rig({ connected: true });
+    await expect(
+      handler.handle(SITE, {
+        method: "bitcoin:signMessage",
+        params: { account: PAYMENT, message: new Uint8Array([0xff, 0xfe]) },
+      }),
+    ).rejects.toMatchObject({
+      code: 4200,
+      message: "blind signing is not enabled: the message is not UTF-8 text",
+    });
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("rejects malformed signMessage params", async () => {
+    const { handler } = rig({ connected: true });
+    for (const params of [
+      { message: message("x") },
+      { account: PAYMENT },
+      { account: PAYMENT, message: "text" },
+      { account: PAYMENT, message: { __bytes: "xyz" } },
+    ]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
+      await expect(
+        handler.handle(SITE, { method: "bitcoin:signMessage", params }),
+      ).rejects.toMatchObject({ code: -32_602 });
+    }
+  });
+
+  it("an unrecognized signature encoding is an internal error", async () => {
+    const { handler } = rig({
+      connected: true,
+      outcome: { kind: "bitcoin.message", signature: "AAAA" },
+    });
+    await expect(
+      handler.handle(SITE, {
+        method: "bitcoin:signMessage",
+        params: { account: PAYMENT, message: message("x") },
+      }),
+    ).rejects.toMatchObject({ code: -32_603 });
+  });
+
+  it("an unexpected outcome is an internal error", async () => {
+    const { handler } = rig({ connected: true, outcome: { kind: "solana.message" } });
+    await expect(
+      handler.handle(SITE, {
+        method: "bitcoin:signMessage",
+        params: { account: PAYMENT, message: message("x") },
+      }),
+    ).rejects.toMatchObject({ code: -32_603 });
+  });
+
+  it("emits both re-pointed accounts when the session's bitcoin accounts change", async () => {
+    const { handler, setSessions } = rig();
+    const events: BitcoinEvent[] = [];
+    const off = handler.subscribe((event) => events.push(event));
+    const session = (accounts: string[]) => ({
+      s1: {
+        id: "s1",
+        origin: ORIGIN,
+        scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
+      },
+    });
+    setSessions(session([PAYMENT, ORDINALS]));
+    await new Promise((resolve) => setTimeout(resolve));
+    setSessions(session(["bc1qnew", "bc1pnew"]));
+    await new Promise((resolve) => setTimeout(resolve));
+    off();
+    expect(events.map((e) => e.name)).toStrictEqual([
+      "bitcoinAccountsChanged",
+      "bitcoinAccountsChanged",
+    ]);
+    expect(events[1]?.origin).toBe(SITE);
+    expect(events[1]?.accounts.map((a) => a.address)).toStrictEqual([PAYMENT, ORDINALS]);
+  });
+
+  it("fails with 4100 when no account group is selected", async () => {
+    const connect = rig({ connected: true });
+    connect.switchGroup(undefined as never);
+    await expect(
+      connect.handler.handle(SITE, {
+        method: "bitcoin:connect",
+        params: { purposes: ["payment"] },
+      }),
+    ).rejects.toMatchObject({ code: 4100 });
+    await expect(
+      connect.handler.handle(SITE, {
+        method: "bitcoin:signMessage",
+        params: { account: PAYMENT, message: message("x") },
+      }),
+    ).rejects.toMatchObject({ code: 4100 });
+  });
+
+  it("a network without a Wallet Standard chain id is an internal error", async () => {
+    const { handler } = rig({
+      connected: true,
+      network: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+    });
+    await expect(
+      handler.handle(SITE, { method: "bitcoin:connect", params: { purposes: ["payment"] } }),
+    ).rejects.toMatchObject({ code: -32_603 });
+  });
+
+  it("bitcoinAccountsChanged is empty without an active group", async () => {
+    const { handler, switchGroup } = rig();
+    await expect(handler.bitcoinAccountsChanged()).resolves.toHaveLength(2);
+    switchGroup(undefined as never);
+    await expect(handler.bitcoinAccountsChanged()).resolves.toStrictEqual([]);
   });
 });

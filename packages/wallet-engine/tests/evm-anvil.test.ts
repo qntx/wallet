@@ -596,6 +596,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         ...bookDeps(),
         spark: {} as SparkController,
         nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
+        bitcoinSign: async () => Promise.reject(new Error("unused")),
         solanaSign: async () => {
           await Promise.resolve();
           throw new Error("solana-sign is not wired in this test");
@@ -617,6 +618,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         allowLocalhost: false,
         selectedGroup: () => ({ walletId, groupIndex: 0 }),
         evmAddress: async () => Promise.resolve(from),
+        bitcoinAddress: async () => Promise.resolve("bc1qunused"),
         solanaAddress: async () => Promise.resolve(from),
         enabledNetworks: () => ["eip155:1"],
         nostrPubkey: async () => Promise.resolve(NOSTR_PUBKEY),

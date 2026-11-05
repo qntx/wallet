@@ -156,6 +156,7 @@ async function rig(
     ...bookDeps(),
     spark: {} as SparkController,
     nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
+    bitcoinSign: async () => Promise.reject(new Error("unused")),
     solanaSign: async () => {
       await Promise.resolve();
       throw new Error("solana-sign is not wired in this test");
@@ -188,6 +189,7 @@ async function rig(
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SEPOLIA],
+    bitcoinAddress: async () => Promise.resolve("bc1qunused"),
     solanaAddress: async (group: { walletId: string; groupIndex: number }, network: string) => {
       await Promise.resolve();
       return `SoLaNaAdd${String(group.groupIndex)}-${network}`;
