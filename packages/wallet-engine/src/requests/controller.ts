@@ -46,6 +46,7 @@ import { newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
+  assessApprovals,
   assessRecipients,
   assessSimulation,
   impersonatesBuiltIn,
@@ -1182,10 +1183,13 @@ export class RequestController extends Controller<RequestControllerState> {
   }
 
   private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {
-    return assessRecipients(
-      intent.family,
-      intent.outflows.map((o) => o.to),
-      this.knownAddresses(intent.family),
+    return mergeRisk(
+      assessRecipients(
+        intent.family,
+        intent.outflows.map((o) => o.to),
+        this.knownAddresses(intent.family),
+      ),
+      assessApprovals(intent),
     );
   }
 

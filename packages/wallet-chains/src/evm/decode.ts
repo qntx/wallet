@@ -21,6 +21,24 @@ const ERC20_APPROVE = AbiFunction.from("function approve(address spender, uint25
 const ERC20_INCREASE = AbiFunction.from(
   "function increaseAllowance(address spender, uint256 amount)",
 );
+const ERC20_DECREASE = AbiFunction.from(
+  "function decreaseAllowance(address spender, uint256 subtractedValue)",
+);
+const SET_APPROVAL_FOR_ALL = AbiFunction.from(
+  "function setApprovalForAll(address operator, bool approved)",
+);
+const PERMIT2_APPROVE = AbiFunction.from(
+  "function approve(address token, address spender, uint160 amount, uint48 expiration)",
+);
+const PERMIT2_LOCKDOWN = AbiFunction.from(
+  "function lockdown((address token, address spender)[] approvals)",
+);
+const ERC721_SAFE_FROM_DATA = AbiFunction.from(
+  "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)",
+);
+const ERC1155_SAFE_BATCH_FROM = AbiFunction.from(
+  "function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)",
+);
 const ERC721_TRANSFER_FROM = AbiFunction.from(
   "function transferFrom(address from, address to, uint256 tokenId)",
 );
@@ -31,7 +49,11 @@ const ERC1155_SAFE_FROM = AbiFunction.from(
   "function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)",
 );
 
+/** The canonical Permit2 deployment (the same address on every supported chain). */
+export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+
 const MAX_UINT256 = 2n ** 256n - 1n;
+const MAX_UINT160 = 2n ** 160n - 1n;
 
 const argAddress = (args: ReadonlyArray<unknown>, index: number): string => {
   const value = args[index];
@@ -110,13 +132,60 @@ const tokenFlow = (
   };
 };
 
-const approvalChange = (tx: EvmTransaction, spender: string, amount: bigint): ApprovalChange => ({
-  asset: tx.to ?? "",
-  spender,
-  amount: amount.toString(10),
-  unlimited: amount === MAX_UINT256,
-  verified: false,
-});
+const allowanceChange = (
+  token: string,
+  spender: string,
+  value: bigint,
+  change: "set" | "increase" | "decrease",
+  max: bigint,
+  chainId: number,
+  table: EvmTokenTable,
+  extra: { readonly expiration?: number; readonly via?: "permit2" } = {},
+): ApprovalChange => {
+  const known = lookupEvmToken(table, chainId, token);
+  return {
+    kind: "allowance",
+    spender,
+    amount: {
+      asset: token,
+      amount: value.toString(10),
+      ...(known === undefined ? {} : { symbol: known.symbol, decimals: known.decimals }),
+    },
+    change,
+    unlimited: change !== "decrease" && value === max,
+    ...extra,
+    verified: known !== undefined,
+  };
+};
+
+const argBool = (args: ReadonlyArray<unknown>, index: number): boolean => {
+  const value = args[index];
+  if (typeof value !== "boolean") {
+    throw new ChainError("invalid-request", "decoded argument is not a bool");
+  }
+  return value;
+};
+
+const argList = (args: ReadonlyArray<unknown>, index: number): ReadonlyArray<unknown> => {
+  const value = args[index];
+  if (!Array.isArray(value)) {
+    throw new ChainError("invalid-request", "decoded argument is not an array");
+  }
+  return value;
+};
+
+const argSeconds = (args: ReadonlyArray<unknown>, index: number): number => {
+  const value = args[index];
+  if (typeof value !== "number" && typeof value !== "bigint") {
+    throw new ChainError("invalid-request", "decoded argument is not an integer");
+  }
+  return Number(value);
+};
+
+const pairField = (pair: unknown, key: "token" | "spender"): string => {
+  const value: unknown = typeof pair === "object" && pair !== null ? Reflect.get(pair, key) : "";
+  return argAddress([value], 0);
+};
 
 const nftFlow = (asset: string, to: string, id: bigint): ReadonlyArray<AssetFlow> => [
   { to, amount: { asset, amount: id.toString(10) }, verified: false },
@@ -162,49 +231,135 @@ const decodeTransaction = (
       verifiability: verified ? "full" : "partial",
     };
   }
-  const approveArgs = tryCall(ERC20_APPROVE, data);
-  if (approveArgs !== undefined) {
-    return {
-      ...base,
-      summary: "approve",
-      outflows: [],
-      approvals: [approvalChange(tx, argAddress(approveArgs, 0), argUint(approveArgs, 1))],
-      fee,
-      verifiability: "partial",
-    };
+  const partial = (
+    summary: "approve" | "transfer",
+    outflows: ReadonlyArray<AssetFlow>,
+    approvals: ReadonlyArray<ApprovalChange>,
+  ): DisplayIntent => ({
+    ...base,
+    summary,
+    outflows,
+    approvals,
+    fee,
+    verifiability: "partial",
+  });
+  const token = tx.to ?? "";
+
+  if (token.toLowerCase() === PERMIT2_ADDRESS.toLowerCase()) {
+    const permitArgs = tryCall(PERMIT2_APPROVE, data);
+    if (permitArgs !== undefined) {
+      const amount = argUint(permitArgs, 2);
+      return partial(
+        "approve",
+        [],
+        [
+          allowanceChange(
+            argAddress(permitArgs, 0),
+            argAddress(permitArgs, 1),
+            amount,
+            "set",
+            MAX_UINT160,
+            chainId,
+            table,
+            { via: "permit2", expiration: argSeconds(permitArgs, 3) },
+          ),
+        ],
+      );
+    }
+    const lockdownArgs = tryCall(PERMIT2_LOCKDOWN, data);
+    if (lockdownArgs !== undefined) {
+      return partial(
+        "approve",
+        [],
+        argList(lockdownArgs, 0).map((pair) =>
+          allowanceChange(
+            pairField(pair, "token"),
+            pairField(pair, "spender"),
+            0n,
+            "set",
+            MAX_UINT160,
+            chainId,
+            table,
+            { via: "permit2" },
+          ),
+        ),
+      );
+    }
   }
-  const increaseArgs = tryCall(ERC20_INCREASE, data);
-  if (increaseArgs !== undefined) {
-    return {
-      ...base,
-      summary: "approve",
-      outflows: [],
-      approvals: [approvalChange(tx, argAddress(increaseArgs, 0), argUint(increaseArgs, 1))],
-      fee,
-      verifiability: "partial",
-    };
-  }
-  for (const fn of [ERC721_TRANSFER_FROM, ERC721_SAFE_FROM]) {
+  for (const [fn, change] of [
+    [ERC20_APPROVE, "set"],
+    [ERC20_INCREASE, "increase"],
+    [ERC20_DECREASE, "decrease"],
+  ] as const) {
     const args = tryCall(fn, data);
     if (args !== undefined) {
-      return {
-        ...base,
-        summary: "transfer",
-        outflows: nftFlow(tx.to ?? "", argAddress(args, 1), argUint(args, 2)),
-        fee,
-        verifiability: "partial",
-      };
+      return partial(
+        "approve",
+        [],
+        [
+          allowanceChange(
+            token,
+            argAddress(args, 0),
+            argUint(args, 1),
+            change,
+            MAX_UINT256,
+            chainId,
+            table,
+          ),
+        ],
+      );
+    }
+  }
+  const operatorArgs = tryCall(SET_APPROVAL_FOR_ALL, data);
+  if (operatorArgs !== undefined) {
+    return partial(
+      "approve",
+      [],
+      [
+        {
+          kind: "operator",
+          asset: token,
+          spender: argAddress(operatorArgs, 0),
+          approved: argBool(operatorArgs, 1),
+          verified: false,
+        },
+      ],
+    );
+  }
+  const transferFromArgs = tryCall(ERC721_TRANSFER_FROM, data);
+  if (transferFromArgs !== undefined) {
+    const to = argAddress(transferFromArgs, 1);
+    const id = argUint(transferFromArgs, 2);
+    if (lookupEvmToken(table, chainId, token) !== undefined) {
+      return partial("transfer", tokenFlow(tx, to, id, chainId, table).flows, []);
+    }
+    return partial("transfer", nftFlow(token, to, id), []);
+  }
+  for (const fn of [ERC721_SAFE_FROM, ERC721_SAFE_FROM_DATA]) {
+    const args = tryCall(fn, data);
+    if (args !== undefined) {
+      return partial("transfer", nftFlow(token, argAddress(args, 1), argUint(args, 2)), []);
     }
   }
   const erc1155Args = tryCall(ERC1155_SAFE_FROM, data);
   if (erc1155Args !== undefined) {
-    return {
-      ...base,
-      summary: "transfer",
-      outflows: nftFlow(tx.to ?? "", argAddress(erc1155Args, 1), argUint(erc1155Args, 2)),
-      fee,
-      verifiability: "partial",
-    };
+    return partial(
+      "transfer",
+      nftFlow(token, argAddress(erc1155Args, 1), argUint(erc1155Args, 2)),
+      [],
+    );
+  }
+  const batchArgs = tryCall(ERC1155_SAFE_BATCH_FROM, data);
+  if (batchArgs !== undefined) {
+    const ids = argList(batchArgs, 2);
+    if (ids.length > 0 && ids.length === argList(batchArgs, 3).length) {
+      const to = argAddress(batchArgs, 1);
+      return partial(
+        "transfer",
+        ids.flatMap((id) => nftFlow(token, to, argUint([id], 0))),
+        [],
+      );
+    }
   }
   return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
 };

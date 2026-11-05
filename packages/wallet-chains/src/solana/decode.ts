@@ -196,12 +196,18 @@ const decodeTransaction = (
       });
     }
     if (call.kind === "token-approve") {
+      const token = lookupSolanaToken(table, request.network, call.mint ?? "");
       approvals.push({
-        asset: call.mint ?? "",
+        kind: "allowance",
         spender: call.to ?? "",
-        amount: (call.amount ?? 0n).toString(10),
+        amount: {
+          asset: call.mint ?? "",
+          amount: (call.amount ?? 0n).toString(10),
+          ...(token === undefined ? {} : { symbol: token.symbol, decimals: token.decimals }),
+        },
+        change: "set",
         unlimited: false,
-        verified: false,
+        verified: token !== undefined,
       });
     }
   }

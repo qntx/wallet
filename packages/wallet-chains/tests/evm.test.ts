@@ -5,11 +5,13 @@ import { signTypedData as ethSignTypedData, SignTypedDataVersion } from "@metama
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
+import * as AbiFunction from "ox/AbiFunction";
 import { privateKeyToAccount } from "viem/accounts";
 import { keccak256 } from "viem/utils";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PERMIT2_ADDRESS,
   checksumEvmAddress,
   EVM_NATIVE_ASSET,
   decodeEvm,
@@ -242,7 +244,7 @@ describe("verifiability + decode", () => {
       "partial",
     );
     const intent = decodeEvm(txReq({ type: "eip1559", data: maxApprove }) as never);
-    expect(intent.approvals[0]?.unlimited).toBe(true);
+    expect(intent.approvals[0]).toMatchObject({ kind: "allowance", unlimited: true });
   });
 
   it("contract call and contract creation → opaque", () => {
@@ -286,5 +288,212 @@ describe("EVM_NATIVE_ASSET", () => {
     expect(EVM_NATIVE_ASSET).toBe("native");
     const intent = decodeEvm(txReq({ type: "eip1559", value: "0x1" }) as never);
     expect(intent.outflows[0]?.amount.asset).toBe(EVM_NATIVE_ASSET);
+  });
+});
+
+describe("approval and transfer decode", () => {
+  const TOKEN = vectors.addressForKey;
+  const table: EvmTokenTable = { "1": { [TOKEN]: { symbol: "TKN", decimals: 6 } } };
+  const SPENDER = "0x1111111254EEB25477B68fb85Ed929f73A960582";
+  const OWNER = "0x00000000000000000000000000000000DeaDBeef";
+  const RECIPIENT = "0x2222222222222222222222222222222222222222";
+  const MAX_256 = 2n ** 256n - 1n;
+  const MAX_160 = 2n ** 160n - 1n;
+
+  const calldata = (signature: string, args: unknown[]): string =>
+    AbiFunction.encodeData(AbiFunction.from(signature) as AbiFunction.AbiFunction, args);
+  const decode = (data: string, to = TOKEN, tokens: EvmTokenTable = table) =>
+    decodeEvm(txReq({ type: "eip1559", to, data }) as never, tokens);
+
+  it("approve sets the allowance; the max is unlimited; the token table adds metadata", () => {
+    const sig = "function approve(address spender, uint256 amount)";
+    const limited = decode(calldata(sig, [SPENDER, 5n]));
+    expect(limited).toMatchObject({ summary: "approve", verifiability: "partial", outflows: [] });
+    expect(limited.approvals).toStrictEqual([
+      {
+        kind: "allowance",
+        spender: SPENDER,
+        amount: { asset: TOKEN, amount: "5", symbol: "TKN", decimals: 6 },
+        change: "set",
+        unlimited: false,
+        verified: true,
+      },
+    ]);
+    const unlimited = decode(calldata(sig, [SPENDER, MAX_256]), TOKEN, {});
+    expect(unlimited.approvals[0]).toMatchObject({ unlimited: true, verified: false });
+    expect(unlimited.approvals[0]).toMatchObject({ amount: { amount: MAX_256.toString(10) } });
+  });
+
+  it("approve with trailing bytes is not canonical → opaque", () => {
+    const data = `${calldata("function approve(address spender, uint256 amount)", [SPENDER, 5n])}00`;
+    expect(decode(data).verifiability).toBe("opaque");
+  });
+
+  it("increaseAllowance increases, decreaseAllowance decreases and is never unlimited", () => {
+    const up = decode(
+      calldata("function increaseAllowance(address spender, uint256 amount)", [SPENDER, MAX_256]),
+    );
+    expect(up.approvals[0]).toMatchObject({ change: "increase", unlimited: true });
+    const down = decode(
+      calldata("function decreaseAllowance(address spender, uint256 subtractedValue)", [
+        SPENDER,
+        MAX_256,
+      ]),
+    );
+    expect(down.approvals[0]).toMatchObject({
+      kind: "allowance",
+      change: "decrease",
+      unlimited: false,
+    });
+    expect(down.verifiability).toBe("partial");
+  });
+
+  it("decreaseAllowance with a wrong selector is opaque", () => {
+    const data = calldata("function decreaseAllowance(address spender, uint256 subtractedValue)", [
+      SPENDER,
+      1n,
+    ]);
+    expect(decode(`0x00000000${data.slice(10)}`).verifiability).toBe("opaque");
+  });
+
+  it("setApprovalForAll grants or revokes an operator on the called contract", () => {
+    const sig = "function setApprovalForAll(address operator, bool approved)";
+    expect(decode(calldata(sig, [SPENDER, true])).approvals).toStrictEqual([
+      { kind: "operator", asset: TOKEN, spender: SPENDER, approved: true, verified: false },
+    ]);
+    const revoke = decode(calldata(sig, [SPENDER, false]));
+    expect(revoke.approvals[0]).toMatchObject({ kind: "operator", approved: false });
+    expect(revoke).toMatchObject({ summary: "approve", verifiability: "partial" });
+  });
+
+  it("setApprovalForAll with a non-canonical bool is opaque", () => {
+    const data = calldata("function setApprovalForAll(address operator, bool approved)", [
+      SPENDER,
+      true,
+    ]);
+    expect(decode(`${data.slice(0, -1)}2`).verifiability).toBe("opaque");
+  });
+
+  it("transferFrom on a table token is an ERC-20 outflow", () => {
+    const data = calldata("function transferFrom(address from, address to, uint256 tokenId)", [
+      OWNER,
+      RECIPIENT,
+      7n,
+    ]);
+    const intent = decode(data);
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: RECIPIENT,
+        amount: { asset: TOKEN, amount: "7", symbol: "TKN", decimals: 6 },
+        verified: true,
+      },
+    ]);
+  });
+
+  it("transferFrom on another contract stays an NFT flow", () => {
+    const data = calldata("function transferFrom(address from, address to, uint256 tokenId)", [
+      OWNER,
+      RECIPIENT,
+      7n,
+    ]);
+    expect(decode(data, TOKEN, {}).outflows).toStrictEqual([
+      { to: RECIPIENT, amount: { asset: TOKEN, amount: "7" }, verified: false },
+    ]);
+  });
+
+  it("ERC-721 safeTransferFrom with data is an NFT flow", () => {
+    const data = calldata(
+      "function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)",
+      [OWNER, RECIPIENT, 9n, "0x1234"],
+    );
+    const intent = decode(data);
+    expect(intent).toMatchObject({ summary: "transfer", verifiability: "partial" });
+    expect(intent.outflows).toStrictEqual([
+      { to: RECIPIENT, amount: { asset: TOKEN, amount: "9" }, verified: false },
+    ]);
+  });
+
+  it("ERC-1155 safeBatchTransferFrom yields one flow per id", () => {
+    const sig =
+      "function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)";
+    const intent = decode(calldata(sig, [OWNER, RECIPIENT, [1n, 2n], [10n, 20n], "0x"]));
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.outflows.map((f) => [f.to, f.amount.asset, f.amount.amount])).toStrictEqual([
+      [RECIPIENT, TOKEN, "1"],
+      [RECIPIENT, TOKEN, "2"],
+    ]);
+  });
+
+  it("ERC-1155 batch with mismatched arrays or no ids is opaque", () => {
+    const sig =
+      "function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)";
+    expect(decode(calldata(sig, [OWNER, RECIPIENT, [1n, 2n], [10n], "0x"])).verifiability).toBe(
+      "opaque",
+    );
+    expect(decode(calldata(sig, [OWNER, RECIPIENT, [], [], "0x"])).verifiability).toBe("opaque");
+  });
+
+  it("Permit2 approve is an allowance via Permit2 with an expiration", () => {
+    const sig =
+      "function approve(address token, address spender, uint160 amount, uint48 expiration)";
+    const intent = decode(calldata(sig, [TOKEN, SPENDER, 100n, 1_800_000_000]), PERMIT2_ADDRESS);
+    expect(intent).toMatchObject({ summary: "approve", verifiability: "partial" });
+    expect(intent.approvals).toStrictEqual([
+      {
+        kind: "allowance",
+        spender: SPENDER,
+        amount: { asset: TOKEN, amount: "100", symbol: "TKN", decimals: 6 },
+        change: "set",
+        unlimited: false,
+        expiration: 1_800_000_000,
+        via: "permit2",
+        verified: true,
+      },
+    ]);
+    const lower = decode(
+      calldata(sig, [TOKEN, SPENDER, MAX_160, 0]),
+      PERMIT2_ADDRESS.toLowerCase(),
+    );
+    expect(lower.approvals[0]).toMatchObject({ via: "permit2", unlimited: true });
+  });
+
+  it("a Permit2 approve sent to another address is not decoded as Permit2", () => {
+    const sig =
+      "function approve(address token, address spender, uint160 amount, uint48 expiration)";
+    const intent = decode(calldata(sig, [TOKEN, SPENDER, 100n, 1_800_000_000]));
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.approvals).toStrictEqual([]);
+  });
+
+  it("Permit2 lockdown revokes every pair", () => {
+    const sig = "function lockdown((address token, address spender)[] approvals)";
+    const intent = decode(
+      calldata(sig, [
+        [
+          { token: TOKEN, spender: SPENDER },
+          { token: OWNER, spender: RECIPIENT },
+        ],
+      ]),
+      PERMIT2_ADDRESS,
+    );
+    expect(intent.verifiability).toBe("partial");
+    expect(intent.approvals).toHaveLength(2);
+    expect(intent.approvals[0]).toMatchObject({
+      kind: "allowance",
+      spender: SPENDER,
+      amount: { asset: TOKEN, amount: "0" },
+      change: "set",
+      unlimited: false,
+      via: "permit2",
+    });
+    expect(intent.approvals[1]).toMatchObject({ spender: RECIPIENT, amount: { asset: OWNER } });
+  });
+
+  it("lockdown on a non-Permit2 address is opaque", () => {
+    const sig = "function lockdown((address token, address spender)[] approvals)";
+    expect(decode(calldata(sig, [[{ token: TOKEN, spender: SPENDER }]])).verifiability).toBe(
+      "opaque",
+    );
   });
 });

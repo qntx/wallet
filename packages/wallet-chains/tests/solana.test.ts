@@ -322,8 +322,13 @@ describe("verifiability + decode", () => {
     });
     const intent = decodeSolana(req(compile([ix])) as never, FEE_PAYER);
     expect(intent.verifiability).toBe("partial");
-    expect(intent.approvals[0]?.spender).toBe(DELEGATE);
-    expect(intent.approvals[0]?.amount).toBe("5");
+    expect(intent.approvals[0]).toMatchObject({
+      kind: "allowance",
+      spender: DELEGATE,
+      amount: { amount: "5" },
+      change: "set",
+      unlimited: false,
+    });
   });
 
   it("ATA create and createIdempotent → full", () => {
