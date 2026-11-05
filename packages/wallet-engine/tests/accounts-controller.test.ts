@@ -387,6 +387,56 @@ describe("AccountTreeController", () => {
     await r.wallet.destroy();
   });
 
+  it("blindSigning is per group, persists, stays out of exportMeta and survives mergeMeta", async () => {
+    const r = await rig();
+    const created = await vaultWithMnemonic(r.wallet);
+    await r.wallet.vault.unlock(VERIFY);
+    await r.accounts.init();
+    const w = created.walletId;
+    r.accounts.addGroup(w);
+
+    expect(r.accounts.blindSigning(w, 0)).toBe(false);
+    r.accounts.setBlindSigning(w, 0, true);
+    expect(r.accounts.blindSigning(w, 0)).toBe(true);
+    expect(r.accounts.blindSigning(w, 1)).toBe(false);
+    r.accounts.setBlindSigning(w, 1, true);
+    r.accounts.setBlindSigning(w, 1, false);
+    expect(r.accounts.blindSigning(w, 1)).toBe(false);
+    expect(r.accounts.getState().groups[w]?.[1]).not.toHaveProperty("blindSigning");
+    expect(() => r.accounts.setBlindSigning(w, 9, true)).toThrow(AccountTreeError);
+    expect(() => r.accounts.setBlindSigning("nope", 0, true)).toThrow(AccountTreeError);
+
+    // The setting is device-local: absent from the sync document.
+    expect(r.accounts.exportMeta(w).groups.every((g) => !("blindSigning" in g))).toBe(true);
+
+    // A newer remote entry replaces local fields but keeps the local opt-in.
+    const localStamp = updatedAtOf(groupsOf(r.accounts.getState(), w)[0]);
+    r.accounts.mergeMeta(w, {
+      wallet: { updatedAt: localStamp + 100 },
+      groups: [{ index: 0, name: "remote", hidden: false, updatedAt: localStamp + 50 }],
+    });
+    expect(r.accounts.getState().groups[w]?.[0]).toMatchObject({
+      name: "remote",
+      blindSigning: true,
+    });
+
+    await sleep(50);
+    await r.accounts.destroy();
+    const again = new AccountTreeController({
+      wallet: r.wallet,
+      spark: r.spark,
+      sparkNetwork: NETWORK,
+      logger: LOGGER,
+      now: () => Date.now(),
+    });
+    again.setStore(r.store);
+    await again.init();
+    expect(again.blindSigning(w, 0)).toBe(true);
+    expect(again.blindSigning(w, 1)).toBe(false);
+    await again.destroy();
+    await r.wallet.destroy();
+  });
+
   it("hide selected re-selects the next visible group; cannot hide all", async () => {
     const r = await rig();
     const created = await vaultWithMnemonic(r.wallet);

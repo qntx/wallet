@@ -247,15 +247,18 @@ describe("SolanaWalletHandler", () => {
     ]);
   });
 
-  it("refuses a signMessage whose bytes are not UTF-8 text with 4200", async () => {
-    const { handler, requestsCalls } = rig({ session: {} });
+  it("passes signMessage bytes to the pipeline — blind signing is the pipeline's call", async () => {
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.message", signature: new Uint8Array(64) },
+    });
     await expect(
       handler.handle(SITE, {
         method: "solana:signMessage",
         params: { message: new Uint8Array([0xff, 0xfe]) },
       }),
-    ).rejects.toMatchObject({ code: 4200, message: expect.stringContaining("blind signing") });
-    expect(requestsCalls).toHaveLength(0);
+    ).resolves.toMatchObject({ signedMessage: new Uint8Array([0xff, 0xfe]) });
+    expect(requestsCalls).toHaveLength(1);
   });
 });
 

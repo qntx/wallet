@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderError } from "../src/connect/errors.ts";
 import { SolanaWalletHandler } from "../src/connect/solana.ts";
 import type { SolanaEvent } from "../src/connect/solana.ts";
-import { SignInOriginError } from "../src/requests/controller.ts";
+import { BlindSigningDisabledError, SignInOriginError } from "../src/requests/controller.ts";
 
 const SITE = "https://app.example";
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -193,6 +193,13 @@ describe("SolanaWalletHandler messages", () => {
     await expect(
       codeOf(call(r, "solana:signMessage", { message: new Uint8Array([65]) })),
     ).resolves.toBe(-32_602);
+  });
+
+  it("maps a blind-signing refusal to 4200", async () => {
+    const r = rig({ prepareError: new BlindSigningDisabledError() });
+    await expect(
+      codeOf(call(r, "solana:signMessage", { message: new Uint8Array([0xff]) })),
+    ).resolves.toBe(4200);
   });
 
   it("fails on an unexpected outcome or without a group", async () => {

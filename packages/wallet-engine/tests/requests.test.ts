@@ -129,6 +129,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
   };
   const controller = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,
@@ -437,6 +438,7 @@ function evmWorld(options: {
   };
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,

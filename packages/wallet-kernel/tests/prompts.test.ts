@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { chainPrompt, MESSAGE_INTENT } from "../src/modules/chains/prompt.ts";
+import { chainPrompt, MESSAGE_INTENT, messageIntent } from "../src/modules/chains/prompt.ts";
 import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
 import { backupCredentialName, corePrompt, formatUnits, promptLocale } from "../src/prompts.ts";
@@ -260,6 +260,29 @@ describe("chain prompts", () => {
     expect(chainPrompt("zh-Hans", MESSAGE_INTENT)).toStrictEqual({
       title: "确认签名",
       description: "签署来自应用的请求",
+    });
+  });
+
+  it("message bytes prompt a blind sign in both locales", () => {
+    const evm = { ...MESSAGE_INTENT, message: { kind: "bytes" as const, hex: "0xff" } };
+    expect(chainPrompt("en", evm)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: "Sign data that cannot be shown as text",
+    });
+    expect(chainPrompt("zh-Hans", evm)).toStrictEqual({
+      title: "确认盲签",
+      description: "签署无法显示为文字的数据",
+    });
+    const solana = messageIntent(new Uint8Array([0xff]));
+    expect(solana.message).toStrictEqual({ kind: "bytes", hex: "0xff" });
+    expect(chainPrompt("en", solana)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: "Sign data that cannot be shown as text",
+    });
+    const text = messageIntent(new TextEncoder().encode("hello"));
+    expect(chainPrompt("en", text)).toStrictEqual({
+      title: "Confirm signature",
+      description: "Sign a request from an app",
     });
   });
 });

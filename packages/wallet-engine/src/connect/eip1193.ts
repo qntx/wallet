@@ -11,6 +11,7 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import { EVM_RPC_METHODS } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
+  BlindSigningDisabledError,
   InvalidTokenError,
   OriginBusyError,
   RequestEndedError,
@@ -29,7 +30,6 @@ import {
   userRejectedRequest,
 } from "./errors.ts";
 import { SessionEvents } from "./subscription.ts";
-import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
 export type Eip1193Request = { readonly method: string; readonly params?: unknown };
 
@@ -94,11 +94,7 @@ const textBytes = (value: unknown): Uint8Array => {
     throw invalidParams("message must be a string");
   }
   if (/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
-    const bytes = hexToBytes(value.slice(2));
-    if (utf8Text(bytes) === undefined) {
-      throw new ProviderError(4200, BLIND_SIGNING_MESSAGE);
-    }
-    return bytes;
+    return hexToBytes(value.slice(2));
   }
   return new TextEncoder().encode(value);
 };
@@ -438,6 +434,9 @@ export class Eip1193Handler {
 function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {
     return error;
+  }
+  if (error instanceof BlindSigningDisabledError) {
+    return new ProviderError(4200, error.message);
   }
   if (error instanceof InvalidTokenError || error instanceof SignInOriginError) {
     return invalidParams(error.message);

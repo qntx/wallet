@@ -113,6 +113,7 @@ function world() {
   let now = 1000;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,

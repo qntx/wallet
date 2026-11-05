@@ -2,7 +2,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
-import { SignInOriginError } from "../requests/controller.ts";
+import { BlindSigningDisabledError, SignInOriginError } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { BrowserOrigin } from "../requests/types.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
@@ -11,7 +11,6 @@ import { ProviderError, invalidParams } from "./errors.ts";
 import { checkSignInInput, signInMessageText } from "./siws.ts";
 import type { SignInFields } from "./siws.ts";
 import { SessionEvents } from "./subscription.ts";
-import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
 /**
  * The Wallet Standard (`window.solana` / `registerWallet`) handler — the bridge routes `provider:
@@ -245,9 +244,6 @@ export class SolanaWalletHandler implements SolanaHandler {
       checkAccounts(request.params, address);
     }
     const message = messageOf(request.params);
-    if (utf8Text(message) === undefined) {
-      throw new ProviderError(4200, BLIND_SIGNING_MESSAGE);
-    }
     const signature = await this.signMessageRequest(checked, network, message);
     return { signature, signedMessage: message };
   }
@@ -329,6 +325,9 @@ export class SolanaWalletHandler implements SolanaHandler {
       });
       return await this.options.requests.outcome(pending.id);
     } catch (error) {
+      if (error instanceof BlindSigningDisabledError) {
+        throw new ProviderError(4200, error.message);
+      }
       throw error instanceof SignInOriginError ? invalidParams(error.message) : error;
     }
   }

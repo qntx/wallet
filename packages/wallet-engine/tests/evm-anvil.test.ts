@@ -589,6 +589,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       await transactions.init();
       const requests = new RequestController({
         phishing: { check: () => "clear" },
+        blindSigning: () => false,
         simulateSolana: simulateSolanaStub,
         tokens: tokensStub,
         transactions,
