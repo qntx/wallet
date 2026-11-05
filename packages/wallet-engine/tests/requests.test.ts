@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
+import type { SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import type { chains } from "@qntx/wallet/chains";
 
@@ -19,6 +20,7 @@ import type {
 } from "../src/transactions/route.ts";
 import {
   bookDeps,
+  fakeSignedEvm,
   simulateSolanaStub,
   tokensStub,
   simulateV1Result,
@@ -398,7 +400,7 @@ function evmWorld(options: {
   const apis = {
     account: async () =>
       Promise.resolve({ template: "evm.bip44", network: SEPOLIA, address: ADDR }),
-    sign: async ({ request }: { request: unknown }) => {
+    sign: async ({ request }: { request: SignRequest }) => {
       signed += 1;
       signedRequests.push(request);
       if (options.lockDuringSign === true) {
@@ -406,7 +408,7 @@ function evmWorld(options: {
       }
       return rejectSign
         ? Promise.reject(new Error("cancelled"))
-        : Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1, 2]) });
+        : Promise.resolve(fakeSignedEvm(request));
     },
   } as unknown as ReturnType<typeof chains>;
   const transactions = new TransactionController({

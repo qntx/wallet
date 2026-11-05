@@ -91,6 +91,16 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   );
 };
 
+type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
+const isEvmRecord = (v: unknown): v is EvmRecord =>
+  isObject(v) &&
+  typeof v["from"] === "string" &&
+  typeof v["groupIndex"] === "number" &&
+  Number.isSafeInteger(v["groupIndex"]) &&
+  v["groupIndex"] >= 0 &&
+  typeof v["raw"] === "string" &&
+  /^0x(?:[0-9a-fA-F]{2})+$/.test(v["raw"]);
+
 const isSparkDeposit = (v: unknown): v is SparkDepositTag =>
   isObject(v) &&
   typeof v["walletId"] === "string" &&
@@ -120,6 +130,7 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     nonce,
     replaces,
     parentId,
+    evm,
     btc,
     sparkDeposit,
     submittedAt,
@@ -147,6 +158,7 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     nonce,
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
+    ...(isEvmRecord(evm) ? { evm } : {}),
     ...(isBtcRecord(btc) ? { btc } : {}),
     ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
@@ -395,7 +407,10 @@ export class TransactionController extends Controller<TransactionControllerState
         const updated = await this.transition(tx, { state: next });
         this.timers.delete(id);
         stop();
-        // When one of a replace pair confirms, the sibling is `replaced`.
+        if (updated.state !== "confirmed" && updated.state !== "failed") {
+          return;
+        }
+        // When one of a replace pair is mined, the sibling is `replaced`.
         const siblings = Object.values(this.getState().txs).filter(
           (t) =>
             t.id !== updated.id &&

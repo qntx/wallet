@@ -58,6 +58,8 @@ export type TrackedTransaction = {
   readonly parentId?: string;
   /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
   readonly sparkDeposit?: SparkDepositTag;
+  /** EVM build record persisted at broadcast for rebroadcast, drop detection and replacement. */
+  readonly evm?: { readonly from: string; readonly groupIndex: number; readonly raw: string };
   /** Bitcoin build record persisted at send for RBF/CPFP rebuilds. */
   readonly btc?: {
     readonly inputs: ReadonlyArray<{

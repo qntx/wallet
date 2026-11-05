@@ -179,6 +179,31 @@ export class EvmChainAdapter {
     });
   }
 
+  /** The endpoint's mined transaction count for `from`: every nonce below it is consumed. */
+  async confirmedCount(client: PublicClient, from: string): Promise<number> {
+    return Number(await evmRpcHex(client, "eth_getTransactionCount", [from, "latest"]));
+  }
+
+  /** True when the endpoint knows the transaction, mined or in its pool. */
+  async known(client: PublicClient, hash: string): Promise<boolean> {
+    const found: unknown = await evmRpc(client, "eth_getTransactionByHash", [hash]);
+    return typeof found === "object" && found !== null;
+  }
+
+  /** Forgets a broadcast at `nonce` that was dropped, so the nonce can be reused. */
+  releaseNonce(network: string, from: string, nonce: number): void {
+    const key = `${network}:${from}`;
+    const local = this.lastNonce.get(key);
+    if (local === undefined || local < nonce) {
+      return;
+    }
+    if (nonce === 0) {
+      this.lastNonce.delete(key);
+    } else {
+      this.lastNonce.set(key, nonce - 1);
+    }
+  }
+
   /** True once a broadcast at `nonce` or later is recorded for (network, from). */
   nonceConsumed(network: string, from: string, nonce: number): boolean {
     const local = this.lastNonce.get(`${network}:${from}`);
