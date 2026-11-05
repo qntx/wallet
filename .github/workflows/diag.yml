@@ -1,0 +1,58 @@
+name: Diag
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  webserver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun ci
+      - run: bunx vp run @qntx/wallet-engine#build && bunx vp run @qntx/playground#build && bunx vp run @qntx/wallet-worker#build
+      - name: Start the worker dev server repeatedly
+        working-directory: packages/wallet-worker/tests/browser
+        run: |
+          node --version
+          getent ahosts localhost || true
+          bun -e "require('dns').lookup('localhost',{all:true},(e,a)=>console.log(JSON.stringify(a)))"
+          fails=0
+          for n in $(seq 1 40); do
+            bun ./serve.ts > /tmp/s.log 2>&1 &
+            pid=$!
+            start=$(date +%s%N)
+            ok=0
+            for i in $(seq 1 100); do
+              code=$(curl -s -m 2 -o /dev/null -w '%{http_code}' http://localhost:4174/ || true)
+              if [ "$code" = "200" ]; then ok=1; break; fi
+              sleep 0.2
+            done
+            echo "run $n ok=$ok ms=$(( ($(date +%s%N) - start) / 1000000 )) last=$code"
+            if [ "$ok" = "0" ]; then
+              fails=$((fails + 1))
+              echo "--- server log"; cat /tmp/s.log
+              echo "--- listeners"; ss -ltnp | grep 4174 || true
+              echo "--- ipv4"; curl -sv -m 5 -o /dev/null http://127.0.0.1:4174/ 2>&1 | tail -5 || true
+              echo "--- ipv6"; curl -sv -m 5 -o /dev/null "http://[::1]:4174/" 2>&1 | tail -5 || true
+            fi
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+          done
+          echo "fails=$fails"
+      - name: Run the worker browser suite repeatedly
+        working-directory: packages/wallet-worker
+        env:
+          DEBUG: pw:webserver
+        run: |
+          bunx playwright install --with-deps chromium
+          for n in $(seq 1 8); do
+            echo "=== suite $n"
+            timeout 400 bunx playwright test --config tests/browser/playwright.config.ts --project chromium 2>&1 | tail -15 || echo "suite $n failed"
+          done
