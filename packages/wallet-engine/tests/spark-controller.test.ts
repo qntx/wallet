@@ -16,6 +16,7 @@ import type { PaymentNote } from "../src/spark/notes.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 import { b64 } from "./phishing-helpers.ts";
+import { realTimer } from "./send-helpers.ts";
 
 const PK = new Uint8Array(33).fill(2);
 const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest" };
@@ -139,6 +140,7 @@ function controller(calls: string[], approvals: unknown[]) {
   const sendArgs: unknown[] = [];
   const { client, aborters } = fakeClient(calls, sendArgs);
   const c = new SparkController({
+    setTimer: realTimer,
     spark: {
       signer: () => null as never,
       approve: async (p: unknown) => {
@@ -171,6 +173,7 @@ describe("lightning-address registration errors", () => {
   const withFetch = (fetch: (input: unknown, init?: unknown) => Promise<unknown>) => {
     const { client } = fakeClient([], []);
     return new SparkController({
+      setTimer: realTimer,
       spark: { signer: () => SIGNER as never, approve: async () => Promise.resolve({}) },
       fetch: fetch as never,
       random: (n) => new Uint8Array(n).fill(1),
@@ -197,6 +200,7 @@ describe("lightning-address registration errors", () => {
     const original = new Error("signer unavailable");
     const { client } = fakeClient([], []);
     const c = new SparkController({
+      setTimer: realTimer,
       spark: {
         signer: () =>
           ({
@@ -477,6 +481,7 @@ describe("event stream resilience", () => {
     const warns: string[] = [];
     const client = flakyClient(calls, sendArgs, aborters);
     const c = new SparkController({
+      setTimer: realTimer,
       spark: {
         signer: () => null as never,
         approve: async (p: unknown) => {
@@ -518,6 +523,7 @@ describe("event claims", () => {
   function controllerWith(client: SparkClient, warns: string[]) {
     const calls: string[] = [];
     const c = new SparkController({
+      setTimer: realTimer,
       spark: {
         signer: () => null as never,
         approve: async () => Promise.resolve({}),
@@ -817,6 +823,7 @@ describe("history and notes", () => {
     const store = createMemoryEngineStore();
     const warns: string[] = [];
     const c = new SparkController({
+      setTimer: realTimer,
       spark: {
         signer: () => null as never,
         approve: async (p: unknown) => {
@@ -977,6 +984,7 @@ describe("history and notes", () => {
       },
     } as SparkClient;
     const c = new SparkController({
+      setTimer: realTimer,
       spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
       fetch: async () => Promise.reject(new Error("x")),
       random: (n) => new Uint8Array(n).fill(1),

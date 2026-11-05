@@ -116,6 +116,7 @@ const rig = (over: Partial<Rig> = {}): Rig => {
     }),
   };
   const ctl = new AccountTreeController({
+    setTimer: () => () => undefined,
     wallet: walletStub(),
     spark,
     sparkNetwork: "regtest",

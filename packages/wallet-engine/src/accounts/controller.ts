@@ -61,6 +61,8 @@ type DiscoveryNetworks = {
 
 export type AccountTreeControllerOptions = {
   readonly wallet: Wallet;
+  readonly setTimer: (ms: number, fn: () => void) => () => void;
+
   readonly spark: SparkController;
   readonly sparkNetwork: SparkNetwork;
   readonly networks?: DiscoveryNetworks;
@@ -290,7 +292,7 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   private readonly options: AccountTreeControllerOptions;
   private col: EngineCollection | undefined;
   private sparkUnsubscribe: (() => void) | undefined;
-  private totalsTimer: ReturnType<typeof setTimeout> | undefined;
+  private cancelTotals: (() => void) | undefined;
   private persistChain: Promise<void> = Promise.resolve();
 
   constructor(options: AccountTreeControllerOptions) {
@@ -1070,19 +1072,19 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   }
 
   private scheduleTotalsPersist(): void {
-    if (this.totalsTimer !== undefined) {
+    if (this.cancelTotals !== undefined) {
       return;
     }
-    this.totalsTimer = setTimeout(() => {
-      this.totalsTimer = undefined;
+    this.cancelTotals = this.options.setTimer(TOTALS_DEBOUNCE_MS, () => {
+      this.cancelTotals = undefined;
       this.persist();
-    }, TOTALS_DEBOUNCE_MS);
+    });
   }
 
   private async flushTotals(): Promise<void> {
-    if (this.totalsTimer !== undefined) {
-      clearTimeout(this.totalsTimer);
-      this.totalsTimer = undefined;
+    if (this.cancelTotals !== undefined) {
+      this.cancelTotals();
+      this.cancelTotals = undefined;
       this.persist();
     }
     await this.persistChain;

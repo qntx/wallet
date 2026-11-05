@@ -18,6 +18,7 @@ export type DepositClaimerOptions = {
   readonly spark: SparkController;
   readonly networks: NetworkController;
   readonly logger: EngineLogger;
+  readonly setTimer: (ms: number, fn: () => void) => () => void;
 };
 
 const pending = (tx: TrackedTransaction): boolean =>
@@ -90,7 +91,7 @@ export class DepositClaimer {
       } catch (error) {
         this.options.logger.warn(`spark deposit ${id} not claimed yet`, error);
         // oxlint-disable-next-line eslint/no-await-in-loop
-        await eventsBackoff(failures, signal);
+        await eventsBackoff(failures, signal, this.options.setTimer);
       }
     }
     if (this.active.get(id)?.signal === signal) {

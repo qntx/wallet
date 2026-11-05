@@ -65,6 +65,7 @@ export type SparkControllerOptions = {
   readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
   readonly logger: EngineLogger;
+  readonly setTimer: (ms: number, fn: () => void) => () => void;
   readonly createClient: SparkClientFactory;
 };
 
@@ -88,17 +89,18 @@ async function resync(
 }
 
 /** Abortable backoff — resolves early when the signal aborts; removes its listener. */
-export async function eventsBackoff(failures: number, signal: AbortSignal): Promise<void> {
+export async function eventsBackoff(
+  failures: number,
+  signal: AbortSignal,
+  setTimer: (ms: number, fn: () => void) => () => void,
+): Promise<void> {
   await new Promise<void>((resolve) => {
-    const timer = setTimeout(
-      () => {
-        signal.removeEventListener("abort", onAbort);
-        resolve();
-      },
-      Math.min(2 ** failures, 30) * 1000,
-    );
+    const cancel = setTimer(Math.min(2 ** failures, 30) * 1000, () => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    });
     const onAbort = (): void => {
-      clearTimeout(timer);
+      cancel();
       resolve();
     };
     signal.addEventListener("abort", onAbort, { once: true });
@@ -298,7 +300,7 @@ export class SparkController extends Controller<SparkControllerState> {
           this.options.logger.warn("spark event stream failed — resubscribing", error);
         }
         // oxlint-disable-next-line no-await-in-loop -- the backoff bounds resubscribe pace
-        await eventsBackoff(failures, signal);
+        await eventsBackoff(failures, signal, this.options.setTimer);
       }
     };
     void loop();

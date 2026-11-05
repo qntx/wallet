@@ -14,7 +14,7 @@
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
-        "@types/node": "26.6.5",
+        "@types/node": "26.6.6",
         "@vitest/coverage-v8": "5.0.5",
         "bumpp": "12.3.0",
         "cborg": "6.1.5",
@@ -71,7 +71,7 @@
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
         "@scure/btc-signer": "2.4.1",
-        "@types/node": "26.6.5",
+        "@types/node": "26.6.6",
         "publint": "0.3.25",
         "typescript": "7.0.2",
         "vite-plus": "1.4.0",
@@ -113,7 +113,7 @@
         "@solana-program/token": "0.18.0",
         "@solana-program/token-2022": "0.20.0",
         "@solana/kit": "8.5.0",
-        "@types/node": "26.6.5",
+        "@types/node": "26.6.6",
         "bitcoinjs-lib": "7.0.5",
         "ecpair": "3.0.2",
         "fast-check": "4.10.2",
@@ -188,7 +188,7 @@
       },
       "devDependencies": {
         "@qntx/tsconfig": "1.0.1",
-        "@types/node": "26.6.5",
+        "@types/node": "26.6.6",
         "fast-check": "4.10.2",
         "typescript": "7.0.2",
         "vite-plus": "1.4.0",
@@ -239,7 +239,7 @@
         "@qntx/wallet-kernel": "0.9.0",
         "@scure/base": "2.4.0",
         "@scure/btc-signer": "2.4.1",
-        "@types/node": "26.6.5",
+        "@types/node": "26.6.6",
         "publint": "0.3.25",
         "typescript": "7.0.2",
         "vite-plus": "1.4.0",
@@ -798,7 +798,7 @@
 
     "@types/ms": ["@types/ms@2.1.0", "", {}, "sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA=="],
 
-    "@types/node": ["@types/node@26.6.5", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-uMzsv9stDdofIZBx4UGh4Z9ZgXnGC9seRDscilBcTHAeOFk67MZg/k9bWVfO+bk4qZmG+l52hRnLwUiH2LnJTg=="],
+    "@types/node": ["@types/node@26.6.6", "", { "dependencies": { "undici-types": "~8.9.0" } }, "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="],
 
     "@types/yargs": ["@types/yargs@17.0.35", "", { "dependencies": { "@types/yargs-parser": "*" } }, "sha512-qUHkeCyQFxMXg79wQfTtfndEC+N9ZZg76HJftDJp+qH2tV7Gj4OJi7l+PiWwJ+pWtW8GwSmqsDj/oymhrTWXjg=="],
 

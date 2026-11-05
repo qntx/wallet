@@ -21,7 +21,7 @@ import type {
   SparkDepositTag,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
-import { bookDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
+import { bookDeps, simulateSolanaStub, tokensStub, realTimer } from "./send-helpers.ts";
 
 const MAINNET_L1 = "bip122:000000000019d6689c085ae165831e93";
 const REGTEST_L1 = "bip122:0f9188f13cb7b2c71f2a335e3a4fc328";
@@ -125,7 +125,7 @@ function rig() {
       return new Uint8Array(n).fill(counter);
     },
     now: () => 1000,
-    setTimer: () => () => undefined,
+    setTimer: realTimer,
     logger: { warn: () => undefined },
   });
   return { requests, sends, calls };
@@ -289,6 +289,7 @@ function claimerRig(txs: Record<string, TrackedTransaction>) {
     }),
   } as never;
   const claimer = new DepositClaimer({
+    setTimer: realTimer,
     transactions,
     spark,
     networks,
@@ -331,7 +332,7 @@ describe("deposit persistence", () => {
         networks: {} as never,
         openStore: async () => Promise.resolve(store),
         random: (n) => new Uint8Array(n),
-        setTimer: () => () => undefined,
+        setTimer: realTimer,
         now: () => 0,
         logger: { warn: () => undefined },
       });
