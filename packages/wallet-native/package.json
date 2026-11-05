@@ -38,6 +38,7 @@
   "scripts": {
     "build": "vp run @qntx/wallet#build && vp pack",
     "test": "vp test",
+    "test:coverage": "vp test --coverage",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "codegen": "nitrogen",
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only && bun ../../scripts/check-native-pack.ts ."

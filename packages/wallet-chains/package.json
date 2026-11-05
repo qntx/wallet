@@ -54,6 +54,7 @@
   "scripts": {
     "build": "vp pack",
     "test": "vp test && bun scripts/size-check.ts",
+    "test:coverage": "vp test --coverage",
     "typecheck": "tsc --noEmit",
     "smoke:hermes": "bun scripts/hermes-smoke.ts",
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only"
@@ -84,6 +85,7 @@
     "@types/node": "26.6.5",
     "bitcoinjs-lib": "7.0.5",
     "ecpair": "3.0.2",
+    "fast-check": "4.10.2",
     "publint": "0.3.25",
     "tiny-secp256k1": "2.2.5",
     "typescript": "7.0.2",
