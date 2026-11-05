@@ -1,5 +1,5 @@
 import { createPublicClient, fallback, http } from "viem";
-import type { PublicClient } from "viem";
+import type { CcipRequestParameters, Hex, PublicClient } from "viem";
 
 /**
  * EVM network controller: the built-in registry plus host-provided and user-added RPC endpoints.
@@ -62,10 +62,16 @@ type Options = {
   readonly random: (length: number) => Uint8Array;
 };
 
+/**
+ * One client builder for both call paths. `ccipRead` is `false` everywhere except ENS resolution:
+ * viem's default CCIP-Read hits the ambient global fetch, so an `OffchainLookup` revert during an
+ * ordinary `eth_call`/simulation could otherwise make the engine fetch an arbitrary URL.
+ */
 const makeClient = (
   info: NetworkInfo,
   urls: ReadonlyArray<string>,
   fetchFn: typeof globalThis.fetch,
+  ccipRead: false | { readonly request: (parameters: CcipRequestParameters) => Promise<Hex> },
 ): PublicClient =>
   createPublicClient({
     chain: {
@@ -76,7 +82,64 @@ const makeClient = (
     },
     transport: fallback(urls.map((url) => http(url, { fetchFn }))),
     batch: { multicall: true },
+    ccipRead,
   });
+
+/**
+ * EIP-3668 client lookup over the injected fetch, mirroring viem's `ccipRequest` semantics: a
+ * `{data}` template is a GET, anything else a POST of `{ data, sender }`; the JSON `data` field or
+ * a plain-text body must be `0x` hex; a non-2xx or malformed body falls to the next URL.
+ */
+const isHexResponse = (value: unknown): value is Hex =>
+  typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+
+export const ccipRequest =
+  (fetchFn: typeof globalThis.fetch) =>
+  async ({ data, sender, urls, requestOptions }: CcipRequestParameters): Promise<Hex> => {
+    const attempt = async (template: string): Promise<Hex> => {
+      const url = template.replace("{sender}", sender.toLowerCase()).replace("{data}", data);
+      const isGet = template.includes("{data}");
+      const res = await fetchFn(url, {
+        method: isGet ? "GET" : "POST",
+        ...(isGet ? {} : { headers: { "content-type": "application/json" } }),
+        ...(isGet ? {} : { body: JSON.stringify({ data, sender }) }),
+        ...(requestOptions?.signal === undefined ? {} : { signal: requestOptions.signal }),
+      });
+      if (!res.ok) {
+        throw new Error(`ccip gateway ${url} answered ${res.status}`);
+      }
+      const body: unknown =
+        res.headers.get("content-type")?.startsWith("application/json") === true
+          ? await res.json()
+          : await res.text();
+      const result = isObject(body) ? body["data"] : body;
+      if (!isHexResponse(result)) {
+        throw new Error(`ccip gateway ${url} answered a malformed response`);
+      }
+      return result;
+    };
+    let error: unknown = new Error("ccip request failed");
+    for (const template of urls) {
+      if (requestOptions?.signal?.aborted === true) {
+        throw error;
+      }
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- gateways are tried in order
+        return await attempt(template);
+      } catch (error_) {
+        error = error_;
+      }
+    }
+    throw error;
+  };
+
+/** An ENS-resolution client: identical endpoints, but CCIP-Read via the injected plain fetch. */
+const makeEnsClient = (
+  info: NetworkInfo,
+  urls: ReadonlyArray<string>,
+  transportFetch: typeof globalThis.fetch,
+  ccipFetch: typeof globalThis.fetch,
+): PublicClient => makeClient(info, urls, transportFetch, { request: ccipRequest(ccipFetch) });
 
 const esploraClient = (
   urls: ReadonlyArray<string>,
@@ -135,6 +198,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
   private readonly options: Options;
   private engineStore?: StoreOrUndefined;
   private readonly clients = new Map<string, PublicClient>();
+  private readonly ensClients = new Map<string, PublicClient>();
   private readonly gatewayBase: string | undefined;
   private readonly gatewayFetch: typeof globalThis.fetch;
   /** Networks the gateway reported at unlock; empty while locked or when the read failed. */
@@ -208,6 +272,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
   lock(): void {
     this.gatewayServed = new Set();
     this.clients.clear();
+    this.ensClients.clear();
     this.engineStore = undefined;
   }
 
@@ -247,7 +312,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
     if (urls.length === 0) {
       throw new Error(`no rpc endpoint for ${network}`);
     }
-    const client = makeClient(info, urls, this.gatewayFetch);
+    const client = makeClient(info, urls, this.gatewayFetch, false);
     this.clients.set(network, client);
     return client;
   }
@@ -277,7 +342,33 @@ export class NetworkController extends Controller<NetworkControllerState> {
   /** Host-endpoint EVM client for cross-checking reads; never sends the install id. */
   independentClient(network: string): Independent<PublicClient> {
     return this.independent(network, (hosts) =>
-      makeClient(this.info(network), hosts, this.options.fetch),
+      makeClient(this.info(network), hosts, this.options.fetch, false),
+    );
+  }
+
+  /**
+   * The client's sibling for ENS resolution: same ordered endpoints, CCIP-Read enabled over the
+   * plain injected fetch — gateway URLs come from contracts, not the host, so they never get the
+   * install id.
+   */
+  ensClient(network: string): PublicClient {
+    const cached = this.ensClients.get(network);
+    if (cached !== undefined) {
+      return cached;
+    }
+    const urls = this.endpoints(network);
+    if (urls.length === 0) {
+      throw new Error(`no rpc endpoint for ${network}`);
+    }
+    const client = makeEnsClient(this.info(network), urls, this.gatewayFetch, this.options.fetch);
+    this.ensClients.set(network, client);
+    return client;
+  }
+
+  /** Host-endpoint ENS client for cross-checking resolutions. */
+  independentEnsClient(network: string): Independent<PublicClient> {
+    return this.independent(network, (hosts) =>
+      makeEnsClient(this.info(network), hosts, this.options.fetch, this.options.fetch),
     );
   }
 

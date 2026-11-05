@@ -134,6 +134,8 @@ export type AssetFlow = {
   readonly to: string;
   readonly amount: AssetAmount;
   readonly verified: boolean;
+  /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
+  readonly name?: string;
 };
 
 export type ApprovalChange =

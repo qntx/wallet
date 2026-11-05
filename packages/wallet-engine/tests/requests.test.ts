@@ -1,3 +1,4 @@
+import { encodeAbiParameters, parseAbiParameters } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
@@ -5,6 +6,7 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import type { chains } from "@qntx/wallet/chains";
 
+import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
 import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
@@ -335,6 +337,13 @@ const feeHistory = (priorityNormal: string, baseFee = "0x64") => ({
   ],
 });
 
+/** A `resolveWithGateways` result whose inner `addr` decodes to `address` for any coin type. */
+const ensResult = (address: string): string =>
+  encodeAbiParameters(parseAbiParameters("bytes, bytes"), [
+    encodeAbiParameters(parseAbiParameters("bytes"), [address as `0x${string}`]),
+    "0x",
+  ]);
+
 function evmWorld(options: {
   lockDuringSign?: boolean;
   gateway?: Rpc | undefined;
@@ -363,12 +372,25 @@ function evmWorld(options: {
     txCounter += 1;
     return txCounter;
   };
-  const answer = (table: Rpc, body: { method: string; params?: unknown }): Response =>
-    body.method === "eth_simulateV1" && !(body.method in table)
+  const answer = (table: Rpc, body: { method: string; params?: unknown }): Response => {
+    const to =
+      Array.isArray(body.params) && typeof body.params[0] === "object" && body.params[0] !== null
+        ? (body.params[0] as { to?: unknown }).to
+        : undefined;
+    if (
+      body.method === "eth_call" &&
+      typeof to === "string" &&
+      to.toLowerCase() === UNIVERSAL_RESOLVER &&
+      typeof table["ensResult"] === "string"
+    ) {
+      return Response.json({ jsonrpc: "2.0", id: 1, result: table["ensResult"] });
+    }
+    return body.method === "eth_simulateV1" && !(body.method in table)
       ? Response.json({ jsonrpc: "2.0", id: 1, result: simulateV1Result(body.params) })
       : body.method in table
         ? Response.json({ jsonrpc: "2.0", id: 1, result: table[body.method] })
         : Response.json({ jsonrpc: "2.0", id: 1, error: { code: -1, message: body.method } });
+  };
   const fetchImpl: typeof globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url === `${GATEWAY}/v1/networks`) {
@@ -530,6 +552,79 @@ describe("EVM pipeline", () => {
     expect(tracked.every((t) => t.state === "rejected")).toBe(true);
     expect(b.display).toMatchObject({ summary: "transfer" });
     expect(w.requests.getState().requests[b.id]?.stage).toBe("awaiting-approval");
+  });
+
+  it("resolves an ENS recipient, names the outflow, and cross-checks the second read", async () => {
+    const w = evmWorld({
+      gateway: { ensResult: ensResult(ADDR) },
+      host: { ensResult: ensResult(ADDR) },
+    });
+    await w.start();
+    const r = await w.requests.prepare({ ...PARAMS, to: "Name.ETH" });
+    expect(r.display).toMatchObject({
+      outflows: [{ to: ADDR, name: "name.eth", verified: true }],
+    });
+    expect(r.checks).toStrictEqual([]);
+    const urCalls = w.calls.filter((c) => c.method === "eth_call").map((c) => c.url);
+    expect(urCalls.some((u) => u.startsWith(GATEWAY))).toBe(true);
+    expect(urCalls).toContain(HOST);
+  });
+
+  it("resolves an ENS recipient on an ERC-20 send and refuses a mismatching second read", async () => {
+    const token = "0x1000000000000000000000000000000000000000";
+    const w = evmWorld({
+      gateway: { ensResult: ensResult(ADDR) },
+      host: { ensResult: ensResult(ADDR) },
+    });
+    await w.start();
+    const r = await w.requests.prepare({ ...PARAMS, to: "name.eth", token });
+    expect(r.display).toMatchObject({ outflows: [{ to: ADDR, name: "name.eth" }] });
+
+    const wrong = evmWorld({
+      gateway: { ensResult: ensResult(ADDR) },
+      host: { ensResult: ensResult("0x1111111111111111111111111111111111111111") },
+    });
+    await wrong.start();
+    await expect(wrong.requests.prepare({ ...PARAMS, to: "name.eth" })).rejects.toThrow(
+      "differently",
+    );
+  });
+
+  it("an unavailable second read leaves the resolution reads-unverified", async () => {
+    const w = evmWorld({ hostEndpoints: false, gateway: { ensResult: ensResult(ADDR) } });
+    await w.start();
+    const r = await w.requests.prepare({ ...PARAMS, to: "name.eth" });
+    expect(r.display).toMatchObject({ outflows: [{ to: ADDR, name: "name.eth" }] });
+    expect(r.checks).toContain("reads-unverified");
+  });
+
+  it("the dApp call path never consults ENS — an invalid `to` fails in normalize", async () => {
+    const w = evmWorld({ gateway: { ensResult: ensResult(ADDR) } });
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-sign",
+        origin: { kind: "browser", origin: "https://app.example" },
+        account: ACCOUNT,
+        network: SEPOLIA,
+        request: {
+          kind: "evm.transaction",
+          network: SEPOLIA,
+          account: ACCOUNT,
+          tx: {
+            type: "legacy",
+            chainId: 11155111,
+            nonce: 0,
+            gas: "0x5208",
+            to: "name.eth",
+            value: "0x0",
+            data: "0x",
+            gasPrice: "0x1",
+          },
+        },
+      }),
+    ).rejects.toThrow("address");
+    expect(w.calls.every((c) => c.method !== "eth_call")).toBe(true);
   });
 
   it("without a gateway nothing is cross-checked and the request is verified", async () => {
