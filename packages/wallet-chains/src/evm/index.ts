@@ -2,7 +2,7 @@ import { requestBase } from "../account-ref.ts";
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
 import { isRecord, networkChainId, normalizeEvmTransaction } from "./transaction.ts";
-import { parseTypedData } from "./typed-data.ts";
+import { domainChainId, parseTypedData } from "./typed-data.ts";
 
 export { EVM_NATIVE_ASSET } from "./assets.ts";
 export { isEvmAddress, checksumEvmAddress, evmAddressFromPublicKey } from "./address.ts";
@@ -12,7 +12,8 @@ export {
   canonicalHex,
   isCanonicalHex,
 } from "./transaction.ts";
-export { PERMIT2_ADDRESS, decodeEvm, verifiabilityEvm } from "./decode.ts";
+export { PERMIT2_ADDRESS } from "./approval.ts";
+export { decodeEvm, verifiabilityEvm } from "./decode.ts";
 export { recoverEvmSigner } from "./recover.ts";
 export { parseTypedData } from "./typed-data.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";
@@ -50,7 +51,14 @@ export const normalizeEvm = (request: unknown): SignRequest => {
     if (typeof typedData !== "string") {
       throw new ChainError("invalid-request", "typed-data payload must be the JSON source string");
     }
-    parseTypedData(typedData, network);
+    const { json } = parseTypedData(typedData);
+    const domainChain = domainChainId(json.domain);
+    if (domainChain !== undefined && domainChain !== chainId) {
+      throw new ChainError(
+        "chain-id-mismatch",
+        `typed-data domain.chainId ${domainChain} does not match network ${network}`,
+      );
+    }
     return { kind: "evm.typed-data", network, account, typedData };
   }
   throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);

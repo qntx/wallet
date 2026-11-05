@@ -23694,7 +23694,7 @@ zoo`.split("\n"));
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-DqBU62x3.mjs
+	// packages/wallet-chains/dist/typed-data-DAV7DuaO.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -23852,7 +23852,7 @@ zoo`.split("\n"));
 		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
 	};
 	/** Parses the EIP-712 JSON source and validates its shape with ox. */
-	var parseTypedData = (typedData, network) => {
+	var parseTypedData = (typedData) => {
 		let json;
 		try {
 			json = JSON.parse(typedData);
@@ -23865,17 +23865,19 @@ zoo`.split("\n"));
 		} catch (_unused2) {
 			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
 		}
-		const { chainId } = json.domain;
-		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" ? Number(chainId) : NaN;
-		return {
-			json,
-			chainIdMismatch: Number.isSafeInteger(numeric) && numeric !== networkChainId(network)
-		};
+		return { json };
 	};
-	var typedDataWarnings = (parsed) => parsed.chainIdMismatch ? [{
-		kind: "chain-id-mismatch",
-		message: "typed-data domain.chainId does not match the request network"
-	}] : [];
+	/**
+	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
+	* decimal string or a `0x` hex string.
+	*/
+	var domainChainId = (domain) => {
+		const { chainId } = domain;
+		if (chainId === void 0) return;
+		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
+		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
+		return numeric;
+	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiItem.js
 	/**
 	* Formats ABI item (e.g. error, event, function) into human-readable ABI item
@@ -26266,6 +26268,153 @@ zoo`.split("\n"));
 		var _table$String;
 		return (_table$String = table[String(chainId)]) === null || _table$String === void 0 ? void 0 : _table$String[address];
 	};
+	var MAX_UINT256 = 2n ** 256n - 1n;
+	var MAX_UINT160 = 2n ** 160n - 1n;
+	/** A fungible-token allowance; `max` is the type's maximum, which marks it unlimited. */
+	var allowanceChange = (token, spender, value, change, max, chainId, table, extra = {}) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2(_objectSpread2({
+			kind: "allowance",
+			spender,
+			amount: _objectSpread2({
+				asset: token,
+				amount: value.toString(10)
+			}, known === void 0 ? {} : {
+				symbol: known.symbol,
+				decimals: known.decimals
+			}),
+			change,
+			unlimited: change !== "decrease" && value === max
+		}, extra), {}, { verified: known !== void 0 });
+	};
+	var isMessage$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var signature = (types, name) => {
+		var _types$name;
+		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
+	};
+	var sameFields = (types, name, fields) => signature(types, name) === fields.join(",");
+	var address = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
+	var uint = (value, max) => {
+		let parsed;
+		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
+		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
+		else return;
+		return parsed >= 0n && parsed <= max ? parsed : void 0;
+	};
+	var MAX_UINT48 = 2n ** 48n - 1n;
+	var DETAILS = [
+		"address token",
+		"uint160 amount",
+		"uint48 expiration",
+		"uint48 nonce"
+	];
+	var PERMISSIONS = ["address token", "uint256 amount"];
+	var WITNESS_WARNING = {
+		kind: "permit2-witness",
+		message: "the permit carries a witness with further terms"
+	};
+	var entries = (value) => Array.isArray(value) && value.length > 0 && value.every(isMessage$1) ? value : void 0;
+	var permit = (...approvals) => ({
+		approvals,
+		warnings: []
+	});
+	/**
+	* The permit a typed-data document grants, or `undefined` when its shape is not exactly one of the
+	* recognized ones. `chainId` is the request network's, used for the built-in token table.
+	*/
+	function recognizePermit(json, chainId, table) {
+		const { types, primaryType, message, domain } = json;
+		const verifying = address(domain["verifyingContract"]);
+		if (verifying === void 0) return;
+		const spender = address(message["spender"]);
+		if (spender === void 0) return;
+		const allow = (token, value, change, max, extra = {}) => allowanceChange(token, spender, value, change, max, chainId, table, extra);
+		if (primaryType === "Permit") {
+			if (sameFields(types, "Permit", [
+				"address owner",
+				"address spender",
+				"uint256 value",
+				"uint256 nonce",
+				"uint256 deadline"
+			])) {
+				const value = uint(message["value"], MAX_UINT256);
+				return value === void 0 ? void 0 : permit(allow(verifying, value, "set", MAX_UINT256));
+			}
+			if (sameFields(types, "Permit", [
+				"address holder",
+				"address spender",
+				"uint256 nonce",
+				"uint256 expiry",
+				"bool allowed"
+			])) {
+				const { allowed } = message;
+				return typeof allowed === "boolean" ? permit(allow(verifying, allowed ? MAX_UINT256 : 0n, "set", MAX_UINT256)) : void 0;
+			}
+			return;
+		}
+		if (verifying.toLowerCase() !== "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase()) return;
+		return recognizePermit2(types, primaryType, message, allow);
+	}
+	var recognizePermit2 = (types, primaryType, message, allow) => {
+		var _own$slice;
+		const via = "permit2";
+		const allowance = (details) => {
+			const token = address(details["token"]);
+			const amount = uint(details["amount"], MAX_UINT160);
+			const expiration = uint(details["expiration"], MAX_UINT48);
+			return token === void 0 || amount === void 0 || expiration === void 0 ? void 0 : allow(token, amount, "set", MAX_UINT160, {
+				via,
+				expiration: Number(expiration)
+			});
+		};
+		const transfer = (permitted, deadline) => {
+			const token = address(permitted["token"]);
+			const amount = uint(permitted["amount"], MAX_UINT256);
+			return token === void 0 || amount === void 0 ? void 0 : allow(token, amount, "transfer", MAX_UINT256, _objectSpread2({ via }, deadline <= MAX_UINT48 ? { expiration: Number(deadline) } : {}));
+		};
+		const all = (list, build) => {
+			const built = list === null || list === void 0 ? void 0 : list.map(build);
+			return built === void 0 || built.some((a) => a === void 0) ? void 0 : permit(...built.filter((a) => a !== void 0));
+		};
+		if (primaryType === "PermitSingle") {
+			const { details } = message;
+			return sameFields(types, primaryType, [
+				"PermitDetails details",
+				"address spender",
+				"uint256 sigDeadline"
+			]) && sameFields(types, "PermitDetails", DETAILS) && isMessage$1(details) ? all([details], allowance) : void 0;
+		}
+		if (primaryType === "PermitBatch") return sameFields(types, primaryType, [
+			"PermitDetails[] details",
+			"address spender",
+			"uint256 sigDeadline"
+		]) && sameFields(types, "PermitDetails", DETAILS) ? all(entries(message["details"]), allowance) : void 0;
+		const witness = primaryType.includes("Witness");
+		const batch = primaryType.includes("Batch");
+		const expected = batch ? [
+			"TokenPermissions[] permitted",
+			"address spender",
+			"uint256 nonce",
+			"uint256 deadline"
+		] : [
+			"TokenPermissions permitted",
+			"address spender",
+			"uint256 nonce",
+			"uint256 deadline"
+		];
+		if (primaryType !== `Permit${batch ? "Batch" : ""}${witness ? "Witness" : ""}TransferFrom`) return;
+		const own = types[primaryType];
+		const last = own === null || own === void 0 ? void 0 : own.at(-1);
+		const fieldsOk = witness ? sameFields(_objectSpread2(_objectSpread2({}, types), {}, { [primaryType]: (_own$slice = own === null || own === void 0 ? void 0 : own.slice(0, -1)) !== null && _own$slice !== void 0 ? _own$slice : [] }), primaryType, expected) && (last === null || last === void 0 ? void 0 : last.name) === "witness" && types[last.type] !== void 0 : sameFields(types, primaryType, expected);
+		const deadline = uint(message["deadline"], MAX_UINT256);
+		if (!fieldsOk || !sameFields(types, "TokenPermissions", PERMISSIONS) || deadline === void 0) return;
+		const { permitted } = message;
+		const result = batch ? all(entries(permitted), (item) => transfer(item, deadline)) : isMessage$1(permitted) ? all([permitted], (item) => transfer(item, deadline)) : void 0;
+		return result === void 0 || !witness ? result : {
+			approvals: result.approvals,
+			warnings: [WITNESS_WARNING]
+		};
+	};
 	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
 	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
 	var ERC20_INCREASE = from$2("function increaseAllowance(address spender, uint256 amount)");
@@ -26278,8 +26427,6 @@ zoo`.split("\n"));
 	var ERC721_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
 	var ERC721_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
 	var ERC1155_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)");
-	var MAX_UINT256 = 2n ** 256n - 1n;
-	var MAX_UINT160 = 2n ** 160n - 1n;
 	var argAddress = (args, index) => {
 		const value = args[index];
 		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
@@ -26334,22 +26481,6 @@ zoo`.split("\n"));
 			}],
 			verified: token !== void 0
 		};
-	};
-	var allowanceChange = (token, spender, value, change, max, chainId, table, extra = {}) => {
-		const known = lookupEvmToken(table, chainId, token);
-		return _objectSpread2(_objectSpread2({
-			kind: "allowance",
-			spender,
-			amount: _objectSpread2({
-				asset: token,
-				amount: value.toString(10)
-			}, known === void 0 ? {} : {
-				symbol: known.symbol,
-				decimals: known.decimals
-			}),
-			change,
-			unlimited: change !== "decrease" && value === max
-		}, extra), {}, { verified: known !== void 0 });
 	};
 	var argBool = (args, index) => {
 		const value = args[index];
@@ -26477,6 +26608,12 @@ zoo`.split("\n"));
 			verifiability: "opaque"
 		});
 	};
+	/** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
+	var displayDomain = (domain) => {
+		const { name, version, verifyingContract, salt } = domain;
+		const chainId = domainChainId(domain);
+		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, typeof name === "string" ? { name } : {}), typeof version === "string" ? { version } : {}), chainId === void 0 ? {} : { chainId }), typeof verifyingContract === "string" && /^0x[0-9a-fA-F]{40}$/.test(verifyingContract) ? { verifyingContract: checksumEvmAddress(verifyingContract) } : {}), typeof salt === "string" ? { salt } : {});
+	};
 	/** Strict UTF-8 text with any sign-in recognition, else the raw bytes as hex. */
 	var messageContent = (bytes) => {
 		try {
@@ -26502,6 +26639,7 @@ zoo`.split("\n"));
 	* production callers use the built-in table.
 	*/
 	var decodeEvm = (request, table = evmTokenTable) => {
+		var _permit$approvals, _permit$warnings;
 		if (request.kind === "evm.transaction") return decodeTransaction$1(request, table);
 		if (request.kind === "evm.personal-message") return {
 			family: "evm",
@@ -26515,16 +26653,24 @@ zoo`.split("\n"));
 			verifiability: "opaque"
 		};
 		if (request.kind !== "evm.typed-data") throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
-		const parsed = parseTypedData(request.typedData, request.network);
+		const { json } = parseTypedData(request.typedData);
+		const message = {
+			kind: "typed-data",
+			primaryType: json.primaryType,
+			domain: displayDomain(json.domain),
+			data: json.message
+		};
+		const permit = recognizePermit(json, networkChainId(request.network), table);
 		return {
 			family: "evm",
 			network: request.network,
-			summary: "message",
+			summary: permit === void 0 ? "message" : "approve",
 			outflows: [],
-			approvals: [],
+			approvals: (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : [],
 			fee: void 0,
-			warnings: typedDataWarnings(parsed),
-			verifiability: "opaque"
+			warnings: (_permit$warnings = permit === null || permit === void 0 ? void 0 : permit.warnings) !== null && _permit$warnings !== void 0 ? _permit$warnings : [],
+			message,
+			verifiability: permit === void 0 ? "opaque" : "partial"
 		};
 	};
 	/**
@@ -26558,7 +26704,9 @@ zoo`.split("\n"));
 		if (request["kind"] === "evm.typed-data") {
 			const { typedData } = request;
 			if (typeof typedData !== "string") throw new ChainError("invalid-request", "typed-data payload must be the JSON source string");
-			parseTypedData(typedData, network);
+			const { json } = parseTypedData(typedData);
+			const domainChain = domainChainId(json.domain);
+			if (domainChain !== void 0 && domainChain !== chainId) throw new ChainError("chain-id-mismatch", `typed-data domain.chainId ${domainChain} does not match network ${network}`);
 			return {
 				kind: "evm.typed-data",
 				network,
@@ -28313,6 +28461,7 @@ zoo`.split("\n"));
 			revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
 			increase: (spender, amount) => `授权 ${spender} 再使用 ${amount}`,
 			decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
+			takeOnce: (spender, amount) => `授权 ${spender} 一次性转走 ${amount}`,
 			viaPermit2: " 经 Permit2",
 			until: (date) => ` 至 ${date}（UTC）`,
 			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
@@ -28337,6 +28486,7 @@ zoo`.split("\n"));
 			revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
 			increase: (spender, amount) => `Allow ${spender} to spend ${amount} more`,
 			decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
+			takeOnce: (spender, amount) => `Allow ${spender} to take ${amount} once`,
 			viaPermit2: " via Permit2",
 			until: (date) => ` until ${date} (UTC)`,
 			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
@@ -28369,6 +28519,7 @@ zoo`.split("\n"));
 		let line;
 		if (change.change === "increase") line = catalog.increase(change.spender, formatAmount(change.amount));
 		else if (change.change === "decrease") line = catalog.decrease(change.spender, formatAmount(change.amount));
+		else if (change.change === "transfer") line = catalog.takeOnce(change.spender, change.unlimited ? catalog.unlimited(name) : formatAmount(change.amount));
 		else if (change.unlimited) line = catalog.allow(change.spender, catalog.unlimited(name));
 		else if (change.amount.amount === "0") line = catalog.revoke(change.spender, name);
 		else line = catalog.allow(change.spender, formatAmount(change.amount));
@@ -28663,7 +28814,7 @@ zoo`.split("\n"));
 	};
 	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmTypedData = (typedData, privateKey) => {
-		const { json } = parseTypedData(typedData, "eip155:1");
+		const { json } = parseTypedData(typedData);
 		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
 	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts

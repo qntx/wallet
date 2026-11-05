@@ -39,6 +39,7 @@ type Catalog = {
   readonly revoke: (spender: string, asset: string) => string;
   readonly increase: (spender: string, amount: string) => string;
   readonly decrease: (spender: string, amount: string) => string;
+  readonly takeOnce: (spender: string, amount: string) => string;
   readonly viaPermit2: string;
   readonly until: (date: string) => string;
   readonly operatorAllow: (spender: string, asset: string) => string;
@@ -65,6 +66,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
     increase: (spender, amount) => `授权 ${spender} 再使用 ${amount}`,
     decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
+    takeOnce: (spender, amount) => `授权 ${spender} 一次性转走 ${amount}`,
     viaPermit2: " 经 Permit2",
     until: (date) => ` 至 ${date}（UTC）`,
     operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
@@ -89,6 +91,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
     increase: (spender, amount) => `Allow ${spender} to spend ${amount} more`,
     decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
+    takeOnce: (spender, amount) => `Allow ${spender} to take ${amount} once`,
     viaPermit2: " via Permit2",
     until: (date) => ` until ${date} (UTC)`,
     operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
@@ -132,6 +135,11 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
     line = catalog.increase(change.spender, formatAmount(change.amount));
   } else if (change.change === "decrease") {
     line = catalog.decrease(change.spender, formatAmount(change.amount));
+  } else if (change.change === "transfer") {
+    line = catalog.takeOnce(
+      change.spender,
+      change.unlimited ? catalog.unlimited(name) : formatAmount(change.amount),
+    );
   } else if (change.unlimited) {
     line = catalog.allow(change.spender, catalog.unlimited(name));
   } else if (change.amount.amount === "0") {

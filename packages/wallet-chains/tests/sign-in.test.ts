@@ -125,7 +125,7 @@ describe("decodeEvm personal-message content", () => {
     });
   });
 
-  it("typed data has no message at this layer", () => {
+  it("typed data carries its structured content", () => {
     const intent = decodeEvm({
       kind: "evm.typed-data",
       network: "eip155:1",
@@ -137,6 +137,6 @@ describe("decodeEvm personal-message content", () => {
         message: {},
       }),
     });
-    expect(intent.message).toBeUndefined();
+    expect(intent.message).toMatchObject({ kind: "typed-data", primaryType: "T" });
   });
 });

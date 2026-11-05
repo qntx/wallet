@@ -617,6 +617,22 @@ describe("Eip1193Handler", () => {
     await r.destroy();
   });
 
+  it("typed data addressed to the signer's own account is refused with -32602", async () => {
+    const r = await rig();
+    await r.connect();
+    const address = await r.addressAt(0);
+    const doc = JSON.parse(TYPED) as { domain: Record<string, unknown> };
+    doc.domain["verifyingContract"] = address.toLowerCase();
+    await expect(
+      r.handler.handle(SITE, {
+        method: "eth_signTypedData_v4",
+        params: [address, JSON.stringify(doc)],
+      }),
+    ).rejects.toMatchObject({ code: -32_602 });
+    expect(Object.values(r.requests.getState().requests)).toHaveLength(0);
+    await r.destroy();
+  });
+
   it("refuses unsafe and deferred methods with 4200", async () => {
     const r = await rig();
     await r.connect();

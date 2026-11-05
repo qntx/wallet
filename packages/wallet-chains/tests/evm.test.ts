@@ -257,7 +257,7 @@ describe("verifiability + decode", () => {
     );
   });
 
-  it("messages → opaque; typed-data chainId mismatch warns", () => {
+  it("messages → opaque; generic typed data shows its content", () => {
     const pm = decodeEvm({
       kind: "evm.personal-message",
       network: "eip155:1",
@@ -265,16 +265,41 @@ describe("verifiability + decode", () => {
       message: new Uint8Array(1),
     });
     expect(pm.verifiability).toBe("opaque");
-    const td = JSON.parse(vectors.typedData);
-    td.domain.chainId = 5;
     const intent = decodeEvm({
       kind: "evm.typed-data",
       network: "eip155:1",
       account: ACCOUNT,
-      typedData: JSON.stringify(td),
+      typedData: vectors.typedData,
     });
-    expect(intent.verifiability).toBe("opaque");
-    expect(intent.warnings[0]?.kind).toBe("chain-id-mismatch");
+    expect(intent).toMatchObject({ summary: "message", verifiability: "opaque", approvals: [] });
+    const doc = JSON.parse(vectors.typedData);
+    expect(intent.message).toMatchObject({
+      kind: "typed-data",
+      primaryType: doc.primaryType,
+      data: doc.message,
+    });
+    expect(intent.warnings).toStrictEqual([]);
+  });
+
+  it("normalizeEvm checks typed-data domain.chainId against the network", () => {
+    const withChain = (chainId: unknown, network = "eip155:1") => {
+      const doc = JSON.parse(vectors.typedData);
+      doc.domain.chainId = chainId;
+      return normalizeEvm({
+        kind: "evm.typed-data",
+        network,
+        account: ACCOUNT,
+        typedData: JSON.stringify(doc),
+      });
+    };
+    expect(withChain(1).kind).toBe("evm.typed-data");
+    expect(withChain("1").kind).toBe("evm.typed-data");
+    expect(withChain("0x1").kind).toBe("evm.typed-data");
+    expect(() => withChain(5)).toThrow(expect.objectContaining({ code: "chain-id-mismatch" }));
+    expect(() => withChain("0x5")).toThrow(expect.objectContaining({ code: "chain-id-mismatch" }));
+    for (const bad of [-1, 1.5, "abc", "", true, null, 2 ** 60]) {
+      expect(() => withChain(bad)).toThrow(expect.objectContaining({ code: "invalid-typed-data" }));
+    }
   });
 
   it("parses CAIP-2 chain ids", () => {
