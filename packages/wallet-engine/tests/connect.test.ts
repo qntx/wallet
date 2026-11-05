@@ -4,6 +4,8 @@ import { recoverMessageAddress, recoverTypedDataAddress } from "viem";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
+import { createMessage } from "@qntx/siwx";
+import { evm } from "@qntx/siwx/evm";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
@@ -32,6 +34,19 @@ const MNEMONIC =
 const PASSWORD = "correct horse battery staple";
 const VERIFY = { kind: "password" as const, password: PASSWORD };
 const SITE = "https://app.example";
+
+const siweText = (domain: string, address: string): string =>
+  evm().format(
+    createMessage({
+      domain,
+      address,
+      uri: `https://${domain}/login`,
+      version: "1",
+      chainId: "1",
+      nonce: "12341234",
+      issuedAt: "2022-03-17T12:45:13.610Z",
+    }),
+  );
 const OTHER_SITE = "https://other.example";
 const MAINNET = "eip155:1";
 const NOSTR_PUBKEYS = ["a".repeat(64), "b".repeat(64)] as const;
@@ -508,6 +523,48 @@ describe("Eip1193Handler", () => {
       origin: { kind: "browser", origin: SITE },
       summary: "message",
     });
+    await r.destroy();
+  });
+
+  it("a SIWE message for another domain is refused with -32602 before approval", async () => {
+    const r = await rig();
+    await r.connect();
+    const address = await r.addressAt(0);
+    const text = siweText("evil.example", address);
+    await expect(
+      r.handler.handle(SITE, {
+        method: "personal_sign",
+        params: [`0x${Buffer.from(text).toString("hex")}`, address],
+      }),
+    ).rejects.toMatchObject({ code: -32_602 });
+    expect(Object.values(r.requests.getState().requests)).toHaveLength(0);
+    await r.destroy();
+  });
+
+  it("a SIWE message for the page reaches approval with the parsed sign-in", async () => {
+    const r = await rig();
+    await r.connect();
+    const address = await r.addressAt(0);
+    const text = siweText("app.example", address);
+    const signature = r.handler.handle(SITE, {
+      method: "personal_sign",
+      params: [`0x${Buffer.from(text).toString("hex")}`, address],
+    });
+    await vi.waitFor(() => {
+      expect(Object.values(r.requests.getState().requests)).toHaveLength(1);
+    });
+    const [pending] = Object.values(r.requests.getState().requests);
+    expect(pending?.display).toMatchObject({
+      message: { kind: "text", text, signIn: { status: "valid" } },
+    });
+    expect(pending?.risk).toStrictEqual([]);
+    await r.approveNext();
+    await signature;
+    await vi.waitFor(async () => {
+      await expect(r.requests.signLog()).resolves.toHaveLength(1);
+    });
+    const [entry] = await r.requests.signLog();
+    expect(entry?.summary).toBe("sign-in app.example");
     await r.destroy();
   });
 

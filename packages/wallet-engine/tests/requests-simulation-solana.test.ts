@@ -1,7 +1,12 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { base58 } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
+import { createMessage } from "@qntx/siwx";
+import { siws } from "@qntx/siwx/svm";
+
 import { AddressBookController } from "../src/addresses/controller.ts";
-import { RequestController } from "../src/requests/controller.ts";
+import { RequestController, SignInOriginError } from "../src/requests/controller.ts";
 import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -146,5 +151,54 @@ describe("solana-sign simulation", () => {
         request: { kind: "message", message: new Uint8Array([0xff]) },
       }),
     ).rejects.toThrow("must be UTF-8 text");
+  });
+});
+
+describe("solana-sign Sign-In with Solana messages", () => {
+  const SIGNER = base58.encode(ed25519.getPublicKey(new Uint8Array(32).fill(7)));
+  const siwsText = (domain: string): string =>
+    siws.format(
+      createMessage({
+        domain,
+        address: SIGNER,
+        uri: `https://${domain}/login`,
+        version: "1",
+        chainId: "mainnet",
+        nonce: "12341234",
+        issuedAt: "2022-03-17T12:45:13.610Z",
+      }),
+    );
+  const message = (text: string) => ({
+    method: "solana-sign" as const,
+    origin: ORIGIN,
+    account: { ...ACCOUNT, address: SIGNER },
+    network: NETWORK,
+    request: { kind: "message" as const, message: new TextEncoder().encode(text) },
+  });
+
+  it("refuses a message for another domain", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    await expect(requests.prepare(message(siwsText("evil.example")))).rejects.toBeInstanceOf(
+      SignInOriginError,
+    );
+  });
+
+  it("shows the parsed sign-in for the page's own domain", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    const request = await requests.prepare(message(siwsText("app.example")));
+    expect(request.display).toMatchObject({
+      kind: "solana.sign",
+      message: { signIn: { status: "valid" } },
+    });
+    expect(request.risk).toStrictEqual([]);
+  });
+
+  it("warns about text that only resembles a sign-in message", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    const request = await requests.prepare(message(`${siwsText("app.example")}\nextra`));
+    expect(request.risk).toStrictEqual([{ code: "sign-in-malformed", level: "warning" }]);
   });
 });

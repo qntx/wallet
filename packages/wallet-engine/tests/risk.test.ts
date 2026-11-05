@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
+import type { SignInParse } from "@qntx/wallet-chains";
+
 import {
   assessApprovals,
   assessRecipients,
+  assessSignIn,
   assessSimulation,
   comparable,
   impersonatesBuiltIn,
@@ -228,5 +231,94 @@ describe("assessApprovals", () => {
       { code: "collection-approval", level: "danger" },
       { code: "unlimited-approval", level: "warning" },
     ]);
+  });
+});
+
+describe("assessSignIn", () => {
+  const SIGNER = "0xe5A12547fe4E872D192E3eCecb76F2Ce1aeA4946";
+  const NOW = Date.parse("2026-06-01T00:00:00Z");
+  const valid = (over: Record<string, unknown> = {}): SignInParse => ({
+    status: "valid",
+    fields: {
+      domain: "app.example",
+      address: SIGNER,
+      uri: "https://app.example/login",
+      version: "1",
+      chainId: "1",
+      nonce: "12341234",
+      issuedAt: "2026-05-31T00:00:00.000Z",
+      ...over,
+    },
+  });
+  const assess = (signIn: SignInParse, origin = "https://app.example", signer = SIGNER) =>
+    assessSignIn({ signIn, origin, signer, family: "evm", now: NOW });
+
+  it("an exact match raises nothing", () => {
+    expect(assess(valid())).toStrictEqual({ risk: [] });
+  });
+
+  it("a subdomain, another host or a plain-http page is refused in production", () => {
+    expect(assess(valid({ domain: "evil.app.example" })).reject).toContain("evil.app.example");
+    expect(assess(valid(), "https://evil.example").reject).toContain("app.example");
+    expect(assess(valid(), "http://app.example").reject).toBeDefined();
+  });
+
+  it("a local development page with its own domain raises nothing", () => {
+    expect(assess(valid({ domain: "localhost:3000" }), "http://localhost:3000")).toStrictEqual({
+      risk: [],
+    });
+    expect(assess(valid({ domain: "[::1]:3000" }), "http://[::1]:3000")).toStrictEqual({
+      risk: [],
+    });
+  });
+
+  it("a local page with another domain is a danger", () => {
+    expect(assess(valid({ domain: "app.example" }), "http://localhost:3000").risk).toContainEqual({
+      code: "sign-in-domain-mismatch",
+      level: "danger",
+    });
+  });
+
+  it("a port mismatch is a warning", () => {
+    expect(assess(valid({ domain: "localhost:3000" }), "http://localhost:4000")).toStrictEqual({
+      risk: [{ code: "sign-in-port-mismatch", level: "warning" }],
+    });
+  });
+
+  it("a malformed origin is refused", () => {
+    expect(assess(valid(), "not an origin").reject).toBeDefined();
+  });
+
+  it("the address must be the signer; EVM compares case-insensitively", () => {
+    expect(assess(valid(), "https://app.example", SIGNER.toLowerCase())).toStrictEqual({
+      risk: [],
+    });
+    expect(assess(valid(), "https://app.example", `0x${"1".repeat(40)}`).risk).toStrictEqual([
+      { code: "sign-in-address-mismatch", level: "danger" },
+    ]);
+    const solana = assessSignIn({
+      signIn: valid({ address: "AbC" }),
+      origin: "https://app.example",
+      signer: "abc",
+      family: "solana",
+      now: NOW,
+    });
+    expect(solana.risk).toStrictEqual([{ code: "sign-in-address-mismatch", level: "danger" }]);
+  });
+
+  it("an expired or not-yet-valid window is a warning", () => {
+    expect(assess(valid({ expirationTime: "2026-05-31T12:00:00.000Z" })).risk).toStrictEqual([
+      { code: "sign-in-expired", level: "warning" },
+    ]);
+    expect(assess(valid({ notBefore: "2026-06-02T00:00:00.000Z" })).risk).toStrictEqual([
+      { code: "sign-in-not-yet-valid", level: "warning" },
+    ]);
+    expect(assess(valid({ expirationTime: "2026-07-01T00:00:00.000Z" })).risk).toStrictEqual([]);
+  });
+
+  it("a malformed sign-in text is a warning", () => {
+    expect(assess({ status: "malformed" })).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
   });
 });

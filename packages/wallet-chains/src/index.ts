@@ -6,6 +6,11 @@
  * zero), token amounts are decimal strings of the smallest unit.
  */
 
+import type { SignInParse } from "./sign-in.ts";
+
+export { parseSignIn } from "./sign-in.ts";
+export type { SignInParse } from "./sign-in.ts";
+
 export type ChainFamily = "evm" | "solana" | "bitcoin";
 
 export type AccountRef =
@@ -163,6 +168,11 @@ export type IntentWarning = {
   readonly message: string;
 };
 
+/** What a message request signs. */
+export type MessageContent =
+  | { readonly kind: "text"; readonly text: string; readonly signIn?: SignInParse }
+  | { readonly kind: "bytes"; readonly hex: string };
+
 export type DisplayIntent = {
   readonly family: ChainFamily;
   readonly network: string;
@@ -175,6 +185,8 @@ export type DisplayIntent = {
    */
   readonly fee: { readonly max: AssetAmount; readonly l1Data?: AssetAmount } | undefined;
   readonly warnings: ReadonlyArray<IntentWarning>;
+  /** What a message request signs; absent for transactions. */
+  readonly message?: MessageContent;
   readonly verifiability: Verifiability;
 };
 

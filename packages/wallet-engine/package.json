@@ -53,6 +53,7 @@
   "dependencies": {
     "@noble/ciphers": "2.4.0",
     "@noble/hashes": "2.4.0",
+    "@qntx/siwx": "0.8.0",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
     "@solana-program/compute-budget": "0.20.0",

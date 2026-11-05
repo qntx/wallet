@@ -2,6 +2,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
+import { SignInOriginError } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { BrowserOrigin } from "../requests/types.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
@@ -318,14 +319,18 @@ export class SolanaWalletHandler implements SolanaHandler {
     if (group === undefined) {
       throw new ProviderError(4100, "no account group is selected");
     }
-    const pending = await this.options.requests.prepare({
-      method: "solana-sign",
-      origin: checked,
-      account: { walletId: group.walletId, groupIndex: group.groupIndex, address },
-      network,
-      request,
-    });
-    return this.options.requests.outcome(pending.id);
+    try {
+      const pending = await this.options.requests.prepare({
+        method: "solana-sign",
+        origin: checked,
+        account: { walletId: group.walletId, groupIndex: group.groupIndex, address },
+        network,
+        request,
+      });
+      return await this.options.requests.outcome(pending.id);
+    } catch (error) {
+      throw error instanceof SignInOriginError ? invalidParams(error.message) : error;
+    }
   }
 
   /** The `setActiveGroup` re-point: the solana session's new `WalletAccount[]` for `change`. */

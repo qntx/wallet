@@ -1,6 +1,6 @@
 (function() {
 	// \0rolldown/runtime.js
-	var __defProp = Object.defineProperty;
+	var __defProp$1 = Object.defineProperty;
 	var __esmMin = (fn, res, err) => () => {
 		if (err) throw err[0];
 		try {
@@ -9,13 +9,13 @@
 			throw err = [e], e;
 		}
 	};
-	var __exportAll = (all, no_symbols) => {
+	var __exportAll$1 = (all, no_symbols) => {
 		let target = {};
-		for (var name in all) __defProp(target, name, {
+		for (var name in all) __defProp$1(target, name, {
 			get: all[name],
 			enumerable: true
 		});
-		if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
+		if (!no_symbols) __defProp$1(target, Symbol.toStringTag, { value: "Module" });
 		return target;
 	};
 	// node_modules/.bun/@noble+ciphers@2.4.0/node_modules/@noble/ciphers/utils.js
@@ -14843,8 +14843,1357 @@ zoo`.split("\n"));
 			return ed25519.verify(signature, message, this.publicKeyRaw);
 		}
 	};
-	// packages/wallet-chains/dist/index.mjs
+	// node_modules/.bun/@qntx+siwx@0.8.0/node_modules/@qntx/siwx/dist/message-B6snBU4B.mjs
 	init_defineProperty();
+	init_objectSpread2();
+	var SYNTAX_MESSAGES = {
+		InvalidUtf8: "invalid UTF-8",
+		CarriageReturn: "CR not allowed",
+		MissingPreamble: "missing preamble marker",
+		MissingAccountSuffix: "missing account suffix",
+		UnexpectedEof: "unexpected end of input",
+		ExpectedBlankLine: "expected blank line",
+		UnexpectedTrailing: "unexpected trailing content",
+		ResourceSyntax: "resource line must start with '- '",
+		InvalidEnvelope: "invalid off-chain message envelope"
+	};
+	function describe(info) {
+		if (info.code === "MessageTooLarge") return `message exceeds maximum size of ${info.max} bytes, got ${info.length}`;
+		if (info.code === "Syntax") return info.syntax === "MissingField" ? `invalid message syntax: missing ${info.field}` : `invalid message syntax: ${SYNTAX_MESSAGES[info.syntax]}`;
+		if (info.code === "InvalidField") return `invalid ${info.field}: ${info.reason}`;
+		if (info.code === "Mismatch") return `${info.field} mismatch: expected ${info.expected}, got ${JSON.stringify(info.actual)}`;
+		if (info.code === "InvalidOrigin") return "invalid origin: not a serialized web origin";
+		if (info.code === "Expired") return "message expired";
+		if (info.code === "NotYetValid") return "message not yet valid";
+		if (info.code === "IssuedAtTooOld") return "issued-at exceeds max age";
+		if (info.code === "InvalidSignature") return `invalid signature: ${info.reason}`;
+		if (info.code === "VerificationFailed") return "verification failed";
+		if (info.code === "Unsupported") return `unsupported: ${info.reason}`;
+		return `backend error: ${info.reason}`;
+	}
+	/** The single error type thrown by every library failure. */
+	var SiwxError = class extends Error {
+		constructor(info) {
+			super(describe(info));
+			_defineProperty(
+				this,
+				/** Structured payload; `code` matches the Rust `Error::code()`. */
+				"info",
+				void 0
+			);
+			this.name = "SiwxError";
+			this.info = info;
+		}
+		/** Stable variant name for cross-language contract tests. */
+		get code() {
+			return this.info.code;
+		}
+	};
+	/** `SiwxError` constructor shorthand for layout failures. */
+	function syntaxError(syntax, field) {
+		if (syntax === "MissingField") {
+			if (field === void 0) throw new RangeError("MissingField requires a field");
+			return new SiwxError({
+				code: "Syntax",
+				syntax,
+				field
+			});
+		}
+		return new SiwxError({
+			code: "Syntax",
+			syntax
+		});
+	}
+	/** `SiwxError` constructor shorthand for a malformed field value. */
+	function fieldError(field, reason) {
+		return new SiwxError({
+			code: "InvalidField",
+			field,
+			reason
+		});
+	}
+	/** `SiwxError` constructor shorthand for a binding mismatch. */
+	function mismatchError(field, expected, actual) {
+		return new SiwxError({
+			code: "Mismatch",
+			field,
+			expected,
+			actual
+		});
+	}
+	//! CAIP-10 `account_id`: `namespace ":" reference ":" address`.
+	/** Every character matches — avoids spread-on-string for Hermes-safe lint. */
+	function everyChar(s, test) {
+		const pred = typeof test === "function" ? test : (c) => test.test(c);
+		for (const c of s) if (!pred(c)) return false;
+		return true;
+	}
+	/**
+	* Validate and build an `account_id`.
+	*
+	* `namespace` is CAIP-2 `[-a-z0-9]{3,8}`; `reference` is `[-_a-zA-Z0-9]{1,32}`; `address` is
+	* `[-.%a-zA-Z0-9]{1,128}`.
+	*
+	* @throws {SiwxError} `InvalidField` `chainId` for bad namespace/reference, `address` for a bad
+	*   address.
+	*/
+	function createAccountId(namespace, reference, address) {
+		if (namespace.length < 3 || namespace.length > 8 || !everyChar(namespace, /[a-z0-9-]/)) throw fieldError("chainId", "bad CAIP-2 namespace");
+		if (reference.length === 0 || reference.length > 32 || !everyChar(reference, /[A-Za-z0-9_-]/)) throw fieldError("chainId", "bad CAIP-2 reference");
+		if (address.length === 0 || address.length > 128 || !everyChar(address, (c) => /[A-Za-z0-9]/.test(c) || c === "-" || c === "." || c === "%")) throw fieldError("address", "bad CAIP-10 address");
+		return Object.freeze({
+			namespace,
+			reference,
+			address,
+			id: `${namespace}:${reference}:${address}`
+		});
+	}
+	//! Shared pieces of the CAIP-122 text layouts (eip4361 and SIWS): the
+	//! preamble infix/suffix and the optional trailing tags in fixed ABNF order.
+	var MID = " wants you to sign in with your ";
+	var SUFFIX = " account:";
+	/**
+	* Parse the optional trailing tags in fixed ABNF order: `Expiration Time`, `Not Before`, `Request
+	* ID`, `Resources` (with `- ` items). Each may appear at most once and only in this order.
+	*/
+	function optionalTags(lines, start) {
+		let i = start;
+		let resources;
+		const take = (tag) => {
+			const line = lines[i];
+			if (line !== void 0 && line.startsWith(tag)) {
+				i++;
+				return line.slice(tag.length);
+			}
+		};
+		const expirationTime = take("Expiration Time: ");
+		const notBefore = take("Not Before: ");
+		const requestId = take("Request ID: ");
+		if (lines[i] === "Resources:") {
+			i++;
+			const list = [];
+			while (i < lines.length) {
+				var _lines$i;
+				const r = (_lines$i = lines[i]) !== null && _lines$i !== void 0 ? _lines$i : "";
+				if (r.startsWith("- ")) {
+					list.push(r.slice(2));
+					i++;
+				} else if (r.startsWith("-")) throw syntaxError("ResourceSyntax");
+				else throw syntaxError("UnexpectedTrailing");
+			}
+			resources = list;
+		}
+		if (i !== lines.length) throw syntaxError("UnexpectedTrailing");
+		return {
+			expirationTime,
+			notBefore,
+			requestId,
+			resources
+		};
+	}
+	/** Maximum accepted signing-text size in bytes. */
+	var MAX_MESSAGE_BYTES = 16384;
+	//! RFC 3986 URI validation, matching Rust `iri-string` exactly:
+	//! `URI = scheme ":" hier-part [ "?" query ] [ "#" fragment ]`,
+	//! `authority = [ userinfo "@" ] host [ ":" port ]`, strict dec-octet
+	//! (no leading zeros), IPv6 / IPvFuture / pct-encoding.
+	var UNRESERVED = /[A-Za-z0-9._~-]/;
+	var SUB_DELIM = /[!$&'()*+,;=]/;
+	var HEX$1 = /[0-9A-Fa-f]/;
+	function isScheme(s) {
+		if (s.length === 0 || !/[A-Za-z]/.test(s.charAt(0))) return false;
+		for (const c of s) if (!/[A-Za-z0-9+.-]/.test(c)) return false;
+		return true;
+	}
+	/** `(unreserved / pct-encoded / sub-delims / ":" / "@")*`, ASCII only. */
+	function everyPct(s, allowed) {
+		for (let i = 0; i < s.length; i++) {
+			const c = s.charAt(i);
+			if (c === "%") {
+				if (i + 2 >= s.length || !HEX$1.test(s.charAt(i + 1)) || !HEX$1.test(s.charAt(i + 2))) return false;
+				i += 2;
+				continue;
+			}
+			if (!allowed(c)) return false;
+		}
+		return true;
+	}
+	function isUserinfo(s) {
+		return everyPct(s, (c) => UNRESERVED.test(c) || SUB_DELIM.test(c) || c === ":");
+	}
+	function isRegName(s) {
+		return everyPct(s, (c) => UNRESERVED.test(c) || SUB_DELIM.test(c));
+	}
+	function isPcharString(s) {
+		return everyPct(s, (c) => UNRESERVED.test(c) || SUB_DELIM.test(c) || c === ":" || c === "@");
+	}
+	/** Dec-octet: 0-255, no leading zeros (RFC 3986 strict). */
+	function isDecOctet(s) {
+		if (s.length === 0 || s.length > 3) return false;
+		if (s.length > 1 && s.startsWith("0")) return false;
+		for (const c of s) if (!/[0-9]/.test(c)) return false;
+		return Number(s) <= 255;
+	}
+	function isIPv4(s) {
+		const parts = s.split(".");
+		return parts.length === 4 && parts.every(isDecOctet);
+	}
+	function isH16(s) {
+		return s.length > 0 && s.length <= 4 && s.split("").every((c) => HEX$1.test(c));
+	}
+	/**
+	* Count h16-equivalent groups in one half of an IPv6 literal (an IPv4 tail counts as two groups and
+	* must be last).
+	*/
+	function ipv6GroupCount(part) {
+		if (part === "") return 0;
+		let n = 0;
+		const groups = part.split(":");
+		for (const g of groups) {
+			if (g === "") return -1;
+			if (g.includes(".")) {
+				if (g !== groups.at(-1) || !isIPv4(g)) return -1;
+				n += 2;
+			} else if (isH16(g)) n += 1;
+			else return -1;
+		}
+		return n;
+	}
+	/** IPv6address per RFC 3986, with optional IPv4 tail and `::` compression. */
+	function isIPv6(s) {
+		var _halves$, _halves$2, _halves$3;
+		const halves = s.split("::");
+		if (halves.length > 2) return false;
+		if (halves.length === 1) return ipv6GroupCount((_halves$ = halves[0]) !== null && _halves$ !== void 0 ? _halves$ : "") === 8;
+		const hn = ipv6GroupCount((_halves$2 = halves[0]) !== null && _halves$2 !== void 0 ? _halves$2 : "");
+		const tn = ipv6GroupCount((_halves$3 = halves[1]) !== null && _halves$3 !== void 0 ? _halves$3 : "");
+		if (hn === -1 || tn === -1) return false;
+		return hn + tn < 8;
+	}
+	function isIPvFuture(s) {
+		var _m$;
+		const m = /^[vV]([0-9A-Fa-f]+)\.(.*)$/.exec(s);
+		if (m === null) return false;
+		const tail = (_m$ = m[2]) !== null && _m$ !== void 0 ? _m$ : "";
+		if (tail.length === 0) return false;
+		for (const c of tail) if (!(UNRESERVED.test(c) || SUB_DELIM.test(c) || c === ":")) return false;
+		return true;
+	}
+	/** `host = IP-literal / IPv4address / reg-name` (first-match-wins). */
+	function isHost(s) {
+		if (s.startsWith("[")) return s.endsWith("]") && (isIPv6(s.slice(1, -1)) || isIPvFuture(s.slice(1, -1)));
+		if (isIPv4(s)) return true;
+		return isRegName(s);
+	}
+	/** `authority = [ userinfo "@" ] host [ ":" port ]`. */
+	function isAuthority(s) {
+		let rest = s;
+		const at = rest.lastIndexOf("@");
+		if (at !== -1) {
+			if (rest.indexOf("@") !== at) return false;
+			if (!isUserinfo(rest.slice(0, at))) return false;
+			rest = rest.slice(at + 1);
+		}
+		let host = rest;
+		let port = "";
+		if (rest.startsWith("[")) {
+			const end = rest.indexOf("]");
+			if (end === -1) return false;
+			host = rest.slice(0, end + 1);
+			const after = rest.slice(end + 1);
+			if (after !== "") {
+				if (!after.startsWith(":")) return false;
+				port = after.slice(1);
+			}
+		} else {
+			const colon = rest.lastIndexOf(":");
+			if (colon !== -1) {
+				host = rest.slice(0, colon);
+				port = rest.slice(colon + 1);
+				if (host.includes(":")) return false;
+			}
+		}
+		if (port !== "" && !port.split("").every((c) => /[0-9]/.test(c))) return false;
+		return isHost(host);
+	}
+	/** `path` characters: each segment is `*pchar`. */
+	function isPath$1(s) {
+		for (const seg of s.split("/")) if (!isPcharString(seg)) return false;
+		return true;
+	}
+	/** `query` / `fragment`: `*( pchar / "/" / "?" )`. */
+	function isQueryOrFragment(s) {
+		return everyPct(s, (c) => UNRESERVED.test(c) || SUB_DELIM.test(c) || c === ":" || c === "@" || c === "/" || c === "?");
+	}
+	/** RFC 3986 `URI` (absolute, with scheme). */
+	function isUri(s) {
+		const hash = s.indexOf("#");
+		if (hash !== -1 && s.includes("#", hash + 1)) return false;
+		let rest = s;
+		let fragment;
+		if (hash !== -1) {
+			fragment = rest.slice(hash + 1);
+			rest = rest.slice(0, hash);
+		}
+		const q = rest.indexOf("?");
+		let query;
+		if (q !== -1) {
+			query = rest.slice(q + 1);
+			rest = rest.slice(0, q);
+		}
+		const colon = rest.indexOf(":");
+		if (colon === -1) return false;
+		if (!isScheme(rest.slice(0, colon))) return false;
+		let hier = rest.slice(colon + 1);
+		if (hier.startsWith("//")) {
+			hier = hier.slice(2);
+			const slash = hier.indexOf("/");
+			const authority = slash === -1 ? hier : hier.slice(0, slash);
+			const path = slash === -1 ? "" : hier.slice(slash);
+			if (!isAuthority(authority)) return false;
+			if (!isPath$1(path)) return false;
+		} else if (!isPath$1(hier)) return false;
+		if (query !== void 0 && !isQueryOrFragment(query)) return false;
+		if (fragment !== void 0 && !isQueryOrFragment(fragment)) return false;
+		return true;
+	}
+	//! Lexical RFC 3339 `date-time` + instant, mirroring Rust `Timestamp`.
+	var SHAPE = /^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
+	/** Days since 1970-01-01 for a proleptic-Gregorian y/m/d (Hinnant's algorithm). */
+	function daysFromCivil(y, m, d) {
+		const yy = m <= 2 ? y - 1 : y;
+		const era = Math.floor((yy >= 0 ? yy : yy - 399) / 400);
+		const yoe = yy - era * 400;
+		const doy = Math.floor((153 * (m > 2 ? m - 3 : m + 9) + 2) / 5) + d - 1;
+		const doe = yoe * 365 + Math.floor(yoe / 4) - Math.floor(yoe / 100) + doy;
+		return era * 146097 + doe - 719468;
+	}
+	function daysInMonth(year, month) {
+		var _ref;
+		return (_ref = [
+			31,
+			year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28,
+			31,
+			30,
+			31,
+			30,
+			31,
+			31,
+			30,
+			31,
+			30,
+			31
+		][month - 1]) !== null && _ref !== void 0 ? _ref : 0;
+	}
+	/**
+	* Parse an RFC 3339 `date-time`; `undefined` when invalid.
+	*
+	* Requires `T`/`t` and `Z`/`z`/`±HH:MM`; optional fraction; real calendar validity (Feb 30
+	* rejected); leap second `:60` rejected like Rust `time`.
+	*/
+	function parseTimestamp(s) {
+		const m = SHAPE.exec(s);
+		if (m === null) return;
+		const [, ys, mos, ds, hs, mis, ss, frac, tz] = m;
+		const year = Number(ys);
+		const month = Number(mos);
+		const day = Number(ds);
+		const hour = Number(hs);
+		const minute = Number(mis);
+		const second = Number(ss);
+		if (month < 1 || month > 12) return;
+		if (day < 1 || day > daysInMonth(year, month)) return;
+		if (hour > 23 || minute > 59 || second > 59) return;
+		let ms = daysFromCivil(year, month, day) * 864e5 + hour * 36e5 + minute * 6e4 + second * 1e3;
+		if (frac !== void 0 && frac.length > 1) ms += Number(frac.slice(1, 4).padEnd(3, "0"));
+		if (tz !== void 0 && tz !== "Z" && tz !== "z") {
+			const oh = Number(tz.slice(1, 3));
+			const om = Number(tz.slice(4, 6));
+			if (oh > 23 || om > 59) return;
+			const off = (oh * 60 + om) * 6e4;
+			ms += tz.startsWith("+") ? -off : off;
+		}
+		if (!Number.isFinite(ms)) return;
+		return {
+			lexeme: s,
+			epochMs: Math.trunc(ms)
+		};
+	}
+	//! Strict UTF-8 helpers.
+	//!
+	//! `TextEncoder`/`TextDecoder` exist on every supported platform (Node,
+	//! browsers, Hermes). Decoding must reject exactly what Rust
+	//! `str::from_utf8` rejects — overlongs, surrogates, > U+10FFFF,
+	//! truncated sequences — so `fatal: true` is used (which follows the
+	//! WHATWG fatal algorithm and rejects all of those).
+	var encoder$1 = new TextEncoder();
+	var fatalDecoder = new TextDecoder("utf-8", { fatal: true });
+	/** Encode `text` as UTF-8 bytes. */
+	function utf8Encode(text) {
+		return encoder$1.encode(text);
+	}
+	/** Decode `bytes` as strict UTF-8; `undefined` on any invalid sequence. */
+	function utf8Decode(bytes) {
+		try {
+			return fatalDecoder.decode(bytes);
+		} catch (_unused2) {
+			return;
+		}
+	}
+	/** UTF-8 byte length of `text` (JS string length counts UTF-16 code units). */
+	function utf8ByteLength(text) {
+		return encoder$1.encode(text).length;
+	}
+	//! CAIP-122 abstract data model: lexical `MessageFields` and the
+	//! validated `Message` produced by `createMessage` (single validation
+	//! path, same check order as Rust `Message::new`).
+	var STATEMENT_CHARS = /* @__PURE__ */ new Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~:/?#[]@!$&'()*+,;= ");
+	function isCaip10Address(s) {
+		if (s.length === 0 || s.length > 128) return false;
+		for (const c of s) if (!/[A-Za-z0-9]/.test(c) && c !== "-" && c !== "." && c !== "%") return false;
+		return true;
+	}
+	/**
+	* Validate `fields` and return a frozen [`Message`].
+	*
+	* Check order (as Rust `Message::new`): scheme, domain, address, statement, uri, version, chainId,
+	* nonce, issuedAt, expirationTime, notBefore, requestId, resources.
+	*
+	* @throws {SiwxError} `InvalidField` naming the first invalid field.
+	*/
+	function createMessage(fields) {
+		if (fields.scheme !== void 0 && !isScheme(fields.scheme)) throw fieldError("scheme", "not an RFC 3986 scheme");
+		if (fields.domain.length === 0) throw fieldError("domain", "empty");
+		if (fields.domain.includes("@")) throw fieldError("domain", "userinfo not allowed");
+		if (fields.domain.startsWith(":")) throw fieldError("domain", "empty host");
+		if (!isAuthority(fields.domain)) throw fieldError("domain", "not an RFC 3986 authority");
+		if (!isCaip10Address(fields.address)) throw fieldError("address", fields.address.length === 0 || fields.address.length > 128 ? "expected 1..=128 characters" : "bad CAIP-10 charset");
+		if (fields.statement !== void 0) {
+			if (utf8ByteLength(fields.statement) > 4096) throw fieldError("statement", "exceeds maximum size");
+			for (const c of fields.statement) if (!STATEMENT_CHARS.has(c)) throw fieldError("statement", "must be RFC 3986 reserved / unreserved / SP");
+		}
+		checkUri(fields.uri, "uri");
+		if (fields.version !== "1") throw fieldError("version", "must be \"1\"");
+		if (fields.chainId.length === 0) throw fieldError("chainId", "empty");
+		if (fields.chainId.length > 64) throw fieldError("chainId", "exceeds 64 characters");
+		for (const c of fields.chainId) if (!/[A-Za-z0-9]/.test(c) && c !== "-" && c !== "_" && c !== ":") throw fieldError("chainId", "bad charset");
+		if (fields.nonce.length < 8) throw fieldError("nonce", "too short");
+		for (const c of fields.nonce) if (!/[A-Za-z0-9]/.test(c)) throw fieldError("nonce", "not ASCII alphanumeric");
+		if (parseTimestamp(fields.issuedAt) === void 0) throw fieldError("issuedAt", "not an RFC 3339 date-time");
+		if (fields.expirationTime !== void 0 && parseTimestamp(fields.expirationTime) === void 0) throw fieldError("expirationTime", "not an RFC 3339 date-time");
+		if (fields.notBefore !== void 0 && parseTimestamp(fields.notBefore) === void 0) throw fieldError("notBefore", "not an RFC 3339 date-time");
+		if (fields.requestId !== void 0) {
+			if (utf8ByteLength(fields.requestId) > 128) throw fieldError("requestId", "exceeds maximum size");
+			if (!isPcharString(fields.requestId)) throw fieldError("requestId", "must be RFC 3986 *pchar");
+		}
+		if (fields.resources !== void 0) {
+			if (fields.resources.length > 32) throw fieldError("resources", "too many");
+			for (const uri of fields.resources) checkUri(uri, "resources");
+		}
+		const out = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
+			domain: fields.domain,
+			address: fields.address,
+			uri: fields.uri,
+			version: fields.version,
+			chainId: fields.chainId,
+			nonce: fields.nonce,
+			issuedAt: fields.issuedAt
+		}, fields.scheme === void 0 ? {} : { scheme: fields.scheme }), fields.statement === void 0 ? {} : { statement: fields.statement }), fields.expirationTime === void 0 ? {} : { expirationTime: fields.expirationTime }), fields.notBefore === void 0 ? {} : { notBefore: fields.notBefore }), fields.requestId === void 0 ? {} : { requestId: fields.requestId }), fields.resources === void 0 ? {} : { resources: fields.resources });
+		return Object.freeze(out);
+	}
+	function checkUri(uri, field) {
+		if (uri.length === 0) throw fieldError(field, "empty");
+		if (utf8ByteLength(uri) > 2048) throw fieldError(field, "exceeds maximum size");
+		if (!isUri(uri)) throw fieldError(field, "not an RFC 3986 URI");
+	}
+	// node_modules/.bun/@qntx+siwx@0.8.0/node_modules/@qntx/siwx/dist/rolldown-runtime-D8jQpDG7.mjs
+	var __defProp = Object.defineProperty;
+	var __exportAll = (all, no_symbols) => {
+		let target = {};
+		for (var name in all) __defProp(target, name, {
+			get: all[name],
+			enumerable: true
+		});
+		if (!no_symbols) __defProp(target, Symbol.toStringTag, { value: "Module" });
+		return target;
+	};
+	// node_modules/.bun/@qntx+siwx@0.8.0/node_modules/@qntx/siwx/dist/eip4361-Bf5VppSi.mjs
+	init_objectSpread2();
+	//! ERC-4361 signing-text layout: `format` and its strict inverse `parse`.
+	//! For every accepted text `t`, `format(label, parse(t).message) === t`
+	//! byte-for-byte.
+	function takeTag(line, tag, field) {
+		if (!line.startsWith(tag)) throw syntaxError("MissingField", field);
+		return line.slice(tag.length);
+	}
+	/** Render `message` as an ERC-4361 signing text under `label`. */
+	function format$2(label, message) {
+		let out = "";
+		if (message.scheme !== void 0) out += `${message.scheme}://`;
+		out += `${message.domain + MID + label + SUFFIX}\n`;
+		out += `${message.address}\n\n`;
+		if (message.statement !== void 0) out += `${message.statement}\n`;
+		out += "\n";
+		out += `URI: ${message.uri}\n`;
+		out += `Version: ${message.version}\n`;
+		out += `Chain ID: ${message.chainId}\n`;
+		out += `Nonce: ${message.nonce}\n`;
+		out += `Issued At: ${message.issuedAt}`;
+		if (message.expirationTime !== void 0) out += `\nExpiration Time: ${message.expirationTime}`;
+		if (message.notBefore !== void 0) out += `\nNot Before: ${message.notBefore}`;
+		if (message.requestId !== void 0) out += `\nRequest ID: ${message.requestId}`;
+		if (message.resources !== void 0) {
+			out += "\nResources:";
+			for (const uri of message.resources) out += `\n- ${uri}`;
+		}
+		return out;
+	}
+	/** Parse `text` into a label + validated message. */
+	function parse$1(text) {
+		const byteLength = utf8ByteLength(text);
+		if (byteLength > 16384) throw new SiwxError({
+			code: "MessageTooLarge",
+			length: byteLength,
+			max: MAX_MESSAGE_BYTES
+		});
+		if (text.includes("\r")) throw syntaxError("CarriageReturn");
+		const lines = text.split("\n");
+		let i = 0;
+		const next = () => {
+			const l = lines[i++];
+			if (l === void 0) throw syntaxError("UnexpectedEof");
+			return l;
+		};
+		const preamble = next();
+		const mid = preamble.indexOf(MID);
+		if (mid === -1) throw syntaxError("MissingPreamble");
+		const head = preamble.slice(0, mid);
+		const tail = preamble.slice(mid + MID.length);
+		if (!tail.endsWith(" account:")) throw syntaxError("MissingAccountSuffix");
+		const label = tail.slice(0, -SUFFIX.length);
+		if (label.length === 0) throw fieldError("label", "empty");
+		let scheme;
+		let domain;
+		const proto = head.indexOf("://");
+		if (proto === -1) domain = head;
+		else {
+			scheme = head.slice(0, proto);
+			domain = head.slice(proto + 3);
+		}
+		const address = next();
+		let blanks = 0;
+		while (lines[i + blanks] === "") blanks++;
+		let statement;
+		if (blanks === 1) {
+			i += 1;
+			statement = next();
+			if (next() !== "") throw syntaxError("ExpectedBlankLine");
+		} else if (blanks === 2) i += 2;
+		else if (blanks === 3) {
+			i += 3;
+			statement = "";
+		} else throw syntaxError("ExpectedBlankLine");
+		const uri = takeTag(next(), "URI: ", "uri");
+		const version = takeTag(next(), "Version: ", "version");
+		const chainId = takeTag(next(), "Chain ID: ", "chainId");
+		const nonce = takeTag(next(), "Nonce: ", "nonce");
+		const issuedAt = takeTag(next(), "Issued At: ", "issuedAt");
+		const opt = optionalTags(lines, i);
+		return {
+			label,
+			message: createMessage(_objectSpread2({
+				scheme,
+				domain,
+				address,
+				statement,
+				uri,
+				version,
+				chainId,
+				nonce,
+				issuedAt
+			}, opt))
+		};
+	}
+	/** [`parseBytes`]: UTF-8 strictness then [`parse`]. */
+	function parseBytes$1(bytes) {
+		if (bytes.length > 16384) throw new SiwxError({
+			code: "MessageTooLarge",
+			length: bytes.length,
+			max: MAX_MESSAGE_BYTES
+		});
+		const text = utf8Decode(bytes);
+		if (text === void 0) throw syntaxError("InvalidUtf8");
+		return parse$1(text);
+	}
+	/** [`parseBytes`] plus a required preamble `label`. */
+	function parseLabeled(label, signed) {
+		const parsed = parseBytes$1(signed);
+		if (parsed.label !== label) throw mismatchError("label", label, parsed.label);
+		return parsed.message;
+	}
+	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha3.js
+	init__u64();
+	init_utils$2();
+	init_defineProperty();
+	var _0n$4 = BigInt(0);
+	var _1n$3 = BigInt(1);
+	var _2n$2 = BigInt(2);
+	var _7n = BigInt(7);
+	var _256n = BigInt(256);
+	var _0x71n = BigInt(113);
+	var SHA3_PI = [];
+	var SHA3_ROTL = [];
+	var _SHA3_IOTA = [];
+	for (let round = 0, R = _1n$3, x = 1, y = 0; round < 24; round++) {
+		[x, y] = [y, (2 * x + 3 * y) % 5];
+		SHA3_PI.push(2 * (5 * y + x));
+		SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
+		let t = _0n$4;
+		for (let j = 0; j < 7; j++) {
+			R = (R << _1n$3 ^ (R >> _7n) * _0x71n) % _256n;
+			if (R & _2n$2) t ^= _1n$3 << (_1n$3 << BigInt(j)) - _1n$3;
+		}
+		_SHA3_IOTA.push(t);
+	}
+	var IOTAS = split(_SHA3_IOTA, true);
+	var SHA3_IOTA_H = IOTAS[0];
+	var SHA3_IOTA_L = IOTAS[1];
+	var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
+	var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
+	var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
+	var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
+	var rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
+	var rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
+	var B = /* @__PURE__ */ new Uint32Array(10);
+	/**
+	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
+	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
+	*   in this file's local little-endian lane-word order
+	* @param rounds - number of rounds to execute
+	* @throws On wrong argument types. {@link TypeError}
+	* @throws On wrong argument ranges or values. {@link RangeError}
+	* @throws If `rounds` is outside the supported `1..24` range. {@link Error}
+	* @example
+	* Permute a Keccak state with the default 24 rounds.
+	* ```ts
+	* keccakP(new Uint32Array(50));
+	* ```
+	*/
+	function keccakP(s, rounds = 24) {
+		if (!(s instanceof Uint32Array)) throw new TypeError("\"s\" expected Uint32Array(50), got type=" + typeof s);
+		if (s.length !== 50) throw new RangeError("\"s\" expected Uint32Array(50), got length=" + s.length);
+		anumber$2(rounds, "rounds");
+		if (rounds < 1 || rounds > 24) throw new Error("\"rounds\" expected integer 1..24");
+		for (let round = 24 - rounds; round < 24; round++) {
+			for (let x = 0; x < 10; x++) B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
+			for (let x = 0; x < 10; x += 2) {
+				const idx1 = (x + 8) % 10;
+				const idx0 = (x + 2) % 10;
+				const B0 = B[idx0];
+				const B1 = B[idx0 + 1];
+				const Th = rotlH(B0, B1, 1) ^ B[idx1];
+				const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
+				for (let y = 0; y < 50; y += 10) {
+					s[x + y] ^= Th;
+					s[x + y + 1] ^= Tl;
+				}
+			}
+			let curH = s[2];
+			let curL = s[3];
+			for (let t = 0; t < 24; t++) {
+				const shift = SHA3_ROTL[t];
+				const Th = rotlH(curH, curL, shift);
+				const Tl = rotlL(curH, curL, shift);
+				const PI = SHA3_PI[t];
+				curH = s[PI];
+				curL = s[PI + 1];
+				s[PI] = Th;
+				s[PI + 1] = Tl;
+			}
+			for (let y = 0; y < 50; y += 10) {
+				const b0 = s[y], b1 = s[y + 1], b2 = s[y + 2], b3 = s[y + 3];
+				s[y] ^= ~s[y + 2] & s[y + 4];
+				s[y + 1] ^= ~s[y + 3] & s[y + 5];
+				s[y + 2] ^= ~s[y + 4] & s[y + 6];
+				s[y + 3] ^= ~s[y + 5] & s[y + 7];
+				s[y + 4] ^= ~s[y + 6] & s[y + 8];
+				s[y + 5] ^= ~s[y + 7] & s[y + 9];
+				s[y + 6] ^= ~s[y + 8] & b0;
+				s[y + 7] ^= ~s[y + 9] & b1;
+				s[y + 8] ^= ~b0 & b2;
+				s[y + 9] ^= ~b1 & b3;
+			}
+			s[0] ^= SHA3_IOTA_H[round];
+			s[1] ^= SHA3_IOTA_L[round];
+		}
+		clean(B);
+	}
+	/**
+	* Keccak sponge function.
+	* @param blockLen - absorb/squeeze rate in bytes
+	* @param suffix - domain separation suffix byte
+	* @param outputLen - default digest length in bytes. This base sponge only
+	*   requires a non-negative integer; wrappers that need positive output
+	*   lengths must enforce that themselves.
+	* @param enableXOF - whether XOF output is allowed
+	* @param rounds - number of Keccak-f rounds
+	* @example
+	* Build a sponge state, absorb bytes, then finalize a digest.
+	* ```ts
+	* const hash = new Keccak(136, 0x06, 32);
+	* hash.update(new Uint8Array([1, 2, 3]));
+	* hash.digest();
+	* ```
+	*/
+	var Keccak = class Keccak {
+		constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
+			_defineProperty(this, "state", void 0);
+			_defineProperty(this, "pos", 0);
+			_defineProperty(this, "posOut", 0);
+			_defineProperty(this, "finished", false);
+			_defineProperty(this, "state32", void 0);
+			_defineProperty(this, "destroyed", false);
+			_defineProperty(this, "blockLen", void 0);
+			_defineProperty(this, "suffix", void 0);
+			_defineProperty(this, "outputLen", void 0);
+			_defineProperty(this, "canXOF", void 0);
+			_defineProperty(this, "enableXOF", false);
+			_defineProperty(this, "rounds", void 0);
+			anumber$2(blockLen, "blockLen");
+			anumber$2(suffix, "suffix");
+			anumber$2(rounds, "rounds");
+			abool$1(enableXOF, "enableXOF");
+			this.blockLen = blockLen;
+			this.suffix = suffix;
+			this.outputLen = outputLen;
+			this.enableXOF = enableXOF;
+			this.canXOF = enableXOF;
+			this.rounds = rounds;
+			anumber$2(outputLen, "outputLen");
+			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
+			this.state = /* @__PURE__ */ new Uint8Array(200);
+			this.state32 = u32$1(this.state);
+		}
+		clone() {
+			return this._cloneInto();
+		}
+		keccak() {
+			swap32IfBE(this.state32);
+			keccakP(this.state32, this.rounds);
+			swap32IfBE(this.state32);
+			this.posOut = 0;
+			this.pos = 0;
+		}
+		update(data) {
+			aexists(this);
+			abytes$2(data);
+			const { blockLen, state, state32 } = this;
+			const len = data.length;
+			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
+			const blockLen32 = blockLen / 4;
+			const data32 = canUseU32 && len >= blockLen ? u32$1(data) : void 0;
+			for (let pos = 0; pos < len;) {
+				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
+					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
+					pos += blockLen;
+					this.pos = blockLen;
+					this.keccak();
+					continue;
+				}
+				const take = Math.min(blockLen - this.pos, len - pos);
+				for (let i = 0; i < take; i++) state[this.pos++] ^= data[pos++];
+				if (this.pos === blockLen) this.keccak();
+			}
+			return this;
+		}
+		finish() {
+			if (this.finished) return;
+			this.finished = true;
+			const { state, suffix, pos, blockLen } = this;
+			state[pos] ^= suffix;
+			if ((suffix & 128) !== 0 && pos === blockLen - 1) this.keccak();
+			state[blockLen - 1] ^= 128;
+			this.keccak();
+		}
+		writeInto(out) {
+			aexists(this, false);
+			abytes$2(out);
+			this.finish();
+			const bufferOut = this.state;
+			const { blockLen } = this;
+			for (let pos = 0, len = out.length; pos < len;) {
+				if (this.posOut >= blockLen) this.keccak();
+				const take = Math.min(blockLen - this.posOut, len - pos);
+				out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
+				this.posOut += take;
+				pos += take;
+			}
+			return out;
+		}
+		xofInto(out) {
+			if (!this.enableXOF) throw new Error("XOF is not enabled");
+			return this.writeInto(out);
+		}
+		xof(bytes) {
+			anumber$2(bytes);
+			return this.xofInto(new Uint8Array(bytes));
+		}
+		digestInto(out) {
+			aoutput(out, this);
+			if (this.finished) throw new Error("digest() was already called");
+			this.writeInto(out.length === this.outputLen ? out : out.subarray(0, this.outputLen));
+			this.destroy();
+		}
+		digest() {
+			const out = new Uint8Array(this.outputLen);
+			this.digestInto(out);
+			return out;
+		}
+		destroy() {
+			this.destroyed = true;
+			clean(this.state);
+		}
+		_cloneInto(to) {
+			const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
+			to || (to = new Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
+			to.blockLen = blockLen;
+			to.state32.set(this.state32);
+			to.pos = this.pos;
+			to.posOut = this.posOut;
+			to.finished = this.finished;
+			to.rounds = rounds;
+			to.suffix = suffix;
+			to.outputLen = outputLen;
+			to.enableXOF = enableXOF;
+			to.canXOF = this.canXOF;
+			to.destroyed = this.destroyed;
+			return to;
+		}
+	};
+	var genKeccak = (suffix, blockLen, outputLen, info = {}) => createHasher(() => new Keccak(blockLen, suffix, outputLen), info);
+	/**
+	* Keccak-256 hash function. Different from SHA3-256.
+	* @param msg - message bytes to hash
+	* @param opts - Reserved hash options.
+	* @returns Digest bytes.
+	* @example
+	* Hash a message with Keccak-256.
+	* ```ts
+	* keccak_256(new Uint8Array([97, 98, 99]));
+	* ```
+	*/
+	var keccak_256 = /* @__PURE__ */ genKeccak(1, 136, 32);
+	// node_modules/.bun/@qntx+siwx@0.8.0/node_modules/@qntx/siwx/dist/evm.mjs
+	init_utils$2();
+	init_secp256k1();
+	init_utils$1();
+	//! EIP-55 / EVM address + chain-id rules, matching `siwx::evm`.
+	var HEX40 = /^[0-9a-fA-F]{40}$/;
+	/** EIP-55 checksum spelling of a `0x`-prefixed 40-hex address. */
+	function toChecksumAddress(address) {
+		if (!address.startsWith("0x")) throw fieldError("address", "expected 0x + 40 hex");
+		const body = address.slice(2);
+		if (!HEX40.test(body)) throw fieldError("address", "expected 0x + 40 hex");
+		const lower = body.toLowerCase();
+		const hash = keccak_256(utf8Encode(lower));
+		let out = "0x";
+		for (let i = 0; i < 40; i++) {
+			var _hash$Math$floor;
+			const c = lower.charAt(i);
+			const nibble = ((_hash$Math$floor = hash[Math.floor(i / 2)]) !== null && _hash$Math$floor !== void 0 ? _hash$Math$floor : 0) >> (i % 2 === 0 ? 4 : 0) & 15;
+			out += /[a-f]/.test(c) && nibble >= 8 ? c.toUpperCase() : c;
+		}
+		return out;
+	}
+	var badAddress = () => fieldError("address", "expected 0x + 40 hex");
+	/** Parse an EVM address to its 20 bytes under the canonical rule. */
+	function parseEip55(address) {
+		const bad = badAddress;
+		if (!address.startsWith("0x")) throw bad();
+		const hex = address.slice(2);
+		if (!HEX40.test(hex)) throw bad();
+		const hasLower = /[a-f]/.test(hex);
+		const hasUpper = /[A-F]/.test(hex);
+		if (hasLower && hasUpper && address !== toChecksumAddress(address)) throw fieldError("address", "bad EIP-55 checksum");
+		return hexToBytes$3(hex);
+	}
+	/**
+	* EVM `chain-id`: `[0-9]+`, no leading zero unless `"0"`, fits in `u64`.
+	*
+	* @throws {SiwxError} `InvalidField` `chainId`.
+	*/
+	function parseEvmChainId(chainId) {
+		if (chainId.length === 0) throw fieldError("chainId", "empty");
+		if (!/^[0-9]+$/.test(chainId)) throw fieldError("chainId", "not decimal");
+		if (chainId.length > 1 && chainId.startsWith("0")) throw fieldError("chainId", "leading zero");
+		const value = BigInt(chainId);
+		if (value > 18446744073709551615n) throw fieldError("chainId", "overflow");
+		return value;
+	}
+	//! EIP-191 `personal_sign` verification.
+	//!
+	//! Decode order (cross-language contract, mirrored with Rust): length ≠
+	//! 65 → `v ∉ {0,1,27,28}` → `r`/`s` equal to 0 or ≥ n → `s > n/2` (all
+	//! `InvalidSignature`) → recovery failure or address mismatch →
+	//! `VerificationFailed`.
+	var N = secp256k1.Point.Fn.ORDER;
+	var N_HALF = N / 2n;
+	/** `keccak256("\x19Ethereum Signed Message:\n" + len + message)`. */
+	function eip191Hash(message) {
+		const prefix = utf8Encode(`\u0019Ethereum Signed Message:\n${message.length}`);
+		const joined = new Uint8Array(prefix.length + message.length);
+		joined.set(prefix);
+		joined.set(message, prefix.length);
+		return keccak_256(joined);
+	}
+	/** Verify a 65-byte `r‖s‖v` EIP-191 signature over `signed`. */
+	function verifyEip191(message, signed, signature) {
+		var _signature$;
+		if (signature.length !== 65) throw new SiwxError({
+			code: "InvalidSignature",
+			reason: "EIP-191 signature must be 65 bytes"
+		});
+		const v = (_signature$ = signature[64]) !== null && _signature$ !== void 0 ? _signature$ : 0;
+		if (v !== 0 && v !== 1 && v !== 27 && v !== 28) throw new SiwxError({
+			code: "InvalidSignature",
+			reason: "v must be 0, 1, 27 or 28"
+		});
+		const r = bytesToNumberBE(signature.subarray(0, 32));
+		const s = bytesToNumberBE(signature.subarray(32, 64));
+		if (r === 0n || r >= N || s === 0n || s >= N) throw new SiwxError({
+			code: "InvalidSignature",
+			reason: "r/s out of range"
+		});
+		if (s > N_HALF) throw new SiwxError({
+			code: "InvalidSignature",
+			reason: "high-s (EIP-2)"
+		});
+		const hash = eip191Hash(signed);
+		let recovered;
+		try {
+			recovered = keccak_256(secp256k1.Signature.fromBytes(signature.subarray(0, 64), "compact").addRecoveryBit(v % 27).recoverPublicKey(hash).toBytes(false).subarray(1)).subarray(12);
+		} catch (_unused) {
+			throw new SiwxError({ code: "VerificationFailed" });
+		}
+		const expected = parseEip55(message.address);
+		if (!equalBytes$2(recovered, expected)) throw new SiwxError({ code: "VerificationFailed" });
+	}
+	//! On-chain smart-account verification: the ERC-6492 universal validator via a
+	//! deployless `eth_call`. Covers deployed ERC-1271 accounts, counterfactual
+	//! ERC-6492 accounts and EOAs. Providers are injected; the library builds no
+	//! transports and applies no timeouts — transport policy belongs to the
+	//! provider owner.
+	var BYTECODE = hexToBytes$2("608060405234801561001057600080fd5b5060405161069438038061069483398101604081905261002f9161051e565b600061003c848484610048565b9050806000526001601ff35b60007f64926492649264926492649264926492649264926492649264926492649264926100748361040c565b036101e7576000606080848060200190518101906100929190610577565b60405192955090935091506000906001600160a01b038516906100b69085906105dd565b6000604051808303816000865af19150503d80600081146100f3576040519150601f19603f3d011682016040523d82523d6000602084013e6100f8565b606091505b50509050876001600160a01b03163b60000361016057806101605760405162461bcd60e51b815260206004820152601e60248201527f5369676e617475726556616c696461746f723a206465706c6f796d656e74000060448201526064015b60405180910390fd5b604051630b135d3f60e11b808252906001600160a01b038a1690631626ba7e90610190908b9087906004016105f9565b602060405180830381865afa1580156101ad573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906101d19190610633565b6001600160e01b03191614945050505050610405565b6001600160a01b0384163b1561027a57604051630b135d3f60e11b808252906001600160a01b03861690631626ba7e9061022790879087906004016105f9565b602060405180830381865afa158015610244573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906102689190610633565b6001600160e01b031916149050610405565b81516041146102df5760405162461bcd60e51b815260206004820152603a602482015260008051602061067483398151915260448201527f3a20696e76616c6964207369676e6174757265206c656e6774680000000000006064820152608401610157565b6102e7610425565b5060208201516040808401518451859392600091859190811061030c5761030c61065d565b016020015160f81c9050601b811480159061032b57508060ff16601c14155b1561038c5760405162461bcd60e51b815260206004820152603b602482015260008051602061067483398151915260448201527f3a20696e76616c6964207369676e617475726520762076616c756500000000006064820152608401610157565b60408051600081526020810180835289905260ff83169181019190915260608101849052608081018390526001600160a01b0389169060019060a0016020604051602081039080840390855afa1580156103ea573d6000803e3d6000fd5b505050602060405103516001600160a01b0316149450505050505b9392505050565b600060208251101561041d57600080fd5b508051015190565b60405180606001604052806003906020820280368337509192915050565b6001600160a01b038116811461045857600080fd5b50565b634e487b7160e01b600052604160045260246000fd5b60005b8381101561048c578181015183820152602001610474565b50506000910152565b600082601f8301126104a657600080fd5b81516001600160401b038111156104bf576104bf61045b565b604051601f8201601f19908116603f011681016001600160401b03811182821017156104ed576104ed61045b565b60405281815283820160200185101561050557600080fd5b610516826020830160208701610471565b949350505050565b60008060006060848603121561053357600080fd5b835161053e81610443565b6020850151604086015191945092506001600160401b0381111561056157600080fd5b61056d86828701610495565b9150509250925092565b60008060006060848603121561058c57600080fd5b835161059781610443565b60208501519093506001600160401b038111156105b357600080fd5b6105bf86828701610495565b604086015190935090506001600160401b0381111561056157600080fd5b600082516105ef818460208701610471565b9190910192915050565b828152604060208201526000825180604084015261061e816060850160208701610471565b601f01601f1916919091016060019392505050565b60006020828403121561064557600080fd5b81516001600160e01b03198116811461040557600080fd5b634e487b7160e01b600052603260045260246000fdfe5369676e617475726556616c696461746f72237265636f7665725369676e6572");
+	/** Abi.encode(address signer, bytes32 hash, bytes signature). */
+	function deploylessCalldata(signer, hash, signature) {
+		const addr = hexToBytes$2(signer.slice(2));
+		const word = 32;
+		const out = new Uint8Array(BYTECODE.length + 96 + word + Math.ceil(signature.length / word) * word);
+		const bc = BYTECODE;
+		out.set(bc, 0);
+		let o = bc.length;
+		out.set(addr, o + (word - addr.length));
+		o += word;
+		out.set(hash, o);
+		o += word;
+		out.set(numberToBytesBE(BigInt(96), word), o);
+		o += word;
+		out.set(numberToBytesBE(BigInt(signature.length), word), o);
+		out.set(signature, o + word);
+		return out;
+	}
+	var malformed$1 = () => new SiwxError({
+		code: "Backend",
+		reason: "malformed eth_call result"
+	});
+	/**
+	* Interpret a deployless validator `eth_call` result: `0x01` or a 32-byte word of zeros ending `01`
+	* is valid; the same shapes ending `00` are `false`; anything else is malformed.
+	*/
+	function decodeResult(hex) {
+		const data = hex === "" || hex === "0x" ? /* @__PURE__ */ new Uint8Array(0) : hexToBytes$2(hex.slice(2));
+		if (data.length === 1) {
+			if (data[0] === 1) return true;
+			if (data[0] === 0) return false;
+			throw malformed$1();
+		}
+		if (data.length === 32) {
+			for (let i = 0; i < 31; i++) if (data[i] !== 0) throw malformed$1();
+			if (data[31] === 1) return true;
+			if (data[31] === 0) return false;
+		}
+		throw malformed$1();
+	}
+	/** JSON-RPC code 3 (EIP-1474 execution reverted) ⇒ signature rejected. */
+	var codeOf = (error) => typeof error === "object" && error !== null && "code" in error ? error.code : void 0;
+	function isRevert(error) {
+		const code = codeOf(error);
+		return typeof code === "number" && code === 3;
+	}
+	function backend$1() {
+		return new SiwxError({
+			code: "Backend",
+			reason: "RPC request failed"
+		});
+	}
+	var MAGIC = (() => {
+		const m = /* @__PURE__ */ new Uint8Array(32);
+		for (let i = 0; i < m.length; i++) m[i] = i % 2 === 0 ? 100 : 146;
+		return m;
+	})();
+	/** True when `signature` ends with the ERC-6492 detection suffix. */
+	function has6492MagicSuffix(signature) {
+		if (signature.length < MAGIC.length) return false;
+		for (let i = 0; i < MAGIC.length; i++) if (signature[signature.length - MAGIC.length + i] !== MAGIC[i]) return false;
+		return true;
+	}
+	/** `eth_chainId` as a decimal number; malformed → `Backend`. */
+	async function providerChainId(provider) {
+		let result;
+		try {
+			result = await provider.request({ method: "eth_chainId" });
+		} catch (_unused2) {
+			throw backend$1();
+		}
+		if (typeof result !== "string" || !/^0x[0-9a-fA-F]+$/.test(result)) throw backend$1();
+		return BigInt(result);
+	}
+	/**
+	* Deployless `eth_call` against the vendored universal validator. `provider`'s chain id must
+	* already equal the message chain id (the caller caches the binding).
+	*/
+	async function verifyOnChain(provider, message, signed, signature) {
+		parseEip55(message.address);
+		const hash = eip191Hash(signed);
+		const data = `0x${bytesToHex$3(deploylessCalldata(message.address, hash, signature))}`;
+		let result;
+		try {
+			result = await provider.request({
+				method: "eth_call",
+				params: [{
+					data,
+					input: data
+				}, "latest"]
+			});
+		} catch (error) {
+			throw isRevert(error) ? new SiwxError({ code: "VerificationFailed" }) : backend$1();
+		}
+		if (typeof result !== "string" || !/^0x[0-9a-fA-F]*$/.test(result)) throw backend$1();
+		if (!decodeResult(result)) throw new SiwxError({ code: "VerificationFailed" });
+	}
+	//! `@qntx/siwx/evm` — EIP-155 (`eip155`) namespace profile.
+	//!
+	//! `account()` emits the canonical EIP-55 checksum spelling, so
+	//! lowercase / uppercase / checksummed spellings of the same address map
+	//! to the same `AccountId`.
+	var CHAIN_NAME = "Ethereum";
+	var NAMESPACE = "eip155";
+	function evmAccount(message) {
+		parseEip55(message.address);
+		parseEvmChainId(message.chainId);
+		return createAccountId(NAMESPACE, message.chainId, toChecksumAddress(message.address));
+	}
+	/**
+	* Ethereum (`eip155`) namespace. EIP-191 runs fully offline; a signature carrying the ERC-6492
+	* magic suffix, or an EIP-191 failure on a chain with a configured provider, takes the on-chain
+	* universal-validator path. Providers own all transport policy — the library applies no timeouts —
+	* and `eth_chainId` is bound to the message chain id (cached per provider on success only) before
+	* any `eth_call`.
+	*/
+	function evm(options) {
+		var _options$rpc;
+		const rpc = (_options$rpc = options === null || options === void 0 ? void 0 : options.rpc) !== null && _options$rpc !== void 0 ? _options$rpc : {};
+		const verifiedChains = /* @__PURE__ */ new Set();
+		const providerFor = (chainId) => {
+			const key = parseEvmChainId(chainId).toString(10);
+			return rpc[key];
+		};
+		const onChain = async (message, signed, signature, eip191Err) => {
+			const key = parseEvmChainId(message.chainId).toString(10);
+			const provider = providerFor(message.chainId);
+			if (provider === void 0) throw eip191Err !== null && eip191Err !== void 0 ? eip191Err : new SiwxError({
+				code: "Unsupported",
+				reason: "EIP-6492 requires RPC"
+			});
+			if (!verifiedChains.has(key)) {
+				const rpcChain = await providerChainId(provider);
+				if (rpcChain !== parseEvmChainId(message.chainId)) throw new SiwxError({
+					code: "Mismatch",
+					field: "chainId",
+					expected: key,
+					actual: rpcChain.toString()
+				});
+				verifiedChains.add(key);
+			}
+			await verifyOnChain(provider, message, signed, signature);
+		};
+		return {
+			namespace: NAMESPACE,
+			label: CHAIN_NAME,
+			account: evmAccount,
+			format(message) {
+				evmAccount(message);
+				return format$2(CHAIN_NAME, message);
+			},
+			parse(signed) {
+				return parseLabeled(CHAIN_NAME, signed);
+			},
+			verify: async (message, signed, signature) => {
+				if (has6492MagicSuffix(signature)) {
+					await onChain(message, signed, signature, void 0);
+					return;
+				}
+				try {
+					verifyEip191(message, signed, signature);
+				} catch (error) {
+					if (error instanceof SiwxError && providerFor(message.chainId) !== void 0) {
+						await onChain(message, signed, signature, error);
+						return;
+					}
+					throw error;
+				}
+			}
+		};
+	}
+	// node_modules/.bun/@qntx+siwx@0.8.0/node_modules/@qntx/siwx/dist/svm.mjs
+	init_utils$1();
+	init_base();
+	init_objectSpread2();
+	/** Solana address rules: canonical on-curve Ed25519 key in base58. */
+	/**
+	* Decode `address` as a base58 (Bitcoin alphabet) string of 32–44 chars that decodes to exactly 32
+	* bytes.
+	*
+	* @throws {SiwxError} `InvalidField` `address`.
+	*/
+	function addressBytes(address) {
+		if (address.length < 32 || address.length > 44) throw fieldError("address", "expected 32–44 base58 chars");
+		let bytes;
+		try {
+			bytes = base58.decode(address);
+		} catch (_unused) {
+			throw fieldError("address", "invalid base58");
+		}
+		if (bytes.length !== 32) throw fieldError("address", "expected 32 bytes");
+		return bytes;
+	}
+	/**
+	* The canonical, non-identity, prime-order-subgroup Ed25519 point for `bytes` (decompress →
+	* recompress byte equality proves canonicity).
+	*
+	* @throws {SiwxError} `InvalidField` `address`.
+	*/
+	function canonicalPoint(bytes) {
+		let point;
+		try {
+			point = ed25519.Point.fromBytes(bytes);
+		} catch (_unused2) {
+			throw fieldError("address", "invalid Ed25519 pubkey");
+		}
+		if (point.equals(ed25519.Point.ZERO)) throw fieldError("address", "identity pubkey");
+		if (!point.isTorsionFree()) throw fieldError("address", "not in the prime-order subgroup");
+		if (!equalBytes$2(point.toBytes(), bytes)) throw fieldError("address", "non-canonical pubkey");
+	}
+	/**
+	* Validate that `address` is a canonical, non-identity, prime-order-subgroup Ed25519 verifying key
+	* in base58 form.
+	*
+	* @throws {SiwxError} `InvalidField` `address`.
+	*/
+	function validateAddress(address) {
+		canonicalPoint(addressBytes(address));
+	}
+	ed25519.Point.CURVE().n;
+	ed25519.Point;
+	/** SIWS (Sign-In-With-Solana) text layout — Phantom ABNF, LF only. */
+	var siws_exports = /* @__PURE__ */ __exportAll({
+		format: () => format$1,
+		parse: () => parse,
+		parseBytes: () => parseBytes
+	});
+	var LABEL = "Solana";
+	/**
+	* Format `message` as a SIWS signing text.
+	*
+	* @throws {SiwxError} `InvalidField` `scheme` (SIWS has none) or `statement` (empty).
+	*/
+	function format$1(message) {
+		if (message.scheme !== void 0) throw new SiwxError({
+			code: "InvalidField",
+			field: "scheme",
+			reason: "not supported by SIWS"
+		});
+		if (message.statement !== void 0) {
+			if (message.statement === "") throw new SiwxError({
+				code: "InvalidField",
+				field: "statement",
+				reason: "empty"
+			});
+			if (message.statement.startsWith("URI: ")) throw new SiwxError({
+				code: "InvalidField",
+				field: "statement",
+				reason: "ambiguous with the URI: tag"
+			});
+		}
+		let out = `${message.domain}${MID}${LABEL}${SUFFIX}\n${message.address}`;
+		if (message.statement !== void 0) out += `\n\n${message.statement}`;
+		out += `\n\nURI: ${message.uri}`;
+		out += `\nVersion: ${message.version}`;
+		out += `\nChain ID: ${message.chainId}`;
+		out += `\nNonce: ${message.nonce}`;
+		out += `\nIssued At: ${message.issuedAt}`;
+		if (message.expirationTime !== void 0) out += `\nExpiration Time: ${message.expirationTime}`;
+		if (message.notBefore !== void 0) out += `\nNot Before: ${message.notBefore}`;
+		if (message.requestId !== void 0) out += `\nRequest ID: ${message.requestId}`;
+		if (message.resources !== void 0) {
+			out += "\nResources:";
+			for (const r of message.resources) out += `\n- ${r}`;
+		}
+		return out;
+	}
+	var missingUri = () => syntaxError("MissingField", "uri");
+	/** The optional statement and the gap up to the required `URI: ` line. */
+	function statementThenFields(lines, i) {
+		if (i.v >= lines.length) throw missingUri();
+		if (lines[i.v] !== "") throw syntaxError("ExpectedBlankLine");
+		i.v++;
+		const l = lines[i.v];
+		if (l === void 0) throw missingUri();
+		if (l === "") throw syntaxError("ExpectedBlankLine");
+		if (l.startsWith("URI: ")) return;
+		i.v++;
+		const after = lines[i.v];
+		if (after === void 0) throw missingUri();
+		if (after !== "") throw syntaxError("ExpectedBlankLine");
+		i.v++;
+		return l;
+	}
+	/**
+	* Parse `text` into a validated message; the preamble label must be exactly `"Solana"`.
+	*
+	* @throws {SiwxError} `Syntax`, `Mismatch` `label`, or `InvalidField`.
+	*/
+	function parse(text) {
+		const byteLength = utf8ByteLength(text);
+		if (byteLength > 16384) throw new SiwxError({
+			code: "MessageTooLarge",
+			length: byteLength,
+			max: MAX_MESSAGE_BYTES
+		});
+		if (text.includes("\r")) throw syntaxError("CarriageReturn");
+		if (text.endsWith("\n")) throw syntaxError("UnexpectedTrailing");
+		const lines = text.split("\n");
+		const idx = { v: 0 };
+		const preamble = lines[idx.v++];
+		if (preamble === void 0) throw syntaxError("UnexpectedEof");
+		const mid = preamble.indexOf(MID);
+		if (mid === -1) throw syntaxError("MissingPreamble");
+		const domain = preamble.slice(0, mid);
+		const tail = preamble.slice(mid + MID.length);
+		if (!tail.endsWith(" account:")) throw syntaxError("MissingAccountSuffix");
+		const label = tail.slice(0, tail.length - SUFFIX.length);
+		if (label !== LABEL) throw new SiwxError({
+			code: "Mismatch",
+			field: "label",
+			expected: LABEL,
+			actual: label
+		});
+		const address = lines[idx.v++];
+		if (address === void 0) throw syntaxError("UnexpectedEof");
+		const statement = statementThenFields(lines, idx);
+		const take = (tag, field) => {
+			const line = lines[idx.v];
+			if (line === void 0 || !line.startsWith(tag)) throw syntaxError("MissingField", field);
+			idx.v++;
+			return line.slice(tag.length);
+		};
+		const uri = take("URI: ", "uri");
+		const version = take("Version: ", "version");
+		const chainId = take("Chain ID: ", "chainId");
+		const nonce = take("Nonce: ", "nonce");
+		const issuedAt = take("Issued At: ", "issuedAt");
+		const tail4 = optionalTags(lines, idx.v);
+		return createMessage(_objectSpread2(_objectSpread2({
+			domain,
+			address
+		}, statement === void 0 ? {} : { statement }), {}, {
+			uri,
+			version,
+			chainId,
+			nonce,
+			issuedAt
+		}, tail4));
+	}
+	/**
+	* {@link parse} over raw bytes: size check, strict UTF-8 (`InvalidUtf8`), then parse.
+	*
+	* @throws {SiwxError}
+	*/
+	function parseBytes(bytes) {
+		if (bytes.length > 16384) throw new SiwxError({
+			code: "MessageTooLarge",
+			length: bytes.length,
+			max: MAX_MESSAGE_BYTES
+		});
+		const text = utf8Decode(bytes);
+		if (text === void 0) throw syntaxError("InvalidUtf8");
+		return parse(text);
+	}
+	new Uint8Array([255, ...utf8Encode("solana offchain")]);
+	// packages/wallet-chains/dist/src-8NZeEnrW.mjs
+	init_defineProperty();
+	var PREAMBLE = " wants you to sign in with your ";
+	var OPTIONAL_KEYS = [
+		"scheme",
+		"statement",
+		"expirationTime",
+		"notBefore",
+		"requestId"
+	];
+	var plainFields = (message) => {
+		const { domain, address, uri, version, chainId, nonce, issuedAt, resources } = message;
+		const fields = {
+			domain,
+			address,
+			uri,
+			version,
+			chainId,
+			nonce,
+			issuedAt
+		};
+		for (const key of OPTIONAL_KEYS) {
+			const value = message[key];
+			if (value !== void 0) fields[key] = value;
+		}
+		if (resources !== void 0) fields.resources = [...resources];
+		return fields;
+	};
+	var parseValid = (text, family) => {
+		if (family === "evm") {
+			const ns = evm();
+			const message = ns.parse(new TextEncoder().encode(text));
+			ns.account(message);
+			return plainFields(message);
+		}
+		const message = siws_exports.parse(text);
+		validateAddress(message.address);
+		return plainFields(message);
+	};
+	/**
+	* Finds a Sign-In with X message in `text` for the chain `family`. `undefined` when the text has no
+	* sign-in preamble; `malformed` when it has one but is not a conforming message for the family
+	* (ERC-4361: wallets should warn about that shape).
+	*/
+	function parseSignIn(text, family) {
+		try {
+			return {
+				status: "valid",
+				fields: parseValid(text, family)
+			};
+		} catch (_unused) {
+			return text.includes(PREAMBLE) ? { status: "malformed" } : void 0;
+		}
+	}
 	var ChainError = class extends Error {
 		constructor(code, message) {
 			super(message);
@@ -14853,7 +16202,7 @@ zoo`.split("\n"));
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-C2qrDbVT.mjs
+	// packages/wallet-chains/dist/account-ref-D2rW_qlI.mjs
 	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$3(value) || typeof value["kind"] !== "string") return false;
@@ -14886,7 +16235,7 @@ zoo`.split("\n"));
 	*/
 	function abigint(n, title = "value") {
 		if (typeof n !== "bigint") throw new TypeError(`"${title}" expected bigint, got type=${typeof n}`);
-		if (n < _0n$4) throw new RangeError(`"${title}" expected non-negative bigint, got ${n}`);
+		if (n < _0n$3) throw new RangeError(`"${title}" expected non-negative bigint, got ${n}`);
 		return n;
 	}
 	function aarray(item, title, inner = () => {}) {
@@ -15094,7 +16443,7 @@ zoo`.split("\n"));
 		}
 		return res;
 	}
-	var Point, Fn, CURVE_ORDER, _0n$4, _2n$2, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
+	var Point, Fn, CURVE_ORDER, _0n$3, _2n$1, hasEven, isBytes, concatBytes, equalBytes, sha256, hash160, sha256x2, pubSchnorr, pubECDSA, LOW_R_BOUND, hasLowR, signSchnorr, tagSchnorr, PubT, INTERNAL_TAPROOT_NUMS, NETWORK, TEST_NETWORK;
 	var init_utils = __esmMin((() => {
 		init_secp256k1();
 		init_utils$1();
@@ -15105,9 +16454,9 @@ zoo`.split("\n"));
 		Point = /* @__PURE__ */ (() => secp256k1.Point)();
 		Fn = /* @__PURE__ */ (() => Point.Fn)();
 		CURVE_ORDER = /* @__PURE__ */ (() => Point.Fn.ORDER)();
-		_0n$4 = /* @__PURE__ */ BigInt(0);
-		_2n$2 = /* @__PURE__ */ BigInt(2);
-		hasEven = (y) => y % _2n$2 === _0n$4;
+		_0n$3 = /* @__PURE__ */ BigInt(0);
+		_2n$1 = /* @__PURE__ */ BigInt(2);
+		hasEven = (y) => y % _2n$1 === _0n$3;
 		isBytes = /* @__PURE__ */ (() => utils.isBytes)();
 		concatBytes = /* @__PURE__ */ (() => utils.concatBytes)();
 		equalBytes = /* @__PURE__ */ (() => utils.equalBytes)();
@@ -15116,7 +16465,7 @@ zoo`.split("\n"));
 		sha256x2 = (...msgs) => sha256(sha256(concatBytes(...msgs)));
 		pubSchnorr = (priv) => schnorr.getPublicKey(priv);
 		pubECDSA = (privateKey, isCompressed) => secp256k1.getPublicKey(privateKey, isCompressed);
-		LOW_R_BOUND = /* @__PURE__ */ (() => CURVE_ORDER / _2n$2)();
+		LOW_R_BOUND = /* @__PURE__ */ (() => CURVE_ORDER / _2n$1)();
 		hasLowR = (sig) => sig.r < LOW_R_BOUND;
 		signSchnorr = (message, secretKey, auxRand) => schnorr.sign(message, secretKey, auxRand);
 		tagSchnorr = (tag, ...messages) => schnorr.utils.taggedHash(tag, ...messages);
@@ -15156,7 +16505,7 @@ zoo`.split("\n"));
 	function ScriptNum(bytesLimit = 6, forceMinimal = false) {
 		return wrap({
 			encodeStream: (w, value) => {
-				if (value === _0n$3) return;
+				if (value === _0n$2) return;
 				const neg = value < 0;
 				const val = BigInt(value);
 				const nums = [];
@@ -15168,17 +16517,17 @@ zoo`.split("\n"));
 			decodeStream: (r) => {
 				const len = r.leftBytes;
 				if (len > bytesLimit) throw new Error(`ScriptNum: number (${len}) bigger than limit=${bytesLimit}`);
-				if (len === 0) return _0n$3;
+				if (len === 0) return _0n$2;
 				const data = r.bytes(len);
 				if (forceMinimal) {
 					if ((data[len - 1] & 127) === 0) {
 						if (len <= 1 || (data[len - 2] & 128) === 0) throw new Error("Non-minimally encoded ScriptNum");
 					}
 				}
-				let res = _0n$3;
+				let res = _0n$2;
 				for (let i = 0; i < len; ++i) res |= BigInt(data[i]) << _8n * BigInt(i);
 				if (data[len - 1] >= 128) {
-					res &= _2n$1 ** BigInt(len * 8) - _1n$3 >> _1n$3;
+					res &= _2n ** BigInt(len * 8) - _1n$2 >> _1n$2;
 					res = -res;
 				}
 				return res;
@@ -15213,13 +16562,13 @@ zoo`.split("\n"));
 		if (tx.segwitFlag && tx.witnesses && tx.witnesses.every((w) => !w.length)) throw new Error("Segwit flag with only empty witness fields");
 		return tx;
 	}
-	var _0n$3, _1n$3, _2n$1, _8n, U8_MAX, COMPACT_DIRECT_MAX, OP, OPNames, scriptPushLen, Script, CompactSize, CompactSizeLen, _VarBytes, VarBytes, _RawWitness, RawWitness, BTCArray, RawInput, RawOutput, _RawTx, RawTx, RawOldTx;
+	var _0n$2, _1n$2, _2n, _8n, U8_MAX, COMPACT_DIRECT_MAX, OP, OPNames, scriptPushLen, Script, CompactSize, CompactSizeLen, _VarBytes, VarBytes, _RawWitness, RawWitness, BTCArray, RawInput, RawOutput, _RawTx, RawTx, RawOldTx;
 	var init_script = __esmMin((() => {
 		init_micro_packed();
 		init_utils();
-		_0n$3 = /* @__PURE__ */ BigInt(0);
-		_1n$3 = /* @__PURE__ */ BigInt(1);
-		_2n$1 = /* @__PURE__ */ BigInt(2);
+		_0n$2 = /* @__PURE__ */ BigInt(0);
+		_1n$2 = /* @__PURE__ */ BigInt(1);
+		_2n = /* @__PURE__ */ BigInt(2);
 		_8n = /* @__PURE__ */ BigInt(8);
 		U8_MAX = /* @__PURE__ */ BigInt(255);
 		COMPACT_DIRECT_MAX = /* @__PURE__ */ BigInt(252);
@@ -15431,7 +16780,7 @@ zoo`.split("\n"));
 			return Object.freeze(wrap({
 				encodeStream: (w, value) => {
 					if (typeof value === "number") value = BigInt(value);
-					if (_0n$3 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
+					if (_0n$2 <= value && value <= COMPACT_DIRECT_MAX) return w.byte(Number(value));
 					for (const [flag, bytes, start, stop] of limitsList) {
 						if (start > value || value > stop) continue;
 						w.byte(flag);
@@ -15444,7 +16793,7 @@ zoo`.split("\n"));
 					const b0 = r.byte();
 					if (b0 <= 252) return BigInt(b0);
 					const [_, bytes, start] = limits[b0];
-					let num = _0n$3;
+					let num = _0n$2;
 					for (let i = 0; i < bytes; i++) num |= BigInt(r.byte()) << _8n * BigInt(i);
 					if (num < start) throw r.err(`Wrong CompactSize(${8 * bytes})`);
 					return num;
@@ -15793,7 +17142,7 @@ zoo`.split("\n"));
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
 	}
-	var unknowns, _0n$2, _1n$2, PubKeyECDSA, PubKeyECDSACompressed, PubKeySchnorr, SignatureSchnorr, RawWitnessWire, BIP32Der, TaprootBIP32Der, GlobalXPUB, tapScriptSigKey, _TaprootControlBlock, TaprootControlBlock, tapTree, BytesInf, ProprietaryKey, Bytes20, Bytes32, Bytes64, Bytes66, MuSig2Participants, MuSig2Key, SilentPaymentInfo, DNSSECProof, PSBTInfo, PSBTGlobal, PSBTInput, PSBTInputFinalKeys, PSBTInputSignatureKeys, PSBTOutput, PSBTOutputUnsignedKeys, PSBTKeyPair, PSBTUnknownKey, PSBTInputCoder, PSBTOutputCoder, PSBTGlobalCoder, _RawPSBTV0, _RawPSBTV2, RawPSBTV0, RawPSBTV2;
+	var unknowns, _0n$1, _1n$1, PubKeyECDSA, PubKeyECDSACompressed, PubKeySchnorr, SignatureSchnorr, RawWitnessWire, BIP32Der, TaprootBIP32Der, GlobalXPUB, tapScriptSigKey, _TaprootControlBlock, TaprootControlBlock, tapTree, BytesInf, ProprietaryKey, Bytes20, Bytes32, Bytes64, Bytes66, MuSig2Participants, MuSig2Key, SilentPaymentInfo, DNSSECProof, PSBTInfo, PSBTGlobal, PSBTInput, PSBTInputFinalKeys, PSBTInputSignatureKeys, PSBTOutput, PSBTOutputUnsignedKeys, PSBTKeyPair, PSBTUnknownKey, PSBTInputCoder, PSBTOutputCoder, PSBTGlobalCoder, _RawPSBTV0, _RawPSBTV2, RawPSBTV0, RawPSBTV2;
 	var init_psbt = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -15807,8 +17156,8 @@ zoo`.split("\n"));
 			if (mode === "ignore" || mode === "strip" || mode === "strict") return mode;
 			throw new Error(`PSBT: invalid ${name} policy=${mode}`);
 		};
-		_0n$2 = /* @__PURE__ */ BigInt(0);
-		_1n$2 = /* @__PURE__ */ BigInt(1);
+		_0n$1 = /* @__PURE__ */ BigInt(0);
+		_1n$1 = /* @__PURE__ */ BigInt(1);
 		PubKeyECDSA = /* @__PURE__ */ (() => validate$4(createBytes(null), (pub) => validatePubkey(pub, PubT.ecdsa)))();
 		PubKeyECDSACompressed = /* @__PURE__ */ (() => validate$4(createBytes(33), (pub) => validatePubkey(pub, PubT.ecdsa)))();
 		PubKeySchnorr = /* @__PURE__ */ (() => validate$4(createBytes(32), (pub) => validatePubkey(pub, PubT.schnorr)))();
@@ -15870,9 +17219,9 @@ zoo`.split("\n"));
 				while (next.length < depth) next.push(0);
 				path = next;
 			}
-			let leaves = _0n$2;
-			for (let i = 0; i < tree.length; i++) leaves += _1n$2 << BigInt(maxDepth - tree[i].depth);
-			if (leaves !== _1n$2 << BigInt(maxDepth)) throw new Error("tapTree: tuples must describe a complete binary tree");
+			let leaves = _0n$1;
+			for (let i = 0; i < tree.length; i++) leaves += _1n$1 << BigInt(maxDepth - tree[i].depth);
+			if (leaves !== _1n$1 << BigInt(maxDepth)) throw new Error("tapTree: tuples must describe a complete binary tree");
 			return tree;
 		}))();
 		BytesInf = /* @__PURE__ */ createBytes(null);
@@ -16039,7 +17388,7 @@ zoo`.split("\n"));
 			return i;
 		})))();
 		PSBTOutputCoder = /* @__PURE__ */ (() => Object.freeze(validate$4(PSBTKeyMap(PSBTOutput), (o) => {
-			if (o.amount !== void 0 && o.amount < _0n$2) throw new Error(`validateOutput: wrong amount=${o.amount}`);
+			if (o.amount !== void 0 && o.amount < _0n$1) throw new Error(`validateOutput: wrong amount=${o.amount}`);
 			if (o.bip32Derivation) for (const [k] of o.bip32Derivation) validatePubkey(k, PubT.ecdsa);
 			return o;
 		})))();
@@ -17084,7 +18433,7 @@ zoo`.split("\n"));
 			return res;
 		}
 	}
-	var _0n$1, _1n$1, U64_MAX, EMPTY32, EMPTY_OUTPUT, toVsize, stripCodeSeparator, DEFAULT_SEQUENCE, def, SignatureHash, SigHash, SigHashNames, cleanExtensions, cleanTxModifiable, TxHashIdx, sighashScope, normalizeUnknowns, LOCKTIME_THRESHOLD, inputSignatures, inputSignedKeys, Transaction;
+	var _0n, _1n, U64_MAX, EMPTY32, EMPTY_OUTPUT, toVsize, stripCodeSeparator, DEFAULT_SEQUENCE, def, SignatureHash, SigHash, SigHashNames, cleanExtensions, cleanTxModifiable, TxHashIdx, sighashScope, normalizeUnknowns, LOCKTIME_THRESHOLD, inputSignatures, inputSignedKeys, Transaction;
 	var init_transaction = __esmMin((() => {
 		init_base();
 		init_utils$2();
@@ -17095,8 +18444,8 @@ zoo`.split("\n"));
 		init_utils();
 		init_objectSpread2();
 		init_defineProperty();
-		_0n$1 = /* @__PURE__ */ BigInt(0);
-		_1n$1 = /* @__PURE__ */ BigInt(1);
+		_0n = /* @__PURE__ */ BigInt(0);
+		_1n = /* @__PURE__ */ BigInt(1);
 		U64_MAX = /* @__PURE__ */ BigInt("0xffffffffffffffff");
 		EMPTY32 = /* @__PURE__ */ new Uint8Array(32);
 		EMPTY_OUTPUT = {
@@ -17622,7 +18971,7 @@ zoo`.split("\n"));
 				});
 			}
 			get fee() {
-				let res = _0n$1;
+				let res = _0n;
 				for (const i of this.inputs) {
 					const prevOut = getPrevOut(i);
 					if (!prevOut) throw new Error("Empty input amount");
@@ -17635,7 +18984,7 @@ zoo`.split("\n"));
 			preimageLegacy(idx, prevOutScript, hashType) {
 				const { isAny, isNone, isSingle } = unpackSighash(hashType);
 				if (idx < 0 || !Number.isSafeInteger(idx)) throw new Error(`Invalid input idx=${idx}`);
-				if (isSingle && idx >= this.outputs.length || idx >= this.inputs.length) return U256LE.encode(_1n$1);
+				if (isSingle && idx >= this.outputs.length || idx >= this.inputs.length) return U256LE.encode(_1n);
 				prevOutScript = stripCodeSeparator(prevOutScript);
 				let inputs = this.inputs.map(inputBeforeSign).map((input, inputIdx) => _objectSpread2(_objectSpread2({}, input), {}, { finalScriptSig: inputIdx === idx ? prevOutScript : EMPTY$1 }));
 				if (isAny) inputs = [inputs[idx]];
@@ -17833,7 +19182,7 @@ zoo`.split("\n"));
 			}
 			finalizeIdx(idx) {
 				this.checkInputIdx(idx);
-				if (this.fee < _0n$1) throw new Error("Outputs spends more than inputs amount");
+				if (this.fee < _0n) throw new Error("Outputs spends more than inputs amount");
 				const input = this.inputs[idx];
 				cleanExtensions(input, this.opts.unknown, this.opts.proprietary);
 				cleanTxModifiable(this.global.txModifiable, this.opts.unknown);
@@ -17961,7 +19310,7 @@ zoo`.split("\n"));
 			extract() {
 				if (!this.isFinal) throw new Error("Transaction has unfinalized inputs");
 				if (!this.outputs.length) throw new Error("Transaction has no outputs");
-				if (this.fee < _0n$1) throw new Error("Outputs spends more than inputs amount");
+				if (this.fee < _0n) throw new Error("Outputs spends more than inputs amount");
 				return this.toBytes(true, true);
 			}
 			combine(other) {
@@ -18044,7 +19393,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-Dv18g8ii.mjs
+	// packages/wallet-chains/dist/message-ChhEZ0lx.mjs
 	init_secp256k1();
 	init_utils();
 	init_transaction();
@@ -18446,258 +19795,6 @@ zoo`.split("\n"));
 	};
 	/** Decodes the message `address` into the scriptPubKey the signer needs. */
 	var decodeMessageTarget = (request) => messageTarget(request.address, request.network, request.format);
-	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/sha3.js
-	init__u64();
-	init_utils$2();
-	init_defineProperty();
-	var _0n = BigInt(0);
-	var _1n = BigInt(1);
-	var _2n = BigInt(2);
-	var _7n = BigInt(7);
-	var _256n = BigInt(256);
-	var _0x71n = BigInt(113);
-	var SHA3_PI = [];
-	var SHA3_ROTL = [];
-	var _SHA3_IOTA = [];
-	for (let round = 0, R = _1n, x = 1, y = 0; round < 24; round++) {
-		[x, y] = [y, (2 * x + 3 * y) % 5];
-		SHA3_PI.push(2 * (5 * y + x));
-		SHA3_ROTL.push((round + 1) * (round + 2) / 2 % 64);
-		let t = _0n;
-		for (let j = 0; j < 7; j++) {
-			R = (R << _1n ^ (R >> _7n) * _0x71n) % _256n;
-			if (R & _2n) t ^= _1n << (_1n << BigInt(j)) - _1n;
-		}
-		_SHA3_IOTA.push(t);
-	}
-	var IOTAS = split(_SHA3_IOTA, true);
-	var SHA3_IOTA_H = IOTAS[0];
-	var SHA3_IOTA_L = IOTAS[1];
-	var rotlSH = (h, l, s) => h << s | l >>> 32 - s;
-	var rotlSL = (h, l, s) => l << s | h >>> 32 - s;
-	var rotlBH = (h, l, s) => l << s - 32 | h >>> 64 - s;
-	var rotlBL = (h, l, s) => h << s - 32 | l >>> 64 - s;
-	var rotlH = (h, l, s) => s > 32 ? rotlBH(h, l, s) : rotlSH(h, l, s);
-	var rotlL = (h, l, s) => s > 32 ? rotlBL(h, l, s) : rotlSL(h, l, s);
-	var B = /* @__PURE__ */ new Uint32Array(10);
-	/**
-	* `keccakf1600` internal permutation, additionally allows adjusting the round count.
-	* @param s - 5x5 Keccak state encoded as 25 lanes split into 50 uint32 words
-	*   in this file's local little-endian lane-word order
-	* @param rounds - number of rounds to execute
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @throws If `rounds` is outside the supported `1..24` range. {@link Error}
-	* @example
-	* Permute a Keccak state with the default 24 rounds.
-	* ```ts
-	* keccakP(new Uint32Array(50));
-	* ```
-	*/
-	function keccakP(s, rounds = 24) {
-		if (!(s instanceof Uint32Array)) throw new TypeError("\"s\" expected Uint32Array(50), got type=" + typeof s);
-		if (s.length !== 50) throw new RangeError("\"s\" expected Uint32Array(50), got length=" + s.length);
-		anumber$2(rounds, "rounds");
-		if (rounds < 1 || rounds > 24) throw new Error("\"rounds\" expected integer 1..24");
-		for (let round = 24 - rounds; round < 24; round++) {
-			for (let x = 0; x < 10; x++) B[x] = s[x] ^ s[x + 10] ^ s[x + 20] ^ s[x + 30] ^ s[x + 40];
-			for (let x = 0; x < 10; x += 2) {
-				const idx1 = (x + 8) % 10;
-				const idx0 = (x + 2) % 10;
-				const B0 = B[idx0];
-				const B1 = B[idx0 + 1];
-				const Th = rotlH(B0, B1, 1) ^ B[idx1];
-				const Tl = rotlL(B0, B1, 1) ^ B[idx1 + 1];
-				for (let y = 0; y < 50; y += 10) {
-					s[x + y] ^= Th;
-					s[x + y + 1] ^= Tl;
-				}
-			}
-			let curH = s[2];
-			let curL = s[3];
-			for (let t = 0; t < 24; t++) {
-				const shift = SHA3_ROTL[t];
-				const Th = rotlH(curH, curL, shift);
-				const Tl = rotlL(curH, curL, shift);
-				const PI = SHA3_PI[t];
-				curH = s[PI];
-				curL = s[PI + 1];
-				s[PI] = Th;
-				s[PI + 1] = Tl;
-			}
-			for (let y = 0; y < 50; y += 10) {
-				const b0 = s[y], b1 = s[y + 1], b2 = s[y + 2], b3 = s[y + 3];
-				s[y] ^= ~s[y + 2] & s[y + 4];
-				s[y + 1] ^= ~s[y + 3] & s[y + 5];
-				s[y + 2] ^= ~s[y + 4] & s[y + 6];
-				s[y + 3] ^= ~s[y + 5] & s[y + 7];
-				s[y + 4] ^= ~s[y + 6] & s[y + 8];
-				s[y + 5] ^= ~s[y + 7] & s[y + 9];
-				s[y + 6] ^= ~s[y + 8] & b0;
-				s[y + 7] ^= ~s[y + 9] & b1;
-				s[y + 8] ^= ~b0 & b2;
-				s[y + 9] ^= ~b1 & b3;
-			}
-			s[0] ^= SHA3_IOTA_H[round];
-			s[1] ^= SHA3_IOTA_L[round];
-		}
-		clean(B);
-	}
-	/**
-	* Keccak sponge function.
-	* @param blockLen - absorb/squeeze rate in bytes
-	* @param suffix - domain separation suffix byte
-	* @param outputLen - default digest length in bytes. This base sponge only
-	*   requires a non-negative integer; wrappers that need positive output
-	*   lengths must enforce that themselves.
-	* @param enableXOF - whether XOF output is allowed
-	* @param rounds - number of Keccak-f rounds
-	* @example
-	* Build a sponge state, absorb bytes, then finalize a digest.
-	* ```ts
-	* const hash = new Keccak(136, 0x06, 32);
-	* hash.update(new Uint8Array([1, 2, 3]));
-	* hash.digest();
-	* ```
-	*/
-	var Keccak = class Keccak {
-		constructor(blockLen, suffix, outputLen, enableXOF = false, rounds = 24) {
-			_defineProperty(this, "state", void 0);
-			_defineProperty(this, "pos", 0);
-			_defineProperty(this, "posOut", 0);
-			_defineProperty(this, "finished", false);
-			_defineProperty(this, "state32", void 0);
-			_defineProperty(this, "destroyed", false);
-			_defineProperty(this, "blockLen", void 0);
-			_defineProperty(this, "suffix", void 0);
-			_defineProperty(this, "outputLen", void 0);
-			_defineProperty(this, "canXOF", void 0);
-			_defineProperty(this, "enableXOF", false);
-			_defineProperty(this, "rounds", void 0);
-			anumber$2(blockLen, "blockLen");
-			anumber$2(suffix, "suffix");
-			anumber$2(rounds, "rounds");
-			abool$1(enableXOF, "enableXOF");
-			this.blockLen = blockLen;
-			this.suffix = suffix;
-			this.outputLen = outputLen;
-			this.enableXOF = enableXOF;
-			this.canXOF = enableXOF;
-			this.rounds = rounds;
-			anumber$2(outputLen, "outputLen");
-			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
-			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$1(this.state);
-		}
-		clone() {
-			return this._cloneInto();
-		}
-		keccak() {
-			swap32IfBE(this.state32);
-			keccakP(this.state32, this.rounds);
-			swap32IfBE(this.state32);
-			this.posOut = 0;
-			this.pos = 0;
-		}
-		update(data) {
-			aexists(this);
-			abytes$2(data);
-			const { blockLen, state, state32 } = this;
-			const len = data.length;
-			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
-			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$1(data) : void 0;
-			for (let pos = 0; pos < len;) {
-				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
-					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
-					pos += blockLen;
-					this.pos = blockLen;
-					this.keccak();
-					continue;
-				}
-				const take = Math.min(blockLen - this.pos, len - pos);
-				for (let i = 0; i < take; i++) state[this.pos++] ^= data[pos++];
-				if (this.pos === blockLen) this.keccak();
-			}
-			return this;
-		}
-		finish() {
-			if (this.finished) return;
-			this.finished = true;
-			const { state, suffix, pos, blockLen } = this;
-			state[pos] ^= suffix;
-			if ((suffix & 128) !== 0 && pos === blockLen - 1) this.keccak();
-			state[blockLen - 1] ^= 128;
-			this.keccak();
-		}
-		writeInto(out) {
-			aexists(this, false);
-			abytes$2(out);
-			this.finish();
-			const bufferOut = this.state;
-			const { blockLen } = this;
-			for (let pos = 0, len = out.length; pos < len;) {
-				if (this.posOut >= blockLen) this.keccak();
-				const take = Math.min(blockLen - this.posOut, len - pos);
-				out.set(bufferOut.subarray(this.posOut, this.posOut + take), pos);
-				this.posOut += take;
-				pos += take;
-			}
-			return out;
-		}
-		xofInto(out) {
-			if (!this.enableXOF) throw new Error("XOF is not enabled");
-			return this.writeInto(out);
-		}
-		xof(bytes) {
-			anumber$2(bytes);
-			return this.xofInto(new Uint8Array(bytes));
-		}
-		digestInto(out) {
-			aoutput(out, this);
-			if (this.finished) throw new Error("digest() was already called");
-			this.writeInto(out.length === this.outputLen ? out : out.subarray(0, this.outputLen));
-			this.destroy();
-		}
-		digest() {
-			const out = new Uint8Array(this.outputLen);
-			this.digestInto(out);
-			return out;
-		}
-		destroy() {
-			this.destroyed = true;
-			clean(this.state);
-		}
-		_cloneInto(to) {
-			const { blockLen, suffix, outputLen, rounds, enableXOF } = this;
-			to || (to = new Keccak(blockLen, suffix, outputLen, enableXOF, rounds));
-			to.blockLen = blockLen;
-			to.state32.set(this.state32);
-			to.pos = this.pos;
-			to.posOut = this.posOut;
-			to.finished = this.finished;
-			to.rounds = rounds;
-			to.suffix = suffix;
-			to.outputLen = outputLen;
-			to.enableXOF = enableXOF;
-			to.canXOF = this.canXOF;
-			to.destroyed = this.destroyed;
-			return to;
-		}
-	};
-	var genKeccak = (suffix, blockLen, outputLen, info = {}) => createHasher(() => new Keccak(blockLen, suffix, outputLen), info);
-	/**
-	* Keccak-256 hash function. Different from SHA3-256.
-	* @param msg - message bytes to hash
-	* @param opts - Reserved hash options.
-	* @returns Digest bytes.
-	* @example
-	* Hash a message with Keccak-256.
-	* ```ts
-	* keccak_256(new Uint8Array([97, 98, 99]));
-	* ```
-	*/
-	var keccak_256 = /* @__PURE__ */ genKeccak(1, 136, 32);
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/version.js
 	/** @internal */
 	var version = "0.1.1";
@@ -22597,7 +23694,7 @@ zoo`.split("\n"));
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-Cf1g7JVv.mjs
+	// packages/wallet-chains/dist/typed-data-DqBU62x3.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -25380,6 +26477,26 @@ zoo`.split("\n"));
 			verifiability: "opaque"
 		});
 	};
+	/** Strict UTF-8 text with any sign-in recognition, else the raw bytes as hex. */
+	var messageContent = (bytes) => {
+		try {
+			const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+			const signIn = parseSignIn(text, "evm");
+			return signIn === void 0 ? {
+				kind: "text",
+				text
+			} : {
+				kind: "text",
+				text,
+				signIn
+			};
+		} catch (_unused2) {
+			return {
+				kind: "bytes",
+				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
+			};
+		}
+	};
 	/**
 	* Decodes a normalized request into a DisplayIntent. The token table parameter is for tests;
 	* production callers use the built-in table.
@@ -25394,6 +26511,7 @@ zoo`.split("\n"));
 			approvals: [],
 			fee: void 0,
 			warnings: [],
+			message: messageContent(request.message),
 			verifiability: "opaque"
 		};
 		if (request.kind !== "evm.typed-data") throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
@@ -37513,7 +38631,7 @@ zoo`.split("\n"));
 		init_errors_5xLkExNL();
 	}));
 	// node_modules/.bun/@qntx+spark@0.5.2/node_modules/@qntx/spark/dist/signer.mjs
-	var signer_exports = /* @__PURE__ */ __exportAll({
+	var signer_exports = /* @__PURE__ */ __exportAll$1({
 		EPHEMERAL_ANCHOR_SCRIPT: () => EPHEMERAL_ANCHOR_SCRIPT,
 		bitcoinAddressScript: () => bitcoinAddressScript,
 		createLnurlAuthSigner: () => createLnurlAuthSigner,
