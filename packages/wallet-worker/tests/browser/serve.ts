@@ -46,8 +46,11 @@ if (production) {
     root,
     build: { outDir },
     preview: {
-      // localhost, not 127.0.0.1 — WebAuthn rejects IP literals as rpId ("invalid domain").
-      host: "localhost",
+      // Bind the IPv4 loopback explicitly: "localhost" binds whichever family name resolution
+      // returns first, while the Playwright readiness probe connects to 127.0.0.1. Pages still
+      // load from http://localhost (WebAuthn rejects IP literals as rpId); browsers try both
+      // loopback families.
+      host: "127.0.0.1",
       port: 4175,
       strictPort: true,
       headers: { "Content-Security-Policy": CSP },
@@ -63,8 +66,11 @@ if (production) {
     // page mid-test ("execution context was destroyed"). Every page dependency is plain ESM.
     optimizeDeps: { noDiscovery: true, exclude: ["@qntx/wallet-worker"] },
     server: {
-      // localhost, not 127.0.0.1 — WebAuthn rejects IP literals as rpId ("invalid domain").
-      host: "localhost",
+      // Bind the IPv4 loopback explicitly: "localhost" binds whichever family name resolution
+      // returns first, while the Playwright readiness probe connects to 127.0.0.1. Pages still
+      // load from http://localhost (WebAuthn rejects IP literals as rpId); browsers try both
+      // loopback families.
+      host: "127.0.0.1",
       port: 4174,
       strictPort: true,
       headers: { "Content-Security-Policy": CSP },

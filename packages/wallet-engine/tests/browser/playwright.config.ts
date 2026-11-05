@@ -16,7 +16,8 @@ const config: PlaywrightTestConfig = defineConfig({
   webServer: [
     {
       command: "bun ./serve.ts",
-      url: "http://localhost:4176/connect.html",
+      // Probe the address the server binds; "localhost" may resolve to the other loopback family.
+      url: "http://127.0.0.1:4176/connect.html",
       reuseExistingServer: process.env["CI"] === undefined,
     },
   ],

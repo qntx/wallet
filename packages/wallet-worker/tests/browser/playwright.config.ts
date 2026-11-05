@@ -19,7 +19,7 @@ const config: PlaywrightTestConfig = defineConfig({
     {
       command: "bun ./serve.ts",
       cwd: new URL(".", import.meta.url).pathname,
-      url: "http://localhost:4174",
+      url: "http://127.0.0.1:4174",
       reuseExistingServer: process.env["CI"] === undefined,
       timeout: 120_000,
     },
@@ -27,7 +27,7 @@ const config: PlaywrightTestConfig = defineConfig({
       // The production build: same page over `vite build` + `vite preview`.
       command: "bun ./serve.ts build",
       cwd: new URL(".", import.meta.url).pathname,
-      url: "http://localhost:4175",
+      url: "http://127.0.0.1:4175",
       // Never reuse: a leftover preview serves a stale bundle that still passes the health check.
       reuseExistingServer: false,
       timeout: 300_000,
