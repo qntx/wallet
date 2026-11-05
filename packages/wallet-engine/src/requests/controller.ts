@@ -51,6 +51,8 @@ import type { RequestCheckCode } from "./checks.ts";
 import {
   assessApprovals,
   assessPermits,
+  assessSafe,
+  assessSeaport,
   assessSignIn,
   assessRecipients,
   assessSimulation,
@@ -859,6 +861,10 @@ export class RequestController extends Controller<RequestControllerState> {
       }
       const permitRisk =
         message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
+      const orderRisk =
+        message?.kind === "typed-data" && "signer" in prepared
+          ? [...assessSeaport(message.seaport, prepared.signer), ...assessSafe(message.safe)]
+          : [];
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -869,7 +875,7 @@ export class RequestController extends Controller<RequestControllerState> {
         ]),
         risk: isTransaction
           ? this.chainRisk(prepared.intent)
-          : mergeRisk(mergeRisk(signInRisk, permitRisk), blindRisk),
+          : mergeRisk(mergeRisk(mergeRisk(signInRisk, permitRisk), orderRisk), blindRisk),
         run: { ...prepared, factor: "required" },
       };
       return isTransaction
@@ -1290,9 +1296,14 @@ export class RequestController extends Controller<RequestControllerState> {
                   : display.message?.kind === "text" && display.message.signIn?.status === "valid"
                     ? `sign-in ${display.message.signIn.fields.domain}`
                     : display.message?.kind === "typed-data" &&
-                        display.approvals[0]?.kind === "allowance"
-                      ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
-                      : display.summary
+                        display.message.seaport !== undefined
+                      ? "seaport order"
+                      : display.message?.kind === "typed-data" && display.message.safe !== undefined
+                        ? `safe tx ${display.message.safe.nonce}`
+                        : display.message?.kind === "typed-data" &&
+                            display.approvals[0]?.kind === "allowance"
+                          ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
+                          : display.summary
                 : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,

@@ -4,10 +4,16 @@
  * references have exactly the canonical field lists; any other shape stays an opaque message.
  */
 import type { ApprovalChange, IntentWarning } from "../index.ts";
-import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import type { EvmTokenTable } from "./tokens.ts";
-import type { TypedDataInput } from "./typed-data.ts";
+import {
+  MAX_UINT48,
+  isTypedDataMessage,
+  sameFields,
+  typedDataAddress,
+  typedDataUint,
+} from "./typed-data.ts";
+import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
 
 export type Permit = {
   readonly approvals: ReadonlyArray<ApprovalChange>;
@@ -15,35 +21,12 @@ export type Permit = {
 };
 
 type Types = TypedDataInput["types"];
-type Message = Readonly<Record<string, unknown>>;
+type Message = TypedDataMessage;
 
-const isMessage = (value: unknown): value is Message =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
+const isMessage = isTypedDataMessage;
+const address = typedDataAddress;
+const uint = typedDataUint;
 
-const signature = (types: Types, name: string): string | undefined =>
-  types[name]?.map((field) => `${field.type} ${field.name}`).join(",");
-
-const sameFields = (types: Types, name: string, fields: ReadonlyArray<string>): boolean =>
-  signature(types, name) === fields.join(",");
-
-const address = (value: unknown): string | undefined =>
-  typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value)
-    ? checksumEvmAddress(value)
-    : undefined;
-
-const uint = (value: unknown, max: bigint): bigint | undefined => {
-  let parsed: bigint;
-  if (typeof value === "number" && Number.isSafeInteger(value)) {
-    parsed = BigInt(value);
-  } else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) {
-    parsed = BigInt(value);
-  } else {
-    return undefined;
-  }
-  return parsed >= 0n && parsed <= max ? parsed : undefined;
-};
-
-const MAX_UINT48 = 2n ** 48n - 1n;
 const DETAILS = ["address token", "uint160 amount", "uint48 expiration", "uint48 nonce"];
 const PERMISSIONS = ["address token", "uint256 amount"];
 

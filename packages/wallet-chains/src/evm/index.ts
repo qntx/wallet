@@ -14,6 +14,7 @@ export {
 } from "./transaction.ts";
 export { PERMIT2_ADDRESS } from "./approval.ts";
 export { decodeEvm, verifiabilityEvm } from "./decode.ts";
+export { SAFE_MULTISEND_CALL_ONLY } from "./safe.ts";
 export { recoverEvmSigner } from "./recover.ts";
 export { parseTypedData } from "./typed-data.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";

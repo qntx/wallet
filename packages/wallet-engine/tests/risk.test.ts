@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { SignInParse } from "@qntx/wallet-chains";
+import type {
+  DisplayIntent,
+  SafeTransaction,
+  SeaportOrder,
+  SignInParse,
+} from "@qntx/wallet-chains";
 
 import {
   assessApprovals,
   assessPermits,
   assessRecipients,
+  assessSafe,
+  assessSeaport,
   assessSignIn,
   assessSimulation,
   comparable,
@@ -380,5 +387,116 @@ describe("assessPermits", () => {
     expect(
       assess({ kind: "operator", asset: KNOWN, spender: OTHER, approved: true, verified: false }),
     ).toStrictEqual([]);
+  });
+});
+
+const SIGNER = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+const NFT = "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D";
+const MULTISEND_141 = "0x9641d764fc13c8B624c04430C7356C1C7C8102e2";
+
+const seaportOrder = (overrides: Partial<SeaportOrder> = {}): SeaportOrder => ({
+  offerer: SIGNER,
+  zone: "0x0000000000000000000000000000000000000000",
+  startTime: 1,
+  endTime: 2,
+  offer: [
+    {
+      kind: "erc721",
+      token: NFT,
+      identifier: "1",
+      startAmount: { asset: NFT, amount: "1" },
+      endAmount: { asset: NFT, amount: "1" },
+    },
+  ],
+  consideration: [],
+  ...overrides,
+});
+
+const paidItem = (recipient: string, amount = "500"): SeaportOrder["consideration"][number] => ({
+  kind: "erc20",
+  token: KNOWN,
+  identifier: "1",
+  startAmount: { asset: KNOWN, amount },
+  endAmount: { asset: KNOWN, amount },
+  recipient,
+});
+
+const safeTx = (overrides: Partial<SafeTransaction> = {}): SafeTransaction => ({
+  safe: "0xD5Ffe748B45F5253fc9975fDd96Fddec052E6D52",
+  nonce: "7",
+  operation: "call",
+  to: KNOWN,
+  value: "0",
+  data: "0x",
+  calls: [],
+  ...overrides,
+});
+
+describe("assessSeaport", () => {
+  it("a listing that pays the offerer nothing is a danger; one that pays is not", () => {
+    expect(assessSeaport(seaportOrder(), SIGNER)).toStrictEqual([
+      { code: "order-receives-nothing", level: "danger" },
+    ]);
+    expect(assessSeaport(seaportOrder({ consideration: [paidItem(OTHER)] }), SIGNER)).toStrictEqual(
+      [{ code: "order-receives-nothing", level: "danger" }],
+    );
+    expect(
+      assessSeaport(seaportOrder({ consideration: [paidItem(SIGNER, "0")] }), SIGNER),
+    ).toStrictEqual([{ code: "order-receives-nothing", level: "danger" }]);
+    expect(
+      assessSeaport(seaportOrder({ consideration: [paidItem(SIGNER)] }), SIGNER),
+    ).toStrictEqual([]);
+    expect(assessSeaport(seaportOrder({ offer: [] }), SIGNER)).toStrictEqual([]);
+    expect(assessSeaport(undefined, SIGNER)).toStrictEqual([]);
+  });
+
+  it("an offerer other than the signer is a warning; the same address any case is fine", () => {
+    expect(assessSeaport(seaportOrder({ offerer: OTHER }), SIGNER)).toStrictEqual([
+      { code: "order-receives-nothing", level: "danger" },
+      { code: "order-offerer-mismatch", level: "warning" },
+    ]);
+    expect(assessSeaport(seaportOrder({ offerer: SIGNER.toLowerCase() }), SIGNER)).toStrictEqual([
+      { code: "order-receives-nothing", level: "danger" },
+    ]);
+  });
+});
+
+describe("assessSafe", () => {
+  it("flags a delegatecall outside canonical MultiSendCallOnly, but not into one", () => {
+    expect(assessSafe(safeTx({ operation: "delegatecall", to: OTHER }))).toStrictEqual([
+      { code: "safe-delegatecall", level: "danger" },
+    ]);
+    expect(assessSafe(safeTx({ operation: "delegatecall", to: MULTISEND_141 }))).toStrictEqual([]);
+    expect(assessSafe(safeTx())).toStrictEqual([]);
+    expect(assessSafe(undefined)).toStrictEqual([]);
+  });
+
+  it("warns on a gas refund and surfaces inner-call approvals", () => {
+    expect(
+      assessSafe(safeTx({ refund: { gasPrice: "5", gasToken: KNOWN, refundReceiver: OTHER } })),
+    ).toStrictEqual([{ code: "safe-gas-refund", level: "warning" }]);
+
+    const inner = {
+      family: "evm",
+      network: "eip155:1",
+      summary: "approve",
+      outflows: [],
+      approvals: [
+        {
+          kind: "allowance",
+          spender: OTHER,
+          amount: { asset: KNOWN, amount: (2n ** 256n - 1n).toString(10) },
+          change: "set",
+          unlimited: true,
+          verified: false,
+        },
+      ],
+      fee: undefined,
+      warnings: [],
+      verifiability: "opaque",
+    } as DisplayIntent;
+    expect(assessSafe(safeTx({ calls: [inner] }))).toStrictEqual([
+      { code: "unlimited-approval", level: "warning" },
+    ]);
   });
 });
