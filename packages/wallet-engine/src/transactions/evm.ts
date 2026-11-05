@@ -1,8 +1,11 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
-import { decodeEvm } from "@qntx/wallet-chains/evm";
+import { isHex, parseTransaction } from "viem";
+
+import { checksumEvmAddress, decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { EvmChainAdapter } from "../chains/evm.ts";
+import type { EvmUnsignedTransaction } from "../chains/evm.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -23,11 +26,18 @@ import type {
   TxState,
 } from "./route.ts";
 
-type PendingBuild = {
-  readonly unsigned: Awaited<ReturnType<EvmChainAdapter["build"]>>;
-  readonly request: SignParams["request"];
-  readonly quote: { readonly tier: string };
-  readonly chainId: number;
+/** Consecutive polls that must see the nonce mined without our receipt before the tx is settled. */
+export const DROP_CONFIRMATIONS = 3;
+export const RESUBMIT_BASE_MS = 15_000;
+export const RESUBMIT_MAX_MS = 600_000;
+/** How long a transaction may stay unknown to the node before it is given up as dropped. */
+export const UNKNOWN_DROP_MS = 1_800_000;
+
+type Watch = {
+  consumed: number;
+  attempt: number;
+  unknownSince: number | undefined;
+  nextResubmit: number | undefined;
 };
 
 const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
@@ -61,7 +71,8 @@ const signSubmit = async (
   apis: ChainApis,
   request: SignParams["request"],
   verify: SignParams["verify"],
-  broadcast: (signed: SignResult) => Promise<string>,
+  account: { readonly from: string; readonly groupIndex: number },
+  broadcast: (signed: SignResult) => Promise<{ readonly hash: string; readonly raw: string }>,
 ): Promise<TrackedTransaction> => {
   let signed: SignResult;
   let tracked = tx;
@@ -74,10 +85,11 @@ const signSubmit = async (
     throw error;
   }
   try {
-    const hash = await broadcast(signed);
+    const { hash, raw } = await broadcast(signed);
     tracked = await ctx.transition(tracked, {
       state: "submitted",
       hash,
+      evm: { from: account.from, groupIndex: account.groupIndex, raw },
       submittedAt: ctx.options.now(),
     });
     ctx.track(tracked.id, hash);
@@ -88,11 +100,61 @@ const signSubmit = async (
   }
 };
 
-/** Per-controller route — the adapter's nonce queue and the replace stash are engine state. */
+/** The unsigned transaction a persisted signed `raw` was built from. */
+const rebuild = (
+  old: TrackedTransaction,
+  from: string,
+  raw: string,
+  chainId: number,
+): EvmUnsignedTransaction => {
+  if (!isHex(raw)) {
+    throw new Error("build record is malformed");
+  }
+  const parsed = parseTransaction(raw);
+  if (parsed.chainId !== chainId) {
+    throw new Error("build record is for a different chain");
+  }
+  if (parsed.nonce !== old.nonce) {
+    throw new Error("build record nonce does not match the transaction");
+  }
+  if (parsed.to === undefined || parsed.to === null || parsed.gas === undefined) {
+    throw new Error("build record is incomplete");
+  }
+  return {
+    family: "evm",
+    network: old.network,
+    from,
+    to: checksumEvmAddress(parsed.to),
+    value: parsed.value ?? 0n,
+    data: parsed.data ?? "0x",
+    nonce: parsed.nonce,
+    gas: parsed.gas,
+    ...("gasPrice" in parsed && parsed.gasPrice !== undefined ? { gasPrice: parsed.gasPrice } : {}),
+    ...("maxFeePerGas" in parsed && parsed.maxFeePerGas !== undefined
+      ? { maxFeePerGas: parsed.maxFeePerGas }
+      : {}),
+    ...("maxPriorityFeePerGas" in parsed && parsed.maxPriorityFeePerGas !== undefined
+      ? { maxPriorityFeePerGas: parsed.maxPriorityFeePerGas }
+      : {}),
+  };
+};
+
+/** Other tracked transactions with a hash at the same (network, sender, nonce). */
+const sameNonce = (ctx: RouteContext, tx: TrackedTransaction, from: string): TrackedTransaction[] =>
+  Object.values(ctx.txs()).filter(
+    (t) =>
+      t.id !== tx.id &&
+      t.family === "evm" &&
+      t.network === tx.network &&
+      t.nonce === tx.nonce &&
+      t.hash !== undefined &&
+      t.evm?.from.toLowerCase() === from.toLowerCase(),
+  );
+
+/** Per-controller route — the adapter's nonce queue and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
-  /** In-memory build context keyed by tx id — the inputs a replace rebuilds from. */
-  const pending = new Map<string, PendingBuild>();
+  const watching = new Map<string, Watch>();
 
   type BuildIntent = Parameters<EvmChainAdapter["build"]>[3];
   type PrepareSpec = {
@@ -174,7 +236,6 @@ export const createEvmRoute = (): EvmRoute => {
     const request = evm.toSignRequest(feed, account, info.chainId);
     const intent = decodeEvm(request);
     const txId = newId(ctx.options.random);
-    const chosen = quote;
     const simulation = await evm.simulate(
       client,
       info.chainId,
@@ -184,7 +245,6 @@ export const createEvmRoute = (): EvmRoute => {
     );
 
     const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
-      pending.set(txId, { unsigned: feed, request, quote: chosen, chainId: info.chainId });
       let tx: TrackedTransaction = {
         id: txId,
         family: "evm",
@@ -198,12 +258,20 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      return signSubmit(ctx, tx, apis, request, verify, async (signed) => {
-        const raw = evm.finalize(feed, signed);
-        const hash = await evm.broadcast(client, raw);
-        evm.commitNonce(network, from, unsigned.nonce);
-        return hash;
-      });
+      return signSubmit(
+        ctx,
+        tx,
+        apis,
+        request,
+        verify,
+        { from, groupIndex: account.groupIndex },
+        async (signed) => {
+          const raw = evm.finalize(feed, signed);
+          const hash = await evm.broadcast(client, raw);
+          evm.commitNonce(network, from, unsigned.nonce);
+          return { hash, raw };
+        },
+      );
     };
 
     return {
@@ -277,17 +345,24 @@ export const createEvmRoute = (): EvmRoute => {
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
   ): Promise<PreparedRequest> => {
-    const stash = pending.get(old.id);
-    if (stash === undefined) {
-      throw new Error("the original build context is gone — cannot replace after restart");
+    const { evm: record } = old;
+    if (record === undefined) {
+      throw new Error("transaction has no build record — cannot replace");
     }
     const { networks } = ctx.options;
     const client = networks.client(old.network);
     const independent = networks.independentClient(old.network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const { tier } = stash.quote;
+    const { chainId } = networks.info(old.network);
+    const original = rebuild(old, record.from, record.raw, chainId);
+    const account = {
+      kind: "hd" as const,
+      walletId: old.account,
+      groupIndex: record.groupIndex,
+      template: "evm.bip44" as const,
+    };
     const estimates = await evm.estimateFee(client);
-    let estimate = estimates.find((q) => q.tier === tier) ?? estimates[1];
+    let estimate = estimates.find((q) => q.tier === "fast") ?? estimates[1];
     if (estimate === undefined) {
       throw new Error("no fee quote");
     }
@@ -311,7 +386,7 @@ export const createEvmRoute = (): EvmRoute => {
         flags.push("reads-unverified");
       }
     }
-    const oldFee = stash.unsigned;
+    const oldFee = original;
     const bumpedFee = bump(oldFee.maxFeePerGas ?? oldFee.gasPrice ?? 0n);
     const maxFeePerGas = bumpedFee > estimate.maxFeePerGas ? bumpedFee : estimate.maxFeePerGas;
     const priorityBump =
@@ -330,20 +405,19 @@ export const createEvmRoute = (): EvmRoute => {
     const unsigned =
       mode === "cancel"
         ? {
-            ...stash.unsigned,
-            to: stash.unsigned.from,
+            ...original,
+            to: original.from,
             value: 0n,
             data: "0x" as const,
             gas: 21000n,
             ...feeFields,
           }
-        : { ...stash.unsigned, ...feeFields };
-    const request = evm.toSignRequest(unsigned, stash.request.account, stash.chainId);
+        : { ...original, ...feeFields };
+    const request = evm.toSignRequest(unsigned, account, chainId);
     const intent = decodeEvm(request);
     const txId = newId(ctx.options.random);
 
     const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
-      pending.set(txId, { unsigned, request, quote: stash.quote, chainId: stash.chainId });
       let tx: TrackedTransaction = {
         id: txId,
         family: "evm",
@@ -358,14 +432,23 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      return signSubmit(ctx, tx, apis, request, verify, async (signed) =>
-        evm.broadcast(client, evm.finalize(unsigned, signed)),
+      return signSubmit(
+        ctx,
+        tx,
+        apis,
+        request,
+        verify,
+        { from: record.from, groupIndex: record.groupIndex },
+        async (signed) => {
+          const raw = evm.finalize(unsigned, signed);
+          return { hash: await evm.broadcast(client, raw), raw };
+        },
       );
     };
 
     return {
       txId,
-      account: stash.request.account,
+      account,
       network: old.network,
       target: old.id,
       intent,
@@ -376,17 +459,107 @@ export const createEvmRoute = (): EvmRoute => {
     };
   };
 
-  /** Returns the terminal state once the receipt lands, or `undefined` to keep polling. */
+  const receiptState = async (
+    client: ReturnType<RouteContext["options"]["networks"]["client"]>,
+    hash: string,
+  ): Promise<TxState | undefined> => {
+    const state = await evm.status(client, hash);
+    if (state === "pending") {
+      return undefined;
+    }
+    return state === "finalized" ? "confirmed" : state;
+  };
+
+  const anyMined = async (
+    ctx: RouteContext,
+    tx: TrackedTransaction,
+    siblings: TrackedTransaction[],
+  ): Promise<boolean> => {
+    const client = ctx.options.networks.client(tx.network);
+    const states = await Promise.all(
+      siblings.map(async (t) => (t.hash === undefined ? undefined : receiptState(client, t.hash))),
+    );
+    return states.some((state) => state !== undefined);
+  };
+
+  /**
+   * Returns the terminal state once the receipt lands, `dropped` or `replaced` once the nonce is
+   * settled without our receipt, or `undefined` to keep polling. While the node does not know the
+   * transaction it is rebroadcast with exponential backoff.
+   */
   const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxState | undefined> => {
     if (tx.hash === undefined) {
       return "failed";
     }
-    const state = await evm.status(ctx.options.networks.client(tx.network), tx.hash);
-    if (state === "pending") {
+    const { hash } = tx;
+    const client = ctx.options.networks.client(tx.network);
+    const settled = await receiptState(client, hash);
+    if (settled !== undefined) {
+      watching.delete(tx.id);
+      return settled;
+    }
+    const record = tx.evm;
+    if (record === undefined) {
       return undefined;
     }
-    pending.delete(tx.id);
-    return state === "finalized" ? "confirmed" : state;
+    const watch: Watch = watching.get(tx.id) ?? {
+      consumed: 0,
+      attempt: 0,
+      unknownSince: undefined,
+      nextResubmit: undefined,
+    };
+    watching.set(tx.id, watch);
+
+    if ((await evm.confirmedCount(client, record.from)) > tx.nonce) {
+      const late = await receiptState(client, hash);
+      if (late !== undefined) {
+        watching.delete(tx.id);
+        return late;
+      }
+      watch.consumed += 1;
+      if (watch.consumed < DROP_CONFIRMATIONS) {
+        return undefined;
+      }
+      watching.delete(tx.id);
+      return (await anyMined(ctx, tx, sameNonce(ctx, tx, record.from))) ? "replaced" : "dropped";
+    }
+    watch.consumed = 0;
+
+    const replacerLive = sameNonce(ctx, tx, record.from).some(
+      (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
+    );
+    if (replacerLive) {
+      watch.unknownSince = undefined;
+      watch.nextResubmit = undefined;
+      watch.attempt = 0;
+      return undefined;
+    }
+
+    if (await evm.known(client, hash)) {
+      watch.unknownSince = undefined;
+      watch.nextResubmit = undefined;
+      watch.attempt = 0;
+      return undefined;
+    }
+    const now = ctx.options.now();
+    watch.unknownSince ??= now;
+    if (now - watch.unknownSince >= UNKNOWN_DROP_MS) {
+      const independent = ctx.options.networks.independentClient(tx.network);
+      const elsewhere =
+        independent.kind === "available" &&
+        (await evm.known(independent.client, hash).catch(() => true));
+      if (!elsewhere) {
+        evm.releaseNonce(tx.network, record.from, tx.nonce);
+        watching.delete(tx.id);
+        return "dropped";
+      }
+    }
+    if (watch.nextResubmit === undefined || now >= watch.nextResubmit) {
+      await evm.broadcast(client, record.raw).catch(() => "");
+      watch.nextResubmit = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
+      watch.attempt += 1;
+    }
+    return undefined;
   };
 
   return { prepare, prepareCall, poll, prepareReplace };

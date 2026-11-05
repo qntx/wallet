@@ -7,7 +7,7 @@ import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
+import { fakeSignedEvm, replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -40,10 +40,6 @@ const evm1559 = (request: Request) => {
   }
   return tx;
 };
-const ok = {
-  kind: "evm.transaction" as const,
-  signedTransaction: new Uint8Array([1, 2]),
-};
 const recordEvmSign =
   (seen: Array<{ nonce: number; maxFeePerGas: string; maxPriorityFeePerGas: string }>) =>
   async ({ request }: { request: Request; verify: Parameters<Sign>[0]["verify"] }) => {
@@ -53,14 +49,14 @@ const recordEvmSign =
       maxFeePerGas: maxFeePerGas ?? "0x0",
       maxPriorityFeePerGas: maxPriorityFeePerGas ?? "0x0",
     });
-    return Promise.resolve(ok);
+    return Promise.resolve(fakeSignedEvm(request));
   };
 const recordCancelSign =
   (seen: Array<{ to: string | undefined; value: string; gas: string }>) =>
   async ({ request }: { request: Request; verify: Parameters<Sign>[0]["verify"] }) => {
     const tx = evmTx(request);
     seen.push({ to: tx.to, value: tx.value ?? "0x0", gas: tx.gas ?? "0x0" });
-    return Promise.resolve(ok);
+    return Promise.resolve(fakeSignedEvm(request));
   };
 const memoryStore = () => createMemoryEngineStore();
 
@@ -247,8 +243,7 @@ describe("TransactionController.replace — state resolution", () => {
     const timers: Array<() => unknown> = [];
     const ctl = ctlWithFetch(
       receiptFetch(`0x${"bb".repeat(32)}`),
-      async () =>
-        Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) }),
+      async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
       timers,
     );
     await ctl.init();
@@ -268,8 +263,7 @@ describe("TransactionController.replace — state resolution", () => {
     const timers: Array<() => unknown> = [];
     const ctl = ctlWithFetch(
       receiptFetch(`0x${"aa".repeat(32)}`),
-      async () =>
-        Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) }),
+      async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
       timers,
     );
     await ctl.init();
@@ -302,8 +296,7 @@ describe("TransactionController.replace — state resolution", () => {
     const timers: Array<() => unknown> = [];
     const ctl = ctlWithFetch(
       receiptFetch(undefined),
-      async () =>
-        Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array([1]) }),
+      async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
       timers,
     );
     await ctl.init();

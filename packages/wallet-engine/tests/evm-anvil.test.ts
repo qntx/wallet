@@ -442,6 +442,44 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
       proc.kill();
     }
   }, 60_000);
+
+  it("rebroadcasts a dropped transaction until it is mined", async () => {
+    const port = 18553;
+    const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
+    await sleep(1500);
+    const timers: Array<() => unknown> = [];
+    const pollAll = async () => {
+      await Promise.all(
+        timers.map(async (fn) => {
+          await fn();
+        }),
+      );
+    };
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { ctl, acct } = await rig(url, timers);
+      const original = await send(ctl, {
+        account: acct,
+        network: "eip155:1",
+        to: RECIPIENT,
+        amount: 10n ** 15n,
+        fee: "slow",
+        verify: VERIFY,
+      });
+      const hash = String(original.hash);
+      await expect(rpcCall(url, "eth_getTransactionByHash", [hash])).resolves.not.toBeNull();
+      await rpcCall(url, "anvil_dropTransaction", [hash]);
+      await expect(rpcCall(url, "eth_getTransactionByHash", [hash])).resolves.toBeNull();
+      await pollAll();
+      await expect(rpcCall(url, "eth_getTransactionByHash", [hash])).resolves.not.toBeNull();
+      expect(ctl.getState().txs[original.id]?.state).toBe("submitted");
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      await pollAll();
+      expect(ctl.getState().txs[original.id]?.state).toBe("confirmed");
+    } finally {
+      proc.kill();
+    }
+  }, 60_000);
 });
 
 const groupAt = (

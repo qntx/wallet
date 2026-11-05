@@ -1,4 +1,8 @@
+import { hexToBytes, isHex, serializeTransaction } from "viem";
+import type { Hex } from "viem";
+
 import type { Event } from "@qntx/nostr";
+import type { SignRequest } from "@qntx/wallet-chains";
 
 import { AddressBookController } from "../src/addresses/controller.ts";
 import type { EsploraDeps } from "../src/chains/bitcoin.ts";
@@ -241,4 +245,48 @@ export function esploraDeps(
 export const idleNetworkDeps = {
   setTimer: (): (() => void) => () => undefined,
   random: (n: number): Uint8Array => new Uint8Array(n),
+};
+
+const hexOf = (value: string | undefined): Hex => {
+  if (value === undefined || !isHex(value)) {
+    throw new Error("malformed hex field");
+  }
+  return value;
+};
+
+/** A sign result whose bytes are the request's transaction serialized with a placeholder signature. */
+export const fakeSignedEvm = (
+  request: SignRequest,
+): { kind: "evm.transaction"; signedTransaction: Uint8Array } => {
+  if (request.kind !== "evm.transaction") {
+    throw new Error("not an evm transaction request");
+  }
+  const { tx } = request;
+  const common = {
+    chainId: tx.chainId,
+    nonce: tx.nonce,
+    gas: BigInt(tx.gas),
+    to: hexOf(tx.to),
+    value: BigInt(tx.value ?? "0x0"),
+    data: hexOf(tx.data ?? "0x"),
+  };
+  const r: Hex = `0x${"11".repeat(32)}`;
+  const sigS: Hex = `0x${"22".repeat(32)}`;
+  const signature = { r, s: sigS, yParity: 0 };
+  const raw =
+    tx.type === "eip1559"
+      ? serializeTransaction(
+          {
+            ...common,
+            type: "eip1559",
+            maxFeePerGas: BigInt(tx.maxFeePerGas),
+            maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+          },
+          signature,
+        )
+      : serializeTransaction(
+          { ...common, type: "legacy", gasPrice: BigInt("gasPrice" in tx ? tx.gasPrice : "0x0") },
+          signature,
+        );
+  return { kind: "evm.transaction", signedTransaction: hexToBytes(raw) };
 };
