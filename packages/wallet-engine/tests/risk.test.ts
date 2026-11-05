@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  assessApprovals,
   assessRecipients,
   assessSimulation,
   comparable,
@@ -180,5 +181,52 @@ describe("impersonatesBuiltIn", () => {
 
   it("only compares within the same chain", () => {
     expect(impersonatesBuiltIn(10, OTHER_TOKEN, "USDT")).toBe(false);
+  });
+});
+
+describe("assessApprovals", () => {
+  type Approvals = Parameters<typeof assessApprovals>[0]["approvals"];
+  const allowance = (change: "set" | "increase" | "decrease", amount: string, unlimited: boolean) =>
+    ({
+      kind: "allowance",
+      spender: OTHER,
+      amount: { asset: KNOWN, amount },
+      change,
+      unlimited,
+      verified: false,
+    }) as const;
+  const operator = (approved: boolean) =>
+    ({ kind: "operator", asset: KNOWN, spender: OTHER, approved, verified: false }) as const;
+  const assess = (...approvals: Array<Approvals[number]>) => assessApprovals({ approvals });
+
+  it("a collection approval is a danger", () => {
+    expect(assess(operator(true))).toStrictEqual([
+      { code: "collection-approval", level: "danger" },
+    ]);
+  });
+
+  it("an unlimited allowance is a warning, set or increase", () => {
+    expect(assess(allowance("set", "1", true))).toStrictEqual([
+      { code: "unlimited-approval", level: "warning" },
+    ]);
+    expect(assess(allowance("increase", "1", true))).toStrictEqual([
+      { code: "unlimited-approval", level: "warning" },
+    ]);
+  });
+
+  it("revocations and limited allowances raise nothing", () => {
+    expect(assess(operator(false))).toStrictEqual([]);
+    expect(assess(allowance("set", "0", false))).toStrictEqual([]);
+    expect(assess(allowance("decrease", "5", false))).toStrictEqual([]);
+    expect(assess(allowance("set", "1000", false))).toStrictEqual([]);
+  });
+
+  it("lists the danger first and deduplicates", () => {
+    expect(
+      assess(allowance("set", "1", true), allowance("set", "2", true), operator(true)),
+    ).toStrictEqual([
+      { code: "collection-approval", level: "danger" },
+      { code: "unlimited-approval", level: "warning" },
+    ]);
   });
 });

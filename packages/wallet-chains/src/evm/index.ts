@@ -12,7 +12,7 @@ export {
   canonicalHex,
   isCanonicalHex,
 } from "./transaction.ts";
-export { decodeEvm, verifiabilityEvm } from "./decode.ts";
+export { PERMIT2_ADDRESS, decodeEvm, verifiabilityEvm } from "./decode.ts";
 export { recoverEvmSigner } from "./recover.ts";
 export { parseTypedData } from "./typed-data.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";

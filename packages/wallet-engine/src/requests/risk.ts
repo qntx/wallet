@@ -21,7 +21,9 @@ export type RiskFinding = {
     | "token-impersonation"
     | "token-symbol-unicode"
     | "simulation-reverted"
-    | "simulation-mismatch";
+    | "simulation-mismatch"
+    | "collection-approval"
+    | "unlimited-approval";
   readonly level: "warning" | "danger";
 };
 
@@ -46,6 +48,27 @@ export function mergeRisk(
     byCode.set(finding.code, finding);
   }
   return byDanger([...byCode.values()]);
+}
+
+/**
+ * Findings for the approvals a transaction grants: an operator approved for a whole collection is a
+ * `danger`; a granted unlimited allowance is a `warning`. Revocations and reductions raise
+ * nothing.
+ */
+export function assessApprovals(
+  intent: Pick<DisplayIntent, "approvals">,
+): ReadonlyArray<RiskFinding> {
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  for (const change of intent.approvals) {
+    if (change.kind === "operator") {
+      if (change.approved) {
+        found.set("collection-approval", { code: "collection-approval", level: "danger" });
+      }
+    } else if (change.change !== "decrease" && change.unlimited) {
+      found.set("unlimited-approval", { code: "unlimited-approval", level: "warning" });
+    }
+  }
+  return byDanger([...found.values()]);
 }
 
 /** Characters compared at each end of an address. */

@@ -131,13 +131,32 @@ export type AssetFlow = {
   readonly verified: boolean;
 };
 
-export type ApprovalChange = {
-  readonly asset: string;
-  readonly spender: string;
-  readonly amount: string;
-  readonly unlimited: boolean;
-  readonly verified: boolean;
-};
+export type ApprovalChange =
+  | {
+      /** A fungible-token allowance: on the token itself, or on Permit2 when `via` is "permit2". */
+      readonly kind: "allowance";
+      readonly spender: string;
+      /** The token and amount (base units); symbol/decimals when the token is in the built-in table. */
+      readonly amount: AssetAmount;
+      /** `set`: the allowance becomes `amount`; `increase`/`decrease`: it changes by `amount`. */
+      readonly change: "set" | "increase" | "decrease";
+      /** `amount` is the type's maximum (uint256; uint160 for Permit2). */
+      readonly unlimited: boolean;
+      /** Unix seconds after which the allowance lapses (Permit2), when it has one. */
+      readonly expiration?: number;
+      readonly via?: "permit2";
+      /** The token is in the built-in table. */
+      readonly verified: boolean;
+    }
+  | {
+      /** ERC-721/1155 `setApprovalForAll`: `spender` may move every token of `asset`. */
+      readonly kind: "operator";
+      readonly asset: string;
+      readonly spender: string;
+      /** `false` revokes. */
+      readonly approved: boolean;
+      readonly verified: false;
+    };
 
 export type IntentWarning = {
   readonly kind: string;

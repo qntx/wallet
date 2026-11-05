@@ -100,8 +100,22 @@ describe("chain prompts", () => {
       summary: "approve",
       outflows: [],
       approvals: [
-        { asset: USDC, spender: SPENDER, amount: "1000000", unlimited: false, verified: true },
-        { asset: USDC, spender: SPENDER, amount: "0", unlimited: true, verified: true },
+        {
+          kind: "allowance",
+          spender: SPENDER,
+          amount: { asset: USDC, amount: "1000000" },
+          change: "set",
+          unlimited: false,
+          verified: true,
+        },
+        {
+          kind: "allowance",
+          spender: SPENDER,
+          amount: { asset: USDC, amount: "0" },
+          change: "set",
+          unlimited: true,
+          verified: true,
+        },
       ],
       fee: undefined,
       verifiability: "full",
@@ -113,6 +127,98 @@ describe("chain prompts", () => {
     expect(chainPrompt("en", intent).description).toBe(
       `Allow ${SPENDER} to spend 1000000 ${USDC}\nAllow ${SPENDER} to spend unlimited ${USDC}`,
     );
+  });
+
+  const allowance = (over: Record<string, unknown>) =>
+    ({
+      kind: "allowance",
+      spender: SPENDER,
+      amount: { asset: USDC, amount: "2500000", symbol: "USDC", decimals: 6 },
+      change: "set",
+      unlimited: false,
+      verified: true,
+      ...over,
+    }) as PromptIntent["approvals"][number];
+  const approveIntent = (...approvals: PromptIntent["approvals"]): PromptIntent => ({
+    summary: "approve",
+    outflows: [],
+    approvals,
+    fee: undefined,
+    verifiability: "full",
+  });
+  const text = (locale: "en" | "zh-Hans", ...approvals: PromptIntent["approvals"]) =>
+    chainPrompt(locale, approveIntent(...approvals)).description;
+
+  it("allowance: set, unlimited, revoke, increase, decrease", () => {
+    expect(text("en", allowance({}))).toBe(`Allow ${SPENDER} to spend 2.5 USDC`);
+    expect(text("zh-Hans", allowance({}))).toBe(`授权 ${SPENDER} 使用 2.5 USDC`);
+    const unlimited = allowance({ unlimited: true });
+    expect(text("en", unlimited)).toBe(`Allow ${SPENDER} to spend unlimited USDC`);
+    expect(text("zh-Hans", unlimited)).toBe(`授权 ${SPENDER} 使用 全部 USDC`);
+    const zero = allowance({ amount: { asset: USDC, amount: "0", symbol: "USDC", decimals: 6 } });
+    expect(text("en", zero)).toBe(`Revoke ${SPENDER}'s allowance for USDC`);
+    expect(text("zh-Hans", zero)).toBe(`撤销 ${SPENDER} 对 USDC 的授权`);
+    expect(text("en", allowance({ change: "increase" }))).toBe(
+      `Allow ${SPENDER} to spend 2.5 USDC more`,
+    );
+    expect(text("zh-Hans", allowance({ change: "increase" }))).toBe(
+      `授权 ${SPENDER} 再使用 2.5 USDC`,
+    );
+    expect(text("en", allowance({ change: "decrease" }))).toBe(
+      `Reduce ${SPENDER}'s allowance by 2.5 USDC`,
+    );
+    expect(text("zh-Hans", allowance({ change: "decrease" }))).toBe(
+      `减少 ${SPENDER} 的授权额度 2.5 USDC`,
+    );
+  });
+
+  it("allowance: unknown token shows raw units and the asset id", () => {
+    const raw = allowance({ amount: { asset: USDC, amount: "7" } });
+    expect(text("en", raw)).toBe(`Allow ${SPENDER} to spend 7 ${USDC}`);
+  });
+
+  it("allowance: Permit2 suffix and UTC expiry", () => {
+    const permit = allowance({ via: "permit2", expiration: 1_800_000_000 });
+    expect(text("en", permit)).toBe(
+      `Allow ${SPENDER} to spend 2.5 USDC via Permit2 until 2027-01-15 (UTC)`,
+    );
+    expect(text("zh-Hans", permit)).toBe(
+      `授权 ${SPENDER} 使用 2.5 USDC 经 Permit2 至 2027-01-15（UTC）`,
+    );
+    const lockdown = allowance({
+      via: "permit2",
+      amount: { asset: USDC, amount: "0", symbol: "USDC", decimals: 6 },
+    });
+    expect(text("en", lockdown)).toBe(`Revoke ${SPENDER}'s allowance for USDC via Permit2`);
+    expect(text("en", allowance({ expiration: 0, via: "permit2" }))).toBe(
+      `Allow ${SPENDER} to spend 2.5 USDC via Permit2`,
+    );
+  });
+
+  it.each([
+    [1, "1970-01-01"],
+    [951_782_400, "2000-02-29"],
+    [1_709_164_799, "2024-02-28"],
+    [1_709_164_800, "2024-02-29"],
+    [4_102_444_800, "2100-01-01"],
+  ] as const)("expiry %d renders as %s in UTC", (expiration, date) => {
+    const line = text("en", allowance({ via: "permit2", expiration }));
+    expect(line).toContain(`until ${date} (UTC)`);
+  });
+
+  it("operator approval and revocation", () => {
+    const grant = {
+      kind: "operator",
+      asset: USDC,
+      spender: SPENDER,
+      approved: true,
+      verified: false,
+    } as const;
+    const revoke = { ...grant, approved: false } as const;
+    expect(text("en", grant)).toBe(`Allow ${SPENDER} to transfer all tokens of ${USDC}`);
+    expect(text("zh-Hans", grant)).toBe(`授权 ${SPENDER} 转走 ${USDC} 的全部代币`);
+    expect(text("en", revoke)).toBe(`Revoke ${SPENDER}'s access to all tokens of ${USDC}`);
+    expect(text("zh-Hans", revoke)).toBe(`撤销 ${SPENDER} 对 ${USDC} 全部代币的授权`);
   });
 
   it("partial leads with the other-outflows warning", () => {
