@@ -9,7 +9,7 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-11-05
+## [0.9.0] - 2026-11-04
 
 A local phishing list, transaction simulation and the remaining in-app browser methods
 (`wallet_addEthereumChain`, `wallet_watchAsset`, `solana:signIn`), plus hardening from the 0.9
@@ -69,7 +69,7 @@ source. Closes #99, #100, #101 and #102. Includes the 0.8.1 native fix.
 - `@qntx/wallet-engine`: `engine.unsubscribe()` also stops the phishing list refresh.
 - The install-id `fetch` for the gateway moved from `NetworkController` to `gateway/client.ts`.
 
-## [0.8.1] - 2026-11-05
+## [0.8.1] - 2026-11-04
 
 A native wallet can unlock again after it locks, without restarting the app.
 

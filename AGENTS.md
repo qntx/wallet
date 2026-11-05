@@ -17,8 +17,9 @@
 - Secrets (entropy, seed, private keys, DEK, PRF output) exist only in the enclave
   (Web Worker, RN kernel runtime). Messages carry no signing secrets, except user exports
   and the data key.
-- The kernel source never imports -worker or -native packages; backends (currently
-  `backends.spark`, the SparkCrypto wasm/native loader) are injected by the host packages.
+- The kernel source never imports -worker or -native packages; backends (`backends.nostr`,
+  the NostrBackend, and `backends.spark`, the SparkCrypto wasm/native loader) are injected
+  by the host packages.
   The engine and @qntx/wallet never import signing implementations.
 - Kernel code uses only the globals allowed in design/enclave.mdx; it must run in a bare
   Hermes runtime.
