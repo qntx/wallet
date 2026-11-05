@@ -8,7 +8,7 @@
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
-import { parseSignIn } from "@qntx/wallet-chains";
+import { ChainError, parseSignIn } from "@qntx/wallet-chains";
 import type { SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
@@ -48,6 +48,7 @@ import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
   assessApprovals,
+  assessPermits,
   assessSignIn,
   assessRecipients,
   assessSimulation,
@@ -771,6 +772,19 @@ export class RequestController extends Controller<RequestControllerState> {
         "signer" in prepared && prepared.intent.message?.kind === "text"
           ? this.signInRisk(prepared.intent.message.signIn, input.origin, prepared.signer, "evm")
           : [];
+      const { message } = prepared.intent;
+      if (
+        message?.kind === "typed-data" &&
+        "signer" in prepared &&
+        message.domain.verifyingContract?.toLowerCase() === prepared.signer.toLowerCase()
+      ) {
+        throw new ChainError(
+          "invalid-request",
+          "typed data addressed to your own account is refused",
+        );
+      }
+      const permitRisk =
+        message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -779,7 +793,7 @@ export class RequestController extends Controller<RequestControllerState> {
           isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
           ...prepared.checks,
         ]),
-        risk: isTransaction ? this.chainRisk(prepared.intent) : signInRisk,
+        risk: isTransaction ? this.chainRisk(prepared.intent) : mergeRisk(signInRisk, permitRisk),
         run: { ...prepared, factor: "required" },
       };
       return isTransaction ? withSimulation(built, prepared.intent, prepared.simulation) : built;
@@ -1157,7 +1171,10 @@ export class RequestController extends Controller<RequestControllerState> {
               : "summary" in display
                 ? display.message?.kind === "text" && display.message.signIn?.status === "valid"
                   ? `sign-in ${display.message.signIn.fields.domain}`
-                  : display.summary
+                  : display.message?.kind === "typed-data" &&
+                      display.approvals[0]?.kind === "allowance"
+                    ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
+                    : display.summary
                 : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,

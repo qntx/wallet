@@ -30,7 +30,10 @@ export type RiskFinding = {
     | "sign-in-port-mismatch"
     | "sign-in-address-mismatch"
     | "sign-in-expired"
-    | "sign-in-not-yet-valid";
+    | "sign-in-not-yet-valid"
+    | "permit-approval"
+    | "permit-unlimited"
+    | "permit-long-lived";
   readonly level: "warning" | "danger";
 };
 
@@ -73,6 +76,37 @@ export function assessApprovals(
       }
     } else if (change.change !== "decrease" && change.unlimited) {
       found.set("unlimited-approval", { code: "unlimited-approval", level: "warning" });
+    }
+  }
+  return byDanger([...found.values()]);
+}
+
+const PERMIT_MAX_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * Findings for what a signed permit grants: any non-revoking allowance is a `warning`, an unlimited
+ * one a `danger`, and a Permit2 allowance that lasts more than 30 days from `now` a `danger`.
+ */
+export function assessPermits(
+  intent: Pick<DisplayIntent, "approvals">,
+  now: number,
+): ReadonlyArray<RiskFinding> {
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  for (const change of intent.approvals) {
+    if (change.kind !== "allowance" || change.amount.amount === "0") {
+      continue;
+    }
+    found.set("permit-approval", { code: "permit-approval", level: "warning" });
+    if (change.unlimited) {
+      found.set("permit-unlimited", { code: "permit-unlimited", level: "danger" });
+    }
+    if (
+      change.via === "permit2" &&
+      change.change === "set" &&
+      change.expiration !== undefined &&
+      change.expiration * 1000 > now + PERMIT_MAX_LIFETIME_MS
+    ) {
+      found.set("permit-long-lived", { code: "permit-long-lived", level: "danger" });
     }
   }
   return byDanger([...found.values()]);

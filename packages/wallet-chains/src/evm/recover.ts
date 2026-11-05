@@ -89,7 +89,7 @@ export const recoverEvmSigner = (
     return Secp256k1.recoverAddress({ payload, signature });
   }
   if (request.kind === "evm.typed-data") {
-    const { json } = parseTypedData(request.typedData, request.network);
+    const { json } = parseTypedData(request.typedData);
     const payload = TypedData.getSignPayload(json);
     return Secp256k1.recoverAddress({ payload, signature });
   }

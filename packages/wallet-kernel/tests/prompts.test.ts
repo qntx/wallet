@@ -206,6 +206,25 @@ describe("chain prompts", () => {
     expect(line).toContain(`until ${date} (UTC)`);
   });
 
+  it("allowance: one-time transfer right, limited and unlimited, with Permit2 and expiry", () => {
+    const once = allowance({ change: "transfer", via: "permit2", expiration: 1_800_000_000 });
+    expect(text("en", once)).toBe(
+      `Allow ${SPENDER} to take 2.5 USDC once via Permit2 until 2027-01-15 (UTC)`,
+    );
+    expect(text("zh-Hans", once)).toBe(
+      `授权 ${SPENDER} 一次性转走 2.5 USDC 经 Permit2 至 2027-01-15（UTC）`,
+    );
+    const unlimited = allowance({ change: "transfer", unlimited: true });
+    expect(text("en", unlimited)).toBe(`Allow ${SPENDER} to take unlimited USDC once`);
+    expect(text("zh-Hans", unlimited)).toBe(`授权 ${SPENDER} 一次性转走 全部 USDC`);
+  });
+
+  it("a one-time transfer right without an expiration has no until suffix", () => {
+    const once = allowance({ change: "transfer", via: "permit2" });
+    expect(text("en", once)).toBe(`Allow ${SPENDER} to take 2.5 USDC once via Permit2`);
+    expect(text("zh-Hans", once)).toBe(`授权 ${SPENDER} 一次性转走 2.5 USDC 经 Permit2`);
+  });
+
   it("operator approval and revocation", () => {
     const grant = {
       kind: "operator",

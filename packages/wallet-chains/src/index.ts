@@ -143,8 +143,12 @@ export type ApprovalChange =
       readonly spender: string;
       /** The token and amount (base units); symbol/decimals when the token is in the built-in table. */
       readonly amount: AssetAmount;
-      /** `set`: the allowance becomes `amount`; `increase`/`decrease`: it changes by `amount`. */
-      readonly change: "set" | "increase" | "decrease";
+      /**
+       * `set`: the allowance becomes `amount`; `increase`/`decrease`: it changes by `amount`;
+       * `transfer`: a one-time right to take up to `amount` before `expiration` (Permit2
+       * SignatureTransfer).
+       */
+      readonly change: "set" | "increase" | "decrease" | "transfer";
       /** `amount` is the type's maximum (uint256; uint160 for Permit2). */
       readonly unlimited: boolean;
       /** Unix seconds after which the allowance lapses (Permit2), when it has one. */
@@ -168,10 +172,26 @@ export type IntentWarning = {
   readonly message: string;
 };
 
+/** The EIP-712 domain fields a wallet shows. */
+export type TypedDataDomain = {
+  readonly name?: string;
+  readonly version?: string;
+  readonly chainId?: number;
+  /** EIP-55 checksummed. */
+  readonly verifyingContract?: string;
+  readonly salt?: string;
+};
+
 /** What a message request signs. */
 export type MessageContent =
   | { readonly kind: "text"; readonly text: string; readonly signIn?: SignInParse }
-  | { readonly kind: "bytes"; readonly hex: string };
+  | { readonly kind: "bytes"; readonly hex: string }
+  | {
+      readonly kind: "typed-data";
+      readonly primaryType: string;
+      readonly domain: TypedDataDomain;
+      readonly data: Readonly<Record<string, unknown>>;
+    };
 
 export type DisplayIntent = {
   readonly family: ChainFamily;

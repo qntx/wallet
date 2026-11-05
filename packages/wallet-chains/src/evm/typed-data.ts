@@ -1,8 +1,7 @@
 import * as TypedData from "ox/TypedData";
 
 import { ChainError } from "../index.ts";
-import type { IntentWarning } from "../index.ts";
-import { isRecord, networkChainId } from "./transaction.ts";
+import { isRecord } from "./transaction.ts";
 
 type TypedDataField = {
   readonly name: string;
@@ -43,17 +42,10 @@ const isTypedDataInput = (value: unknown): value is TypedDataInput => {
   return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
 };
 
-export type ParsedTypedData = {
-  readonly json: TypedDataInput;
-  /**
-   * True when `domain.chainId` disagrees with the request's network — the intent is still signable
-   * but renders `opaque` with a warning.
-   */
-  readonly chainIdMismatch: boolean;
-};
+export type ParsedTypedData = { readonly json: TypedDataInput };
 
 /** Parses the EIP-712 JSON source and validates its shape with ox. */
-export const parseTypedData = (typedData: string, network: string): ParsedTypedData => {
+export const parseTypedData = (typedData: string): ParsedTypedData => {
   let json: unknown;
   try {
     json = JSON.parse(typedData);
@@ -71,25 +63,26 @@ export const parseTypedData = (typedData: string, network: string): ParsedTypedD
   } catch {
     throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
   }
-  const { chainId } = json.domain;
+  return { json };
+};
+
+/**
+ * `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
+ * decimal string or a `0x` hex string.
+ */
+export const domainChainId = (domain: Record<string, unknown>): number | undefined => {
+  const { chainId } = domain;
+  if (chainId === undefined) {
+    return undefined;
+  }
   const numeric =
     typeof chainId === "number"
       ? chainId
-      : typeof chainId === "string"
+      : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId)
         ? Number(chainId)
         : Number.NaN;
-  return {
-    json,
-    chainIdMismatch: Number.isSafeInteger(numeric) && numeric !== networkChainId(network),
-  };
+  if (!Number.isSafeInteger(numeric) || numeric < 0) {
+    throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
+  }
+  return numeric;
 };
-
-export const typedDataWarnings = (parsed: ParsedTypedData): ReadonlyArray<IntentWarning> =>
-  parsed.chainIdMismatch
-    ? [
-        {
-          kind: "chain-id-mismatch",
-          message: "typed-data domain.chainId does not match the request network",
-        },
-      ]
-    : [];

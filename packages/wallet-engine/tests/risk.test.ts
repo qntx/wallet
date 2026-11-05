@@ -4,6 +4,7 @@ import type { SignInParse } from "@qntx/wallet-chains";
 
 import {
   assessApprovals,
+  assessPermits,
   assessRecipients,
   assessSignIn,
   assessSimulation,
@@ -320,5 +321,64 @@ describe("assessSignIn", () => {
     expect(assess({ status: "malformed" })).toStrictEqual({
       risk: [{ code: "sign-in-malformed", level: "warning" }],
     });
+  });
+});
+
+describe("assessPermits", () => {
+  const NOW = Date.parse("2026-06-01T00:00:00Z");
+  const DAY = 86_400;
+  const nowSeconds = NOW / 1000;
+  type Intent = Parameters<typeof assessPermits>[0];
+  const allowance = (over: Record<string, unknown> = {}) =>
+    ({
+      kind: "allowance",
+      spender: OTHER,
+      amount: { asset: KNOWN, amount: "1000" },
+      change: "set",
+      unlimited: false,
+      verified: false,
+      ...over,
+    }) as Intent["approvals"][number];
+  const assess = (...approvals: Array<Intent["approvals"][number]>) =>
+    assessPermits({ approvals }, NOW);
+
+  it("a limited allowance is a warning", () => {
+    expect(assess(allowance())).toStrictEqual([{ code: "permit-approval", level: "warning" }]);
+  });
+
+  it("a revocation raises nothing", () => {
+    expect(assess(allowance({ amount: { asset: KNOWN, amount: "0" } }))).toStrictEqual([]);
+  });
+
+  it("an unlimited allowance is a danger ahead of the warning", () => {
+    expect(assess(allowance({ unlimited: true }))).toStrictEqual([
+      { code: "permit-unlimited", level: "danger" },
+      { code: "permit-approval", level: "warning" },
+    ]);
+  });
+
+  it("a Permit2 allowance beyond 30 days is a danger; a shorter one is a warning only", () => {
+    const long = allowance({ via: "permit2", expiration: nowSeconds + 31 * DAY });
+    expect(assess(long)).toStrictEqual([
+      { code: "permit-long-lived", level: "danger" },
+      { code: "permit-approval", level: "warning" },
+    ]);
+    const short = allowance({ via: "permit2", expiration: nowSeconds + 29 * DAY });
+    expect(assess(short)).toStrictEqual([{ code: "permit-approval", level: "warning" }]);
+  });
+
+  it("a one-time transfer right is never long-lived", () => {
+    const transfer = allowance({
+      via: "permit2",
+      change: "transfer",
+      expiration: nowSeconds + 365 * DAY,
+    });
+    expect(assess(transfer)).toStrictEqual([{ code: "permit-approval", level: "warning" }]);
+  });
+
+  it("operator approvals are not permits", () => {
+    expect(
+      assess({ kind: "operator", asset: KNOWN, spender: OTHER, approved: true, verified: false }),
+    ).toStrictEqual([]);
   });
 });

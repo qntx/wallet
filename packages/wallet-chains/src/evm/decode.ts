@@ -7,16 +7,20 @@ import type {
   DisplayIntent,
   EvmTransaction,
   MessageContent,
+  TypedDataDomain,
   SignRequest,
   Verifiability,
 } from "../index.ts";
 import { parseSignIn } from "../sign-in.ts";
 import { checksumEvmAddress } from "./address.ts";
+import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { recognizePermit } from "./permit.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { assertHex, networkChainId } from "./transaction.ts";
-import { parseTypedData, typedDataWarnings } from "./typed-data.ts";
+import { domainChainId, parseTypedData } from "./typed-data.ts";
+import type { TypedDataInput } from "./typed-data.ts";
 
 const ERC20_TRANSFER = AbiFunction.from("function transfer(address to, uint256 amount)");
 const ERC20_APPROVE = AbiFunction.from("function approve(address spender, uint256 amount)");
@@ -50,12 +54,6 @@ const ERC721_SAFE_FROM = AbiFunction.from(
 const ERC1155_SAFE_FROM = AbiFunction.from(
   "function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)",
 );
-
-/** The canonical Permit2 deployment (the same address on every supported chain). */
-export const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
-
-const MAX_UINT256 = 2n ** 256n - 1n;
-const MAX_UINT160 = 2n ** 160n - 1n;
 
 const argAddress = (args: ReadonlyArray<unknown>, index: number): string => {
   const value = args[index];
@@ -131,32 +129,6 @@ const tokenFlow = (
       },
     ],
     verified: token !== undefined,
-  };
-};
-
-const allowanceChange = (
-  token: string,
-  spender: string,
-  value: bigint,
-  change: "set" | "increase" | "decrease",
-  max: bigint,
-  chainId: number,
-  table: EvmTokenTable,
-  extra: { readonly expiration?: number; readonly via?: "permit2" } = {},
-): ApprovalChange => {
-  const known = lookupEvmToken(table, chainId, token);
-  return {
-    kind: "allowance",
-    spender,
-    amount: {
-      asset: token,
-      amount: value.toString(10),
-      ...(known === undefined ? {} : { symbol: known.symbol, decimals: known.decimals }),
-    },
-    change,
-    unlimited: change !== "decrease" && value === max,
-    ...extra,
-    verified: known !== undefined,
   };
 };
 
@@ -366,6 +338,21 @@ const decodeTransaction = (
   return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
 };
 
+/** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
+const displayDomain = (domain: TypedDataInput["domain"]): TypedDataDomain => {
+  const { name, version, verifyingContract, salt } = domain;
+  const chainId = domainChainId(domain);
+  return {
+    ...(typeof name === "string" ? { name } : {}),
+    ...(typeof version === "string" ? { version } : {}),
+    ...(chainId === undefined ? {} : { chainId }),
+    ...(typeof verifyingContract === "string" && /^0x[0-9a-fA-F]{40}$/.test(verifyingContract)
+      ? { verifyingContract: checksumEvmAddress(verifyingContract) }
+      : {}),
+    ...(typeof salt === "string" ? { salt } : {}),
+  };
+};
+
 /** Strict UTF-8 text with any sign-in recognition, else the raw bytes as hex. */
 const messageContent = (bytes: Uint8Array): MessageContent => {
   try {
@@ -411,15 +398,23 @@ export const decodeEvm = (
   if (request.kind !== "evm.typed-data") {
     throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
   }
-  const parsed = parseTypedData(request.typedData, request.network);
+  const { json } = parseTypedData(request.typedData);
+  const message: MessageContent = {
+    kind: "typed-data",
+    primaryType: json.primaryType,
+    domain: displayDomain(json.domain),
+    data: json.message,
+  };
+  const permit = recognizePermit(json, networkChainId(request.network), table);
   return {
     family: "evm",
     network: request.network,
-    summary: "message",
+    summary: permit === undefined ? "message" : "approve",
     outflows: [],
-    approvals: [],
+    approvals: permit?.approvals ?? [],
     fee: undefined,
-    warnings: typedDataWarnings(parsed),
-    verifiability: "opaque",
+    warnings: permit?.warnings ?? [],
+    message,
+    verifiability: permit === undefined ? "opaque" : "partial",
   };
 };
