@@ -150,7 +150,11 @@ export type DisplayIntent = {
   readonly summary: IntentSummary;
   readonly outflows: ReadonlyArray<AssetFlow>;
   readonly approvals: ReadonlyArray<ApprovalChange>;
-  readonly fee: { readonly max: AssetAmount } | undefined;
+  /**
+   * `l1Data`: OP Stack L1 data fee plus operator fee, estimated by the engine and charged on top of
+   * `max`; not decodable from the transaction, so the kernel's own decode never sets it.
+   */
+  readonly fee: { readonly max: AssetAmount; readonly l1Data?: AssetAmount } | undefined;
   readonly warnings: ReadonlyArray<IntentWarning>;
   readonly verifiability: Verifiability;
 };

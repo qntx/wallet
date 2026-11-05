@@ -15,6 +15,8 @@ export type NetworkInfo = {
   readonly genesisHash?: string;
   readonly decimals: number;
   readonly testnet: boolean;
+  /** OP Stack chain: transactions also pay an L1 data fee and an operator fee. */
+  readonly opStack?: true;
 };
 
 const entry = (
@@ -23,6 +25,7 @@ const entry = (
   symbol: string,
   testnet: boolean,
   _source: string,
+  opStack?: true,
 ): NetworkInfo => ({
   id: `eip155:${chainId}`,
   chainId,
@@ -33,13 +36,14 @@ const entry = (
   family: "evm",
   // Canonical Multicall3 — https://github.com/mds1/multicall3 deployments (all entries below).
   multicall3: "0xcA11bde05977b3631167028862bE2a173976CA11",
+  ...(opStack === true ? { opStack } : {}),
 });
 
 export const NETWORKS: ReadonlyArray<NetworkInfo> = [
   // https://chainlist.org + https://ethereum.org (Ethereum mainnet chainId 1)
   entry(1, "Ethereum", "ETH", false, "https://ethereum.org/en/developers/docs/networks/"),
   // https://docs.base.org — Base Sepolia 84532
-  entry(8453, "Base", "ETH", false, "https://docs.base.org/docs/network-information"),
+  entry(8453, "Base", "ETH", false, "https://docs.base.org/docs/network-information", true),
   // https://docs.arbitrum.io — Arbitrum Sepolia 421614
   entry(
     42161,
@@ -49,7 +53,7 @@ export const NETWORKS: ReadonlyArray<NetworkInfo> = [
     "https://docs.arbitrum.io/for-devs/dev-tools-and-resources/chain-info",
   ),
   // https://docs.optimism.io — OP Sepolia 11155420
-  entry(10, "OP Mainnet", "ETH", false, "https://docs.optimism.io/chain/networks"),
+  entry(10, "OP Mainnet", "ETH", false, "https://docs.optimism.io/chain/networks", true),
   // https://docs.polygon.technology — Amoy 80002
   entry(
     137,
@@ -83,7 +87,7 @@ export const NETWORKS: ReadonlyArray<NetworkInfo> = [
     "https://build.avax.network/docs/tooling/rpc-providers",
   ),
   entry(11155111, "Sepolia", "ETH", true, "https://ethereum.org/en/developers/docs/networks/"),
-  entry(84532, "Base Sepolia", "ETH", true, "https://docs.base.org/docs/network-information"),
+  entry(84532, "Base Sepolia", "ETH", true, "https://docs.base.org/docs/network-information", true),
   entry(
     421614,
     "Arbitrum Sepolia",
@@ -91,7 +95,7 @@ export const NETWORKS: ReadonlyArray<NetworkInfo> = [
     true,
     "https://docs.arbitrum.io/for-devs/dev-tools-and-resources/chain-info",
   ),
-  entry(11155420, "OP Sepolia", "ETH", true, "https://docs.optimism.io/chain/networks"),
+  entry(11155420, "OP Sepolia", "ETH", true, "https://docs.optimism.io/chain/networks", true),
   entry(
     80002,
     "Polygon Amoy",

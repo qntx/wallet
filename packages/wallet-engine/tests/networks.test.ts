@@ -2,7 +2,7 @@ import { base58 } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import { NetworkController } from "../src/networks/controller.ts";
-import { BITCOIN_NETWORKS, SOLANA_NETWORKS } from "../src/networks/registry.ts";
+import { BITCOIN_NETWORKS, NETWORKS, SOLANA_NETWORKS } from "../src/networks/registry.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { idleNetworkDeps } from "./send-helpers.ts";
 
@@ -20,6 +20,14 @@ const genesisFetch = (hash: string) =>
     Promise.resolve(Response.json({ jsonrpc: "2.0", id: 1, result: hash }))) as typeof fetch;
 
 describe("network registry", () => {
+  it("marks exactly the OP Stack chains", () => {
+    expect(
+      NETWORKS.filter((n) => n.opStack === true)
+        .map((n) => n.chainId)
+        .toSorted((a, b) => a - b),
+    ).toStrictEqual([10, 8453, 84532, 11155420]);
+  });
+
   it.each([...SOLANA_NETWORKS, ...BITCOIN_NETWORKS])(
     "$id reference is the first 32 characters of its genesis hash",
     (network) => {

@@ -6,9 +6,10 @@
  * last broadcast + 1) and is only recorded once a broadcast succeeds. Finalization uses the
  * `finalized` block tag; receipts with status 0 fail.
  */
-import { encodeFunctionData, isAddress, isHex, numberToHex } from "viem";
+import { encodeFunctionData, isAddress, isHex, numberToHex, parseAbi } from "viem";
 import type { PublicClient } from "viem";
-import { simulateCalls } from "viem/actions";
+import { readContract, simulateCalls } from "viem/actions";
+import { estimateL1Fee } from "viem/op-stack";
 
 import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
 import {
@@ -86,6 +87,12 @@ export const ERC20_ABI = [
     stateMutability: "view",
   },
 ] as const;
+
+/** OP Stack GasPriceOracle predeploy; viem's `op-stack` entry does not export its ABI or address. */
+export const OP_GAS_PRICE_ORACLE = "0x420000000000000000000000000000000000000F";
+const OP_GAS_PRICE_ORACLE_ABI = parseAbi([
+  "function getOperatorFee(uint256 gasUsed) view returns (uint256)",
+]);
 
 const checkedAddress = (v: string): `0x${string}` => {
   if (!isAddress(v)) {
@@ -213,6 +220,29 @@ export class EvmChainAdapter {
   commitNonce(network: string, from: string, nonce: number): void {
     const key = `${network}:${from}`;
     this.lastNonce.set(key, Math.max(this.lastNonce.get(key) ?? nonce, nonce));
+  }
+
+  /**
+   * OP Stack fees charged on top of gas × gas price: the L1 data fee of the serialized transaction
+   * plus the operator fee at the full gas limit (worst case).
+   */
+  async opStackFee(client: PublicClient, tx: EvmUnsignedTransaction): Promise<bigint> {
+    const [l1, operator] = await Promise.all([
+      estimateL1Fee(client, {
+        chain: null,
+        account: checkedAddress(tx.from),
+        to: checkedAddress(tx.to),
+        value: tx.value,
+        data: checkedHex(tx.data),
+      }),
+      readContract(client, {
+        address: OP_GAS_PRICE_ORACLE,
+        abi: OP_GAS_PRICE_ORACLE_ABI,
+        functionName: "getOperatorFee",
+        args: [tx.gas],
+      }),
+    ]);
+    return l1 + operator;
   }
 
   /** ERC-20 gas is buffered ×1.1 instead of the native ×1.2 (chains.mdx "EVM"). */

@@ -1,7 +1,8 @@
+import { createPublicClient, custom, encodeFunctionData, parseAbi, numberToHex } from "viem";
 import type { PublicClient } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
-import { EvmChainAdapter } from "../src/chains/evm.ts";
+import { EvmChainAdapter, OP_GAS_PRICE_ORACLE } from "../src/chains/evm.ts";
 
 const client = (handlers: Record<string, unknown>): PublicClient =>
   ({
@@ -16,6 +17,20 @@ const client = (handlers: Record<string, unknown>): PublicClient =>
   }) as unknown as PublicClient;
 
 const rpc = (h: Record<string, unknown>) => client(h);
+
+const oracleClient = (calls: Array<{ to: string; data: string }>, operatorCall: string) =>
+  createPublicClient({
+    transport: custom({
+      request: async ({ method, params }: { method: string; params?: unknown }) => {
+        if (method !== "eth_call") {
+          throw new Error(`unmocked ${method}`);
+        }
+        const [call] = params as [{ to: string; data: string }];
+        calls.push(call);
+        return Promise.resolve(numberToHex(call.data === operatorCall ? 40n : 1000n, { size: 32 }));
+      },
+    }),
+  });
 
 describe("EvmChainAdapter", () => {
   it("reserves nothing until a broadcast is committed", async () => {
@@ -123,5 +138,38 @@ describe("EvmChainAdapter", () => {
       },
     });
     await expect(a.status(failed, "0x0")).resolves.toBe("failed");
+  });
+
+  it("sums the L1 data fee and the operator fee read from the GasPriceOracle", async () => {
+    const calls: Array<{ to: string; data: string }> = [];
+    const operatorAbi = parseAbi([
+      "function getOperatorFee(uint256 gasUsed) view returns (uint256)",
+    ]);
+    const operatorCall = encodeFunctionData({
+      abi: operatorAbi,
+      functionName: "getOperatorFee",
+      args: [21_000n],
+    });
+    const oracle = oracleClient(calls, operatorCall);
+    const a = new EvmChainAdapter();
+    const fee = await a.opStackFee(oracle, {
+      family: "evm",
+      network: "eip155:8453",
+      from: `0x${"1".repeat(40)}`,
+      to: `0x${"2".repeat(40)}`,
+      value: 5n,
+      data: "0x",
+      nonce: 0,
+      gas: 21_000n,
+      maxFeePerGas: 4n,
+      maxPriorityFeePerGas: 2n,
+    });
+    expect(fee).toBe(1040n);
+    expect(calls).toHaveLength(2);
+    expect(calls.map((c) => c.to.toLowerCase())).toStrictEqual([
+      OP_GAS_PRICE_ORACLE.toLowerCase(),
+      OP_GAS_PRICE_ORACLE.toLowerCase(),
+    ]);
+    expect(calls.map((c) => c.data)).toContain(operatorCall);
   });
 });

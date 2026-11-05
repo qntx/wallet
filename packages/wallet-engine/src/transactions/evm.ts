@@ -1,7 +1,7 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
 import { isHex, parseTransaction } from "viem";
 
-import { checksumEvmAddress, decodeEvm } from "@qntx/wallet-chains/evm";
+import { EVM_NATIVE_ASSET, checksumEvmAddress, decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { EvmChainAdapter } from "../chains/evm.ts";
@@ -9,6 +9,7 @@ import type { EvmUnsignedTransaction } from "../chains/evm.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
+  feesDiffer,
   feeReachesAmount,
   mergeEvmQuote,
 } from "../requests/checks.ts";
@@ -16,6 +17,7 @@ import type { RequestCheckCode } from "../requests/checks.ts";
 import { errorMessage, newId, replacementStaleReason } from "./route.ts";
 import type {
   ChainApis,
+  DisplayIntent,
   PrepareParams,
   PreparedRequest,
   RouteContext,
@@ -151,6 +153,14 @@ const sameNonce = (ctx: RouteContext, tx: TrackedTransaction, from: string): Tra
       t.evm?.from.toLowerCase() === from.toLowerCase(),
   );
 
+const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent =>
+  l1 === undefined || intent.fee === undefined
+    ? intent
+    : {
+        ...intent,
+        fee: { ...intent.fee, l1Data: { asset: EVM_NATIVE_ASSET, amount: l1.toString(10) } },
+      };
+
 /** Per-controller route — the adapter's nonce queue and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
@@ -164,6 +174,38 @@ export const createEvmRoute = (): EvmRoute => {
     readonly fee: PrepareParams["fee"];
     /** Native value moved; the worst-case fee reaching it is flagged. */
     readonly nativeValue: bigint | undefined;
+  };
+
+  /**
+   * OP Stack L1 data fee plus operator fee for `tx`, the larger of the primary and independent
+   * reads (the chain charges it either way; the figure only drives display and checks). Unknown
+   * when the primary read fails.
+   */
+  const opStackFee = async (
+    ctx: RouteContext,
+    network: string,
+    tx: EvmUnsignedTransaction,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<bigint | undefined> => {
+    const { networks } = ctx.options;
+    let fee: bigint;
+    try {
+      fee = await evm.opStackFee(networks.client(network), tx);
+    } catch {
+      flags.push("reads-unverified");
+      return undefined;
+    }
+    const independent = networks.independentClient(network);
+    if (independent.kind === "available") {
+      try {
+        const other = await evm.opStackFee(independent.client, tx);
+        flags.push(feesDiffer(fee, other) ? "fee-mismatch" : undefined);
+        fee = other > fee ? other : fee;
+      } catch {
+        flags.push("reads-unverified");
+      }
+    }
+    return fee;
   };
 
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
@@ -227,14 +269,18 @@ export const createEvmRoute = (): EvmRoute => {
       }
     }
     const feed = evm.applyFee(unsigned, quote);
+    const l1 = info.opStack === true ? await opStackFee(ctx, network, feed, flags) : undefined;
     if (
       spec.nativeValue !== undefined &&
-      feeReachesAmount(feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n), spec.nativeValue)
+      feeReachesAmount(
+        feed.gas * (feed.maxFeePerGas ?? feed.gasPrice ?? 0n) + (l1 ?? 0n),
+        spec.nativeValue,
+      )
     ) {
       flags.push("fee-exceeds-amount");
     }
     const request = evm.toSignRequest(feed, account, info.chainId);
-    const intent = decodeEvm(request);
+    const intent = withL1Fee(decodeEvm(request), l1);
     const txId = newId(ctx.options.random);
     const simulation = await evm.simulate(
       client,
@@ -414,7 +460,11 @@ export const createEvmRoute = (): EvmRoute => {
           }
         : { ...original, ...feeFields };
     const request = evm.toSignRequest(unsigned, account, chainId);
-    const intent = decodeEvm(request);
+    const l1 =
+      networks.info(old.network).opStack === true
+        ? await opStackFee(ctx, old.network, unsigned, flags)
+        : undefined;
+    const intent = withL1Fee(decodeEvm(request), l1);
     const txId = newId(ctx.options.random);
 
     const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
