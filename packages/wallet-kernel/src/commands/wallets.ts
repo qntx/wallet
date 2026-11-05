@@ -40,13 +40,15 @@ import {
   walletInfo,
 } from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
+import { normalizePassphrase, passphraseText } from "./passphrase.ts";
 import { openSession } from "./vault.ts";
 
 async function deriveWalletMaterial(
   platform: KernelPlatform,
   entropy: Uint8Array,
+  passphrase: Uint8Array | undefined,
 ): Promise<{ master: HDKey; walletId: string }> {
-  return withSeed(platform.pbkdf2, entropy, (seed) => {
+  return withSeed(platform.pbkdf2, entropy, passphraseText(passphrase), (seed) => {
     const master = masterKey(seed);
     return { master, walletId: walletIdOf(master) };
   });
@@ -55,20 +57,23 @@ async function deriveWalletMaterial(
 type WalletMaterial = {
   readonly walletId: string;
   readonly entropy: Uint8Array;
+  /** NFKD UTF-8 bytes; absent for a wallet without a BIP-39 passphrase. */
+  readonly passphrase: Uint8Array | undefined;
   readonly words: EntropyHeader["words"];
   readonly origin: EntropyHeader["origin"];
 };
 
-/** Entropy → master → walletId. `entropy` is not consumed. */
+/** Entropy and passphrase → master → walletId. Neither buffer is consumed. */
 export async function walletMaterial(
   platform: KernelPlatform,
   entropy: Uint8Array,
+  passphrase: Uint8Array | undefined,
   origin: EntropyHeader["origin"],
   words: EntropyHeader["words"],
 ): Promise<WalletMaterial> {
-  const { master, walletId } = await deriveWalletMaterial(platform, entropy);
+  const { master, walletId } = await deriveWalletMaterial(platform, entropy, passphrase);
   try {
-    return { walletId, entropy, words, origin };
+    return { walletId, entropy, passphrase, words, origin };
   } finally {
     master.wipePrivateData();
   }
@@ -84,8 +89,17 @@ export function walletInfoOf(
     origin: material.origin,
     words: material.words,
     backup,
+    ...(material.passphrase === undefined ? {} : { passphrase: true as const }),
     createdAt,
   });
+}
+
+/** The `entropy` record payload: the entropy, then the passphrase bytes when there are any. */
+export function walletSecretPlaintext(
+  entropy: Uint8Array,
+  passphrase: Uint8Array | undefined,
+): Uint8Array {
+  return passphrase === undefined ? new Uint8Array(entropy) : concatBytes(entropy, passphrase);
 }
 
 /** The entropy record for a new wallet, sealed under `dek`. Consumes nothing. */
@@ -100,6 +114,7 @@ export function walletRecord(
     walletId: material.walletId,
     origin: material.origin,
     words: material.words,
+    ...(material.passphrase === undefined ? {} : { passphrase: true as const }),
     backup,
     createdAt,
   });
@@ -109,7 +124,7 @@ export function walletRecord(
     "entropy",
     material.walletId,
     header,
-    new Uint8Array(material.entropy),
+    walletSecretPlaintext(material.entropy, material.passphrase),
   );
 }
 
@@ -286,7 +301,23 @@ async function storedFactorForPending(
 
 export async function confirmMnemonic(
   ctx: KernelContext,
+  params: { draft: string; answers: ReadonlyArray<Uint8Array>; passphrase?: Uint8Array },
+): Promise<{ wallet: WalletInfo; session: string }> {
+  const passphrase =
+    params.passphrase === undefined ? undefined : normalizePassphrase(params.passphrase);
+  try {
+    return await confirmWithPassphrase(ctx, params, passphrase);
+  } finally {
+    if (passphrase !== undefined) {
+      wipe(passphrase);
+    }
+  }
+}
+
+async function confirmWithPassphrase(
+  ctx: KernelContext,
   params: { draft: string; answers: ReadonlyArray<Uint8Array> },
+  passphrase: Uint8Array | undefined,
 ): Promise<{ wallet: WalletInfo; session: string }> {
   const draft = ctx.session.getDraft(params.draft);
   const allMatch = draft.expected.every((expected, i) => {
@@ -305,7 +336,13 @@ export async function confirmMnemonic(
   const taken = ctx.session.takeDraft(params.draft);
   try {
     const entropy = taken.entropy.use((bytes) => new Uint8Array(bytes));
-    const material = await walletMaterial(ctx.platform, entropy, "mnemonic", taken.words);
+    const material = await walletMaterial(
+      ctx.platform,
+      entropy,
+      passphrase,
+      "mnemonic",
+      taken.words,
+    );
     try {
       ensureNewWallet(ctx, material);
       const createdAt = ctx.platform.now();
@@ -355,14 +392,30 @@ export function mnemonicWords(entropy: Uint8Array): EntropyHeader["words"] {
 
 export async function importMnemonic(
   ctx: KernelContext,
-  params: { mnemonic: Uint8Array; factor?: Factor },
+  params: { mnemonic: Uint8Array; passphrase?: Uint8Array; factor?: Factor },
   requestSession: string | undefined,
 ): Promise<{ wallet: WalletInfo; session: string }> {
   const gated = gate(ctx, params.factor, requestSession);
-  const text = decodeUtf8Secret(params.mnemonic); // wipes `params.mnemonic`
-  const entropy = entropyFromMnemonic(text);
-  const material = await walletMaterial(ctx.platform, entropy, "mnemonic", mnemonicWords(entropy));
+  let text: string;
   try {
+    text = decodeUtf8Secret(params.mnemonic); // wipes `params.mnemonic`
+  } catch (error) {
+    params.passphrase?.fill(0);
+    throw error;
+  }
+  let passphrase: Uint8Array | undefined;
+  let entropy: Uint8Array | undefined;
+  try {
+    passphrase =
+      params.passphrase === undefined ? undefined : normalizePassphrase(params.passphrase);
+    entropy = entropyFromMnemonic(text);
+    const material = await walletMaterial(
+      ctx.platform,
+      entropy,
+      passphrase,
+      "mnemonic",
+      mnemonicWords(entropy),
+    );
     ensureNewWallet(ctx, material);
     const createdAt = ctx.platform.now();
     // An imported mnemonic is already written down somewhere: backup is "mnemonic".
@@ -370,7 +423,12 @@ export async function importMnemonic(
     const session = await commitRecords(ctx, gated, params.factor, [record]);
     return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
   } finally {
-    wipe(entropy);
+    if (entropy !== undefined) {
+      wipe(entropy);
+    }
+    if (passphrase !== undefined) {
+      wipe(passphrase);
+    }
   }
 }
 
@@ -461,7 +519,7 @@ export async function createWithPasskey(
     throw error;
   }
   const entropy = entropyFromPrf(prf.prfWallet);
-  const material = await walletMaterial(ctx.platform, entropy, "passkey", 12);
+  const material = await walletMaterial(ctx.platform, entropy, undefined, "passkey", 12);
   try {
     ensureNewWallet(ctx, material);
     const createdAt = ctx.platform.now();

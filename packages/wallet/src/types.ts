@@ -30,6 +30,8 @@ export type WalletInfo = {
    * device-bound passkey).
    */
   readonly backup: "none" | "passkey" | "mnemonic";
+  /** The wallet derives from its mnemonic plus a BIP-39 passphrase; only mnemonic wallets can. */
+  readonly passphrase: boolean;
   readonly createdAt: number;
 };
 
@@ -171,10 +173,20 @@ export type ExportedSecret = {
   readonly wipe: () => void;
 };
 
+/** What `exportMnemonic` returns: the phrase, and the BIP-39 passphrase when the wallet has one. */
+export type ExportedMnemonic = {
+  readonly mnemonic: ExportedSecret;
+  readonly passphrase?: ExportedSecret;
+};
+
 export type MnemonicDraft = {
   readonly words: ExportedSecret; // read once, then the host is responsible for wiping
   readonly quiz: ReadonlyArray<number>; // three positions the enclave picked
-  readonly confirm: (answers: ReadonlyArray<string>) => Promise<WalletInfo>;
+  /** `passphrase` becomes the wallet's BIP-39 passphrase; omit or pass "" for none. */
+  readonly confirm: (
+    answers: ReadonlyArray<string>,
+    options?: { readonly passphrase?: string },
+  ) => Promise<WalletInfo>;
   readonly discard: () => Promise<void>;
 };
 
@@ -201,10 +213,12 @@ export type WalletsApi = {
   }) => Promise<MnemonicDraft>;
   readonly importMnemonic: (options: {
     readonly mnemonic: string;
+    /** BIP-39 passphrase; omit or pass "" for none. Spaces are significant. */
+    readonly passphrase?: string;
     readonly factor?: InitialFactor;
   }) => Promise<WalletInfo>;
-  /** One-shot mnemonic export; requires re-verification every call. */
-  readonly exportMnemonic: (walletId: string, verify: UnlockFactor) => Promise<ExportedSecret>;
+  /** One-shot mnemonic (and passphrase) export; requires re-verification every call. */
+  readonly exportMnemonic: (walletId: string, verify: UnlockFactor) => Promise<ExportedMnemonic>;
   readonly delete: (walletId: string, verify: UnlockFactor) => Promise<void>;
 };
 
@@ -225,11 +239,22 @@ export type BackupApi = {
   }) => Promise<void>;
   readonly update: () => Promise<string>;
   readonly disable: () => Promise<void>;
+  /**
+   * Wallets whose header is flagged `passphrase` restore only when `passphrases` carries theirs;
+   * the rest are listed in `passphraseRequired` and a later restore can bring them in.
+   */
   readonly restore: (options: {
     readonly envelope: string;
     readonly backupFactor: UnlockFactor;
+    readonly passphrases?: ReadonlyArray<{
+      readonly walletId: string;
+      readonly passphrase: string;
+    }>;
     readonly factor?: InitialFactor;
-  }) => Promise<ReadonlyArray<WalletInfo>>;
+  }) => Promise<{
+    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly passphraseRequired: ReadonlyArray<string>;
+  }>;
 };
 
 export type Wallet = {

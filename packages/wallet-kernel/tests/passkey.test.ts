@@ -42,7 +42,7 @@ describe("passkey wallet vector", () => {
   it("mnemonic → seed → NIP-06 key → walletId", async () => {
     const entropy = entropyFromPrf(hexToBytes(vector.prf));
     expect(mnemonicFromEntropy(entropy)).toBe(vector.mnemonic);
-    const seed = await seedFromEntropy(entropy, subtlePbkdf2);
+    const seed = await seedFromEntropy(entropy, "", subtlePbkdf2);
     expect(bytesToHex(seed)).toBe(vector.seed);
     const master = masterKey(seed);
     expect(bytesToHex(master.publicKey!)).toBe(vector.masterPublicKey);

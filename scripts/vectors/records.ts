@@ -6,7 +6,7 @@
  *
  * Key orders (must match the encoders):
  *
- * - Entropy: walletId, origin, words, backup, createdAt
+ * - Entropy: walletId, origin, words, [passphrase: true,] backup, createdAt
  * - Data-key: purpose, createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
  * - Nostr sync key: publicKey, walletId, createdAt
@@ -35,6 +35,7 @@ function textOf(kind: string, input: Input): string {
         walletId: i["walletId"],
         origin: i["origin"],
         words: i["words"],
+        ...(i["passphrase"] === undefined ? {} : { passphrase: i["passphrase"] }),
         backup: i["backup"],
         createdAt: i["createdAt"],
       });
@@ -99,6 +100,18 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       walletId: WALLET_ID,
       origin: "mnemonic",
       words: 12,
+      backup: "mnemonic",
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "entropy-mnemonic-passphrase",
+    kind: "entropy",
+    input: {
+      walletId: "a8a96711dff685cb",
+      origin: "mnemonic",
+      words: 12,
+      passphrase: true,
       backup: "mnemonic",
       createdAt: CREATED_AT,
     },

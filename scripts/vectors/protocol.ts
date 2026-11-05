@@ -62,8 +62,11 @@ const walletInfo = {
   origin: "mnemonic",
   words: 12,
   backup: "mnemonic",
+  passphrase: false,
   createdAt: CREATED_AT,
 };
+const passphraseWalletInfo = { ...walletInfo, passphrase: true };
+const PASSPHRASE = $b(hexOf("p\u00E4ss word"));
 const passwordFactorInfo = { kind: "password", id: FACTOR_ID, createdAt: CREATED_AT };
 const hardwareFactor = { kind: "hardware" };
 const hardwareFactorInfo = { kind: "hardware", id: FACTOR_ID, createdAt: CREATED_AT };
@@ -209,8 +212,48 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "wallet.confirmMnemonic-passphrase",
+    message: {
+      v: 2,
+      id: 9,
+      method: "wallet.confirmMnemonic",
+      params: {
+        draft: DRAFT,
+        answers: [$b(hexOf("legal")), $b(hexOf("winner")), $b(hexOf("thank"))],
+        passphrase: PASSPHRASE,
+      },
+    },
+  },
+  {
     name: "wallet.discardMnemonic",
     message: { v: 2, id: 10, method: "wallet.discardMnemonic", params: { draft: DRAFT } },
+  },
+  {
+    name: "wallet.importMnemonic-passphrase",
+    message: {
+      v: 2,
+      id: 11,
+      method: "wallet.importMnemonic",
+      params: {
+        mnemonic: $b(
+          hexOf("legal winner thank year wave sausage worth useful legal winner thank yellow"),
+        ),
+        passphrase: PASSPHRASE,
+      },
+    },
+  },
+  {
+    name: "backup.restore-passphrases",
+    message: {
+      v: 2,
+      id: 15,
+      method: "backup.restore",
+      params: {
+        envelope: "{}",
+        backupFactor: { kind: "password", password: $b(hexOf("backup password")) },
+        passphrases: [{ walletId: WALLET_ID, passphrase: PASSPHRASE }],
+      },
+    },
   },
   {
     name: "wallet.importMnemonic",
@@ -630,6 +673,38 @@ const accept = [
     message: { v: 2, id: 11, ok: { wallet: walletInfo, session: SESSION } },
   },
   {
+    name: "response-ok-wallet.importMnemonic-passphrase",
+    check: "response:wallet.importMnemonic",
+    message: { v: 2, id: 11, ok: { wallet: passphraseWalletInfo, session: SESSION } },
+  },
+  {
+    name: "response-ok-wallet.exportMnemonic",
+    check: "response:wallet.exportMnemonic",
+    message: { v: 2, id: 12, ok: { mnemonic: $b(hexOf("legal winner thank year")) } },
+  },
+  {
+    name: "response-ok-wallet.exportMnemonic-passphrase",
+    check: "response:wallet.exportMnemonic",
+    message: {
+      v: 2,
+      id: 12,
+      ok: { mnemonic: $b(hexOf("legal winner thank year")), passphrase: PASSPHRASE },
+    },
+  },
+  {
+    name: "response-ok-backup.restore",
+    check: "response:backup.restore",
+    message: {
+      v: 2,
+      id: 15,
+      ok: {
+        wallets: [walletInfo],
+        passphraseRequired: [WALLET_ID],
+        session: SESSION,
+      },
+    },
+  },
+  {
     name: "response-ok-dataKeys.get",
     check: "response:dataKeys.get",
     message: { v: 2, id: 14, ok: $b(PRF) },
@@ -940,6 +1015,106 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     message: JSON.parse(
       `{"v":2,"id":41,"ok":{"paymentHash":${JSON.stringify(BYTES32)},"operatorPackages":{"__proto__":{"$bytes":"abcd"}}}}`,
     ) as unknown,
+  },
+  {
+    name: "params-passphrase-empty",
+    check: "request",
+    message: {
+      v: 2,
+      id: 11,
+      method: "wallet.importMnemonic",
+      params: {
+        mnemonic: $b(
+          hexOf("legal winner thank year wave sausage worth useful legal winner thank yellow"),
+        ),
+        passphrase: $b(""),
+      },
+    },
+  },
+  {
+    name: "params-passphrase-over-cap",
+    check: "request",
+    message: {
+      v: 2,
+      id: 9,
+      method: "wallet.confirmMnemonic",
+      params: {
+        draft: DRAFT,
+        answers: [$b(hexOf("legal")), $b(hexOf("winner")), $b(hexOf("thank"))],
+        passphrase: $b("61".repeat(1025)),
+      },
+    },
+  },
+  {
+    name: "params-passphrase-as-text",
+    check: "request",
+    message: {
+      v: 2,
+      id: 11,
+      method: "wallet.importMnemonic",
+      params: {
+        mnemonic: $b(
+          hexOf("legal winner thank year wave sausage worth useful legal winner thank yellow"),
+        ),
+        passphrase: "secret",
+      },
+    },
+  },
+  {
+    name: "params-restore-passphrase-empty",
+    check: "request",
+    message: {
+      v: 2,
+      id: 15,
+      method: "backup.restore",
+      params: {
+        envelope: "{}",
+        backupFactor: { kind: "password", password: $b(hexOf("backup password")) },
+        passphrases: [{ walletId: WALLET_ID, passphrase: $b("") }],
+      },
+    },
+  },
+  {
+    name: "params-restore-passphrase-extra-key",
+    check: "request",
+    message: {
+      v: 2,
+      id: 15,
+      method: "backup.restore",
+      params: {
+        envelope: "{}",
+        backupFactor: { kind: "password", password: $b(hexOf("backup password")) },
+        passphrases: [{ walletId: WALLET_ID, passphrase: PASSPHRASE, extra: 1 }],
+      },
+    },
+  },
+  {
+    name: "response-export-bare-bytes",
+    check: "response:wallet.exportMnemonic",
+    message: { v: 2, id: 12, ok: $b(hexOf("legal winner thank year")) },
+  },
+  {
+    name: "response-restore-missing-passphraseRequired",
+    check: "response:backup.restore",
+    message: { v: 2, id: 15, ok: { wallets: [walletInfo], session: SESSION } },
+  },
+  {
+    name: "response-wallet-info-missing-passphrase",
+    check: "response:wallet.importMnemonic",
+    message: {
+      v: 2,
+      id: 11,
+      ok: {
+        wallet: {
+          walletId: WALLET_ID,
+          origin: "mnemonic",
+          words: 12,
+          backup: "mnemonic",
+          createdAt: CREATED_AT,
+        },
+        session: SESSION,
+      },
+    },
   },
   {
     name: "params-session-wrong-type",

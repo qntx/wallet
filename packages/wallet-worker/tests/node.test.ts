@@ -204,7 +204,7 @@ describe("node host end to end", () => {
       kind: "password",
       password: PASSWORD,
     });
-    expect(new TextDecoder().decode(exported.read())).toBe(
+    expect(new TextDecoder().decode(exported.mnemonic.read())).toBe(
       "leader monkey parrot ring guide accident before fence cannon height naive bean",
     );
 

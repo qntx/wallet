@@ -14,6 +14,19 @@
       "text": "{\"walletId\":\"0011223344556677\",\"origin\":\"mnemonic\",\"words\":12,\"backup\":\"mnemonic\",\"createdAt\":1767225600000}"
     },
     {
+      "name": "entropy-mnemonic-passphrase",
+      "kind": "entropy",
+      "input": {
+        "walletId": "a8a96711dff685cb",
+        "origin": "mnemonic",
+        "words": 12,
+        "passphrase": true,
+        "backup": "mnemonic",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"walletId\":\"a8a96711dff685cb\",\"origin\":\"mnemonic\",\"words\":12,\"passphrase\":true,\"backup\":\"mnemonic\",\"createdAt\":1767225600000}"
+    },
+    {
       "name": "entropy-passkey-synced",
       "kind": "entropy",
       "input": {

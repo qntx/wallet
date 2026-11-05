@@ -19,20 +19,25 @@ export async function seedFromMnemonic(
   }
 }
 
-export async function seedFromEntropy(entropy: Uint8Array, pbkdf2: Pbkdf2): Promise<Uint8Array> {
-  return seedFromMnemonic(mnemonicFromEntropy(entropy), "", pbkdf2);
+export async function seedFromEntropy(
+  entropy: Uint8Array,
+  passphrase: string,
+  pbkdf2: Pbkdf2,
+): Promise<Uint8Array> {
+  return seedFromMnemonic(mnemonicFromEntropy(entropy), passphrase, pbkdf2);
 }
 
 /**
- * Derives the BIP-39 seed of `entropy`, runs `use`, wipes the seed on every path. Does not own
- * `entropy`.
+ * Derives the BIP-39 seed of `entropy` and `passphrase` ("" for none), runs `use`, wipes the seed
+ * on every path. Does not own `entropy`.
  */
 export async function withSeed<R>(
   pbkdf2: Pbkdf2,
   entropy: Uint8Array,
+  passphrase: string,
   use: (seed: Uint8Array) => R | Promise<R>,
 ): Promise<R> {
-  const seed = await seedFromEntropy(entropy, pbkdf2);
+  const seed = await seedFromEntropy(entropy, passphrase, pbkdf2);
   try {
     return await use(seed);
   } finally {

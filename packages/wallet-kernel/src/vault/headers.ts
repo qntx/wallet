@@ -19,6 +19,11 @@ export type EntropyHeader = {
   readonly walletId: string; // 16 lowercase hex
   readonly origin: "passkey" | "mnemonic";
   readonly words: 12 | 15 | 18 | 21 | 24;
+  /**
+   * The sealed payload carries a BIP-39 passphrase after the entropy. Absent otherwise — never
+   * `false` — so a wallet without one keeps its exact header bytes.
+   */
+  readonly passphrase?: true;
   /** How the entropy survives this device: nothing, a synced passkey, or a written-down mnemonic. */
   readonly backup: "none" | "passkey" | "mnemonic";
   readonly createdAt: number; // non-negative safe integer
@@ -100,6 +105,7 @@ export function encodeHeader(header: CoreHeader): string {
     walletId: header.walletId,
     origin: header.origin,
     words: header.words,
+    ...(header.passphrase === true ? { passphrase: true } : {}),
     backup: header.backup,
     createdAt: header.createdAt,
   });
@@ -121,15 +127,27 @@ function asWords(value: unknown): 12 | 15 | 18 | 21 | 24 {
 
 export function parseEntropyHeader(text: string): EntropyHeader {
   const object = headerObject(text);
-  expectKeys(object, ["walletId", "origin", "words", "backup", "createdAt"]);
+  const flagged = Object.hasOwn(object, "passphrase");
+  expectKeys(
+    object,
+    flagged
+      ? ["walletId", "origin", "words", "passphrase", "backup", "createdAt"]
+      : ["walletId", "origin", "words", "backup", "createdAt"],
+  );
   const { backup } = object;
   if (backup !== "none" && backup !== "passkey" && backup !== "mnemonic") {
     throw headerFailure();
   }
+  const origin = asEntropyOrigin(object["origin"]);
+  // `passphrase` is only ever `true`, and only a mnemonic wallet can have one.
+  if (flagged && (object["passphrase"] !== true || origin !== "mnemonic")) {
+    throw headerFailure();
+  }
   return {
     walletId: asWalletId(object["walletId"]),
-    origin: asEntropyOrigin(object["origin"]),
+    origin,
     words: asWords(object["words"]),
+    ...(flagged ? { passphrase: true as const } : {}),
     backup,
     createdAt: asCreatedAt(object["createdAt"]),
   };

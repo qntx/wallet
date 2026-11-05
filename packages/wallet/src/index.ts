@@ -14,6 +14,7 @@ export {
   type BackupApi,
   type DataKeyApi,
   type DerivedNostrKey,
+  type ExportedMnemonic,
   type ExportedSecret,
   type FactorInfo,
   type InitialFactor,

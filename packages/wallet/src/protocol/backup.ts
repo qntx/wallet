@@ -6,7 +6,7 @@
  */
 import { safeTime } from "./core.ts";
 import type { Validator } from "./validate.ts";
-import { arr, int, literal, obj, str, union } from "./validate.ts";
+import { arr, int, literal, obj, opt, str, union } from "./validate.ts";
 
 const MAX_FACTOR_CHARS = 512;
 const MAX_STRING_BYTES = 64_000;
@@ -58,6 +58,8 @@ export type BackupHeaderWallet = {
   readonly walletId: string;
   readonly origin: "mnemonic" | "passkey";
   readonly words: 12 | 15 | 18 | 21 | 24;
+  /** The wallet has a BIP-39 passphrase; it is never part of the payload. */
+  readonly passphrase?: true;
 };
 
 export type BackupHeaderWire = {
@@ -70,6 +72,7 @@ export const backupHeader: Validator<BackupHeaderWire> = obj({
       walletId: str(128),
       origin: union(literal("mnemonic"), literal("passkey")),
       words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
+      passphrase: opt(literal(true)),
     }),
     1000,
   ),

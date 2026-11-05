@@ -24,6 +24,12 @@ const MNEMONIC = "leader monkey parrot ring guide accident before fence cannon h
 const EXPECTED_PUBLIC_KEY = "17162c921dc4d2518f9a101db33695df1afb56ab82f5ff3e5da6eec3ca5cd917";
 const EXPECTED_NSEC = "nsec10allq0gjx7fddtzef0ax00mdps9t2kmtrldkyjfs8l5xruwvh2dq0lhhkp";
 const PASSWORD = "correct horse battery staple";
+// vectors/bip39.json `passphrase` / vectors/wallet-id.json `passphrase` — `kana-and-compat`.
+const PASSPHRASE_MNEMONIC =
+  "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+const PASSPHRASE = "\u30AC\uFF76\uFF9E \u2460";
+const PASSPHRASE_WALLET_ID = "9f043a6d86bd43b4";
+const PASSPHRASE_PUBLIC_KEY = "d487b7a4113a447308c57222d0307d0662ce682ada63ce1fc10d25a5531ef510";
 // vectors/nip44/official.json — a fixed peer for the encrypt/decrypt round trip.
 const PEER_PUBLIC_KEY = "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
 
@@ -265,7 +271,33 @@ export async function main(): Promise<void> {
   );
   assert(statusEvents.length > 0, "kernel posted status events");
 
-  // 8. The native kernel entry runs on the same bare runtime: __qntx is what the native host
+  // 8. BIP-39 passphrases are NFKD-normalized, so Hermes' String.prototype.normalize must really
+  // decompose (a stub that returns its input would silently derive different wallets): accents,
+  // half-width kana and a compatibility character, then a passphrase wallet whose walletId and
+  // NIP-06 key come from the vectors (vectors/bip39.json, vectors/wallet-id.json `kana-and-compat`).
+  eq("\u00E9".normalize("NFKD"), "e\u0301", "NFKD decomposes an accent");
+  eq("\u30AC".normalize("NFKD"), "\u30AB\u3099", "NFKD decomposes a kana");
+  eq("\uFF76\uFF9E".normalize("NFKD"), "\u30AB\u3099", "NFKD maps half-width kana");
+  eq("\u2460".normalize("NFKD"), "1", "NFKD maps a compatibility digit");
+  const withPassphrase = ok(
+    await kernel2.call(
+      "wallet.importMnemonic",
+      {
+        mnemonic: utf8ToBytes(PASSPHRASE_MNEMONIC),
+        passphrase: utf8ToBytes(PASSPHRASE),
+      },
+      session,
+    ),
+  );
+  const passphraseWallet = field(withPassphrase, "wallet");
+  eq(field(passphraseWallet, "walletId"), PASSPHRASE_WALLET_ID, "passphrase walletId");
+  eq(field(passphraseWallet, "passphrase"), true, "passphrase flag");
+  const passphraseKey = ok(
+    await kernel2.call("nostr.deriveKey", { walletId: PASSPHRASE_WALLET_ID, index: 0 }, session),
+  );
+  eq(field(passphraseKey, "publicKey"), PASSPHRASE_PUBLIC_KEY, "passphrase NIP-06 key");
+
+  // 9. The native kernel entry runs on the same bare runtime: __qntx is what the native host
   // injects (deterministic random, fake clock, sync pbkdf2 callback, in-memory file, a capture
   // port). Importing the entry starts the kernel — its first store.load() and status frame
   // exercise the file-backed RecordStore, so any global outside the Hermes set (e.g.

@@ -941,13 +941,112 @@ describe("ExportedSecret", () => {
   it("reads exactly once and wipes", async () => {
     const { wallet, kernel } = await connectFake(unlockedStatus());
     const secret = utf8ToBytes("abandon abandon abandon");
-    kernel.handlers.set("wallet.exportMnemonic", () => ({ ok: new Uint8Array(secret) }));
+    kernel.handlers.set("wallet.exportMnemonic", () => ({
+      ok: { mnemonic: new Uint8Array(secret) },
+    }));
     const verify = { kind: "password" as const, password: "long enough password" };
     const exported = await wallet.wallets.exportMnemonic("0".repeat(16), verify);
-    const bytes = exported.read();
+    const bytes = exported.mnemonic.read();
     expect(new TextDecoder().decode(bytes)).toBe("abandon abandon abandon");
-    expect(() => exported.read()).toThrow(WalletError);
-    exported.wipe();
+    expect(() => exported.mnemonic.read()).toThrow(WalletError);
+    expect(exported.passphrase).toBeUndefined();
+    exported.mnemonic.wipe();
+  });
+
+  it("exports the passphrase of a passphrase wallet as its own one-shot secret", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    kernel.handlers.set("wallet.exportMnemonic", () => ({
+      ok: { mnemonic: utf8ToBytes("abandon abandon abandon"), passphrase: utf8ToBytes("p4ss") },
+    }));
+    const verify = { kind: "password" as const, password: "long enough password" };
+    const exported = await wallet.wallets.exportMnemonic("0".repeat(16), verify);
+    expect(new TextDecoder().decode(exported.passphrase?.read())).toBe("p4ss");
+    expect(() => exported.passphrase?.read()).toThrow(WalletError);
+  });
+});
+
+const PASSPHRASE_WALLET = {
+  walletId: "0123456789abcdef",
+  origin: "mnemonic",
+  words: 12,
+  backup: "mnemonic",
+  passphrase: true,
+  createdAt: 1,
+} as const;
+const SESSION_ID = "ab".repeat(16);
+
+const sentPassphrase = (params: Record<string, unknown> | undefined): boolean =>
+  params !== undefined && "passphrase" in params;
+
+describe("BIP-39 passphrase wire", () => {
+  const text = (bytes: unknown): string => new TextDecoder().decode(bytes as Uint8Array);
+
+  it("importMnemonic sends the passphrase as UTF-8 bytes and omits it when empty", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    const seen: Array<Record<string, unknown>> = [];
+    kernel.handlers.set("wallet.importMnemonic", (request) => {
+      seen.push(request.params as Record<string, unknown>);
+      return { ok: { wallet: PASSPHRASE_WALLET, session: SESSION_ID } };
+    });
+    const imported = await wallet.wallets.importMnemonic({
+      mnemonic: "abandon abandon abandon",
+      passphrase: "p\u00E4ss word",
+    });
+    expect(imported.passphrase).toBe(true);
+    expect(text(seen[0]?.["passphrase"])).toBe("p\u00E4ss word");
+
+    await wallet.wallets.importMnemonic({ mnemonic: "abandon", passphrase: "" });
+    await wallet.wallets.importMnemonic({ mnemonic: "abandon" });
+    expect(sentPassphrase(seen[1])).toBe(false);
+    expect(sentPassphrase(seen[2])).toBe(false);
+  });
+
+  it("confirm sends the passphrase with the quiz answers", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    let confirmParams: Record<string, unknown> = {};
+    kernel.handlers.set("wallet.createMnemonic", () => ({
+      ok: {
+        draft: "cd".repeat(16),
+        words: utf8ToBytes("abandon abandon abandon"),
+        quiz: [0, 1, 2],
+      },
+    }));
+    kernel.handlers.set("wallet.confirmMnemonic", (request) => {
+      confirmParams = request.params as Record<string, unknown>;
+      return { ok: { wallet: PASSPHRASE_WALLET, session: SESSION_ID } };
+    });
+    const draft = await wallet.wallets.createMnemonic({ words: 12 });
+    const confirmed = await draft.confirm(["a", "b", "c"], { passphrase: "secret" });
+    expect(confirmed.passphrase).toBe(true);
+    expect(text(confirmParams["passphrase"])).toBe("secret");
+
+    await draft.confirm(["a", "b", "c"]);
+    expect("passphrase" in confirmParams).toBe(false);
+  });
+
+  it("restore sends passphrases and returns the wallets still needing one", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    let restoreParams: Record<string, unknown> = {};
+    kernel.handlers.set("backup.restore", (request) => {
+      restoreParams = request.params as Record<string, unknown>;
+      return {
+        ok: {
+          wallets: [],
+          passphraseRequired: ["0123456789abcdef"],
+          session: SESSION_ID,
+        },
+      };
+    });
+    const result = await wallet.backup.restore({
+      envelope: "{}",
+      backupFactor: { kind: "password", password: "long enough password" },
+      passphrases: [{ walletId: "0123456789abcdef", passphrase: "secret" }],
+    });
+    expect(result.passphraseRequired).toStrictEqual(["0123456789abcdef"]);
+    expect(result.wallets).toStrictEqual([]);
+    const sent = restoreParams["passphrases"] as Array<{ walletId: string; passphrase: unknown }>;
+    expect(sent[0]?.walletId).toBe("0123456789abcdef");
+    expect(text(sent[0]?.passphrase)).toBe("secret");
   });
 });
 
@@ -1065,6 +1164,7 @@ describe("passkey restore purpose", () => {
           origin: "passkey",
           words: 12,
           backup: "passkey",
+          passphrase: false,
           createdAt: 1,
         },
         session: "ab".repeat(16),
@@ -1089,6 +1189,7 @@ describe("kernel-run passkey ceremonies (hardware host)", () => {
             origin: "passkey",
             words: 12,
             backup: "passkey",
+            passphrase: false,
             createdAt: 1,
           },
           session: "ab".repeat(16),

@@ -195,6 +195,14 @@ export function wireSecretText(text: string, transfer: ArrayBuffer[]): Uint8Arra
   return wireBytes(new TextEncoder().encode(text), transfer);
 }
 
+/** The `passphrase` wire field for a BIP-39 passphrase: absent for none (undefined or ""). */
+export function wirePassphrase(
+  text: string | undefined,
+  transfer: ArrayBuffer[],
+): { readonly passphrase?: Uint8Array } {
+  return text === undefined || text === "" ? {} : { passphrase: wireSecretText(text, transfer) };
+}
+
 export function requireCeremony(source: FactorSource): PasskeyCeremony {
   if (source.ceremony === undefined) {
     throw new WalletError("factor-unavailable", "no passkey ceremony is configured");

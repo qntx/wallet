@@ -28,11 +28,13 @@ import { createSparkModule } from "./modules/spark/index.ts";
 import { serializeCeremonies } from "./platform.ts";
 import type { KernelPlatform, Port } from "./platform.ts";
 import { wipe } from "./secret/secret.ts";
+import type { Secret } from "./secret/secret.ts";
 import { Session } from "./session/session.ts";
 import { statusContents, statusPayload } from "./status.ts";
 import { factorBindingOk } from "./vault/factors.ts";
+import { parseEntropyHeader } from "./vault/headers.ts";
 import type { StoredRecord, StoreOp, VaultImage } from "./vault/store.ts";
-import { openRecord } from "./vault/vault.ts";
+import { openRecord, splitWalletSecret } from "./vault/vault.ts";
 import type { OpenedRecord } from "./vault/vault.ts";
 
 const EMPTY_IMAGE: VaultImage = { meta: undefined, records: [], factors: [] };
@@ -57,6 +59,30 @@ function collectTransferables(value: unknown, out: ArrayBuffer[], depth = 0): Ar
     collectTransferables(item, out, depth + 1);
   }
   return out;
+}
+
+/**
+ * Opens a record at reconcile. An `entropy` record must also match its header's payload layout, so
+ * an inconsistent wallet record latches the vault corrupted instead of failing at first use.
+ */
+function openChecked(dek: Secret, record: StoredRecord): Uint8Array {
+  const plaintext = openRecord(dek, record);
+  if (record.kind === "entropy") {
+    try {
+      const { entropy, passphrase } = splitWalletSecret(
+        parseEntropyHeader(record.header),
+        plaintext,
+      );
+      wipe(entropy);
+      if (passphrase !== undefined) {
+        wipe(passphrase);
+      }
+    } catch (error) {
+      wipe(plaintext);
+      throw error;
+    }
+  }
+  return plaintext;
 }
 
 function isMethodName(method: string): method is MethodName {
@@ -150,11 +176,11 @@ export function startKernel(host: KernelPlatform, port: Port): void {
       for (const record of next.records) {
         const prior = before.get(`${record.kind}/${record.id}`);
         if (prior === undefined) {
-          opened.push({ kind: record.kind, id: record.id, plaintext: openRecord(dek, record) });
+          opened.push({ kind: record.kind, id: record.id, plaintext: openChecked(dek, record) });
         } else {
           before.delete(`${record.kind}/${record.id}`);
           if (prior.header !== record.header || !equalBytes(prior.sealed, record.sealed)) {
-            opened.push({ kind: record.kind, id: record.id, plaintext: openRecord(dek, record) });
+            opened.push({ kind: record.kind, id: record.id, plaintext: openChecked(dek, record) });
           }
         }
       }

@@ -10,6 +10,14 @@
       "sealed": "01404142434445464748494a4b4c4d4e4f5051525354555657455e9d9434516f09db27a4c283dc8f29f3e09c88c9cc600a04be294e7ff373880c52d763a6e06f415098be397abd50f6"
     },
     {
+      "key": "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "nonce": "808182838485868788898a8b8c8d8e8f9091929394959697",
+      "context": "qntx-wallet/vault/v1/record/entropy/a8a96711dff685cb",
+      "header": "{\"walletId\":\"a8a96711dff685cb\",\"origin\":\"mnemonic\",\"words\":12,\"passphrase\":true,\"backup\":\"mnemonic\",\"createdAt\":1767225600000}",
+      "plaintext": "000000000000000000000000000000007061cc887373776fcc887264",
+      "sealed": "01808182838485868788898a8b8c8d8e8f90919293949596976e5ac5c27fbc99749055e056a86076148fc77e4fdb64a704245a48663865814571c226dc5bc9601f57059f4d"
+    },
+    {
       "key": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
       "nonce": "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7",
       "context": "qntx-wallet/vault/v1/factor/password/00112233445566778899aabbccddeeff",

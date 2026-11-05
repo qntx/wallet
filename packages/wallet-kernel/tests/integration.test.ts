@@ -414,7 +414,9 @@ describe("create / import", () => {
     const exported = ok(
       await h.call("wallet.exportMnemonic", { verify: verify(), walletId }, session),
     );
-    expect(new TextDecoder().decode(exported as Uint8Array)).toBe(passkeyVector.vector.mnemonic);
+    expect(new TextDecoder().decode(bytesField(exported, "mnemonic"))).toBe(
+      passkeyVector.vector.mnemonic,
+    );
     await h.settle();
     expect(lastStatus(h).wallets[0]?.backup).toBe("mnemonic");
     const metaAfter = await storedMeta(h.store);
@@ -438,7 +440,9 @@ describe("create / import", () => {
     const again = ok(
       await h2.call("wallet.exportMnemonic", { verify: verify(), walletId }, session2),
     );
-    expect(new TextDecoder().decode(again as Uint8Array)).toBe(passkeyVector.vector.mnemonic);
+    expect(new TextDecoder().decode(bytesField(again, "mnemonic"))).toBe(
+      passkeyVector.vector.mnemonic,
+    );
   });
 });
 
@@ -876,7 +880,9 @@ describe("exports and data keys", () => {
     };
 
     const exported = ok(await h.call("wallet.exportMnemonic", { verify, walletId }, session));
-    expect(new TextDecoder().decode(exported as Uint8Array)).toBe(passkeyVector.vector.mnemonic);
+    expect(new TextDecoder().decode(bytesField(exported, "mnemonic"))).toBe(
+      passkeyVector.vector.mnemonic,
+    );
 
     const nsecBytes = ok(
       await h.call(
