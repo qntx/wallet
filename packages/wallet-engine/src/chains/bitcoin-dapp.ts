@@ -165,7 +165,7 @@ export const prepareDappPsbts = async (
         template,
       },
       psbt: tx.toPSBT(0),
-      sign: inputs.map((i) => i.index).toSorted((a, b) => a - b),
+      sign: inputs.map((i) => i.index).sort((a, b) => a - b),
     });
     if (request.kind !== "bitcoin.psbt") {
       throw invalid("unexpected request kind");
