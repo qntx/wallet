@@ -1,11 +1,21 @@
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 
+import { ChainError } from "../index.ts";
 import type { AssetFlow, DisplayIntent, SignRequest, Verifiability } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
 const SATS = "sats";
 const OP_RETURN = 0x6a;
+
+/** Btc-signer's parse failures are foreign exceptions — the request is a malformed PSBT. */
+const parsePsbt = (psbt: Uint8Array): Transaction => {
+  try {
+    return Transaction.fromPSBT(psbt);
+  } catch (error) {
+    throw error instanceof ChainError ? error : new ChainError("invalid-request", "malformed PSBT");
+  }
+};
 
 const bytesToHex = (bytes: Uint8Array): string => {
   let out = "";
@@ -43,7 +53,7 @@ export const decodeBitcoinPsbt = (
   request: Extract<SignRequest, { kind: "bitcoin.psbt" }>,
   ownScripts: ReadonlySet<string> = new Set(),
 ): DisplayIntent => {
-  const tx = Transaction.fromPSBT(request.psbt);
+  const tx = parsePsbt(request.psbt);
   const coder = Address(bitcoinNetwork(request.network).params);
   const signed = new Set(request.sign);
   const outflows: AssetFlow[] = [];

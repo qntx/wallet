@@ -18,7 +18,7 @@ import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { recognizePermit } from "./permit.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
-import { assertHex, networkChainId } from "./transaction.ts";
+import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
 import { domainChainId, parseTypedData } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 
@@ -102,10 +102,13 @@ const weiAmount = (wei: bigint, symbol?: string, decimals?: number) => ({
 });
 
 const feeWei = (tx: EvmTransaction): bigint =>
-  BigInt(tx.gas) * (tx.type === "eip1559" ? BigInt(tx.maxFeePerGas) : BigInt(tx.gasPrice));
+  quantityBigInt(tx.gas, "tx.gas") *
+  (tx.type === "eip1559"
+    ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas")
+    : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
 
 const nativeOutflow = (tx: EvmTransaction, to: string): ReadonlyArray<AssetFlow> => [
-  { to, amount: weiAmount(BigInt(tx.value)), verified: true },
+  { to, amount: weiAmount(quantityBigInt(tx.value, "tx.value")), verified: true },
 ];
 
 const tokenFlow = (

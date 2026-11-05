@@ -207,6 +207,22 @@ describe("normalize", () => {
     expect(() => normalizeEvm(txReq({ type: "eip1559", gas: "zzz" }))).toThrow(ChainError);
   });
 
+  it('rejects a bare "0x" quantity in normalize and decode', () => {
+    const cases: ReadonlyArray<{ type: "eip1559" | "legacy"; field: string; decoded: boolean }> = [
+      { type: "eip1559", field: "value", decoded: true },
+      { type: "eip1559", field: "gas", decoded: true },
+      { type: "eip1559", field: "maxFeePerGas", decoded: true },
+      { type: "eip1559", field: "maxPriorityFeePerGas", decoded: false },
+      { type: "legacy", field: "gasPrice", decoded: true },
+    ];
+    for (const { type, field } of cases) {
+      expect(() => normalizeEvm(txReq({ type, [field]: "0x" }))).toThrow(ChainError);
+    }
+    for (const { type, field } of cases.filter((c) => c.decoded)) {
+      expect(() => decodeEvm(txReq({ type, [field]: "0x" }) as never)).toThrow(ChainError);
+    }
+  });
+
   it("rejects eip7702 as unsupported", () => {
     const req = txReq({ type: "eip1559" });
     const bad = { ...req, tx: { ...req.tx, type: "eip7702" } };

@@ -19648,6 +19648,14 @@ zoo`.split("\n"));
 	};
 	var SATS = "sats";
 	var OP_RETURN = 106;
+	/** Btc-signer's parse failures are foreign exceptions — the request is a malformed PSBT. */
+	var parsePsbt = (psbt) => {
+		try {
+			return Transaction.fromPSBT(psbt);
+		} catch (error) {
+			throw error instanceof ChainError ? error : new ChainError("invalid-request", "malformed PSBT");
+		}
+	};
 	var bytesToHex$2 = (bytes) => {
 		let out = "";
 		for (const b of bytes) out += b.toString(16).padStart(2, "0");
@@ -19673,7 +19681,7 @@ zoo`.split("\n"));
 	* change) — not a display hint.
 	*/
 	var decodeBitcoinPsbt = (request, ownScripts = /* @__PURE__ */ new Set()) => {
-		const tx = Transaction.fromPSBT(request.psbt);
+		const tx = parsePsbt(request.psbt);
 		const coder = Address(bitcoinNetwork(request.network).params);
 		const signed = new Set(request.sign);
 		const outflows = [];
@@ -23694,7 +23702,7 @@ zoo`.split("\n"));
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-DAV7DuaO.mjs
+	// packages/wallet-chains/dist/typed-data-DlrvN9SH.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -23719,6 +23727,11 @@ zoo`.split("\n"));
 	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
 	var canonicalHex = (value) => `0x${value.toString(16)}`;
+	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
+	var quantityBigInt = (value, field) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+		return BigInt(value);
+	};
 	var safeInteger = (value, field) => {
 		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
 		return value;
@@ -23726,8 +23739,7 @@ zoo`.split("\n"));
 	var quantity = (value, field) => {
 		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
 		if (CANONICAL_HEX.test(value)) return value;
-		if (/^0x[0-9a-fA-F]+$/.test(value) || value === "0x") return canonicalHex(BigInt(value === "0x" ? "0x0" : value));
-		throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+		return canonicalHex(quantityBigInt(value, field));
 	};
 	var hexBytes$1 = (value, field) => {
 		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
@@ -26458,10 +26470,10 @@ zoo`.split("\n"));
 		asset: EVM_NATIVE_ASSET,
 		amount: wei.toString(10)
 	}, symbol === void 0 ? {} : { symbol }), decimals === void 0 ? {} : { decimals });
-	var feeWei = (tx) => BigInt(tx.gas) * (tx.type === "eip1559" ? BigInt(tx.maxFeePerGas) : BigInt(tx.gasPrice));
+	var feeWei = (tx) => quantityBigInt(tx.gas, "tx.gas") * (tx.type === "eip1559" ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas") : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
 	var nativeOutflow = (tx, to) => [{
 		to,
-		amount: weiAmount(BigInt(tx.value)),
+		amount: weiAmount(quantityBigInt(tx.value, "tx.value")),
 		verified: true
 	}];
 	var tokenFlow = (tx, to, amount, chainId, table) => {

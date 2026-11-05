@@ -282,6 +282,14 @@ describe("normalizeBitcoin", () => {
     expect(n.kind).toBe("bitcoin.psbt");
   });
 
+  it("rejects an empty or garbage PSBT in decode and normalize", () => {
+    for (const psbt of [new Uint8Array([]), new Uint8Array([0xde, 0xad]), new Uint8Array(64)]) {
+      expect(() => decodeBitcoinPsbt(req(psbt) as never)).toThrow(ChainError);
+      expect(() => decodeBitcoinPsbt(req(psbt) as never)).toThrow("malformed PSBT");
+      expect(() => normalizeBitcoin(req(psbt))).toThrow(ChainError);
+    }
+  });
+
   it("rejects missing witnessUtxo, non-default sighash, malformed sign, bad network", () => {
     expect(() => normalizeBitcoin(req(buildPsbt({ noWitnessUtxo: true })))).toThrow(ChainError);
     expect(() => normalizeBitcoin(req(buildPsbt({ sighash: 2 })))).toThrow(ChainError);
