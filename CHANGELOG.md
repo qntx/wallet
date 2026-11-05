@@ -9,6 +9,88 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-05
+
+Signature safety and fund correctness from the code-level audit against MetaMask, Rabby, OneKey and
+Uniswap: message content and Sign-In with Ethereum/Solana binding, EIP-712 permit, Permit2, Seaport
+and Safe recognition, complete approval decoding, per-account blind signing, re-simulation before
+signing, EVM drop detection, the OP Stack L1 data fee and ENS names. Adds BIP-39 passphrases and a
+Bitcoin Wallet Standard dApp provider. `@qntx/siwx` 0.8.0 is a new dependency.
+
+### Added
+
+- `@qntx/wallet`: BIP-39 passphrases for mnemonic wallets (WD-083). `wallets.importMnemonic` and
+  `MnemonicDraft.confirm` take an optional `passphrase` (NFKD, never trimmed, 1–1024 bytes); the
+  seed and `walletId` derive from it, so the same words with another passphrase are a separate
+  wallet. `WalletInfo.passphrase`. The passphrase lives in the wallet's entropy record; records and
+  backups without one keep their bytes.
+- `@qntx/wallet-engine/connect`: a Bitcoin Wallet Standard wallet in the injected script with a
+  `bip122` connection namespace: `bitcoin:connect` (payment = `btc.bip84` 0/0, ordinals =
+  `btc.bip86` 0/0), `bitcoin:events`, `standard:disconnect`, `bitcoin:signMessage` (BIP-322
+  simple), `bitcoin:signTransaction` and `bitcoin:signAndSendTransaction`. dApp PSBTs get
+  derivation paths only for inputs whose prevout is a scanned address of the account;
+  `SINGLE|ANYONECANPAY` is signed only with a same-index output and is a `danger`; inputs of
+  inscription-postage size are flagged; mixing payment and ordinals inputs in one request is
+  refused for now.
+- `@qntx/wallet-chains`: `DisplayIntent.message` carries what a message request signs: text (with
+  `signIn` from `parseSignIn`, built on `@qntx/siwx`), hex for non-text bytes, or structured typed
+  data (`domain`, `primaryType`, `data`, plus `seaport` / `safe` when recognized).
+- `@qntx/wallet-chains`: EIP-712 recognition by exact field lists: EIP-2612 and DAI `Permit`, the six
+  Permit2 types at the canonical contract (`PERMIT2_ADDRESS`), Seaport 1.5/1.6 `OrderComponents`
+  and Safe `SafeTx` (inner calls decoded, MultiSendCallOnly unpacked).
+- `@qntx/wallet-chains`: transaction decoding of `setApprovalForAll`, `decreaseAllowance`, Permit2
+  `approve` and `lockdown`, ERC-721 `safeTransferFrom` with data and ERC-1155
+  `safeBatchTransferFrom`; `transferFrom` on a built-in token decodes as ERC-20.
+- `@qntx/wallet-engine`: request risk for sign-in messages (domain/scheme mismatch refused per
+  ERC-4361 outside local development, port, address, validity window, malformed text), permits
+  (`permit-approval`, `permit-unlimited`, `permit-long-lived`), approvals (`collection-approval`,
+  `unlimited-approval`), Seaport (`order-receives-nothing`, `order-offerer-mismatch`), Safe
+  (`safe-delegatecall`, `safe-gas-refund`), blind signing and dApp PSBTs.
+- `@qntx/wallet-engine`: per-account-group blind signing (`AccountTreeController.setBlindSigning`,
+  device-local, never synced); non-text `personal_sign` and Solana `signMessage` bytes are refused
+  (`4200`) unless enabled, and then carry a `blind-signing` danger.
+- `@qntx/wallet-engine`: approval re-simulates a request whose simulation is older than 60 s; a
+  material change (status, asset set, any asset by more than 5%) returns the request to
+  `awaiting-approval` with `SimulationChangedError`.
+- `@qntx/wallet-engine`: EVM drop detection: a persisted `evm` build record (sender, group, signed
+  raw transaction); a nonce consumed without our receipt settles `replaced` or `dropped`; a
+  transaction the node forgot is rebroadcast with backoff and, after 30 minutes unknown to every
+  endpoint, `dropped` with its nonce released. Speed-up and cancel work after a restart.
+- `@qntx/wallet-engine`: the OP Stack L1 data fee and operator fee on OP Mainnet, Base and their
+  testnets (`DisplayIntent.fee.l1Data`), counted in `fee-exceeds-amount`.
+- `@qntx/wallet-engine`: ENS names as EVM send recipients and `engine.names.resolve`, resolved on
+  mainnet or Sepolia with ENSIP-11 coin types and the ENSIP-19 default, cross-checked between
+  endpoints; the outflow shows the name (`AssetFlow.name`).
+- Coverage thresholds for every package (ratchet) and fast-check property tests with a weekly fuzz
+  workflow.
+
+### Changed
+
+- **BREAKING** `@qntx/wallet-chains`: `ApprovalChange` is an `allowance` | `operator` union.
+- **BREAKING** `@qntx/wallet-chains`: `parseTypedData(typedData)` takes only the source;
+  `normalizeEvm` refuses a malformed or mismatched `domain.chainId` (`chain-id-mismatch`, the kernel
+  refuses it too) instead of warning; recognized permits decode as `approve` / `partial`.
+- **BREAKING** `@qntx/wallet-engine`: `RequestController` requires `blindSigning`;
+  `SolanaDisplay.message` is a `MessageContent`; typed data whose `verifyingContract` is the signer
+  is refused from web pages.
+- **BREAKING** `@qntx/wallet`: `wallets.exportMnemonic` resolves `{ mnemonic, passphrase? }`;
+  `backup.restore` takes `passphrases` and resolves `{ wallets, passphraseRequired }` (the
+  passphrase never enters a backup).
+- `@qntx/wallet-engine`: general viem clients disable CCIP-Read (it used the global `fetch`); ENS
+  clients use the injected fetch.
+- `@qntx/wallet-engine`: the connection controller receives every enabled family's networks.
+
+### Fixed
+
+- `@qntx/wallet-chains`: a bare `"0x"` quantity and empty or garbage PSBT bytes throw `ChainError`
+  instead of foreign exceptions (found by property fuzzing).
+- `@qntx/wallet-engine`: a dropped original no longer marks its live replacement `replaced`.
+- `@qntx/wallet-engine`: the account totals debounce, metadata publish debounce and Spark events
+  backoff run on the injected `setTimer` (`AccountTreeController`, `MetaSyncController`,
+  `SparkController` and `DepositClaimer` take a required `setTimer`).
+- `@qntx/wallet-engine`: the sign log keeps `solana-sign` entries when it reads them back.
+- Browser test servers bind the IPv4 loopback (intermittent Playwright start-up timeouts).
+
 ## [0.9.0] - 2026-11-04
 
 A local phishing list, transaction simulation and the remaining in-app browser methods
@@ -520,7 +602,11 @@ engine is in this repository but not yet published to npm.
 - `@qntx/wallet-worker/node`: `createNodeWallet` runs the same kernel in `worker_threads`, with the test-only `createSoftwarePasskey`.
 - The kernel: BIP-39 (random with a backup quiz, import, export), passkey wallets (PRF output as BIP-39 entropy), BIP-32 and NIP-06 derivation, `walletId`, an XChaCha20-Poly1305 vault whose public headers are authenticated and record-kind agnostic (an unknown kind reports `corrupted` rather than silently dropping data), password and passkey factors with online rate limiting, sessions with idle and absolute limits, a statically composed Nostr module (derived keys, nsec, ncryptsec, generated, NIP-46 client; NIP-04, NIP-44 and batched NIP-59 unwrapping).
 
-[Unreleased]: https://github.com/qntx/wallet/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/qntx/wallet/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/qntx/wallet/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/qntx/wallet/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/qntx/wallet/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/qntx/wallet/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/qntx/wallet/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/qntx/wallet/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/qntx/wallet/compare/v0.5.1...v0.5.2
