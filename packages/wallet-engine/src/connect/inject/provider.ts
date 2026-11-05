@@ -65,6 +65,39 @@ type BitcoinSignMessageFeature = {
   };
 };
 
+type BitcoinSigHash =
+  | "ALL"
+  | "NONE"
+  | "SINGLE"
+  | "ALL|ANYONECANPAY"
+  | "NONE|ANYONECANPAY"
+  | "SINGLE|ANYONECANPAY";
+type BitcoinSignInput = {
+  readonly psbt: Uint8Array;
+  readonly inputsToSign: ReadonlyArray<{
+    readonly account: WalletAccount;
+    readonly signingIndexes: number[];
+    readonly sigHash?: BitcoinSigHash;
+  }>;
+  readonly chain?: IdentifierString;
+};
+type BitcoinSignTransactionFeature = {
+  readonly "bitcoin:signTransaction": {
+    readonly version: "1.0.0";
+    readonly signTransaction: (
+      ...inputs: ReadonlyArray<BitcoinSignInput>
+    ) => Promise<ReadonlyArray<{ readonly signedPsbt: Uint8Array }>>;
+  };
+};
+type BitcoinSignAndSendTransactionFeature = {
+  readonly "bitcoin:signAndSendTransaction": {
+    readonly version: "1.0.0";
+    readonly signAndSendTransaction: (
+      ...inputs: ReadonlyArray<BitcoinSignInput & { readonly chain: IdentifierString }>
+    ) => Promise<ReadonlyArray<{ readonly txId: string }>>;
+  };
+};
+
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -133,6 +166,18 @@ const errorOf = (value: unknown): ProviderRpcError =>
   isRecord(value) && typeof value["code"] === "number" && typeof value["message"] === "string"
     ? new ProviderRpcError(value["code"], value["message"])
     : new ProviderRpcError(-32603, "internal error");
+
+/** The wire shape of Bitcoin sign inputs: accounts travel as their addresses. */
+const btcInputs = (inputs: ReadonlyArray<BitcoinSignInput>): unknown =>
+  inputs.map((input) => ({
+    psbt: input.psbt,
+    chain: input.chain,
+    inputsToSign: input.inputsToSign.map((item) => ({
+      address: item.account.address,
+      signingIndexes: item.signingIndexes,
+      sigHash: item.sigHash,
+    })),
+  }));
 
 const unsupported = async (): Promise<never> => {
   await Promise.resolve();
@@ -477,7 +522,9 @@ export function install(info: ProviderInfo): void {
     BitcoinConnectFeature &
     BitcoinDisconnectFeature &
     BitcoinEventsFeature &
-    BitcoinSignMessageFeature = {
+    BitcoinSignMessageFeature &
+    BitcoinSignTransactionFeature &
+    BitcoinSignAndSendTransactionFeature = {
     "standard:disconnect": { version: "1.0.0", disconnect: btcDisconnect },
     "bitcoin:connect": {
       version: "1.0.0",
@@ -522,6 +569,26 @@ export function install(info: ProviderInfo): void {
           params: { account: input.account.address, message: input.message },
         })) as { signedMessage: Uint8Array; signature: Uint8Array };
         return [{ signedMessage: result.signedMessage, signature: result.signature }];
+      },
+    },
+    "bitcoin:signTransaction": {
+      version: "1.0.0",
+      signTransaction: async (...inputs) => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        return (await request("bitcoin", {
+          method: "bitcoin:signTransaction",
+          params: { inputs: btcInputs(inputs) },
+        })) as Array<{ signedPsbt: Uint8Array }>;
+      },
+    },
+    "bitcoin:signAndSendTransaction": {
+      version: "1.0.0",
+      signAndSendTransaction: async (...inputs) => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        return (await request("bitcoin", {
+          method: "bitcoin:signAndSendTransaction",
+          params: { inputs: btcInputs(inputs) },
+        })) as Array<{ txId: string }>;
       },
     },
   };

@@ -69,6 +69,8 @@ const checkDerivations = (tx: Transaction, coinType: number): void => {
 
 const DEFAULT_SIGHASH = 0;
 const SIGHASH_ALL = 1;
+/** SIGHASH_SINGLE | ANYONECANPAY — the marketplace listing sighash, the only other one accepted. */
+export const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
 
 const isTaprootInput = (input: ReturnType<Transaction["getInput"]>): boolean =>
   input.tapInternalKey !== undefined || getInputType(input).type === "taproot";
@@ -122,9 +124,17 @@ export const normalizeBitcoinPsbt = (
     const allowed =
       sighash === undefined ||
       sighash === SIGHASH_ALL ||
-      (isTaprootInput(input) && sighash === DEFAULT_SIGHASH);
+      (isTaprootInput(input) && sighash === DEFAULT_SIGHASH) ||
+      sighash === SIGHASH_SINGLE_ANYONECANPAY;
     if (!allowed) {
       throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
+    }
+    // SIGHASH_SINGLE signs a constant when the same-index output is missing (the legacy bug).
+    if (sighash === SIGHASH_SINGLE_ANYONECANPAY && idx >= tx.outputsLength) {
+      throw new ChainError(
+        "unsupported",
+        `input ${idx} uses SIGHASH_SINGLE without a same-index output`,
+      );
     }
   }
   return { psbt: tx.toPSBT(0), sign: unique };

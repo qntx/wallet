@@ -156,6 +156,8 @@ async function rig(
     ...bookDeps(),
     spark: {} as SparkController,
     nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
+    bitcoinPrepare: async () => Promise.reject(new Error("unused")),
+    bitcoinSignPsbts: async () => Promise.reject(new Error("unused")),
     bitcoinSign: async () => Promise.reject(new Error("unused")),
     solanaSign: async () => {
       await Promise.resolve();

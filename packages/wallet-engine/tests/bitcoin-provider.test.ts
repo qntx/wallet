@@ -1,14 +1,20 @@
 import { randomBytes } from "node:crypto";
 
-import { describe, expect, it } from "vite-plus/test";
-
 /**
  * The Bitcoin Wallet Standard handler over a REAL Node kernel: connect approval, the `payment` and
  * `ordinals` accounts from the account xpubs, a BIP-322 simple signature the repo's verifier
  * accepts, the sign log, and the account re-point on a group switch.
  */
+import { Address, OutScript, Transaction } from "@scure/btc-signer";
+import { NETWORK } from "@scure/btc-signer/utils.js";
+import { describe, expect, it } from "vite-plus/test";
+
 import { verifyEvent } from "@qntx/nostr";
-import { bitcoinAddressFromXpub, verifyBitcoinMessage } from "@qntx/wallet-chains/bitcoin";
+import {
+  bitcoinAddressFromXpub,
+  verifyBitcoinMessage,
+  verifyBitcoinPsbtSignatures,
+} from "@qntx/wallet-chains/bitcoin";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
@@ -26,6 +32,9 @@ const MNEMONIC =
 // BIP-84 / BIP-86 first receive addresses of the public test mnemonic (BIP-84 and BIP-86 texts).
 const BIP84_FIRST = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 const BIP86_FIRST = "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr";
+
+const TXID = "ab".repeat(32);
+const broadcasts: string[] = [];
 
 async function rig() {
   const wallet = await createNodeWallet({
@@ -49,7 +58,14 @@ async function rig() {
     lightningMaxFee: () => 0,
     wallet,
     sparkNetwork: "regtest",
-    fetch: async () => Promise.reject(new Error("offline")),
+    fetch: async (input, init) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (!url.startsWith("https://esplora.invalid")) {
+        return Promise.reject(new Error("offline"));
+      }
+      broadcasts.push(init?.method === "POST" ? String(init.body) : "");
+      return Promise.resolve(init?.method === "POST" ? new Response(TXID) : Response.json([]));
+    },
     random: (n) => randomBytes(n),
     now: () => Date.now(),
     logger: { warn: () => undefined },
@@ -246,6 +262,249 @@ describe("bitcoin provider over a real kernel", () => {
         }),
       ).rejects.toMatchObject({ code: 4100 });
       expect(Object.keys(r.engine.requests.getState().requests)).toHaveLength(0);
+    } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+});
+
+const scriptOf = (address: string): Uint8Array =>
+  OutScript.encode(Address(NETWORK).decode(address));
+
+/** A PSBT spending one prevout of `from` (a wallet address) to `to`, as a dApp builds it. */
+const dappPsbt = (opts: {
+  from: string;
+  to: string;
+  value: bigint;
+  sighash?: number;
+  foreignScript?: Uint8Array;
+}): Uint8Array => {
+  const tx = new Transaction({ version: 2 });
+  tx.addInput({
+    txid: new Uint8Array(32).fill(9),
+    index: 0,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script: opts.foreignScript ?? scriptOf(opts.from), amount: opts.value },
+    ...(opts.sighash === undefined ? {} : { sighashType: opts.sighash }),
+  });
+  tx.addOutput({
+    script: scriptOf(opts.to),
+    amount: opts.value - (opts.value > 5000n ? 1000n : 100n),
+  });
+  return tx.toPSBT(0);
+};
+
+const bitcoinRisk = (request: { risk: ReadonlyArray<{ code: string }> } | undefined) =>
+  (request?.risk ?? []).filter((finding) => finding.code.startsWith("bitcoin-"));
+
+const xpubOf = (account: Awaited<ReturnType<ReturnType<typeof chains>["account"]>>): string =>
+  "xpub" in account ? (account.xpub ?? "") : "";
+
+const firstSigned = (done: SignedPsbts): Uint8Array =>
+  done.value[0]?.signedPsbt ?? new Uint8Array();
+
+type SignedPsbts = { value: Array<{ signedPsbt: Uint8Array }> };
+
+async function signPsbt(r: Rig, inputs: unknown[], method = "bitcoin:signTransaction") {
+  const call = r.engine.bitcoinWallet.handle(SITE, { method, params: { inputs } });
+  const settled = call.then(
+    (value) => ({ value }),
+    (error: unknown) => ({ error }),
+  );
+  const open = () =>
+    Object.values(r.engine.requests.getState().requests).filter(
+      (entry) => entry.stage === "awaiting-approval",
+    );
+  await Promise.race([until(() => open().length > 0), settled]);
+  const [request] = open();
+  return {
+    request,
+    settled,
+    approve: async () => r.engine.requests.approve(request?.id ?? "", "bitcoin-sign", PW),
+  };
+}
+
+describe("bitcoin dApp PSBTs over a real kernel", () => {
+  it("signs a marketplace listing (0x83) for the ordinals account and flags the risk", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment", "ordinals"]);
+      const psbt = dappPsbt({ from: BIP86_FIRST, to: BIP84_FIRST, value: 546n, sighash: 0x83 });
+      const { request, settled, approve } = await signPsbt(r, [
+        {
+          psbt,
+          inputsToSign: [
+            { address: BIP86_FIRST, signingIndexes: [0], sigHash: "SINGLE|ANYONECANPAY" },
+          ],
+        },
+      ]);
+      expect(request?.display).toMatchObject({
+        kind: "bitcoin.sign",
+        psbts: [{ verifiability: "partial", warnings: [{ kind: "sighash-single-anyonecanpay" }] }],
+      });
+      expect(bitcoinRisk(request)).toStrictEqual([
+        { code: "bitcoin-sighash-single", level: "danger" },
+        { code: "bitcoin-inscription-input", level: "warning" },
+      ]);
+      expect(request?.checks).toContain("decode-partial");
+      await approve();
+      const done = (await settled) as SignedPsbts;
+      const account = await chains(r.wallet).account({
+        walletId: r.walletId,
+        groupIndex: 0,
+        template: "btc.bip86",
+        network: MAINNET,
+      });
+      const signed = firstSigned(done);
+      expect(verifyBitcoinPsbtSignatures(signed, [0], xpubOf(account), "btc.bip86", MAINNET)).toBe(
+        true,
+      );
+      expect(Transaction.fromPSBT(signed).getInput(0).sighashType).toBe(0x83);
+    } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("signs a payment input with ALL and nothing to flag; the log says `bitcoin psbt 1`", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment"]);
+      const psbt = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 100_000n,
+      });
+      const { request, settled, approve } = await signPsbt(r, [
+        { psbt, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+      ]);
+      expect(bitcoinRisk(request)).toStrictEqual([]);
+      expect(request?.checks).toStrictEqual([]);
+      await approve();
+      const done = (await settled) as SignedPsbts;
+      const account = await chains(r.wallet).account({
+        walletId: r.walletId,
+        groupIndex: 0,
+        template: "btc.bip84",
+        network: MAINNET,
+      });
+      expect(
+        verifyBitcoinPsbtSignatures(firstSigned(done), [0], xpubOf(account), "btc.bip84", MAINNET),
+      ).toBe(true);
+      const log = await signLogOf(r, 1);
+      expect(log[0]?.summary).toBe("bitcoin psbt 1");
+    } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("signAndSend finalizes, broadcasts through esplora and returns the txid", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment"]);
+      broadcasts.length = 0;
+      const psbt = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 100_000n,
+      });
+      const { settled, approve, request } = await signPsbt(
+        r,
+        [
+          {
+            psbt,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
+        ],
+        "bitcoin:signAndSendTransaction",
+      );
+      await approve();
+      await expect(settled).resolves.toStrictEqual({ value: [{ txId: TXID }] });
+      expect(broadcasts.some((body) => /^[0-9a-f]{100,}$/.test(body))).toBe(true);
+      await until(() => true);
+      expect(request?.method).toBe("bitcoin-sign");
+    } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("refuses an input that is not the wallet's, a sighash mismatch and mixed accounts", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment", "ordinals"]);
+      const foreign = dappPsbt({
+        from: BIP84_FIRST,
+        to: BIP84_FIRST,
+        value: 100_000n,
+        foreignScript: scriptOf("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"),
+      });
+      const refuse = async (inputs: unknown[]) => {
+        const { settled } = await signPsbt(r, inputs);
+        return settled;
+      };
+      await expect(
+        refuse([{ psbt: foreign, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] }]),
+      ).resolves.toMatchObject({ error: { code: -32_602 } });
+      const sighashed = dappPsbt({
+        from: BIP84_FIRST,
+        to: BIP84_FIRST,
+        value: 100_000n,
+        sighash: 0x83,
+      });
+      await expect(
+        refuse([
+          { psbt: sighashed, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+        ]),
+      ).resolves.toMatchObject({ error: { code: -32_602 } });
+      const plain = dappPsbt({ from: BIP84_FIRST, to: BIP84_FIRST, value: 100_000n });
+      await expect(
+        refuse([
+          {
+            psbt: plain,
+            inputsToSign: [
+              { address: BIP84_FIRST, signingIndexes: [0] },
+              { address: BIP86_FIRST, signingIndexes: [0] },
+            ],
+          },
+        ]),
+      ).resolves.toMatchObject({
+        error: {
+          code: -32_602,
+          message: "mixed payment and ordinals inputs are not supported yet",
+        },
+      });
+      await expect(
+        refuse([
+          {
+            psbt: plain,
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0], sigHash: "NONE" }],
+          },
+        ]),
+      ).resolves.toMatchObject({ error: { code: -32_602 } });
+      await expect(
+        refuse([{ psbt: plain, inputsToSign: [{ address: "bc1qother", signingIndexes: [0] }] }]),
+      ).resolves.toMatchObject({ error: { code: 4100 } });
+    } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("flags a postage-size input signed with ALL as a danger", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["ordinals"]);
+      const psbt = dappPsbt({ from: BIP86_FIRST, to: BIP84_FIRST, value: 546n });
+      const { request } = await signPsbt(r, [
+        { psbt, inputsToSign: [{ address: BIP86_FIRST, signingIndexes: [0] }] },
+      ]);
+      expect(bitcoinRisk(request)).toStrictEqual([
+        { code: "bitcoin-inscription-input", level: "danger" },
+      ]);
     } finally {
       r.engine.unsubscribe();
       await r.wallet.destroy();

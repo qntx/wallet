@@ -179,6 +179,8 @@ export const BITCOIN_METHODS: ReadonlyArray<string> = [
   "standard:disconnect",
   "bitcoin:events",
   "bitcoin:signMessage",
+  "bitcoin:signTransaction",
+  "bitcoin:signAndSendTransaction",
 ];
 
 /** `payment` is the group's `btc.bip84` address, `ordinals` its `btc.bip86` one. */

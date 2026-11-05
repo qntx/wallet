@@ -19776,7 +19776,8 @@ zoo`.split("\n"));
 			const { type } = getInputType(input);
 			if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
 			const sighash = input.sighashType;
-			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
+			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH || sighash === 131)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
+			if (sighash === 131 && idx >= tx.outputsLength) throw new ChainError("unsupported", `input ${idx} uses SIGHASH_SINGLE without a same-index output`);
 		}
 		return {
 			psbt: tx.toPSBT(0),
@@ -19784,6 +19785,7 @@ zoo`.split("\n"));
 		};
 	};
 	var SATS = "sats";
+	var SIGHASH_SINGLE_ANYONECANPAY = 131;
 	var OP_RETURN = 106;
 	/** Btc-signer's parse failures are foreign exceptions — the request is a malformed PSBT. */
 	var parsePsbt = (psbt) => {
@@ -19857,18 +19859,22 @@ zoo`.split("\n"));
 		}
 		const external = tx.inputsLength - signed.size > 0;
 		const undecodable = outflows.some((o) => !o.verified);
-		const verifiability = external ? "opaque" : undecodable ? "partial" : "full";
+		const listing = request.sign.some((i) => tx.getInput(i).sighashType === SIGHASH_SINGLE_ANYONECANPAY);
+		const verifiability = external ? "opaque" : listing || undecodable ? "partial" : "full";
 		return {
 			family: "bitcoin",
 			network: request.network,
 			summary: outflows.length > 0 ? "transfer" : "contract-call",
 			outflows,
 			approvals: [],
-			fee: canFee ? { max: {
+			fee: canFee && !listing ? { max: {
 				asset: SATS,
 				amount: (inSum - outSum).toString(10)
 			} } : void 0,
-			warnings: [],
+			warnings: listing ? [{
+				kind: "sighash-single-anyonecanpay",
+				message: "signed inputs bind only their same-index outputs; the rest of the transaction can change"
+			}] : [],
 			verifiability
 		};
 	};
@@ -28808,7 +28814,8 @@ zoo`.split("\n"));
 		const tx = Transaction.fromPSBT(psbt);
 		for (const { index, privateKey } of inputs) {
 			if (privateKey.length !== 32) throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
-			if (!tx.signIdx(privateKey, index, void 0, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
+			const allowed = tx.getInput(index).sighashType === SigHash.SINGLE_ANYONECANPAY ? [SigHash.SINGLE_ANYONECANPAY] : void 0;
+			if (!tx.signIdx(privateKey, index, allowed, auxRand(index))) throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
 		}
 		return tx.toPSBT(0);
 	};
@@ -28870,7 +28877,8 @@ zoo`.split("\n"));
 			until: (date) => ` 至 ${date}（UTC）`,
 			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
 			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
-			maxFee: (fee) => `最高手续费 ${fee}`
+			maxFee: (fee) => `最高手续费 ${fee}`,
+			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动"
 		},
 		en: {
 			titles: {
@@ -28897,7 +28905,8 @@ zoo`.split("\n"));
 			until: (date) => ` until ${date} (UTC)`,
 			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
 			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
-			maxFee: (fee) => `Max fee ${fee}`
+			maxFee: (fee) => `Max fee ${fee}`,
+			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change"
 		}
 	};
 	/** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
@@ -28934,21 +28943,23 @@ zoo`.split("\n"));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
-		var _intent$message;
+		var _intent$message, _intent$warnings;
 		const catalog = CATALOGS$1[locale];
 		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
 			title: catalog.blindTitle,
 			description: catalog.blindDescription
 		};
 		const title = catalog.titles[intent.summary];
+		const tail = ((_intent$warnings = intent.warnings) === null || _intent$warnings === void 0 ? void 0 : _intent$warnings.some((w) => w.kind === "sighash-single-anyonecanpay")) === true ? [catalog.sighashSingle] : [];
 		if (intent.verifiability === "opaque") return {
 			title,
-			description: catalog.generic
+			description: joinLines([catalog.generic, ...tail])
 		};
 		const lines = [
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
-			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]
+			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
+			...tail
 		];
 		if (intent.verifiability === "partial") return {
 			title,

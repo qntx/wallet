@@ -350,3 +350,36 @@ describe("backup credential name", () => {
     expect(backupCredentialName("zh-Hans")).toBe("云备份密钥");
   });
 });
+
+describe("sighash-single-anyonecanpay caution", () => {
+  const listing: PromptIntent = {
+    summary: "transfer",
+    outflows: [{ to: "bc1qpayee", amount: { asset: "sats", amount: "90000" }, verified: true }],
+    approvals: [],
+    fee: undefined,
+    verifiability: "partial",
+    warnings: [
+      {
+        kind: "sighash-single-anyonecanpay",
+        message:
+          "signed inputs bind only their same-index outputs; the rest of the transaction can change",
+      },
+    ],
+  };
+
+  it("adds the same-index line in both locales, also on an opaque intent", () => {
+    expect(chainPrompt("en", listing).description).toContain(
+      "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+    );
+    expect(chainPrompt("zh-Hans", listing).description).toContain(
+      "已签输入只绑定同序号输出，交易其余部分可被改动",
+    );
+    expect(chainPrompt("en", { ...listing, verifiability: "opaque" }).description).toContain(
+      "same-index outputs",
+    );
+  });
+
+  it("leaves other prompts untouched", () => {
+    expect(chainPrompt("en", { ...listing, warnings: [] }).description).not.toContain("same-index");
+  });
+});

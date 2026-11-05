@@ -6,6 +6,7 @@ import type { AssetFlow, DisplayIntent, SignRequest, Verifiability } from "../in
 import { bitcoinNetwork } from "./networks.ts";
 
 const SATS = "sats";
+const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
 const OP_RETURN = 0x6a;
 
 /** Btc-signer's parse failures are foreign exceptions — the request is a malformed PSBT. */
@@ -95,15 +96,33 @@ export const decodeBitcoinPsbt = (
   }
   const external = tx.inputsLength - signed.size > 0;
   const undecodable = outflows.some((o) => !o.verified);
-  const verifiability: Verifiability = external ? "opaque" : undecodable ? "partial" : "full";
+  const listing = request.sign.some(
+    (i) => tx.getInput(i).sighashType === SIGHASH_SINGLE_ANYONECANPAY,
+  );
+  const verifiability: Verifiability = external
+    ? "opaque"
+    : listing || undecodable
+      ? "partial"
+      : "full";
   return {
     family: "bitcoin",
     network: request.network,
     summary: outflows.length > 0 ? "transfer" : "contract-call",
     outflows,
     approvals: [],
-    fee: canFee ? { max: { asset: SATS, amount: (inSum - outSum).toString(10) } } : undefined,
-    warnings: [],
+    fee:
+      canFee && !listing
+        ? { max: { asset: SATS, amount: (inSum - outSum).toString(10) } }
+        : undefined,
+    warnings: listing
+      ? [
+          {
+            kind: "sighash-single-anyonecanpay",
+            message:
+              "signed inputs bind only their same-index outputs; the rest of the transaction can change",
+          },
+        ]
+      : [],
     verifiability,
   };
 };

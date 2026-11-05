@@ -1,3 +1,4 @@
+/* oxlint-disable typescript/no-unsafe-type-assertion -- page evaluate results are untyped */
 import { randomBytes } from "node:crypto";
 /**
  * The injected EIP-1193/EIP-6963 provider against a real `Eip1193Handler`: the provider script is
@@ -11,6 +12,8 @@ import { randomBytes } from "node:crypto";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { expect, test } from "@playwright/test";
 import type { BrowserContext, Page } from "@playwright/test";
+import { Address, OutScript, Transaction } from "@scure/btc-signer";
+import { NETWORK } from "@scure/btc-signer/utils.js";
 
 import { Keys, KeysSigner, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
@@ -25,6 +28,8 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { chains } from "@qntx/wallet/chains";
 import type { WalletSigner } from "@qntx/wallet/nostr";
 
+import { prepareDappPsbts, signDappPsbts } from "../../src/chains/bitcoin-dapp.ts";
+import type { Esplora } from "../../src/chains/bitcoin.ts";
 import { BitcoinWalletHandler } from "../../src/connect/bitcoin.ts";
 import { ConnectionController } from "../../src/connect/controller.ts";
 import { Eip1193Handler } from "../../src/connect/eip1193.ts";
@@ -103,6 +108,19 @@ const memoryStore = async () => {
   return createMemoryEngineStore();
 };
 
+/** No address has history: the scan finds nothing and a broadcast answers a fixed txid. */
+async function noHistory(): Promise<unknown> {
+  await Promise.resolve();
+  return [];
+}
+
+async function fixedTxid(): Promise<unknown> {
+  await Promise.resolve();
+  return "cd".repeat(32);
+}
+
+const fakeEsplora: Esplora = { get: noHistory, post: fixedTxid };
+
 async function engineRig() {
   const wallet: Wallet = await createNodeWallet({
     verifyEvent,
@@ -175,7 +193,6 @@ async function engineRig() {
     tokens: tokensStub,
     transactions,
     ...bookDeps(),
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- a createInvoice stub suffices
     spark: {
       createInvoice: async () => {
         await Promise.resolve();
@@ -189,6 +206,19 @@ async function engineRig() {
       },
     } as unknown as SparkController,
     nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
+    bitcoinPrepare: async (account, network, psbts) =>
+      prepareDappPsbts(apis, fakeEsplora, account, network, psbts),
+    bitcoinSignPsbts: async (account, _network, prepared, send, verify) => {
+      const { signedPsbts, txids } = await signDappPsbts(
+        apis,
+        account,
+        fakeEsplora,
+        prepared,
+        send,
+        verify,
+      );
+      return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
+    },
     bitcoinSign: async (account, network, request, verify) => {
       const result = await apis.sign({
         request: {
@@ -556,7 +586,6 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
     accounts: [],
     network: "",
   });
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's connect result
   const { accounts } = (await connected) as { accounts: unknown[] };
   expect(accounts).toHaveLength(1);
   await expect(page.evaluate(`window.__getWallets().get()[0].accounts.length`)).resolves.toBe(1);
@@ -587,7 +616,6 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
     (r) => r.stage === "awaiting-approval",
   );
   await rig.requests.approve(pendingSign?.id ?? "", "solana-sign", VERIFY);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's signMessage result
   const outputs = (await result) as Array<{ signature: Uint8Array; signatureType: string }>;
   expect(outputs).toHaveLength(1);
   expect(outputs[0]?.signatureType).toBe("ed25519");
@@ -625,7 +653,6 @@ test("window wallet-standard solana:signIn verifies with verifySignIn in the pag
   );
   expect(sign?.display).toMatchObject({ signIn: { nonce: "n-123" } });
   await rig.requests.approve(sign?.id ?? "", "solana-sign", VERIFY);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's result
   expect((await signedIn) as { ok: boolean; type: string }).toStrictEqual({
     ok: true,
     type: "ed25519",
@@ -657,6 +684,8 @@ test("window wallet-standard bitcoin connect → signMessage verifies in the pag
       "bitcoin:disconnect": "1.0.0",
       "bitcoin:events": "1.0.0",
       "bitcoin:signMessage": "1.0.0",
+      "bitcoin:signTransaction": "1.0.0",
+      "bitcoin:signAndSendTransaction": "1.0.0",
     },
     unsubscribe: "function",
   });
@@ -668,7 +697,6 @@ test("window wallet-standard bitcoin connect → signMessage verifies in the pag
   const [pending] = rig.connections.pending();
   expect(pending?.namespace).toBe("bip122");
   await rig.connections.approveConnection(pending?.id ?? "", { accounts: [], network: BTC_NET });
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's connect result
   const { accounts } = (await connected) as { accounts: Array<{ address: string }> };
   expect(accounts.map((a) => a.address.slice(0, 4))).toStrictEqual(["bc1p", "bc1q"]);
 
@@ -693,7 +721,6 @@ test("window wallet-standard bitcoin connect → signMessage verifies in the pag
     (r) => r.stage === "awaiting-approval",
   );
   await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", VERIFY);
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's signMessage result
   const outputs = (await result) as Array<{ signedMessage: Uint8Array; signature: Uint8Array }>;
   expect(outputs).toHaveLength(1);
   const [paymentAddress] = accounts.slice(1).map((a) => a.address);
@@ -705,4 +732,59 @@ test("window wallet-standard bitcoin connect → signMessage verifies in the pag
       BTC_NET,
     ),
   ).toBe(true);
+});
+
+test("window wallet-standard bitcoin:signTransaction signs a PSBT in the page", async ({
+  context,
+}) => {
+  const { page, rig } = await openConnect(context);
+  await page.addInitScript({ path: "tests/browser/getwallets.js" });
+  await page.reload();
+  const bitcoinWallet = `window.__getWallets().get().find((w) => w.chains.includes("bitcoin:mainnet"))`;
+  const connected = page.evaluate(
+    `${bitcoinWallet}.features["bitcoin:connect"].connect({ purposes: ["payment"] })`,
+  );
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  await rig.connections.approveConnection(pending?.id ?? "", { accounts: [], network: BTC_NET });
+  const { accounts } = (await connected) as { accounts: Array<{ address: string }> };
+  const address = accounts[0]?.address ?? "";
+
+  const tx = new Transaction({ version: 2 });
+  tx.addInput({
+    txid: new Uint8Array(32).fill(9),
+    index: 0,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script: OutScript.encode(Address(NETWORK).decode(address)), amount: 100_000n },
+  });
+  tx.addOutput({
+    script: OutScript.encode(Address(NETWORK).decode("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")),
+    amount: 99_000n,
+  });
+  const psbtHex = Buffer.from(tx.toPSBT(0)).toString("hex");
+  const result = page.evaluate(`(() => {
+    const wallet = ${bitcoinWallet};
+    const psbt = Uint8Array.from(${JSON.stringify(psbtHex)}.match(/../g).map((b) => parseInt(b, 16)));
+    return wallet.features["bitcoin:signTransaction"].signTransaction({
+      psbt,
+      inputsToSign: [{ account: wallet.accounts[0], signingIndexes: [0] }],
+    });
+  })()`);
+  await expect
+    .poll(
+      () =>
+        Object.values(rig.requests.getState().requests).some(
+          (r) => r.stage === "awaiting-approval",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  const pendingSign = Object.values(rig.requests.getState().requests).find(
+    (r) => r.stage === "awaiting-approval",
+  );
+  await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", VERIFY);
+  const outputs = (await result) as Array<{ signedPsbt: Uint8Array }>;
+  expect(outputs).toHaveLength(1);
+  const signed = Transaction.fromPSBT(new Uint8Array(Object.values(outputs[0]?.signedPsbt ?? {})));
+  expect(signed.getInput(0).partialSig).toHaveLength(1);
 });

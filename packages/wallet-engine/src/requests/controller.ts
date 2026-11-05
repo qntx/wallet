@@ -12,6 +12,7 @@ import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
 import { ChainError, parseSignIn } from "@qntx/wallet-chains";
 import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
+import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -50,6 +51,7 @@ import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
   assessApprovals,
+  assessBitcoinPsbts,
   assessPermits,
   assessSafe,
   assessSeaport,
@@ -67,7 +69,9 @@ import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
 import type {
   BitcoinAccount,
+  BitcoinPsbtInput,
   BrowserOrigin,
+  PreparedBitcoinPsbt,
   RequestMethod,
   RequestOrigin,
   SolanaAccount,
@@ -193,15 +197,21 @@ export type SolanaSignInput = {
 };
 
 /**
- * A dApp's Bitcoin request: a BIP-322 simple message signature (PSBT signing is added with
- * `bitcoin:signTransaction`).
+ * A dApp's Bitcoin request: a BIP-322 simple message signature, or a batch of PSBTs signed one
+ * after another under one approval (`send` also finalizes and broadcasts each).
  */
 export type BitcoinSignInput = {
   readonly method: "bitcoin-sign";
   readonly origin: BrowserOrigin;
   readonly account: BitcoinAccount;
   readonly network: string;
-  readonly request: { readonly kind: "message"; readonly message: string };
+  readonly request:
+    | { readonly kind: "message"; readonly message: string }
+    | {
+        readonly kind: "psbt";
+        readonly psbts: ReadonlyArray<BitcoinPsbtInput>;
+        readonly send: boolean;
+      };
 };
 
 export type RequestInput =
@@ -258,14 +268,25 @@ export type SolanaSignResult =
     }
   | { readonly kind: "solana.message"; readonly signature: Uint8Array };
 
-/** `bitcoin-sign` display: the message text the user signs. */
+/** `bitcoin-sign` display: the message text, or each PSBT's decode. */
 export type BitcoinDisplay = {
   readonly kind: "bitcoin.sign";
-  readonly message: MessageContent;
+  readonly message?: MessageContent;
+  readonly psbts?: ReadonlyArray<DisplayIntent>;
+  readonly send?: boolean;
 };
 
-/** `approve` of a `bitcoin-sign` request: the BIP-322 simple signature, base64 of the witness. */
-export type BitcoinSignResult = { readonly kind: "bitcoin.message"; readonly signature: string };
+/**
+ * `approve` of a `bitcoin-sign` request: the BIP-322 simple signature (base64 of the witness), or
+ * the signed PSBTs and, when sent, their txids.
+ */
+export type BitcoinSignResult =
+  | { readonly kind: "bitcoin.message"; readonly signature: string }
+  | {
+      readonly kind: "bitcoin.psbts";
+      readonly signedPsbts: ReadonlyArray<Uint8Array>;
+      readonly txids: ReadonlyArray<string>;
+    };
 
 /** `approve` of a `watch-asset` request: the token was added. */
 export type TokenWatchResult = { readonly kind: "token.watch" };
@@ -427,11 +448,25 @@ export type RequestControllerOptions = {
     request: SolanaSignInput["request"],
     verify: SendParams["verify"],
   ) => Promise<SolanaSignResult>;
-  /** Signs a `bitcoin-sign` request — `chains.sign` with the account's template. */
+  /** Signs a `bitcoin-sign` message — `chains.sign` with the account's template. */
   readonly bitcoinSign: (
     account: BitcoinAccount,
     network: string,
-    request: BitcoinSignInput["request"],
+    request: { readonly kind: "message"; readonly message: string },
+    verify: SendParams["verify"],
+  ) => Promise<BitcoinSignResult>;
+  /** Adds the account's derivation data to a dApp's PSBTs; refuses inputs that are not its own. */
+  readonly bitcoinPrepare: (
+    account: BitcoinAccount,
+    network: string,
+    psbts: ReadonlyArray<BitcoinPsbtInput>,
+  ) => Promise<ReadonlyArray<PreparedBitcoinPsbt>>;
+  /** Signs (and with `send` broadcasts) the prepared PSBTs. */
+  readonly bitcoinSignPsbts: (
+    account: BitcoinAccount,
+    network: string,
+    prepared: ReadonlyArray<PreparedBitcoinPsbt>,
+    send: boolean,
     verify: SendParams["verify"],
   ) => Promise<BitcoinSignResult>;
 };
@@ -981,13 +1016,40 @@ export class RequestController extends Controller<RequestControllerState> {
         single ? async () => this.simulateOne(input.account, input.network, only) : undefined,
       );
     }
+    if (input.method === "bitcoin-sign" && input.request.kind === "psbt") {
+      const { psbts, send } = input.request;
+      const prepared = await this.options.bitcoinPrepare(input.account, input.network, psbts);
+      const intents = prepared.map(({ request, ownScripts }) =>
+        decodeBitcoinPsbt(request, ownScripts),
+      );
+      return {
+        account: input.account,
+        network: input.network,
+        display: { kind: "bitcoin.sign" as const, psbts: intents, send },
+        checks: collectChecks(
+          intents.some((i) => i.verifiability !== "full") ? ["decode-partial"] : [],
+        ),
+        risk: assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
+        run: {
+          factor: "required",
+          staleReason: () => undefined,
+          submit: async (verify) =>
+            this.options.bitcoinSignPsbts(input.account, input.network, prepared, send, verify),
+          release: () => undefined,
+        },
+      };
+    }
     if (input.method === "bitcoin-sign") {
+      if (input.request.kind !== "message") {
+        throw new Error("unreachable bitcoin-sign request");
+      }
+      const { request } = input;
       return {
         account: input.account,
         network: input.network,
         display: {
           kind: "bitcoin.sign" as const,
-          message: { kind: "text" as const, text: input.request.message },
+          message: { kind: "text" as const, text: request.message },
         },
         checks: [],
         risk: [],
@@ -995,7 +1057,7 @@ export class RequestController extends Controller<RequestControllerState> {
           factor: "required",
           staleReason: () => undefined,
           submit: async (verify) =>
-            this.options.bitcoinSign(input.account, input.network, input.request, verify),
+            this.options.bitcoinSign(input.account, input.network, request, verify),
           release: () => undefined,
         },
       };
@@ -1351,7 +1413,11 @@ export class RequestController extends Controller<RequestControllerState> {
           : "kind" in display && display.kind === "lightning.invoice"
             ? `lightning invoice ${display.amountSats} sats`
             : "kind" in display && display.kind === "bitcoin.sign"
-              ? "bitcoin message"
+              ? display.psbts === undefined
+                ? "bitcoin message"
+                : display.send === true
+                  ? "bitcoin send"
+                  : `bitcoin psbt ${String(display.psbts.length)}`
               : "kind" in display && display.kind === "solana.sign"
                 ? display.signIn === undefined
                   ? display.transactions.length === 0
