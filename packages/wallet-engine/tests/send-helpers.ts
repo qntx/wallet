@@ -75,6 +75,14 @@ export const requestsFor = async (
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
     },
+    bitcoinPrepare: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
+    bitcoinSignPsbts: async () => {
+      await Promise.resolve();
+      throw new Error("unused");
+    },
     bitcoinSign: async () => {
       await Promise.resolve();
       throw new Error("unused");

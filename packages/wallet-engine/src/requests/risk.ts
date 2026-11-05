@@ -8,6 +8,7 @@ import type {
 import { SAFE_MULTISEND_CALL_ONLY, evmTokenTable } from "@qntx/wallet-chains/evm";
 import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
+import { isFrozen } from "../chains/bitcoin.ts";
 import type { PhishingStatus } from "../phishing/status.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import { sameAsset } from "./simulation.ts";
@@ -44,6 +45,8 @@ export type RiskFinding = {
     | "order-offerer-mismatch"
     | "safe-delegatecall"
     | "safe-gas-refund"
+    | "bitcoin-sighash-single"
+    | "bitcoin-inscription-input"
     | "blind-signing";
   readonly level: "warning" | "danger";
 };
@@ -168,6 +171,33 @@ export function assessSafe(safe: SafeTransaction | undefined): ReadonlyArray<Ris
   }
   if (safe.refund !== undefined) {
     found.set("safe-gas-refund", { code: "safe-gas-refund", level: "warning" });
+  }
+  return byDanger([...found.values()]);
+}
+
+/**
+ * Findings for the inputs a dApp PSBT asks the wallet to sign. A `SINGLE|ANYONECANPAY` input binds
+ * only its same-index output, so anyone can change the rest of the transaction: `danger`. Until
+ * inscription data exists the heuristic is the coin-selection freeze rule (546 and 330 sat
+ * outputs): such an input is a `warning` when it is signed as a listing (the sighash that fits
+ * selling it) and a `danger` otherwise.
+ */
+export function assessBitcoinPsbts(
+  inputs: ReadonlyArray<{
+    readonly value: number;
+    readonly sigHash: "ALL" | "SINGLE|ANYONECANPAY";
+  }>,
+): ReadonlyArray<RiskFinding> {
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  if (inputs.some((i) => i.sigHash === "SINGLE|ANYONECANPAY")) {
+    found.set("bitcoin-sighash-single", { code: "bitcoin-sighash-single", level: "danger" });
+  }
+  const postage = inputs.filter((i) => isFrozen(i.value));
+  if (postage.length > 0) {
+    found.set("bitcoin-inscription-input", {
+      code: "bitcoin-inscription-input",
+      level: postage.some((i) => i.sigHash !== "SINGLE|ANYONECANPAY") ? "danger" : "warning",
+    });
   }
   return byDanger([...found.values()]);
 }

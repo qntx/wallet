@@ -1,5 +1,5 @@
 import { Address, OutScript } from "@scure/btc-signer/payment.js";
-import { Transaction } from "@scure/btc-signer/transaction.js";
+import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 /**
  * /bitcoin/sign — PSBT signing (P2WPKH, P2SH-P2WPKH, P2PKH, P2TR key path) and message signing
  * (BIP-322 simple, legacy). Inputs must already be normalized: the kernel calls `normalizeBitcoin`
@@ -20,7 +20,13 @@ export const signBitcoinPsbt = (
     if (privateKey.length !== 32) {
       throw new ChainError("invalid-request", `input ${index}: private key must be 32 bytes`);
     }
-    if (!tx.signIdx(privateKey, index, undefined, auxRand(index))) {
+    // Only a 0x83 input widens btc-signer's default (DEFAULT/ALL) allow-list; normalization has
+    // already refused every other non-default sighash.
+    const allowed =
+      tx.getInput(index).sighashType === SigHash.SINGLE_ANYONECANPAY
+        ? [SigHash.SINGLE_ANYONECANPAY]
+        : undefined;
+    if (!tx.signIdx(privateKey, index, allowed, auxRand(index))) {
       throw new ChainError("invalid-request", `input ${index}: key cannot sign`);
     }
   }

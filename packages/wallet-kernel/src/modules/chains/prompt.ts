@@ -18,7 +18,7 @@ import type { PromptLocale } from "../../prompts.ts";
 export type PromptIntent = Pick<
   DisplayIntent,
   "summary" | "outflows" | "approvals" | "fee" | "verifiability" | "message"
->;
+> & { readonly warnings?: DisplayIntent["warnings"] };
 
 /** Off-chain messages carry no decodable value flow. */
 export const MESSAGE_INTENT: PromptIntent = {
@@ -64,6 +64,7 @@ type Catalog = {
   readonly operatorAllow: (spender: string, asset: string) => string;
   readonly operatorRevoke: (spender: string, asset: string) => string;
   readonly maxFee: (fee: string) => string;
+  readonly sighashSingle: string;
 };
 
 const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
@@ -93,6 +94,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
     operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
     maxFee: (fee) => `最高手续费 ${fee}`,
+    sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
   },
   en: {
     titles: {
@@ -120,6 +122,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
     operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
     maxFee: (fee) => `Max fee ${fee}`,
+    sighashSingle:
+      "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
   },
 };
 
@@ -184,13 +188,16 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
     return { title: catalog.blindTitle, description: catalog.blindDescription };
   }
   const title = catalog.titles[intent.summary];
+  const caution = intent.warnings?.some((w) => w.kind === "sighash-single-anyonecanpay") === true;
+  const tail = caution ? [catalog.sighashSingle] : [];
   if (intent.verifiability === "opaque") {
-    return { title, description: catalog.generic };
+    return { title, description: joinLines([catalog.generic, ...tail]) };
   }
   const lines = [
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
     ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
+    ...tail,
   ];
   if (intent.verifiability === "partial") {
     return { title, description: joinLines([catalog.otherOutflows, ...lines]) };

@@ -19,6 +19,7 @@ import { AddressBookController } from "./addresses/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
+import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
 import { SolanaChainAdapter } from "./chains/solana.ts";
 import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
@@ -314,6 +315,19 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         throw new Error("unexpected solana sign result");
       }
       return { kind: "solana.message" as const, signature: result.signature };
+    },
+    bitcoinPrepare: async (account, network, psbts) =>
+      prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
+    bitcoinSignPsbts: async (account, network, prepared, send, verify) => {
+      const { signedPsbts, txids } = await signDappPsbts(
+        chains(options.wallet),
+        account,
+        networks.esplora(network),
+        prepared,
+        send,
+        verify,
+      );
+      return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
     bitcoinSign: async (account, network, request, verify) => {
       const result = await chains(options.wallet).sign({

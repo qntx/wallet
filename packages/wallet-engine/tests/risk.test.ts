@@ -9,6 +9,7 @@ import type {
 
 import {
   assessApprovals,
+  assessBitcoinPsbts,
   assessPermits,
   assessRecipients,
   assessSafe,
@@ -498,5 +499,34 @@ describe("assessSafe", () => {
     expect(assessSafe(safeTx({ calls: [inner] }))).toStrictEqual([
       { code: "unlimited-approval", level: "warning" },
     ]);
+  });
+});
+
+describe("assessBitcoinPsbts", () => {
+  const input = (value: number, sigHash: "ALL" | "SINGLE|ANYONECANPAY") => ({ value, sigHash });
+
+  it("a SINGLE|ANYONECANPAY input is a danger", () => {
+    expect(assessBitcoinPsbts([input(100_000, "SINGLE|ANYONECANPAY")])).toStrictEqual([
+      { code: "bitcoin-sighash-single", level: "danger" },
+    ]);
+  });
+
+  it("postage-size inputs: a warning as a listing, a danger otherwise", () => {
+    expect(assessBitcoinPsbts([input(546, "SINGLE|ANYONECANPAY")])).toStrictEqual([
+      { code: "bitcoin-sighash-single", level: "danger" },
+      { code: "bitcoin-inscription-input", level: "warning" },
+    ]);
+    expect(assessBitcoinPsbts([input(330, "ALL")])).toStrictEqual([
+      { code: "bitcoin-inscription-input", level: "danger" },
+    ]);
+    expect(
+      assessBitcoinPsbts([input(546, "SINGLE|ANYONECANPAY"), input(330, "ALL")]).map(
+        (f) => `${f.code}:${f.level}`,
+      ),
+    ).toStrictEqual(["bitcoin-sighash-single:danger", "bitcoin-inscription-input:danger"]);
+  });
+
+  it("ordinary inputs raise nothing", () => {
+    expect(assessBitcoinPsbts([input(100_000, "ALL"), input(547, "ALL")])).toStrictEqual([]);
   });
 });

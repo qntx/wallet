@@ -1,9 +1,16 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { base64 } from "@scure/base";
 
+import { ChainError } from "@qntx/wallet-chains";
+
 import { BITCOIN_NETWORKS } from "../networks/registry.ts";
 import type { RequestController } from "../requests/controller.ts";
-import type { BitcoinAccount, BrowserOrigin } from "../requests/types.ts";
+import type {
+  BitcoinAccount,
+  BitcoinPsbtInput,
+  BitcoinSigHash,
+  BrowserOrigin,
+} from "../requests/types.ts";
 import type { BitcoinPurpose, ConnectionController, ConnectionSession } from "./controller.ts";
 import { BITCOIN_METHODS, BITCOIN_PURPOSES } from "./controller.ts";
 import { ProviderError, invalidParams } from "./errors.ts";
@@ -136,6 +143,12 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     if (request.method === "bitcoin:signMessage") {
       return this.signMessage(checked, request);
     }
+    if (request.method === "bitcoin:signTransaction") {
+      return this.signTransactions(checked, request, false);
+    }
+    if (request.method === "bitcoin:signAndSendTransaction") {
+      return this.signTransactions(checked, request, true);
+    }
     throw invalidParams(`unsupported bitcoin method ${request.method}`);
   }
 
@@ -224,6 +237,87 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     };
   }
 
+  /**
+   * Signs (and with `send` broadcasts) a batch of dApp PSBTs under one approval. Every account
+   * named must be a session account of one purpose — a PSBT spending both payment and ordinals
+   * inputs is not supported yet — and `chain`, when given, must be the session's network.
+   */
+  private async signTransactions(
+    checked: BrowserOrigin,
+    request: BitcoinRequest,
+    send: boolean,
+  ): Promise<unknown> {
+    const network = this.options.bitcoinNetwork();
+    this.options.connections.authorize(checked.origin, network, request.method);
+    const accounts = this.options.connections.bitcoinAccounts(checked.origin, network);
+    if (accounts === undefined) {
+      throw new ProviderError(4100, "no bitcoin account for this origin");
+    }
+    const inputs = transactionInputs(request.params);
+    if (send && inputs.some((input) => input.chain === undefined)) {
+      throw invalidParams("chain is required for bitcoin:signAndSendTransaction");
+    }
+    if (
+      inputs.some(
+        (input) => input.chain !== undefined && BITCOIN_CHAIN_IDS[input.chain] !== network,
+      )
+    ) {
+      throw invalidParams("chain is not the connected network");
+    }
+    const purposes = new Set<BitcoinPurpose>();
+    for (const { address } of inputs.flatMap((input) => input.inputsToSign)) {
+      const purpose = BITCOIN_PURPOSES.find((p) => accounts[p] === address);
+      if (purpose === undefined) {
+        throw new ProviderError(4100, "account is not a connected account");
+      }
+      purposes.add(purpose);
+    }
+    const [purpose, ...rest] = purposes;
+    if (purpose === undefined) {
+      throw invalidParams("inputsToSign names no account");
+    }
+    if (rest.length > 0) {
+      throw invalidParams("mixed payment and ordinals inputs are not supported yet");
+    }
+    const group = this.options.activeGroup();
+    if (group === undefined) {
+      throw new ProviderError(4100, "no account group is selected");
+    }
+    const account: BitcoinAccount = {
+      ...group,
+      address: accounts[purpose],
+      template: TEMPLATES[purpose],
+    };
+    let outcome: Awaited<ReturnType<BitcoinRequests["outcome"]>>;
+    try {
+      const pending = await this.options.requests.prepare({
+        method: "bitcoin-sign",
+        origin: checked,
+        account,
+        network,
+        request: {
+          kind: "psbt",
+          psbts: inputs.map(({ psbt, inputsToSign }): BitcoinPsbtInput => ({
+            psbt,
+            sign: inputsToSign.flatMap(({ signingIndexes, sigHash }) =>
+              signingIndexes.map((index) => ({ index, sigHash })),
+            ),
+          })),
+          send,
+        },
+      });
+      outcome = await this.options.requests.outcome(pending.id);
+    } catch (error) {
+      throw error instanceof ChainError ? invalidParams(error.message) : error;
+    }
+    if (!("kind" in outcome) || outcome.kind !== "bitcoin.psbts") {
+      throw new ProviderError(-32603, "the bitcoin-sign request settled unexpectedly");
+    }
+    return send
+      ? outcome.txids.map((txId) => ({ txId }))
+      : outcome.signedPsbts.map((signedPsbt) => ({ signedPsbt }));
+  }
+
   /** The `setActiveGroup` re-point: the bitcoin session's new accounts, `payment` then `ordinals`. */
   async bitcoinAccountsChanged(): Promise<BitcoinWalletAccount[]> {
     const network = this.options.bitcoinNetwork();
@@ -272,6 +366,78 @@ const signMessageParams = (params: unknown): { address: string; message: Uint8Ar
     return { address: account, message: hexToBytes(message.__bytes) };
   }
   throw invalidParams("bitcoin:signMessage needs Uint8Array message bytes");
+};
+
+type TransactionInput = {
+  readonly psbt: Uint8Array;
+  readonly chain: string | undefined;
+  readonly inputsToSign: ReadonlyArray<{
+    readonly address: string;
+    readonly signingIndexes: ReadonlyArray<number>;
+    readonly sigHash: BitcoinSigHash;
+  }>;
+};
+
+const bytesOf = (value: unknown): Uint8Array | undefined => {
+  if (value instanceof Uint8Array) {
+    return value;
+  }
+  return isBytesEnvelope(value) && /^(?:[0-9a-fA-F]{2})*$/.test(value.__bytes)
+    ? hexToBytes(value.__bytes)
+    : undefined;
+};
+
+const sigHashOf = (value: unknown): BitcoinSigHash => {
+  if (value === undefined || value === "ALL") {
+    return "ALL";
+  }
+  if (value === "SINGLE|ANYONECANPAY") {
+    return value;
+  }
+  throw invalidParams("sigHash must be ALL or SINGLE|ANYONECANPAY");
+};
+
+/** The wire shape of `bitcoin:signTransaction` inputs: accounts arrive as their addresses. */
+const transactionInputs = (params: unknown): ReadonlyArray<TransactionInput> => {
+  const raw =
+    typeof params === "object" && params !== null
+      ? (params as { inputs?: unknown }).inputs
+      : undefined;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw invalidParams("a bitcoin transaction call needs a non-empty inputs array");
+  }
+  return raw.map((entry: unknown): TransactionInput => {
+    const { psbt, chain, inputsToSign } =
+      typeof entry === "object" && entry !== null
+        ? (entry as { psbt?: unknown; chain?: unknown; inputsToSign?: unknown })
+        : {};
+    const bytes = bytesOf(psbt);
+    if (bytes === undefined || !Array.isArray(inputsToSign) || inputsToSign.length === 0) {
+      throw invalidParams("each input needs psbt bytes and inputsToSign");
+    }
+    if (chain !== undefined && typeof chain !== "string") {
+      throw invalidParams("chain must be a string");
+    }
+    return {
+      psbt: bytes,
+      chain,
+      inputsToSign: inputsToSign.map((item: unknown) => {
+        const { address, signingIndexes, sigHash } =
+          typeof item === "object" && item !== null
+            ? (item as { address?: unknown; signingIndexes?: unknown; sigHash?: unknown })
+            : {};
+        if (
+          typeof address !== "string" ||
+          !Array.isArray(signingIndexes) ||
+          signingIndexes.length === 0 ||
+          !signingIndexes.every((i) => Number.isSafeInteger(i) && i >= 0)
+        ) {
+          throw invalidParams("inputsToSign needs an account and signing indexes");
+        }
+        return { address, signingIndexes: signingIndexes.map(Number), sigHash: sigHashOf(sigHash) };
+      }),
+    };
+  });
 };
 
 const byOrigin = (

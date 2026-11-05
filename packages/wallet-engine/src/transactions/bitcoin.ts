@@ -62,7 +62,7 @@ type BtcStash = {
   readonly fp: number;
 };
 
-const broadcastPsbt = async (
+export const broadcastPsbt = async (
   es: { post: (path: string, body: string) => Promise<unknown> },
   result: SignResult,
 ): Promise<string> => {
@@ -97,7 +97,7 @@ const fetchRawTxes = async (
 };
 
 /** The account-relative full path `purpose'/coin'/group'/change/index` for a PSBT entry. */
-const accountPath = (accountPath: string): ReadonlyArray<number> =>
+export const accountPath = (accountPath: string): ReadonlyArray<number> =>
   accountPath
     .replace(/^m\//, "")
     .split("/")

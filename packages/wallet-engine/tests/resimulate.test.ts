@@ -128,6 +128,8 @@ function rig(first: SimulationOutcome) {
     ...bookDeps(),
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("unused")),
+    bitcoinPrepare: async () => Promise.reject(new Error("unused")),
+    bitcoinSignPsbts: async () => Promise.reject(new Error("unused")),
     bitcoinSign: async () => Promise.reject(new Error("unused")),
     solanaSign: async () => Promise.reject(new Error("unused")),
     fetch: globalThis.fetch,
@@ -175,6 +177,8 @@ function solanaRig(outcomes: ReadonlyArray<SimulationOutcome>) {
     ...bookDeps(),
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("unused")),
+    bitcoinPrepare: async () => Promise.reject(new Error("unused")),
+    bitcoinSignPsbts: async () => Promise.reject(new Error("unused")),
     bitcoinSign: async () => Promise.reject(new Error("unused")),
     solanaSign: async () => {
       signCalls.push("sign");
