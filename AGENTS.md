@@ -20,14 +20,20 @@
 - The kernel source never imports -worker or -native packages; backends (`backends.nostr`,
   the NostrBackend, and `backends.spark`, the SparkCrypto wasm/native loader) are injected
   by the host packages.
-  The engine and @qntx/wallet never import signing implementations.
+- `@qntx/wallet-chains/*/sign` is imported only by the kernel (lint-enforced); the engine
+  and @qntx/wallet never import signing implementations.
+- Gateway data services (portfolio, prices, history) are display-only; values
+  used to build or sign transactions come from chain RPC, cross-checked against the host
+  endpoints when the gateway serves them. apps/gateway imports only
+  `@qntx/wallet-engine/gateway/contract`.
 - Kernel code uses only the globals allowed in design/enclave.mdx; it must run in a bare
   Hermes runtime.
 - Native capabilities that hold, produce or unwrap secrets (keystore, passkey, store) are
   injected into the kernel runtime as JSI host objects and are never registered with Nitro.
 - Protocol library versions are pinned exactly and recorded in the kernel manifest;
   backends' abiVersion is checked at kernel start.
-- Every vault, backup, template and protocol format has fixed vectors in vectors/.
+- Every vault, backup, template, protocol and chain signing format has fixed vectors in
+  vectors/.
 - packages/*/src is platform-neutral; all I/O is injected; no ambient singletons.
 
 `design/` is local-only and never committed.
