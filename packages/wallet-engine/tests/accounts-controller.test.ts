@@ -96,6 +96,7 @@ async function rig(opts: { inspects?: Rig["inspects"] } = {}): Promise<Rig> {
   const inspects = opts.inspects ?? {};
   const closed: string[] = [];
   const spark = new SparkController({
+    setTimer: () => () => undefined,
     spark: {
       signer: () => null as never,
       approve: async () => Promise.resolve({}),
@@ -130,6 +131,7 @@ async function rig(opts: { inspects?: Rig["inspects"] } = {}): Promise<Rig> {
   };
   void closed;
   const accounts = new AccountTreeController({
+    setTimer: () => () => undefined,
     wallet,
     spark,
     sparkNetwork: NETWORK,
@@ -242,6 +244,7 @@ describe("AccountTreeController", () => {
       kernelUrl: KERNEL_URL,
     });
     const spark = new SparkController({
+      setTimer: () => () => undefined,
       spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
       fetch: async () => Promise.reject(new Error("no fetch")),
       random: (n) => new Uint8Array(n).fill(1),
@@ -250,6 +253,7 @@ describe("AccountTreeController", () => {
       createClient: () => ({ close: () => {} }) as unknown as never,
     });
     const accounts = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet,
       spark,
       sparkNetwork: NETWORK,
@@ -423,6 +427,7 @@ describe("AccountTreeController", () => {
     await sleep(50);
     await r.accounts.destroy();
     const again = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet: r.wallet,
       spark: r.spark,
       sparkNetwork: NETWORK,
@@ -483,6 +488,7 @@ describe("AccountTreeController", () => {
     await sleep(50);
     await r.accounts.destroy();
     const again = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet: r.wallet,
       spark: r.spark,
       sparkNetwork: NETWORK,
@@ -523,6 +529,7 @@ describe("AccountTreeController", () => {
     await r.store.collection("accounts").put("tree", bad);
     let warned = false;
     const accounts = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet: r.wallet,
       spark: r.spark,
       sparkNetwork: NETWORK,
@@ -555,6 +562,7 @@ describe("AccountTreeController", () => {
     // Same shape but with an inherited extra key — JSON can't produce one directly, so this
     // asserts the codec doesn't consult prototype properties during validation.
     const accounts = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet: r.wallet,
       spark: r.spark,
       sparkNetwork: NETWORK,
@@ -610,6 +618,7 @@ describe("AccountTreeController", () => {
     await r.accounts.lock();
     expect(r.accounts.getState().totals).toStrictEqual({});
     const again = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet: r.wallet,
       spark: r.spark,
       sparkNetwork: NETWORK,
@@ -636,6 +645,7 @@ describe("AccountTreeController", () => {
       kernelUrl: KERNEL_URL,
     });
     const spark = new SparkController({
+      setTimer: () => () => undefined,
       spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
       fetch: async () => Promise.reject(new Error("no fetch")),
       random: (n) => new Uint8Array(n).fill(1),
@@ -649,6 +659,7 @@ describe("AccountTreeController", () => {
     const col = inner.collection("accounts");
     const { store, release } = stallingStore(inner);
     const accounts = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet,
       spark,
       sparkNetwork: NETWORK,

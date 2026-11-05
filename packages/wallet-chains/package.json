@@ -82,7 +82,7 @@
     "@solana-program/token": "0.18.0",
     "@solana-program/token-2022": "0.20.0",
     "@solana/kit": "8.5.0",
-    "@types/node": "26.6.5",
+    "@types/node": "26.6.6",
     "bitcoinjs-lib": "7.0.5",
     "ecpair": "3.0.2",
     "fast-check": "4.10.2",

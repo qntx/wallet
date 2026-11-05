@@ -404,6 +404,39 @@ describe("signature record", () => {
     expect(entries.map((e) => e.id)).toStrictEqual(["req-good"]);
   });
 
+  it("reads back solana-sign and bitcoin-sign entries", async () => {
+    const log = createSignLog({ warn: () => undefined });
+    log.open(createMemoryEngineStore());
+    const base: SignLogEntry = {
+      id: "req-sol",
+      at: 1,
+      origin: { kind: "browser", origin: "https://app.example" },
+      method: "solana-sign",
+      account: { walletId: "w", groupIndex: 0, address: "SoLaNa" },
+      network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+      summary: "solana message",
+      verification: "verified",
+      checks: [],
+      risk: [],
+      outcome: "submitted",
+    };
+    await log.append(base);
+    await log.append({
+      ...base,
+      id: "req-btc",
+      at: 2,
+      method: "bitcoin-sign",
+      account: { walletId: "w", groupIndex: 0, address: "bc1q", template: "btc.bip84" },
+      network: "bip122:000000000019d6689c085ae165831e93",
+      summary: "bitcoin message",
+    });
+    const entries = await log.list();
+    expect(entries.map((e) => [e.id, e.method])).toStrictEqual([
+      ["req-btc", "bitcoin-sign"],
+      ["req-sol", "solana-sign"],
+    ]);
+  });
+
   it("keeps only the newest 1000 entries", async () => {
     const warnings: string[] = [];
     const log = createSignLog({ warn: (m) => warnings.push(m) });

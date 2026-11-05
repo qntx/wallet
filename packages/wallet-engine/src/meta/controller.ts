@@ -52,6 +52,7 @@ export type MetaSyncControllerOptions = {
   readonly metaSync: MetaSyncConfig | undefined;
   readonly logger: EngineLogger;
   readonly now: () => number;
+  readonly setTimer: (ms: number, fn: () => void) => () => void;
   readonly verifyEvent: (event: Event) => boolean;
 };
 
@@ -68,7 +69,7 @@ export class MetaSyncController extends Controller<MetaSyncState> {
   private readonly pulled = new Set<string>();
   private readonly lastRemoteCreatedAt = new Map<string, number>();
   private readonly lastExported = new Map<string, string>();
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
+  private readonly timers = new Map<string, () => void>();
   private readonly inflight = new Set<string>();
   private accountsUnsubscribe: (() => void) | undefined;
   private addressBookUnsubscribe: (() => void) | undefined;
@@ -102,8 +103,8 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     this.accountsUnsubscribe = undefined;
     this.addressBookUnsubscribe?.();
     this.addressBookUnsubscribe = undefined;
-    for (const timer of this.timers.values()) {
-      clearTimeout(timer);
+    for (const cancel of this.timers.values()) {
+      cancel();
     }
     this.timers.clear();
     this.pulled.clear();
@@ -277,17 +278,14 @@ export class MetaSyncController extends Controller<MetaSyncState> {
         continue;
       }
       this.lastExported.set(walletId, current);
-      const existing = this.timers.get(walletId);
-      if (existing !== undefined) {
-        clearTimeout(existing);
-      }
+      this.timers.get(walletId)?.();
       const gen = this.generation;
       this.timers.set(
         walletId,
-        setTimeout(() => {
+        this.options.setTimer(PUBLISH_DEBOUNCE_MS, () => {
           this.timers.delete(walletId);
           void this.publishNow(walletId, gen);
-        }, PUBLISH_DEBOUNCE_MS),
+        }),
       );
     }
   }

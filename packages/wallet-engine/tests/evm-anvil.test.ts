@@ -529,6 +529,7 @@ describe.runIf(RUN)("anvil e2e: account discovery", () => {
         setStore: () => {},
       } as never;
       const ctl = new AccountTreeController({
+        setTimer: () => () => undefined,
         wallet,
         spark,
         sparkNetwork: "regtest",

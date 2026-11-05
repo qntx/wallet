@@ -655,6 +655,7 @@ const legacyFlow = async (): Promise<void> => {
     );
     // group 0's discovery marks both templates used under `bitcoin`.
     const ctl = new AccountTreeController({
+      setTimer: () => () => undefined,
       wallet,
       spark: {
         store: { subscribe: () => () => {} },

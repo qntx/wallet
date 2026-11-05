@@ -171,6 +171,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     random: options.random,
     now: options.now,
     logger: options.logger,
+    setTimer,
     createClient: ({ ref, store, signer, fetch }) =>
       createSparkClient({
         network: ref.network,
@@ -221,6 +222,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     networks,
     logger: options.logger,
     now: options.now,
+    setTimer,
   });
 
   const requests = new RequestController({
@@ -368,6 +370,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     metaSync: options.metaSync,
     logger: options.logger,
     now: options.now,
+    setTimer,
     verifyEvent: options.verifyEvent,
   });
 
@@ -376,6 +379,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     spark: controller,
     networks,
     logger: options.logger,
+    setTimer,
   });
   const bitcoinAccount = async (
     group: { readonly walletId: string; readonly groupIndex: number },

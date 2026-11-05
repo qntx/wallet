@@ -254,6 +254,14 @@ export function esploraDeps(
   };
 }
 
+/** A wall-clock timer for tests that wait out a controller's debounce or backoff. */
+export const realTimer = (ms: number, fn: () => void): (() => void) => {
+  const id = setTimeout(fn, ms);
+  return () => {
+    clearTimeout(id);
+  };
+};
+
 /** `setTimer` and `random` for a `NetworkController` that never waits. */
 export const idleNetworkDeps = {
   setTimer: (): (() => void) => () => undefined,

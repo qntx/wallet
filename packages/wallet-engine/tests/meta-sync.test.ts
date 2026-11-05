@@ -14,6 +14,7 @@ import { MetaSyncController } from "../src/meta/controller.ts";
 import { decodeMetaDocBytes, encodeMetaDoc } from "../src/meta/doc.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { realTimer } from "./send-helpers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSKEY_CONFIG = {
@@ -88,6 +89,7 @@ async function rig(
   });
   let t = 1_700_000_000_000;
   const spark = new SparkController({
+    setTimer: realTimer,
     spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
     fetch: async () => Promise.reject(new Error("no fetch")),
     random: (n) => new Uint8Array(n).fill(1),
@@ -96,6 +98,7 @@ async function rig(
     createClient: () => ({ close: () => {} }) as unknown as never,
   });
   const accounts = new AccountTreeController({
+    setTimer: realTimer,
     wallet,
     spark,
     sparkNetwork: NETWORK,
@@ -111,6 +114,7 @@ async function rig(
     logger: LOGGER,
   });
   const metaSync = new MetaSyncController({
+    setTimer: realTimer,
     verifyEvent,
     wallet,
     accounts,
@@ -290,6 +294,7 @@ describe("MetaSyncController", () => {
       },
     };
     const metaSync = new MetaSyncController({
+      setTimer: realTimer,
       verifyEvent,
       wallet: r.wallet,
       accounts: r.accounts,
