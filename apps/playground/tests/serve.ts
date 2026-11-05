@@ -21,5 +21,6 @@ for (const file of payloads) {
   cpSync(join(workerDir, file), join(dist, "assets", file));
 }
 
-await preview({ root, preview: { port: 5417, strictPort: true } });
+// The IPv4 loopback explicitly, matching the readiness probe in playwright.config.ts.
+await preview({ root, preview: { host: "127.0.0.1", port: 5417, strictPort: true } });
 process.stdout.write("playground preview on :5417\n");

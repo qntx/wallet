@@ -8,7 +8,13 @@ const server = await createServer({
   root,
   configFile: false,
   logLevel: "warn",
-  server: { port: 4176, strictPort: true, headers: { "content-security-policy": CSP } },
+  // The IPv4 loopback explicitly, matching the readiness probe (see playwright.config.ts).
+  server: {
+    host: "127.0.0.1",
+    port: 4176,
+    strictPort: true,
+    headers: { "content-security-policy": CSP },
+  },
 });
 await server.listen();
 process.stdout.write("connect test page on http://localhost:4176\n");
