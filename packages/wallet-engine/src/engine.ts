@@ -27,6 +27,8 @@ import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
+import { resolveEns } from "./names/ens.ts";
+import type { EnsResolution } from "./names/ens.ts";
 import { NetworkController } from "./networks/controller.ts";
 import { parsePayment } from "./payments/parse.ts";
 import type { PaymentParse } from "./payments/parse.ts";
@@ -109,6 +111,10 @@ export type WalletEngine = {
   readonly backup: BackupController;
   readonly zaps: {
     readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
+  };
+  readonly names: {
+    /** Forward-resolves an ENS name for a send on `network`; throws when it cannot resolve. */
+    readonly resolve: (name: string, network: string) => Promise<EnsResolution>;
   };
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
@@ -536,6 +542,9 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         resolvePayment(input, { network, now: options.now(), fetch: options.fetch }),
       withdrawLnurl: async (params) =>
         withdrawLnurl({ spark: controller, fetch: options.fetch, now: options.now }, params),
+    },
+    names: {
+      resolve: async (name, network) => resolveEns(networks, name, network),
     },
     phishing,
     unsubscribe: () => {

@@ -1,11 +1,12 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
-import { isHex, parseTransaction } from "viem";
+import { isAddress, isHex, parseTransaction } from "viem";
 
 import { EVM_NATIVE_ASSET, checksumEvmAddress, decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { EvmChainAdapter } from "../chains/evm.ts";
 import type { EvmUnsignedTransaction } from "../chains/evm.ts";
+import { resolveEns } from "../names/ens.ts";
 import {
   collectChecks,
   exceedsNetworkCap,
@@ -339,17 +340,38 @@ export const createEvmRoute = (): EvmRoute => {
     };
   };
 
-  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedRequest> =>
-    prepareSpec(ctx, {
+  const prepare = async (ctx: RouteContext, params: PrepareParams): Promise<PreparedRequest> => {
+    let { to } = params;
+    let name: string | undefined;
+    let nameChecks: ReadonlyArray<RequestCheckCode> = [];
+    if (!isAddress(to) && to.includes(".")) {
+      const resolved = await resolveEns(ctx.options.networks, to, params.network);
+      ({ address: to, name, checks: nameChecks } = resolved);
+    }
+    const prepared = await prepareSpec(ctx, {
       account: params.account,
       network: params.network,
       fee: params.fee,
       intent:
         params.token === undefined
-          ? { kind: "native", to: params.to, value: params.amount }
-          : { kind: "erc20", token: params.token, to: params.to, value: params.amount },
+          ? { kind: "native", to, value: params.amount }
+          : { kind: "erc20", token: params.token, to, value: params.amount },
       nativeValue: params.token === undefined ? params.amount : undefined,
     });
+    if (name === undefined) {
+      return prepared;
+    }
+    return {
+      ...prepared,
+      intent: {
+        ...prepared.intent,
+        outflows: prepared.intent.outflows.map((flow) =>
+          flow.to.toLowerCase() === to.toLowerCase() ? { ...flow, name } : flow,
+        ),
+      },
+      checks: [...new Set([...nameChecks, ...prepared.checks])],
+    };
+  };
 
   /**
    * A dApp transaction, already normalized: only `to`, `value` and `data` are kept; nonce and fees
