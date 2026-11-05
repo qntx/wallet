@@ -52,5 +52,10 @@ fresh file edit introduced. To run the gate uncached before a PR:
 (`bunx vp check` checks every file directly; `vp cache clean` clears the
 task cache so the subsequent `bun run` scripts re-evaluate).
 
+The native kernel bundle is committed (`packages/wallet-native/kernel/generated/`). Any
+change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, kernel
+dependencies) needs `bun run native:kernel` and the regenerated files in the same PR; CI's
+native-host-test fails on a stale bundle.
+
 The root scripts build consumed workspace packages first; per-package scripts must stay
 build-free — never nest `vp run …#build` inside a package's own lint/typecheck/test script.
