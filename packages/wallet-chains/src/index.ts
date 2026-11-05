@@ -174,6 +174,47 @@ export type IntentWarning = {
   readonly message: string;
 };
 
+/** One item a Seaport order offers or requests; recognized from EIP-712 `itemType` 0–5. */
+export type SeaportItem = {
+  readonly kind: "native" | "erc20" | "erc721" | "erc1155" | "erc721-criteria" | "erc1155-criteria";
+  /** The item's contract (EIP-55 checksummed; the zero address for `native`). */
+  readonly token: string;
+  /** `identifierOrCriteria` as a decimal string; a criteria root for the criteria kinds. */
+  readonly identifier: string;
+  readonly startAmount: AssetAmount;
+  readonly endAmount: AssetAmount;
+};
+
+/** A recognized Seaport `OrderComponents` message. */
+export type SeaportOrder = {
+  readonly offerer: string;
+  readonly zone: string;
+  readonly startTime: number | undefined;
+  readonly endTime: number | undefined;
+  readonly offer: ReadonlyArray<SeaportItem>;
+  readonly consideration: ReadonlyArray<SeaportItem & { readonly recipient: string }>;
+};
+
+/** A recognized Safe `SafeTx` message. */
+export type SafeTransaction = {
+  readonly safe: string;
+  /** The Safe nonce as a decimal string. */
+  readonly nonce: string;
+  readonly operation: "call" | "delegatecall";
+  readonly to: string;
+  /** Wei, decimal. */
+  readonly value: string;
+  readonly data: string;
+  /** The inner call(s) decoded with the transaction rules (no fee); one per MultiSend entry. */
+  readonly calls: ReadonlyArray<DisplayIntent>;
+  /** The gas-refund terms, present when `gasPrice` is not zero. */
+  readonly refund?: {
+    readonly gasPrice: string;
+    readonly gasToken: string;
+    readonly refundReceiver: string;
+  };
+};
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -193,6 +234,10 @@ export type MessageContent =
       readonly primaryType: string;
       readonly domain: TypedDataDomain;
       readonly data: Readonly<Record<string, unknown>>;
+      /** A recognized Seaport order; only the exact `OrderComponents` shape populates it. */
+      readonly seaport?: SeaportOrder;
+      /** A recognized Safe transaction; only the exact `SafeTx` shape populates it. */
+      readonly safe?: SafeTransaction;
     };
 
 export type DisplayIntent = {

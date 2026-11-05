@@ -1,6 +1,11 @@
 import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siwx";
-import type { DisplayIntent, SignInParse } from "@qntx/wallet-chains";
-import { evmTokenTable } from "@qntx/wallet-chains/evm";
+import type {
+  DisplayIntent,
+  SafeTransaction,
+  SeaportOrder,
+  SignInParse,
+} from "@qntx/wallet-chains";
+import { SAFE_MULTISEND_CALL_ONLY, evmTokenTable } from "@qntx/wallet-chains/evm";
 import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
 import type { PhishingStatus } from "../phishing/status.ts";
@@ -35,6 +40,10 @@ export type RiskFinding = {
     | "permit-approval"
     | "permit-unlimited"
     | "permit-long-lived"
+    | "order-receives-nothing"
+    | "order-offerer-mismatch"
+    | "safe-delegatecall"
+    | "safe-gas-refund"
     | "blind-signing";
   readonly level: "warning" | "danger";
 };
@@ -110,6 +119,55 @@ export function assessPermits(
     ) {
       found.set("permit-long-lived", { code: "permit-long-lived", level: "danger" });
     }
+  }
+  return byDanger([...found.values()]);
+}
+
+/**
+ * Findings for a recognized Seaport order: an order whose `offer` gives up items without any
+ * consideration paying the offerer is the zero-price-listing phishing shape (`danger`), and an
+ * `offerer` other than the signing account is a `warning`.
+ */
+export function assessSeaport(
+  order: SeaportOrder | undefined,
+  signer: string,
+): ReadonlyArray<RiskFinding> {
+  if (order === undefined) {
+    return [];
+  }
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  const paid = order.consideration.some(
+    (item) =>
+      item.recipient.toLowerCase() === order.offerer.toLowerCase() &&
+      (BigInt(item.startAmount.amount) > 0n || BigInt(item.endAmount.amount) > 0n),
+  );
+  if (order.offer.length > 0 && !paid) {
+    found.set("order-receives-nothing", { code: "order-receives-nothing", level: "danger" });
+  }
+  if (order.offerer.toLowerCase() !== signer.toLowerCase()) {
+    found.set("order-offerer-mismatch", { code: "order-offerer-mismatch", level: "warning" });
+  }
+  return byDanger([...found.values()]);
+}
+
+/**
+ * Findings for a recognized Safe transaction: a `delegatecall` into a contract that is not a
+ * canonical MultiSendCallOnly is the multisig-hijack phishing shape (`danger`), a non-zero gas
+ * refund is a `warning`, and every decoded inner call's approvals are assessed too.
+ */
+export function assessSafe(safe: SafeTransaction | undefined): ReadonlyArray<RiskFinding> {
+  if (safe === undefined) {
+    return [];
+  }
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  for (const finding of safe.calls.flatMap((call) => assessApprovals(call))) {
+    found.set(finding.code, finding);
+  }
+  if (safe.operation === "delegatecall" && !SAFE_MULTISEND_CALL_ONLY.has(safe.to.toLowerCase())) {
+    found.set("safe-delegatecall", { code: "safe-delegatecall", level: "danger" });
+  }
+  if (safe.refund !== undefined) {
+    found.set("safe-gas-refund", { code: "safe-gas-refund", level: "warning" });
   }
   return byDanger([...found.values()]);
 }

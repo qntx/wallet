@@ -1,6 +1,7 @@
 import * as TypedData from "ox/TypedData";
 
 import { ChainError } from "../index.ts";
+import { checksumEvmAddress } from "./address.ts";
 import { isRecord } from "./transaction.ts";
 
 type TypedDataField = {
@@ -43,6 +44,58 @@ const isTypedDataInput = (value: unknown): value is TypedDataInput => {
 };
 
 export type ParsedTypedData = { readonly json: TypedDataInput };
+
+/** A message object inside the document's `message`. */
+export type TypedDataMessage = Readonly<Record<string, unknown>>;
+
+export const isTypedDataMessage = (value: unknown): value is TypedDataMessage =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** `value` is an array of message objects (empty allowed). */
+export const typedDataMessages = (value: unknown): ReadonlyArray<TypedDataMessage> | undefined =>
+  Array.isArray(value) && value.every(isTypedDataMessage) ? value : undefined;
+
+/** The `Type field,Type field` signature of struct `name` in `types`. */
+export const typedDataSignature = (
+  types: TypedDataInput["types"],
+  name: string,
+): string | undefined => types[name]?.map((field) => `${field.type} ${field.name}`).join(",");
+
+/** Struct `name` has exactly `fields`, in order, no more. */
+export const sameFields = (
+  types: TypedDataInput["types"],
+  name: string,
+  fields: ReadonlyArray<string>,
+): boolean => typedDataSignature(types, name) === fields.join(",");
+
+/** A hex `address` field value, checksummed; `undefined` when malformed. */
+export const typedDataAddress = (value: unknown): string | undefined =>
+  typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value)
+    ? checksumEvmAddress(value)
+    : undefined;
+
+/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
+export const typedDataUint = (value: unknown, max: bigint): bigint | undefined => {
+  let parsed: bigint;
+  if (typeof value === "number" && Number.isSafeInteger(value)) {
+    parsed = BigInt(value);
+  } else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) {
+    parsed = BigInt(value);
+  } else {
+    return undefined;
+  }
+  return parsed >= 0n && parsed <= max ? parsed : undefined;
+};
+
+/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
+export const MAX_UINT48: bigint = 2n ** 48n - 1n;
+
+const isHexBytes = (value: unknown): value is `0x${string}` =>
+  typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+
+/** A `bytes` field value: `0x`-prefixed hex of even length. */
+export const typedDataBytes = (value: unknown): `0x${string}` | undefined =>
+  isHexBytes(value) ? value : undefined;
 
 /** Parses the EIP-712 JSON source and validates its shape with ox. */
 export const parseTypedData = (typedData: string): ParsedTypedData => {

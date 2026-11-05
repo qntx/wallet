@@ -2,6 +2,8 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { encodeSparkAddress } from "@qntx/spark";
+import type { SignRequest } from "@qntx/wallet-chains";
+import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { AddressBookController } from "../src/addresses/controller.ts";
@@ -95,6 +97,21 @@ function world() {
           events.push(`release ${requestId}`);
         },
       }),
+    prepareDapp: async (account: unknown, request: unknown) => {
+      const normalized = normalizeEvm(request);
+      return Promise.resolve({
+        account,
+        network: normalized.network,
+        signer: OTHER,
+        intent: decodeEvm(normalized),
+        checks: [],
+        staleReason: () => undefined,
+        release: () => {
+          events.push("release dapp");
+        },
+        submit: async () => Promise.resolve({ kind: normalized.kind, signature: "0x1234" }),
+      });
+    },
   } as unknown as TransactionController;
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
   const openStore = async () => Promise.resolve(createMemoryEngineStore(backing));
@@ -428,5 +445,120 @@ describe("signature record", () => {
       setTimeout(resolve);
     });
     expect(w.warnings.some((m) => m.includes("not written: vault locked"))).toBe(true);
+  });
+});
+
+const evmSign = (request: SignRequest) => ({
+  method: "evm-sign" as const,
+  origin: { kind: "browser" as const, origin: "https://app.example" },
+  account: ACCOUNT,
+  network: SEPOLIA,
+  request,
+});
+
+const itemField =
+  "uint8 itemType, address token, uint256 identifierOrCriteria, uint256 startAmount, uint256 endAmount";
+const typedFields = (spec: string) =>
+  spec.split(",").map((part) => {
+    const [type, name] = part.trim().split(" ");
+    return { type: type ?? "", name: name ?? "" };
+  });
+
+const SEAPORT_TYPES = {
+  OrderComponents: typedFields(
+    "address offerer, address zone, OfferItem[] offer, ConsiderationItem[] consideration, uint8 orderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 conduitKey, uint256 counter",
+  ),
+  OfferItem: typedFields(itemField),
+  ConsiderationItem: typedFields(`${itemField}, address recipient`),
+};
+
+const seaportDoc = {
+  types: SEAPORT_TYPES,
+  primaryType: "OrderComponents",
+  domain: {
+    name: "Seaport",
+    version: "1.6",
+    chainId: 11155111,
+    verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+  },
+  message: {
+    offerer: OTHER,
+    zone: "0x0000000000000000000000000000000000000000",
+    offer: [
+      {
+        itemType: 2,
+        token: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+        identifierOrCriteria: "1",
+        startAmount: "1",
+        endAmount: "1",
+      },
+    ],
+    consideration: [],
+    orderType: 0,
+    startTime: "1700000000",
+    endTime: "1700001000",
+    zoneHash: `0x${"00".repeat(32)}`,
+    salt: "0",
+    conduitKey: `0x${"00".repeat(32)}`,
+    counter: "0",
+  },
+};
+
+const safeDoc = {
+  types: {
+    SafeTx: typedFields(
+      "address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce",
+    ),
+  },
+  primaryType: "SafeTx",
+  domain: { verifyingContract: "0xD5Ffe748B45F5253fc9975fDd96Fddec052E6D52", chainId: 11155111 },
+  message: {
+    to: OTHER,
+    value: "0",
+    data: "0x",
+    operation: 1,
+    safeTxGas: "0",
+    baseGas: "0",
+    gasPrice: "0",
+    gasToken: "0x0000000000000000000000000000000000000000",
+    refundReceiver: "0x0000000000000000000000000000000000000000",
+    nonce: "7",
+  },
+};
+
+describe("seaport and safe typed data", () => {
+  it("a zero-price listing is a danger and logs as `seaport order`", async () => {
+    const w = world();
+    await w.start();
+    const request = await w.requests.prepare(
+      evmSign({
+        kind: "evm.typed-data",
+        network: SEPOLIA,
+        account: ACCOUNT,
+        typedData: JSON.stringify(seaportDoc),
+      }),
+    );
+    expect(request.risk.map((r) => r.code)).toContain("order-receives-nothing");
+    const result = await w.requests.approve(request.id, "evm-sign", VERIFY);
+    expect(result).toMatchObject({ kind: "evm.typed-data" });
+    const [entry] = await w.requests.signLog();
+    expect(entry).toMatchObject({ summary: "seaport order", outcome: "submitted" });
+  });
+
+  it("a Safe delegatecall outside MultiSendCallOnly is a danger and logs as `safe tx <nonce>`", async () => {
+    const w = world();
+    await w.start();
+    const request = await w.requests.prepare(
+      evmSign({
+        kind: "evm.typed-data",
+        network: SEPOLIA,
+        account: ACCOUNT,
+        typedData: JSON.stringify(safeDoc),
+      }),
+    );
+    expect(request.risk.map((r) => r.code)).toContain("safe-delegatecall");
+    await w.requests.approve(request.id, "evm-sign", VERIFY);
+    const [entry] = await w.requests.signLog();
+    expect(entry).toMatchObject({ summary: "safe tx 7" });
   });
 });

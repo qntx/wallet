@@ -23702,7 +23702,7 @@ zoo`.split("\n"));
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-DlrvN9SH.mjs
+	// packages/wallet-chains/dist/typed-data-J5g2WemC.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -23863,6 +23863,31 @@ zoo`.split("\n"));
 		if (!isRecord$1(message)) return false;
 		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
 	};
+	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/** `value` is an array of message objects (empty allowed). */
+	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
+	/** The `Type field,Type field` signature of struct `name` in `types`. */
+	var typedDataSignature = (types, name) => {
+		var _types$name;
+		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
+	};
+	/** Struct `name` has exactly `fields`, in order, no more. */
+	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
+	/** A hex `address` field value, checksummed; `undefined` when malformed. */
+	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
+	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
+	var typedDataUint = (value, max) => {
+		let parsed;
+		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
+		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
+		else return;
+		return parsed >= 0n && parsed <= max ? parsed : void 0;
+	};
+	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
+	var MAX_UINT48 = 2n ** 48n - 1n;
+	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+	/** A `bytes` field value: `0x`-prefixed hex of even length. */
+	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
 	/** Parses the EIP-712 JSON source and validates its shape with ox. */
 	var parseTypedData = (typedData) => {
 		let json;
@@ -26299,21 +26324,9 @@ zoo`.split("\n"));
 			unlimited: change !== "decrease" && value === max
 		}, extra), {}, { verified: known !== void 0 });
 	};
-	var isMessage$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	var signature = (types, name) => {
-		var _types$name;
-		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
-	};
-	var sameFields = (types, name, fields) => signature(types, name) === fields.join(",");
-	var address = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
-	var uint = (value, max) => {
-		let parsed;
-		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
-		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
-		else return;
-		return parsed >= 0n && parsed <= max ? parsed : void 0;
-	};
-	var MAX_UINT48 = 2n ** 48n - 1n;
+	var isMessage$1 = isTypedDataMessage;
+	var address = typedDataAddress;
+	var uint = typedDataUint;
 	var DETAILS = [
 		"address token",
 		"uint160 amount",
@@ -26427,6 +26440,216 @@ zoo`.split("\n"));
 			warnings: [WITNESS_WARNING]
 		};
 	};
+	/**
+	* Recognition of Safe `SafeTx` typed data. A document is recognized only when the primary type is
+	* `SafeTx` with exactly the canonical field list and the domain names a `verifyingContract` (the
+	* Safe); any other shape stays an opaque message. A `delegatecall` to a canonical MultiSendCallOnly
+	* contract is unpacked into its inner calls; anything else stays a single opaque call.
+	*/
+	/**
+	* Canonical MultiSendCallOnly deployments (safe-global/safe-deployments): 1.3.0, the 1.3.0 eip155
+	* variant and 1.4.1, lowercase for a checksum-insensitive compare.
+	*/
+	var SAFE_MULTISEND_CALL_ONLY = /* @__PURE__ */ new Set([
+		"0x40a2accbd92bca938b02010e17a5b8929b49130d",
+		"0xa1dabef33b3b82c7814b6d82a79e50f4ac44102b",
+		"0x9641d764fc13c8b624c04430c7356c1c7c8102e2"
+	]);
+	var SAFE_TX = [
+		"address to",
+		"uint256 value",
+		"bytes data",
+		"uint8 operation",
+		"uint256 safeTxGas",
+		"uint256 baseGas",
+		"uint256 gasPrice",
+		"address gasToken",
+		"address refundReceiver",
+		"uint256 nonce"
+	];
+	var MULTISEND = from$2("function multiSend(bytes transactions)");
+	/**
+	* Packed MultiSend entries (`uint8 operation, address to, uint256 value, uint256 dataLength, bytes
+	* data` repeated). `undefined` when `data` is not a `multiSend(bytes)` call, a byte is truncated or
+	* trailing, or an entry's operation is not 0 — the caller falls back to one opaque call.
+	*/
+	var multiSendEntries = (data) => {
+		if (!data.toLowerCase().startsWith("0x8d80ff0a")) return;
+		let packed;
+		try {
+			const decoded = decodeData(MULTISEND, data);
+			const first = Array.isArray(decoded) ? decoded[0] : void 0;
+			if (typeof first !== "string") return;
+			packed = first;
+		} catch (_unused) {
+			return;
+		}
+		if (!packed.startsWith("0x")) return;
+		const hex = packed.slice(2).toLowerCase();
+		const calls = [];
+		let offset = 0;
+		while (offset < hex.length) {
+			if (hex.length - offset < 170) return;
+			if (Number.parseInt(hex.slice(offset, offset + 2), 16) !== 0) return;
+			const to = `0x${hex.slice(offset + 2, offset + 42)}`;
+			const value = BigInt(`0x${hex.slice(offset + 42, offset + 106)}`);
+			const length = BigInt(`0x${hex.slice(offset + 106, offset + 170)}`);
+			offset += 170;
+			if (length * 2n > BigInt(hex.length - offset)) return;
+			calls.push({
+				to: checksumEvmAddress(to),
+				value,
+				data: `0x${hex.slice(offset, offset + Number(length) * 2)}`
+			});
+			offset += Number(length) * 2;
+		}
+		return calls;
+	};
+	/**
+	* The Safe transaction a typed-data document signs, or `undefined` when its shape is not exactly
+	* the recognized one. `decode` decodes one inner call (the transaction rules without a fee); the
+	* caller injects it bound to the request's network and token table.
+	*/
+	function recognizeSafe(json, decode) {
+		const { types, primaryType, message, domain } = json;
+		if (primaryType !== "SafeTx" || !sameFields(types, "SafeTx", SAFE_TX)) return;
+		const safe = typedDataAddress(domain["verifyingContract"]);
+		const to = typedDataAddress(message["to"]);
+		const value = typedDataUint(message["value"], MAX_UINT256);
+		const data = typedDataBytes(message["data"]);
+		const operation = typedDataUint(message["operation"], 255n);
+		const safeTxGas = typedDataUint(message["safeTxGas"], MAX_UINT256);
+		const baseGas = typedDataUint(message["baseGas"], MAX_UINT256);
+		const gasPrice = typedDataUint(message["gasPrice"], MAX_UINT256);
+		const gasToken = typedDataAddress(message["gasToken"]);
+		const refundReceiver = typedDataAddress(message["refundReceiver"]);
+		const nonce = typedDataUint(message["nonce"], MAX_UINT256);
+		if (safe === void 0 || to === void 0 || value === void 0 || data === void 0 || operation === void 0 || operation > 1n || safeTxGas === void 0 || baseGas === void 0 || gasPrice === void 0 || gasToken === void 0 || refundReceiver === void 0 || nonce === void 0) return;
+		const inner = operation === 1n && SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase()) ? multiSendEntries(data) : void 0;
+		const calls = (inner !== null && inner !== void 0 ? inner : [{
+			to,
+			value,
+			data
+		}]).map(decode);
+		return {
+			safe: _objectSpread2({
+				safe,
+				nonce: nonce.toString(10),
+				operation: operation === 0n ? "call" : "delegatecall",
+				to,
+				value: value.toString(10),
+				data,
+				calls
+			}, gasPrice > 0n ? { refund: {
+				gasPrice: gasPrice.toString(10),
+				gasToken,
+				refundReceiver
+			} } : {}),
+			multisend: inner !== void 0
+		};
+	}
+	/** Seaport 1.5 and 1.6 deployments, lowercase for a checksum-insensitive compare. */
+	var SEAPORT_CONTRACTS = /* @__PURE__ */ new Set(["0x0000000000000068f116a894984e2db1123eb395", "0x00000000000000adc04c56bf30ac9d3c0aaf14dc"]);
+	/** Seaport `itemType` values 0–5; an item type outside the list is not recognized. */
+	var ITEM_KINDS = [
+		"native",
+		"erc20",
+		"erc721",
+		"erc1155",
+		"erc721-criteria",
+		"erc1155-criteria"
+	];
+	var ITEM_FIELDS = [
+		"uint8 itemType",
+		"address token",
+		"uint256 identifierOrCriteria",
+		"uint256 startAmount",
+		"uint256 endAmount"
+	];
+	var typesMatch = (types) => Object.keys(types).length === 3 && sameFields(types, "OrderComponents", [
+		"address offerer",
+		"address zone",
+		"OfferItem[] offer",
+		"ConsiderationItem[] consideration",
+		"uint8 orderType",
+		"uint256 startTime",
+		"uint256 endTime",
+		"bytes32 zoneHash",
+		"uint256 salt",
+		"bytes32 conduitKey",
+		"uint256 counter"
+	]) && sameFields(types, "OfferItem", ITEM_FIELDS) && sameFields(types, "ConsiderationItem", [...ITEM_FIELDS, "address recipient"]);
+	var amount = (kind, token, value, chainId, table) => {
+		if (kind === "native") return {
+			asset: EVM_NATIVE_ASSET,
+			amount: value.toString(10),
+			symbol: "ETH",
+			decimals: 18
+		};
+		if (kind === "erc20") {
+			const found = lookupEvmToken(table, chainId, token);
+			return _objectSpread2({
+				asset: token,
+				amount: value.toString(10)
+			}, found === void 0 ? {} : {
+				symbol: found.symbol,
+				decimals: found.decimals
+			});
+		}
+		return {
+			asset: token,
+			amount: value.toString(10)
+		};
+	};
+	var item = (message, chainId, table) => {
+		const itemType = typedDataUint(message["itemType"], 255n);
+		const token = typedDataAddress(message["token"]);
+		const identifier = typedDataUint(message["identifierOrCriteria"], MAX_UINT256);
+		const start = typedDataUint(message["startAmount"], MAX_UINT256);
+		const end = typedDataUint(message["endAmount"], MAX_UINT256);
+		const kind = itemType === void 0 ? void 0 : ITEM_KINDS[Number(itemType)];
+		if (token === void 0 || identifier === void 0 || start === void 0 || end === void 0 || kind === void 0) return;
+		return {
+			kind,
+			token,
+			identifier: identifier.toString(10),
+			startAmount: amount(kind, token, start, chainId, table),
+			endAmount: amount(kind, token, end, chainId, table)
+		};
+	};
+	var all = (list, build) => {
+		const built = list === null || list === void 0 ? void 0 : list.map(build);
+		return built === void 0 || built.some((entry) => entry === void 0) ? void 0 : built.filter((entry) => entry !== void 0);
+	};
+	/**
+	* The Seaport order a typed-data document signs, or `undefined` when its shape is not exactly the
+	* recognized one. `chainId` is the request network's, used for the built-in token table.
+	*/
+	function recognizeSeaport(json, chainId, table) {
+		const { types, primaryType, message, domain } = json;
+		if (primaryType !== "OrderComponents" || !typesMatch(types)) return;
+		const verifying = typedDataAddress(domain["verifyingContract"]);
+		if (domain["name"] !== "Seaport" || verifying === void 0 || !SEAPORT_CONTRACTS.has(verifying.toLowerCase())) return;
+		const offerer = typedDataAddress(message["offerer"]);
+		const zone = typedDataAddress(message["zone"]);
+		const startTime = typedDataUint(message["startTime"], MAX_UINT256);
+		const endTime = typedDataUint(message["endTime"], MAX_UINT256);
+		const offer = all(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
+		const consideration = all(typedDataMessages(message["consideration"]), (entry) => {
+			const base = item(entry, chainId, table);
+			const recipient = typedDataAddress(entry["recipient"]);
+			return base === void 0 || recipient === void 0 ? void 0 : _objectSpread2(_objectSpread2({}, base), {}, { recipient });
+		});
+		if (offerer === void 0 || zone === void 0 || startTime === void 0 || endTime === void 0 || offer === void 0 || consideration === void 0) return;
+		return {
+			offerer,
+			zone,
+			startTime: startTime <= MAX_UINT48 ? Number(startTime) : void 0,
+			endTime: endTime <= MAX_UINT48 ? Number(endTime) : void 0,
+			offer,
+			consideration
+		};
+	}
 	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
 	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
 	var ERC20_INCREASE = from$2("function increaseAllowance(address spender, uint256 amount)");
@@ -26462,7 +26685,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused) {
+		} catch (_unused2) {
 			return;
 		}
 	};
@@ -26471,19 +26694,18 @@ zoo`.split("\n"));
 		amount: wei.toString(10)
 	}, symbol === void 0 ? {} : { symbol }), decimals === void 0 ? {} : { decimals });
 	var feeWei = (tx) => quantityBigInt(tx.gas, "tx.gas") * (tx.type === "eip1559" ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas") : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
-	var nativeOutflow = (tx, to) => [{
+	var nativeOutflow = (value, to) => [{
 		to,
-		amount: weiAmount(quantityBigInt(tx.value, "tx.value")),
+		amount: weiAmount(value),
 		verified: true
 	}];
-	var tokenFlow = (tx, to, amount, chainId, table) => {
-		var _tx$to, _tx$to2;
-		const token = lookupEvmToken(table, chainId, (_tx$to = tx.to) !== null && _tx$to !== void 0 ? _tx$to : "");
+	var tokenFlow = (target, to, amount, chainId, table) => {
+		const token = lookupEvmToken(table, chainId, target);
 		return {
 			flows: [{
 				to,
 				amount: _objectSpread2({
-					asset: (_tx$to2 = tx.to) !== null && _tx$to2 !== void 0 ? _tx$to2 : "",
+					asset: target,
 					amount: amount.toString(10)
 				}, token === void 0 ? {} : {
 					symbol: token.symbol,
@@ -26520,20 +26742,22 @@ zoo`.split("\n"));
 		},
 		verified: false
 	}];
-	var decodeTransaction$1 = (request, table) => {
-		var _tx$to3;
-		const { tx } = request;
-		const chainId = networkChainId(request.network);
-		const data = tx.data.toLowerCase();
-		const fee = { max: weiAmount(feeWei(tx)) };
+	/**
+	* The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
+	* produces the intent; `fee` is `undefined` for a call that is not itself a transaction.
+	*/
+	var decodeCall = (call, network, fee, table) => {
+		var _call$to2;
+		const chainId = networkChainId(network);
+		const data = call.data.toLowerCase();
 		const base = {
 			family: "evm",
-			network: request.network,
+			network,
 			approvals: [],
 			warnings: []
 		};
 		if (data === "0x") {
-			if (tx.to === void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
+			if (call.to === void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
 				summary: "contract-call",
 				outflows: [],
 				fee,
@@ -26541,14 +26765,15 @@ zoo`.split("\n"));
 			});
 			return _objectSpread2(_objectSpread2({}, base), {}, {
 				summary: "transfer",
-				outflows: nativeOutflow(tx, tx.to),
+				outflows: nativeOutflow(call.value, call.to),
 				fee,
 				verifiability: "full"
 			});
 		}
 		const transferArgs = tryCall(ERC20_TRANSFER, data);
 		if (transferArgs !== void 0) {
-			const { flows, verified } = tokenFlow(tx, argAddress(transferArgs, 0), argUint(transferArgs, 1), chainId, table);
+			var _call$to;
+			const { flows, verified } = tokenFlow((_call$to = call.to) !== null && _call$to !== void 0 ? _call$to : "", argAddress(transferArgs, 0), argUint(transferArgs, 1), chainId, table);
 			return _objectSpread2(_objectSpread2({}, base), {}, {
 				summary: "transfer",
 				outflows: flows,
@@ -26563,7 +26788,7 @@ zoo`.split("\n"));
 			fee,
 			verifiability: "partial"
 		});
-		const token = (_tx$to3 = tx.to) !== null && _tx$to3 !== void 0 ? _tx$to3 : "";
+		const token = (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : "";
 		if (token.toLowerCase() === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase()) {
 			const permitArgs = tryCall(PERMIT2_APPROVE, data);
 			if (permitArgs !== void 0) {
@@ -26596,7 +26821,7 @@ zoo`.split("\n"));
 		if (transferFromArgs !== void 0) {
 			const to = argAddress(transferFromArgs, 1);
 			const id = argUint(transferFromArgs, 2);
-			if (lookupEvmToken(table, chainId, token) !== void 0) return partial("transfer", tokenFlow(tx, to, id, chainId, table).flows, []);
+			if (lookupEvmToken(table, chainId, token) !== void 0) return partial("transfer", tokenFlow(token, to, id, chainId, table).flows, []);
 			return partial("transfer", nftFlow(token, to, id), []);
 		}
 		for (const fn of [ERC721_SAFE_FROM, ERC721_SAFE_FROM_DATA]) {
@@ -26620,6 +26845,14 @@ zoo`.split("\n"));
 			verifiability: "opaque"
 		});
 	};
+	var decodeTransaction$1 = (request, table) => {
+		const { tx } = request;
+		return decodeCall({
+			to: tx.to,
+			value: quantityBigInt(tx.value, "tx.value"),
+			data: tx.data
+		}, request.network, { max: weiAmount(feeWei(tx)) }, table);
+	};
 	/** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
 	var displayDomain = (domain) => {
 		const { name, version, verifyingContract, salt } = domain;
@@ -26639,7 +26872,7 @@ zoo`.split("\n"));
 				text,
 				signIn
 			};
-		} catch (_unused2) {
+		} catch (_unused3) {
 			return {
 				kind: "bytes",
 				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
@@ -26651,7 +26884,7 @@ zoo`.split("\n"));
 	* production callers use the built-in table.
 	*/
 	var decodeEvm = (request, table = evmTokenTable) => {
-		var _permit$approvals, _permit$warnings;
+		var _safe$safe$calls$0$su, _safe$safe$calls$, _permit$approvals, _permit$warnings;
 		if (request.kind === "evm.transaction") return decodeTransaction$1(request, table);
 		if (request.kind === "evm.personal-message") return {
 			family: "evm",
@@ -26666,17 +26899,21 @@ zoo`.split("\n"));
 		};
 		if (request.kind !== "evm.typed-data") throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
 		const { json } = parseTypedData(request.typedData);
-		const message = {
+		const chainId = networkChainId(request.network);
+		const permit = recognizePermit(json, chainId, table);
+		const seaport = permit === void 0 ? recognizeSeaport(json, chainId, table) : void 0;
+		const safe = permit === void 0 && seaport === void 0 ? recognizeSafe(json, (call) => decodeCall(call, request.network, void 0, table)) : void 0;
+		const message = _objectSpread2(_objectSpread2({
 			kind: "typed-data",
 			primaryType: json.primaryType,
 			domain: displayDomain(json.domain),
 			data: json.message
-		};
-		const permit = recognizePermit(json, networkChainId(request.network), table);
+		}, seaport === void 0 ? {} : { seaport }), safe === void 0 ? {} : { safe: safe.safe });
+		const summary = seaport === void 0 ? safe === void 0 ? permit === void 0 ? "message" : "approve" : safe.multisend ? "batch" : (_safe$safe$calls$0$su = (_safe$safe$calls$ = safe.safe.calls[0]) === null || _safe$safe$calls$ === void 0 ? void 0 : _safe$safe$calls$.summary) !== null && _safe$safe$calls$0$su !== void 0 ? _safe$safe$calls$0$su : "contract-call" : "swap";
 		return {
 			family: "evm",
 			network: request.network,
-			summary: permit === void 0 ? "message" : "approve",
+			summary,
 			outflows: [],
 			approvals: (_permit$approvals = permit === null || permit === void 0 ? void 0 : permit.approvals) !== null && _permit$approvals !== void 0 ? _permit$approvals : [],
 			fee: void 0,

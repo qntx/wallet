@@ -16,6 +16,8 @@ import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { recognizePermit } from "./permit.ts";
+import { recognizeSafe } from "./safe.ts";
+import { recognizeSeaport } from "./seaport.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
@@ -107,24 +109,24 @@ const feeWei = (tx: EvmTransaction): bigint =>
     ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas")
     : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
 
-const nativeOutflow = (tx: EvmTransaction, to: string): ReadonlyArray<AssetFlow> => [
-  { to, amount: weiAmount(quantityBigInt(tx.value, "tx.value")), verified: true },
+const nativeOutflow = (value: bigint, to: string): ReadonlyArray<AssetFlow> => [
+  { to, amount: weiAmount(value), verified: true },
 ];
 
 const tokenFlow = (
-  tx: EvmTransaction,
+  target: string,
   to: string,
   amount: bigint,
   chainId: number,
   table: EvmTokenTable,
 ): { flows: ReadonlyArray<AssetFlow>; verified: boolean } => {
-  const token = lookupEvmToken(table, chainId, tx.to ?? "");
+  const token = lookupEvmToken(table, chainId, target);
   return {
     flows: [
       {
         to,
         amount: {
-          asset: tx.to ?? "",
+          asset: target,
           amount: amount.toString(10),
           ...(token === undefined ? {} : { symbol: token.symbol, decimals: token.decimals }),
         },
@@ -168,24 +170,35 @@ const nftFlow = (asset: string, to: string, id: bigint): ReadonlyArray<AssetFlow
   { to, amount: { asset, amount: id.toString(10) }, verified: false },
 ];
 
-const decodeTransaction = (
-  request: Extract<SignRequest, { kind: "evm.transaction" }>,
+/** One EVM call, `to` absent for contract creation; `value` and `data` are always present. */
+type EvmCall = {
+  readonly to: string | undefined;
+  readonly value: bigint;
+  readonly data: string;
+};
+
+/**
+ * The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
+ * produces the intent; `fee` is `undefined` for a call that is not itself a transaction.
+ */
+const decodeCall = (
+  call: EvmCall,
+  network: string,
+  fee: DisplayIntent["fee"],
   table: EvmTokenTable,
 ): DisplayIntent => {
-  const { tx } = request;
-  const chainId = networkChainId(request.network);
-  const data = tx.data.toLowerCase();
-  const fee = { max: weiAmount(feeWei(tx)) };
-  const base = { family: "evm" as const, network: request.network, approvals: [], warnings: [] };
+  const chainId = networkChainId(network);
+  const data = call.data.toLowerCase();
+  const base = { family: "evm" as const, network, approvals: [], warnings: [] };
 
   if (data === "0x") {
-    if (tx.to === undefined) {
+    if (call.to === undefined) {
       return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
     }
     return {
       ...base,
       summary: "transfer",
-      outflows: nativeOutflow(tx, tx.to),
+      outflows: nativeOutflow(call.value, call.to),
       fee,
       verifiability: "full",
     };
@@ -194,7 +207,7 @@ const decodeTransaction = (
   const transferArgs = tryCall(ERC20_TRANSFER, data);
   if (transferArgs !== undefined) {
     const { flows, verified } = tokenFlow(
-      tx,
+      call.to ?? "",
       argAddress(transferArgs, 0),
       argUint(transferArgs, 1),
       chainId,
@@ -220,7 +233,7 @@ const decodeTransaction = (
     fee,
     verifiability: "partial",
   });
-  const token = tx.to ?? "";
+  const token = call.to ?? "";
 
   if (token.toLowerCase() === PERMIT2_ADDRESS.toLowerCase()) {
     const permitArgs = tryCall(PERMIT2_APPROVE, data);
@@ -308,7 +321,7 @@ const decodeTransaction = (
     const to = argAddress(transferFromArgs, 1);
     const id = argUint(transferFromArgs, 2);
     if (lookupEvmToken(table, chainId, token) !== undefined) {
-      return partial("transfer", tokenFlow(tx, to, id, chainId, table).flows, []);
+      return partial("transfer", tokenFlow(token, to, id, chainId, table).flows, []);
     }
     return partial("transfer", nftFlow(token, to, id), []);
   }
@@ -339,6 +352,19 @@ const decodeTransaction = (
     }
   }
   return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
+};
+
+const decodeTransaction = (
+  request: Extract<SignRequest, { kind: "evm.transaction" }>,
+  table: EvmTokenTable,
+): DisplayIntent => {
+  const { tx } = request;
+  return decodeCall(
+    { to: tx.to, value: quantityBigInt(tx.value, "tx.value"), data: tx.data },
+    request.network,
+    { max: weiAmount(feeWei(tx)) },
+    table,
+  );
 };
 
 /** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
@@ -402,17 +428,35 @@ export const decodeEvm = (
     throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
   }
   const { json } = parseTypedData(request.typedData);
+  const chainId = networkChainId(request.network);
+  const permit = recognizePermit(json, chainId, table);
+  const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
+  const safe =
+    permit === undefined && seaport === undefined
+      ? recognizeSafe(json, (call) => decodeCall(call, request.network, undefined, table))
+      : undefined;
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,
     domain: displayDomain(json.domain),
     data: json.message,
+    ...(seaport === undefined ? {} : { seaport }),
+    ...(safe === undefined ? {} : { safe: safe.safe }),
   };
-  const permit = recognizePermit(json, networkChainId(request.network), table);
+  const summary =
+    seaport === undefined
+      ? safe === undefined
+        ? permit === undefined
+          ? "message"
+          : "approve"
+        : safe.multisend
+          ? "batch"
+          : (safe.safe.calls[0]?.summary ?? "contract-call")
+      : "swap";
   return {
     family: "evm",
     network: request.network,
-    summary: permit === undefined ? "message" : "approve",
+    summary,
     outflows: [],
     approvals: permit?.approvals ?? [],
     fee: undefined,
