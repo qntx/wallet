@@ -19,6 +19,44 @@ export type SimulationOutcome =
 
 export const SIMULATION_TIMEOUT_MS = 10_000;
 
+/** Asset ids compare by string, case-insensitively for EVM `0x` addresses. */
+export const sameAsset = (a: string, b: string): boolean =>
+  a === b || (a.startsWith("0x") && a.toLowerCase() === b.toLowerCase());
+
+/** An asset amount that moved by more than this share of the old one is a changed simulation. */
+export const SIMULATION_CHANGE_PERCENT = 5n;
+
+const covers = (changes: ReadonlyArray<AssetChange>, other: ReadonlyArray<AssetChange>): boolean =>
+  changes.every((c) => other.some((o) => sameAsset(o.asset, c.asset)));
+
+const total = (changes: ReadonlyArray<AssetChange>, asset: string): bigint =>
+  changes.filter((c) => sameAsset(c.asset, asset)).reduce((sum, c) => sum + BigInt(c.amount), 0n);
+
+/**
+ * Whether a re-simulation differs enough from the first outcome to be shown again: a different
+ * status, an asset appearing or disappearing, or an amount that moved by more than
+ * {@link SIMULATION_CHANGE_PERCENT} percent of the old one. Two outcomes failing or missing the
+ * same way count as unchanged.
+ */
+export function simulationChanged(before: SimulationOutcome, after: SimulationOutcome): boolean {
+  if (before.status !== after.status) {
+    return true;
+  }
+  if (before.status !== "success" || after.status !== "success") {
+    return false;
+  }
+  if (!covers(before.changes, after.changes) || !covers(after.changes, before.changes)) {
+    return true;
+  }
+  return before.changes.some(({ asset }) => {
+    const prior = total(before.changes, asset);
+    const next = total(after.changes, asset);
+    const diff = prior > next ? prior - next : next - prior;
+    const base = prior < 0n ? -prior : prior;
+    return diff * 100n > base * SIMULATION_CHANGE_PERCENT;
+  });
+}
+
 const noop = (): void => undefined;
 
 /**

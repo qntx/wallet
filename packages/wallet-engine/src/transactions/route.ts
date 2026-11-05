@@ -119,6 +119,8 @@ export type PreparedRequest = {
   readonly checks: ReadonlyArray<RequestCheckCode>;
   /** Absent when the request is not simulated (replacements, Bitcoin). */
   readonly simulation?: SimulationOutcome;
+  /** Re-runs the same simulated call at approval; absent when there is nothing to re-run. */
+  readonly resimulate?: () => Promise<SimulationOutcome>;
   /** Why the build can no longer be signed (nonce taken, blockhash expired), if so. */
   readonly staleReason: () => string | undefined | Promise<string | undefined>;
   /** Signs, finalizes, broadcasts and hands the transaction to tracking. */

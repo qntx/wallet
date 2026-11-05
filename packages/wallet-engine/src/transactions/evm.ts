@@ -282,11 +282,12 @@ export const createEvmRoute = (): EvmRoute => {
     const request = evm.toSignRequest(feed, account, info.chainId);
     const intent = withL1Fee(decodeEvm(request), l1);
     const txId = newId(ctx.options.random);
+    const simulated = { to: feed.to, value: feed.value, data: feed.data };
     const simulation = await evm.simulate(
       client,
       info.chainId,
       from,
-      { to: feed.to, value: feed.value, data: feed.data },
+      simulated,
       ctx.options.setTimer,
     );
 
@@ -327,6 +328,8 @@ export const createEvmRoute = (): EvmRoute => {
       intent,
       checks: collectChecks(flags),
       simulation,
+      resimulate: async () =>
+        evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer),
       staleReason: () =>
         evm.nonceConsumed(network, from, unsigned.nonce)
           ? "nonce already used by a newer transaction — start over"

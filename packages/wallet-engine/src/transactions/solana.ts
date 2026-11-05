@@ -187,6 +187,7 @@ export const prepareSolana = async (
     intent,
     checks: collectChecks(flags),
     simulation,
+    resimulate: async () => solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer),
     staleReason: async () =>
       (await solana.blockHeight(rpc)) > unsigned.lastValidBlockHeight
         ? "blockhash expired — start over"

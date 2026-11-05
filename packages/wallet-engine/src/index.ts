@@ -25,7 +25,7 @@ export type { AddressBookErrorCategory } from "./addresses/errors.ts";
 export { PhishingController, PHISHING_REFRESH_MS } from "./phishing/controller.ts";
 export type { PhishingControllerOptions, PhishingState } from "./phishing/controller.ts";
 export type { PhishingStatus } from "./phishing/status.ts";
-export { RequestController, REQUEST_TTL_MS } from "./requests/controller.ts";
+export { RequestController, REQUEST_TTL_MS, RESIMULATE_AFTER_MS } from "./requests/controller.ts";
 export type {
   BrowserOrigin,
   EvmSignInput,
