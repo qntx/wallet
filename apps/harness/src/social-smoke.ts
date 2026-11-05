@@ -156,7 +156,7 @@ export async function smokeUnlock(): Promise<void> {
   // W5 re-verification: one prompt for the export, one for an EVM transfer
   // whose prompt text the kernel renders from its own decode.
   const exported = await wallet.wallets.exportMnemonic(walletId, HARDWARE);
-  const exportedWords = new TextDecoder().decode(exported.read()).split(" ").length;
+  const exportedWords = new TextDecoder().decode(exported.mnemonic.read()).split(" ").length;
   result("export-verified", exportedWords === 12, `words=${exportedWords}`);
   const signed = await chains(wallet).sign({
     request: {

@@ -218,11 +218,22 @@ export class BackupController extends Controller<BackupControllerState> {
     return out;
   }
 
+  /**
+   * Merges a cloud backup into the vault. Wallets with a BIP-39 passphrase restore only when
+   * `passphrases` carries theirs; the rest come back in `passphraseRequired`.
+   */
   async restore(options: {
     readonly name: string;
     readonly backupFactor: UnlockFactor;
+    readonly passphrases?: ReadonlyArray<{
+      readonly walletId: string;
+      readonly passphrase: string;
+    }>;
     readonly factor?: InitialFactor;
-  }): Promise<ReadonlyArray<WalletInfo>> {
+  }): Promise<{
+    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly passphraseRequired: ReadonlyArray<string>;
+  }> {
     if (this.cloud === undefined) {
       throw new BackupControllerError("cloud", "no cloud store configured");
     }
@@ -240,11 +251,12 @@ export class BackupController extends Controller<BackupControllerState> {
       // first reconcile once the engine store opens.
       this.pendingAdoption = { id, digest: digestOf(text) };
     }
-    let wallets: ReadonlyArray<WalletInfo>;
+    let restored: Awaited<ReturnType<Wallet["backup"]["restore"]>>;
     try {
-      wallets = await this.wallet.backup.restore({
+      restored = await this.wallet.backup.restore({
         envelope: text,
         backupFactor: options.backupFactor,
+        ...(options.passphrases === undefined ? {} : { passphrases: options.passphrases }),
         ...(options.factor === undefined ? {} : { factor: options.factor }),
       });
     } catch (error) {
@@ -270,7 +282,7 @@ export class BackupController extends Controller<BackupControllerState> {
     } catch {
       /* state carries the outcome */
     }
-    return wallets;
+    return restored;
   }
 
   private async reconcileOrThrow(): Promise<void> {

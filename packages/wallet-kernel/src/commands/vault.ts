@@ -12,25 +12,32 @@ import type { VaultImage, StoredRecord } from "../vault/store.ts";
 import {
   factorInfo,
   makeFactor,
-  openRecord,
+  openWalletSecret,
   rotateVault,
   unlock,
   verifyFactor,
 } from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
+import { passphraseText } from "./passphrase.ts";
 
-/** Opens a wallet's sealed entropy record, then withSeed; wipes the entropy on every path. */
+/**
+ * Opens a wallet's sealed entropy record, then withSeed over its entropy and passphrase; wipes both
+ * on every path.
+ */
 export async function withWalletSeed<R>(
   pbkdf2: Pbkdf2,
   dek: Secret,
   record: StoredRecord,
   use: (seed: Uint8Array) => R | Promise<R>,
 ): Promise<R> {
-  const entropy = openRecord(dek, record);
+  const { entropy, passphrase } = openWalletSecret(dek, record);
   try {
-    return await withSeed(pbkdf2, entropy, use);
+    return await withSeed(pbkdf2, entropy, passphraseText(passphrase), use);
   } finally {
     wipe(entropy);
+    if (passphrase !== undefined) {
+      wipe(passphrase);
+    }
   }
 }
 

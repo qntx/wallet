@@ -144,5 +144,55 @@
       "01f5bced59dec48e362f2c45b5de68b9fd6c92c6634f44d6d40aab69056506f0e35524a518034ddc1192e1dacd32c1ed3eaa3c3b131c88ed8e7e54c49a5d0998",
       "xprv9s21ZrQH143K39rnQJknpH1WEPFJrzmAqqasiDcVrNuk926oizzJDDQkdiTvNPr2FYDYzWgiMiC63YmfPAa2oPyNB23r2g7d1yiK6WpqaQS"
     ]
+  ],
+  "passphrase": [
+    {
+      "name": "ascii",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "TREZOR",
+      "seed": "c55257c360c07c72029aebc1b53c05ed0362ada38ead3e3e9efa3708e53495531f09a6987599d18264c1e1c92f2cf141630c7a3c4ab7c81b2f001698e7463b04",
+      "evmAddress": "0x9c32F71D4DB8Fb9e1A58B0a80dF79935e7256FA6",
+      "nostrPublicKey": "f32ba651e972dc0a0db8d180690a76d394100ecab6b9594b0950e97a73beb7ae"
+    },
+    {
+      "name": "composed-accents",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "pässwörd",
+      "seed": "f159596e1a257152783ecca3910131fb6496ae4616d76f9b4e060d0e2fead51e2ab2af2c4bb340ce6c683466324af2654b9e31bc05c93ad05025c46a83424485",
+      "evmAddress": "0xbB582d3909445939cf660a5908cA69Ef4476b79B",
+      "nostrPublicKey": "768fbd361bf5a890d750f9b8a27f834c69f0a89df46013201232f819490aa7db"
+    },
+    {
+      "name": "decomposed-accents",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "pässwörd",
+      "seed": "f159596e1a257152783ecca3910131fb6496ae4616d76f9b4e060d0e2fead51e2ab2af2c4bb340ce6c683466324af2654b9e31bc05c93ad05025c46a83424485",
+      "evmAddress": "0xbB582d3909445939cf660a5908cA69Ef4476b79B",
+      "nostrPublicKey": "768fbd361bf5a890d750f9b8a27f834c69f0a89df46013201232f819490aa7db"
+    },
+    {
+      "name": "kana-and-compat",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "ガｶﾞ ①",
+      "seed": "70198ccfaaa77c504b08e1e05afb2d31bfdf9d6a24a5a5ef481f108aedb9adb8fffc9f2a072ba3f267f3c3753d79f19e0bee9267391e3d9035163b18ab8713e8",
+      "evmAddress": "0x28423A1d72d033149bD2e0Ae1BAE04567c71A5D8",
+      "nostrPublicKey": "d487b7a4113a447308c57222d0307d0662ce682ada63ce1fc10d25a5531ef510"
+    },
+    {
+      "name": "leading-space",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": " a",
+      "seed": "da58e7d09e3f16bbe087ed8ab9315262166ab6e60aff266257578b4ef51d57167cff5bf9f80a2cf7c6096a2b224dfd3a836ed1378eeb2cbca848aaf6bbcc44ba",
+      "evmAddress": "0x6988Bf03e2e61d55C1Aba2792eD0f44A7597A6A5",
+      "nostrPublicKey": "e9e09e8a2661f2d2963ebfe309c57044a90f8373de40ff6cf5005338c8e17842"
+    },
+    {
+      "name": "no-space",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "a",
+      "seed": "87d1b98527bc044ca079026f96de0f4f500311598024b524391919116845af4e664e5cac53ad710e1509955c90b5fe94bb66b6df3fce0634a63fe13b9179f6d3",
+      "evmAddress": "0x5Ace647E49512fc94E04E43F6C8AdD33d41442E8",
+      "nostrPublicKey": "97ac0e5576ed7aa7741ee19d2f9c26236ff281e8f196a665b90411fb3286175c"
+    }
   ]
 }

@@ -223,6 +223,32 @@
       }
     },
     {
+      "name": "request-wallet.confirmMnemonic-passphrase",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 9,
+        "method": "wallet.confirmMnemonic",
+        "params": {
+          "draft": "ffeeddccbbaa99887766554433221100",
+          "answers": [
+            {
+              "$bytes": "6c6567616c"
+            },
+            {
+              "$bytes": "77696e6e6572"
+            },
+            {
+              "$bytes": "7468616e6b"
+            }
+          ],
+          "passphrase": {
+            "$bytes": "70c3a4737320776f7264"
+          }
+        }
+      }
+    },
+    {
       "name": "request-wallet.discardMnemonic",
       "check": "request",
       "message": {
@@ -231,6 +257,49 @@
         "method": "wallet.discardMnemonic",
         "params": {
           "draft": "ffeeddccbbaa99887766554433221100"
+        }
+      }
+    },
+    {
+      "name": "request-wallet.importMnemonic-passphrase",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 11,
+        "method": "wallet.importMnemonic",
+        "params": {
+          "mnemonic": {
+            "$bytes": "6c6567616c2077696e6e6572207468616e6b20796561722077617665207361757361676520776f7274682075736566756c206c6567616c2077696e6e6572207468616e6b2079656c6c6f77"
+          },
+          "passphrase": {
+            "$bytes": "70c3a4737320776f7264"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-backup.restore-passphrases",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 15,
+        "method": "backup.restore",
+        "params": {
+          "envelope": "{}",
+          "backupFactor": {
+            "kind": "password",
+            "password": {
+              "$bytes": "6261636b75702070617373776f7264"
+            }
+          },
+          "passphrases": [
+            {
+              "walletId": "0011223344556677",
+              "passphrase": {
+                "$bytes": "70c3a4737320776f7264"
+              }
+            }
+          ]
         }
       }
     },
@@ -912,6 +981,7 @@
               "origin": "mnemonic",
               "words": 12,
               "backup": "mnemonic",
+              "passphrase": false,
               "createdAt": 1767225600000
             }
           ],
@@ -1012,8 +1082,81 @@
             "origin": "mnemonic",
             "words": 12,
             "backup": "mnemonic",
+            "passphrase": false,
             "createdAt": 1767225600000
           },
+          "session": "00112233445566778899aabbccddeeff"
+        }
+      }
+    },
+    {
+      "name": "response-ok-wallet.importMnemonic-passphrase",
+      "check": "response:wallet.importMnemonic",
+      "message": {
+        "v": 2,
+        "id": 11,
+        "ok": {
+          "wallet": {
+            "walletId": "0011223344556677",
+            "origin": "mnemonic",
+            "words": 12,
+            "backup": "mnemonic",
+            "passphrase": true,
+            "createdAt": 1767225600000
+          },
+          "session": "00112233445566778899aabbccddeeff"
+        }
+      }
+    },
+    {
+      "name": "response-ok-wallet.exportMnemonic",
+      "check": "response:wallet.exportMnemonic",
+      "message": {
+        "v": 2,
+        "id": 12,
+        "ok": {
+          "mnemonic": {
+            "$bytes": "6c6567616c2077696e6e6572207468616e6b2079656172"
+          }
+        }
+      }
+    },
+    {
+      "name": "response-ok-wallet.exportMnemonic-passphrase",
+      "check": "response:wallet.exportMnemonic",
+      "message": {
+        "v": 2,
+        "id": 12,
+        "ok": {
+          "mnemonic": {
+            "$bytes": "6c6567616c2077696e6e6572207468616e6b2079656172"
+          },
+          "passphrase": {
+            "$bytes": "70c3a4737320776f7264"
+          }
+        }
+      }
+    },
+    {
+      "name": "response-ok-backup.restore",
+      "check": "response:backup.restore",
+      "message": {
+        "v": 2,
+        "id": 15,
+        "ok": {
+          "wallets": [
+            {
+              "walletId": "0011223344556677",
+              "origin": "mnemonic",
+              "words": 12,
+              "backup": "mnemonic",
+              "passphrase": false,
+              "createdAt": 1767225600000
+            }
+          ],
+          "passphraseRequired": [
+            "0011223344556677"
+          ],
           "session": "00112233445566778899aabbccddeeff"
         }
       }
@@ -1275,6 +1418,7 @@
               "origin": "mnemonic",
               "words": 12,
               "backup": "mnemonic",
+              "passphrase": false,
               "createdAt": 1767225600000
             }
           ],
@@ -1332,6 +1476,7 @@
               "origin": "mnemonic",
               "words": 12,
               "backup": "mnemonic",
+              "passphrase": false,
               "createdAt": 1767225600000
             }
           ],
@@ -1966,6 +2111,167 @@
               "$bytes": "abcd"
             }
           }
+        }
+      }
+    },
+    {
+      "name": "params-passphrase-empty",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 11,
+        "method": "wallet.importMnemonic",
+        "params": {
+          "mnemonic": {
+            "$bytes": "6c6567616c2077696e6e6572207468616e6b20796561722077617665207361757361676520776f7274682075736566756c206c6567616c2077696e6e6572207468616e6b2079656c6c6f77"
+          },
+          "passphrase": {
+            "$bytes": ""
+          }
+        }
+      }
+    },
+    {
+      "name": "params-passphrase-over-cap",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 9,
+        "method": "wallet.confirmMnemonic",
+        "params": {
+          "draft": "ffeeddccbbaa99887766554433221100",
+          "answers": [
+            {
+              "$bytes": "6c6567616c"
+            },
+            {
+              "$bytes": "77696e6e6572"
+            },
+            {
+              "$bytes": "7468616e6b"
+            }
+          ],
+          "passphrase": {
+            "$bytes": "6161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161"
+          }
+        }
+      }
+    },
+    {
+      "name": "params-passphrase-as-text",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 11,
+        "method": "wallet.importMnemonic",
+        "params": {
+          "mnemonic": {
+            "$bytes": "6c6567616c2077696e6e6572207468616e6b20796561722077617665207361757361676520776f7274682075736566756c206c6567616c2077696e6e6572207468616e6b2079656c6c6f77"
+          },
+          "passphrase": "secret"
+        }
+      }
+    },
+    {
+      "name": "params-restore-passphrase-empty",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 15,
+        "method": "backup.restore",
+        "params": {
+          "envelope": "{}",
+          "backupFactor": {
+            "kind": "password",
+            "password": {
+              "$bytes": "6261636b75702070617373776f7264"
+            }
+          },
+          "passphrases": [
+            {
+              "walletId": "0011223344556677",
+              "passphrase": {
+                "$bytes": ""
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "params-restore-passphrase-extra-key",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 15,
+        "method": "backup.restore",
+        "params": {
+          "envelope": "{}",
+          "backupFactor": {
+            "kind": "password",
+            "password": {
+              "$bytes": "6261636b75702070617373776f7264"
+            }
+          },
+          "passphrases": [
+            {
+              "walletId": "0011223344556677",
+              "passphrase": {
+                "$bytes": "70c3a4737320776f7264"
+              },
+              "extra": 1
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "response-export-bare-bytes",
+      "check": "response:wallet.exportMnemonic",
+      "message": {
+        "v": 2,
+        "id": 12,
+        "ok": {
+          "$bytes": "6c6567616c2077696e6e6572207468616e6b2079656172"
+        }
+      }
+    },
+    {
+      "name": "response-restore-missing-passphraseRequired",
+      "check": "response:backup.restore",
+      "message": {
+        "v": 2,
+        "id": 15,
+        "ok": {
+          "wallets": [
+            {
+              "walletId": "0011223344556677",
+              "origin": "mnemonic",
+              "words": 12,
+              "backup": "mnemonic",
+              "passphrase": false,
+              "createdAt": 1767225600000
+            }
+          ],
+          "session": "00112233445566778899aabbccddeeff"
+        }
+      }
+    },
+    {
+      "name": "response-wallet-info-missing-passphrase",
+      "check": "response:wallet.importMnemonic",
+      "message": {
+        "v": 2,
+        "id": 11,
+        "ok": {
+          "wallet": {
+            "walletId": "0011223344556677",
+            "origin": "mnemonic",
+            "words": 12,
+            "backup": "mnemonic",
+            "createdAt": 1767225600000
+          },
+          "session": "00112233445566778899aabbccddeeff"
         }
       }
     },

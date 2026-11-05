@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-Cq5h9X0X.mjs
+	// packages/wallet/dist/core-D-NCx1CQ.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -711,8 +711,11 @@
 		origin: union(literal("passkey"), literal("mnemonic")),
 		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
 		backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
+		passphrase: bool,
 		createdAt: safeTime
 	});
+	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
+	var passphraseBytes = bytes(1, 1024);
 	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-unavailable"), literal("factor-invalidated"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
 	var createdResult = obj({
 		wallet: walletInfo$1,
@@ -785,7 +788,8 @@
 			presence: true,
 			params: obj({
 				draft: draftId,
-				answers: arr(bytes(1, 64), 3, 3)
+				answers: arr(bytes(1, 64), 3, 3),
+				passphrase: opt(passphraseBytes)
 			}),
 			result: createdResult
 		},
@@ -822,10 +826,15 @@
 			params: obj({
 				envelope: str(4e6),
 				backupFactor: backupUnlockFactor,
+				passphrases: opt(arr(obj({
+					walletId,
+					passphrase: passphraseBytes
+				}), 1e3)),
 				factor: opt(factor)
 			}),
 			result: obj({
 				wallets: arr(walletInfo$1, 1e3),
+				passphraseRequired: arr(str(128), 1e3),
 				session: sessionId
 			})
 		},
@@ -834,6 +843,7 @@
 			presence: true,
 			params: obj({
 				mnemonic: bytes(1, 1024),
+				passphrase: opt(passphraseBytes),
 				factor: opt(factor)
 			}),
 			result: createdResult
@@ -845,7 +855,10 @@
 				verify: factor,
 				walletId
 			}),
-			result: bytes(16, 1024)
+			result: obj({
+				mnemonic: bytes(16, 1024),
+				passphrase: opt(passphraseBytes)
+			})
 		},
 		"wallet.delete": {
 			session: true,
@@ -888,7 +901,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DbpLncEB.mjs
+	// packages/wallet/dist/protocol-DDz4nlYK.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -920,7 +933,8 @@
 	var backupHeader = obj({ wallets: arr(obj({
 		walletId: str(128),
 		origin: union(literal("mnemonic"), literal("passkey")),
-		words: union(literal(12), literal(15), literal(18), literal(21), literal(24))
+		words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
+		passphrase: opt(literal(true))
 	}), 1e3) });
 	var backupInfo = obj({
 		id: str(32, /^[0-9a-f]{32}$/),
@@ -7463,6 +7477,7 @@
 		return value;
 	}
 	// packages/wallet-kernel/src/vault/headers.ts
+	init_objectSpread2();
 	var PURPOSE_PATTERN = /^[a-z0-9-]{1,32}$/;
 	var PASSWORD_ITERATIONS$2 = 6e5;
 	function encodeHeader(header) {
@@ -7491,13 +7506,14 @@
 			purpose: header.purpose,
 			createdAt: header.createdAt
 		});
-		return JSON.stringify({
+		return JSON.stringify(_objectSpread2(_objectSpread2({
 			walletId: header.walletId,
 			origin: header.origin,
-			words: header.words,
+			words: header.words
+		}, header.passphrase === true ? { passphrase: true } : {}), {}, {
 			backup: header.backup,
 			createdAt: header.createdAt
-		});
+		}));
 	}
 	function asEntropyOrigin(value) {
 		if (value !== "passkey" && value !== "mnemonic") throw headerFailure();
@@ -7509,7 +7525,15 @@
 	}
 	function parseEntropyHeader(text) {
 		const object = headerObject(text);
-		expectKeys(object, [
+		const flagged = Object.hasOwn(object, "passphrase");
+		expectKeys(object, flagged ? [
+			"walletId",
+			"origin",
+			"words",
+			"passphrase",
+			"backup",
+			"createdAt"
+		] : [
 			"walletId",
 			"origin",
 			"words",
@@ -7518,13 +7542,16 @@
 		]);
 		const { backup } = object;
 		if (backup !== "none" && backup !== "passkey" && backup !== "mnemonic") throw headerFailure();
-		return {
+		const origin = asEntropyOrigin(object["origin"]);
+		if (flagged && (object["passphrase"] !== true || origin !== "mnemonic")) throw headerFailure();
+		return _objectSpread2(_objectSpread2({
 			walletId: asWalletId(object["walletId"]),
-			origin: asEntropyOrigin(object["origin"]),
-			words: asWords(object["words"]),
+			origin,
+			words: asWords(object["words"])
+		}, flagged ? { passphrase: true } : {}), {}, {
 			backup,
 			createdAt: asCreatedAt(object["createdAt"])
-		};
+		});
 	}
 	function parseDataKeyHeader(text) {
 		const object = headerObject(text);
@@ -8126,6 +8153,34 @@
 	function openRecord(dek, record) {
 		return dek.use((bytes) => open(bytes, record.sealed, recordContext(record.kind, record.id), record.header));
 	}
+	/**
+	* Splits an `entropy` record's plaintext at the header's entropy length; a payload the header does
+	* not describe (a passphrase flag without bytes, bytes without the flag, more than
+	* {@link MAX_PASSPHRASE_BYTES}) is `integrity`. Copies — the caller wipes `plaintext` and both
+	* parts.
+	*/
+	function splitWalletSecret(header, plaintext) {
+		const entropyLength = header.words / 3 * 4;
+		const extra = plaintext.length - entropyLength;
+		if (!(header.passphrase === true ? extra >= 1 && extra <= 1024 : extra === 0)) throw new KernelError("integrity", "wallet record does not match its header");
+		return {
+			entropy: plaintext.slice(0, entropyLength),
+			passphrase: header.passphrase === true ? plaintext.slice(entropyLength) : void 0
+		};
+	}
+	/**
+	* The only way to read an `entropy` record: opens it and splits it with {@link splitWalletSecret}.
+	* The caller wipes both buffers.
+	*/
+	function openWalletSecret(dek, record) {
+		const header = parseEntropyHeader(record.header);
+		const plaintext = openRecord(dek, record);
+		try {
+			return splitWalletSecret(header, plaintext);
+		} finally {
+			wipe(plaintext);
+		}
+	}
 	function findRecord(image, kind, id) {
 		const record = image.records.find((r) => r.kind === kind && r.id === id);
 		if (record === void 0) throw new KernelError("not-found", "record not found");
@@ -8188,8 +8243,32 @@
 			origin: header.origin,
 			words: header.words,
 			backup: header.backup,
+			passphrase: header.passphrase === true,
 			createdAt: header.createdAt
 		};
+	}
+	// packages/wallet-kernel/src/commands/passphrase.ts
+	init_utils$2();
+	/**
+	* A wire passphrase (raw UTF-8, wiped here) as the bytes the vault stores: NFKD-normalized, never
+	* trimmed — spaces are significant in BIP-39 — and 1–1024 bytes after normalization.
+	*/
+	function normalizePassphrase(wire) {
+		const normalized = utf8ToBytes$1(decodeUtf8Secret(wire).normalize("NFKD"));
+		if (normalized.length === 0 || normalized.length > 1024) {
+			normalized.fill(0);
+			throw new KernelError("invalid-input", "passphrase must be 1-1024 bytes");
+		}
+		return normalized;
+	}
+	/** The text `seedFromMnemonic` takes for stored passphrase bytes (`undefined` → no passphrase). */
+	function passphraseText(passphrase) {
+		if (passphrase === void 0) return "";
+		try {
+			return new TextDecoder("utf-8", { fatal: true }).decode(passphrase);
+		} catch (_unused) {
+			throw new KernelError("integrity", "wallet passphrase is not valid UTF-8");
+		}
 	}
 	// node_modules/.bun/@noble+curves@2.4.0/node_modules/@noble/curves/abstract/der.js
 	var _0n$8, DERErr, _DER, DER;
@@ -12251,15 +12330,15 @@ zoo`.split("\n"));
 			wipe(password, salt);
 		}
 	}
-	async function seedFromEntropy(entropy, pbkdf2) {
-		return seedFromMnemonic(mnemonicFromEntropy(entropy), "", pbkdf2);
+	async function seedFromEntropy(entropy, passphrase, pbkdf2) {
+		return seedFromMnemonic(mnemonicFromEntropy(entropy), passphrase, pbkdf2);
 	}
 	/**
-	* Derives the BIP-39 seed of `entropy`, runs `use`, wipes the seed on every path. Does not own
-	* `entropy`.
+	* Derives the BIP-39 seed of `entropy` and `passphrase` ("" for none), runs `use`, wipes the seed
+	* on every path. Does not own `entropy`.
 	*/
-	async function withSeed(pbkdf2, entropy, use) {
-		const seed = await seedFromEntropy(entropy, pbkdf2);
+	async function withSeed(pbkdf2, entropy, passphrase, use) {
+		const seed = await seedFromEntropy(entropy, passphrase, pbkdf2);
 		try {
 			return await use(seed);
 		} finally {
@@ -12432,13 +12511,17 @@ zoo`.split("\n"));
 		}
 	};
 	// packages/wallet-kernel/src/commands/vault.ts
-	/** Opens a wallet's sealed entropy record, then withSeed; wipes the entropy on every path. */
+	/**
+	* Opens a wallet's sealed entropy record, then withSeed over its entropy and passphrase; wipes both
+	* on every path.
+	*/
 	async function withWalletSeed(pbkdf2, dek, record, use) {
-		const entropy = openRecord(dek, record);
+		const { entropy, passphrase } = openWalletSecret(dek, record);
 		try {
-			return await withSeed(pbkdf2, entropy, use);
+			return await withSeed(pbkdf2, entropy, passphraseText(passphrase), use);
 		} finally {
 			wipe(entropy);
+			if (passphrase !== void 0) wipe(passphrase);
 		}
 	}
 	var EMPTY_IMAGE$1 = {
@@ -12527,8 +12610,9 @@ zoo`.split("\n"));
 	}
 	// packages/wallet-kernel/src/commands/wallets.ts
 	init_utils$2();
-	async function deriveWalletMaterial(platform, entropy) {
-		return withSeed(platform.pbkdf2, entropy, (seed) => {
+	init_objectSpread2();
+	async function deriveWalletMaterial(platform, entropy, passphrase) {
+		return withSeed(platform.pbkdf2, entropy, passphraseText(passphrase), (seed) => {
 			const master = masterKey(seed);
 			return {
 				master,
@@ -12536,13 +12620,14 @@ zoo`.split("\n"));
 			};
 		});
 	}
-	/** Entropy → master → walletId. `entropy` is not consumed. */
-	async function walletMaterial(platform, entropy, origin, words) {
-		const { master, walletId } = await deriveWalletMaterial(platform, entropy);
+	/** Entropy and passphrase → master → walletId. Neither buffer is consumed. */
+	async function walletMaterial(platform, entropy, passphrase, origin, words) {
+		const { master, walletId } = await deriveWalletMaterial(platform, entropy, passphrase);
 		try {
 			return {
 				walletId,
 				entropy,
+				passphrase,
 				words,
 				origin
 			};
@@ -12551,24 +12636,28 @@ zoo`.split("\n"));
 		}
 	}
 	function walletInfoOf(material, backup, createdAt) {
-		return walletInfo({
+		return walletInfo(_objectSpread2(_objectSpread2({
 			walletId: material.walletId,
 			origin: material.origin,
 			words: material.words,
-			backup,
-			createdAt
-		});
+			backup
+		}, material.passphrase === void 0 ? {} : { passphrase: true }), {}, { createdAt }));
+	}
+	/** The `entropy` record payload: the entropy, then the passphrase bytes when there are any. */
+	function walletSecretPlaintext(entropy, passphrase) {
+		return passphrase === void 0 ? new Uint8Array(entropy) : concatBytes$3(entropy, passphrase);
 	}
 	/** The entropy record for a new wallet, sealed under `dek`. Consumes nothing. */
 	function walletRecord(ctx, dek, material, backup, createdAt) {
-		const header = encodeHeader({
+		const header = encodeHeader(_objectSpread2(_objectSpread2({
 			walletId: material.walletId,
 			origin: material.origin,
-			words: material.words,
+			words: material.words
+		}, material.passphrase === void 0 ? {} : { passphrase: true }), {}, {
 			backup,
 			createdAt
-		});
-		return sealRecord(ctx.platform, dek, "entropy", material.walletId, header, new Uint8Array(material.entropy));
+		}));
+		return sealRecord(ctx.platform, dek, "entropy", material.walletId, header, walletSecretPlaintext(material.entropy, material.passphrase));
 	}
 	/**
 	* The dynamic gate on every "create or import" command: with an uninitialized vault `factor` is
@@ -12724,6 +12813,14 @@ zoo`.split("\n"));
 		};
 	}
 	async function confirmMnemonic(ctx, params) {
+		const passphrase = params.passphrase === void 0 ? void 0 : normalizePassphrase(params.passphrase);
+		try {
+			return await confirmWithPassphrase(ctx, params, passphrase);
+		} finally {
+			if (passphrase !== void 0) wipe(passphrase);
+		}
+	}
+	async function confirmWithPassphrase(ctx, params, passphrase) {
 		const allMatch = ctx.session.getDraft(params.draft).expected.every((expected, i) => {
 			const answer = params.answers[i];
 			return answer !== void 0 && answer.length === expected.length && equalBytes$3(answer, expected);
@@ -12733,7 +12830,7 @@ zoo`.split("\n"));
 		const taken = ctx.session.takeDraft(params.draft);
 		try {
 			const entropy = taken.entropy.use((bytes) => new Uint8Array(bytes));
-			const material = await walletMaterial(ctx.platform, entropy, "mnemonic", taken.words);
+			const material = await walletMaterial(ctx.platform, entropy, passphrase, "mnemonic", taken.words);
 			try {
 				ensureNewWallet(ctx, material);
 				const createdAt = ctx.platform.now();
@@ -12776,9 +12873,20 @@ zoo`.split("\n"));
 	}
 	async function importMnemonic(ctx, params, requestSession) {
 		const gated = gate(ctx, params.factor, requestSession);
-		const entropy = entropyFromMnemonic(decodeUtf8Secret(params.mnemonic));
-		const material = await walletMaterial(ctx.platform, entropy, "mnemonic", mnemonicWords(entropy));
+		let text;
 		try {
+			text = decodeUtf8Secret(params.mnemonic);
+		} catch (error) {
+			var _params$passphrase;
+			(_params$passphrase = params.passphrase) === null || _params$passphrase === void 0 || _params$passphrase.fill(0);
+			throw error;
+		}
+		let passphrase;
+		let entropy;
+		try {
+			passphrase = params.passphrase === void 0 ? void 0 : normalizePassphrase(params.passphrase);
+			entropy = entropyFromMnemonic(text);
+			const material = await walletMaterial(ctx.platform, entropy, passphrase, "mnemonic", mnemonicWords(entropy));
 			ensureNewWallet(ctx, material);
 			const createdAt = ctx.platform.now();
 			const record = walletRecord(ctx, gated.dek, material, "mnemonic", createdAt);
@@ -12788,7 +12896,8 @@ zoo`.split("\n"));
 				session
 			};
 		} finally {
-			wipe(entropy);
+			if (entropy !== void 0) wipe(entropy);
+			if (passphrase !== void 0) wipe(passphrase);
 		}
 	}
 	var PURPOSE_WALLET = 1;
@@ -12862,7 +12971,7 @@ zoo`.split("\n"));
 			throw error;
 		}
 		const entropy = entropyFromPrf(prf.prfWallet);
-		const material = await walletMaterial(ctx.platform, entropy, "passkey", 12);
+		const material = await walletMaterial(ctx.platform, entropy, void 0, "passkey", 12);
 		try {
 			ensureNewWallet(ctx, material);
 			const createdAt = ctx.platform.now();
@@ -12893,6 +13002,7 @@ zoo`.split("\n"));
 	init_sha2();
 	init_utils$2();
 	init_base();
+	init_objectSpread2();
 	var PASSWORD_ITERATIONS = 6e5;
 	/** Payload tag byte: wallet entry. */
 	var ORIGIN_BYTE = {
@@ -12990,26 +13100,21 @@ zoo`.split("\n"));
 			for (const record of ctx.image.records) {
 				if (record.kind !== "entropy") continue;
 				const header = parseEntropyHeader(record.header);
-				const plaintext = openRecord(dek, record);
-				try {
-					wallets.push({
-						walletId: record.id,
-						origin: header.origin,
-						words: header.words,
-						entropy: plaintext
-					});
-				} catch (error) {
-					plaintext.fill(0);
-					throw error;
-				}
+				const { entropy, passphrase } = openWalletSecret(dek, record);
+				passphrase === null || passphrase === void 0 || passphrase.fill(0);
+				wallets.push(_objectSpread2(_objectSpread2({
+					walletId: record.id,
+					origin: header.origin,
+					words: header.words
+				}, header.passphrase === true ? { passphrase: true } : {}), {}, { entropy }));
 			}
 			return {
 				wallets,
-				header: JSON.stringify({ wallets: wallets.map(({ walletId, origin, words }) => ({
+				header: JSON.stringify({ wallets: wallets.map(({ walletId, origin, words, passphrase }) => _objectSpread2({
 					walletId,
 					origin,
 					words
-				})) })
+				}, passphrase === true ? { passphrase } : {})) })
 			};
 		} catch (error) {
 			for (const wallet of wallets) wallet.entropy.fill(0);
@@ -13214,6 +13319,21 @@ zoo`.split("\n"));
 	* down in one commit so a torn restore can't leave half the secrets.
 	*/
 	async function restoreBackup(ctx, params, requestSession) {
+		const passphrases = /* @__PURE__ */ new Map();
+		try {
+			return await restoreWithPassphrases(ctx, params, requestSession, passphrases);
+		} finally {
+			var _params$passphrases;
+			for (const passphrase of passphrases.values()) passphrase.fill(0);
+			for (const entry of (_params$passphrases = params.passphrases) !== null && _params$passphrases !== void 0 ? _params$passphrases : []) entry.passphrase.fill(0);
+		}
+	}
+	async function restoreWithPassphrases(ctx, params, requestSession, passphrases) {
+		var _params$passphrases2;
+		for (const entry of (_params$passphrases2 = params.passphrases) !== null && _params$passphrases2 !== void 0 ? _params$passphrases2 : []) {
+			if (passphrases.has(entry.walletId)) throw new KernelError("invalid-input", `duplicate passphrase for wallet ${entry.walletId}`);
+			passphrases.set(entry.walletId, normalizePassphrase(entry.passphrase));
+		}
 		const envelope = parseEnvelope(params.envelope);
 		const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$2.dec(f.credentialId)] : []);
 		const bek = await bekFromFactor(ctx.platform, envelope, await backupMaterial(ctx, params.backupFactor, credentials));
@@ -13230,9 +13350,15 @@ zoo`.split("\n"));
 				plaintext.fill(0);
 				throw new KernelError("integrity", "backup: payload does not match header");
 			}
+			const flagged = new Set(header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId));
+			for (const walletId of passphrases.keys()) if (!flagged.has(walletId)) {
+				plaintext.fill(0);
+				throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
+			}
 			const gated = gate(ctx, params.factor, requestSession);
 			const records = [];
 			const restored = [];
+			const passphraseRequired = [];
 			let committed = false;
 			try {
 				try {
@@ -13242,7 +13368,13 @@ zoo`.split("\n"));
 						if (expected === void 0) throw new KernelError("integrity", "backup: wallet count mismatch");
 						const words = mnemonicWords(wallet.entropy);
 						if (words !== expected.words) throw new KernelError("integrity", "backup: entropy length does not match header");
-						const material = await walletMaterial(ctx.platform, wallet.entropy, wallet.origin, words);
+						const passphrase = passphrases.get(expected.walletId);
+						if (passphrase === void 0 && expected.passphrase === true) {
+							if (!ctx.image.records.some((r) => r.kind === "entropy" && r.id === expected.walletId)) passphraseRequired.push(expected.walletId);
+							continue;
+						}
+						const material = await walletMaterial(ctx.platform, wallet.entropy, passphrase, wallet.origin, words);
+						if (passphrase !== void 0 && material.walletId !== expected.walletId) throw new KernelError("invalid-input", `passphrase does not match wallet ${expected.walletId}`);
 						if (material.walletId !== expected.walletId || material.origin !== expected.origin) throw new KernelError("integrity", "backup: derived walletId does not match header");
 						if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) continue;
 						const backup = material.origin === "passkey" ? "passkey" : "none";
@@ -13255,6 +13387,7 @@ zoo`.split("\n"));
 					committed = true;
 					return {
 						wallets: restored,
+						passphraseRequired,
 						session
 					};
 				} catch (error) {
@@ -13272,25 +13405,29 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/commands/secrets.ts
 	init_utils$2();
 	init_objectSpread2();
-	/** One-shot export: the mnemonic as UTF-8 bytes (the host wraps it in a wipeable buffer). */
+	/**
+	* One-shot export: the mnemonic as UTF-8 bytes, plus the NFKD passphrase bytes when the wallet has
+	* one (the host wraps both in wipeable buffers).
+	*/
 	async function exportMnemonic(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
 		const record = findRecord(ctx.image, "entropy", params.walletId);
 		const header = parseEntropyHeader(record.header);
-		const entropy = openRecord(dek, record);
+		const { entropy, passphrase } = openWalletSecret(dek, record);
 		try {
 			const exported = utf8ToBytes$1(mnemonicFromEntropy(entropy));
 			if (header.backup !== "mnemonic") {
 				const updated = encodeHeader(_objectSpread2(_objectSpread2({}, header), {}, { backup: "mnemonic" }));
 				await ctx.commit([{
 					op: "put-record",
-					record: sealRecord(ctx.platform, dek, "entropy", params.walletId, updated, new Uint8Array(entropy))
+					record: sealRecord(ctx.platform, dek, "entropy", params.walletId, updated, walletSecretPlaintext(entropy, passphrase))
 				}]);
 			}
-			return exported;
+			return _objectSpread2({ mnemonic: exported }, passphrase === void 0 ? {} : { passphrase: new Uint8Array(passphrase) });
 		} finally {
 			wipe(entropy);
+			if (passphrase !== void 0) wipe(passphrase);
 		}
 	}
 	/**
@@ -40905,6 +41042,22 @@ zoo`.split("\n"));
 		for (const item of items) collectTransferables(item, out, depth + 1);
 		return out;
 	}
+	/**
+	* Opens a record at reconcile. An `entropy` record must also match its header's payload layout, so
+	* an inconsistent wallet record latches the vault corrupted instead of failing at first use.
+	*/
+	function openChecked(dek, record) {
+		const plaintext = openRecord(dek, record);
+		if (record.kind === "entropy") try {
+			const { entropy, passphrase } = splitWalletSecret(parseEntropyHeader(record.header), plaintext);
+			wipe(entropy);
+			if (passphrase !== void 0) wipe(passphrase);
+		} catch (error) {
+			wipe(plaintext);
+			throw error;
+		}
+		return plaintext;
+	}
 	function isMethodName(method) {
 		return method in METHODS;
 	}
@@ -40964,14 +41117,14 @@ zoo`.split("\n"));
 					if (prior === void 0) opened.push({
 						kind: record.kind,
 						id: record.id,
-						plaintext: openRecord(dek, record)
+						plaintext: openChecked(dek, record)
 					});
 					else {
 						before.delete(`${record.kind}/${record.id}`);
 						if (prior.header !== record.header || !equalBytes$3(prior.sealed, record.sealed)) opened.push({
 							kind: record.kind,
 							id: record.id,
-							plaintext: openRecord(dek, record)
+							plaintext: openChecked(dek, record)
 						});
 					}
 				}

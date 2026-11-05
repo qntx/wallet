@@ -212,8 +212,12 @@ export const walletInfo: Validator<WalletInfo> = obj({
   origin: union(literal("passkey"), literal("mnemonic")),
   words: union(literal(12), literal(15), literal(18), literal(21), literal(24)),
   backup: union(literal("none"), literal("passkey"), literal("mnemonic")),
+  passphrase: bool,
   createdAt: safeTime,
 });
+
+/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
+const passphraseBytes: Validator<Uint8Array> = bytes(1, 1024);
 
 export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("locked"),
@@ -266,7 +270,11 @@ export const CORE_METHODS: {
     { readonly draft: string; readonly words: Uint8Array; readonly quiz: ReadonlyArray<number> }
   >;
   readonly "wallet.confirmMnemonic": MethodSpec<
-    { readonly draft: string; readonly answers: ReadonlyArray<Uint8Array> },
+    {
+      readonly draft: string;
+      readonly answers: ReadonlyArray<Uint8Array>;
+      readonly passphrase?: Uint8Array;
+    },
     CreatedResult
   >;
   readonly "wallet.discardMnemonic": MethodSpec<{ readonly draft: string }, NullValue>;
@@ -283,17 +291,25 @@ export const CORE_METHODS: {
     {
       readonly envelope: string;
       readonly backupFactor: BackupUnlockFactor;
+      readonly passphrases?: ReadonlyArray<{
+        readonly walletId: string;
+        readonly passphrase: Uint8Array;
+      }>;
       readonly factor?: Factor;
     },
-    { readonly wallets: ReadonlyArray<WalletInfo>; readonly session: string }
+    {
+      readonly wallets: ReadonlyArray<WalletInfo>;
+      readonly passphraseRequired: ReadonlyArray<string>;
+      readonly session: string;
+    }
   >;
   readonly "wallet.importMnemonic": MethodSpec<
-    { readonly mnemonic: Uint8Array; readonly factor?: Factor },
+    { readonly mnemonic: Uint8Array; readonly passphrase?: Uint8Array; readonly factor?: Factor },
     CreatedResult
   >;
   readonly "wallet.exportMnemonic": MethodSpec<
     { readonly verify: Factor; readonly walletId: string },
-    Uint8Array
+    { readonly mnemonic: Uint8Array; readonly passphrase?: Uint8Array }
   >;
   readonly "wallet.delete": MethodSpec<
     { readonly verify: Factor; readonly walletId: string },
@@ -351,7 +367,11 @@ export const CORE_METHODS: {
   "wallet.confirmMnemonic": {
     session: false,
     presence: true,
-    params: obj({ draft: draftId, answers: arr(bytes(1, 64), 3, 3) }),
+    params: obj({
+      draft: draftId,
+      answers: arr(bytes(1, 64), 3, 3),
+      passphrase: opt(passphraseBytes),
+    }),
     result: createdResult,
   },
   "wallet.discardMnemonic": {
@@ -384,21 +404,30 @@ export const CORE_METHODS: {
     params: obj({
       envelope: str(4_000_000),
       backupFactor: backupUnlockFactor,
+      passphrases: opt(arr(obj({ walletId, passphrase: passphraseBytes }), 1000)),
       factor: opt(factor),
     }),
-    result: obj({ wallets: arr(walletInfo, 1000), session: sessionId }),
+    result: obj({
+      wallets: arr(walletInfo, 1000),
+      passphraseRequired: arr(str(128), 1000),
+      session: sessionId,
+    }),
   },
   "wallet.importMnemonic": {
     session: false,
     presence: true,
-    params: obj({ mnemonic: bytes(1, 1024), factor: opt(factor) }),
+    params: obj({
+      mnemonic: bytes(1, 1024),
+      passphrase: opt(passphraseBytes),
+      factor: opt(factor),
+    }),
     result: createdResult,
   },
   "wallet.exportMnemonic": {
     session: true,
     presence: true,
     params: obj({ verify: factor, walletId }),
-    result: bytes(16, 1024),
+    result: obj({ mnemonic: bytes(16, 1024), passphrase: opt(passphraseBytes) }),
   },
   "wallet.delete": {
     session: true,

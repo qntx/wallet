@@ -6,15 +6,25 @@ import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import { mnemonicFromEntropy } from "../seed/mnemonic.ts";
 import { encodeHeader, parseEntropyHeader } from "../vault/headers.ts";
-import { findRecord, openRecord, sealRecord, verifyFactor } from "../vault/vault.ts";
+import {
+  findRecord,
+  openRecord,
+  openWalletSecret,
+  sealRecord,
+  verifyFactor,
+} from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
+import { walletSecretPlaintext } from "./wallets.ts";
 
-/** One-shot export: the mnemonic as UTF-8 bytes (the host wraps it in a wipeable buffer). */
+/**
+ * One-shot export: the mnemonic as UTF-8 bytes, plus the NFKD passphrase bytes when the wallet has
+ * one (the host wraps both in wipeable buffers).
+ */
 export async function exportMnemonic(
   ctx: KernelContext,
   params: { verify: Factor; walletId: string },
   requestSession: string | undefined,
-): Promise<Uint8Array> {
+): Promise<{ mnemonic: Uint8Array; passphrase?: Uint8Array }> {
   const { dek } = ctx.session.require(requestSession);
   await verifyFactor(
     ctx.platform,
@@ -25,7 +35,7 @@ export async function exportMnemonic(
   );
   const record = findRecord(ctx.image, "entropy", params.walletId);
   const header = parseEntropyHeader(record.header);
-  const entropy = openRecord(dek, record);
+  const { entropy, passphrase } = openWalletSecret(dek, record);
   try {
     const exported = utf8ToBytes(mnemonicFromEntropy(entropy));
     // A successful export is the backup: re-seal the record with backup "mnemonic" — the public
@@ -42,14 +52,20 @@ export async function exportMnemonic(
             "entropy",
             params.walletId,
             updated,
-            new Uint8Array(entropy),
+            walletSecretPlaintext(entropy, passphrase),
           ),
         },
       ]);
     }
-    return exported;
+    return {
+      mnemonic: exported,
+      ...(passphrase === undefined ? {} : { passphrase: new Uint8Array(passphrase) }),
+    };
   } finally {
     wipe(entropy);
+    if (passphrase !== undefined) {
+      wipe(passphrase);
+    }
   }
 }
 

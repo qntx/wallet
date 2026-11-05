@@ -35,7 +35,7 @@ describe("bip39 vectors", () => {
     await expect(seedFromMnemonic(mnemonic, "TREZOR", subtlePbkdf2)).resolves.toStrictEqual(
       hexToBytes(seed),
     );
-    await expect(seedFromEntropy(hexToBytes(entropy), subtlePbkdf2)).resolves.toStrictEqual(
+    await expect(seedFromEntropy(hexToBytes(entropy), "", subtlePbkdf2)).resolves.toStrictEqual(
       await seedFromMnemonic(mnemonic, "", subtlePbkdf2),
     );
   });
@@ -71,5 +71,29 @@ describe("entropyFromMnemonic rejects", () => {
 describe("mnemonicFromEntropy rejects", () => {
   it("unsupported entropy length", () => {
     expect(kernelError(() => mnemonicFromEntropy(new Uint8Array(8)))).toBe("invalid-input");
+  });
+});
+
+type PassphraseVector = { name: string; mnemonic: string; passphrase: string; seed: string };
+const { passphrase: passphraseVectors } = loadVectors("bip39.json") as {
+  passphrase: PassphraseVector[];
+};
+
+describe("bip39 passphrase vectors", () => {
+  it.each(passphraseVectors)("$name: mnemonic + passphrase → seed", async (vector) => {
+    const expected = hexToBytes(vector.seed);
+    await expect(
+      seedFromMnemonic(vector.mnemonic, vector.passphrase, subtlePbkdf2),
+    ).resolves.toStrictEqual(expected);
+    await expect(
+      seedFromEntropy(entropyFromMnemonic(vector.mnemonic), vector.passphrase, subtlePbkdf2),
+    ).resolves.toStrictEqual(expected);
+  });
+
+  it("composed and decomposed spellings share a seed; the passphrase changes it", () => {
+    const seed = (name: string) => passphraseVectors.find((v) => v.name === name)?.seed;
+    expect(seed("composed-accents")).toBe(seed("decomposed-accents"));
+    expect(seed("leading-space")).not.toBe(seed("no-space"));
+    expect(seed("ascii")).not.toBe(seed("no-space"));
   });
 });

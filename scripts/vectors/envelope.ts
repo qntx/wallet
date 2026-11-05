@@ -50,6 +50,18 @@ const record = {
   plaintext: "7f7ff03d123792d6ac594bfa67bf6d0c0ab55b6b1fdb6249303fe861f1ccba9a",
 };
 
+// An `entropy` record of a wallet with a BIP-39 passphrase: the sealed payload is the 16 entropy
+// bytes followed by the NFKD UTF-8 passphrase; the header's `passphrase` flag marks the extra bytes.
+const passphraseBytes = utf8ToBytes("p\u00E4ssw\u00F6rd".normalize("NFKD"));
+const entropyWithPassphrase = {
+  key: "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+  nonce: "808182838485868788898a8b8c8d8e8f9091929394959697",
+  context: "qntx-wallet/vault/v1/record/entropy/a8a96711dff685cb",
+  header:
+    '{"walletId":"a8a96711dff685cb","origin":"mnemonic","words":12,"passphrase":true,"backup":"mnemonic","createdAt":1767225600000}',
+  plaintext: `${"00".repeat(16)}${bytesToHex(passphraseBytes)}`,
+};
+
 const factor = {
   key: "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
   nonce: "c0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7",
@@ -59,7 +71,7 @@ const factor = {
 };
 
 const vectorsList = [];
-for (const v of [record, factor]) {
+for (const v of [record, entropyWithPassphrase, factor]) {
   vectorsList.push({
     ...v,
     ...vector(hexToBytes(v.key), hexToBytes(v.nonce), v.context, v.header, hexToBytes(v.plaintext)),

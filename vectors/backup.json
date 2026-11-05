@@ -101,5 +101,12 @@
   "envelopes": [
     "{\"version\":1,\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"fa4079dcc186aab5\\\",\\\"origin\\\":\\\"passkey\\\",\\\"words\\\":12}]}\",\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARMTExMTExMTExMTExMTExMTExMTExMTE-B_91hrJoBpTCKKKtdW6uChnmMiOg-OqumZiDvIDbOmR9v03RfTJpZlyz-6u5gpXA\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFLOHVYRZnl7yiWlsTU2nogoUL8aJdKNFZdPHh7hAzhKuffizCJgOosi0TdCiVXcN6w\"}],\"payload\":\"ARYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhMhLHw7eGi9ieeh94KN-h93C6RANuZFD2cIH6xUDVH7Njh3Aw\"}",
     "{\"version\":1,\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"fa4079dcc186aab5\\\",\\\"origin\\\":\\\"passkey\\\",\\\"words\\\":12}]}\",\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARMTExMTExMTExMTExMTExMTExMTExMTE-B_91hrJoBpTCKKKtdW6uChnmMiOg-OqumZiDvIDbOmR9v03RfTJpZlyz-6u5gpXA\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFLOHVYRZnl7yiWlsTU2nogoUL8aJdKNFZdPHh7hAzhKuffizCJgOosi0TdCiVXcN6w\"}],\"payload\":\"ARcXFxcXFxcXFxcXFxcXFxcXFxcXFxcXF_ImXkEygS6gtTr5qD2liCdXXlC0a_rtaNffqezB4nhkdtEJ4g\"}"
-  ]
+  ],
+  "passphrase": {
+    "passphrase": "pässwörd",
+    "walletId": "a8a96711dff685cb",
+    "plainWalletId": "30df37a2aa10fbd9",
+    "header": "{\"wallets\":[{\"walletId\":\"a8a96711dff685cb\",\"origin\":\"mnemonic\",\"words\":12,\"passphrase\":true},{\"walletId\":\"30df37a2aa10fbd9\",\"origin\":\"mnemonic\",\"words\":12}]}",
+    "envelope": "{\"version\":1,\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"a8a96711dff685cb\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":12,\\\"passphrase\\\":true},{\\\"walletId\\\":\\\"30df37a2aa10fbd9\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":12}]}\",\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARMTExMTExMTExMTExMTExMTExMTExMTE-B_91hrJoBpTCKKKtdW6uChnmMiOg-OqumZiDvIDbOmR9v03RfTJpZlyz-6u5gpXA\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFLOHVYRZnl7yiWlsTU2nogoUL8aJdKNFZdPHh7hAzhKuffizCJgOosi0TdCiVXcN6w\"}],\"payload\":\"ARgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGOkg-GkkqDQVgQpwz20Za13YcK_rdhPywN-elptrROL0SzY9phIdiHxOaoQn4TILyOLcJh1XD3A\"}"
+  }
 }

@@ -17,6 +17,7 @@ import {
   vaultSaltBytes,
   walletSaltBytes,
   wireBytes,
+  wirePassphrase,
   wireSecretText,
   resolveBackupFactor,
   resolveBackupUnlockFactor,
@@ -30,7 +31,7 @@ import { WalletError } from "./types.ts";
 import type {
   BackupApi,
   DataKeyApi,
-  ExportedSecret,
+  ExportedMnemonic,
   FactorInfo,
   InitialFactor,
   LockReason,
@@ -475,12 +476,16 @@ export class KernelWallet implements Wallet {
       return {
         words: new SingleUseSecret(created.words),
         quiz: created.quiz,
-        confirm: async (answers: ReadonlyArray<string>): Promise<WalletInfo> => {
+        confirm: async (
+          answers: ReadonlyArray<string>,
+          confirmOptions?: { readonly passphrase?: string },
+        ): Promise<WalletInfo> => {
           const answerTransfer: ArrayBuffer[] = [];
           const encoded = answers.map((word) => wireSecretText(word, answerTransfer));
+          const passphrase = wirePassphrase(confirmOptions?.passphrase, answerTransfer);
           const confirmed = await this.channel.call(
             "wallet.confirmMnemonic",
-            { draft: draftId, answers: encoded },
+            { draft: draftId, answers: encoded, ...passphrase },
             answerTransfer,
           );
           this.sessionOf(confirmed);
@@ -493,29 +498,36 @@ export class KernelWallet implements Wallet {
     },
     importMnemonic: async (options: {
       readonly mnemonic: string;
+      readonly passphrase?: string;
       readonly factor?: InitialFactor;
     }): Promise<WalletInfo> => {
       const transfer: ArrayBuffer[] = [];
       const factor = await this.createFactorParam(options.factor, transfer);
       const mnemonic = wireSecretText(options.mnemonic, transfer);
+      const passphrase = wirePassphrase(options.passphrase, transfer);
       const created = await this.channel.call(
         "wallet.importMnemonic",
-        { mnemonic, ...(factor === undefined ? {} : { factor }) },
+        { mnemonic, ...passphrase, ...(factor === undefined ? {} : { factor }) },
         transfer,
       );
       this.sessionOf(created);
       return created.wallet;
     },
-    exportMnemonic: async (walletId: string, verify: UnlockFactor): Promise<ExportedSecret> =>
+    exportMnemonic: async (walletId: string, verify: UnlockFactor): Promise<ExportedMnemonic> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
         const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
-        const bytes = await this.channel.call(
+        const exported = await this.channel.call(
           "wallet.exportMnemonic",
           { verify: wireVerify, walletId },
           transfer,
         );
-        return new SingleUseSecret(bytes);
+        return {
+          mnemonic: new SingleUseSecret(exported.mnemonic),
+          ...(exported.passphrase === undefined
+            ? {}
+            : { passphrase: new SingleUseSecret(exported.passphrase) }),
+        };
       }),
     delete: async (walletId: string, verify: UnlockFactor): Promise<void> =>
       this.withVerifying(async () => {
@@ -559,8 +571,15 @@ export class KernelWallet implements Wallet {
     restore: async (options: {
       readonly envelope: string;
       readonly backupFactor: UnlockFactor;
+      readonly passphrases?: ReadonlyArray<{
+        readonly walletId: string;
+        readonly passphrase: string;
+      }>;
       readonly factor?: InitialFactor;
-    }): Promise<ReadonlyArray<WalletInfo>> =>
+    }): Promise<{
+      readonly wallets: ReadonlyArray<WalletInfo>;
+      readonly passphraseRequired: ReadonlyArray<string>;
+    }> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
         const backupFactor = await resolveBackupUnlockFactor(
@@ -569,17 +588,22 @@ export class KernelWallet implements Wallet {
           transfer,
         );
         const factor = await this.createFactorParam(options.factor, transfer);
+        const passphrases = options.passphrases?.map(({ walletId, passphrase }) => ({
+          walletId,
+          passphrase: wireSecretText(passphrase, transfer),
+        }));
         const result = await this.channel.call(
           "backup.restore",
           {
             envelope: options.envelope,
             backupFactor,
+            ...(passphrases === undefined ? {} : { passphrases }),
             ...(factor === undefined ? {} : { factor }),
           },
           transfer,
         );
         this.sessionOf(result);
-        return result.wallets;
+        return { wallets: result.wallets, passphraseRequired: result.passphraseRequired };
       }),
   };
 

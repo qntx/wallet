@@ -38,8 +38,9 @@ import { open as openEnvelope, seal } from "../vault/envelope.ts";
 import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
 import { encodeHeader, parseBackupKeyHeader, parseEntropyHeader } from "../vault/headers.ts";
 import type { StoredRecord } from "../vault/store.ts";
-import { openRecord, sealRecord, verifyFactor } from "../vault/vault.ts";
+import { openRecord, openWalletSecret, sealRecord, verifyFactor } from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
+import { normalizePassphrase } from "./passphrase.ts";
 import {
   commitRecords,
   gate,
@@ -189,21 +190,24 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
         continue;
       }
       const header = parseEntropyHeader(record.header);
-      const plaintext = openRecord(dek, record);
-      try {
-        wallets.push({
-          walletId: record.id,
-          origin: header.origin,
-          words: header.words,
-          entropy: plaintext,
-        });
-      } catch (error) {
-        plaintext.fill(0);
-        throw error;
-      }
+      // The passphrase never leaves the vault: only the entropy goes into the payload.
+      const { entropy, passphrase } = openWalletSecret(dek, record);
+      passphrase?.fill(0);
+      wallets.push({
+        walletId: record.id,
+        origin: header.origin,
+        words: header.words,
+        ...(header.passphrase === true ? { passphrase: true as const } : {}),
+        entropy,
+      });
     }
     const header = JSON.stringify({
-      wallets: wallets.map(({ walletId, origin, words }) => ({ walletId, origin, words })),
+      wallets: wallets.map(({ walletId, origin, words, passphrase }) => ({
+        walletId,
+        origin,
+        words,
+        ...(passphrase === true ? { passphrase } : {}),
+      })),
     } satisfies BackupHeaderWire);
     return { wallets, header };
   } catch (error) {
@@ -524,9 +528,44 @@ async function bekFromFactor(
  */
 export async function restoreBackup(
   ctx: KernelContext,
-  params: { envelope: string; backupFactor: BackupUnlockFactor; factor?: Factor },
+  params: {
+    envelope: string;
+    backupFactor: BackupUnlockFactor;
+    passphrases?: ReadonlyArray<{ walletId: string; passphrase: Uint8Array }>;
+    factor?: Factor;
+  },
   requestSession: string | undefined,
-): Promise<{ wallets: WalletInfo[]; session: string }> {
+): Promise<{ wallets: WalletInfo[]; passphraseRequired: string[]; session: string }> {
+  const passphrases = new Map<string, Uint8Array>();
+  try {
+    return await restoreWithPassphrases(ctx, params, requestSession, passphrases);
+  } finally {
+    for (const passphrase of passphrases.values()) {
+      passphrase.fill(0);
+    }
+    for (const entry of params.passphrases ?? []) {
+      entry.passphrase.fill(0);
+    }
+  }
+}
+
+async function restoreWithPassphrases(
+  ctx: KernelContext,
+  params: {
+    envelope: string;
+    backupFactor: BackupUnlockFactor;
+    passphrases?: ReadonlyArray<{ walletId: string; passphrase: Uint8Array }>;
+    factor?: Factor;
+  },
+  requestSession: string | undefined,
+  passphrases: Map<string, Uint8Array>,
+): Promise<{ wallets: WalletInfo[]; passphraseRequired: string[]; session: string }> {
+  for (const entry of params.passphrases ?? []) {
+    if (passphrases.has(entry.walletId)) {
+      throw new KernelError("invalid-input", `duplicate passphrase for wallet ${entry.walletId}`);
+    }
+    passphrases.set(entry.walletId, normalizePassphrase(entry.passphrase));
+  }
   const envelope = parseEnvelope(params.envelope);
   const credentials = envelope.factors.flatMap((f) =>
     f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
@@ -551,9 +590,20 @@ export async function restoreBackup(
       throw new KernelError("integrity", "backup: payload does not match header");
     }
 
+    const flagged = new Set(
+      header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId),
+    );
+    for (const walletId of passphrases.keys()) {
+      if (!flagged.has(walletId)) {
+        plaintext.fill(0);
+        throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
+      }
+    }
+
     const gated = gate(ctx, params.factor, requestSession);
     const records: StoredRecord[] = [];
     const restored: WalletInfo[] = [];
+    const passphraseRequired: string[] = [];
     let committed = false;
     try {
       try {
@@ -567,8 +617,29 @@ export async function restoreBackup(
           if (words !== expected.words) {
             throw new KernelError("integrity", "backup: entropy length does not match header");
           }
+          const passphrase = passphrases.get(expected.walletId);
+          if (passphrase === undefined && expected.passphrase === true) {
+            if (
+              !ctx.image.records.some((r) => r.kind === "entropy" && r.id === expected.walletId)
+            ) {
+              passphraseRequired.push(expected.walletId);
+            }
+            continue;
+          }
           // oxlint-disable-next-line no-await-in-loop -- wallets re-derive serially; order matches the header
-          const material = await walletMaterial(ctx.platform, wallet.entropy, wallet.origin, words);
+          const material = await walletMaterial(
+            ctx.platform,
+            wallet.entropy,
+            passphrase,
+            wallet.origin,
+            words,
+          );
+          if (passphrase !== undefined && material.walletId !== expected.walletId) {
+            throw new KernelError(
+              "invalid-input",
+              `passphrase does not match wallet ${expected.walletId}`,
+            );
+          }
           if (material.walletId !== expected.walletId || material.origin !== expected.origin) {
             throw new KernelError("integrity", "backup: derived walletId does not match header");
           }
@@ -592,7 +663,7 @@ export async function restoreBackup(
         }
         const session = await commitRecords(ctx, gated, params.factor, records);
         committed = true;
-        return { wallets: restored, session };
+        return { wallets: restored, passphraseRequired, session };
       } catch (error) {
         // gate() minted a DEK nothing owns yet; commitRecords wipes it only past its own
         // commit and takes ownership on success — a failure in between leaks it here.

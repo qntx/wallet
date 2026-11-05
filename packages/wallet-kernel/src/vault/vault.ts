@@ -24,6 +24,7 @@ import {
 import type { EntropyHeader } from "./headers.ts";
 import {
   encodeHeader,
+  parseEntropyHeader,
   parseHardwareFactorHeader,
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
@@ -486,6 +487,50 @@ export function openRecord(dek: Secret, record: StoredRecord): Uint8Array {
   );
 }
 
+/** The longest BIP-39 passphrase the kernel keeps, in NFKD UTF-8 bytes. */
+export const MAX_PASSPHRASE_BYTES = 1024;
+
+/** What an `entropy` record seals: the entropy, then the passphrase bytes when the header says so. */
+export type WalletSecret = {
+  readonly entropy: Uint8Array;
+  /** NFKD UTF-8; present exactly when the header carries `passphrase`. */
+  readonly passphrase: Uint8Array | undefined;
+};
+
+/**
+ * Splits an `entropy` record's plaintext at the header's entropy length; a payload the header does
+ * not describe (a passphrase flag without bytes, bytes without the flag, more than
+ * {@link MAX_PASSPHRASE_BYTES}) is `integrity`. Copies — the caller wipes `plaintext` and both
+ * parts.
+ */
+export function splitWalletSecret(header: EntropyHeader, plaintext: Uint8Array): WalletSecret {
+  const entropyLength = (header.words / 3) * 4;
+  const extra = plaintext.length - entropyLength;
+  const valid =
+    header.passphrase === true ? extra >= 1 && extra <= MAX_PASSPHRASE_BYTES : extra === 0;
+  if (!valid) {
+    throw new KernelError("integrity", "wallet record does not match its header");
+  }
+  return {
+    entropy: plaintext.slice(0, entropyLength),
+    passphrase: header.passphrase === true ? plaintext.slice(entropyLength) : undefined,
+  };
+}
+
+/**
+ * The only way to read an `entropy` record: opens it and splits it with {@link splitWalletSecret}.
+ * The caller wipes both buffers.
+ */
+export function openWalletSecret(dek: Secret, record: StoredRecord): WalletSecret {
+  const header = parseEntropyHeader(record.header);
+  const plaintext = openRecord(dek, record);
+  try {
+    return splitWalletSecret(header, plaintext);
+  } finally {
+    wipe(plaintext);
+  }
+}
+
 export function findRecord(image: VaultImage, kind: string, id: string): StoredRecord {
   const record = image.records.find((r) => r.kind === kind && r.id === id);
   if (record === undefined) {
@@ -553,6 +598,7 @@ export function walletInfo(header: EntropyHeader): WalletInfo {
     origin: header.origin,
     words: header.words,
     backup: header.backup,
+    passphrase: header.passphrase === true,
     createdAt: header.createdAt,
   };
 }

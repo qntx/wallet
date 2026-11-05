@@ -6,5 +6,49 @@
       "masterPublicKey": "0339a36013301597daef41fbe593a02cc513d0b55527ec2df1050e2e8ff49c85c2",
       "walletId": "6e0d11a50c03aa4f"
     }
+  ],
+  "passphrase": [
+    {
+      "name": "ascii",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "TREZOR",
+      "masterPublicKey": "02f632717d78bf73e74aa8461e2e782532abae4eed5110241025afb59ebfd3d2fd",
+      "walletId": "a2b32447d162a985"
+    },
+    {
+      "name": "composed-accents",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "pässwörd",
+      "masterPublicKey": "0219b5049af77ee87a42e1cd00fd9e78dab1f1ba9116b68043501c239473a0994d",
+      "walletId": "a8a96711dff685cb"
+    },
+    {
+      "name": "decomposed-accents",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "pässwörd",
+      "masterPublicKey": "0219b5049af77ee87a42e1cd00fd9e78dab1f1ba9116b68043501c239473a0994d",
+      "walletId": "a8a96711dff685cb"
+    },
+    {
+      "name": "kana-and-compat",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "ガｶﾞ ①",
+      "masterPublicKey": "02768961b181c49075fdf09628c19965a6cd74f68f1b6da13f2fb145c82561399a",
+      "walletId": "9f043a6d86bd43b4"
+    },
+    {
+      "name": "leading-space",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": " a",
+      "masterPublicKey": "0262bcfc6a9e5ed9a34b04a01f12e8dec4064ff81e370e75cd0dd053bbe76d7ad3",
+      "walletId": "7afccd799ef6224d"
+    },
+    {
+      "name": "no-space",
+      "mnemonic": "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      "passphrase": "a",
+      "masterPublicKey": "0248b9ccbffd786faa3ed41793c021c03b0dc524916997b318973c5acdc6557ee7",
+      "walletId": "90c7a5e295b83d8a"
+    }
   ]
 }

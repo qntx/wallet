@@ -164,7 +164,7 @@ test.describe("web host", () => {
     if (!restored.ok) {
       throw new Error(`backup.restore failed: ${restored.code}`);
     }
-    expect(restored.value[0]?.walletId).toBe(created.value.walletId);
+    expect(restored.value.wallets[0]?.walletId).toBe(created.value.walletId);
 
     snap = await snapshot(page);
     expect(snap.vault).toBe("unlocked");

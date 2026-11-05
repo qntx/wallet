@@ -343,7 +343,7 @@ describe("BackupController", () => {
       // Own-lineage restore merges the foreign file, then the next sync uploads the superset:
       // device 1's two wallets plus device 2's one.
       const merged = await r.engine.backup.restore({ name, backupFactor: BPW });
-      expect(merged).toHaveLength(1); // device 2's wallet is the only new one
+      expect(merged.wallets).toHaveLength(1); // device 2's wallet is the only new one
       await settle(r);
       expect(r.engine.backup.getState().status).toBe("synced");
       const listed3 = await r.engine.backup.list();
@@ -423,7 +423,7 @@ describe("BackupController", () => {
         factor: { kind: "password", password: PASSWORD },
       });
       try {
-        expect(restored).toHaveLength(1);
+        expect(restored.wallets).toHaveLength(1);
         // No explicit sync(): restore converges its own reconcile — the adopted baseline
         // makes the first pass overwrite the same file in place, never a conflict.
         const state = await until(() => engine2.backup.getState().status, isSettled);
@@ -450,8 +450,9 @@ describe("BackupController", () => {
           backupFactor: BPW,
           factor: { kind: "password", password: PASSWORD },
         });
-        expect(restored3).toHaveLength(1);
-        expect(restored3[0]!.walletId).toBe(restored[0]!.walletId);
+        expect(restored3.wallets).toHaveLength(1);
+        expect(restored3.passphraseRequired).toStrictEqual([]);
+        expect(restored3.wallets[0]!.walletId).toBe(restored.wallets[0]!.walletId);
       } finally {
         await wallet3.destroy();
       }
