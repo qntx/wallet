@@ -22,6 +22,15 @@ const config: UserConfig = defineConfig({
     },
     sourcemap: true,
   },
+  test: {
+    include: ["tests/**/*.test.ts"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary"],
+      include: ["src/**/*.ts"],
+      thresholds: { lines: 89, branches: 79, functions: 95, statements: 89 },
+    },
+  },
 });
 
 export default config;

@@ -6,6 +6,9 @@ import { createHarness, mulberry32 } from "./harness.ts";
 
 const METHOD_NAMES = Object.keys(METHODS);
 
+/** Run count; the weekly job raises it via FUZZ_RUNS. */
+const RUNS = Number(process.env["FUZZ_RUNS"] ?? "3000");
+
 function randomMalformed(next: () => number): unknown {
   const pick = (n: number) => Math.floor(next() * n);
   // Every generator below produces a structurally invalid request part.
@@ -58,20 +61,20 @@ function randomMalformed(next: () => number): unknown {
 describe("protocol fuzz", () => {
   it(
     "malformed requests yield integrity errors and the kernel keeps serving",
-    { timeout: 60000 },
+    { timeout: 60000 * Math.max(1, Math.ceil(RUNS / 3000)) },
     async () => {
       const h = createHarness({ seed: 7 });
       await h.settle();
       const next = mulberry32(0xdeadbeef);
       let checked = 0;
-      for (let i = 0; i < 3000; i++) {
+      for (let i = 0; i < RUNS; i++) {
         const malformed = randomMalformed(next);
         // oxlint-disable-next-line eslint/no-await-in-loop -- requests are dispatched sequentially
         const response = await h.sendRaw(malformed);
         expect(response).toHaveProperty("err.code", "integrity");
         checked++;
       }
-      expect(checked).toBe(3000);
+      expect(checked).toBe(RUNS);
       // Still serving: a well-formed request works after the fuzz barrage.
       const res = await h.call("status");
       expect("ok" in res).toBe(true);
