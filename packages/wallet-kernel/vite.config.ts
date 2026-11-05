@@ -5,7 +5,12 @@ import type { UserConfig } from "vite-plus";
 const config: UserConfig = defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
-    coverage: { provider: "v8", reporter: ["text", "text-summary"], include: ["src/**/*.ts"] },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary"],
+      include: ["src/**/*.ts"],
+      thresholds: { lines: 87, branches: 79, functions: 87, statements: 87 },
+    },
   },
 });
 

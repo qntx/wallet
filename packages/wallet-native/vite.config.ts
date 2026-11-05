@@ -15,7 +15,12 @@ const config: UserConfig = defineConfig({
   },
   test: {
     include: ["tests/**/*.{test,spec}.ts"],
-    coverage: { provider: "v8", reporter: ["text", "text-summary"], include: ["src/**/*.ts"] },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary"],
+      include: ["src/**/*.ts"],
+      thresholds: { lines: 94, branches: 87, functions: 90, statements: 93 },
+    },
   },
 });
 

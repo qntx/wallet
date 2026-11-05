@@ -25,7 +25,13 @@ const config: UserConfig = defineConfig({
   ],
   test: {
     include: ["tests/**/*.test.ts"],
-    coverage: { provider: "v8", reporter: ["text", "text-summary"], include: ["src/**/*.ts"] },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary"],
+      include: ["src/**/*.ts"],
+      exclude: ["src/connect/inject.generated.ts"],
+      thresholds: { lines: 84, branches: 75, functions: 85, statements: 84 },
+    },
   },
 });
 

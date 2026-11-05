@@ -1,0 +1,21 @@
+name: fuzz
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: vp run @qntx/wallet-engine#build
+      - run: cd packages/wallet-chains && bunx vp test fuzz
+        env: { FUZZ_RUNS: "100000" }
+      - run: cd packages/wallet-engine && bunx vp test fuzz
+        env: { FUZZ_RUNS: "100000" }
+      - run: cd packages/wallet-kernel && bunx vp test fuzz
+        env: { FUZZ_RUNS: "100000" }

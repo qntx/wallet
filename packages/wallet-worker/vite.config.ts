@@ -25,7 +25,12 @@ const config: UserConfig = defineConfig({
     globalSetup: ["tests/setup.ts"],
     // Playwright specs live in tests/browser and are not part of `vp test`.
     include: ["tests/*.test.ts"],
-    coverage: { provider: "v8", reporter: ["text", "text-summary"], include: ["src/**/*.ts"] },
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "text-summary"],
+      include: ["src/**/*.ts"],
+      thresholds: { lines: 27, branches: 29, functions: 30, statements: 27 },
+    },
   },
 });
 
