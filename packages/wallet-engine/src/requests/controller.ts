@@ -59,6 +59,7 @@ import {
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
+import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
 import type { BrowserOrigin, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
 
@@ -264,6 +265,17 @@ export class SignInOriginError extends Error {
   }
 }
 
+/**
+ * The approval-time re-simulation differs from the prepared outcome; the request went back to
+ * `awaiting-approval` with the fresh result and stays approvable.
+ */
+export class SimulationChangedError extends Error {
+  constructor() {
+    super("the simulation changed while the request waited — review it again");
+    this.name = "SimulationChangedError";
+  }
+}
+
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
 export class RequestEndedError extends Error {
   readonly stage: "rejected" | "failed" | "expired" | "invalidated";
@@ -316,6 +328,8 @@ export type PendingRequest = {
   readonly risk: ReadonlyArray<RiskFinding>;
   /** Present for simulated requests: sends and dApp transactions; absent otherwise. */
   readonly simulation?: SimulationOutcome;
+  /** When `simulation` was produced (ms); one older than {@link RESIMULATE_AFTER_MS} re-runs. */
+  readonly simulatedAt?: number;
   readonly createdAt: number;
   readonly expiresAt: number;
   /** The transaction being replaced or accelerated; absent for a plain send. */
@@ -369,6 +383,9 @@ export type RequestControllerOptions = {
 /** Requests expire this long after creation. */
 export const REQUEST_TTL_MS = 10 * 60 * 1000;
 
+/** A simulation older than this is re-run at approval before any signing. */
+export const RESIMULATE_AFTER_MS = 60_000;
+
 /** What approval needs from a prepared request, whichever kind it is. */
 type Run =
   | {
@@ -391,6 +408,17 @@ type Run =
       readonly release: () => void;
     };
 
+/**
+ * An approval-time re-simulation: the intent the fresh outcome is assessed against, the request's
+ * own checks and risk without the last simulation's findings, and the re-run itself.
+ */
+type Resimulation = {
+  readonly intent: Pick<DisplayIntent, "outflows" | "verifiability">;
+  readonly checks: ReadonlyArray<RequestCheckCode>;
+  readonly risk: ReadonlyArray<RiskFinding>;
+  readonly run: () => Promise<SimulationOutcome>;
+};
+
 type Built = {
   readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
   readonly network: string;
@@ -404,6 +432,8 @@ type Built = {
   readonly checks: ReadonlyArray<RequestCheckCode>;
   readonly risk: ReadonlyArray<RiskFinding>;
   readonly simulation?: SimulationOutcome;
+  /** Present when `simulation` can be re-run at approval. */
+  readonly resimulation?: Resimulation;
   readonly run: Run;
 };
 
@@ -426,6 +456,7 @@ type Settler = {
 type Entry = {
   readonly prepared: Run;
   readonly stopTimer: () => void;
+  readonly resimulation?: Resimulation;
 };
 
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
@@ -474,10 +505,15 @@ const OPAQUE_INTENT: Pick<DisplayIntent, "outflows" | "verifiability"> = {
   verifiability: "opaque",
 };
 
+/**
+ * Merges a simulation's assessment into a built request and keeps the pre-simulation checks, risk
+ * and intent on `resimulation`, so an approval-time re-run assesses the same way.
+ */
 const withSimulation = (
   built: Built,
   intent: Pick<DisplayIntent, "outflows" | "verifiability">,
   simulation: SimulationOutcome | undefined,
+  resimulate?: () => Promise<SimulationOutcome>,
 ): Built => {
   if (simulation === undefined) {
     return built;
@@ -488,6 +524,16 @@ const withSimulation = (
     checks: collectChecks([...built.checks, ...assessed.checks]),
     risk: mergeRisk(built.risk, assessed.risk),
     simulation,
+    ...(resimulate === undefined
+      ? {}
+      : {
+          resimulation: {
+            intent,
+            checks: built.checks,
+            risk: built.risk,
+            run: resimulate,
+          },
+        }),
   };
 };
 
@@ -617,7 +663,9 @@ export class RequestController extends Controller<RequestControllerState> {
       verification: checks.length > 0 ? "unverifiable" : "verified",
       checks,
       risk: mergeRisk(built.risk, originRisk(originStatus)),
-      ...(built.simulation === undefined ? {} : { simulation: built.simulation }),
+      ...(built.simulation === undefined
+        ? {}
+        : { simulation: built.simulation, simulatedAt: createdAt }),
       createdAt,
       expiresAt: createdAt + REQUEST_TTL_MS,
     };
@@ -626,7 +674,18 @@ export class RequestController extends Controller<RequestControllerState> {
         this.finish(id, "expired");
       }
     });
-    this.entries.set(id, { prepared: built.run, stopTimer });
+    const resimulation =
+      built.resimulation === undefined
+        ? undefined
+        : {
+            ...built.resimulation,
+            risk: mergeRisk(built.resimulation.risk, originRisk(originStatus)),
+          };
+    this.entries.set(id, {
+      prepared: built.run,
+      stopTimer,
+      ...(resimulation === undefined ? {} : { resimulation }),
+    });
     this.put(request);
     this.openSettler(id);
     return request;
@@ -796,7 +855,9 @@ export class RequestController extends Controller<RequestControllerState> {
         risk: isTransaction ? this.chainRisk(prepared.intent) : mergeRisk(signInRisk, permitRisk),
         run: { ...prepared, factor: "required" },
       };
-      return isTransaction ? withSimulation(built, prepared.intent, prepared.simulation) : built;
+      return isTransaction
+        ? withSimulation(built, prepared.intent, prepared.simulation, prepared.resimulate)
+        : built;
     }
     if (input.method === "solana-sign") {
       const txs = input.request.kind === "transactions" ? input.request.transactions : [];
@@ -836,14 +897,15 @@ export class RequestController extends Controller<RequestControllerState> {
       if (only === undefined) {
         return built;
       }
-      const simulation: SimulationOutcome =
-        txs.length > 1
-          ? { status: "unavailable", error: "batch" }
-          : await this.simulateOne(input.account, input.network, only);
+      const single = txs.length === 1;
+      const simulation: SimulationOutcome = single
+        ? await this.simulateOne(input.account, input.network, only)
+        : { status: "unavailable", error: "batch" };
       return withSimulation(
         built,
         decoded !== undefined && "verifiability" in decoded ? decoded : OPAQUE_INTENT,
         simulation,
+        single ? async () => this.simulateOne(input.account, input.network, only) : undefined,
       );
     }
     if (input.method === "webln-invoice") {
@@ -953,7 +1015,7 @@ export class RequestController extends Controller<RequestControllerState> {
       run: { ...prepared, factor: "required" },
     };
     return input.method === "send"
-      ? withSimulation(built, prepared.intent, prepared.simulation)
+      ? withSimulation(built, prepared.intent, prepared.simulation, prepared.resimulate)
       : built;
   }
 
@@ -1026,6 +1088,37 @@ export class RequestController extends Controller<RequestControllerState> {
     if (stale !== undefined) {
       this.finish(id, "failed", stale);
       throw new Error(stale);
+    }
+    const { resimulation } = entry;
+    if (
+      resimulation !== undefined &&
+      request.simulatedAt !== undefined &&
+      this.options.now() - request.simulatedAt >= RESIMULATE_AFTER_MS
+    ) {
+      let outcome: SimulationOutcome;
+      try {
+        outcome = await resimulation.run();
+      } catch (error) {
+        outcome = { status: "unavailable", error: errorMessage(error) };
+      }
+      if (session !== this.session) {
+        throw new Error(`request ${id} was invalidated`);
+      }
+      const assessed = assessSimulation(resimulation.intent, outcome);
+      const checks = collectChecks([...resimulation.checks, ...assessed.checks]);
+      const refreshed: PendingRequest = {
+        ...this.requireRequest(id),
+        simulation: outcome,
+        simulatedAt: this.options.now(),
+        verification: checks.length > 0 ? "unverifiable" : "verified",
+        checks,
+        risk: mergeRisk(resimulation.risk, assessed.risk),
+      };
+      if (request.simulation !== undefined && simulationChanged(request.simulation, outcome)) {
+        this.put({ ...refreshed, stage: "awaiting-approval" });
+        throw new SimulationChangedError();
+      }
+      this.put(refreshed);
     }
     try {
       const result =

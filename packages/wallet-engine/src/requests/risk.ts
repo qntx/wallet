@@ -5,6 +5,7 @@ import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
 import type { PhishingStatus } from "../phishing/status.ts";
 import type { RequestCheckCode } from "./checks.ts";
+import { sameAsset } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
 
 /**
@@ -232,9 +233,6 @@ export function assessRecipients(
   }
   return byDanger([...found.values()]);
 }
-
-const sameAsset = (a: string, b: string): boolean =>
-  a === b || (a.startsWith("0x") && a.toLowerCase() === b.toLowerCase());
 
 type DecodedIntent = Pick<DisplayIntent, "outflows" | "verifiability">;
 
