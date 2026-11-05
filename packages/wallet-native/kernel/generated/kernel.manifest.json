@@ -36,6 +36,11 @@
       "integrity": "sha512-0JB2sapmRUFONNeDF3lTCfsgzmiu1EKB3ue/msQCm18fSrmVYN6HV7WQzJsGa7GZXMvlZ13udrV1gDbmXv1/4A=="
     },
     {
+      "name": "@qntx/siwx",
+      "version": "0.8.0",
+      "integrity": "sha512-4bY178vUNhRpCFxnMz58Yd71aMyua+m9K2W/13aWNMsawyYlYALyp0bDAga0uxkqj1IWaAdDH5Sc9yH91DB53w=="
+    },
+    {
       "name": "@qntx/spark",
       "version": "0.5.2",
       "integrity": "sha512-x5J1vJCuUdW5ANldVuRJRu5qczxkENhnZqEWH5PQt7dKKGqJbuLvsV6EyphKbf0MoYYM2kxWalW0NCzoXojamQ=="
@@ -74,7 +79,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "cc3fdc5b8f5a0fdd8882361ae4223886e5b4d21a20510ad94a7efe6186ed6eec"
+      "sha256": "61f3e1bff8a9dd31c8471f7b94ab0c07c0395a6ade1acecc0f4f4a9494baa77f"
     }
   ]
 }

@@ -1,4 +1,5 @@
-import type { DisplayIntent } from "@qntx/wallet-chains";
+import { SiwxError, checkOrigin, createMessage, parseTimestamp } from "@qntx/siwx";
+import type { DisplayIntent, SignInParse } from "@qntx/wallet-chains";
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
 import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
@@ -23,7 +24,13 @@ export type RiskFinding = {
     | "simulation-reverted"
     | "simulation-mismatch"
     | "collection-approval"
-    | "unlimited-approval";
+    | "unlimited-approval"
+    | "sign-in-malformed"
+    | "sign-in-domain-mismatch"
+    | "sign-in-port-mismatch"
+    | "sign-in-address-mismatch"
+    | "sign-in-expired"
+    | "sign-in-not-yet-valid";
   readonly level: "warning" | "danger";
 };
 
@@ -69,6 +76,92 @@ export function assessApprovals(
     }
   }
   return byDanger([...found.values()]);
+}
+
+const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** `scheme`, `host` (IPv6 keeps its brackets) of a `scheme://host[:port]` origin. */
+const originParts = (origin: string): { scheme: string; host: string } => {
+  const sep = origin.indexOf("://");
+  const rest = origin.slice(sep + 3);
+  const end = rest.startsWith("[") ? rest.indexOf("]") + 1 : rest.lastIndexOf(":");
+  return {
+    scheme: sep === -1 ? "" : origin.slice(0, sep).toLowerCase(),
+    host: (end > 0 ? rest.slice(0, end) : rest).toLowerCase(),
+  };
+};
+
+const isLocalHost = (host: string): boolean => LOCAL_HOSTS.has(host) || host.endsWith(".localhost");
+
+/**
+ * What a Sign-In with Ethereum/Solana message adds to a request from `origin`: a message for
+ * another domain is refused (`reject`) in production and a `danger` on a local development page;
+ * the signing address must be the signer; an expired or not-yet-valid window and a text that only
+ * resembles a sign-in message are warnings.
+ */
+export function assessSignIn(input: {
+  readonly signIn: SignInParse;
+  /** The page origin, `scheme://host[:port]`. */
+  readonly origin: string;
+  /** The address that will sign. */
+  readonly signer: string;
+  readonly family: "evm" | "solana";
+  /** Milliseconds since the epoch. */
+  readonly now: number;
+}): { readonly reject?: string; readonly risk: ReadonlyArray<RiskFinding> } {
+  const { signIn, origin, signer, family, now } = input;
+  if (signIn.status === "malformed") {
+    return { risk: [{ code: "sign-in-malformed", level: "warning" }] };
+  }
+  const { fields } = signIn;
+  const { scheme, host } = originParts(origin);
+  const developer = isLocalHost(host);
+  let findings: ReturnType<typeof checkOrigin>;
+  try {
+    findings = checkOrigin(
+      createMessage(fields),
+      origin,
+      developer
+        ? { allowedSchemes: ["https", "http"], defaultScheme: scheme, developerMode: true }
+        : {},
+    );
+  } catch (error) {
+    if (error instanceof SiwxError && error.code === "InvalidOrigin") {
+      return { reject: "the page origin is not a valid web origin", risk: [] };
+    }
+    throw error;
+  }
+  if (findings.some((f) => f.severity === "reject")) {
+    return { reject: `the sign-in message is for ${fields.domain}, not this page`, risk: [] };
+  }
+  const found = new Map<RiskFinding["code"], RiskFinding>();
+  const add = (code: RiskFinding["code"], level: RiskFinding["level"]): void => {
+    found.set(code, { code, level });
+  };
+  for (const finding of findings) {
+    if (finding.code === "PortMismatch") {
+      add("sign-in-port-mismatch", "warning");
+    } else {
+      add("sign-in-domain-mismatch", "danger");
+    }
+  }
+  const same =
+    family === "evm"
+      ? fields.address.toLowerCase() === signer.toLowerCase()
+      : fields.address === signer;
+  if (!same) {
+    add("sign-in-address-mismatch", "danger");
+  }
+  const expires =
+    fields.expirationTime === undefined ? undefined : parseTimestamp(fields.expirationTime);
+  if (expires !== undefined && expires.epochMs < now) {
+    add("sign-in-expired", "warning");
+  }
+  const notBefore = fields.notBefore === undefined ? undefined : parseTimestamp(fields.notBefore);
+  if (notBefore !== undefined && notBefore.epochMs > now) {
+    add("sign-in-not-yet-valid", "warning");
+  }
+  return { risk: byDanger([...found.values()]) };
 }
 
 /** Characters compared at each end of an address. */

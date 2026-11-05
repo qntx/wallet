@@ -6,9 +6,11 @@ import type {
   AssetFlow,
   DisplayIntent,
   EvmTransaction,
+  MessageContent,
   SignRequest,
   Verifiability,
 } from "../index.ts";
+import { parseSignIn } from "../sign-in.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
@@ -364,6 +366,20 @@ const decodeTransaction = (
   return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
 };
 
+/** Strict UTF-8 text with any sign-in recognition, else the raw bytes as hex. */
+const messageContent = (bytes: Uint8Array): MessageContent => {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    const signIn = parseSignIn(text, "evm");
+    return signIn === undefined ? { kind: "text", text } : { kind: "text", text, signIn };
+  } catch {
+    return {
+      kind: "bytes",
+      hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+    };
+  }
+};
+
 /** What the signer can guarantee about this request (WD-065). */
 export const verifiabilityEvm = (request: SignRequest): Verifiability =>
   decodeEvm(request).verifiability;
@@ -388,6 +404,7 @@ export const decodeEvm = (
       approvals: [],
       fee: undefined,
       warnings: [],
+      message: messageContent(request.message),
       verifiability: "opaque",
     };
   }

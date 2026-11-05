@@ -317,9 +317,16 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const { kind, network } = normalized;
     const apis = this.options.chains ?? chains(this.options.wallet);
+    const signing = await apis.account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template: "evm.bip44",
+      network,
+    });
     return {
       account,
       network,
+      signer: "address" in signing ? signing.address : "",
       intent: decodeEvm(normalized),
       checks: [],
       staleReason: () => undefined,

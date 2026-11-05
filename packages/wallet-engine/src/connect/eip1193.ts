@@ -10,7 +10,12 @@ import type { SignRequest } from "@qntx/wallet-chains";
 
 import { EVM_RPC_METHODS } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
-import { InvalidTokenError, OriginBusyError, RequestEndedError } from "../requests/controller.ts";
+import {
+  InvalidTokenError,
+  OriginBusyError,
+  RequestEndedError,
+  SignInOriginError,
+} from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { AccountGroup, ConnectionController, ConnectionSession } from "./controller.ts";
 import { evmChainId } from "./controller.ts";
@@ -434,7 +439,7 @@ function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {
     return error;
   }
-  if (error instanceof InvalidTokenError) {
+  if (error instanceof InvalidTokenError || error instanceof SignInOriginError) {
     return invalidParams(error.message);
   }
   if (error instanceof OriginBusyError) {

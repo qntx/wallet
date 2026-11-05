@@ -134,6 +134,8 @@ export type SignatureResult = {
 
 /** A prepared message signature: nothing is broadcast or tracked, `submit` returns the signature. */
 export type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
+  /** The address that will sign. */
+  readonly signer: string;
   readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
 };
 

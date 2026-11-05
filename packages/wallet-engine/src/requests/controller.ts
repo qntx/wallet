@@ -8,7 +8,8 @@
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
-import type { SignRequest } from "@qntx/wallet-chains";
+import { parseSignIn } from "@qntx/wallet-chains";
+import type { SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -47,6 +48,7 @@ import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
   assessApprovals,
+  assessSignIn,
   assessRecipients,
   assessSimulation,
   impersonatesBuiltIn,
@@ -211,7 +213,7 @@ export type SolanaDisplay = {
   readonly count: number;
   readonly transactions: ReadonlyArray<unknown>;
   /** A message request's text (always valid UTF-8). */
-  readonly message?: { readonly text: string };
+  readonly message?: { readonly text: string; readonly signIn?: SignInParse };
   readonly signIn?: SignInFields;
 };
 
@@ -250,6 +252,14 @@ export class InvalidTokenError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "InvalidTokenError";
+  }
+}
+
+/** A Sign-In with X message for another domain than the page that asked for the signature. */
+export class SignInOriginError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SignInOriginError";
   }
 }
 
@@ -757,6 +767,10 @@ export class RequestController extends Controller<RequestControllerState> {
     if (input.method === "evm-sign") {
       const prepared = await this.options.transactions.prepareDapp(input.account, input.request);
       const isTransaction = input.request.kind === "evm.transaction";
+      const signInRisk =
+        "signer" in prepared && prepared.intent.message?.kind === "text"
+          ? this.signInRisk(prepared.intent.message.signIn, input.origin, prepared.signer, "evm")
+          : [];
       const built: Built = {
         account: prepared.account,
         network: prepared.network,
@@ -765,7 +779,7 @@ export class RequestController extends Controller<RequestControllerState> {
           isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
           ...prepared.checks,
         ]),
-        risk: isTransaction ? this.chainRisk(prepared.intent) : [],
+        risk: isTransaction ? this.chainRisk(prepared.intent) : signInRisk,
         run: { ...prepared, factor: "required" },
       };
       return isTransaction ? withSimulation(built, prepared.intent, prepared.simulation) : built;
@@ -775,6 +789,11 @@ export class RequestController extends Controller<RequestControllerState> {
       const [only] = txs;
       const intents = txs.map((tx) => solanaIntent(input.account, input.network, tx));
       const [decoded] = intents;
+      const signText = input.request.kind === "message" ? messageText(input.request.message) : "";
+      const signIn =
+        input.request.kind === "message" && input.request.signIn === undefined
+          ? parseSignIn(signText, "solana")
+          : undefined;
       const built: Built = {
         account: input.account,
         network: input.network,
@@ -785,13 +804,13 @@ export class RequestController extends Controller<RequestControllerState> {
           transactions: intents,
           ...(input.request.kind === "message"
             ? {
-                message: { text: messageText(input.request.message) },
+                message: { text: signText, ...(signIn === undefined ? {} : { signIn }) },
                 ...(input.request.signIn === undefined ? {} : { signIn: input.request.signIn }),
               }
             : {}),
         },
         checks: [],
-        risk: [],
+        risk: this.signInRisk(signIn, input.origin, input.account.address, "solana"),
         run: {
           factor: "required",
           staleReason: () => undefined,
@@ -1130,11 +1149,15 @@ export class RequestController extends Controller<RequestControllerState> {
             : "kind" in display && display.kind === "solana.sign"
               ? display.signIn === undefined
                 ? display.transactions.length === 0
-                  ? "solana message"
+                  ? display.message?.signIn?.status === "valid"
+                    ? `sign-in ${display.message.signIn.fields.domain}`
+                    : "solana message"
                   : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
                 : `solana sign-in ${display.signIn.domain}`
               : "summary" in display
-                ? display.summary
+                ? display.message?.kind === "text" && display.message.signIn?.status === "valid"
+                  ? `sign-in ${display.message.signIn.fields.domain}`
+                  : display.summary
                 : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
@@ -1180,6 +1203,29 @@ export class RequestController extends Controller<RequestControllerState> {
       )
       .flatMap((tx) => tx.intent?.outflows.map((o) => o.to) ?? []);
     return [...contacts, ...paid];
+  }
+
+  /** Risk of a Sign-In with X message; a message for another domain throws `SignInOriginError`. */
+  private signInRisk(
+    signIn: SignInParse | undefined,
+    origin: BrowserOrigin,
+    signer: string,
+    family: "evm" | "solana",
+  ): ReadonlyArray<RiskFinding> {
+    if (signIn === undefined) {
+      return [];
+    }
+    const assessed = assessSignIn({
+      signIn,
+      origin: origin.origin,
+      signer,
+      family,
+      now: this.options.now(),
+    });
+    if (assessed.reject !== undefined) {
+      throw new SignInOriginError(assessed.reject);
+    }
+    return assessed.risk;
   }
 
   private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {

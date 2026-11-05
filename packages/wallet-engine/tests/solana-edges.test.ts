@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { ProviderError } from "../src/connect/errors.ts";
 import { SolanaWalletHandler } from "../src/connect/solana.ts";
 import type { SolanaEvent } from "../src/connect/solana.ts";
+import { SignInOriginError } from "../src/requests/controller.ts";
 
 const SITE = "https://app.example";
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -24,6 +25,7 @@ function rig(
     session?: boolean;
     group?: typeof GROUP | undefined;
     outcome?: unknown;
+    prepareError?: Error;
   } = {},
 ) {
   let state: { sessions: Record<string, SessionLike>; pending: object } = {
@@ -67,6 +69,9 @@ function rig(
       prepare: async (input) => {
         await Promise.resolve();
         calls.prepared.push(input);
+        if (options.prepareError !== undefined) {
+          throw options.prepareError;
+        }
         return { id: "r" } as never;
       },
       outcome: async () => Promise.resolve(options.outcome as never),
@@ -181,6 +186,13 @@ describe("SolanaWalletHandler messages", () => {
     }
     await expect(codeOf(call(r, "solana:signMessage", { message: 5 }))).resolves.toBe(-32_602);
     await expect(codeOf(call(r, "solana:signMessage", "x"))).resolves.toBe(-32_602);
+  });
+
+  it("maps a sign-in for another domain to invalid params", async () => {
+    const r = rig({ prepareError: new SignInOriginError("wrong domain") });
+    await expect(
+      codeOf(call(r, "solana:signMessage", { message: new Uint8Array([65]) })),
+    ).resolves.toBe(-32_602);
   });
 
   it("fails on an unexpected outcome or without a group", async () => {
