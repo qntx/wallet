@@ -18,6 +18,14 @@ export const isCanonicalHex = (value: string): boolean => CANONICAL_HEX.test(val
 
 export const canonicalHex = (value: bigint): string => `0x${value.toString(16)}`;
 
+/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
+export const quantityBigInt = (value: unknown, field: string): bigint => {
+  if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) {
+    throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+  }
+  return BigInt(value);
+};
+
 const safeInteger = (value: unknown, field: string): number => {
   if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
     throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
@@ -32,10 +40,7 @@ const quantity = (value: unknown, field: string): string => {
   if (CANONICAL_HEX.test(value)) {
     return value;
   }
-  if (/^0x[0-9a-fA-F]+$/.test(value) || value === "0x") {
-    return canonicalHex(BigInt(value === "0x" ? "0x0" : value));
-  }
-  throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+  return canonicalHex(quantityBigInt(value, field));
 };
 
 const hexBytes = (value: unknown, field: string): string => {
