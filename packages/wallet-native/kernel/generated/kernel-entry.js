@@ -3314,7 +3314,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$1, hexFallback, hasHexBuiltin, hexBuiltin, hex$2;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$2, hexFallback, hasHexBuiltin, hexBuiltin, hex$2;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -3544,7 +3544,7 @@
 				return res.subarray(0, pos);
 			}
 		}));
-		utf8$1 = /* @__PURE__ */ freeze(() => {
+		utf8$2 = /* @__PURE__ */ freeze(() => {
 			let _utf8Encoder;
 			let _utf8Decoder;
 			const utf8Builtin = {
@@ -14661,7 +14661,7 @@ zoo`.split("\n"));
 				}
 			});
 		};
-		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$1), (value) => {
+		string = (len, le = false) => validate$4(apply(createBytes(len, le), utf8$2), (value) => {
 			if (typeof value !== "string") throw new Error(`expected string, got ${typeof value}`);
 			return value;
 		});
@@ -19453,9 +19453,9 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8 = (s) => new TextEncoder().encode(s);
+	var utf8$1 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
+	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
 	var concat$2 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
@@ -19485,8 +19485,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8(BIP322_TAG));
-		return sha256$1(concat$2(tag, tag, utf8(message)));
+		const tag = sha256$1(utf8$1(BIP322_TAG));
+		return sha256$1(concat$2(tag, tag, utf8$1(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -19562,7 +19562,7 @@ zoo`.split("\n"));
 	*/
 	var signLegacyMessage = (message, privateKey) => {
 		var _recovered$;
-		const data = concat$2(pushData(LEGACY_MAGIC), pushData(utf8(message)));
+		const data = concat$2(pushData(LEGACY_MAGIC), pushData(utf8$1(message)));
 		const hash = sha256$1(sha256$1(data));
 		const recovered = secp256k1.sign(hash, privateKey, {
 			lowS: true,
@@ -28434,6 +28434,7 @@ zoo`.split("\n"));
 		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
 	};
 	// packages/wallet-kernel/src/modules/chains/prompt.ts
+	init_objectSpread2();
 	/** Off-chain messages carry no decodable value flow. */
 	var MESSAGE_INTENT = {
 		summary: "message",
@@ -28441,6 +28442,21 @@ zoo`.split("\n"));
 		approvals: [],
 		fee: void 0,
 		verifiability: "opaque"
+	};
+	var utf8 = new TextDecoder("utf-8", { fatal: true });
+	/** The prompt intent of a raw message: its UTF-8 text, or the bytes as hex for a blind sign. */
+	var messageIntent = (message) => {
+		try {
+			return _objectSpread2(_objectSpread2({}, MESSAGE_INTENT), {}, { message: {
+				kind: "text",
+				text: utf8.decode(message)
+			} });
+		} catch (_unused) {
+			return _objectSpread2(_objectSpread2({}, MESSAGE_INTENT), {}, { message: {
+				kind: "bytes",
+				hex: `0x${[...message].map((b) => b.toString(16).padStart(2, "0")).join("")}`
+			} });
+		}
 	};
 	var CATALOGS$1 = {
 		"zh-Hans": {
@@ -28453,6 +28469,8 @@ zoo`.split("\n"));
 				authorization: "确认账户授权",
 				batch: "确认批量交易"
 			},
+			blindTitle: "确认盲签",
+			blindDescription: "签署无法显示为文字的数据",
 			generic: "签署来自应用的请求",
 			otherOutflows: "可能还有其他转出",
 			send: (amount, to) => `发送 ${amount} 到 ${to}`,
@@ -28478,6 +28496,8 @@ zoo`.split("\n"));
 				authorization: "Confirm account authorization",
 				batch: "Confirm batch"
 			},
+			blindTitle: "Confirm blind signing",
+			blindDescription: "Sign data that cannot be shown as text",
 			generic: "Sign a request from an app",
 			otherOutflows: "There may be other outflows",
 			send: (amount, to) => `Send ${amount} to ${to}`,
@@ -28528,7 +28548,12 @@ zoo`.split("\n"));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
+		var _intent$message;
 		const catalog = CATALOGS$1[locale];
+		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
+			title: catalog.blindTitle,
+			description: catalog.blindDescription
+		};
 		const title = catalog.titles[intent.summary];
 		if (intent.verifiability === "opaque") return {
 			title,
@@ -28888,7 +28913,7 @@ zoo`.split("\n"));
 				mapChainError(error);
 			}
 			if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-			let intent = MESSAGE_INTENT;
+			let intent = messageIntent(request.message);
 			if (request.kind === "solana.transaction") try {
 				intent = decodeSolana(request, signer);
 			} catch (error) {

@@ -73,7 +73,9 @@ const codeOf = async (run: Promise<unknown>): Promise<number | string> =>
     (error: unknown) => (error instanceof ProviderError ? error.code : String(error)),
   );
 
-async function rig(options: { allowLocalhost?: boolean } = {}) {
+async function rig(
+  options: { allowLocalhost?: boolean; blindSigning?: (groupIndex: number) => boolean } = {},
+) {
   const wallet: Wallet = await createNodeWallet({
     verifyEvent,
     passkey: {
@@ -141,6 +143,7 @@ async function rig(options: { allowLocalhost?: boolean } = {}) {
   const phishing = { check: () => phishingStatus };
   const requests = new RequestController({
     phishing,
+    blindSigning: (_walletId, groupIndex) => options.blindSigning?.(groupIndex) ?? false,
     simulateSolana: simulateSolanaStub,
     tokens: {
       metadata: async () => Promise.resolve(tokenState.metadata),
@@ -568,7 +571,7 @@ describe("Eip1193Handler", () => {
     await r.destroy();
   });
 
-  it("refuses a personal_sign whose bytes are not UTF-8 text without reaching the pipeline", async () => {
+  it("refuses a personal_sign whose bytes are not UTF-8 text until the group opts in to blind signing", async () => {
     const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
@@ -577,6 +580,27 @@ describe("Eip1193Handler", () => {
     ).rejects.toMatchObject({ code: 4200, message: expect.stringContaining("blind signing") });
     expect(Object.values(r.requests.getState().requests)).toHaveLength(0);
     await expect(r.requests.signLog()).resolves.toHaveLength(0);
+
+    const enabled = await rig({ blindSigning: (i) => i === 0 });
+    await enabled.connect();
+    const blind = enabled.handler.handle(SITE, {
+      method: "personal_sign",
+      params: ["0xff", address],
+    });
+    await vi.waitFor(() => {
+      expect(
+        Object.values(enabled.requests.getState().requests).some(
+          (q) => q.stage === "awaiting-approval",
+        ),
+      ).toBe(true);
+    });
+    const [pending] = Object.values(enabled.requests.getState().requests);
+    expect(pending?.display).toMatchObject({ message: { kind: "bytes", hex: "0xff" } });
+    expect(pending?.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    await enabled.approveNext();
+    await expect(blind).resolves.toMatch(/^0x[0-9a-f]+$/);
+    await expect(enabled.requests.signLog()).resolves.toMatchObject([{ summary: "blind message" }]);
+    await enabled.destroy();
 
     const text = r.handler.handle(SITE, {
       method: "personal_sign",

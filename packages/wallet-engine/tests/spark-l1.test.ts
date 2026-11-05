@@ -102,6 +102,7 @@ function rig() {
   let counter = 0;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,

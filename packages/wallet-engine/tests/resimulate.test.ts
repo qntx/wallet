@@ -121,6 +121,7 @@ function rig(first: SimulationOutcome) {
   let counter = 0;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,
@@ -159,6 +160,7 @@ function solanaRig(outcomes: ReadonlyArray<SimulationOutcome>) {
   const signCalls: string[] = [];
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     tokens: tokensStub,
     simulateSolana: async (_account, _network, message) => {
       simulateCalls.push(message);

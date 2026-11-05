@@ -11,7 +11,7 @@ import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 
 import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
-import { MESSAGE_INTENT } from "./prompt.ts";
+import { messageIntent } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import type { ExecuteResult, HdAccount, SolanaRequest } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
@@ -36,7 +36,7 @@ export const executeSolana = (
     if (!deepEqual(normalized, request)) {
       throw new KernelError("invalid-input", "request is not normalized");
     }
-    let intent: PromptIntent = MESSAGE_INTENT;
+    let intent: PromptIntent = messageIntent(request.message);
     if (request.kind === "solana.transaction") {
       try {
         intent = decodeSolana(request, signer);

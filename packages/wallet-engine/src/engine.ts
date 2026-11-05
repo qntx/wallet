@@ -204,8 +204,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
   });
 
+  const accounts = new AccountTreeController({
+    wallet: options.wallet,
+    spark: controller,
+    sparkNetwork: options.sparkNetwork,
+    networks,
+    logger: options.logger,
+    now: options.now,
+  });
+
   const requests = new RequestController({
     phishing,
+    blindSigning: (walletId, groupIndex) => accounts.blindSigning(walletId, groupIndex),
     tokens: {
       metadata: async (network, address) => assets.tokenMetadata(network, address),
       add: async (network, address) => assets.addToken(network, address),
@@ -301,15 +311,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     now: options.now,
     setTimer,
     logger: options.logger,
-  });
-
-  const accounts = new AccountTreeController({
-    wallet: options.wallet,
-    spark: controller,
-    sparkNetwork: options.sparkNetwork,
-    networks,
-    logger: options.logger,
-    now: options.now,
   });
 
   const metaSync = new MetaSyncController({

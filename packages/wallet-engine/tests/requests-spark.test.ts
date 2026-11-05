@@ -80,6 +80,7 @@ function world() {
   let counter = 0;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     nostrSign: async (_ref, _event): Promise<Event> => {

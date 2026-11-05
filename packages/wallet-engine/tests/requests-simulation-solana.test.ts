@@ -6,7 +6,11 @@ import { createMessage } from "@qntx/siwx";
 import { siws } from "@qntx/siwx/svm";
 
 import { AddressBookController } from "../src/addresses/controller.ts";
-import { RequestController, SignInOriginError } from "../src/requests/controller.ts";
+import {
+  BlindSigningDisabledError,
+  RequestController,
+  SignInOriginError,
+} from "../src/requests/controller.ts";
 import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -17,12 +21,16 @@ const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const ACCOUNT = { walletId: "w", groupIndex: 0, address: "11111111111111111111111111111112" };
 const ORIGIN = { kind: "browser", origin: "https://app.example" } as const;
 
-function rig(simulate: (message: Uint8Array) => Promise<SimulationOutcome>) {
+function rig(
+  simulate: (message: Uint8Array) => Promise<SimulationOutcome>,
+  blindSigning: (walletId: string, groupIndex: number) => boolean = () => false,
+) {
   const calls: Uint8Array[] = [];
   const openStore = async () => Promise.resolve(createMemoryEngineStore());
   const logger = { warn: () => undefined };
   const requests = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning,
     tokens: tokensStub,
     simulateSolana: async (_account, _network, message) => {
       calls.push(message);
@@ -139,7 +147,7 @@ describe("solana-sign simulation", () => {
     expect(request.display).toMatchObject({ message: { text: "text" }, signIn });
   });
 
-  it("rejects non-UTF-8 message bytes at the pipeline too", async () => {
+  it("rejects non-UTF-8 message bytes unless the group opted in to blind signing", async () => {
     const { requests } = rig(async () => Promise.reject(new Error("never")));
     await requests.init();
     await expect(
@@ -150,7 +158,25 @@ describe("solana-sign simulation", () => {
         network: NETWORK,
         request: { kind: "message", message: new Uint8Array([0xff]) },
       }),
-    ).rejects.toThrow("must be UTF-8 text");
+    ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+
+    const enabled = rig(
+      async () => Promise.reject(new Error("never")),
+      () => true,
+    );
+    await enabled.requests.init();
+    const request = await enabled.requests.prepare({
+      method: "solana-sign",
+      origin: ORIGIN,
+      account: ACCOUNT,
+      network: NETWORK,
+      request: { kind: "message", message: new Uint8Array([0xff]) },
+    });
+    expect(request.display).toMatchObject({
+      kind: "solana.sign",
+      message: { kind: "bytes", hex: "0xff" },
+    });
+    expect(request.risk).toStrictEqual([{ code: "blind-signing", level: "danger" }]);
   });
 });
 

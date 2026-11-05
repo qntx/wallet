@@ -65,6 +65,7 @@ export const requestsFor = async (
   }
   const created = new RequestController({
     phishing: { check: () => "clear" },
+    blindSigning: () => false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,

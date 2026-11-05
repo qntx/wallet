@@ -34,7 +34,8 @@ export type RiskFinding = {
     | "sign-in-not-yet-valid"
     | "permit-approval"
     | "permit-unlimited"
-    | "permit-long-lived";
+    | "permit-long-lived"
+    | "blind-signing";
   readonly level: "warning" | "danger";
 };
 

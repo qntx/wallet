@@ -17,7 +17,7 @@ import type { PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
   DisplayIntent,
-  "summary" | "outflows" | "approvals" | "fee" | "verifiability"
+  "summary" | "outflows" | "approvals" | "fee" | "verifiability" | "message"
 >;
 
 /** Off-chain messages carry no decodable value flow. */
@@ -29,8 +29,27 @@ export const MESSAGE_INTENT: PromptIntent = {
   verifiability: "opaque",
 };
 
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+/** The prompt intent of a raw message: its UTF-8 text, or the bytes as hex for a blind sign. */
+export const messageIntent = (message: Uint8Array): PromptIntent => {
+  try {
+    return { ...MESSAGE_INTENT, message: { kind: "text", text: utf8.decode(message) } };
+  } catch {
+    return {
+      ...MESSAGE_INTENT,
+      message: {
+        kind: "bytes",
+        hex: `0x${[...message].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+      },
+    };
+  }
+};
+
 type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
+  readonly blindTitle: string;
+  readonly blindDescription: string;
   readonly generic: string;
   readonly otherOutflows: string;
   readonly send: (amount: string, to: string) => string;
@@ -58,6 +77,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
       authorization: "确认账户授权",
       batch: "确认批量交易",
     },
+    blindTitle: "确认盲签",
+    blindDescription: "签署无法显示为文字的数据",
     generic: "签署来自应用的请求",
     otherOutflows: "可能还有其他转出",
     send: (amount, to) => `发送 ${amount} 到 ${to}`,
@@ -83,6 +104,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
       authorization: "Confirm account authorization",
       batch: "Confirm batch",
     },
+    blindTitle: "Confirm blind signing",
+    blindDescription: "Sign data that cannot be shown as text",
     generic: "Sign a request from an app",
     otherOutflows: "There may be other outflows",
     send: (amount, to) => `Send ${amount} to ${to}`,
@@ -157,6 +180,9 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
 
 export function chainPrompt(locale: PromptLocale, intent: PromptIntent): KeystorePrompt {
   const catalog = CATALOGS[locale];
+  if (intent.message?.kind === "bytes") {
+    return { title: catalog.blindTitle, description: catalog.blindDescription };
+  }
   const title = catalog.titles[intent.summary];
   if (intent.verifiability === "opaque") {
     return { title, description: catalog.generic };

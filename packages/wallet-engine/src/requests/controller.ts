@@ -1,3 +1,5 @@
+import { bytesToHex } from "@noble/hashes/utils.js";
+
 /**
  * Request pipeline for internal sends, speed-ups, cancellations and CPFP: `prepare` builds,
  * estimates and cross-checks without signing; `approve(id, method, verify)` is the only way to
@@ -9,7 +11,7 @@ import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
 import { ChainError, parseSignIn } from "@qntx/wallet-chains";
-import type { SignInParse, SignRequest } from "@qntx/wallet-chains";
+import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
@@ -17,7 +19,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import type { AddressBookController } from "../addresses/controller.ts";
 import { normalizeAddress } from "../addresses/normalize.ts";
 import type { SignInFields } from "../connect/siws.ts";
-import { utf8Text } from "../connect/text.ts";
+import { BLIND_SIGNING_MESSAGE, utf8Text } from "../connect/text.ts";
 import { Controller } from "../controller.ts";
 import { TOKEN_SYMBOL_MAX, isAscii, safeDecimals, safeDisplayText } from "../display.ts";
 import { errorMessage } from "../errors.ts";
@@ -214,8 +216,8 @@ export type SolanaDisplay = {
   readonly send: boolean;
   readonly count: number;
   readonly transactions: ReadonlyArray<unknown>;
-  /** A message request's text (always valid UTF-8). */
-  readonly message?: { readonly text: string; readonly signIn?: SignInParse };
+  /** A message request's content — text, or raw bytes when it is not UTF-8. */
+  readonly message?: MessageContent;
   readonly signIn?: SignInFields;
 };
 
@@ -262,6 +264,14 @@ export class SignInOriginError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "SignInOriginError";
+  }
+}
+
+/** Message bytes that cannot be shown as text for a group that did not opt in to blind signing. */
+export class BlindSigningDisabledError extends Error {
+  constructor() {
+    super(BLIND_SIGNING_MESSAGE);
+    this.name = "BlindSigningDisabledError";
   }
 }
 
@@ -365,6 +375,8 @@ export type RequestControllerOptions = {
     ) => Promise<{ readonly symbol: string; readonly decimals: number }>;
     readonly add: (network: string, address: string) => Promise<void>;
   };
+  /** Whether the account group opted in to signing messages that cannot be shown as text. */
+  readonly blindSigning: (walletId: string, groupIndex: number) => boolean;
   /** Simulates one `solana-sign` transaction for display; failures are the caller's `unavailable`. */
   readonly simulateSolana: (
     account: SolanaAccount,
@@ -461,12 +473,13 @@ type Entry = {
 
 const originKey = (origin: BrowserOrigin): string => `origin:${origin.origin}`;
 
-const messageText = (message: Uint8Array): string => {
+/** A message request's content: its UTF-8 text with any sign-in parse, else the raw bytes. */
+const messageContent = (message: Uint8Array, signIn: SignInParse | undefined): MessageContent => {
   const text = utf8Text(message);
   if (text === undefined) {
-    throw new Error("a solana message request must be UTF-8 text");
+    return { kind: "bytes", hex: `0x${bytesToHex(message)}` };
   }
-  return text;
+  return signIn === undefined ? { kind: "text", text } : { kind: "text", text, signIn };
 };
 
 type SolanaDecoded = DisplayIntent | { readonly error: string };
@@ -831,6 +844,8 @@ export class RequestController extends Controller<RequestControllerState> {
         "signer" in prepared && prepared.intent.message?.kind === "text"
           ? this.signInRisk(prepared.intent.message.signIn, input.origin, prepared.signer, "evm")
           : [];
+      const blindRisk =
+        prepared.intent.message?.kind === "bytes" ? this.blindRisk(input.account) : [];
       const { message } = prepared.intent;
       if (
         message?.kind === "typed-data" &&
@@ -852,7 +867,9 @@ export class RequestController extends Controller<RequestControllerState> {
           isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
           ...prepared.checks,
         ]),
-        risk: isTransaction ? this.chainRisk(prepared.intent) : mergeRisk(signInRisk, permitRisk),
+        risk: isTransaction
+          ? this.chainRisk(prepared.intent)
+          : mergeRisk(mergeRisk(signInRisk, permitRisk), blindRisk),
         run: { ...prepared, factor: "required" },
       };
       return isTransaction
@@ -864,10 +881,13 @@ export class RequestController extends Controller<RequestControllerState> {
       const [only] = txs;
       const intents = txs.map((tx) => solanaIntent(input.account, input.network, tx));
       const [decoded] = intents;
-      const signText = input.request.kind === "message" ? messageText(input.request.message) : "";
       const signIn =
         input.request.kind === "message" && input.request.signIn === undefined
-          ? parseSignIn(signText, "solana")
+          ? parseSignIn(utf8Text(input.request.message) ?? "", "solana")
+          : undefined;
+      const message =
+        input.request.kind === "message"
+          ? messageContent(input.request.message, signIn)
           : undefined;
       const built: Built = {
         account: input.account,
@@ -877,15 +897,16 @@ export class RequestController extends Controller<RequestControllerState> {
           send: input.request.kind === "transactions" ? input.request.send : false,
           count: txs.length === 0 ? 1 : txs.length,
           transactions: intents,
-          ...(input.request.kind === "message"
-            ? {
-                message: { text: signText, ...(signIn === undefined ? {} : { signIn }) },
-                ...(input.request.signIn === undefined ? {} : { signIn: input.request.signIn }),
-              }
+          ...(message === undefined ? {} : { message }),
+          ...(input.request.kind === "message" && input.request.signIn !== undefined
+            ? { signIn: input.request.signIn }
             : {}),
         },
         checks: [],
-        risk: this.signInRisk(signIn, input.origin, input.account.address, "solana"),
+        risk: mergeRisk(
+          this.signInRisk(signIn, input.origin, input.account.address, "solana"),
+          message?.kind === "bytes" ? this.blindRisk(input.account) : [],
+        ),
         run: {
           factor: "required",
           staleReason: () => undefined,
@@ -1256,18 +1277,22 @@ export class RequestController extends Controller<RequestControllerState> {
             : "kind" in display && display.kind === "solana.sign"
               ? display.signIn === undefined
                 ? display.transactions.length === 0
-                  ? display.message?.signIn?.status === "valid"
-                    ? `sign-in ${display.message.signIn.fields.domain}`
-                    : "solana message"
+                  ? display.message?.kind === "bytes"
+                    ? "blind message"
+                    : display.message?.kind === "text" && display.message.signIn?.status === "valid"
+                      ? `sign-in ${display.message.signIn.fields.domain}`
+                      : "solana message"
                   : `solana ${display.send ? "send" : "sign"} ${String(display.count)} tx`
                 : `solana sign-in ${display.signIn.domain}`
               : "summary" in display
-                ? display.message?.kind === "text" && display.message.signIn?.status === "valid"
-                  ? `sign-in ${display.message.signIn.fields.domain}`
-                  : display.message?.kind === "typed-data" &&
-                      display.approvals[0]?.kind === "allowance"
-                    ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
-                    : display.summary
+                ? display.message?.kind === "bytes"
+                  ? "blind message"
+                  : display.message?.kind === "text" && display.message.signIn?.status === "valid"
+                    ? `sign-in ${display.message.signIn.fields.domain}`
+                    : display.message?.kind === "typed-data" &&
+                        display.approvals[0]?.kind === "allowance"
+                      ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
+                      : display.summary
                 : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
@@ -1313,6 +1338,18 @@ export class RequestController extends Controller<RequestControllerState> {
       )
       .flatMap((tx) => tx.intent?.outflows.map((o) => o.to) ?? []);
     return [...contacts, ...paid];
+  }
+
+  /** A blind-sign request carries one danger; a group that did not opt in refuses it outright. */
+  private blindRisk(account: AccountRef | SolanaAccount): ReadonlyArray<RiskFinding> {
+    const allowed =
+      "groupIndex" in account && "walletId" in account
+        ? this.options.blindSigning(account.walletId, account.groupIndex)
+        : false;
+    if (!allowed) {
+      throw new BlindSigningDisabledError();
+    }
+    return [{ code: "blind-signing", level: "danger" }];
   }
 
   /** Risk of a Sign-In with X message; a message for another domain throws `SignInOriginError`. */
