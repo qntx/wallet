@@ -25172,10 +25172,17 @@ zoo`.split("\n"));
 	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
 	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
 	var ERC20_INCREASE = from$2("function increaseAllowance(address spender, uint256 amount)");
+	var ERC20_DECREASE = from$2("function decreaseAllowance(address spender, uint256 subtractedValue)");
+	var SET_APPROVAL_FOR_ALL = from$2("function setApprovalForAll(address operator, bool approved)");
+	var PERMIT2_APPROVE = from$2("function approve(address token, address spender, uint160 amount, uint48 expiration)");
+	var PERMIT2_LOCKDOWN = from$2("function lockdown((address token, address spender)[] approvals)");
+	var ERC721_SAFE_FROM_DATA = from$2("function safeTransferFrom(address from, address to, uint256 tokenId, bytes data)");
+	var ERC1155_SAFE_BATCH_FROM = from$2("function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)");
 	var ERC721_TRANSFER_FROM = from$2("function transferFrom(address from, address to, uint256 tokenId)");
 	var ERC721_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 tokenId)");
 	var ERC1155_SAFE_FROM = from$2("function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)");
 	var MAX_UINT256 = 2n ** 256n - 1n;
+	var MAX_UINT160 = 2n ** 160n - 1n;
 	var argAddress = (args, index) => {
 		const value = args[index];
 		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
@@ -25231,15 +25238,39 @@ zoo`.split("\n"));
 			verified: token !== void 0
 		};
 	};
-	var approvalChange = (tx, spender, amount) => {
-		var _tx$to3;
-		return {
-			asset: (_tx$to3 = tx.to) !== null && _tx$to3 !== void 0 ? _tx$to3 : "",
+	var allowanceChange = (token, spender, value, change, max, chainId, table, extra = {}) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2(_objectSpread2({
+			kind: "allowance",
 			spender,
-			amount: amount.toString(10),
-			unlimited: amount === MAX_UINT256,
-			verified: false
-		};
+			amount: _objectSpread2({
+				asset: token,
+				amount: value.toString(10)
+			}, known === void 0 ? {} : {
+				symbol: known.symbol,
+				decimals: known.decimals
+			}),
+			change,
+			unlimited: change !== "decrease" && value === max
+		}, extra), {}, { verified: known !== void 0 });
+	};
+	var argBool = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "boolean") throw new ChainError("invalid-request", "decoded argument is not a bool");
+		return value;
+	};
+	var argList = (args, index) => {
+		const value = args[index];
+		if (!Array.isArray(value)) throw new ChainError("invalid-request", "decoded argument is not an array");
+		return value;
+	};
+	var argSeconds = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "number" && typeof value !== "bigint") throw new ChainError("invalid-request", "decoded argument is not an integer");
+		return Number(value);
+	};
+	var pairField = (pair, key) => {
+		return argAddress([typeof pair === "object" && pair !== null ? Reflect.get(pair, key) : ""], 0);
 	};
 	var nftFlow = (asset, to, id) => [{
 		to,
@@ -25250,7 +25281,7 @@ zoo`.split("\n"));
 		verified: false
 	}];
 	var decodeTransaction$1 = (request, table) => {
-		var _tx$to5;
+		var _tx$to3;
 		const { tx } = request;
 		const chainId = networkChainId(request.network);
 		const data = tx.data.toLowerCase();
@@ -25285,39 +25316,63 @@ zoo`.split("\n"));
 				verifiability: verified ? "full" : "partial"
 			});
 		}
-		const approveArgs = tryCall(ERC20_APPROVE, data);
-		if (approveArgs !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
-			summary: "approve",
-			outflows: [],
-			approvals: [approvalChange(tx, argAddress(approveArgs, 0), argUint(approveArgs, 1))],
+		const partial = (summary, outflows, approvals) => _objectSpread2(_objectSpread2({}, base), {}, {
+			summary,
+			outflows,
+			approvals,
 			fee,
 			verifiability: "partial"
 		});
-		const increaseArgs = tryCall(ERC20_INCREASE, data);
-		if (increaseArgs !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
-			summary: "approve",
-			outflows: [],
-			approvals: [approvalChange(tx, argAddress(increaseArgs, 0), argUint(increaseArgs, 1))],
-			fee,
-			verifiability: "partial"
-		});
-		for (const fn of [ERC721_TRANSFER_FROM, ERC721_SAFE_FROM]) {
-			var _tx$to4;
+		const token = (_tx$to3 = tx.to) !== null && _tx$to3 !== void 0 ? _tx$to3 : "";
+		if (token.toLowerCase() === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase()) {
+			const permitArgs = tryCall(PERMIT2_APPROVE, data);
+			if (permitArgs !== void 0) {
+				const amount = argUint(permitArgs, 2);
+				return partial("approve", [], [allowanceChange(argAddress(permitArgs, 0), argAddress(permitArgs, 1), amount, "set", MAX_UINT160, chainId, table, {
+					via: "permit2",
+					expiration: argSeconds(permitArgs, 3)
+				})]);
+			}
+			const lockdownArgs = tryCall(PERMIT2_LOCKDOWN, data);
+			if (lockdownArgs !== void 0) return partial("approve", [], argList(lockdownArgs, 0).map((pair) => allowanceChange(pairField(pair, "token"), pairField(pair, "spender"), 0n, "set", MAX_UINT160, chainId, table, { via: "permit2" })));
+		}
+		for (const [fn, change] of [
+			[ERC20_APPROVE, "set"],
+			[ERC20_INCREASE, "increase"],
+			[ERC20_DECREASE, "decrease"]
+		]) {
 			const args = tryCall(fn, data);
-			if (args !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
-				summary: "transfer",
-				outflows: nftFlow((_tx$to4 = tx.to) !== null && _tx$to4 !== void 0 ? _tx$to4 : "", argAddress(args, 1), argUint(args, 2)),
-				fee,
-				verifiability: "partial"
-			});
+			if (args !== void 0) return partial("approve", [], [allowanceChange(token, argAddress(args, 0), argUint(args, 1), change, MAX_UINT256, chainId, table)]);
+		}
+		const operatorArgs = tryCall(SET_APPROVAL_FOR_ALL, data);
+		if (operatorArgs !== void 0) return partial("approve", [], [{
+			kind: "operator",
+			asset: token,
+			spender: argAddress(operatorArgs, 0),
+			approved: argBool(operatorArgs, 1),
+			verified: false
+		}]);
+		const transferFromArgs = tryCall(ERC721_TRANSFER_FROM, data);
+		if (transferFromArgs !== void 0) {
+			const to = argAddress(transferFromArgs, 1);
+			const id = argUint(transferFromArgs, 2);
+			if (lookupEvmToken(table, chainId, token) !== void 0) return partial("transfer", tokenFlow(tx, to, id, chainId, table).flows, []);
+			return partial("transfer", nftFlow(token, to, id), []);
+		}
+		for (const fn of [ERC721_SAFE_FROM, ERC721_SAFE_FROM_DATA]) {
+			const args = tryCall(fn, data);
+			if (args !== void 0) return partial("transfer", nftFlow(token, argAddress(args, 1), argUint(args, 2)), []);
 		}
 		const erc1155Args = tryCall(ERC1155_SAFE_FROM, data);
-		if (erc1155Args !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
-			summary: "transfer",
-			outflows: nftFlow((_tx$to5 = tx.to) !== null && _tx$to5 !== void 0 ? _tx$to5 : "", argAddress(erc1155Args, 1), argUint(erc1155Args, 2)),
-			fee,
-			verifiability: "partial"
-		});
+		if (erc1155Args !== void 0) return partial("transfer", nftFlow(token, argAddress(erc1155Args, 1), argUint(erc1155Args, 2)), []);
+		const batchArgs = tryCall(ERC1155_SAFE_BATCH_FROM, data);
+		if (batchArgs !== void 0) {
+			const ids = argList(batchArgs, 2);
+			if (ids.length > 0 && ids.length === argList(batchArgs, 3).length) {
+				const to = argAddress(batchArgs, 1);
+				return partial("transfer", ids.flatMap((id) => nftFlow(token, to, argUint([id], 0))), []);
+			}
+		}
 		return _objectSpread2(_objectSpread2({}, base), {}, {
 			summary: "contract-call",
 			outflows: [],
@@ -26960,7 +27015,6 @@ zoo`.split("\n"));
 		const outflows = [];
 		const approvals = [];
 		for (const call of calls) {
-			var _call$mint4, _call$to2, _call$amount3;
 			if (call.kind === "system-transfer" && call.to !== void 0) {
 				var _call$amount;
 				const [source] = parsed.staticAccounts;
@@ -26988,13 +27042,24 @@ zoo`.split("\n"));
 					verified: token !== void 0
 				});
 			}
-			if (call.kind === "token-approve") approvals.push({
-				asset: (_call$mint4 = call.mint) !== null && _call$mint4 !== void 0 ? _call$mint4 : "",
-				spender: (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : "",
-				amount: ((_call$amount3 = call.amount) !== null && _call$amount3 !== void 0 ? _call$amount3 : 0n).toString(10),
-				unlimited: false,
-				verified: false
-			});
+			if (call.kind === "token-approve") {
+				var _call$mint4, _call$to2, _call$mint5, _call$amount3;
+				const token = lookupSolanaToken(table, request.network, (_call$mint4 = call.mint) !== null && _call$mint4 !== void 0 ? _call$mint4 : "");
+				approvals.push({
+					kind: "allowance",
+					spender: (_call$to2 = call.to) !== null && _call$to2 !== void 0 ? _call$to2 : "",
+					amount: _objectSpread2({
+						asset: (_call$mint5 = call.mint) !== null && _call$mint5 !== void 0 ? _call$mint5 : "",
+						amount: ((_call$amount3 = call.amount) !== null && _call$amount3 !== void 0 ? _call$amount3 : 0n).toString(10)
+					}, token === void 0 ? {} : {
+						symbol: token.symbol,
+						decimals: token.decimals
+					}),
+					change: "set",
+					unlimited: false,
+					verified: token !== void 0
+				});
+			}
 		}
 		const fee = feeLamports(parsed, calls);
 		return {
@@ -27127,6 +27192,13 @@ zoo`.split("\n"));
 			send: (amount, to) => `发送 ${amount} 到 ${to}`,
 			allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
 			unlimited: (asset) => `全部 ${asset}`,
+			revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
+			increase: (spender, amount) => `授权 ${spender} 再使用 ${amount}`,
+			decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
+			viaPermit2: " 经 Permit2",
+			until: (date) => ` 至 ${date}（UTC）`,
+			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
+			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
 			maxFee: (fee) => `最高手续费 ${fee}`
 		},
 		en: {
@@ -27144,6 +27216,13 @@ zoo`.split("\n"));
 			send: (amount, to) => `Send ${amount} to ${to}`,
 			allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
 			unlimited: (asset) => `unlimited ${asset}`,
+			revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
+			increase: (spender, amount) => `Allow ${spender} to spend ${amount} more`,
+			decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
+			viaPermit2: " via Permit2",
+			until: (date) => ` until ${date} (UTC)`,
+			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
+			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
 			maxFee: (fee) => `Max fee ${fee}`
 		}
 	};
@@ -27151,6 +27230,33 @@ zoo`.split("\n"));
 	function formatAmount(amount) {
 		var _amount$symbol;
 		return amount.decimals === void 0 ? `${amount.amount} ${amount.asset}` : `${formatUnits(amount.amount, amount.decimals)} ${(_amount$symbol = amount.symbol) !== null && _amount$symbol !== void 0 ? _amount$symbol : amount.asset}`;
+	}
+	/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
+	function utcDate(seconds) {
+		const z = Math.floor(seconds / 86400) + 719468;
+		const era = Math.floor(z / 146097);
+		const doe = z - era * 146097;
+		const yoe = Math.floor((doe - Math.floor(doe / 1460) + Math.floor(doe / 36524) - Math.floor(doe / 146096)) / 365);
+		const doy = doe - (365 * yoe + Math.floor(yoe / 4) - Math.floor(yoe / 100));
+		const mp = Math.floor((5 * doy + 2) / 153);
+		const day = doy - Math.floor((153 * mp + 2) / 5) + 1;
+		const month = mp < 10 ? mp + 3 : mp - 9;
+		const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
+		return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+	}
+	function approvalLine(catalog, change) {
+		var _change$amount$symbol;
+		if (change.kind === "operator") return change.approved ? catalog.operatorAllow(change.spender, change.asset) : catalog.operatorRevoke(change.spender, change.asset);
+		const name = (_change$amount$symbol = change.amount.symbol) !== null && _change$amount$symbol !== void 0 ? _change$amount$symbol : change.amount.asset;
+		let line;
+		if (change.change === "increase") line = catalog.increase(change.spender, formatAmount(change.amount));
+		else if (change.change === "decrease") line = catalog.decrease(change.spender, formatAmount(change.amount));
+		else if (change.unlimited) line = catalog.allow(change.spender, catalog.unlimited(name));
+		else if (change.amount.amount === "0") line = catalog.revoke(change.spender, name);
+		else line = catalog.allow(change.spender, formatAmount(change.amount));
+		const via = change.via === void 0 ? "" : catalog.viaPermit2;
+		const until = change.expiration === void 0 || change.expiration === 0 ? "" : catalog.until(utcDate(change.expiration));
+		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
 		const catalog = CATALOGS$1[locale];
@@ -27161,7 +27267,7 @@ zoo`.split("\n"));
 		};
 		const lines = [
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
-			...intent.approvals.map((change) => catalog.allow(change.spender, change.unlimited ? catalog.unlimited(change.asset) : `${change.amount} ${change.asset}`)),
+			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]
 		];
 		if (intent.verifiability === "partial") return {
