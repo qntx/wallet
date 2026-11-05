@@ -8,6 +8,7 @@ import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
+import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import { normalizeSolana } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
@@ -19,6 +20,7 @@ import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import { SolanaChainAdapter } from "./chains/solana.ts";
+import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
 import { Nip07Handler } from "./connect/nip07.ts";
@@ -102,6 +104,7 @@ export type WalletEngine = {
   readonly nip07: Nip07Handler;
   readonly webln: WeblnHandler;
   readonly solanaWallet: SolanaWalletHandler;
+  readonly bitcoinWallet: BitcoinWalletHandler;
   /** The phishing list: lifecycle is independent of the lock state. */
   readonly phishing: PhishingController;
   /** Read and receive surface; every payment goes through `requests`. */
@@ -312,6 +315,30 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
       return { kind: "solana.message" as const, signature: result.signature };
     },
+    bitcoinSign: async (account, network, request, verify) => {
+      const result = await chains(options.wallet).sign({
+        request: {
+          kind: "bitcoin.message",
+          network,
+          account: {
+            kind: "hd",
+            walletId: account.walletId,
+            groupIndex: account.groupIndex,
+            template: account.template,
+          },
+          address: account.address,
+          message: request.message,
+          format: "bip322-simple",
+          change: 0,
+          index: 0,
+        },
+        verify,
+      });
+      if (result.kind !== "bitcoin.message") {
+        throw new Error("unexpected bitcoin sign result");
+      }
+      return { kind: "bitcoin.message" as const, signature: result.signature };
+    },
     fetch: options.fetch,
     random: options.random,
     now: options.now,
@@ -336,6 +363,21 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     networks,
     logger: options.logger,
   });
+  const bitcoinAccount = async (
+    group: { readonly walletId: string; readonly groupIndex: number },
+    network: string,
+    purpose: "payment" | "ordinals",
+  ): Promise<{ address: string; publicKey: Uint8Array }> => {
+    const template = purpose === "payment" ? "btc.bip84" : "btc.bip86";
+    const account = await chains(options.wallet).account({ ...group, template, network });
+    if (!("xpub" in account) || account.xpub === undefined) {
+      throw new Error("no Bitcoin account for the group");
+    }
+    return {
+      address: bitcoinAddressFromXpub(account.xpub, template, network, 0, 0),
+      publicKey: bitcoinPubkeyFromXpub(account.xpub, template, network, 0, 0),
+    };
+  };
   const connections = new ConnectionController({
     phishing,
     setTimer,
@@ -367,7 +409,15 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
       return account.address;
     },
-    enabledNetworks: () => networks.enabled("evm"),
+    bitcoinAddress: async (group, network, purpose) => {
+      const { address } = await bitcoinAccount(group, network, purpose);
+      return address;
+    },
+    enabledNetworks: () => [
+      ...networks.enabled("evm"),
+      ...networks.enabled("solana"),
+      ...networks.enabled("bitcoin"),
+    ],
     nostrPubkey: async (ref) => nostr(options.wallet).signer(ref).getPublicKey(),
     invalidate: (origin) => {
       requests.invalidateOrigin(origin);
@@ -428,6 +478,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     activeGroup: () => connections.activeGroup(),
     solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",
+  });
+
+  const bitcoinWallet = new BitcoinWalletHandler({
+    connections,
+    requests,
+    bitcoinAccount,
+    activeGroup: () => connections.activeGroup(),
+    bitcoinNetwork: () => {
+      const enabled = networks.enabled("bitcoin");
+      const mainnet = BITCOIN_CHAIN_IDS["bitcoin:mainnet"] ?? "";
+      return enabled.includes(mainnet) ? mainnet : (enabled[0] ?? mainnet);
+    },
   });
 
   // The transition chain: every status change queues behind the previous one, so a late lock
@@ -524,6 +586,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     nip07,
     webln,
     solanaWallet,
+    bitcoinWallet,
     spark: controller,
     accounts,
     metaSync,

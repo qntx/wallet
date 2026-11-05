@@ -7,6 +7,7 @@
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
 
+import type { BitcoinEvent, BitcoinHandler } from "./bitcoin.ts";
 import type { ConnectionController } from "./controller.ts";
 import type { Eip1193Event, Eip1193Handler } from "./eip1193.ts";
 import { ProviderError } from "./errors.ts";
@@ -21,6 +22,8 @@ export type { Nip07Request } from "./nip07.ts";
 export type { WeblnRequest } from "./webln.ts";
 export type { SolanaRequest, SolanaEvent, SolanaWalletAccount } from "./solana.ts";
 export { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./solana.ts";
+export type { BitcoinRequest, BitcoinEvent, BitcoinWalletAccount } from "./bitcoin.ts";
+export { BitcoinWalletHandler, BITCOIN_CHAIN_IDS } from "./bitcoin.ts";
 export { WeblnHandler } from "./webln.ts";
 export { Nip07Handler } from "./nip07.ts";
 export type { NostrPolicy } from "./controller.ts";
@@ -105,6 +108,7 @@ export type BrowserBridgeOptions = {
   readonly nip07: Pick<Nip07Handler, "handle">;
   readonly webln: Pick<WeblnHandler, "handle">;
   readonly solana: Pick<SolanaHandler, "handle" | "subscribe">;
+  readonly bitcoin: Pick<BitcoinHandler, "handle" | "subscribe">;
   readonly connections: Pick<ConnectionController, "checkOrigin" | "invalidateOrigin">;
   /** The host's `webview.injectJavaScript`. */
   readonly inject: (script: string) => void;
@@ -140,7 +144,7 @@ const errorData = (error: unknown): { code: number; message: string } =>
     : { code: -32603, message: "internal error" };
 
 export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridge {
-  const { eip1193, nip07, webln, solana, connections, inject, now } = options;
+  const { eip1193, nip07, webln, solana, bitcoin, connections, inject, now } = options;
   let topOrigin: string | undefined;
   let disposed = false;
   /** Per-origin request timestamps in the current window, for the 120/min cap. */
@@ -191,6 +195,16 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     });
   });
 
+  const unsubscribeBitcoin = bitcoin.subscribe((event: BitcoinEvent) => {
+    if (disposed || topOrigin === undefined || event.origin !== topOrigin) {
+      return;
+    }
+    receive({
+      event: "bitcoin:events",
+      data: { event: "change", params: { accounts: event.accounts } },
+    });
+  });
+
   const message = (topUrl: string, data: string): void => {
     if (disposed || data.length > MAX_MESSAGE_BYTES) {
       return;
@@ -228,7 +242,9 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
             ? webln
             : provider === "solana"
               ? solana
-              : undefined;
+              : provider === "bitcoin"
+                ? bitcoin
+                : undefined;
     if (handler === undefined) {
       return;
     }
@@ -275,6 +291,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     disposed = true;
     unsubscribe();
     unsubscribeSolana();
+    unsubscribeBitcoin();
     if (topOrigin !== undefined) {
       connections.invalidateOrigin(topOrigin);
       topOrigin = undefined;

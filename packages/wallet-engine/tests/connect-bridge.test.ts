@@ -21,6 +21,7 @@ import type {
   Nip07Request,
   WeblnRequest,
   SolanaRequest,
+  BitcoinRequest,
   ProviderInfo,
 } from "../src/connect/index.ts";
 import { PROVIDER_SCRIPT } from "../src/connect/inject.generated.ts";
@@ -58,6 +59,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
   const handledNostr: Array<{ origin: string; request: Nip07Request }> = [];
   const handledWebln: Array<{ origin: string; request: WeblnRequest }> = [];
   const handledSolana: Array<{ origin: string; request: SolanaRequest }> = [];
+  const handledBitcoin: Array<{ origin: string; request: BitcoinRequest }> = [];
   const phishing = new Set<string>();
   let now = 0;
   const options: BrowserBridgeOptions = {
@@ -96,6 +98,13 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
       },
       subscribe: () => () => undefined,
     },
+    bitcoin: {
+      handle: async (origin, req) => {
+        handledBitcoin.push({ origin, request: req });
+        return Promise.resolve("bitcoin-result");
+      },
+      subscribe: () => () => undefined,
+    },
     connections: {
       checkOrigin: (origin) => {
         if (!origin.startsWith("https://")) {
@@ -128,6 +137,7 @@ function rig(handle: Handle = async () => Promise.resolve("result")) {
     handledNostr,
     handledWebln,
     handledSolana,
+    handledBitcoin,
     phishing,
     emit,
     advance,
@@ -366,4 +376,17 @@ it("routes provider: solana to the solana handler", async () => {
     { origin: SITE, request: { method: "solana:signMessage", params: [] } },
   ]);
   expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 4, result: "solana-result" });
+});
+
+it("routes provider: bitcoin to the bitcoin handler", async () => {
+  const { bridge, handled, handledSolana, handledBitcoin, injections } = rig();
+  bridge.navigated(PAGE);
+  bridge.message(PAGE, request(5, "bitcoin:signMessage", "bitcoin", { params: [] }));
+  await tick();
+  expect(handled).toHaveLength(0);
+  expect(handledSolana).toHaveLength(0);
+  expect(handledBitcoin).toStrictEqual([
+    { origin: SITE, request: { method: "bitcoin:signMessage", params: [] } },
+  ]);
+  expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 5, result: "bitcoin-result" });
 });

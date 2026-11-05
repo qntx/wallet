@@ -10,7 +10,7 @@ import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import type { RiskFinding } from "./risk.ts";
-import type { RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
+import type { BitcoinAccount, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
 
 export type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "invalidated";
 
@@ -19,7 +19,7 @@ export type SignLogEntry = {
   readonly at: number;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount;
+  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount;
   readonly network: string;
   readonly summary: string;
   readonly verification: "verified" | "unverifiable";
@@ -45,6 +45,7 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "nostr-sign",
   "webln-invoice",
   "watch-asset",
+  "bitcoin-sign",
   "spark-deposit",
   "spark-exit",
 ]);
@@ -57,7 +58,9 @@ const OUTCOMES: ReadonlySet<unknown> = new Set([
 ]);
 const FAMILIES: ReadonlySet<unknown> = new Set(["evm", "solana", "bitcoin"]);
 
-const isAccount = (value: unknown): value is AccountRef | SparkAccountRef | SolanaAccount => {
+const isAccount = (
+  value: unknown,
+): value is AccountRef | SparkAccountRef | SolanaAccount | BitcoinAccount => {
   if (!isObject(value)) {
     return false;
   }

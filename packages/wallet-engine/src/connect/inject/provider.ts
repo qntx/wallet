@@ -22,6 +22,49 @@ import type {
 } from "@wallet-standard/features";
 import { registerWallet } from "@wallet-standard/wallet";
 
+/**
+ * The Bitcoin Wallet Standard features, as Exodus defines them
+ * (ExodusMovement/bitcoin-wallet-standard `packages/core/features/src`: connect, signMessage; the
+ * `bitcoin:disconnect` / `bitcoin:events` pair as in MetaMask's
+ * `@metamask/bitcoin-wallet-standard`). Declared here, only the shapes this wallet implements: the
+ * upstream features package is a 2023 0.0.1 release that has no disconnect or events feature, so a
+ * local copy of three small types avoids a dependency that would not cover the surface anyway.
+ */
+type BitcoinPurpose = "payment" | "ordinals";
+type BitcoinConnectFeature = {
+  readonly "bitcoin:connect": {
+    readonly version: "1.0.0";
+    readonly connect: (input: {
+      readonly purposes: BitcoinPurpose[];
+    }) => Promise<{ readonly accounts: ReadonlyArray<WalletAccount> }>;
+  };
+};
+type BitcoinDisconnectFeature = {
+  readonly "bitcoin:disconnect": {
+    readonly version: "1.0.0";
+    readonly disconnect: () => Promise<void>;
+  };
+};
+type BitcoinEventsFeature = {
+  readonly "bitcoin:events": {
+    readonly version: "1.0.0";
+    readonly on: (
+      event: "change",
+      listener: (properties: { readonly accounts?: ReadonlyArray<WalletAccount> }) => void,
+    ) => () => void;
+  };
+};
+type BitcoinSignMessageFeature = {
+  readonly "bitcoin:signMessage": {
+    readonly version: "1.0.0";
+    readonly signMessage: (
+      ...inputs: ReadonlyArray<{ readonly account: WalletAccount; readonly message: Uint8Array }>
+    ) => Promise<
+      ReadonlyArray<{ readonly signedMessage: Uint8Array; readonly signature: Uint8Array }>
+    >;
+  };
+};
+
 const bytesToHex = (bytes: Uint8Array): string =>
   Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -418,6 +461,81 @@ export function install(info: ProviderInfo): void {
     },
   });
   registerWallet(wsWallet);
+
+  // Wallet Standard (Bitcoin): the same machinery, `provider: "bitcoin"`; `standard:disconnect`
+  // and `bitcoin:disconnect` both end the session.
+  const btcAccounts: WalletAccount[] = [];
+  const setBtcAccounts = (accounts: ReadonlyArray<WalletAccount>): void => {
+    btcAccounts.length = 0;
+    btcAccounts.push(...accounts);
+  };
+  const btcDisconnect = async (): Promise<void> => {
+    await request("bitcoin", { method: "standard:disconnect" });
+    setBtcAccounts([]);
+  };
+  const btcFeatures: StandardDisconnectFeature &
+    BitcoinConnectFeature &
+    BitcoinDisconnectFeature &
+    BitcoinEventsFeature &
+    BitcoinSignMessageFeature = {
+    "standard:disconnect": { version: "1.0.0", disconnect: btcDisconnect },
+    "bitcoin:connect": {
+      version: "1.0.0",
+      connect: async (input) => {
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        const result = (await request("bitcoin", {
+          method: "bitcoin:connect",
+          params: input,
+        })) as { accounts: WalletAccount[] };
+        setBtcAccounts(result.accounts);
+        return { accounts: [...btcAccounts] };
+      },
+    },
+    "bitcoin:disconnect": { version: "1.0.0", disconnect: btcDisconnect },
+    "bitcoin:events": {
+      version: "1.0.0",
+      on: (event, cb) => {
+        const listener = (data: unknown): void => {
+          // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's event shape
+          const d = data as { event?: string; params?: { accounts?: WalletAccount[] } };
+          if (d.event === event) {
+            setBtcAccounts(d.params?.accounts ?? []);
+            cb({ accounts: [...btcAccounts] });
+          }
+        };
+        on("bitcoin:events", listener);
+        return () => {
+          removeListener("bitcoin:events", listener);
+        };
+      },
+    },
+    "bitcoin:signMessage": {
+      version: "1.0.0",
+      signMessage: async (...inputs) => {
+        if (inputs.length !== 1 || inputs[0] === undefined) {
+          throw new Error("bitcoin:signMessage accepts one input at a time");
+        }
+        const [input] = inputs;
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the host's shape
+        const result = (await request("bitcoin", {
+          method: "bitcoin:signMessage",
+          params: { account: input.account.address, message: input.message },
+        })) as { signedMessage: Uint8Array; signature: Uint8Array };
+        return [{ signedMessage: result.signedMessage, signature: result.signature }];
+      },
+    },
+  };
+  const btcWallet: Wallet = Object.freeze({
+    version: "1.0.0",
+    name: info.name,
+    icon: info.icon,
+    chains: Object.freeze<IdentifierString[]>(["bitcoin:mainnet", "bitcoin:testnet"]),
+    features: Object.freeze(btcFeatures),
+    get accounts(): ReadonlyArray<WalletAccount> {
+      return btcAccounts;
+    },
+  });
+  registerWallet(btcWallet);
 
   // EIP-6963: announce at install and on every requestProvider, with a frozen { info, provider }.
   const detail = Object.freeze({ info: Object.freeze({ ...info }), provider });

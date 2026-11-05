@@ -18,6 +18,7 @@ export type RequestMethod =
   | "webln-invoice"
   | "watch-asset"
   | "solana-sign"
+  | "bitcoin-sign"
   | "spark-deposit"
   | "spark-exit";
 
@@ -26,4 +27,13 @@ export type SolanaAccount = {
   readonly walletId: string;
   readonly groupIndex: number;
   readonly address: string;
+};
+
+/** A Bitcoin account the `bitcoin-sign` request signs for: the group's fixed dApp-facing address. */
+export type BitcoinAccount = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+  readonly address: string;
+  /** `btc.bip84` for the `payment` purpose, `btc.bip86` for `ordinals`. */
+  readonly template: "btc.bip84" | "btc.bip86";
 };

@@ -39,6 +39,7 @@ function rig(
     transactions: {} as unknown as TransactionController,
     spark: {} as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("unused")),
+    bitcoinSign: async () => Promise.reject(new Error("unused")),
     solanaSign: async () => Promise.reject(new Error("unused")),
     addressBook: new AddressBookController({
       openStore,

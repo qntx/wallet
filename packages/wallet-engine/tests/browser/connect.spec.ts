@@ -15,11 +15,17 @@ import type { BrowserContext, Page } from "@playwright/test";
 import { Keys, KeysSigner, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
 import type { NostrKeyRef, Wallet } from "@qntx/wallet";
+import {
+  bitcoinAddressFromXpub,
+  bitcoinPubkeyFromXpub,
+  verifyBitcoinMessage,
+} from "@qntx/wallet-chains/bitcoin";
 import { solanaAddressFromPublicKey, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 import type { WalletSigner } from "@qntx/wallet/nostr";
 
+import { BitcoinWalletHandler } from "../../src/connect/bitcoin.ts";
 import { ConnectionController } from "../../src/connect/controller.ts";
 import { Eip1193Handler } from "../../src/connect/eip1193.ts";
 import { createBrowserBridge, injectedScript } from "../../src/connect/index.ts";
@@ -49,6 +55,7 @@ const SOL_SECRET = new Uint8Array(32).fill(3);
 const SOL_PUBKEY = ed25519.getPublicKey(SOL_SECRET);
 const SOL_ADDR = solanaAddressFromPublicKey(SOL_PUBKEY);
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const BTC_NET = "bip122:000000000019d6689c085ae165831e93";
 const solanaSignBytes = (message: Uint8Array): Uint8Array => ed25519.sign(message, SOL_SECRET);
 const NOSTR_REF: NostrKeyRef = { kind: "derived", walletId: "w", index: 0 };
 const nostrSigner = new KeysSigner(NOSTR_KEYS);
@@ -115,6 +122,21 @@ async function engineRig() {
     factor: { kind: "password", password: PASSWORD },
   });
   const apis = chains(wallet);
+  const bitcoinAccount = async (
+    group: { walletId: string; groupIndex: number },
+    network: string,
+    purpose: "payment" | "ordinals",
+  ) => {
+    const template = purpose === "payment" ? "btc.bip84" : "btc.bip86";
+    const account = await apis.account({ ...group, template, network });
+    if (!("xpub" in account) || account.xpub === undefined) {
+      throw new Error("no bitcoin account");
+    }
+    return {
+      address: bitcoinAddressFromXpub(account.xpub, template, network, 0, 0),
+      publicKey: bitcoinPubkeyFromXpub(account.xpub, template, network, 0, 0),
+    };
+  };
   const addressAt = async (groupIndex: number, network = MAINNET): Promise<string> => {
     const account = await apis.account({ walletId, groupIndex, template: "evm.bip44", network });
     return "address" in account ? account.address : "";
@@ -167,6 +189,30 @@ async function engineRig() {
       },
     } as unknown as SparkController,
     nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
+    bitcoinSign: async (account, network, request, verify) => {
+      const result = await apis.sign({
+        request: {
+          kind: "bitcoin.message",
+          network,
+          account: {
+            kind: "hd",
+            walletId: account.walletId,
+            groupIndex: account.groupIndex,
+            template: account.template,
+          },
+          address: account.address,
+          message: request.message,
+          format: "bip322-simple",
+          change: 0,
+          index: 0,
+        },
+        verify,
+      });
+      if (result.kind !== "bitcoin.message") {
+        throw new Error("unexpected result");
+      }
+      return { kind: "bitcoin.message" as const, signature: result.signature };
+    },
     solanaSign: async (_account, _network, request) => {
       await Promise.resolve();
       if (request.kind === "message") {
@@ -195,7 +241,11 @@ async function engineRig() {
     selectedGroup: () => ({ walletId, groupIndex: 0 }),
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
-    enabledNetworks: () => [MAINNET, SOL_NET],
+    enabledNetworks: () => [MAINNET, SOL_NET, BTC_NET],
+    bitcoinAddress: async (group, network, purpose) => {
+      const { address } = await bitcoinAccount(group, network, purpose);
+      return address;
+    },
     solanaAddress: async (_group: { walletId: string; groupIndex: number }, _network: string) => {
       await Promise.resolve();
       return SOL_ADDR;
@@ -251,8 +301,15 @@ async function engineRig() {
     activeGroup: () => ({ walletId, groupIndex: 0 }),
     solanaNetwork: () => SOL_NET,
   });
+  const bitcoin = new BitcoinWalletHandler({
+    connections,
+    requests,
+    bitcoinAccount,
+    activeGroup: () => ({ walletId, groupIndex: 0 }),
+    bitcoinNetwork: () => BTC_NET,
+  });
   await connections.setActiveIdentity(NOSTR_REF);
-  return { connections, requests, eip1193, nip07, webln, solana, addressAt };
+  return { connections, requests, eip1193, nip07, webln, solana, bitcoin, addressAt };
 }
 
 async function openConnect(context: BrowserContext) {
@@ -263,6 +320,7 @@ async function openConnect(context: BrowserContext) {
     nip07: rig.nip07,
     webln: rig.webln,
     solana: rig.solana,
+    bitcoin: rig.bitcoin,
     connections: rig.connections,
     inject: (script) => void page.evaluate(script),
     now: () => Date.now(),
@@ -455,6 +513,7 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   );
   expect(wallets).toMatchObject([
     { name: "Qntx Wallet", chains: ["solana:mainnet", "solana:devnet"] },
+    { name: "Qntx Wallet", chains: ["bitcoin:mainnet", "bitcoin:testnet"] },
   ]);
 
   // The standard shapes: every feature is versioned and the signing features are variadic.
@@ -571,4 +630,79 @@ test("window wallet-standard solana:signIn verifies with verifySignIn in the pag
     ok: true,
     type: "ed25519",
   });
+});
+
+test("window wallet-standard bitcoin connect → signMessage verifies in the page", async ({
+  context,
+}) => {
+  const { page, rig } = await openConnect(context);
+  await page.addInitScript({ path: "tests/browser/getwallets.js" });
+  await page.reload();
+  const bitcoinWallet = `window.__getWallets().get().find((w) => w.chains.includes("bitcoin:mainnet"))`;
+
+  const versions = await page.evaluate(`(() => {
+    const wallet = ${bitcoinWallet};
+    const off = wallet.features["bitcoin:events"].on("change", () => undefined);
+    const unsubscribe = typeof off;
+    off();
+    return {
+      versions: Object.fromEntries(Object.entries(wallet.features).map(([id, f]) => [id, f.version])),
+      unsubscribe,
+    };
+  })()`);
+  expect(versions).toStrictEqual({
+    versions: {
+      "standard:disconnect": "1.0.0",
+      "bitcoin:connect": "1.0.0",
+      "bitcoin:disconnect": "1.0.0",
+      "bitcoin:events": "1.0.0",
+      "bitcoin:signMessage": "1.0.0",
+    },
+    unsubscribe: "function",
+  });
+
+  const connected = page.evaluate(
+    `${bitcoinWallet}.features["bitcoin:connect"].connect({ purposes: ["ordinals", "payment"] })`,
+  );
+  await expect.poll(() => rig.connections.pending().length, { timeout: 10_000 }).toBe(1);
+  const [pending] = rig.connections.pending();
+  expect(pending?.namespace).toBe("bip122");
+  await rig.connections.approveConnection(pending?.id ?? "", { accounts: [], network: BTC_NET });
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's connect result
+  const { accounts } = (await connected) as { accounts: Array<{ address: string }> };
+  expect(accounts.map((a) => a.address.slice(0, 4))).toStrictEqual(["bc1p", "bc1q"]);
+
+  const text = "Hello from the page";
+  const result = page.evaluate(`(() => {
+    const wallet = ${bitcoinWallet};
+    return wallet.features["bitcoin:signMessage"].signMessage({
+      account: wallet.accounts[1],
+      message: new TextEncoder().encode(${JSON.stringify(text)}),
+    });
+  })()`);
+  await expect
+    .poll(
+      () =>
+        Object.values(rig.requests.getState().requests).some(
+          (r) => r.stage === "awaiting-approval",
+        ),
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+  const pendingSign = Object.values(rig.requests.getState().requests).find(
+    (r) => r.stage === "awaiting-approval",
+  );
+  await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", VERIFY);
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the page's signMessage result
+  const outputs = (await result) as Array<{ signedMessage: Uint8Array; signature: Uint8Array }>;
+  expect(outputs).toHaveLength(1);
+  const [paymentAddress] = accounts.slice(1).map((a) => a.address);
+  expect(
+    verifyBitcoinMessage(
+      paymentAddress ?? "",
+      text,
+      `smp${Buffer.from(outputs[0]?.signature ?? new Uint8Array()).toString("base64")}`,
+      BTC_NET,
+    ),
+  ).toBe(true);
 });

@@ -87,6 +87,7 @@ function world() {
       await Promise.resolve();
       throw new Error("nostr-sign is not wired in this test");
     },
+    bitcoinSign: async () => Promise.reject(new Error("unused")),
     solanaSign: async () => {
       await Promise.resolve();
       throw new Error("solana-sign is not wired in this test");
