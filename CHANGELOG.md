@@ -9,6 +9,11 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-07
+
+Precise error codes for unusable unlock factors, so hosts can tell users the real remedy instead of
+always asking for a device passcode (qntx/social#275), plus a platform diagnostic on every error.
+
 ### Changed
 
 - **BREAKING**: `WalletErrorCode` drops `factor-unavailable`, which collapsed every keystore and
