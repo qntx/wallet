@@ -28,12 +28,19 @@ const attestation = (flags: number): string =>
   b64(encode({ fmt: "none", attStmt: {}, authData: authData(flags) }));
 
 /** A native stand-in that records the request JSON and answers with `reply`. */
-function native(reply: { json?: unknown; code?: string }) {
+function native(reply: { json?: unknown; code?: string; detail?: string }) {
   const requests: unknown[] = [];
-  const answer = (requestJson: string, done: (json?: string, code?: string) => void): void => {
+  const answer = (
+    requestJson: string,
+    done: (json?: string, code?: string, detail?: string) => void,
+  ): void => {
     requests.push(JSON.parse(requestJson));
     setTimeout(() => {
-      done(reply.json === undefined ? undefined : JSON.stringify(reply.json), reply.code);
+      done(
+        reply.json === undefined ? undefined : JSON.stringify(reply.json),
+        reply.code,
+        reply.detail,
+      );
     });
   };
   const raw: KernelPasskeyNative = { create: answer, get: answer };
@@ -172,7 +179,7 @@ describe("passkey binding: responses", () => {
     expect(result.synced).toBe(false);
   });
 
-  it("a registration with prf.enabled false is factor-unavailable", async () => {
+  it("a registration with prf.enabled false is passkey-prf-unsupported", async () => {
     await expect(
       create({
         json: {
@@ -181,7 +188,7 @@ describe("passkey binding: responses", () => {
           clientExtensionResults: { prf: { enabled: false, results: { first: b64(PRF) } } },
         },
       }),
-    ).rejects.toThrow(expect.objectContaining({ code: "factor-unavailable" }));
+    ).rejects.toThrow(expect.objectContaining({ code: "passkey-prf-unsupported" }));
   });
 
   it.each([
@@ -199,10 +206,10 @@ describe("passkey binding: responses", () => {
   it("a response that is not JSON is unavailable", async () => {
     const broken: KernelPasskeyNative = {
       create: (_request, done) => {
-        done("{", undefined);
+        done("{", undefined, undefined);
       },
       get: (_request, done) => {
-        done("{", undefined);
+        done("{", undefined, undefined);
       },
     };
     await expect(
@@ -224,10 +231,37 @@ describe("passkey binding: responses", () => {
 
   it.each([
     ["cancelled", "cancelled"],
-    ["factor-unavailable", "factor-unavailable"],
+    ["passkey-not-configured", "passkey-not-configured"],
+    ["unsupported", "unsupported"],
     ["unavailable", "unavailable"],
     ["bogus", "unavailable"],
   ])("native code %s surfaces as %s", async (code, expected) => {
     await expect(get({ code })).rejects.toThrow(expect.objectContaining({ code: expected }));
+  });
+
+  it.each([
+    [
+      "a valid detail arrives verbatim",
+      "ASAuthorizationErrorDomain:1004",
+      "ASAuthorizationErrorDomain:1004",
+    ],
+    ["an oversize detail is dropped", "x".repeat(81), undefined],
+    ["a free-text detail is dropped", "passkey for alice@example.com", undefined],
+  ])("%s", async (_name, detail, expected) => {
+    const broken: KernelPasskeyNative = {
+      create: (_request, done) => {
+        done(undefined, "unavailable", detail);
+      },
+      get: (_request, done) => {
+        done(undefined, "unavailable", detail);
+      },
+    };
+    await expect(
+      bindNativePasskey(broken, random).get({
+        rpId: "wallet-harness.qntx.org",
+        allowCredentials: undefined,
+        salts: { first: SALT },
+      }),
+    ).rejects.toThrow(expect.objectContaining({ code: "unavailable", detail: expected }));
   });
 });

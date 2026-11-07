@@ -90,7 +90,7 @@ void passkeyCancel() {
 
 extern "C" JNIEXPORT void JNICALL
 Java_com_margelo_nitro_qntxwallet_Passkey_nativeComplete(
-    JNIEnv* env, jclass, jlong token, jint status, jstring responseJson) {
+    JNIEnv* env, jclass, jlong token, jint status, jstring responseJson, jstring detail) {
   auto done = qntx::take(static_cast<int64_t>(token));
   if (!done) {
     return;
@@ -100,6 +100,8 @@ Java_com_margelo_nitro_qntxwallet_Passkey_nativeComplete(
     case static_cast<jint>(qntx::PasskeyStatus::ok):
     case static_cast<jint>(qntx::PasskeyStatus::cancelled):
     case static_cast<jint>(qntx::PasskeyStatus::unavailable):
+    case static_cast<jint>(qntx::PasskeyStatus::notConfigured):
+    case static_cast<jint>(qntx::PasskeyStatus::unsupported):
       result.status = static_cast<qntx::PasskeyStatus>(status);
       break;
     default:
@@ -110,6 +112,13 @@ Java_com_margelo_nitro_qntxwallet_Passkey_nativeComplete(
     if (utf != nullptr) {
       result.responseJson = utf;
       env->ReleaseStringUTFChars(responseJson, utf);
+    }
+  }
+  if (detail != nullptr) {
+    const char* utf = env->GetStringUTFChars(detail, nullptr);
+    if (utf != nullptr) {
+      result.detail = utf;
+      env->ReleaseStringUTFChars(detail, utf);
     }
   }
   done(std::move(result));

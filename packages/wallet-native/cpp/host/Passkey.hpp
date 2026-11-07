@@ -14,14 +14,24 @@ namespace qntx {
 // PasskeyIos.mm); host tests link a fake.
 
 // The binding maps each status to the kernel's error code: cancelled →
-// "cancelled", unavailable → "factor-unavailable", failed → "unavailable".
-// The values are part of the Android JNI contract (Passkey.kt).
-enum class PasskeyStatus { ok = 0, cancelled = 1, unavailable = 3, failed = 4 };
+// "cancelled", unavailable → "unavailable", failed → "unavailable",
+// notConfigured → "passkey-not-configured", unsupported → "unsupported". The
+// values are part of the Android JNI contract (Passkey.kt).
+enum class PasskeyStatus {
+  ok = 0,
+  cancelled = 1,
+  unavailable = 3,
+  failed = 4,
+  notConfigured = 5,
+  unsupported = 6,
+};
 
 struct PasskeyResult {
   PasskeyStatus status = PasskeyStatus::failed;
   // The WebAuthn registration or authentication response JSON on success.
   std::string responseJson;
+  // A "<domain>:<code>" diagnostic (e.g. "ASAuthorizationErrorDomain:1004").
+  std::string detail;
 };
 
 // Completion callbacks run exactly once, on any thread.

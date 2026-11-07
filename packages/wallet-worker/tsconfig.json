@@ -8,6 +8,7 @@
     "src/browser",
     "src/worker/worker.ts",
     "src/worker/indexeddb.ts",
-    "tests/browser/page"
+    "tests/browser/page",
+    "tests/browser-passkey.test.ts"
   ]
 }

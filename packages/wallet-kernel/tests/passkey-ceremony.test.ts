@@ -154,12 +154,12 @@ describe("kernel passkey ceremony: create", () => {
     expect(walletOf(await create(nativeHarness(authenticator)))["backup"]).toBe("none");
   });
 
-  it("an unverified or PRF-less ceremony is factor-unavailable and establishes nothing", async () => {
+  it("an unverified or PRF-less ceremony is passkey-prf-unsupported and establishes nothing", async () => {
     for (const answer of [{ userVerified: false }, { first: new Uint8Array(16) }]) {
       const { authenticator } = fakeAuthenticator([answer]);
       const h = nativeHarness(authenticator);
       // oxlint-disable-next-line eslint/no-await-in-loop -- one kernel per scripted answer
-      expect(errCode(await create(h))).toBe("factor-unavailable");
+      expect(errCode(await create(h))).toBe("passkey-prf-unsupported");
       // oxlint-disable-next-line eslint/no-await-in-loop -- status of the same kernel
       expect(errCode(await h.call("status"))).toBeUndefined();
     }
@@ -205,7 +205,7 @@ describe("ceremony shape follows the platform", () => {
       synced: true,
       factor: { kind: "hardware" },
     });
-    expect(errCode(response)).toBe("factor-unavailable");
+    expect(errCode(response)).toBe("unsupported");
     expect(calls).toStrictEqual([]);
   });
 
@@ -218,7 +218,7 @@ describe("ceremony shape follows the platform", () => {
       walletSalt: WALLET_SALT,
       factor: { kind: "password", password: utf8ToBytes("correct horse battery staple") },
     });
-    expect(errCode(response)).toBe("factor-unavailable");
+    expect(errCode(response)).toBe("unsupported");
   });
 });
 

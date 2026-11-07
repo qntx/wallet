@@ -238,13 +238,13 @@ const PURPOSE_PROTECTION = 0x02;
 
 /**
  * The backup PRF from one platform ceremony: user-verified with a 32-byte `first` output, else
- * `factor-unavailable`. The unused `second` output is wiped.
+ * `passkey-prf-unsupported`. The unused `second` output is wiped.
  */
 function backupMaterialOf(result: PasskeyResult): BackupMaterial {
   result.second?.fill(0);
   if (!result.userVerified || result.first?.length !== 32) {
     result.first?.fill(0);
-    throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+    throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
   }
   return { kind: "passkey", credentialId: result.credentialId, prfBackup: result.first };
 }
@@ -264,7 +264,7 @@ async function backupMaterial(
     return factor;
   }
   if ((ctx.platform.passkey !== undefined) !== (factor.ceremony === "kernel")) {
-    throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+    throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
   }
   if (factor.ceremony === "host") {
     return factor;

@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-D-NCx1CQ.mjs
+	// packages/wallet/dist/core-DDfzuSIa.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -716,7 +716,7 @@
 	});
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-unavailable"), literal("factor-invalidated"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("no-device-credential"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
 	var createdResult = obj({
 		wallet: walletInfo$1,
 		session: sessionId
@@ -901,7 +901,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DDz4nlYK.mjs
+	// packages/wallet/dist/protocol-DqBfdhN5.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1661,7 +1661,8 @@
 	var lockReason = union(literal("cold-start"), literal("user"), literal("idle"), literal("background"), literal("expired"), literal("crashed"), literal("invalidated"));
 	obj({
 		code: walletErrorCode,
-		retryAt: opt(safeTime)
+		retryAt: opt(safeTime),
+		detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/))
 	});
 	obj({
 		v: literal(2),
@@ -3615,7 +3616,7 @@
 	* input or secret contents.
 	*/
 	var KernelError = class extends Error {
-		constructor(code, message, retryAt, corrupted = false) {
+		constructor(code, message, retryAt, corrupted = false, detail) {
 			super(message);
 			_defineProperty(this, "code", void 0);
 			_defineProperty(this, "retryAt", void 0);
@@ -3628,17 +3629,24 @@
 				"corrupted",
 				void 0
 			);
+			_defineProperty(
+				this,
+				/** Platform diagnostic `"<domain>:<code>"` a backend reported; forwarded to the host verbatim. */
+				"detail",
+				void 0
+			);
 			this.name = "KernelError";
 			this.code = code;
 			this.retryAt = retryAt;
 			this.corrupted = corrupted;
+			this.detail = detail;
 		}
 	};
 	// packages/wallet-kernel/src/platform.ts
 	init_objectSpread2();
-	/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
+	/** The platform authenticator, or `unsupported` where the host runs ceremonies. */
 	function requirePasskey(platform) {
-		if (platform.passkey === void 0) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies in the host");
+		if (platform.passkey === void 0) throw new KernelError("unsupported", "this platform runs passkey ceremonies in the host");
 		return platform.passkey;
 	}
 	/**
@@ -3683,11 +3691,11 @@
 	* factors are exempt.
 	*/
 	function assertFactorKindAvailable(platform, kind) {
-		if (platform.keystore !== void 0 !== (kind === "hardware")) throw new KernelError("factor-unavailable", "this factor kind is not available here");
+		if (platform.keystore !== void 0 !== (kind === "hardware")) throw new KernelError("unsupported", "this factor kind is not available here");
 	}
-	/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
+	/** The platform keystore, or `unsupported` on hosts without secure hardware. */
 	function requireKeystore(platform) {
-		if (platform.keystore === void 0) throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
+		if (platform.keystore === void 0) throw new KernelError("unsupported", "this platform has no hardware keystore");
 		return platform.keystore;
 	}
 	// packages/wallet-kernel/src/prompts.ts
@@ -7969,7 +7977,7 @@
 		let dek;
 		if (factor.kind === "hardware") {
 			const stored = image.factors.find((f) => f.kind === "hardware");
-			if (stored === void 0) throw new KernelError("factor-unavailable", "no hardware factor exists");
+			if (stored === void 0) throw new KernelError("not-found", "no hardware factor exists");
 			const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 			try {
 				dek = unwrapDek(kek, stored);
@@ -8031,9 +8039,9 @@
 	* compare. A public-key miss — `wrong-password`/`wrong-passkey` — tries the next candidate; every
 	* other failure (including corruption-marked integrity) propagates immediately. When no candidate
 	* matched, the miss is reported by factor kind: `wrong-password` (or `invalid-input` when no
-	* password factor exists), `wrong-passkey`, or for hardware `factor-unavailable` (no hardware
-	* factor) / `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system
-	* verification text and runs only for hardware. The verify path never touches the rate limiter.
+	* password factor exists), `wrong-passkey`, or for hardware `not-found` (no hardware factor) /
+	* `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
+	* text and runs only for hardware. The verify path never touches the rate limiter.
 	*/
 	async function verifyFactor(platform, image, factor, dek, prompt) {
 		assertFactorKindAvailable(platform, factor.kind);
@@ -8057,7 +8065,7 @@
 			}
 		}
 		if (factor.kind === "password") throw new KernelError(candidates.length > 0 ? "wrong-password" : "invalid-input", "password did not verify");
-		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("factor-unavailable", "no hardware factor exists");
+		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("not-found", "no hardware factor exists");
 		throw new KernelError("wrong-passkey", "passkey did not verify");
 	}
 	/**
@@ -12903,15 +12911,15 @@ zoo`.split("\n"));
 	var PURPOSE_WALLET = 1;
 	/**
 	* One platform ceremony's wallet PRF: the result must be user-verified and carry a 32-byte `first`
-	* output; anything else is an authenticator without usable PRF support (`factor-unavailable`). The
-	* unused `second` output is wiped.
+	* output; anything else is an authenticator without usable PRF support (`passkey-prf-unsupported`).
+	* The unused `second` output is wiped.
 	*/
 	function walletPrfOf(result) {
 		var _result$first;
 		if (result.second !== void 0) wipe(result.second);
 		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
 			if (result.first !== void 0) wipe(result.first);
-			throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+			throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
 		}
 		return {
 			prfWallet: result.first,
@@ -12958,10 +12966,10 @@ zoo`.split("\n"));
 	/**
 	* Creates or restores a passkey wallet. The ceremony runs where the platform puts it: in the kernel
 	* when a platform authenticator exists, in the host (evidence on the wire) otherwise — the other
-	* shape is `factor-unavailable`.
+	* shape is `unsupported`.
 	*/
 	async function createWithPasskey(ctx, params, requestSession) {
-		if (ctx.platform.passkey !== void 0 !== (params.ceremony === "kernel")) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+		if (ctx.platform.passkey !== void 0 !== (params.ceremony === "kernel")) throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
 		const gated = gate(ctx, params.factor, requestSession);
 		let prf;
 		try {
@@ -13127,7 +13135,7 @@ zoo`.split("\n"));
 	var PURPOSE_PROTECTION = 2;
 	/**
 	* The backup PRF from one platform ceremony: user-verified with a 32-byte `first` output, else
-	* `factor-unavailable`. The unused `second` output is wiped.
+	* `passkey-prf-unsupported`. The unused `second` output is wiped.
 	*/
 	function backupMaterialOf(result) {
 		var _result$second, _result$first;
@@ -13135,7 +13143,7 @@ zoo`.split("\n"));
 		if (!result.userVerified || ((_result$first = result.first) === null || _result$first === void 0 ? void 0 : _result$first.length) !== 32) {
 			var _result$first2;
 			(_result$first2 = result.first) === null || _result$first2 === void 0 || _result$first2.fill(0);
-			throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+			throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
 		}
 		return {
 			kind: "passkey",
@@ -13151,7 +13159,7 @@ zoo`.split("\n"));
 	*/
 	async function backupMaterial(ctx, factor, allowCredentials) {
 		if (factor.kind === "password") return factor;
-		if (ctx.platform.passkey !== void 0 !== (factor.ceremony === "kernel")) throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+		if (ctx.platform.passkey !== void 0 !== (factor.ceremony === "kernel")) throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
 		if (factor.ceremony === "host") return factor;
 		const passkey = requirePasskey(ctx.platform);
 		const salts = { first: utf8ToBytes$1(factor.backupSalt) };
@@ -41309,10 +41317,7 @@ zoo`.split("\n"));
 					integrityFailure = true;
 					setHealth("corrupted");
 				}
-				const err = error instanceof KernelError ? error.retryAt === void 0 ? { code: error.code } : {
-					code: error.code,
-					retryAt: error.retryAt
-				} : { code: "integrity" };
+				const err = error instanceof KernelError ? _objectSpread2(_objectSpread2({ code: error.code }, error.retryAt === void 0 ? {} : { retryAt: error.retryAt }), error.detail === void 0 ? {} : { detail: error.detail }) : { code: "integrity" };
 				return {
 					v: 2,
 					id,
@@ -41338,21 +41343,32 @@ zoo`.split("\n"));
 		});
 		enqueue(reloadAndPost);
 	}
+	// packages/wallet-native/kernel/detail.ts
+	/**
+	* A `"<domain>:<code>"` diagnostic a platform reports alongside a failure code (e.g.
+	* `"LAErrorDomain:-5"`, `"android:KeyPermanentlyInvalidatedException"`): kept only when it is a
+	* short token string — anything else (oversize, free text) is dropped at this producer boundary,
+	* never rejected. Never carries userInfo, localized text or input.
+	*/
+	function detailOf(detail) {
+		return detail !== void 0 && detail.length <= 80 && /^[A-Za-z0-9_.:-]+$/.test(detail) ? detail : void 0;
+	}
 	// packages/wallet-native/kernel/keystore.ts
 	/**
 	* Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
-	* completes each call with `(bytes, code)`; a failure code is already the kernel error code
-	* (`cancelled`, `factor-invalidated`, `factor-unavailable`, `unavailable`) and becomes a
+	* completes each call with `(bytes, code, detail)`; a failure code is already the kernel error code
+	* (`cancelled`, `factor-invalidated`, `no-device-credential`, `unavailable`) and becomes a
 	* `KernelError` so the vault reports it verbatim instead of as an integrity failure.
 	*/
-	function failure$1(code) {
-		return code === "cancelled" || code === "factor-invalidated" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform keystore did not complete") : new KernelError("unavailable", "the platform keystore reported no outcome");
+	function failure$1(code, detail) {
+		const diagnostic = detailOf(detail);
+		return code === "cancelled" || code === "factor-invalidated" || code === "no-device-credential" || code === "unavailable" ? new KernelError(code, "the platform keystore did not complete", void 0, false, diagnostic) : new KernelError("unavailable", "the platform keystore reported no outcome", void 0, false, diagnostic);
 	}
 	async function bytesOf$1(start) {
 		return new Promise((resolve, reject) => {
-			start((result, code) => {
+			start((result, code, detail) => {
 				if (result === void 0) {
-					reject(failure$1(code));
+					reject(failure$1(code, detail));
 					return;
 				}
 				resolve(result);
@@ -41361,9 +41377,9 @@ zoo`.split("\n"));
 	}
 	async function outcomeOf(start) {
 		return new Promise((resolve, reject) => {
-			start((_result, code) => {
+			start((_result, code, detail) => {
 				if (code !== void 0) {
-					reject(failure$1(code));
+					reject(failure$1(code, detail));
 					return;
 				}
 				resolve();
@@ -43756,8 +43772,9 @@ zoo`.split("\n"));
 	};
 	/** Whether bit `flag` (a power of two) is set in the authenticator-data flags byte. */
 	var hasFlag = (flags, flag) => Math.floor(flags / flag) % 2 === 1;
-	function failure(code) {
-		return code === "cancelled" || code === "factor-unavailable" || code === "unavailable" ? new KernelError(code, "the platform passkey ceremony did not complete") : new KernelError("unavailable", "the platform passkey ceremony reported no outcome");
+	function failure(code, detail) {
+		const diagnostic = detailOf(detail);
+		return code === "cancelled" || code === "passkey-not-configured" || code === "unsupported" || code === "unavailable" ? new KernelError(code, "the platform passkey ceremony did not complete", void 0, false, diagnostic) : new KernelError("unavailable", "the platform passkey ceremony reported no outcome", void 0, false, diagnostic);
 	}
 	var malformed = () => new KernelError("unavailable", "the platform returned a malformed passkey response");
 	var b64 = (bytes) => base64urlnopad.encode(bytes);
@@ -43829,7 +43846,7 @@ zoo`.split("\n"));
 		if (!assertion && enabled === false) {
 			first === null || first === void 0 || first.fill(0);
 			second === null || second === void 0 || second.fill(0);
-			throw new KernelError("factor-unavailable", "the passkey does not support the PRF extension");
+			throw new KernelError("passkey-prf-unsupported", "the passkey does not support the PRF extension");
 		}
 		const rawAuthData = response["authenticatorData"];
 		let authData;
@@ -43862,9 +43879,9 @@ zoo`.split("\n"));
 	}
 	async function run(start, request, assertion) {
 		return parseResponse(await new Promise((resolve, reject) => {
-			start(JSON.stringify(request), (responseJson, code) => {
+			start(JSON.stringify(request), (responseJson, code, detail) => {
 				if (responseJson === void 0) {
-					reject(failure(code));
+					reject(failure(code, detail));
 					return;
 				}
 				resolve(responseJson);

@@ -359,6 +359,7 @@ export class Channel {
               err.code,
               `kernel returned ${err.code}`,
               typeof err.retryAt === "number" ? err.retryAt : undefined,
+              err.detail,
             ),
           );
         });

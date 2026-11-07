@@ -15,12 +15,21 @@ export class KernelError extends Error {
    * corrupted state on it. Ordinary failures (a wrong factor, a bad param) leave it false.
    */
   readonly corrupted: boolean;
+  /** Platform diagnostic `"<domain>:<code>"` a backend reported; forwarded to the host verbatim. */
+  readonly detail: string | undefined;
 
-  constructor(code: KernelErrorCode, message: string, retryAt?: number, corrupted = false) {
+  constructor(
+    code: KernelErrorCode,
+    message: string,
+    retryAt?: number,
+    corrupted = false,
+    detail?: string,
+  ) {
     super(message);
     this.name = "KernelError";
     this.code = code;
     this.retryAt = retryAt;
     this.corrupted = corrupted;
+    this.detail = detail;
   }
 }

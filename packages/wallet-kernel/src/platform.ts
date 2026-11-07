@@ -98,7 +98,7 @@ export type KeystorePrompt = {
  * `seal` creates the key alias `id` and encrypts `secret` under it after a user-presence prompt;
  * `open` decrypts after the same presence check; `authenticate` only proves the device owner is
  * present (reset); `clear` deletes every vault key this app created. The host rejects with
- * KernelError codes `cancelled` | `factor-invalidated` | `factor-unavailable` | `unavailable`.
+ * KernelError codes `cancelled` | `factor-invalidated` | `no-device-credential` | `unavailable`.
  */
 export type Keystore = {
   readonly locale: string; // host-preferred BCP 47 language tag
@@ -128,8 +128,9 @@ export type PasskeyResult = {
 
 /**
  * The platform passkey contract (W6): discoverable, user-verified credentials with the PRF
- * extension. The host rejects with KernelError codes `cancelled` | `factor-unavailable` (no PRF
- * support, unconfigured associated domain) | `unavailable`.
+ * extension. The host rejects with KernelError codes `cancelled` | `passkey-not-configured` (no
+ * credential provider set up) | `unsupported` (the platform cannot run ceremonies) |
+ * `unavailable`.
  */
 export type PasskeyAuthenticator = {
   readonly create: (input: {
@@ -146,13 +147,10 @@ export type PasskeyAuthenticator = {
   }) => Promise<PasskeyResult>;
 };
 
-/** The platform authenticator, or `factor-unavailable` where the host runs ceremonies. */
+/** The platform authenticator, or `unsupported` where the host runs ceremonies. */
 export function requirePasskey(platform: KernelPlatform): PasskeyAuthenticator {
   if (platform.passkey === undefined) {
-    throw new KernelError(
-      "factor-unavailable",
-      "this platform runs passkey ceremonies in the host",
-    );
+    throw new KernelError("unsupported", "this platform runs passkey ceremonies in the host");
   }
   return platform.passkey;
 }
@@ -213,14 +211,14 @@ export function assertFactorKindAvailable(
   kind: "hardware" | "password" | "passkey",
 ): void {
   if ((platform.keystore !== undefined) !== (kind === "hardware")) {
-    throw new KernelError("factor-unavailable", "this factor kind is not available here");
+    throw new KernelError("unsupported", "this factor kind is not available here");
   }
 }
 
-/** The platform keystore, or `factor-unavailable` on hosts without secure hardware. */
+/** The platform keystore, or `unsupported` on hosts without secure hardware. */
 export function requireKeystore(platform: KernelPlatform): Keystore {
   if (platform.keystore === undefined) {
-    throw new KernelError("factor-unavailable", "this platform has no hardware keystore");
+    throw new KernelError("unsupported", "this platform has no hardware keystore");
   }
   return platform.keystore;
 }

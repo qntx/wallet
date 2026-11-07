@@ -82,14 +82,14 @@ describe("hardware host", () => {
 
   it("refuses software factors before any ceremony", async () => {
     await expect(code(resolveFactor(hardware, { kind: "passkey" }, []))).resolves.toBe(
-      "factor-unavailable",
+      "unsupported",
     );
     await expect(
       code(resolveFactor(hardware, { kind: "password", password: "long enough pw" }, [])),
-    ).resolves.toBe("factor-unavailable");
+    ).resolves.toBe("unsupported");
     await expect(
       code(resolveInitialFactor(hardware, { kind: "passkey", name: "me" }, [])),
-    ).resolves.toBe("factor-unavailable");
+    ).resolves.toBe("unsupported");
   });
 });
 
@@ -99,10 +99,10 @@ describe("software host", () => {
   it("defaults unlock to passkey and refuses hardware", async () => {
     expect(defaultUnlockFactor(software)).toStrictEqual({ kind: "passkey" });
     await expect(code(resolveFactor(software, { kind: "hardware" }, []))).resolves.toBe(
-      "factor-unavailable",
+      "unsupported",
     );
     await expect(code(resolveInitialFactor(software, { kind: "hardware" }, []))).resolves.toBe(
-      "factor-unavailable",
+      "unsupported",
     );
   });
 

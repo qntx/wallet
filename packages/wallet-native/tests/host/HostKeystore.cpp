@@ -46,6 +46,7 @@ std::optional<qntx::KeystoreStatus> scriptedFailure(const std::string& title) {
       {"fail:invalidated", qntx::KeystoreStatus::invalidated},
       {"fail:unavailable", qntx::KeystoreStatus::unavailable},
       {"fail:failed", qntx::KeystoreStatus::failed},
+      {"fail:nodevice", qntx::KeystoreStatus::noDeviceCredential},
   };
   auto found = kScripts.find(title);
   return found == kScripts.end() ? std::nullopt : std::optional(found->second);
@@ -56,9 +57,12 @@ void finish(Call call, qntx::KeystoreDone done, qntx::KeystoreResult success) {
   auto failure = scriptedFailure(call.title);
   auto& s = state();
   std::lock_guard<std::mutex> lock(s.mutex);
+  // A scripted failure reports its marker as the detail so the JS side can
+  // assert the diagnostic survives the round-trip (read before `call` moves).
+  const std::string detail = failure.has_value() ? call.title : "";
   s.calls.push_back(std::move(call));
   qntx::KeystoreResult result =
-      failure.has_value() ? qntx::KeystoreResult{*failure, {}} : std::move(success);
+      failure.has_value() ? qntx::KeystoreResult{*failure, {}, detail} : std::move(success);
   if (s.holdNext) {
     s.holdNext = false;
     s.held = Held{std::move(done), std::move(result)};

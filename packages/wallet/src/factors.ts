@@ -27,8 +27,8 @@ export type PrfResult = {
 
 /**
  * The WebAuthn ceremony the host performs. Implementations throw `WalletError` — "cancelled" when
- * the user aborts, "factor-unavailable" when the credential cannot produce a PRF. `name` is the new
- * credential's display name, validated by the host before the call (1–64 characters).
+ * the user aborts, "passkey-prf-unsupported" when the credential cannot produce a PRF. `name` is
+ * the new credential's display name, validated by the host before the call (1–64 characters).
  */
 export type PasskeyCeremony = {
   readonly create: (input: {
@@ -60,11 +60,11 @@ export type FactorSource = {
 const HARDWARE: Factor = { kind: "hardware" };
 
 function hardwareOnly(): WalletError {
-  return new WalletError("factor-unavailable", "this host unlocks only with the hardware factor");
+  return new WalletError("unsupported", "this host unlocks only with the hardware factor");
 }
 
 function noHardware(): WalletError {
-  return new WalletError("factor-unavailable", "hardware factors exist only on React Native");
+  return new WalletError("unsupported", "hardware factors exist only on React Native");
 }
 
 /** The factor `vault.unlock()` uses when the caller passes none. */
@@ -205,7 +205,7 @@ export function wirePassphrase(
 
 export function requireCeremony(source: FactorSource): PasskeyCeremony {
   if (source.ceremony === undefined) {
-    throw new WalletError("factor-unavailable", "no passkey ceremony is configured");
+    throw new WalletError("unsupported", "no passkey ceremony is configured");
   }
   return source.ceremony;
 }
@@ -221,7 +221,7 @@ export function passkeyName(name: string): string {
 
 /**
  * Resolves a public `UnlockFactor` to wire factor material. `transfer` collects every buffer the
- * port must move. Ceremony errors surface as they are (cancelled / factor-unavailable).
+ * port must move. Ceremony errors surface as they are (cancelled / passkey-prf-unsupported).
  */
 export async function resolveFactor(
   source: FactorSource,
@@ -275,7 +275,10 @@ export async function resolveInitialFactor(
     if (walletCeremony !== undefined) {
       const { second } = walletCeremony;
       if (second === undefined) {
-        throw new WalletError("factor-unavailable", "the ceremony returned no vault PRF output");
+        throw new WalletError(
+          "passkey-prf-unsupported",
+          "the ceremony returned no vault PRF output",
+        );
       }
       return {
         kind: "passkey",

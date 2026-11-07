@@ -23,7 +23,7 @@ import type { MethodSpec } from "./core.ts";
 import { NOSTR_METHODS, nostrStatus } from "./nostr.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { SPARK_METHODS } from "./spark.ts";
-import { arr, literal, nullValue, obj, opt, union } from "./validate.ts";
+import { arr, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 import type { NullValue, Validator } from "./validate.ts";
 
 export type { WalletErrorCode } from "../types.ts";
@@ -58,6 +58,8 @@ export type Request = {
 export type ErrorPayload = {
   readonly code: WalletErrorCode;
   readonly retryAt?: number; // only for "rate-limited"
+  /** Platform diagnostic `"<domain>:<code>"` — sanitized at the producer, never free text. */
+  readonly detail?: string;
 };
 
 export type Response =
@@ -201,7 +203,11 @@ const lockReason: Validator<LockReason> = union(
   literal("invalidated"),
 );
 
-const errorPayload = obj({ code: walletErrorCode, retryAt: opt(safeTime) });
+const errorPayload = obj({
+  code: walletErrorCode,
+  retryAt: opt(safeTime),
+  detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/)),
+});
 
 /** Host-side validators: `kernelEvent` covers the two push messages. */
 export const kernelEvent: Validator<KernelEvent> = union(
@@ -210,8 +216,11 @@ export const kernelEvent: Validator<KernelEvent> = union(
 );
 
 /** Validates the `err` payload of a response; `ok` is checked against `METHODS[m].result`. */
-export const responseError: Validator<{ code: WalletErrorCode; retryAt?: number | undefined }> =
-  errorPayload;
+export const responseError: Validator<{
+  code: WalletErrorCode;
+  retryAt?: number | undefined;
+  detail?: string | undefined;
+}> = errorPayload;
 
 export { NOSTR_METHODS, SPARK_METHODS };
 export { CHAINS_METHODS } from "./chains.ts";

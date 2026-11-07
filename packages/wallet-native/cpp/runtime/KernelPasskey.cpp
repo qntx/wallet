@@ -19,13 +19,32 @@ const char* errorCode(PasskeyStatus status) {
   switch (status) {
     case PasskeyStatus::cancelled:
       return "cancelled";
-    case PasskeyStatus::unavailable:
-      return "factor-unavailable";
+    case PasskeyStatus::notConfigured:
+      return "passkey-not-configured";
+    case PasskeyStatus::unsupported:
+      return "unsupported";
     case PasskeyStatus::ok:
+    case PasskeyStatus::unavailable:
     case PasskeyStatus::failed:
       break;
   }
   return "unavailable";
+}
+
+// A detail is a "<domain>:<code>" diagnostic the JS side validates again;
+// pass it through only while it stays a short token string.
+jsi::Value detailValue(jsi::Runtime& rt, const std::string& detail) {
+  if (detail.empty() || detail.size() > 80) {
+    return jsi::Value::undefined();
+  }
+  for (const char c : detail) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '_' || c == '.' || c == ':' || c == '-';
+    if (!ok) {
+      return jsi::Value::undefined();
+    }
+  }
+  return jsi::Value(rt, jsi::String::createFromAscii(rt, detail));
 }
 
 struct PasskeyCalls {
@@ -74,12 +93,14 @@ PasskeyDone park(
         done->call(
             rt,
             jsi::Value::undefined(),
-            jsi::Value(rt, jsi::String::createFromAscii(rt, errorCode(status))));
+            jsi::Value(rt, jsi::String::createFromAscii(rt, errorCode(status))),
+            detailValue(rt, shared->detail));
         return;
       }
       done->call(
           rt,
           jsi::Value(rt, jsi::String::createFromUtf8(rt, shared->responseJson)),
+          jsi::Value::undefined(),
           jsi::Value::undefined());
     });
   };

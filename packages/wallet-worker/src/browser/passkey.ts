@@ -19,8 +19,12 @@ const UV_FLAG = 0x04; // authenticator-data flags byte (offset 32), bit 2 = user
 const BE_FLAG = 0x08; // bit 3 = credential is backup-eligible (multi-device capable)
 const BS_FLAG = 0x10; // bit 4 = credential is currently backed up (synced)
 
-function factorUnavailable(message: string): WalletError {
-  return new WalletError("factor-unavailable", message);
+function unavailable(message: string): WalletError {
+  return new WalletError("unavailable", message);
+}
+
+function prfUnsupported(message: string): WalletError {
+  return new WalletError("passkey-prf-unsupported", message);
 }
 
 function cancelled(message: string): WalletError {
@@ -37,7 +41,7 @@ function mapCeremonyError(error: unknown): never {
   if (error instanceof WalletError) {
     throw error;
   }
-  throw factorUnavailable("the passkey ceremony failed");
+  throw unavailable("the passkey ceremony failed");
 }
 
 /** The UV bit of an authenticator-data blob (flags byte at offset 32, bit 0x04). */
@@ -88,7 +92,7 @@ function readPrfResult(
   const first = results?.first;
   const second = results?.second;
   if (first === undefined || (wantSecond && second === undefined)) {
-    throw factorUnavailable("the passkey produced no PRF output");
+    throw prfUnsupported("the passkey produced no PRF output");
   }
   // Copy into fresh Uint8Arrays and drop every reference to the extension's ArrayBuffers.
   return {
@@ -102,7 +106,7 @@ function readPrfResult(
 
 function checkCredential(credential: unknown): PublicKeyCredential {
   if (!(credential instanceof PublicKeyCredential)) {
-    throw factorUnavailable("the authenticator returned no public-key credential");
+    throw unavailable("the authenticator returned no public-key credential");
   }
   return credential;
 }
@@ -142,10 +146,10 @@ export function createWebAuthnPasskey(rp: WebAuthnRp): PasskeyCeremony {
     }
     const { response } = credential;
     if (!(response instanceof AuthenticatorAssertionResponse)) {
-      throw factorUnavailable("the authenticator returned no assertion response");
+      throw unavailable("the authenticator returned no assertion response");
     }
     if (!userVerified(response.authenticatorData)) {
-      throw factorUnavailable("the passkey assertion was not user-verified");
+      throw unavailable("the passkey assertion was not user-verified");
     }
     return readPrfResult(
       credential,
@@ -190,11 +194,11 @@ export function createWebAuthnPasskey(rp: WebAuthnRp): PasskeyCeremony {
       }
       const { response } = credential;
       if (!(response instanceof AuthenticatorAttestationResponse)) {
-        throw factorUnavailable("the authenticator returned no attestation response");
+        throw unavailable("the authenticator returned no attestation response");
       }
       const extensions = credential.getClientExtensionResults();
       if (extensions.prf?.enabled !== true) {
-        throw factorUnavailable("the authenticator does not support the PRF extension");
+        throw prfUnsupported("the authenticator does not support the PRF extension");
       }
       if (extensions.prf.results === undefined) {
         // Some authenticators omit creation-time PRF outputs: one assertion over the new
@@ -206,7 +210,7 @@ export function createWebAuthnPasskey(rp: WebAuthnRp): PasskeyCeremony {
       }
       const authenticatorData = response.getAuthenticatorData();
       if (!userVerified(authenticatorData)) {
-        throw factorUnavailable("the passkey creation was not user-verified");
+        throw unavailable("the passkey creation was not user-verified");
       }
       return readPrfResult(
         credential,
