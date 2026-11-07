@@ -137,7 +137,7 @@ std::optional<KeystoreResult> deviceCredentialMissing() {
 
 KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
   if (auto missing = deviceCredentialMissing()) {
-    return *missing;
+    return std::move(*missing);
   }
   NSData* tag = tagFor(factorId);
   deleteKey(tag);
