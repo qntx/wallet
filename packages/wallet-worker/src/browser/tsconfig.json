@@ -6,5 +6,7 @@
     "lib": ["es2022", "dom", "dom.iterable"],
     "types": []
   },
-  "include": ["."]
+  // The passkey unit test exercises DOM-only source, so the lint project service and
+  // the typecheck script must see it through this DOM program, not the package one.
+  "include": [".", "../../tests/browser-passkey.test.ts"]
 }
