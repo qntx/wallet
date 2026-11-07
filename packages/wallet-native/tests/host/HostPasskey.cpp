@@ -40,9 +40,12 @@ void answer(const std::string& request, qntx::PasskeyDone done) {
            std::pair{"fail:cancelled", qntx::PasskeyStatus::cancelled},
            std::pair{"fail:unavailable", qntx::PasskeyStatus::unavailable},
            std::pair{"fail:failed", qntx::PasskeyStatus::failed},
+           std::pair{"fail:notconfigured", qntx::PasskeyStatus::notConfigured},
+           std::pair{"fail:unsupported", qntx::PasskeyStatus::unsupported},
        }) {
     if (request.find(marker) != std::string::npos) {
-      completeLater(std::move(done), qntx::PasskeyResult{status, {}});
+      // The marker doubles as the detail so the JS side can assert it arrives.
+      completeLater(std::move(done), qntx::PasskeyResult{status, {}, marker});
       return;
     }
   }

@@ -1,13 +1,18 @@
 /**
  * Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
- * completes each call with `(bytes, code)`; a failure code is already the kernel error code
- * (`cancelled`, `factor-invalidated`, `factor-unavailable`, `unavailable`) and becomes a
+ * completes each call with `(bytes, code, detail)`; a failure code is already the kernel error code
+ * (`cancelled`, `factor-invalidated`, `no-device-credential`, `unavailable`) and becomes a
  * `KernelError` so the vault reports it verbatim instead of as an integrity failure.
  */
 import { KernelError } from "../../wallet-kernel/src/errors.ts";
 import type { Keystore } from "../../wallet-kernel/src/platform.ts";
+import { detailOf } from "./detail.ts";
 
-type Completion = (result: Uint8Array | undefined, code: string | undefined) => void;
+type Completion = (
+  result: Uint8Array | undefined,
+  code: string | undefined,
+  detail: string | undefined,
+) => void;
 
 /** The `__qntx.keystore` surface the native host injects. */
 export type KernelKeystoreNative = {
@@ -30,20 +35,27 @@ export type KernelKeystoreNative = {
   readonly clear: (done: Completion) => void;
 };
 
-function failure(code: string | undefined): KernelError {
+function failure(code: string | undefined, detail: string | undefined): KernelError {
+  const diagnostic = detailOf(detail);
   return code === "cancelled" ||
     code === "factor-invalidated" ||
-    code === "factor-unavailable" ||
+    code === "no-device-credential" ||
     code === "unavailable"
-    ? new KernelError(code, "the platform keystore did not complete")
-    : new KernelError("unavailable", "the platform keystore reported no outcome");
+    ? new KernelError(code, "the platform keystore did not complete", undefined, false, diagnostic)
+    : new KernelError(
+        "unavailable",
+        "the platform keystore reported no outcome",
+        undefined,
+        false,
+        diagnostic,
+      );
 }
 
 async function bytesOf(start: (done: Completion) => void): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
-    start((result, code) => {
+    start((result, code, detail) => {
       if (result === undefined) {
-        reject(failure(code));
+        reject(failure(code, detail));
         return;
       }
       resolve(result);
@@ -53,9 +65,9 @@ async function bytesOf(start: (done: Completion) => void): Promise<Uint8Array> {
 
 async function outcomeOf(start: (done: Completion) => void): Promise<void> {
   return new Promise((resolve, reject) => {
-    start((_result, code) => {
+    start((_result, code, detail) => {
       if (code !== undefined) {
-        reject(failure(code));
+        reject(failure(code, detail));
         return;
       }
       resolve();

@@ -51,6 +51,7 @@ object Keystore {
   private const val INVALIDATED = 2
   private const val UNAVAILABLE = 3
   private const val FAILED = 4
+  private const val NO_DEVICE_CREDENTIAL = 5
 
   @Volatile private var current: BiometricPrompt? = null
 
@@ -60,9 +61,13 @@ object Keystore {
   @JvmStatic
   fun seal(token: Long, id: String, secret: ByteArray, title: String, description: String) {
     val activity = foregroundActivity()
-    if (activity == null || !deviceSecure(activity)) {
+    if (activity == null) {
       secret.fill(0)
-      return nativeComplete(token, UNAVAILABLE, null)
+      return nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
+    }
+    if (!deviceSecure(activity)) {
+      secret.fill(0)
+      return nativeComplete(token, NO_DEVICE_CREDENTIAL, null, null)
     }
     val alias = PREFIX + id
     val cipher = try {
@@ -70,20 +75,20 @@ object Keystore {
       Cipher.getInstance(TRANSFORMATION).apply { init(Cipher.ENCRYPT_MODE, generate(alias, activity)) }
     } catch (e: Exception) {
       secret.fill(0)
-      return nativeComplete(token, UNAVAILABLE, null)
+      return nativeComplete(token, UNAVAILABLE, null, detailOf(e))
     }
-    prompt(activity, title, description, BiometricPrompt.CryptoObject(cipher)) { status, crypto ->
+    prompt(activity, title, description, BiometricPrompt.CryptoObject(cipher)) { status, detail, crypto ->
       try {
         val authenticated = crypto?.cipher
         if (status != OK || authenticated == null) {
           keyStore().deleteEntry(alias)
-          nativeComplete(token, if (status == OK) FAILED else status, null)
+          nativeComplete(token, if (status == OK) FAILED else status, null, detail)
         } else {
-          nativeComplete(token, OK, authenticated.iv + authenticated.doFinal(secret))
+          nativeComplete(token, OK, authenticated.iv + authenticated.doFinal(secret), null)
         }
       } catch (e: Exception) {
         keyStore().deleteEntry(alias)
-        nativeComplete(token, FAILED, null)
+        nativeComplete(token, FAILED, null, detailOf(e))
       } finally {
         secret.fill(0)
       }
@@ -92,39 +97,40 @@ object Keystore {
 
   @JvmStatic
   fun open(token: Long, id: String, sealed: ByteArray, title: String, description: String) {
-    val activity = foregroundActivity() ?: return nativeComplete(token, UNAVAILABLE, null)
+    val activity = foregroundActivity()
+      ?: return nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
     if (sealed.size <= IV_BYTES + TAG_BITS / 8) {
-      return nativeComplete(token, FAILED, null)
+      return nativeComplete(token, FAILED, null, null)
     }
     val alias = PREFIX + id
     val key = try {
       keyStore().getKey(alias, null) as? SecretKey
     } catch (e: UnrecoverableKeyException) {
       null
-    } ?: return nativeComplete(token, INVALIDATED, null)
+    } ?: return nativeComplete(token, INVALIDATED, null, null)
     val cipher = try {
       Cipher.getInstance(TRANSFORMATION).apply {
         init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, sealed, 0, IV_BYTES))
       }
     } catch (e: KeyPermanentlyInvalidatedException) {
       keyStore().deleteEntry(alias)
-      return nativeComplete(token, INVALIDATED, null)
+      return nativeComplete(token, INVALIDATED, null, detailOf(e))
     } catch (e: Exception) {
-      return nativeComplete(token, FAILED, null)
+      return nativeComplete(token, FAILED, null, detailOf(e))
     }
-    prompt(activity, title, description, BiometricPrompt.CryptoObject(cipher)) { status, crypto ->
+    prompt(activity, title, description, BiometricPrompt.CryptoObject(cipher)) { status, detail, crypto ->
       val authenticated = crypto?.cipher
       if (status != OK || authenticated == null) {
-        nativeComplete(token, if (status == OK) FAILED else status, null)
+        nativeComplete(token, if (status == OK) FAILED else status, null, detail)
         return@prompt
       }
       val plain = try {
         authenticated.doFinal(sealed, IV_BYTES, sealed.size - IV_BYTES)
       } catch (e: Exception) {
-        return@prompt nativeComplete(token, FAILED, null)
+        return@prompt nativeComplete(token, FAILED, null, detailOf(e))
       }
       try {
-        nativeComplete(token, OK, plain)
+        nativeComplete(token, OK, plain, null)
       } finally {
         plain.fill(0)
       }
@@ -134,10 +140,15 @@ object Keystore {
   @JvmStatic
   fun authenticate(token: Long, title: String, description: String) {
     val activity = foregroundActivity()
-    if (activity == null || !deviceSecure(activity)) {
-      return nativeComplete(token, UNAVAILABLE, null)
+    if (activity == null) {
+      return nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
     }
-    prompt(activity, title, description, null) { status, _ -> nativeComplete(token, status, null) }
+    if (!deviceSecure(activity)) {
+      return nativeComplete(token, NO_DEVICE_CREDENTIAL, null, null)
+    }
+    prompt(activity, title, description, null) { status, detail, _ ->
+      nativeComplete(token, status, null, detail)
+    }
   }
 
   @JvmStatic
@@ -149,7 +160,7 @@ object Keystore {
     } catch (e: Exception) {
       FAILED
     }
-    nativeComplete(token, status, null)
+    nativeComplete(token, status, null, null)
   }
 
   @JvmStatic
@@ -203,7 +214,7 @@ object Keystore {
     title: String,
     description: String,
     crypto: BiometricPrompt.CryptoObject?,
-    done: (Int, BiometricPrompt.CryptoObject?) -> Unit,
+    done: (Int, String?, BiometricPrompt.CryptoObject?) -> Unit,
   ) {
     val executor = ContextCompat.getMainExecutor(activity)
     executor.execute { whenResumed(activity) { show(activity, executor, title, description, crypto, done) } }
@@ -232,7 +243,7 @@ object Keystore {
     title: String,
     description: String,
     crypto: BiometricPrompt.CryptoObject?,
-    done: (Int, BiometricPrompt.CryptoObject?) -> Unit,
+    done: (Int, String?, BiometricPrompt.CryptoObject?) -> Unit,
   ) {
     val info = BiometricPrompt.PromptInfo.Builder()
       .setTitle(title)
@@ -245,12 +256,13 @@ object Keystore {
       object : BiometricPrompt.AuthenticationCallback() {
         override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
           current = null
-          done(OK, result.cryptoObject)
+          done(OK, null, result.cryptoObject)
         }
 
         override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
           current = null
-          done(statusOf(errorCode), null)
+          // The numeric code only — errString is localized free text.
+          done(statusOf(errorCode), "android:BiometricPrompt:$errorCode", null)
         }
       },
     )
@@ -259,7 +271,7 @@ object Keystore {
       if (crypto == null) biometricPrompt.authenticate(info) else biometricPrompt.authenticate(info, crypto)
     } catch (e: Exception) {
       current = null
-      done(FAILED, null)
+      done(FAILED, detailOf(e), null)
     }
   }
 
@@ -268,13 +280,16 @@ object Keystore {
     BiometricPrompt.ERROR_NEGATIVE_BUTTON,
     BiometricPrompt.ERROR_CANCELED,
     BiometricPrompt.ERROR_TIMEOUT -> CANCELLED
-    BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL,
+    BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> NO_DEVICE_CREDENTIAL
     BiometricPrompt.ERROR_HW_UNAVAILABLE,
     BiometricPrompt.ERROR_HW_NOT_PRESENT,
     BiometricPrompt.ERROR_NO_BIOMETRICS -> UNAVAILABLE
     else -> FAILED
   }
 
+  // The exception's simple class name only — the message can name the account.
+  private fun detailOf(e: Exception): String = "android:" + e.javaClass.simpleName
+
   @JvmStatic
-  private external fun nativeComplete(token: Long, status: Int, bytes: ByteArray?)
+  private external fun nativeComplete(token: Long, status: Int, bytes: ByteArray?, detail: String?)
 }

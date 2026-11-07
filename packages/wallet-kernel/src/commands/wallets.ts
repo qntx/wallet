@@ -439,8 +439,8 @@ type WalletPrf = { readonly prfWallet: Uint8Array; readonly synced: boolean };
 
 /**
  * One platform ceremony's wallet PRF: the result must be user-verified and carry a 32-byte `first`
- * output; anything else is an authenticator without usable PRF support (`factor-unavailable`). The
- * unused `second` output is wiped.
+ * output; anything else is an authenticator without usable PRF support (`passkey-prf-unsupported`).
+ * The unused `second` output is wiped.
  */
 function walletPrfOf(result: PasskeyResult): WalletPrf {
   if (result.second !== undefined) {
@@ -450,7 +450,7 @@ function walletPrfOf(result: PasskeyResult): WalletPrf {
     if (result.first !== undefined) {
       wipe(result.first);
     }
-    throw new KernelError("factor-unavailable", "the passkey returned no verified PRF output");
+    throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
   }
   return { prfWallet: result.first, synced: result.synced };
 }
@@ -498,7 +498,7 @@ async function walletCeremony(
 /**
  * Creates or restores a passkey wallet. The ceremony runs where the platform puts it: in the kernel
  * when a platform authenticator exists, in the host (evidence on the wire) otherwise — the other
- * shape is `factor-unavailable`.
+ * shape is `unsupported`.
  */
 export async function createWithPasskey(
   ctx: KernelContext,
@@ -506,7 +506,7 @@ export async function createWithPasskey(
   requestSession: string | undefined,
 ): Promise<{ wallet: WalletInfo; session: string }> {
   if ((ctx.platform.passkey !== undefined) !== (params.ceremony === "kernel")) {
-    throw new KernelError("factor-unavailable", "this platform runs passkey ceremonies elsewhere");
+    throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
   }
   const gated = gate(ctx, params.factor, requestSession);
   let prf: WalletPrf;

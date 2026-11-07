@@ -739,7 +739,7 @@ throws("emptyTitle", function () { ks.open(id, new Uint8Array(4), "", "d", done)
 throws("longDescription", function () { ks.open(id, new Uint8Array(4), "t", new Array(1026).join("x"), done); });
 throws("emptySealed", function () { ks.open(id, new Uint8Array(0), "t", "d", done); });
 throws("noCallback", function () { ks.clear(1); });
-function step(fn) { return new Promise(function (resolve) { fn(function (value, code) { resolve([value, code]); }); }); }
+function step(fn) { return new Promise(function (resolve) { fn(function (value, code, detail) { resolve([value, code, detail]); }); }); }
 step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).then(function (sealed) {
   r.push("sealed=" + (sealed[0] instanceof Uint8Array && sealed[0].length === 32 && sealed[1] === undefined));
   return step(function (cb) { ks.open(id, sealed[0], "解锁钱包", "验证身份以解锁钱包", cb); });
@@ -758,7 +758,10 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
   r.push("cancelled=" + c1[1]);
   return step(function (cb) { ks.authenticate("fail:unavailable", "d", cb); });
 }).then(function (c2) {
-  r.push("unavailable=" + c2[1]);
+  r.push("unavailable=" + c2[1] + "/" + c2[2]);
+  return step(function (cb) { ks.authenticate("fail:nodevice", "d", cb); });
+}).then(function (c2b) {
+  r.push("nodevice=" + c2b[1] + "/" + c2b[2]);
   return step(function (cb) { ks.open(id, new Uint8Array(4), "fail:failed", "d", cb); });
 }).then(function (c3) {
   r.push("failed=" + c3[1]);
@@ -779,10 +782,11 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
                 "locale=zh-Hans-CN frozen=true badId=ok shortSecret=ok emptyTitle=ok "
                 "longDescription=ok emptySealed=ok noCallback=ok sealed=true opened=true "
                 "auth=true missing=factor-invalidated cancelled=cancelled "
-                "unavailable=factor-unavailable failed=unavailable clear=true",
+                "unavailable=unavailable/fail:unavailable "
+                "nodevice=no-device-credential/fail:nodevice failed=unavailable clear=true",
       "keystore-binding: bridge behaviour drifted");
   const auto calls = qntxTestKeystore::calls();
-  CHECK(calls.size() == 8, "keystore-binding: expected eight platform calls");
+  CHECK(calls.size() == 9, "keystore-binding: expected nine platform calls");
   CHECK(!calls.empty() && calls[0].op == "seal" && calls[0].title == "保护钱包" &&
             calls[0].bytes == 32,
       "keystore-binding: seal did not reach the platform verbatim");
@@ -831,15 +835,21 @@ function throws(name, fn) {
 throws("empty", function () { pk.create("", function () {}); });
 throws("long", function () { pk.get(new Array(16 * 1024 + 2).join("x"), function () {}); });
 throws("noCallback", function () { pk.get("{}", 1); });
-function step(fn) { return new Promise(function (resolve) { fn(function (value, code) { resolve([value, code]); }); }); }
+function step(fn) { return new Promise(function (resolve) { fn(function (value, code, detail) { resolve([value, code, detail]); }); }); }
 step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
   r.push("create=" + (c[0] === '{"echo":{"rp":"x"}}' && c[1] === undefined));
   return step(function (cb) { pk.get('{"m":"fail:cancelled"}', cb); });
 }).then(function (c) {
-  r.push("cancelled=" + c[1]);
+  r.push("cancelled=" + c[1] + "/" + c[2]);
   return step(function (cb) { pk.get('{"m":"fail:unavailable"}', cb); });
 }).then(function (c) {
-  r.push("unavailable=" + c[1]);
+  r.push("unavailable=" + c[1] + "/" + c[2]);
+  return step(function (cb) { pk.get('{"m":"fail:notconfigured"}', cb); });
+}).then(function (c) {
+  r.push("notconfigured=" + c[1] + "/" + c[2]);
+  return step(function (cb) { pk.get('{"m":"fail:unsupported"}', cb); });
+}).then(function (c) {
+  r.push("unsupported=" + c[1] + "/" + c[2]);
   return step(function (cb) { pk.create('{"m":"fail:failed"}', cb); });
 }).then(function (c) {
   r.push("failed=" + c[1]);
@@ -857,8 +867,10 @@ step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "frozen=true empty=ok long=ok noCallback=ok create=true cancelled=cancelled "
-                "unavailable=factor-unavailable failed=unavailable",
+                "frozen=true empty=ok long=ok noCallback=ok create=true "
+                "cancelled=cancelled/fail:cancelled unavailable=unavailable/fail:unavailable "
+                "notconfigured=passkey-not-configured/fail:notconfigured "
+                "unsupported=unsupported/fail:unsupported failed=unavailable",
       "passkey-binding: bridge behaviour drifted");
   for (const auto& error : box.errors) {
     std::fprintf(stderr, "passkey-binding onError: %s\n", error.c_str());

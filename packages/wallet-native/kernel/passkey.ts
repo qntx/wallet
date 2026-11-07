@@ -5,7 +5,7 @@
  * user handle, and the UV/BE/BS flags from the authenticator data — which a registration may carry
  * inside an attestation object (iOS). A registration response with no authenticator data at all
  * reports no `first`, so the kernel asserts once. Failure codes from the native side are already
- * kernel error codes.
+ * kernel error codes; an optional `"<domain>:<code>"` detail rides along for diagnostics.
  */
 import { base64urlnopad } from "@scure/base";
 import { decode } from "cborg";
@@ -18,8 +18,13 @@ import type {
   PrfSalts,
   Random,
 } from "../../wallet-kernel/src/platform.ts";
+import { detailOf } from "./detail.ts";
 
-type Completion = (responseJson: string | undefined, code: string | undefined) => void;
+type Completion = (
+  responseJson: string | undefined,
+  code: string | undefined,
+  detail: string | undefined,
+) => void;
 
 /** The `__qntx.passkey` surface the native host injects. */
 export type KernelPasskeyNative = {
@@ -50,10 +55,26 @@ const ATTESTATION_OPTIONS: DecodeOptions = {
 /** Whether bit `flag` (a power of two) is set in the authenticator-data flags byte. */
 const hasFlag = (flags: number, flag: number): boolean => Math.floor(flags / flag) % 2 === 1;
 
-function failure(code: string | undefined): KernelError {
-  return code === "cancelled" || code === "factor-unavailable" || code === "unavailable"
-    ? new KernelError(code, "the platform passkey ceremony did not complete")
-    : new KernelError("unavailable", "the platform passkey ceremony reported no outcome");
+function failure(code: string | undefined, detail: string | undefined): KernelError {
+  const diagnostic = detailOf(detail);
+  return code === "cancelled" ||
+    code === "passkey-not-configured" ||
+    code === "unsupported" ||
+    code === "unavailable"
+    ? new KernelError(
+        code,
+        "the platform passkey ceremony did not complete",
+        undefined,
+        false,
+        diagnostic,
+      )
+    : new KernelError(
+        "unavailable",
+        "the platform passkey ceremony reported no outcome",
+        undefined,
+        false,
+        diagnostic,
+      );
 }
 
 const malformed = (): KernelError =>
@@ -157,7 +178,10 @@ function parseResponse(json: string, assertion: boolean): PasskeyResult {
     // The authenticator has no PRF — a follow-up assertion would fail the same way.
     first?.fill(0);
     second?.fill(0);
-    throw new KernelError("factor-unavailable", "the passkey does not support the PRF extension");
+    throw new KernelError(
+      "passkey-prf-unsupported",
+      "the passkey does not support the PRF extension",
+    );
   }
   const rawAuthData = response["authenticatorData"];
   let authData: Uint8Array | undefined;
@@ -202,9 +226,9 @@ async function run(
   assertion: boolean,
 ): Promise<PasskeyResult> {
   const json = await new Promise<string>((resolve, reject) => {
-    start(JSON.stringify(request), (responseJson, code) => {
+    start(JSON.stringify(request), (responseJson, code, detail) => {
       if (responseJson === undefined) {
-        reject(failure(code));
+        reject(failure(code, detail));
         return;
       }
       resolve(responseJson);

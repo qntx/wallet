@@ -16,6 +16,8 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <utility>
 
 namespace qntx {
@@ -60,7 +62,7 @@ KeystoreStatus statusOf(NSError* error) {
       case LAErrorUserFallback:
         return KeystoreStatus::cancelled;
       case LAErrorPasscodeNotSet:
-        return KeystoreStatus::unavailable;
+        return KeystoreStatus::noDeviceCredential;
       default:
         return KeystoreStatus::failed;
     }
@@ -82,6 +84,39 @@ KeystoreStatus statusOf(CFErrorRef error) {
   return statusOf((__bridge NSError*)error);
 }
 
+// The "<domain>:<code>" diagnostic — never userInfo or localizedDescription,
+// which can name the account.
+std::string detailOf(NSError* error) {
+  if (error == nil) {
+    return {};
+  }
+  char buffer[96];
+  std::snprintf(
+      buffer,
+      sizeof(buffer),
+      "%s:%ld",
+      error.domain.UTF8String,
+      static_cast<long>(error.code));
+  return buffer;
+}
+
+std::string detailOf(CFErrorRef error) {
+  return detailOf((__bridge NSError*)error);
+}
+
+// A failed canEvaluatePolicy: LAErrorPasscodeNotSet is the one failure a user
+// can act on (no device passcode → no hardware factor can exist), so it gets
+// its own status; every other LAError is a plain platform failure.
+KeystoreResult credentialProbeFailure(NSError* error) {
+  return {
+      error != nil && [error.domain isEqualToString:LAErrorDomain] &&
+              error.code == LAErrorPasscodeNotSet
+          ? KeystoreStatus::noDeviceCredential
+          : KeystoreStatus::unavailable,
+      {},
+      detailOf(error)};
+}
+
 void deleteKey(NSData* tag) {
   SecItemDelete((__bridge CFDictionaryRef) @{
     (id)kSecClass : (id)kSecClassKey,
@@ -89,14 +124,20 @@ void deleteKey(NSData* tag) {
   });
 }
 
-bool deviceOwnerAuthenticationAvailable() {
+// The device-credential gate: seal cannot create a hardware key while the
+// policy cannot be evaluated at all.
+std::optional<KeystoreResult> deviceCredentialMissing() {
   LAContext* probe = [LAContext new];
-  return [probe canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:nil];
+  NSError* error = nil;
+  if ([probe canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&error]) {
+    return std::nullopt;
+  }
+  return credentialProbeFailure(error);
 }
 
 KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
-  if (!deviceOwnerAuthenticationAvailable()) {
-    return {KeystoreStatus::unavailable, {}};
+  if (auto missing = deviceCredentialMissing()) {
+    return *missing;
   }
   NSData* tag = tagFor(factorId);
   deleteKey(tag);
@@ -108,10 +149,11 @@ KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
   SecAccessControlRef access = SecAccessControlCreateWithFlags(
       kCFAllocatorDefault, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, flags, &error);
   if (access == nullptr) {
+    KeystoreResult out{KeystoreStatus::unavailable, {}, detailOf(error)};
     if (error != nullptr) {
       CFRelease(error);
     }
-    return {KeystoreStatus::unavailable, {}};
+    return out;
   }
   NSMutableDictionary* attributes = [@{
     (id)kSecAttrKeyType : (id)kSecAttrKeyTypeECSECPrimeRandom,
@@ -128,10 +170,11 @@ KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
   SecKeyRef privateKey = SecKeyCreateRandomKey((__bridge CFDictionaryRef)attributes, &error);
   CFRelease(access);
   if (privateKey == nullptr) {
+    KeystoreResult out{KeystoreStatus::unavailable, {}, detailOf(error)};
     if (error != nullptr) {
       CFRelease(error);
     }
-    return {KeystoreStatus::unavailable, {}};
+    return out;
   }
   SecKeyRef publicKey = SecKeyCopyPublicKey(privateKey);
   CFRelease(privateKey);
@@ -145,11 +188,12 @@ KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
   CFRelease(plain);
   CFRelease(publicKey);
   if (sealed == nullptr) {
+    KeystoreResult out{KeystoreStatus::unavailable, {}, detailOf(error)};
     if (error != nullptr) {
       CFRelease(error);
     }
     deleteKey(tag);
-    return {KeystoreStatus::failed, {}};
+    return out;
   }
   SecretBytes out(CFDataGetBytePtr(sealed), static_cast<size_t>(CFDataGetLength(sealed)));
   CFRelease(sealed);
@@ -239,9 +283,9 @@ void keystoreAuthenticate(KeystorePrompt prompt, KeystoreDone done) {
   dispatch_async(keystoreQueue(), ^{
     LAContext* context = [LAContext new];
     context.touchIDAuthenticationAllowableReuseDuration = 0;
-    NSError* unavailable = nil;
-    if (![context canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&unavailable]) {
-      (*finish)(KeystoreResult{KeystoreStatus::unavailable, {}});
+    NSError* error = nil;
+    if (![context canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&error]) {
+      (*finish)(credentialProbeFailure(error));
       return;
     }
     setCurrentContext(context);

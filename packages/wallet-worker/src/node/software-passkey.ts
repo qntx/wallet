@@ -69,7 +69,7 @@ export function createSoftwarePasskey(
           : credentialIds.find((id) => known.has(bytesToHex(id)));
       if (credentialId === undefined) {
         throw new WalletError(
-          "factor-unavailable",
+          "passkey-prf-unsupported",
           credentialIds === undefined
             ? "no software credential exists yet"
             : "unknown software credential",

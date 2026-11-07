@@ -222,8 +222,10 @@ const passphraseBytes: Validator<Uint8Array> = bytes(1, 1024);
 export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("locked"),
   literal("cancelled"),
-  literal("factor-unavailable"),
   literal("factor-invalidated"),
+  literal("no-device-credential"),
+  literal("passkey-not-configured"),
+  literal("passkey-prf-unsupported"),
   literal("wrong-password"),
   literal("wrong-passkey"),
   literal("rate-limited"),

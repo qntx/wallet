@@ -1523,6 +1523,30 @@
         "event": "locked",
         "reason": "invalidated"
       }
+    },
+    {
+      "name": "response-err-no-device-credential",
+      "check": "responseError",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "err": {
+          "code": "no-device-credential",
+          "detail": "LAErrorDomain:-5"
+        }
+      }
+    },
+    {
+      "name": "response-err-passkey-not-configured",
+      "check": "responseError",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "err": {
+          "code": "passkey-not-configured",
+          "detail": "ASAuthorizationErrorDomain:1010"
+        }
+      }
     }
   ],
   "reject": [
@@ -2318,7 +2342,7 @@
         "id": 2,
         "err": {
           "code": "wrong-password",
-          "detail": "nope"
+          "nope": "extra"
         }
       }
     },
@@ -2339,6 +2363,41 @@
         "v": 2,
         "event": "locked",
         "reason": "forgotten"
+      }
+    },
+    {
+      "name": "response-err-free-text-detail",
+      "check": "responseError",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "err": {
+          "code": "unavailable",
+          "detail": "the passkey for alice failed"
+        }
+      }
+    },
+    {
+      "name": "response-err-long-detail",
+      "check": "responseError",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "err": {
+          "code": "unavailable",
+          "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        }
+      }
+    },
+    {
+      "name": "response-err-factor-unavailable",
+      "check": "responseError",
+      "message": {
+        "v": 2,
+        "id": 2,
+        "err": {
+          "code": "factor-unavailable"
+        }
       }
     }
   ]

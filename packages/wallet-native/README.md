@@ -87,9 +87,8 @@ const wallet = await createNativeWallet({
 Passkey wallets need the platform's domain association:
 
 - **iOS** — `webcredentials:<rpId>` associated domain (requires a paid developer account; free
-  signing cannot hold the entitlement). **Native iOS passkeys are not implemented yet** — the
-  ceremony returns `factor-unavailable`, so `createWithPasskey`/`restoreWithPasskey` cannot be
-  offered on iOS; ship mnemonic restore.
+  signing cannot hold the entitlement). Without the entitlement the ceremony returns
+  `passkey-not-configured`, and below iOS 18 it returns `unsupported`.
 - **Android** — Credential Manager resolves the RP against
   `https://<rpId>/.well-known/assetlinks.json` with
   `delegate_permission/common.get_login_creds` naming the app's package and SHA-256 signing
@@ -111,8 +110,10 @@ Passkey wallets need the platform's domain association:
   `spark.approve` request open a platform authentication ceremony with kernel-owned prompt text
   (Simplified Chinese under a `zh*` locale, English otherwise).
 - `vault.reset` authenticates the device owner first, then erases the vault and all hardware
-  keys. Devices without a lock screen return `factor-unavailable` — the host should send the
-  user to set one up.
+  keys. Devices without a lock screen return `no-device-credential` — the host should send the
+  user to set one up. A `WalletError.detail` string carries the platform diagnostic
+  (`"<domain>:<code>"`, e.g. `"LAErrorDomain:-5"` or
+  `"android:KeyPermanentlyInvalidatedException"`) when the native layer can produce one.
 - `chain.sign` prompts _before_ any secret derivation: the kernel normalizes and decodes the
   intent, shows the prompt, and only then touches key material.
 - The kernel serializes ceremonies — two concurrent signing requests cannot race two system

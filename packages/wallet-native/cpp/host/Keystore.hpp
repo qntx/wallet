@@ -22,14 +22,24 @@ struct KeystorePrompt {
 
 // How a keystore call ended. The binding maps each status to the kernel's
 // error code: cancelled → "cancelled", invalidated → "factor-invalidated",
-// unavailable → "factor-unavailable", failed → "unavailable". The values are
-// part of the Android JNI contract (Keystore.kt).
-enum class KeystoreStatus { ok = 0, cancelled = 1, invalidated = 2, unavailable = 3, failed = 4 };
+// unavailable → "unavailable", failed → "unavailable",
+// noDeviceCredential → "no-device-credential". The values are part of the
+// Android JNI contract (Keystore.kt).
+enum class KeystoreStatus {
+  ok = 0,
+  cancelled = 1,
+  invalidated = 2,
+  unavailable = 3,
+  failed = 4,
+  noDeviceCredential = 5,
+};
 
 struct KeystoreResult {
   KeystoreStatus status = KeystoreStatus::failed;
   // seal: the platform ciphertext; open: the KEK; empty otherwise.
   SecretBytes bytes;
+  // A "<domain>:<code>" diagnostic (e.g. "LAErrorDomain:-5"), empty when none.
+  std::string detail;
 };
 
 // Completion callbacks run exactly once, on any thread.

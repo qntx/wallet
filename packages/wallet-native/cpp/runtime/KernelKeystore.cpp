@@ -71,13 +71,30 @@ const char* errorCode(KeystoreStatus status) {
       return "cancelled";
     case KeystoreStatus::invalidated:
       return "factor-invalidated";
-    case KeystoreStatus::unavailable:
-      return "factor-unavailable";
+    case KeystoreStatus::noDeviceCredential:
+      return "no-device-credential";
     case KeystoreStatus::ok:
+    case KeystoreStatus::unavailable:
     case KeystoreStatus::failed:
       break;
   }
   return "unavailable";
+}
+
+// A detail is a "<domain>:<code>" diagnostic the JS side validates again;
+// pass it through only while it stays a short token string.
+jsi::Value detailValue(jsi::Runtime& rt, const std::string& detail) {
+  if (detail.empty() || detail.size() > 80) {
+    return jsi::Value::undefined();
+  }
+  for (const char c : detail) {
+    const bool ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '_' || c == '.' || c == ':' || c == '-';
+    if (!ok) {
+      return jsi::Value::undefined();
+    }
+  }
+  return jsi::Value(rt, jsi::String::createFromAscii(rt, detail));
 }
 
 // Shared by every keystore call of one runtime: the number of platform calls
@@ -118,23 +135,25 @@ KeystoreDone park(
         done->call(
             rt,
             jsi::Value::undefined(),
-            jsi::Value(rt, jsi::String::createFromAscii(rt, errorCode(shared->status))));
+            jsi::Value(rt, jsi::String::createFromAscii(rt, errorCode(shared->status))),
+            detailValue(rt, shared->detail));
         return;
       }
       if (!withBytes) {
-        done->call(rt, jsi::Value::undefined(), jsi::Value::undefined());
+        done->call(rt, jsi::Value::undefined(), jsi::Value::undefined(), jsi::Value::undefined());
         return;
       }
       if (shared->bytes.size() == 0) {
         done->call(
             rt,
             jsi::Value::undefined(),
-            jsi::Value(rt, jsi::String::createFromAscii(rt, errorCode(KeystoreStatus::failed))));
+            jsi::Value(rt, jsi::String::createFromAscii(rt, errorCode(KeystoreStatus::failed))),
+            jsi::Value::undefined());
         return;
       }
       auto buffer = arrayBufferFromBytes(rt, shared->bytes.data(), shared->bytes.size());
       auto array = makeUint8Array(rt, *state->intrinsics, std::move(buffer));
-      done->call(rt, jsi::Value(std::move(array)), jsi::Value::undefined());
+      done->call(rt, jsi::Value(std::move(array)), jsi::Value::undefined(), jsi::Value::undefined());
     });
   };
 }

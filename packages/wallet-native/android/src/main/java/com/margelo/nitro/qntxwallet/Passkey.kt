@@ -44,6 +44,8 @@ object Passkey {
   private const val CANCELLED = 1
   private const val UNAVAILABLE = 3
   private const val FAILED = 4
+  private const val NOT_CONFIGURED = 5
+  private const val UNSUPPORTED = 6
   // The exception type only — never the message, which can name the account.
   private const val TAG = "QntxPasskey"
 
@@ -51,7 +53,8 @@ object Passkey {
 
   @JvmStatic
   fun create(token: Long, requestJson: String) {
-    val activity = foregroundActivity() ?: return nativeComplete(token, UNAVAILABLE, null)
+    val activity = foregroundActivity()
+      ?: return nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
     val cancel = CancellationSignal().also { signal = it }
     CredentialManager.create(activity).createCredentialAsync(
       activity,
@@ -66,13 +69,14 @@ object Passkey {
             token,
             if (response == null) FAILED else OK,
             response?.registrationResponseJson,
+            null,
           )
         }
 
         override fun onError(e: CreateCredentialException) {
           signal = null
           Log.w(TAG, "create failed: ${e.type}")
-          nativeComplete(token, statusOf(e), null)
+          nativeComplete(token, statusOf(e), null, detailOf(e))
         }
       },
     )
@@ -80,7 +84,8 @@ object Passkey {
 
   @JvmStatic
   fun get(token: Long, requestJson: String) {
-    val activity = foregroundActivity() ?: return nativeComplete(token, UNAVAILABLE, null)
+    val activity = foregroundActivity()
+      ?: return nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
     val cancel = CancellationSignal().also { signal = it }
     CredentialManager.create(activity).getCredentialAsync(
       activity,
@@ -95,13 +100,14 @@ object Passkey {
             token,
             if (credential == null) FAILED else OK,
             credential?.authenticationResponseJson,
+            null,
           )
         }
 
         override fun onError(e: GetCredentialException) {
           signal = null
           Log.w(TAG, "get failed: ${e.type}")
-          nativeComplete(token, statusOf(e), null)
+          nativeComplete(token, statusOf(e), null, detailOf(e))
         }
       },
     )
@@ -121,27 +127,36 @@ object Passkey {
   private fun statusOf(e: CreateCredentialException): Int = when (e) {
     is CreateCredentialCancellationException -> CANCELLED
     is CreateCredentialNoCreateOptionException,
-    is CreateCredentialProviderConfigurationException,
-    is CreateCredentialUnsupportedException -> UNAVAILABLE
+    is CreateCredentialProviderConfigurationException -> NOT_CONFIGURED
+    is CreateCredentialUnsupportedException -> UNSUPPORTED
     is CreatePublicKeyCredentialDomException -> domStatus(e.type)
     else -> FAILED
   }
 
   private fun statusOf(e: GetCredentialException): Int = when (e) {
     is GetCredentialCancellationException -> CANCELLED
-    is NoCredentialException,
-    is GetCredentialProviderConfigurationException,
-    is GetCredentialUnsupportedException -> UNAVAILABLE
+    is GetCredentialProviderConfigurationException -> NOT_CONFIGURED
+    is GetCredentialUnsupportedException -> UNSUPPORTED
+    is NoCredentialException -> UNAVAILABLE
     is GetPublicKeyCredentialDomException -> domStatus(e.type)
     else -> FAILED
   }
 
   private fun domStatus(type: String): Int = when {
     type.endsWith("NotAllowedError") -> CANCELLED
-    type.endsWith("SecurityError") || type.endsWith("NotSupportedError") -> UNAVAILABLE
+    type.endsWith("NotSupportedError") -> UNSUPPORTED
+    type.endsWith("SecurityError") -> UNAVAILABLE
     else -> FAILED
   }
 
+  // The exception's simple class name only — the message can name the account.
+  private fun detailOf(e: Exception): String = "android:" + e.javaClass.simpleName
+
   @JvmStatic
-  private external fun nativeComplete(token: Long, status: Int, responseJson: String?)
+  private external fun nativeComplete(
+    token: Long,
+    status: Int,
+    responseJson: String?,
+    detail: String?,
+  )
 }

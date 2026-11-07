@@ -47,7 +47,7 @@ function fakeNativeKeystore() {
         keys.set(id, sealed);
       }
       later(() => {
-        done(code === undefined ? sealed : undefined, code);
+        done(code === undefined ? sealed : undefined, code, undefined);
       });
     },
     open: (id, sealed, _title, _description, done) => {
@@ -55,25 +55,26 @@ function fakeNativeKeystore() {
       const known = keys.get(id);
       later(() => {
         if (code !== undefined) {
-          done(undefined, code);
+          done(undefined, code, undefined);
           return;
         }
         done(
           known === undefined ? undefined : seal(sealed),
           known === undefined ? "factor-invalidated" : undefined,
+          undefined,
         );
       });
     },
     authenticate: (_title, _description, done) => {
       const code = failures.shift();
       later(() => {
-        done(undefined, code);
+        done(undefined, code, undefined);
       });
     },
     clear: (done) => {
       keys.clear();
       later(() => {
-        done(undefined, undefined);
+        done(undefined, undefined, undefined);
       });
     },
   };
@@ -240,7 +241,7 @@ describe("createNativeWallet", () => {
         mnemonic: words.join(" "),
         factor: { kind: "password", password: "correct horse battery staple" },
       }),
-    ).rejects.toThrow(expect.objectContaining({ code: "factor-unavailable" }));
+    ).rejects.toThrow(expect.objectContaining({ code: "unsupported" }));
     const imported = await wallet.wallets.importMnemonic({ mnemonic: words.join(" ") });
     const { walletId } = imported;
 

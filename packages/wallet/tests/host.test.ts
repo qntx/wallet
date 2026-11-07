@@ -50,7 +50,14 @@ type Request = {
   readonly params: ProtocolValue;
 };
 
-type Reply = { readonly ok: ProtocolValue } | { readonly err: { readonly code: WalletErrorCode } };
+type Reply =
+  | { readonly ok: ProtocolValue }
+  | {
+      readonly err: {
+        readonly code: WalletErrorCode;
+        readonly detail?: string;
+      };
+    };
 
 type Handler = (request: Request) => Reply | Promise<Reply>;
 
@@ -345,6 +352,29 @@ describe("response validation", () => {
     // A kernel that answers off-schema is untrustworthy: terminal state, no respawn.
     expect(spawned).toHaveLength(1);
     expect(spawned.at(0)?.dead).toBe(true);
+    await expect(wallet.dataKeys.get("notes")).rejects.toSatisfy(
+      (e) => walletError(e).code === "integrity",
+    );
+  });
+
+  it("carries an error detail from the kernel to WalletError", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    kernel.handlers.set("dataKeys.get", () => ({
+      err: { code: "unavailable", detail: "android:KeyPermanentlyInvalidatedException" },
+    }));
+    await expect(wallet.dataKeys.get("notes")).rejects.toThrow(
+      expect.objectContaining({
+        code: "unavailable",
+        detail: "android:KeyPermanentlyInvalidatedException",
+      }),
+    );
+  });
+
+  it("drops an error that carries a malformed detail", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    kernel.handlers.set("dataKeys.get", () => ({
+      err: { code: "unavailable", detail: "free text, not a token" },
+    }));
     await expect(wallet.dataKeys.get("notes")).rejects.toSatisfy(
       (e) => walletError(e).code === "integrity",
     );

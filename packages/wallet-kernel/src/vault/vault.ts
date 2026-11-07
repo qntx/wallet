@@ -237,7 +237,7 @@ export async function unlock(
   if (factor.kind === "hardware") {
     const stored = image.factors.find((f) => f.kind === "hardware");
     if (stored === undefined) {
-      throw new KernelError("factor-unavailable", "no hardware factor exists");
+      throw new KernelError("not-found", "no hardware factor exists");
     }
     const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
     try {
@@ -315,9 +315,9 @@ function credentialIdOf(stored: StoredFactor): string | undefined {
  * compare. A public-key miss — `wrong-password`/`wrong-passkey` — tries the next candidate; every
  * other failure (including corruption-marked integrity) propagates immediately. When no candidate
  * matched, the miss is reported by factor kind: `wrong-password` (or `invalid-input` when no
- * password factor exists), `wrong-passkey`, or for hardware `factor-unavailable` (no hardware
- * factor) / `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system
- * verification text and runs only for hardware. The verify path never touches the rate limiter.
+ * password factor exists), `wrong-passkey`, or for hardware `not-found` (no hardware factor) /
+ * `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
+ * text and runs only for hardware. The verify path never touches the rate limiter.
  */
 export async function verifyFactor(
   platform: KernelPlatform,
@@ -370,7 +370,7 @@ export async function verifyFactor(
   if (factor.kind === "hardware") {
     throw candidates.length > 0
       ? new KernelError("integrity", "hardware factor does not open this vault", undefined, true)
-      : new KernelError("factor-unavailable", "no hardware factor exists");
+      : new KernelError("not-found", "no hardware factor exists");
   }
   throw new KernelError("wrong-passkey", "passkey did not verify");
 }

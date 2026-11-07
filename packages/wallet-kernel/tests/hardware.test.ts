@@ -34,7 +34,7 @@ type Call =
   | { readonly op: "authenticate"; readonly prompt: KeystorePrompt }
   | { readonly op: "clear" };
 
-type Outcome = "cancelled" | "factor-invalidated";
+type Outcome = "cancelled" | "factor-invalidated" | "no-device-credential";
 
 /**
  * An in-memory keystore: `seal` keeps the secret under its id and returns SHA-256(id) as the opaque
@@ -236,7 +236,7 @@ describe("hardware factor: platform gate", () => {
       mnemonic: utf8ToBytes(MNEMONIC),
       factor: { kind: "password", password: utf8ToBytes("correct horse battery") },
     });
-    expect(errCode(res)).toBe("factor-unavailable");
+    expect(errCode(res)).toBe("unsupported");
   });
 
   it("a host without a keystore refuses the hardware factor", async () => {
@@ -246,7 +246,7 @@ describe("hardware factor: platform gate", () => {
       mnemonic: utf8ToBytes(MNEMONIC),
       factor: HARDWARE,
     });
-    expect(errCode(res)).toBe("factor-unavailable");
+    expect(errCode(res)).toBe("unsupported");
   });
 
   it("a second hardware factor is already-exists, before any prompt", async () => {
@@ -294,6 +294,10 @@ describe("hardware factor: guarded commands", () => {
     expect(
       errCode(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session)),
     ).toBe("factor-invalidated");
+    fake.fail("no-device-credential");
+    expect(
+      errCode(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session)),
+    ).toBe("no-device-credential");
     ok(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session));
   });
 

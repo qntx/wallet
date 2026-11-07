@@ -145,6 +145,22 @@ std::string jsonString(NSDictionary<NSString*, id>* json) {
   return std::string(static_cast<const char*>(data.bytes), data.length);
 }
 
+// The "<domain>:<code>" diagnostic — never userInfo or localizedDescription,
+// which can name the account.
+std::string detailOf(NSError* error) {
+  if (error == nil) {
+    return {};
+  }
+  char buffer[96];
+  std::snprintf(
+      buffer,
+      sizeof(buffer),
+      "%s:%ld",
+      error.domain.UTF8String,
+      static_cast<long>(error.code));
+  return buffer;
+}
+
 } // namespace
 
 API_AVAILABLE(ios(18.0))
@@ -197,7 +213,8 @@ API_AVAILABLE(ios(18.0))
                 }];
     return;
   }
-  [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::unavailable, {}}];
+  [self finish:qntx::PasskeyResult{
+      qntx::PasskeyStatus::unavailable, {}, "ios:no-key-window"}];
 }
 
 - (void)sceneActivated {
@@ -205,7 +222,8 @@ API_AVAILABLE(ios(18.0))
   _observer = nil;
   ASPresentationAnchor anchor = activeKeyWindow();
   if (anchor == nil) {
-    [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::unavailable, {}}];
+    [self finish:qntx::PasskeyResult{
+        qntx::PasskeyStatus::unavailable, {}, "ios:no-key-window"}];
     return;
   }
   [self performWithAnchor:anchor];
@@ -329,6 +347,8 @@ API_AVAILABLE(ios(18.0))
         status = qntx::PasskeyStatus::cancelled;
         break;
       case ASAuthorizationErrorNotHandled:
+        status = qntx::PasskeyStatus::notConfigured;
+        break;
       case ASAuthorizationErrorFailed:
       case ASAuthorizationErrorNotInteractive:
         status = qntx::PasskeyStatus::unavailable;
@@ -336,7 +356,7 @@ API_AVAILABLE(ios(18.0))
       default:
         // 1010 = ASAuthorizationErrorDeviceNotConfiguredForPasskeyCreation,
         // compared raw so the iOS 19 symbol needs no availability guard.
-        status = error.code == 1010 ? qntx::PasskeyStatus::unavailable
+        status = error.code == 1010 ? qntx::PasskeyStatus::notConfigured
                                     : qntx::PasskeyStatus::failed;
     }
   }
@@ -346,7 +366,7 @@ API_AVAILABLE(ios(18.0))
       "passkey ceremony failed: %{public}@/%ld",
       error.domain,
       static_cast<long>(error.code));
-  [self finish:qntx::PasskeyResult{status, {}}];
+  [self finish:qntx::PasskeyResult{status, {}, detailOf(error)}];
 }
 
 @end
@@ -452,7 +472,7 @@ void passkeyCreate(std::string requestJson, PasskeyDone done) {
     if (@available(iOS 18.0, *)) {
       run(registrationRequest(jsonOf(*json)), std::move(*finish));
     } else {
-      (*finish)(PasskeyResult{PasskeyStatus::unavailable, {}});
+      (*finish)(PasskeyResult{PasskeyStatus::unsupported, {}, "ios:passkeys-unavailable"});
     }
   });
 }
@@ -464,7 +484,7 @@ void passkeyGet(std::string requestJson, PasskeyDone done) {
     if (@available(iOS 18.0, *)) {
       run(assertionRequest(jsonOf(*json)), std::move(*finish));
     } else {
-      (*finish)(PasskeyResult{PasskeyStatus::unavailable, {}});
+      (*finish)(PasskeyResult{PasskeyStatus::unsupported, {}, "ios:passkeys-unavailable"});
     }
   });
 }

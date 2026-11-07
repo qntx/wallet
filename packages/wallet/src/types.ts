@@ -53,8 +53,10 @@ export type DerivedNostrKey = { readonly index: number; readonly publicKey: stri
 export type WalletErrorCode =
   | "locked"
   | "cancelled"
-  | "factor-unavailable"
   | "factor-invalidated"
+  | "no-device-credential"
+  | "passkey-not-configured"
+  | "passkey-prf-unsupported"
   | "wrong-password"
   | "wrong-passkey"
   | "rate-limited"
@@ -107,12 +109,18 @@ export type BackupInfo = {
 export class WalletError extends Error {
   readonly code: WalletErrorCode;
   readonly retryAt: number | undefined;
+  /**
+   * A platform diagnostic as `"<domain>:<code>"` (e.g. `"LAErrorDomain:-5"`,
+   * `"android:KeyPermanentlyInvalidatedException"`): never userInfo, localized text or input.
+   */
+  readonly detail: string | undefined;
 
-  constructor(code: WalletErrorCode, message: string, retryAt?: number) {
+  constructor(code: WalletErrorCode, message: string, retryAt?: number, detail?: string) {
     super(message);
     this.name = "WalletError";
     this.code = code;
     this.retryAt = retryAt;
+    this.detail = detail;
   }
 }
 

@@ -461,9 +461,11 @@ export function startKernel(host: KernelPlatform, port: Port): void {
       }
       const err: ErrorPayload =
         error instanceof KernelError
-          ? error.retryAt === undefined
-            ? { code: error.code }
-            : { code: error.code, retryAt: error.retryAt }
+          ? {
+              code: error.code,
+              ...(error.retryAt === undefined ? {} : { retryAt: error.retryAt }),
+              ...(error.detail === undefined ? {} : { detail: error.detail }),
+            }
           : { code: "integrity" };
       return { v: PROTOCOL_VERSION, id, err };
     }

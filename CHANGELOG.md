@@ -9,6 +9,39 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: `WalletErrorCode` drops `factor-unavailable`, which collapsed every keystore and
+  passkey platform failure into one bucket. Three precise codes replace it, and every remaining
+  site moved to an existing code:
+  - `no-device-credential` — the device has no passcode or lock screen, so a hardware factor
+    cannot exist. iOS: `LAErrorPasscodeNotSet` from `canEvaluatePolicy` (keystore seal, open and
+    authenticate). Android: `KeyguardManager.isDeviceSecure()` false or
+    `BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL`.
+  - `passkey-not-configured` — no passkey provider is set up (iCloud Keychain off, no credential
+    provider). iOS: `ASAuthorizationErrorNotHandled` and 1010
+    (`DeviceNotConfiguredForPasskeyCreation`). Android: `CreateCredentialNoCreateOptionException`
+    and the `*ProviderConfigurationException` pair.
+  - `passkey-prf-unsupported` — the authenticator cannot produce PRF output (`prf.enabled =
+    false`, a ceremony that returns no PRF results, the kernel's "does not support the PRF
+    extension" rejection, the browser and software-passkey hosts).
+  - `unsupported` — the platform cannot do this at all (iOS < 18 passkeys, `*UnsupportedException`
+    and `NotSupportedError` on Android, a hardware factor on a non-RN host, a passkey ceremony
+    where the platform runs them elsewhere).
+  - `not-found` — the vault has no hardware factor ("no hardware factor exists").
+  - `unavailable` — every other platform failure (Secure Enclave / Keystore key or access-control
+    creation, `ASAuthorizationErrorFailed`/`NotInteractive`, no key window, unrecognised Android
+    exceptions).
+
+### Added
+
+- `WalletError.detail`: an optional `"<domain>:<code>"` diagnostic (e.g. `"LAErrorDomain:-5"`,
+  `"NSOSStatusErrorDomain:-34018"`, `"ASAuthorizationErrorDomain:1004"`,
+  `"android:KeyPermanentlyInvalidatedException"`) that rides the error frame from the platform
+  through the kernel to the host. Producers emit domain/code tokens only — never userInfo,
+  localized text or account names — and anything off-shape is dropped at the producer and
+  rejected by the protocol validator (≤80 chars, `^[A-Za-z0-9_.:-]+$`).
+
 ## [0.10.0] - 2026-11-05
 
 Signature safety and fund correctness from the code-level audit against MetaMask, Rabby, OneKey and

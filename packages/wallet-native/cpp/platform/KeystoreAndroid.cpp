@@ -153,14 +153,15 @@ std::string keystoreLocale() {
 // is copied into wiping storage; Kotlin wipes its own copy afterwards.
 extern "C" JNIEXPORT void JNICALL
 Java_com_margelo_nitro_qntxwallet_Keystore_nativeComplete(
-    JNIEnv* env, jclass, jlong token, jint status, jbyteArray bytes) {
+    JNIEnv* env, jclass, jlong token, jint status, jbyteArray bytes, jstring detail) {
   auto done = qntx::take(static_cast<int64_t>(token));
   if (!done) {
     return;
   }
   qntx::KeystoreResult result;
   result.status = static_cast<qntx::KeystoreStatus>(status);
-  if (status < 0 || status > static_cast<jint>(qntx::KeystoreStatus::failed)) {
+  if (status < 0 ||
+      status > static_cast<jint>(qntx::KeystoreStatus::noDeviceCredential)) {
     result.status = qntx::KeystoreStatus::failed;
   }
   if (bytes != nullptr && result.status == qntx::KeystoreStatus::ok) {
@@ -168,6 +169,13 @@ Java_com_margelo_nitro_qntxwallet_Keystore_nativeComplete(
     qntx::SecretBytes copy(static_cast<size_t>(size));
     env->GetByteArrayRegion(bytes, 0, size, reinterpret_cast<jbyte*>(copy.data()));
     result.bytes = std::move(copy);
+  }
+  if (detail != nullptr) {
+    const char* utf = env->GetStringUTFChars(detail, nullptr);
+    if (utf != nullptr) {
+      result.detail = utf;
+      env->ReleaseStringUTFChars(detail, utf);
+    }
   }
   done(std::move(result));
 }
