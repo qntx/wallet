@@ -27,7 +27,7 @@ import type {
   DelegationStatus,
 } from "./route.ts";
 import { accountAddress, newId } from "./route.ts";
-import { pollSolana, prepareSolana } from "./solana.ts";
+import { pollSolana, prepareSolana, prepareSolanaStake } from "./solana.ts";
 
 export type {
   AccountRef,
@@ -470,6 +470,20 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return this.evmRoute.prepareEvmInternal(this.routeCtx(), input);
+  }
+
+  /**
+   * Internal `solana-stake` requests: checks the delegation rules, then builds the stake
+   * transaction through the same fee/simulation path as a SOL send without signing it.
+   */
+  async prepareSolanaStake(
+    input: Extract<ChainRequestInput, { method: "solana-stake" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareSolanaStake(this.routeCtx(), input);
   }
 
   /** The account's 7702 delegation state on `network` (primary endpoint only). */

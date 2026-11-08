@@ -45,6 +45,8 @@ import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
+import { stakePositions, stakeValidators } from "./staking/index.ts";
+import type { StakePosition, StakeValidator } from "./staking/index.ts";
 import type { EngineStore, PublicStore } from "./store/port.ts";
 import type { SwapQuote } from "./swaps/index.ts";
 import { fetchSwapQuote } from "./swaps/quote.ts";
@@ -141,6 +143,14 @@ export type WalletEngine = {
       readonly amount: bigint;
       readonly slippageBps: number;
     }) => Promise<SwapQuote | undefined>;
+  };
+  /** Solana staking reads — the account's stake positions and the current validator set. */
+  readonly staking: {
+    readonly positions: (
+      account: AccountRef,
+      network: string,
+    ) => Promise<ReadonlyArray<StakePosition>>;
+    readonly validators: (network: string) => Promise<ReadonlyArray<StakeValidator>>;
   };
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
@@ -429,6 +439,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     });
     return accountAddress(resolved);
   };
+  const solanaAddressOf = async (account: AccountRef, network: string): Promise<string> => {
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
+    const resolved = await chains(options.wallet).account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template: "solana.bip44-change",
+      network,
+    });
+    return accountAddress(resolved);
+  };
   const connections = new ConnectionController({
     phishing,
     setTimer,
@@ -682,6 +704,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           },
           params,
         ),
+    },
+    staking: {
+      positions: async (account, network) =>
+        stakePositions(networks.solanaRpc(network), await solanaAddressOf(account, network)),
+      validators: async (network) => stakeValidators(networks.solanaRpc(network)),
     },
     phishing,
     unsubscribe: () => {

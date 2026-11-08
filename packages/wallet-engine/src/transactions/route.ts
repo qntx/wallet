@@ -105,7 +105,8 @@ export type ChainRequestMethod =
   | "evm-delegation"
   | "evm-batch"
   | "evm-approve"
-  | "evm-swap";
+  | "evm-swap"
+  | "solana-stake";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
@@ -146,6 +147,20 @@ export type ChainRequestInput =
       readonly account: AccountRef;
       readonly network: string;
       readonly quote: SwapQuote;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "solana-stake";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly action:
+        | { readonly kind: "delegate"; readonly lamports: bigint; readonly vote: string }
+        | { readonly kind: "deactivate"; readonly stakeAccount: string }
+        | {
+            readonly kind: "withdraw";
+            readonly stakeAccount: string;
+            readonly lamports: bigint;
+          };
       readonly fee: PrepareParams["fee"];
     };
 

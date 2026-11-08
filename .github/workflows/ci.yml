@@ -49,8 +49,8 @@ jobs:
       # published asset (releases ship no checksum file) and is pinned here.
       - run: |
           set -e
-          curl -sL -o /tmp/sol.tar.bz2             https://github.com/anza-xyz/agave/releases/download/v3.1.11/solana-release-x86_64-unknown-linux-gnu.tar.bz2
-          echo "5978d621fe2582fc2403fa13f3c06502020bcb42e806ddd4612150049d1a3fbb  /tmp/sol.tar.bz2" | sha256sum -c -
+          curl -sL -o /tmp/sol.tar.bz2             https://github.com/anza-xyz/agave/releases/download/v4.4.0/solana-release-x86_64-unknown-linux-gnu.tar.bz2
+          echo "3363f4728fe786ac7036e342a20df928aa2e3e43f807fbdce67814840538c574  /tmp/sol.tar.bz2" | sha256sum -c -
           tar -xjf /tmp/sol.tar.bz2 -C /tmp
           echo "/tmp/solana-release/bin" >> "$GITHUB_PATH"
       - run: |
