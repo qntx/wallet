@@ -106,6 +106,7 @@ export type ChainRequestMethod =
   | "evm-batch"
   | "evm-approve"
   | "evm-swap"
+  | "evm-lido"
   | "solana-stake";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
@@ -147,6 +148,16 @@ export type ChainRequestInput =
       readonly account: AccountRef;
       readonly network: string;
       readonly quote: SwapQuote;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "evm-lido";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly action:
+        | { readonly kind: "stake"; readonly amount: bigint }
+        | { readonly kind: "request"; readonly amount: bigint }
+        | { readonly kind: "claim"; readonly requestIds: ReadonlyArray<bigint> };
       readonly fee: PrepareParams["fee"];
     }
   | {

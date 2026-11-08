@@ -19,6 +19,7 @@ it for funds.**
 | `sync-key.json`      | The test mnemonic's metadata sync key: `m/44'/1237'/2147483647'/0/0` private + x-only public key | `bun scripts/vectors/sync-key.ts` — `@scure/bip32` + noble schnorr, no kernel imports |
 | `spark-accounts.json` | Spark identity public keys for account groups 0/1 on mainnet/regtest under the public test mnemonic | `bun scripts/spark-accounts-vector.ts` from `packages/wallet-worker` — real `createSparkSigner` on the shipped spark.wasm |
 | `chains/evm-zerox.json` | Five real 0x AllowanceHolder `exec` mainnet transactions (block ~26370k) with their expected `DisplayIntent` — ERC-20 and native sells through the taker Settler, a bridge-Settler exec that is not a swap, and a third-party operator | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
+| `chains/evm-lido.json` | Five real Lido mainnet transactions (block ~26372k) with their expected `DisplayIntent` — two `submit` stakes, `requestWithdrawalsWithPermit`, `requestWithdrawalsWstETHWithPermit` and `claimWithdrawals` — plus three ABI-built request variants (foreign owner, chunked amounts) | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
 
 ## factor vectors
 

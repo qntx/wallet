@@ -128,7 +128,13 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
           ? `委托质押账户 ${a.account} 给验证者 ${a.validator}`
           : a.kind === "deactivate"
             ? `解除质押 ${a.account}`
-            : `从 ${a.account} 提取 ${a.lamports} lamports 到 ${a.to}`,
+            : a.kind === "withdraw"
+              ? `从 ${a.account} 提取 ${a.lamports} lamports 到 ${a.to}`
+              : a.kind === "lido-submit"
+                ? `通过 Lido 质押 ${formatAmount(a.amount)}，收到约 ${formatAmount(a.receive)}`
+                : a.kind === "lido-request"
+                  ? `申请提取 ${formatAmount(a.amount)}，提款凭证归 ${a.owner}`
+                  : `领取 Lido 提款 ${a.requestIds.join(", ")}`,
   },
   en: {
     titles: {
@@ -174,7 +180,13 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
           ? `Delegate stake account ${a.account} to validator ${a.validator}`
           : a.kind === "deactivate"
             ? `Deactivate stake ${a.account}`
-            : `Withdraw ${a.lamports} lamports from ${a.account} to ${a.to}`,
+            : a.kind === "withdraw"
+              ? `Withdraw ${a.lamports} lamports from ${a.account} to ${a.to}`
+              : a.kind === "lido-submit"
+                ? `Stake ${formatAmount(a.amount)} with Lido, receive about ${formatAmount(a.receive)}`
+                : a.kind === "lido-request"
+                  ? `Request withdrawal of ${formatAmount(a.amount)}; the claim NFT goes to ${a.owner}`
+                  : `Claim Lido withdrawals ${a.requestIds.join(", ")}`,
   },
 };
 
