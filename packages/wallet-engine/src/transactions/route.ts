@@ -15,6 +15,7 @@ import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
 import type { EngineStore } from "../store/port.ts";
+import type { SwapQuote } from "../swaps/index.ts";
 
 export type ChainApis = ReturnType<typeof chains>;
 export type SignParams = Parameters<ChainApis["sign"]>[0];
@@ -102,7 +103,9 @@ export type ChainRequestMethod =
   | "cancel"
   | "cpfp"
   | "evm-delegation"
-  | "evm-batch";
+  | "evm-batch"
+  | "evm-approve"
+  | "evm-swap";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
@@ -128,6 +131,22 @@ export type ChainRequestInput =
       readonly fee: PrepareParams["fee"];
       /** A page asking for the batch (`wallet_sendCalls`); absent means the wallet itself. */
       readonly origin?: { readonly kind: "browser"; readonly origin: string };
+    }
+  | {
+      readonly method: "evm-approve";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly token: string;
+      readonly spender: string;
+      readonly amount: bigint;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "evm-swap";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly quote: SwapQuote;
+      readonly fee: PrepareParams["fee"];
     };
 
 /** At most this many calls per batch — one approval stays reviewable. */

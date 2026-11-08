@@ -1,19 +1,30 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
-import { isAddress, isHex, parseTransaction } from "viem";
+import {
+  encodeFunctionData,
+  getAddress,
+  isAddress,
+  isHex,
+  keccak256,
+  parseTransaction,
+} from "viem";
+import { readContract } from "viem/actions";
 
 import { ChainError } from "@qntx/wallet-chains";
-import type { IntentWarning } from "@qntx/wallet-chains";
+import type { IntentWarning, SignRequest } from "@qntx/wallet-chains";
 import {
+  ALLOWANCE_HOLDER,
   EVM_DELEGATOR,
+  MAX_UINT256,
   EVM_DELEGATION_PREFIX,
   EVM_NATIVE_ASSET,
   checksumEvmAddress,
   decodeEvm,
   encodeBatchExecute,
+  networkChainId,
 } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
-import { EvmChainAdapter } from "../chains/evm.ts";
+import { ERC20_ABI, EvmChainAdapter, checkedHex, evmRpcHex } from "../chains/evm.ts";
 import type { EvmUnsignedTransaction } from "../chains/evm.ts";
 import { resolveEns } from "../names/ens.ts";
 import {
@@ -24,6 +35,15 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import {
+  ALLOWANCE_HOLDER_CODE_HASH,
+  QUOTE_MAX_AGE_MS,
+  SETTLER_FEATURE,
+  SETTLER_REGISTRY_ABI,
+  ZEROX_REGISTRY,
+  assertSwapIntent,
+  assertSwapSimulation,
+} from "../swaps/index.ts";
 import {
   accountAddress,
   errorMessage,
@@ -64,7 +84,7 @@ const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
 export type EvmInternalInput = Extract<
   ChainRequestInput,
-  { readonly method: "evm-delegation" | "evm-batch" }
+  { readonly method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" }
 >;
 
 export type EvmRoute = {
@@ -232,12 +252,121 @@ const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent
         fee: { ...intent.fee, l1Data: { asset: EVM_NATIVE_ASSET, amount: l1.toString(10) } },
       };
 
+const erc20Allowance = async (
+  client: Parameters<typeof readContract>[0],
+  token: string,
+  owner: string,
+  spender: string,
+): Promise<bigint> =>
+  readContract(client, {
+    address: getAddress(token),
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: [getAddress(owner), getAddress(spender)],
+  });
+
+/** `allowance(owner, spender)` on both endpoints; the lower wins, a disagreement is flagged. */
+const readAllowance = async (
+  ctx: RouteContext,
+  network: string,
+  token: string,
+  owner: string,
+  spender: string,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<bigint> => {
+  const client = ctx.options.networks.client(network);
+  const primary = await erc20Allowance(client, token, owner, spender);
+  const independent = ctx.options.networks.independentClient(network);
+  if (independent.kind === "available") {
+    try {
+      const other = await erc20Allowance(independent.client, token, owner, spender);
+      if (primary !== other) {
+        flags.push("reads-unverified");
+      }
+      return primary < other ? primary : other;
+    } catch {
+      flags.push("reads-unverified");
+    }
+  }
+  return primary;
+};
+
+type BuildIntent = Parameters<EvmChainAdapter["build"]>[3];
+
+/** `approve(ALLOWANCE_HOLDER, amount)` calldata for a delegated swap batch. */
+const allowanceHolderApprove = (amount: bigint): string =>
+  encodeFunctionData({
+    abi: ERC20_ABI,
+    functionName: "approve",
+    args: [getAddress(ALLOWANCE_HOLDER), amount],
+  });
+
+/** The registry's current (`ownerOf`) and previous (`prev`) Settler for a feature. */
+const registrySettlers = async (
+  client: Parameters<typeof readContract>[0],
+): Promise<{ readonly current: string; readonly previous: string | undefined }> => {
+  let current: string;
+  try {
+    current = await readContract(client, {
+      address: ZEROX_REGISTRY,
+      abi: SETTLER_REGISTRY_ABI,
+      functionName: "ownerOf",
+      args: [SETTLER_FEATURE],
+    });
+  } catch {
+    throw new ChainError("invalid-request", "0x Settler is paused");
+  }
+  let previous: string | undefined;
+  try {
+    previous = await readContract(client, {
+      address: ZEROX_REGISTRY,
+      abi: SETTLER_REGISTRY_ABI,
+      functionName: "prev",
+      args: [SETTLER_FEATURE],
+    });
+  } catch {
+    /* `prev` reverts when the feature has never been redeployed — that is not a pause. */
+  }
+  return { current, previous };
+};
+
+/* approve(spender, amount) — refuses an unlimited amount and the USDT-style nonzero reset. */
+const prepareApproveIntent = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "evm-approve" }>,
+  from: string,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<BuildIntent> => {
+  if (input.amount === MAX_UINT256) {
+    throw new ChainError("invalid-request", "an unlimited approval is refused");
+  }
+  const current = await readAllowance(ctx, input.network, input.token, from, input.spender, flags);
+  if (current === input.amount) {
+    throw new ChainError("invalid-request", "the allowance is already the requested amount");
+  }
+  if (current !== 0n && input.amount !== 0n) {
+    throw new ChainError(
+      "invalid-request",
+      "reset the allowance to zero first — the token rejects a nonzero overwrite",
+    );
+  }
+  return {
+    kind: "call",
+    to: input.token,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [getAddress(input.spender), input.amount],
+    }),
+  };
+};
+
 /** Per-controller route — the adapter's nonce queue and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
   const watching = new Map<string, Watch>();
 
-  type BuildIntent = Parameters<EvmChainAdapter["build"]>[3];
   type PrepareSpec = {
     readonly account: PrepareParams["account"];
     readonly network: string;
@@ -453,6 +582,152 @@ export const createEvmRoute = (): EvmRoute => {
     return state;
   };
 
+  /* `evm-swap`: verify the quote, then a single exec or a delegated [approve, exec] batch. */
+  const prepareSwapIntent = async (
+    ctx: RouteContext,
+    input: Extract<ChainRequestInput, { method: "evm-swap" }>,
+    from: string,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<BuildIntent> => {
+    const { quote } = input;
+    if (ctx.options.now() - quote.fetchedAt > QUOTE_MAX_AGE_MS) {
+      throw new ChainError("invalid-request", "the quote is stale — re-quote");
+    }
+    if (quote.network !== input.network || quote.taker.toLowerCase() !== from.toLowerCase()) {
+      throw new ChainError("invalid-request", "the quote is not for this account and network");
+    }
+    const { transaction: tx } = quote;
+    if (tx.to.toLowerCase() !== ALLOWANCE_HOLDER.toLowerCase()) {
+      throw new ChainError(
+        "invalid-request",
+        "the quoted transaction does not call AllowanceHolder",
+      );
+    }
+    const client = ctx.options.networks.client(input.network);
+    const independent = ctx.options.networks.independentClient(input.network);
+    const ahCode = await evmRpcHex(client, "eth_getCode", [ALLOWANCE_HOLDER, "latest"]);
+    if (keccak256(checkedHex(ahCode)) !== ALLOWANCE_HOLDER_CODE_HASH) {
+      throw new ChainError("invalid-request", "the AllowanceHolder is not the expected contract");
+    }
+    if (independent.kind === "available") {
+      try {
+        const other = await evmRpcHex(independent.client, "eth_getCode", [
+          ALLOWANCE_HOLDER,
+          "latest",
+        ]);
+        if (keccak256(checkedHex(other)) !== ALLOWANCE_HOLDER_CODE_HASH) {
+          throw new ChainError(
+            "invalid-request",
+            "the AllowanceHolder is not the expected contract",
+          );
+        }
+      } catch (error) {
+        if (error instanceof ChainError) {
+          throw error;
+        }
+        flags.push("reads-unverified");
+      }
+    }
+    /* The call must decode to a swap whose sell and minimum the quote claims. */
+    const request: SignRequest = {
+      kind: "evm.transaction",
+      network: input.network,
+      account: input.account,
+      tx: {
+        type: "eip1559",
+        chainId: networkChainId(input.network),
+        to: tx.to,
+        value: `0x${tx.value.toString(16)}`,
+        nonce: 0,
+        gas: "0x0",
+        data: tx.data,
+        accessList: [],
+        maxFeePerGas: "0x0",
+        maxPriorityFeePerGas: "0x0",
+      },
+    };
+    const intent = decodeEvm(request, from);
+    assertSwapIntent(quote, intent, from);
+    const [outflow] = intent.outflows;
+    const settler = outflow?.to ?? "";
+    /* The decoded Settler must be the registry's current or previous taker Settler on both
+       endpoints; a failed independent read only flags the check unverified. */
+    const { current, previous } = await registrySettlers(client);
+    if (
+      settler.toLowerCase() !== current.toLowerCase() &&
+      settler.toLowerCase() !== previous?.toLowerCase()
+    ) {
+      throw new ChainError("invalid-request", "the swap settles through an unrecognised Settler");
+    }
+    if (independent.kind === "available") {
+      try {
+        const other = await registrySettlers(independent.client);
+        if (
+          settler.toLowerCase() !== other.current.toLowerCase() &&
+          settler.toLowerCase() !== other.previous?.toLowerCase()
+        ) {
+          throw new ChainError(
+            "invalid-request",
+            "the swap settles through an unrecognised Settler",
+          );
+        }
+      } catch (error) {
+        if (error instanceof ChainError) {
+          throw error;
+        }
+        flags.push("reads-unverified");
+      }
+    }
+    const sellNative = quote.sell === EVM_NATIVE_ASSET;
+    if (!sellNative) {
+      /* ERC-20 sells must not forward value; native sells forward exactly sellAmount. */
+      if (tx.value !== 0n) {
+        throw new ChainError("invalid-request", "an ERC-20 sell carries no value");
+      }
+      const current = await readAllowance(
+        ctx,
+        input.network,
+        quote.sell,
+        from,
+        ALLOWANCE_HOLDER,
+        flags,
+      );
+      if (current >= quote.sellAmount) {
+        return { kind: "call", to: tx.to, value: tx.value, data: tx.data };
+      }
+      const state = await delegationState(ctx, input.network, from, flags);
+      if (state.kind !== "ours") {
+        throw new ChainError(
+          "invalid-request",
+          "approve AllowanceHolder for the sell amount first, then re-quote",
+        );
+      }
+      const calls = [
+        ...(current === 0n
+          ? []
+          : [{ to: quote.sell, value: 0n, data: allowanceHolderApprove(0n) }]),
+        { to: quote.sell, value: 0n, data: allowanceHolderApprove(quote.sellAmount) },
+        { to: tx.to, value: tx.value, data: tx.data },
+      ];
+      return {
+        kind: "call",
+        to: from,
+        value: 0n,
+        data: encodeBatchExecute(
+          calls.map((c) => ({
+            to: checksumEvmAddress(c.to),
+            value: c.value,
+            data: c.data,
+          })),
+        ),
+      };
+    }
+    if (tx.value !== quote.sellAmount) {
+      throw new ChainError("invalid-request", "a native sell must forward exactly its amount");
+    }
+    return { kind: "call", to: tx.to, value: tx.value, data: tx.data };
+  };
+
   /**
    * `evm-delegation` (upgrade/revoke) and `evm-batch`: internal, group-scoped self-transactions —
    * the batch upgrades the account to the delegator when it is not already delegated to it.
@@ -486,6 +761,10 @@ export const createEvmRoute = (): EvmRoute => {
               : EVM_DELEGATOR.address,
         },
       };
+    } else if (input.method === "evm-approve") {
+      intent = await prepareApproveIntent(ctx, input, from, flags);
+    } else if (input.method === "evm-swap") {
+      intent = await prepareSwapIntent(ctx, input, from, flags);
     } else {
       if (input.calls.length < 2) {
         throw new ChainError("invalid-request", "a batch needs at least two calls");
@@ -530,6 +809,26 @@ export const createEvmRoute = (): EvmRoute => {
       intent,
       nativeValue: undefined,
     });
+    if (input.method === "evm-swap") {
+      /* The simulation is mandatory and must keep the quote's terms, now and at approval. */
+      const gasCost = BigInt(prepared.intent.fee?.max.amount ?? "0");
+      assertSwapSimulation(input.quote, prepared.simulation, gasCost);
+      const rerun = prepared.resimulate;
+      const resimulate =
+        rerun === undefined
+          ? undefined
+          : async () => {
+              const outcome = await rerun();
+              assertSwapSimulation(input.quote, outcome, gasCost);
+              return outcome;
+            };
+      return {
+        ...prepared,
+        ...(resimulate === undefined ? {} : { resimulate }),
+        intent: { ...prepared.intent, warnings: [...prepared.intent.warnings, ...warnings] },
+        checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
+      };
+    }
     return {
       ...prepared,
       intent: { ...prepared.intent, warnings: [...prepared.intent.warnings, ...warnings] },

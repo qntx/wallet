@@ -460,7 +460,10 @@ export class TransactionController extends Controller<TransactionControllerState
    * self-transaction without signing it.
    */
   async prepareEvmInternal(
-    input: Extract<ChainRequestInput, { method: "evm-delegation" | "evm-batch" }>,
+    input: Extract<
+      ChainRequestInput,
+      { method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" }
+    >,
     _requestId: string,
   ): Promise<PreparedRequest> {
     if (this.locked) {

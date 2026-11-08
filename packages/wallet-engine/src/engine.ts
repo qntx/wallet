@@ -46,7 +46,10 @@ import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
 import type { EngineStore, PublicStore } from "./store/port.ts";
+import type { SwapQuote } from "./swaps/index.ts";
+import { fetchSwapQuote } from "./swaps/quote.ts";
 import { TransactionController } from "./transactions/controller.ts";
+import { accountAddress } from "./transactions/route.ts";
 import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
 
 export type EngineOptions = {
@@ -128,6 +131,17 @@ export type WalletEngine = {
   };
   /** The account's EIP-7702 delegation state on `network`. */
   readonly delegation: (account: AccountRef, network: string) => Promise<DelegationStatus>;
+  /** A gateway 0x swap quote — display-only; `undefined` when the quote has no liquidity. */
+  readonly swaps: {
+    readonly quote: (params: {
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly sell: string;
+      readonly buy: string;
+      readonly amount: bigint;
+      readonly slippageBps: number;
+    }) => Promise<SwapQuote | undefined>;
+  };
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
     readonly resolve: (input: string, network: SparkNetwork) => Promise<PaymentParse>;
@@ -403,6 +417,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       publicKey: bitcoinPubkeyFromXpub(account.xpub, template, network, 0, 0),
     };
   };
+  const evmAddressOf = async (account: AccountRef, network: string): Promise<string> => {
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
+    const resolved = await chains(options.wallet).account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template: "evm.bip44",
+      network,
+    });
+    return accountAddress(resolved);
+  };
   const connections = new ConnectionController({
     phishing,
     setTimer,
@@ -645,6 +671,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     delegation: async (account: AccountRef, network: string) =>
       transactions.delegationState(account, network),
+    swaps: {
+      quote: async (params) =>
+        fetchSwapQuote(
+          {
+            fetch: options.fetch,
+            gateway: options.gateway,
+            address: evmAddressOf,
+            now: options.now,
+          },
+          params,
+        ),
+    },
     phishing,
     unsubscribe: () => {
       unsubscribe();

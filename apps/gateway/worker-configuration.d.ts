@@ -6,6 +6,11 @@ interface __BaseEnv_Env {
 	RPC_LIMITER: RateLimit;
 	DEFAULT_LIMITER: RateLimit;
 	CORS_ORIGINS: "http://localhost:5173,http://localhost:8081";
+	/** 0x quote relay — `wrangler secret put ZEROX_API_KEY`; absent, `/v1/quotes/swap` is 503. */
+	ZEROX_API_KEY?: string;
+	/** Optional integrator fee on quotes — both or neither. */
+	ZEROX_FEE_RECIPIENT?: string;
+	ZEROX_FEE_BPS?: string;
 }
 declare namespace Cloudflare {
 	interface GlobalProps {

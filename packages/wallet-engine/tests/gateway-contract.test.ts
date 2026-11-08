@@ -39,6 +39,8 @@ import {
   rpcRequest,
   rpcResponse,
   servedNetworks,
+  swapQuoteRequest,
+  swapQuoteResponse,
   servedNetworksResponse,
   solanaRpcRequest,
 } from "../src/gateway/contract/index.ts";
@@ -591,5 +593,60 @@ describe("hashList at scale", () => {
       Array.from({ length: hashCount(list) }, (_, i) => hexOf(list.subarray(i * 8, i * 8 + 8))),
     ).toStrictEqual(expected);
     expect(decodeHashList(encodeHashList(list))).toStrictEqual(list);
+  });
+});
+
+describe("swapQuote", () => {
+  const AH = "0x0000000000001fF3684f28c67538d4D072C22734";
+  const USDC = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+  const WETH = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
+  const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+  const TAKER = "0x8f3796aa4dB3f47E0fE0D19f9c3c96a51aD5f0F8";
+
+  it("validates the request: an eip155 network, hex tokens, a positive sellAmount, bps 1-5000", () => {
+    const good = {
+      network: "eip155:1",
+      sellToken: USDC,
+      buyToken: NATIVE,
+      sellAmount: "1000000",
+      taker: TAKER,
+      slippageBps: 100,
+    };
+    expect(accepts(swapQuoteRequest, good)).toBe(true);
+    expect(accepts(swapQuoteRequest, { ...good, network: "bip122:x" })).toBe(false);
+    expect(accepts(swapQuoteRequest, { ...good, sellToken: "usdc" })).toBe(false);
+    expect(accepts(swapQuoteRequest, { ...good, sellAmount: "0" })).toBe(false);
+    expect(accepts(swapQuoteRequest, { ...good, slippageBps: 0 })).toBe(false);
+    expect(accepts(swapQuoteRequest, { ...good, slippageBps: 5001 })).toBe(false);
+    expect(accepts(swapQuoteRequest, { ...good, slippageBps: 1.5 })).toBe(false);
+  });
+
+  it("a filled response carries the exec calldata and the quote's terms", () => {
+    const filled = {
+      liquidity: true,
+      provider: "0x",
+      sellToken: USDC,
+      buyToken: WETH,
+      sellAmount: "1000000",
+      buyAmount: "400000000000000",
+      minBuyAmount: "380000000000000",
+      allowanceTarget: AH,
+      transaction: { to: AH, data: "0x2213bc0b00", value: "0", gas: "210000" },
+      fees: { integrator: null, zeroEx: { token: USDC, amount: "500" } },
+      blockNumber: "21000000",
+    };
+    expect(accepts(swapQuoteResponse, filled)).toBe(true);
+    expect(accepts(swapQuoteResponse, { liquidity: false })).toBe(true);
+    /* `transaction.gas` may be null; a non-hex address or a bad data string is rejected. */
+    expect(
+      accepts(swapQuoteResponse, {
+        ...filled,
+        transaction: { ...filled.transaction, gas: null },
+      }),
+    ).toBe(true);
+    expect(
+      accepts(swapQuoteResponse, { ...filled, transaction: { ...filled.transaction, data: "zz" } }),
+    ).toBe(false);
+    expect(accepts(swapQuoteResponse, { ...filled, allowanceTarget: "nope" })).toBe(false);
   });
 });
