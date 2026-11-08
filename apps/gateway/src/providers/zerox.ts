@@ -1,8 +1,6 @@
-import {
-  ZEROX_API_BASE,
-  parseWith,
-  zeroExUpstreamResponse,
-} from "@qntx/wallet-engine/gateway/contract";
+import * as z from "zod/mini";
+
+import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { UpstreamProvider } from "../types.ts";
@@ -13,7 +11,78 @@ export type ZeroExConfig = {
   readonly fee?: { readonly recipient: string; readonly bps: number };
 };
 
+/**
+ * The 0x relay bindings — the API key alone enables the route; the fee pair is validated once, at
+ * option build, so a misconfigured worker fails closed instead of forwarding junk to 0x.
+ */
+export const zeroExConfig = (env: {
+  readonly ZEROX_API_KEY?: string;
+  readonly ZEROX_FEE_RECIPIENT?: string;
+  readonly ZEROX_FEE_BPS?: string;
+}): ZeroExConfig | undefined => {
+  if (env.ZEROX_API_KEY === undefined) {
+    return undefined;
+  }
+  if (env.ZEROX_FEE_RECIPIENT === undefined && env.ZEROX_FEE_BPS === undefined) {
+    return { apiKey: env.ZEROX_API_KEY };
+  }
+  const recipient = env.ZEROX_FEE_RECIPIENT ?? "";
+  const bps = env.ZEROX_FEE_BPS ?? "";
+  if (!/^0x[0-9a-fA-F]{40}$/.test(recipient) || !/^[0-9]+$/.test(bps)) {
+    throw new Error("invalid ZEROX_FEE_RECIPIENT or ZEROX_FEE_BPS");
+  }
+  const bpsN = Number(bps);
+  if (!Number.isInteger(bpsN) || bpsN < 1 || bpsN > 1000) {
+    throw new Error("invalid ZEROX_FEE_RECIPIENT or ZEROX_FEE_BPS");
+  }
+  return { apiKey: env.ZEROX_API_KEY, fee: { recipient, bps: bpsN } };
+};
+
+const ZEROX_API_BASE = "https://api.0x.org";
+
 const PROVIDER: UpstreamProvider = { id: "0x", url: ZEROX_API_BASE };
+
+/** `0x` + 40 hex — an EVM address, the 0x native sentinel `0xEeee…` among them. */
+const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
+
+/** A decimal string of a non-negative integer (`"0"` allowed for gas nulls). */
+const decimal = z.string().check(z.regex(/^[0-9]+$/));
+
+const upstreamFee = z.object({
+  amount: decimal,
+  token: evmAddress,
+  type: z.string(),
+});
+
+/**
+ * The fields of the 0x allowance-holder quote response the gateway consumes — `route`,
+ * `tokenMetadata`, `totalNetworkFee` and the rest are left on the wire on purpose.
+ */
+const zeroExUpstreamResponse = z.object({
+  liquidityAvailable: z.boolean(),
+  allowanceTarget: z.optional(z.union([evmAddress, z.null()])),
+  blockNumber: z.optional(decimal),
+  buyAmount: z.optional(decimal),
+  buyToken: z.optional(evmAddress),
+  sellAmount: z.optional(decimal),
+  sellToken: z.optional(evmAddress),
+  minBuyAmount: z.optional(decimal),
+  fees: z.optional(
+    z.object({
+      integratorFee: z.optional(z.union([upstreamFee, z.null()])),
+      zeroExFee: z.optional(z.union([upstreamFee, z.null()])),
+    }),
+  ),
+  transaction: z.optional(
+    z.object({
+      to: evmAddress,
+      data: z.string().check(z.regex(/^0x[0-9a-fA-F]*$/)),
+      value: decimal,
+      gas: z.union([decimal, z.null()]),
+    }),
+  ),
+  zid: z.optional(z.string()),
+});
 
 const upstreamFeeOf = (
   fee: { readonly amount: string; readonly token: string } | undefined,
@@ -22,9 +91,13 @@ const upstreamFeeOf = (
 
 /**
  * Calls 0x's allowance-holder quote and normalizes it into the wire shape. The upstream error body
- * is never forwarded: a 4xx becomes a bare `invalid-request`, transport/5xx failures a `503`.
+ * is never forwarded: a client error (400, 403, 422) is a bare `invalid-request`; anything else —
+ * auth, rate limit, 5xx, transport, malformed body — is an upstream `503`.
  */
 export type ZeroExQuote = { readonly badRequest: true } | SwapQuoteResponse;
+
+/** The upstream statuses that mean "the request is wrong", not "0x is down". */
+const CLIENT_ERROR: ReadonlySet<number> = new Set([400, 403, 422]);
 
 export async function zeroExQuote(
   forwarder: Forwarder,
@@ -57,17 +130,7 @@ export async function zeroExQuote(
     });
     const text = await http.text();
     if (!http.ok) {
-      /* A 4xx with a parseable 0x error body is a bad request, not an outage. */
-      let badRequest = false;
-      if (http.status >= 400 && http.status < 500) {
-        try {
-          const parsed: unknown = JSON.parse(text);
-          badRequest = typeof parsed === "object" && parsed !== null && "code" in parsed;
-        } catch {
-          badRequest = false;
-        }
-      }
-      if (badRequest) {
+      if (CLIENT_ERROR.has(http.status)) {
         return { badRequest: true } as const;
       }
       throw new Error(`0x returned ${http.status}`);

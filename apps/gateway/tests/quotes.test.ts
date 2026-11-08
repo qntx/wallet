@@ -2,6 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { swapQuote } from "@qntx/wallet-engine/gateway/contract";
 
+import { zeroExConfig } from "../src/providers/zerox.ts";
 import { SEPOLIA, expectContract, fakeFetch, gateway, headers } from "./helpers.ts";
 
 const API = "https://api.0x.org";
@@ -94,22 +95,74 @@ describe("GET /v1/quotes/swap", () => {
     });
   });
 
-  it("maps an upstream 4xx error body to 400", async () => {
+  it.each([400, 403, 422])("maps an upstream %i error body to 400", async (status) => {
+    /* The real 0x error shape: { name, message, data } — the status decides, not the body. */
     const upstream = fakeFetch({
       [`${API}/swap/allowance-holder/quote`]: () =>
-        Response.json({ code: "INSUFFICIENT_ASSET_LIQUIDITY", reason: "x" }, { status: 400 }),
+        Response.json({ name: "INPUT_INVALID", message: "bad sellToken", data: {} }, { status }),
     });
     const app = gateway({ fetch: upstream.fetch, zeroEx: { apiKey: "k" } });
     const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
     expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toStrictEqual({ error: "invalid-request" });
   });
 
-  it("maps an upstream 5xx to 503", async () => {
+  it.each([401, 429, 502])("maps an upstream %i to 503", async (status) => {
     const upstream = fakeFetch({
-      [`${API}/swap/allowance-holder/quote`]: () => new Response("down", { status: 502 }),
+      [`${API}/swap/allowance-holder/quote`]: () =>
+        Response.json({ name: "UPSTREAM", message: "x", data: {} }, { status }),
     });
     const app = gateway({ fetch: upstream.fetch, zeroEx: { apiKey: "k" } });
     const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
     expect(res.status).toBe(503);
+  });
+
+  it("maps a malformed upstream body to 503", async () => {
+    const upstream = fakeFetch({
+      [`${API}/swap/allowance-holder/quote`]: () => Response.json({ ok: true }),
+    });
+    const app = gateway({ fetch: upstream.fetch, zeroEx: { apiKey: "k" } });
+    const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
+  });
+});
+
+describe("zeroExConfig", () => {
+  it("is undefined without a key, key-only without fee bindings, and pairs a valid fee", () => {
+    expect(zeroExConfig({})).toBeUndefined();
+    expect(zeroExConfig({ ZEROX_API_KEY: "k" })).toStrictEqual({ apiKey: "k" });
+    expect(
+      zeroExConfig({
+        ZEROX_API_KEY: "k",
+        ZEROX_FEE_RECIPIENT: "0x00000000000000000000000000000000000000f1",
+        ZEROX_FEE_BPS: "25",
+      }),
+    ).toStrictEqual({
+      apiKey: "k",
+      fee: { recipient: "0x00000000000000000000000000000000000000f1", bps: 25 },
+    });
+  });
+
+  it.each([
+    { ZEROX_API_KEY: "k", ZEROX_FEE_RECIPIENT: "0x123", ZEROX_FEE_BPS: "25" },
+    { ZEROX_API_KEY: "k", ZEROX_FEE_RECIPIENT: "0x00000000000000000000000000000000000000f1" },
+    {
+      ZEROX_API_KEY: "k",
+      ZEROX_FEE_RECIPIENT: "0x00000000000000000000000000000000000000f1",
+      ZEROX_FEE_BPS: "0",
+    },
+    {
+      ZEROX_API_KEY: "k",
+      ZEROX_FEE_RECIPIENT: "0x00000000000000000000000000000000000000f1",
+      ZEROX_FEE_BPS: "1001",
+    },
+    {
+      ZEROX_API_KEY: "k",
+      ZEROX_FEE_RECIPIENT: "0x00000000000000000000000000000000000000f1",
+      ZEROX_FEE_BPS: "1.5",
+    },
+    { ZEROX_API_KEY: "k", ZEROX_FEE_BPS: "25" },
+  ])("rejects %o", (env) => {
+    expect(() => zeroExConfig(env)).toThrow("ZEROX_FEE");
   });
 });

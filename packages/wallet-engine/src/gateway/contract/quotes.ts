@@ -3,9 +3,6 @@ import * as z from "zod/mini";
 import { endpoint } from "./endpoint.ts";
 import { caip2 } from "./primitives.ts";
 
-/** The 0x API base the gateway relays to. */
-export const ZEROX_API_BASE = "https://api.0x.org";
-
 /** The native-token sentinel 0x uses for sell and buy tokens. */
 export const ZEROX_NATIVE_TOKEN = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
 
@@ -28,7 +25,7 @@ export const swapQuoteRequest = z.object({
   /** The address the settlement contract pays out for. */
   taker: evmAddress,
   /** Worst-case slippage in basis points, 1–5000 (a query string, coerced). */
-  slippageBps: z.coerce.number().check(z.minimum(1), z.maximum(5000)),
+  slippageBps: z.coerce.number().check(z.int(), z.minimum(1), z.maximum(5000)),
 });
 
 const fee = z.object({
@@ -72,41 +69,3 @@ export const swapQuote = endpoint("GET", "/v1/quotes/swap", swapQuoteRequest, sw
 
 export type SwapQuoteRequest = z.infer<typeof swapQuoteRequest>;
 export type SwapQuoteResponse = z.infer<typeof swapQuoteResponse>;
-
-const upstreamFee = z.object({
-  amount: decimal,
-  token: evmAddress,
-  type: z.string(),
-});
-
-/**
- * The fields of the 0x allowance-holder quote response the gateway consumes — `route`,
- * `tokenMetadata`, `totalNetworkFee` and the rest are left on the wire on purpose.
- */
-export const zeroExUpstreamResponse = z.object({
-  liquidityAvailable: z.boolean(),
-  allowanceTarget: z.optional(z.union([evmAddress, z.null()])),
-  blockNumber: z.optional(decimal),
-  buyAmount: z.optional(decimal),
-  buyToken: z.optional(evmAddress),
-  sellAmount: z.optional(decimal),
-  sellToken: z.optional(evmAddress),
-  minBuyAmount: z.optional(decimal),
-  fees: z.optional(
-    z.object({
-      integratorFee: z.optional(z.union([upstreamFee, z.null()])),
-      zeroExFee: z.optional(z.union([upstreamFee, z.null()])),
-    }),
-  ),
-  transaction: z.optional(
-    z.object({
-      to: evmAddress,
-      data: z.string().check(z.regex(/^0x[0-9a-fA-F]*$/)),
-      value: decimal,
-      gas: z.union([decimal, z.null()]),
-    }),
-  ),
-  zid: z.optional(z.string()),
-});
-
-export type ZeroExUpstreamResponse = z.infer<typeof zeroExUpstreamResponse>;

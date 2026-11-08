@@ -108,6 +108,7 @@ const simResult = (
     readonly sellAmount: bigint;
     readonly buy: string;
     readonly buyAmount: bigint;
+    readonly taker?: string;
   },
   fail = false,
 ): ((params: unknown) => unknown) => {
@@ -184,6 +185,11 @@ function world(options: {
   settler?: string;
   prev?: string;
   registryFail?: boolean;
+  prevFail?: boolean;
+  ahCode?: string;
+  independentAhCode?: string;
+  independentSettler?: string;
+  independentRegistryFail?: boolean;
   sim?: unknown;
 }) {
   const calls: Array<{ url: string; method: string; params?: unknown }> = [];
@@ -204,7 +210,13 @@ function world(options: {
     if (body.method === "eth_getCode") {
       const p = body.params?.[0] as string;
       if (p?.toLowerCase() === AH.toLowerCase()) {
-        return reply(AH_CODE);
+        const independent = url === HOST;
+        const ah =
+          (independent ? (options.independentAhCode ?? options.ahCode) : options.ahCode) ?? AH_CODE;
+        if (ah === "fail") {
+          return Response.json({ jsonrpc: "2.0", id: 1, error: { code: 3, message: "x" } });
+        }
+        return reply(ah);
       }
       return reply(code[p?.toLowerCase() ?? ""] ?? "0x");
     }
@@ -220,12 +232,22 @@ function world(options: {
         return reply(word(options.allowance ?? 0n));
       }
       if (selector === "0x6352211e") {
-        if (options.registryFail === true) {
+        const independent = url === HOST;
+        const fail = independent
+          ? (options.independentRegistryFail ?? options.registryFail)
+          : options.registryFail;
+        if (fail === true) {
           return Response.json({ jsonrpc: "2.0", id: 1, error: { code: 3, message: "revert" } });
         }
-        return reply(addr(options.settler ?? SETTLER));
+        const settler = independent
+          ? (options.independentSettler ?? options.settler)
+          : options.settler;
+        return reply(addr(settler ?? SETTLER));
       }
       if (selector === "0xe2603dc2") {
+        if (options.prevFail === true) {
+          return Response.json({ jsonrpc: "2.0", id: 1, error: { code: 3, message: "revert" } });
+        }
         return reply(addr(options.prev ?? "0x0000000000000000000000000000000000000000"));
       }
       return reply(word(0n));
@@ -363,7 +385,13 @@ describe("evm-swap", () => {
   it("a native sell forwards exactly its amount to AllowanceHolder", async () => {
     const w = world({
       address: "0xb1673a692f7f99DDEdd49c4a307B367544A3c4c2",
-      sim: simResult({ sell: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", sellAmount: 70000000000000000n, buy: USDC, buyAmount: 160000000n, taker: "0xb1673a692f7f99DDEdd49c4a307B367544A3c4c2" }),
+      sim: simResult({
+        sell: "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        sellAmount: 70000000000000000n,
+        buy: USDC,
+        buyAmount: 160000000n,
+        taker: "0xb1673a692f7f99DDEdd49c4a307B367544A3c4c2",
+      }),
     });
     await w.start();
     const request = await prepareSwap(w, nativeQuote());
@@ -392,6 +420,33 @@ describe("evm-swap", () => {
     const paused = world({ allowance: 10000000n, registryFail: true });
     await paused.start();
     await expect(prepareSwap(paused)).rejects.toThrow("paused");
+  });
+
+  it("accepts the current Settler when the registry has no previous entry", async () => {
+    const w = world({ allowance: 10000000n, prevFail: true });
+    await w.start();
+    const request = await prepareSwap(w);
+    await w.requests.approve(request.id, "evm-swap", VERIFY);
+    expect(w.signedRequests).toHaveLength(1);
+  });
+
+  it("refuses an AllowanceHolder code-hash mismatch on the independent endpoint", async () => {
+    const w = world({ allowance: 10000000n, independentAhCode: "0x1234" });
+    await w.start();
+    await expect(prepareSwap(w)).rejects.toThrow("AllowanceHolder");
+  });
+
+  it("refuses a Settler missing on the independent endpoint's registry", async () => {
+    const w = world({ allowance: 10000000n, independentSettler: USDC });
+    await w.start();
+    await expect(prepareSwap(w)).rejects.toThrow("unrecognised Settler");
+  });
+
+  it("flags reads-unverified when the independent endpoint fails", async () => {
+    const w = world({ allowance: 10000000n, independentAhCode: "fail" });
+    await w.start();
+    const request = await prepareSwap(w);
+    expect(request.checks).toContain("reads-unverified");
   });
 });
 

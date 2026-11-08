@@ -8,9 +8,7 @@ import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
-import { ChainError } from "@qntx/wallet-chains";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import { EVM_NATIVE_ASSET, ZEROX_CHAINS } from "@qntx/wallet-chains/evm";
 import { normalizeSolana } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
@@ -30,9 +28,6 @@ import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
-import { gatewayFetch } from "./gateway/client.ts";
-import { parseWith, swapQuote } from "./gateway/contract/index.ts";
-import { ZEROX_NATIVE_TOKEN } from "./gateway/contract/quotes.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
 import { resolveEns } from "./names/ens.ts";
@@ -51,9 +46,10 @@ import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
 import type { EngineStore, PublicStore } from "./store/port.ts";
-import { chainIdOf } from "./swaps/index.ts";
 import type { SwapQuote } from "./swaps/index.ts";
+import { fetchSwapQuote } from "./swaps/quote.ts";
 import { TransactionController } from "./transactions/controller.ts";
+import { accountAddress } from "./transactions/route.ts";
 import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
 
 export type EngineOptions = {
@@ -164,14 +160,6 @@ const defaultSetTimer = (ms: number, fn: () => void): (() => void) => {
     clearTimeout(id);
   };
 };
-
-const toZeroXToken = (asset: string): string =>
-  asset === EVM_NATIVE_ASSET ? ZEROX_NATIVE_TOKEN : asset;
-const fromZeroXToken = (token: string): string =>
-  token.toLowerCase() === ZEROX_NATIVE_TOKEN.toLowerCase() ||
-  token === "0x0000000000000000000000000000000000000000"
-    ? EVM_NATIVE_ASSET
-    : token;
 
 export function createWalletEngine(options: EngineOptions): WalletEngine {
   const setTimer = options.setTimer ?? defaultSetTimer;
@@ -439,10 +427,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       template: "evm.bip44",
       network,
     });
-    if (!("address" in resolved) || resolved.address === undefined) {
-      throw new Error("no EVM account for the group");
-    }
-    return resolved.address;
+    return accountAddress(resolved);
   };
   const connections = new ConnectionController({
     phishing,
@@ -687,67 +672,16 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     delegation: async (account: AccountRef, network: string) =>
       transactions.delegationState(account, network),
     swaps: {
-      quote: async (params) => {
-        const { account, network, sell, buy, amount, slippageBps } = params;
-        if (options.gateway === undefined) {
-          throw new ChainError("unsupported", "no gateway is configured");
-        }
-        const chainId = chainIdOf(network);
-        if (chainId === 0 || !ZEROX_CHAINS.has(chainId)) {
-          throw new ChainError("unsupported", "the network does not support 0x swaps");
-        }
-        const taker = await evmAddressOf(account, network);
-        const url = new URL(`${options.gateway.url.replace(/\/+$/, "")}${swapQuote.path}`);
-        url.searchParams.set("network", network);
-        url.searchParams.set("sellToken", toZeroXToken(sell));
-        url.searchParams.set("buyToken", toZeroXToken(buy));
-        url.searchParams.set("sellAmount", amount.toString(10));
-        url.searchParams.set("taker", taker);
-        url.searchParams.set("slippageBps", String(slippageBps));
-        const res = await gatewayFetch(options.fetch, options.gateway)(url, {});
-        if (!res.ok) {
-          throw new Error(`the quote service returned ${res.status}`);
-        }
-        const body = parseWith(swapQuote.response, await res.json());
-        if (body === undefined) {
-          throw new Error("the quote service returned a malformed response");
-        }
-        if (!body.liquidity) {
-          return undefined;
-        }
-
-        return {
-          network,
-          taker,
-          sell: fromZeroXToken(body.sellToken),
-          buy: fromZeroXToken(body.buyToken),
-          sellAmount: BigInt(body.sellAmount),
-          buyAmount: BigInt(body.buyAmount),
-          minBuyAmount: BigInt(body.minBuyAmount),
-          allowanceTarget: body.allowanceTarget ?? undefined,
-          transaction: {
-            to: body.transaction.to,
-            data: body.transaction.data,
-            value: BigInt(body.transaction.value),
-            gas: body.transaction.gas === null ? undefined : BigInt(body.transaction.gas),
+      quote: async (params) =>
+        fetchSwapQuote(
+          {
+            fetch: options.fetch,
+            gateway: options.gateway,
+            address: evmAddressOf,
+            now: options.now,
           },
-          fees: {
-            integrator:
-              body.fees.integrator === null
-                ? undefined
-                : {
-                    token: body.fees.integrator.token,
-                    amount: BigInt(body.fees.integrator.amount),
-                  },
-            zeroEx:
-              body.fees.zeroEx === null
-                ? undefined
-                : { token: body.fees.zeroEx.token, amount: BigInt(body.fees.zeroEx.amount) },
-          },
-          blockNumber: BigInt(body.blockNumber),
-          fetchedAt: options.now(),
-        };
-      },
+          params,
+        ),
     },
     phishing,
     unsubscribe: () => {

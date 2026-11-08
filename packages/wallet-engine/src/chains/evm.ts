@@ -62,6 +62,26 @@ export type ChainTxStatus = "pending" | "confirmed" | "failed" | "finalized";
 export const ERC20_ABI = [
   {
     type: "function",
+    name: "approve",
+    inputs: [
+      { name: "spender", type: "address" },
+      { name: "value", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+  },
+  {
+    type: "function",
+    name: "allowance",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
     name: "transfer",
     inputs: [
       { name: "to", type: "address" },
@@ -120,7 +140,7 @@ const unverifiedMetadata = (token: {
   };
 };
 
-const checkedHex = (v: string): `0x${string}` => {
+export const checkedHex = (v: string): `0x${string}` => {
   if (!isHex(v, { strict: true }) || v.length % 2 !== 0) {
     throw new TypeError("malformed hex data");
   }

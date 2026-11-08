@@ -1,5 +1,4 @@
-import { keccak_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { parseAbi } from "viem";
 
 import { ChainError } from "@qntx/wallet-chains";
 import type { DisplayIntent } from "@qntx/wallet-chains";
@@ -16,31 +15,15 @@ export const ALLOWANCE_HOLDER_CODE_HASH =
 /** The 0x deployer: `ownerOf(2)` is the current taker Settler, `prev(2)` the previous one. */
 export const ZEROX_REGISTRY = "0x00000000000004533Fe15556B1E086BB1A72cEae";
 
+/** The deployer registry: taker Settler is feature id 2 (meta-tx is 3, intent 4, bridge 5). */
+export const SETTLER_REGISTRY_ABI = parseAbi([
+  "function ownerOf(uint256) view returns (address)",
+  "function prev(uint128) view returns (address)",
+]);
+export const SETTLER_FEATURE = 2n;
+
 /** A quote older than this may not be signed. */
 export const QUOTE_MAX_AGE_MS = 60_000;
-
-const word = (value: bigint): string => value.toString(16).padStart(64, "0");
-const addrWord = (address: string): string => address.slice(2).toLowerCase().padStart(64, "0");
-
-/** `ownerOf(uint256)` calldata — the 0x deployer registry. */
-export const ownerOfData = (feature: bigint): string => `0x6352211e${word(feature)}`;
-/** `prev(uint128)` calldata — the previous entry for a feature. */
-export const prevOfData = (feature: bigint): string => `0xe2603dc2${word(feature)}`;
-
-/** `approve(address,uint256)` calldata. */
-export const approveData = (spender: string, amount: bigint): string =>
-  `0x095ea7b3${addrWord(spender)}${word(amount)}`;
-
-/** `allowance(address,address)` calldata. */
-export const allowanceData = (owner: string, spender: string): string =>
-  `0xdd62ed3e${addrWord(owner)}${addrWord(spender)}`;
-
-const sameAsset = (a: string, b: string): boolean => a === b || a.toLowerCase() === b.toLowerCase();
-
-export const chainIdOf = (network: string): number => {
-  const id = Number(network.split(":")[1]);
-  return Number.isInteger(id) && id > 0 ? id : 0;
-};
 
 /**
  * The terms a gateway swap quote commits to — `sell`/`buy` use the engine's own asset ids
@@ -69,7 +52,7 @@ export type SwapQuote = {
   readonly fetchedAt: number;
 };
 
-export const SETTLER_FEATURE = 2;
+const sameAsset = (a: string, b: string): boolean => a === b || a.toLowerCase() === b.toLowerCase();
 
 /**
  * Verifies a decoded `exec` intent against the quote it claims to settle: `summary` is `swap`, the
@@ -128,13 +111,13 @@ export const assertSwapIntent = (
  */
 export const assertSwapSimulation = (
   quote: SwapQuote,
-  simulation: SimulationOutcome,
+  simulation: SimulationOutcome | undefined,
   gasCost: bigint,
 ): void => {
-  if (simulation.status !== "success") {
+  if (simulation?.status !== "success") {
     throw new ChainError(
       "invalid-request",
-      `the swap simulation ${simulation.status === "reverted" ? "reverted" : "is unavailable"}`,
+      `the swap simulation ${simulation?.status === "reverted" ? "reverted" : "is unavailable"}`,
     );
   }
   const total = (asset: string): bigint =>
@@ -164,10 +147,3 @@ export const assertSwapSimulation = (
     }
   }
 };
-
-/** Keccak-256 of `0x…` hex, returned as `0x…` hex. */
-export const keccak256Hex = (hex: string): string =>
-  `0x${bytesToHex(keccak_256(hexToBytes(hex.slice(2))))}`;
-
-/** The last 20 bytes of a 32-byte `eth_call` word — an address. */
-export const last20 = (word_: string): string => `0x${word_.slice(-40)}`;

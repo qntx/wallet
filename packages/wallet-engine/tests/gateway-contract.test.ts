@@ -618,6 +618,7 @@ describe("swapQuote", () => {
     expect(accepts(swapQuoteRequest, { ...good, sellAmount: "0" })).toBe(false);
     expect(accepts(swapQuoteRequest, { ...good, slippageBps: 0 })).toBe(false);
     expect(accepts(swapQuoteRequest, { ...good, slippageBps: 5001 })).toBe(false);
+    expect(accepts(swapQuoteRequest, { ...good, slippageBps: 1.5 })).toBe(false);
   });
 
   it("a filled response carries the exec calldata and the quote's terms", () => {

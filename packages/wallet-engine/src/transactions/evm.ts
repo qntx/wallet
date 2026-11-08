@@ -1,5 +1,13 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
-import { isAddress, isHex, parseTransaction } from "viem";
+import {
+  encodeFunctionData,
+  getAddress,
+  isAddress,
+  isHex,
+  keccak256,
+  parseTransaction,
+} from "viem";
+import { readContract } from "viem/actions";
 
 import { ChainError } from "@qntx/wallet-chains";
 import type { IntentWarning, SignRequest } from "@qntx/wallet-chains";
@@ -12,10 +20,11 @@ import {
   checksumEvmAddress,
   decodeEvm,
   encodeBatchExecute,
+  networkChainId,
 } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
-import { EvmChainAdapter, evmRpcHex } from "../chains/evm.ts";
+import { ERC20_ABI, EvmChainAdapter, checkedHex, evmRpcHex } from "../chains/evm.ts";
 import type { EvmUnsignedTransaction } from "../chains/evm.ts";
 import { resolveEns } from "../names/ens.ts";
 import {
@@ -30,16 +39,10 @@ import {
   ALLOWANCE_HOLDER_CODE_HASH,
   QUOTE_MAX_AGE_MS,
   SETTLER_FEATURE,
+  SETTLER_REGISTRY_ABI,
   ZEROX_REGISTRY,
-  allowanceData,
-  approveData,
   assertSwapIntent,
   assertSwapSimulation,
-  chainIdOf,
-  keccak256Hex,
-  last20,
-  ownerOfData,
-  prevOfData,
 } from "../swaps/index.ts";
 import {
   accountAddress,
@@ -249,6 +252,19 @@ const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent
         fee: { ...intent.fee, l1Data: { asset: EVM_NATIVE_ASSET, amount: l1.toString(10) } },
       };
 
+const erc20Allowance = async (
+  client: Parameters<typeof readContract>[0],
+  token: string,
+  owner: string,
+  spender: string,
+): Promise<bigint> =>
+  readContract(client, {
+    address: getAddress(token),
+    abi: ERC20_ABI,
+    functionName: "allowance",
+    args: [getAddress(owner), getAddress(spender)],
+  });
+
 /** `allowance(owner, spender)` on both endpoints; the lower wins, a disagreement is flagged. */
 const readAllowance = async (
   ctx: RouteContext,
@@ -259,12 +275,11 @@ const readAllowance = async (
   flags: Array<RequestCheckCode | undefined>,
 ): Promise<bigint> => {
   const client = ctx.options.networks.client(network);
-  const call = { to: token, data: allowanceData(owner, spender) };
-  const primary = BigInt(await evmRpcHex(client, "eth_call", [call, "latest"]));
+  const primary = await erc20Allowance(client, token, owner, spender);
   const independent = ctx.options.networks.independentClient(network);
   if (independent.kind === "available") {
     try {
-      const other = BigInt(await evmRpcHex(independent.client, "eth_call", [call, "latest"]));
+      const other = await erc20Allowance(independent.client, token, owner, spender);
       if (primary !== other) {
         flags.push("reads-unverified");
       }
@@ -278,11 +293,42 @@ const readAllowance = async (
 
 type BuildIntent = Parameters<EvmChainAdapter["build"]>[3];
 
-/** `eth_call` on the 0x deployer registry — `ownerOf`/`prev`. */
-const callRegistry = async (
-  client: Parameters<typeof evmRpcHex>[0],
-  data: string,
-): Promise<string> => evmRpcHex(client, "eth_call", [{ to: ZEROX_REGISTRY, data }, "latest"]);
+/** `approve(ALLOWANCE_HOLDER, amount)` calldata for a delegated swap batch. */
+const allowanceHolderApprove = (amount: bigint): string =>
+  encodeFunctionData({
+    abi: ERC20_ABI,
+    functionName: "approve",
+    args: [getAddress(ALLOWANCE_HOLDER), amount],
+  });
+
+/** The registry's current (`ownerOf`) and previous (`prev`) Settler for a feature. */
+const registrySettlers = async (
+  client: Parameters<typeof readContract>[0],
+): Promise<{ readonly current: string; readonly previous: string | undefined }> => {
+  let current: string;
+  try {
+    current = await readContract(client, {
+      address: ZEROX_REGISTRY,
+      abi: SETTLER_REGISTRY_ABI,
+      functionName: "ownerOf",
+      args: [SETTLER_FEATURE],
+    });
+  } catch {
+    throw new ChainError("invalid-request", "0x Settler is paused");
+  }
+  let previous: string | undefined;
+  try {
+    previous = await readContract(client, {
+      address: ZEROX_REGISTRY,
+      abi: SETTLER_REGISTRY_ABI,
+      functionName: "prev",
+      args: [SETTLER_FEATURE],
+    });
+  } catch {
+    /* `prev` reverts when the feature has never been redeployed — that is not a pause. */
+  }
+  return { current, previous };
+};
 
 /* approve(spender, amount) — refuses an unlimited amount and the USDT-style nonzero reset. */
 const prepareApproveIntent = async (
@@ -308,7 +354,11 @@ const prepareApproveIntent = async (
     kind: "call",
     to: input.token,
     value: 0n,
-    data: approveData(input.spender, input.amount),
+    data: encodeFunctionData({
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [getAddress(input.spender), input.amount],
+    }),
   };
 };
 
@@ -532,7 +582,6 @@ export const createEvmRoute = (): EvmRoute => {
     return state;
   };
 
-  /** `allowance(owner, spender)` on both endpoints; the lower wins, a disagreement is flagged. */
   /* `evm-swap`: verify the quote, then a single exec or a delegated [approve, exec] batch. */
   const prepareSwapIntent = async (
     ctx: RouteContext,
@@ -557,7 +606,7 @@ export const createEvmRoute = (): EvmRoute => {
     const client = ctx.options.networks.client(input.network);
     const independent = ctx.options.networks.independentClient(input.network);
     const ahCode = await evmRpcHex(client, "eth_getCode", [ALLOWANCE_HOLDER, "latest"]);
-    if (keccak256Hex(ahCode) !== ALLOWANCE_HOLDER_CODE_HASH) {
+    if (keccak256(checkedHex(ahCode)) !== ALLOWANCE_HOLDER_CODE_HASH) {
       throw new ChainError("invalid-request", "the AllowanceHolder is not the expected contract");
     }
     if (independent.kind === "available") {
@@ -566,21 +615,27 @@ export const createEvmRoute = (): EvmRoute => {
           ALLOWANCE_HOLDER,
           "latest",
         ]);
-        if (keccak256Hex(other) !== ALLOWANCE_HOLDER_CODE_HASH) {
-          flags.push("reads-unverified");
+        if (keccak256(checkedHex(other)) !== ALLOWANCE_HOLDER_CODE_HASH) {
+          throw new ChainError(
+            "invalid-request",
+            "the AllowanceHolder is not the expected contract",
+          );
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ChainError) {
+          throw error;
+        }
         flags.push("reads-unverified");
       }
     }
-    /* 3. The call must decode to a swap whose sell and minimum the quote claims. */
+    /* The call must decode to a swap whose sell and minimum the quote claims. */
     const request: SignRequest = {
       kind: "evm.transaction",
       network: input.network,
       account: input.account,
       tx: {
         type: "eip1559",
-        chainId: chainIdOf(input.network),
+        chainId: networkChainId(input.network),
         to: tx.to,
         value: `0x${tx.value.toString(16)}`,
         nonce: 0,
@@ -595,37 +650,31 @@ export const createEvmRoute = (): EvmRoute => {
     assertSwapIntent(quote, intent, from);
     const [outflow] = intent.outflows;
     const settler = outflow?.to ?? "";
-    /* 4. The decoded Settler is the registry's current or previous taker Settler on both endpoints. */
-
-    let current: string | undefined;
-    let previous: string | undefined;
-    try {
-      current = last20(await callRegistry(client, ownerOfData(BigInt(SETTLER_FEATURE))));
-      previous = last20(await callRegistry(client, prevOfData(BigInt(SETTLER_FEATURE))));
-    } catch {
-      throw new ChainError("invalid-request", "0x Settler is paused");
-    }
+    /* The decoded Settler must be the registry's current or previous taker Settler on both
+       endpoints; a failed independent read only flags the check unverified. */
+    const { current, previous } = await registrySettlers(client);
     if (
-      settler.toLowerCase() !== current?.toLowerCase() &&
+      settler.toLowerCase() !== current.toLowerCase() &&
       settler.toLowerCase() !== previous?.toLowerCase()
     ) {
       throw new ChainError("invalid-request", "the swap settles through an unrecognised Settler");
     }
     if (independent.kind === "available") {
       try {
-        const oc = last20(
-          await callRegistry(independent.client, ownerOfData(BigInt(SETTLER_FEATURE))),
-        );
-        const op = last20(
-          await callRegistry(independent.client, prevOfData(BigInt(SETTLER_FEATURE))),
-        );
+        const other = await registrySettlers(independent.client);
         if (
-          settler.toLowerCase() !== oc.toLowerCase() &&
-          settler.toLowerCase() !== op.toLowerCase()
+          settler.toLowerCase() !== other.current.toLowerCase() &&
+          settler.toLowerCase() !== other.previous?.toLowerCase()
         ) {
-          flags.push("reads-unverified");
+          throw new ChainError(
+            "invalid-request",
+            "the swap settles through an unrecognised Settler",
+          );
         }
-      } catch {
+      } catch (error) {
+        if (error instanceof ChainError) {
+          throw error;
+        }
         flags.push("reads-unverified");
       }
     }
@@ -656,8 +705,8 @@ export const createEvmRoute = (): EvmRoute => {
       const calls = [
         ...(current === 0n
           ? []
-          : [{ to: quote.sell, value: 0n, data: approveData(ALLOWANCE_HOLDER, 0n) }]),
-        { to: quote.sell, value: 0n, data: approveData(ALLOWANCE_HOLDER, quote.sellAmount) },
+          : [{ to: quote.sell, value: 0n, data: allowanceHolderApprove(0n) }]),
+        { to: quote.sell, value: 0n, data: allowanceHolderApprove(quote.sellAmount) },
         { to: tx.to, value: tx.value, data: tx.data },
       ];
       return {
@@ -763,9 +812,7 @@ export const createEvmRoute = (): EvmRoute => {
     if (input.method === "evm-swap") {
       /* The simulation is mandatory and must keep the quote's terms, now and at approval. */
       const gasCost = BigInt(prepared.intent.fee?.max.amount ?? "0");
-      if (prepared.simulation !== undefined) {
-        assertSwapSimulation(input.quote, prepared.simulation, gasCost);
-      }
+      assertSwapSimulation(input.quote, prepared.simulation, gasCost);
       const rerun = prepared.resimulate;
       const resimulate =
         rerun === undefined

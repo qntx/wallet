@@ -1,6 +1,7 @@
 import { createGateway } from "./app.ts";
 import { STAGING_NETWORKS } from "./config/networks.ts";
 import { PHISHING_SOURCES } from "./config/phishing.ts";
+import { zeroExConfig } from "./providers/zerox.ts";
 import { buildPhishingList } from "./risk/phishing.ts";
 import type { RiskStore } from "./risk/phishing.ts";
 
@@ -16,27 +17,14 @@ let gateway: Gateway | undefined;
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const zeroEx = zeroExConfig(env);
     gateway ??= createGateway({
       fetch: async (input, init) => fetch(input, init),
       networks: STAGING_NETWORKS,
       limiters: { rpc: env.RPC_LIMITER, default: env.DEFAULT_LIMITER },
       corsOrigins: env.CORS_ORIGINS.split(",").map((origin) => origin.trim()),
       risk: riskStore(env.RISK),
-      ...(env.ZEROX_API_KEY === undefined
-        ? {}
-        : {
-            zeroEx: {
-              apiKey: env.ZEROX_API_KEY,
-              ...(env.ZEROX_FEE_RECIPIENT === undefined || env.ZEROX_FEE_BPS === undefined
-                ? {}
-                : {
-                    fee: {
-                      recipient: env.ZEROX_FEE_RECIPIENT,
-                      bps: Number(env.ZEROX_FEE_BPS),
-                    },
-                  }),
-            },
-          }),
+      ...(zeroEx === undefined ? {} : { zeroEx }),
     });
     return gateway.fetch(request);
   },
