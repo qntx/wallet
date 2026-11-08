@@ -2,12 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { base64 } from "@scure/base";
-import { address,getAddressEncoder } from "@solana/kit";
+import { address, getAddressEncoder } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { SignRequest } from "@qntx/wallet-chains";
-import { chains } from "@qntx/wallet/chains";
+import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
@@ -311,7 +311,7 @@ const world = (o: SwapWorld = {}, _independent = true) => {
   return { requests, transactions, sent, signed, start };
 };
 
-const prepare =  async (w: ReturnType<typeof world>, quote: JupiterSwapQuote) =>
+const prepare = async (w: ReturnType<typeof world>, quote: JupiterSwapQuote) =>
   w.requests.prepare({
     method: "solana-swap",
     account: ACCOUNT,
@@ -351,10 +351,8 @@ describe("solana-swap through requests.prepare", () => {
     const w = world();
     await w.start();
     const quote = solQuote();
-    const bad = {
-      ...quote,
-      setup: quote.setup.map((ix, i) => (i === 0 ? { ...ix, programId: USDC } : ix)),
-    };
+    const badSetup = [{ ...quote.setup[0]!, programId: USDC }, ...quote.setup.slice(1)];
+    const bad = { ...quote, setup: badSetup };
     await expect(prepare(w, bad)).rejects.toThrow(/foreign program/);
   });
 

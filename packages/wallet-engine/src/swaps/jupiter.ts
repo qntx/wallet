@@ -4,6 +4,7 @@ import {
   ADDRESS_LOOKUP_TABLE_PROGRAM_ADDRESS,
 } from "@solana-program/address-lookup-table";
 import { AccountRole, address } from "@solana/kit";
+import type { Instruction } from "@solana/kit";
 
 import { ChainError } from "@qntx/wallet-chains";
 import type { DisplayIntent } from "@qntx/wallet-chains";
@@ -14,6 +15,7 @@ import {
   WSOL_MINT,
 } from "@qntx/wallet-chains/solana";
 
+import type { SimulationOutcome } from "../requests/simulation.ts";
 import type { JupiterInstruction, JupiterSwapQuote } from "./index.ts";
 
 /** Programs a Jupiter `/build` set may touch — anything else is untrusted input. */
@@ -30,7 +32,7 @@ export const fromAsset = (asset: string): string =>
   asset === SOLANA_NATIVE_ASSET ? WSOL_MINT : asset;
 
 /** Wire instruction → kit instruction (`signer`/`writable` flags become the account role). */
-export const jupiterIx = (ix: JupiterInstruction) => ({
+export const jupiterIx = (ix: JupiterInstruction): Instruction => ({
   programAddress: address(ix.programId),
   accounts: ix.accounts.map((a) => ({
     address: address(a.address),
@@ -83,8 +85,6 @@ export const assertJupiterIntent = (
   }
 };
 
-type SimulationOutcome = NonNullable<import("../requests/simulation.ts").SimulationOutcome>;
-
 /**
  * The simulation must keep the quote's terms: the sell asset loses at most `sellAmount` (plus the
  * fee when it is SOL — lamports pays gas in the same asset), the buy asset gains at least
@@ -103,8 +103,8 @@ export const assertJupiterSimulation = (
   }
   const total = (asset: string): bigint =>
     simulation.changes
-      .filter((c) => c.asset === asset)
-      .reduce((sum, c) => sum + BigInt(c.amount), 0n);
+      .filter((c: { readonly asset: string; readonly amount: string }) => c.asset === asset)
+      .reduce((sum: bigint, c: { readonly amount: string }) => sum + BigInt(c.amount), 0n);
   const sellIsSol = quote.sell === SOLANA_NATIVE_ASSET;
   const lamportsFloor = sellIsSol ? -quote.sellAmount - maxFee : -maxFee;
   if (total(SOLANA_NATIVE_ASSET) < lamportsFloor) {
@@ -148,7 +148,7 @@ export const readLookupTable = (owner: string, data: Uint8Array): ReadonlyArray<
 
 /** The checks on a quote's instruction set that need no chain reads. */
 export const assertJupiterPrograms = (quote: JupiterSwapQuote): void => {
-  const all = [...quote.setup, quote.swap, ...(quote.cleanup === null ? [] : [quote.cleanup])];
+  const all = [...quote.setup, quote.swap, ...(quote.cleanup === undefined ? [] : [quote.cleanup])];
   for (const ix of all) {
     if (!ALLOWED_PROGRAMS.has(ix.programId)) {
       throw new ChainError(

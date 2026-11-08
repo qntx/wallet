@@ -206,12 +206,17 @@ const jupBuild = (overrides: Record<string, unknown> = {}) => ({
 describe("GET /v1/quotes/swap/solana", () => {
   it("rejects a non-mainnet network and a malformed mint", async () => {
     const app = gateway({ fetch: fakeFetch({}).fetch });
-    for (const q of [
+    const badQueries = [
       `network=solana:devnet&inputMint=${WSOL}&outputMint=${SUSDC}&amount=1&taker=${STAKER}&slippageBps=50`,
       `network=${SOL_NET}&inputMint=bad&outputMint=${SUSDC}&amount=1&taker=${STAKER}&slippageBps=50`,
       `network=${SOL_NET}&inputMint=${WSOL}&outputMint=${SUSDC}&amount=0&taker=${STAKER}&slippageBps=50`,
-    ]) {
-      const res = await app.request(`${swapQuoteSolana.path}?${q}`, { headers: headers() });
+    ];
+    const results = await Promise.all(
+      badQueries.map(async (q) =>
+        app.request(`${swapQuoteSolana.path}?${q}`, { headers: headers() }),
+      ),
+    );
+    for (const res of results) {
       expect(res.status).toBe(400);
     }
   });
@@ -237,8 +242,8 @@ describe("GET /v1/quotes/swap/solana", () => {
       lookupTables: [STABLE],
     });
     const [call] = upstream.callsTo(`${JAPI}/swap/v2/build`);
-    expect(call?.url).toContain(`inputMint=${  WSOL}`);
-    expect(call?.url).toContain(`taker=${  STAKER}`);
+    expect(call?.url).toContain(`inputMint=${WSOL}`);
+    expect(call?.url).toContain(`taker=${STAKER}`);
     expect(call?.headers).toBeUndefined();
   });
 
@@ -265,29 +270,35 @@ describe("GET /v1/quotes/swap/solana", () => {
   });
 
   it("maps other 4xx to 400 and upstream failures to 503", async () => {
-    for (const [status, expected] of [
+    const cases = [
       [400, 400],
       [422, 400],
       [429, 503],
       [502, 503],
-    ] as const) {
-      const upstream = fakeFetch({
-        [`${JAPI}/swap/v2/build`]: () => Response.json({ error: "bad request" }, { status }),
-      });
-      const app = gateway({ fetch: upstream.fetch });
-      const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, {
-        headers: headers(),
-      });
-      expect(res.status).toBe(expected);
-    }
+    ] as const;
+    const statuses = await Promise.all(
+      cases.map(async ([status]) => {
+        const upstream = fakeFetch({
+          [`${JAPI}/swap/v2/build`]: () => Response.json({ error: "bad request" }, { status }),
+        });
+        const app = gateway({ fetch: upstream.fetch });
+        const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, {
+          headers: headers(),
+        });
+        return res.status;
+      }),
+    );
+    expect(statuses).toStrictEqual(cases.map(([, expected]) => expected));
   });
 
-  it.each([
-    [{ otherInstructions: [solIx()] }, "extra instructions"],
-    [{ tipInstruction: solIx() }, "a tip instruction"],
-    [{ transactionVersion: 1 }, "a v1 build"],
-    [{ transactionVersion: "legacy" }, "a legacy build"],
-  ])("refuses a build with %s", async (patch) => {
+  const unbuildable: Array<Record<string, unknown>> = [
+    { otherInstructions: [solIx()] },
+    { tipInstruction: solIx() },
+    { transactionVersion: 1 },
+    { transactionVersion: "legacy" },
+  ];
+
+  it.each(unbuildable)("refuses a build with %j", async (patch) => {
     const upstream = fakeFetch({
       [`${JAPI}/swap/v2/build`]: () => Response.json(jupBuild(patch)),
     });

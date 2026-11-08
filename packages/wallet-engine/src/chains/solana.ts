@@ -1,4 +1,5 @@
 import { base64 } from "@scure/base";
+import { getAddressLookupTableDecoder } from "@solana-program/address-lookup-table";
 import {
   getSetComputeUnitLimitInstruction,
   getSetComputeUnitPriceInstruction,
@@ -58,7 +59,6 @@ import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
 const MAX_MESSAGE_BYTES = 1232;
-const LOOKUP_TABLE_HEADER_BYTES = 56;
 const ADDRESS_BYTES = 32;
 const TOKEN_ACCOUNT_MIN_BYTES = 72;
 const TOKEN_ACCOUNT_OWNER_OFFSET = 32;
@@ -504,12 +504,18 @@ export class SolanaChainAdapter {
       if (data === undefined) {
         throw new Error(`lookup table ${lookup.address} not found`);
       }
+      let entries: ReadonlyArray<string>;
+      try {
+        entries = getAddressLookupTableDecoder().decode(data).addresses;
+      } catch {
+        throw new Error(`lookup table ${lookup.address} failed to decode`);
+      }
       for (const entry of lookup.writableIndexes) {
-        const start = LOOKUP_TABLE_HEADER_BYTES + entry * ADDRESS_BYTES;
-        if (start + ADDRESS_BYTES > data.length) {
+        const resolved = entries[entry];
+        if (resolved === undefined) {
           throw new Error("lookup table index out of range");
         }
-        writable.push(addressDecoder.decode(data.slice(start, start + ADDRESS_BYTES)));
+        writable.push(resolved);
       }
     }
     return writable;

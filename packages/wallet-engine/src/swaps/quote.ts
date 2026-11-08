@@ -1,3 +1,5 @@
+import { base64 } from "@scure/base";
+
 import { ChainError } from "@qntx/wallet-chains";
 import { EVM_NATIVE_ASSET, ZEROX_CHAINS, networkChainId } from "@qntx/wallet-chains/evm";
 import { WSOL_MINT, SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
@@ -156,7 +158,7 @@ export const fetchJupiterQuote = async (
       signer: a.signer,
       writable: a.writable,
     })),
-    data: Uint8Array.from(Buffer.from(i.data, "base64")),
+    data: base64.decode(i.data),
   });
   return {
     provider: "jupiter",
@@ -169,7 +171,7 @@ export const fetchJupiterQuote = async (
     minBuyAmount: BigInt(body.otherAmountThreshold),
     setup: body.setup.map(ix),
     swap: ix(body.swap),
-    cleanup: body.cleanup === null ? null : ix(body.cleanup),
+    cleanup: body.cleanup === null ? undefined : ix(body.cleanup),
     lookupTables: [...body.lookupTables],
     fetchedAt: deps.now(),
   };

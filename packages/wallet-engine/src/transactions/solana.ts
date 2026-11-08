@@ -624,11 +624,12 @@ const readTable = async (rpc: SolanaRpc, table: string): Promise<ReadonlyArray<s
     await rpc.call("getAccountInfo", [table, { encoding: "base64", commitment: "confirmed" }]),
   );
   const value = obj(result?.["value"]);
-  const data = Array.isArray(value?.["data"]) ? (value["data"] as string[])[0] : undefined;
+  const raw = Array.isArray(value?.["data"]) ? (value["data"] as unknown[]) : undefined;
+  const data = raw !== undefined && raw.every((x) => typeof x === "string") ? raw[0] : undefined;
   if (value === undefined || typeof value["owner"] !== "string" || data === undefined) {
     throw new ChainError("invalid-request", `the swap lookup table ${table} is not on chain`);
   }
-  return readLookupTable(value["owner"], Uint8Array.from(Buffer.from(data, "base64")));
+  return readLookupTable(value["owner"], base64.decode(data));
 };
 
 export const prepareSolanaSwap = async (
@@ -684,7 +685,7 @@ export const prepareSolanaSwap = async (
     }),
   );
 
-  const all = [...quote.setup, quote.swap, ...(quote.cleanup === null ? [] : [quote.cleanup])];
+  const all = [...quote.setup, quote.swap, ...(quote.cleanup === undefined ? [] : [quote.cleanup])];
   let unsigned: SolanaUnsignedTransaction;
   try {
     unsigned = await solana.build(rpc, network, from, {

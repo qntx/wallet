@@ -132,7 +132,10 @@ export async function jupiterQuote(
       slippageBps: res.slippageBps,
       setup: (res.setupInstructions ?? []).map(wireIx),
       swap: wireIx(res.swapInstruction),
-      cleanup: res.cleanupInstruction == null ? null : wireIx(res.cleanupInstruction),
+      cleanup:
+        res.cleanupInstruction === undefined || res.cleanupInstruction === null
+          ? null
+          : wireIx(res.cleanupInstruction),
       lookupTables: Object.keys(res.addressesByLookupTableAddress ?? {}),
     } satisfies SwapQuoteSolanaResponse;
   });

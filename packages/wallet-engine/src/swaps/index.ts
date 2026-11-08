@@ -81,7 +81,7 @@ export type JupiterSwapQuote = {
   readonly minBuyAmount: bigint;
   readonly setup: ReadonlyArray<JupiterInstruction>;
   readonly swap: JupiterInstruction;
-  readonly cleanup: JupiterInstruction | null;
+  readonly cleanup: JupiterInstruction | undefined;
   /** Address lookup table addresses — contents are read from chain, never the gateway. */
   readonly lookupTables: ReadonlyArray<string>;
   readonly fetchedAt: number;
