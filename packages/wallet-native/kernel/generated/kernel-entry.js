@@ -26954,6 +26954,118 @@ zoo`.split("\n"));
 		if (lower === "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the DelegationManager is refused");
 		if (lower === "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the EntryPoint is refused");
 	};
+	var LIDO_STETH = "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84";
+	var LIDO_WSTETH = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0";
+	var SUBMIT = from$2("function submit(address referral) payable");
+	var REQUEST = from$2("function requestWithdrawals(uint256[] amounts, address owner)");
+	var REQUEST_WSTETH = from$2("function requestWithdrawalsWstETH(uint256[] amounts, address owner)");
+	var REQUEST_PERMIT = from$2("function requestWithdrawalsWithPermit(uint256[] amounts, address owner, (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permit)");
+	var REQUEST_WSTETH_PERMIT = from$2("function requestWithdrawalsWstETHWithPermit(uint256[] amounts, address owner, (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permit)");
+	var CLAIM = from$2("function claimWithdrawals(uint256[] requestIds, uint256[] hints)");
+	var ZERO = "0x0000000000000000000000000000000000000000";
+	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
+	var tryCall$1 = (fn, data) => {
+		const selector = getSelector(fn);
+		if (!data.toLowerCase().startsWith(selector)) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(fn, data);
+			if (!Array.isArray(args)) return;
+			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	var argAddress$1 = (args, index) => {
+		const value = args[index];
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
+		return checksumEvmAddress(value);
+	};
+	var argList$1 = (args, index) => {
+		const value = args[index];
+		if (!Array.isArray(value) || !value.every((v) => typeof v === "bigint")) throw new ChainError("invalid-request", "decoded argument is not a uint256 array");
+		return value;
+	};
+	var tokenAmount$1 = (token, amount, table) => {
+		const known = lookupEvmToken(table, 1, token);
+		return _objectSpread2({
+			asset: token,
+			amount: amount.toString(10)
+		}, known === void 0 ? {} : {
+			symbol: known.symbol,
+			decimals: known.decimals
+		});
+	};
+	var tokenFlow$1 = (token, to, amount, table) => ({
+		to,
+		amount: tokenAmount$1(token, amount, table),
+		verified: lookupEvmToken(table, 1, token) !== void 0
+	});
+	/**
+	* Lido staking on Ethereum mainnet: `submit` to stETH, the four withdrawal-request forms and
+	* `claimWithdrawals` on the queue. The minted stETH shares and the checkpointed claim amounts
+	* cannot be read exactly from calldata, so every recognised call is verifiability-partial.
+	*/
+	var decodeLido = (chainId, call, signer, table) => {
+		if (chainId !== 1 || call.to === void 0) return;
+		const to = call.to.toLowerCase();
+		if (to === "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84".toLowerCase() && call.value > 0n) {
+			if (tryCall$1(SUBMIT, call.data) !== void 0) return {
+				outflows: [{
+					to: LIDO_STETH,
+					amount: {
+						asset: EVM_NATIVE_ASSET,
+						amount: call.value.toString(10)
+					},
+					verified: true
+				}],
+				staking: [{
+					kind: "lido-submit",
+					amount: {
+						asset: EVM_NATIVE_ASSET,
+						amount: call.value.toString(10)
+					},
+					receive: tokenAmount$1(LIDO_STETH, call.value, table)
+				}]
+			};
+			return;
+		}
+		if (to !== "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1".toLowerCase()) return;
+		for (const [fn, token] of [
+			[REQUEST, LIDO_STETH],
+			[REQUEST_WSTETH, LIDO_WSTETH],
+			[REQUEST_PERMIT, LIDO_STETH],
+			[REQUEST_WSTETH_PERMIT, LIDO_WSTETH]
+		]) {
+			const args = tryCall$1(fn, call.data);
+			if (args === void 0) continue;
+			const total = argList$1(args, 0).reduce((sum, amount) => sum + amount, 0n);
+			const raw = argAddress$1(args, 1);
+			const owner = raw === ZERO ? signer : raw;
+			const action = {
+				kind: "lido-request",
+				token,
+				amount: tokenAmount$1(token, total, table),
+				owner
+			};
+			return {
+				outflows: owner.toLowerCase() === signer.toLowerCase() ? [] : [tokenFlow$1(token, owner, total, table)],
+				staking: [action]
+			};
+		}
+		const claimArgs = tryCall$1(CLAIM, call.data);
+		if (claimArgs !== void 0) {
+			const requestIds = argList$1(claimArgs, 0).map((id) => id.toString(10));
+			argList$1(claimArgs, 1);
+			return {
+				outflows: [],
+				staking: [{
+					kind: "lido-claim",
+					requestIds
+				}]
+			};
+		}
+	};
 	var isMessage$1 = isTypedDataMessage;
 	var address$1 = typedDataAddress;
 	var uint = typedDataUint;
@@ -27111,7 +27223,7 @@ zoo`.split("\n"));
 			const first = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (typeof first !== "string") return;
 			packed = first;
-		} catch (_unused) {
+		} catch (_unused2) {
 			return;
 		}
 		if (!packed.startsWith("0x")) return;
@@ -27357,7 +27469,7 @@ zoo`.split("\n"));
 				target,
 				data: inner
 			};
-		} catch (_unused2) {
+		} catch (_unused3) {
 			return;
 		}
 	};
@@ -27376,12 +27488,12 @@ zoo`.split("\n"));
 			const [slippage] = args;
 			if (!isSlippage(slippage)) return;
 			return slippage;
-		} catch (_unused3) {
+		} catch (_unused4) {
 			return;
 		}
 	};
 	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$1;
-	var tokenAmount$1 = (token, amount, chainId, table) => {
+	var tokenAmount = (token, amount, chainId, table) => {
 		const known = lookupEvmToken(table, chainId, token);
 		return _objectSpread2({
 			asset: checksumEvmAddress(token),
@@ -27420,7 +27532,7 @@ zoo`.split("\n"));
 				};
 			} else if (call.value === 0n) outflow = {
 				to: target,
-				amount: tokenAmount$1(token, amount, chainId, table),
+				amount: tokenAmount(token, amount, chainId, table),
 				verified: lookupEvmToken(table, chainId, token) !== void 0
 			};
 			if (outflow !== void 0) {
@@ -27431,7 +27543,7 @@ zoo`.split("\n"));
 					approvals: [],
 					minimumReceived: [{
 						to: slippage.recipient,
-						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount$1(slippage.buyToken, slippage.minAmountOut, chainId, table)
+						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount(slippage.buyToken, slippage.minAmountOut, chainId, table)
 					}],
 					verifiability: "partial"
 				};
@@ -27451,118 +27563,6 @@ zoo`.split("\n"));
 			approvals,
 			verifiability: "partial"
 		};
-	};
-	var LIDO_STETH = "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84";
-	var LIDO_WSTETH = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0";
-	var SUBMIT = from$2("function submit(address referral) payable");
-	var REQUEST = from$2("function requestWithdrawals(uint256[] amounts, address owner)");
-	var REQUEST_WSTETH = from$2("function requestWithdrawalsWstETH(uint256[] amounts, address owner)");
-	var REQUEST_PERMIT = from$2("function requestWithdrawalsWithPermit(uint256[] amounts, address owner, (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permit)");
-	var REQUEST_WSTETH_PERMIT = from$2("function requestWithdrawalsWstETHWithPermit(uint256[] amounts, address owner, (uint256 value, uint256 deadline, uint8 v, bytes32 r, bytes32 s) permit)");
-	var CLAIM = from$2("function claimWithdrawals(uint256[] requestIds, uint256[] hints)");
-	var ZERO = "0x0000000000000000000000000000000000000000";
-	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
-	var tryCall$1 = (fn, data) => {
-		const selector = getSelector(fn);
-		if (!data.toLowerCase().startsWith(selector)) return;
-		try {
-			assertHex$1(data, "data");
-			const args = decodeData(fn, data);
-			if (!Array.isArray(args)) return;
-			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused4) {
-			return;
-		}
-	};
-	var argAddress$1 = (args, index) => {
-		const value = args[index];
-		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{40}$/.test(value)) throw new ChainError("invalid-request", "decoded argument is not an address");
-		return checksumEvmAddress(value);
-	};
-	var argList$1 = (args, index) => {
-		const value = args[index];
-		if (!Array.isArray(value) || value.some((v) => typeof v !== "bigint")) throw new ChainError("invalid-request", "decoded argument is not a uint256 array");
-		return value;
-	};
-	var tokenAmount = (token, amount, table) => {
-		const known = lookupEvmToken(table, 1, token);
-		return _objectSpread2({
-			asset: token,
-			amount: amount.toString(10)
-		}, known === void 0 ? {} : {
-			symbol: known.symbol,
-			decimals: known.decimals
-		});
-	};
-	var tokenFlow$1 = (token, to, amount, table) => ({
-		to,
-		amount: tokenAmount(token, amount, table),
-		verified: lookupEvmToken(table, 1, token) !== void 0
-	});
-	/**
-	* Lido staking on Ethereum mainnet: `submit` to stETH, the four withdrawal-request forms and
-	* `claimWithdrawals` on the queue. The minted stETH shares and the checkpointed claim amounts
-	* cannot be read exactly from calldata, so every recognised call is verifiability-partial.
-	*/
-	var decodeLido = (chainId, call, signer, table) => {
-		if (chainId !== 1 || call.to === void 0) return;
-		const to = call.to.toLowerCase();
-		if (to === "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84".toLowerCase() && call.value > 0n) {
-			if (tryCall$1(SUBMIT, call.data) !== void 0) return {
-				outflows: [{
-					to: LIDO_STETH,
-					amount: {
-						asset: EVM_NATIVE_ASSET,
-						amount: call.value.toString(10)
-					},
-					verified: true
-				}],
-				staking: [{
-					kind: "lido-submit",
-					amount: {
-						asset: EVM_NATIVE_ASSET,
-						amount: call.value.toString(10)
-					},
-					receive: tokenAmount(LIDO_STETH, call.value, table)
-				}]
-			};
-			return;
-		}
-		if (to !== "0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1".toLowerCase()) return;
-		for (const [fn, token] of [
-			[REQUEST, LIDO_STETH],
-			[REQUEST_WSTETH, LIDO_WSTETH],
-			[REQUEST_PERMIT, LIDO_STETH],
-			[REQUEST_WSTETH_PERMIT, LIDO_WSTETH]
-		]) {
-			const args = tryCall$1(fn, call.data);
-			if (args === void 0) continue;
-			const total = argList$1(args, 0).reduce((sum, amount) => sum + amount, 0n);
-			const raw = argAddress$1(args, 1);
-			const owner = raw === ZERO ? signer : raw;
-			const action = {
-				kind: "lido-request",
-				token,
-				amount: tokenAmount(token, total, table),
-				owner
-			};
-			return {
-				outflows: owner.toLowerCase() === signer.toLowerCase() ? [] : [tokenFlow$1(token, owner, total, table)],
-				staking: [action]
-			};
-		}
-		const claimArgs = tryCall$1(CLAIM, call.data);
-		if (claimArgs !== void 0) {
-			const requestIds = argList$1(claimArgs, 0).map((id) => id.toString(10));
-			argList$1(claimArgs, 1);
-			return {
-				outflows: [],
-				staking: [{
-					kind: "lido-claim",
-					requestIds
-				}]
-			};
-		}
 	};
 	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
 	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
