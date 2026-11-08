@@ -1,3 +1,14 @@
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getAddressEncoder,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { encodeAbiParameters, parseAbiParameters } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -918,5 +929,66 @@ describe("webln-invoice and browser-origin pay", () => {
       amountSats: 100,
     });
     expect(pending.origin).toStrictEqual(origin);
+  });
+});
+
+const SOL_PAYER = "11111111111111111111111111111112";
+const SOL_STAKE = "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf";
+const SOL_OTHER = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+
+/** A compiled legacy message with a single Stake `Authorize` to `newAuthority` (role: withdrawer). */
+const authorizeTx = (newAuthority: string): Uint8Array => {
+  const data = new Uint8Array(40);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 1, true);
+  data.set(Uint8Array.from(getAddressEncoder().encode(address(newAuthority))), 4);
+  view.setUint32(36, 1, true);
+  const message = appendTransactionMessageInstruction(
+    {
+      programAddress: address("Stake11111111111111111111111111111111111111"),
+      accounts: [
+        { address: address(SOL_STAKE), role: AccountRole.WRITABLE },
+        { address: address(SOL_PAYER), role: AccountRole.READONLY_SIGNER },
+      ],
+      data,
+    },
+    setTransactionMessageLifetimeUsingBlockhash(
+      {
+        blockhash: address("11111111111111111111111111111111"),
+        lastValidBlockHeight: 1000n,
+      } as never,
+      setTransactionMessageFeePayer(
+        address(SOL_PAYER),
+        createTransactionMessage({ version: "legacy" }),
+      ),
+    ),
+  );
+  return new Uint8Array(
+    getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
+  );
+};
+
+describe("solana-sign approval risk", () => {
+  const prepareTx = async (newAuthority: string) => {
+    const f = fake();
+    await f.controller.init();
+    return f.controller.prepare({
+      method: "solana-sign",
+      origin: { kind: "browser", origin: "https://dapp.example" },
+      account: { walletId: "w", groupIndex: 0, address: SOL_PAYER },
+      network: SOL_NET,
+      request: { kind: "transactions", transactions: [authorizeTx(newAuthority)], send: false },
+    });
+  };
+
+  it("a page Authorize handing a stake role to another key is a danger", async () => {
+    const pending = await prepareTx(SOL_OTHER);
+    expect(pending.risk).toContainEqual({ code: "stake-authority", level: "danger" });
+  });
+
+  it("an Authorize to the signer raises no stake-authority finding", async () => {
+    const pending = await prepareTx(SOL_PAYER);
+    expect(pending.risk.find((finding) => finding.code === "stake-authority")).toBeUndefined();
   });
 });

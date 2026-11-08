@@ -298,13 +298,15 @@ const decodeTransaction = (
           }
           break;
         case "authorize":
-          approvals.push({
-            kind: "stake-authority",
-            account: stake.account,
-            role: stake.role,
-            authority: stake.authority,
-            verified: false,
-          });
+          if (stake.authority !== signer) {
+            approvals.push({
+              kind: "stake-authority",
+              account: stake.account,
+              role: stake.role,
+              authority: stake.authority,
+              verified: false,
+            });
+          }
           break;
       }
     }

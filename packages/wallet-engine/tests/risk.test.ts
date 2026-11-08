@@ -211,7 +211,7 @@ describe("assessApprovals", () => {
     ({ kind: "operator", asset: KNOWN, spender: OTHER, approved, verified: false }) as const;
   const assess = (...approvals: Array<Approvals[number]>) => assessApprovals({ approvals });
 
-  it("a stake role handed to another key is a danger; to the signer is not", () => {
+  it("a stake role handed to another key is a danger", () => {
     const grant = (authority: string) =>
       ({
         kind: "stake-authority",
@@ -220,10 +220,7 @@ describe("assessApprovals", () => {
         authority,
         verified: false,
       }) as const;
-    expect(assessApprovals({ approvals: [grant(OTHER)] }, "ME")).toStrictEqual([
-      { code: "stake-authority", level: "danger" },
-    ]);
-    expect(assessApprovals({ approvals: [grant("ME")] }, "ME")).toStrictEqual([]);
+    expect(assess(grant(OTHER))).toStrictEqual([{ code: "stake-authority", level: "danger" }]);
   });
 
   it("a collection approval is a danger", () => {

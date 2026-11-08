@@ -29785,7 +29785,7 @@ zoo`.split("\n"));
 						verified: true
 					});
 					break;
-				case "authorize": approvals.push({
+				case "authorize": if (stake.authority !== signer) approvals.push({
 					kind: "stake-authority",
 					account: stake.account,
 					role: stake.role,

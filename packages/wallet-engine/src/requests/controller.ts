@@ -46,7 +46,7 @@ import type {
   SignatureResult,
   TrackedTransaction,
 } from "../transactions/route.ts";
-import { accountAddress, newRequestId } from "../transactions/route.ts";
+import { newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
@@ -965,7 +965,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...prepared.checks,
         ]),
         risk: isTransaction
-          ? this.chainRisk(prepared.intent, prepared.account)
+          ? this.chainRisk(prepared.intent)
           : mergeRisk(mergeRisk(mergeRisk(signInRisk, permitRisk), orderRisk), blindRisk),
         run: { ...prepared, factor: "required" },
       };
@@ -1001,8 +1001,11 @@ export class RequestController extends Controller<RequestControllerState> {
         },
         checks: [],
         risk: mergeRisk(
-          this.signInRisk(signIn, input.origin, input.account.address, "solana"),
-          message?.kind === "bytes" ? this.blindRisk(input.account) : [],
+          mergeRisk(
+            this.signInRisk(signIn, input.origin, input.account.address, "solana"),
+            message?.kind === "bytes" ? this.blindRisk(input.account) : [],
+          ),
+          intents.flatMap((intent) => ("approvals" in intent ? assessApprovals(intent) : [])),
         ),
         run: {
           factor: "required",
@@ -1182,10 +1185,7 @@ export class RequestController extends Controller<RequestControllerState> {
         prepared.intent.verifiability === "full" ? undefined : "decode-partial",
         ...prepared.checks,
       ]),
-      risk:
-        input.method === "send" || internal
-          ? this.chainRisk(prepared.intent, prepared.account)
-          : [],
+      risk: input.method === "send" || internal ? this.chainRisk(prepared.intent) : [],
       run: { ...prepared, factor: "required" },
     };
     return input.method === "send" || internal
@@ -1546,21 +1546,14 @@ export class RequestController extends Controller<RequestControllerState> {
     return assessed.risk;
   }
 
-  private chainRisk(intent: DisplayIntent, account: AccountRef): ReadonlyArray<RiskFinding> {
-    let signer = "";
-    try {
-      /* Solana account refs carry `address`; the hd refs without one flag every authority. */
-      signer = accountAddress(account);
-    } catch {
-      /* Unresolvable account — treat every stake-authority grant as foreign. */
-    }
+  private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {
     return mergeRisk(
       assessRecipients(
         intent.family,
         intent.outflows.map((o) => o.to),
         this.knownAddresses(intent.family),
       ),
-      assessApprovals(intent, signer),
+      assessApprovals(intent),
     );
   }
 

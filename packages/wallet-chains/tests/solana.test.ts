@@ -799,6 +799,13 @@ describe("stake decode coverage", () => {
       FEE_PAYER,
     );
     expect(intent.summary).toBe("stake");
+    const toSigner = getAuthorizeInstruction({
+      stake: STAKE_ACCT,
+      authority: feePayerSigner,
+      arg0: FEE_PAYER,
+      arg1: StakeAuthorize.Staker,
+    });
+    expect(decodeSolana(req(compile([toSigner])) as never, FEE_PAYER).approvals).toStrictEqual([]);
     expect(intent.staking).toStrictEqual([
       { kind: "withdraw", account: STAKE_ACCT, to: OTHER_KEY, lamports: "1000000" },
       { kind: "deactivate", account: STAKE_ACCT },

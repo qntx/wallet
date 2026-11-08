@@ -192,8 +192,8 @@ export type ApprovalChange =
     }
   | {
       /**
-       * A Solana stake account's staker or withdrawer role handed to another key — by an
-       * `Authorize`/`AuthorizeChecked` instruction, or by `Initialize` naming a non-signer.
+       * A Solana stake account's staker or withdrawer role handed to a key other than the signer —
+       * by an `Authorize`/`AuthorizeChecked` instruction, or by `Initialize` naming a non-signer.
        */
       readonly kind: "stake-authority";
       /** The stake account the role applies to. */
