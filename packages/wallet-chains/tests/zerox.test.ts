@@ -155,7 +155,8 @@ describe("0x AllowanceHolder decode", () => {
     /* The swap's minimum flattens to the top level like the outflows and approvals. */
     expect(intent.minimumReceived).toStrictEqual([
       {
-        to: (vector(0).expected as { minimumReceived: Array<{ to: string }> }).minimumReceived[0]?.to,
+        to: (vector(0).expected as { minimumReceived: Array<{ to: string }> }).minimumReceived[0]
+          ?.to,
         amount: {
           asset: "0x19993B3Cf15c1055063468EB932F5e335A7526ea",
           amount: "751851842450135",
