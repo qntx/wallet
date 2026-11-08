@@ -68,7 +68,7 @@
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
     "@playwright/test": "1.64.1",
-    "@qntx/nostr": "0.15.3",
+    "@qntx/nostr": "0.15.4",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-wasm": "0.5.2",
     "@qntx/wallet": "0.11.0",
@@ -86,7 +86,7 @@
     "publint": "0.3.25"
   },
   "peerDependencies": {
-    "@qntx/nostr": "~0.15.3",
+    "@qntx/nostr": "~0.15.4",
     "@qntx/spark": "~0.5.2",
     "@qntx/wallet": "0.11.0",
     "@qntx/wallet-chains": "0.11.0"

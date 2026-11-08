@@ -27,13 +27,13 @@
     },
     {
       "name": "@qntx/nostr",
-      "version": "0.15.3",
-      "integrity": "sha512-AefcRXe/3basIgDA0gBGzzQ2Y9k131SfrU0hZ+eJqfLzCSzsVJyum5XKzffJ74VU6FroQPbS/fSS7W5mGd22ow=="
+      "version": "0.15.4",
+      "integrity": "sha512-kxWfN3HxKm7bTDn7Mzd+X80J74fbzNwUHOx8in5qMcb89/FgytR0jXllnF6eqGyO7VYG3pKSj94JnhgbkV73BQ=="
     },
     {
       "name": "@qntx/nostr-native",
-      "version": "0.15.3",
-      "integrity": "sha512-0JB2sapmRUFONNeDF3lTCfsgzmiu1EKB3ue/msQCm18fSrmVYN6HV7WQzJsGa7GZXMvlZ13udrV1gDbmXv1/4A=="
+      "version": "0.15.4",
+      "integrity": "sha512-CUBflKqmXeIMyZbm4FP0ssZRmbtbu1IXfsuDso9nxLekPsnXYfo+0gzQNKNxpYTwvQ5ay608nmLsSQ4PV4soMw=="
     },
     {
       "name": "@qntx/siwx",
@@ -79,7 +79,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "f53e9199d7c665b65339a441dc6f9419755520f8ce245b1a39f3adaca3a7a9db"
+      "sha256": "9e09cbb8247ee2a2b04ca97037e6d3d734d7e473e11f478fd77efe7af845cde2"
     }
   ]
 }

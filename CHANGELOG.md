@@ -9,6 +9,10 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+### Changed
+
+- Pin @qntx/nostr 0.15.4.
+
 ## [0.11.0] - 2026-11-07
 
 Precise error codes for unusable unlock factors, so hosts can tell users the real remedy instead of
