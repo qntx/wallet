@@ -1,7 +1,7 @@
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { Address, OutScript, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 /**
  * `chains(wallet)` host proxy: `account` forwards `wallet.accounts` to the kernel and returns the
@@ -121,7 +121,9 @@ describe("chains(wallet)", () => {
       ),
     ).derive(path);
   const BTC_XPUB = btcNode("m/84'/0'/0'").publicExtendedKey;
+  const BTC_XPUB86 = btcNode("m/86'/0'/0'").publicExtendedKey;
   const BTC_CHILD = btcNode("m/84'/0'/0'/0/0");
+  const BTC_CHILD86 = btcNode("m/86'/0'/0'/0/0");
 
   const btcPsbt = (): Uint8Array => {
     const pub = BTC_CHILD.publicKey;
@@ -192,7 +194,6 @@ describe("chains(wallet)", () => {
     kind: "hd" as const,
     walletId: "0a".repeat(8),
     groupIndex: 0,
-    template: "btc.bip84" as const,
   });
 
   it("accepts a kernel psbt signed by the account's own child key", async () => {
@@ -210,10 +211,126 @@ describe("chains(wallet)", () => {
         network: BTC_NETWORK,
         account: btcAccount(),
         psbt: btcPsbt(),
-        sign: [0],
+        sign: [{ index: 0, template: "btc.bip84" }],
       }),
     );
     expect(result.kind).toBe("bitcoin.psbt");
+  });
+
+  it("verifies a mixed bip84+bip86 psbt per template; a bad bip86 signature is integrity", async () => {
+    const xonly86 = BTC_CHILD86.publicKey!.slice(1);
+    const mixed = (): Uint8Array => {
+      const tx = new Transaction({ version: 2 });
+      tx.addInput({
+        txid: new Uint8Array(32),
+        index: 0,
+        sequence: 0xfffffffd,
+        witnessUtxo: { script: p2wpkh(BTC_CHILD.publicKey!).script, amount: 100000n },
+        bip32Derivation: [
+          [
+            BTC_CHILD.publicKey!,
+            { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] },
+          ],
+        ],
+      });
+      tx.addInput({
+        txid: new Uint8Array(32).fill(8),
+        index: 1,
+        sequence: 0xfffffffd,
+        witnessUtxo: { script: p2tr(xonly86).script, amount: 50000n },
+        tapInternalKey: xonly86,
+        tapBip32Derivation: [
+          [
+            xonly86,
+            {
+              hashes: [],
+              der: {
+                fingerprint: 0x73c5da0a,
+                path: [0x80000056, 0x80000000, 0x80000000, 0, 0],
+              },
+            },
+          ],
+        ],
+      });
+      tx.addOutput({
+        script: OutScript.encode(
+          Address(bitcoinNetwork(BTC_NETWORK).params).decode(
+            "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
+          ),
+        ),
+        amount: 140000n,
+      });
+      return tx.toPSBT(0);
+    };
+    const request = () => ({
+      kind: "bitcoin.psbt" as const,
+      network: BTC_NETWORK,
+      account: btcAccount(),
+      psbt: mixed(),
+      sign: [
+        { index: 0, template: "btc.bip84" as const },
+        { index: 1, template: "btc.bip86" as const },
+      ],
+    });
+    const connect = async (signedPsbt: Uint8Array) => {
+      const kernel = new FakeKernel(unlockedStatus());
+      kernel.handlers.set("chain.sign", () => ({ ok: { kind: "bitcoin.psbt", signedPsbt } }));
+      const xpubByTemplate: Record<string, { xpub: string; path: string }> = {
+        "btc.bip84": { xpub: BTC_XPUB, path: "m/84'/0'/0'" },
+        "btc.bip86": { xpub: BTC_XPUB86, path: "m/86'/0'/0'" },
+      };
+      kernel.handlers.set("wallet.accounts", (request) => {
+        const { template } = request.params as { template: string };
+        const account = xpubByTemplate[template];
+        return {
+          ok: {
+            template,
+            network: BTC_NETWORK,
+            xpub: account!.xpub,
+            fingerprint: "73c5da0a",
+            path: account!.path,
+          },
+        };
+      });
+      const wallet = await connectKernel({
+        verifyEvent,
+        spawn: () => {
+          const port = new ScriptedPort(kernel);
+          kernel.attach(port);
+          return port;
+        },
+        factors: "software",
+        passkey: PASSKEY,
+        ceremony: undefined,
+        setTimer: (ms, fn) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+      });
+      return wallet;
+    };
+    const signed = signBitcoinPsbt(
+      mixed(),
+      [
+        { index: 0, privateKey: BTC_CHILD.privateKey! },
+        { index: 1, privateKey: BTC_CHILD86.privateKey! },
+      ],
+      () => new Uint8Array(32),
+    );
+    const good = await connect(signed);
+    const result = await chains(good).sign(btcParams(request()));
+    expect(result.kind).toBe("bitcoin.psbt");
+
+    // A tampered bip86 signature fails verification for its claimed pubkey.
+    const tapSig = Transaction.fromPSBT(signed).getInput(1).tapKeySig!;
+    const raw = new Uint8Array(signed);
+    const at = raw.findIndex((_, i) => tapSig.every((b, j) => raw[i + j] === b));
+    expect(at).toBeGreaterThanOrEqual(0);
+    raw.fill(0, at, at + tapSig.length);
+    const tampered = await connect(raw);
+    await expect(chains(tampered).sign(btcParams(request()))).rejects.toSatisfy(
+      (e) => walletError(e).code === "integrity",
+    );
   });
 
   it("rejects a kernel psbt signed by a foreign key with integrity", async () => {
@@ -249,7 +366,7 @@ describe("chains(wallet)", () => {
           network: BTC_NETWORK,
           account: btcAccount(),
           psbt: btcPsbt(),
-          sign: [0],
+          sign: [{ index: 0, template: "btc.bip84" }],
         }),
       ),
     ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
@@ -273,7 +390,7 @@ describe("chains(wallet)", () => {
       btcParams({
         kind: "bitcoin.message",
         network: BTC_NETWORK,
-        account: btcAccount(),
+        account: { ...btcAccount(), template: "btc.bip84" as const },
         address: bitcoinAddressFromXpub(BTC_XPUB, "btc.bip84", BTC_NETWORK, 0, 0),
         message: "hello",
         format: "bip322-simple",

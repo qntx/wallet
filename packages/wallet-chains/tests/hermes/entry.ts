@@ -140,9 +140,9 @@ function main(): void {
   const req = normalizeBitcoin({
     kind: "bitcoin.psbt",
     network: "bip122:000000000019d6689c085ae165831e93",
-    account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc" },
+    account: { kind: "hd", walletId: "w", groupIndex: 0 },
     psbt: tx.toPSBT(0),
-    sign: [0],
+    sign: [{ index: 0, template: "btc.bip84" }],
   });
   if (req.kind !== "bitcoin.psbt") {
     throw new Error("unexpected kind");

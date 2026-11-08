@@ -60,15 +60,37 @@ export const normalizeBitcoin = (request: unknown): SignRequest => {
   if (!isRecord(request) || typeof request["kind"] !== "string") {
     throw new ChainError("invalid-request", "request must be an object with a kind");
   }
-  const { network, account } = common(request);
   if (request["kind"] === "bitcoin.psbt") {
-    const { psbt } = request;
+    const { network, account, psbt } = request;
+    if (typeof network !== "string") {
+      throw new ChainError("invalid-request", "request.network must be a string");
+    }
+    bitcoinNetwork(network);
+    if (!isRecord(account) || account["kind"] !== "hd") {
+      throw new ChainError("invalid-request", "request.account must be a wallet group");
+    }
+    const { walletId, groupIndex } = account;
+    if (
+      typeof walletId !== "string" ||
+      typeof groupIndex !== "number" ||
+      !Number.isSafeInteger(groupIndex) ||
+      groupIndex < 0
+    ) {
+      throw new ChainError("invalid-request", "request.account must be a wallet group");
+    }
     if (!(psbt instanceof Uint8Array)) {
       throw new ChainError("invalid-request", "psbt must be bytes");
     }
     const normalized = normalizeBitcoinPsbt(psbt, request["sign"], network);
-    return { kind: "bitcoin.psbt", network, account, psbt: normalized.psbt, sign: normalized.sign };
+    return {
+      kind: "bitcoin.psbt",
+      network,
+      account: { kind: "hd", walletId, groupIndex },
+      psbt: normalized.psbt,
+      sign: normalized.sign,
+    };
   }
+  const { network, account } = common(request);
   if (request["kind"] === "bitcoin.message") {
     const { format } = request;
     const target = messageTarget(request["address"], network, format);

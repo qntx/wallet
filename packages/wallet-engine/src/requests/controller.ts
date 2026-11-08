@@ -69,6 +69,7 @@ import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
 import type {
   BitcoinAccount,
+  BitcoinGroup,
   BitcoinPsbtInput,
   BrowserOrigin,
   PreparedBitcoinPsbt,
@@ -79,6 +80,7 @@ import type {
 
 export type {
   BitcoinAccount,
+  BitcoinGroup,
   BrowserOrigin,
   RequestMethod,
   RequestOrigin,
@@ -200,19 +202,25 @@ export type SolanaSignInput = {
  * A dApp's Bitcoin request: a BIP-322 simple message signature, or a batch of PSBTs signed one
  * after another under one approval (`send` also finalizes and broadcasts each).
  */
-export type BitcoinSignInput = {
-  readonly method: "bitcoin-sign";
-  readonly origin: BrowserOrigin;
-  readonly account: BitcoinAccount;
-  readonly network: string;
-  readonly request:
-    | { readonly kind: "message"; readonly message: string }
-    | {
+export type BitcoinSignInput =
+  | {
+      readonly method: "bitcoin-sign";
+      readonly origin: BrowserOrigin;
+      readonly account: BitcoinAccount;
+      readonly network: string;
+      readonly request: { readonly kind: "message"; readonly message: string };
+    }
+  | {
+      readonly method: "bitcoin-sign";
+      readonly origin: BrowserOrigin;
+      readonly account: BitcoinGroup;
+      readonly network: string;
+      readonly request: {
         readonly kind: "psbt";
         readonly psbts: ReadonlyArray<BitcoinPsbtInput>;
         readonly send: boolean;
       };
-};
+    };
 
 export type RequestInput =
   | ChainRequestInput
@@ -374,7 +382,13 @@ export type PendingRequest = {
   readonly id: string;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount;
+  readonly account:
+    | AccountRef
+    | SparkAccountRef
+    | NostrKeyRef
+    | SolanaAccount
+    | BitcoinAccount
+    | BitcoinGroup;
   readonly network: string;
   readonly stage: RequestStage;
   /** Decoded locally from the exact content that will be signed; `family` tells the shapes apart. */
@@ -455,15 +469,15 @@ export type RequestControllerOptions = {
     request: { readonly kind: "message"; readonly message: string },
     verify: SendParams["verify"],
   ) => Promise<BitcoinSignResult>;
-  /** Adds the account's derivation data to a dApp's PSBTs; refuses inputs that are not its own. */
+  /** Adds the group's derivation data to a dApp's PSBTs; refuses inputs that are not its own. */
   readonly bitcoinPrepare: (
-    account: BitcoinAccount,
+    account: BitcoinGroup,
     network: string,
     psbts: ReadonlyArray<BitcoinPsbtInput>,
   ) => Promise<ReadonlyArray<PreparedBitcoinPsbt>>;
   /** Signs (and with `send` broadcasts) the prepared PSBTs. */
   readonly bitcoinSignPsbts: (
-    account: BitcoinAccount,
+    account: BitcoinGroup,
     network: string,
     prepared: ReadonlyArray<PreparedBitcoinPsbt>,
     send: boolean,
@@ -513,7 +527,13 @@ type Resimulation = {
 };
 
 type Built = {
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount;
+  readonly account:
+    | AccountRef
+    | SparkAccountRef
+    | NostrKeyRef
+    | SolanaAccount
+    | BitcoinAccount
+    | BitcoinGroup;
   readonly network: string;
   readonly display:
     | DisplayIntent
@@ -1040,12 +1060,12 @@ export class RequestController extends Controller<RequestControllerState> {
       };
     }
     if (input.method === "bitcoin-sign") {
-      if (input.request.kind !== "message") {
+      const { request, account } = input;
+      if (request.kind !== "message" || !("address" in account)) {
         throw new Error("unreachable bitcoin-sign request");
       }
-      const { request } = input;
       return {
-        account: input.account,
+        account,
         network: input.network,
         display: {
           kind: "bitcoin.sign" as const,
@@ -1057,7 +1077,7 @@ export class RequestController extends Controller<RequestControllerState> {
           factor: "required",
           staleReason: () => undefined,
           submit: async (verify) =>
-            this.options.bitcoinSign(input.account, input.network, request, verify),
+            this.options.bitcoinSign(account, input.network, request, verify),
           release: () => undefined,
         },
       };

@@ -432,7 +432,38 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
     }
   });
 
-  it("refuses an input that is not the wallet's, a sighash mismatch and mixed accounts", async () => {
+  it("signs a mixed payment+ordinals request: the ordinals output is not an outflow", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment", "ordinals"]);
+      // An inscription-purchase-shaped PSBT: the payment input funds, the ordinals
+      // address receives — the wallet's own delivery, not an outflow.
+      const psbt = dappPsbt({ from: BIP84_FIRST, to: BIP86_FIRST, value: 100_000n });
+      const { request, settled, approve } = await signPsbt(r, [
+        { psbt, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
+      ]);
+      expect(request?.display).toMatchObject({
+        kind: "bitcoin.sign",
+        psbts: [{ outflows: [] }],
+      });
+      await approve();
+      const done = (await settled) as SignedPsbts;
+      const account = await chains(r.wallet).account({
+        walletId: r.walletId,
+        groupIndex: 0,
+        template: "btc.bip84",
+        network: MAINNET,
+      });
+      expect(
+        verifyBitcoinPsbtSignatures(firstSigned(done), [0], xpubOf(account), "btc.bip84", MAINNET),
+      ).toBe(true);
+    } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("refuses an input that is not the wallet's, a sighash mismatch and a wrong declared purpose", async () => {
     const r = await rig();
     try {
       await connect(r, ["payment", "ordinals"]);
@@ -460,23 +491,14 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
           { psbt: sighashed, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
         ]),
       ).resolves.toMatchObject({ error: { code: -32_602 } });
-      const plain = dappPsbt({ from: BIP84_FIRST, to: BIP84_FIRST, value: 100_000n });
+      // Declared payment but the prevout is the ordinals address.
+      const ordPrevout = dappPsbt({ from: BIP86_FIRST, to: BIP84_FIRST, value: 100_000n });
       await expect(
         refuse([
-          {
-            psbt: plain,
-            inputsToSign: [
-              { address: BIP84_FIRST, signingIndexes: [0] },
-              { address: BIP86_FIRST, signingIndexes: [0] },
-            ],
-          },
+          { psbt: ordPrevout, inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }] },
         ]),
-      ).resolves.toMatchObject({
-        error: {
-          code: -32_602,
-          message: "mixed payment and ordinals inputs are not supported yet",
-        },
-      });
+      ).resolves.toMatchObject({ error: { code: -32_602 } });
+      const plain = dappPsbt({ from: BIP84_FIRST, to: BIP84_FIRST, value: 100_000n });
       await expect(
         refuse([
           {

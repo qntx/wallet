@@ -7,8 +7,8 @@ import {
   bitcoinNetwork,
   bitcoinPubkeyFromXpub,
 } from "@qntx/wallet-chains/bitcoin";
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { chains } from "@qntx/wallet/chains";
-import type { ChainTemplate } from "@qntx/wallet/protocol";
 
 import {
   BitcoinScanStore,
@@ -57,7 +57,7 @@ type BtcStash = {
   readonly scriptOf: (u: { readonly address: string }) => Uint8Array;
   readonly changeAddresses: ReadonlyArray<string>;
   readonly tier: string;
-  readonly template: ChainTemplate;
+  readonly template: BitcoinAccountTemplate;
   readonly network: string;
   readonly fp: number;
 };
@@ -315,9 +315,13 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const request = {
       kind: "bitcoin.psbt" as const,
       network,
-      account,
+      account: {
+        kind: "hd" as const,
+        walletId: account.walletId,
+        groupIndex: account.groupIndex,
+      },
       psbt,
-      sign: Array.from({ length: txP.inputsLength }, (_, i) => i),
+      sign: Array.from({ length: txP.inputsLength }, (_, i) => ({ index: i, template })),
     };
     const intent = decodeBitcoinPsbt(request, ownScripts);
     const vsize = Math.ceil(
@@ -447,12 +451,18 @@ export const createBitcoinRoute = (): BitcoinRoute => {
   ): PreparedRequest => {
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const txP = Transaction.fromPSBT(psbt);
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
     const request = {
       kind: "bitcoin.psbt" as const,
       network: old.network,
-      account,
+      account: { kind: "hd" as const, walletId: account.walletId, groupIndex: account.groupIndex },
       psbt,
-      sign: Array.from({ length: txP.inputsLength }, (_, i) => i),
+      sign: Array.from({ length: txP.inputsLength }, (_, i) => ({
+        index: i,
+        template: stash.template,
+      })),
     };
     const ownScripts = new Set(
       stash.changeAddresses.map((a) =>

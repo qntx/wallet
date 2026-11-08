@@ -1,8 +1,9 @@
 /**
  * DApp PSBTs (Bitcoin Wallet Standard `signTransaction`): a dApp-built PSBT carries no derivation
  * data, so the engine adds it for the inputs it was asked to sign — and only for inputs whose
- * prevout script is one of this account's scanned addresses. The kernel re-derives and checks every
- * entry; nothing added here is trusted.
+ * prevout script is one of the account's scanned addresses, under the template the sign entry
+ * names. Outputs to the group's own scripts get the same binding so the kernel marks them as
+ * change-like. The kernel re-derives and checks every entry; nothing added here is trusted.
  */
 import { hex } from "@scure/base";
 import { Transaction } from "@scure/btc-signer";
@@ -18,6 +19,7 @@ import type { ChainsApi } from "@qntx/wallet/chains";
 
 import type {
   BitcoinAccount,
+  BitcoinGroup,
   BitcoinPsbtInput,
   BitcoinSigHash,
   PreparedBitcoinPsbt,
@@ -75,52 +77,91 @@ const sighashFor = (
   return existing;
 };
 
+type TemplateDerive = {
+  readonly xpub: string;
+  readonly fp: number;
+  readonly base: ReadonlyArray<number>;
+};
+
+const DAPP_TEMPLATES: ReadonlyArray<BitcoinAccount["template"]> = ["btc.bip84", "btc.bip86"];
+
 /**
- * Enriches and normalizes each dApp PSBT for `account`: the requested inputs must spend scanned
- * addresses of the account's template, get that address's derivation, and agree on the sighash.
+ * Enriches and normalizes each dApp PSBT for `group`: a sign entry's prevout script must be a
+ * scanned address of the template the entry names (a template with no inputs to sign contributes
+ * only its fixed 0/0 address), gets that address's derivation, and agrees on the sighash. Outputs
+ * to any own script get the same derivation binding.
  */
 export const prepareDappPsbts = async (
   apis: Pick<ChainsApi, "account">,
   es: Esplora,
-  account: BitcoinAccount,
+  group: BitcoinGroup,
   network: string,
   psbts: ReadonlyArray<BitcoinPsbtInput>,
 ): Promise<ReadonlyArray<PreparedBitcoinPsbt>> => {
-  const { template } = account;
-  const derived = await apis.account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template,
-    network,
-  });
-  if (!("xpub" in derived) || derived.xpub === undefined) {
-    throw new Error("bitcoin account carries no xpub");
-  }
-  const { xpub, fingerprint, path } = derived as {
-    xpub: string;
-    fingerprint: string;
-    path: string;
-  };
-  const fp = Number.parseInt(fingerprint, 16);
   const net = bitcoinNetwork(network);
-  const base = accountPath(path);
-  const taproot = template === "btc.bip86";
-  const scanned = [
-    ...(await scanChain(es, xpub, template, network, net.params, 0)),
-    ...(await scanChain(es, xpub, template, network, net.params, 1)),
-  ];
-  // The fixed address the dApp was handed is always the account's, scanned or not.
-  const own = new Map<string, { chain: 0 | 1; index: number }>([
-    ...scanned.map((a): [string, { chain: 0 | 1; index: number }] => [
-      hex.encode(scriptPubKey(a.address, net.params)),
-      { chain: a.chain, index: a.index },
-    ]),
-    [hex.encode(scriptPubKey(account.address, net.params)), { chain: 0, index: 0 }],
-  ]);
-  if (bitcoinAddressFromXpub(xpub, template, network, 0, 0) !== account.address) {
-    throw invalid("the account address is not the wallet's address for this purpose");
-  }
+  const signing = new Set(psbts.flatMap((p) => p.sign.map((s) => s.template)));
+  const derives = new Map<BitcoinAccount["template"], TemplateDerive>();
+  // script hex → owning template and its address path tail.
+  const own = new Map<
+    string,
+    { template: BitcoinAccount["template"]; chain: 0 | 1; index: number }
+  >();
+  await Promise.all(
+    DAPP_TEMPLATES.map(async (template) => {
+      const derived = await apis.account({
+        walletId: group.walletId,
+        groupIndex: group.groupIndex,
+        template,
+        network,
+      });
+      if (!("xpub" in derived) || derived.xpub === undefined) {
+        throw new Error("bitcoin account carries no xpub");
+      }
+      const { xpub, fingerprint, path } = derived;
+      derives.set(template, {
+        xpub,
+        fp: Number.parseInt(fingerprint, 16),
+        base: accountPath(path),
+      });
+      // Scan only templates the batch signs; every template binds its fixed 0/0 address.
+      const scanned = signing.has(template)
+        ? [
+            ...(await scanChain(es, xpub, template, network, net.params, 0)),
+            ...(await scanChain(es, xpub, template, network, net.params, 1)),
+          ]
+        : [
+            {
+              chain: 0 as const,
+              index: 0,
+              address: bitcoinAddressFromXpub(xpub, template, network, 0, 0),
+              used: false,
+            },
+          ];
+      for (const a of scanned) {
+        own.set(hex.encode(scriptPubKey(a.address, net.params)), {
+          template,
+          chain: a.chain,
+          index: a.index,
+        });
+      }
+    }),
+  );
   const ownScripts = new Set(own.keys());
+
+  const derivation = (
+    template: BitcoinAccount["template"],
+    chain: 0 | 1,
+    index: number,
+  ): { pubkey: Uint8Array; der: { fingerprint: number; path: number[] } } => {
+    const d = derives.get(template);
+    if (d === undefined) {
+      throw new Error(`no account derived for ${template}`);
+    }
+    return {
+      pubkey: bitcoinPubkeyFromXpub(d.xpub, template, network, chain, index),
+      der: { fingerprint: d.fp, path: [...d.base, chain, index] },
+    };
+  };
 
   return psbts.map((entry): PreparedBitcoinPsbt => {
     let tx: Transaction;
@@ -129,43 +170,59 @@ export const prepareDappPsbts = async (
     } catch {
       throw invalid("PSBT failed to decode");
     }
-    const inputs: Array<{ index: number; value: number; sigHash: BitcoinSigHash }> = [];
-    for (const { index, sigHash } of entry.sign) {
+    const inputs: Array<{
+      index: number;
+      value: number;
+      sigHash: BitcoinSigHash;
+      template: BitcoinAccount["template"];
+    }> = [];
+    for (const { index, sigHash, template } of entry.sign) {
       if (!Number.isSafeInteger(index) || index < 0 || index >= tx.inputsLength) {
         throw invalid(`input ${String(index)} is out of range`);
       }
       const input = tx.getInput(index);
       const prevout = prevoutOf(input);
       const spend = prevout === undefined ? undefined : own.get(hex.encode(prevout.script));
-      if (prevout === undefined || spend === undefined) {
-        throw invalid(`input ${String(index)} is not this wallet's`);
+      if (prevout === undefined || spend === undefined || spend.template !== template) {
+        throw invalid(`input ${String(index)} is not this account's`);
       }
-      const sighashType = sighashFor(input.sighashType, sigHash, taproot, index);
-      const pubkey = bitcoinPubkeyFromXpub(xpub, template, network, spend.chain, spend.index);
-      const der = { fingerprint: fp, path: [...base, spend.chain, spend.index] };
+      const sighashType = sighashFor(input.sighashType, sigHash, template === "btc.bip86", index);
+      const { pubkey, der } = derivation(template, spend.chain, spend.index);
       tx.updateInput(
         index,
         {
           ...(sighashType === undefined ? {} : { sighashType }),
-          ...(taproot
+          ...(template === "btc.bip86"
             ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }
             : { bip32Derivation: [[pubkey, der]] }),
         },
         true,
       );
-      inputs.push({ index, value: Number(prevout.amount), sigHash });
+      inputs.push({ index, value: Number(prevout.amount), sigHash, template });
+    }
+    // Outputs to the group's own scripts are bound as change: the kernel prompt and the
+    // engine display agree they are not outflows.
+    for (let i = 0; i < tx.outputsLength; i++) {
+      const output = tx.getOutput(i);
+      const bound = output.script === undefined ? undefined : own.get(hex.encode(output.script));
+      if (bound === undefined) {
+        continue;
+      }
+      const { pubkey, der } = derivation(bound.template, bound.chain, bound.index);
+      tx.updateOutput(
+        i,
+        bound.template === "btc.bip86"
+          ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }
+          : { bip32Derivation: [[pubkey, der]] },
+        true,
+      );
     }
     const request = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network,
-      account: {
-        kind: "hd",
-        walletId: account.walletId,
-        groupIndex: account.groupIndex,
-        template,
-      },
+      account: { kind: "hd", walletId: group.walletId, groupIndex: group.groupIndex },
       psbt: tx.toPSBT(0),
-      sign: inputs.map((i) => i.index).sort((a, b) => a - b),
+      sign: inputs.map(({ index, template }) => ({ index, template })),
     });
     if (request.kind !== "bitcoin.psbt") {
       throw invalid("unexpected request kind");
@@ -181,7 +238,6 @@ export const prepareDappPsbts = async (
  */
 export const signDappPsbts = async (
   apis: Pick<ChainsApi, "sign">,
-  account: BitcoinAccount,
   es: Pick<Esplora, "post">,
   prepared: ReadonlyArray<PreparedBitcoinPsbt>,
   send: boolean,
@@ -190,18 +246,7 @@ export const signDappPsbts = async (
   const results: SignResult[] = [];
   for (const { request } of prepared) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
-    const result = await apis.sign({
-      request: {
-        ...request,
-        account: {
-          kind: "hd",
-          walletId: account.walletId,
-          groupIndex: account.groupIndex,
-          template: account.template,
-        },
-      },
-      verify,
-    });
+    const result = await apis.sign({ request, verify });
     if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
       throw new Error("unexpected bitcoin sign result");
     }

@@ -121,7 +121,7 @@ const vectors = readVectors();
 const hex = (s: string): Uint8Array =>
   Uint8Array.from(Buffer.from(s.startsWith("0x") ? s.slice(2) : s, "hex"));
 
-const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "btc" } as const;
+const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0 } as const;
 const MAINNET = "bip122:000000000019d6689c085ae165831e93";
 const auxRand = (_n: number): Uint8Array => new Uint8Array(32);
 
@@ -268,7 +268,10 @@ const buildPsbt = (opts: {
   return tx.toPSBT(0);
 };
 
-const req = (psbt: Uint8Array, sign: ReadonlyArray<number> = [0]) => ({
+const req = (
+  psbt: Uint8Array,
+  sign: ReadonlyArray<{ index: number; template: string }> = [{ index: 0, template: "btc.bip84" }],
+) => ({
   kind: "bitcoin.psbt",
   network: MAINNET,
   account: ACCOUNT,
@@ -291,18 +294,85 @@ describe("normalizeBitcoin", () => {
   });
 
   it("rejects missing witnessUtxo, non-default sighash, malformed sign, bad network", () => {
+    const entry = (index: number) => ({ index, template: "btc.bip84" });
     expect(() => normalizeBitcoin(req(buildPsbt({ noWitnessUtxo: true })))).toThrow(ChainError);
     expect(() => normalizeBitcoin(req(buildPsbt({ sighash: 2 })))).toThrow(ChainError);
     expect(() => normalizeBitcoin(req(buildPsbt({ sighash: 0x41 })))).toThrow(ChainError);
     expect(() => normalizeBitcoin(req(buildPsbt({}), []))).toThrow(ChainError);
-    expect(() => normalizeBitcoin(req(buildPsbt({}), [1]))).toThrow(ChainError);
-    expect(() => normalizeBitcoin(req(buildPsbt({}), [0, 0]))).toThrow(ChainError);
+    expect(() => normalizeBitcoin(req(buildPsbt({}), [entry(1)]))).toThrow(ChainError);
+    expect(() => normalizeBitcoin(req(buildPsbt({}), [entry(0), entry(0)]))).toThrow(ChainError);
     expect(() => normalizeBitcoin({ ...req(buildPsbt({})), network: "bip122:deadbeef" })).toThrow(
       ChainError,
     );
     expect(() => normalizeBitcoin({ ...req(buildPsbt({})), psbt: new Uint8Array(4) })).toThrow(
       ChainError,
     );
+  });
+
+  it("validates the sign entries and the group account", () => {
+    const entry = (index: number, template = "btc.bip84") => ({ index, template });
+    const psbt = buildPsbt({ extraInput: true });
+    // Unsorted entries normalize to ascending order.
+    const n = normalizeBitcoin(req(psbt, [entry(1), entry(0)]));
+    expect(asPsbt(n).sign.map((s) => s.index)).toStrictEqual([0, 1]);
+    // Unknown templates, malformed entries and malformed accounts are refused.
+    expect(() => normalizeBitcoin(req(psbt, [entry(0, "btc.bip100")]))).toThrow(ChainError);
+    expect(() => normalizeBitcoin(req(psbt, [entry(0, "evm.bip44")]))).toThrow(ChainError);
+    expect(() => normalizeBitcoin({ ...req(psbt), sign: [0] })).toThrow(ChainError);
+    expect(() =>
+      normalizeBitcoin({ ...req(psbt), sign: [{ index: -1, template: "btc.bip84" }] }),
+    ).toThrow(ChainError);
+    expect(() =>
+      normalizeBitcoin({ ...req(psbt), account: { kind: "hd", walletId: "w" } }),
+    ).toThrow(ChainError);
+    expect(() =>
+      normalizeBitcoin({ ...req(psbt), account: { kind: "hd", walletId: "w", groupIndex: -1 } }),
+    ).toThrow(ChainError);
+    expect(() =>
+      normalizeBitcoin({
+        ...req(psbt),
+        account: { kind: "imported", keyId: "0123456789abcdef", family: "bitcoin" },
+      }),
+    ).toThrow(ChainError);
+  });
+
+  it("requires the derivation kind the entry's template signs under", () => {
+    const tr = new Transaction({ version: 2 });
+    const xonly = ownPub.slice(1);
+    tr.addInput({
+      txid: hex("0707".repeat(16)),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2tr(xonly, undefined, NETWORK).script, amount: 100000n },
+      tapInternalKey: xonly,
+      tapBip32Derivation: [
+        [
+          xonly,
+          {
+            hashes: [],
+            der: {
+              fingerprint: 0x73c5da0a,
+              path: [0x80000056, 0x80000000, 0x80000000, 0, 0],
+            },
+          },
+        ],
+      ],
+    });
+    tr.addOutput({
+      script: OutScript.encode(Address(NETWORK).decode(PAYEE)),
+      amount: 90000n,
+    });
+    // A bip86 entry needs tapBip32Derivation — the p2wpkh input only has bip32Derivation.
+    expect(() =>
+      normalizeBitcoin(req(buildPsbt({}), [{ index: 0, template: "btc.bip86" }])),
+    ).toThrow(ChainError);
+    // A bip84 entry needs bip32Derivation — the taproot input only has tapBip32Derivation.
+    expect(() =>
+      normalizeBitcoin(req(tr.toPSBT(0), [{ index: 0, template: "btc.bip84" }])),
+    ).toThrow(ChainError);
+    expect(() =>
+      normalizeBitcoin(req(tr.toPSBT(0), [{ index: 0, template: "btc.bip86" }])),
+    ).not.toThrow();
   });
 
   it("is idempotent", () => {
@@ -320,7 +390,7 @@ describe("bitcoin.message normalize", () => {
   const msg = (format: string, address: string, network = MAINNET) => ({
     kind: "bitcoin.message",
     network,
-    account: ACCOUNT,
+    account: { ...ACCOUNT, template: "btc.bip84" },
     address,
     message: "hi",
     format,

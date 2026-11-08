@@ -56,7 +56,7 @@ export const decodeBitcoinPsbt = (
 ): DisplayIntent => {
   const tx = parsePsbt(request.psbt);
   const coder = Address(bitcoinNetwork(request.network).params);
-  const signed = new Set(request.sign);
+  const signed = new Set(request.sign.map((s) => s.index));
   const outflows: AssetFlow[] = [];
   let canFee = true;
   let outSum = 0n;
@@ -97,7 +97,7 @@ export const decodeBitcoinPsbt = (
   const external = tx.inputsLength - signed.size > 0;
   const undecodable = outflows.some((o) => !o.verified);
   const listing = request.sign.some(
-    (i) => tx.getInput(i).sighashType === SIGHASH_SINGLE_ANYONECANPAY,
+    (s) => tx.getInput(s.index).sighashType === SIGHASH_SINGLE_ANYONECANPAY,
   );
   const verifiability: Verifiability = external
     ? "opaque"

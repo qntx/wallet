@@ -54,6 +54,13 @@ const template: Validator<ChainTemplate> = union(
   literal("btc.bip86"),
 );
 
+const btcTemplate = union(
+  literal("btc.bip44"),
+  literal("btc.bip49"),
+  literal("btc.bip84"),
+  literal("btc.bip86"),
+);
+
 const caip2: Validator<string> = str(200, /^[a-z0-9-]{3,64}:[0-9a-zA-Z-]{1,128}$/);
 const addressResult = (t: "evm.bip44" | "solana.bip44-change"): Validator<ChainAccount> =>
   obj({
@@ -143,9 +150,17 @@ export type ChainSignRequest =
   | {
       readonly kind: "bitcoin.psbt";
       readonly network: string;
-      readonly account: AccountRef;
+      /** The wallet group whose keys sign; each signed input names its template. */
+      readonly account: {
+        readonly kind: "hd";
+        readonly walletId: string;
+        readonly groupIndex: number;
+      };
       readonly psbt: Uint8Array;
-      readonly sign: ReadonlyArray<number>;
+      readonly sign: ReadonlyArray<{
+        readonly index: number;
+        readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+      }>;
     }
   | {
       readonly kind: "bitcoin.message";
@@ -237,9 +252,9 @@ const signRequest: Validator<ChainSignRequest> = union(
   obj({
     kind: literal("bitcoin.psbt"),
     network: caip2,
-    account: accountRef,
+    account: obj({ kind: literal("hd"), walletId, groupIndex }),
     psbt: bytes(1, 131072),
-    sign: arr(int(0, 1024), 1024),
+    sign: arr(obj({ index: int(0, 1024), template: btcTemplate }), 1024),
   }),
   obj({
     kind: literal("bitcoin.message"),

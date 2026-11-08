@@ -10,7 +10,13 @@ import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import type { RiskFinding } from "./risk.ts";
-import type { BitcoinAccount, RequestMethod, RequestOrigin, SolanaAccount } from "./types.ts";
+import type {
+  BitcoinAccount,
+  BitcoinGroup,
+  RequestMethod,
+  RequestOrigin,
+  SolanaAccount,
+} from "./types.ts";
 
 export type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "invalidated";
 
@@ -19,7 +25,13 @@ export type SignLogEntry = {
   readonly at: number;
   readonly origin: RequestOrigin;
   readonly method: RequestMethod;
-  readonly account: AccountRef | SparkAccountRef | NostrKeyRef | SolanaAccount | BitcoinAccount;
+  readonly account:
+    | AccountRef
+    | SparkAccountRef
+    | NostrKeyRef
+    | SolanaAccount
+    | BitcoinAccount
+    | BitcoinGroup;
   readonly network: string;
   readonly summary: string;
   readonly verification: "verified" | "unverifiable";
@@ -61,7 +73,7 @@ const FAMILIES: ReadonlySet<unknown> = new Set(["evm", "solana", "bitcoin"]);
 
 const isAccount = (
   value: unknown,
-): value is AccountRef | SparkAccountRef | SolanaAccount | BitcoinAccount => {
+): value is AccountRef | SparkAccountRef | SolanaAccount | BitcoinAccount | BitcoinGroup => {
   if (!isObject(value)) {
     return false;
   }
@@ -78,19 +90,12 @@ const isAccount = (
   if (value["kind"] === "derived") {
     return typeof value["walletId"] === "string" && typeof value["index"] === "number";
   }
-  if (
-    value["kind"] === undefined &&
-    typeof value["walletId"] === "string" &&
-    typeof value["groupIndex"] === "number" &&
-    typeof value["address"] === "string"
-  ) {
-    return true;
-  }
+  // SolanaAccount (address), BitcoinAccount (+template), SparkAccountRef (network) and
+  // BitcoinGroup (walletId + groupIndex only) all share this shape head.
   return (
     value["kind"] === undefined &&
     typeof value["walletId"] === "string" &&
-    typeof value["groupIndex"] === "number" &&
-    typeof value["network"] === "string"
+    typeof value["groupIndex"] === "number"
   );
 };
 

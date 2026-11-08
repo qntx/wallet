@@ -10,7 +10,12 @@ import type { PromptIntent } from "./prompt.ts";
 
 export type ExecuteResult = ChainSignResult | { readonly prompt: PromptIntent };
 export type SignRequest = ParamsOf<"chain.sign">["request"];
-export type HdAccount = Extract<SignRequest["account"], { kind: "hd" }>;
+export type HdAccount = Extract<
+  Exclude<SignRequest, { kind: "bitcoin.psbt" }>["account"],
+  { kind: "hd" }
+>;
+/** A bitcoin.psbt account: the wallet group only — each sign entry names its own template. */
+export type BitcoinGroup = Extract<SignRequest, { kind: "bitcoin.psbt" }>["account"];
 export type EvmRequest = Extract<
   SignRequest,
   { kind: "evm.transaction" | "evm.personal-message" | "evm.typed-data" }

@@ -19,7 +19,7 @@ import type { EngineStore } from "../store/port.ts";
 export type ChainApis = ReturnType<typeof chains>;
 export type SignParams = Parameters<ChainApis["sign"]>[0];
 export type SignResult = Awaited<ReturnType<ChainApis["sign"]>>;
-export type AccountRef = SignParams["request"]["account"];
+export type AccountRef = Exclude<SignParams["request"], { kind: "bitcoin.psbt" }>["account"];
 export type DisplayIntent = ReturnType<typeof decodeEvm>;
 
 export type TxState =

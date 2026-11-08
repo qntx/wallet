@@ -297,6 +297,9 @@ const hd = (walletId: string, template: string) => ({
   template,
 });
 
+const grp = (walletId: string, groupIndex = 0) => ({ kind: "hd", walletId, groupIndex });
+const entry = (index: number, template: string) => ({ index, template });
+
 describe("wallet.accounts", () => {
   const setup = async () => {
     const h = createHarness();
@@ -559,9 +562,9 @@ describe("chain.sign", () => {
     const txReq = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip84"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84" }),
-      sign: [0],
+      sign: [entry(0, "btc.bip84")],
     });
     const txRes = ok(await callSign(h, session, txReq));
     const signedPsbt = bytesField(txRes, "signedPsbt");
@@ -592,17 +595,17 @@ describe("chain.sign", () => {
     const wrong = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip49"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip49", wrongScript: true }),
-      sign: [0],
+      sign: [entry(0, "btc.bip49")],
     });
     expect("err" in (await callSign(h, session, wrong))).toBe(true);
     const right = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip49"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip49" }),
-      sign: [0],
+      sign: [entry(0, "btc.bip49")],
     });
     const res = await callSign(h, session, right);
     expect("err" in res).toBe(false);
@@ -613,17 +616,17 @@ describe("chain.sign", () => {
     const badPrev = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip44"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip44", wrongScript: true }),
-      sign: [0],
+      sign: [entry(0, "btc.bip44")],
     });
     expect("err" in (await callSign(h, session, badPrev))).toBe(true);
     const right = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip44"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip44" }),
-      sign: [0],
+      sign: [entry(0, "btc.bip44")],
     });
     const res = await callSign(h, session, right);
     expect("err" in res).toBe(false);
@@ -675,9 +678,9 @@ describe("chain.sign", () => {
     const changeReq = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip84"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", changeOutput: true }),
-      sign: [0],
+      sign: [entry(0, "btc.bip84")],
     });
     const changeRes = ok(await callSign(h, session, changeReq));
     const bip84 = btcVector("btc.bip84");
@@ -693,9 +696,9 @@ describe("chain.sign", () => {
     const externalReq = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip84"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", extraInput: true }),
-      sign: [0],
+      sign: [entry(0, "btc.bip84")],
     });
     const externalRes = ok(await callSign(h, session, externalReq));
     const extTx = Transaction.fromPSBT(bytesField(externalRes, "signedPsbt"));
@@ -704,30 +707,157 @@ describe("chain.sign", () => {
     expect(verifiabilityBitcoin(asPsbt(externalReq))).toBe("opaque");
   });
 
+  it("signs one PSBT spending bip84 and bip86 inputs of the same group", async () => {
+    const { h, session, walletId } = await setup();
+    const pub84 = btcChild("btc.bip84", 0, 0).publicKey!;
+    const child86 = btcChild("btc.bip86", 0, 0);
+    const xonly86 = child86.publicKey!.slice(1);
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: hex("0707".repeat(16)),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2wpkh(pub84).script, amount: 100000n },
+      bip32Derivation: [
+        [pub84, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
+      ],
+    });
+    tx.addInput({
+      txid: hex("0808".repeat(16)),
+      index: 1,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2tr(xonly86).script, amount: 50000n },
+      tapInternalKey: xonly86,
+      tapBip32Derivation: [
+        [
+          xonly86,
+          {
+            hashes: [],
+            der: { fingerprint: MASTER_FP, path: [0x80000056, HARDENED, HARDENED, 0, 0] },
+          },
+        ],
+      ],
+    });
+    tx.addOutput({ script: PAYEE_SCRIPT, amount: 140000n });
+    const req = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: tx.toPSBT(0),
+      sign: [entry(0, "btc.bip84"), entry(1, "btc.bip86")],
+    });
+    const res = ok(await callSign(h, session, req));
+    const signedPsbt = bytesField(res, "signedPsbt");
+    const bip84 = btcVector("btc.bip84");
+    const bip86 = btcVector("btc.bip86");
+    expect(verifyBitcoinPsbtSignatures(signedPsbt, [0], bip84.xpub, "btc.bip84", BTC_NETWORK)).toBe(
+      true,
+    );
+    expect(verifyBitcoinPsbtSignatures(signedPsbt, [1], bip86.xpub, "btc.bip86", BTC_NETWORK)).toBe(
+      true,
+    );
+  });
+
+  it("rejects a sign entry whose template disagrees with the input's script", async () => {
+    const { h, session, walletId } = await setup();
+    const pub84 = btcChild("btc.bip84", 0, 0).publicKey!;
+    const xonly86 = btcChild("btc.bip86", 0, 0).publicKey!.slice(1);
+    // A taproot prevout carrying a bip32 derivation entry: normalizes for a bip84 sign entry,
+    // but the kernel's prevout check binds the input to its own template.
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: hex("0707".repeat(16)),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2tr(xonly86).script, amount: 100000n },
+      bip32Derivation: [
+        [pub84, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
+      ],
+    });
+    tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
+    const wrong = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: tx.toPSBT(0),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in (await callSign(h, session, wrong))).toBe(true);
+    // ...and the honest bip86 entry signs the same prevout.
+    tx.updateInput(0, {
+      tapInternalKey: xonly86,
+      tapBip32Derivation: [
+        [
+          xonly86,
+          {
+            hashes: [],
+            der: { fingerprint: MASTER_FP, path: [0x80000056, HARDENED, HARDENED, 0, 0] },
+          },
+        ],
+      ],
+    });
+    const right = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: tx.toPSBT(0),
+      sign: [entry(0, "btc.bip86")],
+    });
+    const res = await callSign(h, session, right);
+    expect("err" in res).toBe(false);
+  });
+
+  it("rejects an input whose derivation names another group index", async () => {
+    const { h, session, walletId } = await setup();
+    const other = HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive(
+      "m/84'/0'/1'/0/0",
+    );
+    const pub = other.publicKey!;
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: hex("0707".repeat(16)),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2wpkh(pub).script, amount: 100000n },
+      bip32Derivation: [
+        [pub, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, 0x80000001, 0, 0] }],
+      ],
+    });
+    tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
+    const req = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: tx.toPSBT(0),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in (await callSign(h, session, req))).toBe(true);
+  });
+
   it("rejects wrong derivations, foreign scripts, bad addresses and wrong factors", async () => {
     const { h, session, walletId } = await setup();
     const foreignFp = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip84"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", fingerprint: 0xdeadbeef }),
-      sign: [0],
+      sign: [entry(0, "btc.bip84")],
     });
     expect("err" in (await callSign(h, session, foreignFp))).toBe(true);
     const wrongPub = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip84"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip84", wrongPub: true }),
-      sign: [0],
+      sign: [entry(0, "btc.bip84")],
     });
     expect("err" in (await callSign(h, session, wrongPub))).toBe(true);
     const wrongScript = normalizeBitcoin({
       kind: "bitcoin.psbt",
       network: BTC_NETWORK,
-      account: hd(walletId, "btc.bip86"),
+      account: grp(walletId),
       psbt: btcPsbt({ template: "btc.bip86", wrongScript: true }),
-      sign: [0],
+      sign: [entry(0, "btc.bip86")],
     });
     expect("err" in (await callSign(h, session, wrongScript))).toBe(true);
     const wrongFactor = await callSign(
@@ -736,9 +866,9 @@ describe("chain.sign", () => {
       normalizeBitcoin({
         kind: "bitcoin.psbt",
         network: BTC_NETWORK,
-        account: hd(walletId, "btc.bip84"),
+        account: grp(walletId),
         psbt: btcPsbt({ template: "btc.bip84" }),
-        sign: [0],
+        sign: [entry(0, "btc.bip84")],
       }),
       { kind: "password", password: utf8ToBytes("wrong password") },
     );

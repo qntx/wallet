@@ -239,8 +239,8 @@ export class BitcoinWalletHandler implements BitcoinHandler {
 
   /**
    * Signs (and with `send` broadcasts) a batch of dApp PSBTs under one approval. Every account
-   * named must be a session account of one purpose — a PSBT spending both payment and ordinals
-   * inputs is not supported yet — and `chain`, when given, must be the session's network.
+   * named must be a session account — inputs of both purposes may mix in one PSBT, each sign entry
+   * carries its account's template — and `chain`, when given, must be the session's network.
    */
   private async signTransactions(
     checked: BrowserOrigin,
@@ -264,43 +264,34 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     ) {
       throw invalidParams("chain is not the connected network");
     }
-    const purposes = new Set<BitcoinPurpose>();
-    for (const { address } of inputs.flatMap((input) => input.inputsToSign)) {
+    const templateOf = (address: string): BitcoinAccount["template"] => {
       const purpose = BITCOIN_PURPOSES.find((p) => accounts[p] === address);
       if (purpose === undefined) {
         throw new ProviderError(4100, "account is not a connected account");
       }
-      purposes.add(purpose);
-    }
-    const [purpose, ...rest] = purposes;
-    if (purpose === undefined) {
-      throw invalidParams("inputsToSign names no account");
-    }
-    if (rest.length > 0) {
-      throw invalidParams("mixed payment and ordinals inputs are not supported yet");
-    }
+      return TEMPLATES[purpose];
+    };
     const group = this.options.activeGroup();
     if (group === undefined) {
       throw new ProviderError(4100, "no account group is selected");
     }
-    const account: BitcoinAccount = {
-      ...group,
-      address: accounts[purpose],
-      template: TEMPLATES[purpose],
-    };
     let outcome: Awaited<ReturnType<BitcoinRequests["outcome"]>>;
     try {
       const pending = await this.options.requests.prepare({
         method: "bitcoin-sign",
         origin: checked,
-        account,
+        account: group,
         network,
         request: {
           kind: "psbt",
           psbts: inputs.map(({ psbt, inputsToSign }): BitcoinPsbtInput => ({
             psbt,
-            sign: inputsToSign.flatMap(({ signingIndexes, sigHash }) =>
-              signingIndexes.map((index) => ({ index, sigHash })),
+            sign: inputsToSign.flatMap(({ address, signingIndexes, sigHash }) =>
+              signingIndexes.map((index) => ({
+                index,
+                sigHash,
+                template: templateOf(address),
+              })),
             ),
           })),
           send,
