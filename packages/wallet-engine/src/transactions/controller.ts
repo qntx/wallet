@@ -22,7 +22,8 @@ import type {
   RouteContext,
   SparkDepositTag,
   TrackedTransaction,
-  TxState,DelegationStatus
+  TxState,
+  DelegationStatus,
 } from "./route.ts";
 import { accountAddress, newId } from "./route.ts";
 import { pollSolana, prepareSolana } from "./solana.ts";

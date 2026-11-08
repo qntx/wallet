@@ -200,6 +200,24 @@ const sameNonce = (ctx: RouteContext, tx: TrackedTransaction, from: string): Tra
 
 const evmApis = (ctx: RouteContext): ChainApis => ctx.options.chains ?? chains(ctx.options.wallet);
 
+/** The signer's EVM address for an HD account; throws when the account is imported or has none. */
+const resolveFrom = async (
+  ctx: RouteContext,
+  account: PrepareParams["account"],
+  network: string,
+): Promise<string> => {
+  if (account.kind !== "hd") {
+    throw new Error("imported accounts are not yet supported");
+  }
+  const evmAccount = await evmApis(ctx).account({
+    walletId: account.walletId,
+    groupIndex: account.groupIndex,
+    template: "evm.bip44",
+    network,
+  });
+  return accountAddress(evmAccount);
+};
+
 const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent =>
   l1 === undefined || intent.fee === undefined
     ? intent
@@ -223,23 +241,6 @@ export const createEvmRoute = (): EvmRoute => {
     readonly fee: PrepareParams["fee"];
     /** Native value moved; the worst-case fee reaching it is flagged. */
     readonly nativeValue: bigint | undefined;
-  };
-
-  const resolveFrom = async (
-    ctx: RouteContext,
-    account: PrepareParams["account"],
-    network: string,
-  ): Promise<string> => {
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
-    const evmAccount = await evmApis(ctx).account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "evm.bip44",
-      network,
-    });
-    return accountAddress(evmAccount);
   };
 
   /**
