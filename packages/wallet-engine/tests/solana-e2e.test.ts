@@ -32,9 +32,12 @@ import { chains } from "@qntx/wallet/chains";
 import { SolanaChainAdapter } from "../src/chains/solana.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
+import type { RequestController } from "../src/requests/controller.ts";
+import { stakePositions } from "../src/staking/index.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { send as sendTx, idleNetworkDeps } from "./send-helpers.ts";
+import type { ChainRequestInput, TrackedTransaction } from "../src/transactions/route.ts";
+import { send as sendTx, idleNetworkDeps, requestsFor } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_SOLANA"] === "1";
 // Official Agave release binary on PATH (or SOLANA_TEST_VALIDATOR); CI installs v3.1.11
@@ -342,6 +345,83 @@ const solFrom = (acct: unknown): string => {
 
 const txHashOf = (tx: { readonly hash: string | undefined }): string => tx.hash ?? "";
 
+const waitVoteAccount = async (r: SolanaRpc, deadline: number): Promise<string> => {
+  const votes = (await r.call("getVoteAccounts", [])) as {
+    current: Array<{ votePubkey: string }>;
+  };
+  const vote = votes.current[0]?.votePubkey;
+  if (vote !== undefined) {
+    return vote;
+  }
+  if (Date.now() > deadline) {
+    throw new Error("validator exposes no vote account");
+  }
+  await sleep(2000);
+  return waitVoteAccount(r, deadline);
+};
+
+const waitEpochAdvanced = async (r: SolanaRpc, target: bigint, deadline: number): Promise<void> => {
+  /* The stake program rejects deactivate/withdraw while epoch rewards are being
+     distributed — wait a few slots into the new epoch, not just for the boundary. */
+  const info = (await r.call("getEpochInfo", [])) as {
+    epoch: number;
+    slotIndex: number;
+    slotsInEpoch: number;
+  };
+  if (BigInt(info.epoch) > target && info.slotIndex >= 8) {
+    return;
+  }
+  if (Date.now() > deadline) {
+    throw new Error("epoch never advanced");
+  }
+  await sleep(2000);
+  return waitEpochAdvanced(r, target, deadline);
+};
+
+type StakeRun = (
+  action: Extract<ChainRequestInput, { method: "solana-stake" }>["action"],
+) => Promise<TrackedTransaction>;
+
+const stakeAction = async (
+  requests: RequestController,
+  a: SolanaChainAdapter,
+  r: SolanaRpc,
+  account: Extract<ChainRequestInput, { method: "solana-stake" }>["account"],
+  action: Extract<ChainRequestInput, { method: "solana-stake" }>["action"],
+) => {
+  const pending = await requests.prepare({
+    method: "solana-stake",
+    account,
+    network: NETWORK,
+    action,
+    fee: "slow",
+  });
+  const tx = await requests.approve(pending.id, "solana-stake", BVERIFY);
+  await waitConfirmed(a, r, txHashOf(tx), Date.now() + 120_000);
+  return tx;
+};
+
+/* Rewards accrue until cooldown ends — withdraw whatever is left until the account
+   reads empty (a deleted account and a drained husk both report zero lamports). */
+const withdrawStakeAll = async (
+  run: StakeRun,
+  r: SolanaRpc,
+  stakeAccount: string,
+  attempt: number,
+): Promise<void> => {
+  if (attempt >= 5) {
+    return;
+  }
+  const balance = (await r.call("getBalance", [stakeAccount, { commitment: "confirmed" }])) as {
+    value: number;
+  };
+  if (balance.value === 0) {
+    return;
+  }
+  await run({ kind: "withdraw", stakeAccount, lamports: BigInt(balance.value) });
+  return withdrawStakeAll(run, r, stakeAccount, attempt + 1);
+};
+
 const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
   const wallet = await createNodeWallet({
     verifyEvent,
@@ -592,4 +672,106 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       rmSync(ledger, { recursive: true, force: true });
     }
   }, 300_000);
+
+  it("stakes natively: delegate → activate → deactivate → withdraw through the pipeline", async () => {
+    const ledger = mkdtempSync(join(tmpdir(), "sol-stake-"));
+    const validator = spawn(
+      VALIDATOR,
+      [
+        "--reset",
+        "--ledger",
+        ledger,
+        "--quiet",
+        "--bind-address",
+        "127.0.0.1",
+        "--rpc-port",
+        "8897",
+        "--faucet-port",
+        "9907",
+        "--slots-per-epoch",
+        "32",
+      ],
+      { stdio: "ignore" },
+    );
+    try {
+      const url = "http://127.0.0.1:8897";
+      const r = rpc(url);
+      await waitHealthy(r, ledger, Date.now() + 120_000);
+      const a = new SolanaChainAdapter();
+      const { wallet, walletId } = await realWallet();
+      const acct = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: "solana.bip44-change",
+        network: NETWORK,
+      });
+      const from = solFrom(acct);
+      await waitFunded(r, from, Date.now() + 120_000);
+      const vote = await waitVoteAccount(r, Date.now() + 120_000);
+      const min = BigInt(
+        (
+          (await r.call("getStakeMinimumDelegation", [{ commitment: "confirmed" }])) as {
+            value: number | string;
+          }
+        ).value,
+      );
+      const ctl = new TransactionController({
+        wallet,
+        networks: new NetworkController({
+          ...idleNetworkDeps,
+          fetch: globalThis.fetch.bind(globalThis),
+          rpc: { [NETWORK]: [url] },
+          openStore: async () => Promise.resolve(createMemoryEngineStore()),
+          logger: { warn: () => {} },
+        }),
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random: taggedRandom(),
+        setTimer: () => () => {},
+        now: () => 1000,
+        logger: { warn: () => {} },
+        pollMs: 1,
+      });
+      await ctl.init();
+      const requests = await requestsFor(ctl);
+      const account = {
+        kind: "hd" as const,
+        walletId,
+        groupIndex: 0,
+        template: "solana.bip44-change" as const,
+      };
+      const run = async (
+        action: Extract<ChainRequestInput, { method: "solana-stake" }>["action"],
+      ) => stakeAction(requests, a, r, account, action);
+
+      const lamports = min;
+      const delegateTx = await run({ kind: "delegate", lamports, vote });
+      expect(delegateTx.intent?.summary).toBe("stake");
+      const stakeAccount = delegateTx.intent?.staking?.[0]?.account;
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing check
+      if (stakeAccount === undefined) {
+        throw new Error("delegate intent carries no stake account");
+      }
+      const first = await stakePositions(r, from);
+      expect(first.map((p) => [p.address, p.state])).toStrictEqual([[stakeAccount, "activating"]]);
+
+      await waitEpochAdvanced(r, first[0]!.activationEpoch!, Date.now() + 240_000);
+      const active = await stakePositions(r, from);
+      expect(active.map((p) => p.state)).toStrictEqual(["active"]);
+
+      await run({ kind: "deactivate", stakeAccount });
+      const cooling = await stakePositions(r, from);
+      expect(cooling.map((p) => p.state)).toStrictEqual(["deactivating"]);
+
+      await waitEpochAdvanced(r, cooling[0]!.deactivationEpoch!, Date.now() + 240_000);
+      const inactive = await stakePositions(r, from);
+      expect(inactive.map((p) => p.state)).toStrictEqual(["inactive"]);
+
+      await withdrawStakeAll(run, r, stakeAccount, 0);
+      await expect(stakePositions(r, from)).resolves.toStrictEqual([]);
+    } finally {
+      validator.kill("SIGKILL");
+      spawnSync("pkill", ["-f", VALIDATOR]);
+      rmSync(ledger, { recursive: true, force: true });
+    }
+  }, 600_000);
 });

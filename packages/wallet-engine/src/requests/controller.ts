@@ -1170,13 +1170,16 @@ export class RequestController extends Controller<RequestControllerState> {
       input.method === "evm-delegation" ||
       input.method === "evm-batch" ||
       input.method === "evm-approve" ||
-      input.method === "evm-swap";
+      input.method === "evm-swap" ||
+      input.method === "solana-stake";
     const prepared =
       input.method === "send"
         ? await this.options.transactions.prepareSend(input, id)
-        : internal
-          ? await this.options.transactions.prepareEvmInternal(input, id)
-          : await this.options.transactions.prepareReplacement(input, id);
+        : input.method === "solana-stake"
+          ? await this.options.transactions.prepareSolanaStake(input, id)
+          : internal
+            ? await this.options.transactions.prepareEvmInternal(input, id)
+            : await this.options.transactions.prepareReplacement(input, id);
     const built: Built = {
       account: prepared.account,
       network: prepared.network,

@@ -3,7 +3,16 @@ import {
   getSetComputeUnitLimitInstruction,
   getSetComputeUnitPriceInstruction,
 } from "@solana-program/compute-budget";
-import { getTransferSolInstruction } from "@solana-program/system";
+import {
+  getDeactivateInstruction,
+  getDelegateStakeInstruction,
+  getInitializeInstruction,
+  getWithdrawInstruction,
+} from "@solana-program/stake";
+import {
+  getCreateAccountWithSeedInstruction,
+  getTransferSolInstruction,
+} from "@solana-program/system";
 import {
   findAssociatedTokenPda,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -117,6 +126,8 @@ const tokenBalances = (
 };
 
 const CU_SIMULATE_LIMIT = 1_400_000;
+/** The Stake program's account size — `StakeStateV2` is a fixed 200 bytes. */
+export const STAKE_ACCOUNT_BYTES = 200;
 
 export type SolanaIntent =
   | { readonly kind: "sol"; readonly to: string; readonly lamports: bigint }
@@ -128,7 +139,17 @@ export type SolanaIntent =
       readonly decimals: number;
       /** Token-2022 mints carry the TokenzQd owner — defaults to the classic SPL program. */
       readonly tokenProgram?: string;
-    };
+    }
+  | {
+      readonly kind: "stake-delegate";
+      readonly seed: string;
+      readonly stakeAccount: string;
+      /** Delegated lamports; the create instruction funds this plus the rent reserve. */
+      readonly lamports: bigint;
+      readonly vote: string;
+    }
+  | { readonly kind: "stake-deactivate"; readonly stakeAccount: string }
+  | { readonly kind: "stake-withdraw"; readonly stakeAccount: string; readonly lamports: bigint };
 
 export type SolanaFeeTier = "slow" | "normal" | "fast";
 
@@ -172,6 +193,12 @@ export class SolanaChainAdapter {
     return rpc.call(method, params);
   }
 
+  /** Rent-exempt reserve for a stake account; the result is a bare u64 or context-wrapped. */
+  private async rentExempt(rpc: SolanaRpc): Promise<bigint> {
+    const result = await this.rpc(rpc, "getMinimumBalanceForRentExemption", [STAKE_ACCOUNT_BYTES]);
+    return BigInt(str(obj(result)?.["value"] ?? result));
+  }
+
   private async instructions(
     rpc: SolanaRpc,
     from: string,
@@ -183,6 +210,50 @@ export class SolanaChainAdapter {
           source: createNoopSigner(address(from)),
           destination: address(intent.to),
           amount: intent.lamports,
+        }),
+      ];
+    }
+    if (intent.kind === "stake-delegate") {
+      const stake = address(intent.stakeAccount);
+      const authority = createNoopSigner(address(from));
+      const rent = await this.rentExempt(rpc);
+      return [
+        getCreateAccountWithSeedInstruction({
+          payer: authority,
+          newAccount: stake,
+          base: address(from),
+          seed: intent.seed,
+          amount: intent.lamports + rent,
+          space: BigInt(STAKE_ACCOUNT_BYTES),
+          programAddress: address(PROGRAM_IDS.stake),
+        }),
+        getInitializeInstruction({
+          stake,
+          arg0: { staker: address(from), withdrawer: address(from) },
+          arg1: { unixTimestamp: 0n, epoch: 0n, custodian: address(from) },
+        }),
+        getDelegateStakeInstruction({
+          stake,
+          vote: address(intent.vote),
+          stakeAuthority: authority,
+        }),
+      ];
+    }
+    if (intent.kind === "stake-deactivate") {
+      return [
+        getDeactivateInstruction({
+          stake: address(intent.stakeAccount),
+          stakeAuthority: createNoopSigner(address(from)),
+        }),
+      ];
+    }
+    if (intent.kind === "stake-withdraw") {
+      return [
+        getWithdrawInstruction({
+          stake: address(intent.stakeAccount),
+          recipient: address(from),
+          withdrawAuthority: createNoopSigner(address(from)),
+          args: intent.lamports,
         }),
       ];
     }
