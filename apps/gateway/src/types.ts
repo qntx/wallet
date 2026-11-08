@@ -35,6 +35,8 @@ export type GatewayOptions = {
     readonly apiKey: string;
     readonly fee?: { readonly recipient: string; readonly bps: number };
   };
+  /** A Jupiter API key for `/v1/quotes/swap/solana` — absent, the upstream is called keyless. */
+  readonly jupiter?: { readonly apiKey: string };
   /** One JSON line per request; defaults to `console.log`. */
   readonly log?: (line: string) => void;
 };

@@ -25,7 +25,12 @@ export const NETWORKS: ReadonlyArray<GatewayNetwork> = [
   ],
 }));
 
-export type UpstreamCall = { readonly url: string; readonly method: string; readonly body: string };
+export type UpstreamCall = {
+  readonly url: string;
+  readonly method: string;
+  readonly body: string;
+  readonly headers: HeadersInit | undefined;
+};
 export type Upstream = (call: UpstreamCall, signal: AbortSignal) => Response | Promise<Response>;
 
 /** Fake `fetch`: routes by URL prefix to scripted handlers and records every call. */
@@ -41,6 +46,7 @@ export function fakeFetch(handlers: Record<string, Upstream>): {
       url,
       method: init?.method ?? "GET",
       body: typeof init?.body === "string" ? init.body : "",
+      headers: init?.headers,
     };
     calls.push(call);
     const key = Object.keys(handlers).find((prefix) => url.startsWith(prefix));
@@ -101,6 +107,7 @@ export function gateway(options: {
   readonly risk?: RiskStore;
   readonly limiters?: Limiters;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
+  readonly jupiter?: { apiKey: string };
   readonly log?: (line: string) => void;
 }): ReturnType<typeof createGateway> {
   return createGateway({
@@ -110,6 +117,7 @@ export function gateway(options: {
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
+    ...(options.jupiter === undefined ? {} : { jupiter: options.jupiter }),
     log: options.log ?? (() => undefined),
   });
 }
