@@ -572,4 +572,48 @@ describe("solana stake", () => {
       "从 STAKEACCT 提取 500000000 lamports 到 ME",
     );
   });
+
+  describe("lido prompt lines", () => {
+    it.each([
+      [
+        "zh-Hans" as const,
+        {
+          kind: "lido-submit",
+          amount: { asset: "native", amount: "5000000000000000000", symbol: "ETH", decimals: 18 },
+          receive: {
+            asset: "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+            amount: "5000000000000000000",
+            symbol: "stETH",
+            decimals: 18,
+          },
+        },
+        "通过 Lido 质押 5 ETH，收到约 5 stETH",
+      ],
+      [
+        "en" as const,
+        {
+          kind: "lido-request",
+          token: "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+          amount: { asset: "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84", amount: "1000" },
+          owner: "0x1111111111111111111111111111111111111111",
+        },
+        "Request withdrawal of",
+      ],
+      [
+        "en" as const,
+        { kind: "lido-claim", requestIds: ["1", "2"] },
+        "Claim Lido withdrawals 1, 2",
+      ],
+    ])("%s lido %s", (locale, action, needle) => {
+      const p = chainPrompt(locale, {
+        summary: "stake",
+        outflows: [],
+        approvals: [],
+        fee: undefined,
+        verifiability: "partial",
+        staking: [action as never],
+      });
+      expect(JSON.stringify(p)).toContain(needle);
+    });
+  });
 });

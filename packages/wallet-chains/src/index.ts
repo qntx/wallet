@@ -204,7 +204,7 @@ export type ApprovalChange =
       readonly verified: false;
     };
 
-/** One Solana staking operation shown on the signing surface. */
+/** One staking operation shown on the signing surface. */
 export type StakeAction =
   | { readonly kind: "create"; readonly account: string; readonly lamports: string }
   | { readonly kind: "delegate"; readonly account: string; readonly validator: string }
@@ -214,7 +214,18 @@ export type StakeAction =
       readonly account: string;
       readonly to: string;
       readonly lamports: string;
-    };
+    }
+  /** Lido `submit` on Ethereum mainnet: ETH in, approximately `receive` stETH back. */
+  | { readonly kind: "lido-submit"; readonly amount: AssetAmount; readonly receive: AssetAmount }
+  /** Lido withdrawal request on Ethereum mainnet; `owner` gets the claim NFT. */
+  | {
+      readonly kind: "lido-request";
+      readonly token: string;
+      readonly amount: AssetAmount;
+      readonly owner: string;
+    }
+  /** Lido claim of finalised withdrawal requests on Ethereum mainnet (ETH to the caller). */
+  | { readonly kind: "lido-claim"; readonly requestIds: ReadonlyArray<string> };
 
 export type IntentWarning = {
   readonly kind: string;

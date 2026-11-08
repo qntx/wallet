@@ -1,0 +1,296 @@
+{
+ "lido": [
+  {
+   "name": "submit",
+   "network": "eip155:1",
+   "signer": "0x6b314f71a7b9e59c367cb720c987bedc0744ed10",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0xae7ab96520de3a18e5e111b5eaab095312d7fe84",
+    "value": "0x2b5e3af16b1880000",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0xa1903eab0000000000000000000000000000000000000000000000000000000000000000",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [
+     {
+      "to": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "amount": {
+       "asset": "native",
+       "amount": "50000000000000000000"
+      },
+      "verified": true
+     }
+    ],
+    "staking": [
+     {
+      "kind": "lido-submit",
+      "amount": {
+       "asset": "native",
+       "amount": "50000000000000000000"
+      },
+      "receive": {
+       "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+       "amount": "50000000000000000000"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "submit-small",
+   "network": "eip155:1",
+   "signer": "0xc315ce8c0ef0e69129d50835d13a57e88aa79701",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0xae7ab96520de3a18e5e111b5eaab095312d7fe84",
+    "value": "0x126e00f6c5b8000",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0xa1903eab0000000000000000000000006dc9657c2d90d57cadffb64239242d06e6103e43",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [
+     {
+      "to": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "amount": {
+       "asset": "native",
+       "amount": "83000000000000000"
+      },
+      "verified": true
+     }
+    ],
+    "staking": [
+     {
+      "kind": "lido-submit",
+      "amount": {
+       "asset": "native",
+       "amount": "83000000000000000"
+      },
+      "receive": {
+       "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+       "amount": "83000000000000000"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "request-with-permit",
+   "network": "eip155:1",
+   "signer": "0x29de44766a811c4b4ccafadd4c13751eefd352d4",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0x889edc2edab5f40e902b864ad4d7ade8e412f9b1",
+    "value": "0x0",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0xacf41e4d00000000000000000000000000000000000000000000000000000000000000e000000000000000000000000029de44766a811c4b4ccafadd4c13751eefd352d40000000000000000000000000000000000000000000000000148454f793f0000000000000000000000000000000000000000000000000000000000006af2056f000000000000000000000000000000000000000000000000000000000000001c627f3709b7ab137d45989070393b769875a655acd3dfa73c2b6447bf48227f3b54a091f9d8e59c9f1100a73b8ffe93c7b7762d7bbad3fec9b6d27ba1309fb7f900000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000148454f793f0000",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [],
+    "staking": [
+     {
+      "kind": "lido-request",
+      "token": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "amount": {
+       "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+       "amount": "92400000000000000"
+      },
+      "owner": "0x29de44766a811c4B4CcaFAdD4C13751eeFd352d4"
+     }
+    ]
+   }
+  },
+  {
+   "name": "request-wsteth-with-permit",
+   "network": "eip155:1",
+   "signer": "0xf98cbd8047d42c8b31d29e115ded7524b056ca94",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0x889edc2edab5f40e902b864ad4d7ade8e412f9b1",
+    "value": "0x0",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0x7951b76f00000000000000000000000000000000000000000000000000000000000000e0000000000000000000000000f98cbd8047d42c8b31d29e115ded7524b056ca940000000000000000000000000000000000000000000000000070d7a4b0e52d8d000000000000000000000000000000000000000000000000000000006af20d3f000000000000000000000000000000000000000000000000000000000000001b15a2cb04ca7ae533ddb8896ded6b1145bff3d34489931799f90d134cfea8cc400d0ab7b4604323fb8ac0de27b0f78a0b66b0b849ec49e6a8c8f65b4dd6310dfe00000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000070d7a4b0e52d8d",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [],
+    "staking": [
+     {
+      "kind": "lido-request",
+      "token": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+      "amount": {
+       "asset": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+       "amount": "31762299734011277"
+      },
+      "owner": "0xF98CBd8047D42C8B31D29E115ded7524B056ca94"
+     }
+    ]
+   }
+  },
+  {
+   "name": "claim",
+   "network": "eip155:1",
+   "signer": "0xc42a989f9bb3084d95bf32c3c9b401d572547647",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0x889edc2edab5f40e902b864ad4d7ade8e412f9b1",
+    "value": "0x0",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0xe3afe0a3000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000002239f000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000004f4",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [],
+    "staking": [
+     {
+      "kind": "lido-claim",
+      "requestIds": [
+       "140191"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "request",
+   "network": "eip155:1",
+   "signer": "0x1111111111111111111111111111111111111111",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0x889edc2edab5f40e902b864ad4d7ade8e412f9b1",
+    "value": "0x0",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0xd66810420000000000000000000000000000000000000000000000000000000000000040000000000000000000000000111111111111111111111111111111111111111100000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000001f4",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [],
+    "staking": [
+     {
+      "kind": "lido-request",
+      "token": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "amount": {
+       "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+       "amount": "1000000000000000500"
+      },
+      "owner": "0x1111111111111111111111111111111111111111"
+     }
+    ]
+   }
+  },
+  {
+   "name": "request-wsteth",
+   "network": "eip155:1",
+   "signer": "0x1111111111111111111111111111111111111111",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0x889edc2edab5f40e902b864ad4d7ade8e412f9b1",
+    "value": "0x0",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0x19aa625700000000000000000000000000000000000000000000000000000000000000400000000000000000000000001111111111111111111111111111111111111111000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000022b1c8c1227a0000",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [],
+    "staking": [
+     {
+      "kind": "lido-request",
+      "token": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+      "amount": {
+       "asset": "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+       "amount": "2500000000000000000"
+      },
+      "owner": "0x1111111111111111111111111111111111111111"
+     }
+    ]
+   }
+  },
+  {
+   "name": "request-foreign-owner",
+   "network": "eip155:1",
+   "signer": "0x1111111111111111111111111111111111111111",
+   "tx": {
+    "type": "eip1559",
+    "chainId": 1,
+    "to": "0x889edc2edab5f40e902b864ad4d7ade8e412f9b1",
+    "value": "0x0",
+    "nonce": 0,
+    "gas": "0x0",
+    "data": "0xd66810420000000000000000000000000000000000000000000000000000000000000040000000000000000000000000222222222222222222222222222222222222222200000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000064",
+    "accessList": [],
+    "maxFeePerGas": "0x0",
+    "maxPriorityFeePerGas": "0x0"
+   },
+   "expected": {
+    "summary": "stake",
+    "verifiability": "partial",
+    "outflows": [
+     {
+      "to": "0x2222222222222222222222222222222222222222",
+      "amount": {
+       "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+       "amount": "100"
+      },
+      "verified": false
+     }
+    ],
+    "staking": [
+     {
+      "kind": "lido-request",
+      "token": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+      "amount": {
+       "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
+       "amount": "100"
+      },
+      "owner": "0x2222222222222222222222222222222222222222"
+     }
+    ]
+   }
+  }
+ ]
+}

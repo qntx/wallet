@@ -18,6 +18,7 @@ import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./ap
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
+import { decodeLido } from "./lido.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
 import { recognizeSeaport } from "./seaport.ts";
@@ -190,6 +191,7 @@ const decodeCall = (
   network: string,
   fee: DisplayIntent["fee"],
   table: EvmTokenTable,
+  signer: string,
 ): DisplayIntent => {
   const chainId = networkChainId(network);
   const data = call.data.toLowerCase();
@@ -219,6 +221,18 @@ const decodeCall = (
       ...(minimumReceived === undefined ? {} : { minimumReceived }),
       fee,
       verifiability,
+    };
+  }
+
+  const lido = decodeLido(chainId, call, signer, table);
+  if (lido !== undefined) {
+    return {
+      ...base,
+      summary: "stake",
+      outflows: lido.outflows,
+      staking: lido.staking,
+      fee,
+      verifiability: "partial",
     };
   }
 
@@ -426,6 +440,7 @@ const decodeTransaction = (
     request.network,
     fee,
     table,
+    signer,
   );
   if (calls !== undefined && calls.length > 0) {
     const decoded = calls.map((call) =>
@@ -434,15 +449,18 @@ const decodeTransaction = (
         request.network,
         undefined,
         table,
+        signer,
       ),
     );
     const minimumReceived = decoded.flatMap((d) => d.minimumReceived ?? []);
+    const staking = decoded.flatMap((d) => d.staking ?? []);
     return {
       ...intent,
       summary: "batch",
       calls: decoded,
       outflows: decoded.flatMap((d) => d.outflows),
       approvals: decoded.flatMap((d) => d.approvals),
+      ...(staking.length === 0 ? {} : { staking }),
       ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
       verifiability: weakest(decoded),
       ...(delegation === undefined ? {} : { delegation }),
@@ -519,7 +537,7 @@ export const decodeEvm = (
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
-      ? recognizeSafe(json, (call) => decodeCall(call, request.network, undefined, table))
+      ? recognizeSafe(json, (call) => decodeCall(call, request.network, undefined, table, signer))
       : undefined;
   const message: MessageContent = {
     kind: "typed-data",
