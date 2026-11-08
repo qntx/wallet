@@ -69,3 +69,69 @@ export const swapQuote = endpoint("GET", "/v1/quotes/swap", swapQuoteRequest, sw
 
 export type SwapQuoteRequest = z.infer<typeof swapQuoteRequest>;
 export type SwapQuoteResponse = z.infer<typeof swapQuoteResponse>;
+
+/** Base58 public key — Solana mints, program ids, takers and accounts are all 32-byte keys. */
+const base58 = z.string().check(z.regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/));
+
+/** Jupiter is mainnet-only — every other Solana CAIP-2 id is a client error. */
+export const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+
+/** The `swapQuoteSolana` request: an exact-in mint pair for a taker on Solana mainnet. */
+export const swapQuoteSolanaRequest = z.object({
+  network: z.literal(SOLANA_MAINNET),
+  /** The mint sold — `So111…112` for wrapped SOL. */
+  inputMint: base58,
+  /** The mint bought — `So111…112` for wrapped SOL. */
+  outputMint: base58,
+  /** Exact base-unit sell amount, a positive integer as decimal. */
+  amount: z.string().check(z.regex(/^[1-9][0-9]*$/)),
+  /** The account the swap settles for. */
+  taker: base58,
+  /** Worst-case slippage in basis points, 1–5000 (a query string, coerced). */
+  slippageBps: z.coerce.number().check(z.int(), z.minimum(1), z.maximum(5000)),
+});
+
+/** One Solana instruction as the wire carries it — base64 data, plain account flags. */
+export const solanaInstruction = z.object({
+  programId: base58,
+  accounts: z.array(
+    z.object({
+      address: base58,
+      signer: z.boolean(),
+      writable: z.boolean(),
+    }),
+  ),
+  data: z.string().check(z.regex(/^[A-Za-z0-9+/]*={0,2}$/)),
+});
+
+/**
+ * A Jupiter `/build` relay: the instructions that assemble the versioned transaction — the engine
+ * replaces the compute budget with its own and reads the named lookup tables from chain.
+ */
+const solanaQuoteFilled = z.object({
+  liquidity: z.literal(true),
+  provider: z.literal("jupiter"),
+  inputMint: base58,
+  outputMint: base58,
+  inAmount: decimal,
+  outAmount: decimal,
+  otherAmountThreshold: decimal,
+  slippageBps: z.coerce.number().check(z.int()),
+  setup: z.array(solanaInstruction),
+  swap: solanaInstruction,
+  cleanup: z.union([solanaInstruction, z.null()]),
+  /** The address lookup tables the message compresses against — contents never come over the wire. */
+  lookupTables: z.array(base58),
+});
+
+export const swapQuoteSolanaResponse = z.union([solanaQuoteFilled, quoteEmpty]);
+
+export const swapQuoteSolana = endpoint(
+  "GET",
+  "/v1/quotes/swap/solana",
+  swapQuoteSolanaRequest,
+  swapQuoteSolanaResponse,
+);
+
+export type SwapQuoteSolanaRequest = z.infer<typeof swapQuoteSolanaRequest>;
+export type SwapQuoteSolanaResponse = z.infer<typeof swapQuoteSolanaResponse>;

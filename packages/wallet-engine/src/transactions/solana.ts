@@ -15,6 +15,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import { STAKE_ACCOUNT_BYTES, SolanaChainAdapter } from "../chains/solana.ts";
 import type { SolanaIntent, SolanaUnsignedTransaction } from "../chains/solana.ts";
+import { SOLANA_MAINNET } from "../gateway/contract/quotes.ts";
 import type { SolanaRpc, Independent } from "../networks/controller.ts";
 import {
   collectChecks,
@@ -23,6 +24,14 @@ import {
   mergeSolanaQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import { QUOTE_MAX_AGE_MS } from "../swaps/index.ts";
+import {
+  assertJupiterIntent,
+  assertJupiterPrograms,
+  assertJupiterSimulation,
+  jupiterIx,
+  readLookupTable,
+} from "../swaps/jupiter.ts";
 import type {
   AccountRef,
   ChainRequestInput,
@@ -156,6 +165,10 @@ const finishPrepared = async (
     readonly flags?: ReadonlyArray<RequestCheckCode | undefined>;
     readonly extraFlags?: (maxFee: bigint) => Array<RequestCheckCode | undefined>;
     readonly verify?: (maxFee: bigint) => void;
+    readonly lookupTables?: ReadonlyArray<{
+      readonly address: string;
+      readonly addresses: ReadonlyArray<string>;
+    }>;
   },
 ): Promise<PreparedRequest> => {
   const { account, network, from, fee, unsigned, rpc, independent, apis, intentOf } = args;
@@ -200,6 +213,7 @@ const finishPrepared = async (
     network,
     account,
     message: messageBytes,
+    ...(args.lookupTables === undefined ? {} : { lookupTables: args.lookupTables }),
   };
   const intent = intentOf(request);
   const id = newId(ctx.options.random);
@@ -602,4 +616,118 @@ export const token2022Intent = (
     return { ...intent, outflows, warnings, verifiability: "partial" };
   }
   return { ...intent, outflows, warnings };
+};
+
+/** A table read on one endpoint — owner check plus the decoded address list, or a refusal. */
+const readTable = async (rpc: SolanaRpc, table: string): Promise<ReadonlyArray<string>> => {
+  const result = obj(
+    await rpc.call("getAccountInfo", [table, { encoding: "base64", commitment: "confirmed" }]),
+  );
+  const value = obj(result?.["value"]);
+  const data = Array.isArray(value?.["data"]) ? (value["data"] as string[])[0] : undefined;
+  if (value === undefined || typeof value["owner"] !== "string" || data === undefined) {
+    throw new ChainError("invalid-request", `the swap lookup table ${table} is not on chain`);
+  }
+  return readLookupTable(value["owner"], Uint8Array.from(Buffer.from(data, "base64")));
+};
+
+export const prepareSolanaSwap = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "solana-swap" }>,
+): Promise<PreparedRequest> => {
+  const { account, network, quote, fee } = input;
+  if (account.kind !== "hd") {
+    throw new Error("imported accounts are not yet supported");
+  }
+  if (network !== SOLANA_MAINNET) {
+    throw new ChainError("invalid-request", "Jupiter swaps are mainnet-only");
+  }
+  if (ctx.options.now() - quote.fetchedAt > QUOTE_MAX_AGE_MS) {
+    throw new ChainError("invalid-request", "the swap quote is stale — fetch a fresh one");
+  }
+  const rpc = ctx.options.networks.solanaRpc(network);
+  const independent = ctx.options.networks.independentSolanaRpc(network);
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const solAccount = await apis.account({
+    walletId: account.walletId,
+    groupIndex: account.groupIndex,
+    template: "solana.bip44-change",
+    network,
+  });
+  const from = "address" in solAccount ? solAccount.address : "";
+  if (quote.taker !== from) {
+    throw new ChainError("invalid-request", "the swap quote is for a different taker");
+  }
+  assertJupiterPrograms(quote);
+
+  const flags: Array<RequestCheckCode | undefined> = [];
+  const tables = await Promise.all(
+    quote.lookupTables.map(async (table) => {
+      const addresses = await readTable(rpc, table);
+      if (independent.kind === "available") {
+        try {
+          const other = await readTable(independent.client, table);
+          if (other.length !== addresses.length || other.some((a, i) => a !== addresses[i])) {
+            throw new ChainError(
+              "invalid-request",
+              "the endpoints disagree on a swap lookup table",
+            );
+          }
+        } catch (error) {
+          if (error instanceof ChainError) {
+            throw error;
+          }
+          flags.push("reads-unverified");
+        }
+      }
+      return { address: table, addresses };
+    }),
+  );
+
+  const all = [...quote.setup, quote.swap, ...(quote.cleanup === null ? [] : [quote.cleanup])];
+  let unsigned: SolanaUnsignedTransaction;
+  try {
+    unsigned = await solana.build(rpc, network, from, {
+      kind: "instructions",
+      instructions: all.map(jupiterIx),
+      lookupTables: tables,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("compiled message is")) {
+      throw new ChainError(
+        "invalid-request",
+        "the swap's instructions exceed the transaction size limit",
+      );
+    }
+    throw error;
+  }
+  const prepared = await finishPrepared(ctx, {
+    account,
+    network,
+    from,
+    fee,
+    unsigned,
+    rpc,
+    independent,
+    apis,
+    intentOf: (request) => {
+      const intent = decodeSolana(request, from);
+      assertJupiterIntent(quote, intent, from);
+      return intent;
+    },
+    flags,
+    lookupTables: tables,
+  });
+  const maxFee = BigInt(prepared.intent.fee?.max.amount ?? "0");
+  assertJupiterSimulation(quote, prepared.simulation, maxFee);
+  const rerun = prepared.resimulate;
+  const resimulate =
+    rerun === undefined
+      ? undefined
+      : async () => {
+          const outcome = await rerun();
+          assertJupiterSimulation(quote, outcome, maxFee);
+          return outcome;
+        };
+  return { ...prepared, ...(resimulate === undefined ? {} : { resimulate }) };
 };

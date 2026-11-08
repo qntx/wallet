@@ -57,6 +57,7 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "evm-swap",
   "evm-lido",
   "solana-stake",
+  "solana-swap",
   "pay",
   "zap",
   "evm-sign",

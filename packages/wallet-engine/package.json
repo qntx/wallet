@@ -57,6 +57,7 @@
     "@qntx/siwx": "0.8.0",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
+    "@solana-program/address-lookup-table": "0.16.0",
     "@solana-program/compute-budget": "0.20.0",
     "@solana-program/stake": "0.11.0",
     "@solana-program/system": "0.16.0",
