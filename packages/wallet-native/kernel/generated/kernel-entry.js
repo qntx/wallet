@@ -147,7 +147,7 @@
 	* u32(new Uint8Array(4));
 	* ```
 	*/
-	function u32$2(arr) {
+	function u32$3(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -1276,7 +1276,7 @@
 	var MAX_CIPHERTEXT_BYTES = 4096;
 	var MAX_SATS$1 = 0x775f05a074000;
 	var network = union(literal("mainnet"), literal("regtest"));
-	var account = obj({
+	var account$1 = obj({
 		walletId,
 		groupIndex,
 		network
@@ -1498,14 +1498,14 @@
 		"spark.identityPublicKey": {
 			session: true,
 			presence: false,
-			params: obj({ account }),
+			params: obj({ account: account$1 }),
 			result: bytes33
 		},
 		"spark.publicKeys": {
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				keys: arr(sparkLeafKey, 64)
 			}),
 			result: arr(bytes33, 64)
@@ -1514,7 +1514,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				ciphertexts: arr(ciphertext, 64)
 			}),
 			result: arr(bytes33, 64)
@@ -1523,7 +1523,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				count: int(1, 64)
 			}),
 			result: arr(signingCommitment, 64)
@@ -1532,7 +1532,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				jobs: arr(frostSignJob, 64)
 			}),
 			result: arr(bytes32, 64)
@@ -1541,7 +1541,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				jobs: arr(frostAggregateJob, 64)
 			}),
 			result: arr(bytes64, 64)
@@ -1550,7 +1550,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				statement: identityStatement
 			}),
 			result: bytes(64, 128)
@@ -1559,7 +1559,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				key: sparkKey,
 				target: signingTarget
 			}),
@@ -1569,7 +1569,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				request: htlcTimeoutRequest
 			}),
 			result: bytes64
@@ -1578,7 +1578,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				request: prepareTransferRequest
 			}),
 			result: preparedTransfer
@@ -1587,7 +1587,7 @@
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				request: prepareClaimRequest
 			}),
 			result: preparedClaim
@@ -1595,14 +1595,14 @@
 		"spark.prepareLightningReceive": {
 			session: true,
 			presence: false,
-			params: obj({ account }),
+			params: obj({ account: account$1 }),
 			result: preparedLightningReceive
 		},
 		"spark.claimStaticDeposit": {
 			session: true,
 			presence: false,
 			params: obj({
-				account,
+				account: account$1,
 				request: staticDepositClaimRequest
 			}),
 			result: staticDepositClaimResult
@@ -1611,7 +1611,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				account,
+				account: account$1,
 				intent: approveIntent,
 				verify: factor
 			}),
@@ -1831,7 +1831,7 @@
 	* u32(new Uint8Array(8));
 	* ```
 	*/
-	function u32$1(arr) {
+	function u32$2(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -3872,8 +3872,8 @@
 	* @module
 	*/
 	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
-	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$2(encodeStr("expand 16-byte k"))))();
-	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$2(encodeStr("expand 32-byte k"))))();
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$3(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$3(encodeStr("expand 32-byte k"))))();
 	/**
 	* Rotates a 32-bit word left.
 	* @param a - Input word.
@@ -3895,10 +3895,10 @@
 	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
 		const len = data.length;
 		const block = new Uint8Array(BLOCK_LEN);
-		const b32 = u32$2(block);
+		const b32 = u32$3(block);
 		const isAligned = isLE$1 && isAligned32(data) && isAligned32(output);
-		const d32 = isAligned ? u32$2(data) : U32_EMPTY;
-		const o32 = isAligned ? u32$2(output) : U32_EMPTY;
+		const d32 = isAligned ? u32$3(data) : U32_EMPTY;
+		const o32 = isAligned ? u32$3(output) : U32_EMPTY;
 		if (!isLE$1) {
 			for (let pos = 0; pos < len; counter++) {
 				core(sigma, key, nonce, b32, counter, rounds);
@@ -3982,14 +3982,14 @@
 				throw new Error("invalid key size");
 			}
 			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
-			let k32 = u32$2(k);
+			let k32 = u32$3(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
 				const n16 = nonce.subarray(0, 16);
-				if (isLE$1) extendNonceFn(sigma, k32, u32$2(n16), k32);
+				if (isLE$1) extendNonceFn(sigma, k32, u32$3(n16), k32);
 				else {
 					const sigmaRaw = swap32IfBE$1(Uint32Array.from(sigma));
-					extendNonceFn(sigmaRaw, k32, u32$2(n16), k32);
+					extendNonceFn(sigmaRaw, k32, u32$3(n16), k32);
 					clean$1(sigmaRaw);
 					swap32IfBE$1(k32);
 				}
@@ -4003,7 +4003,7 @@
 				nonce = nc;
 				toClean.push(nonce);
 			}
-			const n32 = swap32IfBE$1(u32$2(nonce));
+			const n32 = swap32IfBE$1(u32$3(nonce));
 			try {
 				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
 				return output;
@@ -15732,7 +15732,7 @@ zoo`.split("\n"));
 			anumber$2(outputLen, "outputLen");
 			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
 			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$1(this.state);
+			this.state32 = u32$2(this.state);
 		}
 		clone() {
 			return this._cloneInto();
@@ -15751,7 +15751,7 @@ zoo`.split("\n"));
 			const len = data.length;
 			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
 			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$1(data) : void 0;
+			const data32 = canUseU32 && len >= blockLen ? u32$2(data) : void 0;
 			for (let pos = 0; pos < len;) {
 				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
 					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
@@ -19553,11 +19553,11 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-ChhEZ0lx.mjs
+	// packages/wallet-chains/dist/message-zf3XHwwc.mjs
 	init_secp256k1();
+	init_sha2();
 	init_utils();
 	init_transaction();
-	init_sha2();
 	init_objectSpread2();
 	/**
 	* Bip122 CAIP-2 networks = `bip122:` + the first 32 hex chars of the genesis hash, verified against
@@ -19633,8 +19633,8 @@ zoo`.split("\n"));
 		if (data.length > COMPACT_SIZE_ONE_BYTE_MAX) throw new ChainError("invalid-request", "BIP-322 script data exceeds 252 bytes");
 		return concat$2(varint(data.length), data);
 	};
-	var u32le$1 = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
-	var u64le$1 = (n) => {
+	var u32le$2 = (n) => Uint8Array.of(n % 256, Math.floor(n / 256) % 256, Math.floor(n / 65536) % 256, Math.floor(n / 16777216) % 256);
+	var u64le$2 = (n) => {
 		const out = /* @__PURE__ */ new Uint8Array(8);
 		let v = n;
 		for (let i = 0; i < 8; i++) {
@@ -19655,7 +19655,7 @@ zoo`.split("\n"));
 	*/
 	var toSpend = (scriptPubKey, messageHash) => {
 		const scriptSig = concat$2(Uint8Array.of(0), pushData(messageHash));
-		const raw = concat$2(u32le$1(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le$1(4294967295), pushData(scriptSig), u32le$1(0), varint(1), u64le$1(0n), pushData(scriptPubKey), u32le$1(0));
+		const raw = concat$2(u32le$2(0), varint(1), /* @__PURE__ */ new Uint8Array(32), u32le$2(4294967295), pushData(scriptSig), u32le$2(0), varint(1), u64le$2(0n), pushData(scriptPubKey), u32le$2(0));
 		return {
 			txid: sha256$1(sha256$1(raw)),
 			raw
@@ -26955,7 +26955,7 @@ zoo`.split("\n"));
 		if (lower === "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the EntryPoint is refused");
 	};
 	var isMessage$1 = isTypedDataMessage;
-	var address = typedDataAddress;
+	var address$1 = typedDataAddress;
 	var uint = typedDataUint;
 	var DETAILS = [
 		"address token",
@@ -26979,9 +26979,9 @@ zoo`.split("\n"));
 	*/
 	function recognizePermit(json, chainId, table) {
 		const { types, primaryType, message, domain } = json;
-		const verifying = address(domain["verifyingContract"]);
+		const verifying = address$1(domain["verifyingContract"]);
 		if (verifying === void 0) return;
-		const spender = address(message["spender"]);
+		const spender = address$1(message["spender"]);
 		if (spender === void 0) return;
 		const allow = (token, value, change, max, extra = {}) => allowanceChange(token, spender, value, change, max, chainId, table, extra);
 		if (primaryType === "Permit") {
@@ -27014,7 +27014,7 @@ zoo`.split("\n"));
 		var _own$slice;
 		const via = "permit2";
 		const allowance = (details) => {
-			const token = address(details["token"]);
+			const token = address$1(details["token"]);
 			const amount = uint(details["amount"], MAX_UINT160);
 			const expiration = uint(details["expiration"], MAX_UINT48);
 			return token === void 0 || amount === void 0 || expiration === void 0 ? void 0 : allow(token, amount, "set", MAX_UINT160, {
@@ -27023,7 +27023,7 @@ zoo`.split("\n"));
 			});
 		};
 		const transfer = (permitted, deadline) => {
-			const token = address(permitted["token"]);
+			const token = address$1(permitted["token"]);
 			const amount = uint(permitted["amount"], MAX_UINT256);
 			return token === void 0 || amount === void 0 ? void 0 : allow(token, amount, "transfer", MAX_UINT256, _objectSpread2({ via }, deadline <= MAX_UINT48 ? { expiration: Number(deadline) } : {}));
 		};
@@ -27296,7 +27296,7 @@ zoo`.split("\n"));
 	var SHIM_INIT_CODE_HASH = "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f";
 	/** The native-token sentinel 0x uses in `exec`, and the bare zero address (same meaning). */
 	var NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-	var ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+	var ZERO_ADDRESS$1 = "0x0000000000000000000000000000000000000000";
 	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
 	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
 	var last20 = (hex) => `0x${hex.slice(-40)}`;
@@ -27380,7 +27380,7 @@ zoo`.split("\n"));
 			return;
 		}
 	};
-	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS;
+	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS$1;
 	var tokenAmount = (token, amount, chainId, table) => {
 		const known = lookupEvmToken(table, chainId, token);
 		return _objectSpread2({
@@ -28625,11 +28625,24 @@ zoo`.split("\n"));
 	function bytesEqual(bytes1, bytes2) {
 		return bytes1.length === bytes2.length && bytes1.every((value, index) => value === bytes2[index]);
 	}
+	function getEncodedSize(value, encoder) {
+		return "fixedSize" in encoder ? encoder.fixedSize : encoder.getSizeFromValue(value);
+	}
+	function createEncoder(encoder) {
+		return Object.freeze(_objectSpread2(_objectSpread2({}, encoder), {}, { encode: (value) => {
+			const bytes = new Uint8Array(getEncodedSize(value, encoder));
+			encoder.write(value, bytes, 0);
+			return bytes;
+		} }));
+	}
 	function createDecoder(decoder) {
 		return Object.freeze(_objectSpread2(_objectSpread2({}, decoder), {}, { decode: (bytes, offset = 0) => decoder.read(bytes, offset)[0] }));
 	}
 	function isFixedSize(codec) {
 		return "fixedSize" in codec && typeof codec.fixedSize === "number";
+	}
+	function isVariableSize(codec) {
+		return !isFixedSize(codec);
 	}
 	function assertByteArrayIsNotEmptyForCodec(codecDescription, bytes, offset = 0) {
 		if (bytes.length - offset <= 0) throw new SolanaError(SOLANA_ERROR__CODECS__CANNOT_DECODE_EMPTY_BYTE_ARRAY, { codecDescription });
@@ -28673,6 +28686,17 @@ zoo`.split("\n"));
 		} else buffer = bytes.buffer;
 		return (bytesOffset === 0 || bytesOffset === -buffer.byteLength) && bytesLength === buffer.byteLength ? buffer : buffer.slice(bytesOffset, bytesOffset + bytesLength);
 	}
+	function fixEncoderSize(encoder, fixedBytes) {
+		return createEncoder({
+			fixedSize: fixedBytes,
+			write: (value, bytes, offset) => {
+				const variableByteArray = encoder.encode(value);
+				const fixedByteArray = variableByteArray.length > fixedBytes ? variableByteArray.slice(0, fixedBytes) : variableByteArray;
+				bytes.set(fixedByteArray, offset);
+				return offset + fixedBytes;
+			}
+		});
+	}
 	function fixDecoderSize(decoder, fixedBytes) {
 		return createDecoder({
 			fixedSize: fixedBytes,
@@ -28685,6 +28709,9 @@ zoo`.split("\n"));
 			}
 		});
 	}
+	function transformEncoder(encoder, unmap) {
+		return createEncoder(_objectSpread2(_objectSpread2({}, isVariableSize(encoder) ? _objectSpread2(_objectSpread2({}, encoder), {}, { getSizeFromValue: (value) => encoder.getSizeFromValue(unmap(value)) }) : encoder), {}, { write: (value, bytes, offset) => encoder.write(unmap(value), bytes, offset) }));
+	}
 	function transformDecoder(decoder, map) {
 		return createDecoder(_objectSpread2(_objectSpread2({}, decoder), {}, { read: (bytes, offset) => {
 			const [value, newOffset] = decoder.read(bytes, offset);
@@ -28692,6 +28719,41 @@ zoo`.split("\n"));
 		} }));
 	}
 	// node_modules/.bun/@solana+codecs-strings@8.5.0+ff0372d108591aba/node_modules/@solana/codecs-strings/dist/index.browser.mjs
+	function assertValidBaseString(alphabet4, testValue, givenValue = testValue) {
+		if (!testValue.match(new RegExp(`^[${alphabet4}]*$`))) throw new SolanaError(SOLANA_ERROR__CODECS__INVALID_STRING_FOR_BASE, {
+			alphabet: alphabet4,
+			base: alphabet4.length,
+			value: givenValue
+		});
+	}
+	var getBaseXEncoder = (alphabet4) => {
+		return createEncoder({
+			getSizeFromValue: (value) => {
+				const [leadingZeroes, tailChars] = partitionLeadingZeroes(value, alphabet4[0]);
+				if (!tailChars) return value.length;
+				const base10Number = getBigIntFromBaseX(tailChars, alphabet4);
+				return leadingZeroes.length + Math.ceil(base10Number.toString(16).length / 2);
+			},
+			write(value, bytes, offset) {
+				assertValidBaseString(alphabet4, value);
+				if (value === "") return offset;
+				const [leadingZeroes, tailChars] = partitionLeadingZeroes(value, alphabet4[0]);
+				if (!tailChars) {
+					bytes.set(new Uint8Array(leadingZeroes.length).fill(0), offset);
+					return offset + leadingZeroes.length;
+				}
+				let base10Number = getBigIntFromBaseX(tailChars, alphabet4);
+				const tailBytes = [];
+				while (base10Number > 0n) {
+					tailBytes.unshift(Number(base10Number % 256n));
+					base10Number /= 256n;
+				}
+				const bytesToAdd = [...Array(leadingZeroes.length).fill(0), ...tailBytes];
+				bytes.set(bytesToAdd, offset);
+				return offset + bytesToAdd.length;
+			}
+		});
+	};
 	var getBaseXDecoder$1 = (alphabet4) => {
 		return createDecoder({ read(rawBytes, offset) {
 			const bytes = offset === 0 || offset <= -rawBytes.byteLength ? rawBytes : rawBytes.slice(offset);
@@ -28703,6 +28765,19 @@ zoo`.split("\n"));
 			return [leadingZeroes + getBaseXFromBigInt$1(bytes.slice(trailIndex).reduce((sum, byte) => sum * 256n + BigInt(byte), 0n), alphabet4), rawBytes.length];
 		} });
 	};
+	function partitionLeadingZeroes(value, zeroCharacter) {
+		const [leadingZeros, tailChars] = value.split(new RegExp(`((?!${zeroCharacter}).*)`));
+		return [leadingZeros, tailChars];
+	}
+	function getBigIntFromBaseX(value, alphabet4) {
+		const base = BigInt(alphabet4.length);
+		let sum = 0n;
+		for (const char of value) {
+			sum *= base;
+			sum += BigInt(alphabet4.indexOf(char));
+		}
+		return sum;
+	}
 	function getBaseXFromBigInt$1(value, alphabet4) {
 		const base = BigInt(alphabet4.length);
 		const tailChars = [];
@@ -28713,14 +28788,32 @@ zoo`.split("\n"));
 		return tailChars.join("");
 	}
 	var alphabet2$1 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+	var getBase58Encoder = () => getBaseXEncoder(alphabet2$1);
 	var getBase58Decoder$1 = () => getBaseXDecoder$1(alphabet2$1);
 	globalThis.TextDecoder;
 	globalThis.TextEncoder;
 	// node_modules/.bun/@solana+addresses@8.5.0+ff0372d108591aba/node_modules/@solana/addresses/dist/index.browser.mjs
+	var memoizedBase58Encoder;
 	var memoizedBase58Decoder;
+	function getMemoizedBase58Encoder() {
+		if (!memoizedBase58Encoder) memoizedBase58Encoder = getBase58Encoder();
+		return memoizedBase58Encoder;
+	}
 	function getMemoizedBase58Decoder() {
 		if (!memoizedBase58Decoder) memoizedBase58Decoder = getBase58Decoder$1();
 		return memoizedBase58Decoder;
+	}
+	function assertIsAddress(putativeAddress) {
+		if (putativeAddress.length < 32 || putativeAddress.length > 44) throw new SolanaError(SOLANA_ERROR__ADDRESSES__STRING_LENGTH_OUT_OF_RANGE, { actualLength: putativeAddress.length });
+		const numBytes = getMemoizedBase58Encoder().encode(putativeAddress).byteLength;
+		if (numBytes !== 32) throw new SolanaError(SOLANA_ERROR__ADDRESSES__INVALID_BYTE_LENGTH, { actualLength: numBytes });
+	}
+	function address(putativeAddress) {
+		assertIsAddress(putativeAddress);
+		return putativeAddress;
+	}
+	function getAddressEncoder() {
+		return transformEncoder(fixEncoderSize(getMemoizedBase58Encoder(), 32), (value) => address(typeof value === "string" ? value : value.address));
 	}
 	function getAddressDecoder() {
 		return fixDecoderSize(getMemoizedBase58Decoder(), 32);
@@ -28748,6 +28841,12 @@ zoo`.split("\n"));
 			}
 		});
 	}
+	var getI64Decoder = (config = {}) => numberDecoderFactory({
+		config,
+		get: (view, le) => view.getBigInt64(0, le),
+		name: "i64",
+		size: 8
+	});
 	var MAX_SHORT_U16_VALUE = 65535;
 	var getShortU16Decoder = () => createDecoder({
 		maxSize: 3,
@@ -29165,6 +29264,7 @@ zoo`.split("\n"));
 		} });
 	}
 	// packages/wallet-chains/dist/solana.mjs
+	init_sha2();
 	init_objectSpread2();
 	/** Well-known Solana program ids (base58, 32 bytes) — frozen constants. */
 	var PROGRAM_IDS = Object.freeze({
@@ -29276,6 +29376,174 @@ zoo`.split("\n"));
 	};
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
 	var SOLANA_NATIVE_ASSET = "lamports";
+	/** Sysvars the legacy stake account lists carry; post-SIMD-0490 forms omit them. */
+	var SYSVAR_IDS = Object.freeze({
+		clock: "SysvarC1ock11111111111111111111111111111111",
+		rent: "SysvarRent111111111111111111111111111111111",
+		stakeHistory: "SysvarStakeHistory1111111111111111111111111",
+		stakeConfig: "StakeConfig11111111111111111111111111111111"
+	});
+	var ZERO_ADDRESS = "11111111111111111111111111111111";
+	var u32$1 = getU32Decoder();
+	var u64$2 = getU64Decoder();
+	var i64 = getI64Decoder();
+	var addr = getAddressEncoder();
+	var u32le$1 = (data, offset) => u32$1.decode(data, offset);
+	var u64le$1 = (data, offset) => u64$2.decode(data, offset);
+	var i64le = (data, offset) => i64.decode(data, offset);
+	var key$1 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
+	var account = (parsed, ix, index, lookups) => {
+		var _ix$accountIndices$in;
+		return index < ix.accountIndices.length ? resolveAccountIndex(parsed, (_ix$accountIndices$in = ix.accountIndices[index]) !== null && _ix$accountIndices$in !== void 0 ? _ix$accountIndices$in : 0, lookups) : void 0;
+	};
+	var role = (data, offset) => {
+		const r = u32le$1(data, offset);
+		return r === 0 ? "staker" : r === 1 ? "withdrawer" : "other";
+	};
+	/**
+	* Decodes one Stake-program instruction — exact data length and an account list matching either the
+	* current form or the legacy one (recognised by the sysvar it inserts at a fixed position).
+	* Anything else is `undefined` → the whole transaction decodes `opaque`.
+	*/
+	var decodeStakeIx = (parsed, ix, lookups) => {
+		const { data } = ix;
+		const acc = (i) => account(parsed, ix, i, lookups);
+		const n = ix.accountIndices.length;
+		if (data.length < 4) return;
+		switch (u32le$1(data, 0)) {
+			case 0: {
+				if (data.length !== 116 || !(n === 1 || n === 2 && acc(1) === SYSVAR_IDS.rent)) return;
+				const stake = acc(0);
+				if (stake === void 0) return;
+				const lockup = i64le(data, 68) !== 0n || u64le$1(data, 76) !== 0n || key$1(data, 84) !== ZERO_ADDRESS;
+				return {
+					kind: "initialize",
+					account: stake,
+					staker: key$1(data, 4),
+					withdrawer: key$1(data, 36),
+					lockup
+				};
+			}
+			case 1: {
+				if (data.length !== 40) return;
+				const r = role(data, 36);
+				const legacy = acc(1) === SYSVAR_IDS.clock;
+				const stake = acc(0);
+				if (r === "other" || stake === void 0 || !(legacy ? n === 3 || n === 4 : n === 2 || n === 3)) return;
+				return {
+					kind: "authorize",
+					account: stake,
+					role: r,
+					authority: key$1(data, 4)
+				};
+			}
+			case 2: {
+				const legacy = acc(2) === SYSVAR_IDS.clock;
+				const stake = acc(0);
+				const vote = acc(1);
+				if (data.length !== 4 || stake === void 0 || vote === void 0 || !(n === 3 || n === 6 && legacy && acc(3) === SYSVAR_IDS.stakeHistory && acc(4) === SYSVAR_IDS.stakeConfig)) return;
+				return {
+					kind: "delegate",
+					account: stake,
+					validator: vote
+				};
+			}
+			case 4: {
+				const legacy = acc(2) === SYSVAR_IDS.clock && acc(3) === SYSVAR_IDS.stakeHistory;
+				const stake = acc(0);
+				const to = acc(1);
+				if (data.length !== 12 || stake === void 0 || to === void 0 || !(n === 3 || n === 4 || (n === 5 || n === 6) && legacy)) return;
+				return {
+					kind: "withdraw",
+					account: stake,
+					to,
+					lamports: u64le$1(data, 4)
+				};
+			}
+			case 5: {
+				const stake = acc(0);
+				if (data.length !== 4 || stake === void 0 || !(n === 2 || n === 3 && acc(1) === SYSVAR_IDS.clock)) return;
+				return {
+					kind: "deactivate",
+					account: stake
+				};
+			}
+			case 9: {
+				const legacy = acc(1) === SYSVAR_IDS.rent;
+				const stake = acc(0);
+				const staker = acc(legacy ? 2 : 1);
+				const withdrawer = acc(legacy ? 3 : 2);
+				if (data.length !== 4 || stake === void 0 || staker === void 0 || withdrawer === void 0 || !(n === 3 || n === 4 && legacy)) return;
+				return {
+					kind: "initialize-checked",
+					account: stake,
+					staker,
+					withdrawer
+				};
+			}
+			case 10: {
+				if (data.length !== 8) return;
+				const r = role(data, 4);
+				const legacy = acc(1) === SYSVAR_IDS.clock;
+				const stake = acc(0);
+				const authority = acc(legacy ? 3 : 2);
+				if (r === "other" || stake === void 0 || authority === void 0 || !(legacy ? n === 4 || n === 5 : n === 3 || n === 4)) return;
+				return {
+					kind: "authorize",
+					account: stake,
+					role: r,
+					authority
+				};
+			}
+			default: return;
+		}
+	};
+	/**
+	* A system-program `CreateAccount` (u32 0) or `CreateAccountWithSeed` (u32 3) whose owner is the
+	* Stake program — `undefined` for other owners or any layout deviation. A with-seed creation is
+	* only recognised when `to` is the sha256(base ‖ seed ‖ owner) derived address.
+	*/
+	var decodeStakeCreate = (parsed, ix, lookups) => {
+		const { data } = ix;
+		const acc = (i) => account(parsed, ix, i, lookups);
+		if (data.length < 4) return "other";
+		if (u32le$1(data, 0) === 0) {
+			if (data.length !== 52 || ix.accountIndices.length !== 2) return "other";
+			const from = acc(0);
+			const to = acc(1);
+			if (from === void 0 || to === void 0) return "other";
+			if (key$1(data, 20) !== PROGRAM_IDS.stake) return "other";
+			return {
+				kind: "create",
+				account: to,
+				from,
+				lamports: u64le$1(data, 4)
+			};
+		}
+		if (u32le$1(data, 0) === 3) {
+			const seedLen = data.length >= 44 ? Number(u64le$1(data, 36)) : -1;
+			const end = 92 + seedLen;
+			if (seedLen < 0 || seedLen > 32 || data.length !== end) return "other";
+			const from = acc(0);
+			const to = acc(1);
+			if (from === void 0 || to === void 0 || !(ix.accountIndices.length === 2 || ix.accountIndices.length === 3)) return "other";
+			const base = key$1(data, 4);
+			if (key$1(data, end - 32) !== PROGRAM_IDS.stake) return "other";
+			if (ix.accountIndices.length === 3 && acc(2) !== base) return "other";
+			if (ix.accountIndices.length === 2 && base !== from) return "other";
+			const seed = data.subarray(44, 44 + seedLen);
+			return to === solanaAddressFromPublicKey(sha256$1(new Uint8Array([
+				...addr.encode(address(base)),
+				...seed,
+				...addr.encode(address(PROGRAM_IDS.stake))
+			]))) ? {
+				kind: "create",
+				account: to,
+				from,
+				lamports: u64le$1(data, 44 + seedLen)
+			} : "other";
+		}
+	};
 	var USDC = Object.freeze({
 		symbol: "USDC",
 		decimals: 6,
@@ -29306,11 +29574,17 @@ zoo`.split("\n"));
 		const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
 		const { data } = ix;
 		if (program === PROGRAM_IDS.system) {
-			var _ix$accountIndices$;
+			var _ix$accountIndices$, _ix$accountIndices$2;
 			if (data.length === 12 && u32le(data, 0) === 2) return {
 				kind: "system-transfer",
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$ = ix.accountIndices[1]) !== null && _ix$accountIndices$ !== void 0 ? _ix$accountIndices$ : 0, lookups),
+				from: resolveAccountIndex(parsed, (_ix$accountIndices$ = ix.accountIndices[0]) !== null && _ix$accountIndices$ !== void 0 ? _ix$accountIndices$ : 0, lookups),
+				to: resolveAccountIndex(parsed, (_ix$accountIndices$2 = ix.accountIndices[1]) !== null && _ix$accountIndices$2 !== void 0 ? _ix$accountIndices$2 : 0, lookups),
 				amount: u64le(data, 4)
+			};
+			const create = decodeStakeCreate(parsed, ix, lookups);
+			if (create !== void 0 && create !== "other") return {
+				kind: "system-create",
+				stake: create
 			};
 			return { kind: "other" };
 		}
@@ -29331,30 +29605,38 @@ zoo`.split("\n"));
 			return { kind: "other" };
 		}
 		if (program === PROGRAM_IDS.token || program === PROGRAM_IDS.token2022) {
-			var _ix$accountIndices$2, _ix$accountIndices$3, _ix$accountIndices$4;
+			var _ix$accountIndices$3, _ix$accountIndices$4, _ix$accountIndices$5;
 			if (data.length === 10 && data[0] === 12) return {
 				kind: "token-transfer-checked",
 				amount: u64le(data, 1),
 				decimals: data[9],
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$2 = ix.accountIndices[2]) !== null && _ix$accountIndices$2 !== void 0 ? _ix$accountIndices$2 : 0, lookups),
-				mint: resolveAccountIndex(parsed, (_ix$accountIndices$3 = ix.accountIndices[1]) !== null && _ix$accountIndices$3 !== void 0 ? _ix$accountIndices$3 : 0, lookups)
+				to: resolveAccountIndex(parsed, (_ix$accountIndices$3 = ix.accountIndices[2]) !== null && _ix$accountIndices$3 !== void 0 ? _ix$accountIndices$3 : 0, lookups),
+				mint: resolveAccountIndex(parsed, (_ix$accountIndices$4 = ix.accountIndices[1]) !== null && _ix$accountIndices$4 !== void 0 ? _ix$accountIndices$4 : 0, lookups)
 			};
 			if (data.length === 9 && data[0] === 4) return {
 				kind: "token-approve",
 				amount: u64le(data, 1),
-				to: resolveAccountIndex(parsed, (_ix$accountIndices$4 = ix.accountIndices[1]) !== null && _ix$accountIndices$4 !== void 0 ? _ix$accountIndices$4 : 0, lookups)
+				to: resolveAccountIndex(parsed, (_ix$accountIndices$5 = ix.accountIndices[1]) !== null && _ix$accountIndices$5 !== void 0 ? _ix$accountIndices$5 : 0, lookups)
 			};
 			return { kind: "other" };
 		}
-		if (program === PROGRAM_IDS.stake) return { kind: "stake" };
+		if (program === PROGRAM_IDS.stake) {
+			const stake = decodeStakeIx(parsed, ix, lookups);
+			return stake === void 0 ? { kind: "other" } : {
+				kind: "stake",
+				stake
+			};
+		}
 		return { kind: "other" };
 	};
 	var FULL_KINDS = /* @__PURE__ */ new Set([
 		"system-transfer",
+		"system-create",
 		"cu-limit",
 		"cu-price",
 		"ata-create",
-		"ata-create-idempotent"
+		"ata-create-idempotent",
+		"stake"
 	]);
 	var classify$1 = (parsed, calls, network, table) => {
 		if (parsed.lookups.length > 0) return "partial";
@@ -29362,9 +29644,9 @@ zoo`.split("\n"));
 		for (const call of calls) {
 			var _call$mint;
 			if (call.kind === "other") return "opaque";
-			if (call.kind === "token-approve" || call.kind === "stake") allFull = false;
+			if (call.kind === "token-approve") allFull = false;
 			if (call.kind === "token-transfer-checked" && lookupSolanaToken(table, network, (_call$mint = call.mint) !== null && _call$mint !== void 0 ? _call$mint : "") === void 0) allFull = false;
-			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-approve" && call.kind !== "stake") return "opaque";
+			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-approve") return "opaque";
 		}
 		return allFull ? "full" : "partial";
 	};
@@ -29386,11 +29668,14 @@ zoo`.split("\n"));
 		const verifiability = classify$1(parsed, calls, request.network, table);
 		const outflows = [];
 		const approvals = [];
+		const staking = [];
+		const warnings = [];
+		let otherTransfer = false;
 		for (const call of calls) {
-			if (call.kind === "system-transfer" && call.to !== void 0) {
+			if (call.kind === "system-transfer" && call.to !== void 0 && call.from === signer) {
 				var _call$amount;
-				const [source] = parsed.staticAccounts;
-				if (source === signer) outflows.push({
+				otherTransfer = true;
+				outflows.push({
 					to: call.to,
 					amount: {
 						asset: SOLANA_NATIVE_ASSET,
@@ -29401,6 +29686,7 @@ zoo`.split("\n"));
 			}
 			if (call.kind === "token-transfer-checked") {
 				var _call$mint2, _call$to, _call$mint3, _call$amount2;
+				otherTransfer = true;
 				const token = lookupSolanaToken(table, request.network, (_call$mint2 = call.mint) !== null && _call$mint2 !== void 0 ? _call$mint2 : "");
 				outflows.push({
 					to: (_call$to = call.to) !== null && _call$to !== void 0 ? _call$to : "",
@@ -29432,21 +29718,98 @@ zoo`.split("\n"));
 					verified: token !== void 0
 				});
 			}
+			const { stake } = call;
+			if (stake !== void 0) switch (stake.kind) {
+				case "create":
+					staking.push({
+						kind: "create",
+						account: stake.account,
+						lamports: stake.lamports.toString(10)
+					});
+					if (stake.from === signer) outflows.push({
+						to: stake.account,
+						amount: {
+							asset: SOLANA_NATIVE_ASSET,
+							amount: stake.lamports.toString(10)
+						},
+						verified: true
+					});
+					break;
+				case "initialize":
+				case "initialize-checked":
+					if (stake.staker !== signer) approvals.push({
+						kind: "stake-authority",
+						account: stake.account,
+						role: "staker",
+						authority: stake.staker,
+						verified: false
+					});
+					if (stake.withdrawer !== signer) approvals.push({
+						kind: "stake-authority",
+						account: stake.account,
+						role: "withdrawer",
+						authority: stake.withdrawer,
+						verified: false
+					});
+					if (stake.kind === "initialize" && stake.lockup) warnings.push({
+						kind: "stake-lockup",
+						message: "the stake account is locked — funds cannot move until the lockup expires"
+					});
+					break;
+				case "delegate":
+					staking.push({
+						kind: "delegate",
+						account: stake.account,
+						validator: stake.validator
+					});
+					break;
+				case "deactivate":
+					staking.push({
+						kind: "deactivate",
+						account: stake.account
+					});
+					break;
+				case "withdraw":
+					staking.push({
+						kind: "withdraw",
+						account: stake.account,
+						to: stake.to,
+						lamports: stake.lamports.toString(10)
+					});
+					if (stake.to !== signer) outflows.push({
+						to: stake.to,
+						amount: {
+							asset: SOLANA_NATIVE_ASSET,
+							amount: stake.lamports.toString(10)
+						},
+						verified: true
+					});
+					break;
+				case "authorize": approvals.push({
+					kind: "stake-authority",
+					account: stake.account,
+					role: stake.role,
+					authority: stake.authority,
+					verified: false
+				});
+			}
 		}
 		const fee = feeLamports(parsed, calls);
-		return {
+		const summary = otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
+		return _objectSpread2(_objectSpread2({
 			family: "solana",
 			network: request.network,
-			summary: outflows.length > 0 ? "transfer" : "contract-call",
+			summary,
 			outflows,
 			approvals,
 			fee: fee === void 0 ? void 0 : { max: {
 				asset: SOLANA_NATIVE_ASSET,
 				amount: fee.toString(10)
-			} },
-			warnings: [],
+			} }
+		}, staking.length === 0 ? {} : { staking }), {}, {
+			warnings,
 			verifiability
-		};
+		});
 	};
 	var decodeSolana = (request, signer, table = solanaTokenTable) => decodeTransaction(request, signer, table);
 	var solanaNetwork = (network) => {
@@ -29574,7 +29937,8 @@ zoo`.split("\n"));
 				swap: "确认兑换",
 				message: "确认签名",
 				authorization: "确认账户授权",
-				batch: "确认批量交易"
+				batch: "确认批量交易",
+				stake: "确认质押"
 			},
 			blindTitle: "确认盲签",
 			blindDescription: "签署无法显示为文字的数据",
@@ -29596,7 +29960,13 @@ zoo`.split("\n"));
 			maxFee: (fee) => `最高手续费 ${fee}`,
 			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
 			delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
-			revokeDelegation: "撤销此账户的合约委托"
+			revokeDelegation: "撤销此账户的合约委托",
+			stakeRole: {
+				staker: "质押",
+				withdrawer: "提取"
+			},
+			stakeAuthority: (account, role, authority) => `将质押账户 ${account} 的${role}权限交给 ${authority}`,
+			stakeLine: (a) => a.kind === "create" ? `创建质押账户 ${a.account}，存入 ${a.lamports} lamports` : a.kind === "delegate" ? `委托质押账户 ${a.account} 给验证者 ${a.validator}` : a.kind === "deactivate" ? `解除质押 ${a.account}` : `从 ${a.account} 提取 ${a.lamports} lamports 到 ${a.to}`
 		},
 		en: {
 			titles: {
@@ -29606,7 +29976,8 @@ zoo`.split("\n"));
 				swap: "Confirm swap",
 				message: "Confirm signature",
 				authorization: "Confirm account authorization",
-				batch: "Confirm batch"
+				batch: "Confirm batch",
+				stake: "Confirm staking"
 			},
 			blindTitle: "Confirm blind signing",
 			blindDescription: "Sign data that cannot be shown as text",
@@ -29628,7 +29999,13 @@ zoo`.split("\n"));
 			maxFee: (fee) => `Max fee ${fee}`,
 			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
 			delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
-			revokeDelegation: "Revoke this account's contract delegation"
+			revokeDelegation: "Revoke this account's contract delegation",
+			stakeRole: {
+				staker: "staker",
+				withdrawer: "withdrawer"
+			},
+			stakeAuthority: (account, role, authority) => `Give ${authority} the ${role} authority over stake account ${account}`,
+			stakeLine: (a) => a.kind === "create" ? `Create stake account ${a.account} with ${a.lamports} lamports` : a.kind === "delegate" ? `Delegate stake account ${a.account} to validator ${a.validator}` : a.kind === "deactivate" ? `Deactivate stake ${a.account}` : `Withdraw ${a.lamports} lamports from ${a.account} to ${a.to}`
 		}
 	};
 	/** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
@@ -29651,6 +30028,7 @@ zoo`.split("\n"));
 	}
 	function approvalLine(catalog, change) {
 		var _change$amount$symbol;
+		if (change.kind === "stake-authority") return catalog.stakeAuthority(change.account, catalog.stakeRole[change.role], change.authority);
 		if (change.kind === "operator") return change.approved ? catalog.operatorAllow(change.spender, change.asset) : catalog.operatorRevoke(change.spender, change.asset);
 		const name = (_change$amount$symbol = change.amount.symbol) !== null && _change$amount$symbol !== void 0 ? _change$amount$symbol : change.amount.asset;
 		let line;
@@ -29665,7 +30043,7 @@ zoo`.split("\n"));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
-		var _intent$message, _intent$warnings, _intent$minimumReceiv;
+		var _intent$message, _intent$warnings, _intent$staking, _intent$minimumReceiv;
 		const catalog = CATALOGS$1[locale];
 		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
 			title: catalog.blindTitle,
@@ -29685,6 +30063,7 @@ zoo`.split("\n"));
 		const lines = [
 			...delegation,
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
+			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).map((action) => catalog.stakeLine(action)),
 			...((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
@@ -30693,7 +31072,7 @@ zoo`.split("\n"));
 		const { sbox2 } = tableEncoding;
 		const toClean = [];
 		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
-		const k32 = swap32IfBE$1(u32$2(key));
+		const k32 = swap32IfBE$1(u32$3(key));
 		const Nk = k32.length;
 		const subByte = (n) => applySbox(sbox2, n, n, n, n);
 		const xk = new Uint32Array(len + 28);
@@ -30793,7 +31172,7 @@ zoo`.split("\n"));
 	function prepareBlockEncrypt(plaintext, outLen, dst) {
 		if (dst === void 0) dst = new Uint8Array(outLen);
 		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
-		const o = u32$2(dst);
+		const o = u32$3(dst);
 		return {
 			b: plaintext,
 			o,
@@ -30818,7 +31197,7 @@ zoo`.split("\n"));
 	}
 	function padPCKS(left) {
 		const tmp = /* @__PURE__ */ new Uint8Array(16);
-		const tmp32 = u32$2(tmp);
+		const tmp32 = u32$3(tmp);
 		tmp.set(left);
 		const paddingByte = BLOCK_SIZE - left.length;
 		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
@@ -30855,12 +31234,12 @@ zoo`.split("\n"));
 				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
 				const xk = expandKeyLE(key);
 				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-				const b = u32$2(input);
+				const b = u32$3(input);
 				swap32IfBE$1(b);
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$2(_iv);
+				const n32 = u32$3(_iv);
 				swap32IfBE$1(n32);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				let i = 0;
@@ -30889,11 +31268,11 @@ zoo`.split("\n"));
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$2(_iv);
+				const n32 = u32$3(_iv);
 				swap32IfBE$1(n32);
 				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
-				const b = u32$2(ciphertext);
-				const o = u32$2(dst);
+				const b = u32$3(ciphertext);
+				const o = u32$3(dst);
 				swap32IfBE$1(b);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				for (let i = 0; i + 4 <= b.length;) {
@@ -31402,9 +31781,9 @@ zoo`.split("\n"));
 			c: 1,
 			dkLen: blockSize * p
 		});
-		const B32 = u32$1(B);
-		const V = u32$1(new Uint8Array(blockSize * N));
-		const tmp = u32$1(new Uint8Array(blockSize));
+		const B32 = u32$2(B);
+		const V = u32$2(new Uint8Array(blockSize * N));
+		const tmp = u32$2(new Uint8Array(blockSize));
 		let blockMixCb = () => {};
 		if (onProgress) {
 			const totalBlockMix = 2 * N * p;

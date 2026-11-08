@@ -504,3 +504,72 @@ describe("sighash-single-anyonecanpay caution", () => {
     expect(chainPrompt("en", { ...listing, warnings: [] }).description).not.toContain("same-index");
   });
 });
+
+describe("solana stake", () => {
+  const stake: PromptIntent = {
+    summary: "stake",
+    outflows: [
+      {
+        to: "STAKEACCT",
+        amount: { asset: "solana-native", amount: "2000000000" },
+        verified: true,
+      },
+    ],
+    approvals: [
+      {
+        kind: "stake-authority",
+        account: "STAKEACCT",
+        role: "withdrawer",
+        authority: "OTHER",
+        verified: false,
+      },
+    ],
+    staking: [
+      { kind: "create", account: "STAKEACCT", lamports: "2000000000" },
+      { kind: "delegate", account: "STAKEACCT", validator: "VOTE" },
+    ],
+    fee: undefined,
+    verifiability: "full",
+    warnings: [{ kind: "stake-lockup", message: "locked" }],
+  };
+
+  it("lists staking actions and the authority grant in both locales", () => {
+    expect(chainPrompt("en", stake).description).toContain(
+      "Create stake account STAKEACCT with 2000000000 lamports",
+    );
+    expect(chainPrompt("en", stake).description).toContain(
+      "Delegate stake account STAKEACCT to validator VOTE",
+    );
+    expect(chainPrompt("en", stake).description).toContain(
+      "Give OTHER the withdrawer authority over stake account STAKEACCT",
+    );
+    expect(chainPrompt("zh-Hans", stake).description).toContain(
+      "创建质押账户 STAKEACCT，存入 2000000000 lamports",
+    );
+    expect(chainPrompt("zh-Hans", stake).description).toContain(
+      "委托质押账户 STAKEACCT 给验证者 VOTE",
+    );
+    expect(chainPrompt("zh-Hans", stake).description).toContain(
+      "将质押账户 STAKEACCT 的提取权限交给 OTHER",
+    );
+  });
+
+  it("shows withdraw and deactivate actions", () => {
+    const w: PromptIntent = {
+      ...stake,
+      approvals: [],
+      staking: [
+        { kind: "deactivate", account: "STAKEACCT" },
+        { kind: "withdraw", account: "STAKEACCT", to: "ME", lamports: "500000000" },
+      ],
+    };
+    expect(chainPrompt("en", w).description).toContain("Deactivate stake STAKEACCT");
+    expect(chainPrompt("en", w).description).toContain(
+      "Withdraw 500000000 lamports from STAKEACCT to ME",
+    );
+    expect(chainPrompt("zh-Hans", w).description).toContain("解除质押 STAKEACCT");
+    expect(chainPrompt("zh-Hans", w).description).toContain(
+      "从 STAKEACCT 提取 500000000 lamports 到 ME",
+    );
+  });
+});

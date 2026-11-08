@@ -4,14 +4,28 @@ import { resolve } from "node:path";
 
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { hmac } from "@noble/hashes/hmac.js";
-import { sha512 } from "@noble/hashes/sha2.js";
+import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import {
   getSetComputeUnitLimitInstruction,
   getSetComputeUnitPriceInstruction,
 } from "@solana-program/compute-budget";
-import { getDelegateStakeInstruction } from "@solana-program/stake";
-import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
+import {
+  StakeAuthorize,
+  getAuthorizeCheckedInstruction,
+  getAuthorizeInstruction,
+  getDeactivateInstruction,
+  getDelegateStakeInstruction,
+  getInitializeCheckedInstruction,
+  getInitializeInstruction,
+  getMergeInstruction,
+  getWithdrawInstruction,
+} from "@solana-program/stake";
+import {
+  getCreateAccountInstruction,
+  getCreateAccountWithSeedInstruction,
+  getTransferSolInstruction,
+} from "@solana-program/system";
 import {
   getApproveInstruction,
   getCreateAssociatedTokenIdempotentInstruction,
@@ -19,8 +33,13 @@ import {
   getTransferCheckedInstruction,
 } from "@solana-program/token";
 import { getTransferCheckedInstruction as getTransferCheckedInstruction2022 } from "@solana-program/token-2022";
-import { address, getAddressDecoder } from "@solana/addresses";
-import { assertIsSignatureBytes, createNoopSigner, verifySignature } from "@solana/kit";
+import { address, getAddressDecoder, getAddressEncoder } from "@solana/addresses";
+import {
+  AccountRole,
+  assertIsSignatureBytes,
+  createNoopSigner,
+  verifySignature,
+} from "@solana/kit";
 import {
   appendTransactionMessageInstruction,
   compileTransactionMessage,
@@ -33,6 +52,7 @@ import {
 import { describe, expect, it } from "vite-plus/test";
 
 import { ChainError } from "../src/index.ts";
+import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import {
   SOLANA_NATIVE_ASSET,
   decodeSolana,
@@ -356,13 +376,18 @@ describe("verifiability + decode", () => {
     expect(intent.fee?.max.amount).toBe("5200");
   });
 
-  it("Stake instruction → partial", () => {
+  it("a recognized stake instruction is full; an unrecognized one is opaque", () => {
     const ix = getDelegateStakeInstruction({
       stake: STAKE_ACCT as never,
       vote: VOTE_ACCT,
       stakeAuthority: feePayerSigner,
     });
-    expect(verifiabilitySolana(req(compile([ix])) as never, FEE_PAYER)).toBe("partial");
+    expect(verifiabilitySolana(req(compile([ix])) as never, FEE_PAYER)).toBe("full");
+    const unknown = stakeIx(
+      [{ address: STAKE_ACCT, role: AccountRole.WRITABLE }],
+      cat(u32le(7), u64le(0n)),
+    );
+    expect(verifiabilitySolana(req(compile([unknown])) as never, FEE_PAYER)).toBe("opaque");
   });
 
   it("lookup tables present → partial", () => {
@@ -410,5 +435,460 @@ describe("verifiability + decode", () => {
       programAddress: address("11111111111111111111111111111111"),
     });
     expect(verifiabilitySolana(req(compile([ix])) as never, FEE_PAYER)).toBe("opaque");
+  });
+});
+
+const STAKE_PROG = "Stake11111111111111111111111111111111111111";
+const CLOCK = "SysvarC1ock11111111111111111111111111111111";
+const RENT = "SysvarRent111111111111111111111111111111111";
+const STAKE_HIST = "SysvarStakeHistory1111111111111111111111111";
+const STAKE_CONF = "StakeConfig11111111111111111111111111111111";
+const OTHER_KEY = address("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v");
+const stakeSigner = createNoopSigner(STAKE_ACCT);
+
+const ro = (addr: string) => ({ address: address(addr), role: AccountRole.READONLY });
+const w0 = (addr: string) => ({ address: address(addr), role: AccountRole.WRITABLE });
+const sgn = (addr: string) => ({
+  address: address(addr),
+  role: AccountRole.READONLY_SIGNER,
+  signer: createNoopSigner(address(addr)),
+});
+
+const u32le = (n: number): Uint8Array => {
+  const b = new Uint8Array(4);
+  new DataView(b.buffer).setUint32(0, n, true);
+  return b;
+};
+const u64le = (n: bigint): Uint8Array => {
+  const b = new Uint8Array(8);
+  new DataView(b.buffer).setBigUint64(0, n, true);
+  return b;
+};
+const cat = (...parts: ReadonlyArray<Uint8Array>): Uint8Array =>
+  Uint8Array.from(parts.flatMap((p) => [...p]));
+
+const stakeIx = (accounts: ReadonlyArray<object>, data: Uint8Array) => ({
+  programAddress: address(STAKE_PROG),
+  accounts,
+  data,
+});
+
+describe("stake decode", () => {
+  it("create + initialize + delegate (new forms) → stake/full, three actions, one outflow", () => {
+    const cuLimit = getSetComputeUnitLimitInstruction({ units: 200000 });
+    const cuPrice = getSetComputeUnitPriceInstruction({ microLamports: 1n });
+    const create = getCreateAccountInstruction({
+      payer: feePayerSigner,
+      newAccount: stakeSigner,
+      lamports: 2_000_000_000n,
+      space: 200n,
+      programAddress: address(STAKE_PROG),
+    });
+    const init = getInitializeInstruction({
+      stake: STAKE_ACCT,
+      arg0: { staker: FEE_PAYER, withdrawer: FEE_PAYER },
+      arg1: {
+        custodian: address("11111111111111111111111111111111"),
+        epoch: 0n,
+        unixTimestamp: 0n,
+      },
+    });
+    const delegate = getDelegateStakeInstruction({
+      stake: STAKE_ACCT,
+      vote: VOTE_ACCT,
+      stakeAuthority: feePayerSigner,
+    });
+    const intent = decodeSolana(
+      req(compile([cuLimit, cuPrice, create, init, delegate])) as never,
+      FEE_PAYER,
+    );
+    expect(intent.summary).toBe("stake");
+    expect(intent.verifiability).toBe("full");
+    expect(intent.staking).toStrictEqual([
+      { kind: "create", account: STAKE_ACCT, lamports: "2000000000" },
+      { kind: "delegate", account: STAKE_ACCT, validator: VOTE_ACCT },
+    ]);
+    expect(intent.outflows).toStrictEqual([
+      {
+        to: STAKE_ACCT,
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: "2000000000" },
+        verified: true,
+      },
+    ]);
+    expect(intent.approvals).toStrictEqual([]);
+  });
+
+  it("legacy account lists decode the same as the new forms", () => {
+    const init = getInitializeInstruction({
+      stake: STAKE_ACCT,
+      arg0: { staker: FEE_PAYER, withdrawer: FEE_PAYER },
+      arg1: {
+        custodian: address("11111111111111111111111111111111"),
+        epoch: 0n,
+        unixTimestamp: 0n,
+      },
+    });
+    const legacyInit = stakeIx(
+      [{ address: STAKE_ACCT, role: AccountRole.WRITABLE }, ro(RENT)],
+      Uint8Array.from(init.data),
+    );
+    const delegate = getDelegateStakeInstruction({
+      stake: STAKE_ACCT,
+      vote: VOTE_ACCT,
+      stakeAuthority: feePayerSigner,
+    });
+    const legacyDelegate = stakeIx(
+      [
+        { address: STAKE_ACCT, role: AccountRole.WRITABLE },
+        ro(VOTE_ACCT),
+        ro(CLOCK),
+        ro(STAKE_HIST),
+        ro(STAKE_CONF),
+        sgn(FEE_PAYER),
+      ],
+      Uint8Array.from(delegate.data),
+    );
+    const intent = decodeSolana(req(compile([legacyInit, legacyDelegate])) as never, FEE_PAYER);
+    expect(intent.summary).toBe("stake");
+    expect(intent.staking).toStrictEqual([
+      { kind: "delegate", account: STAKE_ACCT, validator: VOTE_ACCT },
+    ]);
+  });
+
+  it("deactivate → stake action, no outflow", () => {
+    const deact = getDeactivateInstruction({
+      stake: STAKE_ACCT,
+      stakeAuthority: feePayerSigner,
+    });
+    const intent = decodeSolana(req(compile([deact])) as never, FEE_PAYER);
+    expect(intent.summary).toBe("stake");
+    expect(intent.staking).toStrictEqual([{ kind: "deactivate", account: STAKE_ACCT }]);
+    expect(intent.outflows).toStrictEqual([]);
+  });
+
+  it("withdraw to the signer has no outflow; to another address it does", () => {
+    const self = getWithdrawInstruction({
+      stake: STAKE_ACCT,
+      recipient: FEE_PAYER,
+      withdrawAuthority: feePayerSigner,
+      args: 500_000_000n,
+    });
+    const selfIntent = decodeSolana(req(compile([self])) as never, FEE_PAYER);
+    expect(selfIntent.staking).toStrictEqual([
+      { kind: "withdraw", account: STAKE_ACCT, to: FEE_PAYER, lamports: "500000000" },
+    ]);
+    expect(selfIntent.outflows).toStrictEqual([]);
+    const other = getWithdrawInstruction({
+      stake: STAKE_ACCT,
+      recipient: OTHER_KEY,
+      withdrawAuthority: feePayerSigner,
+      args: 500_000_000n,
+    });
+    const otherIntent = decodeSolana(req(compile([other])) as never, FEE_PAYER);
+    expect(otherIntent.outflows).toStrictEqual([
+      {
+        to: OTHER_KEY,
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: "500000000" },
+        verified: true,
+      },
+    ]);
+  });
+
+  it("Authorize/AuthorizeChecked to another key → stake-authority approval", () => {
+    const auth = getAuthorizeInstruction({
+      stake: STAKE_ACCT,
+      authority: feePayerSigner,
+      arg0: OTHER_KEY,
+      arg1: StakeAuthorize.Staker,
+    });
+    const authChecked = getAuthorizeCheckedInstruction({
+      stake: STAKE_ACCT,
+      authority: feePayerSigner,
+      newAuthority: createNoopSigner(OTHER_KEY),
+      stakeAuthorize: StakeAuthorize.Withdrawer,
+    });
+    const intent = decodeSolana(req(compile([auth, authChecked])) as never, FEE_PAYER);
+    expect(intent.approvals).toStrictEqual([
+      {
+        kind: "stake-authority",
+        account: STAKE_ACCT,
+        role: "staker",
+        authority: OTHER_KEY,
+        verified: false,
+      },
+      {
+        kind: "stake-authority",
+        account: STAKE_ACCT,
+        role: "withdrawer",
+        authority: OTHER_KEY,
+        verified: false,
+      },
+    ]);
+  });
+
+  it("Initialize with a foreign withdrawer → approval; non-zero lockup → warning", () => {
+    const init = getInitializeInstruction({
+      stake: STAKE_ACCT,
+      arg0: { staker: FEE_PAYER, withdrawer: OTHER_KEY },
+      arg1: { custodian: OTHER_KEY, epoch: 0n, unixTimestamp: 1_900_000_000n },
+    });
+    const intent = decodeSolana(req(compile([init])) as never, FEE_PAYER);
+    expect(intent.approvals).toStrictEqual([
+      {
+        kind: "stake-authority",
+        account: STAKE_ACCT,
+        role: "withdrawer",
+        authority: OTHER_KEY,
+        verified: false,
+      },
+    ]);
+    expect(intent.warnings.some((w) => w.kind === "stake-lockup")).toBe(true);
+  });
+
+  it("CreateAccountWithSeed whose address does not match the derivation → opaque", () => {
+    /* The new account must be sha256(base ‖ seed ‖ owner) — the program enforces it on-chain. */
+    const seedBytes = new TextEncoder().encode("stake:0");
+    const derived = solanaAddressFromPublicKey(
+      sha256(
+        Uint8Array.from([
+          ...getAddressEncoder().encode(FEE_PAYER),
+          ...seedBytes,
+          ...getAddressEncoder().encode(address(STAKE_PROG)),
+        ]),
+      ),
+    );
+    const ix = getCreateAccountWithSeedInstruction({
+      payer: feePayerSigner,
+      newAccount: address(derived),
+      base: FEE_PAYER,
+      seed: "stake:0",
+      amount: 1_000_000_000n,
+      space: 200n,
+      programAddress: address(STAKE_PROG),
+    });
+    const good = decodeSolana(req(compile([ix])) as never, FEE_PAYER);
+    expect(good.staking?.[0]?.kind).toBe("create");
+    const badIx = getCreateAccountWithSeedInstruction({
+      payer: feePayerSigner,
+      newAccount: OTHER_KEY,
+      base: FEE_PAYER,
+      seed: "stake:0",
+      amount: 1_000_000_000n,
+      space: 200n,
+      programAddress: address(STAKE_PROG),
+    });
+    const bad = decodeSolana(req(compile([badIx])) as never, FEE_PAYER);
+    expect(bad.verifiability).toBe("opaque");
+  });
+
+  it("Split/Merge and truncated data → opaque", () => {
+    const merge = getMergeInstruction({
+      destinationStake: STAKE_ACCT,
+      sourceStake: OTHER_KEY,
+      stakeAuthority: feePayerSigner,
+    });
+    expect(decodeSolana(req(compile([merge])) as never, FEE_PAYER).verifiability).toBe("opaque");
+    const truncated = stakeIx(
+      [{ address: STAKE_ACCT, role: AccountRole.WRITABLE }],
+      u32le(0).subarray(0, 3),
+    );
+    expect(decodeSolana(req(compile([truncated])) as never, FEE_PAYER).verifiability).toBe(
+      "opaque",
+    );
+    const extended = stakeIx(
+      [{ address: STAKE_ACCT, role: AccountRole.WRITABLE }, ro(FEE_PAYER), sgn(FEE_PAYER)],
+      cat(u32le(5), u64le(0n)),
+    );
+    expect(decodeSolana(req(compile([extended])) as never, FEE_PAYER).verifiability).toBe("opaque");
+  });
+
+  it("a second signer's transfer is not attributed to the fee payer", () => {
+    const second = createNoopSigner(OTHER_KEY);
+    const ix = getTransferSolInstruction({ source: second, destination: DEST, amount: 7n });
+    const intent = decodeSolana(req(compile([ix])) as never, FEE_PAYER);
+    expect(intent.outflows).toStrictEqual([]);
+  });
+
+  it("the fixed vectors decode to their recorded intents", () => {
+    const vectors = (
+      JSON.parse(
+        readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/solana.json"), "utf8"),
+      ) as {
+        stake: ReadonlyArray<{
+          name: string;
+          message: string;
+          expected: {
+            summary: string;
+            verifiability: string;
+            staking: ReadonlyArray<unknown>;
+            outflows: ReadonlyArray<unknown>;
+            approvals: ReadonlyArray<unknown>;
+          };
+        }>;
+      }
+    ).stake;
+    for (const v of vectors) {
+      const intent = decodeSolana(
+        req(Uint8Array.from(Buffer.from(v.message, "hex"))) as never,
+        FEE_PAYER,
+      );
+      expect({
+        summary: intent.summary,
+        verifiability: intent.verifiability,
+        staking: intent.staking,
+        outflows: intent.outflows,
+        approvals: intent.approvals,
+      }).toStrictEqual(v.expected);
+    }
+  });
+});
+
+describe("stake decode coverage", () => {
+  it("legacy Authorize/AuthorizeChecked/Withdraw/Deactivate/InitializeChecked decode", () => {
+    const auth = getAuthorizeInstruction({
+      stake: STAKE_ACCT,
+      authority: feePayerSigner,
+      arg0: OTHER_KEY,
+      arg1: StakeAuthorize.Withdrawer,
+    });
+    const legacyAuth = stakeIx(
+      [w0(STAKE_ACCT), ro(CLOCK), sgn(FEE_PAYER), sgn(OTHER_KEY)],
+      Uint8Array.from(auth.data),
+    );
+    const authChecked = getAuthorizeCheckedInstruction({
+      stake: STAKE_ACCT,
+      authority: feePayerSigner,
+      newAuthority: createNoopSigner(OTHER_KEY),
+      stakeAuthorize: StakeAuthorize.Staker,
+    });
+    const legacyAuthChecked = stakeIx(
+      [w0(STAKE_ACCT), ro(CLOCK), sgn(FEE_PAYER), sgn(OTHER_KEY), sgn(OTHER_KEY)],
+      Uint8Array.from(authChecked.data),
+    );
+    const withdraw = getWithdrawInstruction({
+      stake: STAKE_ACCT,
+      recipient: OTHER_KEY,
+      withdrawAuthority: feePayerSigner,
+      args: 1_000_000n,
+    });
+    const legacyWithdraw = stakeIx(
+      [w0(STAKE_ACCT), w0(OTHER_KEY), ro(CLOCK), ro(STAKE_HIST), sgn(FEE_PAYER), sgn(OTHER_KEY)],
+      Uint8Array.from(withdraw.data),
+    );
+    const deact = getDeactivateInstruction({
+      stake: STAKE_ACCT,
+      stakeAuthority: feePayerSigner,
+    });
+    const legacyDeact = stakeIx(
+      [w0(STAKE_ACCT), ro(CLOCK), sgn(FEE_PAYER)],
+      Uint8Array.from(deact.data),
+    );
+    const initChecked = getInitializeCheckedInstruction({
+      stake: STAKE_ACCT,
+      stakeAuthority: FEE_PAYER,
+      withdrawAuthority: createNoopSigner(OTHER_KEY),
+    });
+    const legacyInitChecked = stakeIx(
+      [w0(STAKE_ACCT), ro(RENT), ro(FEE_PAYER), sgn(OTHER_KEY)],
+      Uint8Array.from(initChecked.data),
+    );
+    const intent = decodeSolana(
+      req(
+        compile([legacyAuth, legacyAuthChecked, legacyWithdraw, legacyDeact, legacyInitChecked]),
+      ) as never,
+      FEE_PAYER,
+    );
+    expect(intent.summary).toBe("stake");
+    expect(intent.staking).toStrictEqual([
+      { kind: "withdraw", account: STAKE_ACCT, to: OTHER_KEY, lamports: "1000000" },
+      { kind: "deactivate", account: STAKE_ACCT },
+    ]);
+    expect(intent.approvals).toStrictEqual([
+      {
+        kind: "stake-authority",
+        account: STAKE_ACCT,
+        role: "withdrawer",
+        authority: OTHER_KEY,
+        verified: false,
+      },
+      {
+        kind: "stake-authority",
+        account: STAKE_ACCT,
+        role: "staker",
+        authority: OTHER_KEY,
+        verified: false,
+      },
+      {
+        kind: "stake-authority",
+        account: STAKE_ACCT,
+        role: "withdrawer",
+        authority: OTHER_KEY,
+        verified: false,
+      },
+    ]);
+  });
+
+  it("rejects wrong account counts, roles, owners and shapes", () => {
+    const opaque = (ixs: ReadonlyArray<unknown>) =>
+      decodeSolana(req(compile(ixs)) as never, FEE_PAYER).verifiability;
+    /* Authorize with a role outside staker/withdrawer. */
+    expect(
+      opaque([
+        stakeIx(
+          [w0(STAKE_ACCT), sgn(FEE_PAYER)],
+          cat(u32le(1), Uint8Array.from(getAddressEncoder().encode(OTHER_KEY)), u32le(5)),
+        ),
+      ]),
+    ).toBe("opaque");
+    /* Authorize with too few accounts. */
+    expect(
+      opaque([
+        stakeIx(
+          [w0(STAKE_ACCT)],
+          cat(u32le(1), Uint8Array.from(getAddressEncoder().encode(OTHER_KEY)), u32le(0)),
+        ),
+      ]),
+    ).toBe("opaque");
+    /* DelegateStake with the Clock sysvar missing from the legacy position. */
+    expect(
+      opaque([stakeIx([w0(STAKE_ACCT), ro(VOTE_ACCT), sgn(FEE_PAYER), ro(CLOCK)], u32le(2))]),
+    ).toBe("opaque");
+    /* A system create-account owned by a different program. */
+    const otherCreate = getCreateAccountInstruction({
+      payer: feePayerSigner,
+      newAccount: stakeSigner,
+      lamports: 1_000_000_000n,
+      space: 8n,
+      programAddress: OTHER_KEY,
+    });
+    expect(opaque([otherCreate])).toBe("opaque");
+    /* Truncated create-account data. */
+    expect(
+      opaque([
+        {
+          programAddress: address("11111111111111111111111111111111"),
+          accounts: [sgn(FEE_PAYER), sgn(STAKE_ACCT)],
+          data: u32le(0),
+        },
+      ]),
+    ).toBe("opaque");
+    /* With-seed whose base account doesn't match the data's base. */
+    expect(
+      opaque([
+        {
+          programAddress: address("11111111111111111111111111111111"),
+          accounts: [sgn(FEE_PAYER), w0(STAKE_ACCT), sgn(OTHER_KEY)],
+          data: cat(
+            u32le(3),
+            Uint8Array.from(getAddressEncoder().encode(FEE_PAYER)),
+            u64le(4n),
+            new TextEncoder().encode("seed"),
+            u64le(1n),
+            u64le(200n),
+            Uint8Array.from(getAddressEncoder().encode(address(STAKE_PROG))),
+          ),
+        },
+      ]),
+    ).toBe("opaque");
   });
 });

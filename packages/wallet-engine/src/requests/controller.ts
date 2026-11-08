@@ -46,7 +46,7 @@ import type {
   SignatureResult,
   TrackedTransaction,
 } from "../transactions/route.ts";
-import { newRequestId } from "../transactions/route.ts";
+import { accountAddress, newRequestId } from "../transactions/route.ts";
 import { collectChecks } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
@@ -965,7 +965,7 @@ export class RequestController extends Controller<RequestControllerState> {
           ...prepared.checks,
         ]),
         risk: isTransaction
-          ? this.chainRisk(prepared.intent)
+          ? this.chainRisk(prepared.intent, prepared.account)
           : mergeRisk(mergeRisk(mergeRisk(signInRisk, permitRisk), orderRisk), blindRisk),
         run: { ...prepared, factor: "required" },
       };
@@ -1182,7 +1182,10 @@ export class RequestController extends Controller<RequestControllerState> {
         prepared.intent.verifiability === "full" ? undefined : "decode-partial",
         ...prepared.checks,
       ]),
-      risk: input.method === "send" || internal ? this.chainRisk(prepared.intent) : [],
+      risk:
+        input.method === "send" || internal
+          ? this.chainRisk(prepared.intent, prepared.account)
+          : [],
       run: { ...prepared, factor: "required" },
     };
     return input.method === "send" || internal
@@ -1543,14 +1546,21 @@ export class RequestController extends Controller<RequestControllerState> {
     return assessed.risk;
   }
 
-  private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {
+  private chainRisk(intent: DisplayIntent, account: AccountRef): ReadonlyArray<RiskFinding> {
+    let signer = "";
+    try {
+      /* Solana account refs carry `address`; the hd refs without one flag every authority. */
+      signer = accountAddress(account);
+    } catch {
+      /* Unresolvable account — treat every stake-authority grant as foreign. */
+    }
     return mergeRisk(
       assessRecipients(
         intent.family,
         intent.outflows.map((o) => o.to),
         this.knownAddresses(intent.family),
       ),
-      assessApprovals(intent),
+      assessApprovals(intent, signer),
     );
   }
 

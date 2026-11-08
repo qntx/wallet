@@ -47,6 +47,7 @@ export type RiskFinding = {
     | "safe-gas-refund"
     | "bitcoin-sighash-single"
     | "bitcoin-inscription-input"
+    | "stake-authority"
     | "blind-signing";
   readonly level: "warning" | "danger";
 };
@@ -81,12 +82,18 @@ export function mergeRisk(
  */
 export function assessApprovals(
   intent: Pick<DisplayIntent, "approvals">,
+  signer = "",
 ): ReadonlyArray<RiskFinding> {
   const found = new Map<RiskFinding["code"], RiskFinding>();
   for (const change of intent.approvals) {
     if (change.kind === "operator") {
       if (change.approved) {
         found.set("collection-approval", { code: "collection-approval", level: "danger" });
+      }
+    } else if (change.kind === "stake-authority") {
+      /* Handing a stake role to another key lets it move or unlock the stake. */
+      if (change.authority !== signer) {
+        found.set("stake-authority", { code: "stake-authority", level: "danger" });
       }
     } else if (change.change !== "decrease" && change.unlimited) {
       found.set("unlimited-approval", { code: "unlimited-approval", level: "warning" });
