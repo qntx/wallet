@@ -2,14 +2,26 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { findAssociatedTokenPda } from "@solana-program/token";
-import { address } from "@solana/kit";
+import type { AddressesByLookupTableAddress } from "@solana/kit";
+import {
+  AccountRole,
+  appendTransactionMessageInstruction,
+  address,
+  blockhash,
+  compileTransactionMessage,
+  compressTransactionMessageUsingAddressLookupTables,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { associatedTokenAddress } from "../src/solana/ata.ts";
 import { decodeSolana } from "../src/solana/decode.ts";
-import { parseCompiledMessage, resolveAccountIndex } from "../src/solana/message.ts";
 import { PROGRAM_IDS } from "../src/solana/ids.ts";
 import { WSOL_MINT } from "../src/solana/jupiter.ts";
+import { parseCompiledMessage, resolveAccountIndex } from "../src/solana/message.ts";
 
 const SIGNER = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
 const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
@@ -87,7 +99,7 @@ describe("jupiter decode", () => {
     const bytes = hex(v.jupiter[0]!.message);
     expect(() =>
       decodeSolana(req(bytes.slice(0, -20), v.jupiter[0]!.lookupTables), SIGNER),
-    ).toThrow();
+    ).toThrow("compiled message failed to decode");
     const foreign = decodeSolana(
       req(bytes, v.jupiter[0]!.lookupTables),
       "Ff4CgHQXyMBRktUtmCNPvL4YS1NBiS1d9QDrPqRMhLQ",
@@ -98,15 +110,7 @@ describe("jupiter decode", () => {
 
 describe("resolveAccountIndex with multiple lookup tables", () => {
   it("resolves writable-from-table-2 and readonly-from-table-1 in v0 order", async () => {
-    const {
-      appendTransactionMessageInstruction,
-      compileTransactionMessage,
-      compressTransactionMessageUsingAddressLookupTables,
-      createTransactionMessage,
-      getCompiledTransactionMessageEncoder,
-      setTransactionMessageFeePayer,
-      setTransactionMessageLifetimeUsingBlockhash,
-    } = await import("@solana/kit");
+
     const TABLE1 = "GcUy7n96V4CLEupSJGAd2KbkR2bpmEfrBxpCzqy4Sfcr";
     const TABLE2 = "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx";
     const W2 = "6wWVbLeHDVHvCCsLprB85jkbU1JhS9VezABT2ZZFJ5BB";
@@ -120,30 +124,27 @@ describe("resolveAccountIndex with multiple lookup tables", () => {
     const payer = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
     /* One synthetic instruction whose accounts span both tables: [payer, W2 (table2 writable),
        R1 (table1 readonly)] — the program id itself is static. */
-    let msg = setTransactionMessageLifetimeUsingBlockhash(
-      { blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 1n } as never,
-      setTransactionMessageFeePayer(
-        address(payer),
-        createTransactionMessage({ version: 0 }),
-      ),
-    ) as never;
-    msg = appendTransactionMessageInstruction(
+    const msg = appendTransactionMessageInstruction(
       {
         programAddress: address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
         accounts: [
-          { address: address(W2), role: 2 },
-          { address: address(R1), role: 0 },
+          { address: address(W2), role: AccountRole.WRITABLE },
+          { address: address(R1), role: AccountRole.READONLY },
         ],
         data: Uint8Array.from([9]),
-      } as never,
-      msg,
+      },
+      setTransactionMessageLifetimeUsingBlockhash(
+        { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1n },
+        setTransactionMessageFeePayer(
+          address(payer),
+          createTransactionMessage({ version: 0 }),
+        ),
+      ),
     );
-    const compressed = compressTransactionMessageUsingAddressLookupTables(
-      msg,
-      Object.fromEntries(
-        Object.entries(tables).map(([k, v]) => [address(k), v.map(address)]),
-      ) as never,
+    const lookupsByTable: AddressesByLookupTableAddress = Object.fromEntries(
+      Object.entries(tables).map(([k, v]) => [address(k), v.map(address)]),
     );
+    const compressed = compressTransactionMessageUsingAddressLookupTables(msg, lookupsByTable);
     const compiled = compileTransactionMessage(compressed);
     const bytes = new Uint8Array(getCompiledTransactionMessageEncoder().encode(compiled));
     /* The kit's compressor placed each account into its table's writable or readonly slot;
@@ -155,10 +156,7 @@ describe("resolveAccountIndex with multiple lookup tables", () => {
     expect(resolveAccountIndex(parsed, ix.accountIndices[0]!, declared)).toBe(W2);
     expect(resolveAccountIndex(parsed, ix.accountIndices[1]!, declared)).toBe(R1);
     /* Missing table → the instruction cannot resolve its accounts → the intent is opaque. */
-    const intent = decodeSolana(
-      req(bytes, declared.slice(0, 1) as never) as never,
-      payer,
-    );
+    const intent = decodeSolana(req(bytes, declared.slice(0, 1)), payer);
     expect(intent.verifiability).toBe("opaque");
   });
 });

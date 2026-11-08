@@ -173,12 +173,8 @@ export const resolveAccountIndex = (
      declared addresses. */
   const declared = new Map(lookups.map((t) => [t.address, t.addresses]));
   const loaded = [
-    ...parsed.lookups.flatMap((t) =>
-      t.writableIndexes.map((i) => declared.get(t.address)?.[i]),
-    ),
-    ...parsed.lookups.flatMap((t) =>
-      t.readonlyIndexes.map((i) => declared.get(t.address)?.[i]),
-    ),
+    ...parsed.lookups.flatMap((t) => t.writableIndexes.map((i) => declared.get(t.address)?.[i])),
+    ...parsed.lookups.flatMap((t) => t.readonlyIndexes.map((i) => declared.get(t.address)?.[i])),
   ];
   return loaded[index - parsed.staticAccounts.length];
 };
