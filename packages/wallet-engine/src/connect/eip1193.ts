@@ -642,7 +642,8 @@ export class Eip1193Handler {
       network,
       atomic,
       txIds,
-      expected: calls.length,
+      /* One atomic transaction for the batch/single paths; one per call for sequential. */
+      expected: atomic ? 1 : calls.length,
       createdAt: this.options.now(),
     });
     return { id };
