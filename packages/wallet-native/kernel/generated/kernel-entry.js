@@ -24598,7 +24598,7 @@ zoo`.split("\n"));
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-CShUp4Cy.mjs
+	// packages/wallet-chains/dist/typed-data-B4PJ1v8F.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -24625,6 +24625,8 @@ zoo`.split("\n"));
 		name: "EIP7702StatelessDeleGator",
 		version: "1.3.0"
 	};
+	/** ERC-7821 batch-default execution mode: `0x01` followed by 31 zero bytes. */
+	var EXECUTE_BATCH_MODE = "0x0100000000000000000000000000000000000000000000000000000000000000";
 	var EXECUTE = from$2("function execute(bytes32 mode, bytes executionData)");
 	var EXECUTIONS = [{
 		type: "tuple[]",
@@ -24647,6 +24649,12 @@ zoo`.split("\n"));
 		assert$8(v);
 		return v;
 	};
+	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
+	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$3(EXECUTIONS, [calls.map((c) => ({
+		target: hex$2(checksumEvmAddress(c.to)),
+		value: c.value,
+		callData: hex$2(c.data)
+	}))])]);
 	var list = (v) => Array.isArray(v) ? v : [];
 	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
 	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
@@ -24664,7 +24672,7 @@ zoo`.split("\n"));
 					data: e.callData
 				});
 			}
-			return executions;
+			return encodeBatchExecute(executions).toLowerCase() === data.toLowerCase() ? executions : void 0;
 		} catch (_unused) {
 			return;
 		}
@@ -29473,12 +29481,17 @@ zoo`.split("\n"));
 		};
 		const title = catalog.titles[intent.summary];
 		const tail = ((_intent$warnings = intent.warnings) === null || _intent$warnings === void 0 ? void 0 : _intent$warnings.some((w) => w.kind === "sighash-single-anyonecanpay")) === true ? [catalog.sighashSingle] : [];
+		const delegation = intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation];
 		if (intent.verifiability === "opaque") return {
 			title,
-			description: joinLines([catalog.generic, ...tail])
+			description: joinLines([
+				...delegation,
+				catalog.generic,
+				...tail
+			])
 		};
 		const lines = [
-			...intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation],
+			...delegation,
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],

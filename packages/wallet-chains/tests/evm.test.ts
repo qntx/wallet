@@ -367,6 +367,12 @@ describe("verifiability + decode", () => {
       summary: "batch",
       delegation: { kind: "set" },
     });
+    // trailing junk and a non-canonical inner offset are not batches → opaque contract-call
+    expect(decodeEvm(self(`${two}00`), SIGNER).summary).toBe("contract-call");
+    const argsEnd = 2 + 8 + 64 + 64; // 0x + selector + mode + executionData offset
+    const body = two.slice(argsEnd + 64); // inner offset word, then the tuple array
+    const aliased = `${two.slice(0, argsEnd)}${"0".repeat(62)}40${"0".repeat(64)}${body}`;
+    expect(decodeEvm(self(aliased), SIGNER).summary).toBe("contract-call");
     // non-batch self-call → opaque contract-call; non-self target → normal decode
     expect(decodeEvm(self("0x12345678"), SIGNER).summary).toBe("contract-call");
     const notSelf = decodeEvm(

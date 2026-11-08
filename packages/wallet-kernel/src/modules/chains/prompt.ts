@@ -17,14 +17,7 @@ import type { PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
   DisplayIntent,
-  | "summary"
-  | "outflows"
-  | "approvals"
-  | "fee"
-  | "verifiability"
-  | "message"
-  | "delegation"
-  | "calls"
+  "summary" | "outflows" | "approvals" | "fee" | "verifiability" | "message" | "delegation"
 > & { readonly warnings?: DisplayIntent["warnings"] };
 
 /** Off-chain messages carry no decodable value flow. */
@@ -204,9 +197,6 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   const title = catalog.titles[intent.summary];
   const caution = intent.warnings?.some((w) => w.kind === "sighash-single-anyonecanpay") === true;
   const tail = caution ? [catalog.sighashSingle] : [];
-  if (intent.verifiability === "opaque") {
-    return { title, description: joinLines([catalog.generic, ...tail]) };
-  }
   const delegation =
     intent.delegation === undefined
       ? []
@@ -215,6 +205,9 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
             ? catalog.delegateTo(intent.delegation.name, intent.delegation.version)
             : catalog.revokeDelegation,
         ];
+  if (intent.verifiability === "opaque") {
+    return { title, description: joinLines([...delegation, catalog.generic, ...tail]) };
+  }
   const lines = [
     ...delegation,
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),

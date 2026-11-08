@@ -34,7 +34,7 @@ jobs:
       - run: bunx vp run @qntx/wallet-engine#build
       - run: |
           set -euo pipefail
-          ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts 2>&1 | tee /tmp/e2e.out
+          ENGINE_E2E_ANVIL=1 bunx vitest run tests/evm-anvil.test.ts tests/evm-7702-anvil.test.ts 2>&1 | tee /tmp/e2e.out
           ! grep -q "skipped" /tmp/e2e.out
         working-directory: packages/wallet-engine
 

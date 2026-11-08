@@ -22,7 +22,7 @@ import type {
   RouteContext,
   SparkDepositTag,
   TrackedTransaction,
-  TxState,
+  TxState,DelegationStatus
 } from "./route.ts";
 import { accountAddress, newId } from "./route.ts";
 import { pollSolana, prepareSolana } from "./solana.ts";
@@ -397,14 +397,7 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /** The account's 7702 delegation state on `network` (primary endpoint only). */
-  async delegationState(
-    account: AccountRef,
-    network: string,
-  ): Promise<{
-    readonly supported: boolean;
-    readonly state: "none" | "ours" | "other";
-    readonly address?: string;
-  }> {
+  async delegationState(account: AccountRef, network: string): Promise<DelegationStatus> {
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }

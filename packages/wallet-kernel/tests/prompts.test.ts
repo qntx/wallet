@@ -275,6 +275,29 @@ describe("chain prompts", () => {
     });
   });
 
+  it("delegation appears first on opaque intents", () => {
+    const set: PromptIntent = {
+      ...ethTransfer,
+      summary: "batch",
+      verifiability: "opaque",
+      delegation: {
+        kind: "set",
+        delegator: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+        name: "EIP7702StatelessDeleGator",
+        version: "1.3.0",
+      },
+    };
+    expect(chainPrompt("en", set)).toStrictEqual({
+      title: "Confirm batch",
+      description:
+        "Delegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSign a request from an app",
+    });
+    expect(chainPrompt("en", { ...set, delegation: { kind: "revoke" } })).toStrictEqual({
+      title: "Confirm batch",
+      description: "Revoke this account's contract delegation\nSign a request from an app",
+    });
+  });
+
   it("opaque and messages show only the generic line", () => {
     expect(chainPrompt("en", { ...ethTransfer, verifiability: "opaque" })).toStrictEqual({
       title: "Confirm transfer",

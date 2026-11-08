@@ -47,7 +47,7 @@ import type { SparkControllerOptions } from "./spark/controller.ts";
 import { DepositClaimer } from "./spark/deposit-claim.ts";
 import type { EngineStore, PublicStore } from "./store/port.ts";
 import { TransactionController } from "./transactions/controller.ts";
-import type { AccountRef } from "./transactions/route.ts";
+import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
@@ -122,14 +122,7 @@ export type WalletEngine = {
     readonly resolve: (name: string, network: string) => Promise<EnsResolution>;
   };
   /** The account's EIP-7702 delegation state on `network`. */
-  readonly delegation: (
-    account: AccountRef,
-    network: string,
-  ) => Promise<{
-    readonly supported: boolean;
-    readonly state: "none" | "ours" | "other";
-    readonly address?: string;
-  }>;
+  readonly delegation: (account: AccountRef, network: string) => Promise<DelegationStatus>;
   readonly payments: {
     readonly parse: (input: string, network: SparkNetwork) => PaymentParse;
     readonly resolve: (input: string, network: SparkNetwork) => Promise<PaymentParse>;

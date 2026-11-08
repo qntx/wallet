@@ -128,6 +128,13 @@ export type ChainRequestInput =
       readonly fee: PrepareParams["fee"];
     };
 
+/** The account's EIP-7702 delegation state: `supported` follows the registry hash entry. */
+export type DelegationStatus = {
+  readonly supported: boolean;
+  readonly state: "none" | "ours" | "other";
+  readonly address?: string;
+};
+
 /**
  * A fully built, estimated and cross-checked send that has not been signed. The unsigned content
  * lives in the closures and cannot change after `prepare` returns.

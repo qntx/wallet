@@ -94,7 +94,12 @@ export const decodeBatchExecute = (data: string): ReadonlyArray<Execution> | und
         data: e.callData,
       });
     }
-    return executions;
+    /* Display must equal execution: accept only the canonical encoding the delegator's own
+     * calldata decoder would read — a non-canonical payload (trailing bytes, aliased offsets)
+     * can decode one way here and another on-chain. */
+    return encodeBatchExecute(executions).toLowerCase() === data.toLowerCase()
+      ? executions
+      : undefined;
   } catch {
     return undefined;
   }
