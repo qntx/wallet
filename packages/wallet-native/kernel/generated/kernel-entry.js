@@ -29508,7 +29508,7 @@ zoo`.split("\n"));
 			}
 		};
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/util-BcRBO6o-.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/util-D8wUYmm0.mjs
 	init_utils$2();
 	init_defineProperty();
 	/** Base error for all @qntx/nostr failures. */
@@ -29606,7 +29606,7 @@ zoo`.split("\n"));
 		}
 		return false;
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/kind-I2Tvbe82.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/kind-BAnfDHdg.mjs
 	/** Kind numbers used by this package. */
 	var Kind = {
 		Metadata: 0,
@@ -29638,7 +29638,7 @@ zoo`.split("\n"));
 		EmojiSet: 30030,
 		StarterPack: 39089
 	};
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/event-DHtcm0jM.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/event-B__SmruU.mjs
 	init_sha2();
 	/** Type guard: a non-empty array of strings. */
 	function isTag(value) {
@@ -29718,7 +29718,7 @@ zoo`.split("\n"));
 		const serialized = serializeEvent(event);
 		return bytesToHex$1(sha256$1(utf8Encoder.encode(serialized)));
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/key-Bt0ow7mI.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/key-BxwA02Gx.mjs
 	init_utils$2();
 	init_sha2();
 	init_secp256k1();
@@ -29865,7 +29865,7 @@ zoo`.split("\n"));
 		markVerified(event);
 		return event;
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/verifier-DBSPHzGg.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/verifier-iQR5ivRF.mjs
 	/**
 	* Build an event verifier with exactly the semantics of {@link verifyEvent}, delegating the hash and
 	* signature check to `backend`. Verified/failed results share `verifyEvent`'s WeakSet caches, so
@@ -29887,7 +29887,7 @@ zoo`.split("\n"));
 	}
 	/** Verify event id and BIP-340 signature. Uses WeakSet cache (does not mutate the event). */
 	var verifyEvent = createEventVerifier(nobleBackend);
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/error-CoP2myne.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/error-Cord_cbw.mjs
 	init_defineProperty();
 	/** Thrown when a method is called on a signer after {@link NostrSigner dispose}. */
 	var SignerDisposedError = class extends NostrError {
@@ -30189,7 +30189,7 @@ zoo`.split("\n"));
 			}
 		};
 	});
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip04.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip04.mjs
 	init_utils$2();
 	init_base();
 	/** NIP-04 legacy encrypted direct messages. Prefer NIP-44 for new applications. */
@@ -30250,7 +30250,7 @@ zoo`.split("\n"));
 		if (parts.length !== 2 || ciphertext === void 0 || ciphertext === "" || iv === void 0 || iv === "") throw new CryptoError("invalid NIP-04 payload: missing iv");
 		return [ciphertext, iv];
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip44.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip44.mjs
 	init_utils$2();
 	init_sha2();
 	init_base();
@@ -30372,7 +30372,7 @@ zoo`.split("\n"));
 		if (!equalBytes$3(hmacAad(hmac_key, ciphertext, nonce), mac)) throw new CryptoError("invalid MAC");
 		return unpad(chacha20(chacha_key, chacha_nonce, ciphertext));
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip59.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip59.mjs
 	init_defineProperty();
 	init_objectSpread2();
 	/**
@@ -30440,13 +30440,13 @@ zoo`.split("\n"));
 		if (sealRaw.pubkey !== rumor.pubkey) throw new Nip59Error("seal pubkey does not match rumor pubkey");
 		return rumor;
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip46.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip46.mjs
 	init_defineProperty();
 	// \0@oxc-project+runtime@0.155.0/helpers/esm/classPrivateMethodInitSpec.js
 	function _classPrivateMethodInitSpec(e, a) {
 		_checkPrivateRedeclaration(e, a), a.add(e);
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/signer-DQzjm3pt.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/signer-Y3gcghwd.mjs
 	init_utils$2();
 	init_objectSpread2();
 	var _keys;
@@ -30543,7 +30543,7 @@ zoo`.split("\n"));
 		}
 		return key;
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip19.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip19.mjs
 	init_base();
 	/** Maximum bech32 string length accepted by {@link decode} (NIP-19). */
 	var Bech32MaxSize = 5e3;
@@ -30779,7 +30779,7 @@ zoo`.split("\n"));
 		swap32IfBE(B32);
 		return scryptOutput(password, dkLen, B, V, tmp);
 	}
-	// node_modules/.bun/@qntx+nostr@0.15.3+ea9f70ecde856c26/node_modules/@qntx/nostr/dist/nips/nip49.mjs
+	// node_modules/.bun/@qntx+nostr@0.15.4+cb72dcd9952e90a1/node_modules/@qntx/nostr/dist/nips/nip49.mjs
 	init_utils$2();
 	init_defineProperty();
 	init_objectSpread2();

@@ -10,7 +10,7 @@
     "test:browser": "playwright test --config tests/playwright.config.ts"
   },
   "dependencies": {
-    "@qntx/nostr": "0.15.3",
+    "@qntx/nostr": "0.15.4",
     "@qntx/wallet": "workspace:*",
     "@qntx/wallet-engine": "workspace:*",
     "@qntx/wallet-worker": "workspace:*"

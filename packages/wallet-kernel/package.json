@@ -24,7 +24,7 @@
     "@noble/ciphers": "2.4.0",
     "@noble/curves": "2.4.0",
     "@noble/hashes": "2.4.0",
-    "@qntx/nostr": "0.15.3",
+    "@qntx/nostr": "0.15.4",
     "@qntx/siwx": "0.8.0",
     "@qntx/spark": "0.5.2",
     "@qntx/wallet": "0.11.0",

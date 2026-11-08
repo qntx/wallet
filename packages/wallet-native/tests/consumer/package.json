@@ -4,8 +4,8 @@
   "private": true,
   "main": "index.ts",
   "dependencies": {
-    "@qntx/nostr": "0.15.3",
-    "@qntx/nostr-native": "0.15.3",
+    "@qntx/nostr": "0.15.4",
+    "@qntx/nostr-native": "0.15.4",
     "@qntx/spark": "0.5.2",
     "@qntx/spark-native": "0.5.2",
     "@qntx/wallet": "TARBALL:@qntx/wallet",

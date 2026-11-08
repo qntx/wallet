@@ -81,7 +81,7 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
-    "@qntx/nostr": "0.15.3",
+    "@qntx/nostr": "0.15.4",
     "@qntx/spark": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
     "@qntx/wallet-chains": "0.11.0",
@@ -94,7 +94,7 @@
     "vite-plus": "1.4.0"
   },
   "peerDependencies": {
-    "@qntx/nostr": "~0.15.3",
+    "@qntx/nostr": "~0.15.4",
     "@qntx/spark": "~0.5.2",
     "@qntx/wallet-chains": "0.11.0"
   },
