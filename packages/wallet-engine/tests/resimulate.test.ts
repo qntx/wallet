@@ -20,6 +20,8 @@ import type {
 } from "../src/transactions/route.ts";
 import { bookDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const ACCOUNT = {
   kind: "hd" as const,
   walletId: "w",
@@ -37,21 +39,24 @@ const ORIGIN = { kind: "browser", origin: "https://app.example" } as const;
 const VERIFY = { kind: "password" as const, password: "pw" };
 const START = 1000;
 
-const INTENT: DisplayIntent = decodeEvm({
-  kind: "evm.transaction",
-  network: SEPOLIA,
-  account: ACCOUNT,
-  tx: {
-    type: "legacy",
-    chainId: 11155111,
-    nonce: 0,
-    gas: "0x5208",
-    to: "0x00000000000000000000000000000000deadbeef",
-    value: "0x64",
-    data: "0x",
-    gasPrice: "0x1",
+const INTENT: DisplayIntent = decodeEvm(
+  {
+    kind: "evm.transaction",
+    network: SEPOLIA,
+    account: ACCOUNT,
+    tx: {
+      type: "legacy",
+      chainId: 11155111,
+      nonce: 0,
+      gas: "0x5208",
+      to: "0x00000000000000000000000000000000deadbeef",
+      value: "0x64",
+      data: "0x",
+      gasPrice: "0x1",
+    },
   },
-});
+  SIGNER,
+);
 
 const succeed = (amount: string): SimulationOutcome => ({
   status: "success",

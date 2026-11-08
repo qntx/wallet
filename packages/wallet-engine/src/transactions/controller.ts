@@ -323,11 +323,12 @@ export class TransactionController extends Controller<TransactionControllerState
       template: "evm.bip44",
       network,
     });
+    const signer = "address" in signing ? signing.address : "";
     return {
       account,
       network,
-      signer: "address" in signing ? signing.address : "",
-      intent: decodeEvm(normalized),
+      signer,
+      intent: decodeEvm(normalized, signer),
       checks: [],
       staleReason: () => undefined,
       release: () => undefined,

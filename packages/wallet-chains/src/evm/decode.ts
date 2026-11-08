@@ -15,6 +15,7 @@ import { parseSignIn } from "../sign-in.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { assertNoExecutionGrant } from "./grants.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
 import { recognizeSeaport } from "./seaport.ts";
@@ -397,15 +398,16 @@ const messageContent = (bytes: Uint8Array): MessageContent => {
 };
 
 /** What the signer can guarantee about this request (WD-065). */
-export const verifiabilityEvm = (request: SignRequest): Verifiability =>
-  decodeEvm(request).verifiability;
+export const verifiabilityEvm = (request: SignRequest, signer: string): Verifiability =>
+  decodeEvm(request, signer).verifiability;
 
 /**
- * Decodes a normalized request into a DisplayIntent. The token table parameter is for tests;
- * production callers use the built-in table.
+ * Decodes a normalized request into a DisplayIntent. `signer` is the address of the signing
+ * account; the token table parameter is for tests.
  */
 export const decodeEvm = (
   request: SignRequest,
+  signer: string,
   table: EvmTokenTable = evmTokenTable,
 ): DisplayIntent => {
   if (request.kind === "evm.transaction") {
@@ -428,6 +430,7 @@ export const decodeEvm = (
     throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
   }
   const { json } = parseTypedData(request.typedData);
+  assertNoExecutionGrant(json.domain, signer);
   const chainId = networkChainId(request.network);
   const permit = recognizePermit(json, chainId, table);
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;

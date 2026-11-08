@@ -26501,6 +26501,20 @@ zoo`.split("\n"));
 			unlimited: change !== "decrease" && value === max
 		}, extra), {}, { verified: known !== void 0 });
 	};
+	/**
+	* Typed data whose domain targets an execution context over the signer's account turns a signature
+	* into execution rights: a Delegation the DelegationManager redeems, a PackedUserOperation the
+	* EntryPoint runs for a delegated 7702 account, or an action the account's own EIP-712 domain
+	* authorizes. A generic typed-data request must never produce such a signature.
+	*/
+	var assertNoExecutionGrant = (domain, signer) => {
+		const target = domain["verifyingContract"];
+		if (typeof target !== "string" || !isEvmAddress(target)) return;
+		const lower = target.toLowerCase();
+		if (lower === signer.toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to your own account is refused");
+		if (lower === "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the DelegationManager is refused");
+		if (lower === "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the EntryPoint is refused");
+	};
 	var isMessage$1 = isTypedDataMessage;
 	var address = typedDataAddress;
 	var uint = typedDataUint;
@@ -27057,10 +27071,10 @@ zoo`.split("\n"));
 		}
 	};
 	/**
-	* Decodes a normalized request into a DisplayIntent. The token table parameter is for tests;
-	* production callers use the built-in table.
+	* Decodes a normalized request into a DisplayIntent. `signer` is the address of the signing
+	* account; the token table parameter is for tests.
 	*/
-	var decodeEvm = (request, table = evmTokenTable) => {
+	var decodeEvm = (request, signer, table = evmTokenTable) => {
 		var _safe$safe$calls$0$su, _safe$safe$calls$, _permit$approvals, _permit$warnings;
 		if (request.kind === "evm.transaction") return decodeTransaction$1(request, table);
 		if (request.kind === "evm.personal-message") return {
@@ -27076,6 +27090,7 @@ zoo`.split("\n"));
 		};
 		if (request.kind !== "evm.typed-data") throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
 		const { json } = parseTypedData(request.typedData);
+		assertNoExecutionGrant(json.domain, signer);
 		const chainId = networkChainId(request.network);
 		const permit = recognizePermit(json, chainId, table);
 		const seaport = permit === void 0 ? recognizeSeaport(json, chainId, table) : void 0;
@@ -29304,7 +29319,9 @@ zoo`.split("\n"));
 			const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
 			try {
 				const priv = child.privateKey;
-				if (priv === null) throw new KernelError("integrity", "no private key at account path");
+				const pub = child.publicKey;
+				if (priv === null || pub === null) throw new KernelError("integrity", "no private key at account path");
+				const signer = evmAddressFromPublicKey(pub);
 				let normalized;
 				try {
 					normalized = normalizeEvm(request);
@@ -29314,7 +29331,7 @@ zoo`.split("\n"));
 				if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
 				let intent;
 				try {
-					intent = decodeEvm(request);
+					intent = decodeEvm(request, signer);
 				} catch (error) {
 					mapChainError(error);
 				}

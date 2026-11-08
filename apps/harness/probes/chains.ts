@@ -16,6 +16,8 @@ import { secp256k1 } from "@noble/curves/secp256k1.js";
 
 import { postJson } from "./share.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const EVM_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
 const BTC_KEY = "0x1111111111111111111111111111111111111111111111111111111111111111";
 const EVM_TX = {
@@ -196,7 +198,7 @@ function main(): void {
           account: { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" },
           tx: EVM_TX,
         });
-        if (decodeEvm(n).verifiability !== "full") {
+        if (decodeEvm(n, SIGNER).verifiability !== "full") {
           throw new Error("evm decode mismatch");
         }
       },

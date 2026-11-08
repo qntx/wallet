@@ -10,6 +10,8 @@ import { siws } from "@qntx/siwx/svm";
 import { decodeEvm } from "../src/evm/index.ts";
 import { parseSignIn } from "../src/index.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const ADDRESS = "0xe5A12547fe4E872D192E3eCecb76F2Ce1aeA4946";
 const SOLANA_ADDRESS = base58.encode(ed25519.getPublicKey(new Uint8Array(32).fill(7)));
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" } as const;
@@ -92,7 +94,10 @@ describe("parseSignIn", () => {
 
 describe("decodeEvm personal-message content", () => {
   const decode = (message: Uint8Array) =>
-    decodeEvm({ kind: "evm.personal-message", network: "eip155:1", account: ACCOUNT, message });
+    decodeEvm(
+      { kind: "evm.personal-message", network: "eip155:1", account: ACCOUNT, message },
+      SIGNER,
+    );
 
   it("plain UTF-8 is text without a sign-in", () => {
     const intent = decode(new TextEncoder().encode("hello"));
@@ -126,17 +131,20 @@ describe("decodeEvm personal-message content", () => {
   });
 
   it("typed data carries its structured content", () => {
-    const intent = decodeEvm({
-      kind: "evm.typed-data",
-      network: "eip155:1",
-      account: ACCOUNT,
-      typedData: JSON.stringify({
-        types: { EIP712Domain: [{ name: "chainId", type: "uint256" }], T: [] },
-        primaryType: "T",
-        domain: { chainId: 1 },
-        message: {},
-      }),
-    });
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: ACCOUNT,
+        typedData: JSON.stringify({
+          types: { EIP712Domain: [{ name: "chainId", type: "uint256" }], T: [] },
+          primaryType: "T",
+          domain: { chainId: 1 },
+          message: {},
+        }),
+      },
+      SIGNER,
+    );
     expect(intent.message).toMatchObject({ kind: "typed-data", primaryType: "T" });
   });
 });

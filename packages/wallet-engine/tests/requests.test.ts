@@ -29,6 +29,7 @@ import {
   idleNetworkDeps,
 } from "./send-helpers.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
 const ACCOUNT = {
   kind: "hd" as const,
   walletId: "w",
@@ -51,21 +52,24 @@ const PARAMS = {
 };
 
 const intent = (verifiability: DisplayIntent["verifiability"]): DisplayIntent => ({
-  ...decodeEvm({
-    kind: "evm.transaction",
-    network: SEPOLIA,
-    account: ACCOUNT,
-    tx: {
-      type: "legacy",
-      chainId: 11155111,
-      nonce: 0,
-      gas: "0x5208",
-      to: PARAMS.to,
-      value: "0x1",
-      data: "0x",
-      gasPrice: "0x1",
+  ...decodeEvm(
+    {
+      kind: "evm.transaction",
+      network: SEPOLIA,
+      account: ACCOUNT,
+      tx: {
+        type: "legacy",
+        chainId: 11155111,
+        nonce: 0,
+        gas: "0x5208",
+        to: PARAMS.to,
+        value: "0x1",
+        data: "0x",
+        gasPrice: "0x1",
+      },
     },
-  }),
+    SIGNER,
+  ),
   verifiability,
 });
 

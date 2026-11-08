@@ -25,7 +25,7 @@ import {
   verifyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
 } from "@qntx/wallet-chains/bitcoin";
-import { normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
+import { DELEGATION_MANAGER, normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
@@ -474,6 +474,33 @@ describe("chain.sign", () => {
     expect(recoverEvmSigner(tdReq, { signature: field(tdRes, "signature") as Uint8Array })).toBe(
       EVM_ADDRESS.toLowerCase(),
     );
+  });
+
+  it("refuses typed data that grants execution over the account", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "evm.bip44");
+    const td = (verifyingContract: string) =>
+      normalizeEvm({
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account,
+        typedData: JSON.stringify({
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            Mail: [{ name: "m", type: "string" }],
+          },
+          domain: { name: "X", verifyingContract },
+          primaryType: "Mail",
+          message: { m: "hi" },
+        }),
+      });
+    const delegated = await callSign(h, session, td(DELEGATION_MANAGER));
+    expect(delegated).toMatchObject({ err: { code: "invalid-input" } });
+    const self = await callSign(h, session, td(EVM_ADDRESS));
+    expect(self).toMatchObject({ err: { code: "invalid-input" } });
   });
 
   it("signs a solana transaction and a raw message", async () => {

@@ -8,6 +8,8 @@ import type { DisplayIntent, SignRequest } from "../src/index.ts";
 import { normalizeSolana } from "../src/solana/index.ts";
 import { attempt } from "./fuzz.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 /** Run count for property tests; the weekly job raises it via FUZZ_RUNS. */
 const numRuns = Number(process.env["FUZZ_RUNS"] ?? "200");
 
@@ -109,7 +111,7 @@ describe("EVM decode/normalize fuzz", () => {
   it("decodeEvm on arbitrary calls returns an intent or a ChainError", () => {
     fc.assert(
       fc.property(evmTx, (tx) => {
-        expect(intentOrChainError(attempt(() => decodeEvm(evmRequest(tx))))).toBe(true);
+        expect(intentOrChainError(attempt(() => decodeEvm(evmRequest(tx), SIGNER)))).toBe(true);
       }),
       { numRuns },
     );
@@ -129,7 +131,9 @@ describe("EVM decode/normalize fuzz", () => {
     fc.assert(
       fc.property(fc.jsonValue(), (json) => {
         expect(
-          intentOrChainError(attempt(() => decodeEvm(typedDataRequest(JSON.stringify(json))))),
+          intentOrChainError(
+            attempt(() => decodeEvm(typedDataRequest(JSON.stringify(json)), SIGNER)),
+          ),
         ).toBe(true);
       }),
       { numRuns },

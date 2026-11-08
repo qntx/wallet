@@ -10,7 +10,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
-import { ChainError, parseSignIn } from "@qntx/wallet-chains";
+import { parseSignIn } from "@qntx/wallet-chains";
 import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
@@ -950,16 +950,6 @@ export class RequestController extends Controller<RequestControllerState> {
       const blindRisk =
         prepared.intent.message?.kind === "bytes" ? this.blindRisk(input.account) : [];
       const { message } = prepared.intent;
-      if (
-        message?.kind === "typed-data" &&
-        "signer" in prepared &&
-        message.domain.verifyingContract?.toLowerCase() === prepared.signer.toLowerCase()
-      ) {
-        throw new ChainError(
-          "invalid-request",
-          "typed data addressed to your own account is refused",
-        );
-      }
       const permitRisk =
         message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
       const orderRisk =
