@@ -746,7 +746,9 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       const lamports = min;
       const delegateTx = await run({ kind: "delegate", lamports, vote });
       expect(delegateTx.intent?.summary).toBe("stake");
-      const stakeAccount = delegateTx.intent?.staking?.[0]?.account;
+      const createAction = delegateTx.intent?.staking?.[0];
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing check
+      const stakeAccount = createAction?.kind === "create" ? createAction.account : undefined;
       // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing check
       if (stakeAccount === undefined) {
         throw new Error("delegate intent carries no stake account");

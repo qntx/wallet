@@ -1171,6 +1171,7 @@ export class RequestController extends Controller<RequestControllerState> {
       input.method === "evm-batch" ||
       input.method === "evm-approve" ||
       input.method === "evm-swap" ||
+      input.method === "evm-lido" ||
       input.method === "solana-stake";
     const prepared =
       input.method === "send"

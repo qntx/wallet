@@ -21,11 +21,14 @@ import {
   decodeEvm,
   encodeBatchExecute,
   networkChainId,
+  LIDO_QUEUE,
+  LIDO_STETH,
 } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { ERC20_ABI, EvmChainAdapter, checkedHex, evmRpcHex } from "../chains/evm.ts";
 import type { EvmUnsignedTransaction } from "../chains/evm.ts";
+import { LIDO_CHUNK_MAX, LIDO_CHUNK_MIN, LIDO_QUEUE_ABI, LIDO_STETH_ABI } from "../lido/index.ts";
 import { resolveEns } from "../names/ens.ts";
 import {
   collectChecks,
@@ -84,7 +87,7 @@ const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
 export type EvmInternalInput = Extract<
   ChainRequestInput,
-  { readonly method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" }
+  { readonly method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-lido" }
 >;
 
 export type EvmRoute = {
@@ -292,6 +295,270 @@ const readAllowance = async (
 };
 
 type BuildIntent = Parameters<EvmChainAdapter["build"]>[3];
+
+type ViemClient = Parameters<typeof readContract>[0];
+
+const LIDO_ZERO = "0x0000000000000000000000000000000000000000";
+
+const lidoJson = (v: unknown): string =>
+  JSON.stringify(v, (_k, x: unknown): unknown => (typeof x === "bigint" ? x.toString() : x));
+const sameRead = (a: unknown, b: unknown): boolean => lidoJson(a) === lidoJson(b);
+
+/**
+ * A Lido read cross-checked on the independent endpoint: a successful disagreeing read refuses, a
+ * failed independent read degrades to `reads-unverified` — same rule as the swap path.
+ */
+const lidoRead = async <T>(
+  ctx: RouteContext,
+  network: string,
+  flags: Array<RequestCheckCode | undefined>,
+  mismatch: string,
+  read: (client: ViemClient) => Promise<T>,
+): Promise<T> => {
+  const client = ctx.options.networks.client(network);
+  const independent = ctx.options.networks.independentClient(network);
+  const primary = await read(client);
+  if (independent.kind === "available") {
+    try {
+      const other = await read(independent.client);
+      if (!sameRead(primary, other)) {
+        throw new ChainError("invalid-request", mismatch);
+      }
+    } catch (error) {
+      if (error instanceof ChainError) {
+        throw error;
+      }
+      flags.push("reads-unverified");
+    }
+  }
+  return primary;
+};
+
+const queuePaused = async (
+  ctx: RouteContext,
+  network: string,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<void> => {
+  const paused = await lidoRead(
+    ctx,
+    network,
+    flags,
+    "the queue's pause state differs between endpoints",
+    async (c) =>
+      readContract(c, {
+        address: LIDO_QUEUE,
+        abi: LIDO_QUEUE_ABI,
+        functionName: "isPaused",
+      }),
+  );
+  if (paused) {
+    throw new ChainError("invalid-request", "the Lido withdrawal queue is paused");
+  }
+};
+
+/** `amount` split into request chunks of ≤ 1000 ETH, every chunk ≥ 100 wei — refuses if impossible. */
+const lidoChunks = (amount: bigint): ReadonlyArray<bigint> => {
+  if (amount < LIDO_CHUNK_MIN) {
+    throw new ChainError(
+      "invalid-request",
+      `a withdrawal request needs at least ${LIDO_CHUNK_MIN} wei`,
+    );
+  }
+  const count = amount / LIDO_CHUNK_MAX + (amount % LIDO_CHUNK_MAX === 0n ? 0n : 1n);
+  const chunks: bigint[] = [];
+  let rest = amount;
+  for (let i = 0n; i < count; i++) {
+    const take = rest > LIDO_CHUNK_MAX ? LIDO_CHUNK_MAX : rest;
+    chunks.push(take);
+    rest -= take;
+  }
+  const last = chunks.at(-1);
+  if (last !== undefined && last < LIDO_CHUNK_MIN && chunks.length > 1) {
+    /* Rebalance: a lone sub-minimum tail borrows from the previous full chunk. */
+    const prev = chunks.at(-2);
+    if (prev !== undefined) {
+      const borrow = LIDO_CHUNK_MIN - last;
+      chunks[chunks.length - 2] = prev - borrow;
+      chunks[chunks.length - 1] = last + borrow;
+    }
+  }
+  return chunks;
+};
+
+/** The built request must decode to `stake` with exactly the expected Lido action (builder guard). */
+const lidoApproveCall = (amount: bigint): { to: string; value: bigint; data: string } => ({
+  to: LIDO_STETH,
+  value: 0n,
+  data: encodeFunctionData({
+    abi: ERC20_ABI,
+    functionName: "approve",
+    args: [LIDO_QUEUE, amount],
+  }),
+});
+
+const assertLidoIntent = (
+  action: Extract<ChainRequestInput, { method: "evm-lido" }>["action"],
+  intent: ReturnType<typeof decodeEvm>,
+): void => {
+  const kind =
+    action.kind === "stake"
+      ? "lido-submit"
+      : action.kind === "request"
+        ? "lido-request"
+        : "lido-claim";
+  const staking = intent.staking ?? [];
+  if (staking.length !== 1 || staking[0]?.kind !== kind) {
+    throw new ChainError(
+      "invalid-request",
+      "the built transaction does not decode to the expected Lido action",
+    );
+  }
+};
+
+const prepareLidoIntent = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "evm-lido" }>,
+  from: string,
+  flags: Array<RequestCheckCode | undefined>,
+  stateOf: () => Promise<Awaited<ReturnType<EvmChainAdapter["delegation"]>>>,
+): Promise<BuildIntent> => {
+  const { action, network } = input;
+  if (network !== "eip155:1") {
+    throw new ChainError("invalid-request", "Lido staking is Ethereum mainnet only");
+  }
+  const read = async <T>(mismatch: string, fn: (client: ViemClient) => Promise<T>) =>
+    lidoRead(ctx, network, flags, mismatch, fn);
+
+  if (action.kind === "stake") {
+    if (action.amount <= 0n) {
+      throw new ChainError("invalid-request", "the stake amount must be positive");
+    }
+    const paused = await read("the staking pause state differs between endpoints", async (c) =>
+      readContract(c, {
+        address: LIDO_STETH,
+        abi: LIDO_STETH_ABI,
+        functionName: "isStakingPaused",
+      }),
+    );
+    if (paused) {
+      throw new ChainError("invalid-request", "Lido staking is paused");
+    }
+    const limit = await read("the stake limit differs between endpoints", async (c) =>
+      readContract(c, {
+        address: LIDO_STETH,
+        abi: LIDO_STETH_ABI,
+        functionName: "getCurrentStakeLimit",
+      }),
+    );
+    if (action.amount > limit) {
+      throw new ChainError(
+        "invalid-request",
+        `the stake exceeds the current limit of ${limit} wei`,
+      );
+    }
+    return {
+      kind: "call",
+      to: LIDO_STETH,
+      value: action.amount,
+      data: encodeFunctionData({
+        abi: LIDO_STETH_ABI,
+        functionName: "submit",
+        args: [LIDO_ZERO],
+      }),
+    };
+  }
+
+  if (action.kind === "request") {
+    const chunks = lidoChunks(action.amount);
+    await queuePaused(ctx, network, flags);
+    const owner = getAddress(from);
+    const data = encodeFunctionData({
+      abi: LIDO_QUEUE_ABI,
+      functionName: "requestWithdrawals",
+      args: [chunks, owner],
+    });
+    const allowance = await readAllowance(ctx, network, LIDO_STETH, from, LIDO_QUEUE, flags);
+    if (allowance >= action.amount) {
+      return { kind: "call", to: LIDO_QUEUE, value: 0n, data };
+    }
+    const state = await stateOf();
+    if (state.kind !== "ours") {
+      throw new ChainError("invalid-request", "approve the withdrawal queue for the amount first");
+    }
+    const calls = [
+      ...(allowance === 0n ? [] : [lidoApproveCall(0n)]),
+      lidoApproveCall(action.amount),
+      { to: LIDO_QUEUE, value: 0n, data },
+    ];
+    return {
+      kind: "call",
+      to: from,
+      value: 0n,
+      data: encodeBatchExecute(
+        calls.map((c) => ({ to: checksumEvmAddress(c.to), value: c.value, data: c.data })),
+      ),
+    };
+  }
+
+  const ids = [...new Set(action.requestIds)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  if (ids.length === 0) {
+    throw new ChainError("invalid-request", "no withdrawal requests to claim");
+  }
+  await queuePaused(ctx, network, flags);
+  const status = await read("the withdrawal status differs between endpoints", async (c) =>
+    readContract(c, {
+      address: LIDO_QUEUE,
+      abi: LIDO_QUEUE_ABI,
+      functionName: "getWithdrawalStatus",
+      args: [ids],
+    }),
+  );
+  for (const [i, entry] of status.entries()) {
+    if (entry.owner.toLowerCase() !== from.toLowerCase()) {
+      throw new ChainError(
+        "invalid-request",
+        `withdrawal request ${String(ids[i])} does not belong to this account`,
+      );
+    }
+    if (!entry.isFinalized) {
+      throw new ChainError(
+        "invalid-request",
+        `withdrawal request ${String(ids[i])} is not finalised`,
+      );
+    }
+    if (entry.isClaimed) {
+      throw new ChainError(
+        "invalid-request",
+        `withdrawal request ${String(ids[i])} is already claimed`,
+      );
+    }
+  }
+  const last = await read("the last checkpoint differs between endpoints", async (c) =>
+    readContract(c, {
+      address: LIDO_QUEUE,
+      abi: LIDO_QUEUE_ABI,
+      functionName: "getLastCheckpointIndex",
+    }),
+  );
+  const hints = await read("the checkpoint hints differ between endpoints", async (c) =>
+    readContract(c, {
+      address: LIDO_QUEUE,
+      abi: LIDO_QUEUE_ABI,
+      functionName: "findCheckpointHints",
+      args: [ids, 1n, last],
+    }),
+  );
+  return {
+    kind: "call",
+    to: LIDO_QUEUE,
+    value: 0n,
+    data: encodeFunctionData({
+      abi: LIDO_QUEUE_ABI,
+      functionName: "claimWithdrawals",
+      args: [ids, hints],
+    }),
+  };
+};
 
 /** `approve(ALLOWANCE_HOLDER, amount)` calldata for a delegated swap batch. */
 const allowanceHolderApprove = (amount: bigint): string =>
@@ -737,6 +1004,9 @@ export const createEvmRoute = (): EvmRoute => {
     input: EvmInternalInput,
   ): Promise<PreparedRequest> => {
     const { account, network, fee } = input;
+    if (input.method === "evm-lido" && network !== "eip155:1") {
+      throw new ChainError("invalid-request", "Lido staking is Ethereum mainnet only");
+    }
     const from = await resolveFrom(ctx, account, network);
     const flags: Array<RequestCheckCode | undefined> = [];
     const state = await delegationState(ctx, network, from, flags);
@@ -765,6 +1035,10 @@ export const createEvmRoute = (): EvmRoute => {
       intent = await prepareApproveIntent(ctx, input, from, flags);
     } else if (input.method === "evm-swap") {
       intent = await prepareSwapIntent(ctx, input, from, flags);
+    } else if (input.method === "evm-lido") {
+      intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
+        delegationState(ctx, network, from, flags),
+      );
     } else {
       if (input.calls.length < 2) {
         throw new ChainError("invalid-request", "a batch needs at least two calls");
@@ -809,6 +1083,13 @@ export const createEvmRoute = (): EvmRoute => {
       intent,
       nativeValue: undefined,
     });
+    if (input.method === "evm-lido") {
+      assertLidoIntent(input.action, prepared.intent);
+      return {
+        ...prepared,
+        checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
+      };
+    }
     if (input.method === "evm-swap") {
       /* The simulation is mandatory and must keep the quote's terms, now and at approval. */
       const gasCost = BigInt(prepared.intent.fee?.max.amount ?? "0");

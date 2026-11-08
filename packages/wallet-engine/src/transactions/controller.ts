@@ -456,13 +456,13 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /**
-   * Internal `evm-delegation`/`evm-batch` requests: builds, estimates and cross-checks the
-   * self-transaction without signing it.
+   * Internal EVM requests (`evm-delegation`/`evm-batch`/`evm-approve`/`evm-swap`/`evm-lido`):
+   * builds, estimates and cross-checks the self-transaction without signing it.
    */
   async prepareEvmInternal(
     input: Extract<
       ChainRequestInput,
-      { method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" }
+      { method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-lido" }
     >,
     _requestId: string,
   ): Promise<PreparedRequest> {

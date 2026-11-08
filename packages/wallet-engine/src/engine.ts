@@ -28,6 +28,8 @@ import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
+import { lidoPosition } from "./lido/index.ts";
+import type { LidoPosition } from "./lido/index.ts";
 import { MetaSyncController } from "./meta/controller.ts";
 import type { MetaSyncConfig } from "./meta/controller.ts";
 import { resolveEns } from "./names/ens.ts";
@@ -143,6 +145,10 @@ export type WalletEngine = {
       readonly amount: bigint;
       readonly slippageBps: number;
     }) => Promise<SwapQuote | undefined>;
+  };
+  /** Lido liquid staking on Ethereum mainnet — stETH balance and withdrawal requests. */
+  readonly lido: {
+    readonly position: (account: AccountRef) => Promise<LidoPosition>;
   };
   /** Solana staking reads — the account's stake positions and the current validator set. */
   readonly staking: {
@@ -709,6 +715,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       positions: async (account, network) =>
         stakePositions(networks.solanaRpc(network), await solanaAddressOf(account, network)),
       validators: async (network) => stakeValidators(networks.solanaRpc(network)),
+    },
+    lido: {
+      position: async (account) =>
+        lidoPosition(networks.client("eip155:1"), await evmAddressOf(account, "eip155:1")),
     },
     phishing,
     unsubscribe: () => {
