@@ -147,7 +147,7 @@
 	* u32(new Uint8Array(4));
 	* ```
 	*/
-	function u32$3(arr) {
+	function u32$4(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -1831,7 +1831,7 @@
 	* u32(new Uint8Array(8));
 	* ```
 	*/
-	function u32$2(arr) {
+	function u32$3(arr) {
 		return new Uint32Array(arr.buffer, arr.byteOffset, Math.floor(arr.byteLength / 4));
 	}
 	/**
@@ -3872,8 +3872,8 @@
 	* @module
 	*/
 	var encodeStr = (str) => Uint8Array.from(str.split(""), (c) => c.charCodeAt(0));
-	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$3(encodeStr("expand 16-byte k"))))();
-	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$3(encodeStr("expand 32-byte k"))))();
+	var sigma16_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$4(encodeStr("expand 16-byte k"))))();
+	var sigma32_32 = /* @__PURE__ */ (() => swap32IfBE$1(u32$4(encodeStr("expand 32-byte k"))))();
 	/**
 	* Rotates a 32-bit word left.
 	* @param a - Input word.
@@ -3895,10 +3895,10 @@
 	function runCipher(core, sigma, key, nonce, data, output, counter, rounds) {
 		const len = data.length;
 		const block = new Uint8Array(BLOCK_LEN);
-		const b32 = u32$3(block);
+		const b32 = u32$4(block);
 		const isAligned = isLE$1 && isAligned32(data) && isAligned32(output);
-		const d32 = isAligned ? u32$3(data) : U32_EMPTY;
-		const o32 = isAligned ? u32$3(output) : U32_EMPTY;
+		const d32 = isAligned ? u32$4(data) : U32_EMPTY;
+		const o32 = isAligned ? u32$4(output) : U32_EMPTY;
 		if (!isLE$1) {
 			for (let pos = 0; pos < len; counter++) {
 				core(sigma, key, nonce, b32, counter, rounds);
@@ -3982,14 +3982,14 @@
 				throw new Error("invalid key size");
 			}
 			if (!isLE$1 || !isAligned32(nonce)) toClean.push(nonce = copyBytes$1(nonce));
-			let k32 = u32$3(k);
+			let k32 = u32$4(k);
 			if (extendNonceFn) {
 				if (nonce.length !== 24) throw new Error("arx: extended nonce must be 24 bytes");
 				const n16 = nonce.subarray(0, 16);
-				if (isLE$1) extendNonceFn(sigma, k32, u32$3(n16), k32);
+				if (isLE$1) extendNonceFn(sigma, k32, u32$4(n16), k32);
 				else {
 					const sigmaRaw = swap32IfBE$1(Uint32Array.from(sigma));
-					extendNonceFn(sigmaRaw, k32, u32$3(n16), k32);
+					extendNonceFn(sigmaRaw, k32, u32$4(n16), k32);
 					clean$1(sigmaRaw);
 					swap32IfBE$1(k32);
 				}
@@ -4003,7 +4003,7 @@
 				nonce = nc;
 				toClean.push(nonce);
 			}
-			const n32 = swap32IfBE$1(u32$3(nonce));
+			const n32 = swap32IfBE$1(u32$4(nonce));
 			try {
 				runCipher(core, sigma, k32, n32, data, output, counter, rounds);
 				return output;
@@ -15386,11 +15386,11 @@ zoo`.split("\n"));
 	//! `str::from_utf8` rejects — overlongs, surrogates, > U+10FFFF,
 	//! truncated sequences — so `fatal: true` is used (which follows the
 	//! WHATWG fatal algorithm and rejects all of those).
-	var encoder$1 = new TextEncoder();
+	var encoder$2 = new TextEncoder();
 	var fatalDecoder = new TextDecoder("utf-8", { fatal: true });
 	/** Encode `text` as UTF-8 bytes. */
 	function utf8Encode(text) {
-		return encoder$1.encode(text);
+		return encoder$2.encode(text);
 	}
 	/** Decode `bytes` as strict UTF-8; `undefined` on any invalid sequence. */
 	function utf8Decode(bytes) {
@@ -15402,7 +15402,7 @@ zoo`.split("\n"));
 	}
 	/** UTF-8 byte length of `text` (JS string length counts UTF-16 code units). */
 	function utf8ByteLength(text) {
-		return encoder$1.encode(text).length;
+		return encoder$2.encode(text).length;
 	}
 	//! CAIP-122 abstract data model: lexical `MessageFields` and the
 	//! validated `Message` produced by `createMessage` (single validation
@@ -15732,7 +15732,7 @@ zoo`.split("\n"));
 			anumber$2(outputLen, "outputLen");
 			if (!(0 < blockLen && blockLen < 200)) throw new Error("\"blockLen\" must be 1..199");
 			this.state = /* @__PURE__ */ new Uint8Array(200);
-			this.state32 = u32$2(this.state);
+			this.state32 = u32$3(this.state);
 		}
 		clone() {
 			return this._cloneInto();
@@ -15751,7 +15751,7 @@ zoo`.split("\n"));
 			const len = data.length;
 			const canUseU32 = blockLen % 4 === 0 && data.byteOffset % 4 === 0;
 			const blockLen32 = blockLen / 4;
-			const data32 = canUseU32 && len >= blockLen ? u32$2(data) : void 0;
+			const data32 = canUseU32 && len >= blockLen ? u32$3(data) : void 0;
 			for (let pos = 0; pos < len;) {
 				if (data32 !== void 0 && this.pos === 0 && pos % 4 === 0 && len - pos >= blockLen) {
 					for (let i = 0, o = pos / 4; i < blockLen32; i++) state32[i] ^= data32[o + i];
@@ -20350,9 +20350,9 @@ zoo`.split("\n"));
 	*
 	* @internal
 	*/
-	var encoder = /*#__PURE__*/ new TextEncoder();
+	var encoder$1 = /*#__PURE__*/ new TextEncoder();
 	/** @internal */
-	var decoder$2 = /*#__PURE__*/ new TextDecoder();
+	var decoder$3 = /*#__PURE__*/ new TextDecoder();
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Json.js
 	var bigIntSuffix = "#__bigint";
 	/**
@@ -20596,7 +20596,7 @@ zoo`.split("\n"));
 	* @returns The encoded {@link ox#Hex.Hex} value.
 	*/
 	function fromString$2(value, options = {}) {
-		return fromBytes$1(encoder.encode(value), options);
+		return fromBytes$1(encoder$1.encode(value), options);
 	}
 	/**
 	* Pads a {@link ox#Hex.Hex} value to the left with zero bytes until it reaches the given `size` (default: 32 bytes).
@@ -21019,7 +21019,7 @@ zoo`.split("\n"));
 	*/
 	function fromString$1(value, options = {}) {
 		const { size } = options;
-		const bytes = encoder.encode(value);
+		const bytes = encoder$1.encode(value);
 		if (typeof size === "number") {
 			assertSize$1(bytes, size);
 			return padRight(bytes, size);
@@ -21175,7 +21175,7 @@ zoo`.split("\n"));
 			assertSize$1(bytes_, size);
 			bytes_ = trimRight(bytes_);
 		}
-		return decoder$2.decode(bytes_);
+		return decoder$3.decode(bytes_);
 	}
 	/**
 	* Trims leading zeros from a {@link ox#Bytes.Bytes} value.
@@ -23309,7 +23309,7 @@ zoo`.split("\n"));
 			const value_ = normalizeString(value);
 			const size = getUtf8Size(value_);
 			writeWord(context, offset, size);
-			const { written } = encoder.encodeInto(value_, context.bytes.subarray(offset + 32, offset + 32 + size));
+			const { written } = encoder$1.encodeInto(value_, context.bytes.subarray(offset + 32, offset + 32 + size));
 			if (written !== size) throw new Error("Failed to encode string.");
 			return offset + 32 + Math.ceil(size / 32) * 32;
 		}
@@ -29406,13 +29406,13 @@ zoo`.split("\n"));
 	var SOLANA_NETWORKS = Object.freeze(["solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"]);
 	var BASE58 = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 	var isSolanaAddress = (value) => BASE58.test(value);
-	var decoder$1 = getAddressDecoder();
+	var decoder$2 = getAddressDecoder();
 	/** Base58-encoded address for a 32-byte ed25519 public key. */
 	function solanaAddressFromPublicKey(pubkey) {
 		if (pubkey.length !== 32) throw new ChainError("invalid-address", "expected a 32-byte ed25519 public key");
-		return decoder$1.decode(pubkey);
+		return decoder$2.decode(pubkey);
 	}
-	var decoder = getCompiledTransactionMessageDecoder();
+	var decoder$1 = getCompiledTransactionMessageDecoder();
 	/**
 	* Decodes a compiled wire message; rejects trailing bytes and the 1232-byte transaction limit. The
 	* fee payer is `staticAccounts[0]` — every valid transaction signs it.
@@ -29422,7 +29422,7 @@ zoo`.split("\n"));
 		if (bytes.length === 0) throw new ChainError("invalid-request", "compiled message is empty");
 		let decoded;
 		try {
-			decoded = decoder.decode(bytes);
+			decoded = decoder$1.decode(bytes);
 		} catch (_unused) {
 			throw new ChainError("invalid-request", "compiled message failed to decode");
 		}
@@ -29488,9 +29488,11 @@ zoo`.split("\n"));
 		if (index < parsed.staticAccounts.length) return parsed.staticAccounts[index];
 		if (lookups === void 0) return;
 		let offset = index - parsed.staticAccounts.length;
-		for (const table of lookups) {
-			if (offset < table.addresses.length) return table.addresses[offset];
-			offset -= table.addresses.length;
+		for (const parsedTable of parsed.lookups) {
+			var _lookups$find, _slots$offset;
+			const slots = [...parsedTable.writableIndexes, ...parsedTable.readonlyIndexes];
+			if (offset < slots.length) return (_lookups$find = lookups.find((t) => t.address === parsedTable.address)) === null || _lookups$find === void 0 ? void 0 : _lookups$find.addresses[(_slots$offset = slots[offset]) !== null && _slots$offset !== void 0 ? _slots$offset : 0];
+			offset -= slots.length;
 		}
 	};
 	/** All declared lookup-table entries must be valid base58 32-byte addresses. */
@@ -29508,12 +29510,12 @@ zoo`.split("\n"));
 		stakeConfig: "StakeConfig11111111111111111111111111111111"
 	});
 	var ZERO_ADDRESS = "11111111111111111111111111111111";
-	var u32$1 = getU32Decoder();
-	var u64$2 = getU64Decoder();
+	var u32$2 = getU32Decoder();
+	var u64$3 = getU64Decoder();
 	var i64 = getI64Decoder();
 	var addr = getAddressEncoder();
-	var u32le$1 = (data, offset) => u32$1.decode(data, offset);
-	var u64le$1 = (data, offset) => u64$2.decode(data, offset);
+	var u32le$1 = (data, offset) => u32$2.decode(data, offset);
+	var u64le$1 = (data, offset) => u64$3.decode(data, offset);
 	var i64le = (data, offset) => i64.decode(data, offset);
 	var key$1 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
 	var account = (parsed, ix, index, lookups) => {
@@ -29668,6 +29670,122 @@ zoo`.split("\n"));
 			} : "other";
 		}
 	};
+	var PDA_SEED = new TextEncoder().encode("ProgramDerivedAddress");
+	var encoder = getAddressEncoder();
+	var decoder = getAddressDecoder();
+	var onCurve = (candidate) => {
+		try {
+			ed25519.Point.fromBytes(candidate);
+			return true;
+		} catch (_unused2) {
+			return false;
+		}
+	};
+	/**
+	* Sync Associated Token Account derivation for the kernel: `findAssociatedTokenPda` is async, so
+	* the decoder derives `sha256(owner ‖ tokenProgram ‖ mint ‖ bump ‖ ata ‖ "ProgramDerivedAddress")`
+	* over bump 255→0 and takes the first hash off the ed25519 curve — matching the on-chain rule.
+	*/
+	var associatedTokenAddress = (owner, mint, tokenProgram) => {
+		const ownerBytes = encoder.encode(address(owner));
+		const programBytes = encoder.encode(address(tokenProgram));
+		const mintBytes = encoder.encode(address(mint));
+		const ataBytes = encoder.encode(address(PROGRAM_IDS.associatedToken));
+		const input = new Uint8Array(ownerBytes.length + programBytes.length + mintBytes.length + 1 + ataBytes.length + PDA_SEED.length);
+		let o = 0;
+		const put = (bytes) => {
+			input.set(bytes, o);
+			o += bytes.length;
+		};
+		put(ownerBytes);
+		put(programBytes);
+		put(mintBytes);
+		const bumpAt = o;
+		o += 1;
+		put(ataBytes);
+		put(PDA_SEED);
+		for (let bump = 255; bump >= 0; bump -= 1) {
+			input[bumpAt] = bump;
+			const candidate = sha256$1(input);
+			if (!onCurve(candidate)) return decoder.decode(candidate);
+		}
+		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
+	};
+	/** Jupiter's swap program — recognised by program id like Lido's upgradeable proxies. */
+	var JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+	var WSOL_MINT = "So11111111111111111111111111111111111111112";
+	var ROUTE_V2 = Uint8Array.from([
+		187,
+		100,
+		250,
+		204,
+		49,
+		196,
+		175,
+		20
+	]);
+	var SHARED_ROUTE_V2 = Uint8Array.from([
+		209,
+		152,
+		83,
+		147,
+		124,
+		254,
+		216,
+		233
+	]);
+	var u16$1 = getU16Decoder();
+	var u32$1 = getU32Decoder();
+	var u64$2 = getU64Decoder();
+	var startsWith = (data, prefix) => data.length >= prefix.length && prefix.every((b, i) => data[i] === b);
+	/**
+	* `route_v2` / `shared_accounts_route_v2`: the fixed scalar prefix must be exact and the trailing
+	* `route_plan` vector must declare enough remaining bytes (each step is ≥ 5 bytes on the wire).
+	* The route steps themselves stay opaque — the intent only shows the inputs and the floor.
+	*/
+	var decodeJupiterIx = (parsed, ix, lookups) => {
+		const { data } = ix;
+		const account = (i) => {
+			const index = ix.accountIndices[i];
+			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+		};
+		const require = (i) => {
+			var _account;
+			return (_account = account(i)) !== null && _account !== void 0 ? _account : "";
+		};
+		const planWellFormed = (offset) => {
+			if (data.length < offset + 4) return false;
+			const count = u32$1.decode(data, offset);
+			return data.length >= offset + 4 + count * 5;
+		};
+		const scalars = (o) => ({
+			inAmount: u64$2.decode(data, o),
+			quotedOut: u64$2.decode(data, o + 8),
+			slippageBps: u16$1.decode(data, o + 16),
+			platformFeeBps: u16$1.decode(data, o + 18)
+		});
+		if (startsWith(data, ROUTE_V2)) {
+			if (ix.accountIndices.length < 10 || !planWellFormed(30)) return;
+			const optionalDest = require(7);
+			return _objectSpread2({
+				authority: require(0),
+				sourceMint: require(3),
+				destinationMint: require(4),
+				destinationTokenProgram: require(6),
+				destinationAccount: optionalDest === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" ? require(2) : optionalDest
+			}, scalars(8));
+		}
+		if (startsWith(data, SHARED_ROUTE_V2)) {
+			if (ix.accountIndices.length < 12 || !planWellFormed(31)) return;
+			return _objectSpread2({
+				authority: require(1),
+				sourceMint: require(6),
+				destinationMint: require(7),
+				destinationTokenProgram: require(9),
+				destinationAccount: require(5)
+			}, scalars(9));
+		}
+	};
 	var USDC = Object.freeze({
 		symbol: "USDC",
 		decimals: 6,
@@ -29694,7 +29812,7 @@ zoo`.split("\n"));
 	* Classifies one instruction by program + discriminator/layout. Exact-length checks keep
 	* non-canonical encodings out of the `full` class.
 	*/
-	var classifyIx = (parsed, ix, lookups) => {
+	var classifyIx = (parsed, ix, lookups, signer) => {
 		const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
 		const { data } = ix;
 		if (program === PROGRAM_IDS.system) {
@@ -29729,7 +29847,7 @@ zoo`.split("\n"));
 			return { kind: "other" };
 		}
 		if (program === PROGRAM_IDS.token || program === PROGRAM_IDS.token2022) {
-			var _ix$accountIndices$3, _ix$accountIndices$4, _ix$accountIndices$5;
+			var _ix$accountIndices$3, _ix$accountIndices$4, _ix$accountIndices$5, _ix$accountIndices$6;
 			if (data.length === 10 && data[0] === 12) return {
 				kind: "token-transfer-checked",
 				amount: u64le(data, 1),
@@ -29742,7 +29860,16 @@ zoo`.split("\n"));
 				amount: u64le(data, 1),
 				to: resolveAccountIndex(parsed, (_ix$accountIndices$5 = ix.accountIndices[1]) !== null && _ix$accountIndices$5 !== void 0 ? _ix$accountIndices$5 : 0, lookups)
 			};
+			if (data.length === 1 && data[0] === 17) return { kind: "token-sync-native" };
+			if (data.length === 1 && data[0] === 9) return resolveAccountIndex(parsed, (_ix$accountIndices$6 = ix.accountIndices[1]) !== null && _ix$accountIndices$6 !== void 0 ? _ix$accountIndices$6 : 0, lookups) === signer ? { kind: "token-close-account" } : { kind: "other" };
 			return { kind: "other" };
+		}
+		if (program === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4") {
+			const jupiter = decodeJupiterIx(parsed, ix, lookups);
+			return jupiter !== void 0 && jupiter.authority === signer ? {
+				kind: "jupiter",
+				jupiter
+			} : { kind: "other" };
 		}
 		if (program === PROGRAM_IDS.stake) {
 			const stake = decodeStakeIx(parsed, ix, lookups);
@@ -29760,18 +29887,20 @@ zoo`.split("\n"));
 		"cu-price",
 		"ata-create",
 		"ata-create-idempotent",
-		"stake"
+		"stake",
+		"token-sync-native",
+		"token-close-account"
 	]);
 	var classify$1 = (parsed, calls, network, table) => {
-		if (parsed.lookups.length > 0) return "partial";
 		let allFull = true;
 		for (const call of calls) {
 			var _call$mint;
 			if (call.kind === "other") return "opaque";
-			if (call.kind === "token-approve") allFull = false;
+			if (call.kind === "token-approve" || call.kind === "jupiter") allFull = false;
 			if (call.kind === "token-transfer-checked" && lookupSolanaToken(table, network, (_call$mint = call.mint) !== null && _call$mint !== void 0 ? _call$mint : "") === void 0) allFull = false;
-			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-approve") return "opaque";
+			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-approve" && call.kind !== "jupiter") return "opaque";
 		}
+		if (parsed.lookups.length > 0) return "partial";
 		return allFull ? "full" : "partial";
 	};
 	var feeLamports = (parsed, calls) => {
@@ -29788,16 +29917,20 @@ zoo`.split("\n"));
 			address: t.address,
 			addresses: t.addresses
 		}));
-		const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups));
+		const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
 		const verifiability = classify$1(parsed, calls, request.network, table);
 		const outflows = [];
 		const approvals = [];
 		const staking = [];
 		const warnings = [];
+		const minimumReceived = [];
+		const wsolAtas = /* @__PURE__ */ new Set([associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token), associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token2022)]);
 		let otherTransfer = false;
+		let hasJupiter = false;
 		for (const call of calls) {
 			if (call.kind === "system-transfer" && call.to !== void 0 && call.from === signer) {
 				var _call$amount;
+				if (wsolAtas.has(call.to)) continue;
 				otherTransfer = true;
 				outflows.push({
 					to: call.to,
@@ -29806,6 +29939,46 @@ zoo`.split("\n"));
 						amount: ((_call$amount = call.amount) !== null && _call$amount !== void 0 ? _call$amount : 0n).toString(10)
 					},
 					verified: true
+				});
+			}
+			if (call.kind === "jupiter" && call.jupiter !== void 0) {
+				const swap = call.jupiter;
+				hasJupiter = true;
+				otherTransfer = true;
+				const sell = lookupSolanaToken(table, request.network, swap.sourceMint);
+				outflows.push({
+					to: JUPITER_PROGRAM,
+					amount: swap.sourceMint === "So11111111111111111111111111111111111111112" ? {
+						asset: SOLANA_NATIVE_ASSET,
+						amount: swap.inAmount.toString(10)
+					} : _objectSpread2({
+						asset: swap.sourceMint,
+						amount: swap.inAmount.toString(10)
+					}, sell === void 0 ? {} : {
+						symbol: sell.symbol,
+						decimals: sell.decimals
+					}),
+					verified: swap.sourceMint === "So11111111111111111111111111111111111111112" || sell !== void 0
+				});
+				const minimum = (swap.quotedOut * BigInt(1e4 - swap.slippageBps) + 9999n) / 10000n;
+				const buy = lookupSolanaToken(table, request.network, swap.destinationMint);
+				const destAta = associatedTokenAddress(signer, swap.destinationMint, swap.destinationTokenProgram);
+				minimumReceived.push({
+					to: swap.destinationAccount === destAta ? signer : swap.destinationAccount,
+					amount: swap.destinationMint === "So11111111111111111111111111111111111111112" ? {
+						asset: SOLANA_NATIVE_ASSET,
+						amount: minimum.toString(10)
+					} : _objectSpread2({
+						asset: swap.destinationMint,
+						amount: minimum.toString(10)
+					}, buy === void 0 ? {} : {
+						symbol: buy.symbol,
+						decimals: buy.decimals
+					})
+				});
+				if (swap.platformFeeBps > 0) warnings.push({
+					kind: "platform-fee",
+					message: `${swap.platformFeeBps} bps`
 				});
 			}
 			if (call.kind === "token-transfer-checked") {
@@ -29919,8 +30092,8 @@ zoo`.split("\n"));
 			}
 		}
 		const fee = feeLamports(parsed, calls);
-		const summary = otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
-		return _objectSpread2(_objectSpread2({
+		const summary = hasJupiter ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
+		return _objectSpread2(_objectSpread2(_objectSpread2({
 			family: "solana",
 			network: request.network,
 			summary,
@@ -29930,7 +30103,7 @@ zoo`.split("\n"));
 				asset: SOLANA_NATIVE_ASSET,
 				amount: fee.toString(10)
 			} }
-		}, staking.length === 0 ? {} : { staking }), {}, {
+		}, staking.length === 0 ? {} : { staking }), minimumReceived.length === 0 ? {} : { minimumReceived }), {}, {
 			warnings,
 			verifiability
 		});
@@ -29989,7 +30162,7 @@ zoo`.split("\n"));
 			let decodesAsTransaction = true;
 			try {
 				parseCompiledMessage(message);
-			} catch (_unused3) {
+			} catch (_unused4) {
 				decodesAsTransaction = false;
 			}
 			if (decodesAsTransaction) throw new ChainError("invalid-request", "solana.message payload decodes as a transaction message — use solana.transaction");
@@ -30083,6 +30256,7 @@ zoo`.split("\n"));
 			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
 			maxFee: (fee) => `最高手续费 ${fee}`,
 			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
+			platformFee: (message) => `Jupiter 收取平台费 ${message}`,
 			delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
 			revokeDelegation: "撤销此账户的合约委托",
 			stakeRole: {
@@ -30122,6 +30296,7 @@ zoo`.split("\n"));
 			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
 			maxFee: (fee) => `Max fee ${fee}`,
 			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+			platformFee: (message) => `Jupiter platform fee: ${message}`,
 			delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
 			revokeDelegation: "Revoke this account's contract delegation",
 			stakeRole: {
@@ -30167,7 +30342,7 @@ zoo`.split("\n"));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
-		var _intent$message, _intent$warnings, _intent$staking, _intent$minimumReceiv;
+		var _intent$message, _intent$warnings, _intent$staking, _intent$minimumReceiv, _intent$warnings2;
 		const catalog = CATALOGS$1[locale];
 		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
 			title: catalog.blindTitle,
@@ -30191,6 +30366,7 @@ zoo`.split("\n"));
 			...((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
+			...((_intent$warnings2 = intent.warnings) !== null && _intent$warnings2 !== void 0 ? _intent$warnings2 : []).filter((w) => w.kind === "platform-fee").map((w) => catalog.platformFee(w.message)),
 			...tail
 		];
 		if (intent.verifiability === "partial") return {
@@ -31196,7 +31372,7 @@ zoo`.split("\n"));
 		const { sbox2 } = tableEncoding;
 		const toClean = [];
 		if (!isLE$1 || !isAligned32(key)) toClean.push(key = copyBytes$1(key));
-		const k32 = swap32IfBE$1(u32$3(key));
+		const k32 = swap32IfBE$1(u32$4(key));
 		const Nk = k32.length;
 		const subByte = (n) => applySbox(sbox2, n, n, n, n);
 		const xk = new Uint32Array(len + 28);
@@ -31296,7 +31472,7 @@ zoo`.split("\n"));
 	function prepareBlockEncrypt(plaintext, outLen, dst) {
 		if (dst === void 0) dst = new Uint8Array(outLen);
 		if (!isLE$1 || !isAligned32(plaintext)) plaintext = copyBytes$1(plaintext);
-		const o = u32$3(dst);
+		const o = u32$4(dst);
 		return {
 			b: plaintext,
 			o,
@@ -31321,7 +31497,7 @@ zoo`.split("\n"));
 	}
 	function padPCKS(left) {
 		const tmp = /* @__PURE__ */ new Uint8Array(16);
-		const tmp32 = u32$3(tmp);
+		const tmp32 = u32$4(tmp);
 		tmp.set(left);
 		const paddingByte = BLOCK_SIZE - left.length;
 		for (let i = BLOCK_SIZE - paddingByte; i < BLOCK_SIZE; i++) tmp[i] = paddingByte;
@@ -31358,12 +31534,12 @@ zoo`.split("\n"));
 				const outLen = validateBlockEncrypt(plaintext, pkcs5, dst);
 				const xk = expandKeyLE(key);
 				const { b: input, o, out: _out } = prepareBlockEncrypt(plaintext, outLen, dst);
-				const b = u32$3(input);
+				const b = u32$4(input);
 				swap32IfBE$1(b);
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$3(_iv);
+				const n32 = u32$4(_iv);
 				swap32IfBE$1(n32);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				let i = 0;
@@ -31392,11 +31568,11 @@ zoo`.split("\n"));
 				let _iv = iv;
 				const toClean = [xk];
 				if (!isLE$1 || !isAligned32(_iv)) toClean.push(_iv = copyBytes$1(_iv));
-				const n32 = u32$3(_iv);
+				const n32 = u32$4(_iv);
 				swap32IfBE$1(n32);
 				if (!isLE$1 || !isAligned32(ciphertext)) toClean.push(ciphertext = copyBytes$1(ciphertext));
-				const b = u32$3(ciphertext);
-				const o = u32$3(dst);
+				const b = u32$4(ciphertext);
+				const o = u32$4(dst);
 				swap32IfBE$1(b);
 				let s0 = n32[0], s1 = n32[1], s2 = n32[2], s3 = n32[3];
 				for (let i = 0; i + 4 <= b.length;) {
@@ -31905,9 +32081,9 @@ zoo`.split("\n"));
 			c: 1,
 			dkLen: blockSize * p
 		});
-		const B32 = u32$2(B);
-		const V = u32$2(new Uint8Array(blockSize * N));
-		const tmp = u32$2(new Uint8Array(blockSize));
+		const B32 = u32$3(B);
+		const V = u32$3(new Uint8Array(blockSize * N));
+		const tmp = u32$3(new Uint8Array(blockSize));
 		let blockMixCb = () => {};
 		if (onProgress) {
 			const totalBlockMix = 2 * N * p;

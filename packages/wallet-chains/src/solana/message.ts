@@ -169,11 +169,15 @@ export const resolveAccountIndex = (
     return undefined;
   }
   let offset = index - parsed.staticAccounts.length;
-  for (const table of lookups) {
-    if (offset < table.addresses.length) {
-      return table.addresses[offset];
+  for (const parsedTable of parsed.lookups) {
+    /* The compiled index walks each table's writable references first, then its readable ones;
+       each slot is itself an index into the declared table's addresses. */
+    const slots = [...parsedTable.writableIndexes, ...parsedTable.readonlyIndexes];
+    if (offset < slots.length) {
+      const declared = lookups.find((t) => t.address === parsedTable.address);
+      return declared?.addresses[slots[offset] ?? 0];
     }
-    offset -= table.addresses.length;
+    offset -= slots.length;
   }
   return undefined;
 };

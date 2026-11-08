@@ -573,6 +573,21 @@ describe("solana stake", () => {
     );
   });
 
+  describe("platform fee warning line", () => {
+    it("renders in both locales", () => {
+      const intent = {
+        summary: "swap" as const,
+        outflows: [],
+        approvals: [],
+        fee: undefined,
+        verifiability: "partial" as const,
+        warnings: [{ kind: "platform-fee", message: "50 bps" }],
+      };
+      expect(chainPrompt("zh-Hans", intent).description).toContain("Jupiter 收取平台费 50 bps");
+      expect(chainPrompt("en", intent).description).toContain("Jupiter platform fee: 50 bps");
+    });
+  });
+
   describe("lido prompt lines", () => {
     it.each([
       [

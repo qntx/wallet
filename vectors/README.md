@@ -20,6 +20,7 @@ it for funds.**
 | `spark-accounts.json` | Spark identity public keys for account groups 0/1 on mainnet/regtest under the public test mnemonic | `bun scripts/spark-accounts-vector.ts` from `packages/wallet-worker` — real `createSparkSigner` on the shipped spark.wasm |
 | `chains/evm-zerox.json` | Five real 0x AllowanceHolder `exec` mainnet transactions (block ~26370k) with their expected `DisplayIntent` — ERC-20 and native sells through the taker Settler, a bridge-Settler exec that is not a swap, and a third-party operator | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
 | `chains/evm-lido.json` | Five real Lido mainnet transactions (block ~26372k) with their expected `DisplayIntent` — two `submit` stakes, `requestWithdrawalsWithPermit`, `requestWithdrawalsWstETHWithPermit` and `claimWithdrawals` — plus three ABI-built request variants (foreign owner, chunked amounts) | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
+| `chains/solana.json` (jupiter) | One real Jupiter Swap API V2 `/build` SOL→USDC exact-in v0 message (Metis, block ~44505k): compute-budget, wSOL ATA create + wrap transfer + SyncNative, `route_v2`, wSOL CloseAccount, one lookup table — with expected `DisplayIntent` | `/build` response, 2026-11-08 |
 
 ## factor vectors
 
