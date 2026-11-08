@@ -375,13 +375,13 @@ describe("wallet_sendCalls", () => {
     expect(batched.shown).toHaveLength(0);
   });
 
-  it("a batch on none upgrades with the delegation authorization", async () => {
+  it("a batch on none upgrades only when atomicity is required", async () => {
     const w = world({ code: none });
     await w.start();
     await w.connect();
     const batch = w.handler.handle(SITE, {
       method: "wallet_sendCalls",
-      params: [SEND_PARAMS],
+      params: [{ ...SEND_PARAMS, atomicRequired: true }],
     });
     await w.approveNext();
     await batch;
@@ -390,6 +390,27 @@ describe("wallet_sendCalls", () => {
     };
     expect(tx?.type).toBe("eip7702");
     expect(tx?.authorization?.address).toBe(DELEGATOR);
+
+    /* atomicRequired: false on an undelegated account is sequential — no eip7702 is prepared. */
+    const w2 = world({ code: none });
+    await w2.start();
+    await w2.connect();
+    const sequential = w2.handler.handle(SITE, {
+      method: "wallet_sendCalls",
+      params: [SEND_PARAMS],
+    });
+    await w2.approveNext();
+    await w2.approveNext();
+    const record = (await sequential) as { id: string };
+    expect(w2.signedRequests).toHaveLength(2);
+    expect(
+      w2.signedRequests.every((r) => (r as { tx?: { type?: string } }).tx?.type !== "eip7702"),
+    ).toBe(true);
+    const status = (await w2.handler.handle(SITE, {
+      method: "wallet_getCallsStatus",
+      params: [record.id],
+    })) as { atomic: boolean };
+    expect(status.atomic).toBe(false);
   });
 
   it("an other-delegated page falls back to sequential; atomicRequired gets 5760", async () => {

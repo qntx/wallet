@@ -612,7 +612,14 @@ export class Eip1193Handler {
         txIds.push(tracked.id);
       } else {
         const status = await this.options.delegationState(account, network);
-        if (status.supported && (status.state === "ours" || status.state === "none")) {
+        /*
+         * A delegated account always batches; an undelegated one upgrades only when the page
+         * requires atomicity — a `none` account with `atomicRequired: false` stays sequential.
+         */
+        if (
+          status.state === "ours" ||
+          (status.supported && status.state === "none" && atomicRequired)
+        ) {
           const tracked = await this.submitBatch(origin, session, account, calls);
           txIds.push(tracked.id);
         } else if (atomicRequired) {
