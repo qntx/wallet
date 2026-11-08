@@ -195,6 +195,43 @@ describe("chain prompts", () => {
     );
   });
 
+  it("allowance: a one-time AllowanceHolder grant names the contract", () => {
+    const grant = allowance({ change: "transfer", via: "allowance-holder" });
+    expect(text("en", grant)).toBe(`Allow ${SPENDER} to take 2.5 USDC once via AllowanceHolder`);
+    expect(text("zh-Hans", grant)).toBe(`授权 ${SPENDER} 一次性转走 2.5 USDC 经 AllowanceHolder`);
+  });
+
+  it("swap: shows the minimum received after the outflow", () => {
+    const swap: PromptIntent = {
+      summary: "swap",
+      outflows: [
+        {
+          to: TO,
+          amount: { asset: USDC, amount: "10000000", symbol: "USDC", decimals: 6 },
+          verified: true,
+        },
+      ],
+      approvals: [],
+      minimumReceived: {
+        to: SPENDER,
+        amount: {
+          asset: "eip155:1/slip44:60",
+          amount: "70000000000000000",
+          decimals: 18,
+          symbol: "ETH",
+        },
+      },
+      fee: undefined,
+      verifiability: "partial",
+    };
+    expect(chainPrompt("en", swap).description).toBe(
+      `There may be other outflows\nSend 10 USDC to ${TO}\nReceive at least 0.07 ETH at ${SPENDER}`,
+    );
+    expect(chainPrompt("zh-Hans", swap).description).toBe(
+      `可能还有其他转出\n发送 10 USDC 到 ${TO}\n至少收到 0.07 ETH，收款地址 ${SPENDER}`,
+    );
+  });
+
   it.each([
     [1, "1970-01-01"],
     [951_782_400, "2000-02-29"],

@@ -17,7 +17,14 @@ import type { PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
   DisplayIntent,
-  "summary" | "outflows" | "approvals" | "fee" | "verifiability" | "message" | "delegation"
+  | "summary"
+  | "outflows"
+  | "approvals"
+  | "fee"
+  | "verifiability"
+  | "message"
+  | "delegation"
+  | "minimumReceived"
 > & { readonly warnings?: DisplayIntent["warnings"] };
 
 /** Off-chain messages carry no decodable value flow. */
@@ -60,6 +67,8 @@ type Catalog = {
   readonly decrease: (spender: string, amount: string) => string;
   readonly takeOnce: (spender: string, amount: string) => string;
   readonly viaPermit2: string;
+  readonly viaAllowanceHolder: string;
+  readonly receiveMin: (amount: string, to: string) => string;
   readonly until: (date: string) => string;
   readonly operatorAllow: (spender: string, asset: string) => string;
   readonly operatorRevoke: (spender: string, asset: string) => string;
@@ -92,6 +101,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
     takeOnce: (spender, amount) => `授权 ${spender} 一次性转走 ${amount}`,
     viaPermit2: " 经 Permit2",
+    viaAllowanceHolder: " 经 AllowanceHolder",
+    receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
     until: (date) => ` 至 ${date}（UTC）`,
     operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
     operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
@@ -122,6 +133,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
     takeOnce: (spender, amount) => `Allow ${spender} to take ${amount} once`,
     viaPermit2: " via Permit2",
+    viaAllowanceHolder: " via AllowanceHolder",
+    receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
     until: (date) => ` until ${date} (UTC)`,
     operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
     operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
@@ -181,7 +194,12 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
   } else {
     line = catalog.allow(change.spender, formatAmount(change.amount));
   }
-  const via = change.via === undefined ? "" : catalog.viaPermit2;
+  const via =
+    change.via === "permit2"
+      ? catalog.viaPermit2
+      : change.via === "allowance-holder"
+        ? catalog.viaAllowanceHolder
+        : "";
   const until =
     change.expiration === undefined || change.expiration === 0
       ? ""
@@ -211,6 +229,14 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   const lines = [
     ...delegation,
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
+    ...(intent.minimumReceived === undefined
+      ? []
+      : [
+          catalog.receiveMin(
+            formatAmount(intent.minimumReceived.amount),
+            intent.minimumReceived.to,
+          ),
+        ]),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
     ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
     ...tail,
