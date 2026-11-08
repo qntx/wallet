@@ -69,6 +69,7 @@ async function rig() {
     random: (n) => randomBytes(n),
     now: () => Date.now(),
     logger: { warn: () => undefined },
+    showCallsStatus: () => undefined,
     openStore: async () => Promise.resolve(createMemoryEngineStore({ collections: backing })),
     rpc: { [MAINNET]: ["https://esplora.invalid"] },
   });

@@ -290,6 +290,7 @@ try {
       now: () => Date.now(),
       weblnAlias: "qntx",
       lightningMaxFee: (amountSats) => Math.max(1, Math.ceil(amountSats / 50)),
+      showCallsStatus: () => undefined,
       logger: { warn: (m: string, e?: unknown) => void [m, e] },
       publicStore: await openIndexedDbPublicStore({ name: "playground-public" }),
       openStore: async () =>

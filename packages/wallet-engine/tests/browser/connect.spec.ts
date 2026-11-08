@@ -286,6 +286,21 @@ async function engineRig() {
     networks,
     defaultNetwork: () => MAINNET,
     isTracked: () => false,
+    delegationState: async () => {
+      await Promise.resolve();
+      return { supported: true, state: "none" };
+    },
+    batches: {
+      record: async () => {
+        await Promise.resolve();
+      },
+      get: () => undefined,
+      find: () => undefined,
+    },
+    txById: () => undefined,
+    showCallsStatus: () => undefined,
+    now: () => 0,
+    random: (n) => new Uint8Array(n),
   });
   const nip07 = new Nip07Handler({
     connections,

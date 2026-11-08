@@ -283,6 +283,7 @@ describe.skipIf(!HOSTED)("hosted payments e2e", () => {
         random,
         now: () => Date.now(),
         logger: { warn: () => {} },
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         sparkApis: {
           ...realSparkApis,

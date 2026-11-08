@@ -140,6 +140,10 @@ export const SESSION_METHODS: ReadonlyArray<string> = [
   "personal_sign",
   "eth_signTypedData_v4",
   "wallet_watchAsset",
+  "wallet_getCapabilities",
+  "wallet_sendCalls",
+  "wallet_getCallsStatus",
+  "wallet_showCallsStatus",
 ];
 export const SESSION_NOTIFICATIONS: ReadonlyArray<string> = ["accountsChanged", "chainChanged"];
 /** The `nostr` namespace scope's granted methods — the NIP-07 surface. */

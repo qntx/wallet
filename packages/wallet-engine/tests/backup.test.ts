@@ -131,6 +131,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     random: (n) => randomBytes(n),
     now: () => Date.now(),
     logger: LOGGER,
+    showCallsStatus: () => undefined,
     openStore: async () => Promise.resolve(persistentEngineStore(storeBacking)),
     ...(opts.cloud === false ? {} : { cloud }),
   });
@@ -315,6 +316,7 @@ describe("BackupController", () => {
         random: (n) => randomBytes(n),
         now: () => Date.now(),
         logger: LOGGER,
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         cloud: r.cloud,
       });
@@ -414,6 +416,7 @@ describe("BackupController", () => {
         random: (n) => randomBytes(n),
         now: () => Date.now(),
         logger: LOGGER,
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         cloud: r.cloud,
       });
@@ -542,6 +545,7 @@ describe("BackupController", () => {
         random: (n) => randomBytes(n),
         now: () => Date.now(),
         logger: LOGGER,
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         cloud: corruptRead,
       });

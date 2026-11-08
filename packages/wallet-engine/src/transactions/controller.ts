@@ -13,6 +13,7 @@ import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
   AccountRef,
+  BatchRecord,
   DisplayIntent,
   Options,
   PrepareParams,
@@ -45,6 +46,29 @@ export type TransactionControllerState = {
 };
 
 const encode = (tx: TrackedTransaction): Uint8Array => new TextEncoder().encode(JSON.stringify(tx));
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const encodeBatch = (record: BatchRecord): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(record));
+
+const isBatchRecord = (value: unknown): value is BatchRecord => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { origin, id, network, atomic, txIds, expected, createdAt } = value;
+  return (
+    typeof origin === "string" &&
+    typeof id === "string" &&
+    typeof network === "string" &&
+    typeof atomic === "boolean" &&
+    Array.isArray(txIds) &&
+    (txIds as unknown[]).every((t) => typeof t === "string") &&
+    typeof expected === "number" &&
+    typeof createdAt === "number"
+  );
+};
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -174,6 +198,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private evmRoute = createEvmRoute();
   private bitcoinRoute = createBitcoinRoute();
   private locked = true;
+  private readonly batches = new Map<string, BatchRecord>();
 
   constructor(options: Options) {
     super({ name: "transactions", defaultState: () => ({ txs: {} }) });
@@ -197,11 +222,77 @@ export class TransactionController extends Controller<TransactionControllerState
         this.track(tx.id, tx.hash);
       }
     }
+    const batches = this.engineStore.collection("call-batches");
+    const batchKeys = await batches.list();
+    const batchRows = await Promise.all(batchKeys.map(async (key) => batches.get(key)));
+    for (const raw of batchRows) {
+      const record =
+        raw === undefined
+          ? undefined
+          : (() => {
+              try {
+                const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+                return isBatchRecord(parsed) ? parsed : undefined;
+              } catch {
+                return undefined;
+              }
+            })();
+      if (record !== undefined) {
+        this.batches.set(record.id, record);
+      }
+    }
+    await this.pruneBatches();
   }
 
   async destroy(): Promise<void> {
     this.lock();
     await Promise.resolve();
+  }
+
+  /** One `wallet_sendCalls` bundle the user approved; kept until its transactions leave tracking. */
+  async recordBatch(record: BatchRecord): Promise<void> {
+    this.batches.set(record.id, record);
+    const store = this.engineStore;
+    if (store === undefined) {
+      this.options.logger.warn(`call batch ${record.id} not persisted: vault locked`);
+      return;
+    }
+    await store.collection("call-batches").put(record.id, encodeBatch(record));
+  }
+
+  /** The bundle `origin` asked for, or `undefined` when it is not theirs (or is gone). */
+  batchById(origin: string, id: string): BatchRecord | undefined {
+    const record = this.batches.get(id);
+    return record !== undefined && record.origin === origin ? record : undefined;
+  }
+
+  /** A tracked transaction by id — for `wallet_getCallsStatus`. */
+  txById(id: string): TrackedTransaction | undefined {
+    return this.getState().txs[id];
+  }
+
+  /** Any batch record the id already claims; `wallet_sendCalls` rejects a reused id. */
+  batchFor(id: string): BatchRecord | undefined {
+    return this.batches.get(id);
+  }
+
+  /** Drops records whose transactions have all left tracking; called after any tx prune. */
+  async pruneBatches(): Promise<void> {
+    const store = this.engineStore;
+    const { txs } = this.getState();
+    const stale = [...this.batches.values()].filter((record) =>
+      record.txIds.every((id) => txs[id] === undefined),
+    );
+    for (const record of stale) {
+      this.batches.delete(record.id);
+    }
+    if (store !== undefined) {
+      await Promise.all(
+        stale.map(async (record) => {
+          await store.collection("call-batches").delete(record.id);
+        }),
+      );
+    }
   }
 
   lock(): void {

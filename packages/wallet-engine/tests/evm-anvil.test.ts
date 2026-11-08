@@ -1,6 +1,6 @@
 import { execFile, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 import { createPublicClient, getAddress, http } from "viem";
 import type { PublicClient } from "viem";
@@ -9,6 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
+import { EVM_DELEGATOR } from "@qntx/wallet-chains/evm";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
@@ -32,7 +33,12 @@ import {
 } from "./send-helpers.ts";
 
 const NOSTR_PUBKEY = "a".repeat(64);
+const RECIPIENT2 = "0x000000000000000000000000000000000000dead";
 const RUN = process.env["ENGINE_E2E_ANVIL"] === "1";
+const DELEGATOR_CODE = readFileSync(
+  new URL("fixtures/eip7702-stateless-delegator-1.3.0.hex", import.meta.url).pathname,
+  "utf8",
+).trim();
 
 const anvil = (): string => {
   const local = `${process.env["HOME"] ?? ""}/.foundry/bin/anvil`;
@@ -636,6 +642,21 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         networks,
         defaultNetwork: () => "eip155:1",
         isTracked: () => false,
+        delegationState: async () => {
+          await Promise.resolve();
+          return { supported: true, state: "none" };
+        },
+        batches: {
+          record: async () => {
+            await Promise.resolve();
+          },
+          get: () => undefined,
+          find: () => undefined,
+        },
+        txById: () => undefined,
+        showCallsStatus: () => undefined,
+        now: () => 0,
+        random: (n) => new Uint8Array(n),
       });
       const site = "https://app.example";
       const connecting = handler.handle(site, { method: "eth_requestAccounts" });
@@ -696,6 +717,187 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
       proc.kill();
     }
   }, 60_000);
+});
+
+describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
+  it("a two-call batch upgrades the account and reports 200 with one receipt", async () => {
+    const port = 18557;
+    const proc = execFile(anvil(), [
+      "--port",
+      String(port),
+      "--silent",
+      "--chain-id",
+      "1",
+      "--hardfork",
+      "prague",
+    ]);
+    await sleep(1500);
+    try {
+      const url = `http://127.0.0.1:${port}`;
+      const { wallet, walletId } = await realWallet();
+      const evmAccount = await chains(wallet).account({
+        walletId,
+        groupIndex: 0,
+        template: "evm.bip44",
+        network: "eip155:1",
+      });
+      const from = addressOfAccount(evmAccount);
+      await rpcCall(url, "anvil_setBalance", [from, "0xde0b6b3a7640000"]);
+      await rpcCall(url, "anvil_setCode", [EVM_DELEGATOR.address, DELEGATOR_CODE]);
+      const random = taggedRandom();
+      const networks = new NetworkController({
+        ...idleNetworkDeps,
+        fetch: globalThis.fetch.bind(globalThis),
+        rpc: { "eip155:1": [url] },
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        logger: anvilLogger,
+      });
+      const transactions = new TransactionController({
+        wallet,
+        networks,
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random,
+        setTimer: () => () => {},
+        now: () => 1000,
+        logger: anvilLogger,
+        pollMs: 1,
+      });
+      await transactions.init();
+      const requests = new RequestController({
+        phishing: { check: () => "clear" },
+        blindSigning: () => false,
+        simulateSolana: simulateSolanaStub,
+        tokens: tokensStub,
+        transactions,
+        ...bookDeps(),
+        spark: {} as SparkController,
+        nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
+        bitcoinPrepare: async () => Promise.reject(new Error("unused")),
+        bitcoinSignPsbts: async () => Promise.reject(new Error("unused")),
+        bitcoinSign: async () => Promise.reject(new Error("unused")),
+        solanaSign: async () => Promise.reject(new Error("unused")),
+        fetch: globalThis.fetch.bind(globalThis),
+        random,
+        now: () => 1000,
+        setTimer: () => () => {},
+        logger: anvilLogger,
+      });
+      await requests.init();
+      const connections = new ConnectionController({
+        phishing: { check: () => "clear" },
+        setTimer: () => () => {},
+        openStore: async () => Promise.resolve(createMemoryEngineStore()),
+        random,
+        now: () => 1000,
+        logger: anvilLogger,
+        allowLocalhost: false,
+        selectedGroup: () => ({ walletId, groupIndex: 0 }),
+        evmAddress: async () => Promise.resolve(from),
+        bitcoinAddress: async () => Promise.resolve("bc1qunused"),
+        solanaAddress: async () => Promise.resolve(from),
+        enabledNetworks: () => ["eip155:1"],
+        nostrPubkey: async () => Promise.resolve(NOSTR_PUBKEY),
+        invalidate: (origin) => {
+          requests.invalidateOrigin(origin);
+        },
+      });
+      await connections.init();
+      const handler = new Eip1193Handler({
+        connections,
+        requests,
+        networks,
+        defaultNetwork: () => "eip155:1",
+        isTracked: () => false,
+        delegationState: async (account, network) => transactions.delegationState(account, network),
+        batches: {
+          record: async (record) => transactions.recordBatch(record),
+          get: (origin, id) => transactions.batchById(origin, id),
+          find: (id) => transactions.batchFor(id),
+        },
+        txById: (id) => transactions.txById(id),
+        showCallsStatus: () => undefined,
+        now: () => 0,
+        random: (n) => new Uint8Array(n),
+      });
+      const site = "https://app.example";
+      const connecting = handler.handle(site, { method: "eth_requestAccounts" });
+      await waitUntil(() => connections.pending().length === 1);
+      await connections.approveConnection(soleId(connections.pending()), {
+        accounts: [from],
+        network: "eip155:1",
+      });
+      await connecting;
+
+      const sendCalls = async () => {
+        const pending_ = handler.handle(site, {
+          method: "wallet_sendCalls",
+          params: [
+            {
+              version: "2.0.0",
+              chainId: "0x1",
+              atomicRequired: true,
+              calls: [
+                { to: RECIPIENT, value: "0xde0b6b3a7640000" },
+                { to: RECIPIENT2, value: "0xde0b6b3a7640000" },
+              ],
+            },
+          ],
+        });
+        await waitUntil(() => Object.values(requests.getState().requests).length > 0);
+        const pending = soleRequest(requests.getState().requests);
+        // oxlint-disable-next-line unicorn/prefer-ternary, vitest/no-conditional-in-test -- dispatch on the pending method
+        if (pending.method === "evm-batch") {
+          await requests.approve(pending.id, "evm-batch", VERIFY);
+        } else {
+          await requests.approve(pending.id, "evm-sign", VERIFY);
+        }
+        return (await pending_) as { id: string };
+      };
+      const first = await sendCalls();
+      const batchTx = Object.values(transactions.getState().txs).find((tx) =>
+        transactions.batchFor(first.id)?.txIds.includes(tx.id),
+      );
+      expect(batchTx?.hash).toBeDefined();
+      const parsed = await rpcCall(url, "eth_getTransactionByHash", [batchTx?.hash]);
+      expect((parsed as { type: string }).type).toBe("0x4");
+      const reply = (await handler.handle(site, {
+        method: "wallet_getCallsStatus",
+        params: [first.id],
+      })) as { status: number; atomic: boolean; receipts?: unknown[] };
+      expect(reply.atomic).toBe(true);
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      const reply2 = (await handler.handle(site, {
+        method: "wallet_getCallsStatus",
+        params: [first.id],
+      })) as { status: number; receipts?: unknown[] };
+      expect(reply2.status).toBe(200);
+      expect(reply2.receipts).toHaveLength(1);
+      const balances = await Promise.all(
+        [RECIPIENT, RECIPIENT2].map(async (target) =>
+          BigInt((await rpcCall(url, "eth_getBalance", [target, "latest"])) as string),
+        ),
+      );
+      for (const balance of balances) {
+        expect(balance).toBe(0xde0b6b3a7640000n);
+      }
+      /* The account is now delegated: the same batch is a plain eip1559 self-call. */
+      const second = await sendCalls();
+      const batchTx2 = Object.values(transactions.getState().txs).find((tx) =>
+        transactions.batchFor(second.id)?.txIds.includes(tx.id),
+      );
+      const parsed2 = await rpcCall(url, "eth_getTransactionByHash", [batchTx2?.hash]);
+      expect((parsed2 as { type: string }).type).toBe("0x2");
+      await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
+      const reply3 = (await handler.handle(site, {
+        method: "wallet_getCallsStatus",
+        params: [second.id],
+      })) as { status: number };
+      expect(reply3.status).toBe(200);
+      await wallet.destroy();
+    } finally {
+      proc.kill();
+    }
+  }, 120_000);
 });
 
 const addressOfAccount = (account: object): string =>

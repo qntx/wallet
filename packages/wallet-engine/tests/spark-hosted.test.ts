@@ -156,6 +156,7 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
         random,
         now: () => Date.now(),
         logger: { warn: () => {} },
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore(backing)),
       });
       const refA = { walletId: created.walletId, groupIndex: 0, network: "regtest" } as never;

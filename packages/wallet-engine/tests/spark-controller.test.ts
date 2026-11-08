@@ -662,6 +662,7 @@ describe("lock transition serialization", () => {
       random: (n) => new Uint8Array(n),
       now: () => 0,
       logger: LOGGER,
+      showCallsStatus: () => undefined,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
     });
     const c = engine.spark;
@@ -707,6 +708,7 @@ describe("lock transition serialization", () => {
         };
       },
       logger: LOGGER,
+      showCallsStatus: () => undefined,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
     });
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -736,6 +738,7 @@ describe("lock transition serialization", () => {
       random: (n) => new Uint8Array(n),
       now: () => 0,
       logger: { warn: (m, e) => void warnings.push([m, e]) },
+      showCallsStatus: () => undefined,
       openStore: async () => {
         opens += 1;
         return gateOpenStore(failures);
@@ -785,6 +788,7 @@ describe("createWalletEngine lifecycle", () => {
       random: (n) => new Uint8Array(n),
       now: () => 0,
       logger: LOGGER,
+      showCallsStatus: () => undefined,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
     });
     expect(listeners.size).toBe(1);
