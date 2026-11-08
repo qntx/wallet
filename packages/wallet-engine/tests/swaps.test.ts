@@ -191,7 +191,10 @@ function world(options: {
   independentSettler?: string;
   independentRegistryFail?: boolean;
   sim?: unknown;
+  net?: string;
+  chainIdHex?: string;
 }) {
+  const net = options.net ?? N1;
   const calls: Array<{ url: string; method: string; params?: unknown }> = [];
   const signedRequests: SignRequest[] = [];
   const code = { [EVM_DELEGATOR.address.toLowerCase()]: DEL_CODE, ...options.code };
@@ -199,7 +202,7 @@ function world(options: {
     await Promise.resolve();
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     if (url === `${GW}/v1/networks`) {
-      return Response.json({ networks: [N1] });
+      return Response.json({ networks: [net] });
     }
     const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
       method: string;
@@ -264,7 +267,7 @@ function world(options: {
       return reply(typeof sim === "function" ? sim(body.params) : sim);
     }
     const base: Record<string, unknown> = {
-      eth_chainId: "0x1",
+      eth_chainId: options.chainIdHex ?? "0x1",
       eth_blockNumber: "0x1",
       eth_getTransactionCount: "0x0",
       eth_estimateGas: "0x5208",
@@ -280,7 +283,7 @@ function world(options: {
   const networks = new NetworkController({
     ...idleNetworkDeps,
     fetch: fetchImpl,
-    rpc: { [N1]: [HOST] },
+    rpc: { [net]: [HOST] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
     gateway: { url: GW, installId: "a".repeat(32) },
@@ -289,7 +292,7 @@ function world(options: {
     account: async () =>
       Promise.resolve({
         template: "evm.bip44",
-        network: N1,
+        network: net,
         address: options.address ?? ADDR,
       }),
     sign: async ({ request }: { request: SignRequest }) => {
@@ -536,5 +539,67 @@ describe("evm-approve", () => {
     ).rejects.toThrow("unlimited");
     await expect(prepareApprove(w, 7n)).rejects.toThrow("zero");
     await expect(prepareApprove(w, 5n)).rejects.toThrow("already");
+  });
+});
+
+describe("internal requests on a network without EIP-7702", () => {
+  const AVAX = "eip155:43114";
+  const AVAX_ID = "0xa86a";
+  /* The exec operator word (hex chars 34..98) names chain 1's taker Settler — swap in Avalanche's. */
+  const AVAX_SETTLER = "584a4e93f11331d318165b04099e53708b1fa915";
+  const AVAX_SETTLER_ADDR = `0x${AVAX_SETTLER}`;
+  const EXEC_AVAX = EXEC_DATA.replaceAll(SETTLER.slice(2).toLowerCase(), AVAX_SETTLER);
+  const avaxQuote = (overrides: Partial<SwapQuote> = {}): SwapQuote =>
+    quote({
+      network: AVAX,
+      transaction: { to: AH, data: EXEC_AVAX, value: 0n, gas: 210000n },
+      ...overrides,
+    });
+
+  it("evm-approve succeeds on Avalanche", async () => {
+    const w = world({ net: AVAX, chainIdHex: AVAX_ID });
+    await w.start();
+    const pending = await w.requests.prepare({
+      method: "evm-approve",
+      account: ACCOUNT,
+      network: AVAX,
+      token: USDC,
+      spender: AH,
+      amount: 5n,
+      fee: "normal",
+    });
+    expect((pending.display as { summary?: string }).summary).toBe("approve");
+  });
+
+  it("evm-swap with enough allowance is a direct exec on Avalanche", async () => {
+    const w = world({
+      net: AVAX,
+      chainIdHex: AVAX_ID,
+      allowance: 10n ** 9n,
+      settler: AVAX_SETTLER_ADDR,
+    });
+    await w.start();
+    const pending = await w.requests.prepare({
+      method: "evm-swap",
+      account: ACCOUNT,
+      network: AVAX,
+      quote: avaxQuote(),
+      fee: "normal",
+    });
+    expect((pending.display as { summary?: string }).summary).toBe("swap");
+  });
+
+  it("evm-swap with short allowance refuses with the approve-first message", async () => {
+    const w = world({ net: AVAX, chainIdHex: AVAX_ID, allowance: 0n, settler: AVAX_SETTLER_ADDR });
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-swap",
+        account: ACCOUNT,
+        network: AVAX,
+        quote: avaxQuote(),
+        fee: "normal",
+      }),
+    ).rejects.toThrow(/approve AllowanceHolder/);
   });
 });

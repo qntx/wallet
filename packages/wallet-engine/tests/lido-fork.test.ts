@@ -28,7 +28,7 @@ const RUN = FORK !== undefined && FORK !== "" && process.env["ANVIL"] !== "skip"
 const N1 = "eip155:1";
 const PORT = 18545;
 const RPC_URL = `http://127.0.0.1:${PORT}`;
-const BVERIFY = { kind: "password" as const, password: "fork-lido" };
+const BVERIFY = { kind: "password" as const, password: "correct horse battery staple" };
 const KERNEL_URL: URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 
 const taggedRandom = (): ((n: number) => Uint8Array) => {

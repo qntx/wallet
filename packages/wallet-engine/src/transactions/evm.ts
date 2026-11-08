@@ -849,6 +849,23 @@ export const createEvmRoute = (): EvmRoute => {
     return state;
   };
 
+  /**
+   * The delegation state for the allowance-fallback paths: a network without EIP-7702 cannot run
+   * the delegated approve batch, so it reads as "none" and the caller refuses with the existing
+   * approve-first message instead of surfacing the 7702 error.
+   */
+  const delegationStateOrNone = async (
+    ctx: RouteContext,
+    network: string,
+    from: string,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<Awaited<ReturnType<EvmChainAdapter["delegation"]>>> => {
+    if (ctx.options.networks.info(network).delegatorCodeHash === undefined) {
+      return { kind: "none" };
+    }
+    return delegationState(ctx, network, from, flags);
+  };
+
   /* `evm-swap`: verify the quote, then a single exec or a delegated [approve, exec] batch. */
   const prepareSwapIntent = async (
     ctx: RouteContext,
@@ -962,7 +979,7 @@ export const createEvmRoute = (): EvmRoute => {
       if (current >= quote.sellAmount) {
         return { kind: "call", to: tx.to, value: tx.value, data: tx.data };
       }
-      const state = await delegationState(ctx, input.network, from, flags);
+      const state = await delegationStateOrNone(ctx, input.network, from, flags);
       if (state.kind !== "ours") {
         throw new ChainError(
           "invalid-request",
@@ -1009,10 +1026,10 @@ export const createEvmRoute = (): EvmRoute => {
     }
     const from = await resolveFrom(ctx, account, network);
     const flags: Array<RequestCheckCode | undefined> = [];
-    const state = await delegationState(ctx, network, from, flags);
     let intent: BuildIntent;
     let warnings: ReadonlyArray<IntentWarning> = [];
     if (input.method === "evm-delegation") {
+      const state = await delegationState(ctx, network, from, flags);
       if (input.action === "upgrade" && state.kind === "ours") {
         throw new ChainError("invalid-request", "account is already delegated");
       }
@@ -1037,9 +1054,10 @@ export const createEvmRoute = (): EvmRoute => {
       intent = await prepareSwapIntent(ctx, input, from, flags);
     } else if (input.method === "evm-lido") {
       intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
-        delegationState(ctx, network, from, flags),
+        delegationStateOrNone(ctx, network, from, flags),
       );
     } else {
+      const state = await delegationState(ctx, network, from, flags);
       if (input.calls.length < 2) {
         throw new ChainError("invalid-request", "a batch needs at least two calls");
       }
