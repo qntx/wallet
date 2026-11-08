@@ -44,7 +44,7 @@
     "@types/node": "26.6.6",
     "@vitest/coverage-v8": "5.0.5",
     "bumpp": "12.3.0",
-    "cborg": "6.1.5",
+    "cborg": "6.2.1",
     "madge": "8.0.0",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",

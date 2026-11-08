@@ -44,7 +44,7 @@
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only && bun ../../scripts/check-native-pack.ts ."
   },
   "dependencies": {
-    "cborg": "6.1.5"
+    "cborg": "6.2.1"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",

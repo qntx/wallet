@@ -66,9 +66,9 @@
     "@scure/base": "2.4.0",
     "@scure/bip32": "2.4.0",
     "@scure/btc-signer": "2.4.1",
-    "@solana/addresses": "8.5.0",
-    "@solana/codecs": "8.5.0",
-    "@solana/transaction-messages": "8.5.0",
+    "@solana/addresses": "8.6.0",
+    "@solana/codecs": "8.6.0",
+    "@solana/transaction-messages": "8.6.0",
     "ox": "1.8.12"
   },
   "devDependencies": {
@@ -81,7 +81,7 @@
     "@solana-program/system": "0.16.0",
     "@solana-program/token": "0.18.0",
     "@solana-program/token-2022": "0.20.0",
-    "@solana/kit": "8.5.0",
+    "@solana/kit": "8.6.0",
     "@types/node": "26.6.6",
     "bitcoinjs-lib": "7.0.5",
     "ecpair": "3.0.2",
@@ -89,7 +89,7 @@
     "publint": "0.3.25",
     "tiny-secp256k1": "2.2.5",
     "typescript": "7.0.2",
-    "viem": "2.57.12",
+    "viem": "2.57.14",
     "vite-plus": "1.4.0"
   },
   "devEngines": {

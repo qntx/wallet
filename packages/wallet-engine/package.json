@@ -62,8 +62,8 @@
     "@solana-program/stake": "0.11.0",
     "@solana-program/system": "0.16.0",
     "@solana-program/token": "0.18.0",
-    "@solana/kit": "8.5.0",
-    "viem": "2.57.12",
+    "@solana/kit": "8.6.0",
+    "viem": "2.57.14",
     "zod": "4.6.7",
     "zustand": "5.0.16"
   },
@@ -83,7 +83,7 @@
     "@wallet-standard/base": "1.1.1",
     "@wallet-standard/features": "1.1.1",
     "@wallet-standard/wallet": "1.1.1",
-    "fake-indexeddb": "6.2.6",
+    "fake-indexeddb": "6.2.7",
     "fast-check": "4.10.2",
     "publint": "0.3.25"
   },
