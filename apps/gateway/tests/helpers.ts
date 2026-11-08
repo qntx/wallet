@@ -100,6 +100,7 @@ export function gateway(options: {
   readonly fetch: typeof globalThis.fetch;
   readonly risk?: RiskStore;
   readonly limiters?: Limiters;
+  readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
   readonly log?: (line: string) => void;
 }): ReturnType<typeof createGateway> {
   return createGateway({
@@ -108,6 +109,7 @@ export function gateway(options: {
     limiters: options.limiters ?? { rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
+    ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
     log: options.log ?? (() => undefined),
   });
 }

@@ -27,6 +27,14 @@ export type GatewayOptions = {
   readonly limiters: Limiters;
   readonly corsOrigins: ReadonlyArray<string>;
   readonly risk: RiskStore;
+  /**
+   * The 0x API key that enables `/v1/quotes/swap`, and the integrator fee the gateway charges on
+   * top of a quote, when configured. Absent the route answers `unavailable`.
+   */
+  readonly zeroEx?: {
+    readonly apiKey: string;
+    readonly fee?: { readonly recipient: string; readonly bps: number };
+  };
   /** One JSON line per request; defaults to `console.log`. */
   readonly log?: (line: string) => void;
 };

@@ -1163,7 +1163,11 @@ export class RequestController extends Controller<RequestControllerState> {
         },
       };
     }
-    const internal = input.method === "evm-delegation" || input.method === "evm-batch";
+    const internal =
+      input.method === "evm-delegation" ||
+      input.method === "evm-batch" ||
+      input.method === "evm-approve" ||
+      input.method === "evm-swap";
     const prepared =
       input.method === "send"
         ? await this.options.transactions.prepareSend(input, id)

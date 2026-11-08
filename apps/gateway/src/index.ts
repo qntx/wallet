@@ -22,6 +22,21 @@ export default {
       limiters: { rpc: env.RPC_LIMITER, default: env.DEFAULT_LIMITER },
       corsOrigins: env.CORS_ORIGINS.split(",").map((origin) => origin.trim()),
       risk: riskStore(env.RISK),
+      ...(env.ZEROX_API_KEY === undefined
+        ? {}
+        : {
+            zeroEx: {
+              apiKey: env.ZEROX_API_KEY,
+              ...(env.ZEROX_FEE_RECIPIENT === undefined || env.ZEROX_FEE_BPS === undefined
+                ? {}
+                : {
+                    fee: {
+                      recipient: env.ZEROX_FEE_RECIPIENT,
+                      bps: Number(env.ZEROX_FEE_BPS),
+                    },
+                  }),
+            },
+          }),
     });
     return gateway.fetch(request);
   },
