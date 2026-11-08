@@ -306,4 +306,22 @@ describe("GET /v1/quotes/swap/solana", () => {
     const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
     expect(res.status).toBe(503);
   });
+
+  it("maps a non-JSON upstream body to 503", async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => new Response("upstream overload"),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
+  });
+
+  it("maps a valid JSON body that fails the schema to 503", async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => Response.json({ routes: [] }),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
+  });
 });
