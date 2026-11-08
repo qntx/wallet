@@ -58,7 +58,7 @@
     },
     "packages/wallet": {
       "name": "@qntx/wallet",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "dependencies": {
         "@scure/base": "2.4.0",
       },
@@ -67,7 +67,7 @@
         "@qntx/nostr": "0.15.4",
         "@qntx/spark": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/wallet-chains": "0.11.0",
+        "@qntx/wallet-chains": "0.12.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
         "@scure/btc-signer": "2.4.1",
@@ -79,7 +79,7 @@
       "peerDependencies": {
         "@qntx/nostr": "~0.15.4",
         "@qntx/spark": "~0.5.2",
-        "@qntx/wallet-chains": "0.11.0",
+        "@qntx/wallet-chains": "0.12.0",
       },
       "optionalPeers": [
         "@qntx/nostr",
@@ -89,7 +89,7 @@
     },
     "packages/wallet-chains": {
       "name": "@qntx/wallet-chains",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "dependencies": {
         "@noble/curves": "2.4.0",
         "@noble/hashes": "2.4.0",
@@ -126,7 +126,7 @@
     },
     "packages/wallet-engine": {
       "name": "@qntx/wallet-engine",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "dependencies": {
         "@noble/ciphers": "2.4.0",
         "@noble/hashes": "2.4.0",
@@ -147,9 +147,9 @@
         "@qntx/nostr": "0.15.4",
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
-        "@qntx/wallet": "0.11.0",
-        "@qntx/wallet-chains": "0.11.0",
-        "@qntx/wallet-worker": "0.11.0",
+        "@qntx/wallet": "0.12.0",
+        "@qntx/wallet-chains": "0.12.0",
+        "@qntx/wallet-worker": "0.12.0",
         "@solana-program/token-2022": "0.20.0",
         "@solana/wallet-standard-features": "1.5.0",
         "@solana/wallet-standard-util": "1.2.0",
@@ -164,13 +164,13 @@
       "peerDependencies": {
         "@qntx/nostr": "~0.15.4",
         "@qntx/spark": "~0.5.2",
-        "@qntx/wallet": "0.11.0",
-        "@qntx/wallet-chains": "0.11.0",
+        "@qntx/wallet": "0.12.0",
+        "@qntx/wallet-chains": "0.12.0",
       },
     },
     "packages/wallet-kernel": {
       "name": "@qntx/wallet-kernel",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "dependencies": {
         "@noble/ciphers": "2.4.0",
         "@noble/curves": "2.4.0",
@@ -178,8 +178,8 @@
         "@qntx/nostr": "0.15.4",
         "@qntx/siwx": "0.8.0",
         "@qntx/spark": "0.5.2",
-        "@qntx/wallet": "0.11.0",
-        "@qntx/wallet-chains": "0.11.0",
+        "@qntx/wallet": "0.12.0",
+        "@qntx/wallet-chains": "0.12.0",
         "@scure/base": "2.4.0",
         "@scure/bip32": "2.4.0",
         "@scure/bip39": "2.4.0",
@@ -196,7 +196,7 @@
     },
     "packages/wallet-native": {
       "name": "@qntx/wallet-native",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "dependencies": {
         "cborg": "6.1.5",
       },
@@ -215,14 +215,14 @@
       "peerDependencies": {
         "@qntx/nostr-native": "0.15.4",
         "@qntx/spark-native": "0.5.2",
-        "@qntx/wallet": "0.11.0",
+        "@qntx/wallet": "0.12.0",
         "react-native": "~0.88.0",
         "react-native-nitro-modules": "~0.37.1",
       },
     },
     "packages/wallet-worker": {
       "name": "@qntx/wallet-worker",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "dependencies": {
         "@noble/hashes": "2.4.0",
         "@scure/base": "2.4.0",
@@ -235,8 +235,8 @@
         "@qntx/spark": "0.5.2",
         "@qntx/spark-wasm": "0.5.2",
         "@qntx/tsconfig": "1.0.1",
-        "@qntx/wallet": "0.11.0",
-        "@qntx/wallet-kernel": "0.11.0",
+        "@qntx/wallet": "0.12.0",
+        "@qntx/wallet-kernel": "0.12.0",
         "@scure/base": "2.4.0",
         "@scure/btc-signer": "2.4.1",
         "@types/node": "26.6.6",
@@ -245,7 +245,7 @@
         "vite-plus": "1.4.0",
       },
       "peerDependencies": {
-        "@qntx/wallet": "0.11.0",
+        "@qntx/wallet": "0.12.0",
       },
     },
   },
