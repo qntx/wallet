@@ -1,12 +1,15 @@
+import { base64 } from "@scure/base";
+
 import { ChainError } from "@qntx/wallet-chains";
 import { EVM_NATIVE_ASSET, ZEROX_CHAINS, networkChainId } from "@qntx/wallet-chains/evm";
+import { WSOL_MINT, SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
 import { gatewayFetch } from "../gateway/client.ts";
 import type { GatewayConfig } from "../gateway/client.ts";
-import { parseWith, swapQuote } from "../gateway/contract/index.ts";
-import { ZEROX_NATIVE_TOKEN } from "../gateway/contract/quotes.ts";
+import { parseWith, swapQuote, swapQuoteSolana } from "../gateway/contract/index.ts";
+import { SOLANA_MAINNET, ZEROX_NATIVE_TOKEN } from "../gateway/contract/quotes.ts";
 import type { AccountRef } from "../transactions/route.ts";
-import type { SwapQuote } from "./index.ts";
+import type { JupiterSwapQuote, SwapQuote } from "./index.ts";
 
 const toZeroXToken = (asset: string): string =>
   asset === EVM_NATIVE_ASSET ? ZEROX_NATIVE_TOKEN : asset;
@@ -65,6 +68,7 @@ export const fetchSwapQuote = async (
     return undefined;
   }
   return {
+    provider: "0x",
     network,
     taker,
     sell: fromZeroXToken(body.sellToken),
@@ -93,6 +97,82 @@ export const fetchSwapQuote = async (
           : { token: body.fees.zeroEx.token, amount: BigInt(body.fees.zeroEx.amount) },
     },
     blockNumber: BigInt(body.blockNumber),
+    fetchedAt: deps.now(),
+  };
+};
+
+const toMint = (asset: string): string => (asset === SOLANA_NATIVE_ASSET ? WSOL_MINT : asset);
+const fromMint = (mint: string): string => (mint === WSOL_MINT ? SOLANA_NATIVE_ASSET : mint);
+
+/**
+ * Fetches a gateway Jupiter `/build` for a Solana exact-in sell and maps it to the engine's
+ * `JupiterSwapQuote` (bigint amounts, `lamports` for wSOL). Display-only — `solana-swap` verifies
+ * everything on-chain before signing. `undefined` when the gateway reports no liquidity.
+ */
+export const fetchJupiterQuote = async (
+  deps: {
+    readonly fetch: typeof globalThis.fetch;
+    readonly gateway: GatewayConfig | undefined;
+    readonly address: (account: AccountRef, network: string) => Promise<string>;
+    readonly now: () => number;
+  },
+  params: {
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly sell: string;
+    readonly buy: string;
+    readonly amount: bigint;
+    readonly slippageBps: number;
+  },
+): Promise<JupiterSwapQuote | undefined> => {
+  const { account, network, sell, buy, amount, slippageBps } = params;
+  if (deps.gateway === undefined) {
+    throw new ChainError("unsupported", "no gateway is configured");
+  }
+  if (network !== SOLANA_MAINNET) {
+    throw new ChainError("unsupported", "the network does not support Jupiter swaps");
+  }
+  const taker = await deps.address(account, network);
+  const url = new URL(`${deps.gateway.url.replace(/\/+$/, "")}${swapQuoteSolana.path}`);
+  url.searchParams.set("network", network);
+  url.searchParams.set("inputMint", toMint(sell));
+  url.searchParams.set("outputMint", toMint(buy));
+  url.searchParams.set("amount", amount.toString(10));
+  url.searchParams.set("taker", taker);
+  url.searchParams.set("slippageBps", String(slippageBps));
+  const res = await gatewayFetch(deps.fetch, deps.gateway)(url, {});
+  if (!res.ok) {
+    throw new Error(`the quote service returned ${res.status}`);
+  }
+  const body = parseWith(swapQuoteSolana.response, await res.json());
+  if (body === undefined) {
+    throw new Error("the quote service returned a malformed response");
+  }
+  if (!body.liquidity) {
+    return undefined;
+  }
+  const ix = (i: (typeof body.setup)[number]) => ({
+    programId: i.programId,
+    accounts: i.accounts.map((a) => ({
+      address: a.address,
+      signer: a.signer,
+      writable: a.writable,
+    })),
+    data: base64.decode(i.data),
+  });
+  return {
+    provider: "jupiter",
+    network,
+    taker,
+    sell: fromMint(body.inputMint),
+    buy: fromMint(body.outputMint),
+    sellAmount: BigInt(body.inAmount),
+    buyAmount: BigInt(body.outAmount),
+    minBuyAmount: BigInt(body.otherAmountThreshold),
+    setup: body.setup.map(ix),
+    swap: ix(body.swap),
+    cleanup: body.cleanup === null ? undefined : ix(body.cleanup),
+    lookupTables: [...body.lookupTables],
     fetchedAt: deps.now(),
   };
 };

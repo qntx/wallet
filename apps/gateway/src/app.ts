@@ -44,7 +44,15 @@ export function createGateway(options: GatewayOptions): Hono<{ Variables: Instal
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
   app.route("/", esploraRoutes(deps));
-  app.route("/", quotesRoutes({ fetch: options.fetch, forwarder, zeroEx: options.zeroEx }));
+  app.route(
+    "/",
+    quotesRoutes({
+      fetch: options.fetch,
+      forwarder,
+      zeroEx: options.zeroEx,
+      jupiter: options.jupiter,
+    }),
+  );
   app.route("/", riskRoutes(options.risk));
   app.onError(mapError);
   app.notFound(notFound);

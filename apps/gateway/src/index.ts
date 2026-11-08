@@ -18,6 +18,7 @@ let gateway: Gateway | undefined;
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const zeroEx = zeroExConfig(env);
+    const jupiter = env.JUPITER_API_KEY === undefined ? undefined : { apiKey: env.JUPITER_API_KEY };
     gateway ??= createGateway({
       fetch: async (input, init) => fetch(input, init),
       networks: STAGING_NETWORKS,
@@ -25,6 +26,7 @@ export default {
       corsOrigins: env.CORS_ORIGINS.split(",").map((origin) => origin.trim()),
       risk: riskStore(env.RISK),
       ...(zeroEx === undefined ? {} : { zeroEx }),
+      ...(jupiter === undefined ? {} : { jupiter }),
     });
     return gateway.fetch(request);
   },

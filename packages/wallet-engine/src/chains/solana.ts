@@ -1,4 +1,5 @@
 import { base64 } from "@scure/base";
+import { getAddressLookupTableDecoder } from "@solana-program/address-lookup-table";
 import {
   getSetComputeUnitLimitInstruction,
   getSetComputeUnitPriceInstruction,
@@ -32,6 +33,7 @@ import {
   appendTransactionMessageInstructions,
   blockhash,
   compileTransactionMessage,
+  compressTransactionMessageUsingAddressLookupTables,
   createNoopSigner,
   createTransactionMessage,
   getAddressDecoder,
@@ -57,7 +59,6 @@ import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
 const MAX_MESSAGE_BYTES = 1232;
-const LOOKUP_TABLE_HEADER_BYTES = 56;
 const ADDRESS_BYTES = 32;
 const TOKEN_ACCOUNT_MIN_BYTES = 72;
 const TOKEN_ACCOUNT_OWNER_OFFSET = 32;
@@ -149,7 +150,17 @@ export type SolanaIntent =
       readonly vote: string;
     }
   | { readonly kind: "stake-deactivate"; readonly stakeAccount: string }
-  | { readonly kind: "stake-withdraw"; readonly stakeAccount: string; readonly lamports: bigint };
+  | { readonly kind: "stake-withdraw"; readonly stakeAccount: string; readonly lamports: bigint }
+  | {
+      readonly kind: "instructions";
+      /** Pre-built instructions (e.g. a Jupiter `/build` set) — the adapter only budgets them. */
+      readonly instructions: ReadonlyArray<Instruction>;
+      /** Declared lookup-table contents the v0 message compresses against. */
+      readonly lookupTables?: ReadonlyArray<{
+        readonly address: string;
+        readonly addresses: ReadonlyArray<string>;
+      }>;
+    };
 
 export type SolanaFeeTier = "slow" | "normal" | "fast";
 
@@ -168,6 +179,10 @@ export type SolanaUnsignedTransaction = {
   readonly unitsConsumed: number;
   readonly blockhash: string;
   readonly lastValidBlockHeight: bigint;
+  readonly lookupTables?: ReadonlyArray<{
+    readonly address: string;
+    readonly addresses: ReadonlyArray<string>;
+  }>;
 };
 
 type Compiled = {
@@ -204,6 +219,9 @@ export class SolanaChainAdapter {
     from: string,
     intent: SolanaIntent,
   ): Promise<ReadonlyArray<Instruction>> {
+    if (intent.kind === "instructions") {
+      return intent.instructions;
+    }
     if (intent.kind === "sol") {
       return [
         getTransferSolInstruction({
@@ -315,7 +333,13 @@ export class SolanaChainAdapter {
     const value = obj(hashResult?.["value"]);
     const blockhashValue = typeof value?.["blockhash"] === "string" ? value["blockhash"] : "";
     const lastValidBlockHeight = BigInt(str(value?.["lastValidBlockHeight"], "0"));
-    const compiled = this.compile(from, instructions, blockhashValue, lastValidBlockHeight);
+    const compiled = this.compile(
+      from,
+      instructions,
+      blockhashValue,
+      lastValidBlockHeight,
+      intent.kind === "instructions" ? intent.lookupTables : undefined,
+    );
     const units = await this.simulateUnits(rpc, compiled.messageBytes);
     return {
       family: "solana",
@@ -326,6 +350,9 @@ export class SolanaChainAdapter {
       unitsConsumed: units,
       blockhash: blockhashValue,
       lastValidBlockHeight,
+      ...(intent.kind === "instructions" && intent.lookupTables !== undefined
+        ? { lookupTables: intent.lookupTables }
+        : {}),
     };
   }
 
@@ -373,6 +400,7 @@ export class SolanaChainAdapter {
     instructions: ReadonlyArray<Instruction>,
     blockhashValue: string,
     lastValidBlockHeight: bigint,
+    lookupTables?: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }>,
   ): Compiled {
     const message = createTransactionMessage({ version: 0 });
     const withPayer = setTransactionMessageFeePayer(address(from), message);
@@ -381,7 +409,16 @@ export class SolanaChainAdapter {
       withPayer,
     );
     const withIxs = appendTransactionMessageInstructions([...instructions], withLifetime);
-    const compiled = compileTransactionMessage(withIxs);
+    const compilable =
+      lookupTables === undefined || lookupTables.length === 0
+        ? withIxs
+        : compressTransactionMessageUsingAddressLookupTables(
+            withIxs,
+            Object.fromEntries(
+              lookupTables.map((t) => [address(t.address), t.addresses.map(address)]),
+            ),
+          );
+    const compiled = compileTransactionMessage(compilable);
     const messageBytes = new Uint8Array(getCompiledTransactionMessageEncoder().encode(compiled));
     if (messageBytes.length > MAX_MESSAGE_BYTES) {
       throw new Error(
@@ -424,6 +461,7 @@ export class SolanaChainAdapter {
       ],
       tx.blockhash,
       tx.lastValidBlockHeight,
+      tx.lookupTables,
     );
     return compiled.messageBytes;
   }
@@ -466,12 +504,18 @@ export class SolanaChainAdapter {
       if (data === undefined) {
         throw new Error(`lookup table ${lookup.address} not found`);
       }
+      let entries: ReadonlyArray<string>;
+      try {
+        entries = getAddressLookupTableDecoder().decode(data).addresses;
+      } catch {
+        throw new Error(`lookup table ${lookup.address} failed to decode`);
+      }
       for (const entry of lookup.writableIndexes) {
-        const start = LOOKUP_TABLE_HEADER_BYTES + entry * ADDRESS_BYTES;
-        if (start + ADDRESS_BYTES > data.length) {
+        const resolved = entries[entry];
+        if (resolved === undefined) {
           throw new Error("lookup table index out of range");
         }
-        writable.push(addressDecoder.decode(data.slice(start, start + ADDRESS_BYTES)));
+        writable.push(resolved);
       }
     }
     return writable;

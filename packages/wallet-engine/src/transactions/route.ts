@@ -15,7 +15,7 @@ import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
 import type { EngineStore } from "../store/port.ts";
-import type { SwapQuote } from "../swaps/index.ts";
+import type { JupiterSwapQuote, ZeroExSwapQuote } from "../swaps/index.ts";
 
 export type ChainApis = ReturnType<typeof chains>;
 export type SignParams = Parameters<ChainApis["sign"]>[0];
@@ -107,7 +107,8 @@ export type ChainRequestMethod =
   | "evm-approve"
   | "evm-swap"
   | "evm-lido"
-  | "solana-stake";
+  | "solana-stake"
+  | "solana-swap";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
@@ -147,7 +148,14 @@ export type ChainRequestInput =
       readonly method: "evm-swap";
       readonly account: AccountRef;
       readonly network: string;
-      readonly quote: SwapQuote;
+      readonly quote: ZeroExSwapQuote;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "solana-swap";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly quote: JupiterSwapQuote;
       readonly fee: PrepareParams["fee"];
     }
   | {

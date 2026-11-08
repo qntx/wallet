@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { swapQuote } from "@qntx/wallet-engine/gateway/contract";
+import { swapQuote, swapQuoteSolana } from "@qntx/wallet-engine/gateway/contract";
 
 import { zeroExConfig } from "../src/providers/zerox.ts";
 import { SEPOLIA, expectContract, fakeFetch, gateway, headers } from "./helpers.ts";
@@ -164,5 +164,164 @@ describe("zeroExConfig", () => {
     { ZEROX_API_KEY: "k", ZEROX_FEE_BPS: "25" },
   ])("rejects %o", (env) => {
     expect(() => zeroExConfig(env)).toThrow("ZEROX_FEE");
+  });
+});
+
+const JAPI = "https://api.jup.ag";
+const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+const WSOL = "So11111111111111111111111111111111111111112";
+const SUSDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const STAKER = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
+const STABLE = "5A5XJTxSYiFzmYtMiFwjqH9Cu3Lan6wFsjMuLTSjsGLB";
+
+const SOL_QUERY = `network=${SOL_NET}&inputMint=${WSOL}&outputMint=${SUSDC}&amount=100000000&taker=${STAKER}&slippageBps=50`;
+
+const solIx = (overrides: Record<string, unknown> = {}) => ({
+  programId: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  accounts: [{ pubkey: STAKER, isSigner: true, isWritable: true }],
+  data: "CQ==",
+  ...overrides,
+});
+
+const jupBuild = (overrides: Record<string, unknown> = {}) => ({
+  inputMint: WSOL,
+  outputMint: SUSDC,
+  inAmount: "100000000",
+  outAmount: "8944396",
+  otherAmountThreshold: "8899675",
+  swapMode: "ExactIn",
+  slippageBps: 50,
+  priceImpactPct: "0",
+  computeBudgetInstructions: [solIx({ programId: "ComputeBudget111111111111111111111111111111" })],
+  setupInstructions: [solIx()],
+  swapInstruction: solIx({ programId: "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" }),
+  cleanupInstruction: solIx({ data: "CQ==" }),
+  otherInstructions: [],
+  tipInstruction: null,
+  addressesByLookupTableAddress: { [STABLE]: [WSOL, SUSDC] },
+  transactionVersion: 0,
+  ...overrides,
+});
+
+describe("GET /v1/quotes/swap/solana", () => {
+  it("rejects a non-mainnet network and a malformed mint", async () => {
+    const app = gateway({ fetch: fakeFetch({}).fetch });
+    const badQueries = [
+      `network=solana:devnet&inputMint=${WSOL}&outputMint=${SUSDC}&amount=1&taker=${STAKER}&slippageBps=50`,
+      `network=${SOL_NET}&inputMint=bad&outputMint=${SUSDC}&amount=1&taker=${STAKER}&slippageBps=50`,
+      `network=${SOL_NET}&inputMint=${WSOL}&outputMint=${SUSDC}&amount=0&taker=${STAKER}&slippageBps=50`,
+    ];
+    const results = await Promise.all(
+      badQueries.map(async (q) =>
+        app.request(`${swapQuoteSolana.path}?${q}`, { headers: headers() }),
+      ),
+    );
+    for (const res of results) {
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("calls upstream keyless, drops compute budget, and maps the wire shape", async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => Response.json(jupBuild()),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(200);
+    const body = await expectContract(res, swapQuoteSolana.response);
+    expect(body).toMatchObject({
+      liquidity: true,
+      provider: "jupiter",
+      inputMint: WSOL,
+      outputMint: SUSDC,
+      inAmount: "100000000",
+      outAmount: "8944396",
+      otherAmountThreshold: "8899675",
+      slippageBps: 50,
+      swap: { programId: "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" },
+      lookupTables: [STABLE],
+    });
+    const [call] = upstream.callsTo(`${JAPI}/swap/v2/build`);
+    expect(call?.url).toContain(`inputMint=${WSOL}`);
+    expect(call?.url).toContain(`taker=${STAKER}`);
+    expect(call?.headers).toBeUndefined();
+  });
+
+  it("sends x-api-key when a key is configured", async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => Response.json(jupBuild()),
+    });
+    const app = gateway({ fetch: upstream.fetch, jupiter: { apiKey: "secret-key" } });
+    await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    const [call] = upstream.callsTo(`${JAPI}/swap/v2/build`);
+    expect(call?.headers).toMatchObject({ "x-api-key": "secret-key" });
+  });
+
+  it('maps a 400 "No routes found" to { liquidity: false }', async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => Response.json({ error: "No routes found" }, { status: 400 }),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(200);
+    await expect(expectContract(res, swapQuoteSolana.response)).resolves.toStrictEqual({
+      liquidity: false,
+    });
+  });
+
+  it("maps other 4xx to 400 and upstream failures to 503", async () => {
+    const cases = [
+      [400, 400],
+      [422, 400],
+      [429, 503],
+      [502, 503],
+    ] as const;
+    const statuses = await Promise.all(
+      cases.map(async ([status]) => {
+        const upstream = fakeFetch({
+          [`${JAPI}/swap/v2/build`]: () => Response.json({ error: "bad request" }, { status }),
+        });
+        const app = gateway({ fetch: upstream.fetch });
+        const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, {
+          headers: headers(),
+        });
+        return res.status;
+      }),
+    );
+    expect(statuses).toStrictEqual(cases.map(([, expected]) => expected));
+  });
+
+  const unbuildable: Array<Record<string, unknown>> = [
+    { otherInstructions: [solIx()] },
+    { tipInstruction: solIx() },
+    { transactionVersion: 1 },
+    { transactionVersion: "legacy" },
+  ];
+
+  it.each(unbuildable)("refuses a build with %j", async (patch) => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => Response.json(jupBuild(patch)),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
+  });
+
+  it("maps a non-JSON upstream body to 503", async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => new Response("upstream overload"),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
+  });
+
+  it("maps a valid JSON body that fails the schema to 503", async () => {
+    const upstream = fakeFetch({
+      [`${JAPI}/swap/v2/build`]: () => Response.json({ routes: [] }),
+    });
+    const app = gateway({ fetch: upstream.fetch });
+    const res = await app.request(`${swapQuoteSolana.path}?${SOL_QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
   });
 });

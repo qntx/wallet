@@ -51,7 +51,7 @@ import { stakePositions, stakeValidators } from "./staking/index.ts";
 import type { StakePosition, StakeValidator } from "./staking/index.ts";
 import type { EngineStore, PublicStore } from "./store/port.ts";
 import type { SwapQuote } from "./swaps/index.ts";
-import { fetchSwapQuote } from "./swaps/quote.ts";
+import { fetchJupiterQuote, fetchSwapQuote } from "./swaps/quote.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
 import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
@@ -701,7 +701,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       transactions.delegationState(account, network),
     swaps: {
       quote: async (params) =>
-        fetchSwapQuote(
+        (params.network.startsWith("solana:") ? fetchJupiterQuote : fetchSwapQuote)(
           {
             fetch: options.fetch,
             gateway: options.gateway,

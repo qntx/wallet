@@ -29,7 +29,10 @@ export const QUOTE_MAX_AGE_MS = 60_000;
  * The terms a gateway swap quote commits to — `sell`/`buy` use the engine's own asset ids
  * (`native`, `erc20:<addr>`) rather than the 0x sentinel.
  */
-export type SwapQuote = {
+export type SwapQuote = ZeroExSwapQuote | JupiterSwapQuote;
+
+export type ZeroExSwapQuote = {
+  readonly provider: "0x";
   readonly network: string;
   readonly taker: string;
   readonly sell: string;
@@ -49,6 +52,38 @@ export type SwapQuote = {
     readonly zeroEx: { readonly token: string; readonly amount: bigint } | undefined;
   };
   readonly blockNumber: bigint;
+  readonly fetchedAt: number;
+};
+
+/** One instruction of a Jupiter `/build` set — wire accounts, raw base64-decoded data. */
+export type JupiterInstruction = {
+  readonly programId: string;
+  readonly accounts: ReadonlyArray<{
+    readonly address: string;
+    readonly signer: boolean;
+    readonly writable: boolean;
+  }>;
+  readonly data: Uint8Array;
+};
+
+/**
+ * A Jupiter build the engine verifies on-chain before signing — mints use the engine's asset ids
+ * (`lamports` for native SOL), amounts are base-unit bigints.
+ */
+export type JupiterSwapQuote = {
+  readonly provider: "jupiter";
+  readonly network: string;
+  readonly taker: string;
+  readonly sell: string;
+  readonly buy: string;
+  readonly sellAmount: bigint;
+  readonly buyAmount: bigint;
+  readonly minBuyAmount: bigint;
+  readonly setup: ReadonlyArray<JupiterInstruction>;
+  readonly swap: JupiterInstruction;
+  readonly cleanup: JupiterInstruction | undefined;
+  /** Address lookup table addresses — contents are read from chain, never the gateway. */
+  readonly lookupTables: ReadonlyArray<string>;
   readonly fetchedAt: number;
 };
 
