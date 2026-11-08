@@ -10,7 +10,10 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
+import { associatedTokenAddress } from "./ata.ts";
 import { PROGRAM_IDS } from "./ids.ts";
+import { JUPITER_PROGRAM, WSOL_MINT, decodeJupiterIx } from "./jupiter.ts";
+import type { JupiterSwap } from "./jupiter.ts";
 import { parseCompiledMessage, resolveAccountIndex } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
 import { decodeStakeCreate, decodeStakeIx } from "./stake.ts";
@@ -34,6 +37,9 @@ type IxCall = {
     | "token-transfer-checked"
     | "token-approve"
     | "stake"
+    | "token-sync-native"
+    | "token-close-account"
+    | "jupiter"
     | "other";
   readonly to?: string | undefined;
   readonly amount?: bigint | undefined;
@@ -45,6 +51,8 @@ type IxCall = {
   readonly from?: string | undefined;
   /** A recognized staking instruction: a system create-account or a stake-program op. */
   readonly stake?: StakeIx | StakeCreate | undefined;
+  /** A recognised Jupiter swap instruction. */
+  readonly jupiter?: JupiterSwap | undefined;
 };
 
 /**
@@ -55,6 +63,7 @@ const classifyIx = (
   parsed: ParsedSolanaMessage,
   ix: { programAddressIndex: number; accountIndices: ReadonlyArray<number>; data: Uint8Array },
   lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
+  signer: string,
 ): IxCall => {
   const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
   const { data } = ix;
@@ -108,7 +117,23 @@ const classifyIx = (
         to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
       };
     }
+    if (data.length === 1 && data[0] === 17) {
+      /* SyncNative refreshes a wrapped-SOL balance — the wrap itself is the transfer. */
+      return { kind: "token-sync-native" };
+    }
+    if (data.length === 1 && data[0] === 9) {
+      /* CloseAccount [account, destination, owner] — rent to a foreign address is an outflow the
+         amount cannot be read from; a close back to the signer is plumbing. */
+      const destination = resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups);
+      return destination === signer ? { kind: "token-close-account" } : { kind: "other" };
+    }
     return { kind: "other" };
+  }
+  if (program === JUPITER_PROGRAM) {
+    const jupiter = decodeJupiterIx(parsed, ix, lookups);
+    return jupiter !== undefined && jupiter.authority === signer
+      ? { kind: "jupiter", jupiter }
+      : { kind: "other" };
   }
   if (program === PROGRAM_IDS.stake) {
     const stake = decodeStakeIx(parsed, ix, lookups);
@@ -125,6 +150,8 @@ const FULL_KINDS = new Set([
   "ata-create",
   "ata-create-idempotent",
   "stake",
+  "token-sync-native",
+  "token-close-account",
 ]);
 
 const classify = (
@@ -133,15 +160,12 @@ const classify = (
   network: string,
   table: SolanaTokenTable,
 ): Verifiability => {
-  if (parsed.lookups.length > 0) {
-    return "partial";
-  }
   let allFull = true;
   for (const call of calls) {
     if (call.kind === "other") {
       return "opaque";
     }
-    if (call.kind === "token-approve") {
+    if (call.kind === "token-approve" || call.kind === "jupiter") {
       allFull = false;
     }
     if (
@@ -153,10 +177,14 @@ const classify = (
     if (
       !FULL_KINDS.has(call.kind) &&
       call.kind !== "token-transfer-checked" &&
-      call.kind !== "token-approve"
+      call.kind !== "token-approve" &&
+      call.kind !== "jupiter"
     ) {
       return "opaque";
     }
+  }
+  if (parsed.lookups.length > 0) {
+    return "partial";
   }
   return allFull ? "full" : "partial";
 };
@@ -184,22 +212,71 @@ const decodeTransaction = (
     address: t.address,
     addresses: t.addresses,
   }));
-  const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups));
+  const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
   const verifiability = classify(parsed, calls, request.network, table);
   const outflows: AssetFlow[] = [];
   const approvals: ApprovalChange[] = [];
   const staking: StakeAction[] = [];
   const warnings: IntentWarning[] = [];
+  const minimumReceived: Array<{ to: string; amount: AssetFlow["amount"] }> = [];
+  const wsolAtas = new Set([
+    associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token),
+    associatedTokenAddress(signer, WSOL_MINT, PROGRAM_IDS.token2022),
+  ]);
   let otherTransfer = false;
+  let hasJupiter = false;
   for (const call of calls) {
     if (call.kind === "system-transfer" && call.to !== undefined && call.from === signer) {
       /* The source is the instruction's first account — a second signer funds its own transfer. */
+      if (wsolAtas.has(call.to)) {
+        /* Funding the signer's own wSOL ATA is wrapping, not an outflow — the swap shows the SOL. */
+        continue;
+      }
       otherTransfer = true;
       outflows.push({
         to: call.to,
         amount: { asset: SOLANA_NATIVE_ASSET, amount: (call.amount ?? 0n).toString(10) },
         verified: true,
       });
+    }
+    if (call.kind === "jupiter" && call.jupiter !== undefined) {
+      const swap = call.jupiter;
+      hasJupiter = true;
+      otherTransfer = true;
+      const sell = lookupSolanaToken(table, request.network, swap.sourceMint);
+      outflows.push({
+        to: JUPITER_PROGRAM,
+        amount:
+          swap.sourceMint === WSOL_MINT
+            ? { asset: SOLANA_NATIVE_ASSET, amount: swap.inAmount.toString(10) }
+            : {
+                asset: swap.sourceMint,
+                amount: swap.inAmount.toString(10),
+                ...(sell === undefined ? {} : { symbol: sell.symbol, decimals: sell.decimals }),
+              },
+        verified: swap.sourceMint === WSOL_MINT || sell !== undefined,
+      });
+      const minimum = (swap.quotedOut * BigInt(10_000 - swap.slippageBps) + 9999n) / 10_000n;
+      const buy = lookupSolanaToken(table, request.network, swap.destinationMint);
+      const destAta = associatedTokenAddress(
+        signer,
+        swap.destinationMint,
+        swap.destinationTokenProgram,
+      );
+      minimumReceived.push({
+        to: swap.destinationAccount === destAta ? signer : swap.destinationAccount,
+        amount:
+          swap.destinationMint === WSOL_MINT
+            ? { asset: SOLANA_NATIVE_ASSET, amount: minimum.toString(10) }
+            : {
+                asset: swap.destinationMint,
+                amount: minimum.toString(10),
+                ...(buy === undefined ? {} : { symbol: buy.symbol, decimals: buy.decimals }),
+              },
+      });
+      if (swap.platformFeeBps > 0) {
+        warnings.push({ kind: "platform-fee", message: `${swap.platformFeeBps} bps` });
+      }
     }
     if (call.kind === "token-transfer-checked") {
       otherTransfer = true;
@@ -312,13 +389,15 @@ const decodeTransaction = (
     }
   }
   const fee = feeLamports(parsed, calls);
-  const summary = otherTransfer
-    ? "transfer"
-    : staking.length > 0
-      ? "stake"
-      : outflows.length > 0
-        ? "transfer"
-        : "contract-call";
+  const summary = hasJupiter
+    ? "swap"
+    : otherTransfer
+      ? "transfer"
+      : staking.length > 0
+        ? "stake"
+        : outflows.length > 0
+          ? "transfer"
+          : "contract-call";
   return {
     family: "solana",
     network: request.network,
@@ -330,6 +409,7 @@ const decodeTransaction = (
         ? undefined
         : { max: { asset: SOLANA_NATIVE_ASSET, amount: fee.toString(10) } },
     ...(staking.length === 0 ? {} : { staking }),
+    ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
     warnings,
     verifiability,
   };

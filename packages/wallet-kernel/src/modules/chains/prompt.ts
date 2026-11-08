@@ -81,6 +81,7 @@ type Catalog = {
   readonly delegateTo: (name: string, version: string) => string;
   readonly revokeDelegation: string;
   readonly stakeLine: (action: StakeAction) => string;
+  readonly platformFee: (message: string) => string;
   readonly stakeAuthority: (account: string, role: string, authority: string) => string;
   readonly stakeRole: Readonly<Record<"staker" | "withdrawer", string>>;
 };
@@ -116,6 +117,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
     maxFee: (fee) => `最高手续费 ${fee}`,
     sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
+    platformFee: (message) => `Jupiter 收取平台费 ${message}`,
     delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
     revokeDelegation: "撤销此账户的合约委托",
     stakeRole: { staker: "质押", withdrawer: "提取" },
@@ -167,6 +169,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     maxFee: (fee) => `Max fee ${fee}`,
     sighashSingle:
       "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+    platformFee: (message) => `Jupiter platform fee: ${message}`,
     delegateTo: (name, version) =>
       `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
     revokeDelegation: "Revoke this account's contract delegation",
@@ -281,6 +284,9 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
     ),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
     ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
+    ...(intent.warnings ?? [])
+      .filter((w) => w.kind === "platform-fee")
+      .map((w) => catalog.platformFee(w.message)),
     ...tail,
   ];
   if (intent.verifiability === "partial") {
