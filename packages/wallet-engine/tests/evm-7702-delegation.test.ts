@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 
+import { hexToBytes, serializeTransaction } from "viem";
+import type { Hex } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
@@ -38,12 +40,71 @@ const ACCOUNT = {
 };
 const VERIFY = { kind: "password" as const, password: "pw" };
 const logger = { warn: () => undefined };
-const TARGET = "0x00000000000000000000000000000000C0FFEE00";
+const TARGET = "0x00000000000000000000000000000000c0ffee00";
 
 type Rpc = Record<string, unknown>;
 type CodeOf = (address: string) => string;
 
 const designator = (address: string) => `0xef0100${address.slice(2)}`;
+
+const r: Hex = `0x${"11".repeat(32)}`;
+const s: Hex = `0x${"22".repeat(32)}`;
+const SIG = { r, s, yParity: 0 as const };
+
+/**
+ * A persisted raw the store can parse on replacement — the real serialized envelope for the
+ * request's tx, with `rawAuth` controlling the authorization tuples `rebuild` must inspect.
+ */
+const evmRaw = (tx: unknown, mode: RawAuth): Uint8Array => {
+  const t = tx as {
+    type: string;
+    chainId: number;
+    nonce: number;
+    to: string;
+    value: bigint | string | number;
+    data: string;
+    gas: bigint | string | number;
+    maxFeePerGas: bigint | string | number;
+    maxPriorityFeePerGas: bigint | string | number;
+    authorization?: { address: string };
+  };
+  const one = (address: string, nonce: number) => ({
+    chainId: 1,
+    address: address as Hex,
+    nonce,
+    ...SIG,
+  });
+  const auths: Record<RawAuth, Array<ReturnType<typeof one>>> = {
+    default: t.authorization === undefined ? [] : [one(t.authorization.address, t.nonce + 1)],
+    double:
+      t.authorization === undefined
+        ? []
+        : [one(t.authorization.address, t.nonce + 1), one(t.authorization.address, t.nonce + 1)],
+    wrongNonce: t.authorization === undefined ? [] : [one(t.authorization.address, t.nonce + 7)],
+    foreign: t.authorization === undefined ? [] : [one(TARGET, t.nonce + 1)],
+  };
+  const common = {
+    chainId: t.chainId,
+    nonce: t.nonce,
+    to: t.to as Hex,
+    value: BigInt(t.value ?? 0),
+    data: (t.data ?? "0x") as Hex,
+    gas: BigInt(t.gas),
+    maxFeePerGas: BigInt(t.maxFeePerGas),
+    maxPriorityFeePerGas: BigInt(t.maxPriorityFeePerGas),
+  };
+  const raw =
+    auths[mode].length === 0
+      ? serializeTransaction({ ...common, type: "eip1559" }, SIG)
+      : serializeTransaction({ ...common, type: "eip7702", authorizationList: auths[mode] }, SIG);
+  return hexToBytes(raw);
+};
+
+const badDelegator = (a: string) => (a.toLowerCase() === DELEGATOR.toLowerCase() ? "0x1234" : "0x");
+const contract = (a: string) =>
+  a.toLowerCase() === DELEGATOR.toLowerCase() ? CODE : "0x6080604052348015600e575f";
+const shortDesignator = (a: string) =>
+  a.toLowerCase() === DELEGATOR.toLowerCase() ? CODE : "0xef0100aa";
 
 const none = (a: string) => (a.toLowerCase() === DELEGATOR.toLowerCase() ? CODE : "0x");
 const ours = (a: string) =>
@@ -53,12 +114,26 @@ const other = (a: string) =>
 
 /** The EIP-7702 tx the unsigned closure hands to `sign`; the request's `tx` carries it. */
 const signTx = (request: SignRequest) =>
-  (request as { tx: { type?: string; to: string; data: string; authorization?: unknown } }).tx;
+  (
+    request as {
+      tx: {
+        type?: string;
+        nonce: number;
+        to: string;
+        data: string;
+        gas: string;
+        authorization?: unknown;
+      };
+    }
+  ).tx;
+
+type RawAuth = "default" | "double" | "wrongNonce" | "foreign";
 
 function world(options: {
   code: CodeOf;
   independent?: CodeOf | undefined;
   estimate?: { params?: unknown };
+  rawAuth?: RawAuth;
 }) {
   const base: Rpc = {
     eth_chainId: 1,
@@ -113,10 +188,11 @@ function world(options: {
     account: async () => Promise.resolve({ template: "evm.bip44", network: N1, address: ADDR }),
     sign: async ({ request }: { request: SignRequest }) => {
       signedRequests.push(request);
-      /* fakeSignedEvm cannot serialize eip7702; the raw blob only feeds broadcast. */
+      /* fakeSignedEvm cannot serialize eip7702; persist a real envelope for rebuild. */
+      const { tx } = request as { tx: unknown };
       return Promise.resolve({
         kind: "evm.transaction",
-        signedTransaction: new Uint8Array([2, 3, 4]),
+        signedTransaction: evmRaw(tx, options.rawAuth ?? "default"),
       });
     },
   } as unknown as ReturnType<typeof chains>;
@@ -386,4 +462,160 @@ describe("eip7702 request pipeline", () => {
       address: ADDR,
     });
   });
+
+  it("refuses a delegator hash mismatch on the primary and on the independent endpoint", async () => {
+    const upgrade = {
+      method: "evm-delegation" as const,
+      account: ACCOUNT,
+      network: N1,
+      action: "upgrade" as const,
+      fee: "normal" as const,
+    };
+    const primary = world({ code: badDelegator, independent: none });
+    const independent = world({ code: none, independent: badDelegator });
+    await Promise.all([primary.start(), independent.start()]);
+    await Promise.all([
+      expect(primary.requests.prepare(upgrade)).rejects.toThrow(
+        "delegator contract is not what the network expects",
+      ),
+      expect(independent.requests.prepare(upgrade)).rejects.toThrow(
+        "delegator contract is not what the network expects",
+      ),
+    ]);
+  });
+
+  it("an unavailable independent endpoint still builds with the reads-unverified check", async () => {
+    const w = world({ code: none });
+    await w.start();
+    const request = await w.requests.prepare({
+      method: "evm-delegation",
+      account: ACCOUNT,
+      network: N1,
+      action: "upgrade",
+      fee: "normal",
+    });
+    expect(request.checks).toContain("reads-unverified");
+  });
+
+  it("a network without a delegator entry refuses delegation and batch", async () => {
+    const w = world({ code: none, independent: none });
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-delegation",
+        account: ACCOUNT,
+        network: "eip155:43114",
+        action: "upgrade",
+        fee: "normal",
+      }),
+    ).rejects.toThrow("network does not support EIP-7702");
+    await expect(
+      w.requests.prepare({
+        method: "evm-batch",
+        account: ACCOUNT,
+        network: "eip155:43114",
+        calls: [
+          { to: TARGET, value: 1n, data: "0x" },
+          { to: ADDR, value: 2n, data: "0x" },
+        ],
+        fee: "normal",
+      }),
+    ).rejects.toThrow("network does not support EIP-7702");
+  });
+
+  it("contract code and a wrong-length designator are refused", async () => {
+    const revoke = {
+      method: "evm-delegation" as const,
+      account: ACCOUNT,
+      network: N1,
+      action: "revoke" as const,
+      fee: "normal" as const,
+    };
+    const contractWorld = world({ code: contract, independent: contract });
+    const shortWorld = world({ code: shortDesignator, independent: shortDesignator });
+    await Promise.all([contractWorld.start(), shortWorld.start()]);
+    await Promise.all([
+      expect(contractWorld.requests.prepare(revoke)).rejects.toThrow("account is not an EOA"),
+      expect(shortWorld.requests.prepare(revoke)).rejects.toThrow("account is not an EOA"),
+    ]);
+  });
+
+  it("revoke sends no state override; gas is estimate + 25,000 then buffered", async () => {
+    const estimate: { params?: unknown } = {};
+    const w = world({ code: ours, independent: ours, estimate });
+    await w.start();
+    const request = await w.requests.prepare({
+      method: "evm-delegation",
+      account: ACCOUNT,
+      network: N1,
+      action: "revoke",
+      fee: "normal",
+    });
+    await w.requests.approve(request.id, "evm-delegation", VERIFY);
+    const params = estimate.params as unknown[];
+    expect(params[2]).toBeUndefined();
+    const tx = signTx(w.signedRequests[0]!);
+    expect(BigInt(tx.gas)).toBe(BigInt(Math.floor((0x5208 + 25_000) * 1.2)));
+  });
+
+  it("speed-up keeps the authorization at nonce+1; cancel drops it to a plain self-transfer", async () => {
+    const w = world({ code: none, independent: none });
+    await w.start();
+    const request = await w.requests.prepare({
+      method: "evm-batch",
+      account: ACCOUNT,
+      network: N1,
+      calls: [
+        { to: TARGET, value: 1n, data: "0x" },
+        { to: ADDR, value: 2n, data: "0x" },
+      ],
+      fee: "normal",
+    });
+    const tracked = await w.requests.approve(request.id, "evm-batch", VERIFY);
+    const sped = await w.requests.prepare({ method: "speed-up", txId: tracked.id });
+    await w.requests.approve(sped.id, "speed-up", VERIFY);
+    const spedTx = signTx(w.signedRequests[1]!);
+    expect(spedTx.type).toBe("eip7702");
+    expect(spedTx.authorization).toMatchObject({ address: DELEGATOR });
+    /* A speed-up replaces the original; the cancel needs its own tracked batch. */
+    const second = await w.requests.prepare({
+      method: "evm-batch",
+      account: ACCOUNT,
+      network: N1,
+      calls: [
+        { to: TARGET, value: 1n, data: "0x" },
+        { to: ADDR, value: 2n, data: "0x" },
+      ],
+      fee: "normal",
+    });
+    const tracked2 = await w.requests.approve(second.id, "evm-batch", VERIFY);
+    const cancel = await w.requests.prepare({ method: "cancel", txId: tracked2.id });
+    await w.requests.approve(cancel.id, "cancel", VERIFY);
+    const cancelTx = signTx(w.signedRequests[3]!);
+    expect(cancelTx.authorization).toBeUndefined();
+    expect(cancelTx.to.toLowerCase()).toBe(ADDR.toLowerCase());
+    expect(cancelTx.data).toBe("0x");
+  });
+
+  it.each(["double", "wrongNonce", "foreign"] as const)(
+    "a persisted raw with a %s authorization is rejected by replacement",
+    async (rawAuth) => {
+      const w = world({ code: none, independent: none, rawAuth });
+      await w.start();
+      const request = await w.requests.prepare({
+        method: "evm-batch",
+        account: ACCOUNT,
+        network: N1,
+        calls: [
+          { to: TARGET, value: 1n, data: "0x" },
+          { to: ADDR, value: 2n, data: "0x" },
+        ],
+        fee: "normal",
+      });
+      const tracked = await w.requests.approve(request.id, "evm-batch", VERIFY);
+      await expect(w.requests.prepare({ method: "speed-up", txId: tracked.id })).rejects.toThrow(
+        "build record authorization is unexpected",
+      );
+    },
+  );
 });
