@@ -651,7 +651,6 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
             await Promise.resolve();
           },
           get: () => undefined,
-          find: () => undefined,
         },
         txById: () => undefined,
         showCallsStatus: () => undefined,
@@ -812,7 +811,6 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
         batches: {
           record: async (record) => transactions.recordBatch(record),
           get: (origin, id) => transactions.batchById(origin, id),
-          find: (id) => transactions.batchFor(id),
         },
         txById: (id) => transactions.txById(id),
         showCallsStatus: () => undefined,
@@ -855,7 +853,7 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
       };
       const first = await sendCalls();
       const batchTx = Object.values(transactions.getState().txs).find((tx) =>
-        transactions.batchFor(first.id)?.txIds.includes(tx.id),
+        transactions.batchById(site, first.id)?.txIds.includes(tx.id),
       );
       expect(batchTx?.hash).toBeDefined();
       const parsed = await rpcCall(url, "eth_getTransactionByHash", [batchTx?.hash]);
@@ -883,7 +881,7 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
       /* The account is now delegated: the same batch is a plain eip1559 self-call. */
       const second = await sendCalls();
       const batchTx2 = Object.values(transactions.getState().txs).find((tx) =>
-        transactions.batchFor(second.id)?.txIds.includes(tx.id),
+        transactions.batchById(site, second.id)?.txIds.includes(tx.id),
       );
       const parsed2 = await rpcCall(url, "eth_getTransactionByHash", [batchTx2?.hash]);
       expect((parsed2 as { type: string }).type).toBe("0x2");

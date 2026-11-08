@@ -193,7 +193,6 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     batches: {
       record: async (record) => transactions.recordBatch(record),
       get: (origin, id) => transactions.batchById(origin, id),
-      find: (id) => transactions.batchFor(id),
     },
     txById: (id) => txMap.get(id) ?? transactions.txById(id),
     showCallsStatus: (req) => shown.push(req),
@@ -417,6 +416,12 @@ describe("wallet_sendCalls", () => {
     const record = (await sequential) as { id: string };
     expect(record.id).toBeTypeOf("string");
     expect(w.signedRequests).toHaveLength(2);
+    /* The sequential fallback is not atomic — two independent evm-sign transactions. */
+    const status = (await w.handler.handle(SITE, {
+      method: "wallet_getCallsStatus",
+      params: [record.id],
+    })) as { atomic: boolean };
+    expect(status.atomic).toBe(false);
   });
 
   it("a mid-way sequential rejection still returns the id with the submitted prefix", async () => {
@@ -466,6 +471,9 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
     [["submitted"], undefined, 100],
     [["confirmed"], "0xab", 200],
     [["dropped"], undefined, 400],
+    [["dropped"], "0xab", 400],
+    [["replaced"], "0xab", 400],
+    [["failed"], undefined, 400],
     [["failed"], "0xab", 500],
     [["confirmed", "failed"], "0xab", 600],
   ] as const)("state %s gives status %d", async (states, hash, status) => {
@@ -515,7 +523,7 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
     expect(w.shown).toStrictEqual([{ origin: SITE, txIds: ["a"] }]);
   });
 
-  it("the record survives a store reload and prunes when its transactions leave tracking", async () => {
+  it("the record survives a store reload", async () => {
     const w = world();
     await w.start();
     await w.connect();
@@ -534,6 +542,37 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
       chains: {} as ReturnType<typeof chains>,
     });
     await transactions2.init();
-    expect(transactions2.batchById(SITE, "kept")).toBeUndefined();
+    expect(transactions2.batchById(SITE, "kept")?.id).toBe("kept");
+  });
+
+  it("two origins using the same id each keep their own record", async () => {
+    const w = world();
+    await w.start();
+    await w.connect();
+    await w.connect(OTHER);
+    await recordBatch(w, ["a"], true, "shared");
+    await w.transactions.recordBatch({
+      origin: OTHER,
+      id: "shared",
+      network: N1,
+      atomic: false,
+      txIds: ["b"],
+      expected: 1,
+      createdAt: 0,
+    });
+    expect(w.transactions.batchById(SITE, "shared")?.txIds).toStrictEqual(["a"]);
+    expect(w.transactions.batchById(OTHER, "shared")?.txIds).toStrictEqual(["b"]);
+    w.txMap.set("a", txOf("confirmed", "0x1"));
+    const reply2 = (await w.handler.handle(SITE, {
+      method: "wallet_getCallsStatus",
+      params: ["shared"],
+    })) as { status: number };
+    expect(reply2.status).toBe(200);
+    const other = (await w.handler.handle(OTHER, {
+      method: "wallet_getCallsStatus",
+      params: ["shared"],
+    })) as { status: number; atomic: boolean };
+    expect(other.atomic).toBe(false);
+    expect(other.status).toBe(600);
   });
 });

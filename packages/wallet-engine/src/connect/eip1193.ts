@@ -64,7 +64,6 @@ export type Eip1193HandlerOptions = {
   readonly batches: {
     readonly record: (record: BatchRecord) => Promise<void>;
     readonly get: (origin: string, id: string) => BatchRecord | undefined;
-    readonly find: (id: string) => BatchRecord | undefined;
   };
   /** A tracked transaction by id — `wallet_getCallsStatus` aggregates them. */
   readonly txById: (id: string) => TrackedTransaction | undefined;
@@ -383,19 +382,32 @@ export class Eip1193Handler {
       kind: "evm.transaction",
       network: session.currentNetwork,
       account,
-      tx: {
-        type: "eip1559",
-        chainId,
-        nonce: 0,
+      tx: this.txSkeleton(chainId, {
         gas: quantityOf(arg["gas"], "gas", "0x0"),
         value: quantityOf(arg["value"], "value", "0x0"),
         data,
         ...(to === undefined ? {} : { to }),
-        accessList: [],
-        maxFeePerGas: "0x0",
-        maxPriorityFeePerGas: "0x0",
-      },
+      }),
     }));
+  }
+
+  /** The eip1559 placeholder the pipeline re-fills; only to, value, data and gas survive. */
+  private txSkeleton(
+    chainId: number,
+    call: { gas: string; value: string; data: string; to?: string },
+  ) {
+    return {
+      type: "eip1559" as const,
+      chainId,
+      nonce: 0,
+      gas: call.gas,
+      value: call.value,
+      data: call.data,
+      ...(call.to === undefined ? {} : { to: call.to }),
+      accessList: [],
+      maxFeePerGas: "0x0",
+      maxPriorityFeePerGas: "0x0",
+    };
   }
 
   private signingSession(origin: string, method: string): ConnectionSession {
@@ -467,10 +479,15 @@ export class Eip1193Handler {
       asked === undefined
         ? Object.keys(session.scopes).filter((s) => s.startsWith("eip155:"))
         : (() => {
-            if (!Array.isArray(asked) || !asked.every((c) => typeof c === "string")) {
-              throw invalidParams("chainIds must be an array of hex chain ids");
+            if (
+              !Array.isArray(asked) ||
+              !asked.every((c) => typeof c === "string" && /^0x[0-9a-fA-F]+$/.test(c))
+            ) {
+              throw invalidParams("chainIds must be an array of 0x quantities");
             }
-            return asked.map((c) => `eip155:${Number.parseInt(c, 16)}`);
+            return asked
+              .filter((c): c is string => typeof c === "string")
+              .map((c) => `eip155:${Number.parseInt(c, 16)}`);
           })();
     const group = this.options.connections.activeGroup();
     if (group === undefined) {
@@ -518,7 +535,10 @@ export class Eip1193Handler {
       throw internalError("session network is not an EVM network");
     }
     const askedChain = arg["chainId"];
-    if (typeof askedChain !== "string" || Number(askedChain) !== chainId) {
+    if (typeof askedChain !== "string" || !/^0x[0-9a-fA-F]+$/.test(askedChain)) {
+      throw invalidParams("chainId must be a 0x quantity");
+    }
+    if (Number(askedChain) !== chainId) {
       throw new ProviderError(5710, "chainId does not match the session network");
     }
     this.authorizedAccount(session, arg["from"]);
@@ -583,7 +603,8 @@ export class Eip1193Handler {
     const { atomicRequired } = arg;
     const network = session.currentNetwork;
     const txIds: string[] = [];
-    const atomic = calls.length > 1;
+    /* Atomic for the one-call and the batch paths; a sequential fallback is not atomic. */
+    let atomic = true;
     try {
       const [first] = calls;
       if (calls.length === 1 && first !== undefined) {
@@ -591,15 +612,13 @@ export class Eip1193Handler {
         txIds.push(tracked.id);
       } else {
         const status = await this.options.delegationState(account, network);
-        if (status.supported && status.state === "ours") {
-          const tracked = await this.submitBatch(origin, session, account, calls);
-          txIds.push(tracked.id);
-        } else if (status.supported && status.state === "none") {
+        if (status.supported && (status.state === "ours" || status.state === "none")) {
           const tracked = await this.submitBatch(origin, session, account, calls);
           txIds.push(tracked.id);
         } else if (atomicRequired) {
           throw new ProviderError(5760, "atomicity is not supported on this account");
         } else {
+          atomic = false;
           for (const [index, tx] of calls.entries()) {
             try {
               // oxlint-disable-next-line eslint/no-await-in-loop -- each call is approved separately, in order
@@ -646,18 +665,12 @@ export class Eip1193Handler {
         kind: "evm.transaction",
         network: session.currentNetwork,
         account,
-        tx: {
-          type: "eip1559",
-          chainId: chainId ?? 0,
-          nonce: 0,
+        tx: this.txSkeleton(chainId ?? 0, {
           gas: "0x0",
           value: call.value,
           data: call.data,
           to: call.to,
-          accessList: [],
-          maxFeePerGas: "0x0",
-          maxPriorityFeePerGas: "0x0",
-        },
+        }),
       },
     });
     const result = await this.options.requests.outcome(pending.id);
@@ -713,25 +726,12 @@ export class Eip1193Handler {
     const txs = record.txIds
       .map((txId) => this.options.txById(txId))
       .filter((tx): tx is TrackedTransaction => tx !== undefined);
-    const pending = txs.some(
-      (tx) =>
-        tx.state === "pending" ||
-        tx.state === "submitted" ||
-        tx.state === "signed" ||
-        tx.state === "draft",
-    );
+    const pending = txs.some((tx) => LIVE_TX_STATES.has(tx.state));
     const allConfirmed =
       txs.length === record.expected && txs.every((tx) => tx.state === "confirmed");
-    const noneReached =
-      txs.length > 0 &&
-      txs.every(
-        (tx) =>
-          (tx.state === "rejected" || tx.state === "dropped" || tx.state === "failed") &&
-          tx.hash === undefined,
-      );
-    const allReverted =
-      txs.length > 0 && txs.every((tx) => tx.hash !== undefined && tx.state === "failed");
-    const status = pending ? 100 : allConfirmed ? 200 : noneReached ? 400 : allReverted ? 500 : 600;
+    const noneLanded = txs.length > 0 && txs.every(notOnChain);
+    const allReverted = txs.length > 0 && txs.every(reverted);
+    const status = pending ? 100 : allConfirmed ? 200 : noneLanded ? 400 : allReverted ? 500 : 600;
     const mined = txs.filter((tx) => tx.hash !== undefined);
     const fetched = await Promise.all(
       mined.map(async (tx) => {
@@ -779,6 +779,18 @@ export class Eip1193Handler {
     }
   }
 }
+
+const LIVE_TX_STATES: ReadonlySet<string> = new Set(["draft", "signed", "submitted", "pending"]);
+
+/* Broadcast then dropped/replaced/failed-before-landing never landed; failed with a hash did revert. */
+const notOnChain = (tx: TrackedTransaction): boolean =>
+  tx.state === "rejected" ||
+  tx.state === "dropped" ||
+  tx.state === "replaced" ||
+  (tx.state === "failed" && tx.hash === undefined);
+
+const reverted = (tx: TrackedTransaction): boolean =>
+  tx.state === "failed" && tx.hash !== undefined;
 
 function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {

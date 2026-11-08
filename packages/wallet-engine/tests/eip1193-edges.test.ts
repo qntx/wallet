@@ -111,7 +111,6 @@ function rig(
         await Promise.resolve();
       },
       get: () => undefined,
-      find: () => undefined,
     },
     txById: () => undefined,
     showCallsStatus: () => undefined,

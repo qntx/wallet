@@ -135,7 +135,7 @@ export const EVM_BATCH_LIMIT = 10;
 
 /**
  * One `wallet_sendCalls` bundle: the tracked transactions it produced so `wallet_getCallsStatus`
- * can aggregate them. Pruned once none of its transactions are tracked any more.
+ * can aggregate them, retained alongside those transactions.
  */
 export type BatchRecord = {
   readonly origin: string;

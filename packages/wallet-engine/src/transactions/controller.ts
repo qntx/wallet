@@ -53,6 +53,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const encodeBatch = (record: BatchRecord): Uint8Array =>
   new TextEncoder().encode(JSON.stringify(record));
 
+/** A bundle id is unique per origin — the store key must carry both. */
+const batchKey = (origin: string, id: string): string => `${origin}${id}`;
+
 const isBatchRecord = (value: unknown): value is BatchRecord => {
   if (!isRecord(value)) {
     return false;
@@ -64,8 +67,11 @@ const isBatchRecord = (value: unknown): value is BatchRecord => {
     typeof network === "string" &&
     typeof atomic === "boolean" &&
     Array.isArray(txIds) &&
-    (txIds as unknown[]).every((t) => typeof t === "string") &&
+    txIds.every((t) => typeof t === "string") &&
     typeof expected === "number" &&
+    Number.isSafeInteger(expected) &&
+    expected > 0 &&
+    txIds.length <= expected &&
     typeof createdAt === "number"
   );
 };
@@ -238,10 +244,9 @@ export class TransactionController extends Controller<TransactionControllerState
               }
             })();
       if (record !== undefined) {
-        this.batches.set(record.id, record);
+        this.batches.set(batchKey(record.origin, record.id), record);
       }
     }
-    await this.pruneBatches();
   }
 
   async destroy(): Promise<void> {
@@ -249,50 +254,26 @@ export class TransactionController extends Controller<TransactionControllerState
     await Promise.resolve();
   }
 
-  /** One `wallet_sendCalls` bundle the user approved; kept until its transactions leave tracking. */
+  /** One `wallet_sendCalls` bundle the user approved; retained alongside the transactions it lists. */
   async recordBatch(record: BatchRecord): Promise<void> {
-    this.batches.set(record.id, record);
+    const key = batchKey(record.origin, record.id);
+    this.batches.set(key, record);
     const store = this.engineStore;
     if (store === undefined) {
       this.options.logger.warn(`call batch ${record.id} not persisted: vault locked`);
       return;
     }
-    await store.collection("call-batches").put(record.id, encodeBatch(record));
+    await store.collection("call-batches").put(key, encodeBatch(record));
   }
 
   /** The bundle `origin` asked for, or `undefined` when it is not theirs (or is gone). */
   batchById(origin: string, id: string): BatchRecord | undefined {
-    const record = this.batches.get(id);
-    return record !== undefined && record.origin === origin ? record : undefined;
+    return this.batches.get(batchKey(origin, id));
   }
 
   /** A tracked transaction by id — for `wallet_getCallsStatus`. */
   txById(id: string): TrackedTransaction | undefined {
     return this.getState().txs[id];
-  }
-
-  /** Any batch record the id already claims; `wallet_sendCalls` rejects a reused id. */
-  batchFor(id: string): BatchRecord | undefined {
-    return this.batches.get(id);
-  }
-
-  /** Drops records whose transactions have all left tracking; called after any tx prune. */
-  async pruneBatches(): Promise<void> {
-    const store = this.engineStore;
-    const { txs } = this.getState();
-    const stale = [...this.batches.values()].filter((record) =>
-      record.txIds.every((id) => txs[id] === undefined),
-    );
-    for (const record of stale) {
-      this.batches.delete(record.id);
-    }
-    if (store !== undefined) {
-      await Promise.all(
-        stale.map(async (record) => {
-          await store.collection("call-batches").delete(record.id);
-        }),
-      );
-    }
   }
 
   lock(): void {

@@ -458,7 +458,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     batches: {
       record: async (record) => transactions.recordBatch(record),
       get: (origin, id) => transactions.batchById(origin, id),
-      find: (id) => transactions.batchFor(id),
     },
     txById: (id) => transactions.txById(id),
     showCallsStatus: options.showCallsStatus,
