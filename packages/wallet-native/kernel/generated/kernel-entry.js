@@ -29487,13 +29487,14 @@ zoo`.split("\n"));
 	var resolveAccountIndex = (parsed, index, lookups) => {
 		if (index < parsed.staticAccounts.length) return parsed.staticAccounts[index];
 		if (lookups === void 0) return;
-		let offset = index - parsed.staticAccounts.length;
-		for (const parsedTable of parsed.lookups) {
-			var _lookups$find, _slots$offset;
-			const slots = [...parsedTable.writableIndexes, ...parsedTable.readonlyIndexes];
-			if (offset < slots.length) return (_lookups$find = lookups.find((t) => t.address === parsedTable.address)) === null || _lookups$find === void 0 ? void 0 : _lookups$find.addresses[(_slots$offset = slots[offset]) !== null && _slots$offset !== void 0 ? _slots$offset : 0];
-			offset -= slots.length;
-		}
+		const declared = new Map(lookups.map((t) => [t.address, t.addresses]));
+		return [...parsed.lookups.flatMap((t) => t.writableIndexes.map((i) => {
+			var _declared$get;
+			return (_declared$get = declared.get(t.address)) === null || _declared$get === void 0 ? void 0 : _declared$get[i];
+		})), ...parsed.lookups.flatMap((t) => t.readonlyIndexes.map((i) => {
+			var _declared$get2;
+			return (_declared$get2 = declared.get(t.address)) === null || _declared$get2 === void 0 ? void 0 : _declared$get2[i];
+		}))][index - parsed.staticAccounts.length];
 	};
 	/** All declared lookup-table entries must be valid base58 32-byte addresses. */
 	var validateLookupTables = (tables) => {
@@ -29502,6 +29503,122 @@ zoo`.split("\n"));
 	};
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
 	var SOLANA_NATIVE_ASSET = "lamports";
+	var PDA_SEED = new TextEncoder().encode("ProgramDerivedAddress");
+	var encoder = getAddressEncoder();
+	var decoder = getAddressDecoder();
+	var onCurve = (candidate) => {
+		try {
+			ed25519.Point.fromBytes(candidate);
+			return true;
+		} catch (_unused2) {
+			return false;
+		}
+	};
+	/**
+	* Sync Associated Token Account derivation for the kernel: `findAssociatedTokenPda` is async, so
+	* the decoder derives `sha256(owner ‖ tokenProgram ‖ mint ‖ bump ‖ ata ‖ "ProgramDerivedAddress")`
+	* over bump 255→0 and takes the first hash off the ed25519 curve — matching the on-chain rule.
+	*/
+	var associatedTokenAddress = (owner, mint, tokenProgram) => {
+		const ownerBytes = encoder.encode(address(owner));
+		const programBytes = encoder.encode(address(tokenProgram));
+		const mintBytes = encoder.encode(address(mint));
+		const ataBytes = encoder.encode(address(PROGRAM_IDS.associatedToken));
+		const input = new Uint8Array(ownerBytes.length + programBytes.length + mintBytes.length + 1 + ataBytes.length + PDA_SEED.length);
+		let o = 0;
+		const put = (bytes) => {
+			input.set(bytes, o);
+			o += bytes.length;
+		};
+		put(ownerBytes);
+		put(programBytes);
+		put(mintBytes);
+		const bumpAt = o;
+		o += 1;
+		put(ataBytes);
+		put(PDA_SEED);
+		for (let bump = 255; bump >= 0; bump -= 1) {
+			input[bumpAt] = bump;
+			const candidate = sha256$1(input);
+			if (!onCurve(candidate)) return decoder.decode(candidate);
+		}
+		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
+	};
+	/** Jupiter's swap program — recognised by program id like Lido's upgradeable proxies. */
+	var JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
+	var WSOL_MINT = "So11111111111111111111111111111111111111112";
+	var ROUTE_V2 = Uint8Array.from([
+		187,
+		100,
+		250,
+		204,
+		49,
+		196,
+		175,
+		20
+	]);
+	var SHARED_ROUTE_V2 = Uint8Array.from([
+		209,
+		152,
+		83,
+		147,
+		124,
+		254,
+		216,
+		233
+	]);
+	var u16$1 = getU16Decoder();
+	var u32$2 = getU32Decoder();
+	var u64$3 = getU64Decoder();
+	var startsWith = (data, prefix) => data.length >= prefix.length && prefix.every((b, i) => data[i] === b);
+	/**
+	* `route_v2` / `shared_accounts_route_v2`: the fixed scalar prefix must be exact and the trailing
+	* `route_plan` vector must declare enough remaining bytes (each step is ≥ 5 bytes on the wire). The
+	* route steps themselves stay opaque — the intent only shows the inputs and the floor.
+	*/
+	var decodeJupiterIx = (parsed, ix, lookups) => {
+		const { data } = ix;
+		const account = (i) => {
+			const index = ix.accountIndices[i];
+			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+		};
+		const require = (i) => {
+			var _account;
+			return (_account = account(i)) !== null && _account !== void 0 ? _account : "";
+		};
+		const planWellFormed = (offset) => {
+			if (data.length < offset + 4) return false;
+			const count = u32$2.decode(data, offset);
+			return data.length >= offset + 4 + count * 5;
+		};
+		const scalars = (o) => ({
+			inAmount: u64$3.decode(data, o),
+			quotedOut: u64$3.decode(data, o + 8),
+			slippageBps: u16$1.decode(data, o + 16),
+			platformFeeBps: u16$1.decode(data, o + 18)
+		});
+		if (startsWith(data, ROUTE_V2)) {
+			if (ix.accountIndices.length < 10 || !planWellFormed(30)) return;
+			const optionalDest = require(7);
+			return _objectSpread2({
+				authority: require(0),
+				sourceMint: require(3),
+				destinationMint: require(4),
+				destinationTokenProgram: require(6),
+				destinationAccount: optionalDest === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" ? require(2) : optionalDest
+			}, scalars(8));
+		}
+		if (startsWith(data, SHARED_ROUTE_V2)) {
+			if (ix.accountIndices.length < 12 || !planWellFormed(31)) return;
+			return _objectSpread2({
+				authority: require(1),
+				sourceMint: require(6),
+				destinationMint: require(7),
+				destinationTokenProgram: require(9),
+				destinationAccount: require(5)
+			}, scalars(9));
+		}
+	};
 	/** Sysvars the legacy stake account lists carry; post-SIMD-0490 forms omit them. */
 	var SYSVAR_IDS = Object.freeze({
 		clock: "SysvarC1ock11111111111111111111111111111111",
@@ -29510,12 +29627,12 @@ zoo`.split("\n"));
 		stakeConfig: "StakeConfig11111111111111111111111111111111"
 	});
 	var ZERO_ADDRESS = "11111111111111111111111111111111";
-	var u32$2 = getU32Decoder();
-	var u64$3 = getU64Decoder();
+	var u32$1 = getU32Decoder();
+	var u64$2 = getU64Decoder();
 	var i64 = getI64Decoder();
 	var addr = getAddressEncoder();
-	var u32le$1 = (data, offset) => u32$2.decode(data, offset);
-	var u64le$1 = (data, offset) => u64$3.decode(data, offset);
+	var u32le$1 = (data, offset) => u32$1.decode(data, offset);
+	var u64le$1 = (data, offset) => u64$2.decode(data, offset);
 	var i64le = (data, offset) => i64.decode(data, offset);
 	var key$1 = (data, offset) => solanaAddressFromPublicKey(data.subarray(offset, offset + 32));
 	var account = (parsed, ix, index, lookups) => {
@@ -29668,122 +29785,6 @@ zoo`.split("\n"));
 				from,
 				lamports: u64le$1(data, 44 + seedLen)
 			} : "other";
-		}
-	};
-	var PDA_SEED = new TextEncoder().encode("ProgramDerivedAddress");
-	var encoder = getAddressEncoder();
-	var decoder = getAddressDecoder();
-	var onCurve = (candidate) => {
-		try {
-			ed25519.Point.fromBytes(candidate);
-			return true;
-		} catch (_unused2) {
-			return false;
-		}
-	};
-	/**
-	* Sync Associated Token Account derivation for the kernel: `findAssociatedTokenPda` is async, so
-	* the decoder derives `sha256(owner ‖ tokenProgram ‖ mint ‖ bump ‖ ata ‖ "ProgramDerivedAddress")`
-	* over bump 255→0 and takes the first hash off the ed25519 curve — matching the on-chain rule.
-	*/
-	var associatedTokenAddress = (owner, mint, tokenProgram) => {
-		const ownerBytes = encoder.encode(address(owner));
-		const programBytes = encoder.encode(address(tokenProgram));
-		const mintBytes = encoder.encode(address(mint));
-		const ataBytes = encoder.encode(address(PROGRAM_IDS.associatedToken));
-		const input = new Uint8Array(ownerBytes.length + programBytes.length + mintBytes.length + 1 + ataBytes.length + PDA_SEED.length);
-		let o = 0;
-		const put = (bytes) => {
-			input.set(bytes, o);
-			o += bytes.length;
-		};
-		put(ownerBytes);
-		put(programBytes);
-		put(mintBytes);
-		const bumpAt = o;
-		o += 1;
-		put(ataBytes);
-		put(PDA_SEED);
-		for (let bump = 255; bump >= 0; bump -= 1) {
-			input[bumpAt] = bump;
-			const candidate = sha256$1(input);
-			if (!onCurve(candidate)) return decoder.decode(candidate);
-		}
-		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
-	};
-	/** Jupiter's swap program — recognised by program id like Lido's upgradeable proxies. */
-	var JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
-	var WSOL_MINT = "So11111111111111111111111111111111111111112";
-	var ROUTE_V2 = Uint8Array.from([
-		187,
-		100,
-		250,
-		204,
-		49,
-		196,
-		175,
-		20
-	]);
-	var SHARED_ROUTE_V2 = Uint8Array.from([
-		209,
-		152,
-		83,
-		147,
-		124,
-		254,
-		216,
-		233
-	]);
-	var u16$1 = getU16Decoder();
-	var u32$1 = getU32Decoder();
-	var u64$2 = getU64Decoder();
-	var startsWith = (data, prefix) => data.length >= prefix.length && prefix.every((b, i) => data[i] === b);
-	/**
-	* `route_v2` / `shared_accounts_route_v2`: the fixed scalar prefix must be exact and the trailing
-	* `route_plan` vector must declare enough remaining bytes (each step is ≥ 5 bytes on the wire).
-	* The route steps themselves stay opaque — the intent only shows the inputs and the floor.
-	*/
-	var decodeJupiterIx = (parsed, ix, lookups) => {
-		const { data } = ix;
-		const account = (i) => {
-			const index = ix.accountIndices[i];
-			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
-		};
-		const require = (i) => {
-			var _account;
-			return (_account = account(i)) !== null && _account !== void 0 ? _account : "";
-		};
-		const planWellFormed = (offset) => {
-			if (data.length < offset + 4) return false;
-			const count = u32$1.decode(data, offset);
-			return data.length >= offset + 4 + count * 5;
-		};
-		const scalars = (o) => ({
-			inAmount: u64$2.decode(data, o),
-			quotedOut: u64$2.decode(data, o + 8),
-			slippageBps: u16$1.decode(data, o + 16),
-			platformFeeBps: u16$1.decode(data, o + 18)
-		});
-		if (startsWith(data, ROUTE_V2)) {
-			if (ix.accountIndices.length < 10 || !planWellFormed(30)) return;
-			const optionalDest = require(7);
-			return _objectSpread2({
-				authority: require(0),
-				sourceMint: require(3),
-				destinationMint: require(4),
-				destinationTokenProgram: require(6),
-				destinationAccount: optionalDest === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" ? require(2) : optionalDest
-			}, scalars(8));
-		}
-		if (startsWith(data, SHARED_ROUTE_V2)) {
-			if (ix.accountIndices.length < 12 || !planWellFormed(31)) return;
-			return _objectSpread2({
-				authority: require(1),
-				sourceMint: require(6),
-				destinationMint: require(7),
-				destinationTokenProgram: require(9),
-				destinationAccount: require(5)
-			}, scalars(9));
 		}
 	};
 	var USDC = Object.freeze({

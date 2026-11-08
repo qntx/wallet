@@ -168,18 +168,19 @@ export const resolveAccountIndex = (
   if (lookups === undefined) {
     return undefined;
   }
-  let offset = index - parsed.staticAccounts.length;
-  for (const parsedTable of parsed.lookups) {
-    /* The compiled index walks each table's writable references first, then its readable ones;
-       each slot is itself an index into the declared table's addresses. */
-    const slots = [...parsedTable.writableIndexes, ...parsedTable.readonlyIndexes];
-    if (offset < slots.length) {
-      const declared = lookups.find((t) => t.address === parsedTable.address);
-      return declared?.addresses[slots[offset] ?? 0];
-    }
-    offset -= slots.length;
-  }
-  return undefined;
+  /* v0 orders loaded addresses as every table's writable entries (table order), then every
+     table's readonly entries (table order); each reference is itself an index into that table's
+     declared addresses. */
+  const declared = new Map(lookups.map((t) => [t.address, t.addresses]));
+  const loaded = [
+    ...parsed.lookups.flatMap((t) =>
+      t.writableIndexes.map((i) => declared.get(t.address)?.[i]),
+    ),
+    ...parsed.lookups.flatMap((t) =>
+      t.readonlyIndexes.map((i) => declared.get(t.address)?.[i]),
+    ),
+  ];
+  return loaded[index - parsed.staticAccounts.length];
 };
 
 /** All declared lookup-table entries must be valid base58 32-byte addresses. */

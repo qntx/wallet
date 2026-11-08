@@ -7,6 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { associatedTokenAddress } from "../src/solana/ata.ts";
 import { decodeSolana } from "../src/solana/decode.ts";
+import { parseCompiledMessage, resolveAccountIndex } from "../src/solana/message.ts";
 import { PROGRAM_IDS } from "../src/solana/ids.ts";
 import { WSOL_MINT } from "../src/solana/jupiter.ts";
 
@@ -92,5 +93,72 @@ describe("jupiter decode", () => {
       "Ff4CgHQXyMBRktUtmCNPvL4YS1NBiS1d9QDrPqRMhLQ",
     );
     expect(foreign.verifiability).toBe("opaque");
+  });
+});
+
+describe("resolveAccountIndex with multiple lookup tables", () => {
+  it("resolves writable-from-table-2 and readonly-from-table-1 in v0 order", async () => {
+    const {
+      appendTransactionMessageInstruction,
+      compileTransactionMessage,
+      compressTransactionMessageUsingAddressLookupTables,
+      createTransactionMessage,
+      getCompiledTransactionMessageEncoder,
+      setTransactionMessageFeePayer,
+      setTransactionMessageLifetimeUsingBlockhash,
+    } = await import("@solana/kit");
+    const TABLE1 = "GcUy7n96V4CLEupSJGAd2KbkR2bpmEfrBxpCzqy4Sfcr";
+    const TABLE2 = "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx";
+    const W2 = "6wWVbLeHDVHvCCsLprB85jkbU1JhS9VezABT2ZZFJ5BB";
+    const R1 = "7bFrELm2JUsKfjghdHRXo75ZzQwKWATMLreP5QSnKLcE";
+    const OTHER1 = "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR";
+    const OTHER2 = "9Y34Wev18pdowy32Akobj4JpWWko4JhzhvoyzJNrX94v";
+    const tables: Record<string, string[]> = {
+      [TABLE1]: [R1, OTHER1, "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4"],
+      [TABLE2]: ["CktRuQ2mttgRGkXJtyksdKHjUdc2C4TgDzyB98oEzy8", W2, OTHER2],
+    };
+    const payer = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
+    /* One synthetic instruction whose accounts span both tables: [payer, W2 (table2 writable),
+       R1 (table1 readonly)] — the program id itself is static. */
+    let msg = setTransactionMessageLifetimeUsingBlockhash(
+      { blockhash: "11111111111111111111111111111111", lastValidBlockHeight: 1n } as never,
+      setTransactionMessageFeePayer(
+        address(payer),
+        createTransactionMessage({ version: 0 }),
+      ),
+    ) as never;
+    msg = appendTransactionMessageInstruction(
+      {
+        programAddress: address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+        accounts: [
+          { address: address(W2), role: 2 },
+          { address: address(R1), role: 0 },
+        ],
+        data: Uint8Array.from([9]),
+      } as never,
+      msg,
+    );
+    const compressed = compressTransactionMessageUsingAddressLookupTables(
+      msg,
+      Object.fromEntries(
+        Object.entries(tables).map(([k, v]) => [address(k), v.map(address)]),
+      ) as never,
+    );
+    const compiled = compileTransactionMessage(compressed);
+    const bytes = new Uint8Array(getCompiledTransactionMessageEncoder().encode(compiled));
+    /* The kit's compressor placed each account into its table's writable or readonly slot;
+       resolving those indices through the declared contents must give the original addresses —
+       wrong slot ordering lands on a different table's entries. */
+    const parsed = parseCompiledMessage(bytes);
+    const declared = Object.entries(tables).map(([a, addresses]) => ({ address: a, addresses }));
+    const ix = parsed.instructions[0]!;
+    expect(resolveAccountIndex(parsed, ix.accountIndices[0]!, declared)).toBe(W2);
+    expect(resolveAccountIndex(parsed, ix.accountIndices[1]!, declared)).toBe(R1);
+    /* Missing table → the instruction cannot resolve its accounts → the intent is opaque. */
+    const intent = decodeSolana(
+      req(bytes, declared.slice(0, 1) as never) as never,
+      payer,
+    );
+    expect(intent.verifiability).toBe("opaque");
   });
 });
