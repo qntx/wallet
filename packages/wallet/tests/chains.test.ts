@@ -12,7 +12,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { verifyEvent } from "@qntx/nostr";
 import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
-import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
+import { signEvmPersonalMessage, signEvmTransaction } from "@qntx/wallet-chains/evm/sign";
 
 import { chains } from "../src/chains/index.ts";
 import type { ChainSignRequest } from "../src/protocol/chains.ts";
@@ -111,6 +111,81 @@ describe("chains(wallet)", () => {
     await expect(chains(wallet).sign(signParams())).rejects.toSatisfy(
       (e) => walletError(e).code === "integrity",
     );
+  });
+
+  const connectTx = async (raw: Uint8Array) => {
+    const kernel = new FakeKernel(unlockedStatus());
+    kernel.handlers.set("chain.sign", () => ({
+      ok: { kind: "evm.transaction", signedTransaction: raw },
+    }));
+    kernel.handlers.set("wallet.accounts", () => ({
+      ok: { template: "evm.bip44", network: "eip155:1", address: ADDRESS },
+    }));
+    const wallet = await connectKernel({
+      verifyEvent,
+      spawn: () => {
+        const port = new ScriptedPort(kernel);
+        kernel.attach(port);
+        return port;
+      },
+      factors: "software",
+      passkey: PASSKEY,
+      ceremony: undefined,
+      setTimer: (ms, fn) => {
+        const id = setTimeout(fn, ms);
+        return () => clearTimeout(id);
+      },
+    });
+    return { kernel, wallet };
+  };
+
+  it("accepts a signed eip7702; a mismatched authorization fails the result check", async () => {
+    const TX = {
+      type: "eip7702" as const,
+      chainId: 1,
+      nonce: 0,
+      gas: "0x61a8",
+      value: "0x0",
+      data: "0x",
+      to: ADDRESS,
+      accessList: [] as const,
+      maxFeePerGas: "0x4a817c800",
+      maxPriorityFeePerGas: "0x3b9aca00",
+      authorization: { address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B" },
+    };
+    const account = {
+      kind: "hd" as const,
+      walletId: "0a".repeat(8),
+      groupIndex: 0,
+      template: "evm.bip44" as const,
+    };
+    const request: ChainSignRequest = {
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account,
+      tx: TX,
+    };
+    const verify = { kind: "password" as const, password: "test password" };
+    const { wallet } = await connectTx(signEvmTransaction(TX, PRIV));
+    const ok = await chains(wallet).sign({ request, verify });
+    expect(ok.kind).toBe("evm.transaction");
+
+    const tampered = (tx: Record<string, unknown>) => ({
+      request: { ...request, tx: { ...TX, ...tx } },
+      verify,
+    });
+    const { wallet: wrongAddress } = await connectTx(signEvmTransaction(TX, PRIV));
+    await expect(
+      chains(wrongAddress).sign(
+        tampered({
+          authorization: { address: "0x0000000000000000000000000000000000000000" },
+        }) as never,
+      ),
+    ).rejects.toMatchObject({ code: "invalid-request" });
+    const { wallet: wrongNonce } = await connectTx(signEvmTransaction(TX, PRIV));
+    await expect(chains(wrongNonce).sign(tampered({ nonce: 5 }) as never)).rejects.toMatchObject({
+      code: "invalid-request",
+    });
   });
 
   const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";

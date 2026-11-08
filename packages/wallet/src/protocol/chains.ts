@@ -108,6 +108,14 @@ export type EvmTransactionWire =
       readonly maxFeePerGas: string;
       readonly maxPriorityFeePerGas: string;
       readonly accessList: ReadonlyArray<EvmAccessListEntryWire>;
+    })
+  | (EvmTransactionBase & {
+      readonly type: "eip7702";
+      readonly to: string;
+      readonly maxFeePerGas: string;
+      readonly maxPriorityFeePerGas: string;
+      readonly accessList: ReadonlyArray<EvmAccessListEntryWire>;
+      readonly authorization: { readonly address: string };
     });
 
 /** `chain.sign`'s request — the wire mirror of @qntx/wallet-chains `SignRequest`. */
@@ -218,6 +226,15 @@ const evmTx: Validator<EvmTransactionWire> = union(
     maxFeePerGas: hexQuantity,
     maxPriorityFeePerGas: hexQuantity,
     accessList,
+  }),
+  obj({
+    ...txBase,
+    type: literal("eip7702"),
+    to: evmAddress,
+    maxFeePerGas: hexQuantity,
+    maxPriorityFeePerGas: hexQuantity,
+    accessList,
+    authorization: obj({ address: evmAddress }),
   }),
 );
 

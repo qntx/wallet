@@ -118,6 +118,19 @@ export type EvmTransaction =
       readonly accessList: ReadonlyArray<EvmAccessListEntry>;
       readonly maxFeePerGas: string;
       readonly maxPriorityFeePerGas: string;
+    })
+  | (Omit<EvmTransactionBase, "to"> & {
+      readonly type: "eip7702";
+      readonly to: string;
+      readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+      readonly maxFeePerGas: string;
+      readonly maxPriorityFeePerGas: string;
+      /**
+       * One self-sponsored authorization: its chain id is the transaction's chain id and its nonce
+       * is `tx.nonce + 1`, so multi-tuple or nonce-mismatched authorizations are unrepresentable.
+       * The zero address revokes an existing delegation.
+       */
+      readonly authorization: { readonly address: string };
     });
 
 export type Verifiability = "full" | "partial" | "opaque";
@@ -263,6 +276,17 @@ export type DisplayIntent = {
   /** What a message request signs; absent for transactions. */
   readonly message?: MessageContent;
   readonly verifiability: Verifiability;
+  /** Present iff the transaction carries an EIP-7702 authorization. */
+  readonly delegation?:
+    | {
+        readonly kind: "set";
+        readonly delegator: string;
+        readonly name: string;
+        readonly version: string;
+      }
+    | { readonly kind: "revoke" };
+  /** The decoded inner calls of a recognized ERC-7821 batch execute. */
+  readonly calls?: ReadonlyArray<DisplayIntent>;
 };
 
 export type ChainErrorCode =

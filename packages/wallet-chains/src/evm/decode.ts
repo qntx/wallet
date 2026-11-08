@@ -5,6 +5,7 @@ import type {
   ApprovalChange,
   AssetFlow,
   DisplayIntent,
+  IntentWarning,
   EvmTransaction,
   MessageContent,
   TypedDataDomain,
@@ -15,6 +16,7 @@ import { parseSignIn } from "../sign-in.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
@@ -106,7 +108,7 @@ const weiAmount = (wei: bigint, symbol?: string, decimals?: number) => ({
 
 const feeWei = (tx: EvmTransaction): bigint =>
   quantityBigInt(tx.gas, "tx.gas") *
-  (tx.type === "eip1559"
+  (tx.type === "eip1559" || tx.type === "eip7702"
     ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas")
     : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
 
@@ -355,17 +357,81 @@ const decodeCall = (
   return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
 };
 
+/** The delegation field a request carries, present iff the transaction is eip7702. */
+const delegationOf = (tx: EvmTransaction): DisplayIntent["delegation"] => {
+  if (tx.type !== "eip7702") {
+    return undefined;
+  }
+  return tx.authorization.address === "0x0000000000000000000000000000000000000000"
+    ? { kind: "revoke" }
+    : {
+        kind: "set",
+        delegator: EVM_DELEGATOR.address,
+        name: EVM_DELEGATOR.name,
+        version: EVM_DELEGATOR.version,
+      };
+};
+
+const weakest = (intents: ReadonlyArray<DisplayIntent>): Verifiability =>
+  intents.some((i) => i.verifiability === "opaque")
+    ? "opaque"
+    : intents.some((i) => i.verifiability === "partial")
+      ? "partial"
+      : "full";
+
 const decodeTransaction = (
   request: Extract<SignRequest, { kind: "evm.transaction" }>,
+  signer: string,
   table: EvmTokenTable,
 ): DisplayIntent => {
   const { tx } = request;
-  return decodeCall(
+  const fee = { max: weiAmount(feeWei(tx)) };
+  const delegation = delegationOf(tx);
+  const isSelf =
+    tx.to !== undefined && tx.to.toLowerCase() === signer.toLowerCase() && BigInt(tx.value) === 0n;
+  if (isSelf && tx.data === "0x") {
+    const base = {
+      family: "evm" as const,
+      network: request.network,
+      outflows: [] as ReadonlyArray<AssetFlow>,
+      approvals: [] as ReadonlyArray<ApprovalChange>,
+      fee,
+      warnings: [] as ReadonlyArray<IntentWarning>,
+      verifiability: "full" as const,
+      ...(delegation === undefined ? {} : { delegation }),
+    };
+    return {
+      ...base,
+      summary: tx.type === "eip7702" ? ("authorization" as const) : ("transfer" as const),
+    };
+  }
+  const calls = isSelf ? decodeBatchExecute(tx.data) : undefined;
+  const intent = decodeCall(
     { to: tx.to, value: quantityBigInt(tx.value, "tx.value"), data: tx.data },
     request.network,
-    { max: weiAmount(feeWei(tx)) },
+    fee,
     table,
   );
+  if (calls !== undefined && calls.length > 0) {
+    const decoded = calls.map((call) =>
+      decodeCall(
+        { to: call.to, value: call.value, data: call.data },
+        request.network,
+        undefined,
+        table,
+      ),
+    );
+    return {
+      ...intent,
+      summary: "batch",
+      calls: decoded,
+      outflows: decoded.flatMap((d) => d.outflows),
+      approvals: decoded.flatMap((d) => d.approvals),
+      verifiability: weakest(decoded),
+      ...(delegation === undefined ? {} : { delegation }),
+    };
+  }
+  return { ...intent, ...(delegation === undefined ? {} : { delegation }) };
 };
 
 /** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
@@ -411,7 +477,7 @@ export const decodeEvm = (
   table: EvmTokenTable = evmTokenTable,
 ): DisplayIntent => {
   if (request.kind === "evm.transaction") {
-    return decodeTransaction(request, table);
+    return decodeTransaction(request, signer, table);
   }
   if (request.kind === "evm.personal-message") {
     return {

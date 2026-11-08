@@ -24,7 +24,7 @@ import type {
   TrackedTransaction,
   TxState,
 } from "./route.ts";
-import { newId } from "./route.ts";
+import { accountAddress, newId } from "./route.ts";
 import { pollSolana, prepareSolana } from "./solana.ts";
 
 export type {
@@ -323,7 +323,7 @@ export class TransactionController extends Controller<TransactionControllerState
       template: "evm.bip44",
       network,
     });
-    const signer = "address" in signing ? signing.address : "";
+    const signer = accountAddress(signing);
     return {
       account,
       network,
@@ -353,7 +353,7 @@ export class TransactionController extends Controller<TransactionControllerState
    * replacement needs without signing it. The original must be `submitted` or `pending`.
    */
   async prepareReplacement(
-    input: Exclude<ChainRequestInput, { method: "send" }>,
+    input: Extract<ChainRequestInput, { method: "speed-up" | "cancel" | "cpfp" }>,
     requestId: string,
   ): Promise<PreparedRequest> {
     if (this.locked) {
@@ -380,6 +380,46 @@ export class TransactionController extends Controller<TransactionControllerState
       return this.evmRoute.prepareReplace(ctx, old, input.method);
     }
     throw new Error(`${input.method} is EVM and Bitcoin only`);
+  }
+
+  /**
+   * Internal `evm-delegation`/`evm-batch` requests: builds, estimates and cross-checks the
+   * self-transaction without signing it.
+   */
+  async prepareEvmInternal(
+    input: Extract<ChainRequestInput, { method: "evm-delegation" | "evm-batch" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return this.evmRoute.prepareEvmInternal(this.routeCtx(), input);
+  }
+
+  /** The account's 7702 delegation state on `network` (primary endpoint only). */
+  async delegationState(
+    account: AccountRef,
+    network: string,
+  ): Promise<{
+    readonly supported: boolean;
+    readonly state: "none" | "ours" | "other";
+    readonly address?: string;
+  }> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    if (account.kind !== "hd") {
+      throw new Error("imported accounts are not yet supported");
+    }
+    const ctx = this.routeCtx();
+    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+    const evmAccount = await apis.account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template: "evm.bip44",
+      network,
+    });
+    return this.evmRoute.delegationState(ctx, network, accountAddress(evmAccount));
   }
 
   private track(id: string, hash: string): void {

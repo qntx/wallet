@@ -16,6 +16,8 @@ export type RequestMethod =
   | "pay"
   | "zap"
   | "evm-sign"
+  | "evm-delegation"
+  | "evm-batch"
   | "nostr-sign"
   | "webln-invoice"
   | "watch-asset"

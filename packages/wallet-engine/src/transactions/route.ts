@@ -96,13 +96,37 @@ export type SendParams = {
 
 export type PrepareParams = Omit<SendParams, "verify">;
 
-export type ChainRequestMethod = "send" | "speed-up" | "cancel" | "cpfp";
+export type ChainRequestMethod =
+  | "send"
+  | "speed-up"
+  | "cancel"
+  | "cpfp"
+  | "evm-delegation"
+  | "evm-batch";
 
 /** What a request asks for; replacements and CPFP name the original transaction. */
 export type ChainRequestInput =
   | ({ readonly method: "send" } & PrepareParams)
   | { readonly method: "speed-up" | "cancel"; readonly txId: string }
-  | { readonly method: "cpfp"; readonly txId: string; readonly feeRate: number };
+  | { readonly method: "cpfp"; readonly txId: string; readonly feeRate: number }
+  | {
+      readonly method: "evm-delegation";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly action: "upgrade" | "revoke";
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "evm-batch";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly calls: ReadonlyArray<{
+        readonly to: string;
+        readonly value: bigint;
+        readonly data: string;
+      }>;
+      readonly fee: PrepareParams["fee"];
+    };
 
 /**
  * A fully built, estimated and cross-checked send that has not been signed. The unsigned content
@@ -170,6 +194,15 @@ const hexId = (prefix: string, random: (n: number) => Uint8Array): string =>
   `${prefix}-${[...random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 
 export const newId = (random: (n: number) => Uint8Array): string => hexId("tx", random);
+
+/** The account's address; signer-dependent checks fail closed when an account carries none. */
+export const accountAddress = (account: Readonly<Record<string, unknown>>): string => {
+  const { address } = account;
+  if (typeof address !== "string" || address === "") {
+    throw new Error("account carries no address");
+  }
+  return address;
+};
 
 export const newRequestId = (random: (n: number) => Uint8Array): string => hexId("req", random);
 

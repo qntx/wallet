@@ -78,6 +78,44 @@
         "value": "0x0",
         "accessList": []
       }
+    },
+    {
+      "name": "eip7702-upgrade",
+      "network": "eip155:1",
+      "tx": {
+        "type": "eip7702",
+        "chainId": 1,
+        "to": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        "value": "0x0",
+        "nonce": 0,
+        "gas": "0x61a8",
+        "maxFeePerGas": "0x4a817c800",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "accessList": [],
+        "data": "0x",
+        "authorization": {
+          "address": "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B"
+        }
+      }
+    },
+    {
+      "name": "eip7702-revoke",
+      "network": "eip155:1",
+      "tx": {
+        "type": "eip7702",
+        "chainId": 1,
+        "to": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        "value": "0x0",
+        "nonce": 0,
+        "gas": "0x61a8",
+        "maxFeePerGas": "0x4a817c800",
+        "maxPriorityFeePerGas": "0x3b9aca00",
+        "accessList": [],
+        "data": "0x",
+        "authorization": {
+          "address": "0x0000000000000000000000000000000000000000"
+        }
+      }
     }
   ],
   "personalMessage": "0x48656c6c6f20576f726c64",
@@ -99,6 +137,14 @@
       {
         "name": "eip1559-data",
         "expected": "0x02f8af01038459682f00847735940082a4109470997970c51812dc3a010c7d01b50e0d17dc79c880b844a9059cbb00000000000000000000000070997970c51812dc3a010c7d01b50e0d17dc79c80000000000000000000000000000000000000000000000000000000000000064c001a06f5dcfc1fba9db737fa135e72f337feae798be9ecb0141326d46e722b7a6c61fa047f6ce217ee9eafcbfd779c629b8d58fa6e92b5a22e56adfb77ac10f51260114"
+      },
+      {
+        "name": "eip7702-upgrade",
+        "expected": "0x04f8c90180843b9aca008504a817c8008261a8949858effd232b4033e47d90003d41ec34ecaeda948080c0f85cf85a019463c0c19a282a1b52b07dd5a65b58948a07dae32b0101a01703e3a66bd71f8a9be161456225fc54c214faa0c85b9bf2452a4b1b7153b24ca0714c27e52a49d2b3c95c2721b386766b7cf8f89b7b1452eb832f8e11a838a49880a0b13ffd9df5b927b2c6ba577a92b12d57a4eea92815dfc254d8f456544df75390a0474345a98d29437c703169bbaa7f398925bcc13fb1b6ad59c176ea588873e107"
+      },
+      {
+        "name": "eip7702-revoke",
+        "expected": "0x04f8c90180843b9aca008504a817c8008261a8949858effd232b4033e47d90003d41ec34ecaeda948080c0f85cf85a019400000000000000000000000000000000000000000101a07eed67cbaa4027b6ad3cf31045cfd0f180f8f6df1401d64a72433c328e9678bba049ed5bc0bb08729a3bba9e62c78416fa9555ec1ceac9a660f9e1a18d51a41e3e80a02bd25bfe93d4183c0931647c7c4cbd830e22532091d961845a9f4bd9ee2ccc83a006a1ca30eeaccd689adfc26ffcd6d7b44991abf03020cac8a925f5e357625541"
       }
     ],
     "personalMessage": "0x65e72b1cf8e189569963750e10ccb88fe89389daeeb8b735277d59cd6885ee823eb5a6982b540f185703492dab77b863a88ce01f27e21ade8b2879c10fc9e6531c",

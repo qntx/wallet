@@ -901,7 +901,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-C8x0H3Rr.mjs
+	// packages/wallet/dist/protocol-ClSSLQWy.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -989,6 +989,13 @@
 		maxFeePerGas: hexQuantity,
 		maxPriorityFeePerGas: hexQuantity,
 		accessList: accessList$1
+	})), obj(_objectSpread2(_objectSpread2({}, txBase), {}, {
+		type: literal("eip7702"),
+		to: evmAddress,
+		maxFeePerGas: hexQuantity,
+		maxPriorityFeePerGas: hexQuantity,
+		accessList: accessList$1,
+		authorization: obj({ address: evmAddress })
 	})));
 	var signRequest = union(obj({
 		kind: literal("evm.transaction"),
@@ -3337,7 +3344,7 @@
 			toWords
 		};
 	}
-	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$2, hexFallback, hasHexBuiltin, hexBuiltin, hex$2;
+	var freeze, powers, asciiDecoder, B2S_CHUNK, hasBase64Builtin, ASCII_WHITESPACE, decodeBase64Builtin, base64Fallback, base64$1, base64urlnopad, B58_GROUP, RADIX_BASE_N_MAX_LENGTH, BASE_N_MAX_BYTES, BASE_N_MAX_CHARS, radixBaseN, genBaseN, radix58, genBase58, base58, createBase58check, BECH_ALPHABET, BECH_UPPERCASE_PRINTABLE, POLYMOD_GENERATORS, bech32, bech32m, _isWellFormedShim, _isWellFormed, utf8err, utf8Fallback, utf8$2, hexFallback, hasHexBuiltin, hexBuiltin, hex$3;
 	var init_base = __esmMin((() => {
 		freeze = (fn) => Object.freeze(fn());
 		powers = /* @__PURE__ */ (() => {
@@ -3612,7 +3619,7 @@
 				return Uint8Array.fromHex(s);
 			}
 		};
-		hex$2 = /* @__PURE__ */ freeze(() => hasHexBuiltin ? hexBuiltin : hexFallback);
+		hex$3 = /* @__PURE__ */ freeze(() => hasHexBuiltin ? hexBuiltin : hexFallback);
 	}));
 	// packages/wallet-kernel/src/errors.ts
 	init_sha2();
@@ -14427,15 +14434,15 @@ zoo`.split("\n"));
 			}
 			finish() {
 				if (this.opts.allowUnreadBytes) return;
-				if (this.bitPos) throw this.err(`${this.bitPos} bits left after unpack: ${hex$2.encode(this.data.subarray(this.pos))}`);
+				if (this.bitPos) throw this.err(`${this.bitPos} bits left after unpack: ${hex$3.encode(this.data.subarray(this.pos))}`);
 				if (this.bs && !this.parent) {
 					const notRead = Bitset.indices(this.bs, this.data.length, true);
 					if (notRead.length) {
-						const formatted = Bitset.range(notRead).map(({ pos, length }) => `(${pos}/${length})[${hex$2.encode(this.data.subarray(pos, pos + length))}]`).join(", ");
+						const formatted = Bitset.range(notRead).map(({ pos, length }) => `(${pos}/${length})[${hex$3.encode(this.data.subarray(pos, pos + length))}]`).join(", ");
 						throw this.err(`unread byte ranges: ${formatted} (total=${this.data.length})`);
 					} else return;
 				}
-				if (!this.isEnd()) throw this.err(`${this.leftBytes} bytes ${this.bitPos} bits left after unpack: ${hex$2.encode(this.data.subarray(this.pos))}`);
+				if (!this.isEnd()) throw this.err(`${this.leftBytes} bytes ${this.bitPos} bits left after unpack: ${hex$3.encode(this.data.subarray(this.pos))}`);
 			}
 			err(msg) {
 				return Path.err("Reader", this.stack, msg);
@@ -17014,7 +17021,7 @@ zoo`.split("\n"));
 				const seen = {};
 				const add = (key, value) => {
 					const _value = value;
-					const kStr = hex$2.encode(PSBTUnknownKey.encode(key));
+					const kStr = hex$3.encode(PSBTUnknownKey.encode(key));
 					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
 					seen[kStr] = true;
 					out.push({
@@ -17051,7 +17058,7 @@ zoo`.split("\n"));
 				const noKey = {};
 				const seen = {};
 				for (const elm of raw) {
-					const kStr = hex$2.encode(PSBTUnknownKey.encode(elm.key));
+					const kStr = hex$3.encode(PSBTUnknownKey.encode(elm.key));
 					if (seen[kStr]) throw new Error(`PSBT: duplicate key=${kStr}`);
 					seen[kStr] = true;
 					let name = "unknown";
@@ -17060,7 +17067,7 @@ zoo`.split("\n"));
 					if (byType[elm.key.type]) {
 						const [_name, kc, vc] = byType[elm.key.type];
 						name = _name;
-						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$2.encode(key)} value=${hex$2.encode(value)}`);
+						if (!kc && key.length) throw new Error(`PSBT: Non-empty key for ${name} (key=${hex$3.encode(key)} value=${hex$3.encode(value)}`);
 						key = kc ? kc.decode(key) : void 0;
 						value = vc.decode(value);
 						if (!kc) {
@@ -17202,7 +17209,7 @@ zoo`.split("\n"));
 					if (!Array.isArray(newKV)) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
 					newKV = newKV.map((val) => {
 						if (val.length !== 2) throw new Error(`keyMap(${k}): KV pairs should be [k, v][]`);
-						return [typeof val[0] === "string" ? kC.decode(hex$2.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$2.decode(val[1])) : val[1]];
+						return [typeof val[0] === "string" ? kC.decode(hex$3.decode(val[0])) : val[0], typeof val[1] === "string" ? vC.decode(hex$3.decode(val[1])) : val[1]];
 					});
 					const map = {};
 					const add = (kStr, k, v) => {
@@ -17210,13 +17217,13 @@ zoo`.split("\n"));
 							map[kStr] = [k, v];
 							return;
 						}
-						const oldVal = hex$2.encode(vC.encode(map[kStr][1]));
-						const newVal = hex$2.encode(vC.encode(v));
+						const oldVal = hex$3.encode(vC.encode(map[kStr][1]));
+						const newVal = hex$3.encode(vC.encode(v));
 						if (oldVal !== newVal) throw new Error(`keyMap(${key}): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
 					};
-					for (const [k, v] of oldKV) add(hex$2.encode(kC.encode(k)), k, v);
+					for (const [k, v] of oldKV) add(hex$3.encode(kC.encode(k)), k, v);
 					for (const [k, v] of newKV) {
-						const kStr = hex$2.encode(kC.encode(k));
+						const kStr = hex$3.encode(kC.encode(k));
 						if (v === void 0) {
 							if (cannotChange) throw new Error(`Cannot remove signed field=${key}/${k}`);
 							delete map[kStr];
@@ -17228,26 +17235,26 @@ zoo`.split("\n"));
 					res[key] = Object.values(map);
 				}
 			} else {
-				if (typeof res[k] === "string") res[k] = vC.decode(hex$2.decode(res[k]));
+				if (typeof res[k] === "string") res[k] = vC.decode(hex$3.decode(res[k]));
 				if (cannotChange && k in _val) {
 					if (!_cur || _cur[k] === void 0) throw new Error(`Cannot add signed field=${k}`);
 					let current = _cur[k];
-					if (typeof current === "string") current = vC.decode(hex$2.decode(current));
+					if (typeof current === "string") current = vC.decode(hex$3.decode(current));
 					if (!equalBytes(vC.encode(res[k]), vC.encode(current))) throw new Error(`Cannot change signed field=${k}`);
 				}
 			}
 		}
 		if (unknownMode === "ignore" && _val.unknown) {
 			const map = {};
-			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$2.encode(PSBTUnknownKey.encode(k))] = [k, v];
+			for (const [k, v] of (_cur === null || _cur === void 0 ? void 0 : _cur.unknown) || []) map[hex$3.encode(PSBTUnknownKey.encode(k))] = [k, v];
 			for (const [k, v] of _val.unknown) {
-				const kStr = hex$2.encode(PSBTUnknownKey.encode(k));
+				const kStr = hex$3.encode(PSBTUnknownKey.encode(k));
 				if (map[kStr] === void 0) {
 					map[kStr] = [k, v];
 					continue;
 				}
-				const oldVal = hex$2.encode(BytesInf.encode(map[kStr][1]));
-				const newVal = hex$2.encode(BytesInf.encode(v));
+				const oldVal = hex$3.encode(BytesInf.encode(map[kStr][1]));
+				const newVal = hex$3.encode(BytesInf.encode(v));
 				if (oldVal !== newVal) throw new Error(`keyMap(unknown): same key=${kStr} oldVal=${oldVal} newVal=${newVal}`);
 			}
 			res.unknown = Object.values(map);
@@ -17289,8 +17296,8 @@ zoo`.split("\n"));
 			if (keyCoder || _current[key] === void 0 || _other[key] === void 0) continue;
 			let a = _current[key];
 			let b = _other[key];
-			if (typeof a === "string") a = valueCoder.decode(hex$2.decode(a));
-			if (typeof b === "string") b = valueCoder.decode(hex$2.decode(b));
+			if (typeof a === "string") a = valueCoder.decode(hex$3.decode(a));
+			if (typeof b === "string") b = valueCoder.decode(hex$3.decode(b));
 			if (!equalBytes(valueCoder.encode(a), valueCoder.encode(b))) throw new Error(`Cannot combine conflicting field=${k}`);
 		}
 		return mergeKeyMap(psbtEnum, _other, _current, void 0, unknown, proprietary);
@@ -17715,7 +17722,7 @@ zoo`.split("\n"));
 			const version = tree.leafVersion;
 			const { script: leafScript } = tree;
 			if (tree.tapLeafScript || tree.tapMerkleRoot && !equalBytes(tree.tapMerkleRoot, EMPTY$1)) throw new Error("P2TR: tapRoot leafScript cannot have tree");
-			const script = typeof leafScript === "string" ? hex$2.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
+			const script = typeof leafScript === "string" ? hex$3.decode(leafScript) : abytes(leafScript, void 0, "tree.script");
 			checkTaprootScript(script, internalPubKey, allowUnknownOutputs, customScripts);
 			return {
 				type: "leaf",
@@ -17739,7 +17746,7 @@ zoo`.split("\n"));
 	}
 	function p2tr(internalPubKey, tree, network = NETWORK, allowUnknownOutputs = false, customScripts) {
 		if (!internalPubKey && !tree) throw new Error("p2tr: should have pubKey or scriptTree (or both)");
-		const pubKey = typeof internalPubKey === "string" ? hex$2.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
+		const pubKey = typeof internalPubKey === "string" ? hex$3.decode(internalPubKey) : internalPubKey !== null && internalPubKey !== void 0 ? internalPubKey : taprootNumsKey();
 		if (!isValidPubkey(pubKey, PubT.schnorr)) throw new Error("p2tr: non-schnorr pubkey");
 		if (tree) {
 			let hashedTree = taprootAddPath(taprootHashTree(tree, pubKey, allowUnknownOutputs, customScripts));
@@ -18422,7 +18429,7 @@ zoo`.split("\n"));
 					allowUnknownInputs: true,
 					allowUnknownVersion: true
 				});
-				const txid = hex$2.encode(_i.txid);
+				const txid = hex$3.encode(_i.txid);
 				if (tx.id !== txid) throw new Error(`nonWitnessUtxo: wrong txid, exp=${txid} got=${tx.id}`);
 			}
 		} else if (_i.witnessUtxo) prevOut = _i.witnessUtxo;
@@ -18490,10 +18497,10 @@ zoo`.split("\n"));
 		const _cur = cur;
 		const _allowedFields = allowedFields;
 		let { nonWitnessUtxo, txid } = _i;
-		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$2.decode(nonWitnessUtxo);
+		if (typeof nonWitnessUtxo === "string") nonWitnessUtxo = hex$3.decode(nonWitnessUtxo);
 		if (isBytes(nonWitnessUtxo)) nonWitnessUtxo = RawTx.decode(nonWitnessUtxo);
 		if (!("nonWitnessUtxo" in _i) && nonWitnessUtxo === void 0) nonWitnessUtxo = _cur === null || _cur === void 0 ? void 0 : _cur.nonWitnessUtxo;
-		if (typeof txid === "string") txid = hex$2.decode(txid);
+		if (typeof txid === "string") txid = hex$3.decode(txid);
 		if (txid === void 0) txid = _cur === null || _cur === void 0 ? void 0 : _cur.txid;
 		let res = _objectSpread2(_objectSpread2(_objectSpread2({}, _cur), _i), {}, {
 			nonWitnessUtxo,
@@ -18998,13 +19005,13 @@ zoo`.split("\n"));
 				return this.toBytes(false, false);
 			}
 			get hex() {
-				return hex$2.encode(this.toBytes(true, this.hasWitnesses));
+				return hex$3.encode(this.toBytes(true, this.hasWitnesses));
 			}
 			get hash() {
-				return hex$2.encode(sha256x2(this.toBytes(true)));
+				return hex$3.encode(sha256x2(this.toBytes(true)));
 			}
 			get id() {
-				return hex$2.encode(sha256x2(this.toBytes(true)).reverse());
+				return hex$3.encode(sha256x2(this.toBytes(true)).reverse());
 			}
 			checkInputIdx(idx) {
 				anumber$2(idx, "idx");
@@ -19083,7 +19090,7 @@ zoo`.split("\n"));
 				let { amount, script } = o;
 				if (amount === void 0) amount = cur === null || cur === void 0 ? void 0 : cur.amount;
 				amount = abigint(amount, "o.amount");
-				if (typeof script === "string") script = hex$2.decode(script);
+				if (typeof script === "string") script = hex$3.decode(script);
 				if (script === void 0) script = cur === null || cur === void 0 ? void 0 : cur.script;
 				let res = _objectSpread2(_objectSpread2(_objectSpread2({}, cur), o), {}, {
 					amount,
@@ -20392,7 +20399,7 @@ zoo`.split("\n"));
 	* @param value - The value to assert.
 	* @param options - Options.
 	*/
-	function assert$7(value, options = {}) {
+	function assert$8(value, options = {}) {
 		const { even = false, strict = false } = options;
 		if (typeof value !== "string") throw new InvalidHexTypeError(value);
 		if (strict) {
@@ -20457,7 +20464,7 @@ zoo`.split("\n"));
 	function from$5(value) {
 		if (value instanceof Uint8Array) return fromBytes$1(value);
 		if (Array.isArray(value)) return fromBytes$1(new Uint8Array(value));
-		assert$7(value);
+		assert$8(value);
 		return value;
 	}
 	/**
@@ -20745,7 +20752,7 @@ zoo`.split("\n"));
 	function validate$3(value, options = {}) {
 		const { even = false, strict = false } = options;
 		try {
-			assert$7(value, {
+			assert$8(value, {
 				even,
 				strict
 			});
@@ -21453,7 +21460,7 @@ zoo`.split("\n"));
 	* @param value - Value to assert if it is a valid address.
 	* @param options - Assertion options.
 	*/
-	function assert$6(value, options = {}) {
+	function assert$7(value, options = {}) {
 		const { strict = true } = options;
 		const kind = classify$2(value);
 		if (kind === 0) throw new InvalidAddressError({
@@ -21628,6 +21635,22 @@ zoo`.split("\n"));
 			if (i !== length - 1) params += ", ";
 		}
 		return params;
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiItem.js
+	/**
+	* Formats ABI item (e.g. error, event, function) into human-readable ABI item
+	*
+	* @param abiItem - ABI item
+	* @returns Human-readable ABI item
+	*/
+	function formatAbiItem(abiItem) {
+		var _abiItem$outputs;
+		if (abiItem.type === "function") return `function ${abiItem.name}(${formatAbiParameters(abiItem.inputs)})${abiItem.stateMutability && abiItem.stateMutability !== "nonpayable" ? ` ${abiItem.stateMutability}` : ""}${((_abiItem$outputs = abiItem.outputs) === null || _abiItem$outputs === void 0 ? void 0 : _abiItem$outputs.length) ? ` returns (${formatAbiParameters(abiItem.outputs)})` : ""}`;
+		if (abiItem.type === "event") return `event ${abiItem.name}(${formatAbiParameters(abiItem.inputs)})`;
+		if (abiItem.type === "error") return `error ${abiItem.name}(${formatAbiParameters(abiItem.inputs)})`;
+		if (abiItem.type === "constructor") return `constructor(${formatAbiParameters(abiItem.inputs)})${abiItem.stateMutability === "payable" ? " payable" : ""}`;
+		if (abiItem.type === "fallback") return `fallback() external${abiItem.stateMutability === "payable" ? " payable" : ""}`;
+		return "receive() external payable";
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/errors.js
 	init_defineProperty();
@@ -22181,6 +22204,217 @@ zoo`.split("\n"));
 		}
 		return components;
 	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/parseAbiItem.js
+	/**
+	* Parses human-readable ABI item (e.g. error, event, function) into `Abi` item.
+	*
+	* @param signature - Human-readable ABI item
+	* @returns Parsed `Abi` item.
+	*/
+	function parseAbiItem(signature) {
+		let abiItem;
+		if (typeof signature === "string") abiItem = parseSignature(signature);
+		else {
+			const structs = parseStructs(signature);
+			const length = signature.length;
+			for (let i = 0; i < length; i++) {
+				const signature_ = signature[i];
+				if (isStructSignature(signature_)) continue;
+				abiItem = parseSignature(signature_, structs);
+				break;
+			}
+		}
+		if (!abiItem) throw new InvalidAbiItemError({ signature });
+		return abiItem;
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cursor.js
+	init_defineProperty();
+	var staticCursor = {
+		bytes: /* @__PURE__ */ new Uint8Array(),
+		dataView: /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(0)),
+		position: 0,
+		positionReadCount: void 0,
+		recursiveReadCount: 0,
+		recursiveReadLimit: Number.POSITIVE_INFINITY,
+		assertReadLimit() {
+			if (this.recursiveReadCount >= this.recursiveReadLimit) throw new RecursiveReadLimitExceededError({
+				count: this.recursiveReadCount + 1,
+				limit: this.recursiveReadLimit
+			});
+		},
+		assertPosition(position) {
+			if (position < 0 || position > this.bytes.length - 1) throw new PositionOutOfBoundsError({
+				length: this.bytes.length,
+				position
+			});
+		},
+		decrementPosition(offset) {
+			if (offset < 0) throw new NegativeOffsetError({ offset });
+			const position = this.position - offset;
+			this.assertPosition(position);
+			this.position = position;
+		},
+		getReadCount(position) {
+			var _this$positionReadCou;
+			return ((_this$positionReadCou = this.positionReadCount) === null || _this$positionReadCou === void 0 ? void 0 : _this$positionReadCou.get(position || this.position)) || 0;
+		},
+		incrementPosition(offset) {
+			if (offset < 0) throw new NegativeOffsetError({ offset });
+			const position = this.position + offset;
+			this.assertPosition(position);
+			this.position = position;
+		},
+		inspectByte(position_) {
+			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
+			this.assertPosition(position);
+			return this.bytes[position];
+		},
+		inspectBytes(length, position_) {
+			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
+			this.assertPosition(position + length - 1);
+			return this.bytes.subarray(position, position + length);
+		},
+		inspectUint8(position_) {
+			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
+			this.assertPosition(position);
+			return this.bytes[position];
+		},
+		inspectUint16(position_) {
+			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
+			this.assertPosition(position + 1);
+			return this.dataView.getUint16(position);
+		},
+		inspectUint24(position_) {
+			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
+			this.assertPosition(position + 2);
+			return (this.dataView.getUint16(position) << 8) + this.dataView.getUint8(position + 2);
+		},
+		inspectUint32(position_) {
+			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
+			this.assertPosition(position + 3);
+			return this.dataView.getUint32(position);
+		},
+		pushByte(byte) {
+			this.assertPosition(this.position);
+			this.bytes[this.position] = byte;
+			this.position++;
+		},
+		pushBytes(bytes) {
+			this.assertPosition(this.position + bytes.length - 1);
+			this.bytes.set(bytes, this.position);
+			this.position += bytes.length;
+		},
+		pushUint8(value) {
+			this.assertPosition(this.position);
+			this.bytes[this.position] = value;
+			this.position++;
+		},
+		pushUint16(value) {
+			this.assertPosition(this.position + 1);
+			this.dataView.setUint16(this.position, value);
+			this.position += 2;
+		},
+		pushUint24(value) {
+			this.assertPosition(this.position + 2);
+			this.dataView.setUint16(this.position, value >> 8);
+			this.dataView.setUint8(this.position + 2, value & 255);
+			this.position += 3;
+		},
+		pushUint32(value) {
+			this.assertPosition(this.position + 3);
+			this.dataView.setUint32(this.position, value);
+			this.position += 4;
+		},
+		readByte() {
+			this.assertReadLimit();
+			this._touch();
+			const value = this.inspectByte();
+			this.position++;
+			return value;
+		},
+		readBytes(length, size) {
+			this.assertReadLimit();
+			this._touch();
+			const value = this.inspectBytes(length);
+			this.position += size !== null && size !== void 0 ? size : length;
+			return value;
+		},
+		readUint8() {
+			this.assertReadLimit();
+			this._touch();
+			const value = this.inspectUint8();
+			this.position += 1;
+			return value;
+		},
+		readUint16() {
+			this.assertReadLimit();
+			this._touch();
+			const value = this.inspectUint16();
+			this.position += 2;
+			return value;
+		},
+		readUint24() {
+			this.assertReadLimit();
+			this._touch();
+			const value = this.inspectUint24();
+			this.position += 3;
+			return value;
+		},
+		readUint32() {
+			this.assertReadLimit();
+			this._touch();
+			const value = this.inspectUint32();
+			this.position += 4;
+			return value;
+		},
+		get remaining() {
+			return this.bytes.length - this.position;
+		},
+		setPosition(position) {
+			const oldPosition = this.position;
+			this.assertPosition(position);
+			this.position = position;
+			return () => this.position = oldPosition;
+		},
+		_touch() {
+			var _this$positionReadCou2;
+			if (this.recursiveReadLimit === Number.POSITIVE_INFINITY) return;
+			const map = (_this$positionReadCou2 = this.positionReadCount) !== null && _this$positionReadCou2 !== void 0 ? _this$positionReadCou2 : this.positionReadCount = /* @__PURE__ */ new Map();
+			const count = map.get(this.position) || 0;
+			map.set(this.position, count + 1);
+			if (count > 0) this.recursiveReadCount++;
+		}
+	};
+	/** @internal */
+	function create$1(bytes, { recursiveReadLimit = 8192 } = {}) {
+		const cursor = Object.create(staticCursor);
+		cursor.bytes = bytes;
+		cursor.dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+		cursor.positionReadCount = void 0;
+		cursor.recursiveReadLimit = recursiveReadLimit;
+		return cursor;
+	}
+	/** @internal */
+	var NegativeOffsetError = class extends BaseError {
+		constructor({ offset }) {
+			super(`Offset \`${offset}\` cannot be negative.`);
+			_defineProperty(this, "name", "Cursor.NegativeOffsetError");
+		}
+	};
+	/** @internal */
+	var PositionOutOfBoundsError = class extends BaseError {
+		constructor({ length, position }) {
+			super(`Position \`${position}\` is out of bounds (\`0 < position < ${length}\`).`);
+			_defineProperty(this, "name", "Cursor.PositionOutOfBoundsError");
+		}
+	};
+	/** @internal */
+	var RecursiveReadLimitExceededError = class extends BaseError {
+		constructor({ count, limit }) {
+			super(`Recursive read limit of \`${limit}\` exceeded (recursive read count: \`${count}\`).`);
+			_defineProperty(this, "name", "Cursor.RecursiveReadLimitExceededError");
+		}
+	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Solidity.js
 	var arrayRegex = /^(.*)\[([0-9]*)\]$/;
 	var bytesRegex = /^bytes([1-9]|1[0-9]|2[0-9]|3[0-2])?$/;
@@ -22250,6 +22484,386 @@ zoo`.split("\n"));
 	-(2n ** (248n - 1n));
 	-(2n ** (256n - 1n));
 	var maxUint256 = 2n ** 256n - 1n;
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
+	init_defineProperty();
+	function decode$2(parameters, data, options = {}) {
+		const { as = "Array", checksumAddress = true } = options;
+		const bytes = typeof data === "string" ? fromHex$2(data) : data;
+		const cursor = create$1(bytes);
+		if (size(bytes) === 0 && parameters.length > 0) throw new ZeroDataError();
+		if (size(bytes) && size(bytes) < 32) throw new DataSizeTooSmallError({
+			data: typeof data === "string" ? data : fromBytes$1(data),
+			parameters,
+			size: size(bytes)
+		});
+		let consumed = 0;
+		const values = as === "Array" ? [] : {};
+		for (let i = 0; i < parameters.length; ++i) {
+			const param = parameters[i];
+			try {
+				var _param$name;
+				if (consumed < bytes.length) cursor.setPosition(consumed);
+				const [data_, consumed_] = decodeParameter(cursor, param, {
+					checksumAddress,
+					staticPosition: 0
+				});
+				consumed += consumed_;
+				if (as === "Array") values.push(data_);
+				else values[(_param$name = param.name) !== null && _param$name !== void 0 ? _param$name : i] = data_;
+			} catch (err) {
+				if (err instanceof PositionOutOfBoundsError) throw new DataSizeTooSmallError({
+					data: typeof data === "string" ? data : fromBytes$1(data),
+					parameters,
+					size: size(bytes)
+				});
+				throw err;
+			}
+		}
+		return values;
+	}
+	/**
+	* Encodes primitive values into ABI encoded data as per the [Application Binary Interface (ABI) Specification](https://docs.soliditylang.org/en/latest/abi-spec).
+	*
+	* @example
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* const data = AbiParameters.encode(
+	*   AbiParameters.from(['string', 'uint', 'bool']),
+	*   ['wagmi', 420n, true]
+	* )
+	* ```
+	*
+	* @example
+	* ### JSON Parameters
+	*
+	* Specify **JSON ABI** Parameters as schema:
+	*
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* const data = AbiParameters.encode(
+	*   [
+	*     { type: 'string', name: 'name' },
+	*     { type: 'uint', name: 'age' },
+	*     { type: 'bool', name: 'isOwner' }
+	*   ],
+	*   ['wagmi', 420n, true]
+	* )
+	* ```
+	*
+	* @param parameters - The set of ABI parameters to encode, in the shape of the `inputs` or `outputs` attribute of an ABI Item. These parameters must include valid [ABI types](https://docs.soliditylang.org/en/latest/types.html).
+	* @param values - The set of primitive values that correspond to the ABI types defined in `parameters`.
+	* @returns ABI encoded data.
+	*/
+	function encode$3(parameters, values, options) {
+		const { checksumAddress = false } = options !== null && options !== void 0 ? options : {};
+		return encodeParameters(parameters, values, { checksumAddress });
+	}
+	/**
+	* Encodes an array of primitive values to a [packed ABI encoding](https://docs.soliditylang.org/en/latest/abi-spec.html#non-standard-packed-mode).
+	*
+	* @example
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* const encoded = AbiParameters.encodePacked(
+	*   ['address', 'string'],
+	*   [
+	*     '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
+	*     'hello world'
+	*   ]
+	* )
+	* // @log: '0xd8da6bf26964af9d7eed9e03e53415d37aa9604568656c6c6f20776f726c64'
+	* ```
+	*
+	* @param types - Set of ABI types to pack encode.
+	* @param values - The set of primitive values that correspond to the ABI types defined in `types`.
+	* @returns The encoded packed data.
+	*/
+	function encodePacked(types, values) {
+		if (types.length !== values.length) throw new LengthMismatchError({
+			expectedLength: types.length,
+			givenLength: values.length
+		});
+		const data = [];
+		for (let i = 0; i < types.length; i++) {
+			const type = types[i];
+			const value = values[i];
+			data.push(encodePacked.encode(type, value));
+		}
+		return concat$1(...data);
+	}
+	(function(encodePacked) {
+		function encode(type, value, isArray = false) {
+			if (type === "address") {
+				const address = value;
+				assert$7(address);
+				return padLeft(address.toLowerCase(), isArray ? 32 : 0);
+			}
+			if (type === "string") return fromString$2(value);
+			if (type === "bytes") return value;
+			if (type === "bool") return padLeft(fromBoolean(value), isArray ? 32 : 1);
+			const intMatch = type.match(integerRegex);
+			if (intMatch) {
+				const [_type, baseType, bits = "256"] = intMatch;
+				const size = Number.parseInt(bits, 10) / 8;
+				return fromNumber(value, {
+					size: isArray ? 32 : size,
+					signed: baseType === "int"
+				});
+			}
+			const bytesMatch = type.match(bytesRegex);
+			if (bytesMatch) {
+				const [_type, size] = bytesMatch;
+				if (Number.parseInt(size, 10) !== (value.length - 2) / 2) throw new BytesSizeMismatchError$1({
+					expectedSize: Number.parseInt(size, 10),
+					value
+				});
+				return padRight$1(value, isArray ? 32 : 0);
+			}
+			const arrayMatch = type.match(arrayRegex);
+			if (arrayMatch && Array.isArray(value)) {
+				const [_type, childType, lengthMatch] = arrayMatch;
+				if (lengthMatch) {
+					const declaredLength = Number.parseInt(lengthMatch, 10);
+					if (value.length !== declaredLength) throw new ArrayLengthMismatchError({
+						expectedLength: declaredLength,
+						givenLength: value.length,
+						type
+					});
+				}
+				const data = [];
+				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
+				if (data.length === 0) return "0x";
+				return concat$1(...data);
+			}
+			throw new InvalidTypeError$1(type);
+		}
+		encodePacked.encode = encode;
+	})(encodePacked || (encodePacked = {}));
+	/**
+	* Throws when the data size is too small for the given parameters.
+	*
+	* @example
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* AbiParameters.decode([{ type: 'uint256' }], '0x010f')
+	* //                                             ↑ ❌ 2 bytes
+	* // @error: AbiParameters.DataSizeTooSmallError: Data size of 2 bytes is too small for given parameters.
+	* // @error: Params: (uint256)
+	* // @error: Data:   0x010f (2 bytes)
+	* ```
+	*
+	* ### Solution
+	*
+	* Pass a valid data size.
+	*
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* AbiParameters.decode(
+	*   [{ type: 'uint256' }],
+	*   '0x00000000000000000000000000000000000000000000000000000000000010f'
+	* )
+	* //                                             ↑ ✅ 32 bytes
+	* ```
+	*/
+	var DataSizeTooSmallError = class extends BaseError {
+		constructor({ data, parameters, size }) {
+			super(`Data size of ${size} bytes is too small for given parameters.`, { metaMessages: [`Params: (${formatAbiParameters(parameters)})`, `Data:   ${data} (${size} bytes)`] });
+			_defineProperty(this, "name", "AbiParameters.DataSizeTooSmallError");
+		}
+	};
+	/**
+	* Throws when zero data is provided, but data is expected.
+	*
+	* @example
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* AbiParameters.decode([{ type: 'uint256' }], '0x')
+	* //                                           ↑ ❌ zero data
+	* // @error: AbiParameters.DataSizeTooSmallError: Data size of 2 bytes is too small for given parameters.
+	* // @error: Params: (uint256)
+	* // @error: Data:   0x010f (2 bytes)
+	* ```
+	*
+	* ### Solution
+	*
+	* Pass valid data.
+	*
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* AbiParameters.decode(
+	*   [{ type: 'uint256' }],
+	*   '0x00000000000000000000000000000000000000000000000000000000000010f'
+	* )
+	* //                                             ↑ ✅ 32 bytes
+	* ```
+	*/
+	var ZeroDataError = class extends BaseError {
+		constructor() {
+			super("Cannot decode zero data (\"0x\") with ABI parameters.");
+			_defineProperty(this, "name", "AbiParameters.ZeroDataError");
+		}
+	};
+	/**
+	* The length of the array value does not match the length specified in the corresponding ABI parameter.
+	*
+	* ### Example
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { AbiParameters } from 'ox'
+	* // ---cut---
+	* AbiParameters.encode(AbiParameters.from('uint256[3]'), [
+	*   [69n, 420n]
+	* ])
+	* //                                               ↑ expected: 3  ↑ ❌ length: 2
+	* // @error: AbiParameters.ArrayLengthMismatchError: ABI encoding array length mismatch
+	* // @error: for type `uint256[3]`. Expected: `3`. Given: `2`.
+	* ```
+	*
+	* ### Solution
+	*
+	* Pass an array of the correct length.
+	*
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	* // ---cut---
+	* AbiParameters.encode(AbiParameters.from(['uint256[3]']), [
+	*   [69n, 420n, 69n]
+	* ])
+	* //                                                         ↑ ✅ length: 3
+	* ```
+	*/
+	var ArrayLengthMismatchError = class extends BaseError {
+		constructor({ expectedLength, givenLength, type }) {
+			super(`Array length mismatch for type \`${type}\`. Expected: \`${expectedLength}\`. Given: \`${givenLength}\`.`);
+			_defineProperty(this, "name", "AbiParameters.ArrayLengthMismatchError");
+		}
+	};
+	/**
+	* The size of the bytes value does not match the size specified in the corresponding ABI parameter.
+	*
+	* ### Example
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { AbiParameters } from 'ox'
+	* // ---cut---
+	* AbiParameters.encode(AbiParameters.from('bytes8'), [
+	*   ['0xdeadbeefdeadbeefdeadbeef']
+	* ])
+	* //                                            ↑ expected: 8 bytes  ↑ ❌ size: 12 bytes
+	* // @error: BytesSizeMismatchError: Size of bytes "0xdeadbeefdeadbeefdeadbeef"
+	* // @error: (bytes12) does not match expected size (bytes8).
+	* ```
+	*
+	* ### Solution
+	*
+	* Pass a bytes value of the correct size.
+	*
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	* // ---cut---
+	* AbiParameters.encode(AbiParameters.from(['bytes8']), [
+	*   '0xdeadbeefdeadbeef'
+	* ])
+	* //                                                       ↑ ✅ size: 8 bytes
+	* ```
+	*/
+	var BytesSizeMismatchError$1 = class extends BaseError {
+		constructor({ expectedSize, value }) {
+			super(`Size of bytes "${value}" (bytes${size$1(value)}) does not match expected size (bytes${expectedSize}).`);
+			_defineProperty(this, "name", "AbiParameters.BytesSizeMismatchError");
+		}
+	};
+	/**
+	* The length of the values to encode does not match the length of the ABI parameters.
+	*
+	* ### Example
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { AbiParameters } from 'ox'
+	* // ---cut---
+	* AbiParameters.encode(
+	*   AbiParameters.from(['string', 'uint256']),
+	*   ['hello']
+	* )
+	* // @error: LengthMismatchError: ABI encoding params/values length mismatch.
+	* // @error: Expected length (params): 2
+	* // @error: Given length (values): 1
+	* ```
+	*
+	* ### Solution
+	*
+	* Pass the correct number of values to encode.
+	*
+	* ### Solution
+	*
+	* Pass a [valid ABI type](https://docs.soliditylang.org/en/develop/abi-spec.html#types).
+	*/
+	var LengthMismatchError = class extends BaseError {
+		constructor({ expectedLength, givenLength }) {
+			super([
+				"ABI encoding parameters/values length mismatch.",
+				`Expected length (parameters): ${expectedLength}`,
+				`Given length (values): ${givenLength}`
+			].join("\n"));
+			_defineProperty(this, "name", "AbiParameters.LengthMismatchError");
+		}
+	};
+	/**
+	* The value provided is not a valid array as specified in the corresponding ABI parameter.
+	*
+	* ### Example
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { AbiParameters } from 'ox'
+	* // ---cut---
+	* AbiParameters.encode(
+	*   AbiParameters.from(['uint256[3]']),
+	*   [69]
+	* )
+	* ```
+	*
+	* ### Solution
+	*
+	* Pass an array value.
+	*/
+	var InvalidArrayError$1 = class extends BaseError {
+		constructor(value) {
+			super(`Value \`${value}\` is not a valid array.`);
+			_defineProperty(this, "name", "AbiParameters.InvalidArrayError");
+		}
+	};
+	/**
+	* Throws when the ABI parameter type is invalid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { AbiParameters } from 'ox'
+	*
+	* AbiParameters.decode(
+	*   [{ type: 'lol' }],
+	*   '0x00000000000000000000000000000000000000000000000000000000000010f'
+	* )
+	* //                             ↑ ❌ invalid type
+	* // @error: AbiParameters.InvalidTypeError: Type `lol` is not a valid ABI Type.
+	* ```
+	*/
+	var InvalidTypeError$1 = class extends BaseError {
+		constructor(type) {
+			super(`Type \`${type}\` is not a valid ABI Type.`);
+			_defineProperty(this, "name", "AbiParameters.InvalidTypeError");
+		}
+	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/abiParameters.js
 	init_objectSpread2();
 	/** @internal */
@@ -22568,7 +23182,7 @@ zoo`.split("\n"));
 		}
 		if (parameter.kind === "tuple") return measureParameters(parameter.children, value, context);
 		if (parameter.kind === "address") {
-			assert$6(value, { strict: context.checksumAddress });
+			assert$7(value, { strict: context.checksumAddress });
 			return 32;
 		}
 		if (parameter.kind === "boolean") {
@@ -22750,1386 +23364,6 @@ zoo`.split("\n"));
 		const arrayComponents = getArrayComponents(param.type);
 		if (arrayComponents && hasDynamicChild(_objectSpread2(_objectSpread2({}, param), {}, { type: arrayComponents[1] }))) return true;
 		return false;
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cursor.js
-	init_defineProperty();
-	var staticCursor = {
-		bytes: /* @__PURE__ */ new Uint8Array(),
-		dataView: /* @__PURE__ */ new DataView(/* @__PURE__ */ new ArrayBuffer(0)),
-		position: 0,
-		positionReadCount: void 0,
-		recursiveReadCount: 0,
-		recursiveReadLimit: Number.POSITIVE_INFINITY,
-		assertReadLimit() {
-			if (this.recursiveReadCount >= this.recursiveReadLimit) throw new RecursiveReadLimitExceededError({
-				count: this.recursiveReadCount + 1,
-				limit: this.recursiveReadLimit
-			});
-		},
-		assertPosition(position) {
-			if (position < 0 || position > this.bytes.length - 1) throw new PositionOutOfBoundsError({
-				length: this.bytes.length,
-				position
-			});
-		},
-		decrementPosition(offset) {
-			if (offset < 0) throw new NegativeOffsetError({ offset });
-			const position = this.position - offset;
-			this.assertPosition(position);
-			this.position = position;
-		},
-		getReadCount(position) {
-			var _this$positionReadCou;
-			return ((_this$positionReadCou = this.positionReadCount) === null || _this$positionReadCou === void 0 ? void 0 : _this$positionReadCou.get(position || this.position)) || 0;
-		},
-		incrementPosition(offset) {
-			if (offset < 0) throw new NegativeOffsetError({ offset });
-			const position = this.position + offset;
-			this.assertPosition(position);
-			this.position = position;
-		},
-		inspectByte(position_) {
-			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
-			this.assertPosition(position);
-			return this.bytes[position];
-		},
-		inspectBytes(length, position_) {
-			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
-			this.assertPosition(position + length - 1);
-			return this.bytes.subarray(position, position + length);
-		},
-		inspectUint8(position_) {
-			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
-			this.assertPosition(position);
-			return this.bytes[position];
-		},
-		inspectUint16(position_) {
-			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
-			this.assertPosition(position + 1);
-			return this.dataView.getUint16(position);
-		},
-		inspectUint24(position_) {
-			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
-			this.assertPosition(position + 2);
-			return (this.dataView.getUint16(position) << 8) + this.dataView.getUint8(position + 2);
-		},
-		inspectUint32(position_) {
-			const position = position_ !== null && position_ !== void 0 ? position_ : this.position;
-			this.assertPosition(position + 3);
-			return this.dataView.getUint32(position);
-		},
-		pushByte(byte) {
-			this.assertPosition(this.position);
-			this.bytes[this.position] = byte;
-			this.position++;
-		},
-		pushBytes(bytes) {
-			this.assertPosition(this.position + bytes.length - 1);
-			this.bytes.set(bytes, this.position);
-			this.position += bytes.length;
-		},
-		pushUint8(value) {
-			this.assertPosition(this.position);
-			this.bytes[this.position] = value;
-			this.position++;
-		},
-		pushUint16(value) {
-			this.assertPosition(this.position + 1);
-			this.dataView.setUint16(this.position, value);
-			this.position += 2;
-		},
-		pushUint24(value) {
-			this.assertPosition(this.position + 2);
-			this.dataView.setUint16(this.position, value >> 8);
-			this.dataView.setUint8(this.position + 2, value & 255);
-			this.position += 3;
-		},
-		pushUint32(value) {
-			this.assertPosition(this.position + 3);
-			this.dataView.setUint32(this.position, value);
-			this.position += 4;
-		},
-		readByte() {
-			this.assertReadLimit();
-			this._touch();
-			const value = this.inspectByte();
-			this.position++;
-			return value;
-		},
-		readBytes(length, size) {
-			this.assertReadLimit();
-			this._touch();
-			const value = this.inspectBytes(length);
-			this.position += size !== null && size !== void 0 ? size : length;
-			return value;
-		},
-		readUint8() {
-			this.assertReadLimit();
-			this._touch();
-			const value = this.inspectUint8();
-			this.position += 1;
-			return value;
-		},
-		readUint16() {
-			this.assertReadLimit();
-			this._touch();
-			const value = this.inspectUint16();
-			this.position += 2;
-			return value;
-		},
-		readUint24() {
-			this.assertReadLimit();
-			this._touch();
-			const value = this.inspectUint24();
-			this.position += 3;
-			return value;
-		},
-		readUint32() {
-			this.assertReadLimit();
-			this._touch();
-			const value = this.inspectUint32();
-			this.position += 4;
-			return value;
-		},
-		get remaining() {
-			return this.bytes.length - this.position;
-		},
-		setPosition(position) {
-			const oldPosition = this.position;
-			this.assertPosition(position);
-			this.position = position;
-			return () => this.position = oldPosition;
-		},
-		_touch() {
-			var _this$positionReadCou2;
-			if (this.recursiveReadLimit === Number.POSITIVE_INFINITY) return;
-			const map = (_this$positionReadCou2 = this.positionReadCount) !== null && _this$positionReadCou2 !== void 0 ? _this$positionReadCou2 : this.positionReadCount = /* @__PURE__ */ new Map();
-			const count = map.get(this.position) || 0;
-			map.set(this.position, count + 1);
-			if (count > 0) this.recursiveReadCount++;
-		}
-	};
-	/** @internal */
-	function create$1(bytes, { recursiveReadLimit = 8192 } = {}) {
-		const cursor = Object.create(staticCursor);
-		cursor.bytes = bytes;
-		cursor.dataView = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-		cursor.positionReadCount = void 0;
-		cursor.recursiveReadLimit = recursiveReadLimit;
-		return cursor;
-	}
-	/** @internal */
-	var NegativeOffsetError = class extends BaseError {
-		constructor({ offset }) {
-			super(`Offset \`${offset}\` cannot be negative.`);
-			_defineProperty(this, "name", "Cursor.NegativeOffsetError");
-		}
-	};
-	/** @internal */
-	var PositionOutOfBoundsError = class extends BaseError {
-		constructor({ length, position }) {
-			super(`Position \`${position}\` is out of bounds (\`0 < position < ${length}\`).`);
-			_defineProperty(this, "name", "Cursor.PositionOutOfBoundsError");
-		}
-	};
-	/** @internal */
-	var RecursiveReadLimitExceededError = class extends BaseError {
-		constructor({ count, limit }) {
-			super(`Recursive read limit of \`${limit}\` exceeded (recursive read count: \`${count}\`).`);
-			_defineProperty(this, "name", "Cursor.RecursiveReadLimitExceededError");
-		}
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AbiParameters.js
-	init_defineProperty();
-	function decode$2(parameters, data, options = {}) {
-		const { as = "Array", checksumAddress = true } = options;
-		const bytes = typeof data === "string" ? fromHex$2(data) : data;
-		const cursor = create$1(bytes);
-		if (size(bytes) === 0 && parameters.length > 0) throw new ZeroDataError();
-		if (size(bytes) && size(bytes) < 32) throw new DataSizeTooSmallError({
-			data: typeof data === "string" ? data : fromBytes$1(data),
-			parameters,
-			size: size(bytes)
-		});
-		let consumed = 0;
-		const values = as === "Array" ? [] : {};
-		for (let i = 0; i < parameters.length; ++i) {
-			const param = parameters[i];
-			try {
-				var _param$name;
-				if (consumed < bytes.length) cursor.setPosition(consumed);
-				const [data_, consumed_] = decodeParameter(cursor, param, {
-					checksumAddress,
-					staticPosition: 0
-				});
-				consumed += consumed_;
-				if (as === "Array") values.push(data_);
-				else values[(_param$name = param.name) !== null && _param$name !== void 0 ? _param$name : i] = data_;
-			} catch (err) {
-				if (err instanceof PositionOutOfBoundsError) throw new DataSizeTooSmallError({
-					data: typeof data === "string" ? data : fromBytes$1(data),
-					parameters,
-					size: size(bytes)
-				});
-				throw err;
-			}
-		}
-		return values;
-	}
-	/**
-	* Encodes primitive values into ABI encoded data as per the [Application Binary Interface (ABI) Specification](https://docs.soliditylang.org/en/latest/abi-spec).
-	*
-	* @example
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* const data = AbiParameters.encode(
-	*   AbiParameters.from(['string', 'uint', 'bool']),
-	*   ['wagmi', 420n, true]
-	* )
-	* ```
-	*
-	* @example
-	* ### JSON Parameters
-	*
-	* Specify **JSON ABI** Parameters as schema:
-	*
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* const data = AbiParameters.encode(
-	*   [
-	*     { type: 'string', name: 'name' },
-	*     { type: 'uint', name: 'age' },
-	*     { type: 'bool', name: 'isOwner' }
-	*   ],
-	*   ['wagmi', 420n, true]
-	* )
-	* ```
-	*
-	* @param parameters - The set of ABI parameters to encode, in the shape of the `inputs` or `outputs` attribute of an ABI Item. These parameters must include valid [ABI types](https://docs.soliditylang.org/en/latest/types.html).
-	* @param values - The set of primitive values that correspond to the ABI types defined in `parameters`.
-	* @returns ABI encoded data.
-	*/
-	function encode$3(parameters, values, options) {
-		const { checksumAddress = false } = options !== null && options !== void 0 ? options : {};
-		return encodeParameters(parameters, values, { checksumAddress });
-	}
-	/**
-	* Encodes an array of primitive values to a [packed ABI encoding](https://docs.soliditylang.org/en/latest/abi-spec.html#non-standard-packed-mode).
-	*
-	* @example
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* const encoded = AbiParameters.encodePacked(
-	*   ['address', 'string'],
-	*   [
-	*     '0xd8da6bf26964af9d7eed9e03e53415d37aa96045',
-	*     'hello world'
-	*   ]
-	* )
-	* // @log: '0xd8da6bf26964af9d7eed9e03e53415d37aa9604568656c6c6f20776f726c64'
-	* ```
-	*
-	* @param types - Set of ABI types to pack encode.
-	* @param values - The set of primitive values that correspond to the ABI types defined in `types`.
-	* @returns The encoded packed data.
-	*/
-	function encodePacked(types, values) {
-		if (types.length !== values.length) throw new LengthMismatchError({
-			expectedLength: types.length,
-			givenLength: values.length
-		});
-		const data = [];
-		for (let i = 0; i < types.length; i++) {
-			const type = types[i];
-			const value = values[i];
-			data.push(encodePacked.encode(type, value));
-		}
-		return concat$1(...data);
-	}
-	(function(encodePacked) {
-		function encode(type, value, isArray = false) {
-			if (type === "address") {
-				const address = value;
-				assert$6(address);
-				return padLeft(address.toLowerCase(), isArray ? 32 : 0);
-			}
-			if (type === "string") return fromString$2(value);
-			if (type === "bytes") return value;
-			if (type === "bool") return padLeft(fromBoolean(value), isArray ? 32 : 1);
-			const intMatch = type.match(integerRegex);
-			if (intMatch) {
-				const [_type, baseType, bits = "256"] = intMatch;
-				const size = Number.parseInt(bits, 10) / 8;
-				return fromNumber(value, {
-					size: isArray ? 32 : size,
-					signed: baseType === "int"
-				});
-			}
-			const bytesMatch = type.match(bytesRegex);
-			if (bytesMatch) {
-				const [_type, size] = bytesMatch;
-				if (Number.parseInt(size, 10) !== (value.length - 2) / 2) throw new BytesSizeMismatchError$1({
-					expectedSize: Number.parseInt(size, 10),
-					value
-				});
-				return padRight$1(value, isArray ? 32 : 0);
-			}
-			const arrayMatch = type.match(arrayRegex);
-			if (arrayMatch && Array.isArray(value)) {
-				const [_type, childType, lengthMatch] = arrayMatch;
-				if (lengthMatch) {
-					const declaredLength = Number.parseInt(lengthMatch, 10);
-					if (value.length !== declaredLength) throw new ArrayLengthMismatchError({
-						expectedLength: declaredLength,
-						givenLength: value.length,
-						type
-					});
-				}
-				const data = [];
-				for (let i = 0; i < value.length; i++) data.push(encode(childType, value[i], true));
-				if (data.length === 0) return "0x";
-				return concat$1(...data);
-			}
-			throw new InvalidTypeError$1(type);
-		}
-		encodePacked.encode = encode;
-	})(encodePacked || (encodePacked = {}));
-	/**
-	* Throws when the data size is too small for the given parameters.
-	*
-	* @example
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* AbiParameters.decode([{ type: 'uint256' }], '0x010f')
-	* //                                             ↑ ❌ 2 bytes
-	* // @error: AbiParameters.DataSizeTooSmallError: Data size of 2 bytes is too small for given parameters.
-	* // @error: Params: (uint256)
-	* // @error: Data:   0x010f (2 bytes)
-	* ```
-	*
-	* ### Solution
-	*
-	* Pass a valid data size.
-	*
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* AbiParameters.decode(
-	*   [{ type: 'uint256' }],
-	*   '0x00000000000000000000000000000000000000000000000000000000000010f'
-	* )
-	* //                                             ↑ ✅ 32 bytes
-	* ```
-	*/
-	var DataSizeTooSmallError = class extends BaseError {
-		constructor({ data, parameters, size }) {
-			super(`Data size of ${size} bytes is too small for given parameters.`, { metaMessages: [`Params: (${formatAbiParameters(parameters)})`, `Data:   ${data} (${size} bytes)`] });
-			_defineProperty(this, "name", "AbiParameters.DataSizeTooSmallError");
-		}
-	};
-	/**
-	* Throws when zero data is provided, but data is expected.
-	*
-	* @example
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* AbiParameters.decode([{ type: 'uint256' }], '0x')
-	* //                                           ↑ ❌ zero data
-	* // @error: AbiParameters.DataSizeTooSmallError: Data size of 2 bytes is too small for given parameters.
-	* // @error: Params: (uint256)
-	* // @error: Data:   0x010f (2 bytes)
-	* ```
-	*
-	* ### Solution
-	*
-	* Pass valid data.
-	*
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* AbiParameters.decode(
-	*   [{ type: 'uint256' }],
-	*   '0x00000000000000000000000000000000000000000000000000000000000010f'
-	* )
-	* //                                             ↑ ✅ 32 bytes
-	* ```
-	*/
-	var ZeroDataError = class extends BaseError {
-		constructor() {
-			super("Cannot decode zero data (\"0x\") with ABI parameters.");
-			_defineProperty(this, "name", "AbiParameters.ZeroDataError");
-		}
-	};
-	/**
-	* The length of the array value does not match the length specified in the corresponding ABI parameter.
-	*
-	* ### Example
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { AbiParameters } from 'ox'
-	* // ---cut---
-	* AbiParameters.encode(AbiParameters.from('uint256[3]'), [
-	*   [69n, 420n]
-	* ])
-	* //                                               ↑ expected: 3  ↑ ❌ length: 2
-	* // @error: AbiParameters.ArrayLengthMismatchError: ABI encoding array length mismatch
-	* // @error: for type `uint256[3]`. Expected: `3`. Given: `2`.
-	* ```
-	*
-	* ### Solution
-	*
-	* Pass an array of the correct length.
-	*
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	* // ---cut---
-	* AbiParameters.encode(AbiParameters.from(['uint256[3]']), [
-	*   [69n, 420n, 69n]
-	* ])
-	* //                                                         ↑ ✅ length: 3
-	* ```
-	*/
-	var ArrayLengthMismatchError = class extends BaseError {
-		constructor({ expectedLength, givenLength, type }) {
-			super(`Array length mismatch for type \`${type}\`. Expected: \`${expectedLength}\`. Given: \`${givenLength}\`.`);
-			_defineProperty(this, "name", "AbiParameters.ArrayLengthMismatchError");
-		}
-	};
-	/**
-	* The size of the bytes value does not match the size specified in the corresponding ABI parameter.
-	*
-	* ### Example
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { AbiParameters } from 'ox'
-	* // ---cut---
-	* AbiParameters.encode(AbiParameters.from('bytes8'), [
-	*   ['0xdeadbeefdeadbeefdeadbeef']
-	* ])
-	* //                                            ↑ expected: 8 bytes  ↑ ❌ size: 12 bytes
-	* // @error: BytesSizeMismatchError: Size of bytes "0xdeadbeefdeadbeefdeadbeef"
-	* // @error: (bytes12) does not match expected size (bytes8).
-	* ```
-	*
-	* ### Solution
-	*
-	* Pass a bytes value of the correct size.
-	*
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	* // ---cut---
-	* AbiParameters.encode(AbiParameters.from(['bytes8']), [
-	*   '0xdeadbeefdeadbeef'
-	* ])
-	* //                                                       ↑ ✅ size: 8 bytes
-	* ```
-	*/
-	var BytesSizeMismatchError$1 = class extends BaseError {
-		constructor({ expectedSize, value }) {
-			super(`Size of bytes "${value}" (bytes${size$1(value)}) does not match expected size (bytes${expectedSize}).`);
-			_defineProperty(this, "name", "AbiParameters.BytesSizeMismatchError");
-		}
-	};
-	/**
-	* The length of the values to encode does not match the length of the ABI parameters.
-	*
-	* ### Example
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { AbiParameters } from 'ox'
-	* // ---cut---
-	* AbiParameters.encode(
-	*   AbiParameters.from(['string', 'uint256']),
-	*   ['hello']
-	* )
-	* // @error: LengthMismatchError: ABI encoding params/values length mismatch.
-	* // @error: Expected length (params): 2
-	* // @error: Given length (values): 1
-	* ```
-	*
-	* ### Solution
-	*
-	* Pass the correct number of values to encode.
-	*
-	* ### Solution
-	*
-	* Pass a [valid ABI type](https://docs.soliditylang.org/en/develop/abi-spec.html#types).
-	*/
-	var LengthMismatchError = class extends BaseError {
-		constructor({ expectedLength, givenLength }) {
-			super([
-				"ABI encoding parameters/values length mismatch.",
-				`Expected length (parameters): ${expectedLength}`,
-				`Given length (values): ${givenLength}`
-			].join("\n"));
-			_defineProperty(this, "name", "AbiParameters.LengthMismatchError");
-		}
-	};
-	/**
-	* The value provided is not a valid array as specified in the corresponding ABI parameter.
-	*
-	* ### Example
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { AbiParameters } from 'ox'
-	* // ---cut---
-	* AbiParameters.encode(
-	*   AbiParameters.from(['uint256[3]']),
-	*   [69]
-	* )
-	* ```
-	*
-	* ### Solution
-	*
-	* Pass an array value.
-	*/
-	var InvalidArrayError$1 = class extends BaseError {
-		constructor(value) {
-			super(`Value \`${value}\` is not a valid array.`);
-			_defineProperty(this, "name", "AbiParameters.InvalidArrayError");
-		}
-	};
-	/**
-	* Throws when the ABI parameter type is invalid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { AbiParameters } from 'ox'
-	*
-	* AbiParameters.decode(
-	*   [{ type: 'lol' }],
-	*   '0x00000000000000000000000000000000000000000000000000000000000010f'
-	* )
-	* //                             ↑ ❌ invalid type
-	* // @error: AbiParameters.InvalidTypeError: Type `lol` is not a valid ABI Type.
-	* ```
-	*/
-	var InvalidTypeError$1 = class extends BaseError {
-		constructor(type) {
-			super(`Type \`${type}\` is not a valid ABI Type.`);
-			_defineProperty(this, "name", "AbiParameters.InvalidTypeError");
-		}
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TypedData.js
-	init_objectSpread2();
-	init_defineProperty();
-	/**
-	* Asserts that [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData } from 'ox'
-	*
-	* TypedData.assert({
-	*   domain: {
-	*     name: 'Ether!',
-	*     version: '1',
-	*     chainId: 1,
-	*     verifyingContract:
-	*       '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
-	*   },
-	*   primaryType: 'Foo',
-	*   types: {
-	*     Foo: [
-	*       { name: 'address', type: 'address' },
-	*       { name: 'name', type: 'string' },
-	*       { name: 'foo', type: 'string' }
-	*     ]
-	*   },
-	*   message: {
-	*     address: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9',
-	*     name: 'jxom',
-	*     foo: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9'
-	*   }
-	* })
-	* ```
-	*
-	* @param value - The Typed Data to validate.
-	*/
-	function assert$5(value) {
-		const { domain, message, primaryType, types } = value;
-		const validateValue = (type, value, name) => {
-			const arrayMatch = type.match(arrayRegex);
-			if (arrayMatch) {
-				const [, elementType, lengthStr] = arrayMatch;
-				if (!Array.isArray(value)) throw new InvalidArrayError({
-					name,
-					type,
-					value
-				});
-				if (lengthStr) {
-					const expected = Number.parseInt(lengthStr, 10);
-					if (value.length !== expected) throw new InvalidArrayLengthError({
-						name,
-						type,
-						expectedLength: expected,
-						givenLength: value.length
-					});
-				}
-				for (const element of value) validateValue(elementType, element, name);
-				return;
-			}
-			const integerMatch = type.match(integerRegex);
-			if (integerMatch && (typeof value === "number" || typeof value === "bigint")) {
-				const [, base, size_] = integerMatch;
-				fromNumber(value, {
-					signed: base === "int",
-					size: Number.parseInt(size_ !== null && size_ !== void 0 ? size_ : "", 10) / 8
-				});
-			}
-			if (type === "address" && typeof value === "string" && !validate$2(value)) throw new InvalidAddressError({
-				address: value,
-				cause: new InvalidInputError()
-			});
-			const bytesMatch = type.match(bytesRegex);
-			if (bytesMatch) {
-				const [, size] = bytesMatch;
-				if (size && size$1(value) !== Number.parseInt(size, 10)) throw new BytesSizeMismatchError({
-					expectedSize: Number.parseInt(size, 10),
-					givenSize: size$1(value)
-				});
-			}
-			const struct = types[type];
-			if (struct) {
-				validateReference(type);
-				validateData(struct, value);
-			}
-		};
-		const validateData = (struct, data) => {
-			for (const param of struct) {
-				const { name, type } = param;
-				validateValue(type, data[name], name);
-			}
-		};
-		if (types.EIP712Domain && domain) {
-			if (typeof domain !== "object") throw new InvalidDomainError({ domain });
-			validateData(types.EIP712Domain, domain);
-		}
-		if (primaryType !== "EIP712Domain") {
-			if (types[primaryType]) validateData(types[primaryType], message);
-			else throw new InvalidPrimaryTypeError({
-				primaryType,
-				types
-			});
-		}
-	}
-	/**
-	* Encodes typed data in [EIP-712 format](https://eips.ethereum.org/EIPS/eip-712): `0x19 ‖ 0x01 ‖ domainSeparator ‖ hashStruct(message)`.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData, Hash } from 'ox'
-	*
-	* const data = TypedData.encode({
-	*   // [!code focus:33]
-	*   domain: {
-	*     name: 'Ether Mail',
-	*     version: '1',
-	*     chainId: 1,
-	*     verifyingContract:
-	*       '0x0000000000000000000000000000000000000000'
-	*   },
-	*   types: {
-	*     Person: [
-	*       { name: 'name', type: 'string' },
-	*       { name: 'wallet', type: 'address' }
-	*     ],
-	*     Mail: [
-	*       { name: 'from', type: 'Person' },
-	*       { name: 'to', type: 'Person' },
-	*       { name: 'contents', type: 'string' }
-	*     ]
-	*   },
-	*   primaryType: 'Mail',
-	*   message: {
-	*     from: {
-	*       name: 'Cow',
-	*       wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
-	*     },
-	*     to: {
-	*       name: 'Bob',
-	*       wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
-	*     },
-	*     contents: 'Hello, Bob!'
-	*   }
-	* })
-	* // @log: '0x19012fdf3441fcaf4f30c7e16292b258a5d7054a4e2e00dbd7b7d2f467f2b8fb9413c52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e'
-	* // @log: (0x19 ‖ 0x01 ‖ domainSeparator ‖ hashStruct(message))
-	*
-	* const hash = Hash.keccak256(data)
-	* ```
-	*
-	* @param value - The Typed Data to encode.
-	* @returns The encoded Typed Data.
-	*/
-	function encode$2(value) {
-		const { domain = {}, message, primaryType } = value;
-		const types = _objectSpread2({ EIP712Domain: extractEip712DomainTypes(domain) }, value.types);
-		assert$5({
-			domain,
-			message,
-			primaryType,
-			types
-		});
-		const typeHashes = /* @__PURE__ */ new Map();
-		const parts = ["0x19", "0x01"];
-		if (domain) parts.push(hashDomain({
-			domain,
-			types,
-			typeHashes
-		}));
-		if (primaryType !== "EIP712Domain") parts.push(hashStruct({
-			data: message,
-			primaryType,
-			types,
-			typeHashes
-		}));
-		return concat$1(...parts);
-	}
-	/**
-	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData } from 'ox'
-	*
-	* TypedData.encodeType({
-	*   types: {
-	*     Foo: [
-	*       { name: 'address', type: 'address' },
-	*       { name: 'name', type: 'string' },
-	*       { name: 'foo', type: 'string' }
-	*     ]
-	*   },
-	*   primaryType: 'Foo'
-	* })
-	* // @log: 'Foo(address address,string name,string foo)'
-	* ```
-	*
-	* @param value - The Typed Data schema.
-	* @returns The encoded type.
-	*/
-	function encodeType(value) {
-		const { primaryType, types } = value;
-		let result = "";
-		const unsortedDeps = findTypeDependencies({
-			primaryType,
-			types
-		});
-		unsortedDeps.delete(primaryType);
-		const deps = [primaryType, ...Array.from(unsortedDeps).sort()];
-		for (const type of deps) {
-			var _types$type;
-			result += `${type}(${((_types$type = types[type]) !== null && _types$type !== void 0 ? _types$type : []).map(({ name, type: t }) => `${t} ${name}`).join(",")})`;
-		}
-		return result;
-	}
-	/**
-	* Gets [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for EIP-721 domain.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData } from 'ox'
-	*
-	* TypedData.extractEip712DomainTypes({
-	*   name: 'Ether!',
-	*   version: '1',
-	*   chainId: 1,
-	*   verifyingContract:
-	*     '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
-	* })
-	* // @log: [
-	* // @log:   { 'name': 'name', 'type': 'string' },
-	* // @log:   { 'name': 'version', 'type': 'string' },
-	* // @log:   { 'name': 'chainId', 'type': 'uint256' },
-	* // @log:   { 'name': 'verifyingContract', 'type': 'address' },
-	* // @log: ]
-	* ```
-	*
-	* @param domain - The EIP-712 domain.
-	* @returns The EIP-712 domain schema.
-	*/
-	function extractEip712DomainTypes(domain) {
-		return [
-			typeof (domain === null || domain === void 0 ? void 0 : domain.name) === "string" && {
-				name: "name",
-				type: "string"
-			},
-			typeof (domain === null || domain === void 0 ? void 0 : domain.version) === "string" && {
-				name: "version",
-				type: "string"
-			},
-			(typeof (domain === null || domain === void 0 ? void 0 : domain.chainId) === "number" || typeof (domain === null || domain === void 0 ? void 0 : domain.chainId) === "bigint") && {
-				name: "chainId",
-				type: "uint256"
-			},
-			(domain === null || domain === void 0 ? void 0 : domain.verifyingContract) && {
-				name: "verifyingContract",
-				type: "address"
-			},
-			(domain === null || domain === void 0 ? void 0 : domain.salt) && {
-				name: "salt",
-				type: "bytes32"
-			}
-		].filter(Boolean);
-	}
-	/**
-	* Gets the payload to use for signing typed data in [EIP-712 format](https://eips.ethereum.org/EIPS/eip-712).
-	*
-	* @example
-	* ```ts twoslash
-	* import { Secp256k1, TypedData, Hash } from 'ox'
-	*
-	* const payload = TypedData.getSignPayload({
-	*   // [!code focus:99]
-	*   domain: {
-	*     name: 'Ether Mail',
-	*     version: '1',
-	*     chainId: 1,
-	*     verifyingContract:
-	*       '0x0000000000000000000000000000000000000000'
-	*   },
-	*   types: {
-	*     Person: [
-	*       { name: 'name', type: 'string' },
-	*       { name: 'wallet', type: 'address' }
-	*     ],
-	*     Mail: [
-	*       { name: 'from', type: 'Person' },
-	*       { name: 'to', type: 'Person' },
-	*       { name: 'contents', type: 'string' }
-	*     ]
-	*   },
-	*   primaryType: 'Mail',
-	*   message: {
-	*     from: {
-	*       name: 'Cow',
-	*       wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
-	*     },
-	*     to: {
-	*       name: 'Bob',
-	*       wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
-	*     },
-	*     contents: 'Hello, Bob!'
-	*   }
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload,
-	*   privateKey: '0x...'
-	* })
-	* ```
-	*
-	* @param value - The typed data to get the sign payload for.
-	* @returns The payload to use for signing.
-	*/
-	function getSignPayload$4(value) {
-		return keccak256(encode$2(value));
-	}
-	/**
-	* Hashes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) domain.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData } from 'ox'
-	*
-	* TypedData.hashDomain({
-	*   domain: {
-	*     name: 'Ether Mail',
-	*     version: '1',
-	*     chainId: 1,
-	*     verifyingContract:
-	*       '0x0000000000000000000000000000000000000000'
-	*   }
-	* })
-	* // @log: '0x6192106f129ce05c9075d319c1fa6ea9b3ae37cbd0c1ef92e2be7137bb07baa1'
-	* ```
-	*
-	* @param value - The Typed Data domain and types.
-	* @returns The hashed domain.
-	*/
-	function hashDomain(value) {
-		const { domain, types, typeHashes } = value;
-		return hashStruct({
-			data: domain,
-			primaryType: "EIP712Domain",
-			types: _objectSpread2(_objectSpread2({}, types), {}, { EIP712Domain: (types === null || types === void 0 ? void 0 : types.EIP712Domain) || extractEip712DomainTypes(domain) }),
-			typeHashes
-		});
-	}
-	/**
-	* Hashes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) struct.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData } from 'ox'
-	*
-	* TypedData.hashStruct({
-	*   types: {
-	*     Foo: [
-	*       { name: 'address', type: 'address' },
-	*       { name: 'name', type: 'string' },
-	*       { name: 'foo', type: 'string' }
-	*     ]
-	*   },
-	*   primaryType: 'Foo',
-	*   data: {
-	*     address: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9',
-	*     name: 'jxom',
-	*     foo: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9'
-	*   }
-	* })
-	* // @log: '0x996fb3b6d48c50312d69abdd4c1b6fb02057c85aa86bb8d04c6f023326a168ce'
-	* ```
-	*
-	* @param value - The Typed Data struct to hash.
-	* @returns The hashed Typed Data struct.
-	*/
-	function hashStruct(value) {
-		const { data, primaryType, types, typeHashes } = value;
-		return keccak256(encodeData$1({
-			data,
-			primaryType,
-			types,
-			typeHashes
-		}));
-	}
-	/**
-	* Checks if [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TypedData } from 'ox'
-	*
-	* const valid = TypedData.validate({
-	*   domain: {
-	*     name: 'Ether!',
-	*     version: '1',
-	*     chainId: 1,
-	*     verifyingContract:
-	*       '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
-	*   },
-	*   primaryType: 'Foo',
-	*   types: {
-	*     Foo: [
-	*       { name: 'address', type: 'address' },
-	*       { name: 'name', type: 'string' },
-	*       { name: 'foo', type: 'string' }
-	*     ]
-	*   },
-	*   message: {
-	*     address: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9',
-	*     name: 'jxom',
-	*     foo: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9'
-	*   }
-	* })
-	* // @log: true
-	* ```
-	*
-	* @param value - The Typed Data to validate.
-	*/
-	function validate$1(value) {
-		try {
-			assert$5(value);
-			return true;
-		} catch (_unused) {
-			return false;
-		}
-	}
-	/** Thrown when the bytes size of a typed data value does not match the expected size. */
-	var BytesSizeMismatchError = class extends BaseError {
-		constructor({ expectedSize, givenSize }) {
-			super(`Expected bytes${expectedSize}, got bytes${givenSize}.`);
-			_defineProperty(this, "name", "TypedData.BytesSizeMismatchError");
-		}
-	};
-	/** Thrown when the domain is invalid. */
-	var InvalidDomainError = class extends BaseError {
-		constructor({ domain }) {
-			super(`Invalid domain "${stringify(domain)}".`, { metaMessages: ["Must be a valid EIP-712 domain."] });
-			_defineProperty(this, "name", "TypedData.InvalidDomainError");
-		}
-	};
-	/** Thrown when the primary type of a typed data value is invalid. */
-	var InvalidPrimaryTypeError = class extends BaseError {
-		constructor({ primaryType, types }) {
-			super(`Invalid primary type \`${primaryType}\` must be one of \`${JSON.stringify(Object.keys(types))}\`.`, { metaMessages: ["Check that the primary type is a key in `types`."] });
-			_defineProperty(this, "name", "TypedData.InvalidPrimaryTypeError");
-		}
-	};
-	/** Thrown when the struct type is not a valid type. */
-	var InvalidStructTypeError = class extends BaseError {
-		constructor({ type }) {
-			super(`Struct type "${type}" is invalid.`, { metaMessages: ["Struct type must not be a Solidity type."] });
-			_defineProperty(this, "name", "TypedData.InvalidStructTypeError");
-		}
-	};
-	/** Thrown when an array-typed value is not an array. */
-	var InvalidArrayError = class extends BaseError {
-		constructor({ name, type, value }) {
-			super(`Value for field \`${name}\` of type \`${type}\` is not an array. Got \`${typeof value}\`.`);
-			_defineProperty(this, "name", "TypedData.InvalidArrayError");
-		}
-	};
-	/** Thrown when a fixed-length array does not match its declared length. */
-	var InvalidArrayLengthError = class extends BaseError {
-		constructor({ name, type, expectedLength, givenLength }) {
-			super(`Expected fixed-length array \`${type}\` for field \`${name}\` to have ${expectedLength} elements, got ${givenLength}.`);
-			_defineProperty(this, "name", "TypedData.InvalidArrayLengthError");
-		}
-	};
-	/** @internal */
-	function encodeData$1(value) {
-		var _value$typeHashes, _types$primaryType;
-		const { data, primaryType, types } = value;
-		const typeHashes = (_value$typeHashes = value.typeHashes) !== null && _value$typeHashes !== void 0 ? _value$typeHashes : /* @__PURE__ */ new Map();
-		const encodedTypes = [{ type: "bytes32" }];
-		const encodedValues = [hashType({
-			primaryType,
-			types,
-			typeHashes
-		})];
-		for (const field of (_types$primaryType = types[primaryType]) !== null && _types$primaryType !== void 0 ? _types$primaryType : []) {
-			const [type, value] = encodeField({
-				types,
-				name: field.name,
-				type: field.type,
-				value: data[field.name],
-				typeHashes
-			});
-			encodedTypes.push(type);
-			encodedValues.push(value);
-		}
-		return encode$3(encodedTypes, encodedValues);
-	}
-	/** @internal */
-	function hashType(value) {
-		const { primaryType, types, typeHashes } = value;
-		const cached = typeHashes === null || typeHashes === void 0 ? void 0 : typeHashes.get(primaryType);
-		if (cached) return cached;
-		const hash = keccak256(fromString$2(encodeType({
-			primaryType,
-			types
-		})));
-		typeHashes === null || typeHashes === void 0 || typeHashes.set(primaryType, hash);
-		return hash;
-	}
-	/** @internal */
-	function encodeField(properties) {
-		let { types, name, type, value, typeHashes } = properties;
-		if (types[type] !== void 0) return [{ type: "bytes32" }, keccak256(encodeData$1({
-			data: value,
-			primaryType: type,
-			types,
-			typeHashes
-		}))];
-		if (type === "bytes") {
-			value = `0x${(value.length % 2 ? "0" : "") + value.slice(2)}`;
-			return [{ type: "bytes32" }, keccak256(value, { as: "Hex" })];
-		}
-		if (type === "string") return [{ type: "bytes32" }, keccak256(fromString$1(value), { as: "Hex" })];
-		if (type.lastIndexOf("]") === type.length - 1) {
-			const arrayMatch = type.match(arrayRegex);
-			const parsedType = arrayMatch ? arrayMatch[1] : type.slice(0, type.lastIndexOf("["));
-			const fixedLength = (arrayMatch === null || arrayMatch === void 0 ? void 0 : arrayMatch[2]) ? Number.parseInt(arrayMatch[2], 10) : void 0;
-			if (!Array.isArray(value)) throw new InvalidArrayError({
-				name,
-				type,
-				value
-			});
-			if (fixedLength !== void 0 && value.length !== fixedLength) throw new InvalidArrayLengthError({
-				name,
-				type,
-				expectedLength: fixedLength,
-				givenLength: value.length
-			});
-			const typeValuePairs = value.map((item) => encodeField({
-				name,
-				type: parsedType,
-				types,
-				value: item,
-				typeHashes
-			}));
-			return [{ type: "bytes32" }, keccak256(encode$3(typeValuePairs.map(([t]) => t), typeValuePairs.map(([, v]) => v)))];
-		}
-		return [{ type }, value];
-	}
-	/** @internal */
-	function findTypeDependencies(value, results = /* @__PURE__ */ new Set()) {
-		const { primaryType: primaryType_, types } = value;
-		const primaryType = primaryType_.match(/^\w*/u)[0];
-		if (results.has(primaryType) || types[primaryType] === void 0) return results;
-		results.add(primaryType);
-		for (const field of types[primaryType]) findTypeDependencies({
-			primaryType: field.type,
-			types
-		}, results);
-		return results;
-	}
-	/** @internal */
-	function validateReference(type) {
-		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
-	}
-	// packages/wallet-chains/dist/typed-data-J5g2WemC.mjs
-	init_secp256k1();
-	init_utils$2();
-	init_objectSpread2();
-	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
-	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
-	function checksumEvmAddress(address) {
-		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
-		const checksummed = checksum(address);
-		assert$6(checksummed, { strict: true });
-		return checksummed;
-	}
-	/** `keccak256(pubkey)[12:]` — accepts a 33-byte compressed or 65-byte uncompressed secp256k1 key. */
-	function evmAddressFromPublicKey(pubkey) {
-		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
-		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
-		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
-	}
-	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
-	function assertHex$1(value, field) {
-		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-	}
-	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
-	var canonicalHex = (value) => `0x${value.toString(16)}`;
-	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
-	var quantityBigInt = (value, field) => {
-		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
-		return BigInt(value);
-	};
-	var safeInteger = (value, field) => {
-		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
-		return value;
-	};
-	var quantity = (value, field) => {
-		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
-		if (CANONICAL_HEX.test(value)) return value;
-		return canonicalHex(quantityBigInt(value, field));
-	};
-	var hexBytes$1 = (value, field) => {
-		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-		return value.toLowerCase();
-	};
-	var accessList = (value) => {
-		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
-		return value.map((entry) => {
-			if (!isRecord$1(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
-			const keys = Object.keys(entry).sort();
-			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
-			const { address, storageKeys } = entry;
-			if (typeof address !== "string" || !isEvmAddress(address)) throw new ChainError("invalid-address", "accessList entry has an invalid address");
-			if (!Array.isArray(storageKeys)) throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
-			return {
-				address: checksumEvmAddress(address),
-				storageKeys: storageKeys.map((k) => {
-					if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ChainError("invalid-quantity", "accessList storageKeys must be 32-byte hex strings");
-					return k.toLowerCase();
-				})
-			};
-		});
-	};
-	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
-	var networkChainId = (network) => {
-		var _exec;
-		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
-		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
-		const id = Number(idPart);
-		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
-		return id;
-	};
-	var REQUIRED = {
-		base: [
-			"chainId",
-			"nonce",
-			"gas",
-			"value",
-			"data"
-		],
-		gasPrice: ["gasPrice"],
-		accessList: ["accessList"],
-		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
-	};
-	var ALLOWED = {
-		base: [
-			"type",
-			"chainId",
-			"nonce",
-			"gas",
-			"value",
-			"data",
-			"to"
-		],
-		legacy: ["gasPrice"],
-		eip2930: ["gasPrice", "accessList"],
-		eip1559: [
-			"accessList",
-			"maxFeePerGas",
-			"maxPriorityFeePerGas"
-		]
-	};
-	var requireFields = (input, fields) => {
-		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
-	};
-	var rejectUnknown = (input, type) => {
-		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
-		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
-		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
-	};
-	/**
-	* Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
-	* canonical quantities, EIP-55 addresses. Idempotent.
-	*/
-	var normalizeEvmTransaction = (tx) => {
-		if (!isRecord$1(tx)) throw new ChainError("invalid-request", "tx must be an object");
-		const { type } = tx;
-		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930 and eip1559 only)`);
-		rejectUnknown(tx, type);
-		requireFields(tx, REQUIRED.base);
-		const chainId = safeInteger(tx["chainId"], "chainId");
-		const nonce = safeInteger(tx["nonce"], "nonce");
-		const gas = quantity(tx["gas"], "gas");
-		const value = quantity(tx["value"], "value");
-		const data = hexBytes$1(tx["data"], "data");
-		const toRaw = tx["to"];
-		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
-		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
-		const base = _objectSpread2({
-			chainId,
-			nonce,
-			gas,
-			value,
-			data
-		}, to === void 0 ? {} : { to });
-		if (type === "legacy") {
-			requireFields(tx, REQUIRED.gasPrice);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
-		}
-		if (type === "eip2930") {
-			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, {
-				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
-				accessList: accessList(tx["accessList"])
-			});
-		}
-		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
-		return _objectSpread2(_objectSpread2({ type }, base), {}, {
-			accessList: accessList(tx["accessList"]),
-			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
-			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
-		});
-	};
-	var isField = (value) => isRecord$1(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
-	var isTypedDataInput = (value) => {
-		if (!isRecord$1(value)) return false;
-		const { types, primaryType, domain, message } = value;
-		if (!isRecord$1(types)) return false;
-		if (typeof primaryType !== "string" || primaryType === "") return false;
-		if (!isRecord$1(domain)) return false;
-		if (!isRecord$1(message)) return false;
-		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
-	};
-	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	/** `value` is an array of message objects (empty allowed). */
-	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
-	/** The `Type field,Type field` signature of struct `name` in `types`. */
-	var typedDataSignature = (types, name) => {
-		var _types$name;
-		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
-	};
-	/** Struct `name` has exactly `fields`, in order, no more. */
-	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
-	/** A hex `address` field value, checksummed; `undefined` when malformed. */
-	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
-	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
-	var typedDataUint = (value, max) => {
-		let parsed;
-		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
-		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
-		else return;
-		return parsed >= 0n && parsed <= max ? parsed : void 0;
-	};
-	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
-	var MAX_UINT48 = 2n ** 48n - 1n;
-	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
-	/** A `bytes` field value: `0x`-prefixed hex of even length. */
-	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
-	/** Parses the EIP-712 JSON source and validates its shape with ox. */
-	var parseTypedData = (typedData) => {
-		let json;
-		try {
-			json = JSON.parse(typedData);
-		} catch (_unused) {
-			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
-		}
-		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
-		try {
-			validate$1(json);
-		} catch (_unused2) {
-			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
-		}
-		return { json };
-	};
-	/**
-	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
-	* decimal string or a `0x` hex string.
-	*/
-	var domainChainId = (domain) => {
-		const { chainId } = domain;
-		if (chainId === void 0) return;
-		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
-		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
-		return numeric;
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/formatAbiItem.js
-	/**
-	* Formats ABI item (e.g. error, event, function) into human-readable ABI item
-	*
-	* @param abiItem - ABI item
-	* @returns Human-readable ABI item
-	*/
-	function formatAbiItem(abiItem) {
-		var _abiItem$outputs;
-		if (abiItem.type === "function") return `function ${abiItem.name}(${formatAbiParameters(abiItem.inputs)})${abiItem.stateMutability && abiItem.stateMutability !== "nonpayable" ? ` ${abiItem.stateMutability}` : ""}${((_abiItem$outputs = abiItem.outputs) === null || _abiItem$outputs === void 0 ? void 0 : _abiItem$outputs.length) ? ` returns (${formatAbiParameters(abiItem.outputs)})` : ""}`;
-		if (abiItem.type === "event") return `event ${abiItem.name}(${formatAbiParameters(abiItem.inputs)})`;
-		if (abiItem.type === "error") return `error ${abiItem.name}(${formatAbiParameters(abiItem.inputs)})`;
-		if (abiItem.type === "constructor") return `constructor(${formatAbiParameters(abiItem.inputs)})${abiItem.stateMutability === "payable" ? " payable" : ""}`;
-		if (abiItem.type === "fallback") return `fallback() external${abiItem.stateMutability === "payable" ? " payable" : ""}`;
-		return "receive() external payable";
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/human-readable/parseAbiItem.js
-	/**
-	* Parses human-readable ABI item (e.g. error, event, function) into `Abi` item.
-	*
-	* @param signature - Human-readable ABI item
-	* @returns Parsed `Abi` item.
-	*/
-	function parseAbiItem(signature) {
-		let abiItem;
-		if (typeof signature === "string") abiItem = parseSignature(signature);
-		else {
-			const structs = parseStructs(signature);
-			const length = signature.length;
-			for (let i = 0; i < length; i++) {
-				const signature_ = signature[i];
-				if (isStructSignature(signature_)) continue;
-				abiItem = parseSignature(signature_, structs);
-				break;
-			}
-		}
-		if (!abiItem) throw new InvalidAbiItemError({ signature });
-		return abiItem;
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/abiItem.js
 	init_objectSpread2();
@@ -24627,7 +23861,7 @@ zoo`.split("\n"));
 		if (size$1(data) <= 4) return void 0;
 		return decode$2(item.inputs, slice$2(data, 4), options);
 	}
-	function encodeData(...parameters) {
+	function encodeData$1(...parameters) {
 		const [abiFunction, args] = (() => {
 			if (Array.isArray(parameters[0])) {
 				const [abi, name, args = []] = parameters;
@@ -24804,46 +24038,309 @@ zoo`.split("\n"));
 	function getSelector(abiItem) {
 		return getSelector$1(abiItem);
 	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TypedData.js
+	init_objectSpread2();
+	init_defineProperty();
 	/**
-	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
-	* of the ERC-191 v0x45 envelope). Concatenated with the per-message
-	* `Hex.fromString(String(byteLength))` and the message itself.
-	*
-	* @internal
-	*/
-	var erc191PrefixHex = "0x19" + fromString$2("Ethereum Signed Message:\n").slice(2);
-	/**
-	* Encodes a personal sign message in [ERC-191 format](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e): `0x19 ‖ "Ethereum Signed Message:\n" + message.length ‖ message`.
+	* Asserts that [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) is valid.
 	*
 	* @example
 	* ```ts twoslash
-	* import { Hex, PersonalMessage } from 'ox'
+	* import { TypedData } from 'ox'
 	*
-	* const data = PersonalMessage.encode(
-	*   Hex.fromString('hello world')
-	* )
-	* // @log: '0x19457468657265756d205369676e6564204d6573736167653a0a313168656c6c6f20776f726c64'
-	* // @log: (0x19 ‖ 'Ethereum Signed Message:\n11' ‖ 'hello world')
+	* TypedData.assert({
+	*   domain: {
+	*     name: 'Ether!',
+	*     version: '1',
+	*     chainId: 1,
+	*     verifyingContract:
+	*       '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
+	*   },
+	*   primaryType: 'Foo',
+	*   types: {
+	*     Foo: [
+	*       { name: 'address', type: 'address' },
+	*       { name: 'name', type: 'string' },
+	*       { name: 'foo', type: 'string' }
+	*     ]
+	*   },
+	*   message: {
+	*     address: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9',
+	*     name: 'jxom',
+	*     foo: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9'
+	*   }
+	* })
 	* ```
 	*
-	* @param data - The data to encode.
-	* @returns The encoded personal sign message.
+	* @param value - The Typed Data to validate.
 	*/
-	function encode$1(data) {
-		const message = from$5(data);
-		return concat$1(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+	function assert$6(value) {
+		const { domain, message, primaryType, types } = value;
+		const validateValue = (type, value, name) => {
+			const arrayMatch = type.match(arrayRegex);
+			if (arrayMatch) {
+				const [, elementType, lengthStr] = arrayMatch;
+				if (!Array.isArray(value)) throw new InvalidArrayError({
+					name,
+					type,
+					value
+				});
+				if (lengthStr) {
+					const expected = Number.parseInt(lengthStr, 10);
+					if (value.length !== expected) throw new InvalidArrayLengthError({
+						name,
+						type,
+						expectedLength: expected,
+						givenLength: value.length
+					});
+				}
+				for (const element of value) validateValue(elementType, element, name);
+				return;
+			}
+			const integerMatch = type.match(integerRegex);
+			if (integerMatch && (typeof value === "number" || typeof value === "bigint")) {
+				const [, base, size_] = integerMatch;
+				fromNumber(value, {
+					signed: base === "int",
+					size: Number.parseInt(size_ !== null && size_ !== void 0 ? size_ : "", 10) / 8
+				});
+			}
+			if (type === "address" && typeof value === "string" && !validate$2(value)) throw new InvalidAddressError({
+				address: value,
+				cause: new InvalidInputError()
+			});
+			const bytesMatch = type.match(bytesRegex);
+			if (bytesMatch) {
+				const [, size] = bytesMatch;
+				if (size && size$1(value) !== Number.parseInt(size, 10)) throw new BytesSizeMismatchError({
+					expectedSize: Number.parseInt(size, 10),
+					givenSize: size$1(value)
+				});
+			}
+			const struct = types[type];
+			if (struct) {
+				validateReference(type);
+				validateData(struct, value);
+			}
+		};
+		const validateData = (struct, data) => {
+			for (const param of struct) {
+				const { name, type } = param;
+				validateValue(type, data[name], name);
+			}
+		};
+		if (types.EIP712Domain && domain) {
+			if (typeof domain !== "object") throw new InvalidDomainError({ domain });
+			validateData(types.EIP712Domain, domain);
+		}
+		if (primaryType !== "EIP712Domain") {
+			if (types[primaryType]) validateData(types[primaryType], message);
+			else throw new InvalidPrimaryTypeError({
+				primaryType,
+				types
+			});
+		}
 	}
 	/**
-	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
+	* Encodes typed data in [EIP-712 format](https://eips.ethereum.org/EIPS/eip-712): `0x19 ‖ 0x01 ‖ domainSeparator ‖ hashStruct(message)`.
 	*
 	* @example
 	* ```ts twoslash
-	* import { Hex, PersonalMessage, Secp256k1 } from 'ox'
+	* import { TypedData, Hash } from 'ox'
 	*
-	* const payload = PersonalMessage.getSignPayload(
-	*   Hex.fromString('hello world')
-	* ) // [!code focus]
+	* const data = TypedData.encode({
+	*   // [!code focus:33]
+	*   domain: {
+	*     name: 'Ether Mail',
+	*     version: '1',
+	*     chainId: 1,
+	*     verifyingContract:
+	*       '0x0000000000000000000000000000000000000000'
+	*   },
+	*   types: {
+	*     Person: [
+	*       { name: 'name', type: 'string' },
+	*       { name: 'wallet', type: 'address' }
+	*     ],
+	*     Mail: [
+	*       { name: 'from', type: 'Person' },
+	*       { name: 'to', type: 'Person' },
+	*       { name: 'contents', type: 'string' }
+	*     ]
+	*   },
+	*   primaryType: 'Mail',
+	*   message: {
+	*     from: {
+	*       name: 'Cow',
+	*       wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
+	*     },
+	*     to: {
+	*       name: 'Bob',
+	*       wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
+	*     },
+	*     contents: 'Hello, Bob!'
+	*   }
+	* })
+	* // @log: '0x19012fdf3441fcaf4f30c7e16292b258a5d7054a4e2e00dbd7b7d2f467f2b8fb9413c52c0ee5d84264471806290a3f2c4cecfc5490626bf912d01f240d7a274b371e'
+	* // @log: (0x19 ‖ 0x01 ‖ domainSeparator ‖ hashStruct(message))
+	*
+	* const hash = Hash.keccak256(data)
+	* ```
+	*
+	* @param value - The Typed Data to encode.
+	* @returns The encoded Typed Data.
+	*/
+	function encode$2(value) {
+		const { domain = {}, message, primaryType } = value;
+		const types = _objectSpread2({ EIP712Domain: extractEip712DomainTypes(domain) }, value.types);
+		assert$6({
+			domain,
+			message,
+			primaryType,
+			types
+		});
+		const typeHashes = /* @__PURE__ */ new Map();
+		const parts = ["0x19", "0x01"];
+		if (domain) parts.push(hashDomain({
+			domain,
+			types,
+			typeHashes
+		}));
+		if (primaryType !== "EIP712Domain") parts.push(hashStruct({
+			data: message,
+			primaryType,
+			types,
+			typeHashes
+		}));
+		return concat$1(...parts);
+	}
+	/**
+	* Encodes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for the provided primaryType.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TypedData } from 'ox'
+	*
+	* TypedData.encodeType({
+	*   types: {
+	*     Foo: [
+	*       { name: 'address', type: 'address' },
+	*       { name: 'name', type: 'string' },
+	*       { name: 'foo', type: 'string' }
+	*     ]
+	*   },
+	*   primaryType: 'Foo'
+	* })
+	* // @log: 'Foo(address address,string name,string foo)'
+	* ```
+	*
+	* @param value - The Typed Data schema.
+	* @returns The encoded type.
+	*/
+	function encodeType(value) {
+		const { primaryType, types } = value;
+		let result = "";
+		const unsortedDeps = findTypeDependencies({
+			primaryType,
+			types
+		});
+		unsortedDeps.delete(primaryType);
+		const deps = [primaryType, ...Array.from(unsortedDeps).sort()];
+		for (const type of deps) {
+			var _types$type;
+			result += `${type}(${((_types$type = types[type]) !== null && _types$type !== void 0 ? _types$type : []).map(({ name, type: t }) => `${t} ${name}`).join(",")})`;
+		}
+		return result;
+	}
+	/**
+	* Gets [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) schema for EIP-721 domain.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TypedData } from 'ox'
+	*
+	* TypedData.extractEip712DomainTypes({
+	*   name: 'Ether!',
+	*   version: '1',
+	*   chainId: 1,
+	*   verifyingContract:
+	*     '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
+	* })
+	* // @log: [
+	* // @log:   { 'name': 'name', 'type': 'string' },
+	* // @log:   { 'name': 'version', 'type': 'string' },
+	* // @log:   { 'name': 'chainId', 'type': 'uint256' },
+	* // @log:   { 'name': 'verifyingContract', 'type': 'address' },
+	* // @log: ]
+	* ```
+	*
+	* @param domain - The EIP-712 domain.
+	* @returns The EIP-712 domain schema.
+	*/
+	function extractEip712DomainTypes(domain) {
+		return [
+			typeof (domain === null || domain === void 0 ? void 0 : domain.name) === "string" && {
+				name: "name",
+				type: "string"
+			},
+			typeof (domain === null || domain === void 0 ? void 0 : domain.version) === "string" && {
+				name: "version",
+				type: "string"
+			},
+			(typeof (domain === null || domain === void 0 ? void 0 : domain.chainId) === "number" || typeof (domain === null || domain === void 0 ? void 0 : domain.chainId) === "bigint") && {
+				name: "chainId",
+				type: "uint256"
+			},
+			(domain === null || domain === void 0 ? void 0 : domain.verifyingContract) && {
+				name: "verifyingContract",
+				type: "address"
+			},
+			(domain === null || domain === void 0 ? void 0 : domain.salt) && {
+				name: "salt",
+				type: "bytes32"
+			}
+		].filter(Boolean);
+	}
+	/**
+	* Gets the payload to use for signing typed data in [EIP-712 format](https://eips.ethereum.org/EIPS/eip-712).
+	*
+	* @example
+	* ```ts twoslash
+	* import { Secp256k1, TypedData, Hash } from 'ox'
+	*
+	* const payload = TypedData.getSignPayload({
+	*   // [!code focus:99]
+	*   domain: {
+	*     name: 'Ether Mail',
+	*     version: '1',
+	*     chainId: 1,
+	*     verifyingContract:
+	*       '0x0000000000000000000000000000000000000000'
+	*   },
+	*   types: {
+	*     Person: [
+	*       { name: 'name', type: 'string' },
+	*       { name: 'wallet', type: 'address' }
+	*     ],
+	*     Mail: [
+	*       { name: 'from', type: 'Person' },
+	*       { name: 'to', type: 'Person' },
+	*       { name: 'contents', type: 'string' }
+	*     ]
+	*   },
+	*   primaryType: 'Mail',
+	*   message: {
+	*     from: {
+	*       name: 'Cow',
+	*       wallet: '0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826'
+	*     },
+	*     to: {
+	*       name: 'Bob',
+	*       wallet: '0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB'
+	*     },
+	*     contents: 'Hello, Bob!'
+	*   }
+	* })
 	*
 	* const signature = Secp256k1.sign({
 	*   payload,
@@ -24851,569 +24348,538 @@ zoo`.split("\n"));
 	* })
 	* ```
 	*
-	* @param data - The data to get the sign payload for.
+	* @param value - The typed data to get the sign payload for.
 	* @returns The payload to use for signing.
 	*/
-	function getSignPayload$3(data) {
-		return keccak256(encode$1(data));
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Signature.js
-	init_objectSpread2();
-	init_defineProperty();
-	/**
-	* Asserts that a Signature is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* // @errors: 2322
-	* import { Signature } from 'ox'
-	*
-	* Signature.assert({
-	*   r: '-0x6e1c1f59ee1cf25b75a8d57b3c89e7e6b3b1da823df8b3b89497f30c1f000000',
-	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	*   yParity: 1
-	* })
-	* // @error: InvalidSignatureRError:
-	* // @error: Value `-0x...` is an invalid r value.
-	* // @error: r must be a positive integer less than 2^256.
-	* ```
-	*
-	* @param signature - The signature object to assert.
-	*/
-	function assert$4(signature, options = {}) {
-		const { recovered } = options;
-		if (typeof signature.r === "undefined") throw new MissingPropertiesError({ signature });
-		if (typeof signature.s === "undefined") throw new MissingPropertiesError({ signature });
-		if (recovered && typeof signature.yParity === "undefined") throw new MissingPropertiesError({ signature });
-		try {
-			const r = BigInt(signature.r);
-			if (r < 0n || r > maxUint256) throw new InvalidRError({ value: signature.r });
-		} catch (_unused) {
-			throw new InvalidRError({ value: signature.r });
-		}
-		try {
-			const s = BigInt(signature.s);
-			if (s < 0n || s > maxUint256) throw new InvalidSError({ value: signature.s });
-		} catch (_unused2) {
-			throw new InvalidSError({ value: signature.s });
-		}
-		if (typeof signature.yParity === "number" && signature.yParity !== 0 && signature.yParity !== 1) throw new InvalidYParityError({ value: signature.yParity });
+	function getSignPayload$6(value) {
+		return keccak256(encode$2(value));
 	}
 	/**
-	* Deserializes a {@link ox#Bytes.Bytes} signature into a structured {@link ox#Signature.Signature}.
+	* Hashes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) domain.
 	*
 	* @example
 	* ```ts twoslash
-	* // @noErrors
-	* import { Signature } from 'ox'
+	* import { TypedData } from 'ox'
 	*
-	* Signature.fromBytes(new Uint8Array([128, 3, 131, ...]))
-	* // @log: { r: '0x6e10...', s: '0x4a90...', yParity: 0 }
-	* ```
-	*
-	* @param signature - The serialized signature.
-	* @returns The deserialized {@link ox#Signature.Signature}.
-	*/
-	function fromBytes(signature) {
-		return fromHex$1(fromBytes$1(signature));
-	}
-	/**
-	* Deserializes a {@link ox#Hex.Hex} signature into a structured {@link ox#Signature.Signature}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* Signature.fromHex(
-	*   '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db81c'
-	* )
-	* // @log: { r: '0x6e10...', s: '0x4a90...', yParity: 0 }
-	* ```
-	*
-	* @param serialized - The serialized signature.
-	* @returns The deserialized {@link ox#Signature.Signature}.
-	*/
-	function fromHex$1(signature) {
-		if (signature.length !== 130 && signature.length !== 132) throw new InvalidSerializedSizeError({ signature });
-		const r = slice$2(signature, 0, 32);
-		const s = slice$2(signature, 32, 64);
-		const yParity = (() => {
-			const yParity = Number(`0x${signature.slice(130)}`);
-			if (Number.isNaN(yParity)) return void 0;
-			try {
-				return vToYParity(yParity);
-			} catch (_unused3) {
-				throw new InvalidYParityError({ value: yParity });
-			}
-		})();
-		if (typeof yParity === "undefined") return {
-			r,
-			s
-		};
-		return {
-			r,
-			s,
-			yParity
-		};
-	}
-	/**
-	* Extracts a {@link ox#Signature.Signature} from an arbitrary object that may include signature properties.
-	*
-	* @example
-	* ```ts twoslash
-	* // @noErrors
-	* import { Signature } from 'ox'
-	*
-	* Signature.extract({
-	*   baz: 'barry',
-	*   foo: 'bar',
-	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	*   yParity: 1,
-	*   zebra: 'stripes'
-	* })
-	* // @log: {
-	* // @log:   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	* // @log:   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	* // @log:   yParity: 1
-	* // @log: }
-	* ```
-	*
-	* @param value - The arbitrary object to extract the signature from.
-	* @returns The extracted {@link ox#Signature.Signature}.
-	*/
-	function extract(value) {
-		if (typeof value.r === "undefined") return void 0;
-		if (typeof value.s === "undefined") return void 0;
-		return from$1(value);
-	}
-	/**
-	* Instantiates a typed {@link ox#Signature.Signature} object from a {@link ox#Signature.Signature}, {@link ox#Signature.Legacy}, {@link ox#Bytes.Bytes}, or {@link ox#Hex.Hex}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* Signature.from({
-	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	*   yParity: 1
-	* })
-	* // @log: {
-	* // @log:   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	* // @log:   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	* // @log:   yParity: 1
-	* // @log: }
-	* ```
-	*
-	* @example
-	* ### From Serialized
-	*
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* Signature.from(
-	*   '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db801'
-	* )
-	* // @log: {
-	* // @log:   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	* // @log:   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	* // @log:   yParity: 1,
-	* // @log: }
-	* ```
-	*
-	* @example
-	* ### From Legacy
-	*
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* Signature.from({
-	*   r: '0x68a020a21f5d20c5cf6c9b4d2dccdcdd14a9f7b9c2eb19d3d3acdb2a1a9c1f50',
-	*   s: '0x7e8d44a4a8a3e3a4c6a3c1a3c3a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a4',
-	*   v: 27
-	* })
-	* // @log: {
-	* // @log:   r: '0x68a020a21f5d20c5cf6c9b4d2dccdcdd14a9f7b9c2eb19d3d3acdb2a1a9c1f50',
-	* // @log:   s: '0x7e8d44a4a8a3e3a4c6a3c1a3c3a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a4',
-	* // @log:   yParity: 0
-	* // @log: }
-	* ```
-	*
-	* @param signature - The signature value to instantiate.
-	* @returns The instantiated {@link ox#Signature.Signature}.
-	*/
-	function from$1(signature) {
-		const signature_ = (() => {
-			if (typeof signature === "string") return fromHex$1(signature);
-			if (signature instanceof Uint8Array) return fromBytes(signature);
-			const sig = signature;
-			if (typeof sig.v !== "undefined") return fromLegacy(sig);
-			if (typeof sig.yParity === "string") return fromRpc(sig);
-			return _objectSpread2({
-				r: sig.r,
-				s: sig.s
-			}, typeof sig.yParity !== "undefined" ? { yParity: sig.yParity } : {});
-		})();
-		assert$4(signature_);
-		signature_.r = padLeft(signature_.r, 32);
-		signature_.s = padLeft(signature_.s, 32);
-		return signature_;
-	}
-	/**
-	* Converts a {@link ox#Signature.Legacy} into a {@link ox#Signature.Signature}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const legacy = Signature.fromLegacy({
-	*   r: '0x01',
-	*   s: '0x02',
-	*   v: 28
-	* })
-	* // @log: { r: '0x01', s: '0x02', yParity: 1 }
-	* ```
-	*
-	* @param signature - The {@link ox#Signature.Legacy} to convert.
-	* @returns The converted {@link ox#Signature.Signature}.
-	*/
-	function fromLegacy(signature) {
-		return {
-			r: padLeft(signature.r, 32),
-			s: padLeft(signature.s, 32),
-			yParity: vToYParity(typeof signature.v === "string" ? Number(signature.v) : signature.v)
-		};
-	}
-	/**
-	* Converts a {@link ox#Signature.Rpc} into a {@link ox#Signature.Signature}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const signature = Signature.fromRpc({
-	*   r: '0x635dc2033e60185bb36709c29c75d64ea51dfbd91c32ef4be198e4ceb169fb4d',
-	*   s: '0x50c2667ac4c771072746acfdcf1f1483336dcca8bd2df47cd83175dbe60f0540',
-	*   yParity: '0x0'
-	* })
-	* ```
-	*
-	* @param signature - The {@link ox#Signature.Rpc} to convert.
-	* @returns The converted {@link ox#Signature.Signature}.
-	*/
-	function fromRpc(signature) {
-		const yParity = (() => {
-			const v = signature.v ? Number(signature.v) : void 0;
-			let yParity = signature.yParity ? Number(signature.yParity) : void 0;
-			if (typeof v === "number" && typeof yParity !== "number") yParity = vToYParity(v);
-			if (typeof yParity !== "number") throw new InvalidYParityError({ value: signature.yParity });
-			return yParity;
-		})();
-		return {
-			r: padLeft(signature.r, 32),
-			s: padLeft(signature.s, 32),
-			yParity
-		};
-	}
-	/**
-	* Serializes a {@link ox#Signature.Signature} to {@link ox#Bytes.Bytes}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const signature = Signature.toBytes({
-	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	*   yParity: 1
-	* })
-	* // @log: Uint8Array [102, 16, 10, ...]
-	* ```
-	*
-	* @param signature - The signature to serialize.
-	* @returns The serialized signature.
-	*/
-	function toBytes(signature) {
-		return fromHex$2(toHex(signature));
-	}
-	/**
-	* Decodes a 65-byte recovered byte representation (`yParity ++ r ++ s`,
-	* big-endian) into a {@link ox#Signature.Signature}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const signature = Signature.fromRecoveredBytes(
-	*   new Uint8Array(65)
-	* )
-	* // @log: { r: '0x00...0000', s: '0x00...0000', yParity: 0 }
-	* ```
-	*
-	* @param bytes - The 65-byte recovered representation.
-	* @returns The decoded {@link ox#Signature.Signature}.
-	*/
-	function fromRecoveredBytes(bytes) {
-		if (bytes.length !== 65) throw new InvalidSerializedSizeError({
-			expectedSize: 65,
-			signature: bytes
-		});
-		const yParity = bytes[0];
-		if (yParity !== 0 && yParity !== 1) throw new InvalidYParityError({ value: yParity });
-		return {
-			r: fromBytes$1(bytes.subarray(1, 33)),
-			s: fromBytes$1(bytes.subarray(33, 65)),
-			yParity
-		};
-	}
-	/**
-	* Serializes a {@link ox#Signature.Signature} to {@link ox#Hex.Hex}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const signature = Signature.toHex({
-	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
-	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
-	*   yParity: 1
-	* })
-	* // @log: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db81c'
-	* ```
-	*
-	* @param signature - The signature to serialize.
-	* @returns The serialized signature.
-	*/
-	function toHex(signature) {
-		assert$4(signature);
-		return concat$1(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber(yParityToV(signature.yParity), { size: 1 }) : "0x");
-	}
-	/**
-	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const signatureTuple = Signature.toTuple({
-	*   r: '0x000000000000000000000000000000000000000000000000000000000000007b',
-	*   s: '0x00000000000000000000000000000000000000000000000000000000000001c8',
-	*   yParity: 1
-	* })
-	* // @log: [yParity: '0x01', r: '0x7b', s: '0x1c8']
-	* ```
-	*
-	* @param signature - The {@link ox#Signature.Signature} to convert.
-	* @returns The {@link ox#Signature.Tuple}.
-	*/
-	function toTuple(signature) {
-		const { r, s, yParity } = signature;
-		return [
-			yParity ? "0x01" : "0x",
-			trimLeft$1(r),
-			trimLeft$1(s)
-		];
-	}
-	/**
-	* Converts a ECDSA `v` value to a `yParity` value.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const yParity = Signature.vToYParity(28)
-	* // @log: 1
-	* ```
-	*
-	* @param v - The ECDSA `v` value to convert.
-	* @returns The `yParity` value.
-	*/
-	function vToYParity(v) {
-		if (v === 0 || v === 27) return 0;
-		if (v === 1 || v === 28) return 1;
-		if (v >= 35) return v % 2 === 0 ? 1 : 0;
-		throw new InvalidVError({ value: v });
-	}
-	/**
-	* Converts a ECDSA `v` value to a `yParity` value.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Signature } from 'ox'
-	*
-	* const v = Signature.yParityToV(1)
-	* // @log: 28
-	* ```
-	*
-	* @param yParity - The ECDSA `yParity` value to convert.
-	* @returns The `v` value.
-	*/
-	function yParityToV(yParity) {
-		if (yParity === 0) return 27;
-		if (yParity === 1) return 28;
-		throw new InvalidYParityError({ value: yParity });
-	}
-	/** Thrown when the serialized signature is of an invalid size. */
-	var InvalidSerializedSizeError = class extends BaseError {
-		constructor({ expectedSize, signature }) {
-			super(`Value \`${signature}\` is an invalid signature size.`, { metaMessages: [typeof expectedSize === "number" ? `Expected: ${expectedSize} bytes.` : "Expected: 64 bytes or 65 bytes.", `Received ${size$1(from$5(signature))} bytes.`] });
-			_defineProperty(this, "name", "Signature.InvalidSerializedSizeError");
-		}
-	};
-	/** Thrown when the signature is missing either an `r`, `s`, or `yParity` property. */
-	var MissingPropertiesError = class extends BaseError {
-		constructor({ signature }) {
-			super(`Signature \`${stringify(signature)}\` is missing either an \`r\`, \`s\`, or \`yParity\` property.`);
-			_defineProperty(this, "name", "Signature.MissingPropertiesError");
-		}
-	};
-	/** Thrown when the signature has an invalid `r` value. */
-	var InvalidRError = class extends BaseError {
-		constructor({ value }) {
-			super(`Value \`${value}\` is an invalid r value. r must be a positive integer less than 2^256.`);
-			_defineProperty(this, "name", "Signature.InvalidRError");
-		}
-	};
-	/** Thrown when the signature has an invalid `s` value. */
-	var InvalidSError = class extends BaseError {
-		constructor({ value }) {
-			super(`Value \`${value}\` is an invalid s value. s must be a positive integer less than 2^256.`);
-			_defineProperty(this, "name", "Signature.InvalidSError");
-		}
-	};
-	/** Thrown when the signature has an invalid `yParity` value. */
-	var InvalidYParityError = class extends BaseError {
-		constructor({ value }) {
-			super(`Value \`${value}\` is an invalid y-parity value. Y-parity must be 0 or 1.`);
-			_defineProperty(this, "name", "Signature.InvalidYParityError");
-		}
-	};
-	/** Thrown when the signature has an invalid `v` value. */
-	var InvalidVError = class extends BaseError {
-		constructor({ value }) {
-			super(`Value \`${value}\` is an invalid v value. v must be 27, 28 or >=35.`);
-			_defineProperty(this, "name", "Signature.InvalidVError");
-		}
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cryptoIo.js
-	/**
-	* Formats a structured {@link ox#Signature.Signature} as the requested
-	* representation: the structured object (`'Object'`), serialized hex
-	* (`'Hex'`), or serialized bytes (`'Bytes'`).
-	*
-	* @internal
-	*/
-	function formatSignature(signature, as) {
-		if (as === "Hex") return toHex(signature);
-		if (as === "Bytes") return toBytes(signature);
-		return signature;
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/secp256k1.js
-	init_secp256k1();
-	init_objectSpread2();
-	var signDefault = (payload, privateKey, options) => secp256k1.sign(payload, privateKey, _objectSpread2(_objectSpread2({}, options), {}, {
-		format: "recovered",
-		lowS: true
-	}));
-	/** @internal */
-	var sign$3 = (payload, privateKey, options) => {
-		var _overrides$Secp256k1$5, _overrides$Secp256k5;
-		return ((_overrides$Secp256k1$5 = (_overrides$Secp256k5 = overrides.Secp256k1) === null || _overrides$Secp256k5 === void 0 ? void 0 : _overrides$Secp256k5.sign) !== null && _overrides$Secp256k1$5 !== void 0 ? _overrides$Secp256k1$5 : signDefault)(payload, privateKey, options);
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/entropy.js
-	var extraEntropy = false;
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Secp256k1.js
-	init_defineProperty();
-	/**
-	* Signs the payload with the provided private key.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Secp256k1 } from 'ox'
-	*
-	* const signature = Secp256k1.sign({
-	*   // [!code focus]
-	*   payload: '0xdeadbeef', // [!code focus]
-	*   privateKey: '0x...' // [!code focus]
-	* }) // [!code focus]
-	* ```
-	*
-	* @param options - The signing options.
-	* @returns The ECDSA {@link ox#Signature.Signature}.
-	*/
-	function sign$2(options) {
-		const { as = "Object", extraEntropy: extraEntropy$1 = extraEntropy, hash, payload, privateKey } = options;
-		return formatSignature(fromRecoveredBytes(sign$3(from$4(payload), from$4(privateKey), {
-			extraEntropy: typeof extraEntropy$1 === "boolean" ? extraEntropy$1 : from$4(extraEntropy$1),
-			prehash: hash === true
-		})), as);
-	}
-	fromString$1("ox.secp256k1.fromPrf.v1");
-	fromString$1("ox.secp256k1.fromSeed.v1");
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
-	init_defineProperty();
-	/**
-	* Converts a structured Access List into a list of tuples.
-	*
-	* @example
-	* ```ts twoslash
-	* import { AccessList } from 'ox'
-	*
-	* const accessList = AccessList.toTupleList([
-	*   {
-	*     address: '0x0000000000000000000000000000000000000000',
-	*     storageKeys: [
-	*       '0x0000000000000000000000000000000000000000000000000000000000000001',
-	*       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe'
-	*     ]
+	* TypedData.hashDomain({
+	*   domain: {
+	*     name: 'Ether Mail',
+	*     version: '1',
+	*     chainId: 1,
+	*     verifyingContract:
+	*       '0x0000000000000000000000000000000000000000'
 	*   }
-	* ])
-	* // @log: [
-	* // @log:   [
-	* // @log:     '0x0000000000000000000000000000000000000000',
-	* // @log:     [
-	* // @log:       '0x0000000000000000000000000000000000000000000000000000000000000001',
-	* // @log:       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe',
-	* // @log:     ],
-	* // @log:   ],
-	* // @log: ]
+	* })
+	* // @log: '0x6192106f129ce05c9075d319c1fa6ea9b3ae37cbd0c1ef92e2be7137bb07baa1'
 	* ```
 	*
-	* @param accessList - Access list.
-	* @returns List of tuples.
+	* @param value - The Typed Data domain and types.
+	* @returns The hashed domain.
 	*/
-	function toTupleList(accessList) {
-		if (!accessList || accessList.length === 0) return [];
-		const tuple = [];
-		for (const { address, storageKeys } of accessList) {
-			for (let j = 0; j < storageKeys.length; j++) if (size$1(storageKeys[j]) !== 32) throw new InvalidStorageKeySizeError({ storageKey: storageKeys[j] });
-			if (address) assert$6(address, { strict: false });
-			tuple.push([address, storageKeys]);
-		}
-		return tuple;
+	function hashDomain(value) {
+		const { domain, types, typeHashes } = value;
+		return hashStruct({
+			data: domain,
+			primaryType: "EIP712Domain",
+			types: _objectSpread2(_objectSpread2({}, types), {}, { EIP712Domain: (types === null || types === void 0 ? void 0 : types.EIP712Domain) || extractEip712DomainTypes(domain) }),
+			typeHashes
+		});
 	}
-	/** Thrown when the size of a storage key is invalid. */
-	var InvalidStorageKeySizeError = class extends BaseError {
-		constructor({ storageKey }) {
-			super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${size$1(storageKey)} bytes.`);
-			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
+	/**
+	* Hashes [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) struct.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TypedData } from 'ox'
+	*
+	* TypedData.hashStruct({
+	*   types: {
+	*     Foo: [
+	*       { name: 'address', type: 'address' },
+	*       { name: 'name', type: 'string' },
+	*       { name: 'foo', type: 'string' }
+	*     ]
+	*   },
+	*   primaryType: 'Foo',
+	*   data: {
+	*     address: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9',
+	*     name: 'jxom',
+	*     foo: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9'
+	*   }
+	* })
+	* // @log: '0x996fb3b6d48c50312d69abdd4c1b6fb02057c85aa86bb8d04c6f023326a168ce'
+	* ```
+	*
+	* @param value - The Typed Data struct to hash.
+	* @returns The hashed Typed Data struct.
+	*/
+	function hashStruct(value) {
+		const { data, primaryType, types, typeHashes } = value;
+		return keccak256(encodeData({
+			data,
+			primaryType,
+			types,
+			typeHashes
+		}));
+	}
+	/**
+	* Checks if [EIP-712 Typed Data](https://eips.ethereum.org/EIPS/eip-712) is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TypedData } from 'ox'
+	*
+	* const valid = TypedData.validate({
+	*   domain: {
+	*     name: 'Ether!',
+	*     version: '1',
+	*     chainId: 1,
+	*     verifyingContract:
+	*       '0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC'
+	*   },
+	*   primaryType: 'Foo',
+	*   types: {
+	*     Foo: [
+	*       { name: 'address', type: 'address' },
+	*       { name: 'name', type: 'string' },
+	*       { name: 'foo', type: 'string' }
+	*     ]
+	*   },
+	*   message: {
+	*     address: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9',
+	*     name: 'jxom',
+	*     foo: '0xb9CAB4F0E46F7F6b1024b5A7463734fa68E633f9'
+	*   }
+	* })
+	* // @log: true
+	* ```
+	*
+	* @param value - The Typed Data to validate.
+	*/
+	function validate$1(value) {
+		try {
+			assert$6(value);
+			return true;
+		} catch (_unused) {
+			return false;
+		}
+	}
+	/** Thrown when the bytes size of a typed data value does not match the expected size. */
+	var BytesSizeMismatchError = class extends BaseError {
+		constructor({ expectedSize, givenSize }) {
+			super(`Expected bytes${expectedSize}, got bytes${givenSize}.`);
+			_defineProperty(this, "name", "TypedData.BytesSizeMismatchError");
 		}
 	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
-	/**
-	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
-	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
-	*
-	* Replaces the per-envelope `value ? Hex.fromNumber(value) : '0x'` pattern.
-	*
-	* @internal
-	*/
-	function quantityToHex(value) {
-		if (value === void 0 || value === null) return "0x";
-		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
-		return fromNumber(value);
+	/** Thrown when the domain is invalid. */
+	var InvalidDomainError = class extends BaseError {
+		constructor({ domain }) {
+			super(`Invalid domain "${stringify(domain)}".`, { metaMessages: ["Must be a valid EIP-712 domain."] });
+			_defineProperty(this, "name", "TypedData.InvalidDomainError");
+		}
+	};
+	/** Thrown when the primary type of a typed data value is invalid. */
+	var InvalidPrimaryTypeError = class extends BaseError {
+		constructor({ primaryType, types }) {
+			super(`Invalid primary type \`${primaryType}\` must be one of \`${JSON.stringify(Object.keys(types))}\`.`, { metaMessages: ["Check that the primary type is a key in `types`."] });
+			_defineProperty(this, "name", "TypedData.InvalidPrimaryTypeError");
+		}
+	};
+	/** Thrown when the struct type is not a valid type. */
+	var InvalidStructTypeError = class extends BaseError {
+		constructor({ type }) {
+			super(`Struct type "${type}" is invalid.`, { metaMessages: ["Struct type must not be a Solidity type."] });
+			_defineProperty(this, "name", "TypedData.InvalidStructTypeError");
+		}
+	};
+	/** Thrown when an array-typed value is not an array. */
+	var InvalidArrayError = class extends BaseError {
+		constructor({ name, type, value }) {
+			super(`Value for field \`${name}\` of type \`${type}\` is not an array. Got \`${typeof value}\`.`);
+			_defineProperty(this, "name", "TypedData.InvalidArrayError");
+		}
+	};
+	/** Thrown when a fixed-length array does not match its declared length. */
+	var InvalidArrayLengthError = class extends BaseError {
+		constructor({ name, type, expectedLength, givenLength }) {
+			super(`Expected fixed-length array \`${type}\` for field \`${name}\` to have ${expectedLength} elements, got ${givenLength}.`);
+			_defineProperty(this, "name", "TypedData.InvalidArrayLengthError");
+		}
+	};
+	/** @internal */
+	function encodeData(value) {
+		var _value$typeHashes, _types$primaryType;
+		const { data, primaryType, types } = value;
+		const typeHashes = (_value$typeHashes = value.typeHashes) !== null && _value$typeHashes !== void 0 ? _value$typeHashes : /* @__PURE__ */ new Map();
+		const encodedTypes = [{ type: "bytes32" }];
+		const encodedValues = [hashType({
+			primaryType,
+			types,
+			typeHashes
+		})];
+		for (const field of (_types$primaryType = types[primaryType]) !== null && _types$primaryType !== void 0 ? _types$primaryType : []) {
+			const [type, value] = encodeField({
+				types,
+				name: field.name,
+				type: field.type,
+				value: data[field.name],
+				typeHashes
+			});
+			encodedTypes.push(type);
+			encodedValues.push(value);
+		}
+		return encode$3(encodedTypes, encodedValues);
 	}
+	/** @internal */
+	function hashType(value) {
+		const { primaryType, types, typeHashes } = value;
+		const cached = typeHashes === null || typeHashes === void 0 ? void 0 : typeHashes.get(primaryType);
+		if (cached) return cached;
+		const hash = keccak256(fromString$2(encodeType({
+			primaryType,
+			types
+		})));
+		typeHashes === null || typeHashes === void 0 || typeHashes.set(primaryType, hash);
+		return hash;
+	}
+	/** @internal */
+	function encodeField(properties) {
+		let { types, name, type, value, typeHashes } = properties;
+		if (types[type] !== void 0) return [{ type: "bytes32" }, keccak256(encodeData({
+			data: value,
+			primaryType: type,
+			types,
+			typeHashes
+		}))];
+		if (type === "bytes") {
+			value = `0x${(value.length % 2 ? "0" : "") + value.slice(2)}`;
+			return [{ type: "bytes32" }, keccak256(value, { as: "Hex" })];
+		}
+		if (type === "string") return [{ type: "bytes32" }, keccak256(fromString$1(value), { as: "Hex" })];
+		if (type.lastIndexOf("]") === type.length - 1) {
+			const arrayMatch = type.match(arrayRegex);
+			const parsedType = arrayMatch ? arrayMatch[1] : type.slice(0, type.lastIndexOf("["));
+			const fixedLength = (arrayMatch === null || arrayMatch === void 0 ? void 0 : arrayMatch[2]) ? Number.parseInt(arrayMatch[2], 10) : void 0;
+			if (!Array.isArray(value)) throw new InvalidArrayError({
+				name,
+				type,
+				value
+			});
+			if (fixedLength !== void 0 && value.length !== fixedLength) throw new InvalidArrayLengthError({
+				name,
+				type,
+				expectedLength: fixedLength,
+				givenLength: value.length
+			});
+			const typeValuePairs = value.map((item) => encodeField({
+				name,
+				type: parsedType,
+				types,
+				value: item,
+				typeHashes
+			}));
+			return [{ type: "bytes32" }, keccak256(encode$3(typeValuePairs.map(([t]) => t), typeValuePairs.map(([, v]) => v)))];
+		}
+		return [{ type }, value];
+	}
+	/** @internal */
+	function findTypeDependencies(value, results = /* @__PURE__ */ new Set()) {
+		const { primaryType: primaryType_, types } = value;
+		const primaryType = primaryType_.match(/^\w*/u)[0];
+		if (results.has(primaryType) || types[primaryType] === void 0) return results;
+		results.add(primaryType);
+		for (const field of types[primaryType]) findTypeDependencies({
+			primaryType: field.type,
+			types
+		}, results);
+		return results;
+	}
+	/** @internal */
+	function validateReference(type) {
+		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
+	}
+	// packages/wallet-chains/dist/typed-data-CShUp4Cy.mjs
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
+	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
+	function checksumEvmAddress(address) {
+		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
+		const checksummed = checksum(address);
+		assert$7(checksummed, { strict: true });
+		return checksummed;
+	}
+	/** `keccak256(pubkey)[12:]` — accepts a 33-byte compressed or 65-byte uncompressed secp256k1 key. */
+	function evmAddressFromPublicKey(pubkey) {
+		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
+		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
+		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+	}
+	/**
+	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
+	* address on every chain that supports it.
+	*/
+	var EVM_DELEGATOR = {
+		address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+		name: "EIP7702StatelessDeleGator",
+		version: "1.3.0"
+	};
+	var EXECUTE = from$2("function execute(bytes32 mode, bytes executionData)");
+	var EXECUTIONS = [{
+		type: "tuple[]",
+		components: [
+			{
+				name: "target",
+				type: "address"
+			},
+			{
+				name: "value",
+				type: "uint256"
+			},
+			{
+				name: "callData",
+				type: "bytes"
+			}
+		]
+	}];
+	var hex$2 = (v) => {
+		assert$8(v);
+		return v;
+	};
+	var list = (v) => Array.isArray(v) ? v : [];
+	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
+	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
+	var decodeBatchExecute = (data) => {
+		try {
+			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
+			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
+			const [inner] = list(decode$2(EXECUTIONS, hex$2(executionData)));
+			const executions = [];
+			for (const e of list(inner)) {
+				if (!isExecution(e)) return;
+				executions.push({
+					to: checksumEvmAddress(e.target),
+					value: e.value,
+					data: e.callData
+				});
+			}
+			return executions;
+		} catch (_unused) {
+			return;
+		}
+	};
+	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
+	function assertHex$1(value, field) {
+		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+	}
+	var isRecord$1 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
+	var canonicalHex = (value) => `0x${value.toString(16)}`;
+	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
+	var quantityBigInt = (value, field) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+		return BigInt(value);
+	};
+	var safeInteger = (value, field) => {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
+		return value;
+	};
+	var quantity = (value, field) => {
+		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
+		if (CANONICAL_HEX.test(value)) return value;
+		return canonicalHex(quantityBigInt(value, field));
+	};
+	var hexBytes$1 = (value, field) => {
+		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+		return value.toLowerCase();
+	};
+	var accessList = (value) => {
+		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
+		return value.map((entry) => {
+			if (!isRecord$1(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
+			const keys = Object.keys(entry).sort();
+			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
+			const { address, storageKeys } = entry;
+			if (typeof address !== "string" || !isEvmAddress(address)) throw new ChainError("invalid-address", "accessList entry has an invalid address");
+			if (!Array.isArray(storageKeys)) throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
+			return {
+				address: checksumEvmAddress(address),
+				storageKeys: storageKeys.map((k) => {
+					if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ChainError("invalid-quantity", "accessList storageKeys must be 32-byte hex strings");
+					return k.toLowerCase();
+				})
+			};
+		});
+	};
+	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
+	var networkChainId = (network) => {
+		var _exec;
+		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
+		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
+		const id = Number(idPart);
+		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
+		return id;
+	};
+	var REQUIRED = {
+		base: [
+			"chainId",
+			"nonce",
+			"gas",
+			"value",
+			"data"
+		],
+		gasPrice: ["gasPrice"],
+		accessList: ["accessList"],
+		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
+	};
+	var ALLOWED = {
+		base: [
+			"type",
+			"chainId",
+			"nonce",
+			"gas",
+			"value",
+			"data",
+			"to"
+		],
+		legacy: ["gasPrice"],
+		eip2930: ["gasPrice", "accessList"],
+		eip1559: [
+			"accessList",
+			"maxFeePerGas",
+			"maxPriorityFeePerGas"
+		],
+		eip7702: [
+			"accessList",
+			"maxFeePerGas",
+			"maxPriorityFeePerGas",
+			"authorization"
+		]
+	};
+	var requireFields = (input, fields) => {
+		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
+	};
+	var rejectUnknown = (input, type) => {
+		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
+		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
+		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
+	};
+	/**
+	* Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
+	* canonical quantities, EIP-55 addresses. Idempotent.
+	*/
+	var normalizeEvmTransaction = (tx) => {
+		if (!isRecord$1(tx)) throw new ChainError("invalid-request", "tx must be an object");
+		const { type } = tx;
+		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559" && type !== "eip7702") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930, eip1559 and eip7702 only)`);
+		rejectUnknown(tx, type);
+		requireFields(tx, REQUIRED.base);
+		const chainId = safeInteger(tx["chainId"], "chainId");
+		const nonce = safeInteger(tx["nonce"], "nonce");
+		const gas = quantity(tx["gas"], "gas");
+		const value = quantity(tx["value"], "value");
+		const data = hexBytes$1(tx["data"], "data");
+		const toRaw = tx["to"];
+		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
+		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
+		const base = _objectSpread2({
+			chainId,
+			nonce,
+			gas,
+			value,
+			data
+		}, to === void 0 ? {} : { to });
+		if (type === "legacy") {
+			requireFields(tx, REQUIRED.gasPrice);
+			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
+		}
+		if (type === "eip2930") {
+			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
+			return _objectSpread2(_objectSpread2({ type }, base), {}, {
+				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
+				accessList: accessList(tx["accessList"])
+			});
+		}
+		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
+		const fees = {
+			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
+			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
+		};
+		const list = accessList(tx["accessList"]);
+		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
+		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
+		const auth = tx["authorization"];
+		if (!isRecord$1(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") throw new ChainError("invalid-request", "tx.authorization must be an object with exactly address");
+		const authAddress = checksumEvmAddress(auth["address"]);
+		if (authAddress !== EVM_DELEGATOR.address && authAddress !== "0x0000000000000000000000000000000000000000") throw new ChainError("unsupported", "authorization address is not supported");
+		return _objectSpread2(_objectSpread2(_objectSpread2({ type }, base), {}, {
+			to,
+			accessList: list
+		}, fees), {}, { authorization: { address: authAddress } });
+	};
+	var isField = (value) => isRecord$1(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
+	var isTypedDataInput = (value) => {
+		if (!isRecord$1(value)) return false;
+		const { types, primaryType, domain, message } = value;
+		if (!isRecord$1(types)) return false;
+		if (typeof primaryType !== "string" || primaryType === "") return false;
+		if (!isRecord$1(domain)) return false;
+		if (!isRecord$1(message)) return false;
+		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
+	};
+	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/** `value` is an array of message objects (empty allowed). */
+	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
+	/** The `Type field,Type field` signature of struct `name` in `types`. */
+	var typedDataSignature = (types, name) => {
+		var _types$name;
+		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
+	};
+	/** Struct `name` has exactly `fields`, in order, no more. */
+	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
+	/** A hex `address` field value, checksummed; `undefined` when malformed. */
+	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
+	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
+	var typedDataUint = (value, max) => {
+		let parsed;
+		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
+		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
+		else return;
+		return parsed >= 0n && parsed <= max ? parsed : void 0;
+	};
+	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
+	var MAX_UINT48 = 2n ** 48n - 1n;
+	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+	/** A `bytes` field value: `0x`-prefixed hex of even length. */
+	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
+	/** Parses the EIP-712 JSON source and validates its shape with ox. */
+	var parseTypedData = (typedData) => {
+		let json;
+		try {
+			json = JSON.parse(typedData);
+		} catch (_unused2) {
+			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
+		}
+		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
+		try {
+			validate$1(json);
+		} catch (_unused3) {
+			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
+		}
+		return { json };
+	};
+	/**
+	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
+	* decimal string or a `0x` hex string.
+	*/
+	var domainChainId = (domain) => {
+		const { chainId } = domain;
+		if (chainId === void 0) return;
+		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
+		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
+		return numeric;
+	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
 	init_defineProperty();
 	/**
@@ -25440,7 +24906,7 @@ zoo`.split("\n"));
 	* @param options - Options.
 	* @returns The RLP value.
 	*/
-	function from(value, options) {
+	function from$1(value, options) {
 		const { as } = options;
 		const ctx = {
 			lengths: [],
@@ -25478,9 +24944,9 @@ zoo`.split("\n"));
 	* @param options - Options.
 	* @returns The RLP value.
 	*/
-	function fromHex(hex, options = {}) {
+	function fromHex$1(hex, options = {}) {
 		const { as = "Hex" } = options;
-		return from(hex, { as });
+		return from$1(hex, { as });
 	}
 	/**
 	* Returns the byte length needed to encode `length` itself (1-4 bytes per
@@ -25722,6 +25188,445 @@ zoo`.split("\n"));
 	function invalidNibble(hex) {
 		return new BaseError(`Invalid hex string \`${hex}\`.`);
 	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Signature.js
+	init_objectSpread2();
+	init_defineProperty();
+	/**
+	* Asserts that a Signature is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* // @errors: 2322
+	* import { Signature } from 'ox'
+	*
+	* Signature.assert({
+	*   r: '-0x6e1c1f59ee1cf25b75a8d57b3c89e7e6b3b1da823df8b3b89497f30c1f000000',
+	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	*   yParity: 1
+	* })
+	* // @error: InvalidSignatureRError:
+	* // @error: Value `-0x...` is an invalid r value.
+	* // @error: r must be a positive integer less than 2^256.
+	* ```
+	*
+	* @param signature - The signature object to assert.
+	*/
+	function assert$5(signature, options = {}) {
+		const { recovered } = options;
+		if (typeof signature.r === "undefined") throw new MissingPropertiesError({ signature });
+		if (typeof signature.s === "undefined") throw new MissingPropertiesError({ signature });
+		if (recovered && typeof signature.yParity === "undefined") throw new MissingPropertiesError({ signature });
+		try {
+			const r = BigInt(signature.r);
+			if (r < 0n || r > maxUint256) throw new InvalidRError({ value: signature.r });
+		} catch (_unused) {
+			throw new InvalidRError({ value: signature.r });
+		}
+		try {
+			const s = BigInt(signature.s);
+			if (s < 0n || s > maxUint256) throw new InvalidSError({ value: signature.s });
+		} catch (_unused2) {
+			throw new InvalidSError({ value: signature.s });
+		}
+		if (typeof signature.yParity === "number" && signature.yParity !== 0 && signature.yParity !== 1) throw new InvalidYParityError({ value: signature.yParity });
+	}
+	/**
+	* Deserializes a {@link ox#Bytes.Bytes} signature into a structured {@link ox#Signature.Signature}.
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import { Signature } from 'ox'
+	*
+	* Signature.fromBytes(new Uint8Array([128, 3, 131, ...]))
+	* // @log: { r: '0x6e10...', s: '0x4a90...', yParity: 0 }
+	* ```
+	*
+	* @param signature - The serialized signature.
+	* @returns The deserialized {@link ox#Signature.Signature}.
+	*/
+	function fromBytes(signature) {
+		return fromHex(fromBytes$1(signature));
+	}
+	/**
+	* Deserializes a {@link ox#Hex.Hex} signature into a structured {@link ox#Signature.Signature}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* Signature.fromHex(
+	*   '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db81c'
+	* )
+	* // @log: { r: '0x6e10...', s: '0x4a90...', yParity: 0 }
+	* ```
+	*
+	* @param serialized - The serialized signature.
+	* @returns The deserialized {@link ox#Signature.Signature}.
+	*/
+	function fromHex(signature) {
+		if (signature.length !== 130 && signature.length !== 132) throw new InvalidSerializedSizeError({ signature });
+		const r = slice$2(signature, 0, 32);
+		const s = slice$2(signature, 32, 64);
+		const yParity = (() => {
+			const yParity = Number(`0x${signature.slice(130)}`);
+			if (Number.isNaN(yParity)) return void 0;
+			try {
+				return vToYParity(yParity);
+			} catch (_unused3) {
+				throw new InvalidYParityError({ value: yParity });
+			}
+		})();
+		if (typeof yParity === "undefined") return {
+			r,
+			s
+		};
+		return {
+			r,
+			s,
+			yParity
+		};
+	}
+	/**
+	* Extracts a {@link ox#Signature.Signature} from an arbitrary object that may include signature properties.
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import { Signature } from 'ox'
+	*
+	* Signature.extract({
+	*   baz: 'barry',
+	*   foo: 'bar',
+	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	*   yParity: 1,
+	*   zebra: 'stripes'
+	* })
+	* // @log: {
+	* // @log:   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	* // @log:   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	* // @log:   yParity: 1
+	* // @log: }
+	* ```
+	*
+	* @param value - The arbitrary object to extract the signature from.
+	* @returns The extracted {@link ox#Signature.Signature}.
+	*/
+	function extract(value) {
+		if (typeof value.r === "undefined") return void 0;
+		if (typeof value.s === "undefined") return void 0;
+		return from(value);
+	}
+	/**
+	* Instantiates a typed {@link ox#Signature.Signature} object from a {@link ox#Signature.Signature}, {@link ox#Signature.Legacy}, {@link ox#Bytes.Bytes}, or {@link ox#Hex.Hex}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* Signature.from({
+	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	*   yParity: 1
+	* })
+	* // @log: {
+	* // @log:   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	* // @log:   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	* // @log:   yParity: 1
+	* // @log: }
+	* ```
+	*
+	* @example
+	* ### From Serialized
+	*
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* Signature.from(
+	*   '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db801'
+	* )
+	* // @log: {
+	* // @log:   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	* // @log:   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	* // @log:   yParity: 1,
+	* // @log: }
+	* ```
+	*
+	* @example
+	* ### From Legacy
+	*
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* Signature.from({
+	*   r: '0x68a020a21f5d20c5cf6c9b4d2dccdcdd14a9f7b9c2eb19d3d3acdb2a1a9c1f50',
+	*   s: '0x7e8d44a4a8a3e3a4c6a3c1a3c3a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a4',
+	*   v: 27
+	* })
+	* // @log: {
+	* // @log:   r: '0x68a020a21f5d20c5cf6c9b4d2dccdcdd14a9f7b9c2eb19d3d3acdb2a1a9c1f50',
+	* // @log:   s: '0x7e8d44a4a8a3e3a4c6a3c1a3c3a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a3c1a4',
+	* // @log:   yParity: 0
+	* // @log: }
+	* ```
+	*
+	* @param signature - The signature value to instantiate.
+	* @returns The instantiated {@link ox#Signature.Signature}.
+	*/
+	function from(signature) {
+		const signature_ = (() => {
+			if (typeof signature === "string") return fromHex(signature);
+			if (signature instanceof Uint8Array) return fromBytes(signature);
+			const sig = signature;
+			if (typeof sig.v !== "undefined") return fromLegacy(sig);
+			if (typeof sig.yParity === "string") return fromRpc(sig);
+			return _objectSpread2({
+				r: sig.r,
+				s: sig.s
+			}, typeof sig.yParity !== "undefined" ? { yParity: sig.yParity } : {});
+		})();
+		assert$5(signature_);
+		signature_.r = padLeft(signature_.r, 32);
+		signature_.s = padLeft(signature_.s, 32);
+		return signature_;
+	}
+	/**
+	* Converts a {@link ox#Signature.Legacy} into a {@link ox#Signature.Signature}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const legacy = Signature.fromLegacy({
+	*   r: '0x01',
+	*   s: '0x02',
+	*   v: 28
+	* })
+	* // @log: { r: '0x01', s: '0x02', yParity: 1 }
+	* ```
+	*
+	* @param signature - The {@link ox#Signature.Legacy} to convert.
+	* @returns The converted {@link ox#Signature.Signature}.
+	*/
+	function fromLegacy(signature) {
+		return {
+			r: padLeft(signature.r, 32),
+			s: padLeft(signature.s, 32),
+			yParity: vToYParity(typeof signature.v === "string" ? Number(signature.v) : signature.v)
+		};
+	}
+	/**
+	* Converts a {@link ox#Signature.Rpc} into a {@link ox#Signature.Signature}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const signature = Signature.fromRpc({
+	*   r: '0x635dc2033e60185bb36709c29c75d64ea51dfbd91c32ef4be198e4ceb169fb4d',
+	*   s: '0x50c2667ac4c771072746acfdcf1f1483336dcca8bd2df47cd83175dbe60f0540',
+	*   yParity: '0x0'
+	* })
+	* ```
+	*
+	* @param signature - The {@link ox#Signature.Rpc} to convert.
+	* @returns The converted {@link ox#Signature.Signature}.
+	*/
+	function fromRpc(signature) {
+		const yParity = (() => {
+			const v = signature.v ? Number(signature.v) : void 0;
+			let yParity = signature.yParity ? Number(signature.yParity) : void 0;
+			if (typeof v === "number" && typeof yParity !== "number") yParity = vToYParity(v);
+			if (typeof yParity !== "number") throw new InvalidYParityError({ value: signature.yParity });
+			return yParity;
+		})();
+		return {
+			r: padLeft(signature.r, 32),
+			s: padLeft(signature.s, 32),
+			yParity
+		};
+	}
+	/**
+	* Serializes a {@link ox#Signature.Signature} to {@link ox#Bytes.Bytes}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const signature = Signature.toBytes({
+	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	*   yParity: 1
+	* })
+	* // @log: Uint8Array [102, 16, 10, ...]
+	* ```
+	*
+	* @param signature - The signature to serialize.
+	* @returns The serialized signature.
+	*/
+	function toBytes(signature) {
+		return fromHex$2(toHex(signature));
+	}
+	/**
+	* Decodes a 65-byte recovered byte representation (`yParity ++ r ++ s`,
+	* big-endian) into a {@link ox#Signature.Signature}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const signature = Signature.fromRecoveredBytes(
+	*   new Uint8Array(65)
+	* )
+	* // @log: { r: '0x00...0000', s: '0x00...0000', yParity: 0 }
+	* ```
+	*
+	* @param bytes - The 65-byte recovered representation.
+	* @returns The decoded {@link ox#Signature.Signature}.
+	*/
+	function fromRecoveredBytes(bytes) {
+		if (bytes.length !== 65) throw new InvalidSerializedSizeError({
+			expectedSize: 65,
+			signature: bytes
+		});
+		const yParity = bytes[0];
+		if (yParity !== 0 && yParity !== 1) throw new InvalidYParityError({ value: yParity });
+		return {
+			r: fromBytes$1(bytes.subarray(1, 33)),
+			s: fromBytes$1(bytes.subarray(33, 65)),
+			yParity
+		};
+	}
+	/**
+	* Serializes a {@link ox#Signature.Signature} to {@link ox#Hex.Hex}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const signature = Signature.toHex({
+	*   r: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf',
+	*   s: '0x4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db8',
+	*   yParity: 1
+	* })
+	* // @log: '0x6e100a352ec6ad1b70802290e18aeed190704973570f3b8ed42cb9808e2ea6bf4a90a229a244495b41890987806fcbd2d5d23fc0dbe5f5256c2613c039d76db81c'
+	* ```
+	*
+	* @param signature - The signature to serialize.
+	* @returns The serialized signature.
+	*/
+	function toHex(signature) {
+		assert$5(signature);
+		return concat$1(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber(yParityToV(signature.yParity), { size: 1 }) : "0x");
+	}
+	/**
+	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const signatureTuple = Signature.toTuple({
+	*   r: '0x000000000000000000000000000000000000000000000000000000000000007b',
+	*   s: '0x00000000000000000000000000000000000000000000000000000000000001c8',
+	*   yParity: 1
+	* })
+	* // @log: [yParity: '0x01', r: '0x7b', s: '0x1c8']
+	* ```
+	*
+	* @param signature - The {@link ox#Signature.Signature} to convert.
+	* @returns The {@link ox#Signature.Tuple}.
+	*/
+	function toTuple$1(signature) {
+		const { r, s, yParity } = signature;
+		return [
+			yParity ? "0x01" : "0x",
+			trimLeft$1(r),
+			trimLeft$1(s)
+		];
+	}
+	/**
+	* Converts a ECDSA `v` value to a `yParity` value.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const yParity = Signature.vToYParity(28)
+	* // @log: 1
+	* ```
+	*
+	* @param v - The ECDSA `v` value to convert.
+	* @returns The `yParity` value.
+	*/
+	function vToYParity(v) {
+		if (v === 0 || v === 27) return 0;
+		if (v === 1 || v === 28) return 1;
+		if (v >= 35) return v % 2 === 0 ? 1 : 0;
+		throw new InvalidVError({ value: v });
+	}
+	/**
+	* Converts a ECDSA `v` value to a `yParity` value.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Signature } from 'ox'
+	*
+	* const v = Signature.yParityToV(1)
+	* // @log: 28
+	* ```
+	*
+	* @param yParity - The ECDSA `yParity` value to convert.
+	* @returns The `v` value.
+	*/
+	function yParityToV(yParity) {
+		if (yParity === 0) return 27;
+		if (yParity === 1) return 28;
+		throw new InvalidYParityError({ value: yParity });
+	}
+	/** Thrown when the serialized signature is of an invalid size. */
+	var InvalidSerializedSizeError = class extends BaseError {
+		constructor({ expectedSize, signature }) {
+			super(`Value \`${signature}\` is an invalid signature size.`, { metaMessages: [typeof expectedSize === "number" ? `Expected: ${expectedSize} bytes.` : "Expected: 64 bytes or 65 bytes.", `Received ${size$1(from$5(signature))} bytes.`] });
+			_defineProperty(this, "name", "Signature.InvalidSerializedSizeError");
+		}
+	};
+	/** Thrown when the signature is missing either an `r`, `s`, or `yParity` property. */
+	var MissingPropertiesError = class extends BaseError {
+		constructor({ signature }) {
+			super(`Signature \`${stringify(signature)}\` is missing either an \`r\`, \`s\`, or \`yParity\` property.`);
+			_defineProperty(this, "name", "Signature.MissingPropertiesError");
+		}
+	};
+	/** Thrown when the signature has an invalid `r` value. */
+	var InvalidRError = class extends BaseError {
+		constructor({ value }) {
+			super(`Value \`${value}\` is an invalid r value. r must be a positive integer less than 2^256.`);
+			_defineProperty(this, "name", "Signature.InvalidRError");
+		}
+	};
+	/** Thrown when the signature has an invalid `s` value. */
+	var InvalidSError = class extends BaseError {
+		constructor({ value }) {
+			super(`Value \`${value}\` is an invalid s value. s must be a positive integer less than 2^256.`);
+			_defineProperty(this, "name", "Signature.InvalidSError");
+		}
+	};
+	/** Thrown when the signature has an invalid `yParity` value. */
+	var InvalidYParityError = class extends BaseError {
+		constructor({ value }) {
+			super(`Value \`${value}\` is an invalid y-parity value. Y-parity must be 0 or 1.`);
+			_defineProperty(this, "name", "Signature.InvalidYParityError");
+		}
+	};
+	/** Thrown when the signature has an invalid `v` value. */
+	var InvalidVError = class extends BaseError {
+		constructor({ value }) {
+			super(`Value \`${value}\` is an invalid v value. v must be 27, 28 or >=35.`);
+			_defineProperty(this, "name", "Signature.InvalidVError");
+		}
+	};
 	// \0@oxc-project+runtime@0.155.0/helpers/esm/objectWithoutPropertiesLoose.js
 	function _objectWithoutPropertiesLoose(r, e) {
 		if (null == r) return {};
@@ -25746,6 +25651,332 @@ zoo`.split("\n"));
 	var init_objectWithoutProperties = __esmMin((() => {
 		init_objectWithoutPropertiesLoose();
 	}));
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Authorization.js
+	/**
+	* Computes the sign payload for an {@link ox#Authorization.Authorization} in [EIP-7702 format](https://eips.ethereum.org/EIPS/eip-7702): `keccak256('0x05' || rlp([chain_id, address, nonce]))`.
+	*
+	* @example
+	* The example below demonstrates computing the sign payload for an {@link ox#Authorization.Authorization}. This payload
+	* can then be passed to signing functions like {@link ox#Secp256k1.(sign:function)}.
+	*
+	* ```ts twoslash
+	* import { Authorization, Secp256k1 } from 'ox'
+	*
+	* const authorization = Authorization.from({
+	*   address: '0x1234567890abcdef1234567890abcdef12345678',
+	*   chainId: 1,
+	*   nonce: 69n
+	* })
+	*
+	* const payload = Authorization.getSignPayload(authorization) // [!code focus]
+	*
+	* const signature = Secp256k1.sign({
+	*   payload,
+	*   privateKey: '0x...'
+	* })
+	* ```
+	*
+	* @param authorization - The {@link ox#Authorization.Authorization}.
+	* @returns The sign payload.
+	*/
+	function getSignPayload$5(authorization) {
+		return hash$4(authorization, { presign: true });
+	}
+	/**
+	* Computes the hash for an {@link ox#Authorization.Authorization} in [EIP-7702 format](https://eips.ethereum.org/EIPS/eip-7702): `keccak256('0x05' || rlp([chain_id, address, nonce]))`.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Authorization } from 'ox'
+	*
+	* const authorization = Authorization.from({
+	*   address: '0x1234567890abcdef1234567890abcdef12345678',
+	*   chainId: 1,
+	*   nonce: 69n
+	* })
+	*
+	* const hash = Authorization.hash(authorization) // [!code focus]
+	* ```
+	*
+	* @param authorization - The {@link ox#Authorization.Authorization}.
+	* @returns The hash.
+	*/
+	function hash$4(authorization, options = {}) {
+		const { presign } = options;
+		return keccak256(concat$1("0x05", fromHex$1(toTuple(presign ? {
+			address: authorization.address,
+			chainId: authorization.chainId,
+			nonce: authorization.nonce
+		} : authorization))));
+	}
+	/**
+	* Converts an {@link ox#Authorization.Authorization} to an {@link ox#Authorization.Tuple}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Authorization } from 'ox'
+	*
+	* const authorization = Authorization.from({
+	*   address: '0x1234567890abcdef1234567890abcdef12345678',
+	*   chainId: 1,
+	*   nonce: 69n
+	* })
+	*
+	* const tuple = Authorization.toTuple(authorization) // [!code focus]
+	* // @log: [
+	* // @log:   address: '0x1234567890abcdef1234567890abcdef12345678',
+	* // @log:   chainId: 1,
+	* // @log:   nonce: 69n,
+	* // @log: ]
+	* ```
+	*
+	* @param authorization - The {@link ox#Authorization.Authorization}.
+	* @returns An [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) Authorization tuple.
+	*/
+	function toTuple(authorization) {
+		const { address, chainId, nonce, r, s, yParity } = authorization;
+		const signature = extract({
+			r,
+			s
+		});
+		if (signature && typeof yParity !== "undefined") assertYParity(yParity);
+		return [
+			chainId ? fromNumber(chainId) : "0x",
+			address,
+			nonce ? fromNumber(nonce) : "0x",
+			...signature ? [
+				yParity ? fromNumber(yParity, { size: 1 }) : "0x",
+				trimLeft$1(signature.r),
+				trimLeft$1(signature.s)
+			] : []
+		];
+	}
+	/**
+	* Converts an {@link ox#Authorization.List} to an {@link ox#Authorization.TupleList}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Authorization } from 'ox'
+	*
+	* const authorization_1 = Authorization.from({
+	*   address: '0x1234567890abcdef1234567890abcdef12345678',
+	*   chainId: 1,
+	*   nonce: 69n
+	* })
+	* const authorization_2 = Authorization.from({
+	*   address: '0x1234567890abcdef1234567890abcdef12345678',
+	*   chainId: 3,
+	*   nonce: 20n
+	* })
+	*
+	* const tuple = Authorization.toTupleList([
+	*   authorization_1,
+	*   authorization_2
+	* ]) // [!code focus]
+	* // @log: [
+	* // @log:   [
+	* // @log:     address: '0x1234567890abcdef1234567890abcdef12345678',
+	* // @log:     chainId: 1,
+	* // @log:     nonce: 69n,
+	* // @log:   ],
+	* // @log:   [
+	* // @log:     address: '0x1234567890abcdef1234567890abcdef12345678',
+	* // @log:     chainId: 3,
+	* // @log:     nonce: 20n,
+	* // @log:   ],
+	* // @log: ]
+	* ```
+	*
+	* @param list - An {@link ox#Authorization.List}.
+	* @returns An [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) Authorization tuple list.
+	*/
+	function toTupleList$1(list) {
+		if (!list || list.length === 0) return [];
+		const tupleList = [];
+		for (const authorization of list) tupleList.push(toTuple(authorization));
+		return tupleList;
+	}
+	function assertYParity(yParity) {
+		if (Number.isInteger(yParity) && yParity >= 0 && yParity < 256) return;
+		throw new IntegerOutOfRangeError({
+			max: "255",
+			min: "0",
+			signed: false,
+			size: 1,
+			value: `${yParity}`
+		});
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
+	/**
+	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
+	* of the ERC-191 v0x45 envelope). Concatenated with the per-message
+	* `Hex.fromString(String(byteLength))` and the message itself.
+	*
+	* @internal
+	*/
+	var erc191PrefixHex = "0x19" + fromString$2("Ethereum Signed Message:\n").slice(2);
+	/**
+	* Encodes a personal sign message in [ERC-191 format](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e): `0x19 ‖ "Ethereum Signed Message:\n" + message.length ‖ message`.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Hex, PersonalMessage } from 'ox'
+	*
+	* const data = PersonalMessage.encode(
+	*   Hex.fromString('hello world')
+	* )
+	* // @log: '0x19457468657265756d205369676e6564204d6573736167653a0a313168656c6c6f20776f726c64'
+	* // @log: (0x19 ‖ 'Ethereum Signed Message:\n11' ‖ 'hello world')
+	* ```
+	*
+	* @param data - The data to encode.
+	* @returns The encoded personal sign message.
+	*/
+	function encode$1(data) {
+		const message = from$5(data);
+		return concat$1(erc191PrefixHex, fromString$2(String(size$1(message))), message);
+	}
+	/**
+	* Gets the payload to use for signing an [ERC-191 formatted](https://eips.ethereum.org/EIPS/eip-191#version-0x45-e) personal message.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Hex, PersonalMessage, Secp256k1 } from 'ox'
+	*
+	* const payload = PersonalMessage.getSignPayload(
+	*   Hex.fromString('hello world')
+	* ) // [!code focus]
+	*
+	* const signature = Secp256k1.sign({
+	*   payload,
+	*   privateKey: '0x...'
+	* })
+	* ```
+	*
+	* @param data - The data to get the sign payload for.
+	* @returns The payload to use for signing.
+	*/
+	function getSignPayload$4(data) {
+		return keccak256(encode$1(data));
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cryptoIo.js
+	/**
+	* Formats a structured {@link ox#Signature.Signature} as the requested
+	* representation: the structured object (`'Object'`), serialized hex
+	* (`'Hex'`), or serialized bytes (`'Bytes'`).
+	*
+	* @internal
+	*/
+	function formatSignature(signature, as) {
+		if (as === "Hex") return toHex(signature);
+		if (as === "Bytes") return toBytes(signature);
+		return signature;
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/secp256k1.js
+	init_secp256k1();
+	init_objectSpread2();
+	var signDefault = (payload, privateKey, options) => secp256k1.sign(payload, privateKey, _objectSpread2(_objectSpread2({}, options), {}, {
+		format: "recovered",
+		lowS: true
+	}));
+	/** @internal */
+	var sign$3 = (payload, privateKey, options) => {
+		var _overrides$Secp256k1$5, _overrides$Secp256k5;
+		return ((_overrides$Secp256k1$5 = (_overrides$Secp256k5 = overrides.Secp256k1) === null || _overrides$Secp256k5 === void 0 ? void 0 : _overrides$Secp256k5.sign) !== null && _overrides$Secp256k1$5 !== void 0 ? _overrides$Secp256k1$5 : signDefault)(payload, privateKey, options);
+	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/entropy.js
+	var extraEntropy = false;
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Secp256k1.js
+	init_defineProperty();
+	/**
+	* Signs the payload with the provided private key.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Secp256k1 } from 'ox'
+	*
+	* const signature = Secp256k1.sign({
+	*   // [!code focus]
+	*   payload: '0xdeadbeef', // [!code focus]
+	*   privateKey: '0x...' // [!code focus]
+	* }) // [!code focus]
+	* ```
+	*
+	* @param options - The signing options.
+	* @returns The ECDSA {@link ox#Signature.Signature}.
+	*/
+	function sign$2(options) {
+		const { as = "Object", extraEntropy: extraEntropy$1 = extraEntropy, hash, payload, privateKey } = options;
+		return formatSignature(fromRecoveredBytes(sign$3(from$4(payload), from$4(privateKey), {
+			extraEntropy: typeof extraEntropy$1 === "boolean" ? extraEntropy$1 : from$4(extraEntropy$1),
+			prehash: hash === true
+		})), as);
+	}
+	fromString$1("ox.secp256k1.fromPrf.v1");
+	fromString$1("ox.secp256k1.fromSeed.v1");
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
+	init_defineProperty();
+	/**
+	* Converts a structured Access List into a list of tuples.
+	*
+	* @example
+	* ```ts twoslash
+	* import { AccessList } from 'ox'
+	*
+	* const accessList = AccessList.toTupleList([
+	*   {
+	*     address: '0x0000000000000000000000000000000000000000',
+	*     storageKeys: [
+	*       '0x0000000000000000000000000000000000000000000000000000000000000001',
+	*       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe'
+	*     ]
+	*   }
+	* ])
+	* // @log: [
+	* // @log:   [
+	* // @log:     '0x0000000000000000000000000000000000000000',
+	* // @log:     [
+	* // @log:       '0x0000000000000000000000000000000000000000000000000000000000000001',
+	* // @log:       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe',
+	* // @log:     ],
+	* // @log:   ],
+	* // @log: ]
+	* ```
+	*
+	* @param accessList - Access list.
+	* @returns List of tuples.
+	*/
+	function toTupleList(accessList) {
+		if (!accessList || accessList.length === 0) return [];
+		const tuple = [];
+		for (const { address, storageKeys } of accessList) {
+			for (let j = 0; j < storageKeys.length; j++) if (size$1(storageKeys[j]) !== 32) throw new InvalidStorageKeySizeError({ storageKey: storageKeys[j] });
+			if (address) assert$7(address, { strict: false });
+			tuple.push([address, storageKeys]);
+		}
+		return tuple;
+	}
+	/** Thrown when the size of a storage key is invalid. */
+	var InvalidStorageKeySizeError = class extends BaseError {
+		constructor({ storageKey }) {
+			super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${size$1(storageKey)} bytes.`);
+			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
+		}
+	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
+	/**
+	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
+	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
+	*
+	* Replaces the per-envelope `value ? Hex.fromNumber(value) : '0x'` pattern.
+	*
+	* @internal
+	*/
+	function quantityToHex(value) {
+		if (value === void 0 || value === null) return "0x";
+		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
+		return fromNumber(value);
+	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip2930.js
 	init_objectSpread2();
 	/**
@@ -25768,10 +25999,10 @@ zoo`.split("\n"));
 	*
 	* @param envelope - The transaction envelope to assert.
 	*/
-	function assert$3(envelope) {
+	function assert$4(envelope) {
 		const { chainId, gasPrice, to } = envelope;
 		if (chainId <= 0) throw new InvalidChainIdError({ chainId });
-		if (to) assert$6(to, { strict: false });
+		if (to) assert$7(to, { strict: false });
 		if (gasPrice && BigInt(gasPrice) > 2n ** 256n - 1n) throw new GasPriceTooHighError({ gasPrice });
 	}
 	/**
@@ -25805,8 +26036,8 @@ zoo`.split("\n"));
 	* @param envelope - The transaction envelope to get the sign payload for.
 	* @returns The sign payload.
 	*/
-	function getSignPayload$2(envelope) {
-		return hash$2(envelope, { presign: true });
+	function getSignPayload$3(envelope) {
+		return hash$3(envelope, { presign: true });
 	}
 	/**
 	* Hashes a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}. This is the "transaction hash".
@@ -25840,9 +26071,9 @@ zoo`.split("\n"));
 	* @param options - Options.
 	* @returns The hash of the transaction envelope.
 	*/
-	function hash$2(envelope, options = {}) {
+	function hash$3(envelope, options = {}) {
 		const { presign } = options;
-		return keccak256(serialize$2(_objectSpread2(_objectSpread2({}, envelope), presign ? {
+		return keccak256(serialize$3(_objectSpread2(_objectSpread2({}, envelope), presign ? {
 			r: void 0,
 			s: void 0,
 			yParity: void 0,
@@ -25898,13 +26129,13 @@ zoo`.split("\n"));
 	* @param options - Options.
 	* @returns The serialized Transaction Envelope.
 	*/
-	function serialize$2(envelope, options = {}) {
+	function serialize$3(envelope, options = {}) {
 		var _ref;
 		const { chainId, gas, data, input, nonce, to, value, accessList, gasPrice } = envelope;
-		assert$3(envelope);
+		assert$4(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$1("0x01", fromHex([
+		return concat$1("0x01", fromHex$1([
 			fromNumber(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
@@ -25913,7 +26144,206 @@ zoo`.split("\n"));
 			quantityToHex(value),
 			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
 			accessTupleList,
-			...signature ? toTuple(signature) : []
+			...signature ? toTuple$1(signature) : []
+		]));
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip7702.js
+	init_objectSpread2();
+	var serializedType$1 = "0x04";
+	/**
+	* Asserts a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702} is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip7702, Value } from 'ox'
+	*
+	* TxEnvelopeEip7702.assert({
+	*   authorizationList: [],
+	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
+	*   chainId: 1,
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	* // @error: FeeCapTooHighError:
+	* // @error: The fee cap (`masFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
+	* // @error: higher than the maximum allowed value (2^256-1).
+	* ```
+	*
+	* @param envelope - The transaction envelope to assert.
+	*/
+	function assert$3(envelope) {
+		const { authorizationList } = envelope;
+		if (authorizationList) for (const authorization of authorizationList) {
+			const { address, chainId } = authorization;
+			if (address) assert$7(address, { strict: false });
+			if (Number(chainId) < 0) throw new InvalidChainIdError({ chainId });
+		}
+		assert$1(envelope);
+	}
+	/**
+	* Returns the payload to sign for a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}.
+	*
+	* @example
+	* The example below demonstrates how to compute the sign payload which can be used
+	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeEip7702 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList: [...],
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   maxFeePerGas: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n,
+	* })
+	*
+	* const payload = TxEnvelopeEip7702.getSignPayload(envelope) // [!code focus]
+	* // @log: '0x...'
+	*
+	* const signature = Secp256k1.sign({ payload, privateKey: '0x...' })
+	* ```
+	*
+	* @param envelope - The transaction envelope to get the sign payload for.
+	* @returns The sign payload.
+	*/
+	function getSignPayload$2(envelope) {
+		return hash$2(envelope, { presign: true });
+	}
+	/**
+	* Hashes a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}. This is the "transaction hash".
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeEip7702 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList: [...],
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   maxFeePerGas: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n,
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip7702.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const envelope_signed = TxEnvelopeEip7702.from(envelope, { signature })
+	*
+	* const hash = TxEnvelopeEip7702.hash(envelope_signed) // [!code focus]
+	* ```
+	*
+	* @param envelope - The EIP-7702 Transaction Envelope to hash.
+	* @param options - Options.
+	* @returns The hash of the transaction envelope.
+	*/
+	function hash$2(envelope, options = {}) {
+		const { presign } = options;
+		return keccak256(serialize$2(_objectSpread2(_objectSpread2({}, envelope), presign ? {
+			r: void 0,
+			s: void 0,
+			yParity: void 0
+		} : {})));
+	}
+	/**
+	* Serializes a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}.
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import {
+	*   Authorization,
+	*   Secp256k1,
+	*   TxEnvelopeEip7702,
+	*   Value
+	* } from 'ox'
+	*
+	* const authorization = Authorization.from({
+	*   address: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   chainId: 1,
+	*   nonce: 0n
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: Authorization.getSignPayload(authorization),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const authorizationList = [
+	*   Authorization.from(authorization, { signature })
+	* ]
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList,
+	*   chainId: 1,
+	*   maxFeePerGas: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const serialized = TxEnvelopeEip7702.serialize(envelope) // [!code focus]
+	* ```
+	*
+	* @example
+	* ### Attaching Signatures
+	*
+	* It is possible to attach a `signature` to the serialized Transaction Envelope.
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeEip7702, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList: [...],
+	*   chainId: 1,
+	*   maxFeePerGas: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1'),
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip7702.getSignPayload(envelope),
+	*   privateKey: '0x...',
+	* })
+	*
+	* const serialized = TxEnvelopeEip7702.serialize(envelope, { // [!code focus]
+	*   signature, // [!code focus]
+	* }) // [!code focus]
+	*
+	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
+	* ```
+	*
+	* @param envelope - The Transaction Envelope to serialize.
+	* @param options - Options.
+	* @returns The serialized Transaction Envelope.
+	*/
+	function serialize$2(envelope, options = {}) {
+		var _ref;
+		const { authorizationList, chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
+		assert$3(envelope);
+		const accessTupleList = toTupleList(accessList);
+		const authorizationTupleList = toTupleList$1(authorizationList);
+		const signature = extract(options.signature || envelope);
+		return concat$1(serializedType$1, fromHex$1([
+			fromNumber(chainId),
+			quantityToHex(nonce),
+			quantityToHex(maxPriorityFeePerGas),
+			quantityToHex(maxFeePerGas),
+			quantityToHex(gas),
+			to !== null && to !== void 0 ? to : "0x",
+			quantityToHex(value),
+			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
+			accessTupleList,
+			authorizationTupleList,
+			...signature ? toTuple$1(signature) : []
 		]));
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeLegacy.js
@@ -25940,7 +26370,7 @@ zoo`.split("\n"));
 	*/
 	function assert$2(envelope) {
 		const { chainId, gasPrice, to } = envelope;
-		if (to) assert$6(to, { strict: false });
+		if (to) assert$7(to, { strict: false });
 		if (typeof chainId !== "undefined" && chainId <= 0) throw new InvalidChainIdError({ chainId });
 		if (gasPrice && BigInt(gasPrice) > 2n ** 256n - 1n) throw new GasPriceTooHighError({ gasPrice });
 	}
@@ -26118,7 +26548,7 @@ zoo`.split("\n"));
 			"0x",
 			"0x"
 		];
-		return fromHex(serialized);
+		return fromHex$1(serialized);
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Value.js
 	init_defineProperty();
@@ -26296,7 +26726,7 @@ zoo`.split("\n"));
 	function assert$1(envelope) {
 		const { chainId, maxPriorityFeePerGas, maxFeePerGas, to } = envelope;
 		if (chainId <= 0) throw new InvalidChainIdError({ chainId });
-		if (to) assert$6(to, { strict: false });
+		if (to) assert$7(to, { strict: false });
 		if (maxFeePerGas && BigInt(maxFeePerGas) > 2n ** 256n - 1n) throw new FeeCapTooHighError({ feeCap: maxFeePerGas });
 		if (maxPriorityFeePerGas && maxFeePerGas && maxPriorityFeePerGas > maxFeePerGas) throw new TipAboveFeeCapError({
 			maxFeePerGas,
@@ -26435,7 +26865,7 @@ zoo`.split("\n"));
 		assert$1(envelope);
 		const accessTupleList = toTupleList(accessList);
 		const signature = extract(options.signature || envelope);
-		return concat$1(serializedType, fromHex([
+		return concat$1(serializedType, fromHex$1([
 			fromNumber(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
@@ -26445,7 +26875,7 @@ zoo`.split("\n"));
 			quantityToHex(value),
 			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
 			accessTupleList,
-			...signature ? toTuple(signature) : []
+			...signature ? toTuple$1(signature) : []
 		]));
 	}
 	// packages/wallet-chains/dist/evm.mjs
@@ -26875,7 +27305,7 @@ zoo`.split("\n"));
 			assertHex$1(data, "data");
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
-			return encodeData(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
+			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
 		} catch (_unused2) {
 			return;
 		}
@@ -26884,7 +27314,7 @@ zoo`.split("\n"));
 		asset: EVM_NATIVE_ASSET,
 		amount: wei.toString(10)
 	}, symbol === void 0 ? {} : { symbol }), decimals === void 0 ? {} : { decimals });
-	var feeWei = (tx) => quantityBigInt(tx.gas, "tx.gas") * (tx.type === "eip1559" ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas") : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
+	var feeWei = (tx) => quantityBigInt(tx.gas, "tx.gas") * (tx.type === "eip1559" || tx.type === "eip7702" ? quantityBigInt(tx.maxFeePerGas, "tx.maxFeePerGas") : quantityBigInt(tx.gasPrice, "tx.gasPrice"));
 	var nativeOutflow = (value, to) => [{
 		to,
 		amount: weiAmount(value),
@@ -27036,13 +27466,52 @@ zoo`.split("\n"));
 			verifiability: "opaque"
 		});
 	};
-	var decodeTransaction$1 = (request, table) => {
+	/** The delegation field a request carries, present iff the transaction is eip7702. */
+	var delegationOf = (tx) => {
+		if (tx.type !== "eip7702") return;
+		return tx.authorization.address === "0x0000000000000000000000000000000000000000" ? { kind: "revoke" } : {
+			kind: "set",
+			delegator: EVM_DELEGATOR.address,
+			name: EVM_DELEGATOR.name,
+			version: EVM_DELEGATOR.version
+		};
+	};
+	var weakest = (intents) => intents.some((i) => i.verifiability === "opaque") ? "opaque" : intents.some((i) => i.verifiability === "partial") ? "partial" : "full";
+	var decodeTransaction$1 = (request, signer, table) => {
 		const { tx } = request;
-		return decodeCall({
+		const fee = { max: weiAmount(feeWei(tx)) };
+		const delegation = delegationOf(tx);
+		const isSelf = tx.to !== void 0 && tx.to.toLowerCase() === signer.toLowerCase() && BigInt(tx.value) === 0n;
+		if (isSelf && tx.data === "0x") return _objectSpread2(_objectSpread2({
+			family: "evm",
+			network: request.network,
+			outflows: [],
+			approvals: [],
+			fee,
+			warnings: [],
+			verifiability: "full"
+		}, delegation === void 0 ? {} : { delegation }), {}, { summary: tx.type === "eip7702" ? "authorization" : "transfer" });
+		const calls = isSelf ? decodeBatchExecute(tx.data) : void 0;
+		const intent = decodeCall({
 			to: tx.to,
 			value: quantityBigInt(tx.value, "tx.value"),
 			data: tx.data
-		}, request.network, { max: weiAmount(feeWei(tx)) }, table);
+		}, request.network, fee, table);
+		if (calls !== void 0 && calls.length > 0) {
+			const decoded = calls.map((call) => decodeCall({
+				to: call.to,
+				value: call.value,
+				data: call.data
+			}, request.network, void 0, table));
+			return _objectSpread2(_objectSpread2({}, intent), {}, {
+				summary: "batch",
+				calls: decoded,
+				outflows: decoded.flatMap((d) => d.outflows),
+				approvals: decoded.flatMap((d) => d.approvals),
+				verifiability: weakest(decoded)
+			}, delegation === void 0 ? {} : { delegation });
+		}
+		return _objectSpread2(_objectSpread2({}, intent), delegation === void 0 ? {} : { delegation });
 	};
 	/** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
 	var displayDomain = (domain) => {
@@ -27076,7 +27545,7 @@ zoo`.split("\n"));
 	*/
 	var decodeEvm = (request, signer, table = evmTokenTable) => {
 		var _safe$safe$calls$0$su, _safe$safe$calls$, _permit$approvals, _permit$warnings;
-		if (request.kind === "evm.transaction") return decodeTransaction$1(request, table);
+		if (request.kind === "evm.transaction") return decodeTransaction$1(request, signer, table);
 		if (request.kind === "evm.personal-message") return {
 			family: "evm",
 			network: request.network,
@@ -28927,7 +29396,9 @@ zoo`.split("\n"));
 			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
 			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
 			maxFee: (fee) => `最高手续费 ${fee}`,
-			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动"
+			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
+			delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
+			revokeDelegation: "撤销此账户的合约委托"
 		},
 		en: {
 			titles: {
@@ -28955,7 +29426,9 @@ zoo`.split("\n"));
 			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
 			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
 			maxFee: (fee) => `Max fee ${fee}`,
-			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change"
+			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+			delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
+			revokeDelegation: "Revoke this account's contract delegation"
 		}
 	};
 	/** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
@@ -29005,6 +29478,7 @@ zoo`.split("\n"));
 			description: joinLines([catalog.generic, ...tail])
 		};
 		const lines = [
+			...intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation],
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
@@ -29290,6 +29764,28 @@ zoo`.split("\n"));
 				gasPrice: BigInt(tx.gasPrice),
 				accessList: tx.accessList.map(accessEntry)
 			});
+			return toBytes$1(serialize$3(envelope, { signature: sign$1(getSignPayload$3(envelope), privateKeyHex) }));
+		}
+		if (tx.type === "eip7702") {
+			var _authSignature$yParit;
+			const auth = {
+				chainId: tx.chainId,
+				address: hex(tx.authorization.address, "authorization.address"),
+				nonce: BigInt(tx.nonce + 1)
+			};
+			const authSignature = sign$1(getSignPayload$5(auth), privateKeyHex);
+			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+				type: "eip7702",
+				to: hex(tx.to, "to"),
+				accessList: tx.accessList.map(accessEntry),
+				maxFeePerGas: BigInt(tx.maxFeePerGas),
+				maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+				authorizationList: [_objectSpread2(_objectSpread2({}, auth), {}, {
+					r: authSignature.r,
+					s: authSignature.s,
+					yParity: (_authSignature$yParit = authSignature.yParity) !== null && _authSignature$yParit !== void 0 ? _authSignature$yParit : 0
+				})]
+			});
 			return toBytes$1(serialize$2(envelope, { signature: sign$1(getSignPayload$2(envelope), privateKeyHex) }));
 		}
 		const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
@@ -29304,12 +29800,12 @@ zoo`.split("\n"));
 	var rs_v = (signature) => toBytes(signature);
 	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmPersonalMessage = (message, privateKey) => {
-		return rs_v(from$1(sign$1(getSignPayload$3(fromBytes$1(message)), key(privateKey))));
+		return rs_v(from(sign$1(getSignPayload$4(fromBytes$1(message)), key(privateKey))));
 	};
 	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmTypedData = (typedData, privateKey) => {
 		const { json } = parseTypedData(typedData);
-		return rs_v(from$1(sign$1(getSignPayload$4(json), key(privateKey))));
+		return rs_v(from(sign$1(getSignPayload$6(json), key(privateKey))));
 	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts
 	init_bip32();

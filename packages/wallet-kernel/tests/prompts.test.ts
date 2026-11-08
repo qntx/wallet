@@ -252,6 +252,29 @@ describe("chain prompts", () => {
     });
   });
 
+  it("delegation set and revoke render their lines", () => {
+    const set: PromptIntent = {
+      ...ethTransfer,
+      summary: "authorization",
+      outflows: [],
+      delegation: {
+        kind: "set",
+        delegator: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+        name: "EIP7702StatelessDeleGator",
+        version: "1.3.0",
+      },
+    };
+    expect(chainPrompt("en", set)).toStrictEqual({
+      title: "Confirm account authorization",
+      description:
+        "Delegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nMax fee 0.0004 ETH",
+    });
+    expect(chainPrompt("en", { ...set, delegation: { kind: "revoke" } })).toStrictEqual({
+      title: "Confirm account authorization",
+      description: "Revoke this account's contract delegation\nMax fee 0.0004 ETH",
+    });
+  });
+
   it("opaque and messages show only the generic line", () => {
     expect(chainPrompt("en", { ...ethTransfer, verifiability: "opaque" })).toStrictEqual({
       title: "Confirm transfer",

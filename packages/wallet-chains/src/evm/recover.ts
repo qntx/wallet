@@ -3,17 +3,20 @@
  * envelope or a 65-byte signature and compares it with the account's `wallet.accounts` address — a
  * kernel returning someone else's signature fails closed.
  */
+import * as Authorization from "ox/Authorization";
 import * as Hex from "ox/Hex";
 import * as PersonalMessage from "ox/PersonalMessage";
 import * as Secp256k1 from "ox/Secp256k1";
 import * as Signature from "ox/Signature";
 import * as TxEnvelopeEip1559 from "ox/TxEnvelopeEip1559";
 import * as TxEnvelopeEip2930 from "ox/TxEnvelopeEip2930";
+import * as TxEnvelopeEip7702 from "ox/TxEnvelopeEip7702";
 import * as TxEnvelopeLegacy from "ox/TxEnvelopeLegacy";
 import * as TypedData from "ox/TypedData";
 
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
+import { checksumEvmAddress } from "./address.ts";
 import { parseTypedData } from "./typed-data.ts";
 
 function assertEip1559Hex(hex: `0x${string}`): asserts hex is `0x02${string}` {
@@ -23,6 +26,11 @@ function assertEip1559Hex(hex: `0x${string}`): asserts hex is `0x02${string}` {
 }
 function assertEip2930Hex(hex: `0x${string}`): asserts hex is `0x01${string}` {
   if (!hex.startsWith("0x01")) {
+    throw new ChainError("invalid-request", "unrecognized signed transaction envelope");
+  }
+}
+function assertEip7702Hex(hex: `0x${string}`): asserts hex is `0x04${string}` {
+  if (!hex.startsWith("0x04")) {
     throw new ChainError("invalid-request", "unrecognized signed transaction envelope");
   }
 }
@@ -42,9 +50,45 @@ const signatureOf = (env: EnvelopeFields) => {
 };
 
 /** Recover the signer's EIP-55 address from a serialized signed transaction envelope. */
-const signerFromEnvelope = (signedTransaction: Uint8Array): string => {
+const signerFromEnvelope = (
+  signedTransaction: Uint8Array,
+  request?: Extract<SignRequest, { kind: "evm.transaction" }>,
+): string => {
   const hex = Hex.fromBytes(signedTransaction);
   const [tag] = signedTransaction;
+  if (tag === 0x04) {
+    assertEip7702Hex(hex);
+    const env = TxEnvelopeEip7702.deserialize(hex);
+    const payload = TxEnvelopeEip7702.getSignPayload(env);
+    const signer = Secp256k1.recoverAddress({ payload, signature: signatureOf(env) });
+    const auths = env.authorizationList ?? [];
+    const [auth] = auths;
+    if (
+      request === undefined ||
+      request.tx.type !== "eip7702" ||
+      auths.length !== 1 ||
+      auth === undefined
+    ) {
+      throw new ChainError("invalid-request", "authorization does not match the request");
+    }
+    const { address, chainId, nonce } = auth;
+    const expected = request.tx.authorization.address;
+    if (
+      checksumEvmAddress(address) !== expected ||
+      chainId !== request.tx.chainId ||
+      nonce !== BigInt(request.tx.nonce + 1)
+    ) {
+      throw new ChainError("invalid-request", "authorization does not match the request");
+    }
+    const authSigner = Secp256k1.recoverAddress({
+      payload: Authorization.getSignPayload({ address, chainId, nonce }),
+      signature: Signature.from(auth),
+    });
+    if (authSigner.toLowerCase() !== signer.toLowerCase()) {
+      throw new ChainError("invalid-request", "authorization signer is not the account");
+    }
+    return signer;
+  }
   if (tag === 0x02) {
     assertEip1559Hex(hex);
     const env = TxEnvelopeEip1559.deserialize(hex);
@@ -78,7 +122,7 @@ export const recoverEvmSigner = (
     if (result.signedTransaction === undefined) {
       throw new ChainError("invalid-request", "expected a signed transaction");
     }
-    return signerFromEnvelope(result.signedTransaction);
+    return signerFromEnvelope(result.signedTransaction, request);
   }
   if (result.signature === undefined || result.signature.length !== 65) {
     throw new ChainError("invalid-request", "expected a 65-byte signature");

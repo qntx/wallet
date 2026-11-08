@@ -1163,10 +1163,13 @@ export class RequestController extends Controller<RequestControllerState> {
         },
       };
     }
+    const internal = input.method === "evm-delegation" || input.method === "evm-batch";
     const prepared =
       input.method === "send"
         ? await this.options.transactions.prepareSend(input, id)
-        : await this.options.transactions.prepareReplacement(input, id);
+        : internal
+          ? await this.options.transactions.prepareEvmInternal(input, id)
+          : await this.options.transactions.prepareReplacement(input, id);
     const built: Built = {
       account: prepared.account,
       network: prepared.network,
@@ -1175,10 +1178,10 @@ export class RequestController extends Controller<RequestControllerState> {
         prepared.intent.verifiability === "full" ? undefined : "decode-partial",
         ...prepared.checks,
       ]),
-      risk: input.method === "send" ? this.chainRisk(prepared.intent) : [],
+      risk: input.method === "send" || internal ? this.chainRisk(prepared.intent) : [],
       run: { ...prepared, factor: "required" },
     };
-    return input.method === "send"
+    return input.method === "send" || internal
       ? withSimulation(built, prepared.intent, prepared.simulation, prepared.resimulate)
       : built;
   }

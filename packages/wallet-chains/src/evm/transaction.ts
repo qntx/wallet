@@ -1,6 +1,7 @@
 import { ChainError } from "../index.ts";
 import type { EvmTransaction, EvmAccessListEntry } from "../index.ts";
 import { checksumEvmAddress, isEvmAddress } from "./address.ts";
+import { EVM_DELEGATOR } from "./delegation.ts";
 
 /** Validates a string is `0x`-hex and narrows it to the branded hex type. */
 export function assertHex(value: string, field: string): asserts value is `0x${string}` {
@@ -113,6 +114,7 @@ const ALLOWED = {
   legacy: ["gasPrice"],
   eip2930: ["gasPrice", "accessList"],
   eip1559: ["accessList", "maxFeePerGas", "maxPriorityFeePerGas"],
+  eip7702: ["accessList", "maxFeePerGas", "maxPriorityFeePerGas", "authorization"],
 } as const;
 
 const requireFields = (input: Record<string, unknown>, fields: ReadonlyArray<string>): void => {
@@ -125,7 +127,7 @@ const requireFields = (input: Record<string, unknown>, fields: ReadonlyArray<str
 
 const rejectUnknown = (
   input: Record<string, unknown>,
-  type: "legacy" | "eip2930" | "eip1559",
+  type: "legacy" | "eip2930" | "eip1559" | "eip7702",
 ): void => {
   const allowed = new Set<string>([...ALLOWED.base, ...ALLOWED[type]]);
   const unknown = Object.keys(input).filter((k) => !allowed.has(k));
@@ -146,10 +148,10 @@ export const normalizeEvmTransaction = (tx: unknown): EvmTransaction => {
     throw new ChainError("invalid-request", "tx must be an object");
   }
   const { type } = tx;
-  if (type !== "legacy" && type !== "eip2930" && type !== "eip1559") {
+  if (type !== "legacy" && type !== "eip2930" && type !== "eip1559" && type !== "eip7702") {
     throw new ChainError(
       "unsupported",
-      `transaction type ${String(type)} is not supported (legacy, eip2930 and eip1559 only)`,
+      `transaction type ${String(type)} is not supported (legacy, eip2930, eip1559 and eip7702 only)`,
     );
   }
   rejectUnknown(tx, type);
@@ -184,11 +186,37 @@ export const normalizeEvmTransaction = (tx: unknown): EvmTransaction => {
     };
   }
   requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
+  const fees = {
+    maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
+    maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas"),
+  };
+  const list = accessList(tx["accessList"]);
+  if (type === "eip1559") {
+    return { type, ...base, accessList: list, ...fees };
+  }
+  if (to === undefined) {
+    throw new ChainError("invalid-request", "tx.to is required for eip7702");
+  }
+  const auth = tx["authorization"];
+  if (!isRecord(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") {
+    throw new ChainError(
+      "invalid-request",
+      "tx.authorization must be an object with exactly address",
+    );
+  }
+  const authAddress = checksumEvmAddress(auth["address"]);
+  if (
+    authAddress !== EVM_DELEGATOR.address &&
+    authAddress !== "0x0000000000000000000000000000000000000000"
+  ) {
+    throw new ChainError("unsupported", "authorization address is not supported");
+  }
   return {
     type,
     ...base,
-    accessList: accessList(tx["accessList"]),
-    maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
-    maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas"),
+    to,
+    accessList: list,
+    ...fees,
+    authorization: { address: authAddress },
   };
 };

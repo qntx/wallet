@@ -13,10 +13,12 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   DELEGATION_MANAGER,
   ENTRY_POINT_V08,
+  EVM_DELEGATOR,
   PERMIT2_ADDRESS,
   checksumEvmAddress,
   EVM_NATIVE_ASSET,
   decodeEvm,
+  encodeBatchExecute,
   isEvmAddress,
   networkChainId,
   normalizeEvm,
@@ -51,6 +53,8 @@ const keyBytes = Uint8Array.from(Buffer.from(vectors.privateKey.slice(2), "hex")
 const account = privateKeyToAccount(vectors.privateKey as `0x${string}`);
 
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" } as const;
+const DELEGATOR = EVM_DELEGATOR.address;
+const ZERO = "0x0000000000000000000000000000000000000000";
 
 type TxOver = {
   type: "legacy" | "eip2930" | "eip1559";
@@ -116,15 +120,34 @@ describe("addresses", () => {
   });
 });
 
-const toViemTx = (tx: EvmTransaction) => ({
-  type: tx.type === "legacy" ? "legacy" : tx.type === "eip2930" ? "eip2930" : "eip1559",
+const toViemTx = async (tx: EvmTransaction) => ({
+  ...(tx.type === "eip7702"
+    ? {
+        authorizationList: [
+          await account.signAuthorization({
+            chainId: tx.chainId,
+            contractAddress: tx.authorization.address as `0x${string}`,
+            nonce: tx.nonce + 1,
+          }),
+        ],
+      }
+    : {}),
+
+  type:
+    tx.type === "legacy"
+      ? "legacy"
+      : tx.type === "eip2930"
+        ? "eip2930"
+        : tx.type === "eip7702"
+          ? "eip7702"
+          : "eip1559",
   chainId: tx.chainId,
   to: tx.to === undefined ? undefined : (tx.to as `0x${string}`),
   data: tx.data === undefined ? undefined : (tx.data as `0x${string}`),
   value: BigInt(tx.value),
   nonce: BigInt(tx.nonce),
   gas: BigInt(tx.gas),
-  ...(tx.type === "eip1559"
+  ...(tx.type === "eip7702" || tx.type === "eip1559"
     ? {
         maxFeePerGas: BigInt(tx.maxFeePerGas),
         maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
@@ -138,7 +161,7 @@ const toViemTx = (tx: EvmTransaction) => ({
 describe("sign", () => {
   it.each(vectors.transactions)("byte-matches viem for $name", async ({ tx }) => {
     const ours = signEvmTransaction(tx, keyBytes);
-    const theirs = await account.signTransaction(toViemTx(tx) as never);
+    const theirs = await account.signTransaction((await toViemTx(tx)) as never);
     expect(`0x${Buffer.from(ours).toString("hex")}`).toBe(theirs);
   });
 
@@ -227,10 +250,30 @@ describe("normalize", () => {
     }
   });
 
-  it("rejects eip7702 as unsupported", () => {
+  it("eip7702 requires to, an allowlisted authorization and exact keys", () => {
     const req = txReq({ type: "eip1559" });
-    const bad = { ...req, tx: { ...req.tx, type: "eip7702" } };
-    expect(() => normalizeEvm(bad)).toThrow(/not supported|unsupported/i);
+    const eip7702 = (over: Record<string, unknown> = {}, auth: unknown = {}) => ({
+      ...req,
+      tx: {
+        ...req.tx,
+        type: "eip7702",
+        ...over,
+        authorization: auth,
+      },
+    });
+    expect(normalizeEvm(eip7702({}, { address: DELEGATOR }))).toMatchObject({
+      tx: { type: "eip7702", authorization: { address: DELEGATOR } },
+    });
+    expect(normalizeEvm(eip7702({}, { address: ZERO }))).toMatchObject({
+      tx: { type: "eip7702", authorization: { address: ZERO } },
+    });
+    expect(() =>
+      normalizeEvm(eip7702({}, { address: "0x0000000000000000000000000000000000C0FFEE" })),
+    ).toThrow(ChainError);
+    expect(() => normalizeEvm(eip7702())).toThrow(ChainError);
+    expect(() => normalizeEvm(eip7702({ to: undefined }))).toThrow(ChainError);
+    expect(() => normalizeEvm(eip7702({}, { address: DELEGATOR, nonce: 3 }))).toThrow(ChainError);
+    expect(() => normalizeEvm(eip7702({ extra: 1 }, { address: DELEGATOR }))).toThrow(ChainError);
   });
 });
 
@@ -276,6 +319,61 @@ describe("verifiability + decode", () => {
     expect(
       decodeEvm({ ...noTo, tx: { ...noTo.tx, to: undefined } } as never, SIGNER).verifiability,
     ).toBe("opaque");
+  });
+
+  it("eip7702 → authorization intent with delegation; batch → calls and weakest verifiability", () => {
+    const self = (data = "0x") =>
+      txReq({ type: "eip1559", to: SIGNER, value: "0x0", data }) as never;
+    const eip7702 = (data = "0x", address: string = DELEGATOR) => {
+      const req = txReq({ type: "eip1559", to: SIGNER, value: "0x0", data });
+      return {
+        ...req,
+        tx: { ...req.tx, type: "eip7702" as const, authorization: { address } },
+      } as never;
+    };
+    expect(decodeEvm(eip7702(), SIGNER)).toMatchObject({
+      summary: "authorization",
+      verifiability: "full",
+      outflows: [],
+      delegation: {
+        kind: "set",
+        delegator: DELEGATOR,
+        name: EVM_DELEGATOR.name,
+        version: EVM_DELEGATOR.version,
+      },
+    });
+    expect(decodeEvm(eip7702("0x", ZERO), SIGNER)).toMatchObject({
+      summary: "authorization",
+      delegation: { kind: "revoke" },
+    });
+    const target = "0x0000000000000000000000000000000000C0FFEE";
+    const two = encodeBatchExecute([
+      { to: target, value: 1n, data: "0x" },
+      { to: SIGNER, value: 2n, data: "0x" },
+    ]);
+    const batchIntent = decodeEvm(self(two), SIGNER);
+    expect(batchIntent).toMatchObject({
+      summary: "batch",
+      verifiability: "full",
+      calls: [{ summary: "transfer" }, { summary: "transfer" }],
+    });
+    expect(batchIntent.outflows).toHaveLength(2);
+    const opaque = encodeBatchExecute([
+      { to: target, value: 0n, data: "0x12345678" },
+      { to: SIGNER, value: 0n, data: "0x" },
+    ]);
+    expect(decodeEvm(self(opaque), SIGNER).verifiability).toBe("opaque");
+    expect(decodeEvm(eip7702(opaque), SIGNER)).toMatchObject({
+      summary: "batch",
+      delegation: { kind: "set" },
+    });
+    // non-batch self-call → opaque contract-call; non-self target → normal decode
+    expect(decodeEvm(self("0x12345678"), SIGNER).summary).toBe("contract-call");
+    const notSelf = decodeEvm(
+      txReq({ type: "eip1559", to: target, value: "0x0", data: two }) as never,
+      SIGNER,
+    );
+    expect(notSelf.summary).toBe("contract-call");
   });
 
   it("messages → opaque; generic typed data shows its content", () => {
