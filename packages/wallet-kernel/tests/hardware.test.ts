@@ -29,6 +29,8 @@ import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const SOL_ADDRESS = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
@@ -372,7 +374,9 @@ describe("hardware factor: chain.sign", () => {
     });
     ok(await h.call("chain.sign", { request, verify: HARDWARE }, session));
     expect(wipedAtPrompt).toBe(true);
-    expect(prompts(fake.calls, "open")).toStrictEqual([chainPrompt("en", decodeEvm(request))]);
+    expect(prompts(fake.calls, "open")).toStrictEqual([
+      chainPrompt("en", decodeEvm(request, SIGNER)),
+    ]);
     expect(prompts(fake.calls, "open")[0]?.title).toBe("Confirm transfer");
   });
 

@@ -281,7 +281,7 @@ export const createEvmRoute = (): EvmRoute => {
       flags.push("fee-exceeds-amount");
     }
     const request = evm.toSignRequest(feed, account, info.chainId);
-    const intent = withL1Fee(decodeEvm(request), l1);
+    const intent = withL1Fee(decodeEvm(request, from), l1);
     const txId = newId(ctx.options.random);
     const simulated = { to: feed.to, value: feed.value, data: feed.data };
     const simulation = await evm.simulate(
@@ -489,7 +489,7 @@ export const createEvmRoute = (): EvmRoute => {
       networks.info(old.network).opStack === true
         ? await opStackFee(ctx, old.network, unsigned, flags)
         : undefined;
-    const intent = withL1Fee(decodeEvm(request), l1);
+    const intent = withL1Fee(decodeEvm(request, original.from), l1);
     const txId = newId(ctx.options.random);
 
     const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {

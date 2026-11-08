@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { decodeEvm } from "../src/evm/index.ts";
 import type { EvmTokenTable } from "../src/evm/tokens.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" } as const;
 const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
 const SEAPORT_15 = "0x00000000000000ADc04C56Bf30aC9d3c0aAF14dC";
@@ -75,6 +77,7 @@ const doc = (
 const decode = (d: unknown) =>
   decodeEvm(
     { kind: "evm.typed-data", network: "eip155:1", account: ACCOUNT, typedData: JSON.stringify(d) },
+    SIGNER,
     table,
   );
 

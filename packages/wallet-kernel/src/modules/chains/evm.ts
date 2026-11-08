@@ -2,7 +2,7 @@
 import { HDKey } from "@scure/bip32";
 
 import type { DisplayIntent } from "@qntx/wallet-chains";
-import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
+import { decodeEvm, evmAddressFromPublicKey, normalizeEvm } from "@qntx/wallet-chains/evm";
 import {
   signEvmPersonalMessage,
   signEvmTransaction,
@@ -24,9 +24,11 @@ export const executeEvm = (
     const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
     try {
       const priv = child.privateKey;
-      if (priv === null) {
+      const pub = child.publicKey;
+      if (priv === null || pub === null) {
         throw new KernelError("integrity", "no private key at account path");
       }
+      const signer = evmAddressFromPublicKey(pub);
       let normalized;
       try {
         normalized = normalizeEvm(request);
@@ -38,7 +40,7 @@ export const executeEvm = (
       }
       let intent: DisplayIntent;
       try {
-        intent = decodeEvm(request);
+        intent = decodeEvm(request, signer);
       } catch (error) {
         mapChainError(error);
       }

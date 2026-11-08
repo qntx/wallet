@@ -21,6 +21,8 @@ import type {
 } from "../src/transactions/route.ts";
 import { simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const SEPOLIA = "eip155:11155111";
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm.bip44" } as const;
 const VERIFY = { kind: "password", password: "pw" } as const;
@@ -103,7 +105,7 @@ function world() {
         account,
         network: normalized.network,
         signer: OTHER,
-        intent: decodeEvm(normalized),
+        intent: decodeEvm(normalized, SIGNER),
         checks: [],
         staleReason: () => undefined,
         release: () => {

@@ -3,6 +3,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { checksumEvmAddress, decodeEvm } from "../src/evm/index.ts";
 
+const SIGNER = "0x1111111111111111111111111111111111111111";
+
 const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "evm" } as const;
 const SAFE = checksumEvmAddress("0xd5ffe748b45f5253fc9975fdd96fddec052e6d52");
 const MULTISEND = "0x40A2aCCbd92BCA938b02010E17A5b8929b49130D";
@@ -63,12 +65,15 @@ const doc = (message: Record<string, unknown>, domain: Record<string, unknown> =
 });
 
 const decode = (d: unknown) =>
-  decodeEvm({
-    kind: "evm.typed-data",
-    network: "eip155:1",
-    account: ACCOUNT,
-    typedData: JSON.stringify(d),
-  });
+  decodeEvm(
+    {
+      kind: "evm.typed-data",
+      network: "eip155:1",
+      account: ACCOUNT,
+      typedData: JSON.stringify(d),
+    },
+    SIGNER,
+  );
 
 const safeOf = (d: unknown) => {
   const { message } = decode(d);

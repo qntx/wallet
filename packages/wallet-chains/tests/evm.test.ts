@@ -11,6 +11,8 @@ import { keccak256 } from "viem/utils";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  DELEGATION_MANAGER,
+  ENTRY_POINT_V08,
   PERMIT2_ADDRESS,
   checksumEvmAddress,
   EVM_NATIVE_ASSET,
@@ -24,6 +26,8 @@ import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "..
 import type { EvmTokenTable } from "../src/evm/tokens.ts";
 import { ChainError } from "../src/index.ts";
 import type { EvmTransaction } from "../src/index.ts";
+
+const SIGNER = "0x1111111111111111111111111111111111111111";
 
 const vectors = JSON.parse(
   readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/evm.json"), "utf8"),
@@ -219,7 +223,7 @@ describe("normalize", () => {
       expect(() => normalizeEvm(txReq({ type, [field]: "0x" }))).toThrow(ChainError);
     }
     for (const { type, field } of cases.filter((c) => c.decoded)) {
-      expect(() => decodeEvm(txReq({ type, [field]: "0x" }) as never)).toThrow(ChainError);
+      expect(() => decodeEvm(txReq({ type, [field]: "0x" }) as never, SIGNER)).toThrow(ChainError);
     }
   });
 
@@ -239,54 +243,61 @@ describe("verifiability + decode", () => {
   const maxApprove = `0x095ea7b3${vectors.addressForKey.slice(2).toLowerCase().padStart(64, "0")}${"f".repeat(64)}`;
 
   it("native transfer → full", () => {
-    const intent = decodeEvm(txReq({ type: "eip1559" }) as never);
+    const intent = decodeEvm(txReq({ type: "eip1559" }) as never, SIGNER);
     expect(intent.verifiability).toBe("full");
     expect(intent.summary).toBe("transfer");
     expect(intent.fee?.max.amount).toBe((0x5208).toString());
-    expect(verifiabilityEvm(txReq({ type: "eip1559" }) as never)).toBe("full");
+    expect(verifiabilityEvm(txReq({ type: "eip1559" }) as never, SIGNER)).toBe("full");
   });
 
   it("erc20 transfer → full only in the token table", () => {
     expect(
-      decodeEvm(txReq({ type: "eip1559", data: erc20Transfer }) as never, table).verifiability,
+      decodeEvm(txReq({ type: "eip1559", data: erc20Transfer }) as never, SIGNER, table)
+        .verifiability,
     ).toBe("full");
     expect(
-      decodeEvm(txReq({ type: "eip1559", data: erc20Transfer }) as never, {}).verifiability,
+      decodeEvm(txReq({ type: "eip1559", data: erc20Transfer }) as never, SIGNER, {}).verifiability,
     ).toBe("partial");
   });
 
   it("approve → partial, unlimited on max uint256", () => {
-    expect(decodeEvm(txReq({ type: "eip1559", data: approve }) as never).verifiability).toBe(
-      "partial",
-    );
-    const intent = decodeEvm(txReq({ type: "eip1559", data: maxApprove }) as never);
+    expect(
+      decodeEvm(txReq({ type: "eip1559", data: approve }) as never, SIGNER).verifiability,
+    ).toBe("partial");
+    const intent = decodeEvm(txReq({ type: "eip1559", data: maxApprove }) as never, SIGNER);
     expect(intent.approvals[0]).toMatchObject({ kind: "allowance", unlimited: true });
   });
 
   it("contract call and contract creation → opaque", () => {
-    expect(decodeEvm(txReq({ type: "eip1559", data: "0x12345678" }) as never).verifiability).toBe(
-      "opaque",
-    );
+    expect(
+      decodeEvm(txReq({ type: "eip1559", data: "0x12345678" }) as never, SIGNER).verifiability,
+    ).toBe("opaque");
     const noTo = txReq({ type: "eip1559" });
-    expect(decodeEvm({ ...noTo, tx: { ...noTo.tx, to: undefined } } as never).verifiability).toBe(
-      "opaque",
-    );
+    expect(
+      decodeEvm({ ...noTo, tx: { ...noTo.tx, to: undefined } } as never, SIGNER).verifiability,
+    ).toBe("opaque");
   });
 
   it("messages → opaque; generic typed data shows its content", () => {
-    const pm = decodeEvm({
-      kind: "evm.personal-message",
-      network: "eip155:1",
-      account: ACCOUNT,
-      message: new Uint8Array(1),
-    });
+    const pm = decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account: ACCOUNT,
+        message: new Uint8Array(1),
+      },
+      SIGNER,
+    );
     expect(pm.verifiability).toBe("opaque");
-    const intent = decodeEvm({
-      kind: "evm.typed-data",
-      network: "eip155:1",
-      account: ACCOUNT,
-      typedData: vectors.typedData,
-    });
+    const intent = decodeEvm(
+      {
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: ACCOUNT,
+        typedData: vectors.typedData,
+      },
+      SIGNER,
+    );
     expect(intent).toMatchObject({ summary: "message", verifiability: "opaque", approvals: [] });
     const doc = JSON.parse(vectors.typedData);
     expect(intent.message).toMatchObject({
@@ -295,6 +306,29 @@ describe("verifiability + decode", () => {
       data: doc.message,
     });
     expect(intent.warnings).toStrictEqual([]);
+  });
+
+  it("refuses typed data addressed to the signer or an execution context", () => {
+    const req = (doc: unknown) =>
+      ({
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: ACCOUNT,
+        typedData: JSON.stringify(doc),
+      }) as never;
+    const doc = () => JSON.parse(vectors.typedData);
+    const refused = (verifyingContract: string, signer = SIGNER) => {
+      const d = doc();
+      d.domain["verifyingContract"] = verifyingContract;
+      return () => decodeEvm(req(d), signer);
+    };
+    expect(refused(SIGNER.toLowerCase())).toThrow(ChainError);
+    expect(refused(checksumEvmAddress(SIGNER))).toThrow(ChainError);
+    expect(refused(DELEGATION_MANAGER)).toThrow(ChainError);
+    expect(refused(DELEGATION_MANAGER.toLowerCase())).toThrow(ChainError);
+    expect(refused(ENTRY_POINT_V08)).toThrow(ChainError);
+    expect(refused("0x0000000000000000000000000000000000c0ffee")).not.toThrow();
+    expect(() => decodeEvm(req(doc()), SIGNER)).not.toThrow();
   });
 
   it("normalizeEvm checks typed-data domain.chainId against the network", () => {
@@ -327,7 +361,7 @@ describe("verifiability + decode", () => {
 describe("EVM_NATIVE_ASSET", () => {
   it("is the asset id the decode uses for the native coin", () => {
     expect(EVM_NATIVE_ASSET).toBe("native");
-    const intent = decodeEvm(txReq({ type: "eip1559", value: "0x1" }) as never);
+    const intent = decodeEvm(txReq({ type: "eip1559", value: "0x1" }) as never, SIGNER);
     expect(intent.outflows[0]?.amount.asset).toBe(EVM_NATIVE_ASSET);
   });
 });
@@ -344,7 +378,7 @@ describe("approval and transfer decode", () => {
   const calldata = (signature: string, args: unknown[]): string =>
     AbiFunction.encodeData(AbiFunction.from(signature) as AbiFunction.AbiFunction, args);
   const decode = (data: string, to = TOKEN, tokens: EvmTokenTable = table) =>
-    decodeEvm(txReq({ type: "eip1559", to, data }) as never, tokens);
+    decodeEvm(txReq({ type: "eip1559", to, data }) as never, SIGNER, tokens);
 
   it("approve sets the allowance; the max is unlimited; the token table adds metadata", () => {
     const sig = "function approve(address spender, uint256 amount)";
