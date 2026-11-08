@@ -126,7 +126,26 @@ export type ChainRequestInput =
         readonly data: string;
       }>;
       readonly fee: PrepareParams["fee"];
+      /** A page asking for the batch (`wallet_sendCalls`); absent means the wallet itself. */
+      readonly origin?: { readonly kind: "browser"; readonly origin: string };
     };
+
+/** At most this many calls per batch — one approval stays reviewable. */
+export const EVM_BATCH_LIMIT = 10;
+
+/**
+ * One `wallet_sendCalls` bundle: the tracked transactions it produced so `wallet_getCallsStatus`
+ * can aggregate them, retained alongside those transactions.
+ */
+export type BatchRecord = {
+  readonly origin: string;
+  readonly id: string;
+  readonly network: string;
+  readonly atomic: boolean;
+  readonly txIds: ReadonlyArray<string>;
+  readonly expected: number;
+  readonly createdAt: number;
+};
 
 /** The account's EIP-7702 delegation state: `supported` follows the registry hash entry. */
 export type DelegationStatus = {

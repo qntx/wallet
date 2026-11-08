@@ -210,6 +210,20 @@ async function rig(
     networks,
     defaultNetwork: () => MAINNET,
     isTracked: (_network, address) => tokenState.tracked.has(address.toLowerCase()),
+    delegationState: async () => {
+      await Promise.resolve();
+      return { supported: true, state: "none" };
+    },
+    batches: {
+      record: async () => {
+        await Promise.resolve();
+      },
+      get: () => undefined,
+    },
+    txById: () => undefined,
+    showCallsStatus: () => undefined,
+    now: () => 0,
+    random: (n) => new Uint8Array(n),
   });
   const events: Eip1193Event[] = [];
   handler.subscribe((event) => events.push(event));
@@ -686,7 +700,6 @@ describe("Eip1193Handler", () => {
       "eth_signTypedData_v3",
       "eth_signTransaction",
       "eth_sendRawTransaction",
-      "wallet_sendCalls",
     ]) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
       await expect(codeOf(r.handler.handle(SITE, { method, params: [] }))).resolves.toBe(4200);

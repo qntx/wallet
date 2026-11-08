@@ -284,6 +284,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
             );
           },
         },
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
       });
       const refA = { walletId: created.walletId, groupIndex: 0, network: "regtest" } as never;

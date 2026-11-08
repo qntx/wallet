@@ -24,7 +24,13 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
-import { accountAddress, errorMessage, newId, replacementStaleReason } from "./route.ts";
+import {
+  accountAddress,
+  errorMessage,
+  EVM_BATCH_LIMIT,
+  newId,
+  replacementStaleReason,
+} from "./route.ts";
 import type {
   ChainApis,
   ChainRequestInput,
@@ -484,11 +490,22 @@ export const createEvmRoute = (): EvmRoute => {
       if (input.calls.length < 2) {
         throw new ChainError("invalid-request", "a batch needs at least two calls");
       }
+      if (input.calls.length > EVM_BATCH_LIMIT) {
+        throw new ChainError("invalid-request", `a batch allows at most ${EVM_BATCH_LIMIT} calls`);
+      }
       const calls = input.calls.map((c) => ({
         to: checksumEvmAddress(c.to),
         value: c.value,
         data: c.data,
       }));
+      if (calls.some((c) => c.to.toLowerCase() === from.toLowerCase())) {
+        /* msg.sender == address(this) inside the delegator reaches its admin methods. */
+        throw new ChainError("invalid-request", "a batch call to your own account is refused");
+      }
+      if (input.origin !== undefined && state.kind === "other") {
+        /* A page may not replace a delegation the user set elsewhere — only the wallet may. */
+        throw new ChainError("invalid-request", "the account is already delegated elsewhere");
+      }
       if (state.kind === "other") {
         warnings = [
           {

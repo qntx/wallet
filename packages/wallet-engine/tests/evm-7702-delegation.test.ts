@@ -41,6 +41,7 @@ const ACCOUNT = {
 const VERIFY = { kind: "password" as const, password: "pw" };
 const logger = { warn: () => undefined };
 const TARGET = "0x00000000000000000000000000000000c0ffee00";
+const TARGET2 = "0x0000000000000000000000000000000000000fee";
 
 type Rpc = Record<string, unknown>;
 type CodeOf = (address: string) => string;
@@ -328,7 +329,7 @@ describe("eip7702 request pipeline", () => {
       network: N1,
       calls: [
         { to: TARGET, value: 1n, data: "0x" },
-        { to: ADDR, value: 2n, data: "0x" },
+        { to: TARGET2, value: 2n, data: "0x" },
       ],
       fee: "normal",
     });
@@ -340,7 +341,7 @@ describe("eip7702 request pipeline", () => {
     expect(tx.data).toBe(
       encodeBatchExecute([
         { to: TARGET, value: 1n, data: "0x" },
-        { to: ADDR, value: 2n, data: "0x" },
+        { to: TARGET2, value: 2n, data: "0x" },
       ]),
     );
     expect((request.display as DisplayIntent).summary).toBe("batch");
@@ -365,13 +366,44 @@ describe("eip7702 request pipeline", () => {
       network: N1,
       calls: [
         { to: TARGET, value: 1n, data: "0x" },
-        { to: ADDR, value: 2n, data: "0x" },
+        { to: TARGET2, value: 2n, data: "0x" },
       ],
       fee: "normal",
     });
     await w.requests.approve(request.id, "evm-batch", VERIFY);
     expect(signTx(w.signedRequests[0]!).authorization).toMatchObject({ address: DELEGATOR });
     expect((request.display as DisplayIntent).summary).toBe("batch");
+  });
+
+  it("a batch call to the account itself is refused — the delegator's admin surface", async () => {
+    const w = world({ code: none, independent: none });
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-batch",
+        account: ACCOUNT,
+        network: N1,
+        calls: [
+          { to: TARGET, value: 1n, data: "0x" },
+          { to: ADDR, value: 2n, data: "0x" },
+        ],
+        fee: "normal",
+      }),
+    ).rejects.toThrow("a batch call to your own account is refused");
+  });
+
+  it("a batch over 10 calls is refused", async () => {
+    const w = world({ code: none, independent: none });
+    await w.start();
+    await expect(
+      w.requests.prepare({
+        method: "evm-batch",
+        account: ACCOUNT,
+        network: N1,
+        calls: Array.from({ length: 11 }, () => ({ to: TARGET, value: 1n, data: "0x" })),
+        fee: "normal",
+      }),
+    ).rejects.toThrow("a batch allows at most 10 calls");
   });
 
   it("batch on an other account: eip7702 and a delegation-replaced warning", async () => {
@@ -383,7 +415,7 @@ describe("eip7702 request pipeline", () => {
       network: N1,
       calls: [
         { to: TARGET, value: 1n, data: "0x" },
-        { to: ADDR, value: 2n, data: "0x" },
+        { to: TARGET2, value: 2n, data: "0x" },
       ],
       fee: "normal",
     });
@@ -516,7 +548,7 @@ describe("eip7702 request pipeline", () => {
         network: "eip155:43114",
         calls: [
           { to: TARGET, value: 1n, data: "0x" },
-          { to: ADDR, value: 2n, data: "0x" },
+          { to: TARGET2, value: 2n, data: "0x" },
         ],
         fee: "normal",
       }),
@@ -567,7 +599,7 @@ describe("eip7702 request pipeline", () => {
       network: N1,
       calls: [
         { to: TARGET, value: 1n, data: "0x" },
-        { to: ADDR, value: 2n, data: "0x" },
+        { to: TARGET2, value: 2n, data: "0x" },
       ],
       fee: "normal",
     });
@@ -584,7 +616,7 @@ describe("eip7702 request pipeline", () => {
       network: N1,
       calls: [
         { to: TARGET, value: 1n, data: "0x" },
-        { to: ADDR, value: 2n, data: "0x" },
+        { to: TARGET2, value: 2n, data: "0x" },
       ],
       fee: "normal",
     });
@@ -608,7 +640,7 @@ describe("eip7702 request pipeline", () => {
         network: N1,
         calls: [
           { to: TARGET, value: 1n, data: "0x" },
-          { to: ADDR, value: 2n, data: "0x" },
+          { to: TARGET2, value: 2n, data: "0x" },
         ],
         fee: "normal",
       });

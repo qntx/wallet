@@ -102,6 +102,20 @@ function rig(
     networks: { client: () => ({ transport: { request: transport } }) } as never,
     defaultNetwork: () => MAINNET,
     isTracked: () => false,
+    delegationState: async () => {
+      await Promise.resolve();
+      return { supported: true, state: "none" };
+    },
+    batches: {
+      record: async () => {
+        await Promise.resolve();
+      },
+      get: () => undefined,
+    },
+    txById: () => undefined,
+    showCallsStatus: () => undefined,
+    now: () => 0,
+    random: (n) => new Uint8Array(n),
   });
   const set = (sessions: Sessions): void => {
     state = { ...state, sessions };

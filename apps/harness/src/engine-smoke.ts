@@ -98,6 +98,7 @@ export async function engineSmoke(): Promise<void> {
       logger: { warn: (message) => warnings.push(message) },
       publicStore: createMemoryPublicStore(),
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      showCallsStatus: () => undefined,
       rpc: {
         [SEPOLIA]: ["https://ethereum-sepolia-rpc.publicnode.com"],
         [SIGNET]: ["https://blockstream.info/signet/api"],

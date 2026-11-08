@@ -6,7 +6,7 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
  * call; signing goes through the request pipeline and waits for the host's approval by id.
  */
 import { ChainError } from "@qntx/wallet-chains";
-import type { AccountRef, SignRequest } from "@qntx/wallet-chains";
+import type { SignRequest } from "@qntx/wallet-chains";
 
 import { EVM_RPC_METHODS } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
@@ -18,6 +18,13 @@ import {
   SignInOriginError,
 } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
+import type {
+  AccountRef,
+  BatchRecord,
+  DelegationStatus,
+  TrackedTransaction,
+} from "../transactions/route.ts";
+import { EVM_BATCH_LIMIT } from "../transactions/route.ts";
 import type { AccountGroup, ConnectionController, ConnectionSession } from "./controller.ts";
 import { evmChainId } from "./controller.ts";
 import {
@@ -51,6 +58,22 @@ export type Eip1193HandlerOptions = {
   readonly defaultNetwork: () => string;
   /** Whether a token is already in the built-in table or the user's custom tokens. */
   readonly isTracked: (network: string, address: string) => boolean;
+  /** The account's EIP-7702 delegation state on `network`. */
+  readonly delegationState: (account: AccountRef, network: string) => Promise<DelegationStatus>;
+  /** `wallet_sendCalls` bundles, keyed by their id. */
+  readonly batches: {
+    readonly record: (record: BatchRecord) => Promise<void>;
+    readonly get: (origin: string, id: string) => BatchRecord | undefined;
+  };
+  /** A tracked transaction by id — `wallet_getCallsStatus` aggregates them. */
+  readonly txById: (id: string) => TrackedTransaction | undefined;
+  /** The host shows a bundle's status page; `wallet_showCallsStatus` is the trigger. */
+  readonly showCallsStatus: (request: {
+    readonly origin: string;
+    readonly txIds: ReadonlyArray<string>;
+  }) => void;
+  readonly now: () => number;
+  readonly random: (length: number) => Uint8Array;
 };
 
 /** Refused outright, whatever the session. */
@@ -60,14 +83,6 @@ const REFUSED: ReadonlySet<string> = new Set([
   "eth_signTypedData_v3",
   "eth_signTransaction",
   "eth_sendRawTransaction",
-]);
-
-/** Planned for later layers; answered `4200` until then. */
-const DEFERRED: ReadonlySet<string> = new Set([
-  "wallet_sendCalls",
-  "wallet_getCallsStatus",
-  "wallet_getCapabilities",
-  "wallet_showCallsStatus",
 ]);
 
 const READ_ONLY: ReadonlySet<string> = new Set(
@@ -131,7 +146,7 @@ export class Eip1193Handler {
       return this.watchAsset(origin, request.params);
     }
     const params = paramList(request.params);
-    if (REFUSED.has(method) || DEFERRED.has(method)) {
+    if (REFUSED.has(method)) {
       throw unsupportedMethod(method);
     }
     switch (method) {
@@ -161,6 +176,14 @@ export class Eip1193Handler {
         return this.typedData(origin, params);
       case "eth_sendTransaction":
         return this.sendTransaction(origin, params[0]);
+      case "wallet_getCapabilities":
+        return this.getCapabilities(origin, params);
+      case "wallet_sendCalls":
+        return this.sendCalls(origin, params);
+      case "wallet_getCallsStatus":
+        return this.callsStatus(origin, params, false);
+      case "wallet_showCallsStatus":
+        return this.callsStatus(origin, params, true);
       default:
         break;
     }
@@ -359,19 +382,32 @@ export class Eip1193Handler {
       kind: "evm.transaction",
       network: session.currentNetwork,
       account,
-      tx: {
-        type: "eip1559",
-        chainId,
-        nonce: 0,
+      tx: this.txSkeleton(chainId, {
         gas: quantityOf(arg["gas"], "gas", "0x0"),
         value: quantityOf(arg["value"], "value", "0x0"),
         data,
         ...(to === undefined ? {} : { to }),
-        accessList: [],
-        maxFeePerGas: "0x0",
-        maxPriorityFeePerGas: "0x0",
-      },
+      }),
     }));
+  }
+
+  /** The eip1559 placeholder the pipeline re-fills; only to, value, data and gas survive. */
+  private txSkeleton(
+    chainId: number,
+    call: { gas: string; value: string; data: string; to?: string },
+  ) {
+    return {
+      type: "eip1559" as const,
+      chainId,
+      nonce: 0,
+      gas: call.gas,
+      value: call.value,
+      data: call.data,
+      ...(call.to === undefined ? {} : { to: call.to }),
+      accessList: [],
+      maxFeePerGas: "0x0",
+      maxPriorityFeePerGas: "0x0",
+    };
   }
 
   private signingSession(origin: string, method: string): ConnectionSession {
@@ -416,6 +452,327 @@ export class Eip1193Handler {
     }
   }
 
+  private requiredSession(origin: string): ConnectionSession {
+    const session = this.options.connections.session(origin);
+    if (session === undefined) {
+      throw unauthorized();
+    }
+    return session;
+  }
+
+  private accountFor(group: AccountGroup) {
+    return { kind: "hd", ...group, template: "evm.bip44" } as const;
+  }
+
+  /**
+   * EIP-5792 `wallet_getCapabilities`: `atomic` per chain the page asks about or its session
+   * covers.
+   */
+  private async getCapabilities(
+    origin: string,
+    params: ReadonlyArray<unknown>,
+  ): Promise<Record<string, unknown>> {
+    const session = this.requiredSession(origin);
+    const [address0, asked] = params;
+    this.authorizedAccount(session, address0);
+    const networks =
+      asked === undefined
+        ? Object.keys(session.scopes).filter((s) => s.startsWith("eip155:"))
+        : (() => {
+            if (
+              !Array.isArray(asked) ||
+              !asked.every((c) => typeof c === "string" && /^0x[0-9a-fA-F]+$/.test(c))
+            ) {
+              throw invalidParams("chainIds must be an array of 0x quantities");
+            }
+            return asked
+              .filter((c): c is string => typeof c === "string")
+              .map((c) => `eip155:${Number.parseInt(c, 16)}`);
+          })();
+    const group = this.options.connections.activeGroup();
+    if (group === undefined) {
+      throw internalError("no account group is selected");
+    }
+    const account = this.accountFor(group);
+    const out: Record<string, unknown> = {};
+    await Promise.all(
+      networks.map(async (network) => {
+        let status = "unsupported";
+        try {
+          if (evmChainId(network) !== undefined && this.options.connections.isEnabled(network)) {
+            const s = await this.options.delegationState(account, network);
+            status =
+              s.supported && s.state === "ours"
+                ? "supported"
+                : s.supported && s.state === "none"
+                  ? "ready"
+                  : "unsupported";
+          }
+        } catch {
+          /* a failed read is unsupported */
+        }
+        out[hexChainId(network)] = { atomic: { status } };
+      }),
+    );
+    return out;
+  }
+
+  /** `wallet_sendCalls` (EIP-5792 v2.0.0): atomic batch, sequential fallback or 5760. */
+  private async sendCalls(origin: string, params: ReadonlyArray<unknown>): Promise<unknown> {
+    const session = this.signingSession(origin, "wallet_sendCalls");
+    const [arg] = params;
+    if (!isObject(arg)) {
+      throw invalidParams("params must be a sendCalls object");
+    }
+    if (arg["version"] !== "2.0.0") {
+      throw invalidParams('version must be "2.0.0"');
+    }
+    if (typeof arg["atomicRequired"] !== "boolean") {
+      throw invalidParams("atomicRequired must be a boolean");
+    }
+    const chainId = evmChainId(session.currentNetwork);
+    if (chainId === undefined) {
+      throw internalError("session network is not an EVM network");
+    }
+    const askedChain = arg["chainId"];
+    if (typeof askedChain !== "string" || !/^0x[0-9a-fA-F]+$/.test(askedChain)) {
+      throw invalidParams("chainId must be a 0x quantity");
+    }
+    if (Number(askedChain) !== chainId) {
+      throw new ProviderError(5710, "chainId does not match the session network");
+    }
+    this.authorizedAccount(session, arg["from"]);
+    const group = this.options.connections.activeGroup();
+    if (group === undefined) {
+      throw internalError("no account group is selected");
+    }
+    const account = this.accountFor(group);
+    const rawCalls = arg["calls"];
+    if (!Array.isArray(rawCalls) || rawCalls.length === 0) {
+      throw invalidParams("calls must be a non-empty array");
+    }
+    if (rawCalls.length > EVM_BATCH_LIMIT) {
+      throw new ProviderError(5740, `a batch allows at most ${EVM_BATCH_LIMIT} calls`);
+    }
+    const checkCaps = (caps: unknown): void => {
+      if (caps === undefined) {
+        return;
+      }
+      if (!isObject(caps)) {
+        throw invalidParams("capabilities must be an object");
+      }
+      for (const [name, value] of Object.entries(caps)) {
+        if (!isObject(value) || value["optional"] !== true) {
+          throw new ProviderError(5700, `capability ${name} is not supported`);
+        }
+      }
+    };
+    checkCaps(arg["capabilities"]);
+    const calls = rawCalls.map((raw, index) => {
+      if (!isObject(raw)) {
+        throw invalidParams(`calls[${index}] must be an object`);
+      }
+      checkCaps(raw["capabilities"]);
+      if (typeof raw["to"] !== "string") {
+        throw invalidParams(`calls[${index}].to is required`);
+      }
+      const rawData = raw["data"];
+      if (
+        rawData !== undefined &&
+        (typeof rawData !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(rawData))
+      ) {
+        throw invalidParams(`calls[${index}].data must be hex`);
+      }
+      const value = quantityOf(raw["value"], `calls[${index}].value`, "0x0");
+      const data = typeof rawData === "string" && rawData !== "" ? rawData : "0x";
+      return { to: raw["to"], data, value };
+    });
+    let id: string;
+    const rawId = arg["id"];
+    if (rawId === undefined) {
+      id = `0x${bytesToHex(this.options.random(32))}`;
+    } else {
+      if (typeof rawId !== "string" || rawId.length === 0 || rawId.length > 4096) {
+        throw invalidParams("id must be a string of at most 4096 characters");
+      }
+      if (this.options.batches.get(origin, rawId) !== undefined) {
+        throw new ProviderError(5720, `bundle id ${rawId} is already used`);
+      }
+      id = rawId;
+    }
+    const { atomicRequired } = arg;
+    const network = session.currentNetwork;
+    const txIds: string[] = [];
+    /* Atomic for the one-call and the batch paths; a sequential fallback is not atomic. */
+    let atomic = true;
+    try {
+      const [first] = calls;
+      if (calls.length === 1 && first !== undefined) {
+        const tracked = await this.submitCall(origin, session, account, first);
+        txIds.push(tracked.id);
+      } else {
+        const status = await this.options.delegationState(account, network);
+        /*
+         * A delegated account always batches; an undelegated one upgrades only when the page
+         * requires atomicity — a `none` account with `atomicRequired: false` stays sequential.
+         */
+        if (
+          status.state === "ours" ||
+          (status.supported && status.state === "none" && atomicRequired)
+        ) {
+          const tracked = await this.submitBatch(origin, session, account, calls);
+          txIds.push(tracked.id);
+        } else if (atomicRequired) {
+          throw new ProviderError(5760, "atomicity is not supported on this account");
+        } else {
+          atomic = false;
+          for (const [index, tx] of calls.entries()) {
+            try {
+              // oxlint-disable-next-line eslint/no-await-in-loop -- each call is approved separately, in order
+              const tracked = await this.submitCall(origin, session, account, tx);
+              txIds.push(tracked.id);
+            } catch (error) {
+              if (index === 0) {
+                throw error;
+              }
+              break;
+            }
+          }
+        }
+      }
+    } catch (error) {
+      throw toProviderError(error);
+    }
+    await this.options.batches.record({
+      origin,
+      id,
+      network,
+      atomic,
+      txIds,
+      /* One atomic transaction for the batch/single paths; one per call for sequential. */
+      expected: atomic ? 1 : calls.length,
+      createdAt: this.options.now(),
+    });
+    return { id };
+  }
+
+  /** One call through the `evm-sign` transaction path — its own approval. */
+  private async submitCall(
+    origin: string,
+    session: ConnectionSession,
+    account: AccountRef,
+    call: { to: string; data: string; value: string },
+  ): Promise<TrackedTransaction> {
+    const chainId = evmChainId(session.currentNetwork);
+    const pending = await this.options.requests.prepare({
+      method: "evm-sign",
+      origin: { kind: "browser", origin },
+      account,
+      network: session.currentNetwork,
+      request: {
+        kind: "evm.transaction",
+        network: session.currentNetwork,
+        account,
+        tx: this.txSkeleton(chainId ?? 0, {
+          gas: "0x0",
+          value: call.value,
+          data: call.data,
+          to: call.to,
+        }),
+      },
+    });
+    const result = await this.options.requests.outcome(pending.id);
+    await this.options.connections.touch(origin);
+    if (!("id" in result)) {
+      throw internalError("the transaction has no tracked id");
+    }
+    return result;
+  }
+
+  /** ≥2 calls through `evm-batch` with the page's origin. */
+  private async submitBatch(
+    origin: string,
+    session: ConnectionSession,
+    account: AccountRef,
+    calls: ReadonlyArray<{ to: string; data: string; value: string }>,
+  ): Promise<TrackedTransaction> {
+    const pending = await this.options.requests.prepare({
+      method: "evm-batch",
+      origin: { kind: "browser", origin },
+      account,
+      network: session.currentNetwork,
+      calls: calls.map((c) => ({ to: c.to, value: BigInt(c.value), data: c.data })),
+      fee: "normal",
+    });
+    const result = await this.options.requests.outcome(pending.id);
+    await this.options.connections.touch(origin);
+    if (!("id" in result)) {
+      throw internalError("the batch has no tracked id");
+    }
+    return result;
+  }
+
+  /** `wallet_getCallsStatus` / `wallet_showCallsStatus`: the record must belong to the origin. */
+  private async callsStatus(
+    origin: string,
+    params: ReadonlyArray<unknown>,
+    show: boolean,
+  ): Promise<unknown> {
+    this.requiredSession(origin);
+    const [id] = params;
+    if (typeof id !== "string") {
+      throw invalidParams("id must be a string");
+    }
+    const record = this.options.batches.get(origin, id);
+    if (record === undefined) {
+      throw new ProviderError(5730, `unknown bundle id ${id}`);
+    }
+    if (show) {
+      this.options.showCallsStatus({ origin, txIds: record.txIds });
+      return null;
+    }
+    const txs = record.txIds
+      .map((txId) => this.options.txById(txId))
+      .filter((tx): tx is TrackedTransaction => tx !== undefined);
+    const pending = txs.some((tx) => LIVE_TX_STATES.has(tx.state));
+    const allConfirmed =
+      txs.length === record.expected && txs.every((tx) => tx.state === "confirmed");
+    const noneLanded = txs.length > 0 && txs.every(notOnChain);
+    const allReverted = txs.length > 0 && txs.every(reverted);
+    const status = pending ? 100 : allConfirmed ? 200 : noneLanded ? 400 : allReverted ? 500 : 600;
+    const mined = txs.filter((tx) => tx.hash !== undefined);
+    const fetched = await Promise.all(
+      mined.map(async (tx) => {
+        try {
+          const receipt: unknown = await this.options.networks
+            .client(record.network)
+            .transport.request({ method: "eth_getTransactionReceipt", params: [tx.hash] });
+          return isObject(receipt)
+            ? {
+                logs: Array.isArray(receipt["logs"]) ? receipt["logs"] : [],
+                status: receipt["status"],
+                blockHash: receipt["blockHash"],
+                blockNumber: receipt["blockNumber"],
+                gasUsed: receipt["gasUsed"],
+                transactionHash: tx.hash,
+              }
+            : undefined;
+        } catch {
+          return undefined;
+        }
+      }),
+    );
+    const receipts = fetched.filter((r): r is NonNullable<typeof r> => r !== undefined);
+    return {
+      version: "2.0.0",
+      id: record.id,
+      chainId: hexChainId(record.network),
+      atomic: record.atomic,
+      status,
+      ...(receipts.length > 0 ? { receipts } : {}),
+    };
+  }
+
   private async read(
     origin: string,
     method: string,
@@ -430,6 +787,18 @@ export class Eip1193Handler {
     }
   }
 }
+
+const LIVE_TX_STATES: ReadonlySet<string> = new Set(["draft", "signed", "submitted", "pending"]);
+
+/* Broadcast then dropped/replaced/failed-before-landing never landed; failed with a hash did revert. */
+const notOnChain = (tx: TrackedTransaction): boolean =>
+  tx.state === "rejected" ||
+  tx.state === "dropped" ||
+  tx.state === "replaced" ||
+  (tx.state === "failed" && tx.hash === undefined);
+
+const reverted = (tx: TrackedTransaction): boolean =>
+  tx.state === "failed" && tx.hash !== undefined;
 
 function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {

@@ -68,6 +68,11 @@ export type EngineOptions = {
   readonly lightningMaxFee: (amountSats: number) => number;
   readonly logger: EngineLogger;
   readonly openStore: () => Promise<EngineStore>;
+  /** The host surfaces a call bundle's status page — `wallet_showCallsStatus` triggers it. */
+  readonly showCallsStatus: (request: {
+    readonly origin: string;
+    readonly txIds: ReadonlyArray<string>;
+  }) => void;
   /**
    * Non-secret device data (the phishing list, the origins the user trusts), available while the
    * wallet is locked: a page can be opened before the first unlock.
@@ -449,6 +454,15 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     networks,
     defaultNetwork: () => networks.enabled("evm")[0] ?? "eip155:1",
     isTracked: (network, address) => assets.isTracked(network, address),
+    delegationState: async (account, network) => transactions.delegationState(account, network),
+    batches: {
+      record: async (record) => transactions.recordBatch(record),
+      get: (origin, id) => transactions.batchById(origin, id),
+    },
+    txById: (id) => transactions.txById(id),
+    showCallsStatus: options.showCallsStatus,
+    now: options.now,
+    random: options.random,
   });
   const nip07 = new Nip07Handler({
     connections,

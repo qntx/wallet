@@ -13,6 +13,7 @@ import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
   AccountRef,
+  BatchRecord,
   DisplayIntent,
   Options,
   PrepareParams,
@@ -45,6 +46,35 @@ export type TransactionControllerState = {
 };
 
 const encode = (tx: TrackedTransaction): Uint8Array => new TextEncoder().encode(JSON.stringify(tx));
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const encodeBatch = (record: BatchRecord): Uint8Array =>
+  new TextEncoder().encode(JSON.stringify(record));
+
+/** A bundle id is unique per origin — the store key must carry both. */
+const batchKey = (origin: string, id: string): string => `${origin}${id}`;
+
+const isBatchRecord = (value: unknown): value is BatchRecord => {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const { origin, id, network, atomic, txIds, expected, createdAt } = value;
+  return (
+    typeof origin === "string" &&
+    typeof id === "string" &&
+    typeof network === "string" &&
+    typeof atomic === "boolean" &&
+    Array.isArray(txIds) &&
+    txIds.every((t) => typeof t === "string") &&
+    typeof expected === "number" &&
+    Number.isSafeInteger(expected) &&
+    expected > 0 &&
+    txIds.length <= expected &&
+    typeof createdAt === "number"
+  );
+};
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -174,6 +204,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private evmRoute = createEvmRoute();
   private bitcoinRoute = createBitcoinRoute();
   private locked = true;
+  private readonly batches = new Map<string, BatchRecord>();
 
   constructor(options: Options) {
     super({ name: "transactions", defaultState: () => ({ txs: {} }) });
@@ -197,11 +228,52 @@ export class TransactionController extends Controller<TransactionControllerState
         this.track(tx.id, tx.hash);
       }
     }
+    const batches = this.engineStore.collection("call-batches");
+    const batchKeys = await batches.list();
+    const batchRows = await Promise.all(batchKeys.map(async (key) => batches.get(key)));
+    for (const raw of batchRows) {
+      const record =
+        raw === undefined
+          ? undefined
+          : (() => {
+              try {
+                const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+                return isBatchRecord(parsed) ? parsed : undefined;
+              } catch {
+                return undefined;
+              }
+            })();
+      if (record !== undefined) {
+        this.batches.set(batchKey(record.origin, record.id), record);
+      }
+    }
   }
 
   async destroy(): Promise<void> {
     this.lock();
     await Promise.resolve();
+  }
+
+  /** One `wallet_sendCalls` bundle the user approved; retained alongside the transactions it lists. */
+  async recordBatch(record: BatchRecord): Promise<void> {
+    const key = batchKey(record.origin, record.id);
+    this.batches.set(key, record);
+    const store = this.engineStore;
+    if (store === undefined) {
+      this.options.logger.warn(`call batch ${record.id} not persisted: vault locked`);
+      return;
+    }
+    await store.collection("call-batches").put(key, encodeBatch(record));
+  }
+
+  /** The bundle `origin` asked for, or `undefined` when it is not theirs (or is gone). */
+  batchById(origin: string, id: string): BatchRecord | undefined {
+    return this.batches.get(batchKey(origin, id));
+  }
+
+  /** A tracked transaction by id — for `wallet_getCallsStatus`. */
+  txById(id: string): TrackedTransaction | undefined {
+    return this.getState().txs[id];
   }
 
   lock(): void {

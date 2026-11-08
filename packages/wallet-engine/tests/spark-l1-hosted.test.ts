@@ -112,6 +112,7 @@ describe.skipIf(!HOSTED || esplora === "")("hosted spark exit", () => {
         random,
         now: () => Date.now(),
         logger: { warn: () => {} },
+        showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         rpc: { [l1]: [esplora] },
       });
