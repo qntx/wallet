@@ -29086,8 +29086,8 @@ zoo`.split("\n"));
 	/**
 	* Ownership check for one `request.sign` entry: under the entry's own template, the derivation
 	* entry must be this account's, the claimed pubkey the derived child's, and the prevout script
-	* (witnessUtxo, or nonWitnessUtxo for P2PKH, plus redeemScript for P2SH-P2WPKH) the script of
-	* that key. A template that disagrees with the input's script type fails the path or script check.
+	* (witnessUtxo, or nonWitnessUtxo for P2PKH, plus redeemScript for P2SH-P2WPKH) the script of that
+	* key. A template that disagrees with the input's script type fails the path or script check.
 	*/
 	var bitcoinInput = (b, tx, entry) => {
 		const purpose = BTC_PURPOSE[entry.template];
@@ -29119,10 +29119,10 @@ zoo`.split("\n"));
 		};
 	};
 	/**
-	* Output binding, independent of which templates sign inputs: an output is this group's own when
-	* it carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries
-	* for 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose
-	* script equals that key's script for the purpose. Failures just mean "not own".
+	* Output binding, independent of which templates sign inputs: an output is this group's own when it
+	* carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
+	* 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
+	* equals that key's script for the purpose. Failures just mean "not own".
 	*/
 	var bitcoinOwnScripts = (b, tx) => {
 		const ownScripts = /* @__PURE__ */ new Set();
