@@ -9,8 +9,21 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-08
+
+One PSBT can spend inputs of several Bitcoin templates of a wallet group, as inscription purchases
+do, and `@qntx/nostr` moves to 0.15.4.
+
 ### Changed
 
+- **BREAKING**: `bitcoin.psbt` requests name a wallet group (`account: { kind: "hd", walletId,
+  groupIndex }`) and give every input to sign its own BTC template (`sign: { index, template }[]`,
+  normalized to ascending index) instead of an `AccountRef` and bare input indices; `bitcoin-sign`
+  PSBT requests take a `BitcoinGroup`. bip86 entries need `tapBip32Derivation`, the others
+  `bip32Derivation`. The kernel checks each input under its entry's template and binds outputs of
+  any purpose of the group as own; the main runtime verifies each signature against that
+  template's xpub. The engine drops the mixed-purpose refusal, and dApp PSBT preparation scans only
+  the signing templates and adds derivation data to outputs paying the group's own scripts.
 - Pin @qntx/nostr 0.15.4.
 
 ## [0.11.0] - 2026-11-07
