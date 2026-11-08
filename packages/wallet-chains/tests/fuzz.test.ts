@@ -27,7 +27,6 @@ const BTC_ACCOUNT = {
   kind: "hd" as const,
   walletId: "w",
   groupIndex: 0,
-  template: "btc.bip84" as const,
 };
 const EVM_NET = "eip155:1";
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -96,7 +95,7 @@ const psbtRequest = (psbt: Uint8Array): Extract<SignRequest, { kind: "bitcoin.ps
   network: BTC_NET,
   account: BTC_ACCOUNT,
   psbt,
-  sign: [0],
+  sign: [{ index: 0, template: "btc.bip84" as const }],
 });
 
 const normalizeTwice = (

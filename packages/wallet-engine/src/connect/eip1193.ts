@@ -6,7 +6,7 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
  * call; signing goes through the request pipeline and waits for the host's approval by id.
  */
 import { ChainError } from "@qntx/wallet-chains";
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { AccountRef, SignRequest } from "@qntx/wallet-chains";
 
 import { EVM_RPC_METHODS } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
@@ -386,7 +386,7 @@ export class Eip1193Handler {
   private async sign(
     origin: string,
     session: ConnectionSession,
-    build: (account: SignRequest["account"]) => SignRequest,
+    build: (account: AccountRef) => SignRequest,
   ): Promise<string> {
     const { connections, requests } = this.options;
     const group: AccountGroup | undefined = connections.activeGroup();

@@ -40,13 +40,26 @@ export type BitcoinAccount = {
   readonly template: "btc.bip84" | "btc.bip86";
 };
 
+/**
+ * The wallet group a `bitcoin-sign` PSBT request signs for: inputs of several dApp-facing templates
+ * of the same group may mix in one PSBT — each sign entry names its own template.
+ */
+export type BitcoinGroup = {
+  readonly walletId: string;
+  readonly groupIndex: number;
+};
+
 /** The sighash a dApp asks for per input; anything else is refused before it reaches a request. */
 export type BitcoinSigHash = "ALL" | "SINGLE|ANYONECANPAY";
 
 /** One dApp PSBT and the inputs it asks the wallet to sign. */
 export type BitcoinPsbtInput = {
   readonly psbt: Uint8Array;
-  readonly sign: ReadonlyArray<{ readonly index: number; readonly sigHash: BitcoinSigHash }>;
+  readonly sign: ReadonlyArray<{
+    readonly index: number;
+    readonly sigHash: BitcoinSigHash;
+    readonly template: BitcoinAccount["template"];
+  }>;
 };
 
 /**
@@ -61,5 +74,6 @@ export type PreparedBitcoinPsbt = {
     readonly index: number;
     readonly value: number;
     readonly sigHash: BitcoinSigHash;
+    readonly template: BitcoinAccount["template"];
   }>;
 };

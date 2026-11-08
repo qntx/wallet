@@ -1,6 +1,7 @@
 import { Transaction, getInputType } from "@scure/btc-signer/transaction.js";
 
 import { ChainError } from "../index.ts";
+import type { BitcoinTemplate } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
 /**
@@ -72,19 +73,36 @@ const SIGHASH_ALL = 1;
 /** SIGHASH_SINGLE | ANYONECANPAY — the marketplace listing sighash, the only other one accepted. */
 export const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
 
+const TEMPLATES: ReadonlySet<string> = new Set([
+  "btc.bip44",
+  "btc.bip49",
+  "btc.bip84",
+  "btc.bip86",
+]);
+
+export type PsbtSignEntry = { readonly index: number; readonly template: BitcoinTemplate };
+
+const isSignEntry = (value: unknown): value is PsbtSignEntry =>
+  isRecord(value) &&
+  typeof value["index"] === "number" &&
+  Number.isSafeInteger(value["index"]) &&
+  value["index"] >= 0 &&
+  typeof value["template"] === "string" &&
+  TEMPLATES.has(value["template"]);
+
 const isTaprootInput = (input: ReturnType<Transaction["getInput"]>): boolean =>
   input.tapInternalKey !== undefined || getInputType(input).type === "taproot";
 
 /**
  * Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller).
  * `strictPrevoutValidation` makes btc-signer verify every `nonWitnessUtxo`'s txid against its
- * outpoint.
+ * outpoint. The returned `sign` is sorted ascending by index — a normalized request is canonical.
  */
 export const normalizeBitcoinPsbt = (
   psbt: Uint8Array,
   sign: unknown,
   network: string,
-): { psbt: Uint8Array; sign: ReadonlyArray<number> } => {
+): { psbt: Uint8Array; sign: ReadonlyArray<PsbtSignEntry> } => {
   const net = bitcoinNetwork(network);
   let tx: Transaction;
   try {
@@ -92,20 +110,20 @@ export const normalizeBitcoinPsbt = (
   } catch {
     throw new ChainError("invalid-request", "PSBT failed to decode");
   }
-  if (
-    !Array.isArray(sign) ||
-    sign.length === 0 ||
-    !sign.every((i) => Number.isSafeInteger(i) && i >= 0)
-  ) {
-    throw new ChainError("invalid-request", "sign must be a non-empty array of input indices");
+  if (!Array.isArray(sign) || sign.length === 0 || !sign.every(isSignEntry)) {
+    throw new ChainError(
+      "invalid-request",
+      "sign must be a non-empty array of {index, template} entries",
+    );
   }
-  const unique = [...new Set(sign.map(Number))].sort((a, b) => a - b);
-  const last = unique.at(-1);
-  if (unique.length !== sign.length || last === undefined || last >= tx.inputsLength) {
+  const sorted = [...sign].sort((a, b) => a.index - b.index);
+  const indices = new Set(sorted.map((s) => s.index));
+  const last = sorted.at(-1)?.index;
+  if (indices.size !== sorted.length || last === undefined || last >= tx.inputsLength) {
     throw new ChainError("invalid-request", "sign must be unique, ascending, and in range");
   }
   checkDerivations(tx, net.coinType);
-  for (const idx of unique) {
+  for (const { index: idx, template } of sorted) {
     const input = tx.getInput(idx);
     if (input.witnessUtxo === undefined && input.nonWitnessUtxo === undefined) {
       throw new ChainError(
@@ -113,7 +131,12 @@ export const normalizeBitcoinPsbt = (
         `input ${idx} carries neither witnessUtxo nor nonWitnessUtxo`,
       );
     }
-    if (input.bip32Derivation === undefined && input.tapBip32Derivation === undefined) {
+    // bip86 inputs are taproot: they derive via tapBip32Derivation, the rest via bip32Derivation.
+    if (
+      template === "btc.bip86"
+        ? input.tapBip32Derivation === undefined
+        : input.bip32Derivation === undefined
+    ) {
       throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
     }
     const { type } = getInputType(input);
@@ -137,5 +160,5 @@ export const normalizeBitcoinPsbt = (
       );
     }
   }
-  return { psbt: tx.toPSBT(0), sign: unique };
+  return { psbt: tx.toPSBT(0), sign: sorted };
 };

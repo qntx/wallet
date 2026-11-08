@@ -16,7 +16,7 @@ import { ChainError } from "../src/index.ts";
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const MAINNET = "bip122:000000000019d6689c085ae165831e93";
-const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" } as const;
+const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0 } as const;
 const PAYEE = "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g";
 const SINGLE_ACP = 0x83;
 const auxRand = (_n: number): Uint8Array => new Uint8Array(32);
@@ -79,7 +79,12 @@ const buildPsbt = (
   return tx.toPSBT(0);
 };
 
-const request = (psbt: Uint8Array, sign: ReadonlyArray<number> = [0]) => ({
+const request = (
+  psbt: Uint8Array,
+  sign: ReadonlyArray<{ index: number; template: "btc.bip84" | "btc.bip86" }> = [
+    { index: 0, template: "btc.bip84" },
+  ],
+) => ({
   kind: "bitcoin.psbt",
   network: MAINNET,
   account: ACCOUNT,
@@ -100,8 +105,11 @@ const privateKeyOf = (node: HDKey): Uint8Array => node.privateKey ?? new Uint8Ar
 
 type PsbtRequest = Extract<ReturnType<typeof normalizeBitcoin>, { kind: "bitcoin.psbt" }>;
 
-const normalizedPsbt = (psbt: Uint8Array): PsbtRequest => {
-  const normalized = normalizeBitcoin(request(psbt));
+const normalizedPsbt = (
+  psbt: Uint8Array,
+  template: "btc.bip84" | "btc.bip86" = "btc.bip84",
+): PsbtRequest => {
+  const normalized = normalizeBitcoin(request(psbt, [{ index: 0, template }]));
   if (normalized.kind !== "bitcoin.psbt") {
     throw new Error("expected a PSBT request");
   }
@@ -137,7 +145,7 @@ describe("SIGHASH_SINGLE|ANYONECANPAY", () => {
   ] as const)(
     "%s: signs 0x83, verifies, and decode marks the listing",
     (kind, node, template, xpub) => {
-      const normalized = normalizedPsbt(buildPsbt(kind, { sighash: SINGLE_ACP }));
+      const normalized = normalizedPsbt(buildPsbt(kind, { sighash: SINGLE_ACP }), template);
       const signed = signBitcoinPsbt(
         normalized.psbt,
         [{ index: 0, privateKey: privateKeyOf(node) }],
@@ -177,17 +185,22 @@ describe("SIGHASH_SINGLE|ANYONECANPAY", () => {
   it("refuses 0x83 without a paired output", () => {
     // Two inputs, one output: input 1 has no same-index output.
     const psbt = buildPsbt("p2wpkh", { sighash: SINGLE_ACP, inputs: 2, outputs: 1 });
-    expect(code(() => normalizeBitcoin(request(psbt, [0])))).toBeUndefined();
-    expect(code(() => normalizeBitcoin(request(psbt, [1])))).toBe("unsupported");
+    const entry = (index: number) => ({ index, template: "btc.bip84" as const });
+    expect(code(() => normalizeBitcoin(request(psbt, [entry(0)])))).toBeUndefined();
+    expect(code(() => normalizeBitcoin(request(psbt, [entry(1)])))).toBe("unsupported");
   });
 
   it.each([0x02, 0x03, 0x81, 0x82])("refuses sighash 0x%s", (sighash) => {
     expect(code(() => normalizeBitcoin(request(buildPsbt("p2wpkh", { sighash }))))).toBe(
       "unsupported",
     );
-    expect(code(() => normalizeBitcoin(request(buildPsbt("p2tr", { sighash }))))).toBe(
-      "unsupported",
-    );
+    expect(
+      code(() =>
+        normalizeBitcoin(
+          request(buildPsbt("p2tr", { sighash }), [{ index: 0, template: "btc.bip86" }]),
+        ),
+      ),
+    ).toBe("unsupported");
   });
 
   it("ALL keeps the fee and a full decode", () => {

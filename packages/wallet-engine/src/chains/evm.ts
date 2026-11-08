@@ -11,7 +11,7 @@ import type { PublicClient } from "viem";
 import { readContract, simulateCalls } from "viem/actions";
 import { estimateL1Fee } from "viem/op-stack";
 
-import type { EvmTransaction, SignRequest } from "@qntx/wallet-chains";
+import type { AccountRef, EvmTransaction, SignRequest } from "@qntx/wallet-chains";
 import {
   EVM_NATIVE_ASSET,
   checksumEvmAddress,
@@ -347,7 +347,7 @@ export class EvmChainAdapter {
     };
   }
 
-  toSignRequest<A extends SignRequest["account"]>(
+  toSignRequest<A extends AccountRef>(
     tx: EvmUnsignedTransaction,
     account: A,
     chainId: number,

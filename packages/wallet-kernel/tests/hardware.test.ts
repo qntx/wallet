@@ -6,9 +6,14 @@
 import { equalBytes } from "@noble/ciphers/utils.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
-import { p2wpkh } from "@scure/btc-signer/payment.js";
+import { HDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Transaction } from "@scure/btc-signer/transaction.js";
+import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import { normalizeBitcoin } from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import { normalizeSolana } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
@@ -369,6 +374,81 @@ describe("hardware factor: chain.sign", () => {
     expect(wipedAtPrompt).toBe(true);
     expect(prompts(fake.calls, "open")).toStrictEqual([chainPrompt("en", decodeEvm(request))]);
     expect(prompts(fake.calls, "open")[0]?.title).toBe("Confirm transfer");
+  });
+
+  it("binds own outputs across templates in the prompt; a forged derivation stays an outflow", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    const { session, walletId } = await importHardware(h);
+    const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
+    const MASTER_FP = 0x73c5da0a;
+    const master = HDKey.fromMasterSeed(mnemonicToSeedSync(MNEMONIC));
+    const pub84 = master.derive("m/84'/0'/0'/0/0").publicKey!;
+    const xonly86 = master.derive("m/86'/0'/0'/0/0").publicKey!.slice(1);
+    const ordScript = p2tr(xonly86).script;
+    const ordAddress = p2tr(xonly86).address;
+    const payeeScript = OutScript.encode(
+      Address(NETWORK).decode("bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g"),
+    );
+
+    const psbt = (tapPath: number[]): Uint8Array => {
+      const tx = new Transaction({ version: 2 });
+      tx.addInput({
+        txid: new Uint8Array(32).fill(7),
+        index: 0,
+        sequence: 0xfffffffd,
+        witnessUtxo: { script: p2wpkh(pub84).script, amount: 100000n },
+        bip32Derivation: [
+          [pub84, { fingerprint: MASTER_FP, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
+        ],
+      });
+      tx.addOutput({ script: payeeScript, amount: 80000n });
+      tx.addOutput({ script: ordScript, amount: 10000n });
+      tx.updateOutput(1, {
+        tapInternalKey: xonly86,
+        tapBip32Derivation: [
+          [xonly86, { hashes: [], der: { fingerprint: MASTER_FP, path: tapPath } }],
+        ],
+      });
+      return tx.toPSBT(0);
+    };
+    const requestFor = (bytes: Uint8Array) =>
+      normalizeBitcoin({
+        kind: "bitcoin.psbt",
+        network: BTC_NETWORK,
+        account: { kind: "hd", walletId, groupIndex: 0 },
+        psbt: bytes,
+        sign: [{ index: 0, template: "btc.bip84" }],
+      });
+
+    // The correct tap derivation at the group's own index binds the ordinals output as ours.
+    ok(
+      await h.call(
+        "chain.sign",
+        {
+          request: requestFor(psbt([0x80000056, 0x80000000, 0x80000000, 0, 0])),
+          verify: HARDWARE,
+        },
+        session,
+      ),
+    );
+    const bound = prompts(fake.calls, "open").at(-1);
+    expect(bound?.description).not.toContain(ordAddress);
+    expect(bound?.description).toContain("bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g");
+
+    // A derivation naming another index cannot bind the output: it stays a prompt outflow.
+    ok(
+      await h.call(
+        "chain.sign",
+        {
+          request: requestFor(psbt([0x80000056, 0x80000000, 0x80000000, 0, 5])),
+          verify: HARDWARE,
+        },
+        session,
+      ),
+    );
+    const forged = prompts(fake.calls, "open").at(-1);
+    expect(forged?.description).toContain(ordAddress);
   });
 
   it("a cancelled prompt never reaches the sign pass", async () => {

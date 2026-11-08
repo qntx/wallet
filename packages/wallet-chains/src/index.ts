@@ -22,14 +22,22 @@ export type AccountRef =
     }
   | { readonly kind: "imported"; readonly keyId: string; readonly family: ChainFamily };
 
+/** The BIP-44/49/84/86 account-level templates a bitcoin.psbt input may sign under. */
+export type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+
 export type SignRequest =
   | {
       readonly kind: "bitcoin.psbt";
       readonly network: string;
-      readonly account: AccountRef;
+      /** The wallet group whose keys sign; each signed input names its template. */
+      readonly account: {
+        readonly kind: "hd";
+        readonly walletId: string;
+        readonly groupIndex: number;
+      };
       readonly psbt: Uint8Array;
-      /** Input indices to sign — non-empty, unique, ascending, in range. */
-      readonly sign: ReadonlyArray<number>;
+      /** Inputs to sign — non-empty, unique, ascending by index, in range; each with its template. */
+      readonly sign: ReadonlyArray<{ readonly index: number; readonly template: BitcoinTemplate }>;
     }
   | {
       readonly kind: "bitcoin.message";

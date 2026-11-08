@@ -130,15 +130,21 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   if (account.kind !== "hd") {
     throw new KernelError("unsupported", "imported accounts are not yet supported");
   }
-  const [family] = request.kind.split(".", 1);
-  const expected =
-    family === "evm"
-      ? ["evm.bip44"]
-      : family === "solana"
-        ? ["solana.bip44-change"]
-        : ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"];
-  if (!expected.includes(account.template)) {
-    throw new KernelError("invalid-input", "account template does not match the request family");
+  if (request.kind === "bitcoin.psbt") {
+    if (request.sign.some((s) => BTC_PURPOSE[s.template] === undefined)) {
+      throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
+    }
+  } else {
+    const [family] = request.kind.split(".", 1);
+    const expected =
+      family === "evm"
+        ? ["evm.bip44"]
+        : family === "solana"
+          ? ["solana.bip44-change"]
+          : ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"];
+    if (!("template" in account) || !expected.includes(account.template)) {
+      throw new KernelError("invalid-input", "account template does not match the request family");
+    }
   }
   const record = ctx.image.records.find(
     (entry) => entry.kind === "entropy" && entry.id === account.walletId,
@@ -147,17 +153,23 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
     throw new KernelError("not-found", "no such wallet");
   }
   const execute = (seed: Uint8Array, intentOnly: boolean): ExecuteResult => {
+    if (request.kind === "bitcoin.psbt") {
+      return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
+    }
+    if (request.account.kind !== "hd") {
+      throw new KernelError("unsupported", "imported accounts are not yet supported");
+    }
+    if (request.kind === "bitcoin.message") {
+      return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
+    }
     if (
       request.kind === "evm.transaction" ||
       request.kind === "evm.personal-message" ||
       request.kind === "evm.typed-data"
     ) {
-      return executeEvm(request, account, seed, intentOnly);
+      return executeEvm(request, request.account, seed, intentOnly);
     }
-    if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
-      return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
-    }
-    return executeSolana(request, account, seed, intentOnly);
+    return executeSolana(request, request.account, seed, intentOnly);
   };
   // Two passes over the seed: `prepare` checks ownership, normalizes and decodes, returning
   // only the intent; the seed and every key are wiped before the (possibly long) system

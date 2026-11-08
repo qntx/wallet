@@ -39,25 +39,54 @@ export type ChainsApi = {
   }) => Promise<ChainSignResult>;
 };
 
-/** Whether the kernel's signature belongs to the account it was asked to sign for. */
-const checkSigner = (request: ChainSignRequest, result: ChainSignResult, account: ChainAccount) => {
-  if (request.kind === "bitcoin.psbt" || request.kind === "bitcoin.message") {
+/**
+ * The PSBT check: each sign entry names its template, so the account is fetched once per distinct
+ * template and each group's signatures verify against that template's xpub.
+ */
+const checkPsbt = async (
+  internals: WalletInternals,
+  request: Extract<ChainSignRequest, { kind: "bitcoin.psbt" }>,
+  result: ChainSignResult,
+): Promise<void> => {
+  if (result.kind !== "bitcoin.psbt") {
+    throw integrity("result kind does not match the request");
+  }
+  const byTemplate = new Map<"btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86", number[]>();
+  for (const { index, template } of request.sign) {
+    const group = byTemplate.get(template) ?? [];
+    group.push(index);
+    byTemplate.set(template, group);
+  }
+  for (const [template, indices] of byTemplate) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- one wallet.accounts call per template.
+    const account = await internals.call("wallet.accounts", {
+      walletId: request.account.walletId,
+      groupIndex: request.account.groupIndex,
+      template,
+      network: request.network,
+    });
     if (!("xpub" in account)) {
       throw integrity("chain account has no xpub");
     }
-    if (request.kind === "bitcoin.psbt" && result.kind === "bitcoin.psbt") {
-      if (
-        !verifyBitcoinPsbtSignatures(
-          result.signedPsbt,
-          request.sign,
-          account.xpub,
-          account.template,
-          request.network,
-        )
-      ) {
-        throw integrity("psbt signatures do not verify for the account");
-      }
-      return;
+    if (
+      !verifyBitcoinPsbtSignatures(
+        result.signedPsbt,
+        indices,
+        account.xpub,
+        template,
+        request.network,
+      )
+    ) {
+      throw integrity("psbt signatures do not verify for the account");
+    }
+  }
+};
+
+/** Whether the kernel's signature belongs to the account it was asked to sign for. */
+const checkSigner = (request: ChainSignRequest, result: ChainSignResult, account: ChainAccount) => {
+  if (request.kind === "bitcoin.message") {
+    if (!("xpub" in account)) {
+      throw integrity("chain account has no xpub");
     }
     if (request.kind === "bitcoin.message" && result.kind === "bitcoin.message") {
       const derived = bitcoinAddressFromXpub(
@@ -111,7 +140,9 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
         const transfer: ArrayBuffer[] = [];
         const verify = await internals.resolveFactor(params.verify, transfer);
         const result = await internals.call("chain.sign", { request: params.request, verify });
-        if (params.request.account.kind === "hd") {
+        if (params.request.kind === "bitcoin.psbt") {
+          await checkPsbt(internals, params.request, result);
+        } else if (params.request.account.kind === "hd") {
           const account = await internals.call("wallet.accounts", {
             walletId: params.request.account.walletId,
             groupIndex: params.request.account.groupIndex,

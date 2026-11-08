@@ -3,6 +3,7 @@ import { HDKey } from "@scure/bip32";
 import { p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 
 import { ChainError } from "../index.ts";
+import type { BitcoinTemplate } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
 const xpubChild = (xpub: string, network: string, change: 0 | 1, index: number): Uint8Array => {
@@ -27,7 +28,7 @@ const xpubChild = (xpub: string, network: string, change: 0 | 1, index: number):
   return pub;
 };
 
-export type BitcoinAccountTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+export type BitcoinAccountTemplate = BitcoinTemplate;
 
 /**
  * Derive the address at `change`/`index` under an account-level xpub (`m/84'/c'/i'` or

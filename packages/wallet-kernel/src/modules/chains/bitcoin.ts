@@ -18,7 +18,7 @@ import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin
 
 import { KernelError } from "../../errors.ts";
 import { MESSAGE_INTENT } from "./prompt.ts";
-import type { BitcoinRequest, ExecuteResult, HdAccount } from "./shared.ts";
+import type { BitcoinRequest, ExecuteResult } from "./shared.ts";
 import { BTC_PURPOSE, deepEqual, mapChainError } from "./shared.ts";
 
 const isPath = (path: unknown): path is number[] =>
@@ -36,16 +36,37 @@ type DerivationOwner = {
 
 type Derivation = { pubkey: Uint8Array; fingerprint: number; path: ReadonlyArray<number> };
 
-/** The account derivation context: master, account node, tracked children and the template path. */
-type BitcoinDerive = {
-  readonly master: HDKey;
+/** The account node of one BIP purpose and the children derived under it, for wiping. */
+type PurposeDerive = {
   readonly accountNode: HDKey;
   readonly children: HDKey[];
-  readonly purpose: number;
+};
+
+/**
+ * The group derivation context: purpose-specific account nodes (`m/purpose'/coin'/group'`) are
+ * derived lazily — one PSBT may spend inputs of several templates of the same group.
+ */
+type BitcoinDerive = {
+  readonly master: HDKey;
+  readonly purposes: Map<number, PurposeDerive>;
   readonly coinType: number;
   readonly hardened: number;
-  readonly account: HdAccount;
+  readonly groupIndex: number;
   readonly net: ReturnType<typeof bitcoinNetwork>;
+};
+
+const PURPOSES: ReadonlyArray<number> = [44, 49, 84, 86];
+
+const contextFor = (b: BitcoinDerive, purpose: number): PurposeDerive => {
+  let ctx = b.purposes.get(purpose);
+  if (ctx === undefined) {
+    ctx = {
+      accountNode: b.master.derive(`m/${purpose}'/${b.coinType}'/${b.groupIndex}'`),
+      children: [],
+    };
+    b.purposes.set(purpose, ctx);
+  }
+  return ctx;
 };
 
 /** The PSBT derivation entry that claims this account's fingerprint and path, if any. */
@@ -87,14 +108,14 @@ const expectedScript = (purpose: number, pub: Uint8Array): Uint8Array =>
         ? p2pkh(pub).script
         : p2wpkh(pub).script;
 
-/** Derives `m/purpose'/coin'/group'/change/index` — the only path shape this account may sign. */
-const childAt = (b: BitcoinDerive, path: ReadonlyArray<number>): HDKey => {
+/** Derives `m/purpose'/coin'/group'/change/index` — the only path shape this group may sign. */
+const childAt = (b: BitcoinDerive, purpose: number, path: ReadonlyArray<number>): HDKey => {
   const [purposePath, coinPath, groupPath, change, index] = path;
   if (
     path.length !== 5 ||
-    purposePath !== b.purpose + b.hardened ||
+    purposePath !== purpose + b.hardened ||
     coinPath !== b.coinType + b.hardened ||
-    groupPath !== b.account.groupIndex + b.hardened ||
+    groupPath !== b.groupIndex + b.hardened ||
     change === undefined ||
     index === undefined ||
     (change !== 0 && change !== 1) ||
@@ -103,38 +124,45 @@ const childAt = (b: BitcoinDerive, path: ReadonlyArray<number>): HDKey => {
   ) {
     throw new KernelError("invalid-input", "derivation path is not this account's");
   }
-  const child = b.accountNode.deriveChild(change).deriveChild(index);
-  b.children.push(child);
+  const ctx = contextFor(b, purpose);
+  const child = ctx.accountNode.deriveChild(change).deriveChild(index);
+  ctx.children.push(child);
   return child;
 };
 
 /**
- * Ownership check for one `request.sign` input: the derivation entry must be this account's, the
- * claimed pubkey the derived child's, and the prevout script (witnessUtxo, or nonWitnessUtxo for
- * P2PKH, plus redeemScript for P2SH-P2WPKH) the script of that key.
+ * Ownership check for one `request.sign` entry: under the entry's own template, the derivation
+ * entry must be this account's, the claimed pubkey the derived child's, and the prevout script
+ * (witnessUtxo, or nonWitnessUtxo for P2PKH, plus redeemScript for P2SH-P2WPKH) the script of that
+ * key. A template that disagrees with the input's script type fails the path or script check.
  */
 const bitcoinInput = (
   b: BitcoinDerive,
   tx: Transaction,
-  idx: number,
+  entry: { readonly index: number; readonly template: string },
 ): { index: number; privateKey: Uint8Array } => {
+  const purpose = BTC_PURPOSE[entry.template];
+  if (purpose === undefined) {
+    throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
+  }
+  const { index: idx } = entry;
   const input = tx.getInput(idx);
-  const entry = derivationOf(input, b.master.fingerprint, b.purpose);
-  if (entry === undefined) {
+  const der = derivationOf(input, b.master.fingerprint, purpose);
+  if (der === undefined) {
     throw new KernelError("invalid-input", `input ${idx}: derivation entry is not this account's`);
   }
-  const child = childAt(b, entry.path);
+  const child = childAt(b, purpose, der.path);
   const pub = child.publicKey;
   const priv = child.privateKey;
   if (pub === null || priv === null) {
     throw new KernelError("integrity", "no key at derivation path");
   }
-  if (!deepEqual(entry.pubkey, expectedPub(b.purpose, pub))) {
+  if (!deepEqual(der.pubkey, expectedPub(purpose, pub))) {
     throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
   }
   // bip84/bip49 spend via witnessUtxo; bip44 (P2PKH) proves the
   // prevout via nonWitnessUtxo — the PSBT must carry the matching tx.
-  if (b.purpose === 44) {
+  if (purpose === 44) {
     if (input.nonWitnessUtxo === undefined) {
       throw new KernelError("invalid-input", `input ${idx}: P2PKH spend requires nonWitnessUtxo`);
     }
@@ -143,7 +171,7 @@ const bitcoinInput = (
       readonly script?: Uint8Array;
     }>;
     const prevScript = vout === undefined ? undefined : outs[vout]?.script;
-    if (prevScript === undefined || !deepEqual(prevScript, expectedScript(b.purpose, pub))) {
+    if (prevScript === undefined || !deepEqual(prevScript, expectedScript(purpose, pub))) {
       throw new KernelError(
         "invalid-input",
         `input ${idx}: nonWitnessUtxo prevout is not this key's`,
@@ -151,11 +179,11 @@ const bitcoinInput = (
     }
   } else {
     const prevout = input.witnessUtxo;
-    if (prevout === undefined || !deepEqual(prevout.script, expectedScript(b.purpose, pub))) {
+    if (prevout === undefined || !deepEqual(prevout.script, expectedScript(purpose, pub))) {
       throw new KernelError("invalid-input", `input ${idx}: prevout script is not this key's`);
     }
     if (
-      b.purpose === 49 &&
+      purpose === 49 &&
       (input.redeemScript === undefined || !deepEqual(input.redeemScript, p2wpkh(pub).script))
     ) {
       throw new KernelError("invalid-input", `input ${idx}: redeemScript is not this key's`);
@@ -164,7 +192,12 @@ const bitcoinInput = (
   return { index: idx, privateKey: priv };
 };
 
-/** Output binding: the scripts of outputs that look like this account's (its change addresses). */
+/**
+ * Output binding, independent of which templates sign inputs: an output is this group's own when it
+ * carries a derivation entry with our fingerprint — tap entries only for bip86, bip32 entries for
+ * 44/49/84 — whose path is a valid `m/purpose'/coin'/group'/{0,1}/i` of this group and whose script
+ * equals that key's script for the purpose. Failures just mean "not own".
+ */
 const bitcoinOwnScripts = (b: BitcoinDerive, tx: Transaction): Set<string> => {
   const ownScripts = new Set<string>();
   for (let i = 0; i < tx.outputsLength; i++) {
@@ -172,18 +205,20 @@ const bitcoinOwnScripts = (b: BitcoinDerive, tx: Transaction): Set<string> => {
     if (output.script === undefined) {
       continue;
     }
-    const entry = derivationOf(output, b.master.fingerprint, b.purpose);
-    if (entry === undefined) {
-      continue;
-    }
-    try {
-      const child = childAt(b, entry.path);
-      const pub = child.publicKey;
-      if (pub !== null && deepEqual(output.script, expectedScript(b.purpose, pub))) {
-        ownScripts.add(hex(output.script));
+    for (const purpose of PURPOSES) {
+      const entry = derivationOf(output, b.master.fingerprint, purpose);
+      if (entry === undefined) {
+        continue;
       }
-    } catch {
-      continue;
+      try {
+        const child = childAt(b, purpose, entry.path);
+        const pub = child.publicKey;
+        if (pub !== null && deepEqual(output.script, expectedScript(purpose, pub))) {
+          ownScripts.add(hex(output.script));
+        }
+      } catch {
+        continue;
+      }
     }
   }
   return ownScripts;
@@ -197,7 +232,7 @@ const executeBitcoinPsbt = (
   intentOnly: boolean,
 ): ExecuteResult => {
   const tx = Transaction.fromPSBT(request.psbt);
-  const inputs = request.sign.map((idx) => bitcoinInput(b, tx, idx));
+  const inputs = request.sign.map((entry) => bitcoinInput(b, tx, entry));
   const ownScripts = bitcoinOwnScripts(b, tx);
   let normalized;
   try {
@@ -226,17 +261,18 @@ const executeBitcoinPsbt = (
 /** The message path: the declared change/index must derive this address, then normalize/sign. */
 const executeBitcoinMessage = (
   b: BitcoinDerive,
+  purpose: number,
   request: Extract<BitcoinRequest, { kind: "bitcoin.message" }>,
   random: (len: number) => Uint8Array,
   intentOnly: boolean,
 ): ExecuteResult => {
-  if (request.format === "legacy" && b.account.template !== "btc.bip44") {
+  if (request.format === "legacy" && purpose !== 44) {
     throw new KernelError("unsupported", "legacy message format is btc.bip44-only");
   }
-  const child = childAt(b, [
-    b.purpose + b.hardened,
+  const child = childAt(b, purpose, [
+    purpose + b.hardened,
     b.coinType + b.hardened,
-    b.account.groupIndex + b.hardened,
+    b.groupIndex + b.hardened,
     request.change,
     request.index,
   ]);
@@ -246,11 +282,11 @@ const executeBitcoinMessage = (
     throw new KernelError("integrity", "no key at derivation path");
   }
   const derived =
-    b.purpose === 86
+    purpose === 86
       ? p2tr(pub.slice(1), undefined, b.net.params).address
-      : b.purpose === 49
+      : purpose === 49
         ? p2sh(p2wpkh(pub, b.net.params), b.net.params).address
-        : b.purpose === 44
+        : purpose === 44
           ? p2pkh(pub, b.net.params).address
           : p2wpkh(pub, b.net.params).address;
   if (derived !== request.address) {
@@ -282,40 +318,39 @@ const executeBitcoinMessage = (
 export const executeBitcoin = (
   random: (len: number) => Uint8Array,
   request: BitcoinRequest,
-  account: HdAccount,
+  account: { readonly groupIndex: number },
   seed: Uint8Array,
   intentOnly: boolean,
 ): ExecuteResult => {
   const net = bitcoinNetwork(request.network);
   const master = HDKey.fromMasterSeed(seed, net.bip32);
+  const b: BitcoinDerive = {
+    master,
+    purposes: new Map(),
+    coinType: net.coinType,
+    hardened: 0x80000000,
+    groupIndex: account.groupIndex,
+    net,
+  };
   try {
-    const purpose = BTC_PURPOSE[account.template] ?? 84;
-    const { coinType } = net;
-    const hardened = 0x80000000;
-    const accountNode = master.derive(`m/${purpose}'/${coinType}'/${account.groupIndex}'`);
-    const children: HDKey[] = [];
-    const b: BitcoinDerive = {
-      master,
-      accountNode,
-      children,
-      purpose,
-      coinType,
-      hardened,
-      account,
-      net,
-    };
-    try {
-      if (request.kind === "bitcoin.psbt") {
-        return executeBitcoinPsbt(b, request, random, intentOnly);
-      }
-      return executeBitcoinMessage(b, request, random, intentOnly);
-    } finally {
-      for (const child of children) {
+    if (request.kind === "bitcoin.psbt") {
+      return executeBitcoinPsbt(b, request, random, intentOnly);
+    }
+    if (request.account.kind !== "hd") {
+      throw new KernelError("unsupported", "imported accounts are not yet supported");
+    }
+    const purpose = BTC_PURPOSE[request.account.template];
+    if (purpose === undefined) {
+      throw new KernelError("invalid-input", "account template is not a bitcoin template");
+    }
+    return executeBitcoinMessage(b, purpose, request, random, intentOnly);
+  } finally {
+    for (const ctx of b.purposes.values()) {
+      for (const child of ctx.children) {
         child.wipePrivateData();
       }
-      accountNode.wipePrivateData();
+      ctx.accountNode.wipePrivateData();
     }
-  } finally {
     master.wipePrivateData();
   }
 };
