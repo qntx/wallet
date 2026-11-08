@@ -47,6 +47,7 @@ export type RiskFinding = {
     | "safe-gas-refund"
     | "bitcoin-sighash-single"
     | "bitcoin-inscription-input"
+    | "stake-authority"
     | "blind-signing";
   readonly level: "warning" | "danger";
 };
@@ -88,6 +89,9 @@ export function assessApprovals(
       if (change.approved) {
         found.set("collection-approval", { code: "collection-approval", level: "danger" });
       }
+    } else if (change.kind === "stake-authority") {
+      /* The decoder only emits this for a role handed to a key other than the signer. */
+      found.set("stake-authority", { code: "stake-authority", level: "danger" });
     } else if (change.change !== "decrease" && change.unlimited) {
       found.set("unlimited-approval", { code: "unlimited-approval", level: "warning" });
     }

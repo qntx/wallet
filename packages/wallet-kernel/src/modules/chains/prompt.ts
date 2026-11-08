@@ -9,6 +9,7 @@ import type {
   AssetAmount,
   DisplayIntent,
   IntentSummary,
+  StakeAction,
 } from "@qntx/wallet-chains";
 
 import type { KeystorePrompt } from "../../platform.ts";
@@ -25,7 +26,10 @@ export type PromptIntent = Pick<
   | "message"
   | "delegation"
   | "minimumReceived"
-> & { readonly warnings?: DisplayIntent["warnings"] };
+> & {
+  readonly warnings?: DisplayIntent["warnings"];
+  readonly staking?: DisplayIntent["staking"];
+};
 
 /** Off-chain messages carry no decodable value flow. */
 export const MESSAGE_INTENT: PromptIntent = {
@@ -76,6 +80,9 @@ type Catalog = {
   readonly sighashSingle: string;
   readonly delegateTo: (name: string, version: string) => string;
   readonly revokeDelegation: string;
+  readonly stakeLine: (action: StakeAction) => string;
+  readonly stakeAuthority: (account: string, role: string, authority: string) => string;
+  readonly stakeRole: Readonly<Record<"staker" | "withdrawer", string>>;
 };
 
 const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
@@ -88,6 +95,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
       message: "确认签名",
       authorization: "确认账户授权",
       batch: "确认批量交易",
+      stake: "确认质押",
     },
     blindTitle: "确认盲签",
     blindDescription: "签署无法显示为文字的数据",
@@ -110,6 +118,17 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
     delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
     revokeDelegation: "撤销此账户的合约委托",
+    stakeRole: { staker: "质押", withdrawer: "提取" },
+    stakeAuthority: (account, role, authority) =>
+      `将质押账户 ${account} 的${role}权限交给 ${authority}`,
+    stakeLine: (a) =>
+      a.kind === "create"
+        ? `创建质押账户 ${a.account}，存入 ${a.lamports} lamports`
+        : a.kind === "delegate"
+          ? `委托质押账户 ${a.account} 给验证者 ${a.validator}`
+          : a.kind === "deactivate"
+            ? `解除质押 ${a.account}`
+            : `从 ${a.account} 提取 ${a.lamports} lamports 到 ${a.to}`,
   },
   en: {
     titles: {
@@ -120,6 +139,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
       message: "Confirm signature",
       authorization: "Confirm account authorization",
       batch: "Confirm batch",
+      stake: "Confirm staking",
     },
     blindTitle: "Confirm blind signing",
     blindDescription: "Sign data that cannot be shown as text",
@@ -144,6 +164,17 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     delegateTo: (name, version) =>
       `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
     revokeDelegation: "Revoke this account's contract delegation",
+    stakeRole: { staker: "staker", withdrawer: "withdrawer" },
+    stakeAuthority: (account, role, authority) =>
+      `Give ${authority} the ${role} authority over stake account ${account}`,
+    stakeLine: (a) =>
+      a.kind === "create"
+        ? `Create stake account ${a.account} with ${a.lamports} lamports`
+        : a.kind === "delegate"
+          ? `Delegate stake account ${a.account} to validator ${a.validator}`
+          : a.kind === "deactivate"
+            ? `Deactivate stake ${a.account}`
+            : `Withdraw ${a.lamports} lamports from ${a.account} to ${a.to}`,
   },
 };
 
@@ -171,6 +202,9 @@ function utcDate(seconds: number): string {
 }
 
 function approvalLine(catalog: Catalog, change: ApprovalChange): string {
+  if (change.kind === "stake-authority") {
+    return catalog.stakeAuthority(change.account, catalog.stakeRole[change.role], change.authority);
+  }
   if (change.kind === "operator") {
     return change.approved
       ? catalog.operatorAllow(change.spender, change.asset)
@@ -229,6 +263,7 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   const lines = [
     ...delegation,
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
+    ...(intent.staking ?? []).map((action) => catalog.stakeLine(action)),
     ...(intent.minimumReceived ?? []).map((entry) =>
       catalog.receiveMin(formatAmount(entry.amount), entry.to),
     ),

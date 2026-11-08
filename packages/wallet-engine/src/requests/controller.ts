@@ -1001,8 +1001,11 @@ export class RequestController extends Controller<RequestControllerState> {
         },
         checks: [],
         risk: mergeRisk(
-          this.signInRisk(signIn, input.origin, input.account.address, "solana"),
-          message?.kind === "bytes" ? this.blindRisk(input.account) : [],
+          mergeRisk(
+            this.signInRisk(signIn, input.origin, input.account.address, "solana"),
+            message?.kind === "bytes" ? this.blindRisk(input.account) : [],
+          ),
+          intents.flatMap((intent) => ("approvals" in intent ? assessApprovals(intent) : [])),
         ),
         run: {
           factor: "required",

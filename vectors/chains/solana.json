@@ -59,5 +59,81 @@
   "networks": [
     "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"
+  ],
+  "stake": [
+    {
+      "name": "create-delegate",
+      "message": "010004060000000000000000000000000000000000000000000000000000000000000001dd0749bf517256a242fc0d97592db424a4c14cb645815da7a1b5c08b49b03801000000000000000000000000000000000000000000000000000000000000000009090909090909090909090909090909090909090909090909090909090909090306466fe5211732ffecadba72c39be7bc8ce5bbc5f7126b2c439b3a4000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000000000000000000000000000000000000000000000000000000000000000000000504000502400d0300040009030100000000000000020200016303000000000000000000000000000000000000000000000000000000000000000000000107000000000000007374616b653a300094357700000000c80000000000000006a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000005010174000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000005030103000402000000",
+      "expected": {
+        "summary": "stake",
+        "verifiability": "full",
+        "staking": [
+          {
+            "kind": "create",
+            "account": "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4",
+            "lamports": "2000000000"
+          },
+          {
+            "kind": "delegate",
+            "account": "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4",
+            "validator": "cGfHiC6Kgg3FpFZvgwGcswsCRtp4aBP2fzuXRQPizuN"
+          }
+        ],
+        "outflows": [
+          {
+            "to": "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4",
+            "amount": {
+              "asset": "lamports",
+              "amount": "2000000000"
+            },
+            "verified": true
+          }
+        ],
+        "approvals": []
+      }
+    },
+    {
+      "name": "deactivate",
+      "message": "010001030000000000000000000000000000000000000000000000000000000000000001dd0749bf517256a242fc0d97592db424a4c14cb645815da7a1b5c08b49b0380106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc000000000000000000000000000000000000000000000000000000000000000000000000001020201000405000000",
+      "expected": {
+        "summary": "stake",
+        "verifiability": "full",
+        "staking": [
+          {
+            "kind": "deactivate",
+            "account": "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4"
+          }
+        ],
+        "outflows": [],
+        "approvals": []
+      }
+    },
+    {
+      "name": "withdraw-other",
+      "message": "010001040000000000000000000000000000000000000000000000000000000000000001c6fa7af3bedbad3a3d65f36aabc97431b1bbe4c2d2f6e0e47ca60203452f5d61dd0749bf517256a242fc0d97592db424a4c14cb645815da7a1b5c08b49b0380106a1d8179137542a983437bdfe2a7ab2557f535c8a78722b68a49dc00000000000000000000000000000000000000000000000000000000000000000000000000103030201000c040000000065cd1d00000000",
+      "expected": {
+        "summary": "stake",
+        "verifiability": "full",
+        "staking": [
+          {
+            "kind": "withdraw",
+            "account": "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4",
+            "to": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "lamports": "500000000"
+          }
+        ],
+        "outflows": [
+          {
+            "to": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+            "amount": {
+              "asset": "lamports",
+              "amount": "500000000"
+            },
+            "verified": true
+          }
+        ],
+        "approvals": []
+      }
+    }
   ]
 }

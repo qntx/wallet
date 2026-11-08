@@ -142,7 +142,8 @@ export type IntentSummary =
   | "swap"
   | "message"
   | "authorization"
-  | "batch";
+  | "batch"
+  | "stake";
 
 export type AssetAmount = {
   readonly asset: string;
@@ -188,6 +189,31 @@ export type ApprovalChange =
       /** `false` revokes. */
       readonly approved: boolean;
       readonly verified: false;
+    }
+  | {
+      /**
+       * A Solana stake account's staker or withdrawer role handed to a key other than the signer —
+       * by an `Authorize`/`AuthorizeChecked` instruction, or by `Initialize` naming a non-signer.
+       */
+      readonly kind: "stake-authority";
+      /** The stake account the role applies to. */
+      readonly account: string;
+      readonly role: "staker" | "withdrawer";
+      /** The key receiving the role. */
+      readonly authority: string;
+      readonly verified: false;
+    };
+
+/** One Solana staking operation shown on the signing surface. */
+export type StakeAction =
+  | { readonly kind: "create"; readonly account: string; readonly lamports: string }
+  | { readonly kind: "delegate"; readonly account: string; readonly validator: string }
+  | { readonly kind: "deactivate"; readonly account: string }
+  | {
+      readonly kind: "withdraw";
+      readonly account: string;
+      readonly to: string;
+      readonly lamports: string;
     };
 
 export type IntentWarning = {
@@ -281,6 +307,11 @@ export type DisplayIntent = {
    * `max`; not decodable from the transaction, so the kernel's own decode never sets it.
    */
   readonly fee: { readonly max: AssetAmount; readonly l1Data?: AssetAmount } | undefined;
+  /**
+   * Recognized Solana stake operations — create, delegate, deactivate, withdraw — one per
+   * instruction, in order. Present only when non-empty.
+   */
+  readonly staking?: ReadonlyArray<StakeAction>;
   readonly warnings: ReadonlyArray<IntentWarning>;
   /** What a message request signs; absent for transactions. */
   readonly message?: MessageContent;

@@ -4,13 +4,17 @@ import type {
   ApprovalChange,
   AssetFlow,
   DisplayIntent,
+  IntentWarning,
   SignRequest,
+  StakeAction,
   Verifiability,
 } from "../index.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { PROGRAM_IDS } from "./ids.ts";
 import { parseCompiledMessage, resolveAccountIndex } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
+import { decodeStakeCreate, decodeStakeIx } from "./stake.ts";
+import type { StakeCreate, StakeIx } from "./stake.ts";
 import { lookupSolanaToken, solanaTokenTable } from "./tokens.ts";
 import type { SolanaTokenTable } from "./tokens.ts";
 
@@ -22,6 +26,7 @@ const u64le = (data: Uint8Array, offset: number): bigint => u64.decode(data, off
 type IxCall = {
   readonly kind:
     | "system-transfer"
+    | "system-create"
     | "cu-limit"
     | "cu-price"
     | "ata-create"
@@ -36,6 +41,10 @@ type IxCall = {
   readonly mint?: string | undefined;
   readonly units?: number | undefined;
   readonly microLamports?: bigint | undefined;
+  /** The instruction's source account — the transfer/create funder, not the fee payer. */
+  readonly from?: string | undefined;
+  /** A recognized staking instruction: a system create-account or a stake-program op. */
+  readonly stake?: StakeIx | StakeCreate | undefined;
 };
 
 /**
@@ -53,9 +62,14 @@ const classifyIx = (
     if (data.length === 12 && u32le(data, 0) === 2) {
       return {
         kind: "system-transfer",
+        from: resolveAccountIndex(parsed, ix.accountIndices[0] ?? 0, lookups),
         to: resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups),
         amount: u64le(data, 4),
       };
+    }
+    const create = decodeStakeCreate(parsed, ix, lookups);
+    if (create !== undefined && create !== "other") {
+      return { kind: "system-create", stake: create };
     }
     return { kind: "other" };
   }
@@ -97,17 +111,20 @@ const classifyIx = (
     return { kind: "other" };
   }
   if (program === PROGRAM_IDS.stake) {
-    return { kind: "stake" };
+    const stake = decodeStakeIx(parsed, ix, lookups);
+    return stake === undefined ? { kind: "other" } : { kind: "stake", stake };
   }
   return { kind: "other" };
 };
 
 const FULL_KINDS = new Set([
   "system-transfer",
+  "system-create",
   "cu-limit",
   "cu-price",
   "ata-create",
   "ata-create-idempotent",
+  "stake",
 ]);
 
 const classify = (
@@ -124,7 +141,7 @@ const classify = (
     if (call.kind === "other") {
       return "opaque";
     }
-    if (call.kind === "token-approve" || call.kind === "stake") {
+    if (call.kind === "token-approve") {
       allFull = false;
     }
     if (
@@ -136,8 +153,7 @@ const classify = (
     if (
       !FULL_KINDS.has(call.kind) &&
       call.kind !== "token-transfer-checked" &&
-      call.kind !== "token-approve" &&
-      call.kind !== "stake"
+      call.kind !== "token-approve"
     ) {
       return "opaque";
     }
@@ -172,18 +188,21 @@ const decodeTransaction = (
   const verifiability = classify(parsed, calls, request.network, table);
   const outflows: AssetFlow[] = [];
   const approvals: ApprovalChange[] = [];
+  const staking: StakeAction[] = [];
+  const warnings: IntentWarning[] = [];
+  let otherTransfer = false;
   for (const call of calls) {
-    if (call.kind === "system-transfer" && call.to !== undefined) {
-      const [source] = parsed.staticAccounts;
-      if (source === signer) {
-        outflows.push({
-          to: call.to,
-          amount: { asset: SOLANA_NATIVE_ASSET, amount: (call.amount ?? 0n).toString(10) },
-          verified: true,
-        });
-      }
+    if (call.kind === "system-transfer" && call.to !== undefined && call.from === signer) {
+      /* The source is the instruction's first account — a second signer funds its own transfer. */
+      otherTransfer = true;
+      outflows.push({
+        to: call.to,
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: (call.amount ?? 0n).toString(10) },
+        verified: true,
+      });
     }
     if (call.kind === "token-transfer-checked") {
+      otherTransfer = true;
       const token = lookupSolanaToken(table, request.network, call.mint ?? "");
       outflows.push({
         to: call.to ?? "",
@@ -210,19 +229,108 @@ const decodeTransaction = (
         verified: token !== undefined,
       });
     }
+    const { stake } = call;
+    if (stake !== undefined) {
+      switch (stake.kind) {
+        case "create":
+          staking.push({
+            kind: "create",
+            account: stake.account,
+            lamports: stake.lamports.toString(10),
+          });
+          if (stake.from === signer) {
+            outflows.push({
+              to: stake.account,
+              amount: { asset: SOLANA_NATIVE_ASSET, amount: stake.lamports.toString(10) },
+              verified: true,
+            });
+          }
+          break;
+        case "initialize":
+        case "initialize-checked":
+          if (stake.staker !== signer) {
+            approvals.push({
+              kind: "stake-authority",
+              account: stake.account,
+              role: "staker",
+              authority: stake.staker,
+              verified: false,
+            });
+          }
+          if (stake.withdrawer !== signer) {
+            approvals.push({
+              kind: "stake-authority",
+              account: stake.account,
+              role: "withdrawer",
+              authority: stake.withdrawer,
+              verified: false,
+            });
+          }
+          if (stake.kind === "initialize" && stake.lockup) {
+            warnings.push({
+              kind: "stake-lockup",
+              message: "the stake account is locked — funds cannot move until the lockup expires",
+            });
+          }
+          break;
+        case "delegate":
+          staking.push({ kind: "delegate", account: stake.account, validator: stake.validator });
+          break;
+        case "deactivate":
+          staking.push({ kind: "deactivate", account: stake.account });
+          break;
+        case "withdraw":
+          staking.push({
+            kind: "withdraw",
+            account: stake.account,
+            to: stake.to,
+            lamports: stake.lamports.toString(10),
+          });
+          if (stake.to !== signer) {
+            outflows.push({
+              to: stake.to,
+              amount: {
+                asset: SOLANA_NATIVE_ASSET,
+                amount: stake.lamports.toString(10),
+              },
+              verified: true,
+            });
+          }
+          break;
+        case "authorize":
+          if (stake.authority !== signer) {
+            approvals.push({
+              kind: "stake-authority",
+              account: stake.account,
+              role: stake.role,
+              authority: stake.authority,
+              verified: false,
+            });
+          }
+          break;
+      }
+    }
   }
   const fee = feeLamports(parsed, calls);
+  const summary = otherTransfer
+    ? "transfer"
+    : staking.length > 0
+      ? "stake"
+      : outflows.length > 0
+        ? "transfer"
+        : "contract-call";
   return {
     family: "solana",
     network: request.network,
-    summary: outflows.length > 0 ? "transfer" : "contract-call",
+    summary,
     outflows,
     approvals,
     fee:
       fee === undefined
         ? undefined
         : { max: { asset: SOLANA_NATIVE_ASSET, amount: fee.toString(10) } },
-    warnings: [],
+    ...(staking.length === 0 ? {} : { staking }),
+    warnings,
     verifiability,
   };
 };
