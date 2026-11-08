@@ -51,6 +51,8 @@ const METHODS: ReadonlySet<unknown> = new Set([
   "speed-up",
   "cancel",
   "cpfp",
+  "evm-delegation",
+  "evm-batch",
   "pay",
   "zap",
   "evm-sign",

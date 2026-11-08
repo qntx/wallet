@@ -1,7 +1,16 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
 import { isAddress, isHex, parseTransaction } from "viem";
 
-import { EVM_NATIVE_ASSET, checksumEvmAddress, decodeEvm } from "@qntx/wallet-chains/evm";
+import { ChainError } from "@qntx/wallet-chains";
+import type { IntentWarning } from "@qntx/wallet-chains";
+import {
+  EVM_DELEGATOR,
+  EVM_DELEGATION_PREFIX,
+  EVM_NATIVE_ASSET,
+  checksumEvmAddress,
+  decodeEvm,
+  encodeBatchExecute,
+} from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { EvmChainAdapter } from "../chains/evm.ts";
@@ -15,9 +24,11 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
-import { errorMessage, newId, replacementStaleReason } from "./route.ts";
+import { accountAddress, errorMessage, newId, replacementStaleReason } from "./route.ts";
 import type {
   ChainApis,
+  ChainRequestInput,
+  DelegationStatus,
   DisplayIntent,
   PrepareParams,
   PreparedRequest,
@@ -45,8 +56,23 @@ type Watch = {
 
 const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
+export type EvmInternalInput = Extract<
+  ChainRequestInput,
+  { readonly method: "evm-delegation" | "evm-batch" }
+>;
+
 export type EvmRoute = {
   readonly prepare: (ctx: RouteContext, params: PrepareParams) => Promise<PreparedRequest>;
+  /** The account's 7702 delegation state; `supported` follows the registry. */
+  readonly delegationState: (
+    ctx: RouteContext,
+    network: string,
+    from: string,
+  ) => Promise<DelegationStatus>;
+  readonly prepareEvmInternal: (
+    ctx: RouteContext,
+    input: EvmInternalInput,
+  ) => Promise<PreparedRequest>;
   readonly prepareCall: (
     ctx: RouteContext,
     request: {
@@ -123,6 +149,23 @@ const rebuild = (
   if (parsed.to === undefined || parsed.to === null || parsed.gas === undefined) {
     throw new Error("build record is incomplete");
   }
+  const list = parsed.authorizationList;
+  if (list !== undefined && list.length > 1) {
+    throw new Error("build record authorization is unexpected");
+  }
+  let authorization: { readonly address: string } | undefined;
+  const auth = list?.[0];
+  if (auth !== undefined) {
+    const address = checksumEvmAddress(auth.address);
+    if (
+      (address !== EVM_DELEGATOR.address &&
+        address !== "0x0000000000000000000000000000000000000000") ||
+      BigInt(auth.nonce) !== BigInt(parsed.nonce + 1)
+    ) {
+      throw new Error("build record authorization is unexpected");
+    }
+    authorization = { address };
+  }
   return {
     family: "evm",
     network: old.network,
@@ -139,6 +182,7 @@ const rebuild = (
     ...("maxPriorityFeePerGas" in parsed && parsed.maxPriorityFeePerGas !== undefined
       ? { maxPriorityFeePerGas: parsed.maxPriorityFeePerGas }
       : {}),
+    ...(authorization === undefined ? {} : { authorization }),
   };
 };
 
@@ -153,6 +197,26 @@ const sameNonce = (ctx: RouteContext, tx: TrackedTransaction, from: string): Tra
       t.hash !== undefined &&
       t.evm?.from.toLowerCase() === from.toLowerCase(),
   );
+
+const evmApis = (ctx: RouteContext): ChainApis => ctx.options.chains ?? chains(ctx.options.wallet);
+
+/** The signer's EVM address for an HD account; throws when the account is imported or has none. */
+const resolveFrom = async (
+  ctx: RouteContext,
+  account: PrepareParams["account"],
+  network: string,
+): Promise<string> => {
+  if (account.kind !== "hd") {
+    throw new Error("imported accounts are not yet supported");
+  }
+  const evmAccount = await evmApis(ctx).account({
+    walletId: account.walletId,
+    groupIndex: account.groupIndex,
+    template: "evm.bip44",
+    network,
+  });
+  return accountAddress(evmAccount);
+};
 
 const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent =>
   l1 === undefined || intent.fee === undefined
@@ -171,6 +235,8 @@ export const createEvmRoute = (): EvmRoute => {
   type PrepareSpec = {
     readonly account: PrepareParams["account"];
     readonly network: string;
+    /** The resolved signer address; each path looks the account up exactly once. */
+    readonly from: string;
     readonly intent: BuildIntent;
     readonly fee: PrepareParams["fee"];
     /** Native value moved; the worst-case fee reaching it is flagged. */
@@ -210,7 +276,7 @@ export const createEvmRoute = (): EvmRoute => {
   };
 
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
-    const { account, network, fee } = spec;
+    const { account, network, fee, from } = spec;
     const { networks } = ctx.options;
     if (account.kind !== "hd") {
       throw new Error("imported accounts are not yet supported");
@@ -218,14 +284,7 @@ export const createEvmRoute = (): EvmRoute => {
     const info = networks.info(network);
     const client = networks.client(network);
     const independent = networks.independentClient(network);
-    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const evmAccount = await apis.account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "evm.bip44",
-      network,
-    });
-    const from = "address" in evmAccount ? evmAccount.address : "";
+    const apis = evmApis(ctx);
     const flags: Array<RequestCheckCode | undefined> = [
       independent.kind === "unavailable" ? "reads-unverified" : undefined,
     ];
@@ -284,12 +343,17 @@ export const createEvmRoute = (): EvmRoute => {
     const intent = withL1Fee(decodeEvm(request, from), l1);
     const txId = newId(ctx.options.random);
     const simulated = { to: feed.to, value: feed.value, data: feed.data };
+    const delegatedCode =
+      feed.authorization?.address === EVM_DELEGATOR.address
+        ? `${EVM_DELEGATION_PREFIX}${EVM_DELEGATOR.address.slice(2)}`
+        : undefined;
     const simulation = await evm.simulate(
       client,
       info.chainId,
       from,
       simulated,
       ctx.options.setTimer,
+      delegatedCode,
     );
 
     const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
@@ -330,13 +394,129 @@ export const createEvmRoute = (): EvmRoute => {
       checks: collectChecks(flags),
       simulation,
       resimulate: async () =>
-        evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer),
+        evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer, delegatedCode),
       staleReason: () =>
         evm.nonceConsumed(network, from, unsigned.nonce)
           ? "nonce already used by a newer transaction — start over"
           : undefined,
       submit,
       release: () => undefined,
+    };
+  };
+
+  /**
+   * The shared 7702 precondition: the network supports it, both endpoints agree on the account's
+   * delegation state and both endpoints serve a delegator whose runtime code hashes to the registry
+   * value. An unavailable independent endpoint degrades to `reads-unverified`.
+   */
+  const delegationState = async (
+    ctx: RouteContext,
+    network: string,
+    from: string,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<Awaited<ReturnType<EvmChainAdapter["delegation"]>>> => {
+    const { networks } = ctx.options;
+    const info = networks.info(network);
+    if (info.delegatorCodeHash === undefined) {
+      throw new ChainError("unsupported", "network does not support EIP-7702");
+    }
+    const hash = info.delegatorCodeHash;
+    const primary = networks.client(network);
+    const independent = networks.independentClient(network);
+    const state = await evm.delegation(primary, from);
+    if (!(await evm.delegatorVerified(primary, hash))) {
+      throw new ChainError("invalid-request", "delegator contract is not what the network expects");
+    }
+    if (independent.kind === "available") {
+      const other = await evm.delegation(independent.client, from);
+      const agree =
+        state.kind === other.kind &&
+        (other.kind !== "other" || state.kind !== "other" || other.address === state.address);
+      if (!agree) {
+        throw new ChainError("invalid-request", "delegation state differs between endpoints");
+      }
+      if (!(await evm.delegatorVerified(independent.client, hash))) {
+        throw new ChainError(
+          "invalid-request",
+          "delegator contract is not what the network expects",
+        );
+      }
+    } else {
+      flags.push("reads-unverified");
+    }
+    return state;
+  };
+
+  /**
+   * `evm-delegation` (upgrade/revoke) and `evm-batch`: internal, group-scoped self-transactions —
+   * the batch upgrades the account to the delegator when it is not already delegated to it.
+   */
+  const prepareEvmInternal = async (
+    ctx: RouteContext,
+    input: EvmInternalInput,
+  ): Promise<PreparedRequest> => {
+    const { account, network, fee } = input;
+    const from = await resolveFrom(ctx, account, network);
+    const flags: Array<RequestCheckCode | undefined> = [];
+    const state = await delegationState(ctx, network, from, flags);
+    let intent: BuildIntent;
+    let warnings: ReadonlyArray<IntentWarning> = [];
+    if (input.method === "evm-delegation") {
+      if (input.action === "upgrade" && state.kind === "ours") {
+        throw new ChainError("invalid-request", "account is already delegated");
+      }
+      if (input.action === "revoke" && state.kind === "none") {
+        throw new ChainError("invalid-request", "account has no delegation to revoke");
+      }
+      intent = {
+        kind: "call",
+        to: from,
+        value: 0n,
+        data: "0x",
+        authorization: {
+          address:
+            input.action === "revoke"
+              ? "0x0000000000000000000000000000000000000000"
+              : EVM_DELEGATOR.address,
+        },
+      };
+    } else {
+      if (input.calls.length < 2) {
+        throw new ChainError("invalid-request", "a batch needs at least two calls");
+      }
+      const calls = input.calls.map((c) => ({
+        to: checksumEvmAddress(c.to),
+        value: c.value,
+        data: c.data,
+      }));
+      if (state.kind === "other") {
+        warnings = [
+          {
+            kind: "delegation-replaced",
+            message: `this batch replaces an existing delegation to ${state.address}`,
+          },
+        ];
+      }
+      intent = {
+        kind: "call",
+        to: from,
+        value: 0n,
+        data: encodeBatchExecute(calls),
+        ...(state.kind === "ours" ? {} : { authorization: { address: EVM_DELEGATOR.address } }),
+      };
+    }
+    const prepared = await prepareSpec(ctx, {
+      account,
+      network,
+      from,
+      fee,
+      intent,
+      nativeValue: undefined,
+    });
+    return {
+      ...prepared,
+      intent: { ...prepared.intent, warnings: [...prepared.intent.warnings, ...warnings] },
+      checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
     };
   };
 
@@ -351,6 +531,7 @@ export const createEvmRoute = (): EvmRoute => {
     const prepared = await prepareSpec(ctx, {
       account: params.account,
       network: params.network,
+      from: await resolveFrom(ctx, params.account, params.network),
       fee: params.fee,
       intent:
         params.token === undefined
@@ -395,9 +576,17 @@ export const createEvmRoute = (): EvmRoute => {
       throw new Error("contract creation is not supported");
     }
     const value = BigInt(tx.value);
+    const from = await resolveFrom(ctx, request.account, request.network);
+    if (tx.data !== "0x" && tx.to.toLowerCase() === from.toLowerCase()) {
+      throw new ChainError(
+        "invalid-request",
+        "dApp transactions calling your own account are refused",
+      );
+    }
     return prepareSpec(ctx, {
       account: request.account,
       network: request.network,
+      from,
       fee: "normal",
       intent: { kind: "call", to: tx.to, value, data: tx.data, minGas: BigInt(tx.gas) },
       nativeValue: value > 0n ? value : undefined,
@@ -481,6 +670,7 @@ export const createEvmRoute = (): EvmRoute => {
             value: 0n,
             data: "0x" as const,
             gas: 21000n,
+            authorization: undefined,
             ...feeFields,
           }
         : { ...original, ...feeFields };
@@ -637,5 +827,29 @@ export const createEvmRoute = (): EvmRoute => {
     return undefined;
   };
 
-  return { prepare, prepareCall, poll, prepareReplace };
+  const readDelegationState = async (
+    ctx: RouteContext,
+    network: string,
+    from: string,
+  ): Promise<DelegationStatus> => {
+    const info = ctx.options.networks.info(network);
+    if (info.delegatorCodeHash === undefined) {
+      return { supported: false, state: "none" };
+    }
+    const state = await evm.delegation(ctx.options.networks.client(network), from);
+    return {
+      supported: true,
+      state: state.kind,
+      ...(state.kind === "other" ? { address: state.address } : {}),
+    };
+  };
+
+  return {
+    prepare,
+    prepareCall,
+    delegationState: readDelegationState,
+    prepareEvmInternal,
+    poll,
+    prepareReplace,
+  };
 };

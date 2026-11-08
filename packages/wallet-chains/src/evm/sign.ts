@@ -3,12 +3,14 @@
  * must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
  * key caching; the caller wipes key bytes.
  */
+import * as Authorization from "ox/Authorization";
 import * as Hex from "ox/Hex";
 import * as PersonalMessage from "ox/PersonalMessage";
 import * as Secp256k1 from "ox/Secp256k1";
 import * as Signature from "ox/Signature";
 import * as TxEnvelopeEip1559 from "ox/TxEnvelopeEip1559";
 import * as TxEnvelopeEip2930 from "ox/TxEnvelopeEip2930";
+import * as TxEnvelopeEip7702 from "ox/TxEnvelopeEip7702";
 import * as TxEnvelopeLegacy from "ox/TxEnvelopeLegacy";
 import * as TypedData from "ox/TypedData";
 
@@ -68,6 +70,32 @@ export const signEvmTransaction = (tx: EvmTransaction, privateKey: Uint8Array): 
     };
     const signature = sign(TxEnvelopeEip2930.getSignPayload(envelope), privateKeyHex);
     return Hex.toBytes(TxEnvelopeEip2930.serialize(envelope, { signature }));
+  }
+  if (tx.type === "eip7702") {
+    const auth = {
+      chainId: tx.chainId,
+      address: hex(tx.authorization.address, "authorization.address"),
+      nonce: BigInt(tx.nonce + 1),
+    };
+    const authSignature = sign(Authorization.getSignPayload(auth), privateKeyHex);
+    const envelope = {
+      ...base,
+      type: "eip7702" as const,
+      to: hex(tx.to, "to"),
+      accessList: tx.accessList.map(accessEntry),
+      maxFeePerGas: BigInt(tx.maxFeePerGas),
+      maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+      authorizationList: [
+        {
+          ...auth,
+          r: authSignature.r,
+          s: authSignature.s,
+          yParity: authSignature.yParity ?? 0,
+        },
+      ],
+    };
+    const signature = sign(TxEnvelopeEip7702.getSignPayload(envelope), privateKeyHex);
+    return Hex.toBytes(TxEnvelopeEip7702.serialize(envelope, { signature }));
   }
   const envelope = {
     ...base,

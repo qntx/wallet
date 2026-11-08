@@ -25,7 +25,12 @@ import {
   verifyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
 } from "@qntx/wallet-chains/bitcoin";
-import { DELEGATION_MANAGER, normalizeEvm, recoverEvmSigner } from "@qntx/wallet-chains/evm";
+import {
+  DELEGATION_MANAGER,
+  EVM_DELEGATOR,
+  normalizeEvm,
+  recoverEvmSigner,
+} from "@qntx/wallet-chains/evm";
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
@@ -501,6 +506,48 @@ describe("chain.sign", () => {
     expect(delegated).toMatchObject({ err: { code: "invalid-input" } });
     const self = await callSign(h, session, td(EVM_ADDRESS));
     expect(self).toMatchObject({ err: { code: "invalid-input" } });
+  });
+
+  it("refuses eip7702 requests outside the authorization allowlist", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "evm.bip44");
+    const base = {
+      chainId: 1,
+      nonce: 0,
+      gas: "0x61a8",
+      value: "0x0",
+      data: "0x",
+      to: EVM_ADDRESS,
+      accessList: [],
+      maxFeePerGas: "0x4a817c800",
+      maxPriorityFeePerGas: "0x3b9aca00",
+    };
+    const req = async (tx: Record<string, unknown>) =>
+      callSign(h, session, {
+        kind: "evm.transaction",
+        network: "eip155:1",
+        account,
+        tx: { ...base, type: "eip7702", ...tx },
+      });
+    await expect(req({ authorization: { address: EVM_ADDRESS } })).resolves.toMatchObject({
+      err: { code: "invalid-input" },
+    });
+    expect(
+      "err" in (await req({ to: undefined, authorization: { address: EVM_DELEGATOR.address } })),
+    ).toBe(true);
+    expect(
+      "err" in
+        (await req({
+          authorization: { address: EVM_DELEGATOR.address, nonce: 3 },
+        })),
+    ).toBe(true);
+    expect(
+      "err" in
+        (await req({
+          authorization: { address: EVM_DELEGATOR.address },
+          extra: 1,
+        })),
+    ).toBe(true);
   });
 
   it("signs a solana transaction and a raw message", async () => {

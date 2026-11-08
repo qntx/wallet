@@ -6,13 +6,16 @@
  * last broadcast + 1) and is only recorded once a broadcast succeeds. Finalization uses the
  * `finalized` block tag; receipts with status 0 fail.
  */
-import { encodeFunctionData, isAddress, isHex, numberToHex, parseAbi } from "viem";
+import { encodeFunctionData, isAddress, isHex, keccak256, numberToHex, parseAbi } from "viem";
 import type { PublicClient } from "viem";
 import { readContract, simulateCalls } from "viem/actions";
 import { estimateL1Fee } from "viem/op-stack";
 
 import type { AccountRef, EvmTransaction, SignRequest } from "@qntx/wallet-chains";
+import { ChainError } from "@qntx/wallet-chains";
 import {
+  EVM_DELEGATOR,
+  EVM_DELEGATION_PREFIX,
   EVM_NATIVE_ASSET,
   checksumEvmAddress,
   evmTokenTable,
@@ -44,6 +47,8 @@ export type EvmUnsignedTransaction = {
   readonly gasPrice?: bigint;
   readonly maxFeePerGas?: bigint;
   readonly maxPriorityFeePerGas?: bigint;
+  /** Present iff the transaction carries one self-sponsored EIP-7702 authorization. */
+  readonly authorization?: { readonly address: string } | undefined;
 };
 
 export type EvmFeeQuote = {
@@ -222,6 +227,32 @@ export class EvmChainAdapter {
     this.lastNonce.set(key, Math.max(this.lastNonce.get(key) ?? nonce, nonce));
   }
 
+  /** The account's 7702 delegation state from `eth_getCode`; throws when it is not an EOA. */
+  async delegation(
+    client: PublicClient,
+    address: string,
+  ): Promise<
+    | { readonly kind: "none" }
+    | { readonly kind: "ours" }
+    | { readonly kind: "other"; readonly address: string }
+  > {
+    const code = await evmRpcHex(client, "eth_getCode", [address, "latest"]);
+    if (code === "0x") {
+      return { kind: "none" };
+    }
+    if (!code.toLowerCase().startsWith(EVM_DELEGATION_PREFIX) || code.length !== 48) {
+      throw new ChainError("unsupported", "account is not an EOA");
+    }
+    const target = checksumEvmAddress(`0x${code.slice(8)}`);
+    return target === EVM_DELEGATOR.address ? { kind: "ours" } : { kind: "other", address: target };
+  }
+
+  /** Keccak256 of the delegator's runtime code equals the expected registry hash. */
+  async delegatorVerified(client: PublicClient, expectedHash: string): Promise<boolean> {
+    const code = await evmRpcHex(client, "eth_getCode", [EVM_DELEGATOR.address, "latest"]);
+    return code !== "0x" && keccak256(checkedHex(code)) === expectedHash;
+  }
+
   /**
    * OP Stack fees charged on top of gas × gas price: the L1 data fee of the serialized transaction
    * plus the operator fee at the full gas limit (worst case).
@@ -259,12 +290,14 @@ export class EvmChainAdapter {
           readonly value: bigint;
         }
       | {
-          /** An arbitrary call from a dApp; `minGas` is its own gas figure, a floor under ours. */
+          /** An arbitrary call; `minGas` is its own gas figure, a floor under ours. */
           readonly kind: "call";
           readonly to: string;
           readonly value: bigint;
           readonly data: string;
           readonly minGas?: bigint;
+          /** A self-sponsored EIP-7702 authorization this transaction carries. */
+          readonly authorization?: { readonly address: string };
         },
     nonceOverride?: number,
   ): Promise<EvmUnsignedTransaction> {
@@ -281,14 +314,34 @@ export class EvmChainAdapter {
       : intent.kind === "call"
         ? intent.data
         : "0x";
-    const estimate = BigInt(
-      await evmRpcHex(client, "eth_estimateGas", [{ from, to, value: hex(value), data }]),
-    );
+    const authorization = intent.kind === "call" ? intent.authorization : undefined;
+    /** Estimate the call as it will run: the sender's code overridden to the delegator designator. */
+    const override =
+      authorization?.address === EVM_DELEGATOR.address
+        ? { [from]: { code: `${EVM_DELEGATION_PREFIX}${EVM_DELEGATOR.address.slice(2)}` } }
+        : undefined;
+    const params: unknown[] =
+      override === undefined
+        ? [{ from, to, value: hex(value), data }]
+        : [{ from, to, value: hex(value), data }, "latest", override];
+    const estimate =
+      BigInt(await evmRpcHex(client, "eth_estimateGas", params)) +
+      (authorization === undefined ? 0n : 25_000n);
     const scale = erc20 ? 11n : 12n;
     const buffered = (estimate * scale) / 10n + ((estimate * scale) % 10n === 0n ? 0n : 1n);
     const minGas = intent.kind === "call" ? (intent.minGas ?? 0n) : 0n;
     const gas = buffered > minGas ? buffered : minGas;
-    return { family: "evm", network, from, to, value, data, nonce, gas };
+    return {
+      family: "evm",
+      network,
+      from,
+      to,
+      value,
+      data,
+      nonce,
+      gas,
+      ...(authorization === undefined ? {} : { authorization }),
+    };
   }
 
   async estimateFee(client: PublicClient): Promise<ReadonlyArray<EvmFeeQuote>> {
@@ -362,13 +415,22 @@ export class EvmChainAdapter {
     };
     const transaction: EvmTransaction =
       tx.gasPrice === undefined
-        ? {
-            ...base,
-            type: "eip1559",
-            accessList: [],
-            maxFeePerGas: hex(tx.maxFeePerGas ?? 0n),
-            maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas ?? 0n),
-          }
+        ? tx.authorization === undefined
+          ? {
+              ...base,
+              type: "eip1559",
+              accessList: [],
+              maxFeePerGas: hex(tx.maxFeePerGas ?? 0n),
+              maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas ?? 0n),
+            }
+          : {
+              ...base,
+              type: "eip7702",
+              accessList: [],
+              maxFeePerGas: hex(tx.maxFeePerGas ?? 0n),
+              maxPriorityFeePerGas: hex(tx.maxPriorityFeePerGas ?? 0n),
+              authorization: { address: tx.authorization.address },
+            }
         : { ...base, type: "legacy", gasPrice: hex(tx.gasPrice) };
     return { kind: "evm.transaction", network: tx.network, account, tx: transaction };
   }
@@ -395,12 +457,18 @@ export class EvmChainAdapter {
     from: string,
     call: EvmSimulationCall,
     setTimer: (ms: number, fn: () => unknown) => () => void,
+    delegatedCode?: string,
   ): Promise<SimulationOutcome> {
     return boundedSimulation(async () => {
       const result = await simulateCalls(client, {
         account: checkedAddress(from),
         calls: [{ to: checkedAddress(call.to), value: call.value, data: checkedHex(call.data) }],
         traceAssetChanges: true,
+        ...(delegatedCode === undefined
+          ? {}
+          : {
+              stateOverrides: [{ address: checkedAddress(from), code: checkedHex(delegatedCode) }],
+            }),
       });
       const [first] = result.results;
       if (first?.status === "failure") {

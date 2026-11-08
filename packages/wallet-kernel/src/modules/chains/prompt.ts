@@ -17,7 +17,7 @@ import type { PromptLocale } from "../../prompts.ts";
 
 export type PromptIntent = Pick<
   DisplayIntent,
-  "summary" | "outflows" | "approvals" | "fee" | "verifiability" | "message"
+  "summary" | "outflows" | "approvals" | "fee" | "verifiability" | "message" | "delegation"
 > & { readonly warnings?: DisplayIntent["warnings"] };
 
 /** Off-chain messages carry no decodable value flow. */
@@ -65,6 +65,8 @@ type Catalog = {
   readonly operatorRevoke: (spender: string, asset: string) => string;
   readonly maxFee: (fee: string) => string;
   readonly sighashSingle: string;
+  readonly delegateTo: (name: string, version: string) => string;
+  readonly revokeDelegation: string;
 };
 
 const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
@@ -95,6 +97,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
     maxFee: (fee) => `最高手续费 ${fee}`,
     sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
+    delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
+    revokeDelegation: "撤销此账户的合约委托",
   },
   en: {
     titles: {
@@ -124,6 +128,9 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     maxFee: (fee) => `Max fee ${fee}`,
     sighashSingle:
       "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+    delegateTo: (name, version) =>
+      `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
+    revokeDelegation: "Revoke this account's contract delegation",
   },
 };
 
@@ -190,10 +197,19 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   const title = catalog.titles[intent.summary];
   const caution = intent.warnings?.some((w) => w.kind === "sighash-single-anyonecanpay") === true;
   const tail = caution ? [catalog.sighashSingle] : [];
+  const delegation =
+    intent.delegation === undefined
+      ? []
+      : [
+          intent.delegation.kind === "set"
+            ? catalog.delegateTo(intent.delegation.name, intent.delegation.version)
+            : catalog.revokeDelegation,
+        ];
   if (intent.verifiability === "opaque") {
-    return { title, description: joinLines([catalog.generic, ...tail]) };
+    return { title, description: joinLines([...delegation, catalog.generic, ...tail]) };
   }
   const lines = [
+    ...delegation,
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
     ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
