@@ -115,7 +115,7 @@ export function assessPermits(
       found.set("permit-unlimited", { code: "permit-unlimited", level: "danger" });
     }
     if (
-      (change.via === "permit2" || change.via === "allowance-holder") &&
+      change.via === "permit2" &&
       change.change === "set" &&
       change.expiration !== undefined &&
       change.expiration * 1000 > now + PERMIT_MAX_LIFETIME_MS

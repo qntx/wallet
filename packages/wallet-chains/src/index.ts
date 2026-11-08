@@ -268,14 +268,14 @@ export type DisplayIntent = {
   readonly outflows: ReadonlyArray<AssetFlow>;
   readonly approvals: ReadonlyArray<ApprovalChange>;
   /**
-   * The minimum the settlement contract enforces on-chain for a recognised swap — the
-   * `minAmountOut` the Settler requires its own balance to reach before paying the recipient, not
-   * an estimate.
+   * The minimums the settlement contracts enforce on-chain for recognised swaps — each
+   * `minAmountOut` a Settler requires its own balance to reach before paying the recipient, not an
+   * estimate. Present only when non-empty; a batch concatenates its calls' lists like the others.
    */
-  readonly minimumReceived?: {
+  readonly minimumReceived?: ReadonlyArray<{
     readonly to: string;
     readonly amount: AssetAmount;
-  };
+  }>;
   /**
    * `l1Data`: OP Stack L1 data fee plus operator fee, estimated by the engine and charged on top of
    * `max`; not decodable from the transaction, so the kernel's own decode never sets it.

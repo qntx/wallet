@@ -436,12 +436,14 @@ const decodeTransaction = (
         table,
       ),
     );
+    const minimumReceived = decoded.flatMap((d) => d.minimumReceived ?? []);
     return {
       ...intent,
       summary: "batch",
       calls: decoded,
       outflows: decoded.flatMap((d) => d.outflows),
       approvals: decoded.flatMap((d) => d.approvals),
+      ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
       verifiability: weakest(decoded),
       ...(delegation === undefined ? {} : { delegation }),
     };

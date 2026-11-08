@@ -27429,10 +27429,10 @@ zoo`.split("\n"));
 					summary: "swap",
 					outflows: [outflow],
 					approvals: [],
-					minimumReceived: {
+					minimumReceived: [{
 						to: slippage.recipient,
 						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount(slippage.buyToken, slippage.minAmountOut, chainId, table)
-					},
+					}],
 					verifiability: "partial"
 				};
 			}
@@ -27696,13 +27696,16 @@ zoo`.split("\n"));
 				value: call.value,
 				data: call.data
 			}, request.network, void 0, table));
-			return _objectSpread2(_objectSpread2({}, intent), {}, {
+			const minimumReceived = decoded.flatMap((d) => {
+				var _d$minimumReceived;
+				return (_d$minimumReceived = d.minimumReceived) !== null && _d$minimumReceived !== void 0 ? _d$minimumReceived : [];
+			});
+			return _objectSpread2(_objectSpread2(_objectSpread2({}, intent), {}, {
 				summary: "batch",
 				calls: decoded,
 				outflows: decoded.flatMap((d) => d.outflows),
-				approvals: decoded.flatMap((d) => d.approvals),
-				verifiability: weakest(decoded)
-			}, delegation === void 0 ? {} : { delegation });
+				approvals: decoded.flatMap((d) => d.approvals)
+			}, minimumReceived.length === 0 ? {} : { minimumReceived }), {}, { verifiability: weakest(decoded) }, delegation === void 0 ? {} : { delegation });
 		}
 		return _objectSpread2(_objectSpread2({}, intent), delegation === void 0 ? {} : { delegation });
 	};
@@ -29662,7 +29665,7 @@ zoo`.split("\n"));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
-		var _intent$message, _intent$warnings;
+		var _intent$message, _intent$warnings, _intent$minimumReceiv;
 		const catalog = CATALOGS$1[locale];
 		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
 			title: catalog.blindTitle,
@@ -29682,7 +29685,7 @@ zoo`.split("\n"));
 		const lines = [
 			...delegation,
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
-			...intent.minimumReceived === void 0 ? [] : [catalog.receiveMin(formatAmount(intent.minimumReceived.amount), intent.minimumReceived.to)],
+			...((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
 			...tail

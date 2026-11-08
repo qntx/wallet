@@ -201,6 +201,37 @@ describe("chain prompts", () => {
     expect(text("zh-Hans", grant)).toBe(`授权 ${SPENDER} 一次性转走 2.5 USDC 经 AllowanceHolder`);
   });
 
+  it("batch swap: the minimum received renders alongside the delegation line", () => {
+    const batch: PromptIntent = {
+      summary: "batch",
+      outflows: [
+        {
+          to: TO,
+          amount: { asset: USDC, amount: "10000000", symbol: "USDC", decimals: 6 },
+          verified: true,
+        },
+      ],
+      approvals: [],
+      minimumReceived: [
+        {
+          to: SPENDER,
+          amount: {
+            asset: "eip155:1/slip44:60",
+            amount: "70000000000000000",
+            decimals: 18,
+            symbol: "ETH",
+          },
+        },
+      ],
+      delegation: { kind: "set", delegator: TO, name: "EIP7702StatelessDeleGator", version: "1.3.0" },
+      fee: undefined,
+      verifiability: "partial",
+    };
+    expect(chainPrompt("en", batch).description).toBe(
+      `There may be other outflows\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSend 10 USDC to ${TO}\nReceive at least 0.07 ETH at ${SPENDER}`,
+    );
+  });
+
   it("swap: shows the minimum received after the outflow", () => {
     const swap: PromptIntent = {
       summary: "swap",
@@ -212,15 +243,17 @@ describe("chain prompts", () => {
         },
       ],
       approvals: [],
-      minimumReceived: {
-        to: SPENDER,
-        amount: {
-          asset: "eip155:1/slip44:60",
-          amount: "70000000000000000",
-          decimals: 18,
-          symbol: "ETH",
+      minimumReceived: [
+        {
+          to: SPENDER,
+          amount: {
+            asset: "eip155:1/slip44:60",
+            amount: "70000000000000000",
+            decimals: 18,
+            symbol: "ETH",
+          },
         },
-      },
+      ],
       fee: undefined,
       verifiability: "partial",
     };

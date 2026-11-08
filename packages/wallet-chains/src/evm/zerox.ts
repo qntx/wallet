@@ -247,12 +247,14 @@ export const decodeZeroX = (
         summary: "swap",
         outflows: [outflow],
         approvals: [],
-        minimumReceived: {
-          to: slippage.recipient,
-          amount: buyNative
-            ? nativeMinimum(slippage.minAmountOut)
-            : tokenAmount(slippage.buyToken, slippage.minAmountOut, chainId, table),
-        },
+        minimumReceived: [
+          {
+            to: slippage.recipient,
+            amount: buyNative
+              ? nativeMinimum(slippage.minAmountOut)
+              : tokenAmount(slippage.buyToken, slippage.minAmountOut, chainId, table),
+          },
+        ],
         verifiability: "partial",
       };
     }

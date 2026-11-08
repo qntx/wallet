@@ -31,13 +31,15 @@
           }
         ],
         "approvals": [],
-        "minimumReceived": {
-          "to": "0xCfaE4ADe5Ae06D1730520809c8c3DB9f6c7Fe7E1",
-          "amount": {
-            "asset": "0x19993B3Cf15c1055063468EB932F5e335A7526ea",
-            "amount": "751851842450135"
+        "minimumReceived": [
+          {
+            "to": "0xCfaE4ADe5Ae06D1730520809c8c3DB9f6c7Fe7E1",
+            "amount": {
+              "asset": "0x19993B3Cf15c1055063468EB932F5e335A7526ea",
+              "amount": "751851842450135"
+            }
           }
-        }
+        ]
       }
     },
     {
@@ -69,15 +71,17 @@
           }
         ],
         "approvals": [],
-        "minimumReceived": {
-          "to": "0xb1673a692f7f99DDEdd49c4a307B367544A3c4c2",
-          "amount": {
-            "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-            "amount": "156117721",
-            "symbol": "USDC",
-            "decimals": 6
+        "minimumReceived": [
+          {
+            "to": "0xb1673a692f7f99DDEdd49c4a307B367544A3c4c2",
+            "amount": {
+              "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+              "amount": "156117721",
+              "symbol": "USDC",
+              "decimals": 6
+            }
           }
-        }
+        ]
       }
     },
     {
@@ -109,15 +113,17 @@
           }
         ],
         "approvals": [],
-        "minimumReceived": {
-          "to": "0x09bfD5522a6E082C1Ecd6faFba78A16aBb9653A7",
-          "amount": {
-            "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
-            "amount": "131812814",
-            "symbol": "USDC",
-            "decimals": 6
+        "minimumReceived": [
+          {
+            "to": "0x09bfD5522a6E082C1Ecd6faFba78A16aBb9653A7",
+            "amount": {
+              "asset": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+              "amount": "131812814",
+              "symbol": "USDC",
+              "decimals": 6
+            }
           }
-        }
+        ]
       }
     },
     {

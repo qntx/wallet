@@ -229,14 +229,9 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
   const lines = [
     ...delegation,
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
-    ...(intent.minimumReceived === undefined
-      ? []
-      : [
-          catalog.receiveMin(
-            formatAmount(intent.minimumReceived.amount),
-            intent.minimumReceived.to,
-          ),
-        ]),
+    ...(intent.minimumReceived ?? []).map((entry) =>
+      catalog.receiveMin(formatAmount(entry.amount), entry.to),
+    ),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
     ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
     ...tail,
