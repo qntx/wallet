@@ -223,7 +223,12 @@ describe("chain prompts", () => {
           },
         },
       ],
-      delegation: { kind: "set", delegator: TO, name: "EIP7702StatelessDeleGator", version: "1.3.0" },
+      delegation: {
+        kind: "set",
+        delegator: TO,
+        name: "EIP7702StatelessDeleGator",
+        version: "1.3.0",
+      },
       fee: undefined,
       verifiability: "partial",
     };
