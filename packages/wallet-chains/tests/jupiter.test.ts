@@ -109,8 +109,7 @@ describe("jupiter decode", () => {
 });
 
 describe("resolveAccountIndex with multiple lookup tables", () => {
-  it("resolves writable-from-table-2 and readonly-from-table-1 in v0 order", async () => {
-
+  it("resolves writable-from-table-2 and readonly-from-table-1 in v0 order", () => {
     const TABLE1 = "GcUy7n96V4CLEupSJGAd2KbkR2bpmEfrBxpCzqy4Sfcr";
     const TABLE2 = "US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx";
     const W2 = "6wWVbLeHDVHvCCsLprB85jkbU1JhS9VezABT2ZZFJ5BB";
@@ -135,10 +134,7 @@ describe("resolveAccountIndex with multiple lookup tables", () => {
       },
       setTransactionMessageLifetimeUsingBlockhash(
         { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1n },
-        setTransactionMessageFeePayer(
-          address(payer),
-          createTransactionMessage({ version: 0 }),
-        ),
+        setTransactionMessageFeePayer(address(payer), createTransactionMessage({ version: 0 })),
       ),
     );
     const lookupsByTable: AddressesByLookupTableAddress = Object.fromEntries(
