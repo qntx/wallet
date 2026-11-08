@@ -26,6 +26,7 @@ import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
 import { domainChainId, parseTypedData } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
+import { decodeZeroX } from "./zerox.ts";
 
 const ERC20_TRANSFER = AbiFunction.from("function transfer(address to, uint256 amount)");
 const ERC20_APPROVE = AbiFunction.from("function approve(address spender, uint256 amount)");
@@ -204,6 +205,20 @@ const decodeCall = (
       outflows: nativeOutflow(call.value, call.to),
       fee,
       verifiability: "full",
+    };
+  }
+
+  const zeroX = decodeZeroX(chainId, call, table);
+  if (zeroX !== undefined) {
+    const { summary, outflows, approvals, verifiability, minimumReceived } = zeroX;
+    return {
+      ...base,
+      summary,
+      outflows,
+      approvals,
+      ...(minimumReceived === undefined ? {} : { minimumReceived }),
+      fee,
+      verifiability,
     };
   }
 
@@ -421,12 +436,14 @@ const decodeTransaction = (
         table,
       ),
     );
+    const minimumReceived = decoded.flatMap((d) => d.minimumReceived ?? []);
     return {
       ...intent,
       summary: "batch",
       calls: decoded,
       outflows: decoded.flatMap((d) => d.outflows),
       approvals: decoded.flatMap((d) => d.approvals),
+      ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
       verifiability: weakest(decoded),
       ...(delegation === undefined ? {} : { delegation }),
     };

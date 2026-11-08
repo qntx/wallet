@@ -176,7 +176,7 @@ export type ApprovalChange =
       readonly unlimited: boolean;
       /** Unix seconds after which the allowance lapses (Permit2), when it has one. */
       readonly expiration?: number;
-      readonly via?: "permit2";
+      readonly via?: "permit2" | "allowance-holder";
       /** The token is in the built-in table. */
       readonly verified: boolean;
     }
@@ -267,6 +267,15 @@ export type DisplayIntent = {
   readonly summary: IntentSummary;
   readonly outflows: ReadonlyArray<AssetFlow>;
   readonly approvals: ReadonlyArray<ApprovalChange>;
+  /**
+   * The minimums the settlement contracts enforce on-chain for recognised swaps — each
+   * `minAmountOut` a Settler requires its own balance to reach before paying the recipient, not an
+   * estimate. Present only when non-empty; a batch concatenates its calls' lists like the others.
+   */
+  readonly minimumReceived?: ReadonlyArray<{
+    readonly to: string;
+    readonly amount: AssetAmount;
+  }>;
   /**
    * `l1Data`: OP Stack L1 data fee plus operator fee, estimated by the engine and charged on top of
    * `max`; not decodable from the transaction, so the kernel's own decode never sets it.

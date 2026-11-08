@@ -16126,7 +16126,7 @@ zoo`.split("\n"));
 	*
 	* @throws {SiwxError} `InvalidField` `address`.
 	*/
-	function addressBytes(address) {
+	function addressBytes$1(address) {
 		if (address.length < 32 || address.length > 44) throw fieldError("address", "expected 32–44 base58 chars");
 		let bytes;
 		try {
@@ -16161,7 +16161,7 @@ zoo`.split("\n"));
 	* @throws {SiwxError} `InvalidField` `address`.
 	*/
 	function validateAddress(address) {
-		canonicalPoint(addressBytes(address));
+		canonicalPoint(addressBytes$1(address));
 	}
 	ed25519.Point.CURVE().n;
 	ed25519.Point;
@@ -26887,6 +26887,7 @@ zoo`.split("\n"));
 		]));
 	}
 	// packages/wallet-chains/dist/evm.mjs
+	init_utils$2();
 	init_objectSpread2();
 	/** The native asset id in `AssetFlow` and simulated asset changes. */
 	var EVM_NATIVE_ASSET = "native";
@@ -27279,6 +27280,178 @@ zoo`.split("\n"));
 			consideration
 		};
 	}
+	/** Chains whose AllowanceHolder + Settler deployment this decoder recognises. */
+	var ZEROX_CHAINS = /* @__PURE__ */ new Set([
+		1,
+		10,
+		56,
+		137,
+		8453,
+		999,
+		42161,
+		43114,
+		11155111
+	]);
+	var ZEROX_DEPLOYER = "0x00000000000004533Fe15556B1E086BB1A72cEae";
+	var SHIM_INIT_CODE_HASH = "0x3bf3f97f0be1e2c00023033eefeb4fc062ac552ff36778b17060d90b6764902f";
+	/** The native-token sentinel 0x uses in `exec`, and the bare zero address (same meaning). */
+	var NATIVE_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+	var ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+	var EXEC = from$2("function exec(address operator, address token, uint256 amount, address payable target, bytes data)");
+	var SETTLER_EXECUTE = from$2("function execute((address recipient, address buyToken, uint256 minAmountOut) slippage, bytes[] actions, bytes32 zid)");
+	var last20 = (hex) => `0x${hex.slice(-40)}`;
+	var addressBytes = (address) => hexToBytes$3(address.slice(2));
+	var bigIntBytes32 = (value) => hexToBytes$3(value.toString(16).padStart(64, "0"));
+	var keccakHex = (parts) => {
+		const total = parts.reduce((sum, part) => sum + part.length, 0);
+		const flat = new Uint8Array(total);
+		let offset = 0;
+		for (const part of parts) {
+			flat.set(part, offset);
+			offset += part.length;
+		}
+		return `0x${bytesToHex$4(keccak_256(flat))}`;
+	};
+	var FEATURE_TAKER = 2n;
+	/**
+	* Whether `address` is a taker-feature (2) 0x Settler on `chainId`. Settlers deploy as a CREATE2
+	* shim whose CREATE child is the contract: `salt = (feature << 128) | (chainId << 64) | nonce`,
+	* `shim = CREATE2(deployer, salt, initHash)`, `settler = CREATE(shim, 1)`. Settler is redeployed
+	* roughly monthly, so nonces 1..256 leave decades of headroom; the loop runs 512 keccaks and is
+	* only reached for an AllowanceHolder `exec`. Feature 5 (bridge) is deliberately not matched.
+	*/
+	var isZeroExSettler = (chainId, address) => {
+		const want = address.toLowerCase();
+		const deployer = addressBytes(ZEROX_DEPLOYER);
+		const initHash = hexToBytes$3(SHIM_INIT_CODE_HASH.slice(2));
+		for (let nonce = 1; nonce <= 256; nonce++) {
+			const salt = bigIntBytes32(FEATURE_TAKER * 2n ** 128n + BigInt(chainId) * 2n ** 64n + BigInt(nonce));
+			const shim = addressBytes(last20(keccakHex([
+				new Uint8Array([255]),
+				deployer,
+				salt,
+				initHash
+			])));
+			if (last20(keccakHex([
+				new Uint8Array([214, 148]),
+				shim,
+				new Uint8Array([1])
+			])) === want) return true;
+		}
+		return false;
+	};
+	/** The canonical-decoded `exec` arguments, or `undefined` (selector mismatch or non-canonical). */
+	var decodeExec = (data) => {
+		if (!data.toLowerCase().startsWith("0x2213bc0b")) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(EXEC, data);
+			if (!Array.isArray(args) || args.length !== 5) return;
+			if (encodeData$1(EXEC, args).toLowerCase() !== data.toLowerCase()) return;
+			const [operator, token, amount, target, inner] = args;
+			if (typeof operator !== "string" || typeof token !== "string" || typeof amount !== "bigint" || typeof target !== "string" || typeof inner !== "string") return;
+			return {
+				operator,
+				token,
+				amount,
+				target,
+				data: inner
+			};
+		} catch (_unused2) {
+			return;
+		}
+	};
+	var isSlippage = (value) => typeof value === "object" && value !== null && "recipient" in value && typeof value.recipient === "string" && "buyToken" in value && typeof value.buyToken === "string" && "minAmountOut" in value && typeof value.minAmountOut === "bigint";
+	/**
+	* The canonical-decoded `execute` slippage tuple, or `undefined` when the call is not a Settler
+	* execute.
+	*/
+	var decodeSettlerExecute = (data) => {
+		if (!data.toLowerCase().startsWith("0x1fff991f")) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(SETTLER_EXECUTE, data);
+			if (!Array.isArray(args) || args.length !== 3) return;
+			if (encodeData$1(SETTLER_EXECUTE, args).toLowerCase() !== data.toLowerCase()) return;
+			const [slippage] = args;
+			if (!isSlippage(slippage)) return;
+			return slippage;
+		} catch (_unused3) {
+			return;
+		}
+	};
+	var isNativeToken = (token) => token.toLowerCase() === NATIVE_SENTINEL || token.toLowerCase() === ZERO_ADDRESS;
+	var tokenAmount = (token, amount, chainId, table) => {
+		const known = lookupEvmToken(table, chainId, token);
+		return _objectSpread2({
+			asset: checksumEvmAddress(token),
+			amount: amount.toString(10)
+		}, known === void 0 ? {} : {
+			symbol: known.symbol,
+			decimals: known.decimals
+		});
+	};
+	var nativeMinimum = (amount) => ({
+		asset: EVM_NATIVE_ASSET,
+		amount: amount.toString(10)
+	});
+	/**
+	* The `DisplayIntent` for a call to AllowanceHolder `exec` on a chain this decoder covers: a swap
+	* when the operator calls the taker Settler's own `execute` (operator == target, an on-chain
+	* Settler, a canonical inner call) and a generic one-time allowance otherwise. `undefined` when the
+	* call is not to AllowanceHolder or not `exec`.
+	*/
+	var decodeZeroX = (chainId, call, table) => {
+		if (call.to === void 0 || call.to.toLowerCase() !== "0x0000000000001fF3684f28c67538d4D072C22734".toLowerCase() || !ZEROX_CHAINS.has(chainId)) return;
+		const exec = decodeExec(call.data);
+		if (exec === void 0) return;
+		const { operator, token, amount, target, data: inner } = exec;
+		const slippage = decodeSettlerExecute(inner);
+		if (operator.toLowerCase() === target.toLowerCase() && isZeroExSettler(chainId, target) && slippage !== void 0 && slippage !== void 0) {
+			let outflow;
+			if (isNativeToken(token)) {
+				if (amount === call.value && call.value > 0n) outflow = {
+					to: target,
+					amount: {
+						asset: EVM_NATIVE_ASSET,
+						amount: call.value.toString(10)
+					},
+					verified: true
+				};
+			} else if (call.value === 0n) outflow = {
+				to: target,
+				amount: tokenAmount(token, amount, chainId, table),
+				verified: lookupEvmToken(table, chainId, token) !== void 0
+			};
+			if (outflow !== void 0) {
+				const buyNative = isNativeToken(slippage.buyToken);
+				return {
+					summary: "swap",
+					outflows: [outflow],
+					approvals: [],
+					minimumReceived: [{
+						to: slippage.recipient,
+						amount: buyNative ? nativeMinimum(slippage.minAmountOut) : tokenAmount(slippage.buyToken, slippage.minAmountOut, chainId, table)
+					}],
+					verifiability: "partial"
+				};
+			}
+		}
+		const approvals = isNativeToken(token) ? [] : [allowanceChange(checksumEvmAddress(token), operator, amount, "transfer", MAX_UINT256, chainId, table, { via: "allowance-holder" })];
+		return {
+			summary: "contract-call",
+			outflows: call.value === 0n ? [] : [{
+				to: target,
+				amount: {
+					asset: EVM_NATIVE_ASSET,
+					amount: call.value.toString(10)
+				},
+				verified: true
+			}],
+			approvals,
+			verifiability: "partial"
+		};
+	};
 	var ERC20_TRANSFER = from$2("function transfer(address to, uint256 amount)");
 	var ERC20_APPROVE = from$2("function approve(address spender, uint256 amount)");
 	var ERC20_INCREASE = from$2("function increaseAllowance(address spender, uint256 amount)");
@@ -27314,7 +27487,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused2) {
+		} catch (_unused4) {
 			return;
 		}
 	};
@@ -27397,6 +27570,18 @@ zoo`.split("\n"));
 				outflows: nativeOutflow(call.value, call.to),
 				fee,
 				verifiability: "full"
+			});
+		}
+		const zeroX = decodeZeroX(chainId, call, table);
+		if (zeroX !== void 0) {
+			const { summary, outflows, approvals, verifiability, minimumReceived } = zeroX;
+			return _objectSpread2(_objectSpread2(_objectSpread2({}, base), {}, {
+				summary,
+				outflows,
+				approvals
+			}, minimumReceived === void 0 ? {} : { minimumReceived }), {}, {
+				fee,
+				verifiability
 			});
 		}
 		const transferArgs = tryCall(ERC20_TRANSFER, data);
@@ -27511,13 +27696,16 @@ zoo`.split("\n"));
 				value: call.value,
 				data: call.data
 			}, request.network, void 0, table));
-			return _objectSpread2(_objectSpread2({}, intent), {}, {
+			const minimumReceived = decoded.flatMap((d) => {
+				var _d$minimumReceived;
+				return (_d$minimumReceived = d.minimumReceived) !== null && _d$minimumReceived !== void 0 ? _d$minimumReceived : [];
+			});
+			return _objectSpread2(_objectSpread2(_objectSpread2({}, intent), {}, {
 				summary: "batch",
 				calls: decoded,
 				outflows: decoded.flatMap((d) => d.outflows),
-				approvals: decoded.flatMap((d) => d.approvals),
-				verifiability: weakest(decoded)
-			}, delegation === void 0 ? {} : { delegation });
+				approvals: decoded.flatMap((d) => d.approvals)
+			}, minimumReceived.length === 0 ? {} : { minimumReceived }), {}, { verifiability: weakest(decoded) }, delegation === void 0 ? {} : { delegation });
 		}
 		return _objectSpread2(_objectSpread2({}, intent), delegation === void 0 ? {} : { delegation });
 	};
@@ -27540,7 +27728,7 @@ zoo`.split("\n"));
 				text,
 				signIn
 			};
-		} catch (_unused3) {
+		} catch (_unused5) {
 			return {
 				kind: "bytes",
 				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
@@ -29400,6 +29588,8 @@ zoo`.split("\n"));
 			decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
 			takeOnce: (spender, amount) => `授权 ${spender} 一次性转走 ${amount}`,
 			viaPermit2: " 经 Permit2",
+			viaAllowanceHolder: " 经 AllowanceHolder",
+			receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
 			until: (date) => ` 至 ${date}（UTC）`,
 			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
 			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
@@ -29430,6 +29620,8 @@ zoo`.split("\n"));
 			decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
 			takeOnce: (spender, amount) => `Allow ${spender} to take ${amount} once`,
 			viaPermit2: " via Permit2",
+			viaAllowanceHolder: " via AllowanceHolder",
+			receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
 			until: (date) => ` until ${date} (UTC)`,
 			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
 			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
@@ -29468,12 +29660,12 @@ zoo`.split("\n"));
 		else if (change.unlimited) line = catalog.allow(change.spender, catalog.unlimited(name));
 		else if (change.amount.amount === "0") line = catalog.revoke(change.spender, name);
 		else line = catalog.allow(change.spender, formatAmount(change.amount));
-		const via = change.via === void 0 ? "" : catalog.viaPermit2;
+		const via = change.via === "permit2" ? catalog.viaPermit2 : change.via === "allowance-holder" ? catalog.viaAllowanceHolder : "";
 		const until = change.expiration === void 0 || change.expiration === 0 ? "" : catalog.until(utcDate(change.expiration));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
-		var _intent$message, _intent$warnings;
+		var _intent$message, _intent$warnings, _intent$minimumReceiv;
 		const catalog = CATALOGS$1[locale];
 		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
 			title: catalog.blindTitle,
@@ -29493,6 +29685,7 @@ zoo`.split("\n"));
 		const lines = [
 			...delegation,
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
+			...((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)),
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
 			...tail
