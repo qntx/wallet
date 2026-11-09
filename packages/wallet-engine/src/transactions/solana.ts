@@ -1,10 +1,11 @@
-import { base64 } from "@scure/base";
+import { base58, base64 } from "@scure/base";
 import { address, createAddressWithSeed } from "@solana/kit";
 
 import type { StakeAction } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
 import {
   decodeSolana,
+  MPL_CORE_PROGRAM,
   netAfterTransferFee,
   parseMintExtensions,
   PROGRAM_IDS,
@@ -552,6 +553,118 @@ export const prepareSolanaStake = async (
 };
 
 /** Returns the terminal state, `dropped` on blockhash expiry, or `undefined` to keep polling. */
+/** A `getAccountInfo` response value for a Core asset — owner + raw account bytes. */
+const coreAssetAccount = async (rpc: SolanaRpc, asset: string): Promise<Uint8Array> => {
+  const info = await rpc.call("getAccountInfo", [
+    asset,
+    { encoding: "base64", commitment: "confirmed" },
+  ]);
+  const value = obj(info)?.["value"];
+  if (value === null || value === undefined || obj(value)?.["owner"] !== MPL_CORE_PROGRAM) {
+    throw new ChainError("invalid-request", "the asset is not a Metaplex Core account");
+  }
+  const raw = arr(obj(value)?.["data"])?.[0];
+  if (typeof raw !== "string") {
+    throw new ChainError("invalid-request", "the asset account has no data");
+  }
+  return base64.decode(raw);
+};
+
+const CORE_KEY_ASSET_V1 = 1;
+const CORE_UPDATE_AUTHORITY_COLLECTION = 2;
+
+export const prepareSolanaCoreSend = async (
+  ctx: RouteContext,
+  input: Extract<ChainRequestInput, { method: "solana-core-send" }>,
+): Promise<PreparedRequest> => {
+  const { account, network, asset, to, fee } = input;
+  if (account.kind !== "hd") {
+    throw new Error("imported accounts are not yet supported");
+  }
+  const rpc = ctx.options.networks.solanaRpc(network);
+  const independent = ctx.options.networks.independentSolanaRpc(network);
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  const solAccount = await apis.account({
+    walletId: account.walletId,
+    groupIndex: account.groupIndex,
+    template: "solana.bip44-change",
+    network,
+  });
+  const from = "address" in solAccount ? solAccount.address : "";
+  const flags: Array<RequestCheckCode | undefined> = [];
+  const data = await coreAssetAccount(rpc, asset);
+  if (independent.kind === "available") {
+    try {
+      const other = await coreAssetAccount(independent.client, asset);
+      if (data.length !== other.length || !data.every((b, i) => b === other[i])) {
+        throw new ChainError("invalid-request", "the endpoints disagree on the asset account");
+      }
+    } catch (error) {
+      if (error instanceof ChainError) {
+        throw error;
+      }
+      flags.push("reads-unverified");
+    }
+  }
+  /* AssetV1 layout: key u8 at 0, owner pubkey at 1-32, updateAuthority enum at 33. */
+  if (data.length < 66 || data[0] !== CORE_KEY_ASSET_V1) {
+    throw new ChainError("invalid-request", "the account is not an mpl-core asset");
+  }
+  if (base58.encode(data.slice(1, 33)) !== from) {
+    throw new ChainError("invalid-request", "the account does not own the asset");
+  }
+  const collection =
+    data[33] === CORE_UPDATE_AUTHORITY_COLLECTION
+      ? base58.encode(data.slice(34, 66))
+      : MPL_CORE_PROGRAM;
+  const unsigned = await solana.build(rpc, network, from, {
+    kind: "instructions",
+    instructions: [
+      jupiterIx({
+        programId: MPL_CORE_PROGRAM,
+        accounts: [
+          { address: asset, signer: false, writable: true },
+          { address: collection, signer: false, writable: false },
+          { address: from, signer: true, writable: true },
+          { address: from, signer: true, writable: false },
+          { address: to, signer: false, writable: false },
+          { address: MPL_CORE_PROGRAM, signer: false, writable: false },
+          { address: MPL_CORE_PROGRAM, signer: false, writable: false },
+        ],
+        /* mpl-core IDL at c8732ac: TransferV1 disc 14, args {compressionProof: None}. */
+        data: Uint8Array.from([14, 0]),
+      }),
+    ],
+    lookupTables: [],
+  });
+  return finishPrepared(ctx, {
+    account,
+    network,
+    from,
+    fee,
+    unsigned,
+    rpc,
+    independent,
+    apis,
+    intentOf: (request) => {
+      const intent = decodeSolana(request, from);
+      const [outflow] = intent.outflows;
+      if (
+        intent.summary !== "transfer" ||
+        intent.outflows.length !== 1 ||
+        outflow === undefined ||
+        outflow.to !== to ||
+        outflow.amount.asset !== asset ||
+        outflow.amount.amount !== "1"
+      ) {
+        throw new ChainError("invalid-request", "the built transfer does not decode to the send");
+      }
+      return intent;
+    },
+    flags,
+  });
+};
+
 export const pollSolana = async (
   ctx: RouteContext,
   tx: TrackedTransaction,

@@ -97,6 +97,7 @@ export type EvmInternalInput = Extract<
       | "evm-approve"
       | "evm-swap"
       | "evm-bridge"
+      | "evm-nft-send"
       | "evm-lido";
   }
 >;
@@ -699,6 +700,75 @@ const prepareApproveIntent = async (
   };
 };
 
+/* The built call must decode back to exactly the send: one NFT outflow to the recipient
+   with the right contract, id and unit count — like the bridge's quote-term guard. */
+const guardNftCall = (
+  input: Extract<ChainRequestInput, { method: "evm-nft-send" }>,
+  from: string,
+  to: string,
+  tokenId: bigint,
+  amount: bigint,
+  data: string,
+): BuildIntent => {
+  const request: SignRequest = {
+    kind: "evm.transaction",
+    network: input.network,
+    account: input.account,
+    tx: {
+      type: "eip1559",
+      chainId: networkChainId(input.network),
+      to: input.contract,
+      value: "0x0",
+      nonce: 0,
+      gas: "0x0",
+      data,
+      accessList: [],
+      maxFeePerGas: "0x0",
+      maxPriorityFeePerGas: "0x0",
+    },
+  };
+  const intent = decodeEvm(request, from);
+  const [outflow] = intent.outflows;
+  if (
+    intent.summary !== "transfer" ||
+    intent.outflows.length !== 1 ||
+    outflow === undefined ||
+    outflow.to.toLowerCase() !== to.toLowerCase() ||
+    outflow.amount.asset.toLowerCase() !== input.contract.toLowerCase() ||
+    outflow.amount.tokenId !== tokenId.toString(10) ||
+    outflow.amount.amount !== amount.toString(10)
+  ) {
+    throw new ChainError("invalid-request", "the built transfer does not decode to the send");
+  }
+  return { kind: "call", to: input.contract, value: 0n, data };
+};
+
+/* A cross-checked read on both endpoints: a successful disagreeing read refuses, a failed
+   independent read degrades to `reads-unverified` — same rule as the swap path. */
+const nftRead = async <T>(
+  ctx: RouteContext,
+  network: string,
+  read: (client: ViemClient) => Promise<T>,
+  flags: Array<RequestCheckCode | undefined>,
+): Promise<T> => {
+  const primary = await read(ctx.options.networks.client(network));
+  const independent = ctx.options.networks.independentClient(network);
+  if (independent.kind === "available") {
+    try {
+      const other = await read(independent.client);
+      if (other !== primary) {
+        throw new ChainError("invalid-request", "the two endpoints disagree on the NFT read");
+      }
+    } catch (error) {
+      if (error instanceof ChainError) {
+        throw error;
+      }
+      flags.push("reads-unverified");
+    }
+  }
+  return primary;
+};
+
 /** Per-controller route — the adapter's nonce queue and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
@@ -1204,6 +1274,170 @@ export const createEvmRoute = (): EvmRoute => {
    * `evm-delegation` (upgrade/revoke) and `evm-batch`: internal, group-scoped self-transactions —
    * the batch upgrades the account to the delegator when it is not already delegated to it.
    */
+  const ERC165_ABI = [
+    {
+      type: "function",
+      name: "supportsInterface",
+      stateMutability: "view",
+      inputs: [{ name: "interfaceId", type: "bytes4" }],
+      outputs: [{ name: "", type: "bool" }],
+    },
+  ] as const;
+  const ERC721_ABI = [
+    {
+      type: "function",
+      name: "ownerOf",
+      stateMutability: "view",
+      inputs: [{ name: "tokenId", type: "uint256" }],
+      outputs: [{ name: "", type: "address" }],
+    },
+    {
+      type: "function",
+      name: "safeTransferFrom",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "from", type: "address" },
+        { name: "to", type: "address" },
+        { name: "tokenId", type: "uint256" },
+      ],
+      outputs: [],
+    },
+  ] as const;
+  const ERC1155_ABI = [
+    {
+      type: "function",
+      name: "balanceOf",
+      stateMutability: "view",
+      inputs: [
+        { name: "account", type: "address" },
+        { name: "id", type: "uint256" },
+      ],
+      outputs: [{ name: "", type: "uint256" }],
+    },
+    {
+      type: "function",
+      name: "safeTransferFrom",
+      stateMutability: "nonpayable",
+      inputs: [
+        { name: "from", type: "address" },
+        { name: "to", type: "address" },
+        { name: "id", type: "uint256" },
+        { name: "amount", type: "uint256" },
+        { name: "data", type: "bytes" },
+      ],
+      outputs: [],
+    },
+  ] as const;
+  const ERC721_INTERFACE = "0x80ac58cd";
+  const ERC1155_INTERFACE = "0xd9b67a26";
+
+  /* A cross-checked read on both endpoints: a successful disagreeing read refuses, a failed
+     independent read degrades to `reads-unverified` — same rule as the swap path. */
+
+  /* `evm-nft-send`: detect the standard by ERC-165, check ownership, build safeTransferFrom. */
+  const prepareNftSend = async (
+    ctx: RouteContext,
+    input: Extract<ChainRequestInput, { method: "evm-nft-send" }>,
+    from: string,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<BuildIntent> => {
+    const { network, contract, tokenId } = input;
+    let { to } = input;
+    if (!isAddress(to) && to.includes(".")) {
+      const resolved = await resolveEns(ctx.options.networks, to, network);
+      to = resolved.address;
+      flags.push(...resolved.checks);
+    }
+    const c = getAddress(contract);
+    const supports721 = await nftRead(
+      ctx,
+      network,
+      async (client) =>
+        readContract(client, {
+          address: c,
+          abi: ERC165_ABI,
+          functionName: "supportsInterface",
+          args: [ERC721_INTERFACE],
+        }),
+      flags,
+    );
+    const supports1155 = await nftRead(
+      ctx,
+      network,
+      async (client) =>
+        readContract(client, {
+          address: c,
+          abi: ERC165_ABI,
+          functionName: "supportsInterface",
+          args: [ERC1155_INTERFACE],
+        }),
+      flags,
+    );
+    if (!supports721 && !supports1155) {
+      throw new ChainError("invalid-request", "the contract is neither ERC-721 nor ERC-1155");
+    }
+    if (supports721) {
+      const owner = await nftRead(
+        ctx,
+        network,
+        async (client) =>
+          readContract(client, {
+            address: c,
+            abi: ERC721_ABI,
+            functionName: "ownerOf",
+            args: [tokenId],
+          }) as Promise<string>,
+        flags,
+      );
+      if (owner.toLowerCase() !== from.toLowerCase()) {
+        throw new ChainError("invalid-request", "the account does not own the token");
+      }
+      return guardNftCall(
+        input,
+        from,
+        to,
+        tokenId,
+        1n,
+        encodeFunctionData({
+          abi: ERC721_ABI,
+          functionName: "safeTransferFrom",
+          args: [getAddress(from), getAddress(to), tokenId],
+        }),
+      );
+    }
+    const amount = input.amount ?? 1n;
+    if (amount < 1n) {
+      throw new ChainError("invalid-request", "an ERC-1155 send needs at least one unit");
+    }
+    const balance = await nftRead(
+      ctx,
+      network,
+      async (client) =>
+        readContract(client, {
+          address: c,
+          abi: ERC1155_ABI,
+          functionName: "balanceOf",
+          args: [getAddress(from), tokenId],
+        }),
+      flags,
+    );
+    if (balance < amount) {
+      throw new ChainError("invalid-request", "the account does not hold enough units");
+    }
+    return guardNftCall(
+      input,
+      from,
+      to,
+      tokenId,
+      amount,
+      encodeFunctionData({
+        abi: ERC1155_ABI,
+        functionName: "safeTransferFrom",
+        args: [getAddress(from), getAddress(to), tokenId, amount, "0x"],
+      }),
+    );
+  };
+
   const prepareEvmInternal = async (
     ctx: RouteContext,
     input: EvmInternalInput,
@@ -1242,6 +1476,8 @@ export const createEvmRoute = (): EvmRoute => {
       intent = await prepareSwapIntent(ctx, input, from, flags);
     } else if (input.method === "evm-bridge") {
       intent = await prepareBridgeIntent(ctx, input, from, flags);
+    } else if (input.method === "evm-nft-send") {
+      intent = await prepareNftSend(ctx, input, from, flags);
     } else if (input.method === "evm-lido") {
       intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
         delegationStateOrNone(ctx, network, from, flags),

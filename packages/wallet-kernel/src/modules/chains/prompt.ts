@@ -209,6 +209,10 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
 
 /** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
 export function formatAmount(amount: AssetAmount): string {
+  if (amount.tokenId !== undefined) {
+    const base = `${amount.asset} #${amount.tokenId}`;
+    return amount.amount === "1" ? base : `${base} ×${amount.amount}`;
+  }
   return amount.decimals === undefined
     ? `${amount.amount} ${amount.asset}`
     : `${formatUnits(amount.amount, amount.decimals)} ${amount.symbol ?? amount.asset}`;

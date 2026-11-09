@@ -15,6 +15,7 @@ export { EXT, parseMintExtensions, netAfterTransferFee } from "./token2022.ts";
 export type { MintExtensionSummary } from "./token2022.ts";
 export { SOLANA_NATIVE_ASSET } from "./assets.ts";
 export { associatedTokenAddress } from "./ata.ts";
+export { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 export { JUPITER_PROGRAM, WSOL_MINT } from "./jupiter.ts";
 export { parseCompiledMessage } from "./message.ts";
 export type { LookupReference, ParsedSolanaMessage } from "./message.ts";

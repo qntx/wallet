@@ -368,5 +368,26 @@
     ]
    }
   }
+ ],
+ "core": [
+  {
+   "name": "transferV1-real-mainnet",
+   "message": "0x80020104080b5779e0f16df9db77e84aa197483274c33a1ec536f3d0c395c5dfc6874980b24aa630b33c8c2056afa2a48118fb8fcd88805557fbe6e0fa3df05756a75a590541ee0a686fc618dedb8788e9d532a873d26e14ec56fd9c6c312bb56da9838a31f187ec87d1f745cb3a03384a26a69eda0ca2d1aa0f41e42416377e91ff5b5d3100000000000000000000000000000000000000000000000000000000000000007ecb3a2a0b4c3e2994e4e630f248297b88639cc0b6daa5ab99db8118f0d7c91baf54ab10bd97a542a09ef7b39889dd0cd394a4cce9dfa6cdc97ebe2d235ba7480c38a19500d48ca31c228aaa46fe30d81875c0ec39b62dc6e7da7adf388b9445fc08ea82b7ad7df59f5858fdec727289666a0c465b3a3cbdda1c444f61572a4402040200030c02000000e230000000000000060702070001050606020e0000",
+   "lookupTables": [],
+   "expected": {
+    "summary": "transfer",
+    "verifiability": "partial",
+    "outflows": [
+     {
+      "to": "9Xx76WpEjfwhvuTcXiXBHgVPzXsJ8aAaSBTLjdFyf9DL",
+      "amount": {
+       "asset": "5SN2S9fjnSDNFyzFrky2CuiY5bHKYdNkF8rgRwP3YTi8",
+       "amount": "1"
+      },
+      "verified": false
+     }
+    ]
+   }
+  }
  ]
 }
