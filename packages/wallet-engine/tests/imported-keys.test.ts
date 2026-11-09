@@ -9,7 +9,13 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
-import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
+import {
+  bookDeps,
+  fakeSignedEvm,
+  idleNetworkDeps,
+  simulateSolanaStub,
+  tokensStub,
+} from "./send-helpers.ts";
 
 const N1 = "eip155:1";
 const SOL = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
@@ -23,9 +29,8 @@ const SOLKEY: KeyInfo = {
   address: SOL_ADDR,
   createdAt: 1,
 };
-const logger = { warn: () => undefined };
 
-const rig = (opts: { keys?: KeyInfo[] } = {}) => {
+const rig = (opts: { keys?: KeyInfo[]; warns?: string[]; store?: unknown } = {}) => {
   const signedRequests: SignRequest[] = [];
   const calls: string[] = [];
   const wallet = {
@@ -36,6 +41,7 @@ const rig = (opts: { keys?: KeyInfo[] } = {}) => {
       export: async () => Promise.resolve(new Uint8Array(4)),
     },
   } as unknown as Wallet;
+  const log = { warn: (msg: string) => opts.warns?.push(msg) };
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
     calls.push(url);
@@ -62,6 +68,18 @@ const rig = (opts: { keys?: KeyInfo[] } = {}) => {
     if (m === "eth_gasPrice" || m === "eth_maxPriorityFeePerGas") {
       return hex("0x3b9aca00");
     }
+    if (m === "eth_feeHistory") {
+      return Response.json({
+        jsonrpc: "2.0",
+        id: 1,
+        result: {
+          baseFeePerGas: ["0x1", "0x1"],
+          gasUsedRatio: [0.5],
+          oldestBlock: "0x1",
+          reward: [["0x3b9aca00"]],
+        },
+      });
+    }
     if (m === "eth_getBlockByNumber") {
       return Response.json({ jsonrpc: "2.0", id: 1, result: { baseFeePerGas: "0x1" } });
     }
@@ -71,26 +89,30 @@ const rig = (opts: { keys?: KeyInfo[] } = {}) => {
     return Response.json({ jsonrpc: "2.0", id: 1, result: "0x0" });
   };
   const apis = {
+    account: async () => Promise.resolve({ template: "evm.bip44", network: N1, address: EVM_ADDR }),
     sign: async ({ request }: { request: SignRequest }) => {
       signedRequests.push(request);
-      return Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array(1) });
+      return Promise.resolve(fakeSignedEvm(request));
     },
   } as unknown as ReturnType<typeof chains>;
   const networks = new NetworkController({
     fetch: fetchImpl,
     rpc: { [N1]: ["http://rpc.test"], [SOL]: ["http://sol.test"], [BTC]: ["http://btc.test"] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
-    logger,
+    logger: log,
     ...idleNetworkDeps,
   });
   const transactions = new TransactionController({
     wallet,
     networks,
-    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    openStore: async () =>
+      Promise.resolve(
+        (opts.store ?? createMemoryEngineStore()) as ReturnType<typeof createMemoryEngineStore>,
+      ),
     random: (n) => new Uint8Array(n).fill(3),
     setTimer: () => () => undefined,
     now: () => 0,
-    logger,
+    logger: log,
     pollMs: 1,
     chains: apis,
   });
@@ -111,7 +133,7 @@ const rig = (opts: { keys?: KeyInfo[] } = {}) => {
     random: (n) => new Uint8Array(n).fill(4),
     now: () => 0,
     setTimer: () => () => undefined,
-    logger,
+    logger: log,
   });
   const start = async () => {
     await networks.init();
@@ -263,5 +285,105 @@ describe("imported keys on the facade", () => {
         expect(imported.every((k) => k.keyId !== String(g.index))).toBe(true);
       }
     }
+  });
+});
+
+describe("replacements of imported-key transactions", () => {
+  const verify = { kind: "password" as const, password: "pw" };
+  const sendImported = async (w: ReturnType<typeof rig>) => {
+    const pending = await w.requests.prepare({
+      method: "send",
+      account: evmRef,
+      network: N1,
+      to: "0x000000000000000000000000000000000000dEaD",
+      amount: 1n,
+      fee: "normal",
+    });
+    return w.requests.approve(pending.id, "send", verify);
+  };
+
+  it("persists the signer ref in the build record", async () => {
+    const w = rig();
+    await w.start();
+    const tx = await sendImported(w);
+    expect(tx.evm?.account).toStrictEqual(evmRef);
+  });
+
+  it("speed-up signs the replacement with the imported ref", async () => {
+    const w = rig();
+    await w.start();
+    const tx = await sendImported(w);
+    const pending = await w.requests.prepare({ method: "speed-up", txId: tx.id });
+    await w.requests.approve(pending.id, "speed-up", verify);
+    const signed = w.signedRequests.at(-1) as { account?: { kind: string; keyId?: string } };
+    expect(signed.account?.kind).toBe("imported");
+    expect(signed.account?.keyId).toBe(KEY.keyId);
+  });
+
+  it("cancel signs the replacement with the imported ref", async () => {
+    const w = rig();
+    await w.start();
+    const tx = await sendImported(w);
+    const pending = await w.requests.prepare({ method: "cancel", txId: tx.id });
+    await w.requests.approve(pending.id, "cancel", verify);
+    const signed = w.signedRequests.at(-1) as { account?: { kind: string; keyId?: string } };
+    expect(signed.account?.kind).toBe("imported");
+    expect(signed.account?.keyId).toBe(KEY.keyId);
+  });
+
+  it("an HD replacement still rebuilds from the persisted ref", async () => {
+    const hdRef = {
+      kind: "hd" as const,
+      walletId: "w",
+      groupIndex: 0,
+      template: "evm.bip44" as const,
+    };
+    const w = rig();
+    await w.start();
+    const pending = await w.requests.prepare({
+      method: "send",
+      account: hdRef,
+      network: N1,
+      to: "0x000000000000000000000000000000000000dEaD",
+      amount: 1n,
+      fee: "normal",
+    });
+    const tx = await w.requests.approve(pending.id, "send", verify);
+    expect(tx.evm?.account).toStrictEqual(hdRef);
+    const bumped = await w.requests.prepare({ method: "speed-up", txId: tx.id });
+    await w.requests.approve(bumped.id, "speed-up", verify);
+    const signed = w.signedRequests.at(-1) as { account?: { kind: string; walletId?: string } };
+    expect(signed.account?.kind).toBe("hd");
+    expect(signed.account?.walletId).toBe("w");
+  });
+
+  it("drops a persisted build record missing the signer ref, with a warning", async () => {
+    const warns: string[] = [];
+    const backing = new Map<string, Map<string, Uint8Array>>();
+    const col = new Map<string, Uint8Array>();
+    backing.set("transactions", col);
+    col.set(
+      "t1",
+      new TextEncoder().encode(
+        JSON.stringify({
+          id: "t1",
+          family: "evm",
+          network: N1,
+          account: "w",
+          hash: `0x${"ab".repeat(32)}`,
+          state: "submitted",
+          nonce: 0,
+          submittedAt: 1,
+          evm: { from: EVM_ADDR, groupIndex: 0, raw: "0x12" },
+        }),
+      ),
+    );
+    const store = createMemoryEngineStore({ collections: backing });
+    const w = rig({ warns, store });
+    await w.start();
+    const tx = w.transactions.getState().txs["t1"];
+    expect(tx).toBeDefined();
+    expect(tx?.evm).toBeUndefined();
+    expect(warns.some((m) => m.includes("malformed evm build record"))).toBe(true);
   });
 });

@@ -48,6 +48,7 @@ export type TrackedTransaction = {
   readonly id: string;
   readonly family: "evm" | "solana" | "bitcoin";
   readonly network: string;
+  /** The signer's identity label — `walletId` for HD accounts, `keyId` for imported keys. */
   readonly account: string;
   readonly hash: string | undefined;
   readonly state: TxState;
@@ -62,7 +63,7 @@ export type TrackedTransaction = {
   /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
   readonly sparkDeposit?: SparkDepositTag;
   /** EVM build record persisted at broadcast for rebroadcast, drop detection and replacement. */
-  readonly evm?: { readonly from: string; readonly groupIndex: number; readonly raw: string };
+  readonly evm?: { readonly from: string; readonly account: AccountRef; readonly raw: string };
   /** Bitcoin build record persisted at send for RBF/CPFP rebuilds. */
   readonly btc?: {
     readonly inputs: ReadonlyArray<{

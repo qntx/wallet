@@ -129,12 +129,19 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
 };
 
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
+const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
+  isObject(v) &&
+  ((v["kind"] === "hd" &&
+    typeof v["walletId"] === "string" &&
+    typeof v["groupIndex"] === "number" &&
+    Number.isSafeInteger(v["groupIndex"]) &&
+    v["groupIndex"] >= 0 &&
+    typeof v["template"] === "string") ||
+    (v["kind"] === "imported" && typeof v["keyId"] === "string" && v["family"] === "evm"));
 const isEvmRecord = (v: unknown): v is EvmRecord =>
   isObject(v) &&
   typeof v["from"] === "string" &&
-  typeof v["groupIndex"] === "number" &&
-  Number.isSafeInteger(v["groupIndex"]) &&
-  v["groupIndex"] >= 0 &&
+  isEvmAccountRef(v["account"]) &&
   typeof v["raw"] === "string" &&
   /^0x(?:[0-9a-fA-F]{2})+$/.test(v["raw"]);
 
@@ -151,7 +158,10 @@ const isIntent = (v: unknown): v is DisplayIntent =>
   Array.isArray(v["outflows"]) &&
   typeof v["verifiability"] === "string";
 
-const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
+const decode = (
+  raw: Uint8Array,
+  warn: (msg: string) => void = () => undefined,
+): TrackedTransaction | undefined => {
   const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
   if (!isObject(parsed)) {
     return undefined;
@@ -195,7 +205,14 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     nonce,
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
-    ...(isEvmRecord(evm) ? { evm } : {}),
+    ...(isEvmRecord(evm)
+      ? { evm }
+      : (() => {
+          if (evm !== undefined) {
+            warn(`dropping malformed evm build record on transaction ${id}`);
+          }
+          return {};
+        })()),
     ...(isBtcRecord(btc) ? { btc } : {}),
     ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
@@ -225,7 +242,8 @@ export class TransactionController extends Controller<TransactionControllerState
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
     for (const raw of rows) {
-      const tx = raw === undefined ? undefined : decode(raw);
+      const tx =
+        raw === undefined ? undefined : decode(raw, (msg) => this.options.logger.warn(msg));
       if (tx === undefined) {
         continue;
       }
