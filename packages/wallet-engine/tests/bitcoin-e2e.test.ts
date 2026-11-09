@@ -63,6 +63,8 @@ const startEsplora = (name: string): string => {
       name,
       "-p",
       "127.0.0.1::80",
+      "-e",
+      "NO_REGTEST_MINING=1",
       ESPLORA_IMAGE,
       "bash",
       "-c",
@@ -182,6 +184,29 @@ const esploraUp = (base: string) => async (): Promise<boolean> => {
   }
 };
 
+/**
+ * `bitcoin-cli getblockchaininfo` exiting 0 — proves the regtest cookie exists and the RPC left its
+ * warm-up state (-28). Without it the image's createwallet/mine cli calls, and ours, can race.
+ */
+const nodeUp = (name: string): boolean =>
+  spawnSync(
+    "docker",
+    [
+      "exec",
+      name,
+      "/srv/explorer/bitcoin-30.2/bin/bitcoin-cli",
+      "-regtest",
+      "-datadir=/data/bitcoin",
+      "getblockchaininfo",
+    ],
+    { encoding: "utf8" },
+  ).status === 0;
+
+const nodeReady = (name: string) => async (): Promise<boolean> => {
+  const up = await Promise.resolve(nodeUp(name));
+  return up;
+};
+
 const tipSynced = (base: string, tip: number) => async (): Promise<boolean> => {
   const r = await fetch(`${base}/blocks/tip/height`, { signal: AbortSignal.timeout(5000) });
   const text = await r.text();
@@ -223,8 +248,8 @@ const regtestFlow = async () => {
   const run = (method: string, params: ReadonlyArray<unknown> = []): unknown =>
     rpc(NAME, method, params);
   try {
-    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-      throw new Error(`esplora never came up\n${logsOf(NAME)}`);
+    await waitFor(nodeReady(NAME), 3000, Date.now() + 120_000, () => {
+      throw new Error(`bitcoind never warmed up\n${logsOf(NAME)}`);
     });
 
     const wpkhRecv = addrOf("wpkh", ACCT, 0, 0);
@@ -236,6 +261,9 @@ const regtestFlow = async () => {
     }
     const walletAddr = run("getnewaddress") as string;
     run("generatetoaddress", [101, walletAddr]);
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logsOf(NAME)}`);
+    });
     run("generatetoaddress", [1, wpkhRecv]);
     run("generatetoaddress", [1, trRecv]);
     run("sendtoaddress", [wpkhRecv, "0.00000546"]);
@@ -329,8 +357,8 @@ const taprootFlow = async (): Promise<void> => {
   const base = startEsplora(`${NAME}-tr`);
   const timers: Array<() => unknown> = [];
   try {
-    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-      throw new Error(`esplora never came up\n${logsOf(`${NAME}-tr`)}`);
+    await waitFor(nodeReady(`${NAME}-tr`), 3000, Date.now() + 120_000, () => {
+      throw new Error(`bitcoind never warmed up\n${logsOf(`${NAME}-tr`)}`);
     });
     try {
       rpc(`${NAME}-tr`, "createwallet", ["e2e-tr"]);
@@ -341,6 +369,9 @@ const taprootFlow = async (): Promise<void> => {
     const recv = bitcoinAddressFromXpub(xpub, "btc.bip86", NETWORK, 0, 0);
     const walletAddr = rpc(`${NAME}-tr`, "getnewaddress") as string;
     rpc(`${NAME}-tr`, "generatetoaddress", [101, walletAddr]);
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logsOf(`${NAME}-tr`)}`);
+    });
     rpc(`${NAME}-tr`, "sendtoaddress", [recv, "0.00050000"]);
     rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
     await waitFor(
@@ -465,8 +496,8 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
   const base = startEsplora(`${NAME}-rbf`);
   const timers: Array<() => unknown> = [];
   try {
-    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-      throw new Error(`esplora never came up\n${logsOf(`${NAME}-rbf`)}`);
+    await waitFor(nodeReady(`${NAME}-rbf`), 3000, Date.now() + 120_000, () => {
+      throw new Error(`bitcoind never warmed up\n${logsOf(`${NAME}-rbf`)}`);
     });
     try {
       rpc(`${NAME}-rbf`, "createwallet", ["e2e-rbf"]);
@@ -477,6 +508,9 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
     const recv = bitcoinAddressFromXpub(xpub, "btc.bip84", NETWORK, 0, 0);
     const walletAddr = rpc(`${NAME}-rbf`, "getnewaddress") as string;
     rpc(`${NAME}-rbf`, "generatetoaddress", [101, walletAddr]);
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logsOf(`${NAME}-rbf`)}`);
+    });
     rpc(`${NAME}-rbf`, "sendtoaddress", [recv, "0.00050000"]);
     rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
     await waitFor(
@@ -584,8 +618,8 @@ const legacyFlow = async (): Promise<void> => {
   const timers: Array<() => unknown> = [];
   try {
     await step("esplora up", async () =>
-      waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
-        throw new Error(`esplora never came up\n${logsOf(LEGACY)}`);
+      waitFor(nodeReady(LEGACY), 3000, Date.now() + 120_000, () => {
+        throw new Error(`bitcoind never warmed up\n${logsOf(LEGACY)}`);
       }),
     );
     try {
@@ -610,6 +644,9 @@ const legacyFlow = async (): Promise<void> => {
     const addr44 = bitcoinAddressFromXpub(xpub44, "btc.bip44", NETWORK, 0, 0);
     const walletAddr = rpc(`${NAME}-legacy`, "getnewaddress") as string;
     rpc(`${NAME}-legacy`, "generatetoaddress", [101, walletAddr]);
+    await waitFor(esploraUp(base), 3000, Date.now() + 120_000, () => {
+      throw new Error(`esplora never came up\n${logsOf(LEGACY)}`);
+    });
     rpc(`${NAME}-legacy`, "sendtoaddress", [addr49, "0.00050000"]);
     rpc(`${NAME}-legacy`, "sendtoaddress", [addr44, "0.00050000"]);
     rpc(`${NAME}-legacy`, "generatetoaddress", [1, walletAddr]);
