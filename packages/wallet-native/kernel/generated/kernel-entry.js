@@ -26941,20 +26941,6 @@ zoo`.split("\n"));
 		}, extra), {}, { verified: known !== void 0 });
 	};
 	/**
-	* Typed data whose domain targets an execution context over the signer's account turns a signature
-	* into execution rights: a Delegation the DelegationManager redeems, a PackedUserOperation the
-	* EntryPoint runs for a delegated 7702 account, or an action the account's own EIP-712 domain
-	* authorizes. A generic typed-data request must never produce such a signature.
-	*/
-	var assertNoExecutionGrant = (domain, signer) => {
-		const target = domain["verifyingContract"];
-		if (typeof target !== "string" || !isEvmAddress(target)) return;
-		const lower = target.toLowerCase();
-		if (lower === signer.toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to your own account is refused");
-		if (lower === "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the DelegationManager is refused");
-		if (lower === "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the EntryPoint is refused");
-	};
-	/**
 	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
 	* address only. Verified against the Across deployments registry on 2026-11-08.
 	*/
@@ -27042,13 +27028,13 @@ zoo`.split("\n"));
 			1,
 			2,
 			3
-		].map((i) => v4 !== void 0 ? paddedAddress(args[i]) : argAddress$2(args, i));
+		].map((i) => v4 === void 0 ? argAddress$2(args, i) : paddedAddress(args[i]));
 		if (depositor === void 0 || recipient === void 0 || inputToken === void 0 || outputToken === void 0) return;
 		const inputAmount = argUint$1(args, 4);
 		const outputAmount = argUint$1(args, 5);
 		const destinationChainId = argUint$1(args, 6);
 		const fillDeadline = argUint$1(args, 9);
-		const message = args[11];
+		const message = args.at(11);
 		if (inputAmount === void 0 || outputAmount === void 0 || destinationChainId === void 0 || fillDeadline === void 0 || message !== "0x") return;
 		return {
 			outflows: [{
@@ -27070,6 +27056,20 @@ zoo`.split("\n"));
 				refundTo: depositor
 			}
 		};
+	};
+	/**
+	* Typed data whose domain targets an execution context over the signer's account turns a signature
+	* into execution rights: a Delegation the DelegationManager redeems, a PackedUserOperation the
+	* EntryPoint runs for a delegated 7702 account, or an action the account's own EIP-712 domain
+	* authorizes. A generic typed-data request must never produce such a signature.
+	*/
+	var assertNoExecutionGrant = (domain, signer) => {
+		const target = domain["verifyingContract"];
+		if (typeof target !== "string" || !isEvmAddress(target)) return;
+		const lower = target.toLowerCase();
+		if (lower === signer.toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to your own account is refused");
+		if (lower === "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the DelegationManager is refused");
+		if (lower === "0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108".toLowerCase()) throw new ChainError("invalid-request", "typed data addressed to the EntryPoint is refused");
 	};
 	var LIDO_STETH = "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84";
 	var LIDO_WSTETH = "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0";

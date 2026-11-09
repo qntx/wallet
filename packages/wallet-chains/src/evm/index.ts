@@ -24,6 +24,7 @@ export {
 export { SAFE_MULTISEND_CALL_ONLY } from "./safe.ts";
 export { recoverEvmSigner } from "./recover.ts";
 export { ALLOWANCE_HOLDER, ZEROX_CHAINS, isZeroExSettler, decodeZeroX } from "./zerox.ts";
+export { ACROSS_SPOKEPOOLS, ACROSS_WRAPPED_NATIVE, decodeAcross } from "./across.ts";
 export { LIDO_CHAIN, LIDO_STETH, LIDO_WSTETH, LIDO_QUEUE } from "./lido.ts";
 export { parseTypedData } from "./typed-data.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";

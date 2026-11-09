@@ -462,7 +462,15 @@ export class TransactionController extends Controller<TransactionControllerState
   async prepareEvmInternal(
     input: Extract<
       ChainRequestInput,
-      { method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-lido" }
+      {
+        method:
+          | "evm-delegation"
+          | "evm-batch"
+          | "evm-approve"
+          | "evm-swap"
+          | "evm-bridge"
+          | "evm-lido";
+      }
     >,
     _requestId: string,
   ): Promise<PreparedRequest> {

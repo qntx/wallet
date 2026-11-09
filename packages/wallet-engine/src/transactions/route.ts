@@ -15,6 +15,7 @@ import type { NetworkController } from "../networks/controller.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { SimulationOutcome } from "../requests/simulation.ts";
 import type { EngineStore } from "../store/port.ts";
+import type { AcrossBridgeQuote } from "../swaps/bridge.ts";
 import type { JupiterSwapQuote, ZeroExSwapQuote } from "../swaps/index.ts";
 
 export type ChainApis = ReturnType<typeof chains>;
@@ -106,6 +107,7 @@ export type ChainRequestMethod =
   | "evm-batch"
   | "evm-approve"
   | "evm-swap"
+  | "evm-bridge"
   | "evm-lido"
   | "solana-stake"
   | "solana-swap";
@@ -149,6 +151,13 @@ export type ChainRequestInput =
       readonly account: AccountRef;
       readonly network: string;
       readonly quote: ZeroExSwapQuote;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "evm-bridge";
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly quote: AcrossBridgeQuote;
       readonly fee: PrepareParams["fee"];
     }
   | {

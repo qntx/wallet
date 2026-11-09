@@ -364,15 +364,17 @@ describe("GET /v1/quotes/bridge", () => {
     const app = gateway({ fetch: upstream.fetch });
     const res = await app.request(`${bridgeQuote.path}?${BRIDGE_QUERY}`, { headers: headers() });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body["provider"]).toBe("across");
-    expect(body["outputAmount"]).toBe("299966316");
-    expect(body["destinationNetwork"]).toBe("eip155:10");
-    expect(body["quoteTimestamp"]).toBe(1794190799);
-    expect(body["fillDeadline"]).toBe(1794197999);
-    expect(body["exclusiveRelayer"]).toBe("0xFD03AbCAdaF3F930fA4E37Eb2f6ea3A44a41b7F0");
-    expect(body["exclusivityParameter"]).toBe(1794191119);
-    expect(body["spokePool"]).toBe("0x5c7bcd6e7de5423a257d81b442095a1a6ced35c5");
+    const body = await expectContract(res, bridgeQuote.response);
+    expect(body).toMatchObject({
+      provider: "across",
+      outputAmount: "299966316",
+      destinationNetwork: "eip155:10",
+      quoteTimestamp: 1794190799,
+      fillDeadline: 1794197999,
+      exclusiveRelayer: "0xFD03AbCAdaF3F930fA4E37Eb2f6ea3A44a41b7F0",
+      exclusivityParameter: 1794191119,
+      spokePool: "0x5c7bcd6e7de5423a257d81b442095a1a6ced35c5",
+    });
     const called = upstream.calls.at(-1)!;
     const url = new URL(called.url);
     expect(url.searchParams.get("originChainId")).toBe("1");
@@ -388,8 +390,9 @@ describe("GET /v1/quotes/bridge", () => {
     });
     const app = gateway({ fetch: upstream.fetch });
     const res = await app.request(`${bridgeQuote.path}?${BRIDGE_QUERY}`, { headers: headers() });
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body["liquidity"]).toBe(false);
+    await expect(expectContract(res, bridgeQuote.response)).resolves.toStrictEqual({
+      liquidity: false,
+    });
   });
 
   it("reports no liquidity when the amount exceeds the limits", async () => {
@@ -399,8 +402,9 @@ describe("GET /v1/quotes/bridge", () => {
     });
     const app = gateway({ fetch: upstream.fetch });
     const res = await app.request(`${bridgeQuote.path}?${BRIDGE_QUERY}`, { headers: headers() });
-    const body = (await res.json()) as Record<string, unknown>;
-    expect(body["liquidity"]).toBe(false);
+    await expect(expectContract(res, bridgeQuote.response)).resolves.toStrictEqual({
+      liquidity: false,
+    });
   });
 
   it.each([
