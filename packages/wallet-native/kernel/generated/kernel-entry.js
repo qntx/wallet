@@ -27897,9 +27897,9 @@ zoo`.split("\n"));
 			const values = argList(batchArgs, 3);
 			if (ids.length > 0 && ids.length === values.length) {
 				const to = argAddress(batchArgs, 1);
-				return partial("transfer", ids.map((id, i) => {
+				return partial("transfer", ids.flatMap((id, i) => {
 					var _values$i;
-					return nftFlow(token, to, argUint([id], 0), argUint([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0))[0];
+					return nftFlow(token, to, argUint([id], 0), argUint([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0));
 				}), []);
 			}
 		}
