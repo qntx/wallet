@@ -2,6 +2,8 @@ import { sValidator } from "@hono/standard-validator";
 import { Hono } from "hono";
 
 import {
+  bridgeQuote,
+  bridgeQuoteRequest,
   swapQuote,
   swapQuoteRequest,
   swapQuoteSolana,
@@ -9,6 +11,8 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 
 import { GatewayHttpError } from "../middleware/errors.ts";
+import type { AcrossQuote } from "../providers/across.ts";
+import { acrossQuote } from "../providers/across.ts";
 import type { Forwarder } from "../providers/forward.ts";
 import type { JupiterConfig, JupiterQuote } from "../providers/jupiter.ts";
 import { jupiterQuote } from "../providers/jupiter.ts";
@@ -71,6 +75,30 @@ export function quotesRoutes(deps: {
           amount,
           taker,
           slippageBps,
+        });
+        if ("badRequest" in result) {
+          throw new GatewayHttpError(400, "invalid-request");
+        }
+        return c.json(result);
+      },
+    )
+    .get(
+      bridgeQuote.path,
+      sValidator("query", bridgeQuoteRequest, (result) => {
+        if (!result.success) {
+          throw new GatewayHttpError(400, "invalid-request");
+        }
+      }),
+      async (c) => {
+        /* Across serves keyless — no provider option is needed. */
+        const { network, destinationNetwork, inputToken, outputToken, amount } =
+          c.req.valid("query");
+        const result: AcrossQuote = await acrossQuote(deps.forwarder, deps.fetch, {
+          inputToken,
+          outputToken,
+          originChainId: network.slice(7),
+          destinationChainId: destinationNetwork.slice(7),
+          amount,
         });
         if ("badRequest" in result) {
           throw new GatewayHttpError(400, "invalid-request");
