@@ -103,6 +103,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
     string,
     ReadonlyArray<{ address: string; verified: boolean }>
   >();
+  /** State key → the `refresh` arguments that produced it (the address is the xpub for BTC). */
+  private readonly tracked = new Map<
+    string,
+    { readonly network: string; readonly address: string }
+  >();
 
   constructor(options: Options) {
     super({ name: "assets", defaultState: () => ({ balances: {} }) });
@@ -136,6 +141,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.cancelPoll?.();
     this.cancelPoll = undefined;
     this.customTokens.clear();
+    this.tracked.clear();
     this.engineStore = undefined;
     this.update(() => ({ balances: {} }));
   }
@@ -172,13 +178,22 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   private async refreshAll(): Promise<void> {
     await Promise.all(
-      Object.keys(this.getState().balances).flatMap((entry) => {
-        const [network, address] = entry.split(":");
-        return network === undefined || address === undefined
-          ? []
-          : [this.refresh(address, network)];
-      }),
+      [...this.tracked.values()].map(async ({ network, address }) =>
+        this.refresh(address, network),
+      ),
     );
+  }
+
+  /** Writes `balances` under `stateKey` and remembers how to refresh it. */
+  private record(
+    stateKey: string,
+    network: string,
+    address: string,
+    balances: AccountBalances,
+  ): AccountBalances {
+    this.tracked.set(stateKey, { network, address });
+    this.update((s) => ({ balances: { ...s.balances, [stateKey]: balances } }));
+    return balances;
   }
 
   /** Reads the address's balances and returns exactly what it wrote under its state key. */
@@ -201,11 +216,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
       address,
       custom.map((t) => ({ address: t.address, verified: t.verified })),
     );
-    const balances: AccountBalances = { native, tokens };
-    this.update((s) => ({
-      balances: { ...s.balances, [key(network, address)]: balances },
-    }));
-    return balances;
+    return this.record(key(network, address), network, address, { native, tokens });
   }
 
   /** SOL via getBalance; SPL via getTokenAccountsByOwner (jsonParsed) for known mints. */
@@ -245,11 +256,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         };
       }),
     );
-    const balances: AccountBalances = { native, tokens };
-    this.update((s) => ({
-      balances: { ...s.balances, [key(network, owner)]: balances },
-    }));
-    return balances;
+    return this.record(key(network, owner), network, owner, { native, tokens });
   }
 
   private async readTokens(
@@ -461,16 +468,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
         ownUnconfirmed += v;
       }
     }
-    const balances: AccountBalances = {
+    return this.record(`${xpub}:${network}:BTC`, network, xpub, {
       native: confirmed.toString(),
       tokens: [],
       unconfirmed: ownUnconfirmed.toString(),
       frozen: frozen.toString(),
-    };
-    this.update((s) => ({
-      ...s,
-      balances: { ...s.balances, [`${xpub}:${network}:BTC`]: balances },
-    }));
-    return balances;
+    });
   }
 }
