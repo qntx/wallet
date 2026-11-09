@@ -26941,6 +26941,123 @@ zoo`.split("\n"));
 		}, extra), {}, { verified: known !== void 0 });
 	};
 	/**
+	* Across SpokePool proxies per origin chain — UUPS upgradeable, so the kernel recognises them by
+	* address only. Verified against the Across deployments registry on 2026-11-08.
+	*/
+	var ACROSS_SPOKEPOOLS = {
+		1: "0x5c7BCd6E7De5423a257D81B442095A1a6ced35C5",
+		10: "0x6f26Bf09B1C792e3228e5467807a900A503c0281",
+		56: "0x4e8E101924eDE233C13e2D8622DC8aED2872d505",
+		137: "0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096",
+		999: "0x35E63eA3eb0fb7A3bc543C71FB66412e1F6B0E04",
+		8453: "0x09aea4b2242abC8bb4BB78D537A67a245A7bEC64",
+		42161: "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A",
+		43114: "0xFE9D541c92E4e90437C7152A00244886dE37a658",
+		11155111: "0x5ef6C01E11889d86803e0B23e3cB3F9E9d97B662"
+	};
+	/** Each pool's `wrappedNativeToken()` — read on-chain on 2026-11-08. */
+	var ACROSS_WRAPPED_NATIVE = {
+		1: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+		10: "0x4200000000000000000000000000000000000006",
+		56: "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+		137: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+		999: "0x5555555555555555555555555555555555555555",
+		8453: "0x4200000000000000000000000000000000000006",
+		42161: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+		43114: "0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7",
+		11155111: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"
+	};
+	var DEPOSIT = from$2("function deposit(bytes32 depositor, bytes32 recipient, bytes32 inputToken, bytes32 outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, bytes32 exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityParameter, bytes message)");
+	var DEPOSIT_V3 = from$2("function depositV3(address depositor, address recipient, address inputToken, address outputToken, uint256 inputAmount, uint256 outputAmount, uint256 destinationChainId, address exclusiveRelayer, uint32 quoteTimestamp, uint32 fillDeadline, uint32 exclusivityDeadline, bytes message)");
+	/** Canonical-encoding decode like `tryCall` in decode.ts — undefined on any mismatch. */
+	var tryCall$2 = (fn, data) => {
+		const selector = getSelector(fn);
+		if (!data.toLowerCase().startsWith(selector)) return;
+		try {
+			assertHex$1(data, "data");
+			const args = decodeData(fn, data);
+			if (!Array.isArray(args)) return;
+			const reencoded = encodeData$1(fn, args).toLowerCase();
+			return data.toLowerCase().startsWith(reencoded) ? args : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	/** A bytes32 carrying an EVM address must be left-padded; anything else is a non-EVM target. */
+	var paddedAddress = (value) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(value)) return;
+		if (value.slice(2, 26) !== "000000000000000000000000") return;
+		return checksumEvmAddress(`0x${value.slice(26)}`);
+	};
+	var tokenAmount$2 = (table, chainId, token, amount) => {
+		const meta = table === void 0 ? void 0 : lookupEvmToken(table, chainId, token);
+		return meta === void 0 ? {
+			asset: token,
+			amount: amount.toString(10)
+		} : {
+			asset: token,
+			amount: amount.toString(10),
+			decimals: meta.decimals,
+			symbol: meta.symbol
+		};
+	};
+	var argUint$1 = (args, index) => {
+		const v = args[index];
+		return typeof v === "bigint" ? v : typeof v === "number" ? BigInt(v) : void 0;
+	};
+	var argAddress$2 = (args, index) => {
+		const v = args[index];
+		return typeof v === "string" && /^0x[0-9a-fA-F]{40}$/.test(v) ? checksumEvmAddress(v) : void 0;
+	};
+	/**
+	* Decodes a `deposit`/`depositV3` to the chain's SpokePool — empty `message` only; bytes32 fields
+	* must carry left-padded EVM addresses (non-EVM destinations are not recognised). The deposit
+	* guarantees `outputAmount` on the destination chain or a refund to `depositor` after
+	* `fillDeadline`, so the intent's `minimumReceived` and `bridge` fields carry those terms.
+	*/
+	var decodeAcross = (chainId, call, table) => {
+		var _ref, _ACROSS_WRAPPED_NATIV;
+		const pool = ACROSS_SPOKEPOOLS[chainId];
+		if (pool === void 0 || call.to === void 0 || call.to.toLowerCase() !== pool.toLowerCase()) return;
+		const v4 = tryCall$2(DEPOSIT, call.data);
+		const v3 = v4 === void 0 ? tryCall$2(DEPOSIT_V3, call.data) : void 0;
+		if (v4 === void 0 && v3 === void 0) return;
+		const args = (_ref = v4 !== null && v4 !== void 0 ? v4 : v3) !== null && _ref !== void 0 ? _ref : [];
+		const [depositor, recipient, inputToken, outputToken] = [
+			0,
+			1,
+			2,
+			3
+		].map((i) => v4 === void 0 ? argAddress$2(args, i) : paddedAddress(args[i]));
+		if (depositor === void 0 || recipient === void 0 || inputToken === void 0 || outputToken === void 0) return;
+		const inputAmount = argUint$1(args, 4);
+		const outputAmount = argUint$1(args, 5);
+		const destinationChainId = argUint$1(args, 6);
+		const fillDeadline = argUint$1(args, 9);
+		const message = args.at(11);
+		if (inputAmount === void 0 || outputAmount === void 0 || destinationChainId === void 0 || fillDeadline === void 0 || message !== "0x") return;
+		return {
+			outflows: [{
+				to: pool,
+				amount: call.value > 0n && inputToken.toLowerCase() === ((_ACROSS_WRAPPED_NATIV = ACROSS_WRAPPED_NATIVE[chainId]) !== null && _ACROSS_WRAPPED_NATIV !== void 0 ? _ACROSS_WRAPPED_NATIV : "").toLowerCase() ? {
+					asset: EVM_NATIVE_ASSET,
+					amount: call.value.toString(10)
+				} : tokenAmount$2(table, chainId, inputToken, inputAmount),
+				verified: true
+			}],
+			minimumReceived: [{
+				to: recipient,
+				amount: tokenAmount$2(table, Number(destinationChainId), outputToken, outputAmount),
+				verified: true
+			}],
+			bridge: {
+				destinationNetwork: `eip155:${destinationChainId.toString(10)}`,
+				fillDeadline: Number(fillDeadline),
+				refundTo: depositor
+			}
+		};
+	};
+	/**
 	* Typed data whose domain targets an execution context over the signer's account turns a signature
 	* into execution rights: a Delegation the DelegationManager redeems, a PackedUserOperation the
 	* EntryPoint runs for a delegated 7702 account, or an action the account's own EIP-712 domain
@@ -26972,7 +27089,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused) {
+		} catch (_unused2) {
 			return;
 		}
 	};
@@ -27223,7 +27340,7 @@ zoo`.split("\n"));
 			const first = Array.isArray(decoded) ? decoded[0] : void 0;
 			if (typeof first !== "string") return;
 			packed = first;
-		} catch (_unused2) {
+		} catch (_unused3) {
 			return;
 		}
 		if (!packed.startsWith("0x")) return;
@@ -27469,7 +27586,7 @@ zoo`.split("\n"));
 				target,
 				data: inner
 			};
-		} catch (_unused3) {
+		} catch (_unused4) {
 			return;
 		}
 	};
@@ -27488,7 +27605,7 @@ zoo`.split("\n"));
 			const [slippage] = args;
 			if (!isSlippage(slippage)) return;
 			return slippage;
-		} catch (_unused4) {
+		} catch (_unused5) {
 			return;
 		}
 	};
@@ -27599,7 +27716,7 @@ zoo`.split("\n"));
 			const args = decodeData(fn, data);
 			if (!Array.isArray(args)) return;
 			return encodeData$1(fn, args).toLowerCase() === data.toLowerCase() ? args : void 0;
-		} catch (_unused5) {
+		} catch (_unused6) {
 			return;
 		}
 	};
@@ -27696,6 +27813,15 @@ zoo`.split("\n"));
 				verifiability
 			});
 		}
+		const across = decodeAcross(chainId, call, table);
+		if (across !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
+			summary: "bridge",
+			outflows: across.outflows,
+			minimumReceived: across.minimumReceived,
+			bridge: across.bridge,
+			fee,
+			verifiability: "partial"
+		});
 		const lido = decodeLido(chainId, call, signer, table);
 		if (lido !== void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
 			summary: "stake",
@@ -27852,7 +27978,7 @@ zoo`.split("\n"));
 				text,
 				signIn
 			};
-		} catch (_unused6) {
+		} catch (_unused7) {
 			return {
 				kind: "bytes",
 				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
@@ -30236,7 +30362,8 @@ zoo`.split("\n"));
 				message: "确认签名",
 				authorization: "确认账户授权",
 				batch: "确认批量交易",
-				stake: "确认质押"
+				stake: "确认质押",
+				bridge: "确认跨链"
 			},
 			blindTitle: "确认盲签",
 			blindDescription: "签署无法显示为文字的数据",
@@ -30258,6 +30385,7 @@ zoo`.split("\n"));
 			maxFee: (fee) => `最高手续费 ${fee}`,
 			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
 			platformFee: (message) => `Jupiter 收取平台费 ${message}`,
+			bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
 			delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
 			revokeDelegation: "撤销此账户的合约委托",
 			stakeRole: {
@@ -30276,7 +30404,8 @@ zoo`.split("\n"));
 				message: "Confirm signature",
 				authorization: "Confirm account authorization",
 				batch: "Confirm batch",
-				stake: "Confirm staking"
+				stake: "Confirm staking",
+				bridge: "Confirm bridge"
 			},
 			blindTitle: "Confirm blind signing",
 			blindDescription: "Sign data that cannot be shown as text",
@@ -30298,6 +30427,7 @@ zoo`.split("\n"));
 			maxFee: (fee) => `Max fee ${fee}`,
 			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
 			platformFee: (message) => `Jupiter platform fee: ${message}`,
+			bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
 			delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
 			revokeDelegation: "Revoke this account's contract delegation",
 			stakeRole: {
@@ -30343,7 +30473,7 @@ zoo`.split("\n"));
 		return `${line}${via}${until}`;
 	}
 	function chainPrompt(locale, intent) {
-		var _intent$message, _intent$warnings, _intent$staking, _intent$minimumReceiv, _intent$warnings2;
+		var _intent$message, _intent$warnings, _intent$staking, _intent$minimumReceiv, _intent$minimumReceiv2, _intent$minimumReceiv3, _intent$minimumReceiv4, _intent$warnings2;
 		const catalog = CATALOGS$1[locale];
 		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
 			title: catalog.blindTitle,
@@ -30364,7 +30494,7 @@ zoo`.split("\n"));
 			...delegation,
 			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).map((action) => catalog.stakeLine(action)),
-			...((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)),
+			...intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)) : [catalog.bridgeLine(intent.bridge.destinationNetwork, ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, (/* @__PURE__ */ new Date(intent.bridge.fillDeadline * 1e3)).toISOString().slice(0, 16), intent.bridge.refundTo)],
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
 			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
 			...((_intent$warnings2 = intent.warnings) !== null && _intent$warnings2 !== void 0 ? _intent$warnings2 : []).filter((w) => w.kind === "platform-fee").map((w) => catalog.platformFee(w.message)),

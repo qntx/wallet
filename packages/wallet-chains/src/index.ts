@@ -143,7 +143,8 @@ export type IntentSummary =
   | "message"
   | "authorization"
   | "batch"
-  | "stake";
+  | "stake"
+  | "bridge";
 
 export type AssetAmount = {
   readonly asset: string;
@@ -323,6 +324,15 @@ export type DisplayIntent = {
    * instruction, in order. Present only when non-empty.
    */
   readonly staking?: ReadonlyArray<StakeAction>;
+  /**
+   * A recognized Across SpokePool deposit: the calldata-stated destination chain, the fill deadline
+   * after which an unfilled deposit refunds `refundTo` on this chain.
+   */
+  readonly bridge?: {
+    readonly destinationNetwork: string;
+    readonly fillDeadline: number;
+    readonly refundTo: string;
+  };
   readonly warnings: ReadonlyArray<IntentWarning>;
   /** What a message request signs; absent for transactions. */
   readonly message?: MessageContent;

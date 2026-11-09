@@ -135,3 +135,51 @@ export const swapQuoteSolana = endpoint(
 
 export type SwapQuoteSolanaRequest = z.infer<typeof swapQuoteSolanaRequest>;
 export type SwapQuoteSolanaResponse = z.infer<typeof swapQuoteSolanaResponse>;
+
+/** The `bridgeQuote` request: an exact-in token transfer from an origin chain to a destination. */
+export const bridgeQuoteRequest = z.object({
+  /** `eip155:<n>` — the origin chain. */
+  network: caip2.check(z.regex(/^eip155:[0-9]+$/)),
+  /** `eip155:<n>` — the destination chain. */
+  destinationNetwork: caip2.check(z.regex(/^eip155:[0-9]+$/)),
+  /** The token deposited on the origin chain — the chain's wrapped native for a native send. */
+  inputToken: evmAddress,
+  /** The token received on the destination chain. */
+  outputToken: evmAddress,
+  /** Exact base-unit input amount, a positive integer as decimal. */
+  amount: z.string().check(z.regex(/^[1-9][0-9]*$/)),
+  /** The account the deposit settles for. */
+  taker: evmAddress,
+});
+
+/**
+ * An Across `/suggested-fees` relay: the deposit terms the engine must verify on-chain — output and
+ * deadline verbatim, the spoke pool address so a stale or spoofed build is refused.
+ */
+const bridgeQuoteFilled = z.object({
+  liquidity: z.literal(true),
+  provider: z.literal("across"),
+  inputToken: evmAddress,
+  outputToken: evmAddress,
+  inputAmount: decimal,
+  outputAmount: decimal,
+  destinationNetwork: caip2.check(z.regex(/^eip155:[0-9]+$/)),
+  quoteTimestamp: z.coerce.number().check(z.int()),
+  fillDeadline: z.coerce.number().check(z.int()),
+  exclusiveRelayer: evmAddress,
+  exclusivityParameter: z.coerce.number().check(z.int()),
+  spokePool: evmAddress,
+  limits: z.object({ minDeposit: decimal, maxDeposit: decimal }),
+});
+
+export const bridgeQuoteResponse = z.union([bridgeQuoteFilled, quoteEmpty]);
+
+export const bridgeQuote = endpoint(
+  "GET",
+  "/v1/quotes/bridge",
+  bridgeQuoteRequest,
+  bridgeQuoteResponse,
+);
+
+export type BridgeQuoteRequest = z.infer<typeof bridgeQuoteRequest>;
+export type BridgeQuoteResponse = z.infer<typeof bridgeQuoteResponse>;

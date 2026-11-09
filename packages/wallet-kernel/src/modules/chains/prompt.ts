@@ -26,6 +26,7 @@ export type PromptIntent = Pick<
   | "message"
   | "delegation"
   | "minimumReceived"
+  | "bridge"
 > & {
   readonly warnings?: DisplayIntent["warnings"];
   readonly staking?: DisplayIntent["staking"];
@@ -82,6 +83,13 @@ type Catalog = {
   readonly revokeDelegation: string;
   readonly stakeLine: (action: StakeAction) => string;
   readonly platformFee: (message: string) => string;
+  readonly bridgeLine: (
+    network: string,
+    amount: string,
+    to: string,
+    deadline: string,
+    refundTo: string,
+  ) => string;
   readonly stakeAuthority: (account: string, role: string, authority: string) => string;
   readonly stakeRole: Readonly<Record<"staker" | "withdrawer", string>>;
 };
@@ -97,6 +105,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
       authorization: "确认账户授权",
       batch: "确认批量交易",
       stake: "确认质押",
+      bridge: "确认跨链",
     },
     blindTitle: "确认盲签",
     blindDescription: "签署无法显示为文字的数据",
@@ -118,6 +127,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     maxFee: (fee) => `最高手续费 ${fee}`,
     sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
     platformFee: (message) => `Jupiter 收取平台费 ${message}`,
+    bridgeLine: (network, amount, to, deadline, refundTo) =>
+      `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
     delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
     revokeDelegation: "撤销此账户的合约委托",
     stakeRole: { staker: "质押", withdrawer: "提取" },
@@ -148,6 +159,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
       authorization: "Confirm account authorization",
       batch: "Confirm batch",
       stake: "Confirm staking",
+      bridge: "Confirm bridge",
     },
     blindTitle: "Confirm blind signing",
     blindDescription: "Sign data that cannot be shown as text",
@@ -170,6 +182,8 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     sighashSingle:
       "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
     platformFee: (message) => `Jupiter platform fee: ${message}`,
+    bridgeLine: (network, amount, to, deadline, refundTo) =>
+      `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
     delegateTo: (name, version) =>
       `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
     revokeDelegation: "Revoke this account's contract delegation",
@@ -279,9 +293,21 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
     ...delegation,
     ...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
     ...(intent.staking ?? []).map((action) => catalog.stakeLine(action)),
-    ...(intent.minimumReceived ?? []).map((entry) =>
-      catalog.receiveMin(formatAmount(entry.amount), entry.to),
-    ),
+    ...(intent.bridge === undefined
+      ? (intent.minimumReceived ?? []).map((entry) =>
+          catalog.receiveMin(formatAmount(entry.amount), entry.to),
+        )
+      : [
+          catalog.bridgeLine(
+            intent.bridge.destinationNetwork,
+            intent.minimumReceived?.[0] === undefined
+              ? "?"
+              : formatAmount(intent.minimumReceived[0].amount),
+            intent.minimumReceived?.[0]?.to ?? intent.bridge.refundTo,
+            new Date(intent.bridge.fillDeadline * 1000).toISOString().slice(0, 16),
+            intent.bridge.refundTo,
+          ),
+        ]),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
     ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
     ...(intent.warnings ?? [])

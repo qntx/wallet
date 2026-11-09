@@ -50,8 +50,14 @@ import { DepositClaimer } from "./spark/deposit-claim.ts";
 import { stakePositions, stakeValidators } from "./staking/index.ts";
 import type { StakePosition, StakeValidator } from "./staking/index.ts";
 import type { EngineStore, PublicStore } from "./store/port.ts";
+import type { AcrossBridgeQuote, AcrossBridgeStatus } from "./swaps/bridge.ts";
 import type { SwapQuote } from "./swaps/index.ts";
-import { fetchJupiterQuote, fetchSwapQuote } from "./swaps/quote.ts";
+import {
+  fetchBridgeQuote,
+  fetchBridgeStatus,
+  fetchJupiterQuote,
+  fetchSwapQuote,
+} from "./swaps/quote.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
 import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
@@ -135,6 +141,24 @@ export type WalletEngine = {
   };
   /** The account's EIP-7702 delegation state on `network`. */
   readonly delegation: (account: AccountRef, network: string) => Promise<DelegationStatus>;
+  /**
+   * A gateway Across bridge quote — display-only; `undefined` when the route has no liquidity.
+   * `status` reads the Across deposit-status API; neither affects signing.
+   */
+  readonly bridges: {
+    readonly quote: (params: {
+      readonly account: AccountRef;
+      readonly network: string;
+      readonly destinationNetwork: string;
+      readonly inputToken: string;
+      readonly outputToken: string;
+      readonly amount: bigint;
+    }) => Promise<AcrossBridgeQuote | undefined>;
+    readonly status: (params: {
+      readonly network: string;
+      readonly txHash: string;
+    }) => Promise<AcrossBridgeStatus>;
+  };
   /** A gateway 0x swap quote — display-only; `undefined` when the quote has no liquidity. */
   readonly swaps: {
     readonly quote: (params: {
@@ -699,6 +723,19 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     delegation: async (account: AccountRef, network: string) =>
       transactions.delegationState(account, network),
+    bridges: {
+      quote: async (params) =>
+        fetchBridgeQuote(
+          {
+            fetch: options.fetch,
+            gateway: options.gateway,
+            address: evmAddressOf,
+            now: options.now,
+          },
+          params,
+        ),
+      status: async (params) => fetchBridgeStatus({ fetch: options.fetch }, params),
+    },
     swaps: {
       quote: async (params) =>
         (params.network.startsWith("solana:") ? fetchJupiterQuote : fetchSwapQuote)(

@@ -23,6 +23,8 @@ import {
   networkChainId,
   LIDO_QUEUE,
   LIDO_STETH,
+  ACROSS_SPOKEPOOLS,
+  ACROSS_WRAPPED_NATIVE,
 } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
@@ -38,6 +40,7 @@ import {
   mergeEvmQuote,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import { assertBridgeSimulation } from "../swaps/bridge.ts";
 import {
   ALLOWANCE_HOLDER_CODE_HASH,
   QUOTE_MAX_AGE_MS,
@@ -87,7 +90,15 @@ const bump = (v: bigint): bigint => (v * 11n + 9n) / 10n;
 
 export type EvmInternalInput = Extract<
   ChainRequestInput,
-  { readonly method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-lido" }
+  {
+    readonly method:
+      | "evm-delegation"
+      | "evm-batch"
+      | "evm-approve"
+      | "evm-swap"
+      | "evm-bridge"
+      | "evm-lido";
+  }
 >;
 
 export type EvmRoute = {
@@ -560,6 +571,65 @@ const prepareLidoIntent = async (
   };
 };
 
+const ACROSS_DEPOSIT_ABI = [
+  {
+    type: "function",
+    name: "deposit",
+    stateMutability: "payable",
+    inputs: [
+      { name: "depositor", type: "bytes32" },
+      { name: "recipient", type: "bytes32" },
+      { name: "inputToken", type: "bytes32" },
+      { name: "outputToken", type: "bytes32" },
+      { name: "inputAmount", type: "uint256" },
+      { name: "outputAmount", type: "uint256" },
+      { name: "destinationChainId", type: "uint256" },
+      { name: "exclusiveRelayer", type: "bytes32" },
+      { name: "quoteTimestamp", type: "uint32" },
+      { name: "fillDeadline", type: "uint32" },
+      { name: "exclusivityParameter", type: "uint32" },
+      { name: "message", type: "bytes" },
+    ],
+    outputs: [],
+  },
+] as const;
+
+const pad32 = (address: string): `0x${string}` => `0x${address.slice(2).padStart(64, "0")}`;
+
+/** The SpokePool `deposit` calldata built from a verified quote — the SDK data suffix is not used. */
+const acrossDepositCall = (
+  depositor: string,
+  quote: {
+    readonly inputToken: string;
+    readonly outputToken: string;
+    readonly inputAmount: bigint;
+    readonly outputAmount: bigint;
+    readonly exclusiveRelayer: string;
+    readonly quoteTimestamp: number;
+    readonly fillDeadline: number;
+    readonly exclusivityParameter: number;
+  },
+  destinationChainId: number,
+): string =>
+  encodeFunctionData({
+    abi: ACROSS_DEPOSIT_ABI,
+    functionName: "deposit",
+    args: [
+      pad32(depositor),
+      pad32(depositor),
+      pad32(quote.inputToken),
+      pad32(quote.outputToken),
+      quote.inputAmount,
+      quote.outputAmount,
+      BigInt(destinationChainId),
+      pad32(quote.exclusiveRelayer),
+      quote.quoteTimestamp,
+      quote.fillDeadline,
+      quote.exclusivityParameter,
+      "0x",
+    ],
+  });
+
 /** `approve(ALLOWANCE_HOLDER, amount)` calldata for a delegated swap batch. */
 const allowanceHolderApprove = (amount: bigint): string =>
   encodeFunctionData({
@@ -1012,6 +1082,124 @@ export const createEvmRoute = (): EvmRoute => {
     return { kind: "call", to: tx.to, value: tx.value, data: tx.data };
   };
 
+  /* `evm-bridge`: verify the quote, build the SpokePool deposit, gate the ERC-20 allowance. */
+  const prepareBridgeIntent = async (
+    ctx: RouteContext,
+    input: Extract<ChainRequestInput, { method: "evm-bridge" }>,
+    from: string,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<BuildIntent> => {
+    const { quote } = input;
+    if (ctx.options.now() - quote.fetchedAt > QUOTE_MAX_AGE_MS) {
+      throw new ChainError("invalid-request", "the quote is stale — re-quote");
+    }
+    if (quote.taker.toLowerCase() !== from.toLowerCase()) {
+      throw new ChainError("invalid-request", "the quote is not for this account");
+    }
+    const originChainId = networkChainId(input.network);
+    const destinationChainId = networkChainId(quote.destinationNetwork);
+    const spokePool = ACROSS_SPOKEPOOLS[originChainId];
+    if (spokePool === undefined || ACROSS_SPOKEPOOLS[destinationChainId] === undefined) {
+      throw new ChainError("invalid-request", "the network pair does not support Across bridges");
+    }
+    if (quote.spokePool.toLowerCase() !== spokePool.toLowerCase()) {
+      throw new ChainError("invalid-request", "the quote names a different SpokePool");
+    }
+    /* Across deposits always pay a nonnegative relay fee, so the destination amount of a
+       same-asset route can never exceed the input. */
+    if (quote.outputAmount <= 0n || quote.outputAmount > quote.inputAmount) {
+      throw new ChainError("invalid-request", "the quoted output amount is out of range");
+    }
+    /* The depositor refunds after fillDeadline; the deadline must be in the future and within the
+       protocol's 7200 s fill-deadline buffer of the quote timestamp. */
+    if (
+      quote.fillDeadline * 1000 <= ctx.options.now() ||
+      quote.fillDeadline - quote.quoteTimestamp > 7200
+    ) {
+      throw new ChainError("invalid-request", "the quoted fill deadline is out of range");
+    }
+    const native =
+      quote.inputToken.toLowerCase() === (ACROSS_WRAPPED_NATIVE[originChainId] ?? "").toLowerCase();
+    const data = acrossDepositCall(from, quote, destinationChainId);
+    /* The built call must decode back to the quote's exact terms. */
+    const request: SignRequest = {
+      kind: "evm.transaction",
+      network: input.network,
+      account: input.account,
+      tx: {
+        type: "eip1559",
+        chainId: originChainId,
+        to: spokePool,
+        value: `0x${(native ? quote.inputAmount : 0n).toString(16)}`,
+        nonce: 0,
+        gas: "0x0",
+        data,
+        accessList: [],
+        maxFeePerGas: "0x0",
+        maxPriorityFeePerGas: "0x0",
+      },
+    };
+    const intent = decodeEvm(request, from);
+    if (
+      intent.summary !== "bridge" ||
+      intent.minimumReceived?.[0]?.to.toLowerCase() !== from.toLowerCase() ||
+      intent.minimumReceived[0].amount.amount !== quote.outputAmount.toString(10) ||
+      intent.minimumReceived[0].amount.asset.toLowerCase() !== quote.outputToken.toLowerCase() ||
+      intent.bridge?.destinationNetwork !== quote.destinationNetwork ||
+      intent.bridge.fillDeadline !== quote.fillDeadline ||
+      intent.bridge.refundTo.toLowerCase() !== from.toLowerCase()
+    ) {
+      throw new ChainError("invalid-request", "the built deposit does not decode to the quote");
+    }
+    const [outflow] = intent.outflows;
+    if (
+      outflow === undefined ||
+      (native
+        ? outflow.amount.asset !== EVM_NATIVE_ASSET ||
+          outflow.amount.amount !== quote.inputAmount.toString(10)
+        : outflow.amount.asset.toLowerCase() !== quote.inputToken.toLowerCase() ||
+          outflow.amount.amount !== quote.inputAmount.toString(10))
+    ) {
+      throw new ChainError("invalid-request", "the built deposit does not decode to the quote");
+    }
+    if (native) {
+      return { kind: "call", to: spokePool, value: quote.inputAmount, data };
+    }
+    const current = await readAllowance(
+      ctx,
+      input.network,
+      quote.inputToken,
+      from,
+      spokePool,
+      flags,
+    );
+    if (current >= quote.inputAmount) {
+      return { kind: "call", to: spokePool, value: 0n, data };
+    }
+    const state = await delegationStateOrNone(ctx, input.network, from, flags);
+    if (state.kind !== "ours") {
+      throw new ChainError(
+        "invalid-request",
+        "approve the SpokePool for the input amount first, then re-quote",
+      );
+    }
+    const calls = [
+      ...(current === 0n
+        ? []
+        : [{ to: quote.inputToken, value: 0n, data: allowanceHolderApprove(0n) }]),
+      { to: quote.inputToken, value: 0n, data: allowanceHolderApprove(quote.inputAmount) },
+      { to: spokePool, value: 0n, data },
+    ];
+    return {
+      kind: "call",
+      to: from,
+      value: 0n,
+      data: encodeBatchExecute(
+        calls.map((c) => ({ to: checksumEvmAddress(c.to), value: c.value, data: c.data })),
+      ),
+    };
+  };
+
   /**
    * `evm-delegation` (upgrade/revoke) and `evm-batch`: internal, group-scoped self-transactions —
    * the batch upgrades the account to the delegator when it is not already delegated to it.
@@ -1052,6 +1240,8 @@ export const createEvmRoute = (): EvmRoute => {
       intent = await prepareApproveIntent(ctx, input, from, flags);
     } else if (input.method === "evm-swap") {
       intent = await prepareSwapIntent(ctx, input, from, flags);
+    } else if (input.method === "evm-bridge") {
+      intent = await prepareBridgeIntent(ctx, input, from, flags);
     } else if (input.method === "evm-lido") {
       intent = await prepareLidoIntent(ctx, input, from, flags, async () =>
         delegationStateOrNone(ctx, network, from, flags),
@@ -1108,17 +1298,25 @@ export const createEvmRoute = (): EvmRoute => {
         checks: [...new Set([...prepared.checks, ...collectChecks(flags)])],
       };
     }
-    if (input.method === "evm-swap") {
+    if (input.method === "evm-swap" || input.method === "evm-bridge") {
       /* The simulation is mandatory and must keep the quote's terms, now and at approval. */
       const gasCost = BigInt(prepared.intent.fee?.max.amount ?? "0");
-      assertSwapSimulation(input.quote, prepared.simulation, gasCost);
+      if (input.method === "evm-swap") {
+        assertSwapSimulation(input.quote, prepared.simulation, gasCost);
+      } else {
+        assertBridgeSimulation(input.quote, prepared.simulation, gasCost);
+      }
       const rerun = prepared.resimulate;
       const resimulate =
         rerun === undefined
           ? undefined
           : async () => {
               const outcome = await rerun();
-              assertSwapSimulation(input.quote, outcome, gasCost);
+              if (input.method === "evm-swap") {
+                assertSwapSimulation(input.quote, outcome, gasCost);
+              } else {
+                assertBridgeSimulation(input.quote, outcome, gasCost);
+              }
               return outcome;
             };
       return {
