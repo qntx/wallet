@@ -15,6 +15,8 @@ import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
 import { AccountTreeController } from "./accounts/controller.ts";
+import { WatchController } from "./accounts/watch.ts";
+import type { WatchAccount } from "./accounts/watch.ts";
 import { AddressBookController } from "./addresses/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
@@ -130,6 +132,18 @@ export type WalletEngine = {
   /** Read and receive surface; every payment goes through `requests`. */
   readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
   readonly accounts: AccountTreeController;
+  readonly watch: {
+    readonly add: (input: {
+      readonly family: "evm" | "solana" | "bitcoin";
+      readonly address: string;
+      readonly name?: string;
+    }) => Promise<WatchAccount>;
+    readonly rename: (id: string, name: string) => Promise<void>;
+    readonly remove: (id: string) => Promise<void>;
+    readonly list: () => ReadonlyArray<WatchAccount>;
+    readonly assets: (id: string, network: string) => Promise<unknown>;
+    readonly history: (id: string) => ReadonlyArray<unknown>;
+  };
   readonly metaSync: MetaSyncController;
   readonly backup: BackupController;
   readonly zaps: {
@@ -285,6 +299,52 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
     now: options.now,
     setTimer,
+  });
+  const watch = new WatchController({
+    random: options.random,
+    now: options.now,
+    logger: options.logger,
+    /* "Own" covers every HD group's derived EVM, Solana and Bitcoin (payment/ordinals)
+       address — derived on demand since the tree stores only group indexes — plus any
+       address already in the balances state. */
+    ownAddresses: async () => {
+      const reads = Object.entries(accounts.getState().groups).flatMap(([walletId, groups]) =>
+        groups.flatMap((group) =>
+          (
+            [
+              ["evm.bip44", "evm"],
+              ["solana.bip44-change", "solana"],
+              ["btc.bip84", "bitcoin"],
+              ["btc.bip86", "bitcoin"],
+            ] as const
+          ).flatMap(([template, family]) =>
+            networks.enabled(family).map(async (network) => {
+              try {
+                const account = await chains(options.wallet).account({
+                  walletId,
+                  groupIndex: group.index,
+                  template,
+                  network,
+                });
+                return "address" in account ? account.address : undefined;
+              } catch {
+                /* a family the group has no account on is not a collision */
+                return undefined;
+              }
+            }),
+          ),
+        ),
+      );
+      const derived = await Promise.all(reads);
+      const addresses = new Set(derived.filter((a) => a !== undefined));
+      for (const entry of Object.keys(assets.getState().balances)) {
+        const [, address] = entry.split(":");
+        if (address !== undefined) {
+          addresses.add(address);
+        }
+      }
+      return [...addresses];
+    },
   });
 
   const requests = new RequestController({
@@ -692,6 +752,38 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     assets,
     transactions,
     requests,
+    watch: {
+      add: async (input) => watch.add(input),
+      rename: async (id, name) => watch.rename(id, name),
+      remove: async (id) => watch.remove(id),
+      list: () => watch.list(),
+      /* The same per-address balance read the HD accounts use — the controller refreshes a
+         plain address, so a watch account's stored address plugs straight in. */
+      assets: async (id, network) => {
+        const account = watch.getState().accounts[id];
+        if (account === undefined) {
+          throw new Error("no such watch account");
+        }
+        await assets.refresh(account.address, network);
+        return assets.getState().balances[`${network}:${account.address}`];
+      },
+      /* Tracked transactions the address appears in — EVM by `evm.from`, Bitcoin by
+         its recorded inputs, Solana has no address field on the store so watch history
+         for it is only what a future per-address read adds. */
+      history: (id) => {
+        const account = watch.getState().accounts[id];
+        if (account === undefined) {
+          throw new Error("no such watch account");
+        }
+        const address = account.address.toLowerCase();
+        return Object.values(transactions.getState().txs).filter((tx) => {
+          if (tx.evm?.from.toLowerCase() === address) {
+            return true;
+          }
+          return tx.btc?.inputs.some((input) => input.address.toLowerCase() === address) ?? false;
+        });
+      },
+    },
     addressBook,
     connections,
     eip1193,
