@@ -1,3 +1,4 @@
+import { hex } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { NETWORK, p2wpkh, Transaction } from "@scure/btc-signer";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
@@ -115,10 +116,11 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
     now: () => 0,
     logger: { warn: () => {} },
     chains: {
-      account: async () =>
+      account: async (p: { groupIndex: number }) =>
         Promise.resolve({
           template: "btc.bip84",
           network: "bip122:000000000019d6689c085ae165831e93",
+          groupIndex: p.groupIndex,
           xpub: HD.publicExtendedKey,
           fingerprint: "00000000",
           path: "m/84'/0'/0'",
@@ -158,6 +160,16 @@ const signedPsbt = (n: number): Transaction => {
     throw new Error("expected a bitcoin.psbt sign call");
   }
   return Transaction.fromPSBT(req.psbt);
+};
+
+const inputTxids = (tx: Transaction): ReadonlyArray<string> =>
+  Array.from({ length: tx.inputsLength }, (_, i) =>
+    hex.encode(tx.getInput(i).txid ?? new Uint8Array()),
+  );
+
+const signGroupIndex = (n: number): number | undefined => {
+  const req = signedCalls[n]?.request;
+  return req !== undefined && req.account.kind === "hd" ? req.account.groupIndex : undefined;
 };
 
 const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransaction> => {
@@ -471,6 +483,7 @@ describe("bitcoin rbf", () => {
   it("every segwit-v0 PSBT input carries its previous transaction, fetched for spent inputs only", async () => {
     setUtxos(DEFAULT_UTXOS);
     const c = ctx();
+    signedCalls.length = 0;
     hexCalls.length = 0;
     const original = await send(c);
     const sendPsbt = signedPsbt(0);
@@ -485,11 +498,57 @@ describe("bitcoin rbf", () => {
     expect(signedPsbt(1).getInput(0).nonWitnessUtxo).toBeDefined();
     hexCalls.length = 0;
     const bumped = await route.prepareReplace(c, original, "speed-up", "req-r");
-    expect(new Set(hexCalls)).toStrictEqual(new Set(DEFAULT_UTXOS.map((u) => u.txid)));
+    // The stashed inputs already carry their prevouts — nothing is re-fetched here.
+    expect(hexCalls).toStrictEqual([]);
     await bumped.submit({ kind: "password", password: "pw" });
     const bumpPsbt = signedPsbt(2);
     for (let i = 0; i < bumpPsbt.inputsLength; i++) {
       expect(bumpPsbt.getInput(i).nonWitnessUtxo).toBeDefined();
     }
+  });
+
+  it("a replacement spends only the original's inputs — never unselected utxos", async () => {
+    signedCalls.length = 0;
+    setUtxos([
+      { txid: funding(1, 50_000).txid, vout: 0, value: 50_000 },
+      { txid: funding(2, 30_000).txid, vout: 0, value: 30_000 },
+      { txid: funding(3, 40_000).txid, vout: 0, value: 40_000 },
+    ]);
+    const c = ctx();
+    const original = await send(c);
+    const originalInputs = signedPsbt(0).inputsLength;
+    expect(originalInputs).toBe(1);
+    const speedUp = await route.prepareReplace(c, original, "speed-up", "req-speed-up");
+    await speedUp.submit({ kind: "password", password: "pw" });
+    const cancel = await route.prepareReplace(c, original, "cancel", "req-cancel");
+    await cancel.submit({ kind: "password", password: "pw" });
+    for (const n of [1, 2] as const) {
+      const tx = signedPsbt(n);
+      const txids = new Set(inputTxids(tx));
+      // Exactly the original's inputs, each once — unselected utxos and duplicates are bugs.
+      expect(tx.inputsLength).toBe(originalInputs);
+      expect(txids.size).toBe(tx.inputsLength);
+    }
+  });
+
+  it("fee bumps keep the original account's groupIndex", async () => {
+    signedCalls.length = 0;
+    setUtxos(DEFAULT_UTXOS);
+    const c = ctx();
+    const original = await routeSend(route, c, {
+      account: { kind: "hd", walletId: "w", groupIndex: 1, template: "btc.bip84" },
+      network: "bip122:000000000019d6689c085ae165831e93",
+      to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+      amount: 10_000n,
+      fee: "slow",
+      verify: { kind: "password", password: "pw" },
+    });
+    expect(signGroupIndex(0)).toBe(1);
+    const bumped = await route.prepareReplace(c, original, "speed-up", "req-r");
+    await bumped.submit({ kind: "password", password: "pw" });
+    expect(signGroupIndex(1)).toBe(1);
+    const child = await route.prepareCpfp(c, original, 10, "req-c");
+    await child.submit({ kind: "password", password: "pw" });
+    expect(signGroupIndex(2)).toBe(1);
   });
 });

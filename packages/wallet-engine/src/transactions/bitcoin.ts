@@ -46,6 +46,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 type BtcStash = {
   readonly inputs: ReadonlyArray<Parameters<BitcoinChainAdapter["buildPsbt"]>[0][number]>;
+  readonly groupIndex: number;
   readonly allUtxos: ReadonlyArray<{
     readonly txid: string;
     readonly vout: number;
@@ -324,6 +325,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
             throw new Error(`no raw transaction for input ${String(i)}`);
           }
           parsed.updateInput(i, { nonWitnessUtxo: raw });
+          const chosen = selected[i];
+          if (chosen !== undefined) {
+            chosen.nonWitnessUtxo = raw;
+          }
         }
         psbt = parsed.toPSBT(0);
       } catch (error) {
@@ -369,8 +374,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const outTotal = outValues.reduce((a, o) => a + o.value, 0);
     const id0 = newId(ctx.options.random);
     const stash: BtcStash = {
-      inputs,
+      inputs: selected,
       allUtxos: utxos,
+      groupIndex: account.groupIndex,
       pathOf: (u) => {
         const a = byAddr.get(u.address);
         return a === undefined ? [] : [...base, a.chain, a.index];
@@ -568,14 +574,19 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const { template } = stash;
     const btcAccount = await apis.account({
       walletId: old.account,
-      groupIndex: 0,
+      groupIndex: stash.groupIndex,
       template,
       network: old.network,
     });
     if (!("xpub" in btcAccount)) {
       throw new Error("bitcoin account carries no xpub");
     }
-    const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
+    const account = {
+      kind: "hd" as const,
+      walletId: old.account,
+      groupIndex: stash.groupIndex,
+      template,
+    };
     const tiers = await feeTiers(es);
     const tierQuote = tiers.find((t) => t.tier === stash.tier) ?? tiers[1];
     let rate = tierQuote === undefined ? 1 : tierQuote.satPerByte;
@@ -664,75 +675,20 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         }
       }
       if (feeNeeded(outputs) > 0n) {
-        const keepChange = [...outputs, { address: changeAddr, amount: BigInt(dust) }];
-        while (feeNeeded(keepChange) > 0n && spare.length > extraUtxos.length) {
-          const next = spare[extraUtxos.length];
-          if (next === undefined) {
-            break;
-          }
-          const key = `${next.txid}:${next.vout}`;
-          extraUtxos.push(next);
-          reserved.set(key, requestId);
-          try {
-            const more =
-              template === "btc.bip86"
-                ? new Map<string, Uint8Array>()
-                : // oxlint-disable-next-line eslint/no-await-in-loop -- extras join one at a time.
-                  await fetchRawTxes(es, [next]);
-            extraInputs.push(
-              ...bitcoin.toInputs(
-                [{ ...next, status: "confirmed" as const }],
-                0,
-                stash.pathOf,
-                stash.pubkeyOf,
-                stash.scriptOf,
-                stash.template,
-                (u) => more.get(u.txid),
-              ),
-            );
-          } catch (error) {
-            extraUtxos.pop();
-            reserved.delete(key);
-            throw error;
-          }
-        }
-        if (feeNeeded(keepChange) > 0n) {
-          throw new Error("insufficient confirmed utxo to fund the replacement fee");
-        }
-        const changeValue =
-          inTotal +
-          extraUtxos.reduce((a, u) => a + u.value, 0) -
-          payee.reduce((a, o) => a + Number(o.amount), 0) -
-          newFee;
+        throw new Error("insufficient confirmed utxo to fund the replacement fee");
+      }
+      const changeValue =
+        inTotal +
+        extraUtxos.reduce((a, u) => a + u.value, 0) -
+        payee.reduce((a, o) => a + Number(o.amount), 0) -
+        newFee;
+      if (changeValue >= dust) {
         outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
-      } else {
-        const changeValue =
-          inTotal +
-          extraUtxos.reduce((a, u) => a + u.value, 0) -
-          payee.reduce((a, o) => a + Number(o.amount), 0) -
-          newFee;
-        if (changeValue >= dust) {
-          outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
-        }
       }
     }
-    // The candidates stashed at prepare time carry no previous transaction for segwit v0 — it is
-    // fetched only for what a PSBT actually spends. The replacement spends them all.
-    let ownInputs = stash.inputs;
-    if (template === "btc.bip49" || template === "btc.bip84") {
-      const raws = await fetchRawTxes(
-        es,
-        stash.inputs.map((i) => ({ txid: String(i.txid) })),
-      );
-      ownInputs = stash.inputs.map((i) => {
-        const nonWitnessUtxo = raws.get(String(i.txid));
-        if (nonWitnessUtxo === undefined) {
-          throw new Error(`no raw transaction for input ${String(i.txid)}`);
-        }
-        return { ...i, nonWitnessUtxo };
-      });
-    }
-    const allInputs = [...ownInputs, ...extraInputs];
+    // The stash carries only the original's selected inputs, each already carrying its previous
+    // transaction for segwit v0 — the replacement spends exactly those plus any extras.
+    const allInputs = [...stash.inputs, ...extraInputs];
     const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params);
     const record = {
       inputs: [
@@ -789,7 +745,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const es = ctx.options.networks.esplora(old.network);
     const independent = ctx.options.networks.independentEsplora(old.network);
     const { template } = stash;
-    const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
+    const account = {
+      kind: "hd" as const,
+      walletId: old.account,
+      groupIndex: stash.groupIndex,
+      template,
+    };
     const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
     if (own.length === 0) {
       throw new Error("parent has no own outputs to bump");
