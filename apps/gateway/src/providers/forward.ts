@@ -8,7 +8,7 @@ import {
 } from "cockatiel";
 
 import { GatewayHttpError } from "../middleware/errors.ts";
-import type { UpstreamProvider } from "../types.ts";
+import type { ResolvedProvider } from "../types.ts";
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
 export const BREAKER_FAILURES = 5;
@@ -24,8 +24,8 @@ export type Forwarder = {
    * a returned value ends the walk. When every provider fails the caller gets a 503.
    */
   run: <T>(
-    providers: ReadonlyArray<UpstreamProvider>,
-    attempt: (provider: UpstreamProvider, signal: AbortSignal) => Promise<T>,
+    providers: ReadonlyArray<ResolvedProvider>,
+    attempt: (provider: ResolvedProvider, signal: AbortSignal) => Promise<T>,
   ) => Promise<Forwarded<T>>;
 };
 

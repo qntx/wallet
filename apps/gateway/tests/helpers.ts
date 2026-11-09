@@ -107,6 +107,7 @@ export function gateway(options: {
   readonly risk?: RiskStore;
   readonly limiters?: Limiters;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
+  readonly auth?: Parameters<typeof createGateway>[0]["auth"];
   readonly jupiter?: { apiKey: string };
   readonly log?: (line: string) => void;
 }): ReturnType<typeof createGateway> {
@@ -116,6 +117,7 @@ export function gateway(options: {
     limiters: options.limiters ?? { rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
+    auth: options.auth ?? {},
     ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
     ...(options.jupiter === undefined ? {} : { jupiter: options.jupiter }),
     log: options.log ?? (() => undefined),

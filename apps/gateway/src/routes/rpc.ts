@@ -49,9 +49,10 @@ export function rpcRoutes({
       const { value, providerId } = await forwarder.run(
         network.providers,
         async (provider, signal) => {
+          const headers = (await provider.auth?.()) ?? {};
           const response = await fetch(provider.url, {
             method: "POST",
-            headers: { "content-type": "application/json" },
+            headers: { "content-type": "application/json", ...headers },
             body: payload,
             signal,
           });

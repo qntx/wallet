@@ -43,9 +43,14 @@ export function esploraRoutes({
       const { value, providerId } = await forwarder.run(
         network.providers,
         async (provider, signal) => {
+          const authHeaders = (await provider.auth?.()) ?? {};
           const response = await fetch(`${provider.url}${path}`, {
             method: c.req.method,
-            ...(body === undefined ? {} : { headers: { "content-type": "text/plain" }, body }),
+            headers: {
+              ...authHeaders,
+              ...(body === undefined ? {} : { "content-type": "text/plain" }),
+            },
+            ...(body === undefined ? {} : { body }),
             signal,
           });
           // 400/404 (bad request, unknown tx) are the upstream's real answer. 401 and 403 (an

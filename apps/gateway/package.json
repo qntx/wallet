@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "wrangler dev --env staging",
     "deploy:staging": "wrangler deploy --env staging",
-    "types": "wrangler types --env staging",
+    "types": "wrangler types",
     "typecheck": "tsc --noEmit",
     "test": "vp test",
-    "test:coverage": "vp test --coverage"
+    "test:coverage": "vp test --coverage",
+    "smoke": "bun scripts/smoke.ts"
   },
   "dependencies": {
     "@hono/standard-validator": "0.4.1",

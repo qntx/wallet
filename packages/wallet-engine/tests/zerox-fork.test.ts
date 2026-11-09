@@ -94,6 +94,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         limiters,
         corsOrigins: [],
         risk,
+        auth: {},
         zeroEx: { apiKey: KEY ?? "" },
         log: () => undefined,
       });

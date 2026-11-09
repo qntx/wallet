@@ -3,7 +3,7 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
-import type { UpstreamProvider } from "../types.ts";
+import type { ResolvedProvider } from "../types.ts";
 import type { Forwarder } from "./forward.ts";
 
 export type ZeroExConfig = {
@@ -40,7 +40,7 @@ export const zeroExConfig = (env: {
 
 const ZEROX_API_BASE = "https://api.0x.org";
 
-const PROVIDER: UpstreamProvider = { id: "0x", url: ZEROX_API_BASE };
+const PROVIDER: ResolvedProvider = { id: "0x", url: ZEROX_API_BASE };
 
 /** `0x` + 40 hex — an EVM address, the 0x native sentinel `0xEeee…` among them. */
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));

@@ -3,7 +3,7 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteSolanaResponse } from "@qntx/wallet-engine/gateway/contract";
 
-import type { UpstreamProvider } from "../types.ts";
+import type { ResolvedProvider } from "../types.ts";
 import type { Forwarder } from "./forward.ts";
 
 /** An optional Jupiter API key — absent, the `/build` API serves keyless at its public rate. */
@@ -11,7 +11,7 @@ export type JupiterConfig = { readonly apiKey?: string };
 
 const JUP_API_BASE = "https://api.jup.ag";
 
-const PROVIDER: UpstreamProvider = { id: "jupiter", url: JUP_API_BASE };
+const PROVIDER: ResolvedProvider = { id: "jupiter", url: JUP_API_BASE };
 
 const base58 = z.string().check(z.regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/));
 const decimal = z.string().check(z.regex(/^[0-9]+$/));

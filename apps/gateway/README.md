@@ -1,8 +1,8 @@
 # @qntx/gateway
 
 The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-RPC and Esplora
-requests to public providers with failover. Private, never published. It holds no secrets and signs
-nothing — wallet data from it is for display and for reads the engine cross-checks.
+requests to upstream providers with failover. Private, never published. It holds provider and
+quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
 | Route                            | Behavior                                                                                                                          |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,8 +27,8 @@ the entries `phishingKey` accepts, hashes them to 8 bytes, and — only when the
 set changed — writes `phishing:snapshot` and then `phishing:journal` to the `RISK` KV namespace. The
 journal keeps 7 days and at most 168 entries; a request with `since` inside it gets one folded diff.
 A failing source, or a deny list that shrank by more than half, skips the build and logs one JSON
-line. The build is not scheduled yet: staging has no cron trigger until its hosting is decided.
-Staging KV namespace: `wallet-gateway-staging-risk`.
+line. Both environments run the build hourly (`"0 * * * *"`). KV namespaces:
+`wallet-gateway-staging-risk` (staging), `wallet-gateway-risk` (production).
 
 | Source                                                                                            | License                                                                                                                 | Used                                         |
 | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- |
@@ -77,8 +77,7 @@ After changing `wrangler.jsonc`, regenerate the committed runtime types:
 ## Deploy staging
 
 Staging serves testnets only (Sepolia, Base Sepolia, Solana devnet, Bitcoin signet and testnet4)
-through keyless public endpoints, at `https://wallet-gateway-staging.qntx.org`. Production is not
-defined yet.
+through keyless public endpoints, at `https://wallet-gateway-staging.qntx.org`.
 
 ```bash
 bunx wrangler login                     # once; the Cloudflare account owning qntx.org
@@ -86,3 +85,29 @@ bun run --cwd apps/gateway deploy:staging
 ```
 
 Roll back with `bunx wrangler rollback --env staging`.
+
+## Production
+
+Production serves mainnets only at `https://gateway.meowl.xyz` on account
+`9241dfd75bea0009a3870173f7e1acd2`: the eight EVM mainnets plus Solana through Alchemy first and
+dRPC second (keys in request headers, never URLs — `Authorization: Bearer` and `Drpc-Key`), and
+Bitcoin mainnet through Blockstream Enterprise's Esplora (client-credentials token, cached per
+isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
+
+Required secrets — set them **before** the first deploy, `wrangler deploy` refuses otherwise:
+
+```bash
+for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY             BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET; do
+  bunx wrangler secret put "$NAME" --env production
+done
+```
+
+(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional.) Deploys run from GitHub Actions →
+**Gateway → Run workflow** on `main` into the `production` environment; a push to `main` touching
+`apps/gateway/**`, `packages/wallet-engine/src/gateway/**` or `.../networks/**` redeploys staging
+automatically. GitHub setup: create environments `staging` and `production`, require reviewers on
+`production`, and put `CLOUDFLARE_API_TOKEN` in each environment's secrets — a token with
+**Workers Scripts:Edit** and **Workers KV Storage:Edit** on this account (custom-domain and
+rate-limit binding deploys ride the same Scripts permission).
+
+Roll back with `bunx wrangler rollback --env production`.
