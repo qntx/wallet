@@ -284,7 +284,7 @@ describe("hardware factor: guarded commands", () => {
     ok(await h.call("wallet.delete", { verify: HARDWARE, walletId }, session));
     expect(prompts(fake.calls, "open")).toStrictEqual([
       corePrompt("en", "export-mnemonic"),
-      corePrompt("en", "export-key"),
+      corePrompt("en", "export-private-key"),
       corePrompt("en", "delete-wallet"),
     ]);
   });

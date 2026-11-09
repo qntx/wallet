@@ -13,6 +13,7 @@ import { CHAINS_METHODS } from "./chains.ts";
 import {
   CORE_METHODS,
   factorInfo,
+  keyInfo,
   MAX_SNAPSHOT_ITEMS,
   safeTime,
   walletErrorCode,
@@ -157,6 +158,7 @@ const statusPayload: Validator<StatusPayload> = obj({
   factors: arr(factorInfo, MAX_SNAPSHOT_ITEMS),
   wallets: arr(walletInfo, MAX_SNAPSHOT_ITEMS),
   nostr: nostrStatus,
+  importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
   backup: union(backupInfo, nullValue),
 });
 

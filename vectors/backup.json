@@ -108,5 +108,12 @@
     "plainWalletId": "30df37a2aa10fbd9",
     "header": "{\"wallets\":[{\"walletId\":\"a8a96711dff685cb\",\"origin\":\"mnemonic\",\"words\":12,\"passphrase\":true},{\"walletId\":\"30df37a2aa10fbd9\",\"origin\":\"mnemonic\",\"words\":12}]}",
     "envelope": "{\"version\":1,\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"a8a96711dff685cb\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":12,\\\"passphrase\\\":true},{\\\"walletId\\\":\\\"30df37a2aa10fbd9\\\",\\\"origin\\\":\\\"mnemonic\\\",\\\"words\\\":12}]}\",\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARMTExMTExMTExMTExMTExMTExMTExMTE-B_91hrJoBpTCKKKtdW6uChnmMiOg-OqumZiDvIDbOmR9v03RfTJpZlyz-6u5gpXA\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFLOHVYRZnl7yiWlsTU2nogoUL8aJdKNFZdPHh7hAzhKuffizCJgOosi0TdCiVXcN6w\"}],\"payload\":\"ARgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGOkg-GkkqDQVgQpwz20Za13YcK_rdhPywN-elptrROL0SzY9phIdiHxOaoQn4TILyOLcJh1XD3A\"}"
+  },
+  "importedKey": {
+    "secret": "2b4be7f19ee27bbf30c667b642d5f4aa69fd169872f8fc3059c08ebae2eb19e7",
+    "keyId": "3d2718a5a66188a7",
+    "family": "solana",
+    "header": "{\"wallets\":[{\"walletId\":\"fa4079dcc186aab5\",\"origin\":\"passkey\",\"words\":12}],\"keys\":[{\"keyId\":\"3d2718a5a66188a7\",\"family\":\"solana\"}]}",
+    "envelope": "{\"version\":1,\"createdAt\":1700000000000,\"header\":\"{\\\"wallets\\\":[{\\\"walletId\\\":\\\"fa4079dcc186aab5\\\",\\\"origin\\\":\\\"passkey\\\",\\\"words\\\":12}],\\\"keys\\\":[{\\\"keyId\\\":\\\"3d2718a5a66188a7\\\",\\\"family\\\":\\\"solana\\\"}]}\",\"factors\":[{\"kind\":\"password\",\"iterations\":600000,\"salt\":\"EhISEhISEhISEhISEhISEg\",\"sealedBek\":\"ARMTExMTExMTExMTExMTExMTExMTExMTE-B_91hrJoBpTCKKKtdW6uChnmMiOg-OqumZiDvIDbOmR9v03RfTJpZlyz-6u5gpXA\"},{\"kind\":\"passkey\",\"credentialId\":\"YmFja3VwLXZlY3Rvci1jcmVkZW50aWFs\",\"sealedBek\":\"ARQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFLOHVYRZnl7yiWlsTU2nogoUL8aJdKNFZdPHh7hAzhKuffizCJgOosi0TdCiVXcN6w\"}],\"payload\":\"ARkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGUamlS14fLPmXjxMsKPG7CoF-nA_3GyRwa8hDmIwJtJX0M6gqtbbkALeyjVwBewE5qssU36q9kkVDorYl2aJOHoXbfdt1fXE\"}"
   }
 }

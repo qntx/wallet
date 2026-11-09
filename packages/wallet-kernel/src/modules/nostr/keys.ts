@@ -119,7 +119,7 @@ export async function exportKey(
     ctx.image,
     params.verify,
     dek,
-    corePromptFor(ctx.platform.keystore, "export-key"),
+    corePromptFor(ctx.platform.keystore, "export-private-key"),
   );
   const record = findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey);
   const secretKey = openRecord(dek, record);

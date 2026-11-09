@@ -10,6 +10,12 @@ import type { PromptIntent } from "./prompt.ts";
 
 export type ExecuteResult = ChainSignResult | { readonly prompt: PromptIntent };
 export type SignRequest = ParamsOf<"chain.sign">["request"];
+export type EvmKeySource =
+  | { readonly kind: "hd"; readonly account: HdAccount; readonly seed: Uint8Array }
+  | { readonly kind: "imported"; readonly secret: Uint8Array };
+
+export type SolanaKeySource = EvmKeySource;
+
 export type HdAccount = Extract<
   Exclude<SignRequest, { kind: "bitcoin.psbt" }>["account"],
   { kind: "hd" }

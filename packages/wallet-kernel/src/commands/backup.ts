@@ -29,17 +29,25 @@ import type {
 } from "@qntx/wallet/protocol";
 import type { WalletInfo } from "@qntx/wallet/types";
 
+import { keyIdOf } from "../derive/key-id.ts";
 import { KernelError } from "../errors.ts";
 import { requirePasskey } from "../platform.ts";
 import type { KernelPlatform, PasskeyResult } from "../platform.ts";
 import { backupCredentialName, corePromptFor, promptLocale } from "../prompts.ts";
+import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
 import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
-import { encodeHeader, parseBackupKeyHeader, parseEntropyHeader } from "../vault/headers.ts";
+import {
+  encodeHeader,
+  parseBackupKeyHeader,
+  parseEntropyHeader,
+  parseKeyHeader,
+} from "../vault/headers.ts";
 import type { StoredRecord } from "../vault/store.ts";
 import { openRecord, openWalletSecret, sealRecord, verifyFactor } from "../vault/vault.ts";
 import type { KernelContext } from "./context.ts";
+import { keyMaterial as keyMaterialFor } from "./keys.ts";
 import { normalizePassphrase } from "./passphrase.ts";
 import {
   commitRecords,
@@ -119,14 +127,33 @@ function parseHeader(text: string): BackupHeaderWire {
 }
 
 const PAYLOAD_WALLET = 0x01;
+const PAYLOAD_KEY = 0x02;
+
+const KEY_FAMILY_NAME: Readonly<Record<number, "evm" | "solana" | "bitcoin">> = {
+  0x01: "evm",
+  0x02: "solana",
+  0x03: "bitcoin",
+};
+const KEY_FAMILY_BYTE: Readonly<Record<"evm" | "solana" | "bitcoin", number>> = {
+  evm: 0x01,
+  solana: 0x02,
+  bitcoin: 0x03,
+};
 
 function encodePayload(
   wallets: ReadonlyArray<{
     origin: "passkey" | "mnemonic";
     entropy: Uint8Array;
   }>,
+  keys: ReadonlyArray<{
+    family: "evm" | "solana" | "bitcoin";
+    secret: Uint8Array;
+  }>,
 ): Uint8Array {
-  const size = 1 + wallets.reduce((acc, w) => acc + 3 + w.entropy.length, 0);
+  const size =
+    1 +
+    wallets.reduce((acc, w) => acc + 3 + w.entropy.length, 0) +
+    keys.reduce((acc, k) => acc + 3 + k.secret.length, 0);
   const out = new Uint8Array(size);
   let off = 0;
   out[off++] = 2; // payload version
@@ -137,20 +164,29 @@ function encodePayload(
     out.set(w.entropy, off);
     off += w.entropy.length;
   }
+  for (const k of keys) {
+    out[off++] = PAYLOAD_KEY;
+    out[off++] = KEY_FAMILY_BYTE[k.family] ?? 0;
+    out[off++] = k.secret.length;
+    out.set(k.secret, off);
+    off += k.secret.length;
+  }
   return out;
 }
 
 function decodePayload(bytes: Uint8Array): {
   wallets: Array<{ origin: "passkey" | "mnemonic"; entropy: Uint8Array }>;
+  keys: Array<{ family: "evm" | "solana" | "bitcoin"; secret: Uint8Array }>;
 } {
   if (bytes.length === 0 || bytes[0] !== 2) {
     throw new KernelError("integrity", "backup: bad payload version");
   }
   const wallets: Array<{ origin: "passkey" | "mnemonic"; entropy: Uint8Array }> = [];
+  const keys: Array<{ family: "evm" | "solana" | "bitcoin"; secret: Uint8Array }> = [];
   let off = 1;
   while (off < bytes.length) {
     const tag = bytes[off++];
-    if (tag === PAYLOAD_WALLET) {
+    if (tag === PAYLOAD_WALLET || tag === PAYLOAD_KEY) {
       if (off + 2 > bytes.length) {
         break;
       }
@@ -160,11 +196,19 @@ function decodePayload(bytes: Uint8Array): {
         throw new KernelError("integrity", "backup: truncated payload");
       }
       off += 2;
-      const origin = ORIGIN_NAME[ob];
-      if (origin === undefined) {
-        throw new KernelError("integrity", "backup: unknown origin byte");
+      if (tag === PAYLOAD_KEY) {
+        const family = KEY_FAMILY_NAME[ob];
+        if (family === undefined) {
+          throw new KernelError("integrity", "backup: unknown key family byte");
+        }
+        keys.push({ family, secret: bytes.slice(off, off + len) });
+      } else {
+        const origin = ORIGIN_NAME[ob];
+        if (origin === undefined) {
+          throw new KernelError("integrity", "backup: unknown origin byte");
+        }
+        wallets.push({ origin, entropy: bytes.slice(off, off + len) });
       }
-      wallets.push({ origin, entropy: bytes.slice(off, off + len) });
       off += len;
     } else {
       throw new KernelError("integrity", "backup: unknown payload tag");
@@ -173,12 +217,17 @@ function decodePayload(bytes: Uint8Array): {
   if (off !== bytes.length) {
     throw new KernelError("integrity", "backup: payload length mismatch");
   }
-  return { wallets };
+  return { wallets, keys };
 }
 
 /** The vault's public backup header plus the payload plaintexts — caller wipes via wipeContents. */
 type BackupContents = {
   readonly wallets: ReadonlyArray<BackupHeaderWallet & { readonly entropy: Uint8Array }>;
+  readonly keys: ReadonlyArray<{
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+    readonly secret: Uint8Array;
+  }>;
   readonly header: string;
 };
 
@@ -201,6 +250,18 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
         entropy,
       });
     }
+    const keys: Array<{
+      keyId: string;
+      family: "evm" | "solana" | "bitcoin";
+      secret: Uint8Array;
+    }> = [];
+    for (const record of ctx.image.records) {
+      if (record.kind !== "key") {
+        continue;
+      }
+      const { family } = parseKeyHeader(record.header);
+      keys.push({ keyId: record.id, family, secret: openRecord(dek, record) });
+    }
     const header = JSON.stringify({
       wallets: wallets.map(({ walletId, origin, words, passphrase }) => ({
         walletId,
@@ -208,8 +269,9 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
         words,
         ...(passphrase === true ? { passphrase } : {}),
       })),
+      ...(keys.length === 0 ? {} : { keys: keys.map(({ keyId, family }) => ({ keyId, family })) }),
     } satisfies BackupHeaderWire);
-    return { wallets, header };
+    return { wallets, keys, header };
   } catch (error) {
     for (const wallet of wallets) {
       wallet.entropy.fill(0);
@@ -221,6 +283,9 @@ function collectContents(ctx: KernelContext, dek: Secret): BackupContents {
 function wipeContents(contents: BackupContents): void {
   for (const wallet of contents.wallets) {
     wallet.entropy.fill(0);
+  }
+  for (const key of contents.keys) {
+    key.secret.fill(0);
   }
 }
 
@@ -431,7 +496,7 @@ export function updateBackup(
   const bek = openRecord(dek, record);
   const contents = collectContents(ctx, dek);
   try {
-    const plaintext = encodePayload(contents.wallets);
+    const plaintext = encodePayload(contents.wallets, contents.keys);
     // Exactly one random draw in the whole command: the payload seal nonce.
     const sealedPayload = seal(
       bek,
@@ -585,7 +650,10 @@ async function restoreWithPassphrases(
     }
     const header = parseHeader(envelope.header);
     const decoded = decodePayload(plaintext);
-    if (decoded.wallets.length !== header.wallets.length) {
+    if (
+      decoded.wallets.length !== header.wallets.length ||
+      decoded.keys.length !== (header.keys?.length ?? 0)
+    ) {
       plaintext.fill(0);
       throw new KernelError("integrity", "backup: payload does not match header");
     }
@@ -655,6 +723,37 @@ async function restoreWithPassphrases(
           records.push(record);
           restored.push(walletInfoOf(material, backup, now));
         }
+        for (const [index, key] of decoded.keys.entries()) {
+          const expected = header.keys?.[index];
+          if (expected === undefined) {
+            throw new KernelError("integrity", "backup: key count mismatch");
+          }
+          const material = keyMaterialFor(key.family, key.secret);
+          const keyId = keyIdOf(key.family, material.publicKey);
+          if (keyId !== expected.keyId || key.family !== expected.family) {
+            throw new KernelError("integrity", "backup: derived keyId does not match header");
+          }
+          if (ctx.image.records.some((r) => r.kind === "key" && r.id === keyId)) {
+            continue; // already in the vault
+          }
+          try {
+            records.push(
+              sealRecord(
+                ctx.platform,
+                gated.dek,
+                "key",
+                keyId,
+                encodeHeader({ family: key.family, address: material.address, createdAt: now }),
+                material.secret,
+              ),
+            );
+          } finally {
+            // A keypair input produces a sliced seed copy distinct from `key.secret`.
+            if (material.secret !== key.secret) {
+              wipe(material.secret);
+            }
+          }
+        }
         if (gated.uninitialized) {
           // Adoption — only while the vault is being established, inside the same atomic
           // commit: a forged envelope merging into an existing vault can never hijack its
@@ -676,6 +775,9 @@ async function restoreWithPassphrases(
       plaintext.fill(0);
       for (const wallet of decoded.wallets) {
         wallet.entropy.fill(0);
+      }
+      for (const key of decoded.keys) {
+        key.secret.fill(0);
       }
     }
   } finally {

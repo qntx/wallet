@@ -94,6 +94,7 @@ export type StatusPayload = {
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;
   readonly nostr: { readonly keys: ReadonlyArray<NostrKeyInfo> };
+  readonly importedKeys: ReadonlyArray<KeyInfo>;
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
   readonly backup: BackupInfo | null;
 };
@@ -163,6 +164,29 @@ export type AutoLockPolicy =
   | { readonly platform: "native"; readonly backgroundSeconds: 0 | 60 | 300 | 900 }
   | { readonly platform: "web"; readonly idleMinutes: 5 | 15 | 60 };
 
+/** Public info for an imported private key — the record id, family and address. */
+export type KeyInfo = {
+  readonly keyId: string;
+  readonly family: "evm" | "solana" | "bitcoin";
+  readonly address: string;
+  readonly createdAt: number;
+};
+
+/** The `wallet.keys` facade — import/list/remove/export for single private keys. */
+export type KeysApi = {
+  /**
+   * `secret` is the family's canonical encoding: `0x`-prefixed 64-hex or 32 bytes for EVM; base58
+   * or raw bytes for a Solana 32-byte seed or 64-byte keypair.
+   */
+  readonly import: (
+    family: "evm" | "solana" | "bitcoin",
+    secret: string | Uint8Array,
+  ) => Promise<KeyInfo>;
+  readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
+  readonly remove: (keyId: string, verify: UnlockFactor) => Promise<void>;
+  readonly export: (keyId: string, verify: UnlockFactor) => Promise<Uint8Array>;
+};
+
 export type WalletSnapshot = {
   readonly vault: VaultState;
   readonly lockReason: LockReason | undefined;
@@ -170,6 +194,7 @@ export type WalletSnapshot = {
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;
   readonly nostr: { readonly keys: ReadonlyArray<NostrKeyInfo> };
+  readonly importedKeys: ReadonlyArray<KeyInfo>;
   /** The retained backup key's public id, or null when cloud backup is off. */
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
   readonly backup: BackupInfo | null;
