@@ -71,6 +71,21 @@ describe("gap-20 scanning", () => {
     expect(addrs).toHaveLength(40);
     expect(addrs[19]!.used).toBe(true);
   });
+
+  it("fails closed after 2000 addresses when every address reports history", async () => {
+    let queried = 0;
+    const lying: Esplora = {
+      get: async () => {
+        queried += 1;
+        return Promise.resolve([{ txid: "x" }]);
+      },
+      post: async () => Promise.reject(new Error("unmocked")),
+    };
+    await expect(
+      scanChain(lying, xpub, "btc.bip84", "bip122:000000000019d6689c085ae165831e93", NETWORK, 0),
+    ).rejects.toThrow("bitcoin address scan exceeded 2000 addresses");
+    expect(queried).toBe(2000);
+  });
 });
 
 const realTimerDeps: EsploraDeps = {

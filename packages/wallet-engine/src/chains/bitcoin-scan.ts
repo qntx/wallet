@@ -66,6 +66,8 @@ const windowUsed = async (
     }),
   );
 
+const MAX_SCAN_ADDRESSES = 2000;
+
 export const scanChain = async (
   es: Esplora,
   xpub: string,
@@ -73,29 +75,34 @@ export const scanChain = async (
   network: string,
   params: typeof BTC_NETWORK,
   chain: BtcChain,
-  start = 0,
 ): Promise<ReadonlyArray<ScanAddress>> => {
-  const batch: ScanAddress[] = Array.from({ length: GAP }, (_, i) => {
-    const index = start + i;
-    return {
-      chain,
-      index,
-      address: bitcoinAddressFromXpub(xpub, template, network, chain, index),
-      used: false,
-    };
-  });
-  const used = await windowUsed(es, params, batch);
-  const marked = batch.map((a, i) => ({
-    chain: a.chain,
-    index: a.index,
-    address: a.address,
-    used: used[i] === true,
-  }));
-  if (!marked.some((a) => a.used)) {
-    return marked;
+  const scanned: ScanAddress[] = [];
+  for (let start = 0; ; start += GAP) {
+    if (start + GAP > MAX_SCAN_ADDRESSES) {
+      throw new Error(`bitcoin address scan exceeded ${MAX_SCAN_ADDRESSES} addresses`);
+    }
+    const batch: ScanAddress[] = Array.from({ length: GAP }, (_, i) => {
+      const index = start + i;
+      return {
+        chain,
+        index,
+        address: bitcoinAddressFromXpub(xpub, template, network, chain, index),
+        used: false,
+      };
+    });
+    // oxlint-disable-next-line eslint/no-await-in-loop -- whether to scan the next window depends on this one.
+    const used = await windowUsed(es, params, batch);
+    const marked = batch.map((a, i) => ({
+      chain: a.chain,
+      index: a.index,
+      address: a.address,
+      used: used[i] === true,
+    }));
+    scanned.push(...marked);
+    if (!marked.some((a) => a.used)) {
+      return scanned;
+    }
   }
-  const rest = await scanChain(es, xpub, template, network, params, chain, start + GAP);
-  return [...marked, ...rest];
 };
 
 const scanAddressUtxos = async (
