@@ -113,6 +113,67 @@ describe("chains(wallet)", () => {
     );
   });
 
+  describe("imported account", () => {
+    const KEY_ID = "11".repeat(8);
+    const importedParams = () => ({
+      request: {
+        kind: "evm.personal-message" as const,
+        network: "eip155:1",
+        account: { kind: "imported" as const, keyId: KEY_ID, family: "evm" as const },
+        message: MESSAGE,
+      },
+      verify: { kind: "password" as const, password: "test password" },
+    });
+    const connectImported = async (signature: Uint8Array, listed: boolean) => {
+      const kernel = new FakeKernel(unlockedStatus());
+      kernel.handlers.set("chain.sign", () => ({
+        ok: { kind: "evm.personal-message", signature },
+      }));
+      kernel.handlers.set("keys.list", () => ({
+        ok: listed ? [{ keyId: KEY_ID, family: "evm", address: ADDRESS, createdAt: 1 }] : [],
+      }));
+      const wallet = await connectKernel({
+        verifyEvent,
+        spawn: () => {
+          const port = new ScriptedPort(kernel);
+          kernel.attach(port);
+          return port;
+        },
+        factors: "software",
+        passkey: PASSKEY,
+        ceremony: undefined,
+        setTimer: (ms, fn) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+      });
+      return wallet;
+    };
+
+    it("verifies the signature against the imported key's address", async () => {
+      const wallet = await connectImported(signEvmPersonalMessage(MESSAGE, PRIV), true);
+      const result = await chains(wallet).sign(importedParams());
+      expect(result.kind).toBe("evm.personal-message");
+    });
+
+    it("rejects a signature not made by the imported key with integrity", async () => {
+      const wallet = await connectImported(
+        signEvmPersonalMessage(MESSAGE, new Uint8Array(32).fill(8)),
+        true,
+      );
+      await expect(chains(wallet).sign(importedParams())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
+    it("rejects a keyId the vault does not list with integrity", async () => {
+      const wallet = await connectImported(signEvmPersonalMessage(MESSAGE, PRIV), false);
+      await expect(chains(wallet).sign(importedParams())).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+  });
+
   const connectTx = async (raw: Uint8Array) => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("chain.sign", () => ({

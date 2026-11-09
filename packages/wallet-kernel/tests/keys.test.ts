@@ -1,6 +1,10 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { base58 } from "@scure/base";
+import { HDKey } from "@scure/bip32";
+import { mnemonicToSeedSync } from "@scure/bip39";
+import Slip10 from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
@@ -8,8 +12,10 @@ import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
 import { normalizeSolana, solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
 import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 
+import { wipe } from "../src/secret/secret.ts";
 import type { KernelResponse } from "./harness.ts";
 import { createHarness } from "./harness.ts";
+import { loadVectors } from "./helpers.ts";
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -36,6 +42,25 @@ const err = (r: KernelResponse): string | undefined => {
     return r.err.code;
   }
   return undefined;
+};
+
+const must = <T>(value: T | null | undefined): T => {
+  if (value === undefined || value === null) {
+    throw new Error("expected a defined value");
+  }
+  return value;
+};
+
+const mustFind = <T extends { readonly kind: string; readonly id: string }>(
+  records: ReadonlyArray<T>,
+  kind: string,
+  id: string,
+): T => {
+  const record = records.find((r) => r.kind === kind && r.id === id);
+  if (record === undefined) {
+    throw new Error(`missing ${kind} record ${id}`);
+  }
+  return record;
 };
 
 const setup = async () => {
@@ -112,18 +137,163 @@ describe("keys.import", () => {
     expect(err(mism)).toBe("invalid-input");
   });
 
-  it("refuses a key that collides with a derived account", async () => {
+  it("refuses a private key that derives an own EVM or Solana account", async () => {
     const { h, session } = await setup();
-    // group-0 evm.bip44 of the test mnemonic — import refuses its private key.
-    // m/44'/60'/0'/0/0 of the "abandon…about" mnemonic is public test-vector
-    // 0x9858EfFD232B4033E47d90003D41EC34EcaEda94 — its key derives the same address.
-    // Deriving the exact secret needs the seed; the own-address check is exercised
-    // by attempting a key that IS a derived account — use a second random key as
-    // a smoke check the path runs, then assert a normal import still succeeds.
-    const res = ok(
-      await h.call("keys.import", { family: "evm", secret: new Uint8Array(32).fill(3) }, session),
+    const seed = mnemonicToSeedSync(new TextDecoder().decode(MNEMONIC));
+    try {
+      // evm.bip44 group 0 — m/44'/60'/0'/0/0 — and solana.bip44-change group 0 —
+      // m/44'/501'/0'/0' — of the test mnemonic, derived exactly like ownAddresses does.
+      const evmChild = HDKey.fromMasterSeed(seed).derive("m/44'/60'/0'/0/0");
+      const solChild = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'");
+      const evmSecret = new Uint8Array(must(evmChild.privateKey));
+      const solSecret = new Uint8Array(solChild.privateKey);
+      try {
+        expect(evmSecret).toHaveLength(32);
+        expect(
+          err(await h.call("keys.import", { family: "evm", secret: evmSecret }, session)),
+        ).toBe("conflict");
+        expect(
+          err(await h.call("keys.import", { family: "solana", secret: solSecret }, session)),
+        ).toBe("conflict");
+      } finally {
+        evmChild.wipePrivateData();
+        wipe(solChild.privateKey);
+      }
+      // A key that is not a derived account still imports.
+      const res = ok(
+        await h.call("keys.import", { family: "evm", secret: new Uint8Array(32).fill(3) }, session),
+      );
+      expect(res["family"]).toBe("evm");
+    } finally {
+      wipe(seed);
+    }
+  });
+
+  it("rejects malformed secrets and unsupported families", async () => {
+    const { h, session } = await setup();
+    // The wire bound is 32–64 bytes — shorter or longer secrets are malformed requests.
+    expect(
+      err(
+        await h.call(
+          "keys.import",
+          { family: "evm", secret: new Uint8Array(31).fill(0x11) },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    // Zero is not a valid secp256k1 scalar.
+    expect(
+      err(await h.call("keys.import", { family: "evm", secret: new Uint8Array(32) }, session)),
+    ).toBe("invalid-input");
+    // Inside the wire bound but not a valid Solana length — the kernel checks.
+    expect(
+      err(
+        await h.call(
+          "keys.import",
+          { family: "solana", secret: new Uint8Array(33).fill(0x22) },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    expect(
+      err(
+        await h.call(
+          "keys.import",
+          { family: "solana", secret: new Uint8Array(65).fill(0x22) },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    // The family byte is reserved for Bitcoin, but WIF/raw BTC import is out of scope.
+    expect(
+      err(
+        await h.call(
+          "keys.import",
+          { family: "bitcoin", secret: new Uint8Array(32).fill(0x33) },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+  });
+
+  it("refuses a second import of the same EVM key", async () => {
+    const { h, session } = await setup();
+    ok(await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session));
+    expect(
+      err(
+        await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session),
+      ),
+    ).toBe("conflict");
+  });
+
+  it("wipes the caller's secret buffer after import", async () => {
+    const { h, session } = await setup();
+    const secret = new Uint8Array(EVM_SECRET);
+    ok(await h.call("keys.import", { family: "evm", secret }, session));
+    expect(secret.every((b) => b === 0)).toBe(true);
+    // A 64-byte Solana keypair input is wiped wholesale, public half included.
+    const keypair = new Uint8Array(64);
+    keypair.set(SOL_SECRET, 0);
+    keypair.set(ed25519.getPublicKey(SOL_SECRET), 32);
+    ok(await h.call("keys.import", { family: "solana", secret: keypair }, session));
+    expect(keypair.every((b) => b === 0)).toBe(true);
+  });
+
+  it("export and remove verify the factor before acting", async () => {
+    const { h, session } = await setup();
+    const imp = ok(
+      await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session),
     );
-    expect(res["family"]).toBe("evm");
+    const keyId = imp["keyId"] as string;
+    const wrong = {
+      kind: "passkey" as const,
+      credentialId: utf8ToBytes("other-credential"),
+      prf: new Uint8Array(32).fill(9),
+    };
+    expect(err(await h.call("keys.export", { verify: wrong, keyId }, session))).toBe(
+      "wrong-passkey",
+    );
+    expect(err(await h.call("keys.remove", { verify: wrong, keyId }, session))).toBe(
+      "wrong-passkey",
+    );
+    const list = ok(await h.call("keys.list", null, session)) as unknown as Array<{
+      keyId: string;
+    }>;
+    expect(list.map((k) => k.keyId)).toContain(keyId);
+  });
+
+  it("a tampered key record fails integrity when opened", async () => {
+    const { h, session } = await setup();
+    const imp = ok(
+      await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session),
+    );
+    const keyId = imp["keyId"] as string;
+    const image = await h.store.load();
+    const record = mustFind(image.records, "key", keyId);
+    const tampered = new Uint8Array(record.sealed);
+    const view = new DataView(tampered.buffer, tampered.byteOffset, tampered.byteLength);
+    view.setUint8(0, view.getUint8(0) ^ 0xff);
+    await h.store.commit([{ op: "put-record", record: { ...record, sealed: tampered } }]);
+    await h.settle();
+    expect(err(await h.call("keys.export", { verify: PASSKEY(), keyId }, session))).toBe(
+      "integrity",
+    );
+  });
+
+  it("a tampered key header fails integrity in keys.list", async () => {
+    const { h, session } = await setup();
+    const imp = ok(
+      await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session),
+    );
+    const keyId = imp["keyId"] as string;
+    const image = await h.store.load();
+    const record = mustFind(image.records, "key", keyId);
+    // Family is authenticated header data — an unknown value fails parseKeyHeader.
+    const tamperedHeader = record.header.replace('"evm"', '"nope"');
+    expect(tamperedHeader).not.toBe(record.header);
+    await h.store.commit([{ op: "put-record", record: { ...record, header: tamperedHeader } }]);
+    await h.settle();
+    expect(err(await h.call("keys.list", null, session))).toBe("integrity");
   });
 });
 
@@ -185,7 +355,89 @@ describe("chain.sign (imported)", () => {
         session,
       ),
     );
+    const signature = res["signature"] as Uint8Array;
     const expected = signSolanaMessage(utf8ToBytes("hello solana"), new Uint8Array(SOL_SECRET));
-    expect(res["signature"]).toStrictEqual(expected);
+    expect(signature).toStrictEqual(expected);
+    // The imported address is the ed25519 public key — the signature must verify under it.
+    expect(
+      ed25519.verify(
+        signature,
+        utf8ToBytes("hello solana"),
+        base58.decode(imp["address"] as string),
+      ),
+    ).toBe(true);
+  });
+
+  it("byte-matches the viem-checked vector for an imported EVM key", async () => {
+    const vectors = loadVectors("chains/evm.json") as {
+      privateKey: string;
+      personalMessage: string;
+      expected: { personalMessage: string };
+    };
+    const { h, session } = await setup();
+    const secret = hexToBytes(vectors.privateKey.slice(2));
+    const imp = ok(await h.call("keys.import", { family: "evm", secret }, session));
+    expect(imp["address"]).toBe("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+    const res = ok(
+      await h.call(
+        "chain.sign",
+        {
+          request: {
+            kind: "evm.personal-message",
+            network: "eip155:1",
+            account: { kind: "imported", keyId: imp["keyId"], family: "evm" },
+            message: hexToBytes(vectors.personalMessage.slice(2)),
+          },
+          verify: PASSKEY(),
+        },
+        session,
+      ),
+    );
+    // vectors.expected.personalMessage is byte-matched against viem in wallet-chains tests.
+    expect(res["signature"]).toStrictEqual(hexToBytes(vectors.expected.personalMessage.slice(2)));
+  });
+
+  it("refuses a request whose family does not match the key", async () => {
+    const { h, session } = await setup();
+    const imp = ok(
+      await h.call("keys.import", { family: "evm", secret: new Uint8Array(EVM_SECRET) }, session),
+    );
+    const res = await h.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "solana.message",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          account: { kind: "imported", keyId: imp["keyId"], family: "solana" },
+          message: utf8ToBytes("mismatch"),
+          format: "raw",
+        },
+        verify: PASSKEY(),
+      },
+      session,
+    );
+    expect(err(res)).toBe("invalid-input");
+  });
+
+  it("refuses an imported ref on a bitcoin request", async () => {
+    const { h, session } = await setup();
+    const res = await h.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "bitcoin.message",
+          network: "bip122:000000000019d6689c085ae165831e93",
+          account: { kind: "imported", keyId: "00".repeat(8), family: "bitcoin" },
+          address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+          message: "hello",
+          format: "bip322-simple",
+          change: 0,
+          index: 0,
+        },
+        verify: PASSKEY(),
+      },
+      session,
+    );
+    expect(err(res)).toBe("unsupported");
   });
 });
