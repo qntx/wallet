@@ -1,0 +1,51 @@
+name: Gateway
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/gateway/**"
+      - "packages/wallet-engine/src/gateway/**"
+      - "packages/wallet-engine/src/networks/**"
+      - "bun.lock"
+      - ".github/workflows/gateway.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gateway-${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
+  cancel-in-progress: false
+
+jobs:
+  staging:
+    if: github.event_name == 'push'
+    environment: staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-engine#build
+      - working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler deploy --env staging
+      - working-directory: apps/gateway
+        run: bun scripts/smoke.ts https://wallet-gateway-staging.qntx.org staging
+  production:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    environment: production
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-engine#build
+      - working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler deploy --env production
+      - working-directory: apps/gateway
+        run: bun scripts/smoke.ts https://gateway.meowl.xyz production
