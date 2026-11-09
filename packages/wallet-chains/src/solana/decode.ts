@@ -11,6 +11,7 @@ import type {
 } from "../index.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { associatedTokenAddress } from "./ata.ts";
+import { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 import { PROGRAM_IDS } from "./ids.ts";
 import { JUPITER_PROGRAM, WSOL_MINT, decodeJupiterIx } from "./jupiter.ts";
 import type { JupiterSwap } from "./jupiter.ts";
@@ -40,6 +41,7 @@ type IxCall = {
     | "token-sync-native"
     | "token-close-account"
     | "jupiter"
+    | "core-transfer"
     | "other";
   readonly to?: string | undefined;
   readonly amount?: bigint | undefined;
@@ -53,6 +55,8 @@ type IxCall = {
   readonly stake?: StakeIx | StakeCreate | undefined;
   /** A recognised Jupiter swap instruction. */
   readonly jupiter?: JupiterSwap | undefined;
+  /** A recognised Metaplex Core transfer: the asset leaves for `newOwner`. */
+  readonly core?: { readonly asset: string; readonly newOwner: string } | undefined;
 };
 
 /**
@@ -135,6 +139,12 @@ const classifyIx = (
       ? { kind: "jupiter", jupiter }
       : { kind: "other" };
   }
+  if (program === MPL_CORE_PROGRAM) {
+    const core = decodeCoreIx(parsed, ix, lookups);
+    return core !== undefined && core.authority === signer
+      ? { kind: "core-transfer", core }
+      : { kind: "other" };
+  }
   if (program === PROGRAM_IDS.stake) {
     const stake = decodeStakeIx(parsed, ix, lookups);
     return stake === undefined ? { kind: "other" } : { kind: "stake", stake };
@@ -165,7 +175,7 @@ const classify = (
     if (call.kind === "other") {
       return "opaque";
     }
-    if (call.kind === "token-approve" || call.kind === "jupiter") {
+    if (call.kind === "token-approve" || call.kind === "jupiter" || call.kind === "core-transfer") {
       allFull = false;
     }
     if (
@@ -178,7 +188,8 @@ const classify = (
       !FULL_KINDS.has(call.kind) &&
       call.kind !== "token-transfer-checked" &&
       call.kind !== "token-approve" &&
-      call.kind !== "jupiter"
+      call.kind !== "jupiter" &&
+      call.kind !== "core-transfer"
     ) {
       return "opaque";
     }
@@ -277,6 +288,14 @@ const decodeTransaction = (
       if (swap.platformFeeBps > 0) {
         warnings.push({ kind: "platform-fee", message: `${swap.platformFeeBps} bps` });
       }
+    }
+    if (call.kind === "core-transfer" && call.core !== undefined) {
+      otherTransfer = true;
+      outflows.push({
+        to: call.core.newOwner,
+        amount: { asset: call.core.asset, amount: "1" },
+        verified: false,
+      });
     }
     if (call.kind === "token-transfer-checked") {
       otherTransfer = true;

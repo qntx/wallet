@@ -29670,6 +29670,33 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
 	};
+	/** `MplAssetInstruction::TransferV1` = 14; `TransferV1Args` is `{ compressionProof: Option }` — a
+	* bare transfer carries `[14, 0]` (no compression proof). mpl-core IDL at c8732ac. */
+	var TRANSFER_V1 = Uint8Array.from([14, 0]);
+	/**
+	* `TransferV1` with the accounts `[asset, collection, payer, authority, newOwner, systemProgram,
+	* logWrapper]` — omitted optionals carry the program id itself (the Shank convention). The
+	* authority slot resolves to the payer when it is the placeholder; it must be the signer for the
+	* call to count as a transfer the wallet is doing.
+	*/
+	var decodeCoreIx = (parsed, ix, lookups) => {
+		const { data } = ix;
+		const account = (i) => {
+			const index = ix.accountIndices[i];
+			return index === void 0 ? void 0 : resolveAccountIndex(parsed, index, lookups);
+		};
+		if (data.length !== 2 || data[0] !== TRANSFER_V1[0] || data[1] !== TRANSFER_V1[1]) return;
+		const asset = account(0);
+		const payer = account(2);
+		const authoritySlot = account(3);
+		const newOwner = account(4);
+		if (asset === void 0 || payer === void 0 || authoritySlot === void 0 || newOwner === void 0) return;
+		return {
+			authority: authoritySlot === "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d" ? payer : authoritySlot,
+			asset,
+			newOwner
+		};
+	};
 	/** Jupiter's swap program — recognised by program id like Lido's upgradeable proxies. */
 	var JUPITER_PROGRAM = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
 	var WSOL_MINT = "So11111111111111111111111111111111111111112";
@@ -29998,6 +30025,13 @@ zoo`.split("\n"));
 				jupiter
 			} : { kind: "other" };
 		}
+		if (program === "CoREENxT6tW1HoK8ypY1SxRMZTcVPm7R94rH4PZNhX7d") {
+			const core = decodeCoreIx(parsed, ix, lookups);
+			return core !== void 0 && core.authority === signer ? {
+				kind: "core-transfer",
+				core
+			} : { kind: "other" };
+		}
 		if (program === PROGRAM_IDS.stake) {
 			const stake = decodeStakeIx(parsed, ix, lookups);
 			return stake === void 0 ? { kind: "other" } : {
@@ -30023,9 +30057,9 @@ zoo`.split("\n"));
 		for (const call of calls) {
 			var _call$mint;
 			if (call.kind === "other") return "opaque";
-			if (call.kind === "token-approve" || call.kind === "jupiter") allFull = false;
+			if (call.kind === "token-approve" || call.kind === "jupiter" || call.kind === "core-transfer") allFull = false;
 			if (call.kind === "token-transfer-checked" && lookupSolanaToken(table, network, (_call$mint = call.mint) !== null && _call$mint !== void 0 ? _call$mint : "") === void 0) allFull = false;
-			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-approve" && call.kind !== "jupiter") return "opaque";
+			if (!FULL_KINDS.has(call.kind) && call.kind !== "token-transfer-checked" && call.kind !== "token-approve" && call.kind !== "jupiter" && call.kind !== "core-transfer") return "opaque";
 		}
 		if (parsed.lookups.length > 0) return "partial";
 		return allFull ? "full" : "partial";
@@ -30106,6 +30140,17 @@ zoo`.split("\n"));
 				if (swap.platformFeeBps > 0) warnings.push({
 					kind: "platform-fee",
 					message: `${swap.platformFeeBps} bps`
+				});
+			}
+			if (call.kind === "core-transfer" && call.core !== void 0) {
+				otherTransfer = true;
+				outflows.push({
+					to: call.core.newOwner,
+					amount: {
+						asset: call.core.asset,
+						amount: "1"
+					},
+					verified: false
 				});
 			}
 			if (call.kind === "token-transfer-checked") {
