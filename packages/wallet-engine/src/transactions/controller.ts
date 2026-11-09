@@ -26,7 +26,7 @@ import type {
   TxState,
   DelegationStatus,
 } from "./route.ts";
-import { accountAddress, newId } from "./route.ts";
+import { accountAddressOf, newId } from "./route.ts";
 import {
   pollSolana,
   prepareSolana,
@@ -129,12 +129,19 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
 };
 
 type EvmRecord = NonNullable<TrackedTransaction["evm"]>;
+const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
+  isObject(v) &&
+  ((v["kind"] === "hd" &&
+    typeof v["walletId"] === "string" &&
+    typeof v["groupIndex"] === "number" &&
+    Number.isSafeInteger(v["groupIndex"]) &&
+    v["groupIndex"] >= 0 &&
+    typeof v["template"] === "string") ||
+    (v["kind"] === "imported" && typeof v["keyId"] === "string" && v["family"] === "evm"));
 const isEvmRecord = (v: unknown): v is EvmRecord =>
   isObject(v) &&
   typeof v["from"] === "string" &&
-  typeof v["groupIndex"] === "number" &&
-  Number.isSafeInteger(v["groupIndex"]) &&
-  v["groupIndex"] >= 0 &&
+  isEvmAccountRef(v["account"]) &&
   typeof v["raw"] === "string" &&
   /^0x(?:[0-9a-fA-F]{2})+$/.test(v["raw"]);
 
@@ -151,7 +158,10 @@ const isIntent = (v: unknown): v is DisplayIntent =>
   Array.isArray(v["outflows"]) &&
   typeof v["verifiability"] === "string";
 
-const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
+const decode = (
+  raw: Uint8Array,
+  warn: (msg: string) => void = () => undefined,
+): TrackedTransaction | undefined => {
   const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
   if (!isObject(parsed)) {
     return undefined;
@@ -195,7 +205,14 @@ const decode = (raw: Uint8Array): TrackedTransaction | undefined => {
     nonce,
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
-    ...(isEvmRecord(evm) ? { evm } : {}),
+    ...(isEvmRecord(evm)
+      ? { evm }
+      : (() => {
+          if (evm !== undefined) {
+            warn(`dropping malformed evm build record on transaction ${id}`);
+          }
+          return {};
+        })()),
     ...(isBtcRecord(btc) ? { btc } : {}),
     ...(isSparkDeposit(sparkDeposit) ? { sparkDeposit } : {}),
     submittedAt,
@@ -225,7 +242,8 @@ export class TransactionController extends Controller<TransactionControllerState
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
     for (const raw of rows) {
-      const tx = raw === undefined ? undefined : decode(raw);
+      const tx =
+        raw === undefined ? undefined : decode(raw, (msg) => this.options.logger.warn(msg));
       if (tx === undefined) {
         continue;
       }
@@ -336,11 +354,8 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    const { account, network } = params;
+    const { network } = params;
     const info = this.options.networks.info(network);
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     const ctx = this.routeCtx();
     if (info.family === "solana") {
       return prepareSolana(ctx, params);
@@ -381,9 +396,6 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     const normalized = normalizeEvm(request);
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     if (normalized.kind === "evm.transaction") {
       return this.evmRoute.prepareCall(this.routeCtx(), {
         account,
@@ -396,13 +408,7 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const { kind, network } = normalized;
     const apis = this.options.chains ?? chains(this.options.wallet);
-    const signing = await apis.account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "evm.bip44",
-      network,
-    });
-    const signer = accountAddress(signing);
+    const signer = await accountAddressOf(this.routeCtx(), account, "evm.bip44", network);
     return {
       account,
       network,
@@ -526,18 +532,12 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     const ctx = this.routeCtx();
-    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const evmAccount = await apis.account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "evm.bip44",
+    return this.evmRoute.delegationState(
+      ctx,
       network,
-    });
-    return this.evmRoute.delegationState(ctx, network, accountAddress(evmAccount));
+      await accountAddressOf(ctx, account, "evm.bip44", network),
+    );
   }
 
   private track(id: string, hash: string): void {

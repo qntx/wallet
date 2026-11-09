@@ -458,7 +458,7 @@ describe("EVM replacement after restart", () => {
     expect(after.value).toBe(before.value);
     expect(after.gas).toBe(before.gas);
     expect(BigInt(after.maxFeePerGas)).toBeGreaterThan(BigInt(before.maxFeePerGas));
-    expect(replacement.evm?.groupIndex).toBe(0);
+    expect(replacement.evm?.account).toStrictEqual(ACCOUNT);
   });
 
   it("cancel rebuilds as a 0-value self-transfer", async () => {
@@ -491,7 +491,11 @@ describe("EVM build record persistence", () => {
     const w = world();
     const first = await w.boot();
     const tx = await send(first.ctl, SEND);
-    expect(tx.evm).toStrictEqual({ from: ADDR, groupIndex: 0, raw: expect.stringMatching(/^0x/) });
+    expect(tx.evm).toStrictEqual({
+      from: ADDR,
+      account: ACCOUNT,
+      raw: expect.stringMatching(/^0x/),
+    });
     const second = await w.boot();
     expect(second.ctl.getState().txs[tx.id]?.evm).toStrictEqual(tx.evm);
   });

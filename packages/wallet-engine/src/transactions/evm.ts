@@ -51,13 +51,14 @@ import {
   assertSwapSimulation,
 } from "../swaps/index.ts";
 import {
-  accountAddress,
+  accountAddressOf,
   errorMessage,
   EVM_BATCH_LIMIT,
   newId,
   replacementStaleReason,
 } from "./route.ts";
 import type {
+  AccountRef,
   ChainApis,
   ChainRequestInput,
   DelegationStatus,
@@ -141,7 +142,7 @@ const signSubmit = async (
   apis: ChainApis,
   request: SignParams["request"],
   verify: SignParams["verify"],
-  account: { readonly from: string; readonly groupIndex: number },
+  account: { readonly from: string; readonly account: AccountRef },
   broadcast: (signed: SignResult) => Promise<{ readonly hash: string; readonly raw: string }>,
 ): Promise<TrackedTransaction> => {
   let signed: SignResult;
@@ -159,7 +160,7 @@ const signSubmit = async (
     tracked = await ctx.transition(tracked, {
       state: "submitted",
       hash,
-      evm: { from: account.from, groupIndex: account.groupIndex, raw },
+      evm: { from: account.from, account: account.account, raw },
       submittedAt: ctx.options.now(),
     });
     ctx.track(tracked.id, hash);
@@ -247,16 +248,7 @@ const resolveFrom = async (
   account: PrepareParams["account"],
   network: string,
 ): Promise<string> => {
-  if (account.kind !== "hd") {
-    throw new Error("imported accounts are not yet supported");
-  }
-  const evmAccount = await evmApis(ctx).account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template: "evm.bip44",
-    network,
-  });
-  return accountAddress(evmAccount);
+  return accountAddressOf(ctx, account, "evm.bip44", network);
 };
 
 const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent =>
@@ -820,9 +812,6 @@ export const createEvmRoute = (): EvmRoute => {
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
     const { account, network, fee, from } = spec;
     const { networks } = ctx.options;
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     const info = networks.info(network);
     const client = networks.client(network);
     const independent = networks.independentClient(network);
@@ -903,7 +892,7 @@ export const createEvmRoute = (): EvmRoute => {
         id: txId,
         family: "evm",
         network,
-        account: account.walletId,
+        account: account.kind === "hd" ? account.walletId : account.keyId,
         hash: undefined,
         state: "draft",
         intent,
@@ -912,20 +901,12 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      return signSubmit(
-        ctx,
-        tx,
-        apis,
-        request,
-        verify,
-        { from, groupIndex: account.groupIndex },
-        async (signed) => {
-          const raw = evm.finalize(feed, signed);
-          const hash = await evm.broadcast(client, raw);
-          evm.commitNonce(network, from, unsigned.nonce);
-          return { hash, raw };
-        },
-      );
+      return signSubmit(ctx, tx, apis, request, verify, { from, account }, async (signed) => {
+        const raw = evm.finalize(feed, signed);
+        const hash = await evm.broadcast(client, raw);
+        evm.commitNonce(network, from, unsigned.nonce);
+        return { hash, raw };
+      });
     };
 
     return {
@@ -1654,7 +1635,7 @@ export const createEvmRoute = (): EvmRoute => {
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
   ): Promise<PreparedRequest> => {
-    const { evm: record } = old;
+    const record = old.evm;
     if (record === undefined) {
       throw new Error("transaction has no build record — cannot replace");
     }
@@ -1664,12 +1645,7 @@ export const createEvmRoute = (): EvmRoute => {
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const { chainId } = networks.info(old.network);
     const original = rebuild(old, record.from, record.raw, chainId);
-    const account = {
-      kind: "hd" as const,
-      walletId: old.account,
-      groupIndex: record.groupIndex,
-      template: "evm.bip44" as const,
-    };
+    const { account } = record;
     const estimates = await evm.estimateFee(client);
     let estimate = estimates.find((q) => q.tier === "fast") ?? estimates[1];
     if (estimate === undefined) {
@@ -1752,7 +1728,7 @@ export const createEvmRoute = (): EvmRoute => {
         apis,
         request,
         verify,
-        { from: record.from, groupIndex: record.groupIndex },
+        { from: record.from, account: record.account },
         async (signed) => {
           const raw = evm.finalize(unsigned, signed);
           return { hash: await evm.broadcast(client, raw), raw };

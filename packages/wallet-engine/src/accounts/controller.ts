@@ -1,7 +1,7 @@
 import { isAddress } from "viem";
 
 import type { SparkNetwork } from "@qntx/spark";
-import type { Wallet } from "@qntx/wallet";
+import type { KeyInfo, Wallet } from "@qntx/wallet";
 import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { chains } from "@qntx/wallet/chains";
 
@@ -294,6 +294,12 @@ export class AccountTreeController extends Controller<AccountTreeState> {
   private sparkUnsubscribe: (() => void) | undefined;
   private cancelTotals: (() => void) | undefined;
   private persistChain: Promise<void> = Promise.resolve();
+
+  /** Every imported private key in the vault — a separate list, never a group member. */
+  imported = async (): Promise<ReadonlyArray<KeyInfo>> => {
+    await Promise.resolve();
+    return this.options.wallet.keys.list();
+  };
 
   constructor(options: AccountTreeControllerOptions) {
     super({

@@ -7,7 +7,7 @@
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
-import type { Wallet } from "@qntx/wallet";
+import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import { normalizeSolana } from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
@@ -173,6 +173,8 @@ export type WalletEngine = {
     }) => Promise<AcrossBridgeStatus>;
   };
   /** A gateway 0x swap quote — display-only; `undefined` when the quote has no liquidity. */
+  /** Imported single private keys held in the vault — passthrough to `wallet.keys`. */
+  readonly keys: KeysApi;
   readonly swaps: {
     readonly quote: (params: {
       readonly account: AccountRef;
@@ -510,9 +512,24 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       publicKey: bitcoinPubkeyFromXpub(account.xpub, template, network, 0, 0),
     };
   };
+  /** An imported ref's stored address from `wallet.keys` — family must match or it is refused. */
+  const importedAddressOf = async (
+    account: Extract<AccountRef, { kind: "imported" }>,
+    family: "evm" | "solana",
+  ): Promise<string> => {
+    if (account.family !== family) {
+      throw new Error(`an imported ${account.family} key cannot sign on a ${family} network`);
+    }
+    const keys = await options.wallet.keys.list();
+    const key = keys.find((entry) => entry.keyId === account.keyId);
+    if (key === undefined) {
+      throw new Error("the imported key is not in the vault");
+    }
+    return key.address;
+  };
   const evmAddressOf = async (account: AccountRef, network: string): Promise<string> => {
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
+    if (account.kind === "imported") {
+      return importedAddressOf(account, "evm");
     }
     const resolved = await chains(options.wallet).account({
       walletId: account.walletId,
@@ -523,8 +540,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     return accountAddress(resolved);
   };
   const solanaAddressOf = async (account: AccountRef, network: string): Promise<string> => {
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
+    if (account.kind === "imported") {
+      return importedAddressOf(account, "solana");
     }
     const resolved = await chains(options.wallet).account({
       walletId: account.walletId,
@@ -804,6 +821,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           params,
         ),
       status: async (params) => fetchBridgeStatus({ fetch: options.fetch }, params),
+    },
+    keys: {
+      import: async (family, secret) => options.wallet.keys.import(family, secret),
+      list: async () => options.wallet.keys.list(),
+      remove: async (keyId, verify) => options.wallet.keys.remove(keyId, verify),
+      export: async (keyId, verify) => options.wallet.keys.export(keyId, verify),
     },
     swaps: {
       quote: async (params) =>
