@@ -577,7 +577,7 @@ describe("approval and transfer decode", () => {
       7n,
     ]);
     expect(decode(data, TOKEN, {}).outflows).toStrictEqual([
-      { to: RECIPIENT, amount: { asset: TOKEN, amount: "7" }, verified: false },
+      { to: RECIPIENT, amount: { asset: TOKEN, amount: "1", tokenId: "7" }, verified: false },
     ]);
   });
 
@@ -589,7 +589,16 @@ describe("approval and transfer decode", () => {
     const intent = decode(data);
     expect(intent).toMatchObject({ summary: "transfer", verifiability: "partial" });
     expect(intent.outflows).toStrictEqual([
-      { to: RECIPIENT, amount: { asset: TOKEN, amount: "9" }, verified: false },
+      { to: RECIPIENT, amount: { asset: TOKEN, amount: "1", tokenId: "9" }, verified: false },
+    ]);
+  });
+
+  it("ERC-1155 safeTransferFrom carries the id and the unit count", () => {
+    const sig =
+      "function safeTransferFrom(address from, address to, uint256 id, uint256 amount, bytes data)";
+    const intent = decode(calldata(sig, [OWNER, RECIPIENT, 5n, 1000n, "0x"]));
+    expect(intent.outflows).toStrictEqual([
+      { to: RECIPIENT, amount: { asset: TOKEN, amount: "1000", tokenId: "5" }, verified: false },
     ]);
   });
 
@@ -598,9 +607,11 @@ describe("approval and transfer decode", () => {
       "function safeBatchTransferFrom(address from, address to, uint256[] ids, uint256[] amounts, bytes data)";
     const intent = decode(calldata(sig, [OWNER, RECIPIENT, [1n, 2n], [10n, 20n], "0x"]));
     expect(intent.verifiability).toBe("partial");
-    expect(intent.outflows.map((f) => [f.to, f.amount.asset, f.amount.amount])).toStrictEqual([
-      [RECIPIENT, TOKEN, "1"],
-      [RECIPIENT, TOKEN, "2"],
+    expect(
+      intent.outflows.map((f) => [f.to, f.amount.asset, f.amount.amount, f.amount.tokenId]),
+    ).toStrictEqual([
+      [RECIPIENT, TOKEN, "10", "1"],
+      [RECIPIENT, TOKEN, "20", "2"],
     ]);
   });
 

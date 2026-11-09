@@ -700,6 +700,49 @@ const prepareApproveIntent = async (
   };
 };
 
+/* The built call must decode back to exactly the send: one NFT outflow to the recipient
+   with the right contract, id and unit count — like the bridge's quote-term guard. */
+const guardNftCall = (
+  input: Extract<ChainRequestInput, { method: "evm-nft-send" }>,
+  from: string,
+  to: string,
+  tokenId: bigint,
+  amount: bigint,
+  data: string,
+): BuildIntent => {
+  const request: SignRequest = {
+    kind: "evm.transaction",
+    network: input.network,
+    account: input.account,
+    tx: {
+      type: "eip1559",
+      chainId: networkChainId(input.network),
+      to: input.contract,
+      value: "0x0",
+      nonce: 0,
+      gas: "0x0",
+      data,
+      accessList: [],
+      maxFeePerGas: "0x0",
+      maxPriorityFeePerGas: "0x0",
+    },
+  };
+  const intent = decodeEvm(request, from);
+  const [outflow] = intent.outflows;
+  if (
+    intent.summary !== "transfer" ||
+    intent.outflows.length !== 1 ||
+    outflow === undefined ||
+    outflow.to.toLowerCase() !== to.toLowerCase() ||
+    outflow.amount.asset.toLowerCase() !== input.contract.toLowerCase() ||
+    outflow.amount.tokenId !== tokenId.toString(10) ||
+    outflow.amount.amount !== amount.toString(10)
+  ) {
+    throw new ChainError("invalid-request", "the built transfer does not decode to the send");
+  }
+  return { kind: "call", to: input.contract, value: 0n, data };
+};
+
 /* A cross-checked read on both endpoints: a successful disagreeing read refuses, a failed
    independent read degrades to `reads-unverified` — same rule as the swap path. */
 const nftRead = async <T>(
@@ -1349,16 +1392,18 @@ export const createEvmRoute = (): EvmRoute => {
       if (owner.toLowerCase() !== from.toLowerCase()) {
         throw new ChainError("invalid-request", "the account does not own the token");
       }
-      return {
-        kind: "call",
-        to: contract,
-        value: 0n,
-        data: encodeFunctionData({
+      return guardNftCall(
+        input,
+        from,
+        to,
+        tokenId,
+        1n,
+        encodeFunctionData({
           abi: ERC721_ABI,
           functionName: "safeTransferFrom",
           args: [getAddress(from), getAddress(to), tokenId],
         }),
-      };
+      );
     }
     const amount = input.amount ?? 1n;
     if (amount < 1n) {
@@ -1379,16 +1424,18 @@ export const createEvmRoute = (): EvmRoute => {
     if (balance < amount) {
       throw new ChainError("invalid-request", "the account does not hold enough units");
     }
-    return {
-      kind: "call",
-      to: contract,
-      value: 0n,
-      data: encodeFunctionData({
+    return guardNftCall(
+      input,
+      from,
+      to,
+      tokenId,
+      amount,
+      encodeFunctionData({
         abi: ERC1155_ABI,
         functionName: "safeTransferFrom",
         args: [getAddress(from), getAddress(to), tokenId, amount, "0x"],
       }),
-    };
+    );
   };
 
   const prepareEvmInternal = async (

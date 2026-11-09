@@ -151,6 +151,8 @@ export type AssetAmount = {
   readonly amount: string;
   readonly decimals?: number;
   readonly symbol?: string;
+  /** NFT flows only: the decimal token id; `amount` is then the unit count. */
+  readonly tokenId?: string;
 };
 
 export type AssetFlow = {

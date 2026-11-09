@@ -27765,11 +27765,12 @@ zoo`.split("\n"));
 	var pairField = (pair, key) => {
 		return argAddress([typeof pair === "object" && pair !== null ? Reflect.get(pair, key) : ""], 0);
 	};
-	var nftFlow = (asset, to, id) => [{
+	var nftFlow = (asset, to, id, value = 1n) => [{
 		to,
 		amount: {
 			asset,
-			amount: id.toString(10)
+			amount: value.toString(10),
+			tokenId: id.toString(10)
 		},
 		verified: false
 	}];
@@ -27889,13 +27890,17 @@ zoo`.split("\n"));
 			if (args !== void 0) return partial("transfer", nftFlow(token, argAddress(args, 1), argUint(args, 2)), []);
 		}
 		const erc1155Args = tryCall(ERC1155_SAFE_FROM, data);
-		if (erc1155Args !== void 0) return partial("transfer", nftFlow(token, argAddress(erc1155Args, 1), argUint(erc1155Args, 2)), []);
+		if (erc1155Args !== void 0) return partial("transfer", nftFlow(token, argAddress(erc1155Args, 1), argUint(erc1155Args, 2), argUint(erc1155Args, 3)), []);
 		const batchArgs = tryCall(ERC1155_SAFE_BATCH_FROM, data);
 		if (batchArgs !== void 0) {
 			const ids = argList(batchArgs, 2);
-			if (ids.length > 0 && ids.length === argList(batchArgs, 3).length) {
+			const values = argList(batchArgs, 3);
+			if (ids.length > 0 && ids.length === values.length) {
 				const to = argAddress(batchArgs, 1);
-				return partial("transfer", ids.flatMap((id) => nftFlow(token, to, argUint([id], 0))), []);
+				return partial("transfer", ids.map((id, i) => {
+					var _values$i;
+					return nftFlow(token, to, argUint([id], 0), argUint([(_values$i = values[i]) !== null && _values$i !== void 0 ? _values$i : 0n], 0))[0];
+				}), []);
 			}
 		}
 		return _objectSpread2(_objectSpread2({}, base), {}, {
@@ -29670,8 +29675,10 @@ zoo`.split("\n"));
 		}
 		throw new ChainError("invalid-request", "no PDA bump for the associated token account");
 	};
-	/** `MplAssetInstruction::TransferV1` = 14; `TransferV1Args` is `{ compressionProof: Option }` — a
-	* bare transfer carries `[14, 0]` (no compression proof). mpl-core IDL at c8732ac. */
+	/**
+	* `MplAssetInstruction::TransferV1` = 14; `TransferV1Args` is `{ compressionProof: Option }` — a
+	* bare transfer carries `[14, 0]` (no compression proof). mpl-core IDL at c8732ac.
+	*/
 	var TRANSFER_V1 = Uint8Array.from([14, 0]);
 	/**
 	* `TransferV1` with the accounts `[asset, collection, payer, authority, newOwner, systemProgram,
@@ -30486,6 +30493,10 @@ zoo`.split("\n"));
 	/** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
 	function formatAmount(amount) {
 		var _amount$symbol;
+		if (amount.tokenId !== void 0) {
+			const base = `${amount.asset} #${amount.tokenId}`;
+			return amount.amount === "1" ? base : `${base} ×${amount.amount}`;
+		}
 		return amount.decimals === void 0 ? `${amount.amount} ${amount.asset}` : `${formatUnits(amount.amount, amount.decimals)} ${(_amount$symbol = amount.symbol) !== null && _amount$symbol !== void 0 ? _amount$symbol : amount.asset}`;
 	}
 	/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */

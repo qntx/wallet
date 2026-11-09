@@ -172,8 +172,12 @@ const pairField = (pair: unknown, key: "token" | "spender"): string => {
   return argAddress([value], 0);
 };
 
-const nftFlow = (asset: string, to: string, id: bigint): ReadonlyArray<AssetFlow> => [
-  { to, amount: { asset, amount: id.toString(10) }, verified: false },
+const nftFlow = (asset: string, to: string, id: bigint, value = 1n): ReadonlyArray<AssetFlow> => [
+  {
+    to,
+    amount: { asset, amount: value.toString(10), tokenId: id.toString(10) },
+    verified: false,
+  },
 ];
 
 /** One EVM call, `to` absent for contract creation; `value` and `data` are always present. */
@@ -381,18 +385,19 @@ const decodeCall = (
   if (erc1155Args !== undefined) {
     return partial(
       "transfer",
-      nftFlow(token, argAddress(erc1155Args, 1), argUint(erc1155Args, 2)),
+      nftFlow(token, argAddress(erc1155Args, 1), argUint(erc1155Args, 2), argUint(erc1155Args, 3)),
       [],
     );
   }
   const batchArgs = tryCall(ERC1155_SAFE_BATCH_FROM, data);
   if (batchArgs !== undefined) {
     const ids = argList(batchArgs, 2);
-    if (ids.length > 0 && ids.length === argList(batchArgs, 3).length) {
+    const values = argList(batchArgs, 3);
+    if (ids.length > 0 && ids.length === values.length) {
       const to = argAddress(batchArgs, 1);
       return partial(
         "transfer",
-        ids.flatMap((id) => nftFlow(token, to, argUint([id], 0))),
+        ids.flatMap((id, i) => nftFlow(token, to, argUint([id], 0), argUint([values[i] ?? 0n], 0))),
         [],
       );
     }

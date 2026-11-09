@@ -192,7 +192,12 @@ describe("evm-nft-send", () => {
     const w = evmWorld({ supports1155: true, balance: 5n });
     await w.start();
     const p = await prepareNft(w, { amount: 3n });
-    expect((p.display as { summary: string }).summary).toBe("transfer");
+    const display = p.display as {
+      summary: string;
+      outflows: ReadonlyArray<{ amount: { amount: string; tokenId?: string } }>;
+    };
+    expect(display.summary).toBe("transfer");
+    expect(display.outflows[0]?.amount).toMatchObject({ tokenId: "7", amount: "3" });
   });
 
   it("a contract that is neither ERC-721 nor ERC-1155 refuses", async () => {
