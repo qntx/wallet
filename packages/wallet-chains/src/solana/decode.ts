@@ -9,6 +9,7 @@ import type {
   StakeAction,
   Verifiability,
 } from "../index.ts";
+import { ChainError } from "../index.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { associatedTokenAddress } from "./ata.ts";
 import { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
@@ -200,17 +201,36 @@ const classify = (
   return allFull ? "full" : "partial";
 };
 
+const DEFAULT_INSTRUCTION_CU = 200_000n;
+const BUILTIN_INSTRUCTION_CU = 3000n;
+const MAX_COMPUTE_UNIT_LIMIT = 1_400_000n;
+
 const feeLamports = (
   parsed: ParsedSolanaMessage,
+  lookups: ReadonlyArray<{ address: string; addresses: ReadonlyArray<string> }> | undefined,
   calls: ReadonlyArray<IxCall>,
-): bigint | undefined => {
-  const limit = calls.find((c) => c.kind === "cu-limit")?.units;
-  const price = calls.find((c) => c.kind === "cu-price")?.microLamports;
-  if (limit === undefined || price === undefined) {
-    return undefined;
+): bigint => {
+  const price = calls.find((c) => c.kind === "cu-price")?.microLamports ?? 0n;
+  // Agave compute_budget_instruction_details.rs: the default limit is 3,000 CU per
+  // non-migrating builtin instruction (System and ComputeBudget here; migrating builtins count
+  // as regular instructions, so this stays an upper bound) plus 200,000 per other instruction,
+  // capped at MAX_COMPUTE_UNIT_LIMIT.
+  let builtin = 0n;
+  let other = 0n;
+  for (const ix of parsed.instructions) {
+    const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+    if (program === PROGRAM_IDS.system || program === PROGRAM_IDS.computeBudget) {
+      builtin += 1n;
+    } else {
+      other += 1n;
+    }
   }
+  const defaultLimit = BUILTIN_INSTRUCTION_CU * builtin + DEFAULT_INSTRUCTION_CU * other;
+  const requested = calls.find((c) => c.kind === "cu-limit")?.units;
+  const limit = requested === undefined ? defaultLimit : BigInt(requested);
+  const capped = limit < MAX_COMPUTE_UNIT_LIMIT ? limit : MAX_COMPUTE_UNIT_LIMIT;
   const signatures = BigInt(parsed.numRequiredSignatures);
-  return 5000n * signatures + (price * BigInt(limit) + 999_999n) / 1_000_000n;
+  return 5000n * signatures + (price * capped + 999_999n) / 1_000_000n;
 };
 
 const decodeTransaction = (
@@ -224,6 +244,12 @@ const decodeTransaction = (
     addresses: t.addresses,
   }));
   const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
+  if (
+    calls.filter((c) => c.kind === "cu-limit").length > 1 ||
+    calls.filter((c) => c.kind === "cu-price").length > 1
+  ) {
+    throw new ChainError("invalid-request", "duplicate compute-budget instruction");
+  }
   const verifiability = classify(parsed, calls, request.network, table);
   const outflows: AssetFlow[] = [];
   const approvals: ApprovalChange[] = [];
@@ -407,7 +433,7 @@ const decodeTransaction = (
       }
     }
   }
-  const fee = feeLamports(parsed, calls);
+  const fee = feeLamports(parsed, lookups, calls);
   const summary = hasJupiter
     ? "swap"
     : otherTransfer
@@ -423,10 +449,7 @@ const decodeTransaction = (
     summary,
     outflows,
     approvals,
-    fee:
-      fee === undefined
-        ? undefined
-        : { max: { asset: SOLANA_NATIVE_ASSET, amount: fee.toString(10) } },
+    fee: { max: { asset: SOLANA_NATIVE_ASSET, amount: fee.toString(10) } },
     ...(staking.length === 0 ? {} : { staking }),
     ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
     warnings,

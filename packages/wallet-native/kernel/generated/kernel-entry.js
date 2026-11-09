@@ -25297,12 +25297,24 @@ zoo`.split("\n"));
 		if (parsed.lookups.length > 0) return "partial";
 		return allFull ? "full" : "partial";
 	};
-	var feeLamports = (parsed, calls) => {
-		var _calls$find, _calls$find2;
-		const limit = (_calls$find = calls.find((c) => c.kind === "cu-limit")) === null || _calls$find === void 0 ? void 0 : _calls$find.units;
-		const price = (_calls$find2 = calls.find((c) => c.kind === "cu-price")) === null || _calls$find2 === void 0 ? void 0 : _calls$find2.microLamports;
-		if (limit === void 0 || price === void 0) return;
-		return 5000n * BigInt(parsed.numRequiredSignatures) + (price * BigInt(limit) + 999999n) / 1000000n;
+	var DEFAULT_INSTRUCTION_CU = 200000n;
+	var BUILTIN_INSTRUCTION_CU = 3000n;
+	var MAX_COMPUTE_UNIT_LIMIT = 1400000n;
+	var feeLamports = (parsed, lookups, calls) => {
+		var _calls$find$microLamp, _calls$find, _calls$find2;
+		const price = (_calls$find$microLamp = (_calls$find = calls.find((c) => c.kind === "cu-price")) === null || _calls$find === void 0 ? void 0 : _calls$find.microLamports) !== null && _calls$find$microLamp !== void 0 ? _calls$find$microLamp : 0n;
+		let builtin = 0n;
+		let other = 0n;
+		for (const ix of parsed.instructions) {
+			const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+			if (program === PROGRAM_IDS.system || program === PROGRAM_IDS.computeBudget) builtin += 1n;
+			else other += 1n;
+		}
+		const defaultLimit = BUILTIN_INSTRUCTION_CU * builtin + DEFAULT_INSTRUCTION_CU * other;
+		const requested = (_calls$find2 = calls.find((c) => c.kind === "cu-limit")) === null || _calls$find2 === void 0 ? void 0 : _calls$find2.units;
+		const limit = requested === void 0 ? defaultLimit : BigInt(requested);
+		const capped = limit < MAX_COMPUTE_UNIT_LIMIT ? limit : MAX_COMPUTE_UNIT_LIMIT;
+		return 5000n * BigInt(parsed.numRequiredSignatures) + (price * capped + 999999n) / 1000000n;
 	};
 	var decodeTransaction = (request, signer, table) => {
 		var _request$lookupTables;
@@ -25312,6 +25324,7 @@ zoo`.split("\n"));
 			addresses: t.addresses
 		}));
 		const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
+		if (calls.filter((c) => c.kind === "cu-limit").length > 1 || calls.filter((c) => c.kind === "cu-price").length > 1) throw new ChainError("invalid-request", "duplicate compute-budget instruction");
 		const verifiability = classify$1(parsed, calls, request.network, table);
 		const outflows = [];
 		const approvals = [];
@@ -25496,7 +25509,7 @@ zoo`.split("\n"));
 				});
 			}
 		}
-		const fee = feeLamports(parsed, calls);
+		const fee = feeLamports(parsed, lookups, calls);
 		const summary = hasJupiter ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
 		return _objectSpread2(_objectSpread2(_objectSpread2({
 			family: "solana",
@@ -25504,7 +25517,7 @@ zoo`.split("\n"));
 			summary,
 			outflows,
 			approvals,
-			fee: fee === void 0 ? void 0 : { max: {
+			fee: { max: {
 				asset: SOLANA_NATIVE_ASSET,
 				amount: fee.toString(10)
 			} }

@@ -10,6 +10,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
@@ -32,7 +33,7 @@ import {
   normalizeEvm,
   recoverEvmSigner,
 } from "@qntx/wallet-chains/evm";
-import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
@@ -314,6 +315,39 @@ const lieWitness = (psbt: Uint8Array, amount: bigint): Uint8Array => {
     return out;
   }
   throw new Error("witnessUtxo field not found");
+};
+
+/** A compiled legacy message: SetComputeUnitPrice(5e12 microlamports) + a 0.001 SOL transfer. */
+const cuPriceMessage = (): Uint8Array => {
+  const seed = mnemonicToSeedSync(vectors.mnemonic);
+  const priv = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'").privateKey;
+  const payer = ed25519.getPublicKey(priv);
+  const dest = new Uint8Array(32).fill(0x22);
+  const system = base58.decode("11111111111111111111111111111111");
+  const budget = base58.decode("ComputeBudget111111111111111111111111111111");
+  const price = new Uint8Array(9);
+  price[0] = 3;
+  new DataView(price.buffer).setBigUint64(1, 5_000_000_000_000n, true);
+  const transfer = new Uint8Array(12);
+  const dv = new DataView(transfer.buffer);
+  dv.setUint32(0, 2, true);
+  dv.setBigUint64(4, 1_000_000n, true);
+  const ix1 = [3, 0, 9, ...price];
+  const ix2 = [2, 2, 0, 1, 12, ...transfer];
+  return new Uint8Array([
+    1,
+    0,
+    2,
+    4,
+    ...payer,
+    ...dest,
+    ...system,
+    ...budget,
+    ...new Uint8Array(32).fill(0x33),
+    2,
+    ...ix1,
+    ...ix2,
+  ]);
 };
 
 /** A legacy Solana transfer whose fee payer is account 0's public key. */
@@ -946,6 +980,24 @@ describe("chain.sign", () => {
     expect(bytesField(res, "signedPsbt").length).toBeGreaterThan(0);
     const intent = decodeBitcoinPsbt(asPsbt(req));
     expect(chainPrompt("en", intent).description).toContain("Max fee 99000000 sats");
+  });
+
+  it("E-28: a priority fee without SetComputeUnitLimit shows the default-limit max fee", () => {
+    const seed = mnemonicToSeedSync(vectors.mnemonic);
+    const priv = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'").privateKey;
+    const payer = base58.encode(ed25519.getPublicKey(priv));
+    const req = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
+        message: cuPriceMessage(),
+      },
+      payer,
+    ) as never;
+    const intent = decodeSolana(req, payer);
+    expect(intent.verifiability).toBe("full");
+    expect(chainPrompt("en", intent).description).toContain("Max fee 30000005000 lamports");
   });
 
   it("rejects a sign entry whose template disagrees with the input's script", async () => {
