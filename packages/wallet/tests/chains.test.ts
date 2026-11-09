@@ -267,11 +267,15 @@ describe("chains(wallet)", () => {
       throw new Error("no pubkey");
     }
     const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: new Uint8Array(32), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2wpkh(pub).script, amount: 100000n });
     tx.addInput({
-      txid: new Uint8Array(32),
+      txid: prev.id,
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2wpkh(pub).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
       ],
@@ -357,11 +361,15 @@ describe("chains(wallet)", () => {
     const xonly86 = BTC_CHILD86.publicKey!.slice(1);
     const mixed = (): Uint8Array => {
       const tx = new Transaction({ version: 2 });
+      const prev = new Transaction({ version: 2 });
+      prev.addInput({ txid: new Uint8Array(32), index: 0, sequence: 0xffffffff });
+      prev.addOutput({ script: p2wpkh(BTC_CHILD.publicKey!).script, amount: 100000n });
       tx.addInput({
-        txid: new Uint8Array(32),
+        txid: prev.id,
         index: 0,
         sequence: 0xfffffffd,
         witnessUtxo: { script: p2wpkh(BTC_CHILD.publicKey!).script, amount: 100000n },
+        nonWitnessUtxo: prev.toBytes(true, false),
         bip32Derivation: [
           [
             BTC_CHILD.publicKey!,
@@ -477,11 +485,15 @@ describe("chains(wallet)", () => {
     ).derive("m/84'/0'/0'/0/0");
     const foreignPub = foreignNode.publicKey!;
     const foreignTx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    const foreignPrev = new Transaction({ version: 2 });
+    foreignPrev.addInput({ txid: new Uint8Array(32), index: 0, sequence: 0xffffffff });
+    foreignPrev.addOutput({ script: p2wpkh(foreignPub).script, amount: 100000n });
     foreignTx.addInput({
-      txid: new Uint8Array(32),
+      txid: foreignPrev.id,
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2wpkh(foreignPub).script, amount: 100000n },
+      nonWitnessUtxo: foreignPrev.toBytes(true, false),
       bip32Derivation: [
         [foreignPub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
       ],

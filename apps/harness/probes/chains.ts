@@ -68,12 +68,17 @@ const ACCOUNT = { kind: "hd", walletId: "w", groupIndex: 0, template: "btc" } as
 const auxRand = (): Uint8Array => new Uint8Array(32);
 
 const buildP2wpkhPsbt = (pub: Uint8Array): Uint8Array => {
+  const script = p2wpkh(pub, NETWORK).script;
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({ txid: hexToBytes("0x" + "07".repeat(32)), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script, amount: 100000n });
   const tx = new Transaction({ version: 2 });
   tx.addInput({
-    txid: hexToBytes("0x" + "07".repeat(32)),
+    txid: hexToBytes("0x" + prev.id),
     index: 0,
     sequence: 0xfffffffd,
-    witnessUtxo: { script: p2wpkh(pub, NETWORK).script, amount: 100000n },
+    witnessUtxo: { script, amount: 100000n },
+    nonWitnessUtxo: prev.toBytes(true, false),
     bip32Derivation: [[pub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }]],
   });
   tx.addOutput({ script: Uint8Array.of(0x00, 0x14, ...new Uint8Array(20)), amount: 90000n });

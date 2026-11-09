@@ -109,8 +109,13 @@ const memoryStore = async () => {
 };
 
 /** No address has history: the scan finds nothing and a broadcast answers a fixed txid. */
-async function noHistory(): Promise<unknown> {
+const prevTxes = new Map<string, string>();
+async function noHistory(path: string): Promise<unknown> {
   await Promise.resolve();
+  const hex = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(path);
+  if (hex !== null) {
+    return prevTxes.get(hex[1] ?? "") ?? "";
+  }
   return [];
 }
 
@@ -757,12 +762,17 @@ test("window wallet-standard bitcoin:signTransaction signs a PSBT in the page", 
   const { accounts } = (await connected) as { accounts: Array<{ address: string }> };
   const address = accounts[0]?.address ?? "";
 
+  const script = OutScript.encode(Address(NETWORK).decode(address));
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({ txid: new Uint8Array(32).fill(9), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script, amount: 100_000n });
+  prevTxes.set(prev.id, Buffer.from(prev.toBytes(true, false)).toString("hex"));
   const tx = new Transaction({ version: 2 });
   tx.addInput({
-    txid: new Uint8Array(32).fill(9),
+    txid: prev.id,
     index: 0,
     sequence: 0xfffffffd,
-    witnessUtxo: { script: OutScript.encode(Address(NETWORK).decode(address)), amount: 100_000n },
+    witnessUtxo: { script, amount: 100_000n },
   });
   tx.addOutput({
     script: OutScript.encode(Address(NETWORK).decode("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4")),

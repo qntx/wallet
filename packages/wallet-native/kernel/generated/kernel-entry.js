@@ -30455,9 +30455,12 @@ zoo`.split("\n"));
 	var isSignEntry = (value) => isRecord$1(value) && typeof value["index"] === "number" && Number.isSafeInteger(value["index"]) && value["index"] >= 0 && typeof value["template"] === "string" && TEMPLATES.has(value["template"]);
 	var isTaprootInput = (input) => input.tapInternalKey !== void 0 || getInputType(input).type === "taproot";
 	/**
-	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller).
-	* `strictPrevoutValidation` makes btc-signer verify every `nonWitnessUtxo`'s txid against its
-	* outpoint. The returned `sign` is sorted ascending by index — a normalized request is canonical.
+	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller). Every
+	* non-taproot signed input must carry the full previous transaction: a BIP-143 signature commits
+	* only to its own input's amount, so a `witnessUtxo`-only amount is unverifiable. btc-signer checks
+	* each `nonWitnessUtxo` hashes to the input's txid and agrees with any `witnessUtxo` present
+	* (`strictPrevoutValidation`). The returned `sign` is sorted ascending by index — a normalized
+	* request is canonical.
 	*/
 	var normalizeBitcoinPsbt = (psbt, sign, network) => {
 		var _sorted$at;
@@ -30478,8 +30481,7 @@ zoo`.split("\n"));
 			const input = tx.getInput(idx);
 			if (input.witnessUtxo === void 0 && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} carries neither witnessUtxo nor nonWitnessUtxo`);
 			if (template === "btc.bip86" ? input.tapBip32Derivation === void 0 : input.bip32Derivation === void 0) throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
-			const { type } = getInputType(input);
-			if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
+			if (template !== "btc.bip86" && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} must carry nonWitnessUtxo`);
 			const sighash = input.sighashType;
 			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH || sighash === 131)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
 			if (sighash === 131 && idx >= tx.outputsLength) throw new ChainError("unsupported", `input ${idx} uses SIGHASH_SINGLE without a same-index output`);
@@ -30556,26 +30558,33 @@ zoo`.split("\n"));
 				verified: addr !== void 0
 			});
 		}
+		const amountsCommitted = request.sign.some((s) => isTaprootInput(tx.getInput(s.index)) && tx.getInput(s.index).sighashType !== SIGHASH_SINGLE_ANYONECANPAY);
 		let inSum = 0n;
 		for (let i = 0; i < tx.inputsLength; i++) {
 			const input = tx.getInput(i);
-			if (input.witnessUtxo === void 0) canFee = false;
-			else inSum += input.witnessUtxo.amount;
+			const nonWitness = input.nonWitnessUtxo;
+			if (nonWitness !== void 0) {
+				const prev = input.index === void 0 ? void 0 : nonWitness.outputs[input.index];
+				if (prev === void 0) canFee = false;
+				else inSum += prev.amount;
+			} else if (amountsCommitted && input.witnessUtxo !== void 0) inSum += input.witnessUtxo.amount;
+			else canFee = false;
 		}
 		const external = tx.inputsLength - signed.size > 0;
 		const undecodable = outflows.some((o) => !o.verified);
 		const listing = request.sign.some((s) => tx.getInput(s.index).sighashType === SIGHASH_SINGLE_ANYONECANPAY);
-		const verifiability = external ? "opaque" : listing || undecodable ? "partial" : "full";
+		const fee = canFee && !listing ? { max: {
+			asset: SATS,
+			amount: (inSum - outSum).toString(10)
+		} } : void 0;
+		const verifiability = external ? "opaque" : listing || undecodable || fee === void 0 ? "partial" : "full";
 		return {
 			family: "bitcoin",
 			network: request.network,
 			summary: outflows.length > 0 ? "transfer" : "contract-call",
 			outflows,
 			approvals: [],
-			fee: canFee && !listing ? { max: {
-				asset: SATS,
-				amount: (inSum - outSum).toString(10)
-			} } : void 0,
+			fee,
 			warnings: listing ? [{
 				kind: "sighash-single-anyonecanpay",
 				message: "signed inputs bind only their same-index outputs; the rest of the transaction can change"
@@ -30740,6 +30749,7 @@ zoo`.split("\n"));
 			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
 			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
 			maxFee: (fee) => `最高手续费 ${fee}`,
+			feeUnknown: "手续费未知",
 			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
 			platformFee: (message) => `Jupiter 收取平台费 ${message}`,
 			bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
@@ -30782,6 +30792,7 @@ zoo`.split("\n"));
 			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
 			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
 			maxFee: (fee) => `Max fee ${fee}`,
+			feeUnknown: "Fee unknown",
 			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
 			platformFee: (message) => `Jupiter platform fee: ${message}`,
 			bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
@@ -30857,7 +30868,7 @@ zoo`.split("\n"));
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).map((action) => catalog.stakeLine(action)),
 			...intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)) : [catalog.bridgeLine(intent.bridge.destinationNetwork, ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, (/* @__PURE__ */ new Date(intent.bridge.fillDeadline * 1e3)).toISOString().slice(0, 16), intent.bridge.refundTo)],
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
-			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
+			...intent.fee === void 0 ? intent.message === void 0 ? [catalog.feeUnknown] : [] : [catalog.maxFee(formatAmount(intent.fee.max))],
 			...((_intent$warnings2 = intent.warnings) !== null && _intent$warnings2 !== void 0 ? _intent$warnings2 : []).filter((w) => w.kind === "platform-fee").map((w) => catalog.platformFee(w.message)),
 			...tail
 		];

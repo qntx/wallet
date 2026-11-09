@@ -63,6 +63,12 @@ async function rig() {
       if (!url.startsWith("https://esplora.invalid")) {
         return Promise.reject(new Error("offline"));
       }
+      const hex = /^https:\/\/esplora\.invalid\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
+      if (hex !== null) {
+        return Promise.resolve(
+          new Response(Buffer.from(PREVS.get(hex[1] ?? "") ?? []).toString("hex")),
+        );
+      }
       broadcasts.push(init?.method === "POST" ? String(init.body) : "");
       return Promise.resolve(init?.method === "POST" ? new Response(TXID) : Response.json([]));
     },
@@ -274,6 +280,8 @@ const scriptOf = (address: string): Uint8Array =>
   OutScript.encode(Address(NETWORK).decode(address));
 
 /** A PSBT spending one prevout of `from` (a wallet address) to `to`, as a dApp builds it. */
+const PREVS = new Map<string, Uint8Array>();
+
 const dappPsbt = (opts: {
   from: string;
   to: string;
@@ -281,9 +289,13 @@ const dappPsbt = (opts: {
   sighash?: number;
   foreignScript?: Uint8Array;
 }): Uint8Array => {
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({ txid: new Uint8Array(32).fill(9), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script: opts.foreignScript ?? scriptOf(opts.from), amount: opts.value });
+  PREVS.set(prev.id, prev.toBytes(true, false));
   const tx = new Transaction({ version: 2 });
   tx.addInput({
-    txid: new Uint8Array(32).fill(9),
+    txid: prev.id,
     index: 0,
     sequence: 0xfffffffd,
     witnessUtxo: { script: opts.foreignScript ?? scriptOf(opts.from), amount: opts.value },

@@ -241,32 +241,35 @@ export class BitcoinChainAdapter {
       .filter((u) => u.status === "confirmed" && !isFrozen(u.value))
       .map((u) => {
         const pub = pubkeyOf(u);
-        // bip49 is a segwit-wrapped P2SH spend (witnessUtxo + redeemScript);
-        // bip44 P2PKH proves the prevout through the whole prior transaction.
+        // bip49 is a segwit-wrapped P2SH spend (witnessUtxo + redeemScript); every non-taproot
+        // input also carries the full previous transaction — the signer proves its amounts from
+        // it, not from an attestable witnessUtxo. bip44 needs it already for selection (its
+        // prevout lives nowhere else); for bip49/bip84 the caller attaches it where the raw tx
+        // is at hand.
         const entry: TransactionInputUpdate = {
           txid: u.txid,
           index: u.vout,
           sequence: 0xfffffffd,
         };
-        if (template !== "btc.bip44") {
-          entry.witnessUtxo = { amount: BigInt(u.value), script: scriptOf(u) };
-        }
-        if (template === "btc.bip44") {
-          const raw = rawTxOf === undefined ? undefined : rawTxOf(u);
-          if (raw === undefined) {
-            throw new Error(`no raw transaction for bip44 input ${u.txid}`);
-          }
-          entry.nonWitnessUtxo = raw;
-        }
         if (template === "btc.bip86") {
           // `pubkeyOf` already returns the x-only internal key for bip86.
           entry.tapInternalKey = pub;
           entry.tapBip32Derivation = [[pub, { hashes: [], der: { fingerprint, path: pathOf(u) } }]];
-        } else {
-          entry.bip32Derivation = [[pub, { fingerprint, path: pathOf(u) }]];
-          if (template === "btc.bip49") {
-            entry.redeemScript = p2wpkh(pub).script;
-          }
+          return entry;
+        }
+        if (template !== "btc.bip44") {
+          entry.witnessUtxo = { amount: BigInt(u.value), script: scriptOf(u) };
+        }
+        const raw = rawTxOf === undefined ? undefined : rawTxOf(u);
+        if (raw === undefined && template === "btc.bip44") {
+          throw new Error(`no raw transaction for bip44 input ${u.txid}`);
+        }
+        if (raw !== undefined) {
+          entry.nonWitnessUtxo = raw;
+        }
+        entry.bip32Derivation = [[pub, { fingerprint, path: pathOf(u) }]];
+        if (template === "btc.bip49") {
+          entry.redeemScript = p2wpkh(pub).script;
         }
         return entry;
       });

@@ -397,11 +397,15 @@ describe("hardware factor: chain.sign", () => {
 
     const psbt = (tapPath: number[]): Uint8Array => {
       const tx = new Transaction({ version: 2 });
+      const prev = new Transaction({ version: 2 });
+      prev.addInput({ txid: new Uint8Array(32).fill(7), index: 0, sequence: 0xffffffff });
+      prev.addOutput({ script: p2wpkh(pub84).script, amount: 100000n });
       tx.addInput({
-        txid: new Uint8Array(32).fill(7),
+        txid: prev.id,
         index: 0,
         sequence: 0xfffffffd,
         witnessUtxo: { script: p2wpkh(pub84).script, amount: 100000n },
+        nonWitnessUtxo: prev.toBytes(true, false),
         bip32Derivation: [
           [pub84, { fingerprint: MASTER_FP, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
         ],

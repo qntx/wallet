@@ -17,14 +17,25 @@ const TXID = (n: number) => n.toString(16).padStart(2, "0").repeat(32);
 const { script } = p2wpkh(PUB.publicKey!, NETWORK);
 
 const OUR_HASH = scripthash(TO_ADDR, NETWORK);
+/** A real funding tx paying `script` — its txid survives the engine's prevout checks. */
+const PREVS = new Map<string, Uint8Array>();
+const funding = (seed: number, value: number): { txid: string; raw: Uint8Array } => {
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({ txid: TXID(seed), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script, amount: BigInt(value) });
+  const raw = prev.toBytes(true, false);
+  PREVS.set(prev.id, raw);
+  return { txid: prev.id, raw };
+};
 const DEFAULT_UTXOS = [
-  { txid: TXID(1), vout: 0, value: 50_000 },
-  { txid: TXID(2), vout: 0, value: 30_000 },
+  { txid: funding(1, 50_000).txid, vout: 0, value: 50_000 },
+  { txid: funding(2, 30_000).txid, vout: 0, value: 30_000 },
 ];
 let utxoList = [...DEFAULT_UTXOS];
 const setUtxos = (list: ReadonlyArray<{ txid: string; vout: number; value: number }>): void => {
   utxoList = [...list];
 };
+const hexCalls: string[] = [];
 const get = (url: string): unknown => {
   const sh = /^\/scripthash\/([0-9a-f]{64})\/(txs|utxo)$/.exec(url);
   if (sh !== null) {
@@ -35,6 +46,11 @@ const get = (url: string): unknown => {
   }
   if (url === "/fee-estimates") {
     return { "1": 20, "3": 10, "6": 5, "144": 1 };
+  }
+  const hm = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
+  if (hm !== null) {
+    hexCalls.push(hm[1] ?? "");
+    return Buffer.from(PREVS.get(hm[1] ?? "") ?? new Uint8Array()).toString("hex");
   }
   const m = /^\/tx\/([0-9a-f]{64})$/.exec(url);
   if (m !== null) {
@@ -55,7 +71,12 @@ const get = (url: string): unknown => {
 };
 const esploraStub = {
   get: async (u: string) => Promise.resolve(get(u)),
-  post: async () => Promise.resolve(TXID(9)),
+  post: async (_u: string, body: string) => {
+    const raw = new Uint8Array(Buffer.from(body, "hex"));
+    const { id } = Transaction.fromRaw(raw, { allowUnknownInputs: true });
+    PREVS.set(id, raw);
+    return Promise.resolve(id);
+  },
 };
 
 const signedCalls: SignParams[] = [];
@@ -130,6 +151,14 @@ const ctx = (transitions: TrackedTransaction[] = []): RouteContext => ({
   txs: () => ({}),
   newId: nextId,
 });
+
+const signedPsbt = (n: number): Transaction => {
+  const req = signedCalls[n]?.request;
+  if (req === undefined || req.kind !== "bitcoin.psbt") {
+    throw new Error("expected a bitcoin.psbt sign call");
+  }
+  return Transaction.fromPSBT(req.psbt);
+};
 
 const send = async (c: RouteContext, amount = 10_000n): Promise<TrackedTransaction> => {
   setUtxos(DEFAULT_UTXOS);
@@ -241,8 +270,8 @@ describe("bitcoin rbf", () => {
 
   it("adds confirmed inputs when the change cannot absorb the bump", async () => {
     setUtxos([
-      { txid: TXID(1), vout: 0, value: 50_000 },
-      { txid: TXID(2), vout: 0, value: 30_000 },
+      { txid: funding(1, 50_000).txid, vout: 0, value: 50_000 },
+      { txid: funding(2, 30_000).txid, vout: 0, value: 30_000 },
     ]);
     const c = ctx();
     const original = await send(c, 49_400n);
@@ -254,7 +283,7 @@ describe("bitcoin rbf", () => {
   });
 
   it("fails before signing when the bump is unfundable", async () => {
-    setUtxos([{ txid: TXID(1), vout: 0, value: 6000 }]);
+    setUtxos([{ txid: funding(1, 6000).txid, vout: 0, value: 6000 }]);
     const c = ctx();
     const original = await routeSend(route, c, {
       account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
@@ -287,7 +316,7 @@ describe("bitcoin rbf", () => {
     const verify = { kind: "password" as const, password: "pw" };
 
     it("prepare locks the selected outputs under the request id; release frees them", async () => {
-      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
       const first = await route.prepare(c, params, "req-1");
       await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
@@ -297,7 +326,7 @@ describe("bitcoin rbf", () => {
 
     it("a reservation is memory only: after a lock and a fresh unlock the outputs are selectable again", async () => {
       const store = createMemoryEngineStore();
-      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
       await route.unlock(store);
       await route.prepare(c, params, "req-1");
@@ -311,7 +340,7 @@ describe("bitcoin rbf", () => {
 
     it("a broadcast persists the lock under the transaction id", async () => {
       const store = createMemoryEngineStore();
-      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
       await route.unlock(store);
       const prepared = await route.prepare(c, params, "req-1");
@@ -336,8 +365,8 @@ describe("bitcoin rbf", () => {
 
     it("concurrent prepares never select the same output", async () => {
       setUtxos([
-        { txid: TXID(1), vout: 0, value: 50_000 },
-        { txid: TXID(2), vout: 0, value: 50_000 },
+        { txid: funding(1, 50_000).txid, vout: 0, value: 50_000 },
+        { txid: funding(2, 50_000).txid, vout: 0, value: 50_000 },
       ]);
       const c = ctx();
       const [a, b] = await Promise.all([
@@ -350,7 +379,7 @@ describe("bitcoin rbf", () => {
       const again = await route.prepare(c, params, "req-4");
       again.release();
 
-      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const results = await Promise.allSettled([
         route.prepare(c, params, "req-5"),
         route.prepare(c, params, "req-6"),
@@ -359,7 +388,7 @@ describe("bitcoin rbf", () => {
     });
 
     it("a broadcast moves the lock to the transaction: the outputs stay reserved", async () => {
-      setUtxos([{ txid: TXID(1), vout: 0, value: 50_000 }]);
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
       const prepared = await route.prepare(c, params, "req-1");
       const tx = await prepared.submit(verify);
@@ -412,8 +441,8 @@ describe("bitcoin rbf", () => {
 
     it("a replacement reserves its extra inputs in memory; release frees them", async () => {
       setUtxos([
-        { txid: TXID(1), vout: 0, value: 50_000 },
-        { txid: TXID(2), vout: 0, value: 30_000 },
+        { txid: funding(1, 50_000).txid, vout: 0, value: 50_000 },
+        { txid: funding(2, 30_000).txid, vout: 0, value: 30_000 },
       ]);
       const c = ctx();
       const original = await send(c, 49_400n);
@@ -437,5 +466,30 @@ describe("bitcoin rbf", () => {
       const old = btcOf(original);
       expect(btcOf(bumped).fee).toBeGreaterThanOrEqual(old.fee + old.vsize);
     });
+  });
+
+  it("every segwit-v0 PSBT input carries its previous transaction, fetched for spent inputs only", async () => {
+    setUtxos(DEFAULT_UTXOS);
+    const c = ctx();
+    hexCalls.length = 0;
+    const original = await send(c);
+    const sendPsbt = signedPsbt(0);
+    expect(sendPsbt.inputsLength).toBe(1);
+    expect(sendPsbt.getInput(0).nonWitnessUtxo).toBeDefined();
+    // Raws are fetched only for what a PSBT spends: the send selected one of the two utxos.
+    expect(hexCalls).toStrictEqual([DEFAULT_UTXOS[0]!.txid]);
+    hexCalls.length = 0;
+    const child = await route.prepareCpfp(c, original, 10, "req-c");
+    expect(hexCalls).toStrictEqual([original.hash]);
+    await child.submit({ kind: "password", password: "pw" });
+    expect(signedPsbt(1).getInput(0).nonWitnessUtxo).toBeDefined();
+    hexCalls.length = 0;
+    const bumped = await route.prepareReplace(c, original, "speed-up", "req-r");
+    expect(new Set(hexCalls)).toStrictEqual(new Set(DEFAULT_UTXOS.map((u) => u.txid)));
+    await bumped.submit({ kind: "password", password: "pw" });
+    const bumpPsbt = signedPsbt(2);
+    for (let i = 0; i < bumpPsbt.inputsLength; i++) {
+      expect(bumpPsbt.getInput(i).nonWitnessUtxo).toBeDefined();
+    }
   });
 });

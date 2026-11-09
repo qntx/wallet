@@ -160,8 +160,9 @@ const bitcoinInput = (
   if (!deepEqual(der.pubkey, expectedPub(purpose, pub))) {
     throw new KernelError("invalid-input", `input ${idx}: derivation pubkey is not ours`);
   }
-  // bip84/bip49 spend via witnessUtxo; bip44 (P2PKH) proves the
-  // prevout via nonWitnessUtxo — the PSBT must carry the matching tx.
+  // Non-taproot spends must carry nonWitnessUtxo (normalize requires it — a BIP-143 signature
+  // commits only to its own input's amount); bip44 also proves the prevout script through it.
+  // btc-signer already checked nonWitnessUtxo against the txid and any witnessUtxo at parse.
   if (purpose === 44) {
     if (input.nonWitnessUtxo === undefined) {
       throw new KernelError("invalid-input", `input ${idx}: P2PKH spend requires nonWitnessUtxo`);

@@ -76,7 +76,7 @@ export const broadcastPsbt = async (
   return String(await es.post("/tx", hex.encode(raw)));
 };
 
-const fetchRawTxes = async (
+export const fetchRawTxes = async (
   es: { readonly get: (path: string) => Promise<unknown> },
   utxos: ReadonlyArray<{ readonly txid: string }>,
 ): Promise<Map<string, Uint8Array>> => {
@@ -294,7 +294,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     // Selection and reservation run with no await between them, so concurrent prepares cannot
     // pick the same output.
     const free = inputs.filter((i) => !isHeld(`${String(i.txid ?? "")}:${String(i.index ?? 0)}`));
-    const { psbt, inputs: selected } = bitcoin.buildPsbt(
+    const { psbt: unsigned, inputs: selected } = bitcoin.buildPsbt(
       free,
       to,
       amount,
@@ -306,8 +306,32 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
     const selectedUtxos = utxos.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+    // Reserve before the first post-selection await: a concurrent prepare must not see them.
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
+    }
+    // Segwit v0 inputs prove their amounts through the full previous transaction (bip44 carried
+    // it already for selection). Fetch it only for the inputs actually spent and attach it.
+    let psbt = unsigned;
+    if (template === "btc.bip49" || template === "btc.bip84") {
+      try {
+        const prevTxs = await fetchRawTxes(es, selectedUtxos);
+        const parsed = Transaction.fromPSBT(unsigned);
+        for (let i = 0; i < parsed.inputsLength; i++) {
+          const { txid } = parsed.getInput(i);
+          const raw = txid === undefined ? undefined : prevTxs.get(hex.encode(txid));
+          if (raw === undefined) {
+            throw new Error(`no raw transaction for input ${String(i)}`);
+          }
+          parsed.updateInput(i, { nonWitnessUtxo: raw });
+        }
+        psbt = parsed.toPSBT(0);
+      } catch (error) {
+        for (const key of selectedKeys) {
+          reserved.delete(key);
+        }
+        throw error;
+      }
     }
     const txP = Transaction.fromPSBT(psbt);
     const ownScripts = new Set(
@@ -613,17 +637,31 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         if (next === undefined) {
           break;
         }
+        const key = `${next.txid}:${next.vout}`;
         extraUtxos.push(next);
-        extraInputs.push(
-          ...bitcoin.toInputs(
-            [{ ...next, status: "confirmed" as const }],
-            stash.fp,
-            stash.pathOf,
-            stash.pubkeyOf,
-            stash.scriptOf,
-            stash.template,
-          ),
-        );
+        reserved.set(key, requestId);
+        try {
+          const raws =
+            template === "btc.bip86"
+              ? new Map<string, Uint8Array>()
+              : // oxlint-disable-next-line eslint/no-await-in-loop -- extras join one at a time.
+                await fetchRawTxes(es, [next]);
+          extraInputs.push(
+            ...bitcoin.toInputs(
+              [{ ...next, status: "confirmed" as const }],
+              stash.fp,
+              stash.pathOf,
+              stash.pubkeyOf,
+              stash.scriptOf,
+              stash.template,
+              (u) => raws.get(u.txid),
+            ),
+          );
+        } catch (error) {
+          extraUtxos.pop();
+          reserved.delete(key);
+          throw error;
+        }
       }
       if (feeNeeded(outputs) > 0n) {
         const keepChange = [...outputs, { address: changeAddr, amount: BigInt(dust) }];
@@ -632,17 +670,31 @@ export const createBitcoinRoute = (): BitcoinRoute => {
           if (next === undefined) {
             break;
           }
+          const key = `${next.txid}:${next.vout}`;
           extraUtxos.push(next);
-          extraInputs.push(
-            ...bitcoin.toInputs(
-              [{ ...next, status: "confirmed" as const }],
-              0,
-              stash.pathOf,
-              stash.pubkeyOf,
-              stash.scriptOf,
-              stash.template,
-            ),
-          );
+          reserved.set(key, requestId);
+          try {
+            const more =
+              template === "btc.bip86"
+                ? new Map<string, Uint8Array>()
+                : // oxlint-disable-next-line eslint/no-await-in-loop -- extras join one at a time.
+                  await fetchRawTxes(es, [next]);
+            extraInputs.push(
+              ...bitcoin.toInputs(
+                [{ ...next, status: "confirmed" as const }],
+                0,
+                stash.pathOf,
+                stash.pubkeyOf,
+                stash.scriptOf,
+                stash.template,
+                (u) => more.get(u.txid),
+              ),
+            );
+          } catch (error) {
+            extraUtxos.pop();
+            reserved.delete(key);
+            throw error;
+          }
         }
         if (feeNeeded(keepChange) > 0n) {
           throw new Error("insufficient confirmed utxo to fund the replacement fee");
@@ -664,7 +716,23 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         }
       }
     }
-    const allInputs = [...stash.inputs, ...extraInputs];
+    // The candidates stashed at prepare time carry no previous transaction for segwit v0 — it is
+    // fetched only for what a PSBT actually spends. The replacement spends them all.
+    let ownInputs = stash.inputs;
+    if (template === "btc.bip49" || template === "btc.bip84") {
+      const raws = await fetchRawTxes(
+        es,
+        stash.inputs.map((i) => ({ txid: String(i.txid) })),
+      );
+      ownInputs = stash.inputs.map((i) => {
+        const nonWitnessUtxo = raws.get(String(i.txid));
+        if (nonWitnessUtxo === undefined) {
+          throw new Error(`no raw transaction for input ${String(i.txid)}`);
+        }
+        return { ...i, nonWitnessUtxo };
+      });
+    }
+    const allInputs = [...ownInputs, ...extraInputs];
     const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params);
     const record = {
       inputs: [
@@ -751,9 +819,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         flags.push("reads-unverified");
       }
     }
+    if (old.hash === undefined) {
+      throw new Error("the parent transaction has no broadcast hash");
+    }
+    const parentTxid = old.hash;
+    const parentRaws =
+      template === "btc.bip86"
+        ? new Map<string, Uint8Array>()
+        : await fetchRawTxes(es, [{ txid: parentTxid }]);
     const childInputs = bitcoin.toInputs(
       own.map((o) => ({
-        txid: old.hash ?? "",
+        txid: parentTxid,
         vout: o.vout,
         value: o.value,
         address: o.address,
@@ -765,6 +841,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       stash.pubkeyOf,
       stash.scriptOf,
       stash.template,
+      (u) => parentRaws.get(u.txid),
     );
     const [changeAddr] = stash.changeAddresses;
     if (changeAddr === undefined) {

@@ -34,18 +34,26 @@ const accountFor = (template: BitcoinAccountTemplate): ChainAccount => ({
   path: `m/${template === "btc.bip86" ? 86 : 84}'/0'/0'`,
 });
 
+/** Raw previous transactions the mock esplora serves by txid — registered per input below. */
+const PREVS = new Map<string, Uint8Array>();
+
 /** A dApp PSBT: prevouts carry no derivation — the engine is expected to add it. */
 const dappPsbt = (
-  inputs: ReadonlyArray<{ script: Uint8Array; amount: bigint }>,
+  inputs: ReadonlyArray<{ script: Uint8Array; amount: bigint; lie?: bigint }>,
   outputs: ReadonlyArray<{ script: Uint8Array; amount: bigint }>,
 ): Uint8Array => {
   const tx = new Transaction({ version: 2 });
   for (const [i, input] of inputs.entries()) {
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: new Uint8Array(32).fill(i + 1), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: input.script, amount: input.amount });
+    const raw = prev.toBytes(true, false);
+    PREVS.set(prev.id, raw);
     tx.addInput({
-      txid: new Uint8Array(32).fill(i + 1),
+      txid: prev.id,
       index: 0,
       sequence: 0xfffffffd,
-      witnessUtxo: input,
+      witnessUtxo: { script: input.script, amount: input.lie ?? input.amount },
     });
   }
   for (const output of outputs) {
@@ -59,6 +67,10 @@ const rig = () => {
   const es: Esplora = {
     get: async (path: string) => {
       calls.push(path);
+      const m = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(path);
+      if (m !== null) {
+        return Promise.resolve(Buffer.from(PREVS.get(m[1] ?? "") ?? []).toString("hex"));
+      }
       return Promise.resolve([]);
     },
     post: async () => Promise.resolve(""),
@@ -151,7 +163,8 @@ describe("prepareDappPsbts", () => {
     );
     await prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip84")] }]);
     const paymentOnly = calls.length;
-    expect(paymentOnly).toBe(40);
+    // 40 scan calls + the signed input's previous transaction.
+    expect(paymentOnly).toBe(41);
 
     calls.length = 0;
     const both = dappPsbt(
@@ -164,6 +177,61 @@ describe("prepareDappPsbts", () => {
     await prepareDappPsbts(apis, es, GROUP, MAINNET, [
       { psbt: both, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] },
     ]);
-    expect(calls).toHaveLength(80);
+    expect(calls).toHaveLength(82);
   });
+
+  it("rejects a witnessUtxo that lies about the chain prevout", { timeout: 20_000 }, async () => {
+    const { es, apis } = rig();
+    const psbt = dappPsbt(
+      [{ script: scriptOf("btc.bip84"), amount: 100000n, lie: 99999n }],
+      [{ script: PAYEE_SCRIPT, amount: 90000n }],
+    );
+    await expect(
+      prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip84")] }]),
+    ).rejects.toMatchObject({
+      code: "invalid-request",
+      message: "input 0 amount or script does not match the chain",
+    });
+  });
+
+  it(
+    "attaches the chain prevout: nonWitnessUtxo for bip84, witnessUtxo for both",
+    {
+      timeout: 20_000,
+    },
+    async () => {
+      const { es, apis } = rig();
+      const psbt = dappPsbt(
+        [
+          { script: scriptOf("btc.bip84"), amount: 100000n },
+          { script: scriptOf("btc.bip86"), amount: 30000n },
+        ],
+        [{ script: PAYEE_SCRIPT, amount: 120000n }],
+      );
+      const [prepared] = await prepareDappPsbts(apis, es, GROUP, MAINNET, [
+        { psbt, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] },
+      ]);
+      const tx = Transaction.fromPSBT(prepared!.request.psbt);
+      expect(tx.getInput(0).nonWitnessUtxo).toBeDefined();
+      expect(tx.getInput(0).witnessUtxo?.amount).toBe(100000n);
+      expect(tx.getInput(1).witnessUtxo?.amount).toBe(30000n);
+    },
+  );
+
+  it(
+    "rejects a bip86 witnessUtxo amount that disagrees with the chain",
+    {
+      timeout: 20_000,
+    },
+    async () => {
+      const { es, apis } = rig();
+      const psbt = dappPsbt(
+        [{ script: scriptOf("btc.bip86"), amount: 30000n, lie: 40000n }],
+        [{ script: PAYEE_SCRIPT, amount: 29000n }],
+      );
+      await expect(
+        prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip86")] }]),
+      ).rejects.toMatchObject({ code: "invalid-request" });
+    },
+  );
 });

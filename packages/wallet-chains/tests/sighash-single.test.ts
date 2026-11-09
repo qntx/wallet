@@ -44,11 +44,19 @@ const buildPsbt = (
       ? p2wpkh(node.publicKey ?? new Uint8Array(), NETWORK).script
       : p2tr(internal, undefined, NETWORK).script;
   for (let i = 0; i < (opts.inputs ?? 1); i++) {
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({
+      txid: hex(`11${String(i)}1`.repeat(16).slice(0, 64)),
+      index: 0,
+      sequence: 0xffffffff,
+    });
+    prev.addOutput({ script, amount: 100000n });
     tx.addInput({
-      txid: hex(`07${String(i)}7`.repeat(16).slice(0, 64)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script, amount: 100000n },
+      ...(kind === "p2wpkh" ? { nonWitnessUtxo: prev.toBytes(true, false) } : {}),
       ...(opts.sighash === undefined ? {} : { sighashType: opts.sighash }),
       ...(kind === "p2wpkh"
         ? {

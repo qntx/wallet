@@ -20,6 +20,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { SignRequest } from "@qntx/wallet-chains";
 import {
   bitcoinNetwork,
+  decodeBitcoinPsbt,
   normalizeBitcoin,
   verifiabilityBitcoin,
   verifyBitcoinMessage,
@@ -34,6 +35,7 @@ import {
 import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { chainPrompt } from "../src/modules/chains/prompt.ts";
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
 
@@ -218,17 +220,24 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
       };
     }
   }
-  if (purpose === 44) {
+  if (purpose !== 86) {
+    // Non-taproot spends must carry the full previous transaction — it pays whatever script the
+    // (possibly wrong) witnessUtxo declares so the two agree at parse.
+    const prevScript =
+      purpose === 44
+        ? opts.wrongScript === true
+          ? p2pkh(foreignPub).script
+          : p2pkh(pub).script
+        : (input["witnessUtxo"] as { script: Uint8Array }).script;
     const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
     prev.addInput({ txid: hex("1111".repeat(16)), index: 0, sequence: 0xffffffff });
-    prev.addOutput({
-      script: opts.wrongScript === true ? p2pkh(foreignPub).script : p2pkh(pub).script,
-      amount: 100000n,
-    });
+    prev.addOutput({ script: prevScript, amount: 100000n });
     input["txid"] = hex(prev.id);
     input["index"] = 0;
     input["nonWitnessUtxo"] = prev.toBytes(true, false);
-    delete input["witnessUtxo"];
+    if (purpose === 44) {
+      delete input["witnessUtxo"];
+    }
   }
   tx.addInput(input);
   if (opts.extraInput === true) {
@@ -261,6 +270,50 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
     );
   }
   return tx.toPSBT(0);
+};
+
+/** A one-input PSBT spending `script` via a bip84 derivation; `nonWitness` is the raw prev tx. */
+const prevoutPsbt = (
+  pub: Uint8Array,
+  script: Uint8Array,
+  nonWitness: Uint8Array | undefined,
+): Uint8Array => {
+  const tx = new Transaction({ version: 2 });
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script, amount: 100000n });
+  tx.addInput({
+    txid: nonWitness === undefined ? hex("0707".repeat(16)) : prev.id,
+    index: 0,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script, amount: 100000n },
+    ...(nonWitness === undefined ? {} : { nonWitnessUtxo: nonWitness }),
+    bip32Derivation: [
+      [pub, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
+    ],
+  });
+  tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
+  return tx.toPSBT(0);
+};
+
+/**
+ * Rewrite input 0's witnessUtxo amount inside a serialized PSBT. btc-signer refuses a disagreeing
+ * witness/nonWitness pair at construction, so the lie exists only on the wire.
+ */
+const lieWitness = (psbt: Uint8Array, amount: bigint): Uint8Array => {
+  const out = new Uint8Array(psbt);
+  // witnessUtxo KV: keyLen 0x01, key 0x01, valueLen 0x1f, then LE64 amount before the script.
+  const mark = [0x01, 0x01, 0x1f, 0xa0, 0x86, 0x01];
+  outer: for (let i = 0; i + mark.length + 8 <= out.length; i++) {
+    for (let j = 0; j < mark.length; j++) {
+      if (out[i + j] !== mark[j]) {
+        continue outer;
+      }
+    }
+    new DataView(out.buffer, out.byteOffset).setBigUint64(i + 3, amount, true);
+    return out;
+  }
+  throw new Error("witnessUtxo field not found");
 };
 
 /** A legacy Solana transfer whose fee payer is account 0's public key. */
@@ -787,11 +840,15 @@ describe("chain.sign", () => {
     const child86 = btcChild("btc.bip86", 0, 0);
     const xonly86 = child86.publicKey!.slice(1);
     const tx = new Transaction({ version: 2 });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2wpkh(pub84).script, amount: 100000n });
     tx.addInput({
-      txid: hex("0707".repeat(16)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2wpkh(pub84).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub84, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
       ],
@@ -832,6 +889,65 @@ describe("chain.sign", () => {
     );
   });
 
+  it("rejects a witnessUtxo-only bip84 input and a lying witnessUtxo amount", async () => {
+    const { h, session, walletId } = await setup();
+    const pub = btcChild("btc.bip84", 0, 0).publicKey!;
+    const { script } = p2wpkh(pub);
+    const mk = (nonWitness: Uint8Array | undefined): Uint8Array =>
+      prevoutPsbt(pub, script, nonWitness);
+    // E-06: the fee shown came from an unattested witnessUtxo — now the request cannot normalize.
+    const witnessOnly = await callSign(h, session, {
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: mk(undefined),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in witnessOnly).toBe(true);
+    // An honest nonWitnessUtxo beside a lying witnessUtxo fails strictPrevoutValidation.
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script, amount: 100000n });
+    const lying = await callSign(h, session, {
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: lieWitness(mk(prev.toBytes(true, false)), 99999n),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in lying).toBe(true);
+  });
+
+  it("shows the proven nonWitnessUtxo fee for a P2PKH spend", async () => {
+    const { h, session, walletId } = await setup();
+    const pub = btcChild("btc.bip44", 0, 0).publicKey!;
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2pkh(pub).script, amount: 100_000_000n });
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      nonWitnessUtxo: prev.toBytes(true, false),
+      bip32Derivation: [
+        [pub, { fingerprint: MASTER_FP, path: [0x8000002c, HARDENED, HARDENED, 0, 0] }],
+      ],
+    });
+    tx.addOutput({ script: PAYEE_SCRIPT, amount: 1_000_000n });
+    const req = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: tx.toPSBT(0),
+      sign: [entry(0, "btc.bip44")],
+    });
+    const res = ok(await callSign(h, session, req));
+    expect(bytesField(res, "signedPsbt").length).toBeGreaterThan(0);
+    const intent = decodeBitcoinPsbt(asPsbt(req));
+    expect(chainPrompt("en", intent).description).toContain("Max fee 99000000 sats");
+  });
+
   it("rejects a sign entry whose template disagrees with the input's script", async () => {
     const { h, session, walletId } = await setup();
     const pub84 = btcChild("btc.bip84", 0, 0).publicKey!;
@@ -839,11 +955,15 @@ describe("chain.sign", () => {
     // A taproot prevout carrying a bip32 derivation entry: normalizes for a bip84 sign entry,
     // but the kernel's prevout check binds the input to its own template.
     const tx = new Transaction({ version: 2 });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2tr(xonly86).script, amount: 100000n });
     tx.addInput({
-      txid: hex("0707".repeat(16)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2tr(xonly86).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub84, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
       ],
@@ -888,11 +1008,15 @@ describe("chain.sign", () => {
     );
     const pub = other.publicKey!;
     const tx = new Transaction({ version: 2 });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2wpkh(pub).script, amount: 100000n });
     tx.addInput({
-      txid: hex("0707".repeat(16)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2wpkh(pub).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, 0x80000001, 0, 0] }],
       ],

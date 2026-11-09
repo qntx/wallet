@@ -78,6 +78,7 @@ type Catalog = {
   readonly operatorAllow: (spender: string, asset: string) => string;
   readonly operatorRevoke: (spender: string, asset: string) => string;
   readonly maxFee: (fee: string) => string;
+  readonly feeUnknown: string;
   readonly sighashSingle: string;
   readonly delegateTo: (name: string, version: string) => string;
   readonly revokeDelegation: string;
@@ -125,6 +126,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
     operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
     maxFee: (fee) => `最高手续费 ${fee}`,
+    feeUnknown: "手续费未知",
     sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
     platformFee: (message) => `Jupiter 收取平台费 ${message}`,
     bridgeLine: (network, amount, to, deadline, refundTo) =>
@@ -179,6 +181,7 @@ const CATALOGS: Readonly<Record<PromptLocale, Catalog>> = {
     operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
     operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
     maxFee: (fee) => `Max fee ${fee}`,
+    feeUnknown: "Fee unknown",
     sighashSingle:
       "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
     platformFee: (message) => `Jupiter platform fee: ${message}`,
@@ -313,7 +316,11 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
           ),
         ]),
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
-    ...(intent.fee === undefined ? [] : [catalog.maxFee(formatAmount(intent.fee.max))]),
+    ...(intent.fee === undefined
+      ? intent.message === undefined
+        ? [catalog.feeUnknown]
+        : []
+      : [catalog.maxFee(formatAmount(intent.fee.max))]),
     ...(intent.warnings ?? [])
       .filter((w) => w.kind === "platform-fee")
       .map((w) => catalog.platformFee(w.message)),

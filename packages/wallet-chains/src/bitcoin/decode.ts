@@ -4,6 +4,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 import { ChainError } from "../index.ts";
 import type { AssetFlow, DisplayIntent, SignRequest, Verifiability } from "../index.ts";
 import { bitcoinNetwork } from "./networks.ts";
+import { isTaprootInput } from "./psbt.ts";
 
 const SATS = "sats";
 const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
@@ -85,13 +86,29 @@ export const decodeBitcoinPsbt = (
       verified: addr !== undefined,
     });
   }
+  // An input amount is proven only by the full previous transaction — or by a signed taproot
+  // input, whose BIP-341 signature commits to every input's amount (sha_amounts) unless it is a
+  // listing sighash.
+  const amountsCommitted = request.sign.some(
+    (s) =>
+      isTaprootInput(tx.getInput(s.index)) &&
+      tx.getInput(s.index).sighashType !== SIGHASH_SINGLE_ANYONECANPAY,
+  );
   let inSum = 0n;
   for (let i = 0; i < tx.inputsLength; i++) {
     const input = tx.getInput(i);
-    if (input.witnessUtxo === undefined) {
-      canFee = false;
-    } else {
+    const nonWitness = input.nonWitnessUtxo;
+    if (nonWitness !== undefined) {
+      const prev = input.index === undefined ? undefined : nonWitness.outputs[input.index];
+      if (prev === undefined) {
+        canFee = false;
+      } else {
+        inSum += prev.amount;
+      }
+    } else if (amountsCommitted && input.witnessUtxo !== undefined) {
       inSum += input.witnessUtxo.amount;
+    } else {
+      canFee = false;
     }
   }
   const external = tx.inputsLength - signed.size > 0;
@@ -99,9 +116,13 @@ export const decodeBitcoinPsbt = (
   const listing = request.sign.some(
     (s) => tx.getInput(s.index).sighashType === SIGHASH_SINGLE_ANYONECANPAY,
   );
+  const fee =
+    canFee && !listing
+      ? { max: { asset: SATS, amount: (inSum - outSum).toString(10) } }
+      : undefined;
   const verifiability: Verifiability = external
     ? "opaque"
-    : listing || undecodable
+    : listing || undecodable || fee === undefined
       ? "partial"
       : "full";
   return {
@@ -110,10 +131,7 @@ export const decodeBitcoinPsbt = (
     summary: outflows.length > 0 ? "transfer" : "contract-call",
     outflows,
     approvals: [],
-    fee:
-      canFee && !listing
-        ? { max: { asset: SATS, amount: (inSum - outSum).toString(10) } }
-        : undefined,
+    fee,
     warnings: listing
       ? [
           {

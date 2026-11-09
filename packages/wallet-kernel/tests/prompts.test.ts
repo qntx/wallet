@@ -92,7 +92,9 @@ describe("chain prompts", () => {
       outflows: [{ to: TO, amount: { asset: USDC, amount: "2500000" }, verified: false }],
       fee: undefined,
     };
-    expect(chainPrompt("en", intent).description).toBe(`Send 2500000 ${USDC} to ${TO}`);
+    expect(chainPrompt("en", intent).description).toBe(
+      `Send 2500000 ${USDC} to ${TO}\nFee unknown`,
+    );
   });
 
   it("approvals: limited and unlimited", () => {
@@ -122,10 +124,10 @@ describe("chain prompts", () => {
     };
     expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
       title: "确认授权",
-      description: `授权 ${SPENDER} 使用 1000000 ${USDC}\n授权 ${SPENDER} 使用 全部 ${USDC}`,
+      description: `授权 ${SPENDER} 使用 1000000 ${USDC}\n授权 ${SPENDER} 使用 全部 ${USDC}\n手续费未知`,
     });
     expect(chainPrompt("en", intent).description).toBe(
-      `Allow ${SPENDER} to spend 1000000 ${USDC}\nAllow ${SPENDER} to spend unlimited ${USDC}`,
+      `Allow ${SPENDER} to spend 1000000 ${USDC}\nAllow ${SPENDER} to spend unlimited ${USDC}\nFee unknown`,
     );
   });
 
@@ -150,55 +152,61 @@ describe("chain prompts", () => {
     chainPrompt(locale, approveIntent(...approvals)).description;
 
   it("allowance: set, unlimited, revoke, increase, decrease", () => {
-    expect(text("en", allowance({}))).toBe(`Allow ${SPENDER} to spend 2.5 USDC`);
-    expect(text("zh-Hans", allowance({}))).toBe(`授权 ${SPENDER} 使用 2.5 USDC`);
+    expect(text("en", allowance({}))).toBe(`Allow ${SPENDER} to spend 2.5 USDC\nFee unknown`);
+    expect(text("zh-Hans", allowance({}))).toBe(`授权 ${SPENDER} 使用 2.5 USDC\n手续费未知`);
     const unlimited = allowance({ unlimited: true });
-    expect(text("en", unlimited)).toBe(`Allow ${SPENDER} to spend unlimited USDC`);
-    expect(text("zh-Hans", unlimited)).toBe(`授权 ${SPENDER} 使用 全部 USDC`);
+    expect(text("en", unlimited)).toBe(`Allow ${SPENDER} to spend unlimited USDC\nFee unknown`);
+    expect(text("zh-Hans", unlimited)).toBe(`授权 ${SPENDER} 使用 全部 USDC\n手续费未知`);
     const zero = allowance({ amount: { asset: USDC, amount: "0", symbol: "USDC", decimals: 6 } });
-    expect(text("en", zero)).toBe(`Revoke ${SPENDER}'s allowance for USDC`);
-    expect(text("zh-Hans", zero)).toBe(`撤销 ${SPENDER} 对 USDC 的授权`);
+    expect(text("en", zero)).toBe(`Revoke ${SPENDER}'s allowance for USDC\nFee unknown`);
+    expect(text("zh-Hans", zero)).toBe(`撤销 ${SPENDER} 对 USDC 的授权\n手续费未知`);
     expect(text("en", allowance({ change: "increase" }))).toBe(
-      `Allow ${SPENDER} to spend 2.5 USDC more`,
+      `Allow ${SPENDER} to spend 2.5 USDC more\nFee unknown`,
     );
     expect(text("zh-Hans", allowance({ change: "increase" }))).toBe(
-      `授权 ${SPENDER} 再使用 2.5 USDC`,
+      `授权 ${SPENDER} 再使用 2.5 USDC\n手续费未知`,
     );
     expect(text("en", allowance({ change: "decrease" }))).toBe(
-      `Reduce ${SPENDER}'s allowance by 2.5 USDC`,
+      `Reduce ${SPENDER}'s allowance by 2.5 USDC\nFee unknown`,
     );
     expect(text("zh-Hans", allowance({ change: "decrease" }))).toBe(
-      `减少 ${SPENDER} 的授权额度 2.5 USDC`,
+      `减少 ${SPENDER} 的授权额度 2.5 USDC\n手续费未知`,
     );
   });
 
   it("allowance: unknown token shows raw units and the asset id", () => {
     const raw = allowance({ amount: { asset: USDC, amount: "7" } });
-    expect(text("en", raw)).toBe(`Allow ${SPENDER} to spend 7 ${USDC}`);
+    expect(text("en", raw)).toBe(`Allow ${SPENDER} to spend 7 ${USDC}\nFee unknown`);
   });
 
   it("allowance: Permit2 suffix and UTC expiry", () => {
     const permit = allowance({ via: "permit2", expiration: 1_800_000_000 });
     expect(text("en", permit)).toBe(
-      `Allow ${SPENDER} to spend 2.5 USDC via Permit2 until 2027-01-15 (UTC)`,
+      `Allow ${SPENDER} to spend 2.5 USDC via Permit2 until 2027-01-15 (UTC)\nFee unknown`,
     );
     expect(text("zh-Hans", permit)).toBe(
-      `授权 ${SPENDER} 使用 2.5 USDC 经 Permit2 至 2027-01-15（UTC）`,
+      `授权 ${SPENDER} 使用 2.5 USDC 经 Permit2 至 2027-01-15（UTC）\n手续费未知`,
     );
     const lockdown = allowance({
       via: "permit2",
       amount: { asset: USDC, amount: "0", symbol: "USDC", decimals: 6 },
     });
-    expect(text("en", lockdown)).toBe(`Revoke ${SPENDER}'s allowance for USDC via Permit2`);
+    expect(text("en", lockdown)).toBe(
+      `Revoke ${SPENDER}'s allowance for USDC via Permit2\nFee unknown`,
+    );
     expect(text("en", allowance({ expiration: 0, via: "permit2" }))).toBe(
-      `Allow ${SPENDER} to spend 2.5 USDC via Permit2`,
+      `Allow ${SPENDER} to spend 2.5 USDC via Permit2\nFee unknown`,
     );
   });
 
   it("allowance: a one-time AllowanceHolder grant names the contract", () => {
     const grant = allowance({ change: "transfer", via: "allowance-holder" });
-    expect(text("en", grant)).toBe(`Allow ${SPENDER} to take 2.5 USDC once via AllowanceHolder`);
-    expect(text("zh-Hans", grant)).toBe(`授权 ${SPENDER} 一次性转走 2.5 USDC 经 AllowanceHolder`);
+    expect(text("en", grant)).toBe(
+      `Allow ${SPENDER} to take 2.5 USDC once via AllowanceHolder\nFee unknown`,
+    );
+    expect(text("zh-Hans", grant)).toBe(
+      `授权 ${SPENDER} 一次性转走 2.5 USDC 经 AllowanceHolder\n手续费未知`,
+    );
   });
 
   it("batch swap: the minimum received renders alongside the delegation line", () => {
@@ -233,7 +241,7 @@ describe("chain prompts", () => {
       verifiability: "partial",
     };
     expect(chainPrompt("en", batch).description).toBe(
-      `There may be other outflows\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSend 10 USDC to ${TO}\nReceive at least 0.07 ETH at ${SPENDER}`,
+      `There may be other outflows\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSend 10 USDC to ${TO}\nReceive at least 0.07 ETH at ${SPENDER}\nFee unknown`,
     );
   });
 
@@ -263,10 +271,10 @@ describe("chain prompts", () => {
       verifiability: "partial",
     };
     expect(chainPrompt("en", swap).description).toBe(
-      `There may be other outflows\nSend 10 USDC to ${TO}\nReceive at least 0.07 ETH at ${SPENDER}`,
+      `There may be other outflows\nSend 10 USDC to ${TO}\nReceive at least 0.07 ETH at ${SPENDER}\nFee unknown`,
     );
     expect(chainPrompt("zh-Hans", swap).description).toBe(
-      `可能还有其他转出\n发送 10 USDC 到 ${TO}\n至少收到 0.07 ETH，收款地址 ${SPENDER}`,
+      `可能还有其他转出\n发送 10 USDC 到 ${TO}\n至少收到 0.07 ETH，收款地址 ${SPENDER}\n手续费未知`,
     );
   });
 
@@ -284,20 +292,24 @@ describe("chain prompts", () => {
   it("allowance: one-time transfer right, limited and unlimited, with Permit2 and expiry", () => {
     const once = allowance({ change: "transfer", via: "permit2", expiration: 1_800_000_000 });
     expect(text("en", once)).toBe(
-      `Allow ${SPENDER} to take 2.5 USDC once via Permit2 until 2027-01-15 (UTC)`,
+      `Allow ${SPENDER} to take 2.5 USDC once via Permit2 until 2027-01-15 (UTC)\nFee unknown`,
     );
     expect(text("zh-Hans", once)).toBe(
-      `授权 ${SPENDER} 一次性转走 2.5 USDC 经 Permit2 至 2027-01-15（UTC）`,
+      `授权 ${SPENDER} 一次性转走 2.5 USDC 经 Permit2 至 2027-01-15（UTC）\n手续费未知`,
     );
     const unlimited = allowance({ change: "transfer", unlimited: true });
-    expect(text("en", unlimited)).toBe(`Allow ${SPENDER} to take unlimited USDC once`);
-    expect(text("zh-Hans", unlimited)).toBe(`授权 ${SPENDER} 一次性转走 全部 USDC`);
+    expect(text("en", unlimited)).toBe(`Allow ${SPENDER} to take unlimited USDC once\nFee unknown`);
+    expect(text("zh-Hans", unlimited)).toBe(`授权 ${SPENDER} 一次性转走 全部 USDC\n手续费未知`);
   });
 
   it("a one-time transfer right without an expiration has no until suffix", () => {
     const once = allowance({ change: "transfer", via: "permit2" });
-    expect(text("en", once)).toBe(`Allow ${SPENDER} to take 2.5 USDC once via Permit2`);
-    expect(text("zh-Hans", once)).toBe(`授权 ${SPENDER} 一次性转走 2.5 USDC 经 Permit2`);
+    expect(text("en", once)).toBe(
+      `Allow ${SPENDER} to take 2.5 USDC once via Permit2\nFee unknown`,
+    );
+    expect(text("zh-Hans", once)).toBe(
+      `授权 ${SPENDER} 一次性转走 2.5 USDC 经 Permit2\n手续费未知`,
+    );
   });
 
   it("operator approval and revocation", () => {
@@ -309,10 +321,14 @@ describe("chain prompts", () => {
       verified: false,
     } as const;
     const revoke = { ...grant, approved: false } as const;
-    expect(text("en", grant)).toBe(`Allow ${SPENDER} to transfer all tokens of ${USDC}`);
-    expect(text("zh-Hans", grant)).toBe(`授权 ${SPENDER} 转走 ${USDC} 的全部代币`);
-    expect(text("en", revoke)).toBe(`Revoke ${SPENDER}'s access to all tokens of ${USDC}`);
-    expect(text("zh-Hans", revoke)).toBe(`撤销 ${SPENDER} 对 ${USDC} 全部代币的授权`);
+    expect(text("en", grant)).toBe(
+      `Allow ${SPENDER} to transfer all tokens of ${USDC}\nFee unknown`,
+    );
+    expect(text("zh-Hans", grant)).toBe(`授权 ${SPENDER} 转走 ${USDC} 的全部代币\n手续费未知`);
+    expect(text("en", revoke)).toBe(
+      `Revoke ${SPENDER}'s access to all tokens of ${USDC}\nFee unknown`,
+    );
+    expect(text("zh-Hans", revoke)).toBe(`撤销 ${SPENDER} 对 ${USDC} 全部代币的授权\n手续费未知`);
   });
 
   it("partial leads with the other-outflows warning", () => {
@@ -371,6 +387,15 @@ describe("chain prompts", () => {
       title: "Confirm batch",
       description: "Revoke this account's contract delegation\nSign a request from an app",
     });
+  });
+
+  it("an unknown fee renders its own line; off-chain messages never get one", () => {
+    const partial: PromptIntent = { ...ethTransfer, fee: undefined, verifiability: "partial" };
+    expect(chainPrompt("en", partial).description).toContain("Fee unknown");
+    expect(chainPrompt("zh-Hans", partial).description).toContain("手续费未知");
+    const message: PromptIntent = { ...partial, message: { kind: "text", text: "permit" } };
+    expect(chainPrompt("en", message).description).not.toContain("Fee unknown");
+    expect(chainPrompt("zh-Hans", message).description).not.toContain("手续费未知");
   });
 
   it("opaque and messages show only the generic line", () => {
