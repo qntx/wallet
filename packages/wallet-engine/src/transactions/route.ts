@@ -108,6 +108,8 @@ export type ChainRequestMethod =
   | "evm-approve"
   | "evm-swap"
   | "evm-bridge"
+  | "evm-nft-send"
+  | "solana-core-send"
   | "evm-lido"
   | "solana-stake"
   | "solana-swap";
@@ -158,6 +160,27 @@ export type ChainRequestInput =
       readonly account: AccountRef;
       readonly network: string;
       readonly quote: AcrossBridgeQuote;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "evm-nft-send";
+      readonly account: AccountRef;
+      readonly network: string;
+      /** The ERC-721 or ERC-1155 contract. */
+      readonly contract: string;
+      readonly tokenId: bigint;
+      readonly to: string;
+      /** ERC-1155 only — the units sent; ERC-721 ignores it. */
+      readonly amount?: bigint;
+      readonly fee: PrepareParams["fee"];
+    }
+  | {
+      readonly method: "solana-core-send";
+      readonly account: AccountRef;
+      readonly network: string;
+      /** The Core asset account. */
+      readonly asset: string;
+      readonly to: string;
       readonly fee: PrepareParams["fee"];
     }
   | {

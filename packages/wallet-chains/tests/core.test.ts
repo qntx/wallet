@@ -25,7 +25,7 @@ const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const req = (
   message: string,
   lookups: ReadonlyArray<{ address: string; addresses: string[] }> = [],
-): SignRequest => ({
+): Extract<SignRequest, { kind: "solana.transaction" }> => ({
   kind: "solana.transaction" as const,
   network: NETWORK,
   account: { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "solana.bip44" },
@@ -50,7 +50,9 @@ describe("metaplex core decode", () => {
   });
 
   it("a compression-proof transfer is not recognised", () => {
-    const parsed = parseCompiledMessage(Uint8Array.from(Buffer.from(vectors.core[0]!.message.slice(2), "hex")));
+    const parsed = parseCompiledMessage(
+      Uint8Array.from(Buffer.from(vectors.core[0]!.message.slice(2), "hex")),
+    );
     const ix = parsed.instructions[0]!;
     /* Mutate the args byte from 0 (None) to 1 (Some proof) — the layout is then a proof blob. */
     const core = decodeCoreIx(
@@ -62,7 +64,9 @@ describe("metaplex core decode", () => {
   });
 
   it("an unknown core instruction is opaque", () => {
-    const parsed = parseCompiledMessage(Uint8Array.from(Buffer.from(vectors.core[0]!.message.slice(2), "hex")));
+    const parsed = parseCompiledMessage(
+      Uint8Array.from(Buffer.from(vectors.core[0]!.message.slice(2), "hex")),
+    );
     const ix = parsed.instructions[0]!;
     const core = decodeCoreIx(
       parsed,

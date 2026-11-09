@@ -27,7 +27,13 @@ import type {
   DelegationStatus,
 } from "./route.ts";
 import { accountAddress, newId } from "./route.ts";
-import { pollSolana, prepareSolana, prepareSolanaStake, prepareSolanaSwap } from "./solana.ts";
+import {
+  pollSolana,
+  prepareSolana,
+  prepareSolanaCoreSend,
+  prepareSolanaStake,
+  prepareSolanaSwap,
+} from "./solana.ts";
 
 export type {
   AccountRef,
@@ -469,6 +475,7 @@ export class TransactionController extends Controller<TransactionControllerState
           | "evm-approve"
           | "evm-swap"
           | "evm-bridge"
+          | "evm-nft-send"
           | "evm-lido";
       }
     >,
@@ -502,6 +509,16 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return prepareSolanaSwap(this.routeCtx(), input);
+  }
+
+  async prepareSolanaCoreSend(
+    input: Extract<ChainRequestInput, { method: "solana-core-send" }>,
+    _requestId: string,
+  ): Promise<PreparedRequest> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return prepareSolanaCoreSend(this.routeCtx(), input);
   }
 
   /** The account's 7702 delegation state on `network` (primary endpoint only). */
