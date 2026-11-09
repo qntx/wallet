@@ -9,6 +9,114 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-09
+
+DeFi on top of verified signing: EIP-7702 smart accounts and EIP-5792 call batches, same-chain
+swaps through 0x and Jupiter, cross-chain transfers through Across, native SOL and Lido staking,
+NFT sends, watch-only accounts and imported private keys. Every third-party quote is untrusted
+input: the engine rebuilds or re-decodes each transaction and checks its terms on-chain before the
+kernel shows it, and typed data that grants execution rights is refused in the kernel itself.
+
+### Added
+
+- `@qntx/wallet-chains/evm`: EIP-7702 against the MetaMask `EIP7702StatelessDeleGator` v1.3.0
+  (`EVM_DELEGATOR`). `EvmTransaction` gains an `eip7702` variant (one self-sponsored authorization,
+  `nonce = tx.nonce + 1`, delegator or zero address only); `encodeBatchExecute` /
+  `decodeBatchExecute` for ERC-7821 batch mode; `decodeEvm` reports a `delegation` intent and
+  decodes canonical batch self-calls call by call. `recoverEvmSigner` verifies the authorization.
+- `@qntx/wallet-chains/evm`: 0x AllowanceHolder `exec` decoding (`ALLOWANCE_HOLDER`,
+  `ZEROX_CHAINS`, `decodeZeroX`, `isZeroExSettler`): a taker Settler `execute` is a `swap` with the
+  sell outflow and `DisplayIntent.minimumReceived`, the floor the Settler enforces on-chain; any
+  other `exec` is a contract call with a one-time `allowance-holder` approval.
+- `@qntx/wallet-chains/evm`: Lido stETH `submit`, the four WithdrawalQueue request forms and
+  `claimWithdrawals` on mainnet; a request whose owner is not the signer is an outflow to that
+  owner. Across SpokePool `deposit` / `depositV3` on nine chains as a `bridge` with
+  `DisplayIntent.bridge` (`destinationNetwork`, `fillDeadline`, `refundTo`) and the calldata's
+  output amount as `minimumReceived`.
+- `@qntx/wallet-chains/solana`: Stake program decoding (create, initialize, delegate, deactivate,
+  withdraw, authorize; post-SIMD-0490 and legacy account lists) with `DisplayIntent.staking`, a
+  `stake-authority` approval and a `stake-lockup` warning. Jupiter `route_v2` /
+  `shared_accounts_route_v2` as a `swap` with the derived minimum received, wSOL wrapping and
+  closing back to the signer treated as harmless, and a platform-fee warning. Metaplex Core
+  `TransferV1` as an outflow of the asset when the signer is the authority.
+- `@qntx/wallet-engine`: internal requests `evm-delegation` (upgrade, revoke), `evm-batch`,
+  `evm-approve` (exact amounts only; refuses unlimited, nonzero overwrite and no-op), `evm-swap`,
+  `evm-bridge`, `evm-nft-send`, `evm-lido`, `solana-swap`, `solana-stake` and `solana-core-send`.
+  Each verifies the quote or on-chain state on the primary and independent endpoints (disagreement
+  refuses, an unavailable independent read is `reads-unverified`), requires its built transaction
+  to decode back to exactly the requested terms, and requires a successful simulation that is
+  re-checked at approval.
+  - 0x: the AllowanceHolder code hash is pinned and the decoded Settler must be the deployer
+    registry's current or previous taker Settler (`ownerOf(2)` / `prev(2)`).
+  - Jupiter: every address lookup table is read from both endpoints, the wallet sets its own
+    compute budget, only System, Token, Token-2022, ATA and Jupiter programs are allowed, and the
+    message must fit 1232 bytes.
+  - Across: SpokePool addresses are compile-time constants, the depositor and recipient are the
+    account, and the fill deadline is at most two hours after the quote.
+  - Native staking derives stake accounts as `stake:<n>` seeds of the account and reads the
+    minimum delegation from RPC; Lido checks pause and stake limit and splits withdrawal requests
+    into chunks of at most 1000 ETH.
+- `@qntx/wallet-engine`: read facades `delegation(account, network)`, `swaps.quote` (provider
+  union `"0x" | "jupiter"`), `bridges.quote` / `bridges.status`, `staking.positions` /
+  `staking.validators` and `lido.position`, all display-only.
+- `@qntx/wallet-engine/connect`: EIP-5792 v2.0.0 `wallet_getCapabilities`, `wallet_sendCalls`,
+  `wallet_getCallsStatus` and `wallet_showCallsStatus`. Two or more calls become one atomic
+  `evm-batch` when the account is or can be delegated, otherwise a sequential path, or `5760` when
+  atomicity is required; a call addressed to the account itself is refused.
+- `@qntx/wallet-engine`: watch-only accounts (`engine.watch.add` / `rename` / `remove` / `list` /
+  `assets`) for EVM, Solana and Bitcoin addresses. `WatchAccount` is not an `AccountRef`, so no
+  signing path accepts one; duplicates and the wallet's own derived addresses are refused, and dApp
+  connections never expose them.
+- `@qntx/wallet`: imported private keys (`keys.import` / `list` / `remove` / `export`, state
+  `importedKeys`). EVM takes a 32-byte secp256k1 key, Solana a 32-byte seed or a 64-byte keypair
+  whose public half is checked. Each key is its own encrypted `key` vault record with a `keyId`
+  derived from its family and public key; duplicates and addresses of the first 20 groups of any
+  mnemonic wallet in the vault are refused. Removal and export require factor verification.
+  `chain.sign` takes `{ kind: "imported", keyId, family }` for EVM and Solana, and the host checks
+  every signature against the key's listed address. Cloud backups carry imported keys and restore
+  re-derives each `keyId`.
+- `@qntx/wallet-engine`: `engine.keys` and `AccountTreeController.imported()`. Imported EVM and
+  Solana keys sign every internal request (sends, approvals, swaps, bridges, NFT sends, staking,
+  7702 delegation and batches, speed-up and cancel); one resolver checks the key is listed and of
+  the request's family before any chain read. Imported keys are listed beside the HD tree, never as
+  group members, and are not offered to dApp sessions.
+- `apps/gateway`: `GET /v1/quotes/swap` (0x, `ZEROX_API_KEY`, optional `ZEROX_FEE_RECIPIENT` /
+  `ZEROX_FEE_BPS`), `GET /v1/quotes/swap/solana` (Jupiter `/build`, optional `JUPITER_API_KEY`) and
+  `GET /v1/quotes/bridge` (Across). Upstream 400/403/422 map to `invalid-request`; 401, 429, 5xx
+  and malformed bodies to `unavailable`.
+
+### Changed
+
+- **BREAKING** `@qntx/wallet-chains`: `decodeEvm(request, signer, table)` and
+  `verifiabilityEvm(request, signer)` take the signer. Typed data whose `verifyingContract` is the
+  signer, the MetaMask DelegationManager or the ERC-4337 v0.8 EntryPoint is refused with
+  `invalid-request`; the kernel applies the refusal on both signing passes.
+- **BREAKING** `@qntx/wallet-chains`: `ApprovalChange.via` is `permit2 | allowance-holder`;
+  `ApprovalChange` gains `stake-authority`; `IntentSummary` gains `stake` and `bridge`;
+  `DisplayIntent` gains `minimumReceived`, `staking` (native stake and `lido-*` actions), `bridge`
+  and `delegation`.
+- **BREAKING** `@qntx/wallet-chains`: NFT flows carry `AssetAmount.tokenId`. ERC-721 is
+  `amount: "1"` with the id in `tokenId`; ERC-1155 carries the quantity in `amount`, and a batch
+  emits one flow per id and value. Token ids no longer appear as amounts in prompts or risk totals.
+- **BREAKING** `@qntx/wallet-engine`: `EngineOptions.showCallsStatus` is required;
+  `ChainRequestMethod` gains the internal requests above.
+- **BREAKING** `@qntx/wallet-engine`: a tracked transaction's EVM build record is
+  `{ from, account, raw }` with the signing `AccountRef`, so replacements of imported-key
+  transactions sign with the same key. Records without `account` are dropped as malformed on load.
+- **BREAKING** `@qntx/wallet`: system prompts gain `export-private-key` and `remove-private-key`.
+- CI runs the Solana e2e suite on Agave 4.4.0 (Stake program v5).
+
+### Fixed
+
+- `@qntx/wallet-chains/solana`: v0 lookup accounts resolve every table's writable entries before
+  the readonly ones; multi-table messages previously showed wrong addresses. An unrecognised
+  instruction in a lookup-table message is `opaque` again instead of `partial`.
+- `@qntx/wallet-chains/solana`: a system transfer's outflow uses the instruction's source account
+  instead of the fee payer.
+- `@qntx/wallet-engine`: a stake-authority grant to another account is a `danger` on the dApp
+  Solana sign path.
+- The bitcoin e2e Esplora container waits for bitcoind before creating its wallet (start-up race).
+
 ## [0.12.0] - 2026-11-08
 
 One PSBT can spend inputs of several Bitcoin templates of a wallet group, as inscription purchases
