@@ -11,6 +11,7 @@ const config: UserConfig = defineConfig({
       "solana-sign": "src/solana/sign.ts",
       bitcoin: "src/bitcoin/index.ts",
       "bitcoin-sign": "src/bitcoin/sign.ts",
+      networks: "src/networks.ts",
     },
     deps: {
       // Every third-party import must resolve as an external dependency; a src import that

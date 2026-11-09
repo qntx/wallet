@@ -1,6 +1,7 @@
+import { recoverPersonalSignature } from "@metamask/eth-sig-util";
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
@@ -8,9 +9,7 @@ import Slip10 from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
-import { signEvmPersonalMessage } from "@qntx/wallet-chains/evm/sign";
 import { normalizeSolana, solanaAddressFromPublicKey } from "@qntx/wallet-chains/solana";
-import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 
 import { wipe } from "../src/secret/secret.ts";
 import type { KernelResponse } from "./harness.ts";
@@ -319,11 +318,14 @@ describe("chain.sign (imported)", () => {
         session,
       ),
     );
-    const expected = signEvmPersonalMessage(
-      utf8ToBytes("hello imported"),
-      new Uint8Array(EVM_SECRET),
-    );
-    expect(res["signature"]).toStrictEqual(expected);
+    // Oracle: recover the signer with @metamask/eth-sig-util rather than re-running our signer.
+    const signature = res["signature"] as Uint8Array;
+    expect(
+      recoverPersonalSignature({
+        data: utf8ToBytes("hello imported"),
+        signature: `0x${bytesToHex(signature)}`,
+      }).toLowerCase(),
+    ).toBe((imp["address"] as string).toLowerCase());
   });
 
   it("signs a Solana message with the imported seed", async () => {
@@ -356,8 +358,6 @@ describe("chain.sign (imported)", () => {
       ),
     );
     const signature = res["signature"] as Uint8Array;
-    const expected = signSolanaMessage(utf8ToBytes("hello solana"), new Uint8Array(SOL_SECRET));
-    expect(signature).toStrictEqual(expected);
     // The imported address is the ed25519 public key — the signature must verify under it.
     expect(
       ed25519.verify(

@@ -979,7 +979,7 @@ describe("chain.sign", () => {
     const res = ok(await callSign(h, session, req));
     expect(bytesField(res, "signedPsbt").length).toBeGreaterThan(0);
     const intent = decodeBitcoinPsbt(asPsbt(req));
-    expect(chainPrompt("en", intent).description).toContain("Max fee 99000000 sats");
+    expect(chainPrompt("en", intent).description).toContain("Max fee 0.99 BTC");
   });
 
   it("E-28: a priority fee without SetComputeUnitLimit shows the default-limit max fee", () => {
@@ -997,7 +997,7 @@ describe("chain.sign", () => {
     ) as never;
     const intent = decodeSolana(req, payer);
     expect(intent.verifiability).toBe("full");
-    expect(chainPrompt("en", intent).description).toContain("Max fee 30000005000 lamports");
+    expect(chainPrompt("en", intent).description).toContain("Max fee 30.000005 SOL");
   });
 
   it("rejects a sign entry whose template disagrees with the input's script", async () => {

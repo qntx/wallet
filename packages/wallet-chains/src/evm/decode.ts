@@ -12,6 +12,7 @@ import type {
   SignRequest,
   Verifiability,
 } from "../index.ts";
+import { withNativeAmountMeta } from "../networks.ts";
 import { parseSignIn } from "../sign-in.ts";
 import { decodeAcross } from "./across.ts";
 import { checksumEvmAddress } from "./address.ts";
@@ -531,7 +532,12 @@ export const decodeEvm = (
   table: EvmTokenTable = evmTokenTable,
 ): DisplayIntent => {
   if (request.kind === "evm.transaction") {
-    return decodeTransaction(request, signer, table);
+    return withNativeAmountMeta(
+      decodeTransaction(request, signer, table),
+      request.network,
+      EVM_NATIVE_ASSET,
+      18,
+    );
   }
   if (request.kind === "evm.personal-message") {
     return {

@@ -84,7 +84,9 @@
       "to": "FsoYiVQ9vKFnX9tpNi7d6N8Ptk8HQbnmednRzdmmURp4",
       "amount": {
        "asset": "lamports",
-       "amount": "2000000000"
+       "amount": "2000000000",
+       "decimals": 9,
+       "symbol": "SOL"
       },
       "verified": true
      }
@@ -127,7 +129,9 @@
       "to": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
       "amount": {
        "asset": "lamports",
-       "amount": "500000000"
+       "amount": "500000000",
+       "decimals": 9,
+       "symbol": "SOL"
       },
       "verified": true
      }
@@ -350,7 +354,9 @@
       "to": "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
       "amount": {
        "asset": "lamports",
-       "amount": "1000000000"
+       "amount": "1000000000",
+       "decimals": 9,
+       "symbol": "SOL"
       },
       "verified": true
      }

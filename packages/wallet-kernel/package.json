@@ -36,6 +36,7 @@
     "micro-key-producer": "0.10.2"
   },
   "devDependencies": {
+    "@metamask/eth-sig-util": "9.0.0",
     "@qntx/tsconfig": "1.0.1",
     "@types/node": "26.6.6",
     "fast-check": "4.10.2",

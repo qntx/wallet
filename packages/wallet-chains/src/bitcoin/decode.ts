@@ -3,6 +3,7 @@ import { Transaction } from "@scure/btc-signer/transaction.js";
 
 import { ChainError } from "../index.ts";
 import type { AssetFlow, DisplayIntent, SignRequest, Verifiability } from "../index.ts";
+import { withNativeAmountMeta } from "../networks.ts";
 import { bitcoinNetwork } from "./networks.ts";
 import { isTaprootInput } from "./psbt.ts";
 
@@ -125,24 +126,29 @@ export const decodeBitcoinPsbt = (
     : listing || undecodable || fee === undefined
       ? "partial"
       : "full";
-  return {
-    family: "bitcoin",
-    network: request.network,
-    summary: outflows.length > 0 ? "transfer" : "contract-call",
-    outflows,
-    approvals: [],
-    fee,
-    warnings: listing
-      ? [
-          {
-            kind: "sighash-single-anyonecanpay",
-            message:
-              "signed inputs bind only their same-index outputs; the rest of the transaction can change",
-          },
-        ]
-      : [],
-    verifiability,
-  };
+  return withNativeAmountMeta(
+    {
+      family: "bitcoin",
+      network: request.network,
+      summary: outflows.length > 0 ? "transfer" : "contract-call",
+      outflows,
+      approvals: [],
+      fee,
+      warnings: listing
+        ? [
+            {
+              kind: "sighash-single-anyonecanpay",
+              message:
+                "signed inputs bind only their same-index outputs; the rest of the transaction can change",
+            },
+          ]
+        : [],
+      verifiability,
+    },
+    request.network,
+    SATS,
+    8,
+  );
 };
 
 export const verifiabilityBitcoin = (

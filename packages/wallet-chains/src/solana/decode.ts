@@ -10,6 +10,7 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { ChainError } from "../index.ts";
+import { withNativeAmountMeta } from "../networks.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { associatedTokenAddress } from "./ata.ts";
 import { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
@@ -468,4 +469,10 @@ export const decodeSolana = (
   request: Extract<SignRequest, { kind: "solana.transaction" }>,
   signer: string,
   table: SolanaTokenTable = solanaTokenTable,
-): DisplayIntent => decodeTransaction(request, signer, table);
+): DisplayIntent =>
+  withNativeAmountMeta(
+    decodeTransaction(request, signer, table),
+    request.network,
+    SOLANA_NATIVE_ASSET,
+    9,
+  );

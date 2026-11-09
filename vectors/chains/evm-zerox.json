@@ -65,7 +65,9 @@
             "to": "0xaddC26a3854feaBFd20d6BF658254088D83a425A",
             "amount": {
               "asset": "native",
-              "amount": "70000000000000000"
+              "amount": "70000000000000000",
+              "decimals": 18,
+              "symbol": "ETH"
             },
             "verified": true
           }
@@ -107,7 +109,9 @@
             "to": "0xaddC26a3854feaBFd20d6BF658254088D83a425A",
             "amount": {
               "asset": "native",
-              "amount": "59000000000000000"
+              "amount": "59000000000000000",
+              "decimals": 18,
+              "symbol": "ETH"
             },
             "verified": true
           }
@@ -149,7 +153,9 @@
             "to": "0x0038DFB2bBc353Daa6aD22Cb11Ee1D78f41B59cd",
             "amount": {
               "asset": "native",
-              "amount": "346794276265113"
+              "amount": "346794276265113",
+              "decimals": 18,
+              "symbol": "ETH"
             },
             "verified": true
           }
@@ -180,7 +186,9 @@
             "to": "0x559B33F816Fb4d6b24731D77eDB5C5b2f5F5B624",
             "amount": {
               "asset": "native",
-              "amount": "228400339412496"
+              "amount": "228400339412496",
+              "decimals": 18,
+              "symbol": "ETH"
             },
             "verified": true
           }

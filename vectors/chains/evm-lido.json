@@ -24,7 +24,9 @@
       "to": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
       "amount": {
        "asset": "native",
-       "amount": "50000000000000000000"
+       "amount": "50000000000000000000",
+       "decimals": 18,
+       "symbol": "ETH"
       },
       "verified": true
      }
@@ -34,7 +36,9 @@
       "kind": "lido-submit",
       "amount": {
        "asset": "native",
-       "amount": "50000000000000000000"
+       "amount": "50000000000000000000",
+       "decimals": 18,
+       "symbol": "ETH"
       },
       "receive": {
        "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
@@ -68,7 +72,9 @@
       "to": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",
       "amount": {
        "asset": "native",
-       "amount": "83000000000000000"
+       "amount": "83000000000000000",
+       "decimals": 18,
+       "symbol": "ETH"
       },
       "verified": true
      }
@@ -78,7 +84,9 @@
       "kind": "lido-submit",
       "amount": {
        "asset": "native",
-       "amount": "83000000000000000"
+       "amount": "83000000000000000",
+       "decimals": 18,
+       "symbol": "ETH"
       },
       "receive": {
        "asset": "0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84",

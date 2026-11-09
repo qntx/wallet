@@ -580,7 +580,7 @@ describe("stake decode", () => {
     expect(intent.outflows).toStrictEqual([
       {
         to: STAKE_ACCT,
-        amount: { asset: SOLANA_NATIVE_ASSET, amount: "2000000000" },
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: "2000000000", decimals: 9, symbol: "SOL" },
         verified: true,
       },
     ]);
@@ -657,7 +657,7 @@ describe("stake decode", () => {
     expect(otherIntent.outflows).toStrictEqual([
       {
         to: OTHER_KEY,
-        amount: { asset: SOLANA_NATIVE_ASSET, amount: "500000000" },
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: "500000000", decimals: 9, symbol: "SOL" },
         verified: true,
       },
     ]);
