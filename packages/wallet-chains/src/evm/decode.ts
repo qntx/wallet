@@ -13,6 +13,7 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { parseSignIn } from "../sign-in.ts";
+import { decodeAcross } from "./across.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
@@ -221,6 +222,19 @@ const decodeCall = (
       ...(minimumReceived === undefined ? {} : { minimumReceived }),
       fee,
       verifiability,
+    };
+  }
+
+  const across = decodeAcross(chainId, call, table);
+  if (across !== undefined) {
+    return {
+      ...base,
+      summary: "bridge",
+      outflows: across.outflows,
+      minimumReceived: across.minimumReceived,
+      bridge: across.bridge,
+      fee,
+      verifiability: "partial",
     };
   }
 
