@@ -15,6 +15,24 @@ const EVM = "0x1234567890abcdef1234567890abcdef12345678";
 const SOL = "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263";
 const BTC = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
 
+const stubbedAssets = (): AssetsController => {
+  const c = {
+    transport: {
+      request: async ({ method }: { method: string }) =>
+        Promise.resolve(({ eth_getBalance: "0x1234" } as Record<string, string>)[method]),
+    },
+  } as unknown as PublicClient;
+  return new AssetsController({
+    networks: {
+      client: () => c,
+      info: () => ({ family: "evm", chainId: 1 }),
+    } as never,
+    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    setTimer: () => () => {},
+    logger,
+  });
+};
+
 const world = (own: ReadonlyArray<string> = []) => {
   let call = 0;
   const ownAddresses = async () => Promise.resolve(own);
@@ -70,25 +88,23 @@ describe("WatchController", () => {
   it("reads a watched EVM address through the same per-address path", async () => {
     /* `assets.refresh(address, network)` is the one read path HD accounts' derived
        addresses and watch accounts' stored addresses share — no derivation happens. */
-    const c = {
-      transport: {
-        request: async ({ method }: { method: string }) =>
-          Promise.resolve(({ eth_getBalance: "0x1234" } as Record<string, string>)[method]),
-      },
-    } as unknown as PublicClient;
-    const assets = new AssetsController({
-      networks: {
-        client: () => c,
-        info: () => ({ family: "evm", chainId: 1 }),
-      } as never,
-      openStore: async () => Promise.resolve(createMemoryEngineStore()),
-      setTimer: () => () => {},
-      logger,
-    });
+    const assets = stubbedAssets();
     const w = world();
     const a = await w.add({ family: "evm", address: EVM });
     await assets.refresh(a.address, "eip155:1");
     expect(assets.getState().balances[`eip155:1:${a.address}`]?.native).toBe("4660");
+  });
+
+  it("a removed watch account can be re-added after its balance was tracked", async () => {
+    /* "Own" is derived addresses only — the balances state may still hold a removed
+       account's address, and counting it as own would block re-adding it. */
+    const assets = stubbedAssets();
+    const w = world();
+    const a = await w.add({ family: "evm", address: EVM });
+    await assets.refresh(a.address, "eip155:1");
+    await w.remove(a.id);
+    const again = await w.add({ family: "evm", address: EVM });
+    expect(again.address).toBe(EVM);
   });
 
   it("a watch account can never reach a dApp session", async () => {

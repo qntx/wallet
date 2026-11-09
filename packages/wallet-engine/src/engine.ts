@@ -142,7 +142,6 @@ export type WalletEngine = {
     readonly remove: (id: string) => Promise<void>;
     readonly list: () => ReadonlyArray<WatchAccount>;
     readonly assets: (id: string, network: string) => Promise<unknown>;
-    readonly history: (id: string) => ReadonlyArray<unknown>;
   };
   readonly metaSync: MetaSyncController;
   readonly backup: BackupController;
@@ -304,9 +303,10 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     random: options.random,
     now: options.now,
     logger: options.logger,
-    /* "Own" covers every HD group's derived EVM, Solana and Bitcoin (payment/ordinals)
-       address — derived on demand since the tree stores only group indexes — plus any
-       address already in the balances state. */
+    /* "Own" covers only the HD groups' derived EVM, Solana and Bitcoin (payment/ordinals)
+       addresses — derived on demand since the tree stores only group indexes. Deliberately
+       not the balances-state keys: a removed watch account's address can still appear
+       there, and treating it as own would block re-adding it. */
     ownAddresses: async () => {
       const reads = Object.entries(accounts.getState().groups).flatMap(([walletId, groups]) =>
         groups.flatMap((group) =>
@@ -336,14 +336,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         ),
       );
       const derived = await Promise.all(reads);
-      const addresses = new Set(derived.filter((a) => a !== undefined));
-      for (const entry of Object.keys(assets.getState().balances)) {
-        const [, address] = entry.split(":");
-        if (address !== undefined) {
-          addresses.add(address);
-        }
-      }
-      return [...addresses];
+      return derived.filter((a) => a !== undefined);
     },
   });
 
@@ -766,22 +759,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         }
         await assets.refresh(account.address, network);
         return assets.getState().balances[`${network}:${account.address}`];
-      },
-      /* Tracked transactions the address appears in — EVM by `evm.from`, Bitcoin by
-         its recorded inputs, Solana has no address field on the store so watch history
-         for it is only what a future per-address read adds. */
-      history: (id) => {
-        const account = watch.getState().accounts[id];
-        if (account === undefined) {
-          throw new Error("no such watch account");
-        }
-        const address = account.address.toLowerCase();
-        return Object.values(transactions.getState().txs).filter((tx) => {
-          if (tx.evm?.from.toLowerCase() === address) {
-            return true;
-          }
-          return tx.btc?.inputs.some((input) => input.address.toLowerCase() === address) ?? false;
-        });
       },
     },
     addressBook,
