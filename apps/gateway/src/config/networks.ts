@@ -56,3 +56,99 @@ export const STAGING_NETWORKS: ReadonlyArray<GatewayNetwork> = [
     ],
   },
 ];
+
+/**
+ * Production serves mainnets only. EVM and Solana prefer Alchemy, falling back to dRPC; Bitcoin
+ * uses Blockstream Enterprise's Esplora (the engine falls back to the host's own endpoints on a
+ * 503). Keys ride in headers — URLs carry no key material.
+ */
+export const PRODUCTION_NETWORKS: ReadonlyArray<GatewayNetwork> = [
+  {
+    // Ethereum mainnet — chain id 1
+    id: "eip155:1",
+    providers: [
+      // https://docs.alchemy.com/reference/evm-quickstart — JSON-RPC over bearer auth
+      { id: "alchemy", url: "https://eth-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      // https://drpc.org/docs — load balancer, key in the Drpc-Key header
+      { id: "drpc", url: "https://lb.drpc.live/ethereum", auth: "drpc" },
+    ],
+  },
+  {
+    // Base — chain id 8453
+    id: "eip155:8453",
+    providers: [
+      { id: "alchemy", url: "https://base-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/base", auth: "drpc" },
+    ],
+  },
+  {
+    // Arbitrum One — chain id 42161
+    id: "eip155:42161",
+    providers: [
+      { id: "alchemy", url: "https://arb-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/arbitrum", auth: "drpc" },
+    ],
+  },
+  {
+    // OP Mainnet — chain id 10
+    id: "eip155:10",
+    providers: [
+      { id: "alchemy", url: "https://opt-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/optimism", auth: "drpc" },
+    ],
+  },
+  {
+    // Polygon — chain id 137
+    id: "eip155:137",
+    providers: [
+      { id: "alchemy", url: "https://polygon-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/polygon", auth: "drpc" },
+    ],
+  },
+  {
+    // BNB Smart Chain — chain id 56
+    id: "eip155:56",
+    providers: [
+      { id: "alchemy", url: "https://bnb-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/bsc", auth: "drpc" },
+    ],
+  },
+  {
+    // HyperEVM — chain id 999
+    id: "eip155:999",
+    providers: [
+      { id: "alchemy", url: "https://hyperliquid-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/hyperliquid", auth: "drpc" },
+    ],
+  },
+  {
+    // Avalanche C-Chain — chain id 43114
+    id: "eip155:43114",
+    providers: [
+      { id: "alchemy", url: "https://avax-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/avalanche", auth: "drpc" },
+    ],
+  },
+  {
+    // Solana mainnet-beta
+    id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    providers: [
+      // https://docs.alchemy.com/reference/solana-quickstart — JSON-RPC over bearer auth
+      { id: "alchemy", url: "https://solana-mainnet.g.alchemy.com/v2", auth: "alchemy" },
+      { id: "drpc", url: "https://lb.drpc.live/solana", auth: "drpc" },
+    ],
+  },
+  {
+    // Bitcoin mainnet (Esplora)
+    id: "bip122:000000000019d6689c085ae165831e93",
+    providers: [
+      // https://github.com/Blockstream/esplora/blob/master/API.md + Enterprise OAuth —
+      // token from login.blockstream.com client_credentials, sent as bearer
+      {
+        id: "blockstream",
+        url: "https://enterprise.blockstream.info/api",
+        auth: "blockstream",
+      },
+    ],
+  },
+];
