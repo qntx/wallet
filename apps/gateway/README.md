@@ -106,8 +106,9 @@ done
 **Gateway → Run workflow** on `main` into the `production` environment; a push to `main` touching
 `apps/gateway/**`, `packages/wallet-engine/src/gateway/**` or `.../networks/**` redeploys staging
 automatically. GitHub setup: create environments `staging` and `production`, require reviewers on
-`production`, and put `CLOUDFLARE_API_TOKEN` in each environment's secrets — a token with
-**Workers Scripts:Edit** and **Workers KV Storage:Edit** on this account (custom-domain and
-rate-limit binding deploys ride the same Scripts permission).
+`production`, and put `CLOUDFLARE_API_TOKEN` in each environment's secrets — an account token
+with **Account › Workers Scripts › Edit** on this account and **Zone › Workers Routes › Edit** on
+`qntx.org` and `meowl.xyz` (custom domains are created and changed through the zone's Workers
+Routes permission). Bindings need no extra permission to deploy.
 
 Roll back with `bunx wrangler rollback --env production`.
