@@ -2,6 +2,7 @@
 import { hex } from "@scure/base";
 import { Address, OutScript, Transaction } from "@scure/btc-signer";
 
+import { ChainError } from "@qntx/wallet-chains";
 import {
   decodeBitcoinPsbt,
   bitcoinNetwork,
@@ -180,7 +181,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
   ): Promise<PreparedRequest> => {
     const { account, network, to, amount, fee } = params;
     if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
+      throw new ChainError("unsupported", "imported keys cannot sign bitcoin transactions");
     }
     const es = ctx.options.networks.esplora(network);
     const independent = ctx.options.networks.independentEsplora(network);
@@ -452,7 +453,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const txP = Transaction.fromPSBT(psbt);
     if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
+      throw new ChainError("unsupported", "imported keys cannot sign bitcoin transactions");
     }
     const request = {
       kind: "bitcoin.psbt" as const,

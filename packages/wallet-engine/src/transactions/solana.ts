@@ -44,7 +44,7 @@ import type {
   TrackedTransaction,
   TxState,
 } from "./route.ts";
-import { newId, failTx, submitTx } from "./route.ts";
+import { accountAddressOf, newId, failTx, submitTx } from "./route.ts";
 
 /** The network's base signature fee, lamports per signature. */
 const BASE_FEE_LAMPORTS = 5000n;
@@ -69,19 +69,10 @@ export const prepareSolana = async (
   params: PrepareParams,
 ): Promise<PreparedRequest> => {
   const { account, network, to, amount, fee } = params;
-  if (account.kind !== "hd") {
-    throw new Error("imported accounts are not yet supported");
-  }
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-  const solAccount = await apis.account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template: "solana.bip44-change",
-    network,
-  });
-  const from = "address" in solAccount ? solAccount.address : "";
+  const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   // For an SPL transfer, resolve the mint's owner (Token vs Token-2022) and reject the
   // extension combinations the wallet cannot carry before any signing or broadcast.
   let tokenProgram: string | undefined;
@@ -154,7 +145,7 @@ type SolanaSignRequest = {
 const finishPrepared = async (
   ctx: RouteContext,
   args: {
-    readonly account: Extract<AccountRef, { readonly kind: "hd" }>;
+    readonly account: AccountRef;
     readonly network: string;
     readonly from: string;
     readonly fee: PrepareParams["fee"];
@@ -225,7 +216,7 @@ const finishPrepared = async (
       id,
       family: "solana",
       network,
-      account: account.walletId,
+      account: account.kind === "hd" ? account.walletId : account.keyId,
       hash: undefined,
       state: "draft",
       intent,
@@ -399,19 +390,10 @@ export const prepareSolanaStake = async (
   input: Extract<ChainRequestInput, { method: "solana-stake" }>,
 ): Promise<PreparedRequest> => {
   const { account, network, action, fee } = input;
-  if (account.kind !== "hd") {
-    throw new Error("imported accounts are not yet supported");
-  }
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-  const solAccount = await apis.account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template: "solana.bip44-change",
-    network,
-  });
-  const from = "address" in solAccount ? solAccount.address : "";
+  const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   const flags: Array<RequestCheckCode | undefined> = [];
 
   let intent: SolanaIntent;
@@ -578,19 +560,10 @@ export const prepareSolanaCoreSend = async (
   input: Extract<ChainRequestInput, { method: "solana-core-send" }>,
 ): Promise<PreparedRequest> => {
   const { account, network, asset, to, fee } = input;
-  if (account.kind !== "hd") {
-    throw new Error("imported accounts are not yet supported");
-  }
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-  const solAccount = await apis.account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template: "solana.bip44-change",
-    network,
-  });
-  const from = "address" in solAccount ? solAccount.address : "";
+  const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   const flags: Array<RequestCheckCode | undefined> = [];
   const data = await coreAssetAccount(rpc, asset);
   if (independent.kind === "available") {
@@ -750,9 +723,6 @@ export const prepareSolanaSwap = async (
   input: Extract<ChainRequestInput, { method: "solana-swap" }>,
 ): Promise<PreparedRequest> => {
   const { account, network, quote, fee } = input;
-  if (account.kind !== "hd") {
-    throw new Error("imported accounts are not yet supported");
-  }
   if (network !== SOLANA_MAINNET) {
     throw new ChainError("invalid-request", "Jupiter swaps are mainnet-only");
   }
@@ -762,13 +732,7 @@ export const prepareSolanaSwap = async (
   const rpc = ctx.options.networks.solanaRpc(network);
   const independent = ctx.options.networks.independentSolanaRpc(network);
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-  const solAccount = await apis.account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template: "solana.bip44-change",
-    network,
-  });
-  const from = "address" in solAccount ? solAccount.address : "";
+  const from = await accountAddressOf(ctx, account, "solana.bip44-change", network);
   if (quote.taker !== from) {
     throw new ChainError("invalid-request", "the swap quote is for a different taker");
   }

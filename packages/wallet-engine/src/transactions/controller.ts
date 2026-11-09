@@ -26,7 +26,7 @@ import type {
   TxState,
   DelegationStatus,
 } from "./route.ts";
-import { accountAddress, newId } from "./route.ts";
+import { accountAddressOf, newId } from "./route.ts";
 import {
   pollSolana,
   prepareSolana,
@@ -336,11 +336,8 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    const { account, network } = params;
+    const { network } = params;
     const info = this.options.networks.info(network);
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     const ctx = this.routeCtx();
     if (info.family === "solana") {
       return prepareSolana(ctx, params);
@@ -381,9 +378,6 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     const normalized = normalizeEvm(request);
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     if (normalized.kind === "evm.transaction") {
       return this.evmRoute.prepareCall(this.routeCtx(), {
         account,
@@ -396,13 +390,7 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     const { kind, network } = normalized;
     const apis = this.options.chains ?? chains(this.options.wallet);
-    const signing = await apis.account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "evm.bip44",
-      network,
-    });
-    const signer = accountAddress(signing);
+    const signer = await accountAddressOf(this.routeCtx(), account, "evm.bip44", network);
     return {
       account,
       network,
@@ -526,18 +514,12 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.locked) {
       throw new Error("transactions require an unlocked vault");
     }
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     const ctx = this.routeCtx();
-    const apis = ctx.options.chains ?? chains(ctx.options.wallet);
-    const evmAccount = await apis.account({
-      walletId: account.walletId,
-      groupIndex: account.groupIndex,
-      template: "evm.bip44",
+    return this.evmRoute.delegationState(
+      ctx,
       network,
-    });
-    return this.evmRoute.delegationState(ctx, network, accountAddress(evmAccount));
+      await accountAddressOf(ctx, account, "evm.bip44", network),
+    );
   }
 
   private track(id: string, hash: string): void {

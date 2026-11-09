@@ -295,6 +295,7 @@ export type Wallet = {
   readonly subscribe: (listener: () => void) => () => void;
   readonly vault: VaultApi;
   readonly wallets: WalletsApi;
+  readonly keys: KeysApi;
   readonly dataKeys: DataKeyApi;
   readonly backup: BackupApi;
   readonly destroy: () => Promise<void>;

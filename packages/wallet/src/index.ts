@@ -24,6 +24,8 @@ export {
   type NostrKeyRef,
   type PasskeyConfig,
   type StatusPayload,
+  type KeyInfo,
+  type KeysApi,
   type UnlockFactor,
   type VaultApi,
   type VaultState,

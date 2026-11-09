@@ -4,8 +4,9 @@
  */
 import type { SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
+import { ChainError } from "@qntx/wallet-chains";
 import type { decodeEvm } from "@qntx/wallet-chains/evm";
-import type { chains } from "@qntx/wallet/chains";
+import { chains } from "@qntx/wallet/chains";
 
 import type { EvmFeeTier } from "../chains/evm.ts";
 import type { SolanaFeeTier } from "../chains/solana.ts";
@@ -316,6 +317,51 @@ export const accountAddress = (account: Readonly<Record<string, unknown>>): stri
 };
 
 export const newRequestId = (random: (n: number) => Uint8Array): string => hexId("req", random);
+
+const TEMPLATE_FAMILY = { "evm.bip44": "evm", "solana.bip44-change": "solana" } as const;
+
+/**
+ * The signer address for a send/sign account ref: HD refs derive through the chains proxy; an
+ * imported ref resolves its stored address from `wallet.keys` — the ref's family and the key's
+ * listed family must both match the network's family or the request is refused.
+ */
+export const accountAddressOf = async (
+  ctx: RouteContext,
+  account: AccountRef,
+  template: keyof typeof TEMPLATE_FAMILY,
+  network: string,
+): Promise<string> => {
+  const family = TEMPLATE_FAMILY[template];
+  if (account.kind === "imported") {
+    if (account.family !== family) {
+      throw new ChainError(
+        "invalid-request",
+        `an imported ${account.family} key cannot sign on a ${family} network`,
+      );
+    }
+    const keys = await ctx.options.wallet.keys.list();
+    const key = keys.find((entry) => entry.keyId === account.keyId);
+    if (key === undefined) {
+      throw new ChainError("invalid-request", "the imported key is not in the vault");
+    }
+    if (key.family !== family) {
+      throw new ChainError(
+        "invalid-request",
+        `the imported key is a ${key.family} key, not ${family}`,
+      );
+    }
+    return key.address;
+  }
+  const apis = ctx.options.chains ?? chains(ctx.options.wallet);
+  return accountAddress(
+    await apis.account({
+      walletId: account.walletId,
+      groupIndex: account.groupIndex,
+      template,
+      network,
+    }),
+  );
+};
 
 export { errorMessage } from "../errors.ts";
 

@@ -51,7 +51,7 @@ import {
   assertSwapSimulation,
 } from "../swaps/index.ts";
 import {
-  accountAddress,
+  accountAddressOf,
   errorMessage,
   EVM_BATCH_LIMIT,
   newId,
@@ -247,16 +247,7 @@ const resolveFrom = async (
   account: PrepareParams["account"],
   network: string,
 ): Promise<string> => {
-  if (account.kind !== "hd") {
-    throw new Error("imported accounts are not yet supported");
-  }
-  const evmAccount = await evmApis(ctx).account({
-    walletId: account.walletId,
-    groupIndex: account.groupIndex,
-    template: "evm.bip44",
-    network,
-  });
-  return accountAddress(evmAccount);
+  return accountAddressOf(ctx, account, "evm.bip44", network);
 };
 
 const withL1Fee = (intent: DisplayIntent, l1: bigint | undefined): DisplayIntent =>
@@ -820,9 +811,6 @@ export const createEvmRoute = (): EvmRoute => {
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
     const { account, network, fee, from } = spec;
     const { networks } = ctx.options;
-    if (account.kind !== "hd") {
-      throw new Error("imported accounts are not yet supported");
-    }
     const info = networks.info(network);
     const client = networks.client(network);
     const independent = networks.independentClient(network);
@@ -903,7 +891,7 @@ export const createEvmRoute = (): EvmRoute => {
         id: txId,
         family: "evm",
         network,
-        account: account.walletId,
+        account: account.kind === "hd" ? account.walletId : account.keyId,
         hash: undefined,
         state: "draft",
         intent,
@@ -918,7 +906,7 @@ export const createEvmRoute = (): EvmRoute => {
         apis,
         request,
         verify,
-        { from, groupIndex: account.groupIndex },
+        { from, groupIndex: account.kind === "hd" ? account.groupIndex : -1 },
         async (signed) => {
           const raw = evm.finalize(feed, signed);
           const hash = await evm.broadcast(client, raw);
