@@ -91,8 +91,10 @@ describe("WatchController", () => {
     const assets = stubbedAssets();
     const w = world();
     const a = await w.add({ family: "evm", address: EVM });
-    await assets.refresh(a.address, "eip155:1");
-    expect(assets.getState().balances[`eip155:1:${a.address}`]?.native).toBe("4660");
+    const balances = await assets.refresh(a.address, "eip155:1");
+    /* `watch.assets` returns this value directly — it is exactly what refresh wrote. */
+    expect(balances).toStrictEqual({ native: "4660", tokens: [] });
+    expect(assets.getState().balances[`eip155:1:${a.address}`]).toStrictEqual(balances);
   });
 
   it("a removed watch account can be re-added after its balance was tracked", async () => {

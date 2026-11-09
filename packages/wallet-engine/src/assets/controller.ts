@@ -181,15 +181,14 @@ export class AssetsController extends Controller<AssetsControllerState> {
     );
   }
 
-  async refresh(address: string, network: string): Promise<void> {
+  /** Reads the address's balances and returns exactly what it wrote under its state key. */
+  async refresh(address: string, network: string): Promise<AccountBalances> {
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
-      await this.refreshSolana(address, network);
-      return;
+      return this.refreshSolana(address, network);
     }
     if (info.family === "bitcoin") {
-      await this.refreshBitcoin(address, network);
-      return;
+      return this.refreshBitcoin(address, network);
     }
     const client = this.options.networks.client(network);
     const native = BigInt(
@@ -202,13 +201,15 @@ export class AssetsController extends Controller<AssetsControllerState> {
       address,
       custom.map((t) => ({ address: t.address, verified: t.verified })),
     );
+    const balances: AccountBalances = { native, tokens };
     this.update((s) => ({
-      balances: { ...s.balances, [key(network, address)]: { native, tokens } },
+      balances: { ...s.balances, [key(network, address)]: balances },
     }));
+    return balances;
   }
 
   /** SOL via getBalance; SPL via getTokenAccountsByOwner (jsonParsed) for known mints. */
-  private async refreshSolana(owner: string, network: string): Promise<void> {
+  private async refreshSolana(owner: string, network: string): Promise<AccountBalances> {
     const rpc = this.options.networks.solanaRpc(network);
     const bal = obj(await rpc.call("getBalance", [owner, { commitment: "confirmed" }]));
     const balValue = bal?.["value"];
@@ -244,9 +245,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
         };
       }),
     );
+    const balances: AccountBalances = { native, tokens };
     this.update((s) => ({
-      balances: { ...s.balances, [key(network, owner)]: { native, tokens } },
+      balances: { ...s.balances, [key(network, owner)]: balances },
     }));
+    return balances;
   }
 
   private async readTokens(
@@ -435,7 +438,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   /** BTC balance = confirmed spendable + own unconfirmed change; frozen 546/330 shown separately. */
-  async refreshBitcoin(xpub: string, network: string): Promise<void> {
+  async refreshBitcoin(xpub: string, network: string): Promise<AccountBalances> {
     const es = this.options.networks.esplora(network);
     const net = bitcoinNetwork(network);
     const template = "btc.bip84" as const;
@@ -458,17 +461,16 @@ export class AssetsController extends Controller<AssetsControllerState> {
         ownUnconfirmed += v;
       }
     }
+    const balances: AccountBalances = {
+      native: confirmed.toString(),
+      tokens: [],
+      unconfirmed: ownUnconfirmed.toString(),
+      frozen: frozen.toString(),
+    };
     this.update((s) => ({
       ...s,
-      balances: {
-        ...s.balances,
-        [`${xpub}:${network}:BTC`]: {
-          native: confirmed.toString(),
-          tokens: [],
-          unconfirmed: ownUnconfirmed.toString(),
-          frozen: frozen.toString(),
-        },
-      },
+      balances: { ...s.balances, [`${xpub}:${network}:BTC`]: balances },
     }));
+    return balances;
   }
 }

@@ -19,6 +19,7 @@ import { WatchController } from "./accounts/watch.ts";
 import type { WatchAccount } from "./accounts/watch.ts";
 import { AddressBookController } from "./addresses/controller.ts";
 import { AssetsController } from "./assets/controller.ts";
+import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
@@ -141,7 +142,7 @@ export type WalletEngine = {
     readonly rename: (id: string, name: string) => Promise<void>;
     readonly remove: (id: string) => Promise<void>;
     readonly list: () => ReadonlyArray<WatchAccount>;
-    readonly assets: (id: string, network: string) => Promise<unknown>;
+    readonly assets: (id: string, network: string) => Promise<AccountBalances>;
   };
   readonly metaSync: MetaSyncController;
   readonly backup: BackupController;
@@ -774,8 +775,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         if (account === undefined) {
           throw new Error("no such watch account");
         }
-        await assets.refresh(account.address, network);
-        return assets.getState().balances[`${network}:${account.address}`];
+        return assets.refresh(account.address, network);
       },
     },
     addressBook,
