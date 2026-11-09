@@ -191,6 +191,7 @@ export function unlockedStatus(): StatusPayload {
     factors: [{ kind: "passkey", id: "f".repeat(32), credentialId: "Y3JlZA", createdAt: 1 }],
     wallets: [],
     nostr: { keys: [NOSTR_KEY] },
+    importedKeys: [],
     backup: null,
   };
 }

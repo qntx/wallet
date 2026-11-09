@@ -62,8 +62,15 @@ export type BackupHeaderWallet = {
   readonly passphrase?: true;
 };
 
+export type BackupHeaderKey = {
+  readonly keyId: string;
+  readonly family: "evm" | "solana" | "bitcoin";
+};
+
 export type BackupHeaderWire = {
   readonly wallets: ReadonlyArray<BackupHeaderWallet>;
+  /** Imported keys carried by the payload; absent when there are none. */
+  readonly keys?: ReadonlyArray<BackupHeaderKey>;
 };
 
 export const backupHeader: Validator<BackupHeaderWire> = obj({
@@ -75,6 +82,15 @@ export const backupHeader: Validator<BackupHeaderWire> = obj({
       passphrase: opt(literal(true)),
     }),
     1000,
+  ),
+  keys: opt(
+    arr(
+      obj({
+        keyId: str(16, /^[0-9a-f]{16}$/),
+        family: union(literal("evm"), literal("solana"), literal("bitcoin")),
+      }),
+      256,
+    ),
   ),
 });
 

@@ -6,6 +6,8 @@
  * internals in internal.ts — never through the public type.
  */
 
+import { base58, hex } from "@scure/base";
+
 import { Channel } from "./channel.ts";
 import type { MainPort, SetTimer } from "./channel.ts";
 import {
@@ -34,6 +36,8 @@ import type {
   ExportedMnemonic,
   FactorInfo,
   InitialFactor,
+  KeyInfo,
+  KeysApi,
   LockReason,
   MnemonicDraft,
   PasskeyConfig,
@@ -129,6 +133,7 @@ export class KernelWallet implements Wallet {
       factors: [],
       wallets: [],
       nostr: { keys: [] },
+      importedKeys: [],
       backup: null,
     };
     this.channel = new Channel(
@@ -252,6 +257,7 @@ export class KernelWallet implements Wallet {
       factors: status === undefined ? [] : status.factors,
       wallets: status === undefined ? [] : status.wallets,
       nostr: { keys: status === undefined ? [] : status.nostr.keys },
+      importedKeys: status === undefined ? [] : status.importedKeys,
       backup: status === undefined ? null : status.backup,
     };
     const current = this.snapshotValue;
@@ -262,6 +268,7 @@ export class KernelWallet implements Wallet {
       deepEqual(current.factors, next.factors) &&
       deepEqual(current.wallets, next.wallets) &&
       deepEqual(current.nostr, next.nostr) &&
+      deepEqual(current.importedKeys, next.importedKeys) &&
       deepEqual(current.backup, next.backup)
     ) {
       return;
@@ -368,6 +375,41 @@ export class KernelWallet implements Wallet {
     reset: async (): Promise<void> => {
       await this.channel.call("vault.reset", null);
     },
+  };
+
+  readonly keys: KeysApi = {
+    import: async (
+      family: "evm" | "solana" | "bitcoin",
+      secret: string | Uint8Array,
+    ): Promise<KeyInfo> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const decoded = decodeKeySecret(family, secret);
+        try {
+          return await this.channel.call(
+            "keys.import",
+            { family, secret: wireBytes(decoded, transfer) },
+            transfer,
+          );
+        } finally {
+          if (decoded !== secret) {
+            decoded.fill(0);
+          }
+        }
+      }),
+    list: async (): Promise<ReadonlyArray<KeyInfo>> => this.channel.call("keys.list", null, []),
+    remove: async (keyId: string, verify: UnlockFactor): Promise<void> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        await this.channel.call("keys.remove", { verify: wireVerify, keyId }, transfer);
+      }),
+    export: async (keyId: string, verify: UnlockFactor): Promise<Uint8Array> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        return this.channel.call("keys.export", { verify: wireVerify, keyId }, transfer);
+      }),
   };
 
   readonly wallets: WalletsApi = {
@@ -618,6 +660,33 @@ export class KernelWallet implements Wallet {
     this.onDestroy?.();
     this.channel.destroy();
   }
+}
+
+/**
+ * `keys.import`'s `secret` in bytes: a string is the family's canonical text encoding — `0x` hex
+ * for EVM, base58 for Solana — while a Uint8Array passes straight through to the kernel's checks.
+ */
+function decodeKeySecret(
+  family: "evm" | "solana" | "bitcoin",
+  secret: string | Uint8Array,
+): Uint8Array {
+  if (secret instanceof Uint8Array) {
+    return secret;
+  }
+  if (family === "evm") {
+    if (!/^0x[0-9a-fA-F]{64}$/.test(secret)) {
+      throw new WalletError("invalid-input", "an EVM private key is 0x-prefixed 64-hex");
+    }
+    return hex.decode(secret.slice(2));
+  }
+  if (family === "solana") {
+    try {
+      return base58.decode(secret);
+    } catch {
+      throw new WalletError("invalid-input", "a Solana private key is base58");
+    }
+  }
+  throw new WalletError("invalid-input", `keys are not supported on ${family}`);
 }
 
 /**

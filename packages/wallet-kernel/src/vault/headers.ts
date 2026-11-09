@@ -61,9 +61,16 @@ export type BackupKeyHeader = {
   readonly createdAt: number;
 };
 
+export type KeyHeader = {
+  readonly family: "evm" | "solana" | "bitcoin";
+  readonly address: string;
+  readonly createdAt: number;
+};
+
 export type CoreHeader =
   | EntropyHeader
   | DataKeyHeader
+  | KeyHeader
   | PasswordFactorHeader
   | PasskeyFactorHeader
   | HardwareFactorHeader
@@ -100,6 +107,13 @@ export function encodeHeader(header: CoreHeader): string {
   }
   if ("purpose" in header) {
     return JSON.stringify({ purpose: header.purpose, createdAt: header.createdAt });
+  }
+  if ("family" in header) {
+    return JSON.stringify({
+      family: header.family,
+      address: header.address,
+      createdAt: header.createdAt,
+    });
   }
   return JSON.stringify({
     walletId: header.walletId,
@@ -224,4 +238,29 @@ export function parseBackupKeyHeader(text: string): BackupKeyHeader {
     throw headerFailure();
   }
   return { id, factors, createdAt: asCreatedAt(object["createdAt"]) };
+}
+
+const FAMILY_VALUES = new Set(["evm", "solana", "bitcoin"]);
+
+const isKeyFamily = (value: unknown): value is KeyHeader["family"] =>
+  typeof value === "string" && FAMILY_VALUES.has(value);
+const ADDRESS_MAX = 90;
+
+export function parseKeyHeader(text: string): KeyHeader {
+  const object = headerObject(text);
+  expectKeys(object, ["family", "address", "createdAt"]);
+  const { family, address } = object;
+  if (
+    !isKeyFamily(family) ||
+    typeof address !== "string" ||
+    address.length === 0 ||
+    address.length > ADDRESS_MAX
+  ) {
+    throw headerFailure();
+  }
+  return {
+    family,
+    address,
+    createdAt: asCreatedAt(object["createdAt"]),
+  };
 }

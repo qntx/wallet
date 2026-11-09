@@ -32,10 +32,23 @@ export const MAX_SNAPSHOT_ITEMS = 4096;
 export const sessionId: Validator<string> = str(32, /^[0-9a-f]{32}$/);
 export const draftId: Validator<string> = str(32, /^[0-9a-f]{32}$/);
 export const walletId: Validator<string> = str(16, /^[0-9a-f]{16}$/);
+export const keyId: Validator<string> = str(16, /^[0-9a-f]{16}$/);
+export const keyFamily: Validator<"evm" | "solana" | "bitcoin"> = union(
+  literal("evm"),
+  literal("solana"),
+  literal("bitcoin"),
+);
+
 export const publicKey: Validator<string> = str(64, /^[0-9a-f]{64}$/);
 export const credentialId: Validator<string> = str(1364, /^[A-Za-z0-9_-]+$/);
 export const safeTime: Validator<number> = int(0, Number.MAX_SAFE_INTEGER);
 export const groupIndex: Validator<number> = int(0, 0x7fffffff);
+export const keyInfo: Validator<{
+  readonly keyId: string;
+  readonly family: "evm" | "solana" | "bitcoin";
+  readonly address: string;
+  readonly createdAt: number;
+}> = obj({ keyId, family: keyFamily, address: str(90, /^.+$/), createdAt: safeTime });
 /** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
 export const identityIndex: Validator<number> = int(0, 0x7ffffffe);
 
@@ -318,6 +331,32 @@ export const CORE_METHODS: {
     NullValue
   >;
   readonly "dataKeys.get": MethodSpec<{ readonly purpose: string }, Uint8Array>;
+  readonly "keys.import": MethodSpec<
+    { readonly family: "evm" | "solana" | "bitcoin"; readonly secret: Uint8Array },
+    {
+      readonly keyId: string;
+      readonly family: "evm" | "solana" | "bitcoin";
+      readonly address: string;
+      readonly createdAt: number;
+    }
+  >;
+  readonly "keys.list": MethodSpec<
+    NullValue,
+    ReadonlyArray<{
+      readonly keyId: string;
+      readonly family: "evm" | "solana" | "bitcoin";
+      readonly address: string;
+      readonly createdAt: number;
+    }>
+  >;
+  readonly "keys.remove": MethodSpec<
+    { readonly verify: Factor; readonly keyId: string },
+    NullValue
+  >;
+  readonly "keys.export": MethodSpec<
+    { readonly verify: Factor; readonly keyId: string },
+    Uint8Array
+  >;
 } = {
   "session.touch": {
     session: true,
@@ -442,5 +481,29 @@ export const CORE_METHODS: {
     presence: false,
     params: obj({ purpose: str(32, /^[a-z0-9-]{1,32}$/) }),
     result: bytes(32),
+  },
+  "keys.import": {
+    session: true,
+    presence: true,
+    params: obj({ family: keyFamily, secret: bytes(32, 64) }),
+    result: keyInfo,
+  },
+  "keys.list": {
+    session: true,
+    presence: true,
+    params: nullValue,
+    result: arr(keyInfo, 256),
+  },
+  "keys.remove": {
+    session: true,
+    presence: true,
+    params: obj({ verify: factor, keyId }),
+    result: nullValue,
+  },
+  "keys.export": {
+    session: true,
+    presence: true,
+    params: obj({ verify: factor, keyId }),
+    result: bytes(1, 256),
   },
 };

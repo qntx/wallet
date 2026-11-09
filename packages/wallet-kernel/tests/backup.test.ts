@@ -4,7 +4,7 @@
 // the vault.
 
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
-import { base64urlnopad } from "@scure/base";
+import { base58, base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
@@ -441,6 +441,13 @@ type BackupVector = {
   readonly backupKeyHeader: string;
   readonly enable: { readonly factors: ReadonlyArray<Record<string, unknown>> };
   readonly envelopes: ReadonlyArray<string>;
+  readonly importedKey: {
+    readonly secret: string;
+    readonly keyId: string;
+    readonly family: string;
+    readonly header: string;
+    readonly envelope: string;
+  };
 };
 
 function makeReplay(
@@ -547,6 +554,53 @@ describe("backup vector", () => {
     expect(strField(at(wallets, 0), "walletId")).toBe(vector.walletId);
     // Restoring into a fresh vault adopts the envelope's backup key.
     expect(strField(await statusBackup(b), "id")).toBe(vector.id);
+  });
+
+  it("restores an imported key from the imported-key envelope", async () => {
+    const { importedKey } = vector;
+    const credentialId = hexToBytes(vector.inputs.credentialIdHex);
+    const b = createHarness({ seed: 99 });
+    await b.settle();
+    const restored = ok(
+      await b.call("backup.restore", {
+        envelope: importedKey.envelope,
+        backupFactor: {
+          kind: "passkey",
+          ceremony: "host",
+          credentialId,
+          prfBackup: hexToBytes(vector.inputs.prfBackup),
+        },
+        factor: {
+          kind: "passkey",
+          credentialId,
+          prf: hexToBytes(vector.inputs.prfVault),
+        },
+      }),
+    );
+    const session = strField(restored, "session");
+    const keys = ok(await b.call("keys.list", null, session)) as ReadonlyArray<{
+      keyId: string;
+      family: string;
+    }>;
+    expect(keys.map((k) => k.keyId)).toStrictEqual([importedKey.keyId]);
+    expect(keys[0]?.family).toBe(importedKey.family);
+    const exported = ok(
+      await b.call(
+        "keys.export",
+        {
+          verify: {
+            kind: "passkey",
+            credentialId,
+            prf: hexToBytes(vector.inputs.prfVault),
+          },
+          keyId: importedKey.keyId,
+        },
+        session,
+      ),
+    );
+    expect(base58.decode(new TextDecoder().decode(exported as Uint8Array))).toStrictEqual(
+      hexToBytes(importedKey.secret),
+    );
   });
 });
 

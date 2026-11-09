@@ -66,6 +66,18 @@ const walletInfo = {
   createdAt: CREATED_AT,
 };
 const passphraseWalletInfo = { ...walletInfo, passphrase: true };
+const keyInfo = {
+  keyId: "3d2718a5a66188a7",
+  family: "solana",
+  address: "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+  createdAt: CREATED_AT,
+};
+const evmKeyInfo = {
+  keyId: "20738682c94a48dc",
+  family: "evm",
+  address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  createdAt: CREATED_AT,
+};
 const PASSPHRASE = $b(hexOf("p\u00E4ss word"));
 const passwordFactorInfo = { kind: "password", id: FACTOR_ID, createdAt: CREATED_AT };
 const hardwareFactor = { kind: "hardware" };
@@ -87,6 +99,7 @@ const statusUnlocked = {
   factors: [passwordFactorInfo],
   wallets: [walletInfo],
   nostr: { keys: [derivedKey, derivedKey] },
+  importedKeys: [keyInfo, evmKeyInfo],
   backup: backupInfo,
 };
 const signedEvent = {
@@ -599,6 +612,58 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "keys.import",
+    message: {
+      v: 2,
+      id: 50,
+      method: "keys.import",
+      session: SESSION,
+      params: { family: "evm", secret: BYTES32 },
+    },
+  },
+  {
+    name: "keys.list",
+    message: { v: 2, id: 51, method: "keys.list", session: SESSION, params: null },
+  },
+  {
+    name: "keys.remove",
+    message: {
+      v: 2,
+      id: 52,
+      method: "keys.remove",
+      session: SESSION,
+      params: { verify: passkeyFactor, keyId: "20738682c94a48dc" },
+    },
+  },
+  {
+    name: "keys.export",
+    message: {
+      v: 2,
+      id: 53,
+      method: "keys.export",
+      session: SESSION,
+      params: { verify: passkeyFactor, keyId: "20738682c94a48dc" },
+    },
+  },
+  {
+    name: "chain.sign-imported-account",
+    message: {
+      v: 2,
+      id: 54,
+      method: "chain.sign",
+      session: SESSION,
+      params: {
+        request: {
+          kind: "evm.personal-message",
+          network: "eip155:1",
+          account: { kind: "imported", keyId: "20738682c94a48dc", family: "evm" },
+          message: BYTES32,
+        },
+        verify: passkeyFactor,
+      },
+    },
+  },
+  {
     name: "spark.claimStaticDeposit",
     message: {
       v: 2,
@@ -708,6 +773,26 @@ const accept = [
     name: "response-ok-dataKeys.get",
     check: "response:dataKeys.get",
     message: { v: 2, id: 14, ok: $b(PRF) },
+  },
+  {
+    name: "response-ok-keys.import",
+    check: "response:keys.import",
+    message: { v: 2, id: 50, ok: evmKeyInfo },
+  },
+  {
+    name: "response-ok-keys.list",
+    check: "response:keys.list",
+    message: { v: 2, id: 51, ok: [keyInfo, evmKeyInfo] },
+  },
+  {
+    name: "response-ok-keys.remove",
+    check: "response:keys.remove",
+    message: { v: 2, id: 52, ok: null },
+  },
+  {
+    name: "response-ok-keys.export",
+    check: "response:keys.export",
+    message: { v: 2, id: 53, ok: $b("cd".repeat(32)) },
   },
   {
     name: "response-ok-nostr.deriveKey",
@@ -1134,7 +1219,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
   {
     name: "response-err-extra-key",
     check: "responseError",
-    message: { v: 2, id: 2, err: { code: "wrong-password", detail: "nope" } },
+    message: { v: 2, id: 2, err: { code: "wrong-password", nope: "extra" } },
   },
   {
     name: "event-unknown-field",

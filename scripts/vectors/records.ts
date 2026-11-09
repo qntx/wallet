@@ -8,6 +8,7 @@
  *
  * - Entropy: walletId, origin, words, [passphrase: true,] backup, createdAt
  * - Data-key: purpose, createdAt
+ * - Imported key: family, address, createdAt
  * - Nostr derived: publicKey, walletId, index, createdAt
  * - Nostr sync key: publicKey, walletId, createdAt
  * - Password factor: salt, iterations, publicKey, createdAt
@@ -41,6 +42,12 @@ function textOf(kind: string, input: Input): string {
       });
     case "data-key":
       return JSON.stringify({ purpose: i["purpose"], createdAt: i["createdAt"] });
+    case "key":
+      return JSON.stringify({
+        family: i["family"],
+        address: i["address"],
+        createdAt: i["createdAt"],
+      });
     case "nostr-derived":
       return JSON.stringify({
         publicKey: i["publicKey"],
@@ -142,6 +149,24 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     name: "data-key",
     kind: "data-key",
     input: { purpose: "backup", createdAt: CREATED_AT },
+  },
+  {
+    name: "key-evm",
+    kind: "key",
+    input: {
+      family: "evm",
+      address: "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+      createdAt: CREATED_AT,
+    },
+  },
+  {
+    name: "key-solana",
+    kind: "key",
+    input: {
+      family: "solana",
+      address: "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+      createdAt: CREATED_AT,
+    },
   },
   {
     name: "nostr-derived",

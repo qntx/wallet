@@ -16,6 +16,7 @@ import {
   parseDataKeyHeader,
   parseEntropyHeader,
   parseHardwareFactorHeader,
+  parseKeyHeader,
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
 } from "../src/vault/headers.ts";
@@ -42,6 +43,12 @@ describe("record and factor header vectors", () => {
 
   it.each(byKind("data-key"))("$name encodes and parses byte-for-byte", (vector) => {
     const parsed = parseDataKeyHeader(vector.text);
+    expect(parsed).toStrictEqual(vector.input);
+    expect(encodeHeader(parsed)).toBe(vector.text);
+  });
+
+  it.each(byKind("key"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseKeyHeader(vector.text);
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeHeader(parsed)).toBe(vector.text);
   });

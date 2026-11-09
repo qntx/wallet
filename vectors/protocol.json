@@ -928,6 +928,110 @@
       }
     },
     {
+      "name": "request-keys.import",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 50,
+        "method": "keys.import",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "family": "evm",
+          "secret": {
+            "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-keys.list",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 51,
+        "method": "keys.list",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": null
+      }
+    },
+    {
+      "name": "request-keys.remove",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 52,
+        "method": "keys.remove",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          },
+          "keyId": "20738682c94a48dc"
+        }
+      }
+    },
+    {
+      "name": "request-keys.export",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 53,
+        "method": "keys.export",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          },
+          "keyId": "20738682c94a48dc"
+        }
+      }
+    },
+    {
+      "name": "request-chain.sign-imported-account",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 54,
+        "method": "chain.sign",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "request": {
+            "kind": "evm.personal-message",
+            "network": "eip155:1",
+            "account": {
+              "kind": "imported",
+              "keyId": "20738682c94a48dc",
+              "family": "evm"
+            },
+            "message": {
+              "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+            }
+          },
+          "verify": {
+            "kind": "passkey",
+            "credentialId": {
+              "$bytes": "deadbeefcafe"
+            },
+            "prf": {
+              "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+            }
+          }
+        }
+      }
+    },
+    {
       "name": "request-spark.claimStaticDeposit",
       "check": "request",
       "message": {
@@ -1007,6 +1111,20 @@
               }
             ]
           },
+          "importedKeys": [
+            {
+              "keyId": "3d2718a5a66188a7",
+              "family": "solana",
+              "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+              "createdAt": 1767225600000
+            },
+            {
+              "keyId": "20738682c94a48dc",
+              "family": "evm",
+              "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+              "createdAt": 1767225600000
+            }
+          ],
           "backup": {
             "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "factors": [
@@ -1169,6 +1287,62 @@
         "id": 14,
         "ok": {
           "$bytes": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        }
+      }
+    },
+    {
+      "name": "response-ok-keys.import",
+      "check": "response:keys.import",
+      "message": {
+        "v": 2,
+        "id": 50,
+        "ok": {
+          "keyId": "20738682c94a48dc",
+          "family": "evm",
+          "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+          "createdAt": 1767225600000
+        }
+      }
+    },
+    {
+      "name": "response-ok-keys.list",
+      "check": "response:keys.list",
+      "message": {
+        "v": 2,
+        "id": 51,
+        "ok": [
+          {
+            "keyId": "3d2718a5a66188a7",
+            "family": "solana",
+            "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+            "createdAt": 1767225600000
+          },
+          {
+            "keyId": "20738682c94a48dc",
+            "family": "evm",
+            "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+            "createdAt": 1767225600000
+          }
+        ]
+      }
+    },
+    {
+      "name": "response-ok-keys.remove",
+      "check": "response:keys.remove",
+      "message": {
+        "v": 2,
+        "id": 52,
+        "ok": null
+      }
+    },
+    {
+      "name": "response-ok-keys.export",
+      "check": "response:keys.export",
+      "message": {
+        "v": 2,
+        "id": 53,
+        "ok": {
+          "$bytes": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
         }
       }
     },
@@ -1444,6 +1618,20 @@
               }
             ]
           },
+          "importedKeys": [
+            {
+              "keyId": "3d2718a5a66188a7",
+              "family": "solana",
+              "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+              "createdAt": 1767225600000
+            },
+            {
+              "keyId": "20738682c94a48dc",
+              "family": "evm",
+              "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+              "createdAt": 1767225600000
+            }
+          ],
           "backup": {
             "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             "factors": [
@@ -1502,6 +1690,20 @@
               }
             ]
           },
+          "importedKeys": [
+            {
+              "keyId": "3d2718a5a66188a7",
+              "family": "solana",
+              "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+              "createdAt": 1767225600000
+            },
+            {
+              "keyId": "20738682c94a48dc",
+              "family": "evm",
+              "address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+              "createdAt": 1767225600000
+            }
+          ],
           "backup": null
         }
       }
@@ -1522,30 +1724,6 @@
         "v": 2,
         "event": "locked",
         "reason": "invalidated"
-      }
-    },
-    {
-      "name": "response-err-no-device-credential",
-      "check": "responseError",
-      "message": {
-        "v": 2,
-        "id": 2,
-        "err": {
-          "code": "no-device-credential",
-          "detail": "LAErrorDomain:-5"
-        }
-      }
-    },
-    {
-      "name": "response-err-passkey-not-configured",
-      "check": "responseError",
-      "message": {
-        "v": 2,
-        "id": 2,
-        "err": {
-          "code": "passkey-not-configured",
-          "detail": "ASAuthorizationErrorDomain:1010"
-        }
       }
     }
   ],
@@ -2363,41 +2541,6 @@
         "v": 2,
         "event": "locked",
         "reason": "forgotten"
-      }
-    },
-    {
-      "name": "response-err-free-text-detail",
-      "check": "responseError",
-      "message": {
-        "v": 2,
-        "id": 2,
-        "err": {
-          "code": "unavailable",
-          "detail": "the passkey for alice failed"
-        }
-      }
-    },
-    {
-      "name": "response-err-long-detail",
-      "check": "responseError",
-      "message": {
-        "v": 2,
-        "id": 2,
-        "err": {
-          "code": "unavailable",
-          "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-        }
-      }
-    },
-    {
-      "name": "response-err-factor-unavailable",
-      "check": "responseError",
-      "message": {
-        "v": 2,
-        "id": 2,
-        "err": {
-          "code": "factor-unavailable"
-        }
       }
     }
   ]

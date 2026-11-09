@@ -16,9 +16,9 @@ export type CorePromptKind =
   | "unlock"
   | "create"
   | "export-mnemonic"
-  | "export-key"
+  | "export-private-key"
   | "delete-wallet"
-  | "remove-key"
+  | "remove-private-key"
   | "backup"
   | "manage-factors"
   | "reset";
@@ -28,9 +28,9 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     unlock: { title: "解锁钱包", description: "验证身份以解锁钱包" },
     create: { title: "保护钱包", description: "验证身份以启用本设备的硬件保护" },
     "export-mnemonic": { title: "导出助记词", description: "验证身份以显示助记词" },
-    "export-key": { title: "导出私钥", description: "验证身份以导出私钥" },
+    "export-private-key": { title: "导出私钥", description: "验证身份以导出私钥" },
     "delete-wallet": { title: "删除钱包", description: "验证身份以从本设备删除此钱包" },
-    "remove-key": { title: "删除密钥", description: "验证身份以删除此密钥" },
+    "remove-private-key": { title: "删除密钥", description: "验证身份以删除此密钥" },
     backup: { title: "开启云备份", description: "验证身份以开启云备份" },
     "manage-factors": { title: "管理解锁方式", description: "验证身份以更改钱包的解锁方式" },
     reset: {
@@ -48,7 +48,7 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
       title: "Export recovery phrase",
       description: "Verify your identity to reveal the recovery phrase",
     },
-    "export-key": {
+    "export-private-key": {
       title: "Export private key",
       description: "Verify your identity to export the private key",
     },
@@ -56,7 +56,10 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
       title: "Delete wallet",
       description: "Verify your identity to delete this wallet from this device",
     },
-    "remove-key": { title: "Remove key", description: "Verify your identity to remove this key" },
+    "remove-private-key": {
+      title: "Remove key",
+      description: "Verify your identity to remove this key",
+    },
     backup: {
       title: "Turn on cloud backup",
       description: "Verify your identity to turn on cloud backup",

@@ -60,6 +60,26 @@
       "text": "{\"purpose\":\"backup\",\"createdAt\":1767225600000}"
     },
     {
+      "name": "key-evm",
+      "kind": "key",
+      "input": {
+        "family": "evm",
+        "address": "0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"family\":\"evm\",\"address\":\"0x9858EfFD232B4033E47d90003D41EC34EcaEda94\",\"createdAt\":1767225600000}"
+    },
+    {
+      "name": "key-solana",
+      "kind": "key",
+      "input": {
+        "family": "solana",
+        "address": "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk",
+        "createdAt": 1767225600000
+      },
+      "text": "{\"family\":\"solana\",\"address\":\"HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk\",\"createdAt\":1767225600000}"
+    },
+    {
       "name": "nostr-derived",
       "kind": "nostr-derived",
       "input": {

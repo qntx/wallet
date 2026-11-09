@@ -83,7 +83,11 @@ const checkPsbt = async (
 };
 
 /** Whether the kernel's signature belongs to the account it was asked to sign for. */
-const checkSigner = (request: ChainSignRequest, result: ChainSignResult, account: ChainAccount) => {
+const checkSigner = (
+  request: ChainSignRequest,
+  result: ChainSignResult,
+  account: ChainAccount | { readonly address: string },
+) => {
   if (request.kind === "bitcoin.message") {
     if (!("xpub" in account)) {
       throw integrity("chain account has no xpub");
@@ -150,6 +154,14 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
             network: params.request.network,
           });
           checkSigner(params.request, result, account);
+        } else {
+          const { keyId } = params.request.account;
+          const keys = await internals.call("keys.list", null);
+          const key = keys.find((k) => k.keyId === keyId);
+          if (key === undefined) {
+            throw integrity("chain.sign answered for a key not in the vault");
+          }
+          checkSigner(params.request, result, { address: key.address });
         }
         return result;
       }),

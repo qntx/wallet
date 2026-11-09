@@ -13,6 +13,7 @@ import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
 import type {
   ChainAccount,
+  ChainSignResult,
   ChainTemplate,
   CHAINS_METHODS,
   MethodName,
@@ -22,8 +23,10 @@ import type { Handler, VaultHooks } from "../../commands/context.ts";
 import { withWalletSeed } from "../../commands/vault.ts";
 import { KernelError } from "../../errors.ts";
 import { promptLocale } from "../../prompts.ts";
+import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
-import { verifyFactor } from "../../vault/vault.ts";
+import { parseKeyHeader } from "../../vault/headers.ts";
+import { openRecord, verifyFactor } from "../../vault/vault.ts";
 import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
 import { chainPrompt } from "./prompt.ts";
@@ -127,6 +130,9 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   const { dek } = ctx.session.require(session);
   const { request, verify } = params;
   const { account } = request;
+  if (account.kind === "imported") {
+    return chainSignImported(ctx, params, session, dek);
+  }
   if (account.kind !== "hd") {
     throw new KernelError("unsupported", "imported accounts are not yet supported");
   }
@@ -162,14 +168,15 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
     if (request.kind === "bitcoin.message") {
       return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
     }
+    const source = { kind: "hd" as const, account: request.account, seed };
     if (
       request.kind === "evm.transaction" ||
       request.kind === "evm.personal-message" ||
       request.kind === "evm.typed-data"
     ) {
-      return executeEvm(request, request.account, seed, intentOnly);
+      return executeEvm(request, source, intentOnly);
     }
-    return executeSolana(request, request.account, seed, intentOnly);
+    return executeSolana(request, source, intentOnly);
   };
   // Two passes over the seed: `prepare` checks ownership, normalizes and decodes, returning
   // only the intent; the seed and every key are wiped before the (possibly long) system
@@ -186,6 +193,75 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   // The session may have ended while the prompt was up.
   ctx.session.require(session);
   const signed = await withSeed((seed) => execute(seed, false));
+  if ("prompt" in signed) {
+    throw new KernelError("integrity", "unreachable: sign pass did not sign");
+  }
+  return signed;
+};
+
+/* `chain.sign` under `{kind:"imported", keyId, family}` — the same two-pass flow, but the
+   secret comes straight from the `key` record instead of an entropy derivation. Bitcoin
+   requests have no imported path: WIF is out of scope. */
+const chainSignImported = async (
+  ctx: Parameters<Handler<"chain.sign">>[0],
+  params: Parameters<Handler<"chain.sign">>[1],
+  session: Parameters<Handler<"chain.sign">>[2],
+  dek: Secret,
+): Promise<ChainSignResult> => {
+  const { request, verify } = params;
+  const { account } = request;
+  if (account.kind !== "imported") {
+    throw new KernelError("integrity", "unreachable: imported path with an hd account");
+  }
+  const isEvm =
+    request.kind === "evm.transaction" ||
+    request.kind === "evm.personal-message" ||
+    request.kind === "evm.typed-data";
+  const isSolana = request.kind === "solana.transaction" || request.kind === "solana.message";
+  if (!isEvm && !isSolana) {
+    throw new KernelError("unsupported", "imported accounts are not supported on bitcoin");
+  }
+  const record = ctx.image.records.find(
+    (entry) => entry.kind === "key" && entry.id === account.keyId,
+  );
+  if (record === undefined) {
+    throw new KernelError("not-found", "no such imported key");
+  }
+  const header = parseKeyHeader(record.header);
+  if (header.family !== (isEvm ? "evm" : "solana")) {
+    throw new KernelError("invalid-input", "the key's family does not match the request");
+  }
+  const execute = (secret: Uint8Array, intentOnly: boolean): ExecuteResult => {
+    const source = { kind: "imported" as const, secret };
+    if (
+      request.kind === "evm.transaction" ||
+      request.kind === "evm.personal-message" ||
+      request.kind === "evm.typed-data"
+    ) {
+      return executeEvm(request, source, intentOnly);
+    }
+    if (request.kind === "solana.transaction" || request.kind === "solana.message") {
+      return executeSolana(request, source, intentOnly);
+    }
+    throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
+  };
+  const withKey = async <R>(run: (secret: Uint8Array) => R): Promise<R> => {
+    const secret = openRecord(dek, record);
+    try {
+      return await run(secret);
+    } finally {
+      wipe(secret);
+    }
+  };
+  const prepared = await withKey((secret) => execute(secret, true));
+  if (!("prompt" in prepared)) {
+    throw new KernelError("integrity", "unreachable: prepare pass signed");
+  }
+  await verifyFactor(ctx.platform, ctx.image, verify, dek, () =>
+    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
+  );
+  ctx.session.require(session);
+  const signed = await withKey((secret) => execute(secret, false));
   if ("prompt" in signed) {
     throw new KernelError("integrity", "unreachable: sign pass did not sign");
   }

@@ -1,4 +1,5 @@
 /** EVM signing for `chain.sign` — derive, normalize, decode, then sign or return the intent. */
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { HDKey } from "@scure/bip32";
 
 import type { DisplayIntent } from "@qntx/wallet-chains";
@@ -10,18 +11,23 @@ import {
 } from "@qntx/wallet-chains/evm/sign";
 
 import { KernelError } from "../../errors.ts";
-import type { EvmRequest, ExecuteResult, HdAccount } from "./shared.ts";
+import type { EvmKeySource, EvmRequest, ExecuteResult } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
 
 export const executeEvm = (
   request: EvmRequest,
-  account: HdAccount,
-  seed: Uint8Array,
+  source: EvmKeySource,
   intentOnly: boolean,
 ): ExecuteResult => {
-  const master = HDKey.fromMasterSeed(seed);
+  if (source.kind === "imported") {
+    /* The record's plaintext is the private key; `chainSign` wipes the opened copy. */
+    const priv = source.secret;
+    const signer = evmAddressFromPublicKey(secp256k1.getPublicKey(priv, true));
+    return evmBody(request, priv, signer, intentOnly);
+  }
+  const master = HDKey.fromMasterSeed(source.seed);
   try {
-    const child = master.derive(`m/44'/60'/0'/0/${account.groupIndex}`);
+    const child = master.derive(`m/44'/60'/0'/0/${source.account.groupIndex}`);
     try {
       const priv = child.privateKey;
       const pub = child.publicKey;
@@ -29,6 +35,23 @@ export const executeEvm = (
         throw new KernelError("integrity", "no private key at account path");
       }
       const signer = evmAddressFromPublicKey(pub);
+      return evmBody(request, priv, signer, intentOnly);
+    } finally {
+      child.wipePrivateData();
+    }
+  } finally {
+    master.wipePrivateData();
+  }
+};
+
+const evmBody = (
+  request: EvmRequest,
+  priv: Uint8Array,
+  signer: string,
+  intentOnly: boolean,
+): ExecuteResult => {
+  {
+    {
       let normalized;
       try {
         normalized = normalizeEvm(request);
@@ -63,10 +86,6 @@ export const executeEvm = (
         kind: "evm.typed-data",
         signature: signEvmTypedData(request.typedData, priv),
       };
-    } finally {
-      child.wipePrivateData();
     }
-  } finally {
-    master.wipePrivateData();
   }
 };
