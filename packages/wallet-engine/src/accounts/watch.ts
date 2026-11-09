@@ -109,8 +109,13 @@ export class WatchController extends Controller<WatchState> {
   }
 
   async destroy(): Promise<void> {
-    this.col = undefined;
+    this.lock();
     await Promise.resolve();
+  }
+
+  lock(): void {
+    this.col = undefined;
+    this.update(() => ({ accounts: {} }));
   }
 
   private async persist(account: WatchAccount): Promise<void> {

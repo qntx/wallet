@@ -625,3 +625,34 @@ describe("BackupController", () => {
     }
   });
 });
+
+describe("engine lock/unlock", () => {
+  it("watch accounts survive lock and unlock", async () => {
+    const r = await rig({ cloud: false });
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await until(
+        () => r.engine.backup.getState().status,
+        (s) => s !== "locked",
+      );
+      await r.engine.watch.add({
+        family: "evm",
+        address: "0x00000000000000000000000000000000DeaDBeef",
+        name: "cold",
+      });
+      await r.wallet.vault.lock();
+      await until(
+        () => r.engine.watch.list().length,
+        (n) => n === 0,
+      );
+      await r.wallet.vault.unlock(PW);
+      const [account] = await until(
+        () => r.engine.watch.list(),
+        (list) => list.length === 1,
+      );
+      expect(account?.name).toBe("cold");
+    } finally {
+      await r.close();
+    }
+  });
+});
