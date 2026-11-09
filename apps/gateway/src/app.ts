@@ -22,7 +22,7 @@ export type { GatewayOptions } from "./types.ts";
 
 /** Builds the gateway; every upstream call goes through `options.fetch`. */
 export function createGateway(options: GatewayOptions): Hono<{ Variables: InstallIdVariables }> {
-  const served = indexNetworks(options.networks);
+  const served = indexNetworks(options.networks, options.auth);
   const forwarder = createForwarder();
   const deps = { fetch: options.fetch, forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);

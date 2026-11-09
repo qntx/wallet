@@ -2,12 +2,15 @@ import type { MiddlewareHandler } from "hono";
 
 import { networkById } from "@qntx/wallet-engine/gateway/contract";
 
-import type { GatewayNetwork } from "../types.ts";
+import type { GatewayNetwork, ResolvedProvider, UpstreamAuth, UpstreamAuthId } from "../types.ts";
 import { GatewayHttpError } from "./errors.ts";
 
 export type Family = "evm" | "solana" | "bitcoin";
 
-export type ResolvedNetwork = GatewayNetwork & { readonly family: Family };
+export type ResolvedNetwork = Omit<GatewayNetwork, "providers"> & {
+  readonly family: Family;
+  readonly providers: ReadonlyArray<ResolvedProvider>;
+};
 
 export type NetworkVariables = { network: ResolvedNetwork };
 
@@ -26,9 +29,13 @@ export const resolveNetwork =
     await next();
   };
 
-/** Indexes configured networks by id and pins each to its registry family. */
+/**
+ * Indexes configured networks by id and pins each to its registry family. A provider naming an
+ * `auth` absent from `auth` fails construction — a keyed endpoint is never called unauthenticated.
+ */
 export function indexNetworks(
   networks: ReadonlyArray<GatewayNetwork>,
+  auth: Readonly<Partial<Record<UpstreamAuthId, UpstreamAuth>>>,
 ): Map<string, ResolvedNetwork> {
   const served = new Map<string, ResolvedNetwork>();
   for (const network of networks) {
@@ -39,7 +46,20 @@ export function indexNetworks(
     if (network.providers.length === 0) {
       throw new Error(`network ${network.id} has no providers`);
     }
-    served.set(network.id, { ...network, family: info.family });
+    const providers = network.providers.map((provider) => {
+      const { auth: authId, ...rest } = provider;
+      if (authId === undefined) {
+        return rest;
+      }
+      const resolve = auth[authId];
+      if (resolve === undefined) {
+        throw new Error(
+          `provider ${provider.id} on ${network.id} names unconfigured auth "${authId}"`,
+        );
+      }
+      return { ...rest, auth: resolve };
+    });
+    served.set(network.id, { id: network.id, providers, family: info.family });
   }
   return served;
 }

@@ -3,12 +3,12 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { BridgeQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
-import type { UpstreamProvider } from "../types.ts";
+import type { ResolvedProvider } from "../types.ts";
 import type { Forwarder } from "./forward.ts";
 
 const ACROSS_API = "https://app.across.to";
 
-const PROVIDER: UpstreamProvider = { id: "across", url: ACROSS_API };
+const PROVIDER: ResolvedProvider = { id: "across", url: ACROSS_API };
 
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
 const decimal = z.string().check(z.regex(/^[0-9]+$/));
