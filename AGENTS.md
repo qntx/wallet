@@ -14,9 +14,11 @@
   reimplements protocol or cryptographic code that belongs to them.
 - @qntx/wallet-kernel is private and only bundled by the host packages. Nothing in the
   main runtime can import it.
-- Secrets (entropy, seed, private keys, DEK, PRF output) exist only in the enclave
-  (Web Worker, RN kernel runtime). Messages carry no signing secrets, except user exports
-  and the data key.
+- Secrets (entropy, seed, private keys, DEK) exist only in the enclave (Web Worker, RN kernel
+  runtime). Messages carry no signing secrets, except user exports and the data key. On RN the
+  password and PRF output never leave the kernel runtime either; on the Web they necessarily pass
+  through the main thread (WebAuthn is main-thread only), so the Web wallet is a hot wallet that
+  does not withstand an active main-thread attacker.
 - The kernel source never imports -worker or -native packages; backends (`backends.nostr`,
   the NostrBackend, and `backends.spark`, the SparkCrypto wasm/native loader) are injected
   by the host packages.

@@ -70,10 +70,15 @@ What to do with each vault state:
 
 ## Security notes
 
-- Secrets (seed, keys, DEK, PRF output) exist only inside the kernel's Web Worker; the host
-  thread sees ciphertext and public headers only.
-- The Web host is a **hot wallet**: it protects against the host page reading secrets, not
-  against a compromised browser or device.
+- Seed, keys and the DEK exist only inside the kernel's Web Worker. The password and the
+  passkey PRF output, however, necessarily pass through the host thread: WebAuthn runs only on
+  the main thread, and for a passkey wallet the PRF output _is_ the wallet entropy.
+- The Web host is a **hot wallet**. The Worker keeps secrets away from passive leaks (logs, error
+  reports, third-party scripts reading globals) and from reads of in-session memory. It does not
+  protect against an active attacker on the main thread: XSS or a malicious dependency can capture
+  the next password or PRF output and decrypt the same-origin IndexedDB vault, which is equivalent
+  to stealing the wallet. Ship a strict CSP, review dependencies, and steer large balances to the
+  mobile or hardware wallet.
 - Your CSP must allow the bundled worker: `worker-src 'self'` (the worker loads from your own
   origin — a stricter policy breaks the wallet).
 - Vite users: set `optimizeDeps.exclude: ["@qntx/wallet-worker"]` so the worker URL survives dev;
