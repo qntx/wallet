@@ -260,6 +260,8 @@ describe("chains(wallet)", () => {
   const BTC_XPUB86 = btcNode("m/86'/0'/0'").publicExtendedKey;
   const BTC_CHILD = btcNode("m/84'/0'/0'/0/0");
   const BTC_CHILD86 = btcNode("m/86'/0'/0'/0/0");
+  const BTC_XPUB44 = btcNode("m/44'/0'/0'").publicExtendedKey;
+  const BTC_CHILD44 = btcNode("m/44'/0'/0'/0/0");
 
   const btcPsbt = (): Uint8Array => {
     const pub = BTC_CHILD.publicKey;
@@ -291,22 +293,25 @@ describe("chains(wallet)", () => {
     return tx.toPSBT(0);
   };
 
-  const btcConnect = async (result: {
-    readonly kind: string;
-    readonly signedPsbt?: Uint8Array;
-    readonly signature?: string;
-  }) => {
+  const BIP84_ACCOUNT = {
+    template: "btc.bip84",
+    network: BTC_NETWORK,
+    xpub: BTC_XPUB,
+    fingerprint: "73c5da0a",
+    path: "m/84'/0'/0'",
+  };
+
+  const btcConnect = async (
+    result: {
+      readonly kind: string;
+      readonly signedPsbt?: Uint8Array;
+      readonly signature?: string;
+    },
+    account: typeof BIP84_ACCOUNT = BIP84_ACCOUNT,
+  ) => {
     const kernel = new FakeKernel(unlockedStatus());
     kernel.handlers.set("chain.sign", () => ({ ok: result }));
-    kernel.handlers.set("wallet.accounts", () => ({
-      ok: {
-        template: "btc.bip84",
-        network: BTC_NETWORK,
-        xpub: BTC_XPUB,
-        fingerprint: "73c5da0a",
-        path: "m/84'/0'/0'",
-      },
-    }));
+    kernel.handlers.set("wallet.accounts", () => ({ ok: account }));
     const wallet = await connectKernel({
       verifyEvent,
       spawn: () => {
@@ -542,6 +547,40 @@ describe("chains(wallet)", () => {
         address: bitcoinAddressFromXpub(BTC_XPUB, "btc.bip84", BTC_NETWORK, 0, 0),
         message: "hello",
         format: "bip322-simple",
+        change: 0,
+        index: 0,
+      }),
+    );
+    expect(result.kind).toBe("bitcoin.message");
+  });
+
+  it("accepts a kernel legacy message signed by the bip44 account's child key", async () => {
+    const address = bitcoinAddressFromXpub(BTC_XPUB44, "btc.bip44", BTC_NETWORK, 0, 0);
+    const { wallet } = await btcConnect(
+      {
+        kind: "bitcoin.message",
+        signature: signBitcoinMessage(
+          { network: BTC_NETWORK, address, message: "hello", format: "legacy" },
+          BTC_CHILD44.privateKey!,
+          () => new Uint8Array(32),
+        ),
+      },
+      {
+        template: "btc.bip44",
+        network: BTC_NETWORK,
+        xpub: BTC_XPUB44,
+        fingerprint: "73c5da0a",
+        path: "m/44'/0'/0'",
+      },
+    );
+    const result = await chains(wallet).sign(
+      btcParams({
+        kind: "bitcoin.message",
+        network: BTC_NETWORK,
+        account: { ...btcAccount(), template: "btc.bip44" as const },
+        address,
+        message: "hello",
+        format: "legacy",
         change: 0,
         index: 0,
       }),

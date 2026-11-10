@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { schnorr } from "@noble/curves/secp256k1.js";
 import { base64 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
@@ -8,13 +11,17 @@ import { HDKey } from "@scure/bip32";
  * missing derivation entry must fail closed.
  */
 import { mnemonicToSeedSync } from "@scure/bip39";
-import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
+import { Address, OutScript, p2pkh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { signBitcoinMessage, signBitcoinPsbt } from "../src/bitcoin/sign.ts";
-import { verifyBitcoinMessage, verifyBitcoinPsbtSignatures } from "../src/bitcoin/verify.ts";
+import {
+  verifyBitcoinMessage,
+  verifyBitcoinPsbtSignatures,
+  verifyLegacyBitcoinMessage,
+} from "../src/bitcoin/verify.ts";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
@@ -294,5 +301,45 @@ describe("verifyBitcoinMessage (BIP-322 simple)", () => {
     expect(
       verifyBitcoinMessage(addr, "hello bip322", base64.encode(new Uint8Array([1])), NETWORK_CAIP),
     ).toBe(false);
+  });
+});
+
+describe("verifyLegacyBitcoinMessage", () => {
+  const { legacyMessage } = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/bitcoin.json"), "utf8"),
+  ) as { legacyMessage: { address: string; message: string; signature: string } };
+
+  it("verifies the Electrum legacy vector", () => {
+    expect(
+      verifyLegacyBitcoinMessage(
+        legacyMessage.address,
+        legacyMessage.message,
+        legacyMessage.signature,
+        NETWORK_CAIP,
+      ),
+    ).toBe(true);
+  });
+
+  it("verifies our own compressed-key legacy signature for its P2PKH address", () => {
+    const addr = p2pkh(ownKey.publicKey!, NETWORK).address;
+    const sig = signBitcoinMessage(
+      { network: NETWORK_CAIP, address: addr, message: "hello legacy", format: "legacy" },
+      ownKey.privateKey!,
+      auxRand,
+    );
+    expect(verifyLegacyBitcoinMessage(addr, "hello legacy", sig, NETWORK_CAIP)).toBe(true);
+    expect(verifyLegacyBitcoinMessage(addr, "HELLO legacy", sig, NETWORK_CAIP)).toBe(false);
+  });
+
+  it("rejects another address, a bad header and a bad encoding", () => {
+    const { address, message, signature } = legacyMessage;
+    const other = p2pkh(ownKey.publicKey!, NETWORK).address;
+    expect(verifyLegacyBitcoinMessage(other, message, signature, NETWORK_CAIP)).toBe(false);
+    const raw = base64.decode(signature);
+    raw[0] = 26;
+    expect(verifyLegacyBitcoinMessage(address, message, base64.encode(raw), NETWORK_CAIP)).toBe(
+      false,
+    );
+    expect(verifyLegacyBitcoinMessage(address, message, "not-base64!!", NETWORK_CAIP)).toBe(false);
   });
 });

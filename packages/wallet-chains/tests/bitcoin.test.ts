@@ -207,11 +207,14 @@ describe("bip322 + legacy message", () => {
     const header = Number(raw[0]);
     expect(header).toBeGreaterThanOrEqual(31);
     expect(header).toBeLessThanOrEqual(34);
+    // The compact signature is over the double-SHA256 digest itself (no further prehash), which is
+    // what Bitcoin Core and Electrum verify.
     expect(
       secp256k1.verify(
         raw.subarray(1),
         expectedHash(vectors.legacyMessage.message),
         secp256k1.getPublicKey(priv, true),
+        { prehash: false },
       ),
     ).toBe(true);
   });

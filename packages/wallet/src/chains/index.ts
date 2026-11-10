@@ -7,6 +7,7 @@
 import {
   bitcoinAddressFromXpub,
   verifyBitcoinMessage,
+  verifyLegacyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
 } from "@qntx/wallet-chains/bitcoin";
 import { recoverEvmSigner } from "@qntx/wallet-chains/evm";
@@ -102,7 +103,12 @@ const checkSigner = (
       );
       if (
         derived !== request.address ||
-        !verifyBitcoinMessage(request.address, request.message, result.signature, request.network)
+        !(request.format === "legacy" ? verifyLegacyBitcoinMessage : verifyBitcoinMessage)(
+          request.address,
+          request.message,
+          result.signature,
+          request.network,
+        )
       ) {
         throw integrity("message signature does not verify for the account");
       }

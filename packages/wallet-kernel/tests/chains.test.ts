@@ -831,7 +831,9 @@ describe("chain.sign", () => {
     data.set(prefix, 1);
     data[1 + prefix.length] = msg.length;
     data.set(msg, 2 + prefix.length);
-    expect(secp256k1.verify(raw.subarray(1), sha256(sha256(data)), expected)).toBe(true);
+    expect(
+      secp256k1.verify(raw.subarray(1), sha256(sha256(data)), expected, { prehash: false }),
+    ).toBe(true);
   });
 
   it("treats our change output as change and an external input as opaque", async () => {

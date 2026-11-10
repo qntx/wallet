@@ -155,10 +155,17 @@ export const signBip322Simple = (
  * Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
  * 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
  */
+/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
+export const legacyMessageHash = (message: string): Uint8Array =>
+  sha256(sha256(concat(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
+
 export const signLegacyMessage = (message: string, privateKey: Uint8Array): string => {
-  const data = concat(pushData(LEGACY_MAGIC), pushData(utf8(message)));
-  const hash = sha256(sha256(data));
-  const recovered = secp256k1.sign(hash, privateKey, { lowS: true, format: "recovered" });
+  const hash = legacyMessageHash(message);
+  const recovered = secp256k1.sign(hash, privateKey, {
+    lowS: true,
+    format: "recovered",
+    prehash: false,
+  });
   const header = 27 + (recovered[0] ?? 0) + 4;
   return base64(concat(Uint8Array.of(header), recovered.slice(1)));
 };
