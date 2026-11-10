@@ -34,8 +34,10 @@ export function ipPrefix(ip: string | undefined): string {
 const TRANSPORT_PREFIXES = ["/v1/rpc/", "/v1/esplora/"];
 
 /**
- * Counts per "install id + IP prefix" in the group's binding (transport routes use the RPC limiter,
- * everything else the default); 429 with `Retry-After` when the binding refuses. Health is exempt.
+ * Two counters per request, health exempt: the IP-prefix limiter first (install ids are chosen by
+ * the client, so this is the only bound a script rotating them meets), then "install id + IP
+ * prefix" in the group's binding (transport routes use the RPC limiter, everything else the
+ * default). Either refusing answers 429 with `Retry-After`.
  */
 export const rateLimit =
   (limiters: Limiters): MiddlewareHandler<{ Variables: InstallIdVariables }> =>
@@ -44,12 +46,15 @@ export const rateLimit =
       await next();
       return;
     }
-    const limiter: RateLimiter = TRANSPORT_PREFIXES.some((prefix) => c.req.path.startsWith(prefix))
+    const prefix = ipPrefix(c.req.header("cf-connecting-ip"));
+    const limiter: RateLimiter = TRANSPORT_PREFIXES.some((p) => c.req.path.startsWith(p))
       ? limiters.rpc
       : limiters.default;
-    const key = `${c.get("installId")}:${ipPrefix(c.req.header("cf-connecting-ip"))}`;
-    const { success } = await limiter.limit({ key });
-    if (!success) {
+    const byIp = await limiters.ip.limit({ key: prefix });
+    const byInstall = byIp.success
+      ? await limiter.limit({ key: `${c.get("installId")}:${prefix}` })
+      : byIp;
+    if (!byInstall.success) {
       throw new GatewayHttpError(429, "rate-limited", RATE_LIMIT_RETRY_AFTER_SECONDS);
     }
     await next();

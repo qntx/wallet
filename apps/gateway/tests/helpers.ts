@@ -114,7 +114,7 @@ export function gateway(options: {
   return createGateway({
     fetch: options.fetch,
     networks: NETWORKS,
-    limiters: options.limiters ?? { rpc: allowAll, default: allowAll },
+    limiters: options.limiters ?? { ip: allowAll, rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     auth: options.auth ?? {},

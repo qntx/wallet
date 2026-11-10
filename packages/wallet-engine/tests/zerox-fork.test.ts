@@ -83,7 +83,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
           return { success: true };
         },
       };
-      const limiters: Limiters = { rpc: allowAll, default: allowAll };
+      const limiters: Limiters = { ip: allowAll, rpc: allowAll, default: allowAll };
       const risk: RiskStore = {
         get: async () => Promise.resolve(undefined),
         put: async () => Promise.resolve(),

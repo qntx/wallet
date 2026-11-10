@@ -5,6 +5,8 @@ export type RateLimiter = {
 };
 
 export type Limiters = {
+  /** Per IP prefix across every install id — the ceiling rotating install ids cannot escape. */
+  readonly ip: RateLimiter;
   readonly rpc: RateLimiter;
   readonly default: RateLimiter;
 };

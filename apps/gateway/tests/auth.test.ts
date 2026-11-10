@@ -8,7 +8,7 @@ import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts
 import { bearer, blockstreamAuth, header } from "../src/providers/auth.ts";
 import { allowAll, call, fakeFetch, headers, memoryRiskStore, post, rpcOk } from "./helpers.ts";
 
-const limiters = { rpc: allowAll, default: allowAll };
+const limiters = { ip: allowAll, rpc: allowAll, default: allowAll };
 const risk = memoryRiskStore();
 
 const NET = {

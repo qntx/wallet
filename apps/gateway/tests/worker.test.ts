@@ -15,6 +15,7 @@ const kv = (): KVNamespace =>
 const staging = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   ({
     RISK: kv(),
+    IP_LIMITER: allowAll,
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
     CORS_ORIGINS: "http://localhost:5173,http://localhost:8081",
@@ -26,6 +27,7 @@ const staging = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
 const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
   ({
     RISK: kv(),
+    IP_LIMITER: allowAll,
     RPC_LIMITER: allowAll,
     DEFAULT_LIMITER: allowAll,
     CORS_ORIGINS: "",
