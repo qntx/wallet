@@ -161,9 +161,14 @@ export const decodeAcross = (
   ) {
     return undefined;
   }
+  // Native deposits forward exactly `inputAmount` as msg.value; any other value attached to the
+  // call would leave the intent without that outflow, so the call is not recognised.
   const native =
     call.value > 0n &&
     inputToken.toLowerCase() === (ACROSS_WRAPPED_NATIVE[chainId] ?? "").toLowerCase();
+  if (call.value > 0n && (!native || call.value !== inputAmount)) {
+    return undefined;
+  }
   return {
     outflows: [
       {

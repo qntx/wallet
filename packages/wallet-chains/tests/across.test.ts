@@ -95,6 +95,18 @@ describe("across decode", () => {
     expect(intent.summary).not.toBe("bridge");
   });
 
+  it("an ERC-20 deposit that also carries native value is not recognised", () => {
+    const tx = { ...dep!.tx, value: "0x1" };
+    const intent = decodeEvm(txReq(tx as unknown as EvmTransaction, "eip155:1"), dep!.signer);
+    expect(intent.summary).not.toBe("bridge");
+  });
+
+  it("a native deposit whose value differs from inputAmount is not recognised", () => {
+    const tx = { ...dv3!.tx, value: `0x${(BigInt(dv3!.tx.value) + 1n).toString(16)}` };
+    const intent = decodeEvm(txReq(tx as unknown as EvmTransaction, "eip155:1"), dv3!.signer);
+    expect(intent.summary).not.toBe("bridge");
+  });
+
   it("the v3 vector decodes the depositor as recipient too", () => {
     const intent = decodeEvm(txReq(dv3!.tx as unknown as EvmTransaction, "eip155:1"), dv3!.signer);
     expect(intent.bridge).toStrictEqual(dv3!.expect.bridge);
