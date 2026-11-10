@@ -24,7 +24,7 @@ import type {
   BitcoinSigHash,
   PreparedBitcoinPsbt,
 } from "../requests/types.ts";
-import { accountPath, broadcastPsbt } from "../transactions/bitcoin.ts";
+import { accountPath, broadcastPsbt, fetchRawTxes } from "../transactions/bitcoin.ts";
 import type { SignResult } from "../transactions/route.ts";
 import { scanChain, scriptPubKey } from "./bitcoin-scan.ts";
 import type { Esplora } from "./bitcoin.ts";
@@ -34,21 +34,6 @@ const SIGHASH_DEFAULT = 0;
 const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
 
 const invalid = (message: string): ChainError => new ChainError("invalid-request", message);
-
-type Input = ReturnType<Transaction["getInput"]>;
-
-/** The script of the output an input spends — `witnessUtxo`, else the `nonWitnessUtxo` output. */
-const prevoutOf = (input: Input): { script: Uint8Array; amount: bigint } | undefined => {
-  if (input.witnessUtxo !== undefined) {
-    return input.witnessUtxo;
-  }
-  const outputs: ReadonlyArray<{ script?: Uint8Array; amount?: bigint }> =
-    input.nonWitnessUtxo === undefined ? [] : input.nonWitnessUtxo.outputs;
-  const output = input.index === undefined ? undefined : outputs[input.index];
-  const script = output?.script;
-  const amount = output?.amount;
-  return script === undefined || amount === undefined ? undefined : { script, amount };
-};
 
 /**
  * The sighash the input will be signed with: a PSBT that already names one must agree with the
@@ -163,72 +148,110 @@ export const prepareDappPsbts = async (
     };
   };
 
-  return psbts.map((entry): PreparedBitcoinPsbt => {
-    let tx: Transaction;
-    try {
-      tx = Transaction.fromPSBT(entry.psbt, { strictPrevoutValidation: true });
-    } catch {
-      throw invalid("PSBT failed to decode");
-    }
-    const inputs: Array<{
-      index: number;
-      value: number;
-      sigHash: BitcoinSigHash;
-      template: BitcoinAccount["template"];
-    }> = [];
-    for (const { index, sigHash, template } of entry.sign) {
-      if (!Number.isSafeInteger(index) || index < 0 || index >= tx.inputsLength) {
-        throw invalid(`input ${String(index)} is out of range`);
+  return Promise.all(
+    psbts.map(async (entry): Promise<PreparedBitcoinPsbt> => {
+      let tx: Transaction;
+      try {
+        tx = Transaction.fromPSBT(entry.psbt, { strictPrevoutValidation: true });
+      } catch {
+        throw invalid("PSBT failed to decode");
       }
-      const input = tx.getInput(index);
-      const prevout = prevoutOf(input);
-      const spend = prevout === undefined ? undefined : own.get(hex.encode(prevout.script));
-      if (prevout === undefined || spend === undefined || spend.template !== template) {
-        throw invalid(`input ${String(index)} is not this account's`);
+      const inputs: Array<{
+        index: number;
+        value: number;
+        sigHash: BitcoinSigHash;
+        template: BitcoinAccount["template"];
+      }> = [];
+      // Validate every sign entry first; the previous transactions are then fetched in one call.
+      const signed = entry.sign.map(({ index, sigHash, template }) => {
+        if (!Number.isSafeInteger(index) || index < 0 || index >= tx.inputsLength) {
+          throw invalid(`input ${String(index)} is out of range`);
+        }
+        const input = tx.getInput(index);
+        const { txid, index: vout } = input;
+        if (txid === undefined || vout === undefined) {
+          throw invalid(`input ${String(index)} is not this account's`);
+        }
+        return { index, sigHash, template, input, txidHex: hex.encode(txid), vout };
+      });
+      const raws = await fetchRawTxes(
+        es,
+        [...new Set(signed.map((s) => s.txidHex))].map((txid) => ({ txid })),
+      );
+      for (const { index, sigHash, template, input, txidHex, vout } of signed) {
+        // The dApp's witnessUtxo is advisory: the prevout comes from the chain. bip84 signing
+        // also carries the raw previous transaction so the kernel proves the amount.
+        const raw = raws.get(txidHex);
+        if (raw === undefined) {
+          throw invalid(`input ${String(index)} is not this account's`);
+        }
+        const prevTx = Transaction.fromRaw(raw, { allowUnknownInputs: true });
+        const prevOut = vout >= prevTx.outputsLength ? undefined : prevTx.getOutput(vout);
+        const prev =
+          prevOut?.script === undefined || prevOut.amount === undefined
+            ? undefined
+            : { script: prevOut.script, amount: prevOut.amount };
+        if (prev === undefined) {
+          throw invalid(`input ${String(index)} is not this account's`);
+        }
+        const declared = input.witnessUtxo;
+        if (
+          declared !== undefined &&
+          (hex.encode(declared.script) !== hex.encode(prev.script) ||
+            declared.amount !== prev.amount)
+        ) {
+          throw invalid(`input ${String(index)} amount or script does not match the chain`);
+        }
+        const spend = own.get(hex.encode(prev.script));
+        if (spend === undefined || spend.template !== template) {
+          throw invalid(`input ${String(index)} is not this account's`);
+        }
+        const sighashType = sighashFor(input.sighashType, sigHash, template === "btc.bip86", index);
+        const { pubkey, der } = derivation(template, spend.chain, spend.index);
+        tx.updateInput(
+          index,
+          {
+            witnessUtxo: { script: prev.script, amount: prev.amount },
+            ...(template === "btc.bip84" ? { nonWitnessUtxo: raw } : {}),
+            ...(sighashType === undefined ? {} : { sighashType }),
+            ...(template === "btc.bip86"
+              ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }
+              : { bip32Derivation: [[pubkey, der]] }),
+          },
+          true,
+        );
+        inputs.push({ index, value: Number(prev.amount), sigHash, template });
       }
-      const sighashType = sighashFor(input.sighashType, sigHash, template === "btc.bip86", index);
-      const { pubkey, der } = derivation(template, spend.chain, spend.index);
-      tx.updateInput(
-        index,
-        {
-          ...(sighashType === undefined ? {} : { sighashType }),
-          ...(template === "btc.bip86"
+      // Outputs to the group's own scripts are bound as change: the kernel prompt and the
+      // engine display agree they are not outflows.
+      for (let i = 0; i < tx.outputsLength; i++) {
+        const output = tx.getOutput(i);
+        const bound = output.script === undefined ? undefined : own.get(hex.encode(output.script));
+        if (bound === undefined) {
+          continue;
+        }
+        const { pubkey, der } = derivation(bound.template, bound.chain, bound.index);
+        tx.updateOutput(
+          i,
+          bound.template === "btc.bip86"
             ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }
-            : { bip32Derivation: [[pubkey, der]] }),
-        },
-        true,
-      );
-      inputs.push({ index, value: Number(prevout.amount), sigHash, template });
-    }
-    // Outputs to the group's own scripts are bound as change: the kernel prompt and the
-    // engine display agree they are not outflows.
-    for (let i = 0; i < tx.outputsLength; i++) {
-      const output = tx.getOutput(i);
-      const bound = output.script === undefined ? undefined : own.get(hex.encode(output.script));
-      if (bound === undefined) {
-        continue;
+            : { bip32Derivation: [[pubkey, der]] },
+          true,
+        );
       }
-      const { pubkey, der } = derivation(bound.template, bound.chain, bound.index);
-      tx.updateOutput(
-        i,
-        bound.template === "btc.bip86"
-          ? { tapInternalKey: pubkey, tapBip32Derivation: [[pubkey, { hashes: [], der }]] }
-          : { bip32Derivation: [[pubkey, der]] },
-        true,
-      );
-    }
-    const request = normalizeBitcoin({
-      kind: "bitcoin.psbt",
-      network,
-      account: { kind: "hd", walletId: group.walletId, groupIndex: group.groupIndex },
-      psbt: tx.toPSBT(0),
-      sign: inputs.map(({ index, template }) => ({ index, template })),
-    });
-    if (request.kind !== "bitcoin.psbt") {
-      throw invalid("unexpected request kind");
-    }
-    return { request, ownScripts, inputs };
-  });
+      const request = normalizeBitcoin({
+        kind: "bitcoin.psbt",
+        network,
+        account: { kind: "hd", walletId: group.walletId, groupIndex: group.groupIndex },
+        psbt: tx.toPSBT(0),
+        sign: inputs.map(({ index, template }) => ({ index, template })),
+      });
+      if (request.kind !== "bitcoin.psbt") {
+        throw invalid("unexpected request kind");
+      }
+      return { request, ownScripts, inputs };
+    }),
+  );
 };
 
 /**

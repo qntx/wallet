@@ -14,7 +14,7 @@ import { parseSignIn } from "@qntx/wallet-chains";
 import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
-import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
+import { decodeSolana, normalizeSolana, SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
@@ -47,7 +47,7 @@ import type {
   TrackedTransaction,
 } from "../transactions/route.ts";
 import { newRequestId } from "../transactions/route.ts";
-import { collectChecks } from "./checks.ts";
+import { collectChecks, feeReachesAmount } from "./checks.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import {
   assessApprovals,
@@ -615,6 +615,17 @@ const solanaIntent = (
   }
 };
 
+/** The transaction's declared lamport outflows are swallowed whole by its maximum fee. */
+const feeExceedsLamports = (intent: SolanaDecoded): boolean => {
+  if ("error" in intent || intent.fee === undefined) {
+    return false;
+  }
+  const lamports = intent.outflows
+    .filter((f) => f.amount.asset === SOLANA_NATIVE_ASSET)
+    .reduce((a, f) => a + BigInt(f.amount.amount), 0n);
+  return lamports > 0n && feeReachesAmount(BigInt(intent.fee.max.amount), lamports);
+};
+
 /** Nothing declared and nothing checkable: what a transaction that did not decode counts as. */
 const OPAQUE_INTENT: Pick<DisplayIntent, "outflows" | "verifiability"> = {
   outflows: [],
@@ -999,7 +1010,7 @@ export class RequestController extends Controller<RequestControllerState> {
             ? { signIn: input.request.signIn }
             : {}),
         },
-        checks: [],
+        checks: collectChecks(intents.some(feeExceedsLamports) ? ["fee-exceeds-amount"] : []),
         risk: mergeRisk(
           mergeRisk(
             this.signInRisk(signIn, input.origin, input.account.address, "solana"),

@@ -90,13 +90,16 @@ const isSignEntry = (value: unknown): value is PsbtSignEntry =>
   typeof value["template"] === "string" &&
   TEMPLATES.has(value["template"]);
 
-const isTaprootInput = (input: ReturnType<Transaction["getInput"]>): boolean =>
+export const isTaprootInput = (input: ReturnType<Transaction["getInput"]>): boolean =>
   input.tapInternalKey !== undefined || getInputType(input).type === "taproot";
 
 /**
- * Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller).
- * `strictPrevoutValidation` makes btc-signer verify every `nonWitnessUtxo`'s txid against its
- * outpoint. The returned `sign` is sorted ascending by index — a normalized request is canonical.
+ * Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller). Every
+ * non-taproot signed input must carry the full previous transaction: a BIP-143 signature commits
+ * only to its own input's amount, so a `witnessUtxo`-only amount is unverifiable. btc-signer checks
+ * each `nonWitnessUtxo` hashes to the input's txid and agrees with any `witnessUtxo` present
+ * (`strictPrevoutValidation`). The returned `sign` is sorted ascending by index — a normalized
+ * request is canonical.
  */
 export const normalizeBitcoinPsbt = (
   psbt: Uint8Array,
@@ -139,9 +142,8 @@ export const normalizeBitcoinPsbt = (
     ) {
       throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
     }
-    const { type } = getInputType(input);
-    if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === undefined) {
-      throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
+    if (template !== "btc.bip86" && input.nonWitnessUtxo === undefined) {
+      throw new ChainError("invalid-request", `input ${idx} must carry nonWitnessUtxo`);
     }
     const sighash = input.sighashType;
     const allowed =

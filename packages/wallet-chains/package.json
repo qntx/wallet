@@ -46,6 +46,10 @@
       "types": "./dist/bitcoin-sign.d.mts",
       "default": "./dist/bitcoin-sign.mjs"
     },
+    "./networks": {
+      "types": "./dist/networks.d.mts",
+      "default": "./dist/networks.mjs"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

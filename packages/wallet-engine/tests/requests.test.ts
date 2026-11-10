@@ -969,6 +969,75 @@ const authorizeTx = (newAuthority: string): Uint8Array => {
   );
 };
 
+/** A compiled legacy message: SetComputeUnitPrice(`microLamports`) + a 0.001 SOL transfer. */
+const solTransferTx = (microLamports: bigint): Uint8Array => {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, 1_000_000n, true);
+  const price = new Uint8Array(9);
+  price[0] = 3;
+  new DataView(price.buffer).setBigUint64(1, microLamports, true);
+  const message = appendTransactionMessageInstruction(
+    {
+      programAddress: address("11111111111111111111111111111111"),
+      accounts: [
+        { address: address(SOL_PAYER), role: AccountRole.WRITABLE_SIGNER },
+        { address: address(SOL_OTHER), role: AccountRole.WRITABLE },
+      ],
+      data,
+    },
+    appendTransactionMessageInstruction(
+      {
+        programAddress: address("ComputeBudget111111111111111111111111111111"),
+        accounts: [],
+        data: price,
+      },
+      setTransactionMessageLifetimeUsingBlockhash(
+        {
+          blockhash: address("11111111111111111111111111111111"),
+          lastValidBlockHeight: 1000n,
+        } as never,
+        setTransactionMessageFeePayer(
+          address(SOL_PAYER),
+          createTransactionMessage({ version: "legacy" }),
+        ),
+      ),
+    ),
+  );
+  return new Uint8Array(
+    getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
+  );
+};
+
+describe("solana-sign fee checks", () => {
+  const prepareFeeTx = async (microLamports: bigint) => {
+    const f = fake();
+    await f.controller.init();
+    return f.controller.prepare({
+      method: "solana-sign",
+      origin: { kind: "browser", origin: "https://dapp.example" },
+      account: { walletId: "w", groupIndex: 0, address: SOL_PAYER },
+      network: SOL_NET,
+      request: {
+        kind: "transactions",
+        transactions: [solTransferTx(microLamports)],
+        send: false,
+      },
+    });
+  };
+
+  it("a priority fee that swallows the transfer is fee-exceeds-amount", async () => {
+    const pending = await prepareFeeTx(5_000_000_000_000n);
+    expect(pending.checks).toContain("fee-exceeds-amount");
+  });
+
+  it("an ordinary priority fee raises no fee-exceeds-amount", async () => {
+    const pending = await prepareFeeTx(1000n);
+    expect(pending.checks).not.toContain("fee-exceeds-amount");
+  });
+});
+
 describe("solana-sign approval risk", () => {
   const prepareTx = async (newAuthority: string) => {
     const f = fake();

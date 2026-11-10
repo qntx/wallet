@@ -12573,7 +12573,7 @@
 	* and `eth_chainId` is bound to the message chain id (cached per provider on success only) before
 	* any `eth_call`.
 	*/
-	function evm(options) {
+	function evm$1(options) {
 		var _options$rpc;
 		const rpc = (_options$rpc = options === null || options === void 0 ? void 0 : options.rpc) !== null && _options$rpc !== void 0 ? _options$rpc : {};
 		const verifiedChains = /* @__PURE__ */ new Set();
@@ -12843,7 +12843,7 @@
 	};
 	var parseValid = (text, family) => {
 		if (family === "evm") {
-			const ns = evm();
+			const ns = evm$1();
 			const message = ns.parse(new TextEncoder().encode(text));
 			ns.account(message);
 			return plainFields(message);
@@ -17793,6 +17793,114 @@
 		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
 		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
 		return numeric;
+	};
+	// packages/wallet-chains/dist/networks.mjs
+	init_objectSpread2();
+	var evm = (chainId, name, symbol, testnet) => ({
+		id: `eip155:${chainId}`,
+		family: "evm",
+		name,
+		symbol,
+		decimals: 18,
+		testnet,
+		chainId
+	});
+	var EVM_NETWORKS = [
+		evm(1, "Ethereum", "ETH", false),
+		evm(8453, "Base", "ETH", false),
+		evm(42161, "Arbitrum One", "ETH", false),
+		evm(10, "OP Mainnet", "ETH", false),
+		evm(137, "Polygon", "POL", false),
+		evm(56, "BNB Smart Chain", "BNB", false),
+		evm(999, "HyperEVM", "HYPE", false),
+		evm(43114, "Avalanche C-Chain", "AVAX", false),
+		evm(11155111, "Sepolia", "ETH", true),
+		evm(84532, "Base Sepolia", "ETH", true),
+		evm(421614, "Arbitrum Sepolia", "ETH", true),
+		evm(11155420, "OP Sepolia", "ETH", true),
+		evm(80002, "Polygon Amoy", "POL", true),
+		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm(998, "HyperEVM Testnet", "HYPE", true),
+		evm(43113, "Avalanche Fuji", "AVAX", true)
+	];
+	var BUILT_IN_NETWORKS = Object.freeze([
+		...EVM_NETWORKS,
+		{
+			id: "bip122:000000000019d6689c085ae165831e93",
+			chainId: 0,
+			name: "Bitcoin",
+			symbol: "BTC",
+			decimals: 8,
+			testnet: false,
+			family: "bitcoin",
+			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+		},
+		{
+			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
+			chainId: 0,
+			name: "Bitcoin Testnet4",
+			symbol: "tBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
+		},
+		{
+			id: "bip122:00000008819873e925422c1ff0f99f7c",
+			chainId: 0,
+			name: "Bitcoin Signet",
+			symbol: "sBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
+		},
+		{
+			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+			chainId: 0,
+			name: "Bitcoin Regtest",
+			symbol: "rBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+		},
+		{
+			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+			chainId: 0,
+			name: "Solana",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: false,
+			family: "solana",
+			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+		},
+		{
+			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+			chainId: 0,
+			name: "Solana Devnet",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: true,
+			family: "solana",
+			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+		}
+	]);
+	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
+	/**
+	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
+	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
+	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
+	*/
+	var withNativeAmountMeta = (intent, network, asset, decimals) => {
+		var _networkMeta;
+		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
+		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
+		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
+			amount: amount(a.amount),
+			receive: amount(a.receive)
+		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) });
+		return decorate(intent);
 	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
 	init_defineProperty();
@@ -23222,7 +23330,7 @@ zoo`.split("\n"));
 	*/
 	var decodeEvm = (request, signer, table = evmTokenTable) => {
 		var _safe$safe$calls$0$su, _safe$safe$calls$, _permit$approvals, _permit$warnings;
-		if (request.kind === "evm.transaction") return decodeTransaction$1(request, signer, table);
+		if (request.kind === "evm.transaction") return withNativeAmountMeta(decodeTransaction$1(request, signer, table), request.network, EVM_NATIVE_ASSET, 18);
 		if (request.kind === "evm.personal-message") return {
 			family: "evm",
 			network: request.network,
@@ -25297,12 +25405,24 @@ zoo`.split("\n"));
 		if (parsed.lookups.length > 0) return "partial";
 		return allFull ? "full" : "partial";
 	};
-	var feeLamports = (parsed, calls) => {
-		var _calls$find, _calls$find2;
-		const limit = (_calls$find = calls.find((c) => c.kind === "cu-limit")) === null || _calls$find === void 0 ? void 0 : _calls$find.units;
-		const price = (_calls$find2 = calls.find((c) => c.kind === "cu-price")) === null || _calls$find2 === void 0 ? void 0 : _calls$find2.microLamports;
-		if (limit === void 0 || price === void 0) return;
-		return 5000n * BigInt(parsed.numRequiredSignatures) + (price * BigInt(limit) + 999999n) / 1000000n;
+	var DEFAULT_INSTRUCTION_CU = 200000n;
+	var BUILTIN_INSTRUCTION_CU = 3000n;
+	var MAX_COMPUTE_UNIT_LIMIT = 1400000n;
+	var feeLamports = (parsed, lookups, calls) => {
+		var _calls$find$microLamp, _calls$find, _calls$find2;
+		const price = (_calls$find$microLamp = (_calls$find = calls.find((c) => c.kind === "cu-price")) === null || _calls$find === void 0 ? void 0 : _calls$find.microLamports) !== null && _calls$find$microLamp !== void 0 ? _calls$find$microLamp : 0n;
+		let builtin = 0n;
+		let other = 0n;
+		for (const ix of parsed.instructions) {
+			const program = resolveAccountIndex(parsed, ix.programAddressIndex, lookups);
+			if (program === PROGRAM_IDS.system || program === PROGRAM_IDS.computeBudget) builtin += 1n;
+			else other += 1n;
+		}
+		const defaultLimit = BUILTIN_INSTRUCTION_CU * builtin + DEFAULT_INSTRUCTION_CU * other;
+		const requested = (_calls$find2 = calls.find((c) => c.kind === "cu-limit")) === null || _calls$find2 === void 0 ? void 0 : _calls$find2.units;
+		const limit = requested === void 0 ? defaultLimit : BigInt(requested);
+		const capped = limit < MAX_COMPUTE_UNIT_LIMIT ? limit : MAX_COMPUTE_UNIT_LIMIT;
+		return 5000n * BigInt(parsed.numRequiredSignatures) + (price * capped + 999999n) / 1000000n;
 	};
 	var decodeTransaction = (request, signer, table) => {
 		var _request$lookupTables;
@@ -25312,6 +25432,7 @@ zoo`.split("\n"));
 			addresses: t.addresses
 		}));
 		const calls = parsed.instructions.map((ix) => classifyIx(parsed, ix, lookups, signer));
+		if (calls.filter((c) => c.kind === "cu-limit").length > 1 || calls.filter((c) => c.kind === "cu-price").length > 1) throw new ChainError("invalid-request", "duplicate compute-budget instruction");
 		const verifiability = classify$1(parsed, calls, request.network, table);
 		const outflows = [];
 		const approvals = [];
@@ -25496,7 +25617,7 @@ zoo`.split("\n"));
 				});
 			}
 		}
-		const fee = feeLamports(parsed, calls);
+		const fee = feeLamports(parsed, lookups, calls);
 		const summary = hasJupiter ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
 		return _objectSpread2(_objectSpread2(_objectSpread2({
 			family: "solana",
@@ -25504,7 +25625,7 @@ zoo`.split("\n"));
 			summary,
 			outflows,
 			approvals,
-			fee: fee === void 0 ? void 0 : { max: {
+			fee: { max: {
 				asset: SOLANA_NATIVE_ASSET,
 				amount: fee.toString(10)
 			} }
@@ -25513,7 +25634,7 @@ zoo`.split("\n"));
 			verifiability
 		});
 	};
-	var decodeSolana = (request, signer, table = solanaTokenTable) => decodeTransaction(request, signer, table);
+	var decodeSolana = (request, signer, table = solanaTokenTable) => withNativeAmountMeta(decodeTransaction(request, signer, table), request.network, SOLANA_NATIVE_ASSET, 9);
 	var solanaNetwork = (network) => {
 		if (!SOLANA_NETWORKS.includes(network)) throw new ChainError("unsupported", `unknown Solana network: ${network}`);
 	};
@@ -30455,9 +30576,12 @@ zoo`.split("\n"));
 	var isSignEntry = (value) => isRecord$1(value) && typeof value["index"] === "number" && Number.isSafeInteger(value["index"]) && value["index"] >= 0 && typeof value["template"] === "string" && TEMPLATES.has(value["template"]);
 	var isTaprootInput = (input) => input.tapInternalKey !== void 0 || getInputType(input).type === "taproot";
 	/**
-	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller).
-	* `strictPrevoutValidation` makes btc-signer verify every `nonWitnessUtxo`'s txid against its
-	* outpoint. The returned `sign` is sorted ascending by index — a normalized request is canonical.
+	* Validates and canonicalizes a bitcoin.psbt request (network already checked by the caller). Every
+	* non-taproot signed input must carry the full previous transaction: a BIP-143 signature commits
+	* only to its own input's amount, so a `witnessUtxo`-only amount is unverifiable. btc-signer checks
+	* each `nonWitnessUtxo` hashes to the input's txid and agrees with any `witnessUtxo` present
+	* (`strictPrevoutValidation`). The returned `sign` is sorted ascending by index — a normalized
+	* request is canonical.
 	*/
 	var normalizeBitcoinPsbt = (psbt, sign, network) => {
 		var _sorted$at;
@@ -30478,8 +30602,7 @@ zoo`.split("\n"));
 			const input = tx.getInput(idx);
 			if (input.witnessUtxo === void 0 && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} carries neither witnessUtxo nor nonWitnessUtxo`);
 			if (template === "btc.bip86" ? input.tapBip32Derivation === void 0 : input.bip32Derivation === void 0) throw new ChainError("invalid-request", `input ${idx} is missing a bip32 derivation`);
-			const { type } = getInputType(input);
-			if ((type === "legacy" || type === "nonwitness-script") && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} is missing nonWitnessUtxo`);
+			if (template !== "btc.bip86" && input.nonWitnessUtxo === void 0) throw new ChainError("invalid-request", `input ${idx} must carry nonWitnessUtxo`);
 			const sighash = input.sighashType;
 			if (!(sighash === void 0 || sighash === SIGHASH_ALL || isTaprootInput(input) && sighash === DEFAULT_SIGHASH || sighash === 131)) throw new ChainError("unsupported", `input ${idx} uses a non-default sighash`);
 			if (sighash === 131 && idx >= tx.outputsLength) throw new ChainError("unsupported", `input ${idx} uses SIGHASH_SINGLE without a same-index output`);
@@ -30556,32 +30679,39 @@ zoo`.split("\n"));
 				verified: addr !== void 0
 			});
 		}
+		const amountsCommitted = request.sign.some((s) => isTaprootInput(tx.getInput(s.index)) && tx.getInput(s.index).sighashType !== SIGHASH_SINGLE_ANYONECANPAY);
 		let inSum = 0n;
 		for (let i = 0; i < tx.inputsLength; i++) {
 			const input = tx.getInput(i);
-			if (input.witnessUtxo === void 0) canFee = false;
-			else inSum += input.witnessUtxo.amount;
+			const nonWitness = input.nonWitnessUtxo;
+			if (nonWitness !== void 0) {
+				const prev = input.index === void 0 ? void 0 : nonWitness.outputs[input.index];
+				if (prev === void 0) canFee = false;
+				else inSum += prev.amount;
+			} else if (amountsCommitted && input.witnessUtxo !== void 0) inSum += input.witnessUtxo.amount;
+			else canFee = false;
 		}
 		const external = tx.inputsLength - signed.size > 0;
 		const undecodable = outflows.some((o) => !o.verified);
 		const listing = request.sign.some((s) => tx.getInput(s.index).sighashType === SIGHASH_SINGLE_ANYONECANPAY);
-		const verifiability = external ? "opaque" : listing || undecodable ? "partial" : "full";
-		return {
+		const fee = canFee && !listing ? { max: {
+			asset: SATS,
+			amount: (inSum - outSum).toString(10)
+		} } : void 0;
+		const verifiability = external ? "opaque" : listing || undecodable || fee === void 0 ? "partial" : "full";
+		return withNativeAmountMeta({
 			family: "bitcoin",
 			network: request.network,
 			summary: outflows.length > 0 ? "transfer" : "contract-call",
 			outflows,
 			approvals: [],
-			fee: canFee && !listing ? { max: {
-				asset: SATS,
-				amount: (inSum - outSum).toString(10)
-			} } : void 0,
+			fee,
 			warnings: listing ? [{
 				kind: "sighash-single-anyonecanpay",
 				message: "signed inputs bind only their same-index outputs; the rest of the transaction can change"
 			}] : [],
 			verifiability
-		};
+		}, request.network, SATS, 8);
 	};
 	var common = (request) => {
 		const base = requestBase(request);
@@ -30709,100 +30839,113 @@ zoo`.split("\n"));
 			} });
 		}
 	};
-	var CATALOGS$1 = {
-		"zh-Hans": {
-			titles: {
-				transfer: "确认转账",
-				approve: "确认授权",
-				"contract-call": "确认合约调用",
-				swap: "确认兑换",
-				message: "确认签名",
-				authorization: "确认账户授权",
-				batch: "确认批量交易",
-				stake: "确认质押",
-				bridge: "确认跨链"
-			},
-			blindTitle: "确认盲签",
-			blindDescription: "签署无法显示为文字的数据",
-			generic: "签署来自应用的请求",
-			otherOutflows: "可能还有其他转出",
-			send: (amount, to) => `发送 ${amount} 到 ${to}`,
-			allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
-			unlimited: (asset) => `全部 ${asset}`,
-			revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
-			increase: (spender, amount) => `授权 ${spender} 再使用 ${amount}`,
-			decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
-			takeOnce: (spender, amount) => `授权 ${spender} 一次性转走 ${amount}`,
-			viaPermit2: " 经 Permit2",
-			viaAllowanceHolder: " 经 AllowanceHolder",
-			receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
-			until: (date) => ` 至 ${date}（UTC）`,
-			operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
-			operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
-			maxFee: (fee) => `最高手续费 ${fee}`,
-			sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
-			platformFee: (message) => `Jupiter 收取平台费 ${message}`,
-			bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
-			delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
-			revokeDelegation: "撤销此账户的合约委托",
-			stakeRole: {
-				staker: "质押",
-				withdrawer: "提取"
-			},
-			stakeAuthority: (account, role, authority) => `将质押账户 ${account} 的${role}权限交给 ${authority}`,
-			stakeLine: (a) => a.kind === "create" ? `创建质押账户 ${a.account}，存入 ${a.lamports} lamports` : a.kind === "delegate" ? `委托质押账户 ${a.account} 给验证者 ${a.validator}` : a.kind === "deactivate" ? `解除质押 ${a.account}` : a.kind === "withdraw" ? `从 ${a.account} 提取 ${a.lamports} lamports 到 ${a.to}` : a.kind === "lido-submit" ? `通过 Lido 质押 ${formatAmount(a.amount)}，收到约 ${formatAmount(a.receive)}` : a.kind === "lido-request" ? `申请提取 ${formatAmount(a.amount)}，提款凭证归 ${a.owner}` : `领取 Lido 提款 ${a.requestIds.join(", ")}`
+	var zh = {
+		titles: {
+			transfer: "确认转账",
+			approve: "确认授权",
+			"contract-call": "确认合约调用",
+			swap: "确认兑换",
+			message: "确认签名",
+			authorization: "确认账户授权",
+			batch: "确认批量交易",
+			stake: "确认质押",
+			bridge: "确认跨链"
 		},
-		en: {
-			titles: {
-				transfer: "Confirm transfer",
-				approve: "Confirm approval",
-				"contract-call": "Confirm contract call",
-				swap: "Confirm swap",
-				message: "Confirm signature",
-				authorization: "Confirm account authorization",
-				batch: "Confirm batch",
-				stake: "Confirm staking",
-				bridge: "Confirm bridge"
-			},
-			blindTitle: "Confirm blind signing",
-			blindDescription: "Sign data that cannot be shown as text",
-			generic: "Sign a request from an app",
-			otherOutflows: "There may be other outflows",
-			send: (amount, to) => `Send ${amount} to ${to}`,
-			allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
-			unlimited: (asset) => `unlimited ${asset}`,
-			revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
-			increase: (spender, amount) => `Allow ${spender} to spend ${amount} more`,
-			decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
-			takeOnce: (spender, amount) => `Allow ${spender} to take ${amount} once`,
-			viaPermit2: " via Permit2",
-			viaAllowanceHolder: " via AllowanceHolder",
-			receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
-			until: (date) => ` until ${date} (UTC)`,
-			operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
-			operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
-			maxFee: (fee) => `Max fee ${fee}`,
-			sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
-			platformFee: (message) => `Jupiter platform fee: ${message}`,
-			bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
-			delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
-			revokeDelegation: "Revoke this account's contract delegation",
-			stakeRole: {
-				staker: "staker",
-				withdrawer: "withdrawer"
-			},
-			stakeAuthority: (account, role, authority) => `Give ${authority} the ${role} authority over stake account ${account}`,
-			stakeLine: (a) => a.kind === "create" ? `Create stake account ${a.account} with ${a.lamports} lamports` : a.kind === "delegate" ? `Delegate stake account ${a.account} to validator ${a.validator}` : a.kind === "deactivate" ? `Deactivate stake ${a.account}` : a.kind === "withdraw" ? `Withdraw ${a.lamports} lamports from ${a.account} to ${a.to}` : a.kind === "lido-submit" ? `Stake ${formatAmount(a.amount)} with Lido, receive about ${formatAmount(a.receive)}` : a.kind === "lido-request" ? `Request withdrawal of ${formatAmount(a.amount)}; the claim NFT goes to ${a.owner}` : `Claim Lido withdrawals ${a.requestIds.join(", ")}`
-		}
+		blindTitle: "确认盲签",
+		blindDescription: "签署无法显示为文字的数据",
+		generic: "签署来自应用的请求",
+		otherOutflows: "可能还有其他转出",
+		send: (amount, to) => `发送 ${amount} 到 ${to}`,
+		allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
+		unlimited: (asset) => `全部 ${asset}`,
+		revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
+		increase: (spender, amount) => `授权 ${spender} 再使用 ${amount}`,
+		decrease: (spender, amount) => `减少 ${spender} 的授权额度 ${amount}`,
+		takeOnce: (spender, amount) => `授权 ${spender} 一次性转走 ${amount}`,
+		viaPermit2: " 经 Permit2",
+		viaAllowanceHolder: " 经 AllowanceHolder",
+		receiveMin: (amount, to) => `至少收到 ${amount}，收款地址 ${to}`,
+		until: (date) => ` 至 ${date}（UTC）`,
+		operatorAllow: (spender, asset) => `授权 ${spender} 转走 ${asset} 的全部代币`,
+		operatorRevoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 全部代币的授权`,
+		maxFee: (fee) => `最高手续费 ${fee}`,
+		feeUnknown: "手续费未知",
+		networkLine: (label) => `网络：${label}`,
+		unknownEvmChain: (chainId) => `EVM 链 ${chainId}`,
+		unverifiedToken: (amount, asset) => `${amount} 个最小单位（未验证代币 ${asset}）`,
+		sighashSingle: "已签输入只绑定同序号输出，交易其余部分可被改动",
+		platformFee: (message) => `Jupiter 收取平台费 ${message}`,
+		bridgeLine: (network, amount, to, deadline, refundTo) => `跨链到 ${network}：至少收到 ${amount}，收款地址 ${to}；${deadline} 前未成交则退回 ${refundTo}`,
+		delegateTo: (name, version) => `将此账户委托给 ${name} v${version}；该合约可代其执行调用`,
+		revokeDelegation: "撤销此账户的合约委托",
+		stakeRole: {
+			staker: "质押",
+			withdrawer: "提取"
+		},
+		stakeAuthority: (account, role, authority) => `将质押账户 ${account} 的${role}权限交给 ${authority}`,
+		stakeLine: (a, sol) => a.kind === "create" ? `创建质押账户 ${a.account}，存入 ${sol(a.lamports)}` : a.kind === "delegate" ? `委托质押账户 ${a.account} 给验证者 ${a.validator}` : a.kind === "deactivate" ? `解除质押 ${a.account}` : a.kind === "withdraw" ? `从 ${a.account} 提取 ${sol(a.lamports)} 到 ${a.to}` : a.kind === "lido-submit" ? `通过 Lido 质押 ${formatAmount(zh, a.amount)}，收到约 ${formatAmount(zh, a.receive)}` : a.kind === "lido-request" ? `申请提取 ${formatAmount(zh, a.amount)}，提款凭证归 ${a.owner}` : `领取 Lido 提款 ${a.requestIds.join(", ")}`
 	};
-	/** `0.05 ETH` with known decimals (symbol, else the asset id); raw units and asset id otherwise. */
-	function formatAmount(amount) {
+	var en = {
+		titles: {
+			transfer: "Confirm transfer",
+			approve: "Confirm approval",
+			"contract-call": "Confirm contract call",
+			swap: "Confirm swap",
+			message: "Confirm signature",
+			authorization: "Confirm account authorization",
+			batch: "Confirm batch",
+			stake: "Confirm staking",
+			bridge: "Confirm bridge"
+		},
+		blindTitle: "Confirm blind signing",
+		blindDescription: "Sign data that cannot be shown as text",
+		generic: "Sign a request from an app",
+		otherOutflows: "There may be other outflows",
+		send: (amount, to) => `Send ${amount} to ${to}`,
+		allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
+		unlimited: (asset) => `unlimited ${asset}`,
+		revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
+		increase: (spender, amount) => `Allow ${spender} to spend ${amount} more`,
+		decrease: (spender, amount) => `Reduce ${spender}'s allowance by ${amount}`,
+		takeOnce: (spender, amount) => `Allow ${spender} to take ${amount} once`,
+		viaPermit2: " via Permit2",
+		viaAllowanceHolder: " via AllowanceHolder",
+		receiveMin: (amount, to) => `Receive at least ${amount} at ${to}`,
+		until: (date) => ` until ${date} (UTC)`,
+		operatorAllow: (spender, asset) => `Allow ${spender} to transfer all tokens of ${asset}`,
+		operatorRevoke: (spender, asset) => `Revoke ${spender}'s access to all tokens of ${asset}`,
+		maxFee: (fee) => `Max fee ${fee}`,
+		feeUnknown: "Fee unknown",
+		networkLine: (label) => `Network: ${label}`,
+		unknownEvmChain: (chainId) => `EVM chain ${chainId}`,
+		unverifiedToken: (amount, asset) => `${amount} base units of unverified token ${asset}`,
+		sighashSingle: "Signed inputs bind only their same-index outputs; the rest of the transaction can change",
+		platformFee: (message) => `Jupiter platform fee: ${message}`,
+		bridgeLine: (network, amount, to, deadline, refundTo) => `Bridge to ${network}: receive at least ${amount} at ${to}; refunded to ${refundTo} if not filled by ${deadline} (UTC)`,
+		delegateTo: (name, version) => `Delegate this account to ${name} v${version}; the contract can execute calls on its behalf`,
+		revokeDelegation: "Revoke this account's contract delegation",
+		stakeRole: {
+			staker: "staker",
+			withdrawer: "withdrawer"
+		},
+		stakeAuthority: (account, role, authority) => `Give ${authority} the ${role} authority over stake account ${account}`,
+		stakeLine: (a, sol) => a.kind === "create" ? `Create stake account ${a.account} with ${sol(a.lamports)}` : a.kind === "delegate" ? `Delegate stake account ${a.account} to validator ${a.validator}` : a.kind === "deactivate" ? `Deactivate stake ${a.account}` : a.kind === "withdraw" ? `Withdraw ${sol(a.lamports)} from ${a.account} to ${a.to}` : a.kind === "lido-submit" ? `Stake ${formatAmount(en, a.amount)} with Lido, receive about ${formatAmount(en, a.receive)}` : a.kind === "lido-request" ? `Request withdrawal of ${formatAmount(en, a.amount)}; the claim NFT goes to ${a.owner}` : `Claim Lido withdrawals ${a.requestIds.join(", ")}`
+	};
+	var CATALOGS$1 = {
+		"zh-Hans": zh,
+		en
+	};
+	/**
+	* `0.05 ETH` with known decimals (symbol, else the asset id); an amount with no decimals and no
+	* tokenId is a token the table did not review, so the raw units are named unverified.
+	*/
+	function formatAmount(catalog, amount) {
 		var _amount$symbol;
 		if (amount.tokenId !== void 0) {
 			const base = `${amount.asset} #${amount.tokenId}`;
 			return amount.amount === "1" ? base : `${base} ×${amount.amount}`;
 		}
-		return amount.decimals === void 0 ? `${amount.amount} ${amount.asset}` : `${formatUnits(amount.amount, amount.decimals)} ${(_amount$symbol = amount.symbol) !== null && _amount$symbol !== void 0 ? _amount$symbol : amount.asset}`;
+		return amount.decimals === void 0 ? catalog.unverifiedToken(amount.amount, amount.asset) : `${formatUnits(amount.amount, amount.decimals)} ${(_amount$symbol = amount.symbol) !== null && _amount$symbol !== void 0 ? _amount$symbol : amount.asset}`;
 	}
 	/** `YYYY-MM-DD` of a Unix-seconds instant in UTC (civil-from-days; no `Date` in the enclave). */
 	function utcDate(seconds) {
@@ -30817,18 +30960,27 @@ zoo`.split("\n"));
 		const year = yoe + era * 400 + (month <= 2 ? 1 : 0);
 		return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 	}
+	/** `YYYY-MM-DD HH:MM` of a Unix-seconds instant in UTC (no `Date` in the enclave). */
+	var utcDateTime = (seconds) => `${utcDate(seconds)} ${String(Math.floor(seconds / 3600) % 24).padStart(2, "0")}:${String(Math.floor(seconds / 60) % 60).padStart(2, "0")}`;
+	/** The network's display name: the registry name, a generic EVM label, or the raw CAIP-2 id. */
+	var networkLabel = (catalog, id) => {
+		const meta = networkMeta(id);
+		if (meta !== void 0) return meta.name;
+		const evm = /^eip155:(\d+)$/.exec(id);
+		return evm === null ? id : catalog.unknownEvmChain(Number(evm[1]));
+	};
 	function approvalLine(catalog, change) {
 		var _change$amount$symbol;
 		if (change.kind === "stake-authority") return catalog.stakeAuthority(change.account, catalog.stakeRole[change.role], change.authority);
 		if (change.kind === "operator") return change.approved ? catalog.operatorAllow(change.spender, change.asset) : catalog.operatorRevoke(change.spender, change.asset);
 		const name = (_change$amount$symbol = change.amount.symbol) !== null && _change$amount$symbol !== void 0 ? _change$amount$symbol : change.amount.asset;
 		let line;
-		if (change.change === "increase") line = catalog.increase(change.spender, formatAmount(change.amount));
-		else if (change.change === "decrease") line = catalog.decrease(change.spender, formatAmount(change.amount));
-		else if (change.change === "transfer") line = catalog.takeOnce(change.spender, change.unlimited ? catalog.unlimited(name) : formatAmount(change.amount));
+		if (change.change === "increase") line = catalog.increase(change.spender, formatAmount(catalog, change.amount));
+		else if (change.change === "decrease") line = catalog.decrease(change.spender, formatAmount(catalog, change.amount));
+		else if (change.change === "transfer") line = catalog.takeOnce(change.spender, change.unlimited ? catalog.unlimited(name) : formatAmount(catalog, change.amount));
 		else if (change.unlimited) line = catalog.allow(change.spender, catalog.unlimited(name));
 		else if (change.amount.amount === "0") line = catalog.revoke(change.spender, name);
-		else line = catalog.allow(change.spender, formatAmount(change.amount));
+		else line = catalog.allow(change.spender, formatAmount(catalog, change.amount));
 		const via = change.via === "permit2" ? catalog.viaPermit2 : change.via === "allowance-holder" ? catalog.viaAllowanceHolder : "";
 		const until = change.expiration === void 0 || change.expiration === 0 ? "" : catalog.until(utcDate(change.expiration));
 		return `${line}${via}${until}`;
@@ -30843,9 +30995,15 @@ zoo`.split("\n"));
 		const title = catalog.titles[intent.summary];
 		const tail = ((_intent$warnings = intent.warnings) === null || _intent$warnings === void 0 ? void 0 : _intent$warnings.some((w) => w.kind === "sighash-single-anyonecanpay")) === true ? [catalog.sighashSingle] : [];
 		const delegation = intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation];
+		const network = intent.message === void 0 && intent.network !== void 0 ? [catalog.networkLine(networkLabel(catalog, intent.network))] : [];
+		const sol = (lamports) => {
+			var _networkMeta$symbol, _networkMeta, _intent$network;
+			return `${formatUnits(lamports, 9)} ${(_networkMeta$symbol = (_networkMeta = networkMeta((_intent$network = intent.network) !== null && _intent$network !== void 0 ? _intent$network : "")) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol) !== null && _networkMeta$symbol !== void 0 ? _networkMeta$symbol : "SOL"}`;
+		};
 		if (intent.verifiability === "opaque") return {
 			title,
 			description: joinLines([
+				...network,
 				...delegation,
 				catalog.generic,
 				...tail
@@ -30853,21 +31011,25 @@ zoo`.split("\n"));
 		};
 		const lines = [
 			...delegation,
-			...intent.outflows.map((flow) => catalog.send(formatAmount(flow.amount), flow.to)),
-			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).map((action) => catalog.stakeLine(action)),
-			...intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(entry.amount), entry.to)) : [catalog.bridgeLine(intent.bridge.destinationNetwork, ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, (/* @__PURE__ */ new Date(intent.bridge.fillDeadline * 1e3)).toISOString().slice(0, 16), intent.bridge.refundTo)],
+			...intent.outflows.map((flow) => catalog.send(formatAmount(catalog, flow.amount), flow.to)),
+			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).map((action) => catalog.stakeLine(action, sol)),
+			...intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to)) : [catalog.bridgeLine(networkLabel(catalog, intent.bridge.destinationNetwork), ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(catalog, intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, utcDateTime(intent.bridge.fillDeadline), intent.bridge.refundTo)],
 			...intent.approvals.map((change) => approvalLine(catalog, change)),
-			...intent.fee === void 0 ? [] : [catalog.maxFee(formatAmount(intent.fee.max))],
+			...intent.fee === void 0 ? intent.message === void 0 ? [catalog.feeUnknown] : [] : [catalog.maxFee(formatAmount(catalog, intent.fee.max))],
 			...((_intent$warnings2 = intent.warnings) !== null && _intent$warnings2 !== void 0 ? _intent$warnings2 : []).filter((w) => w.kind === "platform-fee").map((w) => catalog.platformFee(w.message)),
 			...tail
 		];
 		if (intent.verifiability === "partial") return {
 			title,
-			description: joinLines([catalog.otherOutflows, ...lines])
+			description: joinLines([
+				...network,
+				catalog.otherOutflows,
+				...lines
+			])
 		};
 		return {
 			title,
-			description: joinLines(lines.length === 0 ? [catalog.generic] : lines)
+			description: joinLines([...network, ...lines.length === 0 ? [catalog.generic] : lines])
 		};
 	}
 	// packages/wallet-kernel/src/modules/chains/shared.ts

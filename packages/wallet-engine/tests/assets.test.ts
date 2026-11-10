@@ -287,3 +287,44 @@ describe("AssetsController solana", () => {
     expect(tok?.decimals).toBe(6);
   });
 });
+
+describe("AssetsController polling", () => {
+  it("re-reads every tracked account with its own network and address", async () => {
+    const evmReads: unknown[] = [];
+    const solReads: unknown[] = [];
+    const timers: Array<() => unknown> = [];
+    const ctl = new AssetsController({
+      networks: {
+        info: solNetInfo,
+        client: () =>
+          client({
+            eth_getBalance: (params?: unknown[]) => {
+              evmReads.push(params?.[0]);
+              return "0x1";
+            },
+          }),
+        solanaRpc: () =>
+          solRpc({
+            getBalance: (params?: unknown[]) => {
+              solReads.push(params?.[0]);
+              return { value: 1 };
+            },
+          }),
+      } as never,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      setTimer: (_ms, fn) => {
+        timers.push(fn);
+        return () => {};
+      },
+      logger,
+    });
+    await ctl.init();
+    ctl.setVisible(true);
+    await ctl.refresh(OWNER, "eip155:1");
+    await ctl.refresh(SOL_OWNER, SOL_NET);
+    void timers[0]?.();
+    await new Promise((resolve) => setTimeout(resolve));
+    expect(evmReads).toStrictEqual([OWNER, OWNER]);
+    expect(solReads).toStrictEqual([SOL_OWNER, SOL_OWNER]);
+  });
+});

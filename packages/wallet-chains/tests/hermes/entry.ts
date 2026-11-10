@@ -123,12 +123,20 @@ function main(): void {
   const btcKey = hexToBytes("0x1111111111111111111111111111111111111111111111111111111111111111");
   const btcPub = p2wpkhPub(btcKey);
   const btcScript = p2wpkh(btcPub, NETWORK).script;
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({
+    txid: hexToBytes(`0x${"07".repeat(32)}`),
+    index: 0,
+    sequence: 0xffffffff,
+  });
+  prev.addOutput({ script: btcScript, amount: 100000n });
   const tx = new Transaction({ version: 2 });
   tx.addInput({
-    txid: hexToBytes(`0x${"07".repeat(32)}`),
+    txid: hexToBytes(`0x${prev.id}`),
     index: 0,
     sequence: 0xfffffffd,
     witnessUtxo: { script: btcScript, amount: 100000n },
+    nonWitnessUtxo: prev.toBytes(true, false),
     bip32Derivation: [
       [btcPub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
     ],

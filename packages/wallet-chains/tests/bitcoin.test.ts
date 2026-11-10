@@ -223,35 +223,79 @@ const ownPub = HDKey.fromMasterSeed(mnemonicToSeedSync(vectors.mnemonic)).derive
 ).publicKey!;
 const ownScript = p2wpkh(ownPub, NETWORK).script;
 
+/**
+ * Rewrite input 0's witnessUtxo amount inside a serialized PSBT. btc-signer rejects a disagreeing
+ * witness/nonWitness pair at construction, so the lie a hostile dApp sends exists only on the
+ * wire.
+ */
+const lieWitness = (psbt: Uint8Array, amount: bigint): Uint8Array => {
+  const out = new Uint8Array(psbt);
+  // witnessUtxo KV: keyLen 0x01, key 0x01, valueLen 0x1f, then LE64 amount before the script.
+  const mark = [0x01, 0x01, 0x1f, 0xa0, 0x86, 0x01];
+  outer: for (let i = 0; i + mark.length + 8 <= out.length; i++) {
+    for (let j = 0; j < mark.length; j++) {
+      if (out[i + j] !== mark[j]) {
+        continue outer;
+      }
+    }
+    new DataView(out.buffer, out.byteOffset).setBigUint64(i + 3, amount, true);
+    return out;
+  }
+  throw new Error("witnessUtxo field not found");
+};
+
+/** A real previous transaction paying `script` `amount` — its txid validates as a prevout. */
+const funding = (script: Uint8Array, amount: bigint): { txid: string; raw: Uint8Array } => {
+  const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+  prev.addInput({ txid: hex("1111".repeat(16)), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script, amount });
+  return { txid: prev.id, raw: prev.toBytes(true, false) };
+};
+
 const buildPsbt = (opts: {
   sighash?: number;
   noWitnessUtxo?: boolean;
+  witnessOnly?: boolean;
   opReturn?: boolean;
   extraInput?: boolean;
+  extraPrev?: boolean;
   weirdScript?: boolean;
   coinType?: number;
 }): Uint8Array => {
   const coinType = opts.coinType ?? 0x80000000;
   const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+  const prev = funding(ownScript, 100000n);
   const input: Record<string, unknown> = {
-    txid: hex("0707".repeat(16)),
+    txid: hex(prev.txid),
     index: 0,
     sequence: 0xfffffffd,
     bip32Derivation: [
       [ownPub, { fingerprint: 0x73c5da0a, path: [0x80000054, coinType, 0x80000000, 0, 0] }],
     ],
-    ...(opts.noWitnessUtxo === true ? {} : { witnessUtxo: { script: ownScript, amount: 100000n } }),
+    ...(opts.noWitnessUtxo === true
+      ? {}
+      : {
+          witnessUtxo: {
+            script: ownScript,
+            amount: 100000n,
+          },
+        }),
+    ...(opts.witnessOnly === true || opts.noWitnessUtxo === true
+      ? {}
+      : { nonWitnessUtxo: prev.raw }),
   };
   if (opts.sighash !== undefined) {
     input["sighashType"] = opts.sighash;
   }
   tx.addInput(input);
   if (opts.extraInput === true) {
+    const extraPrev = funding(ownScript, 5000n);
     tx.addInput({
-      txid: hex("0808".repeat(16)),
+      txid: hex(extraPrev.txid),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: ownScript, amount: 5000n },
+      ...(opts.extraPrev === true ? { nonWitnessUtxo: extraPrev.raw } : {}),
       bip32Derivation: [
         [ownPub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 1] }],
       ],
@@ -293,9 +337,20 @@ describe("normalizeBitcoin", () => {
     }
   });
 
-  it("rejects missing witnessUtxo, non-default sighash, malformed sign, bad network", () => {
+  it("rejects missing prevouts, non-default sighash, malformed sign, bad network", () => {
     const entry = (index: number) => ({ index, template: "btc.bip84" });
     expect(() => normalizeBitcoin(req(buildPsbt({ noWitnessUtxo: true })))).toThrow(ChainError);
+    // Segwit v0 sign entries must carry the full previous transaction: the witnessUtxo amount
+    // alone is unverifiable, and a witnessUtxo that disagrees with it fails validation.
+    expect(() => normalizeBitcoin(req(buildPsbt({ witnessOnly: true })))).toThrow(
+      /must carry nonWitnessUtxo/,
+    );
+    expect(() => normalizeBitcoin(req(lieWitness(buildPsbt({}), 99999n)))).toThrow(ChainError);
+    expect(() =>
+      normalizeBitcoin(
+        req(buildPsbt({ witnessOnly: true }), [{ index: 0, template: "btc.bip49" }]),
+      ),
+    ).toThrow(/must carry nonWitnessUtxo/);
     expect(() => normalizeBitcoin(req(buildPsbt({ sighash: 2 })))).toThrow(ChainError);
     expect(() => normalizeBitcoin(req(buildPsbt({ sighash: 0x41 })))).toThrow(ChainError);
     expect(() => normalizeBitcoin(req(buildPsbt({}), []))).toThrow(ChainError);
@@ -311,7 +366,7 @@ describe("normalizeBitcoin", () => {
 
   it("validates the sign entries and the group account", () => {
     const entry = (index: number, template = "btc.bip84") => ({ index, template });
-    const psbt = buildPsbt({ extraInput: true });
+    const psbt = buildPsbt({ extraInput: true, extraPrev: true });
     // Unsorted entries normalize to ascending order.
     const n = normalizeBitcoin(req(psbt, [entry(1), entry(0)]));
     expect(asPsbt(n).sign.map((s) => s.index)).toStrictEqual([0, 1]);
@@ -451,13 +506,119 @@ describe("decode + verifiability", () => {
     expect(intent.outflows).toHaveLength(0);
   });
 
-  it("external input → opaque and fee includes its prevout", () => {
+  it("external input → opaque; a witnessUtxo-only prevout leaves the fee unknown", () => {
     const intent = decodeBitcoinPsbt(
       asPsbt(normalizeBitcoin(req(buildPsbt({ extraInput: true })))),
       new Set(),
     );
     expect(intent.verifiability).toBe("opaque");
-    expect(intent.fee?.max.amount).toBe("15000");
+    expect(intent.fee).toBeUndefined();
+  });
+
+  it("legacy input: fee proven by nonWitnessUtxo alone stays full", () => {
+    const script44 = p2pkh(ownPub, NETWORK).script;
+    const prev = funding(script44, 100_000_000n);
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput({
+      txid: hex(prev.txid),
+      index: 0,
+      sequence: 0xfffffffd,
+      nonWitnessUtxo: prev.raw,
+      bip32Derivation: [
+        [ownPub, { fingerprint: 0x73c5da0a, path: [0x8000002c, 0x80000000, 0x80000000, 0, 0] }],
+      ],
+    });
+    tx.addOutput({ script: OutScript.encode(Address(NETWORK).decode(PAYEE)), amount: 1_000_000n });
+    const intent = decodeBitcoinPsbt(
+      asPsbt(normalizeBitcoin(req(tx.toPSBT(0), [{ index: 0, template: "btc.bip44" }]))),
+      new Set(),
+    );
+    expect(intent.verifiability).toBe("full");
+    expect(intent.fee?.max.amount).toBe("99000000");
+  });
+
+  it("taproot commits every input amount; a mixed bip84+bip86 spend keeps a full fee", () => {
+    const xonly = ownPub.slice(1);
+    const prev84 = funding(ownScript, 100000n);
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: hex(prev84.txid),
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: ownScript, amount: 100000n },
+      nonWitnessUtxo: prev84.raw,
+      bip32Derivation: [
+        [ownPub, { fingerprint: 0x73c5da0a, path: [0x80000054, 0x80000000, 0x80000000, 0, 0] }],
+      ],
+    });
+    tx.addInput({
+      txid: hex("0808".repeat(16)),
+      index: 1,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: p2tr(xonly, undefined, NETWORK).script, amount: 50000n },
+      tapInternalKey: xonly,
+      tapBip32Derivation: [
+        [
+          xonly,
+          {
+            hashes: [],
+            der: { fingerprint: 0x73c5da0a, path: [0x80000056, 0x80000000, 0x80000000, 0, 0] },
+          },
+        ],
+      ],
+    });
+    tx.addOutput({ script: OutScript.encode(Address(NETWORK).decode(PAYEE)), amount: 140000n });
+    const intent = decodeBitcoinPsbt(
+      asPsbt(
+        normalizeBitcoin(
+          req(tx.toPSBT(0), [
+            { index: 0, template: "btc.bip84" },
+            { index: 1, template: "btc.bip86" },
+          ]),
+        ),
+      ),
+      new Set(),
+    );
+    expect(intent.verifiability).toBe("full");
+    expect(intent.fee?.max.amount).toBe("10000");
+  });
+
+  it("a taproot-only spend keeps a proven fee; a listing sighash makes it partial", () => {
+    const xonly = ownPub.slice(1);
+    const tr = (sighash: number): Uint8Array => {
+      const tx = new Transaction({ version: 2 });
+      tx.addInput({
+        txid: hex("0707".repeat(16)),
+        index: 0,
+        sequence: 0xfffffffd,
+        witnessUtxo: { script: p2tr(xonly, undefined, NETWORK).script, amount: 100000n },
+        tapInternalKey: xonly,
+        tapBip32Derivation: [
+          [
+            xonly,
+            {
+              hashes: [],
+              der: { fingerprint: 0x73c5da0a, path: [0x80000056, 0x80000000, 0x80000000, 0, 0] },
+            },
+          ],
+        ],
+        sighashType: sighash,
+      });
+      tx.addOutput({ script: OutScript.encode(Address(NETWORK).decode(PAYEE)), amount: 90000n });
+      return tx.toPSBT(0);
+    };
+    const full = decodeBitcoinPsbt(
+      asPsbt(normalizeBitcoin(req(tr(0x01), [{ index: 0, template: "btc.bip86" }]))),
+      new Set(),
+    );
+    expect(full.verifiability).toBe("full");
+    expect(full.fee?.max.amount).toBe("10000");
+    const listing = decodeBitcoinPsbt(
+      asPsbt(normalizeBitcoin(req(tr(0x83), [{ index: 0, template: "btc.bip86" }]))),
+      new Set(),
+    );
+    expect(listing.verifiability).toBe("partial");
+    expect(listing.fee).toBeUndefined();
   });
 
   it("OP_RETURN row keeps full class; undecodable output → partial", () => {

@@ -376,6 +376,75 @@ describe("verifiability + decode", () => {
     expect(intent.fee?.max.amount).toBe("5200");
   });
 
+  const tokenIxForFee = () =>
+    getTransferCheckedInstruction({
+      source: SRC_TOKEN as never,
+      mint: MINT,
+      destination: DST_TOKEN,
+      authority: feePayerSigner,
+      amount: 50n,
+      decimals: 6,
+    });
+  const feeOf = (ixs: Parameters<typeof compile>[0]) =>
+    decodeSolana(req(compile(ixs)) as never, FEE_PAYER).fee?.max.amount;
+
+  it("no SetComputeUnitLimit: builtins count 3,000 CU toward the default limit", () => {
+    const micro = 5_000_000_000_000n;
+    const limit = 2n * 3000n;
+    expect(feeOf([getSetComputeUnitPriceInstruction({ microLamports: micro }), transferIx()])).toBe(
+      String(5000n + (micro * limit + 999_999n) / 1_000_000n),
+    );
+  });
+
+  it("a non-builtin instruction costs its 200,000 CU default", () => {
+    const micro = 1000n;
+    const limit = 3000n + 200_000n;
+    expect(
+      feeOf([getSetComputeUnitPriceInstruction({ microLamports: micro }), tokenIxForFee()]),
+    ).toBe(String(5000n + (micro * limit + 999_999n) / 1_000_000n));
+  });
+
+  it("a requested limit above 1,400,000 is capped", () => {
+    const micro = 1000n;
+    expect(
+      feeOf([
+        getSetComputeUnitLimitInstruction({ units: 2_000_000 }),
+        getSetComputeUnitPriceInstruction({ microLamports: micro }),
+        transferIx(),
+      ]),
+    ).toBe(String(5000n + (micro * 1_400_000n + 999_999n) / 1_000_000n));
+  });
+
+  it("no SetComputeUnitPrice: the fee is the signature cost only", () => {
+    expect(feeOf([transferIx()])).toBe("5000");
+  });
+
+  it("duplicate compute-budget instructions are rejected", () => {
+    expect(() =>
+      feeOf([
+        getSetComputeUnitPriceInstruction({ microLamports: 1000n }),
+        getSetComputeUnitPriceInstruction({ microLamports: 2000n }),
+        transferIx(),
+      ]),
+    ).toThrow("duplicate compute-budget instruction");
+    expect(() =>
+      feeOf([
+        getSetComputeUnitLimitInstruction({ units: 200_000 }),
+        getSetComputeUnitLimitInstruction({ units: 300_000 }),
+        transferIx(),
+      ]),
+    ).toThrow("duplicate compute-budget instruction");
+  });
+
+  it("the instruction-count default limit is capped at 1,400,000", () => {
+    const micro = 1000n;
+    const ixs = [
+      getSetComputeUnitPriceInstruction({ microLamports: micro }),
+      ...Array.from({ length: 8 }, tokenIxForFee),
+    ];
+    expect(feeOf(ixs)).toBe(String(5000n + (micro * 1_400_000n + 999_999n) / 1_000_000n));
+  });
+
   it("a recognized stake instruction is full; an unrecognized one is opaque", () => {
     const ix = getDelegateStakeInstruction({
       stake: STAKE_ACCT as never,
@@ -511,7 +580,7 @@ describe("stake decode", () => {
     expect(intent.outflows).toStrictEqual([
       {
         to: STAKE_ACCT,
-        amount: { asset: SOLANA_NATIVE_ASSET, amount: "2000000000" },
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: "2000000000", decimals: 9, symbol: "SOL" },
         verified: true,
       },
     ]);
@@ -588,7 +657,7 @@ describe("stake decode", () => {
     expect(otherIntent.outflows).toStrictEqual([
       {
         to: OTHER_KEY,
-        amount: { asset: SOLANA_NATIVE_ASSET, amount: "500000000" },
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: "500000000", decimals: 9, symbol: "SOL" },
         verified: true,
       },
     ]);

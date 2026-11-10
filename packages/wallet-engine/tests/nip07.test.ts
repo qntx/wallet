@@ -120,12 +120,21 @@ describe("Nip07Handler", () => {
     expect(approved).toHaveLength(1);
   });
 
-  test.each([[0], [3], [5], [10002]])(
+  test.each([[0], [3], [5], [10002], [10000], [10019], [10050], [13194], [30000], [30078]])(
     "forced-confirm kind %i always uses the pipeline",
     async (kind) => {
       const { handler, approved } = rig({ policy: { signing: "always", decrypt: false } });
       await handler.handle(ORIGIN, { method: "signEvent", params: unsigned({ kind }) });
       expect(approved).toHaveLength(1);
+    },
+  );
+
+  test.each([[1], [7], [9999], [20001], [40000]])(
+    "policy 'always' signs regular and ephemeral kind %i directly",
+    async (kind) => {
+      const { handler, approved } = rig({ policy: { signing: "always", decrypt: false } });
+      await handler.handle(ORIGIN, { method: "signEvent", params: unsigned({ kind }) });
+      expect(approved).toHaveLength(0);
     },
   );
 

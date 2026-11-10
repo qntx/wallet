@@ -697,9 +697,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       controller.setStore(store);
       backup.setStore(store);
       accounts.setStore(store);
+      watch.setStore(store);
       backup.trigger(); // reconcile — never awaited on the transition chain
       // Load + reconcile + drive the selected account through spark.setAccounts.
       await accounts.init();
+      await watch.init();
       await controller.init();
       // Pull → merge → maybe publish for every wallet with a group-0 identity.
       await addressBook.init();
@@ -716,6 +718,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       connections.lock();
       requests.lock();
       addressBook.lock();
+      watch.lock();
       transactions.lock();
       assets.lock();
       networks.lock();

@@ -10,6 +10,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
@@ -20,6 +21,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { SignRequest } from "@qntx/wallet-chains";
 import {
   bitcoinNetwork,
+  decodeBitcoinPsbt,
   normalizeBitcoin,
   verifiabilityBitcoin,
   verifyBitcoinMessage,
@@ -31,9 +33,10 @@ import {
   normalizeEvm,
   recoverEvmSigner,
 } from "@qntx/wallet-chains/evm";
-import { normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import { chainPrompt } from "../src/modules/chains/prompt.ts";
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
 
@@ -218,17 +221,24 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
       };
     }
   }
-  if (purpose === 44) {
+  if (purpose !== 86) {
+    // Non-taproot spends must carry the full previous transaction — it pays whatever script the
+    // (possibly wrong) witnessUtxo declares so the two agree at parse.
+    const prevScript =
+      purpose === 44
+        ? opts.wrongScript === true
+          ? p2pkh(foreignPub).script
+          : p2pkh(pub).script
+        : (input["witnessUtxo"] as { script: Uint8Array }).script;
     const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
     prev.addInput({ txid: hex("1111".repeat(16)), index: 0, sequence: 0xffffffff });
-    prev.addOutput({
-      script: opts.wrongScript === true ? p2pkh(foreignPub).script : p2pkh(pub).script,
-      amount: 100000n,
-    });
+    prev.addOutput({ script: prevScript, amount: 100000n });
     input["txid"] = hex(prev.id);
     input["index"] = 0;
     input["nonWitnessUtxo"] = prev.toBytes(true, false);
-    delete input["witnessUtxo"];
+    if (purpose === 44) {
+      delete input["witnessUtxo"];
+    }
   }
   tx.addInput(input);
   if (opts.extraInput === true) {
@@ -261,6 +271,83 @@ const btcPsbt = (opts: PsbtOpts): Uint8Array => {
     );
   }
   return tx.toPSBT(0);
+};
+
+/** A one-input PSBT spending `script` via a bip84 derivation; `nonWitness` is the raw prev tx. */
+const prevoutPsbt = (
+  pub: Uint8Array,
+  script: Uint8Array,
+  nonWitness: Uint8Array | undefined,
+): Uint8Array => {
+  const tx = new Transaction({ version: 2 });
+  const prev = new Transaction({ version: 2 });
+  prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+  prev.addOutput({ script, amount: 100000n });
+  tx.addInput({
+    txid: nonWitness === undefined ? hex("0707".repeat(16)) : prev.id,
+    index: 0,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script, amount: 100000n },
+    ...(nonWitness === undefined ? {} : { nonWitnessUtxo: nonWitness }),
+    bip32Derivation: [
+      [pub, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
+    ],
+  });
+  tx.addOutput({ script: PAYEE_SCRIPT, amount: 90000n });
+  return tx.toPSBT(0);
+};
+
+/**
+ * Rewrite input 0's witnessUtxo amount inside a serialized PSBT. btc-signer refuses a disagreeing
+ * witness/nonWitness pair at construction, so the lie exists only on the wire.
+ */
+const lieWitness = (psbt: Uint8Array, amount: bigint): Uint8Array => {
+  const out = new Uint8Array(psbt);
+  // witnessUtxo KV: keyLen 0x01, key 0x01, valueLen 0x1f, then LE64 amount before the script.
+  const mark = [0x01, 0x01, 0x1f, 0xa0, 0x86, 0x01];
+  outer: for (let i = 0; i + mark.length + 8 <= out.length; i++) {
+    for (let j = 0; j < mark.length; j++) {
+      if (out[i + j] !== mark[j]) {
+        continue outer;
+      }
+    }
+    new DataView(out.buffer, out.byteOffset).setBigUint64(i + 3, amount, true);
+    return out;
+  }
+  throw new Error("witnessUtxo field not found");
+};
+
+/** A compiled legacy message: SetComputeUnitPrice(5e12 microlamports) + a 0.001 SOL transfer. */
+const cuPriceMessage = (): Uint8Array => {
+  const seed = mnemonicToSeedSync(vectors.mnemonic);
+  const priv = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'").privateKey;
+  const payer = ed25519.getPublicKey(priv);
+  const dest = new Uint8Array(32).fill(0x22);
+  const system = base58.decode("11111111111111111111111111111111");
+  const budget = base58.decode("ComputeBudget111111111111111111111111111111");
+  const price = new Uint8Array(9);
+  price[0] = 3;
+  new DataView(price.buffer).setBigUint64(1, 5_000_000_000_000n, true);
+  const transfer = new Uint8Array(12);
+  const dv = new DataView(transfer.buffer);
+  dv.setUint32(0, 2, true);
+  dv.setBigUint64(4, 1_000_000n, true);
+  const ix1 = [3, 0, 9, ...price];
+  const ix2 = [2, 2, 0, 1, 12, ...transfer];
+  return new Uint8Array([
+    1,
+    0,
+    2,
+    4,
+    ...payer,
+    ...dest,
+    ...system,
+    ...budget,
+    ...new Uint8Array(32).fill(0x33),
+    2,
+    ...ix1,
+    ...ix2,
+  ]);
 };
 
 /** A legacy Solana transfer whose fee payer is account 0's public key. */
@@ -787,11 +874,15 @@ describe("chain.sign", () => {
     const child86 = btcChild("btc.bip86", 0, 0);
     const xonly86 = child86.publicKey!.slice(1);
     const tx = new Transaction({ version: 2 });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2wpkh(pub84).script, amount: 100000n });
     tx.addInput({
-      txid: hex("0707".repeat(16)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2wpkh(pub84).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub84, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
       ],
@@ -832,6 +923,83 @@ describe("chain.sign", () => {
     );
   });
 
+  it("rejects a witnessUtxo-only bip84 input and a lying witnessUtxo amount", async () => {
+    const { h, session, walletId } = await setup();
+    const pub = btcChild("btc.bip84", 0, 0).publicKey!;
+    const { script } = p2wpkh(pub);
+    const mk = (nonWitness: Uint8Array | undefined): Uint8Array =>
+      prevoutPsbt(pub, script, nonWitness);
+    // E-06: the fee shown came from an unattested witnessUtxo — now the request cannot normalize.
+    const witnessOnly = await callSign(h, session, {
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: mk(undefined),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in witnessOnly).toBe(true);
+    // An honest nonWitnessUtxo beside a lying witnessUtxo fails strictPrevoutValidation.
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script, amount: 100000n });
+    const lying = await callSign(h, session, {
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: lieWitness(mk(prev.toBytes(true, false)), 99999n),
+      sign: [entry(0, "btc.bip84")],
+    });
+    expect("err" in lying).toBe(true);
+  });
+
+  it("shows the proven nonWitnessUtxo fee for a P2PKH spend", async () => {
+    const { h, session, walletId } = await setup();
+    const pub = btcChild("btc.bip44", 0, 0).publicKey!;
+    const prev = new Transaction({ version: 2, allowUnknownOutputs: true });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2pkh(pub).script, amount: 100_000_000n });
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      nonWitnessUtxo: prev.toBytes(true, false),
+      bip32Derivation: [
+        [pub, { fingerprint: MASTER_FP, path: [0x8000002c, HARDENED, HARDENED, 0, 0] }],
+      ],
+    });
+    tx.addOutput({ script: PAYEE_SCRIPT, amount: 1_000_000n });
+    const req = normalizeBitcoin({
+      kind: "bitcoin.psbt",
+      network: BTC_NETWORK,
+      account: grp(walletId),
+      psbt: tx.toPSBT(0),
+      sign: [entry(0, "btc.bip44")],
+    });
+    const res = ok(await callSign(h, session, req));
+    expect(bytesField(res, "signedPsbt").length).toBeGreaterThan(0);
+    const intent = decodeBitcoinPsbt(asPsbt(req));
+    expect(chainPrompt("en", intent).description).toContain("Max fee 0.99 BTC");
+  });
+
+  it("E-28: a priority fee without SetComputeUnitLimit shows the default-limit max fee", () => {
+    const seed = mnemonicToSeedSync(vectors.mnemonic);
+    const priv = Slip10.fromMasterSeed(seed).derive("m/44'/501'/0'/0'").privateKey;
+    const payer = base58.encode(ed25519.getPublicKey(priv));
+    const req = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
+        message: cuPriceMessage(),
+      },
+      payer,
+    ) as never;
+    const intent = decodeSolana(req, payer);
+    expect(intent.verifiability).toBe("full");
+    expect(chainPrompt("en", intent).description).toContain("Max fee 30.000005 SOL");
+  });
+
   it("rejects a sign entry whose template disagrees with the input's script", async () => {
     const { h, session, walletId } = await setup();
     const pub84 = btcChild("btc.bip84", 0, 0).publicKey!;
@@ -839,11 +1007,15 @@ describe("chain.sign", () => {
     // A taproot prevout carrying a bip32 derivation entry: normalizes for a bip84 sign entry,
     // but the kernel's prevout check binds the input to its own template.
     const tx = new Transaction({ version: 2 });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2tr(xonly86).script, amount: 100000n });
     tx.addInput({
-      txid: hex("0707".repeat(16)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2tr(xonly86).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub84, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, HARDENED, 0, 0] }],
       ],
@@ -888,11 +1060,15 @@ describe("chain.sign", () => {
     );
     const pub = other.publicKey!;
     const tx = new Transaction({ version: 2 });
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hex("0707".repeat(16)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: p2wpkh(pub).script, amount: 100000n });
     tx.addInput({
-      txid: hex("0707".repeat(16)),
+      txid: hex(prev.id),
       index: 0,
       sequence: 0xfffffffd,
       witnessUtxo: { script: p2wpkh(pub).script, amount: 100000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
       bip32Derivation: [
         [pub, { fingerprint: MASTER_FP, path: [0x80000054, HARDENED, 0x80000001, 0, 0] }],
       ],

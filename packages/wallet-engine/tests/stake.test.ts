@@ -314,7 +314,7 @@ describe("solana-stake delegate", () => {
     expect(display.outflows).toStrictEqual([
       {
         to: stakeAccount,
-        amount: { asset: "lamports", amount: "2002282880" },
+        amount: { asset: "lamports", amount: "2002282880", decimals: 9, symbol: "SOL" },
         verified: true,
       },
     ]);

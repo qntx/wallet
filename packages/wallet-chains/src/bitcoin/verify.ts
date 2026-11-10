@@ -180,12 +180,14 @@ export const verifyBitcoinPsbtSignatures = (
           decoded !== undefined && decoded.type === "wpkh"
             ? OutScript.encode({ type: "pkh", hash: decoded.hash })
             : effective;
-        // P2PKH inputs sign the legacy (non-segwit) preimage — btc-signer exposes it as a
-        // private method; the public witness preimages do not apply to non-witness inputs.
-        const hash =
-          input.nonWitnessUtxo === undefined
-            ? tx.preimageWitnessV0(idx, scriptCode, sighashType, prevAmount)
-            : preimageLegacy(tx, idx, scriptCode, sighashType);
+        // Segwit prevouts sign the BIP-143 witness preimage even when they also carry the full
+        // previous transaction (which is how their amount is now proven); only a non-witness
+        // prevout script means the legacy preimage — btc-signer exposes it as a private method.
+        const witness =
+          decoded !== undefined && (decoded.type === "wpkh" || decoded.type === "wsh");
+        const hash = witness
+          ? tx.preimageWitnessV0(idx, scriptCode, sighashType, prevAmount)
+          : preimageLegacy(tx, idx, scriptCode, sighashType);
         if (
           !secp256k1.verify(
             secp256k1.Signature.fromBytes(rawSig.slice(0, -1), "der").toBytes(),

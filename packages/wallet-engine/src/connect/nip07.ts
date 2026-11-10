@@ -37,8 +37,16 @@ export type Nip07HandlerOptions = {
   readonly signerFor: (ref: NostrKeyRef) => WalletSigner;
 };
 
-/** `signEvent` of these kinds always asks for explicit confirmation, whatever the policy allows. */
-const FORCED_CONFIRM_KINDS: ReadonlySet<number> = new Set([0, 3, 5, 10002]);
+/**
+ * `signEvent` of these kinds always asks for explicit confirmation, whatever the policy allows:
+ * metadata/contact-list/deletion plus every replaceable and addressable event.
+ */
+const forcesConfirmation = (kind: number): boolean =>
+  kind === 0 ||
+  kind === 3 ||
+  kind === 5 ||
+  (kind >= 10_000 && kind < 20_000) ||
+  (kind >= 30_000 && kind < 40_000);
 
 const MAX_TAGS = 64;
 const MAX_TAG_ITEMS = 32;
@@ -175,7 +183,7 @@ export class Nip07Handler {
       policy.signing === "always" ||
       (typeof policy.signing === "object" && policy.signing.kinds.includes(event.kind));
     const signing = { ...event, pubkey };
-    if (direct && !FORCED_CONFIRM_KINDS.has(event.kind)) {
+    if (direct && !forcesConfirmation(event.kind)) {
       await connections.touch(origin);
       return signerFor(identity).signEvent(signing);
     }

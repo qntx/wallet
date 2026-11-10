@@ -46,6 +46,7 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 type BtcStash = {
   readonly inputs: ReadonlyArray<Parameters<BitcoinChainAdapter["buildPsbt"]>[0][number]>;
+  readonly groupIndex: number;
   readonly allUtxos: ReadonlyArray<{
     readonly txid: string;
     readonly vout: number;
@@ -76,7 +77,7 @@ export const broadcastPsbt = async (
   return String(await es.post("/tx", hex.encode(raw)));
 };
 
-const fetchRawTxes = async (
+export const fetchRawTxes = async (
   es: { readonly get: (path: string) => Promise<unknown> },
   utxos: ReadonlyArray<{ readonly txid: string }>,
 ): Promise<Map<string, Uint8Array>> => {
@@ -294,7 +295,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     // Selection and reservation run with no await between them, so concurrent prepares cannot
     // pick the same output.
     const free = inputs.filter((i) => !isHeld(`${String(i.txid ?? "")}:${String(i.index ?? 0)}`));
-    const { psbt, inputs: selected } = bitcoin.buildPsbt(
+    const { psbt: unsigned, inputs: selected } = bitcoin.buildPsbt(
       free,
       to,
       amount,
@@ -306,8 +307,36 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
     const selectedUtxos = utxos.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+    // Reserve before the first post-selection await: a concurrent prepare must not see them.
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
+    }
+    // Segwit v0 inputs prove their amounts through the full previous transaction (bip44 carried
+    // it already for selection). Fetch it only for the inputs actually spent and attach it.
+    let psbt = unsigned;
+    if (template === "btc.bip49" || template === "btc.bip84") {
+      try {
+        const prevTxs = await fetchRawTxes(es, selectedUtxos);
+        const parsed = Transaction.fromPSBT(unsigned);
+        for (let i = 0; i < parsed.inputsLength; i++) {
+          const { txid } = parsed.getInput(i);
+          const raw = txid === undefined ? undefined : prevTxs.get(hex.encode(txid));
+          if (raw === undefined) {
+            throw new Error(`no raw transaction for input ${String(i)}`);
+          }
+          parsed.updateInput(i, { nonWitnessUtxo: raw });
+          const chosen = selected[i];
+          if (chosen !== undefined) {
+            chosen.nonWitnessUtxo = raw;
+          }
+        }
+        psbt = parsed.toPSBT(0);
+      } catch (error) {
+        for (const key of selectedKeys) {
+          reserved.delete(key);
+        }
+        throw error;
+      }
     }
     const txP = Transaction.fromPSBT(psbt);
     const ownScripts = new Set(
@@ -345,8 +374,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const outTotal = outValues.reduce((a, o) => a + o.value, 0);
     const id0 = newId(ctx.options.random);
     const stash: BtcStash = {
-      inputs,
+      inputs: selected,
       allUtxos: utxos,
+      groupIndex: account.groupIndex,
       pathOf: (u) => {
         const a = byAddr.get(u.address);
         return a === undefined ? [] : [...base, a.chain, a.index];
@@ -544,14 +574,19 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const { template } = stash;
     const btcAccount = await apis.account({
       walletId: old.account,
-      groupIndex: 0,
+      groupIndex: stash.groupIndex,
       template,
       network: old.network,
     });
     if (!("xpub" in btcAccount)) {
       throw new Error("bitcoin account carries no xpub");
     }
-    const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
+    const account = {
+      kind: "hd" as const,
+      walletId: old.account,
+      groupIndex: stash.groupIndex,
+      template,
+    };
     const tiers = await feeTiers(es);
     const tierQuote = tiers.find((t) => t.tier === stash.tier) ?? tiers[1];
     let rate = tierQuote === undefined ? 1 : tierQuote.satPerByte;
@@ -613,57 +648,46 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         if (next === undefined) {
           break;
         }
+        const key = `${next.txid}:${next.vout}`;
         extraUtxos.push(next);
-        extraInputs.push(
-          ...bitcoin.toInputs(
-            [{ ...next, status: "confirmed" as const }],
-            stash.fp,
-            stash.pathOf,
-            stash.pubkeyOf,
-            stash.scriptOf,
-            stash.template,
-          ),
-        );
-      }
-      if (feeNeeded(outputs) > 0n) {
-        const keepChange = [...outputs, { address: changeAddr, amount: BigInt(dust) }];
-        while (feeNeeded(keepChange) > 0n && spare.length > extraUtxos.length) {
-          const next = spare[extraUtxos.length];
-          if (next === undefined) {
-            break;
-          }
-          extraUtxos.push(next);
+        reserved.set(key, requestId);
+        try {
+          const raws =
+            template === "btc.bip86"
+              ? new Map<string, Uint8Array>()
+              : // oxlint-disable-next-line eslint/no-await-in-loop -- extras join one at a time.
+                await fetchRawTxes(es, [next]);
           extraInputs.push(
             ...bitcoin.toInputs(
               [{ ...next, status: "confirmed" as const }],
-              0,
+              stash.fp,
               stash.pathOf,
               stash.pubkeyOf,
               stash.scriptOf,
               stash.template,
+              (u) => raws.get(u.txid),
             ),
           );
-        }
-        if (feeNeeded(keepChange) > 0n) {
-          throw new Error("insufficient confirmed utxo to fund the replacement fee");
-        }
-        const changeValue =
-          inTotal +
-          extraUtxos.reduce((a, u) => a + u.value, 0) -
-          payee.reduce((a, o) => a + Number(o.amount), 0) -
-          newFee;
-        outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
-      } else {
-        const changeValue =
-          inTotal +
-          extraUtxos.reduce((a, u) => a + u.value, 0) -
-          payee.reduce((a, o) => a + Number(o.amount), 0) -
-          newFee;
-        if (changeValue >= dust) {
-          outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
+        } catch (error) {
+          extraUtxos.pop();
+          reserved.delete(key);
+          throw error;
         }
       }
+      if (feeNeeded(outputs) > 0n) {
+        throw new Error("insufficient confirmed utxo to fund the replacement fee");
+      }
+      const changeValue =
+        inTotal +
+        extraUtxos.reduce((a, u) => a + u.value, 0) -
+        payee.reduce((a, o) => a + Number(o.amount), 0) -
+        newFee;
+      if (changeValue >= dust) {
+        outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
+      }
     }
+    // The stash carries only the original's selected inputs, each already carrying its previous
+    // transaction for segwit v0 — the replacement spends exactly those plus any extras.
     const allInputs = [...stash.inputs, ...extraInputs];
     const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params);
     const record = {
@@ -721,7 +745,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const es = ctx.options.networks.esplora(old.network);
     const independent = ctx.options.networks.independentEsplora(old.network);
     const { template } = stash;
-    const account = { kind: "hd" as const, walletId: old.account, groupIndex: 0, template };
+    const account = {
+      kind: "hd" as const,
+      walletId: old.account,
+      groupIndex: stash.groupIndex,
+      template,
+    };
     const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
     if (own.length === 0) {
       throw new Error("parent has no own outputs to bump");
@@ -751,9 +780,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         flags.push("reads-unverified");
       }
     }
+    if (old.hash === undefined) {
+      throw new Error("the parent transaction has no broadcast hash");
+    }
+    const parentTxid = old.hash;
+    const parentRaws =
+      template === "btc.bip86"
+        ? new Map<string, Uint8Array>()
+        : await fetchRawTxes(es, [{ txid: parentTxid }]);
     const childInputs = bitcoin.toInputs(
       own.map((o) => ({
-        txid: old.hash ?? "",
+        txid: parentTxid,
         vout: o.vout,
         value: o.value,
         address: o.address,
@@ -765,6 +802,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       stash.pubkeyOf,
       stash.scriptOf,
       stash.template,
+      (u) => parentRaws.get(u.txid),
     );
     const [changeAddr] = stash.changeAddresses;
     if (changeAddr === undefined) {
