@@ -77,7 +77,9 @@ const world = (options: { gateway?: boolean } = {}) => {
       try {
         return { result: answer(node, body.method, body.params ?? []) };
       } catch (error) {
-        return { error: { code: -1, message: error instanceof Error ? error.message : "failed" } };
+        // An unmocked method answers like a node without it (-32601, which viem never retries).
+        const message = error instanceof Error ? error.message : "failed";
+        return { error: { code: message.startsWith("unmocked") ? -32601 : -1, message } };
       }
     })();
     return Promise.resolve(Response.json({ jsonrpc: "2.0", id: 1, ...reply }));

@@ -99,6 +99,44 @@ describe("0x AllowanceHolder decode", () => {
     expect(intent.summary).not.toBe("swap");
   });
 
+  /* The operator is head word 1 (address at chars 34..74), the target head word 4 (226..266). */
+  const withOperatorAndTarget = (address: string): string => {
+    const word = address.slice(2).toLowerCase();
+    const { data } = erc20.tx;
+    return `${data.slice(0, 34)}${word}${data.slice(74, 226)}${word}${data.slice(266)}`;
+  };
+
+  it.each([
+    ["an arbitrary contract", "0x559B33F816fB4d6B24731d77eDb5c5b2f5f5B624"],
+    ["another chain's Settler", "0x103502909141F7025a94b7b99A276dCD128e21a8"],
+    ["a feature-5 bridge Settler", "0x0038Dfb2BBC353DAa6AD22cB11eE1d78F41B59Cd"],
+  ])("an exec whose operator and target is %s is not a swap", (_name, address) => {
+    const data = withOperatorAndTarget(address);
+    const intent = decodeEvm(
+      txReq(
+        mutate((t) => ({ ...t, data })),
+        erc20.network,
+      ),
+      SIGNER,
+      table,
+    );
+    expect(intent.summary).not.toBe("swap");
+    expect(intent.minimumReceived).toBeUndefined();
+  });
+
+  it("the unmodified exec with a Settler operator and target is a swap", () => {
+    const data = withOperatorAndTarget(SETTLER);
+    const intent = decodeEvm(
+      txReq(
+        mutate((t) => ({ ...t, data })),
+        erc20.network,
+      ),
+      SIGNER,
+      table,
+    );
+    expect(intent.summary).toBe("swap");
+  });
+
   it("an ERC-20 sell carrying value is not a swap", () => {
     const intent = decodeEvm(
       txReq(

@@ -16,7 +16,7 @@ import type { PaymentNote } from "../src/spark/notes.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { EngineStore } from "../src/store/port.ts";
 import { b64 } from "./phishing-helpers.ts";
-import { realTimer } from "./send-helpers.ts";
+import { fastTimer, realTimer } from "./send-helpers.ts";
 
 const PK = new Uint8Array(33).fill(2);
 const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest" };
@@ -481,7 +481,7 @@ describe("event stream resilience", () => {
     const warns: string[] = [];
     const client = flakyClient(calls, sendArgs, aborters);
     const c = new SparkController({
-      setTimer: realTimer,
+      setTimer: fastTimer,
       spark: {
         signer: () => null as never,
         approve: async (p: unknown) => {
@@ -523,7 +523,7 @@ describe("event claims", () => {
   function controllerWith(client: SparkClient, warns: string[]) {
     const calls: string[] = [];
     const c = new SparkController({
-      setTimer: realTimer,
+      setTimer: fastTimer,
       spark: {
         signer: () => null as never,
         approve: async () => Promise.resolve({}),

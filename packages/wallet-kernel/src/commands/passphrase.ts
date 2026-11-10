@@ -17,7 +17,7 @@ export function normalizePassphrase(wire: Uint8Array): Uint8Array {
   return normalized;
 }
 
-/** The text `seedFromMnemonic` takes for stored passphrase bytes (`undefined` → no passphrase). */
+/** The text `seedFromEntropy` takes for stored passphrase bytes (`undefined` → no passphrase). */
 export function passphraseText(passphrase: Uint8Array | undefined): string {
   if (passphrase === undefined) {
     return "";

@@ -11,6 +11,7 @@ export type { BitcoinAccountTemplate } from "./account.ts";
 export { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "./account.ts";
 export { decodeBitcoinPsbt, verifiabilityBitcoin } from "./decode.ts";
 export {
+  samePsbtContent,
   verifyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
   verifyLegacyBitcoinMessage,

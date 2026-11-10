@@ -87,8 +87,16 @@ export function openSession(ctx: KernelContext, dek: Secret, keyId: string): str
 /**
  * Deletes every record and factor. On a keystore host the device owner proves presence first
  * (WD-055: the main runtime alone cannot erase the vault) and the hardware keys go with the data.
+ * An open, healthy vault can only be erased by whoever holds its live session; a locked,
+ * forgotten-password or unhealthy vault stays sessionless — reset is its recovery path.
  */
-export async function resetVault(ctx: KernelContext): Promise<NullValue> {
+export async function resetVault(
+  ctx: KernelContext,
+  requestSession: string | undefined,
+): Promise<NullValue> {
+  if (ctx.session.unlocked && ctx.health === "ok") {
+    ctx.session.require(requestSession);
+  }
   const { keystore } = ctx.platform;
   if (keystore !== undefined) {
     await keystore.authenticate(corePromptFor(keystore, "reset")());
@@ -126,6 +134,7 @@ export async function addFactor(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "manage-factors"),
   );
   if (params.factor.kind !== "password") {
@@ -170,6 +179,7 @@ export async function removeFactor(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "manage-factors"),
   );
   const rotation = await rotateVault(ctx.platform, ctx.image, dek, new Set([params.id]), []);

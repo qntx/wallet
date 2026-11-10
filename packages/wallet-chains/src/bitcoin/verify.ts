@@ -1,14 +1,15 @@
 /**
  * Result verification for `chain.sign`: the host re-checks the kernel's Bitcoin work against the
- * account's xpub — a kernel returning someone else's signature fails closed with `integrity`.
- * `/bitcoin` entry only — no private key material.
+ * request and the account's xpub — a kernel returning someone else's signature, or a signature over
+ * other content, fails closed with `integrity`. `/bitcoin` entry only — no private key material.
  */
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
 import { base64 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import { Address, OutScript, p2pkh, p2tr } from "@scure/btc-signer/payment.js";
+import { RawTx } from "@scure/btc-signer/script.js";
 import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
-import { taprootTweakPubkey } from "@scure/btc-signer/utils.js";
+import { equalBytes, taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 
 import type { BitcoinAccountTemplate } from "./account.ts";
 import { bip322ToSpendTxid, legacyMessageHash } from "./message.ts";
@@ -70,6 +71,40 @@ const tailOf = (path: ReadonlyArray<number>): { change: 0 | 1; index: number } |
 
 const eq = (a: Uint8Array, b: Uint8Array): boolean =>
   a.length === b.length && a.every((v, i) => v === b[i]);
+
+type PsbtInput = ReturnType<Transaction["getInput"]>;
+
+const samePrevout = (a: PsbtInput, b: PsbtInput): boolean => {
+  const [x, y] = [a.witnessUtxo, b.witnessUtxo];
+  const witness =
+    x === undefined || y === undefined
+      ? x === y
+      : x.amount === y.amount && equalBytes(x.script, y.script);
+  const [m, n] = [a.nonWitnessUtxo, b.nonWitnessUtxo];
+  const full =
+    m === undefined || n === undefined ? m === n : equalBytes(RawTx.encode(m), RawTx.encode(n));
+  return witness && full;
+};
+
+/**
+ * Whether `signed` is the PSBT `requested` asked to sign: the same unsigned transaction and, on
+ * every input, the same prevout data the signatures commit to. A kernel that signs another
+ * transaction, or the same one over altered amounts, fails this before any signature is checked.
+ */
+export const samePsbtContent = (requested: Uint8Array, signed: Uint8Array): boolean => {
+  try {
+    const want = Transaction.fromPSBT(requested);
+    const got = Transaction.fromPSBT(signed);
+    if (!equalBytes(want.unsignedTx, got.unsignedTx)) {
+      return false;
+    }
+    return Array.from({ length: want.inputsLength }, (_, i) => i).every((i) =>
+      samePrevout(want.getInput(i), got.getInput(i)),
+    );
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Verify every signature on the inputs listed in `sign` against the account's xpub: the input's

@@ -12,6 +12,15 @@ import type { AccountRef } from "../transactions/route.ts";
 import type { AcrossBridgeQuote, AcrossBridgeStatus } from "./bridge.ts";
 import type { JupiterSwapQuote, SwapQuote } from "./index.ts";
 
+/** `amount` less `bps` basis points, rounded down — the floor a provider's minimum may not go below. */
+const lessBps = (amount: bigint, bps: number): bigint => (amount * BigInt(10_000 - bps)) / 10_000n;
+
+const bound = (ok: boolean, what: string): void => {
+  if (!ok) {
+    throw new ChainError("invalid-request", `the quote ${what} does not match the request`);
+  }
+};
+
 const toZeroXToken = (asset: string): string =>
   asset === EVM_NATIVE_ASSET ? ZEROX_NATIVE_TOKEN : asset;
 const fromZeroXToken = (token: string): string =>
@@ -22,8 +31,9 @@ const fromZeroXToken = (token: string): string =>
 
 /**
  * Fetches a gateway 0x quote and maps it to the engine's `SwapQuote` (bigint amounts, engine asset
- * ids, `fetchedAt`). Display-only — `evm-swap` verifies everything on-chain before signing.
- * `undefined` when the gateway reports no liquidity.
+ * ids, `fetchedAt`). The returned quote is bound to the request — tokens, sell amount and a minimum
+ * within slippage — and `evm-swap` still verifies the call on-chain before signing. `undefined`
+ * when the gateway reports no liquidity.
  */
 export const fetchSwapQuote = async (
   deps: {
@@ -68,15 +78,22 @@ export const fetchSwapQuote = async (
   if (!body.liquidity) {
     return undefined;
   }
+  const sellAmount = BigInt(body.sellAmount);
+  const buyAmount = BigInt(body.buyAmount);
+  const minBuyAmount = BigInt(body.minBuyAmount);
+  bound(fromZeroXToken(body.sellToken).toLowerCase() === sell.toLowerCase(), "sell token");
+  bound(fromZeroXToken(body.buyToken).toLowerCase() === buy.toLowerCase(), "buy token");
+  bound(sellAmount === amount, "sell amount");
+  bound(minBuyAmount >= lessBps(buyAmount, slippageBps), "minimum");
   return {
     provider: "0x",
     network,
     taker,
     sell: fromZeroXToken(body.sellToken),
     buy: fromZeroXToken(body.buyToken),
-    sellAmount: BigInt(body.sellAmount),
-    buyAmount: BigInt(body.buyAmount),
-    minBuyAmount: BigInt(body.minBuyAmount),
+    sellAmount,
+    buyAmount,
+    minBuyAmount,
     allowanceTarget: body.allowanceTarget ?? undefined,
     transaction: {
       to: body.transaction.to,
@@ -107,7 +124,8 @@ const fromMint = (mint: string): string => (mint === WSOL_MINT ? SOLANA_NATIVE_A
 
 /**
  * Fetches a gateway Jupiter `/build` for a Solana exact-in sell and maps it to the engine's
- * `JupiterSwapQuote` (bigint amounts, `lamports` for wSOL). Display-only — `solana-swap` verifies
+ * `JupiterSwapQuote` (bigint amounts, `lamports` for wSOL). The returned quote is bound to the
+ * request — mints, in-amount and a threshold within slippage — and `solana-swap` still verifies
  * everything on-chain before signing. `undefined` when the gateway reports no liquidity.
  */
 export const fetchJupiterQuote = async (
@@ -161,15 +179,22 @@ export const fetchJupiterQuote = async (
     })),
     data: base64.decode(i.data),
   });
+  const inAmount = BigInt(body.inAmount);
+  const outAmount = BigInt(body.outAmount);
+  const threshold = BigInt(body.otherAmountThreshold);
+  bound(fromMint(body.inputMint) === sell, "sell token");
+  bound(fromMint(body.outputMint) === buy, "buy token");
+  bound(inAmount === amount, "sell amount");
+  bound(threshold >= lessBps(outAmount, slippageBps), "minimum");
   return {
     provider: "jupiter",
     network,
     taker,
     sell: fromMint(body.inputMint),
     buy: fromMint(body.outputMint),
-    sellAmount: BigInt(body.inAmount),
-    buyAmount: BigInt(body.outAmount),
-    minBuyAmount: BigInt(body.otherAmountThreshold),
+    sellAmount: inAmount,
+    buyAmount: outAmount,
+    minBuyAmount: threshold,
     setup: body.setup.map(ix),
     swap: ix(body.swap),
     cleanup: body.cleanup === null ? undefined : ix(body.cleanup),
@@ -192,8 +217,9 @@ const chainIdOf = (network: string): string => {
 
 /**
  * Fetches a gateway bridge quote and maps it to `AcrossBridgeQuote` (bigint amounts, `taker`,
- * `fetchedAt`). Display-only — `evm-bridge` rebuilds and verifies everything on-chain. `undefined`
- * when the gateway reports no liquidity.
+ * `fetchedAt`). The returned quote is bound to the request — tokens, in-amount, destination network
+ * and an output above the caller's relay-fee ceiling — and `evm-bridge` still rebuilds and verifies
+ * everything on-chain. `undefined` when the gateway reports no liquidity.
  */
 export const fetchBridgeQuote = async (
   deps: {
@@ -209,9 +235,15 @@ export const fetchBridgeQuote = async (
     readonly inputToken: string;
     readonly outputToken: string;
     readonly amount: bigint;
+    /** Highest relay fee accepted, in basis points of the input amount. */
+    readonly maxFeeBps: number;
   },
 ): Promise<AcrossBridgeQuote | undefined> => {
-  const { account, network, destinationNetwork, inputToken, outputToken, amount } = params;
+  const { account, network, destinationNetwork, inputToken, outputToken, amount, maxFeeBps } =
+    params;
+  if (!Number.isInteger(maxFeeBps) || maxFeeBps < 0 || maxFeeBps > 10_000) {
+    throw new ChainError("invalid-request", "maxFeeBps must be an integer between 0 and 10000");
+  }
   if (deps.gateway === undefined) {
     throw new ChainError("unsupported", "no gateway is configured");
   }
@@ -234,12 +266,19 @@ export const fetchBridgeQuote = async (
   if (!body.liquidity) {
     return undefined;
   }
+  const inputAmount = BigInt(body.inputAmount);
+  const outputAmount = BigInt(body.outputAmount);
+  bound(body.inputToken.toLowerCase() === inputToken.toLowerCase(), "input token");
+  bound(body.outputToken.toLowerCase() === outputToken.toLowerCase(), "output token");
+  bound(inputAmount === amount, "input amount");
+  bound(body.destinationNetwork === destinationNetwork, "destination network");
+  bound(outputAmount >= lessBps(inputAmount, maxFeeBps), "output amount");
   return {
     provider: "across",
     inputToken: body.inputToken,
     outputToken: body.outputToken,
-    inputAmount: BigInt(body.inputAmount),
-    outputAmount: BigInt(body.outputAmount),
+    inputAmount,
+    outputAmount,
     destinationNetwork: body.destinationNetwork,
     quoteTimestamp: body.quoteTimestamp,
     fillDeadline: body.fillDeadline,

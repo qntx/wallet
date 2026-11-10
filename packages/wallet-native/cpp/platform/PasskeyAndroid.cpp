@@ -107,6 +107,8 @@ Java_com_margelo_nitro_qntxwallet_Passkey_nativeComplete(
     default:
       result.status = qntx::PasskeyStatus::failed;
   }
+  // Credential Manager returns the PRF outputs only inside this JSON string, so on Android they
+  // cannot travel as wiped bytes the way iOS delivers them (PasskeyResult::prfFirst).
   if (responseJson != nullptr && result.status == qntx::PasskeyStatus::ok) {
     const char* utf = env->GetStringUTFChars(responseJson, nullptr);
     if (utf != nullptr) {

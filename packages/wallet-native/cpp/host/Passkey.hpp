@@ -3,6 +3,8 @@
 #include <functional>
 #include <string>
 
+#include "../runtime/KernelBuffer.hpp"
+
 namespace qntx {
 
 // The platform passkey authenticator behind `__qntx.passkey` (W6). The kernel
@@ -32,6 +34,12 @@ struct PasskeyResult {
   std::string responseJson;
   // A "<domain>:<code>" diagnostic (e.g. "ASAuthorizationErrorDomain:1004").
   std::string detail;
+  // The PRF outputs, which for a passkey wallet are the wallet entropy: delivered as wiped bytes,
+  // never inside `responseJson`, and empty when the platform returned none. iOS fills them;
+  // Android's Credential Manager returns PRF results only inside its response JSON string (a
+  // platform limit), so there they stay empty and the kernel reads the JSON.
+  SecretBytes prfFirst;
+  SecretBytes prfSecond;
 };
 
 // Completion callbacks run exactly once, on any thread.

@@ -167,15 +167,20 @@ export type WalletEngine = {
       readonly inputToken: string;
       readonly outputToken: string;
       readonly amount: bigint;
+      /** Highest relay fee accepted, in basis points of the input amount. */
+      readonly maxFeeBps: number;
     }) => Promise<AcrossBridgeQuote | undefined>;
     readonly status: (params: {
       readonly network: string;
       readonly txHash: string;
     }) => Promise<AcrossBridgeStatus>;
   };
-  /** A gateway 0x swap quote — display-only; `undefined` when the quote has no liquidity. */
   /** Imported single private keys held in the vault — passthrough to `wallet.keys`. */
   readonly keys: KeysApi;
+  /**
+   * A gateway swap quote (0x on EVM, Jupiter on Solana) bound to the request's tokens, amount and
+   * slippage; `undefined` when the quote has no liquidity.
+   */
   readonly swaps: {
     readonly quote: (params: {
       readonly account: AccountRef;

@@ -14,6 +14,10 @@ import { createWebWallet } from "@qntx/wallet-worker/browser";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
 
+import { installKernelWorkerPolicy } from "./trusted-types.ts";
+
+installKernelWorkerPolicy();
+
 const stats = { spawned: 0, terminated: 0 };
 const NativeWorker = Worker;
 Object.assign(globalThis, {

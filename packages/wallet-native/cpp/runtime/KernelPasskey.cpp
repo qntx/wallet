@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "../host/Passkey.hpp"
+#include "KernelBuffer.hpp"
 #include "KernelGlobals.hpp"
 #include "KernelJs.hpp"
 
@@ -45,6 +46,23 @@ jsi::Value detailValue(jsi::Runtime& rt, const std::string& detail) {
     }
   }
   return jsi::Value(rt, jsi::String::createFromAscii(rt, detail));
+}
+
+// `{ first, second? }` Uint8Arrays over the platform's PRF outputs, or undefined when it gave none.
+jsi::Value prfValue(jsi::Runtime& rt, KernelGlobalsState& state, const PasskeyResult& result) {
+  if (result.prfFirst.size() == 0) {
+    return jsi::Value::undefined();
+  }
+  auto bytes = [&](const SecretBytes& secret) {
+    return makeUint8Array(
+        rt, *state.intrinsics, arrayBufferFromBytes(rt, secret.data(), secret.size()));
+  };
+  auto prf = jsi::Object(rt);
+  prf.setProperty(rt, "first", bytes(result.prfFirst));
+  if (result.prfSecond.size() != 0) {
+    prf.setProperty(rt, "second", bytes(result.prfSecond));
+  }
+  return jsi::Value(rt, prf);
 }
 
 struct PasskeyCalls {
@@ -101,7 +119,8 @@ PasskeyDone park(
           rt,
           jsi::Value(rt, jsi::String::createFromUtf8(rt, shared->responseJson)),
           jsi::Value::undefined(),
-          jsi::Value::undefined());
+          jsi::Value::undefined(),
+          prfValue(rt, *state, *shared));
     });
   };
 }

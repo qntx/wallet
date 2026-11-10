@@ -68,6 +68,26 @@ function isSparkPayload(url: string): boolean {
   );
 }
 
+test("Trusted Types: the page policy admits the kernel worker and nothing else", async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== "chromium", "Trusted Types enforcement is asserted on Chromium");
+  await page.goto("/");
+  const created = await page.evaluate(async () => qntx.create());
+  expect(created.ok).toBe(true);
+  // A string evaluate: the spec program has Node types, not the page's DOM.
+  const other = await page.evaluate(`(() => {
+    try {
+      new Worker("/not-the-kernel.js").terminate();
+      return "spawned";
+    } catch (error) {
+      return error instanceof TypeError ? "blocked" : String(error);
+    }
+  })()`);
+  expect(other).toBe("blocked");
+});
+
 test.describe("web host", () => {
   test("passkey wallet: create, lock terminates the worker, unlock, sign @webauthn", async ({
     context,

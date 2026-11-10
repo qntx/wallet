@@ -2,29 +2,24 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import type { Pbkdf2 } from "../platform.ts";
 import { wipe } from "../secret/secret.ts";
-import { mnemonicFromEntropy } from "./mnemonic.ts";
+import { mnemonicBytes } from "./mnemonic.ts";
 
-/** BIP-39 seed: PBKDF2-HMAC-SHA512, 2048 rounds, 64 bytes. */
-export async function seedFromMnemonic(
-  mnemonic: string,
+/**
+ * BIP-39 seed of `entropy`: PBKDF2-HMAC-SHA512 over the normalized mnemonic, 2048 rounds, 64 bytes.
+ * The mnemonic exists only as wiped bytes, never as a string.
+ */
+export async function seedFromEntropy(
+  entropy: Uint8Array,
   passphrase: string,
   pbkdf2: Pbkdf2,
 ): Promise<Uint8Array> {
-  const password = utf8ToBytes(mnemonic.normalize("NFKD"));
+  const password = mnemonicBytes(entropy);
   const salt = utf8ToBytes(`mnemonic${passphrase}`.normalize("NFKD"));
   try {
     return await pbkdf2("sha512", password, salt, 2048, 64);
   } finally {
     wipe(password, salt);
   }
-}
-
-export async function seedFromEntropy(
-  entropy: Uint8Array,
-  passphrase: string,
-  pbkdf2: Pbkdf2,
-): Promise<Uint8Array> {
-  return seedFromMnemonic(mnemonicFromEntropy(entropy), passphrase, pbkdf2);
 }
 
 /**

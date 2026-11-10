@@ -4,6 +4,7 @@ import { checksumEvmAddress, isEvmAddress } from "@qntx/wallet-chains/evm";
 import { isSolanaAddress } from "@qntx/wallet-chains/solana";
 
 import { Controller } from "../controller.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineCollection, EngineStore } from "../store/port.ts";
 
 /**
@@ -93,14 +94,12 @@ export class WatchController extends Controller<WatchState> {
     const rows = await Promise.all(keys.map(async (key) => this.col?.get(key)));
     const accounts: Record<string, WatchAccount> = {};
     for (const raw of rows) {
-      const record =
-        raw === undefined || raw === null
-          ? undefined
-          : (JSON.parse(new TextDecoder().decode(raw)) as unknown);
+      if (raw === undefined || raw === null) {
+        continue;
+      }
+      const record = readJson(raw);
       if (!isWatchRecord(record)) {
-        if (record !== undefined) {
-          this.options.logger.warn("dropping a malformed watch account", { record });
-        }
+        this.options.logger.warn("dropping a malformed watch account", { record });
         continue;
       }
       accounts[record.id] = record;

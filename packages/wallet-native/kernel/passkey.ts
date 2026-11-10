@@ -3,9 +3,11 @@
  * only runs the system ceremony; this module builds the WebAuthn options JSON (discoverable,
  * user-verified, PRF eval) and parses the response JSON strictly — credential id, PRF results, the
  * user handle, and the UV/BE/BS flags from the authenticator data — which a registration may carry
- * inside an attestation object (iOS). A registration response with no authenticator data at all
- * reports no `first`, so the kernel asserts once. Failure codes from the native side are already
- * kernel error codes; an optional `"<domain>:<code>"` detail rides along for diagnostics.
+ * inside an attestation object (iOS). iOS delivers the PRF outputs as separate bytes, never as
+ * strings; Android's Credential Manager only offers them inside the response JSON. A registration
+ * response with no authenticator data at all reports no `first`, so the kernel asserts once.
+ * Failure codes from the native side are already kernel error codes; an optional
+ * `"<domain>:<code>"` detail rides along for diagnostics.
  */
 import { base64urlnopad } from "@scure/base";
 import { decode } from "cborg";
@@ -20,10 +22,14 @@ import type {
 } from "../../wallet-kernel/src/platform.ts";
 import { detailOf } from "./detail.ts";
 
+/** PRF outputs the platform hands over as bytes (iOS), outside the response JSON. */
+type NativePrf = { readonly first: Uint8Array; readonly second?: Uint8Array };
+
 type Completion = (
   responseJson: string | undefined,
   code: string | undefined,
   detail: string | undefined,
+  prf: NativePrf | undefined,
 ) => void;
 
 /** The `__qntx.passkey` surface the native host injects. */
@@ -163,7 +169,11 @@ function attestationAuthData(attestationObject: Uint8Array): Uint8Array {
  * the single registration ceremony already verified the user. Without authenticator data its PRF
  * results are dropped and the kernel falls back to an assertion that does carry them.
  */
-function parseResponse(json: string, assertion: boolean): PasskeyResult {
+function parseResponse(
+  json: string,
+  native: NativePrf | undefined,
+  assertion: boolean,
+): PasskeyResult {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -173,7 +183,18 @@ function parseResponse(json: string, assertion: boolean): PasskeyResult {
   const credential = objectOf(parsed);
   const response = objectOf(credential["response"]);
   const credentialId = bytesOf(credential["rawId"]);
-  const { enabled, first, second } = prfResults(credential["clientExtensionResults"]);
+  const fromJson = prfResults(credential["clientExtensionResults"]);
+  if (native !== undefined && (fromJson.first !== undefined || fromJson.second !== undefined)) {
+    // One source only: a platform that hands PRF bytes over never also puts them in the JSON.
+    fromJson.first?.fill(0);
+    fromJson.second?.fill(0);
+    native.first.fill(0);
+    native.second?.fill(0);
+    throw malformed();
+  }
+  const { enabled } = fromJson;
+  const first = native?.first ?? fromJson.first;
+  const second = native === undefined ? fromJson.second : native.second;
   if (!assertion && enabled === false) {
     // The authenticator has no PRF — a follow-up assertion would fail the same way.
     first?.fill(0);
@@ -225,16 +246,18 @@ async function run(
   request: unknown,
   assertion: boolean,
 ): Promise<PasskeyResult> {
-  const json = await new Promise<string>((resolve, reject) => {
-    start(JSON.stringify(request), (responseJson, code, detail) => {
-      if (responseJson === undefined) {
-        reject(failure(code, detail));
-        return;
-      }
-      resolve(responseJson);
-    });
-  });
-  return parseResponse(json, assertion);
+  const { json, prf } = await new Promise<{ json: string; prf: NativePrf | undefined }>(
+    (resolve, reject) => {
+      start(JSON.stringify(request), (responseJson, code, detail, native) => {
+        if (responseJson === undefined) {
+          reject(failure(code, detail));
+          return;
+        }
+        resolve({ json: responseJson, prf: native });
+      });
+    },
+  );
+  return parseResponse(json, prf, assertion);
 }
 
 export function bindNativePasskey(raw: KernelPasskeyNative, random: Random): PasskeyAuthenticator {

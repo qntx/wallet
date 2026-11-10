@@ -5,8 +5,9 @@ import type { CcipRequestParameters, Hex, PublicClient } from "viem";
  * EVM network controller: the built-in registry plus host-provided and user-added RPC endpoints.
  * Each network gets a lazily-created viem PublicClient on a `fallback` transport — endpoints are
  * tried in order (custom → host), each with the injected fetch, so a dead endpoint fails over
- * without code here. Custom RPC URLs are validated against the registry chain id with `eth_chainId`
- * and persisted in the EngineStore.
+ * without code here. Custom RPC URLs are validated against the registry chain (EVM chain id,
+ * Bitcoin/Solana genesis hash) when added and again at every unlock, and persisted in the
+ * EngineStore.
  */
 import { esplora } from "../chains/bitcoin.ts";
 import type { Esplora, EsploraDeps } from "../chains/bitcoin.ts";
@@ -21,14 +22,15 @@ import {
   rpcPath,
   servedNetworksResponse,
 } from "../gateway/contract/index.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 import { networkById } from "./registry.ts";
 import type { NetworkInfo } from "./registry.ts";
 
-/** Bound on the unlock-time `/v1/networks` read so a dead gateway cannot stall unlocking. */
-const GATEWAY_PROBE_TIMEOUT_MS = 5000;
+/** Bound on each unlock-time endpoint probe so a dead gateway or RPC cannot stall unlocking. */
+const PROBE_TIMEOUT_MS = 5000;
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -201,6 +203,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
   private readonly ensClients = new Map<string, PublicClient>();
   private readonly gatewayBase: string | undefined;
   private readonly gatewayFetch: typeof globalThis.fetch;
+  /** The persisted custom endpoints, verified or not — what `addRpc` writes back. */
+  private storedRpc: Record<string, ReadonlyArray<string>> = {};
   /** Networks the gateway reported at unlock; empty while locked or when the read failed. */
   private gatewayServed: ReadonlySet<string> = new Set();
 
@@ -215,25 +219,45 @@ export class NetworkController extends Controller<NetworkControllerState> {
 
   async init(): Promise<void> {
     this.engineStore = await this.options.openStore();
-    await this.loadCustomRpc(this.engineStore);
-    await this.loadGatewayNetworks();
+    await Promise.all([this.loadCustomRpc(this.engineStore), this.loadGatewayNetworks()]);
   }
 
+  /**
+   * Loads the persisted custom endpoints and re-verifies each against its network before use: an
+   * endpoint that no longer serves the chain (or does not answer) is skipped for this session and
+   * stays persisted, so a transient failure costs nothing at the next unlock.
+   */
   private async loadCustomRpc(store: EngineStore): Promise<void> {
     const raw = await store.collection("networks").get("customRpc");
-    if (raw === undefined) {
-      return;
+    const parsed = raw === undefined ? undefined : readJson(raw);
+    if (raw !== undefined && !isObject(parsed)) {
+      this.options.logger.warn("custom rpc endpoints skipped: malformed");
     }
-    const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
-    if (typeof parsed === "object" && parsed !== null) {
-      const map: Record<string, ReadonlyArray<string>> = {};
-      for (const [k, v] of Object.entries(parsed)) {
-        if (Array.isArray(v) && v.every((u) => typeof u === "string")) {
-          map[k] = v;
-        }
+    const stored: Record<string, ReadonlyArray<string>> = {};
+    for (const [network, urls] of Object.entries(isObject(parsed) ? parsed : {})) {
+      if (Array.isArray(urls) && urls.every((u) => typeof u === "string")) {
+        stored[network] = urls;
       }
-      this.update((s) => ({ ...s, customRpc: map }));
     }
+    this.storedRpc = stored;
+    const verified = await Promise.all(
+      Object.entries(stored).map(async ([network, urls]) => {
+        const info = networkById(network);
+        const results =
+          info === undefined
+            ? []
+            : await Promise.allSettled(urls.map(async (url) => this.probe(info, url)));
+        const usable = urls.filter((_, i) => results[i]?.status === "fulfilled");
+        for (const url of urls.filter((u) => !usable.includes(u))) {
+          this.options.logger.warn(`custom endpoint not used for this session: ${network} ${url}`);
+        }
+        return [network, usable] as const;
+      }),
+    );
+    this.update((s) => ({
+      ...s,
+      customRpc: Object.fromEntries(verified.filter(([, urls]) => urls.length > 0)),
+    }));
   }
 
   /** Reads the gateway's served networks; any failure leaves the gateway unused until next unlock. */
@@ -242,7 +266,7 @@ export class NetworkController extends Controller<NetworkControllerState> {
       return;
     }
     const url = `${this.gatewayBase}${networksPath}`;
-    const probe = timeoutSignal(GATEWAY_PROBE_TIMEOUT_MS, this.options.setTimer);
+    const probe = timeoutSignal(PROBE_TIMEOUT_MS, this.options.setTimer);
     try {
       const res = await this.gatewayFetch(url, {
         signal: probe.signal,
@@ -270,6 +294,8 @@ export class NetworkController extends Controller<NetworkControllerState> {
   }
 
   lock(): void {
+    this.storedRpc = {};
+    this.update((s) => ({ ...s, customRpc: {} }));
     this.gatewayServed = new Set();
     this.clients.clear();
     this.ensClients.clear();
@@ -419,64 +445,65 @@ export class NetworkController extends Controller<NetworkControllerState> {
     });
   }
 
-  /** Validate a custom endpoint's reported chain id, then persist it first in the list. */
-  async addRpc(network: string, url: string): Promise<void> {
-    const info = this.info(network);
-    if (info.family === "bitcoin") {
-      const res = await this.options.fetch(`${url.replace(/\/$/, "")}/block-height/0`);
-      const genesisText = await res.text();
-      const genesis = genesisText.trim();
-      if (genesis !== info.genesisHash) {
-        throw new Error(`${url} reports genesis ${genesis}, expected ${info.genesisHash ?? ""}`);
+  /**
+   * Throws unless `url` serves `info`'s chain: the genesis hash for Bitcoin (Esplora) and Solana,
+   * `eth_chainId` for EVM. Bounded like the gateway probe, so a dead endpoint cannot stall unlock.
+   */
+  private async probe(info: NetworkInfo, url: string): Promise<void> {
+    const bound = timeoutSignal(PROBE_TIMEOUT_MS, this.options.setTimer);
+    try {
+      if (info.family === "bitcoin") {
+        const res = await this.options.fetch(`${url.replace(/\/$/, "")}/block-height/0`, {
+          signal: bound.signal,
+        });
+        const text = await res.text();
+        const genesis = text.trim();
+        if (genesis !== info.genesisHash) {
+          throw new Error(`${url} reports genesis ${genesis}, expected ${info.genesisHash ?? ""}`);
+        }
+        return;
       }
-    } else if (info.family === "solana") {
+      const method = info.family === "solana" ? "getGenesisHash" : "eth_chainId";
       const res = await this.options.fetch(url, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getGenesisHash", params: [] }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params: [] }),
+        signal: bound.signal,
       });
       const body: unknown = await res.json();
-      const genesis = isObject(body) ? body["result"] : undefined;
-      if (genesis !== info.genesisHash) {
-        throw new Error(
-          `${url} reports genesis hash ${String(genesis)}, expected ${info.genesisHash ?? ""}`,
-        );
+      const result = isObject(body) ? body["result"] : undefined;
+      if (info.family === "solana") {
+        if (result !== info.genesisHash) {
+          throw new Error(
+            `${url} reports genesis hash ${String(result)}, expected ${info.genesisHash ?? ""}`,
+          );
+        }
+        return;
       }
-      const current = this.getState().customRpc[network] ?? [];
-      const customRpc = { ...this.getState().customRpc, [network]: [url, ...current] };
-      this.update((s) => ({ ...s, customRpc }));
-      const store = this.engineStore;
-      if (store !== undefined) {
-        await store
-          .collection("networks")
-          .put("customRpc", new TextEncoder().encode(JSON.stringify(customRpc)));
+      if (typeof result !== "string") {
+        throw new TypeError(`eth_chainId returned a malformed response from ${url}`);
       }
-      return;
+      const chainId = Number.parseInt(result, 16);
+      if (chainId !== info.chainId) {
+        throw new Error(`${url} reports chain id ${chainId}, expected ${info.chainId}`);
+      }
+    } finally {
+      bound.cancel();
     }
-    const res = await this.options.fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
-    });
-    const body: unknown = await res.json();
-    const result =
-      typeof body === "object" && body !== null && "result" in body ? body.result : undefined;
-    if (typeof result !== "string") {
-      throw new TypeError(`eth_chainId returned a malformed response from ${url}`);
-    }
-    const chainId = Number.parseInt(result, 16);
-    if (chainId !== info.chainId) {
-      throw new Error(`${url} reports chain id ${chainId}, expected ${info.chainId}`);
-    }
-    const current = this.getState().customRpc[network] ?? [];
-    const customRpc = { ...this.getState().customRpc, [network]: [url, ...current] };
-    this.update((s) => ({ ...s, customRpc }));
+  }
+
+  /** Validates a custom endpoint against the network's chain, then persists it first in the list. */
+  async addRpc(network: string, url: string): Promise<void> {
+    await this.probe(this.info(network), url);
+    this.storedRpc = { ...this.storedRpc, [network]: [url, ...(this.storedRpc[network] ?? [])] };
+    this.update((s) => ({
+      ...s,
+      customRpc: { ...s.customRpc, [network]: [url, ...(s.customRpc[network] ?? [])] },
+    }));
     this.clients.delete(network);
-    const store = this.engineStore;
-    if (store !== undefined) {
-      await store
-        .collection("networks")
-        .put("customRpc", new TextEncoder().encode(JSON.stringify(customRpc)));
-    }
+    this.ensClients.delete(network);
+    await this.engineStore
+      ?.collection("networks")
+      .put("customRpc", new TextEncoder().encode(JSON.stringify(this.storedRpc)));
   }
 }

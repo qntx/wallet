@@ -18,7 +18,7 @@ import type { KernelPlatform, PasskeyResult } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
 import { decodeUtf8Secret, Secret, wipe } from "../secret/secret.ts";
 import { randomEntropy } from "../seed/entropy.ts";
-import { entropyFromMnemonic, mnemonicFromEntropy } from "../seed/mnemonic.ts";
+import { entropyFromMnemonic, mnemonicBytes, splitMnemonic } from "../seed/mnemonic.ts";
 import { entropyFromPrf } from "../seed/passkey.ts";
 import { withSeed } from "../seed/seed.ts";
 import { wipePendingFactor } from "../session/session.ts";
@@ -264,10 +264,10 @@ export async function createMnemonic(
     ctx.session.require(requestSession);
   }
   const entropy = randomEntropy(params.words, ctx.platform.random);
-  const mnemonic = mnemonicFromEntropy(entropy);
-  const wordList = mnemonic.split(" ");
+  const mnemonic = mnemonicBytes(entropy);
+  const wordList = splitMnemonic(mnemonic);
   const quiz = quizPositions(ctx.platform.random, wordList.length);
-  const expected = quiz.map((position) => utf8ToBytes(wordList[position] ?? ""));
+  const expected = quiz.map((position) => Uint8Array.from(wordList[position] ?? []));
   const id = bytesToHex(ctx.platform.random(16));
   ctx.session.putDraft(id, {
     entropy: Secret.take(entropy),
@@ -276,7 +276,7 @@ export async function createMnemonic(
     expected,
     pendingFactor,
   });
-  return { draft: id, words: utf8ToBytes(mnemonic), quiz };
+  return { draft: id, words: mnemonic, quiz };
 }
 
 /**
@@ -544,6 +544,7 @@ export async function deleteWallet(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "delete-wallet"),
   );
   findRecord(ctx.image, "entropy", params.walletId);

@@ -11,6 +11,7 @@ import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { Esplora } from "./bitcoin.ts";
 
@@ -147,8 +148,7 @@ export class BitcoinScanStore {
   async unlock(store: EngineStore): Promise<ScanState | undefined> {
     this.engineStore = store;
     const raw = await store.collection(COLL).get("state");
-    const parsed: unknown =
-      raw === undefined ? undefined : JSON.parse(new TextDecoder().decode(raw));
+    const parsed: unknown = raw === undefined ? undefined : readJson(raw);
     if (
       !isObject(parsed) ||
       !Array.isArray(parsed["addresses"]) ||
@@ -220,7 +220,7 @@ const toLockedUtxo = (v: unknown): LockedUtxo | undefined => {
   }
   const status = str(v["status"]);
   const txId = str(v["txId"]);
-  if (status !== "confirmed" && status !== "locked" && status !== "frozen") {
+  if (status !== "confirmed" && status !== "locked") {
     return undefined;
   }
   const locked: LockedUtxo =
@@ -247,7 +247,7 @@ const toLockedUtxo = (v: unknown): LockedUtxo | undefined => {
 
 /** Persistent UTXO lock/spent lifecycle — locked by an in-flight tx, released or spent at its end. */
 export type LockedUtxo = ScanUtxo & {
-  readonly status: "confirmed" | "locked" | "frozen";
+  readonly status: "confirmed" | "locked";
   readonly txId?: string;
 };
 
@@ -264,7 +264,7 @@ export class BtcUtxoStore {
         : new Map<string, LockedUtxo>(
             Object.entries(
               ((): Record<string, LockedUtxo> => {
-                const rawParsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+                const rawParsed = readJson(raw);
                 const parsed = isObject(rawParsed) ? rawParsed : {};
                 const pairs: ReadonlyArray<readonly [string, LockedUtxo]> = Object.entries(
                   parsed,
@@ -292,9 +292,7 @@ export class BtcUtxoStore {
   }
 
   replace(utxos: ReadonlyArray<ScanUtxo>): void {
-    const locked = [...this.utxos.entries()].filter(
-      ([, u]) => u.status === "locked" || u.status === "frozen",
-    );
+    const locked = [...this.utxos.entries()].filter(([, u]) => u.status === "locked");
     this.utxos = new Map(
       utxos.map((u) => [
         BtcUtxoStore.key(u),
@@ -361,12 +359,6 @@ export class BtcUtxoStore {
   spendable(): ReadonlyArray<LockedUtxo> {
     return [...this.utxos.values()].filter(
       (u) => u.status === "confirmed" && !(u.value === 546 || u.value === 330),
-    );
-  }
-
-  frozen(): ReadonlyArray<LockedUtxo> {
-    return [...this.utxos.values()].filter(
-      (u) => u.status === "frozen" || u.value === 546 || u.value === 330,
     );
   }
 

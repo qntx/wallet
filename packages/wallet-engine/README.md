@@ -77,6 +77,19 @@ What the host must provide:
 A host that already calls `install()` from `react-native-quick-crypto` (as Meowl does) also works;
 the same smoke passes with those globals installed.
 
+### In-app browser
+
+`createBrowserBridge` attributes every page message to the origin of the URL the host passes as
+`topUrl`, and drops it unless that origin is the current top-level page. The host must therefore
+pass the URL of the frame that sent the message, never the top-level URL, or a cross-origin frame
+inside a connected dApp (an ad, a widget) could request accounts and signatures under the dApp's
+origin. Use react-native-webview 13.13.5 or later, which reports the sending frame in
+`nativeEvent.url` (the message's `frameInfo` on iOS, the `WebMessageListener` source origin on
+Android). On an Android system WebView without `WEB_MESSAGE_LISTENER`, react-native-webview falls
+back to `addJavascriptInterface`, which reaches every frame and reports the top-level URL; the
+in-app browser is not safe there. The injected provider installs itself only in the top-level
+document.
+
 ## License
 
 MIT OR Apache-2.0

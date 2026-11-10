@@ -62,6 +62,10 @@ NSData* _Nullable base64urlDecode(NSString* _Nullable value) {
   return [[NSData alloc] initWithBase64EncodedString:standard options:0];
 }
 
+qntx::SecretBytes secretBytesOf(NSData* data) {
+  return qntx::SecretBytes(static_cast<const uint8_t*>(data.bytes), data.length);
+}
+
 NSString* base64urlEncode(NSData* data) {
   NSString* standard = [data base64EncodedStringWithOptions:0];
   standard = [standard stringByReplacingOccurrencesOfString:@"+" withString:@"-"];
@@ -278,6 +282,9 @@ API_AVAILABLE(ios(18.0))
   NSMutableDictionary<NSString*, id>* extensions = [NSMutableDictionary new];
   NSMutableDictionary<NSString*, id>* response = [NSMutableDictionary new];
   std::string credentialId;
+  // The PRF outputs are the wallet entropy: they leave as wiped bytes, never in the JSON.
+  NSData* first = nil;
+  NSData* second = nil;
   if ([authorization.credential
           isKindOfClass:ASAuthorizationPlatformPublicKeyCredentialRegistration.class]) {
     auto* credential = (ASAuthorizationPlatformPublicKeyCredentialRegistration*)
@@ -289,17 +296,9 @@ API_AVAILABLE(ios(18.0))
       response[@"attestationObject"] = base64urlEncode(credential.rawAttestationObject);
     }
     if (credential.prf != nil) {
-      NSMutableDictionary<NSString*, id>* prf =
-          [@{ @"enabled" : @(credential.prf.isSupported) } mutableCopy];
-      if (credential.prf.first != nil) {
-        NSMutableDictionary<NSString*, id>* results =
-            [@{ @"first" : base64urlEncode(credential.prf.first) } mutableCopy];
-        if (credential.prf.second != nil) {
-          results[@"second"] = base64urlEncode(credential.prf.second);
-        }
-        prf[@"results"] = results;
-      }
-      extensions[@"prf"] = prf;
+      extensions[@"prf"] = @{ @"enabled" : @(credential.prf.isSupported) };
+      first = credential.prf.first;
+      second = credential.prf.second;
     }
   } else if ([authorization.credential
                  isKindOfClass:ASAuthorizationPlatformPublicKeyCredentialAssertion.class]) {
@@ -312,12 +311,8 @@ API_AVAILABLE(ios(18.0))
     response[@"signature"] = base64urlEncode(credential.signature);
     response[@"userHandle"] = base64urlEncode(credential.userID);
     if (credential.prf != nil) {
-      NSMutableDictionary<NSString*, id>* results =
-          [@{ @"first" : base64urlEncode(credential.prf.first) } mutableCopy];
-      if (credential.prf.second != nil) {
-        results[@"second"] = base64urlEncode(credential.prf.second);
-      }
-      extensions[@"prf"] = @{ @"results" : results };
+      first = credential.prf.first;
+      second = credential.prf.second;
     }
   } else {
     [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::failed, {}}];
@@ -335,7 +330,14 @@ API_AVAILABLE(ios(18.0))
     [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::failed, {}}];
     return;
   }
-  [self finish:qntx::PasskeyResult{qntx::PasskeyStatus::ok, std::move(json)}];
+  qntx::PasskeyResult result{qntx::PasskeyStatus::ok, std::move(json)};
+  if (first != nil) {
+    result.prfFirst = secretBytesOf(first);
+    if (second != nil) {
+      result.prfSecond = secretBytesOf(second);
+    }
+  }
+  [self finish:std::move(result)];
 }
 
 - (void)authorizationController:(ASAuthorizationController*)controller

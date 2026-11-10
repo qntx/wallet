@@ -83,6 +83,26 @@ const wallet = await createNodeWallet({
   `worker: { format: "es" }` (required to keep the Spark backend lazy; the default `"iife"`
   still runs but ships Spark inside the initial worker) and dev-server
   `optimizeDeps.exclude: ["@qntx/wallet-worker"]`; webpack 5 — nothing.
+- Trusted Types (`require-trusted-types-for 'script'`) works with a `default` policy that admits
+  the bundled kernel worker. Bundlers recognise the worker only in the literal
+  `new Worker(new URL(…))` form, so the library cannot pass a named policy's `TrustedScriptURL`
+  itself. Add `trusted-types default` to the CSP and install the policy before
+  `createWebWallet`:
+
+  ```ts
+  trustedTypes?.createPolicy("default", {
+    createScriptURL: (input) => {
+      const url = new URL(input, location.href);
+      if (url.origin !== location.origin || !/\/kernel\.worker[^/]*\.js$/.test(url.pathname)) {
+        throw new TypeError(`script URL not allowed: ${input}`);
+      }
+      return url.href;
+    },
+  });
+  ```
+
+  The Playwright suite runs the whole Web host under exactly this CSP and policy.
+
 - `dist/kernel.manifest.json` pins the artifacts the package was built from. Consumer bundlers
   re-bundle the worker, so the shipped bytes differ from the manifest's; `spark.wasm` is still
   verified by its integrity constant when the kernel loads it.

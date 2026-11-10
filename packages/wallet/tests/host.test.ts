@@ -1320,6 +1320,85 @@ describe("queue-head watchdog", () => {
   });
 });
 
+describe("ceremony watchdog", () => {
+  const flush = async (): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve);
+    });
+  };
+
+  it("a system ceremony suspends the call watchdog until it ends", async () => {
+    const timers = new FakeTimers();
+    const { wallet, kernel } = await connectFake(unlockedStatus(), timers.setTimer);
+    let gate: (() => void) | undefined;
+    kernel.handlers.set("dataKeys.get", async () => {
+      kernel.send({ v: 2, event: "ceremony", active: true });
+      await new Promise<void>((resolve) => {
+        gate = resolve;
+      });
+      kernel.send({ v: 2, event: "ceremony", active: false });
+      return { ok: new Uint8Array(32) };
+    });
+    const call = wallet.dataKeys.get("p");
+    await flush();
+    // The prompt is showing: nothing is timed, however long the user takes.
+    expect(timers.armed).toBe(0);
+    timers.fireAll();
+    await flush();
+    gate?.();
+    await expect(call).resolves.toBeInstanceOf(Uint8Array);
+    expect(timers.armed).toBe(0);
+  });
+
+  it("an unanswered call without a ceremony still crashes after the timeout", async () => {
+    const timers = new FakeTimers();
+    const { wallet, kernel } = await connectFake(unlockedStatus(), timers.setTimer);
+    kernel.handlers.set("dataKeys.get", async () => new Promise(() => undefined));
+    const call = wallet.dataKeys.get("p");
+    await flush();
+    expect(timers.armed).toBe(1);
+    timers.fireAll();
+    await expect(call).rejects.toSatisfy((e) => walletError(e).code === "crashed");
+  });
+
+  it("the watchdog re-arms when the ceremony ends without an answer", async () => {
+    const timers = new FakeTimers();
+    const { wallet, kernel } = await connectFake(unlockedStatus(), timers.setTimer);
+    kernel.handlers.set("dataKeys.get", async () => {
+      kernel.send({ v: 2, event: "ceremony", active: true });
+      kernel.send({ v: 2, event: "ceremony", active: false });
+      await new Promise(() => undefined);
+      return { ok: null };
+    });
+    const call = wallet.dataKeys.get("p");
+    await flush();
+    // The prompt is over: the head is silent — the clock restarted.
+    expect(timers.armed).toBe(1);
+    timers.fireAll();
+    await expect(call).rejects.toSatisfy((e) => walletError(e).code === "crashed");
+  });
+
+  it("a respawn during a ceremony does not leave the watchdog suppressed", async () => {
+    const timers = new FakeTimers();
+    const { wallet, kernel, spawned } = await connectFake(unlockedStatus(), timers.setTimer);
+    kernel.handlers.set("dataKeys.get", async () => {
+      kernel.send({ v: 2, event: "ceremony", active: true });
+      spawned.at(0)?.crash();
+      await new Promise(() => undefined);
+      return { ok: null };
+    });
+    const crashed = wallet.dataKeys.get("p");
+    await expect(crashed).rejects.toSatisfy((e) => walletError(e).code === "crashed");
+    await flush(); // the respawned port delivers its fresh status
+    kernel.handlers.set("dataKeys.get", async () => new Promise(() => undefined));
+    const next = wallet.dataKeys.get("p2");
+    await flush();
+    expect(timers.armed).toBe(1);
+    timers.fireAll();
+    await expect(next).rejects.toSatisfy((e) => walletError(e).code === "crashed");
+  });
+});
+
 describe("presence activity", () => {
   const unlockPassword = { kind: "password" as const, password: "long enough password" };
 

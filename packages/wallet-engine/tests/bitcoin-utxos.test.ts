@@ -33,7 +33,6 @@ describe("BtcUtxoStore", () => {
     const store = new BtcUtxoStore();
     store.replace([utxo("aa", 0, 100_000), utxo("bb", 0, 546)]);
     store.lock([utxo("aa", 0, 100_000)], "tx-1");
-    expect(store.frozen().map((u) => u.txid)).toStrictEqual(["bb"]);
     store.endTx("tx-1", "confirmed");
     expect(store.all()).toHaveLength(1);
     expect(store.spendable().map((u) => u.txid)).toStrictEqual([]);

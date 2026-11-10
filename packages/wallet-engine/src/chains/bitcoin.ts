@@ -28,7 +28,7 @@ export type BtcUtxo = {
   readonly vout: number;
   readonly value: number;
   readonly address: string;
-  readonly status: "unconfirmed" | "confirmed" | "locked" | "frozen";
+  readonly status: "unconfirmed" | "confirmed" | "locked";
   readonly height: number;
 };
 

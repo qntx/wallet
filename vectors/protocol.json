@@ -1796,6 +1796,24 @@
         "event": "locked",
         "reason": "invalidated"
       }
+    },
+    {
+      "name": "event-ceremony-start",
+      "check": "event",
+      "message": {
+        "v": 2,
+        "event": "ceremony",
+        "active": true
+      }
+    },
+    {
+      "name": "event-ceremony-end",
+      "check": "event",
+      "message": {
+        "v": 2,
+        "event": "ceremony",
+        "active": false
+      }
     }
   ],
   "reject": [
@@ -2612,6 +2630,15 @@
         "v": 2,
         "event": "locked",
         "reason": "forgotten"
+      }
+    },
+    {
+      "name": "event-ceremony-active-not-boolean",
+      "check": "event",
+      "message": {
+        "v": 2,
+        "event": "ceremony",
+        "active": "yes"
       }
     }
   ]

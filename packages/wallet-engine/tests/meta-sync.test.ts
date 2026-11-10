@@ -183,6 +183,8 @@ async function waitPublished(relay: FakeRelay, count: number): Promise<void> {
   );
 }
 
+// Every rig creates a real vault (a 600k-round PBKDF2 password factor per device) and waits out
+// the controller's real debounce, so the multi-device cases carry explicit timeouts.
 describe("MetaSyncController", () => {
   it("a wallet with no derived identity still syncs on its dedicated key", async () => {
     const r = await rig();

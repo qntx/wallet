@@ -1,7 +1,7 @@
 /**
- * Signer recovery for `chain.sign` results: the host re-derives the signer address from a signed
- * envelope or a 65-byte signature and compares it with the account's `wallet.accounts` address — a
- * kernel returning someone else's signature fails closed.
+ * Signer recovery for `chain.sign` results: the host re-derives the signer address of the requested
+ * transaction, message or typed data and compares it with the account's `wallet.accounts` address —
+ * a kernel returning someone else's signature, or a signature over other content, fails closed.
  */
 import * as Authorization from "ox/Authorization";
 import * as Hex from "ox/Hex";
@@ -16,7 +16,7 @@ import * as TypedData from "ox/TypedData";
 
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
-import { checksumEvmAddress } from "./address.ts";
+import { evmAuthorization, evmEnvelope } from "./envelope.ts";
 import { parseTypedData } from "./typed-data.ts";
 
 function assertEip1559Hex(hex: `0x${string}`): asserts hex is `0x02${string}` {
@@ -49,65 +49,65 @@ const signatureOf = (env: EnvelopeFields) => {
   return Signature.from({ r, s, yParity });
 };
 
-/** Recover the signer's EIP-55 address from a serialized signed transaction envelope. */
-const signerFromEnvelope = (
-  signedTransaction: Uint8Array,
-  request?: Extract<SignRequest, { kind: "evm.transaction" }>,
-): string => {
-  const hex = Hex.fromBytes(signedTransaction);
-  const [tag] = signedTransaction;
-  if (tag === 0x04) {
+/**
+ * The transaction signature and, for EIP-7702, the authorization signature a signed envelope
+ * carries.
+ */
+const signaturesOf = (
+  hex: `0x${string}`,
+): { readonly signature: Signature.Signature; readonly authorization?: Signature.Signature } => {
+  if (hex.startsWith("0x04")) {
     assertEip7702Hex(hex);
     const env = TxEnvelopeEip7702.deserialize(hex);
-    const payload = TxEnvelopeEip7702.getSignPayload(env);
-    const signer = Secp256k1.recoverAddress({ payload, signature: signatureOf(env) });
     const auths = env.authorizationList ?? [];
     const [auth] = auths;
-    if (
-      request === undefined ||
-      request.tx.type !== "eip7702" ||
-      auths.length !== 1 ||
-      auth === undefined
-    ) {
+    if (auths.length !== 1 || auth === undefined) {
       throw new ChainError("invalid-request", "authorization does not match the request");
     }
-    const { address, chainId, nonce } = auth;
-    const expected = request.tx.authorization.address;
-    if (
-      checksumEvmAddress(address) !== expected ||
-      chainId !== request.tx.chainId ||
-      nonce !== BigInt(request.tx.nonce + 1)
-    ) {
-      throw new ChainError("invalid-request", "authorization does not match the request");
-    }
+    return { signature: signatureOf(env), authorization: Signature.from(auth) };
+  }
+  if (hex.startsWith("0x02")) {
+    assertEip1559Hex(hex);
+    return { signature: signatureOf(TxEnvelopeEip1559.deserialize(hex)) };
+  }
+  if (hex.startsWith("0x01")) {
+    assertEip2930Hex(hex);
+    return { signature: signatureOf(TxEnvelopeEip2930.deserialize(hex)) };
+  }
+  try {
+    return { signature: signatureOf(TxEnvelopeLegacy.deserialize(hex)) };
+  } catch {
+    throw new ChainError("invalid-request", "unrecognized signed transaction envelope");
+  }
+};
+
+/**
+ * The signer of `signedTransaction`, which must be exactly `request.tx` under its signature: the
+ * envelope is rebuilt from the request, re-serialized with the returned signatures and compared
+ * byte for byte, so a valid signature by the account over any other transaction is refused.
+ */
+const signerFromEnvelope = (
+  signedTransaction: Uint8Array,
+  request: Extract<SignRequest, { kind: "evm.transaction" }>,
+): string => {
+  const hex = Hex.fromBytes(signedTransaction);
+  const { signature, authorization } = signaturesOf(hex);
+  const expected = evmEnvelope(request.tx, authorization);
+  // `serialize` keeps the request's hex casing (checksummed addresses); `hex` is lowercase.
+  if (expected.serialize(signature).toLowerCase() !== hex) {
+    throw new ChainError("invalid-request", "the signed transaction does not match the request");
+  }
+  const signer = Secp256k1.recoverAddress({ payload: expected.payload, signature });
+  if (request.tx.type === "eip7702" && authorization !== undefined) {
     const authSigner = Secp256k1.recoverAddress({
-      payload: Authorization.getSignPayload({ address, chainId, nonce }),
-      signature: Signature.from(auth),
+      payload: Authorization.getSignPayload(evmAuthorization(request.tx)),
+      signature: authorization,
     });
     if (authSigner.toLowerCase() !== signer.toLowerCase()) {
       throw new ChainError("invalid-request", "authorization signer is not the account");
     }
-    return signer;
   }
-  if (tag === 0x02) {
-    assertEip1559Hex(hex);
-    const env = TxEnvelopeEip1559.deserialize(hex);
-    const payload = TxEnvelopeEip1559.getSignPayload(env);
-    return Secp256k1.recoverAddress({ payload, signature: signatureOf(env) });
-  }
-  if (tag === 0x01) {
-    assertEip2930Hex(hex);
-    const env = TxEnvelopeEip2930.deserialize(hex);
-    const payload = TxEnvelopeEip2930.getSignPayload(env);
-    return Secp256k1.recoverAddress({ payload, signature: signatureOf(env) });
-  }
-  try {
-    const env = TxEnvelopeLegacy.deserialize(hex);
-    const payload = TxEnvelopeLegacy.getSignPayload(env);
-    return Secp256k1.recoverAddress({ payload, signature: signatureOf(env) });
-  } catch {
-    throw new ChainError("invalid-request", "unrecognized signed transaction envelope");
-  }
+  return signer;
 };
 
 /**

@@ -8,27 +8,12 @@ import * as Hex from "ox/Hex";
 import * as PersonalMessage from "ox/PersonalMessage";
 import * as Secp256k1 from "ox/Secp256k1";
 import * as Signature from "ox/Signature";
-import * as TxEnvelopeEip1559 from "ox/TxEnvelopeEip1559";
-import * as TxEnvelopeEip2930 from "ox/TxEnvelopeEip2930";
-import * as TxEnvelopeEip7702 from "ox/TxEnvelopeEip7702";
-import * as TxEnvelopeLegacy from "ox/TxEnvelopeLegacy";
 import * as TypedData from "ox/TypedData";
 
 import { ChainError } from "../index.ts";
-import type { EvmAccessListEntry, EvmTransaction } from "../index.ts";
+import type { EvmTransaction } from "../index.ts";
+import { evmAuthorization, evmEnvelope } from "./envelope.ts";
 import { parseTypedData } from "./typed-data.ts";
-
-/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
-function assertHex(value: string, field: string): asserts value is `0x${string}` {
-  if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) {
-    throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-  }
-}
-
-const hex = (value: string, field: string): `0x${string}` => {
-  assertHex(value, field);
-  return value;
-};
 
 const key = (privateKey: Uint8Array): `0x${string}` => {
   if (privateKey.length !== 32) {
@@ -37,75 +22,19 @@ const key = (privateKey: Uint8Array): `0x${string}` => {
   return Hex.fromBytes(privateKey);
 };
 
-const accessEntry = (entry: EvmAccessListEntry) => ({
-  address: hex(entry.address, "accessList.address"),
-  storageKeys: entry.storageKeys.map((k) => hex(k, "accessList.storageKeys")),
-});
-
 const sign = (payload: `0x${string}`, privateKey: `0x${string}`) =>
   Secp256k1.sign({ payload, privateKey, as: "Object" as const });
 
 /** Signs a normalized transaction; returns the serialized signed envelope. */
 export const signEvmTransaction = (tx: EvmTransaction, privateKey: Uint8Array): Uint8Array => {
   const privateKeyHex = key(privateKey);
-  const base = {
-    chainId: tx.chainId,
-    to: tx.to === undefined ? undefined : hex(tx.to, "to"),
-    data: hex(tx.data, "data"),
-    value: BigInt(tx.value),
-    nonce: BigInt(tx.nonce),
-    gas: BigInt(tx.gas),
-  };
-  if (tx.type === "legacy") {
-    const envelope = { ...base, type: "legacy" as const, gasPrice: BigInt(tx.gasPrice) };
-    const signature = sign(TxEnvelopeLegacy.getSignPayload(envelope), privateKeyHex);
-    return Hex.toBytes(TxEnvelopeLegacy.serialize(envelope, { signature }));
-  }
-  if (tx.type === "eip2930") {
-    const envelope = {
-      ...base,
-      type: "eip2930" as const,
-      gasPrice: BigInt(tx.gasPrice),
-      accessList: tx.accessList.map(accessEntry),
-    };
-    const signature = sign(TxEnvelopeEip2930.getSignPayload(envelope), privateKeyHex);
-    return Hex.toBytes(TxEnvelopeEip2930.serialize(envelope, { signature }));
-  }
-  if (tx.type === "eip7702") {
-    const auth = {
-      chainId: tx.chainId,
-      address: hex(tx.authorization.address, "authorization.address"),
-      nonce: BigInt(tx.nonce + 1),
-    };
-    const authSignature = sign(Authorization.getSignPayload(auth), privateKeyHex);
-    const envelope = {
-      ...base,
-      type: "eip7702" as const,
-      to: hex(tx.to, "to"),
-      accessList: tx.accessList.map(accessEntry),
-      maxFeePerGas: BigInt(tx.maxFeePerGas),
-      maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
-      authorizationList: [
-        {
-          ...auth,
-          r: authSignature.r,
-          s: authSignature.s,
-          yParity: authSignature.yParity ?? 0,
-        },
-      ],
-    };
-    const signature = sign(TxEnvelopeEip7702.getSignPayload(envelope), privateKeyHex);
-    return Hex.toBytes(TxEnvelopeEip7702.serialize(envelope, { signature }));
-  }
-  const envelope = {
-    ...base,
-    type: "eip1559" as const,
-    accessList: tx.accessList.map(accessEntry),
-    maxFeePerGas: BigInt(tx.maxFeePerGas),
-    maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
-  };
-  const signature = sign(TxEnvelopeEip1559.getSignPayload(envelope), privateKeyHex);
-  return Hex.toBytes(TxEnvelopeEip1559.serialize(envelope, { signature }));
+  const envelope = evmEnvelope(
+    tx,
+    tx.type === "eip7702"
+      ? sign(Authorization.getSignPayload(evmAuthorization(tx)), privateKeyHex)
+      : undefined,
+  );
+  return Hex.toBytes(envelope.serialize(sign(envelope.payload, privateKeyHex)));
 };
 
 /** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */

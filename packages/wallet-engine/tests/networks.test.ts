@@ -12,6 +12,19 @@ const openStore = async () => Promise.resolve(createMemoryEngineStore());
 const chainIdFetch = (hexId: string) =>
   (async () => Promise.resolve(Response.json({ result: hexId }, { status: 200 }))) as typeof fetch;
 
+const [BTC] = BITCOIN_NETWORKS;
+if (BTC === undefined) {
+  throw new Error("the registry has no bitcoin network");
+}
+
+/** An Esplora that answers only the genesis probe. */
+const esploraFetch = (async (input: string | URL | Request) => {
+  await Promise.resolve();
+  return String(input).endsWith("/block-height/0")
+    ? new Response(BTC.genesisHash ?? "")
+    : new Response("not found", { status: 404 });
+}) as typeof fetch;
+
 const DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 const DEVNET_GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 
@@ -122,5 +135,68 @@ describe("NetworkController", () => {
       "https://saved.example",
       "https://host.example",
     ]);
+  });
+
+  it("re-verifies persisted endpoints at unlock and skips one that changed chain", async () => {
+    const store = createMemoryEngineStore();
+    const a = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: chainIdFetch("0x1"),
+      rpc: {},
+      openStore: async () => Promise.resolve(store),
+      logger,
+    });
+    await a.init();
+    await a.addRpc("eip155:1", "https://saved.example");
+    const warnings: string[] = [];
+    const b = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: chainIdFetch("0x38"),
+      rpc: { "eip155:1": ["https://host.example"] },
+      openStore: async () => Promise.resolve(store),
+      logger: { warn: (message: string) => warnings.push(message) },
+    });
+    await b.init();
+    expect(b.endpoints("eip155:1")).toStrictEqual(["https://host.example"]);
+    expect(warnings).toContain(
+      "custom endpoint not used for this session: eip155:1 https://saved.example",
+    );
+    // Still persisted: the next unlock re-checks it rather than losing the user's setting.
+    const c = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: chainIdFetch("0x1"),
+      rpc: {},
+      openStore: async () => Promise.resolve(store),
+      logger,
+    });
+    await c.init();
+    expect(c.endpoints("eip155:1")).toStrictEqual(["https://saved.example"]);
+  });
+
+  it("persists a validated Bitcoin Esplora endpoint", async () => {
+    const n = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: esploraFetch,
+      rpc: {},
+      openStore,
+      logger,
+    });
+    await n.init();
+    await n.addRpc(BTC.id, "https://esplora.example/api");
+    expect(n.endpoints(BTC.id)).toStrictEqual(["https://esplora.example/api"]);
+  });
+
+  it("unlocks past a non-JSON custom endpoint row", async () => {
+    const store = createMemoryEngineStore();
+    await store.collection("networks").put("customRpc", new TextEncoder().encode("{torn"));
+    const n = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: chainIdFetch("0x1"),
+      rpc: { "eip155:1": ["https://host.example"] },
+      openStore: async () => Promise.resolve(store),
+      logger,
+    });
+    await n.init();
+    expect(n.endpoints("eip155:1")).toStrictEqual(["https://host.example"]);
   });
 });

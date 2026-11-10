@@ -40,8 +40,9 @@ export type SetTimer = (delayMs: number, fn: () => void) => () => void;
 
 /**
  * A silent kernel is a wedged kernel: the request at the head of the kernel's serial queue gets
- * this long before the port is replaced. Requests still queued behind it are not timed — the kernel
- * answers in order, so only the head can wedge.
+ * this long before the port is replaced, not counting time spent inside a system verification
+ * prompt (the kernel's `ceremony` events suspend the timer). Requests still queued behind the head
+ * are not timed — the kernel answers in order, so only the head can wedge.
  */
 const CALL_TIMEOUT_MS = 60_000;
 
@@ -70,6 +71,8 @@ export class Channel {
   private unlisten: (() => void) | undefined;
   private unlistenExit: (() => void) | undefined;
   private generation = 0;
+  /** The kernel reported a pending system verification prompt — the watchdog is suspended. */
+  private ceremony = false;
 
   private readonly pending = new Map<number, Pending>();
   /** Times the earliest pending request — the one the kernel is working on. */
@@ -125,6 +128,7 @@ export class Channel {
     this.port = undefined;
     this.session = undefined;
     this.deferredStatus = undefined;
+    this.ceremony = false;
     this.watchdog?.cancel();
     this.watchdog = undefined;
     this.portReady = false;
@@ -216,6 +220,7 @@ export class Channel {
   }
 
   private failPending(error: WalletError): void {
+    this.ceremony = false;
     this.watchdog?.cancel();
     this.watchdog = undefined;
     for (const [, pending] of this.pending) {
@@ -229,7 +234,7 @@ export class Channel {
     this.watchdog?.cancel();
     const head = this.pending.keys().next().value;
     this.watchdog =
-      head === undefined
+      head === undefined || this.ceremony
         ? undefined
         : {
             id: head,
@@ -237,6 +242,20 @@ export class Channel {
               this.onCallTimeout();
             }),
           };
+  }
+
+  /** A `ceremony` event suspends (active) or re-arms (inactive) the watchdog on the current head. */
+  private onCeremony(active: boolean): void {
+    if (this.ceremony === active) {
+      return;
+    }
+    this.ceremony = active;
+    if (active) {
+      this.watchdog?.cancel();
+      this.watchdog = undefined;
+    } else {
+      this.armWatchdog();
+    }
   }
 
   /** Removes the pending entry, re-timing the watchdog when the head settled, then runs `fn`. */
@@ -318,13 +337,15 @@ export class Channel {
         }
         this.portReady = true;
         this.resolveReady?.();
-      } else {
+      } else if (event.event === "locked") {
         // A locked event destroys the enclave: drop the session, tear down the port, respawn.
         this.session = undefined;
         this.deferredStatus = undefined;
         this.handlers.onLocked(event.reason);
         this.failPending(new WalletError("locked", "the vault locked"));
         this.respawn();
+      } else {
+        this.onCeremony(event.active);
       }
       return;
     }

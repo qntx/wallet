@@ -551,7 +551,7 @@ const sparkApprove = async (
     params.account,
     params.intent,
   );
-  await verifyFactor(ctx.platform, ctx.image, params.verify, dek, () =>
+  await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () =>
     sparkPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), summary),
   );
   // Re-check after the prompt: the session may have ended and approvals may have expired or
