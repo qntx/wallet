@@ -17543,430 +17543,69 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-M-0IlEpr.mjs
-	init_secp256k1();
-	init_utils$2();
-	init_objectSpread2();
-	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
-	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
-	function checksumEvmAddress(address) {
-		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
-		const checksummed = checksum(address);
-		assert$7(checksummed, { strict: true });
-		return checksummed;
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
+	init_defineProperty();
+	/**
+	* Converts a structured Access List into a list of tuples.
+	*
+	* @example
+	* ```ts twoslash
+	* import { AccessList } from 'ox'
+	*
+	* const accessList = AccessList.toTupleList([
+	*   {
+	*     address: '0x0000000000000000000000000000000000000000',
+	*     storageKeys: [
+	*       '0x0000000000000000000000000000000000000000000000000000000000000001',
+	*       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe'
+	*     ]
+	*   }
+	* ])
+	* // @log: [
+	* // @log:   [
+	* // @log:     '0x0000000000000000000000000000000000000000',
+	* // @log:     [
+	* // @log:       '0x0000000000000000000000000000000000000000000000000000000000000001',
+	* // @log:       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe',
+	* // @log:     ],
+	* // @log:   ],
+	* // @log: ]
+	* ```
+	*
+	* @param accessList - Access list.
+	* @returns List of tuples.
+	*/
+	function toTupleList$1(accessList) {
+		if (!accessList || accessList.length === 0) return [];
+		const tuple = [];
+		for (const { address, storageKeys } of accessList) {
+			for (let j = 0; j < storageKeys.length; j++) if (size$1(storageKeys[j]) !== 32) throw new InvalidStorageKeySizeError({ storageKey: storageKeys[j] });
+			if (address) assert$7(address, { strict: false });
+			tuple.push([address, storageKeys]);
+		}
+		return tuple;
 	}
-	/** `keccak256(pubkey)[12:]` — accepts a 33-byte compressed or 65-byte uncompressed secp256k1 key. */
-	function evmAddressFromPublicKey(pubkey) {
-		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
-		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
-		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+	/** Thrown when the size of a storage key is invalid. */
+	var InvalidStorageKeySizeError = class extends BaseError {
+		constructor({ storageKey }) {
+			super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${size$1(storageKey)} bytes.`);
+			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
+		}
+	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
+	/**
+	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
+	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
+	*
+	* Replaces the per-envelope `value ? Hex.fromNumber(value) : '0x'` pattern.
+	*
+	* @internal
+	*/
+	function quantityToHex(value) {
+		if (value === void 0 || value === null) return "0x";
+		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
+		return fromNumber(value);
 	}
-	/**
-	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
-	* address on every chain that supports it.
-	*/
-	var EVM_DELEGATOR = {
-		address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
-		name: "EIP7702StatelessDeleGator",
-		version: "1.3.0"
-	};
-	/** ERC-7821 batch-default execution mode: `0x01` followed by 31 zero bytes. */
-	var EXECUTE_BATCH_MODE = "0x0100000000000000000000000000000000000000000000000000000000000000";
-	var EXECUTE = from$2("function execute(bytes32 mode, bytes executionData)");
-	var EXECUTIONS = [{
-		type: "tuple[]",
-		components: [
-			{
-				name: "target",
-				type: "address"
-			},
-			{
-				name: "value",
-				type: "uint256"
-			},
-			{
-				name: "callData",
-				type: "bytes"
-			}
-		]
-	}];
-	var hex$2 = (v) => {
-		assert$8(v);
-		return v;
-	};
-	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
-	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$3(EXECUTIONS, [calls.map((c) => ({
-		target: hex$2(checksumEvmAddress(c.to)),
-		value: c.value,
-		callData: hex$2(c.data)
-	}))])]);
-	var list = (v) => Array.isArray(v) ? v : [];
-	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
-	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
-	var decodeBatchExecute = (data) => {
-		try {
-			const [mode, executionData] = list(decodeData(EXECUTE, hex$2(data)));
-			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
-			const [inner] = list(decode$2(EXECUTIONS, hex$2(executionData)));
-			const executions = [];
-			for (const e of list(inner)) {
-				if (!isExecution(e)) return;
-				executions.push({
-					to: checksumEvmAddress(e.target),
-					value: e.value,
-					data: e.callData
-				});
-			}
-			return encodeBatchExecute(executions).toLowerCase() === data.toLowerCase() ? executions : void 0;
-		} catch (_unused) {
-			return;
-		}
-	};
-	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
-	function assertHex$1(value, field) {
-		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-	}
-	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
-	var canonicalHex = (value) => `0x${value.toString(16)}`;
-	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
-	var quantityBigInt = (value, field) => {
-		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
-		return BigInt(value);
-	};
-	var safeInteger = (value, field) => {
-		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
-		return value;
-	};
-	var quantity = (value, field) => {
-		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
-		if (CANONICAL_HEX.test(value)) return value;
-		return canonicalHex(quantityBigInt(value, field));
-	};
-	var hexBytes$1 = (value, field) => {
-		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-		return value.toLowerCase();
-	};
-	var accessList = (value) => {
-		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
-		return value.map((entry) => {
-			if (!isRecord$3(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
-			const keys = Object.keys(entry).sort();
-			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
-			const { address, storageKeys } = entry;
-			if (typeof address !== "string" || !isEvmAddress(address)) throw new ChainError("invalid-address", "accessList entry has an invalid address");
-			if (!Array.isArray(storageKeys)) throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
-			return {
-				address: checksumEvmAddress(address),
-				storageKeys: storageKeys.map((k) => {
-					if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ChainError("invalid-quantity", "accessList storageKeys must be 32-byte hex strings");
-					return k.toLowerCase();
-				})
-			};
-		});
-	};
-	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
-	var networkChainId = (network) => {
-		var _exec;
-		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
-		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
-		const id = Number(idPart);
-		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
-		return id;
-	};
-	var REQUIRED = {
-		base: [
-			"chainId",
-			"nonce",
-			"gas",
-			"value",
-			"data"
-		],
-		gasPrice: ["gasPrice"],
-		accessList: ["accessList"],
-		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
-	};
-	var ALLOWED = {
-		base: [
-			"type",
-			"chainId",
-			"nonce",
-			"gas",
-			"value",
-			"data",
-			"to"
-		],
-		legacy: ["gasPrice"],
-		eip2930: ["gasPrice", "accessList"],
-		eip1559: [
-			"accessList",
-			"maxFeePerGas",
-			"maxPriorityFeePerGas"
-		],
-		eip7702: [
-			"accessList",
-			"maxFeePerGas",
-			"maxPriorityFeePerGas",
-			"authorization"
-		]
-	};
-	var requireFields = (input, fields) => {
-		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
-	};
-	var rejectUnknown = (input, type) => {
-		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
-		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
-		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
-	};
-	/**
-	* Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
-	* canonical quantities, EIP-55 addresses. Idempotent.
-	*/
-	var normalizeEvmTransaction = (tx) => {
-		if (!isRecord$3(tx)) throw new ChainError("invalid-request", "tx must be an object");
-		const { type } = tx;
-		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559" && type !== "eip7702") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930, eip1559 and eip7702 only)`);
-		rejectUnknown(tx, type);
-		requireFields(tx, REQUIRED.base);
-		const chainId = safeInteger(tx["chainId"], "chainId");
-		const nonce = safeInteger(tx["nonce"], "nonce");
-		const gas = quantity(tx["gas"], "gas");
-		const value = quantity(tx["value"], "value");
-		const data = hexBytes$1(tx["data"], "data");
-		const toRaw = tx["to"];
-		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
-		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
-		const base = _objectSpread2({
-			chainId,
-			nonce,
-			gas,
-			value,
-			data
-		}, to === void 0 ? {} : { to });
-		if (type === "legacy") {
-			requireFields(tx, REQUIRED.gasPrice);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
-		}
-		if (type === "eip2930") {
-			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
-			return _objectSpread2(_objectSpread2({ type }, base), {}, {
-				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
-				accessList: accessList(tx["accessList"])
-			});
-		}
-		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
-		const fees = {
-			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
-			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
-		};
-		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
-		const list = accessList(tx["accessList"]);
-		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
-		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
-		const auth = tx["authorization"];
-		if (!isRecord$3(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") throw new ChainError("invalid-request", "tx.authorization must be an object with exactly address");
-		const authAddress = checksumEvmAddress(auth["address"]);
-		if (authAddress !== EVM_DELEGATOR.address && authAddress !== "0x0000000000000000000000000000000000000000") throw new ChainError("unsupported", "authorization address is not supported");
-		return _objectSpread2(_objectSpread2(_objectSpread2({ type }, base), {}, {
-			to,
-			accessList: list
-		}, fees), {}, { authorization: { address: authAddress } });
-	};
-	var isField = (value) => isRecord$3(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
-	var isTypedDataInput = (value) => {
-		if (!isRecord$3(value)) return false;
-		const { types, primaryType, domain, message } = value;
-		if (!isRecord$3(types)) return false;
-		if (typeof primaryType !== "string" || primaryType === "") return false;
-		if (!isRecord$3(domain)) return false;
-		if (!isRecord$3(message)) return false;
-		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
-	};
-	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-	/** `value` is an array of message objects (empty allowed). */
-	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
-	/** The `Type field,Type field` signature of struct `name` in `types`. */
-	var typedDataSignature = (types, name) => {
-		var _types$name;
-		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
-	};
-	/** Struct `name` has exactly `fields`, in order, no more. */
-	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
-	/** A hex `address` field value, checksummed; `undefined` when malformed. */
-	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
-	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
-	var typedDataUint = (value, max) => {
-		let parsed;
-		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
-		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
-		else return;
-		return parsed >= 0n && parsed <= max ? parsed : void 0;
-	};
-	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
-	var MAX_UINT48 = 2n ** 48n - 1n;
-	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
-	/** A `bytes` field value: `0x`-prefixed hex of even length. */
-	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
-	/**
-	* Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
-	* struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
-	* message and a missing nested struct fails here rather than inside the encoder.
-	*/
-	var checkStructure = (types, type, value, depth) => {
-		const array = /^(.+)\[\d*\]$/.exec(type);
-		const struct = array === null ? types[type] : void 0;
-		if (array === null && struct === void 0) return;
-		if (depth >= 32) throw new ChainError("invalid-typed-data", "typedData nests too deeply");
-		if (array !== null) {
-			var _array$;
-			if (!Array.isArray(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
-			for (const item of value) checkStructure(types, (_array$ = array[1]) !== null && _array$ !== void 0 ? _array$ : "", item, depth + 1);
-			return;
-		}
-		if (!isRecord$3(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
-		for (const field of struct !== null && struct !== void 0 ? struct : []) checkStructure(types, field.type, value[field.name], depth + 1);
-	};
-	/**
-	* Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
-	* without it ox derives the domain type from the domain object while MetaMask hashes an empty
-	* domain, so the same document would sign differently across wallets.
-	*/
-	var parseTypedData = (typedData) => {
-		let json;
-		try {
-			json = JSON.parse(typedData);
-		} catch (_unused2) {
-			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
-		}
-		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
-		if (json.types["EIP712Domain"] === void 0) throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
-		try {
-			validate$1(json);
-		} catch (_unused3) {
-			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
-		}
-		checkStructure(json.types, json.primaryType, json.message, 0);
-		return { json };
-	};
-	/**
-	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
-	* decimal string or a `0x` hex string.
-	*/
-	var domainChainId = (domain) => {
-		const { chainId } = domain;
-		if (chainId === void 0) return;
-		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
-		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
-		return numeric;
-	};
-	// packages/wallet-chains/dist/networks.mjs
-	init_objectSpread2();
-	var evm = (chainId, name, symbol, testnet) => ({
-		id: `eip155:${chainId}`,
-		family: "evm",
-		name,
-		symbol,
-		decimals: 18,
-		testnet,
-		chainId
-	});
-	var EVM_NETWORKS = [
-		evm(1, "Ethereum", "ETH", false),
-		evm(8453, "Base", "ETH", false),
-		evm(42161, "Arbitrum One", "ETH", false),
-		evm(10, "OP Mainnet", "ETH", false),
-		evm(137, "Polygon", "POL", false),
-		evm(56, "BNB Smart Chain", "BNB", false),
-		evm(999, "HyperEVM", "HYPE", false),
-		evm(43114, "Avalanche C-Chain", "AVAX", false),
-		evm(11155111, "Sepolia", "ETH", true),
-		evm(84532, "Base Sepolia", "ETH", true),
-		evm(421614, "Arbitrum Sepolia", "ETH", true),
-		evm(11155420, "OP Sepolia", "ETH", true),
-		evm(80002, "Polygon Amoy", "POL", true),
-		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
-		evm(998, "HyperEVM Testnet", "HYPE", true),
-		evm(43113, "Avalanche Fuji", "AVAX", true)
-	];
-	var BUILT_IN_NETWORKS = Object.freeze([
-		...EVM_NETWORKS,
-		{
-			id: "bip122:000000000019d6689c085ae165831e93",
-			chainId: 0,
-			name: "Bitcoin",
-			symbol: "BTC",
-			decimals: 8,
-			testnet: false,
-			family: "bitcoin",
-			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
-		},
-		{
-			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
-			chainId: 0,
-			name: "Bitcoin Testnet4",
-			symbol: "tBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
-		},
-		{
-			id: "bip122:00000008819873e925422c1ff0f99f7c",
-			chainId: 0,
-			name: "Bitcoin Signet",
-			symbol: "sBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
-		},
-		{
-			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
-			chainId: 0,
-			name: "Bitcoin Regtest",
-			symbol: "rBTC",
-			decimals: 8,
-			testnet: true,
-			family: "bitcoin",
-			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
-		},
-		{
-			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
-			chainId: 0,
-			name: "Solana",
-			symbol: "SOL",
-			decimals: 9,
-			testnet: false,
-			family: "solana",
-			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
-		},
-		{
-			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
-			chainId: 0,
-			name: "Solana Devnet",
-			symbol: "SOL",
-			decimals: 9,
-			testnet: true,
-			family: "solana",
-			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
-		}
-	]);
-	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
-	/**
-	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
-	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
-	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
-	*/
-	var withNativeAmountMeta = (intent, network, asset, decimals) => {
-		var _networkMeta;
-		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
-		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
-		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
-			amount: amount(a.amount),
-			receive: amount(a.receive)
-		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) });
-		return decorate(intent);
-	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
 	init_defineProperty();
 	/**
@@ -18877,7 +18516,7 @@
 	* @param list - An {@link ox#Authorization.List}.
 	* @returns An [EIP-7702](https://eips.ethereum.org/EIPS/eip-7702) Authorization tuple list.
 	*/
-	function toTupleList$1(list) {
+	function toTupleList(list) {
 		if (!list || list.length === 0) return [];
 		const tupleList = [];
 		for (const authorization of list) tupleList.push(toTuple(authorization));
@@ -18893,6 +18532,1413 @@
 			value: `${yParity}`
 		});
 	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip2930.js
+	init_objectSpread2();
+	/**
+	* Asserts a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930} is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip2930, Value } from 'ox'
+	*
+	* TxEnvelopeEip2930.assert({
+	*   gasPrice: 2n ** 256n - 1n + 1n,
+	*   chainId: 1,
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	* // @error: GasPriceTooHighError:
+	* // @error: The gas price (`gasPrice` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
+	* // @error: higher than the maximum allowed value (2^256-1).
+	* ```
+	*
+	* @param envelope - The transaction envelope to assert.
+	*/
+	function assert$4(envelope) {
+		const { chainId, gasPrice, to } = envelope;
+		if (chainId <= 0) throw new InvalidChainIdError({ chainId });
+		if (to) assert$7(to, { strict: false });
+		if (gasPrice && BigInt(gasPrice) > 2n ** 256n - 1n) throw new GasPriceTooHighError({ gasPrice });
+	}
+	/**
+	* Returns the payload to sign for a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}.
+	*
+	* @example
+	* The example below demonstrates how to compute the sign payload which can be used
+	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
+	*
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeEip2930 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip2930.from({
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   gasPrice: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n
+	* })
+	*
+	* const payload = TxEnvelopeEip2930.getSignPayload(envelope) // [!code focus]
+	* // @log: '0x...'
+	*
+	* const signature = Secp256k1.sign({
+	*   payload,
+	*   privateKey: '0x...'
+	* })
+	* ```
+	*
+	* @param envelope - The transaction envelope to get the sign payload for.
+	* @returns The sign payload.
+	*/
+	function getSignPayload$4(envelope) {
+		return hash$3(envelope, { presign: true });
+	}
+	/**
+	* Hashes a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}. This is the "transaction hash".
+	*
+	* @example
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeEip2930 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip2930.from({
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   gasPrice: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip2930.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const envelope_signed = TxEnvelopeEip2930.from(envelope, {
+	*   signature
+	* })
+	*
+	* const hash = TxEnvelopeEip2930.hash(envelope_signed) // [!code focus]
+	* ```
+	*
+	* @param envelope - The EIP-2930 Transaction Envelope to hash.
+	* @param options - Options.
+	* @returns The hash of the transaction envelope.
+	*/
+	function hash$3(envelope, options = {}) {
+		const { presign } = options;
+		return keccak256(serialize$3(_objectSpread2(_objectSpread2({}, envelope), presign ? {
+			r: void 0,
+			s: void 0,
+			yParity: void 0,
+			v: void 0
+		} : {})));
+	}
+	/**
+	* Serializes a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip2930, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip2930.from({
+	*   chainId: 1,
+	*   gasPrice: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const serialized = TxEnvelopeEip2930.serialize(envelope) // [!code focus]
+	* ```
+	*
+	* @example
+	* ### Attaching Signatures
+	*
+	* It is possible to attach a `signature` to the serialized Transaction Envelope.
+	*
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeEip2930, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip2930.from({
+	*   chainId: 1,
+	*   gasPrice: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip2930.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const serialized = TxEnvelopeEip2930.serialize(envelope, {
+	*   // [!code focus]
+	*   signature // [!code focus]
+	* }) // [!code focus]
+	*
+	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
+	* ```
+	*
+	* @param envelope - The Transaction Envelope to serialize.
+	* @param options - Options.
+	* @returns The serialized Transaction Envelope.
+	*/
+	function serialize$3(envelope, options = {}) {
+		var _ref;
+		const { chainId, gas, data, input, nonce, to, value, accessList, gasPrice } = envelope;
+		assert$4(envelope);
+		const accessTupleList = toTupleList$1(accessList);
+		const signature = extract(options.signature || envelope);
+		return concat$2("0x01", fromHex$1([
+			fromNumber(chainId),
+			quantityToHex(nonce),
+			quantityToHex(gasPrice),
+			quantityToHex(gas),
+			to !== null && to !== void 0 ? to : "0x",
+			quantityToHex(value),
+			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
+			accessTupleList,
+			...signature ? toTuple$1(signature) : []
+		]));
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip7702.js
+	init_objectSpread2();
+	var serializedType$1 = "0x04";
+	/**
+	* Asserts a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702} is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip7702, Value } from 'ox'
+	*
+	* TxEnvelopeEip7702.assert({
+	*   authorizationList: [],
+	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
+	*   chainId: 1,
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	* // @error: FeeCapTooHighError:
+	* // @error: The fee cap (`masFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
+	* // @error: higher than the maximum allowed value (2^256-1).
+	* ```
+	*
+	* @param envelope - The transaction envelope to assert.
+	*/
+	function assert$3(envelope) {
+		const { authorizationList } = envelope;
+		if (authorizationList) for (const authorization of authorizationList) {
+			const { address, chainId } = authorization;
+			if (address) assert$7(address, { strict: false });
+			if (Number(chainId) < 0) throw new InvalidChainIdError({ chainId });
+		}
+		assert$1(envelope);
+	}
+	/**
+	* Returns the payload to sign for a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}.
+	*
+	* @example
+	* The example below demonstrates how to compute the sign payload which can be used
+	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeEip7702 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList: [...],
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   maxFeePerGas: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n,
+	* })
+	*
+	* const payload = TxEnvelopeEip7702.getSignPayload(envelope) // [!code focus]
+	* // @log: '0x...'
+	*
+	* const signature = Secp256k1.sign({ payload, privateKey: '0x...' })
+	* ```
+	*
+	* @param envelope - The transaction envelope to get the sign payload for.
+	* @returns The sign payload.
+	*/
+	function getSignPayload$3(envelope) {
+		return hash$2(envelope, { presign: true });
+	}
+	/**
+	* Hashes a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}. This is the "transaction hash".
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeEip7702 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList: [...],
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   maxFeePerGas: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n,
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip7702.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const envelope_signed = TxEnvelopeEip7702.from(envelope, { signature })
+	*
+	* const hash = TxEnvelopeEip7702.hash(envelope_signed) // [!code focus]
+	* ```
+	*
+	* @param envelope - The EIP-7702 Transaction Envelope to hash.
+	* @param options - Options.
+	* @returns The hash of the transaction envelope.
+	*/
+	function hash$2(envelope, options = {}) {
+		const { presign } = options;
+		return keccak256(serialize$2(_objectSpread2(_objectSpread2({}, envelope), presign ? {
+			r: void 0,
+			s: void 0,
+			yParity: void 0
+		} : {})));
+	}
+	/**
+	* Serializes a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}.
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import {
+	*   Authorization,
+	*   Secp256k1,
+	*   TxEnvelopeEip7702,
+	*   Value
+	* } from 'ox'
+	*
+	* const authorization = Authorization.from({
+	*   address: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   chainId: 1,
+	*   nonce: 0n
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: Authorization.getSignPayload(authorization),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const authorizationList = [
+	*   Authorization.from(authorization, { signature })
+	* ]
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList,
+	*   chainId: 1,
+	*   maxFeePerGas: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const serialized = TxEnvelopeEip7702.serialize(envelope) // [!code focus]
+	* ```
+	*
+	* @example
+	* ### Attaching Signatures
+	*
+	* It is possible to attach a `signature` to the serialized Transaction Envelope.
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeEip7702, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip7702.from({
+	*   authorizationList: [...],
+	*   chainId: 1,
+	*   maxFeePerGas: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1'),
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip7702.getSignPayload(envelope),
+	*   privateKey: '0x...',
+	* })
+	*
+	* const serialized = TxEnvelopeEip7702.serialize(envelope, { // [!code focus]
+	*   signature, // [!code focus]
+	* }) // [!code focus]
+	*
+	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
+	* ```
+	*
+	* @param envelope - The Transaction Envelope to serialize.
+	* @param options - Options.
+	* @returns The serialized Transaction Envelope.
+	*/
+	function serialize$2(envelope, options = {}) {
+		var _ref;
+		const { authorizationList, chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
+		assert$3(envelope);
+		const accessTupleList = toTupleList$1(accessList);
+		const authorizationTupleList = toTupleList(authorizationList);
+		const signature = extract(options.signature || envelope);
+		return concat$2(serializedType$1, fromHex$1([
+			fromNumber(chainId),
+			quantityToHex(nonce),
+			quantityToHex(maxPriorityFeePerGas),
+			quantityToHex(maxFeePerGas),
+			quantityToHex(gas),
+			to !== null && to !== void 0 ? to : "0x",
+			quantityToHex(value),
+			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
+			accessTupleList,
+			authorizationTupleList,
+			...signature ? toTuple$1(signature) : []
+		]));
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeLegacy.js
+	init_objectSpread2();
+	/**
+	* Asserts a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy} is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeLegacy, Value } from 'ox'
+	*
+	* TxEnvelopeLegacy.assert({
+	*   gasPrice: 2n ** 256n - 1n + 1n,
+	*   chainId: 1,
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	* // @error: GasPriceTooHighError:
+	* // @error: The gas price (`gasPrice` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
+	* // @error: higher than the maximum allowed value (2^256-1).
+	* ```
+	*
+	* @param envelope - The transaction envelope to assert.
+	*/
+	function assert$2(envelope) {
+		const { chainId, gasPrice, to } = envelope;
+		if (to) assert$7(to, { strict: false });
+		if (typeof chainId !== "undefined" && chainId <= 0) throw new InvalidChainIdError({ chainId });
+		if (gasPrice && BigInt(gasPrice) > 2n ** 256n - 1n) throw new GasPriceTooHighError({ gasPrice });
+	}
+	/**
+	* Returns the payload to sign for a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy}.
+	*
+	* @example
+	* The example below demonstrates how to compute the sign payload which can be used
+	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeLegacy } from 'ox'
+	*
+	* const envelope = TxEnvelopeLegacy.from({
+	*   nonce: 0n,
+	*   gasPrice: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n
+	* })
+	*
+	* const payload = TxEnvelopeLegacy.getSignPayload(envelope) // [!code focus]
+	* // @log: '0x...'
+	*
+	* const signature = Secp256k1.sign({
+	*   payload,
+	*   privateKey: '0x...'
+	* })
+	* ```
+	*
+	* @param envelope - The transaction envelope to get the sign payload for.
+	* @returns The sign payload.
+	*/
+	function getSignPayload$2(envelope) {
+		return hash$1(envelope, { presign: true });
+	}
+	/**
+	* Hashes a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy}. This is the "transaction hash".
+	*
+	* @example
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeLegacy } from 'ox'
+	*
+	* const envelope = TxEnvelopeLegacy.from({
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   gasPrice: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeLegacy.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const envelope_signed = TxEnvelopeLegacy.from(envelope, {
+	*   signature
+	* })
+	*
+	* const hash = TxEnvelopeLegacy.hash(envelope_signed) // [!code focus]
+	* ```
+	*
+	* @param envelope - The Legacy Transaction Envelope to hash.
+	* @param options - Options.
+	* @returns The hash of the transaction envelope.
+	*/
+	function hash$1(envelope, options = {}) {
+		const { presign } = options;
+		return keccak256(serialize$1(_objectSpread2(_objectSpread2({}, envelope), presign ? {
+			r: void 0,
+			s: void 0,
+			yParity: void 0,
+			v: void 0
+		} : {})));
+	}
+	/**
+	* Serializes a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy}.
+	*
+	* @example
+	* ```ts twoslash
+	* // @noErrors
+	* import { TxEnvelopeLegacy } from 'ox'
+	*
+	* const envelope = TxEnvelopeLegacy.from({
+	*   chainId: 1,
+	*   gasPrice: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const serialized = TxEnvelopeLegacy.serialize(envelope) // [!code focus]
+	* ```
+	*
+	* @example
+	* ### Attaching Signatures
+	*
+	* It is possible to attach a `signature` to the serialized Transaction Envelope.
+	*
+	* ```ts twoslash
+	* // @noErrors
+	* import { Secp256k1, TxEnvelopeLegacy, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeLegacy.from({
+	*   chainId: 1,
+	*   gasPrice: Value.fromGwei('10'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeLegacy.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const serialized = TxEnvelopeLegacy.serialize(envelope, {
+	*   // [!code focus]
+	*   signature // [!code focus]
+	* }) // [!code focus]
+	*
+	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
+	* ```
+	*
+	* @param envelope - The Transaction Envelope to serialize.
+	* @param options - Options.
+	* @returns The serialized Transaction Envelope.
+	*/
+	function serialize$1(envelope, options = {}) {
+		var _ref;
+		const { chainId = 0, gas, data, input, nonce, to, value, gasPrice } = envelope;
+		assert$2(envelope);
+		let serialized = [
+			quantityToHex(nonce),
+			quantityToHex(gasPrice),
+			quantityToHex(gas),
+			to !== null && to !== void 0 ? to : "0x",
+			quantityToHex(value),
+			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x"
+		];
+		const signature = (() => {
+			if (options.signature) return {
+				r: options.signature.r,
+				s: options.signature.s,
+				v: yParityToV(options.signature.yParity)
+			};
+			if (typeof envelope.r === "undefined" || typeof envelope.s === "undefined") return void 0;
+			return {
+				r: envelope.r,
+				s: envelope.s,
+				v: envelope.v
+			};
+		})();
+		if (signature) {
+			const v = (() => {
+				if (signature.v >= 35) {
+					if (Math.floor((signature.v - 35) / 2) > 0) return signature.v;
+					return 27 + (signature.v === 35 ? 0 : 1);
+				}
+				if (chainId > 0) return chainId * 2 + 35 + signature.v - 27;
+				const v = 27 + (signature.v === 27 ? 0 : 1);
+				if (signature.v !== v) throw new InvalidVError({ value: signature.v });
+				return v;
+			})();
+			serialized = [
+				...serialized,
+				fromNumber(v),
+				trimLeft$1(signature.r),
+				trimLeft$1(signature.s)
+			];
+		} else if (chainId > 0) serialized = [
+			...serialized,
+			fromNumber(chainId),
+			"0x",
+			"0x"
+		];
+		return fromHex$1(serialized);
+	}
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Value.js
+	init_defineProperty();
+	/** @see https://ethereum.github.io/yellowpaper/paper.pdf */
+	var exponents = {
+		wei: 0,
+		gwei: 9,
+		szabo: 12,
+		finney: 15,
+		ether: 18
+	};
+	/**
+	* Formats a `bigint` Value to its string representation (divided by the given exponent).
+	*
+	* @example
+	* ```ts twoslash
+	* import { Value } from 'ox'
+	*
+	* Value.format(420_000_000_000n, 9)
+	* // @log: '420'
+	* ```
+	*
+	* @param value - The `bigint` Value to format.
+	* @param decimals - The exponent to divide the `bigint` Value by.
+	* @returns The string representation of the Value.
+	*/
+	function format(value, decimals = 0) {
+		if (!Number.isInteger(decimals) || decimals < 0) throw new InvalidDecimalsError({ decimals });
+		let display = value.toString();
+		const negative = display.startsWith("-");
+		if (negative) display = display.slice(1);
+		display = display.padStart(decimals, "0");
+		let [integer, fraction] = [display.slice(0, display.length - decimals), display.slice(display.length - decimals)];
+		fraction = fraction.replace(/(0+)$/, "");
+		return `${negative ? "-" : ""}${integer || "0"}${fraction ? `.${fraction}` : ""}`;
+	}
+	/**
+	* Formats a `bigint` Value (default: wei) to a string representation of Gwei.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Value } from 'ox'
+	*
+	* Value.formatGwei(1_000_000_000n)
+	* // @log: '1'
+	* ```
+	*
+	* @param wei - The Value to format.
+	* @param unit - The unit to format the Value in. @default 'wei'.
+	* @returns The Gwei string representation of the Value.
+	*/
+	function formatGwei(wei, unit = "wei") {
+		return format(wei, exponents.gwei - exponents[unit]);
+	}
+	/**
+	* Thrown when the `decimals` argument is not a non-negative integer.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Value } from 'ox'
+	*
+	* Value.from('1', -1)
+	* // @error: Value.InvalidDecimalsError: `decimals` must be a non-negative integer. Got `-1`.
+	* ```
+	*/
+	var InvalidDecimalsError = class extends BaseError {
+		constructor({ decimals }) {
+			super(`\`decimals\` must be a non-negative integer. Got \`${decimals}\`.`);
+			_defineProperty(this, "name", "Value.InvalidDecimalsError");
+		}
+	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelope.js
+	init_defineProperty();
+	/**
+	* Thrown when a fee cap is too high.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip1559 } from 'ox'
+	*
+	* TxEnvelopeEip1559.assert({
+	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
+	*   chainId: 1
+	* })
+	* // @error: TransactionEnvelope.FeeCapTooHighError: The fee cap (`maxFeePerGas`/`maxPriorityFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913.129639936 gwei) cannot be higher than the maximum allowed value (2^256-1).
+	* ```
+	*/
+	var FeeCapTooHighError = class extends BaseError {
+		constructor({ feeCap } = {}) {
+			super(`The fee cap (\`maxFeePerGas\`/\`maxPriorityFeePerGas\`${feeCap ? ` = ${formatGwei(feeCap)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`);
+			_defineProperty(this, "name", "TransactionEnvelope.FeeCapTooHighError");
+		}
+	};
+	/**
+	* Thrown when a gas price is too high.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeLegacy } from 'ox'
+	*
+	* TxEnvelopeLegacy.assert({
+	*   gasPrice: 2n ** 256n - 1n + 1n,
+	*   chainId: 1
+	* })
+	* // @error: TransactionEnvelope.GasPriceTooHighError: The gas price (`gasPrice` = 115792089237316195423570985008687907853269984665640564039457584007913.129639936 gwei) cannot be higher than the maximum allowed value (2^256-1).
+	* ```
+	*/
+	var GasPriceTooHighError = class extends BaseError {
+		constructor({ gasPrice } = {}) {
+			super(`The gas price (\`gasPrice\`${gasPrice ? ` = ${formatGwei(gasPrice)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`);
+			_defineProperty(this, "name", "TransactionEnvelope.GasPriceTooHighError");
+		}
+	};
+	/**
+	* Thrown when a chain ID is invalid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip1559 } from 'ox'
+	*
+	* TxEnvelopeEip1559.assert({ chainId: 0 })
+	* // @error: TransactionEnvelope.InvalidChainIdError: Chain ID "0" is invalid.
+	* ```
+	*/
+	var InvalidChainIdError = class extends BaseError {
+		constructor({ chainId }) {
+			super(typeof chainId !== "undefined" ? `Chain ID "${chainId}" is invalid.` : "Chain ID is invalid.");
+			_defineProperty(this, "name", "TransactionEnvelope.InvalidChainIdError");
+		}
+	};
+	/**
+	* Thrown when a tip is higher than a fee cap.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip1559 } from 'ox'
+	*
+	* TxEnvelopeEip1559.assert({
+	*   chainId: 1,
+	*   maxFeePerGas: 10n,
+	*   maxPriorityFeePerGas: 11n
+	* })
+	* // @error: TransactionEnvelope.TipAboveFeeCapError: The provided tip (`maxPriorityFeePerGas` = 11 gwei) cannot be higher than the fee cap (`maxFeePerGas` = 10 gwei).
+	* ```
+	*/
+	var TipAboveFeeCapError = class extends BaseError {
+		constructor({ maxPriorityFeePerGas, maxFeePerGas } = {}) {
+			super([`The provided tip (\`maxPriorityFeePerGas\`${maxPriorityFeePerGas ? ` = ${formatGwei(maxPriorityFeePerGas)} gwei` : ""}) cannot be higher than the fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)} gwei` : ""}).`].join("\n"));
+			_defineProperty(this, "name", "TransactionEnvelope.TipAboveFeeCapError");
+		}
+	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip1559.js
+	init_objectSpread2();
+	var serializedType = "0x02";
+	/**
+	* Asserts a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559} is valid.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip1559, Value } from 'ox'
+	*
+	* TxEnvelopeEip1559.assert({
+	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
+	*   chainId: 1,
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	* // @error: FeeCapTooHighError:
+	* // @error: The fee cap (`masFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
+	* // @error: higher than the maximum allowed value (2^256-1).
+	* ```
+	*
+	* @param envelope - The transaction envelope to assert.
+	*/
+	function assert$1(envelope) {
+		const { chainId, maxPriorityFeePerGas, maxFeePerGas, to } = envelope;
+		if (chainId <= 0) throw new InvalidChainIdError({ chainId });
+		if (to) assert$7(to, { strict: false });
+		if (maxFeePerGas && BigInt(maxFeePerGas) > 2n ** 256n - 1n) throw new FeeCapTooHighError({ feeCap: maxFeePerGas });
+		if (maxPriorityFeePerGas && maxFeePerGas && maxPriorityFeePerGas > maxFeePerGas) throw new TipAboveFeeCapError({
+			maxFeePerGas,
+			maxPriorityFeePerGas
+		});
+	}
+	/**
+	* Returns the payload to sign for a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559}.
+	*
+	* @example
+	* The example below demonstrates how to compute the sign payload which can be used
+	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
+	*
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeEip1559 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip1559.from({
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   maxFeePerGas: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n
+	* })
+	*
+	* const payload = TxEnvelopeEip1559.getSignPayload(envelope) // [!code focus]
+	* // @log: '0x...'
+	*
+	* const signature = Secp256k1.sign({
+	*   payload,
+	*   privateKey: '0x...'
+	* })
+	* ```
+	*
+	* @param envelope - The transaction envelope to get the sign payload for.
+	* @returns The sign payload.
+	*/
+	function getSignPayload$1(envelope) {
+		return hash(envelope, { presign: true });
+	}
+	/**
+	* Hashes a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559}. This is the "transaction hash".
+	*
+	* @example
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeEip1559 } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip1559.from({
+	*   chainId: 1,
+	*   nonce: 0n,
+	*   maxFeePerGas: 1000000000n,
+	*   gas: 21000n,
+	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
+	*   value: 1000000000000000000n
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip1559.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const envelope_signed = TxEnvelopeEip1559.from(envelope, {
+	*   signature
+	* })
+	*
+	* const hash = TxEnvelopeEip1559.hash(envelope_signed) // [!code focus]
+	* ```
+	*
+	* @param envelope - The EIP-1559 Transaction Envelope to hash.
+	* @param options - Options.
+	* @returns The hash of the transaction envelope.
+	*/
+	function hash(envelope, options = {}) {
+		const { presign } = options;
+		return keccak256(serialize(_objectSpread2(_objectSpread2({}, envelope), presign ? {
+			r: void 0,
+			s: void 0,
+			yParity: void 0,
+			v: void 0
+		} : {})));
+	}
+	/**
+	* Serializes a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { TxEnvelopeEip1559, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip1559.from({
+	*   chainId: 1,
+	*   maxFeePerGas: Value.fromGwei('10'),
+	*   maxPriorityFeePerGas: Value.fromGwei('1'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const serialized = TxEnvelopeEip1559.serialize(envelope) // [!code focus]
+	* ```
+	*
+	* @example
+	* ### Attaching Signatures
+	*
+	* It is possible to attach a `signature` to the serialized Transaction Envelope.
+	*
+	* ```ts twoslash
+	* import { Secp256k1, TxEnvelopeEip1559, Value } from 'ox'
+	*
+	* const envelope = TxEnvelopeEip1559.from({
+	*   chainId: 1,
+	*   maxFeePerGas: Value.fromGwei('10'),
+	*   maxPriorityFeePerGas: Value.fromGwei('1'),
+	*   to: '0x0000000000000000000000000000000000000000',
+	*   value: Value.fromEther('1')
+	* })
+	*
+	* const signature = Secp256k1.sign({
+	*   payload: TxEnvelopeEip1559.getSignPayload(envelope),
+	*   privateKey: '0x...'
+	* })
+	*
+	* const serialized = TxEnvelopeEip1559.serialize(envelope, {
+	*   // [!code focus]
+	*   signature // [!code focus]
+	* }) // [!code focus]
+	*
+	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
+	* ```
+	*
+	* @param envelope - The Transaction Envelope to serialize.
+	* @param options - Options.
+	* @returns The serialized Transaction Envelope.
+	*/
+	function serialize(envelope, options = {}) {
+		var _ref;
+		const { chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
+		assert$1(envelope);
+		const accessTupleList = toTupleList$1(accessList);
+		const signature = extract(options.signature || envelope);
+		return concat$2(serializedType, fromHex$1([
+			fromNumber(chainId),
+			quantityToHex(nonce),
+			quantityToHex(maxPriorityFeePerGas),
+			quantityToHex(maxFeePerGas),
+			quantityToHex(gas),
+			to !== null && to !== void 0 ? to : "0x",
+			quantityToHex(value),
+			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
+			accessTupleList,
+			...signature ? toTuple$1(signature) : []
+		]));
+	}
+	// packages/wallet-chains/dist/envelope-IkSTlTiE.mjs
+	init_secp256k1();
+	init_utils$2();
+	init_objectSpread2();
+	/** EIP-55 checksummed address, e.g. `0x52908400098527886E0F7030069857D2E4169EE7`. */
+	var isEvmAddress = (value) => /^0x[0-9a-fA-F]{40}$/.test(value);
+	function checksumEvmAddress(address) {
+		if (!isEvmAddress(address)) throw new ChainError("invalid-address", "not an EVM address");
+		const checksummed = checksum(address);
+		assert$7(checksummed, { strict: true });
+		return checksummed;
+	}
+	/** `keccak256(pubkey)[12:]` — accepts a 33-byte compressed or 65-byte uncompressed secp256k1 key. */
+	function evmAddressFromPublicKey(pubkey) {
+		const uncompressed = pubkey.length === 65 && pubkey[0] === 4 ? pubkey : pubkey.length === 33 ? secp256k1.Point.fromBytes(pubkey).toBytes(false) : void 0;
+		if (uncompressed === void 0 || uncompressed[0] !== 4) throw new ChainError("invalid-address", "expected a compressed or uncompressed secp256k1 key");
+		return checksumEvmAddress(`0x${bytesToHex$4(keccak_256(uncompressed.subarray(1))).slice(-40)}`);
+	}
+	/**
+	* MetaMask Delegation Framework EIP7702StatelessDeleGator v1.3.0 — deterministic CREATE2, the same
+	* address on every chain that supports it.
+	*/
+	var EVM_DELEGATOR = {
+		address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B",
+		name: "EIP7702StatelessDeleGator",
+		version: "1.3.0"
+	};
+	/** ERC-7821 batch-default execution mode: `0x01` followed by 31 zero bytes. */
+	var EXECUTE_BATCH_MODE = "0x0100000000000000000000000000000000000000000000000000000000000000";
+	var EXECUTE = from$2("function execute(bytes32 mode, bytes executionData)");
+	var EXECUTIONS = [{
+		type: "tuple[]",
+		components: [
+			{
+				name: "target",
+				type: "address"
+			},
+			{
+				name: "value",
+				type: "uint256"
+			},
+			{
+				name: "callData",
+				type: "bytes"
+			}
+		]
+	}];
+	var hex$1 = (v) => {
+		assert$8(v);
+		return v;
+	};
+	/** ERC-7821 batch-default self-call payload for `execute` on the delegator. */
+	var encodeBatchExecute = (calls) => encodeData$1(EXECUTE, [EXECUTE_BATCH_MODE, encode$3(EXECUTIONS, [calls.map((c) => ({
+		target: hex$1(checksumEvmAddress(c.to)),
+		value: c.value,
+		callData: hex$1(c.data)
+	}))])]);
+	var list = (v) => Array.isArray(v) ? v : [];
+	var isExecution = (e) => typeof e === "object" && e !== null && "target" in e && "value" in e && "callData" in e && typeof e.target === "string" && isEvmAddress(e.target) && typeof e.value === "bigint" && typeof e.callData === "string";
+	/** Decodes an `execute` call; undefined unless the encoding is canonical batch-default mode. */
+	var decodeBatchExecute = (data) => {
+		try {
+			const [mode, executionData] = list(decodeData(EXECUTE, hex$1(data)));
+			if (mode !== "0x0100000000000000000000000000000000000000000000000000000000000000" || typeof executionData !== "string") return;
+			const [inner] = list(decode$2(EXECUTIONS, hex$1(executionData)));
+			const executions = [];
+			for (const e of list(inner)) {
+				if (!isExecution(e)) return;
+				executions.push({
+					to: checksumEvmAddress(e.target),
+					value: e.value,
+					data: e.callData
+				});
+			}
+			return encodeBatchExecute(executions).toLowerCase() === data.toLowerCase() ? executions : void 0;
+		} catch (_unused) {
+			return;
+		}
+	};
+	/** Validates a string is `0x`-hex and narrows it to the branded hex type. */
+	function assertHex$1(value, field) {
+		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+	}
+	var isRecord$3 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	var CANONICAL_HEX = /^0x(?:0|[1-9a-f][0-9a-f]*)$/;
+	var canonicalHex = (value) => `0x${value.toString(16)}`;
+	/** Parses a JSON-RPC quantity: `0x` and at least one hex digit — a bare `"0x"` is malformed. */
+	var quantityBigInt = (value, field) => {
+		if (typeof value !== "string" || !/^0x[0-9a-fA-F]+$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be a 0x quantity`);
+		return BigInt(value);
+	};
+	var safeInteger = (value, field) => {
+		if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) throw new ChainError("invalid-quantity", `${field} must be a non-negative safe integer`);
+		return value;
+	};
+	var quantity = (value, field) => {
+		if (typeof value !== "string") throw new ChainError("invalid-quantity", `${field} must be a 0x quantity string`);
+		if (CANONICAL_HEX.test(value)) return value;
+		return canonicalHex(quantityBigInt(value, field));
+	};
+	var hexBytes$1 = (value, field) => {
+		if (typeof value !== "string" || !/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+		return value.toLowerCase();
+	};
+	var accessList = (value) => {
+		if (!Array.isArray(value)) throw new ChainError("invalid-request", "accessList must be an array");
+		return value.map((entry) => {
+			if (!isRecord$3(entry)) throw new ChainError("invalid-address", "accessList entries must be objects");
+			const keys = Object.keys(entry).sort();
+			if (keys.length !== 2 || keys[0] !== "address" || keys[1] !== "storageKeys") throw new ChainError("unknown-field", `accessList entry fields must be exactly address+storageKeys, got ${keys.join(",")}`);
+			const { address, storageKeys } = entry;
+			if (typeof address !== "string" || !isEvmAddress(address)) throw new ChainError("invalid-address", "accessList entry has an invalid address");
+			if (!Array.isArray(storageKeys)) throw new ChainError("invalid-quantity", "accessList storageKeys must be an array");
+			return {
+				address: checksumEvmAddress(address),
+				storageKeys: storageKeys.map((k) => {
+					if (typeof k !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(k)) throw new ChainError("invalid-quantity", "accessList storageKeys must be 32-byte hex strings");
+					return k.toLowerCase();
+				})
+			};
+		});
+	};
+	/** The EIP-155 part of a CAIP-2 `network` string, e.g. `eip155:1` → 1. */
+	var networkChainId = (network) => {
+		var _exec;
+		const idPart = (_exec = /^eip155:(\d+)$/.exec(network)) === null || _exec === void 0 ? void 0 : _exec[1];
+		if (idPart === void 0) throw new ChainError("chain-id-mismatch", `network is not an eip155 CAIP-2 id: ${network}`);
+		const id = Number(idPart);
+		if (!Number.isSafeInteger(id)) throw new ChainError("chain-id-mismatch", `chain id is not a safe integer: ${network}`);
+		return id;
+	};
+	var REQUIRED = {
+		base: [
+			"chainId",
+			"nonce",
+			"gas",
+			"value",
+			"data"
+		],
+		gasPrice: ["gasPrice"],
+		accessList: ["accessList"],
+		eip1559: ["maxFeePerGas", "maxPriorityFeePerGas"]
+	};
+	var ALLOWED = {
+		base: [
+			"type",
+			"chainId",
+			"nonce",
+			"gas",
+			"value",
+			"data",
+			"to"
+		],
+		legacy: ["gasPrice"],
+		eip2930: ["gasPrice", "accessList"],
+		eip1559: [
+			"accessList",
+			"maxFeePerGas",
+			"maxPriorityFeePerGas"
+		],
+		eip7702: [
+			"accessList",
+			"maxFeePerGas",
+			"maxPriorityFeePerGas",
+			"authorization"
+		]
+	};
+	var requireFields = (input, fields) => {
+		for (const field of fields) if (input[field] === void 0) throw new ChainError("invalid-request", `tx.${field} is required`);
+	};
+	var rejectUnknown = (input, type) => {
+		const allowed = /* @__PURE__ */ new Set([...ALLOWED.base, ...ALLOWED[type]]);
+		const unknown = Object.keys(input).filter((k) => !allowed.has(k));
+		if (unknown.length > 0) throw new ChainError("unknown-field", `tx has unknown fields for ${type}: ${unknown.sort().join(", ")}`);
+	};
+	/**
+	* Canonicalizes an EVM transaction: exact key sets per type, all required fields present, `0x`
+	* canonical quantities, EIP-55 addresses. Idempotent.
+	*/
+	var normalizeEvmTransaction = (tx) => {
+		if (!isRecord$3(tx)) throw new ChainError("invalid-request", "tx must be an object");
+		const { type } = tx;
+		if (type !== "legacy" && type !== "eip2930" && type !== "eip1559" && type !== "eip7702") throw new ChainError("unsupported", `transaction type ${String(type)} is not supported (legacy, eip2930, eip1559 and eip7702 only)`);
+		rejectUnknown(tx, type);
+		requireFields(tx, REQUIRED.base);
+		const chainId = safeInteger(tx["chainId"], "chainId");
+		const nonce = safeInteger(tx["nonce"], "nonce");
+		const gas = quantity(tx["gas"], "gas");
+		const value = quantity(tx["value"], "value");
+		const data = hexBytes$1(tx["data"], "data");
+		const toRaw = tx["to"];
+		const to = toRaw === void 0 ? void 0 : typeof toRaw === "string" && isEvmAddress(toRaw) ? checksumEvmAddress(toRaw) : void 0;
+		if (toRaw !== void 0 && to === void 0) throw new ChainError("invalid-address", "to must be a valid EVM address");
+		const base = _objectSpread2({
+			chainId,
+			nonce,
+			gas,
+			value,
+			data
+		}, to === void 0 ? {} : { to });
+		if (type === "legacy") {
+			requireFields(tx, REQUIRED.gasPrice);
+			return _objectSpread2(_objectSpread2({ type }, base), {}, { gasPrice: quantity(tx["gasPrice"], "gasPrice") });
+		}
+		if (type === "eip2930") {
+			requireFields(tx, [...REQUIRED.gasPrice, ...REQUIRED.accessList]);
+			return _objectSpread2(_objectSpread2({ type }, base), {}, {
+				gasPrice: quantity(tx["gasPrice"], "gasPrice"),
+				accessList: accessList(tx["accessList"])
+			});
+		}
+		requireFields(tx, [...REQUIRED.accessList, ...REQUIRED.eip1559]);
+		const fees = {
+			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
+			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
+		};
+		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
+		const list = accessList(tx["accessList"]);
+		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
+		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
+		const auth = tx["authorization"];
+		if (!isRecord$3(auth) || Object.keys(auth).length !== 1 || typeof auth["address"] !== "string") throw new ChainError("invalid-request", "tx.authorization must be an object with exactly address");
+		const authAddress = checksumEvmAddress(auth["address"]);
+		if (authAddress !== EVM_DELEGATOR.address && authAddress !== "0x0000000000000000000000000000000000000000") throw new ChainError("unsupported", "authorization address is not supported");
+		return _objectSpread2(_objectSpread2(_objectSpread2({ type }, base), {}, {
+			to,
+			accessList: list
+		}, fees), {}, { authorization: { address: authAddress } });
+	};
+	var isField = (value) => isRecord$3(value) && typeof value["name"] === "string" && typeof value["type"] === "string";
+	var isTypedDataInput = (value) => {
+		if (!isRecord$3(value)) return false;
+		const { types, primaryType, domain, message } = value;
+		if (!isRecord$3(types)) return false;
+		if (typeof primaryType !== "string" || primaryType === "") return false;
+		if (!isRecord$3(domain)) return false;
+		if (!isRecord$3(message)) return false;
+		return Object.values(types).every((fields) => Array.isArray(fields) && fields.every(isField));
+	};
+	var isTypedDataMessage = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+	/** `value` is an array of message objects (empty allowed). */
+	var typedDataMessages = (value) => Array.isArray(value) && value.every(isTypedDataMessage) ? value : void 0;
+	/** The `Type field,Type field` signature of struct `name` in `types`. */
+	var typedDataSignature = (types, name) => {
+		var _types$name;
+		return (_types$name = types[name]) === null || _types$name === void 0 ? void 0 : _types$name.map((field) => `${field.type} ${field.name}`).join(",");
+	};
+	/** Struct `name` has exactly `fields`, in order, no more. */
+	var sameFields = (types, name, fields) => typedDataSignature(types, name) === fields.join(",");
+	/** A hex `address` field value, checksummed; `undefined` when malformed. */
+	var typedDataAddress = (value) => typeof value === "string" && /^0x[0-9a-fA-F]{40}$/.test(value) ? checksumEvmAddress(value) : void 0;
+	/** A uint field value (safe-integer number, decimal or `0x` hex string) ≤ `max`. */
+	var typedDataUint = (value, max) => {
+		let parsed;
+		if (typeof value === "number" && Number.isSafeInteger(value)) parsed = BigInt(value);
+		else if (typeof value === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(value)) parsed = BigInt(value);
+		else return;
+		return parsed >= 0n && parsed <= max ? parsed : void 0;
+	};
+	/** The largest timestamp a permit/order expiry or a Safe field is allowed to carry. */
+	var MAX_UINT48 = 2n ** 48n - 1n;
+	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
+	/** A `bytes` field value: `0x`-prefixed hex of even length. */
+	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
+	/**
+	* Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
+	* struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
+	* message and a missing nested struct fails here rather than inside the encoder.
+	*/
+	var checkStructure = (types, type, value, depth) => {
+		const array = /^(.+)\[\d*\]$/.exec(type);
+		const struct = array === null ? types[type] : void 0;
+		if (array === null && struct === void 0) return;
+		if (depth >= 32) throw new ChainError("invalid-typed-data", "typedData nests too deeply");
+		if (array !== null) {
+			var _array$;
+			if (!Array.isArray(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
+			for (const item of value) checkStructure(types, (_array$ = array[1]) !== null && _array$ !== void 0 ? _array$ : "", item, depth + 1);
+			return;
+		}
+		if (!isRecord$3(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
+		for (const field of struct !== null && struct !== void 0 ? struct : []) checkStructure(types, field.type, value[field.name], depth + 1);
+	};
+	/**
+	* Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
+	* without it ox derives the domain type from the domain object while MetaMask hashes an empty
+	* domain, so the same document would sign differently across wallets.
+	*/
+	var parseTypedData = (typedData) => {
+		let json;
+		try {
+			json = JSON.parse(typedData);
+		} catch (_unused2) {
+			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
+		}
+		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
+		if (json.types["EIP712Domain"] === void 0) throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
+		try {
+			validate$1(json);
+		} catch (_unused3) {
+			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
+		}
+		checkStructure(json.types, json.primaryType, json.message, 0);
+		return { json };
+	};
+	/**
+	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
+	* decimal string or a `0x` hex string.
+	*/
+	var domainChainId = (domain) => {
+		const { chainId } = domain;
+		if (chainId === void 0) return;
+		const numeric = typeof chainId === "number" ? chainId : typeof chainId === "string" && /^(?:[0-9]+|0x[0-9a-fA-F]+)$/.test(chainId) ? Number(chainId) : NaN;
+		if (!Number.isSafeInteger(numeric) || numeric < 0) throw new ChainError("invalid-typed-data", "typed-data domain.chainId is malformed");
+		return numeric;
+	};
+	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
+	function assertHex(value, field) {
+		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
+	}
+	var hex$2 = (value, field) => {
+		assertHex(value, field);
+		return value;
+	};
+	var accessEntry = (entry) => ({
+		address: hex$2(entry.address, "accessList.address"),
+		storageKeys: entry.storageKeys.map((k) => hex$2(k, "accessList.storageKeys"))
+	});
+	/** The EIP-7702 authorization an `eip7702` transaction carries: the account's next-but-one nonce. */
+	var evmAuthorization = (tx) => ({
+		chainId: tx.chainId,
+		address: hex$2(tx.authorization.address, "authorization.address"),
+		nonce: BigInt(tx.nonce + 1)
+	});
+	/**
+	* The envelope of `tx`. An `eip7702` transaction embeds its signed authorization, so the caller
+	* passes the signature over `evmAuthorization(tx)`.
+	*/
+	var evmEnvelope = (tx, authorization) => {
+		const base = {
+			chainId: tx.chainId,
+			to: tx.to === void 0 ? void 0 : hex$2(tx.to, "to"),
+			data: hex$2(tx.data, "data"),
+			value: BigInt(tx.value),
+			nonce: BigInt(tx.nonce),
+			gas: BigInt(tx.gas)
+		};
+		if (tx.type === "legacy") {
+			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+				type: "legacy",
+				gasPrice: BigInt(tx.gasPrice)
+			});
+			return {
+				payload: getSignPayload$2(envelope),
+				serialize: (signature) => serialize$1(envelope, { signature })
+			};
+		}
+		if (tx.type === "eip2930") {
+			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+				type: "eip2930",
+				gasPrice: BigInt(tx.gasPrice),
+				accessList: tx.accessList.map(accessEntry)
+			});
+			return {
+				payload: getSignPayload$4(envelope),
+				serialize: (signature) => serialize$3(envelope, { signature })
+			};
+		}
+		if (tx.type === "eip7702") {
+			if (authorization === void 0) throw new ChainError("invalid-request", "an eip7702 envelope needs its signed authorization");
+			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+				type: "eip7702",
+				to: hex$2(tx.to, "to"),
+				accessList: tx.accessList.map(accessEntry),
+				maxFeePerGas: BigInt(tx.maxFeePerGas),
+				maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
+				authorizationList: [_objectSpread2(_objectSpread2({}, evmAuthorization(tx)), {}, {
+					r: authorization.r,
+					s: authorization.s,
+					yParity: authorization.yParity
+				})]
+			});
+			return {
+				payload: getSignPayload$3(envelope),
+				serialize: (signature) => serialize$2(envelope, { signature })
+			};
+		}
+		const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
+			type: "eip1559",
+			accessList: tx.accessList.map(accessEntry),
+			maxFeePerGas: BigInt(tx.maxFeePerGas),
+			maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas)
+		});
+		return {
+			payload: getSignPayload$1(envelope),
+			serialize: (signature) => serialize(envelope, { signature })
+		};
+	};
+	// packages/wallet-chains/dist/networks.mjs
+	init_objectSpread2();
+	var evm = (chainId, name, symbol, testnet) => ({
+		id: `eip155:${chainId}`,
+		family: "evm",
+		name,
+		symbol,
+		decimals: 18,
+		testnet,
+		chainId
+	});
+	var EVM_NETWORKS = [
+		evm(1, "Ethereum", "ETH", false),
+		evm(8453, "Base", "ETH", false),
+		evm(42161, "Arbitrum One", "ETH", false),
+		evm(10, "OP Mainnet", "ETH", false),
+		evm(137, "Polygon", "POL", false),
+		evm(56, "BNB Smart Chain", "BNB", false),
+		evm(999, "HyperEVM", "HYPE", false),
+		evm(43114, "Avalanche C-Chain", "AVAX", false),
+		evm(11155111, "Sepolia", "ETH", true),
+		evm(84532, "Base Sepolia", "ETH", true),
+		evm(421614, "Arbitrum Sepolia", "ETH", true),
+		evm(11155420, "OP Sepolia", "ETH", true),
+		evm(80002, "Polygon Amoy", "POL", true),
+		evm(97, "BNB Smart Chain Testnet", "tBNB", true),
+		evm(998, "HyperEVM Testnet", "HYPE", true),
+		evm(43113, "Avalanche Fuji", "AVAX", true)
+	];
+	var BUILT_IN_NETWORKS = Object.freeze([
+		...EVM_NETWORKS,
+		{
+			id: "bip122:000000000019d6689c085ae165831e93",
+			chainId: 0,
+			name: "Bitcoin",
+			symbol: "BTC",
+			decimals: 8,
+			testnet: false,
+			family: "bitcoin",
+			genesisHash: "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
+		},
+		{
+			id: "bip122:00000000da84f2bafbbc53dee25a72ae",
+			chainId: 0,
+			name: "Bitcoin Testnet4",
+			symbol: "tBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000000da84f2bafbbc53dee25a72ae507ff4914b867c565be350b0da8bf043"
+		},
+		{
+			id: "bip122:00000008819873e925422c1ff0f99f7c",
+			chainId: 0,
+			name: "Bitcoin Signet",
+			symbol: "sBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "00000008819873e925422c1ff0f99f7cc9bbb232af63a077a480a3633bee1ef6"
+		},
+		{
+			id: "bip122:0f9188f13cb7b2c71f2a335e3a4fc328",
+			chainId: 0,
+			name: "Bitcoin Regtest",
+			symbol: "rBTC",
+			decimals: 8,
+			testnet: true,
+			family: "bitcoin",
+			genesisHash: "0f9188f13cb7b2c71f2a335e3a4fc328bf5beb436012afca590b1a11466e2206"
+		},
+		{
+			id: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+			chainId: 0,
+			name: "Solana",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: false,
+			family: "solana",
+			genesisHash: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
+		},
+		{
+			id: "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+			chainId: 0,
+			name: "Solana Devnet",
+			symbol: "SOL",
+			decimals: 9,
+			testnet: true,
+			family: "solana",
+			genesisHash: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG"
+		}
+	]);
+	var networkMeta = (id) => BUILT_IN_NETWORKS.find((n) => n.id === id);
+	/**
+	* Attaches `decimals` (always — a native unit's decimals are a fixed property of the family) and
+	* `symbol` (when the network is in the table) to every amount of the chain's native asset inside a
+	* decoded intent: outflows, minimum-received, the fee and nested batch calls.
+	*/
+	var withNativeAmountMeta = (intent, network, asset, decimals) => {
+		var _networkMeta;
+		const symbol = (_networkMeta = networkMeta(network)) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol;
+		const amount = (a) => a.asset === asset ? _objectSpread2(_objectSpread2({}, a), {}, { decimals }, symbol === void 0 ? {} : { symbol }) : a;
+		const decorate = (i) => _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, i), {}, { outflows: i.outflows.map((f) => _objectSpread2(_objectSpread2({}, f), {}, { amount: amount(f.amount) })) }, i.minimumReceived === void 0 ? {} : { minimumReceived: i.minimumReceived.map((m) => _objectSpread2(_objectSpread2({}, m), {}, { amount: amount(m.amount) })) }), i.staking === void 0 ? {} : { staking: i.staking.map((a) => a.kind === "lido-submit" ? _objectSpread2(_objectSpread2({}, a), {}, {
+			amount: amount(a.amount),
+			receive: amount(a.receive)
+		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) });
+		return decorate(intent);
+	};
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
 	/**
 	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
@@ -18943,7 +19989,7 @@
 	* @param data - The data to get the sign payload for.
 	* @returns The payload to use for signing.
 	*/
-	function getSignPayload$4(data) {
+	function getSignPayload(data) {
 		return keccak256(encode$1(data));
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/cryptoIo.js
@@ -21321,970 +22367,6 @@ zoo`.split("\n"));
 	}
 	fromString$1("ox.secp256k1.fromPrf.v1");
 	fromString$1("ox.secp256k1.fromSeed.v1");
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/AccessList.js
-	init_defineProperty();
-	/**
-	* Converts a structured Access List into a list of tuples.
-	*
-	* @example
-	* ```ts twoslash
-	* import { AccessList } from 'ox'
-	*
-	* const accessList = AccessList.toTupleList([
-	*   {
-	*     address: '0x0000000000000000000000000000000000000000',
-	*     storageKeys: [
-	*       '0x0000000000000000000000000000000000000000000000000000000000000001',
-	*       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe'
-	*     ]
-	*   }
-	* ])
-	* // @log: [
-	* // @log:   [
-	* // @log:     '0x0000000000000000000000000000000000000000',
-	* // @log:     [
-	* // @log:       '0x0000000000000000000000000000000000000000000000000000000000000001',
-	* // @log:       '0x60fdd29ff912ce880cd3edaf9f932dc61d3dae823ea77e0323f94adb9f6a72fe',
-	* // @log:     ],
-	* // @log:   ],
-	* // @log: ]
-	* ```
-	*
-	* @param accessList - Access list.
-	* @returns List of tuples.
-	*/
-	function toTupleList(accessList) {
-		if (!accessList || accessList.length === 0) return [];
-		const tuple = [];
-		for (const { address, storageKeys } of accessList) {
-			for (let j = 0; j < storageKeys.length; j++) if (size$1(storageKeys[j]) !== 32) throw new InvalidStorageKeySizeError({ storageKey: storageKeys[j] });
-			if (address) assert$7(address, { strict: false });
-			tuple.push([address, storageKeys]);
-		}
-		return tuple;
-	}
-	/** Thrown when the size of a storage key is invalid. */
-	var InvalidStorageKeySizeError = class extends BaseError {
-		constructor({ storageKey }) {
-			super(`Size for storage key "${storageKey}" is invalid. Expected 32 bytes. Got ${size$1(storageKey)} bytes.`);
-			_defineProperty(this, "name", "AccessList.InvalidStorageKeySizeError");
-		}
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/internal/tx.js
-	/**
-	* Encodes a transaction quantity (`bigint` or `number`) as an RLP scalar Hex.
-	* Returns `'0x'` (RLP empty bytes) for `undefined`, `null`, or zero values.
-	*
-	* Replaces the per-envelope `value ? Hex.fromNumber(value) : '0x'` pattern.
-	*
-	* @internal
-	*/
-	function quantityToHex(value) {
-		if (value === void 0 || value === null) return "0x";
-		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
-		return fromNumber(value);
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip2930.js
-	init_objectSpread2();
-	/**
-	* Asserts a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930} is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip2930, Value } from 'ox'
-	*
-	* TxEnvelopeEip2930.assert({
-	*   gasPrice: 2n ** 256n - 1n + 1n,
-	*   chainId: 1,
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	* // @error: GasPriceTooHighError:
-	* // @error: The gas price (`gasPrice` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
-	* // @error: higher than the maximum allowed value (2^256-1).
-	* ```
-	*
-	* @param envelope - The transaction envelope to assert.
-	*/
-	function assert$4(envelope) {
-		const { chainId, gasPrice, to } = envelope;
-		if (chainId <= 0) throw new InvalidChainIdError({ chainId });
-		if (to) assert$7(to, { strict: false });
-		if (gasPrice && BigInt(gasPrice) > 2n ** 256n - 1n) throw new GasPriceTooHighError({ gasPrice });
-	}
-	/**
-	* Returns the payload to sign for a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}.
-	*
-	* @example
-	* The example below demonstrates how to compute the sign payload which can be used
-	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
-	*
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeEip2930 } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip2930.from({
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   gasPrice: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n
-	* })
-	*
-	* const payload = TxEnvelopeEip2930.getSignPayload(envelope) // [!code focus]
-	* // @log: '0x...'
-	*
-	* const signature = Secp256k1.sign({
-	*   payload,
-	*   privateKey: '0x...'
-	* })
-	* ```
-	*
-	* @param envelope - The transaction envelope to get the sign payload for.
-	* @returns The sign payload.
-	*/
-	function getSignPayload$3(envelope) {
-		return hash$3(envelope, { presign: true });
-	}
-	/**
-	* Hashes a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}. This is the "transaction hash".
-	*
-	* @example
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeEip2930 } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip2930.from({
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   gasPrice: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeEip2930.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const envelope_signed = TxEnvelopeEip2930.from(envelope, {
-	*   signature
-	* })
-	*
-	* const hash = TxEnvelopeEip2930.hash(envelope_signed) // [!code focus]
-	* ```
-	*
-	* @param envelope - The EIP-2930 Transaction Envelope to hash.
-	* @param options - Options.
-	* @returns The hash of the transaction envelope.
-	*/
-	function hash$3(envelope, options = {}) {
-		const { presign } = options;
-		return keccak256(serialize$3(_objectSpread2(_objectSpread2({}, envelope), presign ? {
-			r: void 0,
-			s: void 0,
-			yParity: void 0,
-			v: void 0
-		} : {})));
-	}
-	/**
-	* Serializes a {@link ox#TxEnvelopeEip2930.TxEnvelopeEip2930}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip2930, Value } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip2930.from({
-	*   chainId: 1,
-	*   gasPrice: Value.fromGwei('10'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const serialized = TxEnvelopeEip2930.serialize(envelope) // [!code focus]
-	* ```
-	*
-	* @example
-	* ### Attaching Signatures
-	*
-	* It is possible to attach a `signature` to the serialized Transaction Envelope.
-	*
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeEip2930, Value } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip2930.from({
-	*   chainId: 1,
-	*   gasPrice: Value.fromGwei('10'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeEip2930.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const serialized = TxEnvelopeEip2930.serialize(envelope, {
-	*   // [!code focus]
-	*   signature // [!code focus]
-	* }) // [!code focus]
-	*
-	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
-	* ```
-	*
-	* @param envelope - The Transaction Envelope to serialize.
-	* @param options - Options.
-	* @returns The serialized Transaction Envelope.
-	*/
-	function serialize$3(envelope, options = {}) {
-		var _ref;
-		const { chainId, gas, data, input, nonce, to, value, accessList, gasPrice } = envelope;
-		assert$4(envelope);
-		const accessTupleList = toTupleList(accessList);
-		const signature = extract(options.signature || envelope);
-		return concat$2("0x01", fromHex$1([
-			fromNumber(chainId),
-			quantityToHex(nonce),
-			quantityToHex(gasPrice),
-			quantityToHex(gas),
-			to !== null && to !== void 0 ? to : "0x",
-			quantityToHex(value),
-			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
-			accessTupleList,
-			...signature ? toTuple$1(signature) : []
-		]));
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip7702.js
-	init_objectSpread2();
-	var serializedType$1 = "0x04";
-	/**
-	* Asserts a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702} is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip7702, Value } from 'ox'
-	*
-	* TxEnvelopeEip7702.assert({
-	*   authorizationList: [],
-	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
-	*   chainId: 1,
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	* // @error: FeeCapTooHighError:
-	* // @error: The fee cap (`masFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
-	* // @error: higher than the maximum allowed value (2^256-1).
-	* ```
-	*
-	* @param envelope - The transaction envelope to assert.
-	*/
-	function assert$3(envelope) {
-		const { authorizationList } = envelope;
-		if (authorizationList) for (const authorization of authorizationList) {
-			const { address, chainId } = authorization;
-			if (address) assert$7(address, { strict: false });
-			if (Number(chainId) < 0) throw new InvalidChainIdError({ chainId });
-		}
-		assert$1(envelope);
-	}
-	/**
-	* Returns the payload to sign for a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}.
-	*
-	* @example
-	* The example below demonstrates how to compute the sign payload which can be used
-	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { Secp256k1, TxEnvelopeEip7702 } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip7702.from({
-	*   authorizationList: [...],
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   maxFeePerGas: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n,
-	* })
-	*
-	* const payload = TxEnvelopeEip7702.getSignPayload(envelope) // [!code focus]
-	* // @log: '0x...'
-	*
-	* const signature = Secp256k1.sign({ payload, privateKey: '0x...' })
-	* ```
-	*
-	* @param envelope - The transaction envelope to get the sign payload for.
-	* @returns The sign payload.
-	*/
-	function getSignPayload$2(envelope) {
-		return hash$2(envelope, { presign: true });
-	}
-	/**
-	* Hashes a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}. This is the "transaction hash".
-	*
-	* @example
-	* ```ts twoslash
-	* // @noErrors
-	* import { Secp256k1, TxEnvelopeEip7702 } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip7702.from({
-	*   authorizationList: [...],
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   maxFeePerGas: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n,
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeEip7702.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const envelope_signed = TxEnvelopeEip7702.from(envelope, { signature })
-	*
-	* const hash = TxEnvelopeEip7702.hash(envelope_signed) // [!code focus]
-	* ```
-	*
-	* @param envelope - The EIP-7702 Transaction Envelope to hash.
-	* @param options - Options.
-	* @returns The hash of the transaction envelope.
-	*/
-	function hash$2(envelope, options = {}) {
-		const { presign } = options;
-		return keccak256(serialize$2(_objectSpread2(_objectSpread2({}, envelope), presign ? {
-			r: void 0,
-			s: void 0,
-			yParity: void 0
-		} : {})));
-	}
-	/**
-	* Serializes a {@link ox#TxEnvelopeEip7702.TxEnvelopeEip7702}.
-	*
-	* @example
-	* ```ts twoslash
-	* // @noErrors
-	* import {
-	*   Authorization,
-	*   Secp256k1,
-	*   TxEnvelopeEip7702,
-	*   Value
-	* } from 'ox'
-	*
-	* const authorization = Authorization.from({
-	*   address: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   chainId: 1,
-	*   nonce: 0n
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: Authorization.getSignPayload(authorization),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const authorizationList = [
-	*   Authorization.from(authorization, { signature })
-	* ]
-	*
-	* const envelope = TxEnvelopeEip7702.from({
-	*   authorizationList,
-	*   chainId: 1,
-	*   maxFeePerGas: Value.fromGwei('10'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const serialized = TxEnvelopeEip7702.serialize(envelope) // [!code focus]
-	* ```
-	*
-	* @example
-	* ### Attaching Signatures
-	*
-	* It is possible to attach a `signature` to the serialized Transaction Envelope.
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { Secp256k1, TxEnvelopeEip7702, Value } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip7702.from({
-	*   authorizationList: [...],
-	*   chainId: 1,
-	*   maxFeePerGas: Value.fromGwei('10'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1'),
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeEip7702.getSignPayload(envelope),
-	*   privateKey: '0x...',
-	* })
-	*
-	* const serialized = TxEnvelopeEip7702.serialize(envelope, { // [!code focus]
-	*   signature, // [!code focus]
-	* }) // [!code focus]
-	*
-	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
-	* ```
-	*
-	* @param envelope - The Transaction Envelope to serialize.
-	* @param options - Options.
-	* @returns The serialized Transaction Envelope.
-	*/
-	function serialize$2(envelope, options = {}) {
-		var _ref;
-		const { authorizationList, chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
-		assert$3(envelope);
-		const accessTupleList = toTupleList(accessList);
-		const authorizationTupleList = toTupleList$1(authorizationList);
-		const signature = extract(options.signature || envelope);
-		return concat$2(serializedType$1, fromHex$1([
-			fromNumber(chainId),
-			quantityToHex(nonce),
-			quantityToHex(maxPriorityFeePerGas),
-			quantityToHex(maxFeePerGas),
-			quantityToHex(gas),
-			to !== null && to !== void 0 ? to : "0x",
-			quantityToHex(value),
-			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
-			accessTupleList,
-			authorizationTupleList,
-			...signature ? toTuple$1(signature) : []
-		]));
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeLegacy.js
-	init_objectSpread2();
-	/**
-	* Asserts a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy} is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeLegacy, Value } from 'ox'
-	*
-	* TxEnvelopeLegacy.assert({
-	*   gasPrice: 2n ** 256n - 1n + 1n,
-	*   chainId: 1,
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	* // @error: GasPriceTooHighError:
-	* // @error: The gas price (`gasPrice` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
-	* // @error: higher than the maximum allowed value (2^256-1).
-	* ```
-	*
-	* @param envelope - The transaction envelope to assert.
-	*/
-	function assert$2(envelope) {
-		const { chainId, gasPrice, to } = envelope;
-		if (to) assert$7(to, { strict: false });
-		if (typeof chainId !== "undefined" && chainId <= 0) throw new InvalidChainIdError({ chainId });
-		if (gasPrice && BigInt(gasPrice) > 2n ** 256n - 1n) throw new GasPriceTooHighError({ gasPrice });
-	}
-	/**
-	* Returns the payload to sign for a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy}.
-	*
-	* @example
-	* The example below demonstrates how to compute the sign payload which can be used
-	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { Secp256k1, TxEnvelopeLegacy } from 'ox'
-	*
-	* const envelope = TxEnvelopeLegacy.from({
-	*   nonce: 0n,
-	*   gasPrice: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n
-	* })
-	*
-	* const payload = TxEnvelopeLegacy.getSignPayload(envelope) // [!code focus]
-	* // @log: '0x...'
-	*
-	* const signature = Secp256k1.sign({
-	*   payload,
-	*   privateKey: '0x...'
-	* })
-	* ```
-	*
-	* @param envelope - The transaction envelope to get the sign payload for.
-	* @returns The sign payload.
-	*/
-	function getSignPayload$1(envelope) {
-		return hash$1(envelope, { presign: true });
-	}
-	/**
-	* Hashes a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy}. This is the "transaction hash".
-	*
-	* @example
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeLegacy } from 'ox'
-	*
-	* const envelope = TxEnvelopeLegacy.from({
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   gasPrice: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeLegacy.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const envelope_signed = TxEnvelopeLegacy.from(envelope, {
-	*   signature
-	* })
-	*
-	* const hash = TxEnvelopeLegacy.hash(envelope_signed) // [!code focus]
-	* ```
-	*
-	* @param envelope - The Legacy Transaction Envelope to hash.
-	* @param options - Options.
-	* @returns The hash of the transaction envelope.
-	*/
-	function hash$1(envelope, options = {}) {
-		const { presign } = options;
-		return keccak256(serialize$1(_objectSpread2(_objectSpread2({}, envelope), presign ? {
-			r: void 0,
-			s: void 0,
-			yParity: void 0,
-			v: void 0
-		} : {})));
-	}
-	/**
-	* Serializes a {@link ox#TxEnvelopeLegacy.TxEnvelopeLegacy}.
-	*
-	* @example
-	* ```ts twoslash
-	* // @noErrors
-	* import { TxEnvelopeLegacy } from 'ox'
-	*
-	* const envelope = TxEnvelopeLegacy.from({
-	*   chainId: 1,
-	*   gasPrice: Value.fromGwei('10'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const serialized = TxEnvelopeLegacy.serialize(envelope) // [!code focus]
-	* ```
-	*
-	* @example
-	* ### Attaching Signatures
-	*
-	* It is possible to attach a `signature` to the serialized Transaction Envelope.
-	*
-	* ```ts twoslash
-	* // @noErrors
-	* import { Secp256k1, TxEnvelopeLegacy, Value } from 'ox'
-	*
-	* const envelope = TxEnvelopeLegacy.from({
-	*   chainId: 1,
-	*   gasPrice: Value.fromGwei('10'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeLegacy.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const serialized = TxEnvelopeLegacy.serialize(envelope, {
-	*   // [!code focus]
-	*   signature // [!code focus]
-	* }) // [!code focus]
-	*
-	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
-	* ```
-	*
-	* @param envelope - The Transaction Envelope to serialize.
-	* @param options - Options.
-	* @returns The serialized Transaction Envelope.
-	*/
-	function serialize$1(envelope, options = {}) {
-		var _ref;
-		const { chainId = 0, gas, data, input, nonce, to, value, gasPrice } = envelope;
-		assert$2(envelope);
-		let serialized = [
-			quantityToHex(nonce),
-			quantityToHex(gasPrice),
-			quantityToHex(gas),
-			to !== null && to !== void 0 ? to : "0x",
-			quantityToHex(value),
-			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x"
-		];
-		const signature = (() => {
-			if (options.signature) return {
-				r: options.signature.r,
-				s: options.signature.s,
-				v: yParityToV(options.signature.yParity)
-			};
-			if (typeof envelope.r === "undefined" || typeof envelope.s === "undefined") return void 0;
-			return {
-				r: envelope.r,
-				s: envelope.s,
-				v: envelope.v
-			};
-		})();
-		if (signature) {
-			const v = (() => {
-				if (signature.v >= 35) {
-					if (Math.floor((signature.v - 35) / 2) > 0) return signature.v;
-					return 27 + (signature.v === 35 ? 0 : 1);
-				}
-				if (chainId > 0) return chainId * 2 + 35 + signature.v - 27;
-				const v = 27 + (signature.v === 27 ? 0 : 1);
-				if (signature.v !== v) throw new InvalidVError({ value: signature.v });
-				return v;
-			})();
-			serialized = [
-				...serialized,
-				fromNumber(v),
-				trimLeft$1(signature.r),
-				trimLeft$1(signature.s)
-			];
-		} else if (chainId > 0) serialized = [
-			...serialized,
-			fromNumber(chainId),
-			"0x",
-			"0x"
-		];
-		return fromHex$1(serialized);
-	}
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Value.js
-	init_defineProperty();
-	/** @see https://ethereum.github.io/yellowpaper/paper.pdf */
-	var exponents = {
-		wei: 0,
-		gwei: 9,
-		szabo: 12,
-		finney: 15,
-		ether: 18
-	};
-	/**
-	* Formats a `bigint` Value to its string representation (divided by the given exponent).
-	*
-	* @example
-	* ```ts twoslash
-	* import { Value } from 'ox'
-	*
-	* Value.format(420_000_000_000n, 9)
-	* // @log: '420'
-	* ```
-	*
-	* @param value - The `bigint` Value to format.
-	* @param decimals - The exponent to divide the `bigint` Value by.
-	* @returns The string representation of the Value.
-	*/
-	function format(value, decimals = 0) {
-		if (!Number.isInteger(decimals) || decimals < 0) throw new InvalidDecimalsError({ decimals });
-		let display = value.toString();
-		const negative = display.startsWith("-");
-		if (negative) display = display.slice(1);
-		display = display.padStart(decimals, "0");
-		let [integer, fraction] = [display.slice(0, display.length - decimals), display.slice(display.length - decimals)];
-		fraction = fraction.replace(/(0+)$/, "");
-		return `${negative ? "-" : ""}${integer || "0"}${fraction ? `.${fraction}` : ""}`;
-	}
-	/**
-	* Formats a `bigint` Value (default: wei) to a string representation of Gwei.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Value } from 'ox'
-	*
-	* Value.formatGwei(1_000_000_000n)
-	* // @log: '1'
-	* ```
-	*
-	* @param wei - The Value to format.
-	* @param unit - The unit to format the Value in. @default 'wei'.
-	* @returns The Gwei string representation of the Value.
-	*/
-	function formatGwei(wei, unit = "wei") {
-		return format(wei, exponents.gwei - exponents[unit]);
-	}
-	/**
-	* Thrown when the `decimals` argument is not a non-negative integer.
-	*
-	* @example
-	* ```ts twoslash
-	* import { Value } from 'ox'
-	*
-	* Value.from('1', -1)
-	* // @error: Value.InvalidDecimalsError: `decimals` must be a non-negative integer. Got `-1`.
-	* ```
-	*/
-	var InvalidDecimalsError = class extends BaseError {
-		constructor({ decimals }) {
-			super(`\`decimals\` must be a non-negative integer. Got \`${decimals}\`.`);
-			_defineProperty(this, "name", "Value.InvalidDecimalsError");
-		}
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelope.js
-	init_defineProperty();
-	/**
-	* Thrown when a fee cap is too high.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip1559 } from 'ox'
-	*
-	* TxEnvelopeEip1559.assert({
-	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
-	*   chainId: 1
-	* })
-	* // @error: TransactionEnvelope.FeeCapTooHighError: The fee cap (`maxFeePerGas`/`maxPriorityFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913.129639936 gwei) cannot be higher than the maximum allowed value (2^256-1).
-	* ```
-	*/
-	var FeeCapTooHighError = class extends BaseError {
-		constructor({ feeCap } = {}) {
-			super(`The fee cap (\`maxFeePerGas\`/\`maxPriorityFeePerGas\`${feeCap ? ` = ${formatGwei(feeCap)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`);
-			_defineProperty(this, "name", "TransactionEnvelope.FeeCapTooHighError");
-		}
-	};
-	/**
-	* Thrown when a gas price is too high.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeLegacy } from 'ox'
-	*
-	* TxEnvelopeLegacy.assert({
-	*   gasPrice: 2n ** 256n - 1n + 1n,
-	*   chainId: 1
-	* })
-	* // @error: TransactionEnvelope.GasPriceTooHighError: The gas price (`gasPrice` = 115792089237316195423570985008687907853269984665640564039457584007913.129639936 gwei) cannot be higher than the maximum allowed value (2^256-1).
-	* ```
-	*/
-	var GasPriceTooHighError = class extends BaseError {
-		constructor({ gasPrice } = {}) {
-			super(`The gas price (\`gasPrice\`${gasPrice ? ` = ${formatGwei(gasPrice)} gwei` : ""}) cannot be higher than the maximum allowed value (2^256-1).`);
-			_defineProperty(this, "name", "TransactionEnvelope.GasPriceTooHighError");
-		}
-	};
-	/**
-	* Thrown when a chain ID is invalid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip1559 } from 'ox'
-	*
-	* TxEnvelopeEip1559.assert({ chainId: 0 })
-	* // @error: TransactionEnvelope.InvalidChainIdError: Chain ID "0" is invalid.
-	* ```
-	*/
-	var InvalidChainIdError = class extends BaseError {
-		constructor({ chainId }) {
-			super(typeof chainId !== "undefined" ? `Chain ID "${chainId}" is invalid.` : "Chain ID is invalid.");
-			_defineProperty(this, "name", "TransactionEnvelope.InvalidChainIdError");
-		}
-	};
-	/**
-	* Thrown when a tip is higher than a fee cap.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip1559 } from 'ox'
-	*
-	* TxEnvelopeEip1559.assert({
-	*   chainId: 1,
-	*   maxFeePerGas: 10n,
-	*   maxPriorityFeePerGas: 11n
-	* })
-	* // @error: TransactionEnvelope.TipAboveFeeCapError: The provided tip (`maxPriorityFeePerGas` = 11 gwei) cannot be higher than the fee cap (`maxFeePerGas` = 10 gwei).
-	* ```
-	*/
-	var TipAboveFeeCapError = class extends BaseError {
-		constructor({ maxPriorityFeePerGas, maxFeePerGas } = {}) {
-			super([`The provided tip (\`maxPriorityFeePerGas\`${maxPriorityFeePerGas ? ` = ${formatGwei(maxPriorityFeePerGas)} gwei` : ""}) cannot be higher than the fee cap (\`maxFeePerGas\`${maxFeePerGas ? ` = ${formatGwei(maxFeePerGas)} gwei` : ""}).`].join("\n"));
-			_defineProperty(this, "name", "TransactionEnvelope.TipAboveFeeCapError");
-		}
-	};
-	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/TxEnvelopeEip1559.js
-	init_objectSpread2();
-	var serializedType = "0x02";
-	/**
-	* Asserts a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559} is valid.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip1559, Value } from 'ox'
-	*
-	* TxEnvelopeEip1559.assert({
-	*   maxFeePerGas: 2n ** 256n - 1n + 1n,
-	*   chainId: 1,
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	* // @error: FeeCapTooHighError:
-	* // @error: The fee cap (`masFeePerGas` = 115792089237316195423570985008687907853269984665640564039457584007913 gwei) cannot be
-	* // @error: higher than the maximum allowed value (2^256-1).
-	* ```
-	*
-	* @param envelope - The transaction envelope to assert.
-	*/
-	function assert$1(envelope) {
-		const { chainId, maxPriorityFeePerGas, maxFeePerGas, to } = envelope;
-		if (chainId <= 0) throw new InvalidChainIdError({ chainId });
-		if (to) assert$7(to, { strict: false });
-		if (maxFeePerGas && BigInt(maxFeePerGas) > 2n ** 256n - 1n) throw new FeeCapTooHighError({ feeCap: maxFeePerGas });
-		if (maxPriorityFeePerGas && maxFeePerGas && maxPriorityFeePerGas > maxFeePerGas) throw new TipAboveFeeCapError({
-			maxFeePerGas,
-			maxPriorityFeePerGas
-		});
-	}
-	/**
-	* Returns the payload to sign for a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559}.
-	*
-	* @example
-	* The example below demonstrates how to compute the sign payload which can be used
-	* with ECDSA signing utilities like {@link ox#Secp256k1.(sign:function)}.
-	*
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeEip1559 } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip1559.from({
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   maxFeePerGas: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n
-	* })
-	*
-	* const payload = TxEnvelopeEip1559.getSignPayload(envelope) // [!code focus]
-	* // @log: '0x...'
-	*
-	* const signature = Secp256k1.sign({
-	*   payload,
-	*   privateKey: '0x...'
-	* })
-	* ```
-	*
-	* @param envelope - The transaction envelope to get the sign payload for.
-	* @returns The sign payload.
-	*/
-	function getSignPayload(envelope) {
-		return hash(envelope, { presign: true });
-	}
-	/**
-	* Hashes a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559}. This is the "transaction hash".
-	*
-	* @example
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeEip1559 } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip1559.from({
-	*   chainId: 1,
-	*   nonce: 0n,
-	*   maxFeePerGas: 1000000000n,
-	*   gas: 21000n,
-	*   to: '0x70997970c51812dc3a010c7d01b50e0d17dc79c8',
-	*   value: 1000000000000000000n
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeEip1559.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const envelope_signed = TxEnvelopeEip1559.from(envelope, {
-	*   signature
-	* })
-	*
-	* const hash = TxEnvelopeEip1559.hash(envelope_signed) // [!code focus]
-	* ```
-	*
-	* @param envelope - The EIP-1559 Transaction Envelope to hash.
-	* @param options - Options.
-	* @returns The hash of the transaction envelope.
-	*/
-	function hash(envelope, options = {}) {
-		const { presign } = options;
-		return keccak256(serialize(_objectSpread2(_objectSpread2({}, envelope), presign ? {
-			r: void 0,
-			s: void 0,
-			yParity: void 0,
-			v: void 0
-		} : {})));
-	}
-	/**
-	* Serializes a {@link ox#TxEnvelopeEip1559.TxEnvelopeEip1559}.
-	*
-	* @example
-	* ```ts twoslash
-	* import { TxEnvelopeEip1559, Value } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip1559.from({
-	*   chainId: 1,
-	*   maxFeePerGas: Value.fromGwei('10'),
-	*   maxPriorityFeePerGas: Value.fromGwei('1'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const serialized = TxEnvelopeEip1559.serialize(envelope) // [!code focus]
-	* ```
-	*
-	* @example
-	* ### Attaching Signatures
-	*
-	* It is possible to attach a `signature` to the serialized Transaction Envelope.
-	*
-	* ```ts twoslash
-	* import { Secp256k1, TxEnvelopeEip1559, Value } from 'ox'
-	*
-	* const envelope = TxEnvelopeEip1559.from({
-	*   chainId: 1,
-	*   maxFeePerGas: Value.fromGwei('10'),
-	*   maxPriorityFeePerGas: Value.fromGwei('1'),
-	*   to: '0x0000000000000000000000000000000000000000',
-	*   value: Value.fromEther('1')
-	* })
-	*
-	* const signature = Secp256k1.sign({
-	*   payload: TxEnvelopeEip1559.getSignPayload(envelope),
-	*   privateKey: '0x...'
-	* })
-	*
-	* const serialized = TxEnvelopeEip1559.serialize(envelope, {
-	*   // [!code focus]
-	*   signature // [!code focus]
-	* }) // [!code focus]
-	*
-	* // ... send `serialized` transaction to JSON-RPC `eth_sendRawTransaction`
-	* ```
-	*
-	* @param envelope - The Transaction Envelope to serialize.
-	* @param options - Options.
-	* @returns The serialized Transaction Envelope.
-	*/
-	function serialize(envelope, options = {}) {
-		var _ref;
-		const { chainId, gas, nonce, to, value, maxFeePerGas, maxPriorityFeePerGas, accessList, data, input } = envelope;
-		assert$1(envelope);
-		const accessTupleList = toTupleList(accessList);
-		const signature = extract(options.signature || envelope);
-		return concat$2(serializedType, fromHex$1([
-			fromNumber(chainId),
-			quantityToHex(nonce),
-			quantityToHex(maxPriorityFeePerGas),
-			quantityToHex(maxFeePerGas),
-			quantityToHex(gas),
-			to !== null && to !== void 0 ? to : "0x",
-			quantityToHex(value),
-			(_ref = data !== null && data !== void 0 ? data : input) !== null && _ref !== void 0 ? _ref : "0x",
-			accessTupleList,
-			...signature ? toTuple$1(signature) : []
-		]));
-	}
 	// packages/wallet-chains/dist/evm.mjs
 	init_utils$2();
 	init_objectSpread2();
@@ -30801,7 +30883,7 @@ zoo`.split("\n"));
 		let decoded;
 		try {
 			decoded = Address(net.params).decode(address);
-		} catch (_unused6) {
+		} catch (_unused7) {
 			throw new ChainError("invalid-address", "address does not belong to this network");
 		}
 		if (format === "bip322-simple") {
@@ -31140,7 +31222,7 @@ zoo`.split("\n"));
 	init_payment();
 	init_transaction();
 	var isPath = (path) => Array.isArray(path) && path.every((p) => typeof p === "number");
-	var hex$1 = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
+	var hex = (bytes) => bytes.reduce((acc, b) => acc + b.toString(16).padStart(2, "0"), "");
 	var PURPOSES = [
 		44,
 		49,
@@ -31239,7 +31321,7 @@ zoo`.split("\n"));
 				if (entry === void 0) continue;
 				try {
 					const pub = childAt(b, purpose, entry.path).publicKey;
-					if (pub !== null && deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex$1(output.script));
+					if (pub !== null && deepEqual(output.script, expectedScript(purpose, pub))) ownScripts.add(hex(output.script));
 				} catch (_unused) {
 					continue;
 				}
@@ -31328,28 +31410,15 @@ zoo`.split("\n"));
 		}
 	};
 	// packages/wallet-chains/dist/evm-sign.mjs
-	init_objectSpread2();
 	/**
 	* /evm/sign — deterministic (RFC 6979) ECDSA signing over the chain's canonical payloads. Inputs
 	* must already be normalized: the kernel calls `normalizeEvm` first and rejects on a ChainError. No
 	* key caching; the caller wipes key bytes.
 	*/
-	/** Validates a string is `0x`-hex and narrows it for ox's branded type. */
-	function assertHex(value, field) {
-		if (!/^0x(?:[0-9a-fA-F]{2})*$/.test(value)) throw new ChainError("invalid-quantity", `${field} must be 0x-prefixed bytes`);
-	}
-	var hex = (value, field) => {
-		assertHex(value, field);
-		return value;
-	};
 	var key = (privateKey) => {
 		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
 		return fromBytes$1(privateKey);
 	};
-	var accessEntry = (entry) => ({
-		address: hex(entry.address, "accessList.address"),
-		storageKeys: entry.storageKeys.map((k) => hex(k, "accessList.storageKeys"))
-	});
 	var sign$1 = (payload, privateKey) => sign$2({
 		payload,
 		privateKey,
@@ -31358,64 +31427,14 @@ zoo`.split("\n"));
 	/** Signs a normalized transaction; returns the serialized signed envelope. */
 	var signEvmTransaction = (tx, privateKey) => {
 		const privateKeyHex = key(privateKey);
-		const base = {
-			chainId: tx.chainId,
-			to: tx.to === void 0 ? void 0 : hex(tx.to, "to"),
-			data: hex(tx.data, "data"),
-			value: BigInt(tx.value),
-			nonce: BigInt(tx.nonce),
-			gas: BigInt(tx.gas)
-		};
-		if (tx.type === "legacy") {
-			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-				type: "legacy",
-				gasPrice: BigInt(tx.gasPrice)
-			});
-			return toBytes$1(serialize$1(envelope, { signature: sign$1(getSignPayload$1(envelope), privateKeyHex) }));
-		}
-		if (tx.type === "eip2930") {
-			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-				type: "eip2930",
-				gasPrice: BigInt(tx.gasPrice),
-				accessList: tx.accessList.map(accessEntry)
-			});
-			return toBytes$1(serialize$3(envelope, { signature: sign$1(getSignPayload$3(envelope), privateKeyHex) }));
-		}
-		if (tx.type === "eip7702") {
-			var _authSignature$yParit;
-			const auth = {
-				chainId: tx.chainId,
-				address: hex(tx.authorization.address, "authorization.address"),
-				nonce: BigInt(tx.nonce + 1)
-			};
-			const authSignature = sign$1(getSignPayload$5(auth), privateKeyHex);
-			const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-				type: "eip7702",
-				to: hex(tx.to, "to"),
-				accessList: tx.accessList.map(accessEntry),
-				maxFeePerGas: BigInt(tx.maxFeePerGas),
-				maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas),
-				authorizationList: [_objectSpread2(_objectSpread2({}, auth), {}, {
-					r: authSignature.r,
-					s: authSignature.s,
-					yParity: (_authSignature$yParit = authSignature.yParity) !== null && _authSignature$yParit !== void 0 ? _authSignature$yParit : 0
-				})]
-			});
-			return toBytes$1(serialize$2(envelope, { signature: sign$1(getSignPayload$2(envelope), privateKeyHex) }));
-		}
-		const envelope = _objectSpread2(_objectSpread2({}, base), {}, {
-			type: "eip1559",
-			accessList: tx.accessList.map(accessEntry),
-			maxFeePerGas: BigInt(tx.maxFeePerGas),
-			maxPriorityFeePerGas: BigInt(tx.maxPriorityFeePerGas)
-		});
-		return toBytes$1(serialize(envelope, { signature: sign$1(getSignPayload(envelope), privateKeyHex) }));
+		const envelope = evmEnvelope(tx, tx.type === "eip7702" ? sign$1(getSignPayload$5(evmAuthorization(tx)), privateKeyHex) : void 0);
+		return toBytes$1(envelope.serialize(sign$1(envelope.payload, privateKeyHex)));
 	};
 	/** 65-byte r‖s‖v; `Signature.toBytes` emits v = 27 + yParity already. */
 	var rs_v = (signature) => toBytes(signature);
 	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmPersonalMessage = (message, privateKey) => {
-		return rs_v(from(sign$1(getSignPayload$4(fromBytes$1(message)), key(privateKey))));
+		return rs_v(from(sign$1(getSignPayload(fromBytes$1(message)), key(privateKey))));
 	};
 	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmTypedData = (typedData, privateKey) => {

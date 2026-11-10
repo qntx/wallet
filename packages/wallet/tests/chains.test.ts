@@ -242,11 +242,43 @@ describe("chains(wallet)", () => {
           authorization: { address: "0x0000000000000000000000000000000000000000" },
         }) as never,
       ),
-    ).rejects.toMatchObject({ code: "invalid-request" });
+    ).rejects.toMatchObject({ code: "integrity" });
     const { wallet: wrongNonce } = await connectTx(signEvmTransaction(TX, PRIV));
     await expect(chains(wrongNonce).sign(tampered({ nonce: 5 }) as never)).rejects.toMatchObject({
-      code: "invalid-request",
+      code: "integrity",
     });
+  });
+
+  it("rejects a valid account signature over a different transaction with integrity", async () => {
+    const TX = {
+      type: "eip1559" as const,
+      chainId: 1,
+      nonce: 0,
+      gas: "0x5208",
+      value: "0x1",
+      data: "0x",
+      to: ADDRESS,
+      accessList: [] as const,
+      maxFeePerGas: "0x4a817c800",
+      maxPriorityFeePerGas: "0x3b9aca00",
+    };
+    const request: ChainSignRequest = {
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: { kind: "hd", walletId: "0a".repeat(8), groupIndex: 0, template: "evm.bip44" },
+      tx: TX,
+    };
+    const verify = { kind: "password" as const, password: "test password" };
+    const { wallet: honest } = await connectTx(signEvmTransaction(TX, PRIV));
+    await expect(chains(honest).sign({ request, verify })).resolves.toMatchObject({
+      kind: "evm.transaction",
+    });
+    const { wallet } = await connectTx(
+      signEvmTransaction({ ...TX, value: "0xde0b6b3a7640000" }, PRIV),
+    );
+    await expect(chains(wallet).sign({ request, verify })).rejects.toSatisfy(
+      (e) => walletError(e).code === "integrity",
+    );
   });
 
   const BTC_NETWORK = "bip122:000000000019d6689c085ae165831e93";
@@ -263,7 +295,7 @@ describe("chains(wallet)", () => {
   const BTC_XPUB44 = btcNode("m/44'/0'/0'").publicExtendedKey;
   const BTC_CHILD44 = btcNode("m/44'/0'/0'/0/0");
 
-  const btcPsbt = (): Uint8Array => {
+  const btcPsbt = (pay = 90000n): Uint8Array => {
     const pub = BTC_CHILD.publicKey;
     if (pub === null) {
       throw new Error("no pubkey");
@@ -288,7 +320,7 @@ describe("chains(wallet)", () => {
           "bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g",
         ),
       ),
-      amount: 90000n,
+      amount: pay,
     });
     return tx.toPSBT(0);
   };
@@ -339,6 +371,28 @@ describe("chains(wallet)", () => {
     kind: "hd" as const,
     walletId: "0a".repeat(8),
     groupIndex: 0,
+  });
+
+  it("rejects a kernel psbt that signs a different transaction with integrity", async () => {
+    const { wallet } = await btcConnect({
+      kind: "bitcoin.psbt",
+      signedPsbt: signBitcoinPsbt(
+        btcPsbt(10000n),
+        [{ index: 0, privateKey: BTC_CHILD.privateKey! }],
+        () => new Uint8Array(32),
+      ),
+    });
+    await expect(
+      chains(wallet).sign(
+        btcParams({
+          kind: "bitcoin.psbt",
+          network: BTC_NETWORK,
+          account: btcAccount(),
+          psbt: btcPsbt(),
+          sign: [{ index: 0, template: "btc.bip84" }],
+        }),
+      ),
+    ).rejects.toSatisfy((e) => walletError(e).code === "integrity");
   });
 
   it("accepts a kernel psbt signed by the account's own child key", async () => {

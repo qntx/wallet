@@ -9,7 +9,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { recoverEvmSigner } from "../src/evm/recover.ts";
 import { signEvmPersonalMessage, signEvmTransaction, signEvmTypedData } from "../src/evm/sign.ts";
-import type { SignRequest } from "../src/index.ts";
+import type { EvmTransaction, SignRequest } from "../src/index.ts";
 
 const KEY = new Uint8Array(32).fill(3);
 const ADDR = Address.fromPublicKey(Secp256k1.getPublicKey({ privateKey: KEY }));
@@ -107,6 +107,49 @@ describe("recoverEvmSigner", () => {
       expect(recoverEvmSigner(request, { signedTransaction })).toBe(ADDR);
     },
   );
+
+  it.each(["legacy", "eip2930", "eip1559"] as const)(
+    "refuses an account signature over a different %s transaction",
+    (type) => {
+      const request = txRequest(type) as Extract<SignRequest, { kind: "evm.transaction" }>;
+      const signedTransaction = signEvmTransaction({ ...request.tx, value: "0x2" }, KEY);
+      expect(() => recoverEvmSigner(request, { signedTransaction })).toThrow(
+        expect.objectContaining({ code: "invalid-request" }),
+      );
+    },
+  );
+
+  it("binds an eip7702 envelope and its authorization to the request", () => {
+    const tx: Extract<EvmTransaction, { type: "eip7702" }> = {
+      type: "eip7702",
+      chainId: 1,
+      nonce: 0,
+      gas: "0x61a8",
+      maxFeePerGas: "0x59682f00",
+      maxPriorityFeePerGas: "0x1",
+      to: ADDR,
+      value: "0x0",
+      data: "0x",
+      accessList: [],
+      authorization: { address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B" },
+    };
+    const request: SignRequest = {
+      kind: "evm.transaction",
+      network: EIP155,
+      account: { kind: "imported", keyId: "k", family: "evm" },
+      tx,
+    };
+    expect(recoverEvmSigner(request, { signedTransaction: signEvmTransaction(tx, KEY) })).toBe(
+      ADDR,
+    );
+    const other = signEvmTransaction(
+      { ...tx, authorization: { address: "0x00000000000000000000000000000000DeaDBeef" } },
+      KEY,
+    );
+    expect(() => recoverEvmSigner(request, { signedTransaction: other })).toThrow(
+      expect.objectContaining({ code: "invalid-request" }),
+    );
+  });
 
   it("rejects a missing signed transaction", () => {
     expect(() => recoverEvmSigner(txRequest("eip1559"), {})).toThrow(

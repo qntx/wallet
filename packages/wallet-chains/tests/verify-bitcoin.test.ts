@@ -18,6 +18,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { signBitcoinMessage, signBitcoinPsbt } from "../src/bitcoin/sign.ts";
 import {
+  samePsbtContent,
   verifyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
   verifyLegacyBitcoinMessage,
@@ -75,6 +76,43 @@ const p2trPsbt = (): Uint8Array => {
   tx.addOutput({ script: OutScript.encode(PAYEE), amount: 90000n });
   return tx.toPSBT(0);
 };
+
+describe("samePsbtContent", () => {
+  const variant = (patch: (tx: Transaction) => void): Uint8Array => {
+    const tx = Transaction.fromPSBT(p2wpkhPsbt());
+    patch(tx);
+    return tx.toPSBT(0);
+  };
+
+  it("accepts the signed request", () => {
+    const requested = p2wpkhPsbt();
+    const signed = signBitcoinPsbt(
+      requested,
+      [{ index: 0, privateKey: ownKey.privateKey! }],
+      auxRand,
+    );
+    expect(samePsbtContent(requested, signed)).toBe(true);
+  });
+
+  it("rejects a different unsigned transaction", () => {
+    const other = variant((tx) => {
+      tx.updateOutput(0, { amount: 10000n });
+    });
+    expect(samePsbtContent(p2wpkhPsbt(), other)).toBe(false);
+  });
+
+  it("rejects altered prevout data", () => {
+    const other = variant((tx) => {
+      const { witnessUtxo } = tx.getInput(0);
+      tx.updateInput(0, { witnessUtxo: { script: witnessUtxo!.script, amount: 1n } }, true);
+    });
+    expect(samePsbtContent(p2wpkhPsbt(), other)).toBe(false);
+  });
+
+  it("rejects bytes that are not a PSBT", () => {
+    expect(samePsbtContent(p2wpkhPsbt(), new Uint8Array([1, 2, 3]))).toBe(false);
+  });
+});
 
 describe("verifyBitcoinPsbtSignatures", () => {
   it("verifies a P2WPKH signature made by the account's own key", () => {

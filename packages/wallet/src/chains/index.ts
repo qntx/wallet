@@ -1,11 +1,13 @@
 /**
  * The chains module of @qntx/wallet: `chains(wallet)` returns the wallet's chain API. `account`
  * calls the kernel's `wallet.accounts`; `sign` calls `chain.sign` and then verifies the returned
- * signature against the account address — a kernel that answers with someone else's signature fails
- * closed with `integrity`.
+ * signature against the request and the account address — a kernel that answers with someone else's
+ * signature, or a signature over other content, fails closed with `integrity`.
  */
+import { ChainError } from "@qntx/wallet-chains";
 import {
   bitcoinAddressFromXpub,
+  samePsbtContent,
   verifyBitcoinMessage,
   verifyLegacyBitcoinMessage,
   verifyBitcoinPsbtSignatures,
@@ -51,6 +53,9 @@ const checkPsbt = async (
 ): Promise<void> => {
   if (result.kind !== "bitcoin.psbt") {
     throw integrity("result kind does not match the request");
+  }
+  if (!samePsbtContent(request.psbt, result.signedPsbt)) {
+    throw integrity("signed psbt does not match the request");
   }
   const byTemplate = new Map<"btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86", number[]>();
   for (const { index, template } of request.sign) {
@@ -127,7 +132,15 @@ const checkSigner = (
     ) {
       throw integrity("result kind does not match the request");
     }
-    const signer = recoverEvmSigner(request, result);
+    let signer: string;
+    try {
+      signer = recoverEvmSigner(request, result);
+    } catch (error) {
+      if (error instanceof ChainError) {
+        throw integrity("signed content does not match the request");
+      }
+      throw error;
+    }
     if (signer.toLowerCase() !== account.address.toLowerCase()) {
       throw integrity("signer does not match the account");
     }
