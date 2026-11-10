@@ -13,14 +13,21 @@ namespace margelo::nitro::qntxwallet {
 
 namespace {
 
-// A kernel crash reaches JS only as "crashed"; the reason goes to the system
-// log so field reports and device runs can tell causes apart. Kernel error
-// messages are static strings that never echo input or secrets.
+// A kernel crash reaches JS only as "crashed"; the fact goes to the system log
+// so field reports can tell crashes apart. The reason can carry third-party
+// error text or an unhandled rejection's message, so it is private on iOS
+// (redacted unless a debugger or profile unlocks it) and debug-only on
+// Android, whose logcat has no redaction.
 void logKernelCrash(const std::string& reason) {
 #if defined(__ANDROID__)
+#ifdef NDEBUG
+  (void)reason;
+  __android_log_print(ANDROID_LOG_ERROR, "QntxKernel", "kernel runtime crashed");
+#else
   __android_log_print(ANDROID_LOG_ERROR, "QntxKernel", "kernel runtime crashed: %s", reason.c_str());
+#endif
 #elif defined(__APPLE__)
-  os_log_error(OS_LOG_DEFAULT, "qntx kernel runtime crashed: %{public}s", reason.c_str());
+  os_log_error(OS_LOG_DEFAULT, "qntx kernel runtime crashed: %{private}s", reason.c_str());
 #else
   (void)reason;
 #endif
