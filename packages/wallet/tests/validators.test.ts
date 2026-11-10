@@ -299,6 +299,15 @@ describe("spark method validators", () => {
       ["spark.receivedPublicKeys", { account, ciphertexts: [new Uint8Array(96)] }],
       ["spark.newCommitments", { account, count: 2 }],
       ["spark.signFrost", { account, jobs: [signJob] }],
+      [
+        "spark.signFrost",
+        {
+          account,
+          jobs: [
+            { ...signJob, exit: { connectorTx: new Uint8Array(60), exitTx: new Uint8Array(60) } },
+          ],
+        },
+      ],
       ["spark.aggregateFrost", { account, jobs: [aggregateJob] }],
       [
         "spark.signIdentity",
@@ -396,6 +405,14 @@ describe("spark method validators", () => {
       fails(METHODS["spark.signFrost"].params, {
         account,
         jobs: [{ ...signJob, verifyingKey: new Uint8Array(32) }],
+      }),
+    ).toBe(true);
+    expect(
+      fails(METHODS["spark.signFrost"].params, {
+        account,
+        jobs: [
+          { ...signJob, exit: { connectorTx: new Uint8Array(0), exitTx: new Uint8Array(60) } },
+        ],
       }),
     ).toBe(true);
     expect(
