@@ -21,7 +21,8 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 import { KernelError } from "../src/errors.ts";
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
-import type { Keystore, KeystorePrompt, Pbkdf2 } from "../src/platform.ts";
+import type { Keystore, KeystorePrompt, KernelPlatform, Pbkdf2 } from "../src/platform.ts";
+import { serializeCeremonies } from "../src/platform.ts";
 import { corePrompt } from "../src/prompts.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore } from "../src/vault/store.ts";
@@ -550,5 +551,56 @@ describe("hardware factor: reset", () => {
     expect(errCode(await h.call("vault.reset", null, session))).toBe("cancelled");
     expect(field(ok(await h.call("status")), "vault")).toBe("unlocked");
     expect(fake.keys.size).toBe(1);
+  });
+});
+
+describe("serializeCeremonies", () => {
+  it("emits ceremony true then false around a keystore prompt, in order, also when it rejects", async () => {
+    const events: boolean[] = [];
+    const fake = fakeKeystore();
+    const release = fake.hold();
+    const platform = serializeCeremonies(
+      // Only keystore/passkey are read — the rest of the platform is unused here.
+      { keystore: fake.keystore, passkey: undefined } as KernelPlatform,
+      (active) => events.push(active),
+    );
+    const prompt = { title: "t", description: "d" };
+    // Sealed through the raw keystore so no ceremony fires before the assertions start.
+    const sealed = await fake.keystore.seal("id", new Uint8Array(8), prompt);
+    const open = platform.keystore!.open("id", sealed, prompt);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve);
+    });
+    expect(events).toStrictEqual([true]);
+    release();
+    await expect(open).resolves.toBeInstanceOf(Uint8Array);
+    expect(events).toStrictEqual([true, false]);
+
+    fake.fail("cancelled");
+    await expect(platform.keystore!.open("id", sealed, prompt)).rejects.toThrow(KernelError);
+    expect(events).toStrictEqual([true, false, true, false]);
+  });
+
+  it("serializes ceremonies queued behind a held prompt", async () => {
+    const events: boolean[] = [];
+    const fake = fakeKeystore();
+    const release = fake.hold();
+    const platform = serializeCeremonies(
+      { keystore: fake.keystore, passkey: undefined } as KernelPlatform,
+      (active) => events.push(active),
+    );
+    const prompt = { title: "t", description: "d" };
+    const sealed = await fake.keystore.seal("a", new Uint8Array(8), prompt);
+    const first = platform.keystore!.open("a", sealed, prompt);
+    const second = platform.keystore!.authenticate(prompt);
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve);
+    });
+    // The second ceremony waits in the queue — only the first has announced itself.
+    expect(events).toStrictEqual([true]);
+    release();
+    await expect(first).resolves.toBeInstanceOf(Uint8Array);
+    await expect(second).resolves.toBeUndefined();
+    expect(events).toStrictEqual([true, false, true, false]);
   });
 });

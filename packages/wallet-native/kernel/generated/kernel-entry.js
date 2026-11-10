@@ -942,7 +942,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-CoJS2clN.mjs
+	// packages/wallet/dist/protocol-DE7yvA3t.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1739,6 +1739,10 @@
 		v: literal(2),
 		event: literal("locked"),
 		reason: lockReason
+	}), obj({
+		v: literal(2),
+		event: literal("ceremony"),
+		active: bool
 	});
 	// node_modules/.bun/@noble+hashes@2.4.0/node_modules/@noble/hashes/utils.js
 	/**
@@ -3738,9 +3742,10 @@
 	/**
 	* Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
 	* create/get share one queue, because the platform can show only one verification at a time. A
-	* rejection does not wedge the queue. Applied once by `startKernel`.
+	* rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony` fires `true` when
+	* a ceremony's work starts and `false` when it settles, strictly paired per queued call.
 	*/
-	function serializeCeremonies(platform) {
+	function serializeCeremonies(platform, onCeremony) {
 		let tail = Promise.resolve();
 		const queue = async (work) => {
 			const previous = tail;
@@ -3750,9 +3755,11 @@
 			});
 			try {
 				await previous;
+				onCeremony(true);
 				return await work();
 			} finally {
 				release === null || release === void 0 || release();
+				onCeremony(false);
 			}
 		};
 		const { keystore, passkey } = platform;
@@ -43322,7 +43329,13 @@ zoo`.split("\n"));
 		return "unavailable";
 	}
 	function startKernel(host, port) {
-		const platform = serializeCeremonies(host);
+		const platform = serializeCeremonies(host, (active) => {
+			post({
+				v: 2,
+				event: "ceremony",
+				active
+			});
+		});
 		const nostr = createNostrModule(platform.backends.nostr);
 		const spark = createSparkModule();
 		const chains = createChainsModule();

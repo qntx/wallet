@@ -118,7 +118,10 @@ function classifyLoadFailure(error: unknown): "corrupted" | "unsupported" | "una
 
 export function startKernel(host: KernelPlatform, port: Port): void {
   // Every system-UI ceremony goes through one queue: the platform shows one prompt at a time.
-  const platform = serializeCeremonies(host);
+  // The callback posts lazily — ceremonies only run inside requests, after `post` exists.
+  const platform = serializeCeremonies(host, (active) => {
+    post({ v: PROTOCOL_VERSION, event: "ceremony", active });
+  });
   // The module composition is explicit and static: the nostr module owns its handler table, its
   // VaultHooks entry in ctx.modules and its status section; there is no registry — future modules
   // add a line here and a section in status.ts's composition.

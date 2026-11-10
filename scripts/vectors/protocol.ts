@@ -7,7 +7,8 @@
  *
  * - Request: `{ v: 2, id, method, session?, params }`
  * - Response: `{ v: 2, id, ok }` or `{ v: 2, id, err: { code, retryAt? } }`
- * - Event: `{ v: 2, event: "status", status }` or `{ v: 2, event: "locked", reason }`
+ * - Event: `{ v: 2, event: "status", status }` or `{ v: 2, event: "locked", reason }` or `{ v: 2,
+ *   event: "ceremony", active }`
  *
  * `check` names the contract a sample exercises:
  *
@@ -935,6 +936,16 @@ const accept = [
     check: "event",
     message: { v: 2, event: "locked", reason: "invalidated" },
   },
+  {
+    name: "event-ceremony-start",
+    check: "event",
+    message: { v: 2, event: "ceremony", active: true },
+  },
+  {
+    name: "event-ceremony-end",
+    check: "event",
+    message: { v: 2, event: "ceremony", active: false },
+  },
 ];
 
 const reject: Array<{ name: string; check: string; message: unknown }> = [
@@ -1252,6 +1263,11 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "event-unknown-reason",
     check: "event",
     message: { v: 2, event: "locked", reason: "forgotten" },
+  },
+  {
+    name: "event-ceremony-active-not-boolean",
+    check: "event",
+    message: { v: 2, event: "ceremony", active: "yes" },
   },
 ];
 

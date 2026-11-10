@@ -24,7 +24,7 @@ import type { MethodSpec } from "./core.ts";
 import { NOSTR_METHODS, nostrStatus } from "./nostr.ts";
 // oxlint-disable-next-line unicorn/prefer-export-from -- the table is composed locally AND re-exported
 import { SPARK_METHODS } from "./spark.ts";
-import { arr, literal, nullValue, obj, opt, str, union } from "./validate.ts";
+import { arr, bool, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 import type { NullValue, Validator } from "./validate.ts";
 
 export type { WalletErrorCode } from "../types.ts";
@@ -73,7 +73,13 @@ export type KernelEvent =
       readonly event: "status";
       readonly status: StatusPayload;
     }
-  | { readonly v: typeof PROTOCOL_VERSION; readonly event: "locked"; readonly reason: LockReason };
+  | { readonly v: typeof PROTOCOL_VERSION; readonly event: "locked"; readonly reason: LockReason }
+  | {
+      /** The kernel is (true) / is no longer (false) waiting on a system verification prompt. */
+      readonly v: typeof PROTOCOL_VERSION;
+      readonly event: "ceremony";
+      readonly active: boolean;
+    };
 
 /**
  * The worst-case encoded size of one request, enforced by both sides: the host refuses to post a
@@ -211,10 +217,11 @@ const errorPayload = obj({
   detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/)),
 });
 
-/** Host-side validators: `kernelEvent` covers the two push messages. */
+/** Host-side validators: `kernelEvent` covers the push messages. */
 export const kernelEvent: Validator<KernelEvent> = union(
   obj({ v: literal(PROTOCOL_VERSION), event: literal("status"), status: statusPayload }),
   obj({ v: literal(PROTOCOL_VERSION), event: literal("locked"), reason: lockReason }),
+  obj({ v: literal(PROTOCOL_VERSION), event: literal("ceremony"), active: bool }),
 );
 
 /** Validates the `err` payload of a response; `ok` is checked against `METHODS[m].result`. */

@@ -158,9 +158,13 @@ export function requirePasskey(platform: KernelPlatform): PasskeyAuthenticator {
 /**
  * Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
  * create/get share one queue, because the platform can show only one verification at a time. A
- * rejection does not wedge the queue. Applied once by `startKernel`.
+ * rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony` fires `true` when
+ * a ceremony's work starts and `false` when it settles, strictly paired per queued call.
  */
-export function serializeCeremonies(platform: KernelPlatform): KernelPlatform {
+export function serializeCeremonies(
+  platform: KernelPlatform,
+  onCeremony: (active: boolean) => void,
+): KernelPlatform {
   let tail: Promise<void> = Promise.resolve();
   const queue = async <T>(work: () => Promise<T>): Promise<T> => {
     const previous = tail;
@@ -170,9 +174,11 @@ export function serializeCeremonies(platform: KernelPlatform): KernelPlatform {
     });
     try {
       await previous;
+      onCeremony(true);
       return await work();
     } finally {
       release?.();
+      onCeremony(false);
     }
   };
   const { keystore, passkey } = platform;
