@@ -133,9 +133,6 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   if (account.kind === "imported") {
     return chainSignImported(ctx, params, session, dek);
   }
-  if (account.kind !== "hd") {
-    throw new KernelError("unsupported", "imported accounts are not yet supported");
-  }
   if (request.kind === "bitcoin.psbt") {
     if (request.sign.some((s) => BTC_PURPOSE[s.template] === undefined)) {
       throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
@@ -160,15 +157,15 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   }
   const execute = (seed: Uint8Array, intentOnly: boolean): ExecuteResult => {
     if (request.kind === "bitcoin.psbt") {
-      return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
-    }
-    if (request.account.kind !== "hd") {
-      throw new KernelError("unsupported", "imported accounts are not yet supported");
+      return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
     }
     if (request.kind === "bitcoin.message") {
-      return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
+      return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
     }
-    const source = { kind: "hd" as const, account: request.account, seed };
+    if (!("template" in account)) {
+      throw new KernelError("invalid-input", "account template does not match the request family");
+    }
+    const source = { kind: "hd" as const, account, seed };
     if (
       request.kind === "evm.transaction" ||
       request.kind === "evm.personal-message" ||

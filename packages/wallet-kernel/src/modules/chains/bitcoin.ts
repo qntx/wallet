@@ -319,7 +319,7 @@ const executeBitcoinMessage = (
 export const executeBitcoin = (
   random: (len: number) => Uint8Array,
   request: BitcoinRequest,
-  account: { readonly groupIndex: number },
+  account: Extract<BitcoinRequest["account"], { kind: "hd" }>,
   seed: Uint8Array,
   intentOnly: boolean,
 ): ExecuteResult => {
@@ -337,10 +337,7 @@ export const executeBitcoin = (
     if (request.kind === "bitcoin.psbt") {
       return executeBitcoinPsbt(b, request, random, intentOnly);
     }
-    if (request.account.kind !== "hd") {
-      throw new KernelError("unsupported", "imported accounts are not yet supported");
-    }
-    const purpose = BTC_PURPOSE[request.account.template];
+    const purpose = "template" in account ? BTC_PURPOSE[account.template] : undefined;
     if (purpose === undefined) {
       throw new KernelError("invalid-input", "account template is not a bitcoin template");
     }

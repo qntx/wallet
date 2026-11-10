@@ -50,42 +50,38 @@ const evmBody = (
   signer: string,
   intentOnly: boolean,
 ): ExecuteResult => {
-  {
-    {
-      let normalized;
-      try {
-        normalized = normalizeEvm(request);
-      } catch (error) {
-        mapChainError(error);
-      }
-      if (!deepEqual(normalized, request)) {
-        throw new KernelError("invalid-input", "request is not normalized");
-      }
-      let intent: DisplayIntent;
-      try {
-        intent = decodeEvm(request, signer);
-      } catch (error) {
-        mapChainError(error);
-      }
-      if (intentOnly) {
-        return { prompt: intent };
-      }
-      if (request.kind === "evm.transaction") {
-        return {
-          kind: "evm.transaction",
-          signedTransaction: signEvmTransaction(request.tx, priv),
-        };
-      }
-      if (request.kind === "evm.personal-message") {
-        return {
-          kind: "evm.personal-message",
-          signature: signEvmPersonalMessage(request.message, priv),
-        };
-      }
-      return {
-        kind: "evm.typed-data",
-        signature: signEvmTypedData(request.typedData, priv),
-      };
-    }
+  let normalized;
+  try {
+    normalized = normalizeEvm(request);
+  } catch (error) {
+    mapChainError(error);
   }
+  if (!deepEqual(normalized, request)) {
+    throw new KernelError("invalid-input", "request is not normalized");
+  }
+  let intent: DisplayIntent;
+  try {
+    intent = decodeEvm(request, signer);
+  } catch (error) {
+    mapChainError(error);
+  }
+  if (intentOnly) {
+    return { prompt: intent };
+  }
+  if (request.kind === "evm.transaction") {
+    return {
+      kind: "evm.transaction",
+      signedTransaction: signEvmTransaction(request.tx, priv),
+    };
+  }
+  if (request.kind === "evm.personal-message") {
+    return {
+      kind: "evm.personal-message",
+      signature: signEvmPersonalMessage(request.message, priv),
+    };
+  }
+  return {
+    kind: "evm.typed-data",
+    signature: signEvmTypedData(request.typedData, priv),
+  };
 };
