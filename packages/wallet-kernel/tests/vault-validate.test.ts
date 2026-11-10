@@ -36,6 +36,15 @@ const code = (fn: () => unknown): string => {
 };
 
 describe("assertVaultImage", () => {
+  it("accepts the same record id under different kinds", () => {
+    expect(
+      assertVaultImage({
+        ...validImage(),
+        records: [validRecord(), { ...validRecord(), kind: "data-key" }],
+      }),
+    ).toBeDefined();
+  });
+
   it("returns a valid image; meta may be absent or null", () => {
     expect(assertVaultImage(validImage())).toBeDefined();
     const noMeta = validImage() as Record<string, unknown>;
@@ -78,6 +87,18 @@ describe("assertVaultImage", () => {
         }),
     ],
     ["records not array", () => assertVaultImage({ ...validImage(), records: {} })],
+    [
+      "duplicate record kind+id",
+      () => assertVaultImage({ ...validImage(), records: [validRecord(), validRecord()] }),
+    ],
+    [
+      "duplicate factor id",
+      () =>
+        assertVaultImage({
+          ...validImage(),
+          factors: [validFactor(), { ...validFactor(), kind: "passkey" }],
+        }),
+    ],
     [
       "record extra key",
       () => assertVaultImage({ ...validImage(), records: [{ ...validRecord(), extra: 1 }] }),
