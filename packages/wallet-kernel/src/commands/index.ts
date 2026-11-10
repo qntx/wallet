@@ -20,7 +20,7 @@ export const CORE_HANDLERS: {
     return null;
   },
   "vault.unlock": async (ctx, params) => vaultCommands.unlockVault(ctx, params),
-  "vault.reset": async (ctx) => vaultCommands.resetVault(ctx),
+  "vault.reset": async (ctx, _params, session) => vaultCommands.resetVault(ctx, session),
   "vault.addFactor": async (ctx, params, session) => vaultCommands.addFactor(ctx, params, session),
   "vault.removeFactor": async (ctx, params, session) =>
     vaultCommands.removeFactor(ctx, params, session),

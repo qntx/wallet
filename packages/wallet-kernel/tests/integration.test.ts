@@ -1693,6 +1693,29 @@ describe("password rate limiting", () => {
 });
 
 describe("integrity", () => {
+  it("an open healthy vault resets only with its live session", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    // A sessionless call on an open, healthy vault is refused before anything is erased.
+    expect(errCode(await h.call("vault.reset", null))).toBe("locked");
+    expect(lastStatus(h).vault).toBe("unlocked");
+    // The live session resets.
+    expect(ok(await h.call("vault.reset", null, session))).toBeNull();
+    expect(lastStatus(h).vault).toBe("uninitialized");
+  });
+
+  it("a locked vault resets without a session", async () => {
+    const h = createHarness();
+    await h.settle();
+    await createPasskeyWallet(h);
+    const h2 = createHarness({ store: h.store });
+    await h2.settle();
+    expect(lastStatus(h2).vault).toBe("locked");
+    expect(ok(await h2.call("vault.reset"))).toBeNull();
+    expect(lastStatus(h2).vault).toBe("uninitialized");
+  });
+
   it("a record that fails authentication at unlock corrupts the vault; reset recovers", async () => {
     const h = createHarness();
     await h.settle();

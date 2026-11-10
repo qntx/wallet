@@ -25901,8 +25901,11 @@ zoo`.split("\n"));
 	/**
 	* Deletes every record and factor. On a keystore host the device owner proves presence first
 	* (WD-055: the main runtime alone cannot erase the vault) and the hardware keys go with the data.
+	* An open, healthy vault can only be erased by whoever holds its live session; a locked,
+	* forgotten-password or unhealthy vault stays sessionless — reset is its recovery path.
 	*/
-	async function resetVault(ctx) {
+	async function resetVault(ctx, requestSession) {
+		if (ctx.session.unlocked && ctx.health === "ok") ctx.session.require(requestSession);
 		const { keystore } = ctx.platform;
 		if (keystore !== void 0) await keystore.authenticate(corePromptFor(keystore, "reset")());
 		ctx.session.lock("user");
@@ -27222,7 +27225,7 @@ zoo`.split("\n"));
 			return null;
 		},
 		"vault.unlock": async (ctx, params) => unlockVault(ctx, params),
-		"vault.reset": async (ctx) => resetVault(ctx),
+		"vault.reset": async (ctx, _params, session) => resetVault(ctx, session),
 		"vault.addFactor": async (ctx, params, session) => addFactor(ctx, params, session),
 		"vault.removeFactor": async (ctx, params, session) => removeFactor(ctx, params, session),
 		"wallet.createWithPasskey": async (ctx, params, session) => createWithPasskey(ctx, params, session),

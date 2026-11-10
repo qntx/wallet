@@ -68,6 +68,11 @@ What to do with each vault state:
 - `unavailable` — the vault store failed transiently. Retry; the kernel retries a load on the
   next request itself.
 
+Resetting requires the live session while the vault is open and healthy; a locked or unhealthy
+vault resets without one. On Web/Node reset is not an authentication boundary — same-origin code
+can delete IndexedDB directly — so hosts must put their own confirmation UX in front of it. On
+React Native the device owner proves presence before anything is erased.
+
 ## Security notes
 
 - Seed, keys and the DEK exist only inside the kernel's Web Worker. The password and the
