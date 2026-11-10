@@ -8,6 +8,7 @@ import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
 import { Controller } from "../controller.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
@@ -162,7 +163,7 @@ const decode = (
   raw: Uint8Array,
   warn: (msg: string) => void = () => undefined,
 ): TrackedTransaction | undefined => {
-  const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+  const parsed = readJson(raw);
   if (!isObject(parsed)) {
     return undefined;
   }

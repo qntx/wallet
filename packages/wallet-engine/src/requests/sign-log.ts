@@ -6,6 +6,7 @@ import type { NostrKeyRef } from "@qntx/wallet";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { EngineLogger } from "../events.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { AccountRef } from "../transactions/route.ts";
 import type { RequestCheckCode } from "./checks.ts";
@@ -172,7 +173,7 @@ export function createSignLog(logger: EngineLogger): SignLog {
         if (raw === undefined) {
           continue;
         }
-        const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+        const parsed = readJson(raw);
         if (isEntry(parsed)) {
           entries.push(parsed);
         }

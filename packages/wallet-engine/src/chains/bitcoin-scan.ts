@@ -11,6 +11,7 @@ import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import type { Esplora } from "./bitcoin.ts";
 
@@ -147,8 +148,7 @@ export class BitcoinScanStore {
   async unlock(store: EngineStore): Promise<ScanState | undefined> {
     this.engineStore = store;
     const raw = await store.collection(COLL).get("state");
-    const parsed: unknown =
-      raw === undefined ? undefined : JSON.parse(new TextDecoder().decode(raw));
+    const parsed: unknown = raw === undefined ? undefined : readJson(raw);
     if (
       !isObject(parsed) ||
       !Array.isArray(parsed["addresses"]) ||
@@ -264,7 +264,7 @@ export class BtcUtxoStore {
         : new Map<string, LockedUtxo>(
             Object.entries(
               ((): Record<string, LockedUtxo> => {
-                const rawParsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+                const rawParsed = readJson(raw);
                 const parsed = isObject(rawParsed) ? rawParsed : {};
                 const pairs: ReadonlyArray<readonly [string, LockedUtxo]> = Object.entries(
                   parsed,

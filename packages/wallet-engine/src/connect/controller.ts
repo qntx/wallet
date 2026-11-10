@@ -9,6 +9,7 @@ import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { PhishingController } from "../phishing/controller.ts";
 import { PHISHING_BLOCKED_MESSAGE } from "../phishing/status.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import {
   internalError,
@@ -268,7 +269,7 @@ export class ConnectionController extends Controller<ConnectionState> {
       if (raw === undefined || key === undefined) {
         continue;
       }
-      const parsed: unknown = JSON.parse(new TextDecoder().decode(raw));
+      const parsed = readJson(raw);
       if (!isSession(parsed)) {
         this.options.logger.warn("connection session skipped: malformed");
         expired.push(key);

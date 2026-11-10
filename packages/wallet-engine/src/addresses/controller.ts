@@ -6,6 +6,7 @@
  */
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { AddressBookError } from "./errors.ts";
 import { ADDRESS_BOOK_LIMIT, evictTombstones, mergeWithReport } from "./merge.ts";
@@ -56,7 +57,7 @@ export class AddressBookController extends Controller<AddressBookState> {
       if (raw === undefined) {
         continue;
       }
-      const record = decodeRecord(JSON.parse(new TextDecoder().decode(raw)));
+      const record = decodeRecord(readJson(raw));
       if (record === undefined) {
         this.options.logger.warn("address book record skipped: malformed");
       } else {

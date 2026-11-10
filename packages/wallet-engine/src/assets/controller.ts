@@ -17,6 +17,7 @@ import { ERC20_ABI, evmRpcHex } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
+import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
@@ -119,7 +120,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.engineStore = await this.options.openStore();
     const listed = await this.engineStore.collection(COLLECTION).get("customTokens");
     if (listed !== undefined) {
-      const parsed: unknown = JSON.parse(new TextDecoder().decode(listed));
+      const parsed = readJson(listed);
       if (isObject(parsed)) {
         for (const [network, arr] of Object.entries(parsed)) {
           if (Array.isArray(arr)) {
