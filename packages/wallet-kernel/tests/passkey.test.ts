@@ -6,7 +6,7 @@ import { masterKey } from "../src/derive/hd.ts";
 import { walletIdOf } from "../src/derive/wallet-id.ts";
 import { KernelError } from "../src/errors.ts";
 import { nostrKeyAt } from "../src/modules/nostr/derive.ts";
-import { mnemonicFromEntropy } from "../src/seed/mnemonic.ts";
+import { mnemonicBytes } from "../src/seed/mnemonic.ts";
 import { entropyFromPrf } from "../src/seed/passkey.ts";
 import { seedFromEntropy } from "../src/seed/seed.ts";
 import { kernelError, loadVectors, subtlePbkdf2 } from "./helpers.ts";
@@ -41,7 +41,7 @@ describe("entropyFromPrf", () => {
 describe("passkey wallet vector", () => {
   it("mnemonic → seed → NIP-06 key → walletId", async () => {
     const entropy = entropyFromPrf(hexToBytes(vector.prf));
-    expect(mnemonicFromEntropy(entropy)).toBe(vector.mnemonic);
+    expect(new TextDecoder().decode(mnemonicBytes(entropy))).toBe(vector.mnemonic);
     const seed = await seedFromEntropy(entropy, "", subtlePbkdf2);
     expect(bytesToHex(seed)).toBe(vector.seed);
     const master = masterKey(seed);

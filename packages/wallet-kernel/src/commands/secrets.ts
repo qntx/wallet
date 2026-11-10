@@ -1,10 +1,8 @@
-import { utf8ToBytes } from "@noble/hashes/utils.js";
-
 import type { Factor } from "@qntx/wallet/protocol";
 
 import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
-import { mnemonicFromEntropy } from "../seed/mnemonic.ts";
+import { mnemonicBytes } from "../seed/mnemonic.ts";
 import { encodeHeader, parseEntropyHeader } from "../vault/headers.ts";
 import {
   findRecord,
@@ -38,7 +36,7 @@ export async function exportMnemonic(
   const header = parseEntropyHeader(record.header);
   const { entropy, passphrase } = openWalletSecret(dek, record);
   try {
-    const exported = utf8ToBytes(mnemonicFromEntropy(entropy));
+    const exported = mnemonicBytes(entropy);
     // A successful export is the backup: re-seal the record with backup "mnemonic" — the public
     // header enters the AAD, so it must be sealed again. The guarded commit makes a concurrent
     // write conflict rather than silently lose the flag; a second export changes nothing.

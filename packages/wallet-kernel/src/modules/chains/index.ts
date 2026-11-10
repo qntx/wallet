@@ -1,8 +1,9 @@
 /**
  * The chains module: `wallet.accounts` — the public account for a template at the wallet's group
- * index, derived from the wallet's entropy record. No records, no cache: seed and every node are
- * wiped in `finally` on every path. `chain.sign` prepares, verifies and signs through the
- * per-family executors in `./evm.ts`, `./bitcoin.ts` and `./solana.ts`.
+ * index, derived from the wallet's entropy record once per session and then served from a cache of
+ * public data only. No records: seed and every node are wiped in `finally` on every path.
+ * `chain.sign` prepares, verifies and signs through the per-family executors in `./evm.ts`,
+ * `./bitcoin.ts` and `./solana.ts`.
  */
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
@@ -26,6 +27,7 @@ import { promptLocale } from "../../prompts.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
+import type { StoredRecord } from "../../vault/store.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
 import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
@@ -103,7 +105,19 @@ const accountFor = (
   }
 };
 
-const walletAccounts: Handler<"wallet.accounts"> = async (ctx, params, session) => {
+/**
+ * Public account data per entropy record for the session: `wallet.accounts` derives each account
+ * once, then answers without touching the seed. Keyed by the record object, so a reloaded image
+ * (any commit, a removed wallet, a rotated vault) starts empty; lock drops it all.
+ */
+type AccountCache = WeakMap<StoredRecord, Map<string, ChainAccount>>;
+
+const walletAccounts = async (
+  ctx: Parameters<Handler<"wallet.accounts">>[0],
+  params: Parameters<Handler<"wallet.accounts">>[1],
+  session: string | undefined,
+  cache: AccountCache,
+): Promise<ChainAccount> => {
   const { dek } = ctx.session.require(session);
   const record = ctx.image.records.find(
     (entry) => entry.kind === "entropy" && entry.id === params.walletId,
@@ -112,7 +126,12 @@ const walletAccounts: Handler<"wallet.accounts"> = async (ctx, params, session) 
     throw new KernelError("not-found", "no such wallet");
   }
   checkNetwork(params.template, params.network);
-  return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
+  const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
+  const known = cache.get(record)?.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
     // Bitcoin account keys serialize with the network's version bytes (xpub or tpub).
     const master = HDKey.fromMasterSeed(
       seed,
@@ -124,6 +143,10 @@ const walletAccounts: Handler<"wallet.accounts"> = async (ctx, params, session) 
       master.wipePrivateData();
     }
   });
+  const accounts = cache.get(record) ?? new Map<string, ChainAccount>();
+  accounts.set(key, account);
+  cache.set(record, accounts);
+  return account;
 };
 
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
@@ -266,16 +289,20 @@ const chainSignImported = async (
 };
 
 export function createChainsModule(): ChainsModule {
+  let accounts: AccountCache = new WeakMap();
   const vault: VaultHooks = {
     ownsRecord: () => false,
     claimUnlocked: (records) => records,
     forget: () => undefined,
-    lock: () => undefined,
+    lock: () => {
+      accounts = new WeakMap();
+    },
     walletDeleteOps: () => [],
   };
 
   const handlers: { [M in keyof typeof CHAINS_METHODS & MethodName]: Handler<M> } = {
-    "wallet.accounts": walletAccounts,
+    "wallet.accounts": async (ctx, params, session) =>
+      walletAccounts(ctx, params, session, accounts),
     "chain.sign": chainSign,
   };
 

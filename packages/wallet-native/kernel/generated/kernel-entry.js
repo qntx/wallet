@@ -20118,7 +20118,6 @@
 	init_sha2();
 	init_utils$2();
 	/*! scure-bip39 - MIT License (c) 2022 Patricio Palladino, Paul Miller (paulmillr.com) */
-	var isJapanese = (wordlist) => wordlist[0] === "あいこくしん";
 	function isWellFormedUnicode(value) {
 		for (let i = 0; i < value.length; i++) {
 			const current = value.charCodeAt(i);
@@ -20171,25 +20170,6 @@
 			if (!isWellFormedUnicode(i)) throw new TypeError("wordlist: expected well-formed Unicode string");
 		});
 	}
-	function encodeWords(entropy, wordlist) {
-		awordlist(wordlist);
-		const bytes = new Uint8Array(entropy.length + 1);
-		bytes.set(entropy);
-		bytes[entropy.length] = calcChecksum(entropy);
-		const words = [];
-		let carry = 0;
-		let bits = 0;
-		for (const byte of bytes) {
-			carry = carry << 8 | byte;
-			bits += 8;
-			if (bits >= 11) {
-				bits -= 11;
-				words.push(wordlist[carry >>> bits & 2047]);
-				carry &= (1 << bits) - 1;
-			}
-		}
-		return words;
-	}
 	function decodeWords(words, wordlist) {
 		awordlist(wordlist);
 		const entLen = words.length / 3 * 4;
@@ -20240,30 +20220,6 @@
 		const entropy = decodeWords(words, wordlist);
 		aentropy(entropy);
 		return entropy;
-	}
-	/**
-	* Reversible: Converts raw entropy in form of byte array to mnemonic string.
-	* @param entropy - Byte array.
-	* @param wordlist - Imported wordlist for a specific language.
-	* @returns 12-24 words.
-	* @throws On wrong argument types. {@link TypeError}
-	* @throws On wrong argument ranges or values. {@link RangeError}
-	* @example
-	* Convert raw entropy into an English mnemonic.
-	* ```ts
-	* import { entropyToMnemonic } from '@scure/bip39';
-	* import { wordlist } from '@scure/bip39/wordlists/english.js';
-	* const ent = new Uint8Array([
-	*   0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f,
-	*   0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f
-	* ]);
-	* const mnemonic = entropyToMnemonic(ent, wordlist);
-	* // 'legal winner thank year wave sausage worth useful legal winner thank yellow'
-	* ```
-	*/
-	function entropyToMnemonic(entropy, wordlist) {
-		aentropy(entropy);
-		return encodeWords(entropy, wordlist).join(isJapanese(wordlist) ? "　" : " ");
 	}
 	/**
 	* Validates mnemonic for being 12-24 words contained in `wordlist`.
@@ -25858,6 +25814,8 @@ zoo`.split("\n"));
 		throw new ChainError("unsupported", `unsupported sign request kind: ${request["kind"]}`);
 	};
 	// packages/wallet-kernel/src/seed/mnemonic.ts
+	init_sha2();
+	init_utils$2();
 	var WORD_COUNTS = /* @__PURE__ */ new Set([
 		12,
 		15,
@@ -25883,25 +25841,70 @@ zoo`.split("\n"));
 		if (!validateMnemonic(mnemonic, wordlist)) throw new KernelError("invalid-input", "invalid mnemonic");
 		return mnemonicToEntropy(mnemonic, wordlist);
 	}
-	/** 16/20/24/28/32 bytes of entropy → BIP-39 mnemonic (english wordlist). */
-	function mnemonicFromEntropy(entropy) {
+	/** Each wordlist entry as UTF-8. English words are ASCII, so they are already NFKD-normalized. */
+	var WORD_BYTES = wordlist.map((word) => utf8ToBytes$1(word));
+	/**
+	* 16/20/24/28/32 bytes of entropy → its BIP-39 mnemonic (english wordlist) as normalized UTF-8: the
+	* words joined by single spaces, exactly the PBKDF2 password BIP-39 specifies. Built from the
+	* 11-bit indices directly, so no JS string ever holds the mnemonic; the caller wipes the result.
+	*/
+	function mnemonicBytes(entropy) {
 		if (!ENTROPY_LENGTHS.has(entropy.length)) throw new KernelError("invalid-input", "entropy must be 16, 20, 24, 28 or 32 bytes");
-		return entropyToMnemonic(entropy, wordlist);
+		const checksum = sha256$1(entropy);
+		const entropyBits = entropy.length * 8;
+		const indices = new Uint16Array((entropyBits + entropyBits / 32) / 11);
+		try {
+			for (const word of indices.keys()) {
+				let index = 0;
+				for (let bit = word * 11; bit < word * 11 + 11; bit++) {
+					var _source;
+					const source = bit < entropyBits ? entropy : checksum;
+					const at = bit < entropyBits ? bit : bit - entropyBits;
+					index = index << 1 | ((_source = source[at >> 3]) !== null && _source !== void 0 ? _source : 0) >> 7 - (at & 7) & 1;
+				}
+				indices[word] = index;
+			}
+			const words = Array.from(indices, (index) => {
+				var _WORD_BYTES$index;
+				return (_WORD_BYTES$index = WORD_BYTES[index]) !== null && _WORD_BYTES$index !== void 0 ? _WORD_BYTES$index : /* @__PURE__ */ new Uint8Array();
+			});
+			const out = new Uint8Array(words.reduce((length, w) => length + w.length, words.length - 1));
+			let offset = 0;
+			for (const [i, word] of words.entries()) {
+				if (i > 0) out[offset++] = 32;
+				out.set(word, offset);
+				offset += word.length;
+			}
+			return out;
+		} finally {
+			wipe(checksum);
+			indices.fill(0);
+		}
+	}
+	/** The words of a `mnemonicBytes` result, as views into it (no copies). */
+	function splitMnemonic(mnemonic) {
+		const words = [];
+		let start = 0;
+		for (let i = 0; i <= mnemonic.length; i++) if (i === mnemonic.length || mnemonic[i] === 32) {
+			words.push(mnemonic.subarray(start, i));
+			start = i + 1;
+		}
+		return words;
 	}
 	// packages/wallet-kernel/src/seed/seed.ts
 	init_utils$2();
-	/** BIP-39 seed: PBKDF2-HMAC-SHA512, 2048 rounds, 64 bytes. */
-	async function seedFromMnemonic(mnemonic, passphrase, pbkdf2) {
-		const password = utf8ToBytes$1(mnemonic.normalize("NFKD"));
+	/**
+	* BIP-39 seed of `entropy`: PBKDF2-HMAC-SHA512 over the normalized mnemonic, 2048 rounds, 64 bytes.
+	* The mnemonic exists only as wiped bytes, never as a string.
+	*/
+	async function seedFromEntropy(entropy, passphrase, pbkdf2) {
+		const password = mnemonicBytes(entropy);
 		const salt = utf8ToBytes$1(`mnemonic${passphrase}`.normalize("NFKD"));
 		try {
 			return await pbkdf2("sha512", password, salt, 2048, 64);
 		} finally {
 			wipe(password, salt);
 		}
-	}
-	async function seedFromEntropy(entropy, passphrase, pbkdf2) {
-		return seedFromMnemonic(mnemonicFromEntropy(entropy), passphrase, pbkdf2);
 	}
 	/**
 	* Derives the BIP-39 seed of `entropy` and `passphrase` ("" for none), runs `use`, wipes the seed
@@ -25929,7 +25932,7 @@ zoo`.split("\n"));
 		}
 		return normalized;
 	}
-	/** The text `seedFromMnemonic` takes for stored passphrase bytes (`undefined` → no passphrase). */
+	/** The text `seedFromEntropy` takes for stored passphrase bytes (`undefined` → no passphrase). */
 	function passphraseText(passphrase) {
 		if (passphrase === void 0) return "";
 		try {
@@ -26544,12 +26547,12 @@ zoo`.split("\n"));
 			ctx.session.require(requestSession);
 		}
 		const entropy = randomEntropy(params.words, ctx.platform.random);
-		const mnemonic = mnemonicFromEntropy(entropy);
-		const wordList = mnemonic.split(" ");
+		const mnemonic = mnemonicBytes(entropy);
+		const wordList = splitMnemonic(mnemonic);
 		const quiz = quizPositions(ctx.platform.random, wordList.length);
 		const expected = quiz.map((position) => {
 			var _wordList$position;
-			return utf8ToBytes$1((_wordList$position = wordList[position]) !== null && _wordList$position !== void 0 ? _wordList$position : "");
+			return Uint8Array.from((_wordList$position = wordList[position]) !== null && _wordList$position !== void 0 ? _wordList$position : []);
 		});
 		const id = bytesToHex$4(ctx.platform.random(16));
 		ctx.session.putDraft(id, {
@@ -26561,7 +26564,7 @@ zoo`.split("\n"));
 		});
 		return {
 			draft: id,
-			words: utf8ToBytes$1(mnemonic),
+			words: mnemonic,
 			quiz
 		};
 	}
@@ -27248,7 +27251,6 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/commands/secrets.ts
-	init_utils$2();
 	init_objectSpread2();
 	/**
 	* One-shot export: the mnemonic as UTF-8 bytes, plus the NFKD passphrase bytes when the wallet has
@@ -27261,7 +27263,7 @@ zoo`.split("\n"));
 		const header = parseEntropyHeader(record.header);
 		const { entropy, passphrase } = openWalletSecret(dek, record);
 		try {
-			const exported = utf8ToBytes$1(mnemonicFromEntropy(entropy));
+			const exported = mnemonicBytes(entropy);
 			if (header.backup !== "mnemonic") {
 				const updated = encodeHeader(_objectSpread2(_objectSpread2({}, header), {}, { backup: "mnemonic" }));
 				await ctx.commit([{
@@ -31553,9 +31555,10 @@ zoo`.split("\n"));
 	// packages/wallet-kernel/src/modules/chains/index.ts
 	/**
 	* The chains module: `wallet.accounts` — the public account for a template at the wallet's group
-	* index, derived from the wallet's entropy record. No records, no cache: seed and every node are
-	* wiped in `finally` on every path. `chain.sign` prepares, verifies and signs through the
-	* per-family executors in `./evm.ts`, `./bitcoin.ts` and `./solana.ts`.
+	* index, derived from the wallet's entropy record once per session and then served from a cache of
+	* public data only. No records: seed and every node are wiped in `finally` on every path.
+	* `chain.sign` prepares, verifies and signs through the per-family executors in `./evm.ts`,
+	* `./bitcoin.ts` and `./solana.ts`.
 	*/
 	init_bip32();
 	var checkNetwork = (template, network) => {
@@ -31608,12 +31611,16 @@ zoo`.split("\n"));
 			account.wipePrivateData();
 		}
 	};
-	var walletAccounts = async (ctx, params, session) => {
+	var walletAccounts = async (ctx, params, session, cache) => {
+		var _cache$get, _cache$get2;
 		const { dek } = ctx.session.require(session);
 		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === params.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
 		checkNetwork(params.template, params.network);
-		return withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
+		const key = `${String(params.groupIndex)}/${params.template}/${params.network}`;
+		const known = (_cache$get = cache.get(record)) === null || _cache$get === void 0 ? void 0 : _cache$get.get(key);
+		if (known !== void 0) return known;
+		const account = await withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => {
 			const master = HDKey$1.fromMasterSeed(seed, params.template.startsWith("btc.") ? bitcoinNetwork(params.network).bip32 : void 0);
 			try {
 				return accountFor(master, seed, params.template, params.network, params.groupIndex);
@@ -31621,6 +31628,10 @@ zoo`.split("\n"));
 				master.wipePrivateData();
 			}
 		});
+		const accounts = (_cache$get2 = cache.get(record)) !== null && _cache$get2 !== void 0 ? _cache$get2 : /* @__PURE__ */ new Map();
+		accounts.set(key, account);
+		cache.set(record, accounts);
+		return account;
 	};
 	var chainSign = async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
@@ -31704,16 +31715,19 @@ zoo`.split("\n"));
 		return signed;
 	};
 	function createChainsModule() {
+		let accounts = /* @__PURE__ */ new WeakMap();
 		return {
 			vault: {
 				ownsRecord: () => false,
 				claimUnlocked: (records) => records,
 				forget: () => void 0,
-				lock: () => void 0,
+				lock: () => {
+					accounts = /* @__PURE__ */ new WeakMap();
+				},
 				walletDeleteOps: () => []
 			},
 			handlers: {
-				"wallet.accounts": walletAccounts,
+				"wallet.accounts": async (ctx, params, session) => walletAccounts(ctx, params, session, accounts),
 				"chain.sign": chainSign
 			}
 		};

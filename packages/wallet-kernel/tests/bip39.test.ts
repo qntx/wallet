@@ -1,15 +1,21 @@
 import { pbkdf2 } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { entropyToMnemonic, mnemonicToSeed } from "@scure/bip39";
+import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   entropyFromMnemonic,
-  mnemonicFromEntropy,
+  mnemonicBytes,
   normalizeMnemonic,
+  splitMnemonic,
 } from "../src/seed/mnemonic.ts";
-import { seedFromEntropy, seedFromMnemonic } from "../src/seed/seed.ts";
+import { seedFromEntropy } from "../src/seed/seed.ts";
+import { seededRandom } from "./harness.ts";
 import { kernelError, loadVectors, subtlePbkdf2 } from "./helpers.ts";
+
+const seededBytes = (seed: number): ((n: number) => Uint8Array) => seededRandom(seed).random;
 
 // Each entry: [entropy hex, mnemonic, seed hex, xprv]. Passphrase "TREZOR".
 type Bip39Vector = [entropy: string, mnemonic: string, seed: string, xprv: string];
@@ -31,13 +37,10 @@ describe("subtlePbkdf2", () => {
 describe("bip39 vectors", () => {
   it.each(english)("entropy ⇄ mnemonic ⇄ seed: %s", async (entropy, mnemonic, seed) => {
     expect(bytesToHex(entropyFromMnemonic(mnemonic))).toBe(entropy);
-    expect(mnemonicFromEntropy(hexToBytes(entropy))).toBe(mnemonic);
-    await expect(seedFromMnemonic(mnemonic, "TREZOR", subtlePbkdf2)).resolves.toStrictEqual(
-      hexToBytes(seed),
-    );
-    await expect(seedFromEntropy(hexToBytes(entropy), "", subtlePbkdf2)).resolves.toStrictEqual(
-      await seedFromMnemonic(mnemonic, "", subtlePbkdf2),
-    );
+    expect(mnemonicBytes(hexToBytes(entropy))).toStrictEqual(utf8ToBytes(mnemonic));
+    await expect(
+      seedFromEntropy(hexToBytes(entropy), "TREZOR", subtlePbkdf2),
+    ).resolves.toStrictEqual(hexToBytes(seed));
   });
 });
 
@@ -68,9 +71,30 @@ describe("entropyFromMnemonic rejects", () => {
   });
 });
 
-describe("mnemonicFromEntropy rejects", () => {
-  it("unsupported entropy length", () => {
-    expect(kernelError(() => mnemonicFromEntropy(new Uint8Array(8)))).toBe("invalid-input");
+describe("mnemonicBytes", () => {
+  const random = seededBytes(0x5eed);
+
+  it.each([16, 20, 24, 28, 32])(
+    "matches @scure/bip39 for random %d-byte entropy, never as a string",
+    async (length) => {
+      for (let i = 0; i < 64; i++) {
+        const entropy = random(length);
+        const expected = entropyToMnemonic(entropy, wordlist);
+        const bytes = mnemonicBytes(entropy);
+        expect(bytes).toStrictEqual(utf8ToBytes(expected));
+        expect(splitMnemonic(bytes).map((w) => new TextDecoder().decode(w))).toStrictEqual(
+          expected.split(" "),
+        );
+      }
+      const entropy = random(length);
+      await expect(seedFromEntropy(entropy, "pass", subtlePbkdf2)).resolves.toStrictEqual(
+        await mnemonicToSeed(entropyToMnemonic(entropy, wordlist), "pass"),
+      );
+    },
+  );
+
+  it("rejects an unsupported entropy length", () => {
+    expect(kernelError(() => mnemonicBytes(new Uint8Array(8)))).toBe("invalid-input");
   });
 });
 
@@ -82,9 +106,6 @@ const { passphrase: passphraseVectors } = loadVectors("bip39.json") as {
 describe("bip39 passphrase vectors", () => {
   it.each(passphraseVectors)("$name: mnemonic + passphrase → seed", async (vector) => {
     const expected = hexToBytes(vector.seed);
-    await expect(
-      seedFromMnemonic(vector.mnemonic, vector.passphrase, subtlePbkdf2),
-    ).resolves.toStrictEqual(expected);
     await expect(
       seedFromEntropy(entropyFromMnemonic(vector.mnemonic), vector.passphrase, subtlePbkdf2),
     ).resolves.toStrictEqual(expected);

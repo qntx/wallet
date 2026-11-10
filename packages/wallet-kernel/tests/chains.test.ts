@@ -37,8 +37,10 @@ import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wall
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
+import type { Pbkdf2 } from "../src/platform.ts";
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
+import { subtlePbkdf2 } from "./helpers.ts";
 
 function ok(response: KernelResponse): ProtocolValue {
   if ("err" in response) {
@@ -392,6 +394,18 @@ const hd = (walletId: string, template: string) => ({
 const grp = (walletId: string, groupIndex = 0) => ({ kind: "hd", walletId, groupIndex });
 const entry = (index: number, template: string) => ({ index, template });
 
+/** A PBKDF2 that counts BIP-39 seed derivations (the only SHA-512 use). */
+const seedSpy = (): { readonly pbkdf2: Pbkdf2; readonly seeds: () => number } => {
+  const hashes: string[] = [];
+  return {
+    pbkdf2: async (hash, password, salt, iterations, length) => {
+      hashes.push(hash);
+      return subtlePbkdf2(hash, password, salt, iterations, length);
+    },
+    seeds: () => hashes.filter((hash) => hash === "sha512").length,
+  };
+};
+
 describe("wallet.accounts", () => {
   const setup = async () => {
     const h = createHarness();
@@ -408,6 +422,39 @@ describe("wallet.accounts", () => {
       walletId: strField(field(res, "wallet"), "walletId"),
     };
   };
+
+  it("derives each account once per session and again after a lock", async () => {
+    const spy = seedSpy();
+    const h = createHarness({ maxSessionMs: 60_000, pbkdf2: spy.pbkdf2 });
+    await h.settle();
+    const imported = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+      }),
+    );
+    const walletId = strField(field(imported, "wallet"), "walletId");
+    const params = {
+      walletId,
+      groupIndex: 0,
+      template: vectors.evm.template,
+      network: vectors.evm.network,
+    };
+    const accounts = async (session: string) =>
+      field(ok(await h.call("wallet.accounts", params, session)), "address");
+    let session = strField(imported, "session");
+    const before = spy.seeds();
+    const address = await accounts(session);
+    const again = await Promise.all(Array.from({ length: 5 }, async () => accounts(session)));
+    expect(again).toStrictEqual(Array.from({ length: 5 }, () => address));
+    expect(spy.seeds() - before).toBe(1);
+    h.advance(60_001);
+    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+    session = strField(ok(await h.call("vault.unlock", { factor: PASSKEY() })), "session");
+    const unlocked = spy.seeds();
+    await expect(accounts(session)).resolves.toBe(address);
+    expect(spy.seeds() - unlocked).toBe(1);
+  });
 
   it("derives the vector EVM accounts", async () => {
     const { h, session, walletId } = await setup();
