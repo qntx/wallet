@@ -30384,7 +30384,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-zf3XHwwc.mjs
+	// packages/wallet-chains/dist/message-_Jfs46Lm.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -30551,13 +30551,15 @@ zoo`.split("\n"));
 	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
 	*/
+	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
 	var signLegacyMessage = (message, privateKey) => {
 		var _recovered$;
-		const data = concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)));
-		const hash = sha256$1(sha256$1(data));
+		const hash = legacyMessageHash(message);
 		const recovered = secp256k1.sign(hash, privateKey, {
 			lowS: true,
-			format: "recovered"
+			format: "recovered",
+			prehash: false
 		});
 		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
 		return base64(concat$1(Uint8Array.of(header), recovered.slice(1)));
@@ -30761,7 +30763,7 @@ zoo`.split("\n"));
 		let decoded;
 		try {
 			decoded = Address(net.params).decode(address);
-		} catch (_unused5) {
+		} catch (_unused6) {
 			throw new ChainError("invalid-address", "address does not belong to this network");
 		}
 		if (format === "bip322-simple") {
@@ -46397,9 +46399,32 @@ zoo`.split("\n"));
 		allowInfinity: false,
 		allowBigInt: false
 	};
-	/** Reject non-safe-integer numbers and non-string map keys; cborg flags cover the rest. */
+	/**
+	* A string UTF-8 can carry unchanged: iterating by code point pairs every valid surrogate, so a
+	* surrogate code point on its own is a lone one.
+	*/
+	function wellFormed(text) {
+		for (const char of text) {
+			var _char$codePointAt;
+			const point = (_char$codePointAt = char.codePointAt(0)) !== null && _char$codePointAt !== void 0 ? _char$codePointAt : 0;
+			if (point >= 55296 && point <= 57343) return false;
+		}
+		return true;
+	}
+	function checkString(text) {
+		if (!wellFormed(text)) throw new CborError("lone-surrogate", "cbor frame: string with a lone UTF-16 surrogate");
+	}
+	/**
+	* Reject non-safe-integer numbers, non-string map keys and strings UTF-8 cannot represent (a lone
+	* surrogate would be replaced with U+FFFD, silently changing the value); cborg flags cover the
+	* rest.
+	*/
 	function validate(value) {
-		if (value === null || typeof value === "boolean" || typeof value === "string") return;
+		if (value === null || typeof value === "boolean") return;
+		if (typeof value === "string") {
+			checkString(value);
+			return;
+		}
 		if (typeof value === "number") {
 			if (!Number.isInteger(value)) throw new CborError("float", "cbor frame: non-integer number");
 			if (!Number.isSafeInteger(value)) throw new CborError("unsafe-int", "cbor frame: integer outside the safe range");
@@ -46413,6 +46438,7 @@ zoo`.split("\n"));
 		if (typeof value === "object") {
 			for (const [key, item] of Object.entries(value)) {
 				if (typeof key !== "string") throw new CborError("non-string-key", "cbor frame: non-string map key");
+				checkString(key);
 				validate(item);
 			}
 			return;

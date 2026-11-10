@@ -87,6 +87,21 @@ describe("frame caps and post-decode validation", () => {
     );
   });
 
+  it.each([
+    ["lone high", "a\uD800b"],
+    ["lone low", "\uDC00"],
+    ["trailing high", "x\uD83D"],
+  ])("rejects a %s surrogate in a value and in a map key", (_name, text) => {
+    expect(() => encodeFrame(text)).toThrow(expect.objectContaining({ code: "lone-surrogate" }));
+    expect(() => encodeFrame({ [text]: 1 })).toThrow(
+      expect.objectContaining({ code: "lone-surrogate" }),
+    );
+  });
+
+  it("keeps paired surrogates (astral characters) intact", () => {
+    expect(decodeFrame(encodeFrame("emoji \uD83D\uDE00"))).toBe("emoji \uD83D\uDE00");
+  });
+
   it("rejects floats even when cborg decodes them", () => {
     expect(() => decodeFrame(encode(0.5))).toThrow(expect.objectContaining({ code: "float" }));
   });

@@ -79,7 +79,7 @@
   "bundles": [
     {
       "file": "kernel-entry.js",
-      "sha256": "8ade7a26348a7d1475b44d212d084b733017cafd58460b64f6f3d959309b663f"
+      "sha256": "87691fb0a505ab05f04c0b76b7c6f05bce55951e20050079b1bd882dc0653407"
     }
   ]
 }
