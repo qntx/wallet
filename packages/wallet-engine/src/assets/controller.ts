@@ -12,6 +12,7 @@ import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
 
 import { BtcUtxoStore, scanChain, scanUtxos } from "../chains/bitcoin-scan.ts";
+import { isFrozen } from "../chains/bitcoin.ts";
 import { ERC20_ABI, evmRpcHex } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
@@ -460,7 +461,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     let frozen = 0n;
     for (const u of this.bitcoinUtxos.all()) {
       const v = BigInt(u.value);
-      if (u.status === "frozen" || u.value === 546 || u.value === 330) {
+      if (isFrozen(u.value)) {
         frozen += v;
       } else if (u.height > 0) {
         confirmed += v;

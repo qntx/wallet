@@ -220,7 +220,7 @@ const toLockedUtxo = (v: unknown): LockedUtxo | undefined => {
   }
   const status = str(v["status"]);
   const txId = str(v["txId"]);
-  if (status !== "confirmed" && status !== "locked" && status !== "frozen") {
+  if (status !== "confirmed" && status !== "locked") {
     return undefined;
   }
   const locked: LockedUtxo =
@@ -247,7 +247,7 @@ const toLockedUtxo = (v: unknown): LockedUtxo | undefined => {
 
 /** Persistent UTXO lock/spent lifecycle — locked by an in-flight tx, released or spent at its end. */
 export type LockedUtxo = ScanUtxo & {
-  readonly status: "confirmed" | "locked" | "frozen";
+  readonly status: "confirmed" | "locked";
   readonly txId?: string;
 };
 
@@ -292,9 +292,7 @@ export class BtcUtxoStore {
   }
 
   replace(utxos: ReadonlyArray<ScanUtxo>): void {
-    const locked = [...this.utxos.entries()].filter(
-      ([, u]) => u.status === "locked" || u.status === "frozen",
-    );
+    const locked = [...this.utxos.entries()].filter(([, u]) => u.status === "locked");
     this.utxos = new Map(
       utxos.map((u) => [
         BtcUtxoStore.key(u),
@@ -361,12 +359,6 @@ export class BtcUtxoStore {
   spendable(): ReadonlyArray<LockedUtxo> {
     return [...this.utxos.values()].filter(
       (u) => u.status === "confirmed" && !(u.value === 546 || u.value === 330),
-    );
-  }
-
-  frozen(): ReadonlyArray<LockedUtxo> {
-    return [...this.utxos.values()].filter(
-      (u) => u.status === "frozen" || u.value === 546 || u.value === 330,
     );
   }
 
