@@ -460,6 +460,69 @@ describe("hardware factor: chain.sign", () => {
     expect(forged?.description).toContain(ordAddress);
   });
 
+  const evmRequest = (walletId: string) =>
+    normalizeEvm({
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x1",
+        data: "0x",
+        to: "0x00000000000000000000000000000000deadbeef",
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    });
+
+  it("a factor that does not open the vault produces no signature", async () => {
+    seeds.length = 0;
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore, pbkdf2: spyPbkdf2 });
+    const { session, walletId } = await importHardware(h);
+    const before = seeds.length;
+    // The keystore returns a KEK for some other vault: verification must fail, not sign.
+    for (const alias of fake.keys.keys()) {
+      fake.keys.set(alias, new Uint8Array(32).fill(9));
+    }
+    const response = await h.call(
+      "chain.sign",
+      { request: evmRequest(walletId), verify: HARDWARE },
+      session,
+    );
+    expect(errCode(response)).toBe("integrity");
+    expect("ok" in response).toBe(false);
+    expect(seeds.length - before).toBe(1);
+  });
+
+  it("a session that ends during the prompt fails locked without signing", async () => {
+    seeds.length = 0;
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore, pbkdf2: spyPbkdf2, maxSessionMs: 60_000 });
+    const { session, walletId } = await importHardware(h);
+    const before = seeds.length;
+    const release = fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      fake.watchOpen(resolve);
+    });
+    const pending = h.call(
+      "chain.sign",
+      { request: evmRequest(walletId), verify: HARDWARE },
+      session,
+    );
+    await prompted;
+    h.advance(60_001);
+    release();
+    const response = await pending;
+    expect(errCode(response)).toBe("locked");
+    expect(seeds.length - before).toBe(1);
+    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+  });
+
   it("a cancelled prompt never reaches the sign pass", async () => {
     seeds.length = 0;
     const fake = fakeKeystore();

@@ -8182,6 +8182,7 @@
 		for (const stored of candidates) {
 			const kek = await kekFor(platform, factor, stored, prompt);
 			try {
+				if (dek.wiped) throw new KernelError("locked", "the session ended during verification");
 				const opened = unwrapDek(kek, stored);
 				try {
 					verified = opened.use((a) => dek.use((b) => equalBytes$4(a, b)));

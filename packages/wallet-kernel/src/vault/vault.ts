@@ -358,6 +358,11 @@ export async function verifyFactor(
     // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
     const kek = await kekFor(platform, factor, stored, prompt);
     try {
+      // The session can end while the system prompt is up: its DEK is then wiped, and the
+      // operation fails as locked rather than comparing against nothing.
+      if (dek.wiped) {
+        throw new KernelError("locked", "the session ended during verification");
+      }
       const opened = unwrapDek(kek, stored);
       try {
         verified = opened.use((a) => dek.use((b) => equalBytes(a, b)));
