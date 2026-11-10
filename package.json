@@ -50,6 +50,10 @@
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
     "vite-plus": "1.4.0"
   },
+  "overrides": {
+    "minimatch": "11.0.4",
+    "uuid": "11.1.1"
+  },
   "devEngines": {
     "packageManager": {
       "name": "bun",
