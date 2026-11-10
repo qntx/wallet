@@ -1,0 +1,7 @@
+[install]
+# Adopt npm releases only once they are 7 days old, the cooldown Dependabot applies
+# (.github/dependabot.yml) — this also covers hand-made `bun add` / `bun update` bumps.
+# A coordinated first-party release that must land sooner is listed as `name@version` in
+# minimumReleaseAgeExcludes, with the reason in the PR, and removed once it is a week old.
+minimumReleaseAge = 604800
+minimumReleaseAgeExcludes = []
