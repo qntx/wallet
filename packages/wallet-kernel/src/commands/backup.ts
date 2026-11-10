@@ -453,6 +453,7 @@ export async function enableBackup(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "backup"),
   );
   const bek = ctx.platform.random(32);

@@ -544,6 +544,7 @@ export async function deleteWallet(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "delete-wallet"),
   );
   findRecord(ctx.image, "entropy", params.walletId);

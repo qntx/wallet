@@ -47,6 +47,18 @@ function backoffDelay(failedAttempts: number): number {
     : 0;
 }
 
+/**
+ * The shared limiter for password attempts on the persisted counters: an attempt rejected while
+ * backoff is armed is `rate-limited` — it never ran PBKDF2 so it is not counted and cannot push the
+ * horizon forward.
+ */
+function assertPasswordAttemptAllowed(platform: KernelPlatform, meta: VaultMeta): void {
+  const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
+  if (platform.now() < retryAt) {
+    throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
+  }
+}
+
 export const PASSWORD_FACTOR_ITERATIONS = 600000;
 
 function factorId(random: KernelPlatform["random"]): string {
@@ -250,12 +262,7 @@ export async function unlock(
     if (passwords.length === 0) {
       throw new KernelError("invalid-input", "no password factor exists");
     }
-    const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
-    if (platform.now() < retryAt) {
-      // A rejected attempt never ran PBKDF2: it is not counted, so retries during backoff
-      // cannot push the horizon forward.
-      throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
-    }
+    assertPasswordAttemptAllowed(platform, meta);
     for (const stored of passwords) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
       const kek = await kekFor(
@@ -317,13 +324,16 @@ function credentialIdOf(stored: StoredFactor): string | undefined {
  * matched, the miss is reported by factor kind: `wrong-password` (or `invalid-input` when no
  * password factor exists), `wrong-passkey`, or for hardware `not-found` (no hardware factor) /
  * `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
- * text and runs only for hardware. The verify path never touches the rate limiter.
+ * text and runs only for hardware. Password re-verification shares `unlock`'s rate limiting: the
+ * same armed-backoff rejection, the same `record-failure` commit on a miss and the same
+ * `reset-failures` commit on a success.
  */
 export async function verifyFactor(
   platform: KernelPlatform,
   image: VaultImage,
   factor: Factor,
   dek: Secret,
+  commit: (ops: ReadonlyArray<StoreOp>) => Promise<void>,
   prompt: () => KeystorePrompt,
 ): Promise<void> {
   assertFactorKindAvailable(platform, factor.kind);
@@ -336,18 +346,26 @@ export async function verifyFactor(
       credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId)
     );
   });
+  if (factor.kind === "password" && candidates.length > 0) {
+    const { meta } = image;
+    if (meta === undefined) {
+      throw new KernelError("invalid-input", "vault is not initialized");
+    }
+    assertPasswordAttemptAllowed(platform, meta);
+  }
+  let verified = false;
   for (const stored of candidates) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
     const kek = await kekFor(platform, factor, stored, prompt);
     try {
       const opened = unwrapDek(kek, stored);
       try {
-        const same = opened.use((a) => dek.use((b) => equalBytes(a, b)));
-        if (same) {
-          return;
-        }
+        verified = opened.use((a) => dek.use((b) => equalBytes(a, b)));
       } finally {
         opened.wipe();
+      }
+      if (verified) {
+        break;
       }
       // A clean unwrap whose DEK differs is another vault's factor: try the next candidate.
     } catch (error) {
@@ -361,7 +379,16 @@ export async function verifyFactor(
       wipe(kek);
     }
   }
+  if (verified) {
+    if (factor.kind === "password" && (image.meta?.failedAttempts ?? 0) !== 0) {
+      await commit([{ op: "reset-failures" }]);
+    }
+    return;
+  }
   if (factor.kind === "password") {
+    if (candidates.length > 0) {
+      await commit([{ op: "record-failure", at: platform.now() }]);
+    }
     throw new KernelError(
       candidates.length > 0 ? "wrong-password" : "invalid-input",
       "password did not verify",

@@ -184,7 +184,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   if (!("prompt" in prepared)) {
     throw new KernelError("integrity", "unreachable: prepare pass signed");
   }
-  await verifyFactor(ctx.platform, ctx.image, verify, dek, () =>
+  await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
   // The session may have ended while the prompt was up.
@@ -254,7 +254,7 @@ const chainSignImported = async (
   if (!("prompt" in prepared)) {
     throw new KernelError("integrity", "unreachable: prepare pass signed");
   }
-  await verifyFactor(ctx.platform, ctx.image, verify, dek, () =>
+  await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
   ctx.session.require(session);

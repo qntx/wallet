@@ -189,6 +189,7 @@ export async function removeKey(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "remove-private-key"),
   );
   findRecord(ctx.image, "key", params.keyId);
@@ -208,6 +209,7 @@ export async function exportKey(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "export-private-key"),
   );
   const record = findRecord(ctx.image, "key", params.keyId);

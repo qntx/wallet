@@ -7963,6 +7963,15 @@
 		var _BACKOFF_MS$Math$min;
 		return failedAttempts >= FAILURES_BEFORE_BACKOFF ? (_BACKOFF_MS$Math$min = BACKOFF_MS[Math.min(failedAttempts - FAILURES_BEFORE_BACKOFF, BACKOFF_MS.length - 1)]) !== null && _BACKOFF_MS$Math$min !== void 0 ? _BACKOFF_MS$Math$min : 3e5 : 0;
 	}
+	/**
+	* The shared limiter for password attempts on the persisted counters: an attempt rejected while
+	* backoff is armed is `rate-limited` — it never ran PBKDF2 so it is not counted and cannot push the
+	* horizon forward.
+	*/
+	function assertPasswordAttemptAllowed(platform, meta) {
+		const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
+		if (platform.now() < retryAt) throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
+	}
 	var PASSWORD_FACTOR_ITERATIONS = 6e5;
 	function factorId(random) {
 		return bytesToHex$4(random(16));
@@ -8101,8 +8110,7 @@
 		} else if (factor.kind === "password") {
 			const passwords = image.factors.filter((stored) => stored.kind === "password");
 			if (passwords.length === 0) throw new KernelError("invalid-input", "no password factor exists");
-			const retryAt = meta.lastFailureAt + backoffDelay(meta.failedAttempts);
-			if (platform.now() < retryAt) throw new KernelError("rate-limited", "too many wrong passwords", retryAt);
+			assertPasswordAttemptAllowed(platform, meta);
 			for (const stored of passwords) {
 				const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 				try {
@@ -8155,30 +8163,50 @@
 	* matched, the miss is reported by factor kind: `wrong-password` (or `invalid-input` when no
 	* password factor exists), `wrong-passkey`, or for hardware `not-found` (no hardware factor) /
 	* `integrity` (the keystore opened a KEK for another DEK). `prompt` renders the system verification
-	* text and runs only for hardware. The verify path never touches the rate limiter.
+	* text and runs only for hardware. Password re-verification shares `unlock`'s rate limiting: the
+	* same armed-backoff rejection, the same `record-failure` commit on a miss and the same
+	* `reset-failures` commit on a success.
 	*/
-	async function verifyFactor(platform, image, factor, dek, prompt) {
+	async function verifyFactor(platform, image, factor, dek, commit, prompt) {
 		assertFactorKindAvailable(platform, factor.kind);
 		const candidates = image.factors.filter((stored) => {
 			if (factor.kind !== stored.kind) return false;
 			return factor.kind !== "passkey" || credentialIdOf(stored) === base64urlnopad.encode(factor.credentialId);
 		});
+		if (factor.kind === "password" && candidates.length > 0) {
+			const { meta } = image;
+			if (meta === void 0) throw new KernelError("invalid-input", "vault is not initialized");
+			assertPasswordAttemptAllowed(platform, meta);
+		}
+		let verified = false;
 		for (const stored of candidates) {
 			const kek = await kekFor(platform, factor, stored, prompt);
 			try {
 				const opened = unwrapDek(kek, stored);
 				try {
-					if (opened.use((a) => dek.use((b) => equalBytes$4(a, b)))) return;
+					verified = opened.use((a) => dek.use((b) => equalBytes$4(a, b)));
 				} finally {
 					opened.wipe();
 				}
+				if (verified) break;
 			} catch (error) {
 				if (!(error instanceof KernelError) || error.code !== "wrong-password" && error.code !== "wrong-passkey") throw error;
 			} finally {
 				wipe(kek);
 			}
 		}
-		if (factor.kind === "password") throw new KernelError(candidates.length > 0 ? "wrong-password" : "invalid-input", "password did not verify");
+		if (verified) {
+			var _image$meta$failedAtt, _image$meta;
+			if (factor.kind === "password" && ((_image$meta$failedAtt = (_image$meta = image.meta) === null || _image$meta === void 0 ? void 0 : _image$meta.failedAttempts) !== null && _image$meta$failedAtt !== void 0 ? _image$meta$failedAtt : 0) !== 0) await commit([{ op: "reset-failures" }]);
+			return;
+		}
+		if (factor.kind === "password") {
+			if (candidates.length > 0) await commit([{
+				op: "record-failure",
+				at: platform.now()
+			}]);
+			throw new KernelError(candidates.length > 0 ? "wrong-password" : "invalid-input", "password did not verify");
+		}
 		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("not-found", "no hardware factor exists");
 		throw new KernelError("wrong-passkey", "passkey did not verify");
 	}
@@ -25893,7 +25921,7 @@ zoo`.split("\n"));
 		const { dek } = ctx.session.require(requestSession);
 		assertFactorKindAvailable(ctx.platform, params.factor.kind);
 		if (params.factor.kind === "hardware" && ctx.image.factors.some((f) => f.kind === "hardware")) throw new KernelError("already-exists", "the vault already has a hardware factor");
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "manage-factors"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "manage-factors"));
 		if (params.factor.kind !== "password") {
 			const stored = await makeFactor(ctx.platform, params.factor, dek);
 			await ctx.commit([{
@@ -25917,7 +25945,7 @@ zoo`.split("\n"));
 		const { dek } = ctx.session.require(requestSession);
 		if (ctx.image.factors.find((f) => f.id === params.id) === void 0) throw new KernelError("not-found", "no such factor");
 		if (ctx.image.factors.length <= 1) throw new KernelError("invalid-input", "the vault must keep at least one factor");
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "manage-factors"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "manage-factors"));
 		const rotation = await rotateVault(ctx.platform, ctx.image, dek, /* @__PURE__ */ new Set([params.id]), []);
 		await ctx.commit(rotation.ops, { rotate: {
 			dek: rotation.dek,
@@ -26040,7 +26068,7 @@ zoo`.split("\n"));
 	}
 	async function removeKey$1(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "remove-private-key"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "remove-private-key"));
 		findRecord(ctx.image, "key", params.keyId);
 		await ctx.commit([{
 			op: "delete-record",
@@ -26052,7 +26080,7 @@ zoo`.split("\n"));
 	/** The secret in the family's canonical encoding — hex `0x` for EVM, base58 for Solana. */
 	async function exportKey$1(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-private-key"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-private-key"));
 		const record = findRecord(ctx.image, "key", params.keyId);
 		const header = parseKeyHeader(record.header);
 		const secret = openRecord(dek, record);
@@ -26649,7 +26677,7 @@ zoo`.split("\n"));
 	}
 	async function deleteWallet(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "delete-wallet"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "delete-wallet"));
 		findRecord(ctx.image, "entropy", params.walletId);
 		const extras = ctx.modules.flatMap((module) => module.walletDeleteOps(ctx.image, params.walletId));
 		await ctx.commit([{
@@ -26940,7 +26968,7 @@ zoo`.split("\n"));
 	*/
 	async function enableBackup(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "backup"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "backup"));
 		const bek = ctx.platform.random(32);
 		if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
 		try {
@@ -27142,7 +27170,7 @@ zoo`.split("\n"));
 	*/
 	async function exportMnemonic(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-mnemonic"));
 		const record = findRecord(ctx.image, "entropy", params.walletId);
 		const header = parseEntropyHeader(record.header);
 		const { entropy, passphrase } = openWalletSecret(dek, record);
@@ -31605,7 +31633,7 @@ zoo`.split("\n"));
 		const withSeed = async (run) => withWalletSeed(ctx.platform.pbkdf2, dek, record, run);
 		const prepared = await withSeed((seed) => execute(seed, true));
 		if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
-		await verifyFactor(ctx.platform, ctx.image, verify, dek, () => {
+		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor, _ctx$platform$keystor2;
 			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
 		});
@@ -31643,7 +31671,7 @@ zoo`.split("\n"));
 		};
 		const prepared = await withKey((secret) => execute(secret, true));
 		if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
-		await verifyFactor(ctx.platform, ctx.image, verify, dek, () => {
+		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor3, _ctx$platform$keystor4;
 			return chainPrompt(promptLocale((_ctx$platform$keystor3 = (_ctx$platform$keystor4 = ctx.platform.keystore) === null || _ctx$platform$keystor4 === void 0 ? void 0 : _ctx$platform$keystor4.locale) !== null && _ctx$platform$keystor3 !== void 0 ? _ctx$platform$keystor3 : "en"), prepared.prompt);
 		});
@@ -33225,7 +33253,7 @@ zoo`.split("\n"));
 	}
 	async function exportKey(ctx, params, requestSession) {
 		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, corePromptFor(ctx.platform.keystore, "export-private-key"));
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "export-private-key"));
 		const secretKey = openRecord(dek, findRecord(ctx.image, NOSTR_KEY_KIND, params.publicKey));
 		try {
 			return params.format.kind === "nsec" ? nsecFromSecretKey(secretKey) : await ncryptsecFromSecretKey(secretKey, params.format.password);
@@ -43133,7 +43161,7 @@ zoo`.split("\n"));
 		const key = poolKey(params.account);
 		if (liveApprovals(state, ctx, key).length >= APPROVAL_MAX_PER_ACCOUNT) throw new KernelError("invalid-input", "approval cap reached for this account");
 		const { summary, decoded } = decodeIntent(await sparkRuntime(state), params.account, params.intent);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, () => {
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor, _ctx$platform$keystor2;
 			return sparkPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), summary);
 		});

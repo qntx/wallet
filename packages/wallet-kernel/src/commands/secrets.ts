@@ -31,6 +31,7 @@ export async function exportMnemonic(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "export-mnemonic"),
   );
   const record = findRecord(ctx.image, "entropy", params.walletId);

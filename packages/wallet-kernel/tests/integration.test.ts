@@ -1517,6 +1517,118 @@ describe("password rate limiting", () => {
     await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
   });
 
+  it("re-verification shares the persisted counters and arms the same backoff", async () => {
+    // F-005: verifyFactor rate-limits with the exact same persisted counters as vault.unlock.
+    const h = createHarness({ wrapStore: nonEchoing });
+    await h.settle();
+    await createPasswordVault(h);
+    const h2 = respawn(h, nonEchoing);
+    await h2.settle();
+    const unlocked = ok(
+      await h2.call("vault.unlock", {
+        factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+      }),
+    );
+    const session = strField(unlocked, "session");
+    const badVerify = async () =>
+      h2.call(
+        "vault.addFactor",
+        {
+          factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+          verify: { kind: "password", password: utf8ToBytes("a wrong password") },
+        },
+        session,
+      );
+    // Misses 1-5 are honest wrong-password errors — each one lands its increment.
+    for (let i = 0; i < 5; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- attempts are sequential by design
+      expect(errCode(await badVerify())).toBe("wrong-password");
+    }
+    const t = h2.wallNow();
+    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    // The next re-verification is rate-limited with the armed deadline — never counted.
+    const limited = await badVerify();
+    expect(errCode(limited)).toBe("rate-limited");
+    expect(errPayload(limited).retryAt).toBe(t + 30_000);
+    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    // The shared counter gates the unlock path too: a fresh locked kernel sees the same horizon.
+    const h3 = respawn(h, nonEchoing);
+    await h3.settle();
+    const limitedUnlock = await badPassword(h3);
+    expect(errCode(limitedUnlock)).toBe("rate-limited");
+    expect(errPayload(limitedUnlock).retryAt).toBe(t + 30_000);
+  });
+
+  it("unlock failures count toward re-verification backoff", async () => {
+    const h = createHarness({ wrapStore: nonEchoing });
+    await h.settle();
+    await createPasswordVault(h);
+    const h2 = respawn(h, nonEchoing);
+    await h2.settle();
+    const unlocked = ok(
+      await h2.call("vault.unlock", {
+        factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+      }),
+    );
+    const session = strField(unlocked, "session");
+    // unlock attempts while the session is live still land their increments on the shared counter.
+    for (let i = 0; i < 5; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- attempts are sequential by design
+      expect(errCode(await badPassword(h2))).toBe("wrong-password");
+    }
+    await expect(storedFailedAttempts(h.store)).resolves.toBe(5);
+    const limited = await h2.call(
+      "vault.addFactor",
+      {
+        factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+        verify: { kind: "password", password: utf8ToBytes("a wrong password") },
+      },
+      session,
+    );
+    expect(errCode(limited)).toBe("rate-limited");
+  });
+
+  it("a successful re-verification resets the counter", async () => {
+    const h = createHarness({ wrapStore: nonEchoing });
+    await h.settle();
+    await createPasswordVault(h);
+    const h2 = respawn(h, nonEchoing);
+    await h2.settle();
+    const unlocked = ok(
+      await h2.call("vault.unlock", {
+        factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+      }),
+    );
+    const session = strField(unlocked, "session");
+    const badVerify = async () =>
+      h2.call(
+        "vault.addFactor",
+        {
+          factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+          verify: { kind: "password", password: utf8ToBytes("a wrong password") },
+        },
+        session,
+      );
+    for (let i = 0; i < 4; i++) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- attempts are sequential by design
+      expect(errCode(await badVerify())).toBe("wrong-password");
+    }
+    await expect(storedFailedAttempts(h.store)).resolves.toBe(4);
+    // A correct verify clears the counter — the next miss starts at 1, not 5.
+    const right = await h2.call(
+      "vault.addFactor",
+      {
+        factor: { kind: "password", password: utf8ToBytes("another password ok") },
+        verify: { kind: "password", password: new Uint8Array(PASSWORD) },
+      },
+      session,
+    );
+    expect("ok" in right).toBe(true);
+    await expect(storedFailedAttempts(h.store)).resolves.toBe(0);
+    expect(errCode(await badVerify())).toBe("wrong-password");
+    await expect(storedFailedAttempts(h.store)).resolves.toBe(1);
+  });
+
   it("two kernels sharing one store never lose an increment", async () => {
     const h = createHarness({ wrapStore: nonEchoing });
     await h.settle();

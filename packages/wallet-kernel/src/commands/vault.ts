@@ -126,6 +126,7 @@ export async function addFactor(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "manage-factors"),
   );
   if (params.factor.kind !== "password") {
@@ -170,6 +171,7 @@ export async function removeFactor(
     ctx.image,
     params.verify,
     dek,
+    ctx.commit,
     corePromptFor(ctx.platform.keystore, "manage-factors"),
   );
   const rotation = await rotateVault(ctx.platform, ctx.image, dek, new Set([params.id]), []);
