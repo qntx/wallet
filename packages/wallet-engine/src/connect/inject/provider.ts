@@ -185,10 +185,17 @@ const unsupported = async (): Promise<never> => {
 };
 
 /**
- * Installs `window.ethereum` (EIP-1193) and the EIP-6963 announcer for `info`. `id` increments per
- * request; the pending map settles on the host's reply.
+ * Installs `window.ethereum` (EIP-1193) and the EIP-6963 announcer for `info` in the top-level
+ * document; subframes get nothing. `id` increments per request; the pending map settles on the
+ * host's reply.
  */
 export function install(info: ProviderInfo): void {
+  // Only the top-level document gets a provider: the host binds every message to the page's
+  // origin, and a frame of another origin (an ad, a third-party widget) must not request accounts
+  // or signatures under it.
+  if (page.top !== page.self) {
+    return;
+  }
   let nextId = 1;
   const pending = new Map<number, Pending>();
   const listeners = new Map<string, Set<Listener>>();

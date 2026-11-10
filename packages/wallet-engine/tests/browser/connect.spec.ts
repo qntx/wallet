@@ -395,6 +395,26 @@ test("EIP-6963 announce carries the frozen provider", async ({ context }) => {
   expect(detail).toMatchObject({ info: { uuid: INFO.uuid, rdns: INFO.rdns }, frozen: true });
 });
 
+test("a cross-origin subframe gets no provider", async ({ context }) => {
+  const { page } = await openConnect(context);
+  // A sandboxed srcdoc frame has an opaque origin: cross-origin to the page, yet it still runs
+  // the init scripts, as a bridge injected into every frame would.
+  await page.evaluate(`new Promise((resolve) => {
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "allow-scripts");
+    frame.srcdoc = "<!doctype html><title>widget</title>";
+    frame.addEventListener("load", resolve, { once: true });
+    document.body.append(frame);
+  })`);
+  const frame = page.frames().find((f) => f !== page.mainFrame());
+  if (frame === undefined) {
+    throw new Error("the subframe did not load");
+  }
+  expect(await frame.evaluate(`typeof window.ReactNativeWebView`)).toBe("object");
+  expect(await frame.evaluate(`typeof window.ethereum`)).toBe("undefined");
+  expect(await page.evaluate(`typeof window.ethereum`)).toBe("object");
+});
+
 test("the provider exposes request/on/removeListener only", async ({ context }) => {
   const { page } = await openConnect(context);
   const keys = await page.evaluate(`Object.keys(window.ethereum).toSorted()`);

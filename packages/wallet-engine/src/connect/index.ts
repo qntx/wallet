@@ -94,8 +94,14 @@ export const PROVIDER_SCRIPT_SHA256: string = bytesToHex(sha256(utf8ToBytes(PROV
 /** The bridge the host's WebView message handler calls. */
 export type BrowserBridge = {
   /**
-   * `onMessage`: `topUrl` is the WebView's `nativeEvent.url` (the observed top-level URL — the only
-   * source of truth for the page's origin); `data` is `nativeEvent.data`.
+   * `onMessage`: `topUrl` is the WebView's `nativeEvent.url` and `data` is `nativeEvent.data`. A
+   * message is accepted only when `topUrl`'s origin is the current top-level origin, so `topUrl`
+   * must be the URL of the frame that SENT the message, never the top-level URL: otherwise any
+   * frame inside a connected dApp could act under the dApp's origin. react-native-webview reports
+   * the sending frame from 13.13.5: on iOS the message's `frameInfo`, on Android the
+   * `WebMessageListener` source origin. Its Android fallback for a system WebView without
+   * `WEB_MESSAGE_LISTENER` (`addJavascriptInterface`) reaches every frame and reports the top-level
+   * URL; the in-app browser is not safe on such a WebView.
    */
   readonly message: (topUrl: string, data: string) => void;
   /** Top-level navigation completed: an origin change voids the old origin's pending work. */
