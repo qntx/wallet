@@ -11,10 +11,14 @@ import {
   solanaRpcRequest,
 } from "@qntx/wallet-engine/gateway/contract";
 
+import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
 import type { Forwarder } from "../providers/forward.ts";
+
+/** Well above the largest raw transaction a node relays (128 kB of bytes, hex-encoded) in a batch. */
+const MAX_BODY_BYTES = 512 * 1024;
 
 type Deps = {
   readonly fetch: typeof globalThis.fetch;
@@ -31,6 +35,7 @@ export function rpcRoutes({
   const routes = new Hono<{ Variables: NetworkVariables }>();
   routes.post(
     rpc.path,
+    limitBody(MAX_BODY_BYTES),
     resolveNetwork(served, ["evm", "solana"]),
     sValidator("json", rpcRequest, (result) => {
       if (!result.success) {

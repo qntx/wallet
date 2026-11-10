@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import { PROVIDERS_HEADER, esploraPathAllowed } from "@qntx/wallet-engine/gateway/contract";
 
+import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
@@ -28,6 +29,7 @@ export function esploraRoutes({
   routes.on(
     ["GET", "POST"],
     "/v1/esplora/:caip2/*",
+    limitBody(MAX_BODY_BYTES),
     resolveNetwork(served, ["bitcoin"]),
     async (c) => {
       const network = c.get("network");
@@ -36,9 +38,6 @@ export function esploraRoutes({
         throw new GatewayHttpError(400, "invalid-request");
       }
       const body = c.req.method === "POST" ? await c.req.text() : undefined;
-      if (body !== undefined && body.length > MAX_BODY_BYTES) {
-        throw new GatewayHttpError(400, "invalid-request");
-      }
 
       const { value, providerId } = await forwarder.run(
         network.providers,

@@ -10,6 +10,6 @@ permissions:
 
 jobs:
   release:
-    uses: qntx/workflows/.github/workflows/release.yml@v2
+    uses: qntx/workflows/.github/workflows/release.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: write

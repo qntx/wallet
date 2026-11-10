@@ -1,7 +1,7 @@
 /**
  * `KernelHost` JS wrapper: CBOR frames over a Nitro-host-shaped channel. The host moves bytes only
  * — encode/decode happens here and in the kernel entry — so a malformed inbound frame can never
- * reach the message domain: the port exits `integrity` and the host runtime is destroyed.
+ * reach the message domain: the port exits `crashed` and the host runtime is destroyed.
  */
 import type { MainPort, PortExit } from "@qntx/wallet/host";
 import type { ProtocolValue } from "@qntx/wallet/protocol";

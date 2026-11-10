@@ -39,6 +39,11 @@
           "namespace_id": "1002",
           "simple": { "limit": 50, "period": 10 },
         },
+        {
+          "name": "IP_LIMITER",
+          "namespace_id": "1003",
+          "simple": { "limit": 300, "period": 10 },
+        },
       ],
     },
     "production": {
@@ -69,6 +74,11 @@
           "name": "DEFAULT_LIMITER",
           "namespace_id": "2002",
           "simple": { "limit": 50, "period": 10 },
+        },
+        {
+          "name": "IP_LIMITER",
+          "namespace_id": "2003",
+          "simple": { "limit": 300, "period": 10 },
         },
       ],
     },

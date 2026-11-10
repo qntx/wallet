@@ -23,7 +23,7 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
   const zeroEx = zeroExConfig(env);
   const base = {
     fetch: async (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init),
-    limiters: { rpc: env.RPC_LIMITER, default: env.DEFAULT_LIMITER },
+    limiters: { ip: env.IP_LIMITER, rpc: env.RPC_LIMITER, default: env.DEFAULT_LIMITER },
     corsOrigins: env.CORS_ORIGINS.split(",")
       .map((origin) => origin.trim())
       .filter((origin) => origin !== ""),

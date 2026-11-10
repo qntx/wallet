@@ -33030,15 +33030,6 @@ zoo`.split("\n"));
 			this.signers.clear();
 		}
 	};
-	/** A fresh valid secp256k1 scalar from the platform RNG (retries on the ~2^-128 invalid draws). */
-	/** Decodes a UTF-8 `nsec1…` bech32 payload; the input bytes are wiped. */
-	/**
-	* Decrypts an `ncryptsec` with the UTF-8 `password` bytes (wiped after use). The payload is decoded
-	* and shape-checked before scrypt ever runs: malformed input is `invalid-input`, a logN above
-	* `maxLogN` (the kernel policy's cap) is `unsupported`, a scrypt allocation failure (`RangeError`
-	* cause) is `unavailable`, and every other decrypt failure is `wrong-password`. `scrypt` is a
-	* kernel-internal test seam — hosts never inject it.
-	*/
 	function nsecFromSecretKey(secretKey) {
 		return new TextEncoder().encode(nsecEncode(secretKey));
 	}

@@ -16,6 +16,7 @@ import {
   ORIGIN,
   SEPOLIA,
   SIGNET,
+  allowAll,
   call,
   denyAll,
   expectContract,
@@ -82,7 +83,10 @@ describe("served networks", () => {
   it("requires an install id and counts against the default limiter", async () => {
     const rpc = recordingLimiter();
     const dflt = recordingLimiter();
-    const app = gateway({ fetch: fakeFetch({}).fetch, limiters: { rpc, default: dflt } });
+    const app = gateway({
+      fetch: fakeFetch({}).fetch,
+      limiters: { ip: allowAll, rpc, default: dflt },
+    });
     const anonymous = await app.request("/v1/networks");
     const identified = await app.request("/v1/networks", { headers: headers() });
     expect(anonymous.status).toBe(400);
@@ -94,7 +98,7 @@ describe("served networks", () => {
   it("answers 429 when the default limiter refuses", async () => {
     const app = gateway({
       fetch: fakeFetch({}).fetch,
-      limiters: { rpc: denyAll, default: denyAll },
+      limiters: { ip: allowAll, rpc: denyAll, default: denyAll },
     });
     const res = await app.request("/v1/networks", { headers: headers() });
     expect(res.status).toBe(429);
@@ -139,6 +143,26 @@ describe("rpc validation", () => {
     const res = await gateway({ fetch: up.fetch }).request(`/v1/rpc/${SEPOLIA}`, post(body));
     expect(res.status).toBe(400);
     await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
+  });
+
+  it("413s an rpc body above 512 KiB without reading it upstream", async () => {
+    const up = upstream();
+    const big = JSON.stringify(call("eth_call", [{ data: `0x${"00".repeat(300 * 1024)}` }]));
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/rpc/${SEPOLIA}`, post(big));
+    expect(res.status).toBe(413);
+    await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
+  });
+
+  it("413s an esplora body above 1 MB", async () => {
+    const up = fakeFetch({});
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx`, {
+      method: "POST",
+      headers: headers(),
+      body: "00".repeat(600_000),
+    });
+    expect(res.status).toBe(413);
     expect(up.calls).toHaveLength(0);
   });
 
@@ -486,7 +510,10 @@ describe("esplora forwarding", () => {
 describe("rate limiting", () => {
   it("answers 429 with Retry-After when the binding refuses", async () => {
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk("0x1") });
-    const app = gateway({ fetch: up.fetch, limiters: { rpc: denyAll, default: denyAll } });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip: allowAll, rpc: denyAll, default: denyAll },
+    });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
     expect(res.status).toBe(429);
     expect(res.headers.get("retry-after")).toBe("10");
@@ -503,7 +530,7 @@ describe("rate limiting", () => {
       "https://a.test/evm": () => rpcOk("0x1"),
       "https://a.test/btc": () => new Response("0"),
     });
-    const app = gateway({ fetch: up.fetch, limiters: { rpc, default: dflt } });
+    const app = gateway({ fetch: up.fetch, limiters: { ip: allowAll, rpc, default: dflt } });
     await app.request(`/v1/rpc/${SEPOLIA}`, {
       ...post(call("eth_chainId")),
       headers: headers({ "content-type": "application/json", "cf-connecting-ip": "203.0.113.77" }),
@@ -518,9 +545,43 @@ describe("rate limiting", () => {
     expect(dflt.keys).toHaveLength(0);
   });
 
+  it("bounds a client that rotates install ids by its IP prefix", async () => {
+    const ip = recordingLimiter();
+    let budget = 2;
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0x1") }).fetch,
+      limiters: {
+        ip: {
+          limit: async (options) => {
+            await ip.limit(options);
+            budget -= 1;
+            return { success: budget >= 0 };
+          },
+        },
+        rpc: allowAll,
+        default: allowAll,
+      },
+    });
+    const statuses = [];
+    for (const id of ["a", "b", "c"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- requests are counted in order
+      const res = await app.request(`/v1/rpc/${SEPOLIA}`, {
+        ...post(call("eth_chainId")),
+        headers: headers({
+          "content-type": "application/json",
+          "cf-connecting-ip": "203.0.113.77",
+          "x-install-id": id.repeat(32),
+        }),
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses).toStrictEqual([200, 200, 429]);
+    expect(ip.keys).toStrictEqual(Array.from({ length: 3 }, () => "203.0.113.0/24"));
+  });
+
   it("does not count health", async () => {
     const rpc = recordingLimiter();
-    const app = gateway({ fetch: fakeFetch({}).fetch, limiters: { rpc, default: rpc } });
+    const app = gateway({ fetch: fakeFetch({}).fetch, limiters: { ip: rpc, rpc, default: rpc } });
     await app.request("/v1/health");
     expect(rpc.keys).toHaveLength(0);
   });
