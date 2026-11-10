@@ -3,7 +3,7 @@ import { HTTPException } from "hono/http-exception";
 
 import type { GatewayErrorCode } from "@qntx/wallet-engine/gateway/contract";
 
-type ErrorStatus = 400 | 404 | 429 | 500 | 503;
+type ErrorStatus = 400 | 404 | 413 | 429 | 500 | 503;
 
 /** An error with a fixed HTTP mapping; the body carries only the contract error code. */
 export class GatewayHttpError extends Error {

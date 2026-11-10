@@ -142,6 +142,26 @@ describe("rpc validation", () => {
     expect(up.calls).toHaveLength(0);
   });
 
+  it("413s an rpc body above 512 KiB without reading it upstream", async () => {
+    const up = upstream();
+    const big = JSON.stringify(call("eth_call", [{ data: `0x${"00".repeat(300 * 1024)}` }]));
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/rpc/${SEPOLIA}`, post(big));
+    expect(res.status).toBe(413);
+    await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
+  });
+
+  it("413s an esplora body above 1 MB", async () => {
+    const up = fakeFetch({});
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx`, {
+      method: "POST",
+      headers: headers(),
+      body: "00".repeat(600_000),
+    });
+    expect(res.status).toBe(413);
+    expect(up.calls).toHaveLength(0);
+  });
+
   it("accepts a batch of exactly 20", async () => {
     const app = gateway({
       fetch: fakeFetch({
