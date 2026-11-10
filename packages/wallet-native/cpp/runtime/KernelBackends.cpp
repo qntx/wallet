@@ -17,6 +17,34 @@ namespace {
 
 constexpr double kUint32Max = 4294967295.0;
 
+void exact32(jsi::Runtime& rt, const ByteView& view, const char* name) {
+  if (view.size != 32) {
+    throw jsi::JSError(rt, std::string(name) + " expects a 32-byte view");
+  }
+}
+
+void wipe(uint8_t* data, size_t size) {
+  volatile uint8_t* p = data;
+  while (size--) {
+    *p++ = 0;
+  }
+}
+
+// Releases (and wipes) a library-owned qs_* output on every path, including a
+// throw while it is being copied into the runtime.
+struct QsOutput {
+  uint8_t* data = nullptr;
+  size_t size = 0;
+  QsOutput() = default;
+  QsOutput(const QsOutput&) = delete;
+  QsOutput& operator=(const QsOutput&) = delete;
+  ~QsOutput() {
+    if (data != nullptr) {
+      qs_free(data, size);
+    }
+  }
+};
+
 // Every qs_* call shares this shape: byte inputs go in as borrowed (data,
 // size) views; the library-owned output is copied into a fresh Uint8Array
 // before qs_free wipes and releases it. A nonzero code throws
@@ -26,22 +54,13 @@ jsi::Value callOut(
     jsi::Runtime& rt,
     const KernelIntrinsics& intrinsics,
     Invoke&& invoke) {
-  uint8_t* out = nullptr;
-  size_t outLen = 0;
-  const int32_t code = invoke(&out, &outLen);
-  jsi::Value result;
-  if (code == 0) {
-    auto buffer = arrayBufferFromBytes(rt, out, outLen);
-    result = jsi::Value(
-        rt, makeUint8Array(rt, intrinsics, std::move(buffer)));
-  }
-  if (out != nullptr) {
-    qs_free(out, outLen);
-  }
+  QsOutput out;
+  const int32_t code = invoke(&out.data, &out.size);
   if (code != 0) {
     throw jsi::JSError(rt, "qntx_spark:" + std::to_string(code));
   }
-  return result;
+  auto buffer = arrayBufferFromBytes(rt, out.data, out.size);
+  return jsi::Value(rt, makeUint8Array(rt, intrinsics, std::move(buffer)));
 }
 
 uint32_t uint32Arg(
@@ -183,22 +202,10 @@ void installKernelBackends(
   nostr.setProperty(
       rt, "abiVersion", jsi::Value(static_cast<double>(nostr_native_abi_version())));
 
-  auto exact32 = [](jsi::Runtime& rt, const ByteView& view, const char* name) {
-    if (view.size != 32) {
-      throw jsi::JSError(rt, std::string(name) + " expects a 32-byte view");
-    }
-  };
-  auto wipe = [](uint8_t* data, size_t size) {
-    volatile uint8_t* p = data;
-    while (size--) {
-      *p++ = 0;
-    }
-  };
-
   nostr.setProperty(
       rt,
       "publicKey",
-      hostFn(rt, "nostr.publicKey", 1, [&intrinsics, &exact32, &wipe](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+      hostFn(rt, "nostr.publicKey", 1, [&intrinsics](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
         if (count < 1) {
           throw jsi::JSError(rt, "__qntx.backends.nostr.publicKey expects (secretKey)");
         }
@@ -220,7 +227,7 @@ void installKernelBackends(
   nostr.setProperty(
       rt,
       "sign",
-      hostFn(rt, "nostr.sign", 3, [&intrinsics, &exact32, &wipe](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+      hostFn(rt, "nostr.sign", 3, [&intrinsics](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
         if (count < 3) {
           throw jsi::JSError(rt, "__qntx.backends.nostr.sign expects (id, secretKey, auxRand)");
         }
@@ -264,7 +271,7 @@ void installKernelBackends(
   nostr.setProperty(
       rt,
       "ecdhX",
-      hostFn(rt, "nostr.ecdhX", 2, [&intrinsics, &exact32, &wipe](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+      hostFn(rt, "nostr.ecdhX", 2, [&intrinsics](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
         if (count < 2) {
           throw jsi::JSError(rt, "__qntx.backends.nostr.ecdhX expects (secretKey, publicKeyX)");
         }
