@@ -312,6 +312,21 @@ describe("verifiability + decode", () => {
     ).toBe("partial");
   });
 
+  it("marks each erc20 flow verified only for a listed token", () => {
+    const listed = decodeEvm(
+      txReq({ type: "eip1559", data: erc20Transfer }) as never,
+      SIGNER,
+      table,
+    );
+    expect(listed.outflows[0]?.verified).toBe(true);
+    const unlisted = decodeEvm(
+      txReq({ type: "eip1559", data: erc20Transfer }) as never,
+      SIGNER,
+      {},
+    );
+    expect(unlisted.outflows[0]?.verified).toBe(false);
+  });
+
   it("approve → partial, unlimited on max uint256", () => {
     expect(
       decodeEvm(txReq({ type: "eip1559", data: approve }) as never, SIGNER).verifiability,
