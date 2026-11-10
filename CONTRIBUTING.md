@@ -26,6 +26,20 @@ Run before opening a pull request:
 bun run lint && bun run typecheck && bun run test
 ```
 
+## Working across repositories
+
+To try an unreleased `qntx/nostr` or `qntx/spark` change, `bun link` it into the
+package that consumes it, and undo the link before you test or open a pull
+request:
+
+```bash
+bun install --force
+```
+
+`bun install --frozen-lockfile` keeps such links, so `bun run check:pkg` (which
+CI runs) fails while any `node_modules/@qntx/*` entry resolves outside this
+checkout. A dependency change itself lands as a released, pinned version.
+
 ## Commits
 
 English Conventional Commits: `type(scope): subject` (`feat`, `fix`, `docs`,
