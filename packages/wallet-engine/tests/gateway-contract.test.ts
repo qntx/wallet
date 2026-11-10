@@ -41,6 +41,7 @@ import {
   servedNetworks,
   swapQuoteRequest,
   swapQuoteResponse,
+  swapQuoteSolanaResponse,
   servedNetworksResponse,
   solanaRpcRequest,
 } from "../src/gateway/contract/index.ts";
@@ -602,6 +603,28 @@ describe("swapQuote", () => {
   const WETH = "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2";
   const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
   const TAKER = "0x8f3796aa4dB3f47E0fE0D19f9c3c96a51aD5f0F8";
+
+  it("a Jupiter response's slippage stays within 0-10000 bps", () => {
+    const ix = { programId: "11111111111111111111111111111111", accounts: [], data: "" };
+    const filled = {
+      liquidity: true,
+      provider: "jupiter",
+      inputMint: "So11111111111111111111111111111111111111112",
+      outputMint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+      inAmount: "1000",
+      outAmount: "900",
+      otherAmountThreshold: "890",
+      slippageBps: 100,
+      setup: [],
+      swap: ix,
+      cleanup: null,
+      lookupTables: [],
+    };
+    expect(accepts(swapQuoteSolanaResponse, filled)).toBe(true);
+    expect(accepts(swapQuoteSolanaResponse, { ...filled, slippageBps: 10_000 })).toBe(true);
+    expect(accepts(swapQuoteSolanaResponse, { ...filled, slippageBps: 10_001 })).toBe(false);
+    expect(accepts(swapQuoteSolanaResponse, { ...filled, slippageBps: -1 })).toBe(false);
+  });
 
   it("validates the request: an eip155 network, hex tokens, a positive sellAmount, bps 1-5000", () => {
     const good = {

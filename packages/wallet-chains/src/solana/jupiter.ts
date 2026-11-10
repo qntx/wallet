@@ -33,6 +33,12 @@ export type JupiterSwap = {
   readonly platformFeeBps: number;
 };
 
+const MAX_BPS = 10_000;
+
+/** A slippage above 100% has no "minimum received" — such a route is not recognised. */
+const withinSlippage = (swap: JupiterSwap): JupiterSwap | undefined =>
+  swap.slippageBps > MAX_BPS ? undefined : swap;
+
 /**
  * `route_v2` / `shared_accounts_route_v2`: the fixed scalar prefix must be exact and the trailing
  * `route_plan` vector must declare enough remaining bytes (each step is ≥ 5 bytes on the wire). The
@@ -77,28 +83,28 @@ export const decodeJupiterIx = (
       return undefined;
     }
     const optionalDest = require(7);
-    return {
+    return withinSlippage({
       authority: require(0),
       sourceMint: require(3),
       destinationMint: require(4),
       destinationTokenProgram: require(6),
       destinationAccount: optionalDest === JUPITER_PROGRAM ? require(2) : optionalDest,
       ...scalars(8),
-    };
+    });
   }
   if (startsWith(data, SHARED_ROUTE_V2)) {
     /* u8 id precedes the same scalars — prefix is 8 + 1 + 22 = 31 bytes. */
     if (ix.accountIndices.length < 12 || !planWellFormed(31)) {
       return undefined;
     }
-    return {
+    return withinSlippage({
       authority: require(1),
       sourceMint: require(6),
       destinationMint: require(7),
       destinationTokenProgram: require(9),
       destinationAccount: require(5),
       ...scalars(9),
-    };
+    });
   }
   return undefined;
 };

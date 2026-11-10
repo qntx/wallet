@@ -20,7 +20,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { associatedTokenAddress } from "../src/solana/ata.ts";
 import { decodeSolana } from "../src/solana/decode.ts";
 import { PROGRAM_IDS } from "../src/solana/ids.ts";
-import { WSOL_MINT } from "../src/solana/jupiter.ts";
+import { JUPITER_PROGRAM as JUPITER, WSOL_MINT } from "../src/solana/jupiter.ts";
 import { parseCompiledMessage, resolveAccountIndex } from "../src/solana/message.ts";
 
 const SIGNER = "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM";
@@ -105,6 +105,20 @@ describe("jupiter decode", () => {
       "Ff4CgHQXyMBRktUtmCNPvL4YS1NBiS1d9QDrPqRMhLQ",
     );
     expect(foreign.verifiability).toBe("opaque");
+  });
+
+  it.each([10_001, 65_535])("a route with slippageBps %i is not recognised", (bps) => {
+    const bytes = hex(vector.message);
+    const parsed = parseCompiledMessage(bytes);
+    const route = parsed.instructions.find(
+      (ix) => resolveAccountIndex(parsed, ix.programAddressIndex, vector.lookupTables) === JUPITER,
+    )!;
+    const start = Buffer.from(bytes).indexOf(Buffer.from(route.data));
+    /* route_v2: 8-byte discriminator, then inAmount u64, quotedOut u64, slippageBps u16 (LE). */
+    new DataView(bytes.buffer, bytes.byteOffset).setUint16(start + 24, bps, true);
+    const intent = decodeSolana(req(bytes, vector.lookupTables), SIGNER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.minimumReceived).toBeUndefined();
   });
 });
 
