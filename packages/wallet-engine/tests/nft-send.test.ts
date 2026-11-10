@@ -104,7 +104,11 @@ const evmWorld = (o: {
     };
     return body.method in base
       ? reply(base[body.method])
-      : Response.json({ jsonrpc: "2.0", id: 1, error: { code: -1, message: body.method } });
+      : Response.json({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32601, message: `method not found: ${body.method}` },
+        });
   };
   const networks = new NetworkController({
     ...idleNetworkDeps,

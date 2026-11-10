@@ -407,7 +407,11 @@ function evmWorld(options: {
       ? Response.json({ jsonrpc: "2.0", id: 1, result: simulateV1Result(body.params) })
       : body.method in table
         ? Response.json({ jsonrpc: "2.0", id: 1, result: table[body.method] })
-        : Response.json({ jsonrpc: "2.0", id: 1, error: { code: -1, message: body.method } });
+        : Response.json({
+            jsonrpc: "2.0",
+            id: 1,
+            error: { code: -32601, message: `method not found: ${body.method}` },
+          });
   };
   const fetchImpl: typeof globalThis.fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;

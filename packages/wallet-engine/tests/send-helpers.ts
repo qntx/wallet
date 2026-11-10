@@ -262,6 +262,13 @@ export const realTimer = (ms: number, fn: () => void): (() => void) => {
   };
 };
 
+/**
+ * A wall-clock timer that runs every delay 1000× faster (2 s → 2 ms): backoff loops keep their real
+ * asynchronous ordering without the test waiting out the schedule.
+ */
+export const fastTimer = (ms: number, fn: () => void): (() => void) =>
+  realTimer(Math.ceil(ms / 1000), fn);
+
 /** `setTimer` and `random` for a `NetworkController` that never waits. */
 export const idleNetworkDeps = {
   setTimer: (): (() => void) => () => undefined,

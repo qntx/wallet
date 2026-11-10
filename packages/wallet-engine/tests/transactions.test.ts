@@ -44,7 +44,11 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
     return Promise.resolve(
       body.method in table
         ? Response.json({ result: table[body.method] })
-        : Response.json({ error: { message: `unmocked ${body.method}` } }, { status: 500 }),
+        : Response.json({
+            jsonrpc: "2.0",
+            id: 1,
+            error: { code: -32601, message: `method not found: ${body.method}` },
+          }),
     );
   }) as typeof fetch;
 

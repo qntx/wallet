@@ -78,6 +78,8 @@ const answer = (node: Node, method: string, params: unknown[]): unknown => {
           ["0x1", "0x2", "0x3"],
         ],
       };
+    case "eth_blockNumber":
+      return "0x2";
     case "eth_getBlockByNumber":
       return { number: "0x2" };
     case "eth_sendRawTransaction": {
@@ -122,7 +124,9 @@ const world = (options: { gateway?: boolean } = {}) => {
       try {
         return { result: answer(node, body.method, body.params ?? []) };
       } catch (error) {
-        return { error: { code: -1, message: error instanceof Error ? error.message : "failed" } };
+        // An unmocked method answers like a node without it (-32601, which viem never retries).
+        const message = error instanceof Error ? error.message : "failed";
+        return { error: { code: message.startsWith("unmocked") ? -32601 : -1, message } };
       }
     })();
     return Promise.resolve(Response.json({ jsonrpc: "2.0", id: 1, ...reply }));

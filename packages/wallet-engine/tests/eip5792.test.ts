@@ -111,7 +111,11 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     }
     return body.method in base
       ? Response.json({ jsonrpc: "2.0", id: 1, result: base[body.method] })
-      : Response.json({ jsonrpc: "2.0", id: 1, error: { code: -1, message: body.method } });
+      : Response.json({
+          jsonrpc: "2.0",
+          id: 1,
+          error: { code: -32601, message: `method not found: ${body.method}` },
+        });
   };
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
   const openStore = async () => Promise.resolve(createMemoryEngineStore(backing));
