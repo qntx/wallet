@@ -120,6 +120,11 @@ export const signEvmPersonalMessage = (message: Uint8Array, privateKey: Uint8Arr
 /** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 export const signEvmTypedData = (typedData: string, privateKey: Uint8Array): Uint8Array => {
   const { json } = parseTypedData(typedData);
-  const payload = TypedData.getSignPayload(json);
+  let payload: Hex.Hex;
+  try {
+    payload = TypedData.getSignPayload(json);
+  } catch {
+    throw new ChainError("invalid-typed-data", "typedData failed to encode");
+  }
   return rs_v(Signature.from(sign(payload, key(privateKey))));
 };

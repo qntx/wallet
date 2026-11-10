@@ -43,7 +43,7 @@ const ITEM_FIELDS = [
 ];
 
 const typesMatch = (types: TypedDataInput["types"]): boolean =>
-  Object.keys(types).length === 3 &&
+  Object.keys(types).filter((name) => name !== "EIP712Domain").length === 3 &&
   sameFields(types, "OrderComponents", [
     "address offerer",
     "address zone",

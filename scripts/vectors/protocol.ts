@@ -489,6 +489,28 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "spark.signFrost (cooperative exit)",
+    message: {
+      v: 2,
+      id: 34,
+      method: "spark.signFrost",
+      session: SESSION,
+      params: {
+        account: SPARK_ACCOUNT,
+        jobs: [
+          {
+            key: { type: "leaf", leafId: LEAF_ID },
+            target: sparkTarget,
+            verifyingKey: COMPRESSED,
+            commitment: sparkCommitment,
+            operatorCommitments: [{ identifier: OPERATOR, commitment: sparkCommitment }],
+            exit: { connectorTx: sparkTarget.transaction, exitTx: sparkTarget.transaction },
+          },
+        ],
+      },
+    },
+  },
+  {
     name: "spark.aggregateFrost",
     message: {
       v: 2,

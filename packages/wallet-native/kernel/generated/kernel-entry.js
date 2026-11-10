@@ -942,7 +942,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-fXHXJguP.mjs
+	// packages/wallet/dist/protocol-CoJS2clN.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1376,7 +1376,11 @@
 		verifyingKey: bytes33,
 		commitment: signingCommitment,
 		operatorCommitments: arr(operatorCommitment, MAX_OPERATORS),
-		adaptorPublicKey
+		adaptorPublicKey,
+		exit: opt(obj({
+			connectorTx: bytes(1, MAX_TX_BYTES),
+			exitTx: bytes(1, MAX_TX_BYTES)
+		}))
 	});
 	var frostAggregateJob = obj({
 		key: sparkKey,
@@ -17504,7 +17508,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-B4PJ1v8F.mjs
+	// packages/wallet-chains/dist/typed-data-M-0IlEpr.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -17720,6 +17724,7 @@
 			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
 			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
 		};
+		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
 		const list = accessList(tx["accessList"]);
 		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
 		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
@@ -17767,7 +17772,30 @@
 	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
 	/** A `bytes` field value: `0x`-prefixed hex of even length. */
 	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
-	/** Parses the EIP-712 JSON source and validates its shape with ox. */
+	/**
+	* Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
+	* struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
+	* message and a missing nested struct fails here rather than inside the encoder.
+	*/
+	var checkStructure = (types, type, value, depth) => {
+		const array = /^(.+)\[\d*\]$/.exec(type);
+		const struct = array === null ? types[type] : void 0;
+		if (array === null && struct === void 0) return;
+		if (depth >= 32) throw new ChainError("invalid-typed-data", "typedData nests too deeply");
+		if (array !== null) {
+			var _array$;
+			if (!Array.isArray(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
+			for (const item of value) checkStructure(types, (_array$ = array[1]) !== null && _array$ !== void 0 ? _array$ : "", item, depth + 1);
+			return;
+		}
+		if (!isRecord$3(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
+		for (const field of struct !== null && struct !== void 0 ? struct : []) checkStructure(types, field.type, value[field.name], depth + 1);
+	};
+	/**
+	* Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
+	* without it ox derives the domain type from the domain object while MetaMask hashes an empty
+	* domain, so the same document would sign differently across wallets.
+	*/
 	var parseTypedData = (typedData) => {
 		let json;
 		try {
@@ -17776,11 +17804,13 @@
 			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
 		}
 		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
+		if (json.types["EIP712Domain"] === void 0) throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
 		try {
 			validate$1(json);
 		} catch (_unused3) {
 			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
 		}
+		checkStructure(json.types, json.primaryType, json.message, 0);
 		return { json };
 	};
 	/**
@@ -22370,10 +22400,12 @@ zoo`.split("\n"));
 		const fillDeadline = argUint$1(args, 9);
 		const message = args.at(11);
 		if (inputAmount === void 0 || outputAmount === void 0 || destinationChainId === void 0 || fillDeadline === void 0 || message !== "0x") return;
+		const native = call.value > 0n && inputToken.toLowerCase() === ((_ACROSS_WRAPPED_NATIV = ACROSS_WRAPPED_NATIVE[chainId]) !== null && _ACROSS_WRAPPED_NATIV !== void 0 ? _ACROSS_WRAPPED_NATIV : "").toLowerCase();
+		if (call.value > 0n && (!native || call.value !== inputAmount)) return;
 		return {
 			outflows: [{
 				to: pool,
-				amount: call.value > 0n && inputToken.toLowerCase() === ((_ACROSS_WRAPPED_NATIV = ACROSS_WRAPPED_NATIVE[chainId]) !== null && _ACROSS_WRAPPED_NATIV !== void 0 ? _ACROSS_WRAPPED_NATIV : "").toLowerCase() ? {
+				amount: native ? {
 					asset: EVM_NATIVE_ASSET,
 					amount: call.value.toString(10)
 				} : tokenAmount$2(table, chainId, inputToken, inputAmount),
@@ -22759,7 +22791,7 @@ zoo`.split("\n"));
 		"uint256 startAmount",
 		"uint256 endAmount"
 	];
-	var typesMatch = (types) => Object.keys(types).length === 3 && sameFields(types, "OrderComponents", [
+	var typesMatch = (types) => Object.keys(types).filter((name) => name !== "EIP712Domain").length === 3 && sameFields(types, "OrderComponents", [
 		"address offerer",
 		"address zone",
 		"OfferItem[] offer",
@@ -24886,11 +24918,13 @@ zoo`.split("\n"));
 		if (bytes.length > 1232) throw new ChainError("invalid-request", "compiled message exceeds the 1232-byte limit");
 		if (bytes.length === 0) throw new ChainError("invalid-request", "compiled message is empty");
 		let decoded;
+		let end;
 		try {
-			decoded = decoder$1.decode(bytes);
+			[decoded, end] = decoder$1.read(bytes, 0);
 		} catch (_unused) {
 			throw new ChainError("invalid-request", "compiled message failed to decode");
 		}
+		if (end !== bytes.length) throw new ChainError("invalid-request", "compiled message has trailing bytes");
 		const message = asCompiledMessage(decoded);
 		const staticAccounts = [...message.staticAccounts];
 		const lookups = message.addressTableLookups;
@@ -25065,6 +25099,9 @@ zoo`.split("\n"));
 	var u32$2 = getU32Decoder();
 	var u64$3 = getU64Decoder();
 	var startsWith = (data, prefix) => data.length >= prefix.length && prefix.every((b, i) => data[i] === b);
+	var MAX_BPS = 1e4;
+	/** A slippage above 100% has no "minimum received" — such a route is not recognised. */
+	var withinSlippage = (swap) => swap.slippageBps > MAX_BPS ? void 0 : swap;
 	/**
 	* `route_v2` / `shared_accounts_route_v2`: the fixed scalar prefix must be exact and the trailing
 	* `route_plan` vector must declare enough remaining bytes (each step is ≥ 5 bytes on the wire). The
@@ -25094,23 +25131,23 @@ zoo`.split("\n"));
 		if (startsWith(data, ROUTE_V2)) {
 			if (ix.accountIndices.length < 10 || !planWellFormed(30)) return;
 			const optionalDest = require(7);
-			return _objectSpread2({
+			return withinSlippage(_objectSpread2({
 				authority: require(0),
 				sourceMint: require(3),
 				destinationMint: require(4),
 				destinationTokenProgram: require(6),
 				destinationAccount: optionalDest === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4" ? require(2) : optionalDest
-			}, scalars(8));
+			}, scalars(8)));
 		}
 		if (startsWith(data, SHARED_ROUTE_V2)) {
 			if (ix.accountIndices.length < 12 || !planWellFormed(31)) return;
-			return _objectSpread2({
+			return withinSlippage(_objectSpread2({
 				authority: require(1),
 				sourceMint: require(6),
 				destinationMint: require(7),
 				destinationTokenProgram: require(9),
 				destinationAccount: require(5)
-			}, scalars(9));
+			}, scalars(9)));
 		}
 	};
 	/** Sysvars the legacy stake account lists carry; post-SIMD-0490 forms omit them. */
@@ -30347,7 +30384,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-zf3XHwwc.mjs
+	// packages/wallet-chains/dist/message-_Jfs46Lm.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -30514,13 +30551,15 @@ zoo`.split("\n"));
 	* Legacy "Bitcoin Signed Message" compact signature for P2PKH addresses: base64(1-byte header +
 	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
 	*/
+	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
 	var signLegacyMessage = (message, privateKey) => {
 		var _recovered$;
-		const data = concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)));
-		const hash = sha256$1(sha256$1(data));
+		const hash = legacyMessageHash(message);
 		const recovered = secp256k1.sign(hash, privateKey, {
 			lowS: true,
-			format: "recovered"
+			format: "recovered",
+			prehash: false
 		});
 		const header = 27 + ((_recovered$ = recovered[0]) !== null && _recovered$ !== void 0 ? _recovered$ : 0) + 4;
 		return base64(concat$1(Uint8Array.of(header), recovered.slice(1)));
@@ -30724,7 +30763,7 @@ zoo`.split("\n"));
 		let decoded;
 		try {
 			decoded = Address(net.params).decode(address);
-		} catch (_unused5) {
+		} catch (_unused6) {
 			throw new ChainError("invalid-address", "address does not belong to this network");
 		}
 		if (format === "bip322-simple") {
@@ -31239,8 +31278,7 @@ zoo`.split("\n"));
 		};
 		try {
 			if (request.kind === "bitcoin.psbt") return executeBitcoinPsbt(b, request, random, intentOnly);
-			if (request.account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
-			const purpose = BTC_PURPOSE[request.account.template];
+			const purpose = "template" in account ? BTC_PURPOSE[account.template] : void 0;
 			if (purpose === void 0) throw new KernelError("invalid-input", "account template is not a bitcoin template");
 			return executeBitcoinMessage(b, purpose, request, random, intentOnly);
 		} finally {
@@ -31344,7 +31382,13 @@ zoo`.split("\n"));
 	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmTypedData = (typedData, privateKey) => {
 		const { json } = parseTypedData(typedData);
-		return rs_v(from(sign$1(getSignPayload$6(json), key(privateKey))));
+		let payload;
+		try {
+			payload = getSignPayload$6(json);
+		} catch (_unused) {
+			throw new ChainError("invalid-typed-data", "typedData failed to encode");
+		}
+		return rs_v(from(sign$1(payload, key(privateKey))));
 	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts
 	init_secp256k1();
@@ -31370,34 +31414,32 @@ zoo`.split("\n"));
 		}
 	};
 	var evmBody = (request, priv, signer, intentOnly) => {
-		{
-			let normalized;
-			try {
-				normalized = normalizeEvm(request);
-			} catch (error) {
-				mapChainError(error);
-			}
-			if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-			let intent;
-			try {
-				intent = decodeEvm(request, signer);
-			} catch (error) {
-				mapChainError(error);
-			}
-			if (intentOnly) return { prompt: intent };
-			if (request.kind === "evm.transaction") return {
-				kind: "evm.transaction",
-				signedTransaction: signEvmTransaction(request.tx, priv)
-			};
-			if (request.kind === "evm.personal-message") return {
-				kind: "evm.personal-message",
-				signature: signEvmPersonalMessage(request.message, priv)
-			};
-			return {
-				kind: "evm.typed-data",
-				signature: signEvmTypedData(request.typedData, priv)
-			};
+		let normalized;
+		try {
+			normalized = normalizeEvm(request);
+		} catch (error) {
+			mapChainError(error);
 		}
+		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+		let intent;
+		try {
+			intent = decodeEvm(request, signer);
+		} catch (error) {
+			mapChainError(error);
+		}
+		if (intentOnly) return { prompt: intent };
+		if (request.kind === "evm.transaction") return {
+			kind: "evm.transaction",
+			signedTransaction: signEvmTransaction(request.tx, priv)
+		};
+		if (request.kind === "evm.personal-message") return {
+			kind: "evm.personal-message",
+			signature: signEvmPersonalMessage(request.message, priv)
+		};
+		return {
+			kind: "evm.typed-data",
+			signature: signEvmTypedData(request.typedData, priv)
+		};
 	};
 	// packages/wallet-chains/dist/solana-sign.mjs
 	/**
@@ -31431,26 +31473,24 @@ zoo`.split("\n"));
 		}
 	};
 	var solanaBody = (request, priv, signer, intentOnly) => {
-		{
-			let normalized;
-			try {
-				normalized = normalizeSolana(request, signer);
-			} catch (error) {
-				mapChainError(error);
-			}
-			if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-			let intent = messageIntent(request.message);
-			if (request.kind === "solana.transaction") try {
-				intent = decodeSolana(request, signer);
-			} catch (error) {
-				mapChainError(error);
-			}
-			if (intentOnly) return { prompt: intent };
-			return {
-				kind: request.kind,
-				signature: signSolanaMessage(request.message, priv)
-			};
+		let normalized;
+		try {
+			normalized = normalizeSolana(request, signer);
+		} catch (error) {
+			mapChainError(error);
 		}
+		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
+		let intent = messageIntent(request.message);
+		if (request.kind === "solana.transaction") try {
+			intent = decodeSolana(request, signer);
+		} catch (error) {
+			mapChainError(error);
+		}
+		if (intentOnly) return { prompt: intent };
+		return {
+			kind: request.kind,
+			signature: signSolanaMessage(request.message, priv)
+		};
 	};
 	// packages/wallet-kernel/src/modules/chains/index.ts
 	/**
@@ -31529,7 +31569,6 @@ zoo`.split("\n"));
 		const { request, verify } = params;
 		const { account } = request;
 		if (account.kind === "imported") return chainSignImported(ctx, params, session, dek);
-		if (account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
 		if (request.kind === "bitcoin.psbt") {
 			if (request.sign.some((s) => BTC_PURPOSE[s.template] === void 0)) throw new KernelError("invalid-input", "sign template is not a bitcoin account template");
 		} else {
@@ -31545,12 +31584,12 @@ zoo`.split("\n"));
 		const record = ctx.image.records.find((entry) => entry.kind === "entropy" && entry.id === account.walletId);
 		if (record === void 0) throw new KernelError("not-found", "no such wallet");
 		const execute = (seed, intentOnly) => {
-			if (request.kind === "bitcoin.psbt") return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
-			if (request.account.kind !== "hd") throw new KernelError("unsupported", "imported accounts are not yet supported");
-			if (request.kind === "bitcoin.message") return executeBitcoin(ctx.platform.random, request, request.account, seed, intentOnly);
+			if (request.kind === "bitcoin.psbt") return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
+			if (request.kind === "bitcoin.message") return executeBitcoin(ctx.platform.random, request, account, seed, intentOnly);
+			if (!("template" in account)) throw new KernelError("invalid-input", "account template does not match the request family");
 			const source = {
 				kind: "hd",
-				account: request.account,
+				account,
 				seed
 			};
 			if (request.kind === "evm.transaction" || request.kind === "evm.personal-message" || request.kind === "evm.typed-data") return executeEvm(request, source, intentOnly);
@@ -43008,7 +43047,7 @@ zoo`.split("\n"));
 	* matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
 	* cumulative budget deduped by leaf public key.
 	*/
-	var transferCovered = (outflow, intent) => outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$4(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
+	var transferCovered = (outflow, intent) => outflow.receivers.length > 0 && outflow.receivers.every((receiver) => intent.receivers.some((wanted) => equalBytes$4(wanted.identityPublicKey, receiver.identityPublicKey) && receiver.amountSats <= wanted.amountSats));
 	var lightningCovered = async (state, rt, key, network, outflow, approval, intent) => {
 		const signer = state.signers.get(key);
 		const { paymentHash } = approval.decoded;
@@ -43039,15 +43078,34 @@ zoo`.split("\n"));
 		if (!outflow.outputs.every((output) => equalBytes$4(output.script, rt.EPHEMERAL_ANCHOR_SCRIPT) || equalBytes$4(output.script, addressScript))) return false;
 		return outflow.inputSats - outflow.totalSats <= intent.maxFeeSats;
 	};
+	/**
+	* Token outflows are compared per receiver: non-self outputs are summed by owner and each sum must
+	* stay within that owner's summed approval, so one approval never covers several outputs.
+	*/
+	var tokenOutputsCovered = (outputs, identity, intent) => {
+		if (outputs.length === 0) return false;
+		const approved = /* @__PURE__ */ new Map();
+		for (const receiver of intent.receivers) {
+			var _approved$get;
+			const owner = bytesToHex$4(receiver.ownerPublicKey);
+			approved.set(owner, ((_approved$get = approved.get(owner)) !== null && _approved$get !== void 0 ? _approved$get : 0n) + BigInt(receiver.amount));
+		}
+		const spent = /* @__PURE__ */ new Map();
+		for (const output of outputs) {
+			var _spent$get;
+			if (equalBytes$4(output.ownerPublicKey, identity)) continue;
+			if (!equalBytes$4(output.tokenIdentifier, intent.tokenIdentifier)) return false;
+			const owner = bytesToHex$4(output.ownerPublicKey);
+			spent.set(owner, ((_spent$get = spent.get(owner)) !== null && _spent$get !== void 0 ? _spent$get : 0n) + output.amount);
+		}
+		return [...spent].every(([owner, amount]) => {
+			var _approved$get2;
+			return amount <= ((_approved$get2 = approved.get(owner)) !== null && _approved$get2 !== void 0 ? _approved$get2 : -1n);
+		});
+	};
 	var tokenCovered = async (state, key, outflow, intent) => {
 		const signer = state.signers.get(key);
-		if (signer === void 0) return false;
-		const identity = await signer.identityPublicKey();
-		return outflow.outputs.every((output) => {
-			if (equalBytes$4(output.ownerPublicKey, identity)) return true;
-			if (!equalBytes$4(output.tokenIdentifier, intent.tokenIdentifier)) return false;
-			return intent.receivers.some((wanted) => equalBytes$4(wanted.ownerPublicKey, output.ownerPublicKey) && output.amount <= BigInt(wanted.amount));
-		});
+		return signer !== void 0 && tokenOutputsCovered(outflow.outputs, await signer.identityPublicKey(), intent);
 	};
 	var authorizeWithCtx = async (state, ctx, account, outflow) => {
 		const rt = await sparkRuntime(state);
@@ -46288,6 +46346,7 @@ zoo`.split("\n"));
 			safeNonNegative(metaRow["lastFailureAt"], "meta lastFailureAt");
 		}
 		if (!Array.isArray(records) || records.length > MAX_ROWS) throw bad("records is not a bounded array");
+		const seenRecords = /* @__PURE__ */ new Set();
 		for (const entry of records) {
 			const row = plainObject(entry);
 			exactKeys(row, "header,id,kind,sealed");
@@ -46295,8 +46354,12 @@ zoo`.split("\n"));
 			boundedString(row["id"], MAX_ID, "record id");
 			boundedString(row["header"], MAX_HEADER, "record header");
 			sealedBytes(row["sealed"]);
+			const recordKey = `${row["kind"]}\0${String(row["id"])}`;
+			if (seenRecords.has(recordKey)) throw bad("duplicate record kind+id");
+			seenRecords.add(recordKey);
 		}
 		if (!Array.isArray(factors) || factors.length > MAX_ROWS) throw bad("factors is not a bounded array");
+		const seenFactors = /* @__PURE__ */ new Set();
 		for (const entry of factors) {
 			const row = plainObject(entry);
 			exactKeys(row, "header,id,kind,sealed");
@@ -46304,6 +46367,8 @@ zoo`.split("\n"));
 			if (typeof row["id"] !== "string" || !HEX_32.test(row["id"])) throw bad("factor id is not 32 lowercase hex");
 			boundedString(row["header"], MAX_HEADER, "factor header");
 			sealedBytes(row["sealed"]);
+			if (seenFactors.has(row["id"])) throw bad("duplicate factor id");
+			seenFactors.add(row["id"]);
 		}
 		return image;
 	}
@@ -46334,9 +46399,32 @@ zoo`.split("\n"));
 		allowInfinity: false,
 		allowBigInt: false
 	};
-	/** Reject non-safe-integer numbers and non-string map keys; cborg flags cover the rest. */
+	/**
+	* A string UTF-8 can carry unchanged: iterating by code point pairs every valid surrogate, so a
+	* surrogate code point on its own is a lone one.
+	*/
+	function wellFormed(text) {
+		for (const char of text) {
+			var _char$codePointAt;
+			const point = (_char$codePointAt = char.codePointAt(0)) !== null && _char$codePointAt !== void 0 ? _char$codePointAt : 0;
+			if (point >= 55296 && point <= 57343) return false;
+		}
+		return true;
+	}
+	function checkString(text) {
+		if (!wellFormed(text)) throw new CborError("lone-surrogate", "cbor frame: string with a lone UTF-16 surrogate");
+	}
+	/**
+	* Reject non-safe-integer numbers, non-string map keys and strings UTF-8 cannot represent (a lone
+	* surrogate would be replaced with U+FFFD, silently changing the value); cborg flags cover the
+	* rest.
+	*/
 	function validate(value) {
-		if (value === null || typeof value === "boolean" || typeof value === "string") return;
+		if (value === null || typeof value === "boolean") return;
+		if (typeof value === "string") {
+			checkString(value);
+			return;
+		}
 		if (typeof value === "number") {
 			if (!Number.isInteger(value)) throw new CborError("float", "cbor frame: non-integer number");
 			if (!Number.isSafeInteger(value)) throw new CborError("unsafe-int", "cbor frame: integer outside the safe range");
@@ -46350,6 +46438,7 @@ zoo`.split("\n"));
 		if (typeof value === "object") {
 			for (const [key, item] of Object.entries(value)) {
 				if (typeof key !== "string") throw new CborError("non-string-key", "cbor frame: non-string map key");
+				checkString(key);
 				validate(item);
 			}
 			return;

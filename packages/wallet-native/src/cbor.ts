@@ -23,6 +23,7 @@ export type CborErrorCode =
   | "non-string-key"
   | "duplicate-key"
   | "indefinite"
+  | "lone-surrogate"
   | "bad-type";
 
 export class CborError extends Error {
@@ -45,9 +46,37 @@ const DECODE_OPTIONS: DecodeOptions = {
   allowBigInt: false,
 };
 
-/** Reject non-safe-integer numbers and non-string map keys; cborg flags cover the rest. */
+/**
+ * A string UTF-8 can carry unchanged: iterating by code point pairs every valid surrogate, so a
+ * surrogate code point on its own is a lone one.
+ */
+function wellFormed(text: string): boolean {
+  for (const char of text) {
+    const point = char.codePointAt(0) ?? 0;
+    if (point >= 0xd800 && point <= 0xdfff) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function checkString(text: string): void {
+  if (!wellFormed(text)) {
+    throw new CborError("lone-surrogate", "cbor frame: string with a lone UTF-16 surrogate");
+  }
+}
+
+/**
+ * Reject non-safe-integer numbers, non-string map keys and strings UTF-8 cannot represent (a lone
+ * surrogate would be replaced with U+FFFD, silently changing the value); cborg flags cover the
+ * rest.
+ */
 function validate(value: unknown): asserts value is ProtocolValue {
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
+  if (value === null || typeof value === "boolean") {
+    return;
+  }
+  if (typeof value === "string") {
+    checkString(value);
     return;
   }
   if (typeof value === "number") {
@@ -74,6 +103,7 @@ function validate(value: unknown): asserts value is ProtocolValue {
       if (typeof key !== "string") {
         throw new CborError("non-string-key", "cbor frame: non-string map key");
       }
+      checkString(key);
       validate(item);
     }
     return;

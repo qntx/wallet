@@ -190,6 +190,9 @@ export const normalizeEvmTransaction = (tx: unknown): EvmTransaction => {
     maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
     maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas"),
   };
+  if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) {
+    throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
+  }
   const list = accessList(tx["accessList"]);
   if (type === "eip1559") {
     return { type, ...base, accessList: list, ...fees };

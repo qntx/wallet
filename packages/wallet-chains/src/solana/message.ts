@@ -40,10 +40,14 @@ export const parseCompiledMessage = (bytes: Uint8Array): ParsedSolanaMessage => 
     throw new ChainError("invalid-request", "compiled message is empty");
   }
   let decoded: unknown;
+  let end: number;
   try {
-    decoded = decoder.decode(bytes);
+    [decoded, end] = decoder.read(bytes, 0);
   } catch {
     throw new ChainError("invalid-request", "compiled message failed to decode");
+  }
+  if (end !== bytes.length) {
+    throw new ChainError("invalid-request", "compiled message has trailing bytes");
   }
   const message = asCompiledMessage(decoded);
   const staticAccounts = [...message.staticAccounts];

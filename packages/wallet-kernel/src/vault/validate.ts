@@ -98,6 +98,7 @@ export function assertVaultImage(value: unknown): VaultImage {
   if (!Array.isArray(records) || records.length > MAX_ROWS) {
     throw bad("records is not a bounded array");
   }
+  const seenRecords = new Set<string>();
   for (const entry of records) {
     const row = plainObject(entry);
     exactKeys(row, "header,id,kind,sealed");
@@ -107,10 +108,16 @@ export function assertVaultImage(value: unknown): VaultImage {
     boundedString(row["id"], MAX_ID, "record id");
     boundedString(row["header"], MAX_HEADER, "record header");
     sealedBytes(row["sealed"]);
+    const recordKey = `${row["kind"]}\0${String(row["id"])}`;
+    if (seenRecords.has(recordKey)) {
+      throw bad("duplicate record kind+id");
+    }
+    seenRecords.add(recordKey);
   }
   if (!Array.isArray(factors) || factors.length > MAX_ROWS) {
     throw bad("factors is not a bounded array");
   }
+  const seenFactors = new Set<string>();
   for (const entry of factors) {
     const row = plainObject(entry);
     exactKeys(row, "header,id,kind,sealed");
@@ -123,6 +130,10 @@ export function assertVaultImage(value: unknown): VaultImage {
     }
     boundedString(row["header"], MAX_HEADER, "factor header");
     sealedBytes(row["sealed"]);
+    if (seenFactors.has(row["id"])) {
+      throw bad("duplicate factor id");
+    }
+    seenFactors.add(row["id"]);
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- every row field was checked above
   return image as VaultImage;

@@ -75,6 +75,20 @@ const cases = [
     expect: "reject",
     frame: Buffer.from(encode({ meta: null, records: [], factors: [], extra: 1 })).toString("hex"),
   },
+  {
+    name: "duplicate-record",
+    expect: "reject",
+    frame: Buffer.from(
+      encode(image(meta(3), [...withRecord.records, ...withRecord.records], full.factors)),
+    ).toString("hex"),
+  },
+  {
+    name: "duplicate-factor",
+    expect: "reject",
+    frame: Buffer.from(
+      encode(image(meta(3), withRecord.records, [...full.factors, ...full.factors])),
+    ).toString("hex"),
+  },
 ];
 
 writeFileSync(

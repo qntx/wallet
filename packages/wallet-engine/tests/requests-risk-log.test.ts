@@ -503,6 +503,9 @@ const typedFields = (spec: string) =>
   });
 
 const SEAPORT_TYPES = {
+  EIP712Domain: typedFields(
+    "string name, string version, uint256 chainId, address verifyingContract",
+  ),
   OrderComponents: typedFields(
     "address offerer, address zone, OfferItem[] offer, ConsiderationItem[] consideration, uint8 orderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 conduitKey, uint256 counter",
   ),
@@ -544,6 +547,7 @@ const seaportDoc = {
 
 const safeDoc = {
   types: {
+    EIP712Domain: typedFields("uint256 chainId, address verifyingContract"),
     SafeTx: typedFields(
       "address to, uint256 value, bytes data, uint8 operation, uint256 safeTxGas, uint256 baseGas, uint256 gasPrice, address gasToken, address refundReceiver, uint256 nonce",
     ),

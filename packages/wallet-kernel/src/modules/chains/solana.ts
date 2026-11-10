@@ -44,30 +44,28 @@ const solanaBody = (
   signer: string,
   intentOnly: boolean,
 ): ExecuteResult => {
-  {
-    let normalized;
+  let normalized;
+  try {
+    normalized = normalizeSolana(request, signer);
+  } catch (error) {
+    mapChainError(error);
+  }
+  if (!deepEqual(normalized, request)) {
+    throw new KernelError("invalid-input", "request is not normalized");
+  }
+  let intent: PromptIntent = messageIntent(request.message);
+  if (request.kind === "solana.transaction") {
     try {
-      normalized = normalizeSolana(request, signer);
+      intent = decodeSolana(request, signer);
     } catch (error) {
       mapChainError(error);
     }
-    if (!deepEqual(normalized, request)) {
-      throw new KernelError("invalid-input", "request is not normalized");
-    }
-    let intent: PromptIntent = messageIntent(request.message);
-    if (request.kind === "solana.transaction") {
-      try {
-        intent = decodeSolana(request, signer);
-      } catch (error) {
-        mapChainError(error);
-      }
-    }
-    if (intentOnly) {
-      return { prompt: intent };
-    }
-    return {
-      kind: request.kind,
-      signature: signSolanaMessage(request.message, priv),
-    };
   }
+  if (intentOnly) {
+    return { prompt: intent };
+  }
+  return {
+    kind: request.kind,
+    signature: signSolanaMessage(request.message, priv),
+  };
 };

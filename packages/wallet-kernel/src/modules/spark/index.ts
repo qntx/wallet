@@ -329,10 +329,11 @@ const signerFor = async (
  * matching it exactly per the E1-b table — single-use kinds consume, lightning/exit spend a
  * cumulative budget deduped by leaf public key.
  */
-const transferCovered = (
+export const transferCovered = (
   outflow: Extract<SparkOutflow, { kind: "transfer" }>,
   intent: Extract<SparkApproveIntent, { kind: "transfer" }>,
 ): boolean =>
+  outflow.receivers.length > 0 &&
   outflow.receivers.every((receiver) =>
     intent.receivers.some(
       (wanted) =>
@@ -431,6 +432,37 @@ const onchainCovered = (
   return fee <= intent.maxFeeSats;
 };
 
+/**
+ * Token outflows are compared per receiver: non-self outputs are summed by owner and each sum must
+ * stay within that owner's summed approval, so one approval never covers several outputs.
+ */
+export const tokenOutputsCovered = (
+  outputs: Extract<SparkOutflow, { kind: "token" }>["outputs"],
+  identity: Uint8Array,
+  intent: Extract<SparkApproveIntent, { kind: "token" }>,
+): boolean => {
+  if (outputs.length === 0) {
+    return false;
+  }
+  const approved = new Map<string, bigint>();
+  for (const receiver of intent.receivers) {
+    const owner = bytesToHex(receiver.ownerPublicKey);
+    approved.set(owner, (approved.get(owner) ?? 0n) + BigInt(receiver.amount));
+  }
+  const spent = new Map<string, bigint>();
+  for (const output of outputs) {
+    if (equalBytes(output.ownerPublicKey, identity)) {
+      continue;
+    }
+    if (!equalBytes(output.tokenIdentifier, intent.tokenIdentifier)) {
+      return false;
+    }
+    const owner = bytesToHex(output.ownerPublicKey);
+    spent.set(owner, (spent.get(owner) ?? 0n) + output.amount);
+  }
+  return [...spent].every(([owner, amount]) => amount <= (approved.get(owner) ?? -1n));
+};
+
 const tokenCovered = async (
   state: SparkState,
   key: string,
@@ -438,23 +470,10 @@ const tokenCovered = async (
   intent: Extract<SparkApproveIntent, { kind: "token" }>,
 ): Promise<boolean> => {
   const signer = state.signers.get(key);
-  if (signer === undefined) {
-    return false;
-  }
-  const identity = await signer.identityPublicKey();
-  return outflow.outputs.every((output) => {
-    if (equalBytes(output.ownerPublicKey, identity)) {
-      return true;
-    }
-    if (!equalBytes(output.tokenIdentifier, intent.tokenIdentifier)) {
-      return false;
-    }
-    return intent.receivers.some(
-      (wanted) =>
-        equalBytes(wanted.ownerPublicKey, output.ownerPublicKey) &&
-        output.amount <= BigInt(wanted.amount),
-    );
-  });
+  return (
+    signer !== undefined &&
+    tokenOutputsCovered(outflow.outputs, await signer.identityPublicKey(), intent)
+  );
 };
 
 const authorizeWithCtx = async (

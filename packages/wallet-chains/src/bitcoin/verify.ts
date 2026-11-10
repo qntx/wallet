@@ -6,12 +6,12 @@
 import { secp256k1, schnorr } from "@noble/curves/secp256k1.js";
 import { base64 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
-import { Address, OutScript, p2tr } from "@scure/btc-signer/payment.js";
+import { Address, OutScript, p2pkh, p2tr } from "@scure/btc-signer/payment.js";
 import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 
 import type { BitcoinAccountTemplate } from "./account.ts";
-import { bip322ToSpendTxid } from "./message.ts";
+import { bip322ToSpendTxid, legacyMessageHash } from "./message.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -287,6 +287,35 @@ export const verifyBitcoinMessage = (
       pub,
       { prehash: false },
     );
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Legacy "Bitcoin Signed Message" verification for a P2PKH address: recover the public key from the
+ * compact signature (header = 27 + recovery, +4 when the key is compressed) and compare its P2PKH
+ * address with `address`.
+ */
+export const verifyLegacyBitcoinMessage = (
+  address: string,
+  message: string,
+  signatureBase64: string,
+  network: string,
+): boolean => {
+  try {
+    const raw = base64.decode(signatureBase64);
+    const [header] = raw;
+    if (raw.length !== 65 || header === undefined || header < 27 || header > 34) {
+      return false;
+    }
+    const recovered = secp256k1.recoverPublicKey(
+      Uint8Array.of((header - 27) % 4, ...raw.slice(1)),
+      legacyMessageHash(message),
+      { prehash: false },
+    );
+    const pub = secp256k1.Point.fromBytes(recovered).toBytes(header >= 31);
+    return p2pkh(pub, bitcoinNetwork(network).params).address === address;
   } catch {
     return false;
   }

@@ -97,7 +97,50 @@ const isHexBytes = (value: unknown): value is `0x${string}` =>
 export const typedDataBytes = (value: unknown): `0x${string}` | undefined =>
   isHexBytes(value) ? value : undefined;
 
-/** Parses the EIP-712 JSON source and validates its shape with ox. */
+/** Struct nesting allowed in a message — real protocols (Seaport, Permit2, Safe) stay under 8. */
+export const MAX_TYPED_DATA_DEPTH = 32;
+
+/**
+ * Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
+ * struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
+ * message and a missing nested struct fails here rather than inside the encoder.
+ */
+const checkStructure = (
+  types: TypedDataInput["types"],
+  type: string,
+  value: unknown,
+  depth: number,
+): void => {
+  const array = /^(.+)\[\d*\]$/.exec(type);
+  const struct = array === null ? types[type] : undefined;
+  if (array === null && struct === undefined) {
+    return;
+  }
+  if (depth >= MAX_TYPED_DATA_DEPTH) {
+    throw new ChainError("invalid-typed-data", "typedData nests too deeply");
+  }
+  if (array !== null) {
+    if (!Array.isArray(value)) {
+      throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
+    }
+    for (const item of value) {
+      checkStructure(types, array[1] ?? "", item, depth + 1);
+    }
+    return;
+  }
+  if (!isRecord(value)) {
+    throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
+  }
+  for (const field of struct ?? []) {
+    checkStructure(types, field.type, value[field.name], depth + 1);
+  }
+};
+
+/**
+ * Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
+ * without it ox derives the domain type from the domain object while MetaMask hashes an empty
+ * domain, so the same document would sign differently across wallets.
+ */
 export const parseTypedData = (typedData: string): ParsedTypedData => {
   let json: unknown;
   try {
@@ -111,11 +154,15 @@ export const parseTypedData = (typedData: string): ParsedTypedData => {
       "typedData must be a JSON object with types, primaryType, domain and message",
     );
   }
+  if (json.types["EIP712Domain"] === undefined) {
+    throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
+  }
   try {
     TypedData.validate(json);
   } catch {
     throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
   }
+  checkStructure(json.types, json.primaryType, json.message, 0);
   return { json };
 };
 

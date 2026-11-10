@@ -255,6 +255,7 @@ const frostSignJob: Validator<FrostSignJob> = obj({
   commitment: signingCommitment,
   operatorCommitments: arr(operatorCommitment, MAX_OPERATORS),
   adaptorPublicKey,
+  exit: opt(obj({ connectorTx: bytes(1, MAX_TX_BYTES), exitTx: bytes(1, MAX_TX_BYTES) })),
 });
 
 const frostAggregateJob: Validator<FrostAggregateJob> = obj({

@@ -689,6 +689,77 @@
       }
     },
     {
+      "name": "request-spark.signFrost (cooperative exit)",
+      "check": "request",
+      "message": {
+        "v": 2,
+        "id": 34,
+        "method": "spark.signFrost",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "account": {
+            "walletId": "0011223344556677",
+            "groupIndex": 0,
+            "network": "regtest"
+          },
+          "jobs": [
+            {
+              "key": {
+                "type": "leaf",
+                "leafId": "3f7b2e1c-1a2b-4c3d-8e4f-000000000001"
+              },
+              "target": {
+                "transaction": {
+                  "$bytes": "02000000000000000000000000000000000000000000000000000000"
+                },
+                "inputIndex": 0,
+                "prevouts": [
+                  {
+                    "script": {
+                      "$bytes": "5120abababababababababababababababababababababababababababababababab"
+                    },
+                    "amount": 1000
+                  }
+                ]
+              },
+              "verifyingKey": {
+                "$bytes": "02abababababababababababababababababababababababababababababababab"
+              },
+              "commitment": {
+                "hiding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                },
+                "binding": {
+                  "$bytes": "02abababababababababababababababababababababababababababababababab"
+                }
+              },
+              "operatorCommitments": [
+                {
+                  "identifier": "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffff0000000011111111",
+                  "commitment": {
+                    "hiding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    },
+                    "binding": {
+                      "$bytes": "02abababababababababababababababababababababababababababababababab"
+                    }
+                  }
+                }
+              ],
+              "exit": {
+                "connectorTx": {
+                  "$bytes": "02000000000000000000000000000000000000000000000000000000"
+                },
+                "exitTx": {
+                  "$bytes": "02000000000000000000000000000000000000000000000000000000"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
       "name": "request-spark.aggregateFrost",
       "check": "request",
       "message": {

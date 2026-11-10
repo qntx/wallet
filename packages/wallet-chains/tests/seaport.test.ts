@@ -27,6 +27,7 @@ const OFFER_ITEM = fields(
 const CONSIDERATION_ITEM = [...OFFER_ITEM, { type: "address", name: "recipient" }];
 
 const orderTypes = (): Record<string, Field[]> => ({
+  EIP712Domain: fields("string name, string version, uint256 chainId, address verifyingContract"),
   OrderComponents: fields(
     "address offerer, address zone, OfferItem[] offer, ConsiderationItem[] consideration, uint8 orderType, uint256 startTime, uint256 endTime, bytes32 zoneHash, uint256 salt, bytes32 conduitKey, uint256 counter",
   ),

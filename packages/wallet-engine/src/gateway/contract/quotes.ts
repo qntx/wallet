@@ -116,7 +116,7 @@ const solanaQuoteFilled = z.object({
   inAmount: decimal,
   outAmount: decimal,
   otherAmountThreshold: decimal,
-  slippageBps: z.coerce.number().check(z.int()),
+  slippageBps: z.coerce.number().check(z.int(), z.minimum(0), z.maximum(10_000)),
   setup: z.array(solanaInstruction),
   swap: solanaInstruction,
   cleanup: z.union([solanaInstruction, z.null()]),
