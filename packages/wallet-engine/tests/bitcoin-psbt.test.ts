@@ -1,5 +1,5 @@
 import { HDKey } from "@scure/bip32";
-import { NETWORK, p2wpkh, Transaction } from "@scure/btc-signer";
+import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import { BitcoinChainAdapter, dustFor, isFrozen } from "../src/chains/bitcoin.ts";
@@ -72,6 +72,41 @@ describe("bitcoin psbt construction", () => {
     expect(der?.length).toBe(1);
     expect(der?.[0]?.[1]?.fingerprint).toBe(0xdeadbeef);
     expect(der?.[0]?.[1]?.path.join(",")).toBe("1,0");
+  });
+});
+
+describe("taproot inputs", () => {
+  const XONLY = PUB.slice(1);
+  const SCRIPT = p2tr(XONLY, undefined, NETWORK).script;
+
+  it("carries the prevout and the key-path derivation, and funds a send", () => {
+    const inputs = adapter.toInputs(
+      [utxo(TXID(7), 1, 150_000)],
+      0xdeadbeef,
+      () => [0, 0],
+      () => XONLY,
+      () => SCRIPT,
+      "btc.bip86",
+    );
+    const [input] = inputs;
+    expect(input?.witnessUtxo).toStrictEqual({ amount: 150_000n, script: SCRIPT });
+    expect(input?.tapInternalKey).toStrictEqual(XONLY);
+    expect(input?.tapBip32Derivation?.[0]?.[1]?.der.path.join(",")).toBe("0,0");
+    expect(input?.bip32Derivation).toBeUndefined();
+    expect(input?.nonWitnessUtxo).toBeUndefined();
+
+    const { psbt, inputs: selected } = adapter.buildPsbt(
+      inputs,
+      TO,
+      100_000n,
+      20n,
+      CHANGE,
+      NETWORK,
+    );
+    expect(selected).toHaveLength(1);
+    const built = Transaction.fromPSBT(psbt).getInput(0);
+    expect(built.witnessUtxo?.amount).toBe(150_000n);
+    expect(built.tapInternalKey).toStrictEqual(XONLY);
   });
 });
 
