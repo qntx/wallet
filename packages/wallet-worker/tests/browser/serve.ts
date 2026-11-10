@@ -15,8 +15,11 @@ import { build, createServer, preview } from "vite";
 
 const require = createRequire(import.meta.url);
 
+// Trusted Types enforced: the page's `default` policy (page/trusted-types.ts) must admit the
+// kernel worker, as the README tells consumers.
 const CSP =
-  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'";
+  "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; " +
+  "require-trusted-types-for 'script'; trusted-types default";
 const root = new URL("page", import.meta.url).pathname;
 const distDir = new URL("../../dist", import.meta.url).pathname;
 // spark.wasm may be absent from dist/ after a cached (output-restoring) build — restore it from
