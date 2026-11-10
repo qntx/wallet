@@ -1,6 +1,7 @@
 // Test-only platform passkey authenticator: the host build has no Credential
 // Manager, so this file supplies the passkey* functions. A request completes
-// on a detached thread with `{"echo":<request>}`, or with the status a
+// on a detached thread with `{"echo":<request>}` (plus 32-byte PRF outputs of 7s
+// and 8s when the request contains `"prf"`), or with the status a
 // `"fail:<status>"` marker inside the request names; a `"hold"` marker parks
 // the completion until passkeyCancel.
 #include "HostPasskey.hpp"
@@ -49,8 +50,13 @@ void answer(const std::string& request, qntx::PasskeyDone done) {
       return;
     }
   }
-  completeLater(
-      std::move(done), qntx::PasskeyResult{qntx::PasskeyStatus::ok, "{\"echo\":" + request + "}"});
+  qntx::PasskeyResult result{qntx::PasskeyStatus::ok, "{\"echo\":" + request + "}"};
+  if (request.find("\"prf\"") != std::string::npos) {
+    // The PRF outputs ride beside the JSON as bytes, as on iOS.
+    result.prfFirst = qntx::SecretBytes(std::vector<uint8_t>(32, 7));
+    result.prfSecond = qntx::SecretBytes(std::vector<uint8_t>(32, 8));
+  }
+  completeLater(std::move(done), std::move(result));
 }
 
 } // namespace

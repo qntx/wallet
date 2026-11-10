@@ -821,7 +821,8 @@ __send("held");
 }
 
 // The passkey bridge: the request JSON reaches the platform verbatim, the
-// response JSON comes back on the kernel thread, failures map to kernel error
+// response JSON comes back on the kernel thread with PRF outputs as separate
+// Uint8Arrays, failures map to kernel error
 // codes, bad arguments throw, and teardown cancels a held ceremony.
 int passkeyBinding() {
   qntxTestPasskey::reset();
@@ -835,9 +836,13 @@ function throws(name, fn) {
 throws("empty", function () { pk.create("", function () {}); });
 throws("long", function () { pk.get(new Array(16 * 1024 + 2).join("x"), function () {}); });
 throws("noCallback", function () { pk.get("{}", 1); });
-function step(fn) { return new Promise(function (resolve) { fn(function (value, code, detail) { resolve([value, code, detail]); }); }); }
+function step(fn) { return new Promise(function (resolve) { fn(function (value, code, detail, prf) { resolve([value, code, detail, prf]); }); }); }
+function filled(bytes, value) { return bytes instanceof Uint8Array && bytes.length === 32 && bytes.every(function (b) { return b === value; }); }
 step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
-  r.push("create=" + (c[0] === '{"echo":{"rp":"x"}}' && c[1] === undefined));
+  r.push("create=" + (c[0] === '{"echo":{"rp":"x"}}' && c[1] === undefined && c[3] === undefined));
+  return step(function (cb) { pk.get('{"m":"prf"}', cb); });
+}).then(function (c) {
+  r.push("prf=" + (c[0] === '{"echo":{"m":"prf"}}' && filled(c[3].first, 7) && filled(c[3].second, 8)));
   return step(function (cb) { pk.get('{"m":"fail:cancelled"}', cb); });
 }).then(function (c) {
   r.push("cancelled=" + c[1] + "/" + c[2]);
@@ -867,7 +872,7 @@ step(function (cb) { pk.create('{"rp":"x"}', cb); }).then(function (c) {
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "frozen=true empty=ok long=ok noCallback=ok create=true "
+                "frozen=true empty=ok long=ok noCallback=ok create=true prf=true "
                 "cancelled=cancelled/fail:cancelled unavailable=unavailable/fail:unavailable "
                 "notconfigured=passkey-not-configured/fail:notconfigured "
                 "unsupported=unsupported/fail:unsupported failed=unavailable",

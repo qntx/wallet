@@ -46135,7 +46135,8 @@ zoo`.split("\n"));
 	* the single registration ceremony already verified the user. Without authenticator data its PRF
 	* results are dropped and the kernel falls back to an assertion that does carry them.
 	*/
-	function parseResponse(json, assertion) {
+	function parseResponse(json, native, assertion) {
+		var _native$first;
 		let parsed;
 		try {
 			parsed = JSON.parse(json);
@@ -46145,7 +46146,18 @@ zoo`.split("\n"));
 		const credential = objectOf(parsed);
 		const response = objectOf(credential["response"]);
 		const credentialId = bytesOf(credential["rawId"]);
-		const { enabled, first, second } = prfResults(credential["clientExtensionResults"]);
+		const fromJson = prfResults(credential["clientExtensionResults"]);
+		if (native !== void 0 && (fromJson.first !== void 0 || fromJson.second !== void 0)) {
+			var _fromJson$first, _fromJson$second, _native$second;
+			(_fromJson$first = fromJson.first) === null || _fromJson$first === void 0 || _fromJson$first.fill(0);
+			(_fromJson$second = fromJson.second) === null || _fromJson$second === void 0 || _fromJson$second.fill(0);
+			native.first.fill(0);
+			(_native$second = native.second) === null || _native$second === void 0 || _native$second.fill(0);
+			throw malformed();
+		}
+		const { enabled } = fromJson;
+		const first = (_native$first = native === null || native === void 0 ? void 0 : native.first) !== null && _native$first !== void 0 ? _native$first : fromJson.first;
+		const second = native === void 0 ? fromJson.second : native.second;
 		if (!assertion && enabled === false) {
 			first === null || first === void 0 || first.fill(0);
 			second === null || second === void 0 || second.fill(0);
@@ -46181,15 +46193,19 @@ zoo`.split("\n"));
 		};
 	}
 	async function run(start, request, assertion) {
-		return parseResponse(await new Promise((resolve, reject) => {
-			start(JSON.stringify(request), (responseJson, code, detail) => {
+		const { json, prf } = await new Promise((resolve, reject) => {
+			start(JSON.stringify(request), (responseJson, code, detail, native) => {
 				if (responseJson === void 0) {
 					reject(failure(code, detail));
 					return;
 				}
-				resolve(responseJson);
+				resolve({
+					json: responseJson,
+					prf: native
+				});
 			});
-		}), assertion);
+		});
+		return parseResponse(json, prf, assertion);
 	}
 	function bindNativePasskey(raw, random) {
 		return {

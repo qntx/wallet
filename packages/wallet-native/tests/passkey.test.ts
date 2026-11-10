@@ -28,11 +28,21 @@ const attestation = (flags: number): string =>
   b64(encode({ fmt: "none", attStmt: {}, authData: authData(flags) }));
 
 /** A native stand-in that records the request JSON and answers with `reply`. */
-function native(reply: { json?: unknown; code?: string; detail?: string }) {
+function native(reply: {
+  json?: unknown;
+  code?: string;
+  detail?: string;
+  prf?: { first: Uint8Array; second?: Uint8Array };
+}) {
   const requests: unknown[] = [];
   const answer = (
     requestJson: string,
-    done: (json?: string, code?: string, detail?: string) => void,
+    done: (
+      json: string | undefined,
+      code: string | undefined,
+      detail: string | undefined,
+      prf: { first: Uint8Array; second?: Uint8Array } | undefined,
+    ) => void,
   ): void => {
     requests.push(JSON.parse(requestJson));
     setTimeout(() => {
@@ -40,6 +50,7 @@ function native(reply: { json?: unknown; code?: string; detail?: string }) {
         reply.json === undefined ? undefined : JSON.stringify(reply.json),
         reply.code,
         reply.detail,
+        reply.prf,
       );
     });
   };
@@ -106,12 +117,30 @@ describe("passkey binding: requests", () => {
 });
 
 describe("passkey binding: responses", () => {
-  const get = async (reply: { json?: unknown; code?: string }) =>
+  const get = async (reply: Parameters<typeof native>[0]) =>
     bindNativePasskey(native(reply).raw, random).get({
       rpId: "wallet-harness.qntx.org",
       allowCredentials: undefined,
       salts: { first: SALT },
     });
+
+  it("takes the PRF outputs the platform hands over as bytes (iOS)", async () => {
+    const result = await get({
+      json: assertion(0x1d, { clientExtensionResults: {} }),
+      prf: { first: new Uint8Array(PRF), second: new Uint8Array(PRF2) },
+    });
+    expect(result.first).toStrictEqual(PRF);
+    expect(result.second).toStrictEqual(PRF2);
+    expect(result.userVerified).toBe(true);
+  });
+
+  it("refuses PRF results in the JSON alongside native bytes, wiping both", async () => {
+    const bytes = new Uint8Array(PRF2);
+    await expect(get({ json: assertion(0x1d), prf: { first: bytes } })).rejects.toMatchObject({
+      code: "unavailable",
+    });
+    expect(bytes.every((b) => b === 0)).toBe(true);
+  });
 
   it("reads PRF, user handle and the UV/BE/BS flags of an assertion", async () => {
     const result = await get({ json: assertion(0x1d) });
@@ -206,10 +235,10 @@ describe("passkey binding: responses", () => {
   it("a response that is not JSON is unavailable", async () => {
     const broken: KernelPasskeyNative = {
       create: (_request, done) => {
-        done("{", undefined, undefined);
+        done("{", undefined, undefined, undefined);
       },
       get: (_request, done) => {
-        done("{", undefined, undefined);
+        done("{", undefined, undefined, undefined);
       },
     };
     await expect(
@@ -250,10 +279,10 @@ describe("passkey binding: responses", () => {
   ])("%s", async (_name, detail, expected) => {
     const broken: KernelPasskeyNative = {
       create: (_request, done) => {
-        done(undefined, "unavailable", detail);
+        done(undefined, "unavailable", detail, undefined);
       },
       get: (_request, done) => {
-        done(undefined, "unavailable", detail);
+        done(undefined, "unavailable", detail, undefined);
       },
     };
     await expect(
