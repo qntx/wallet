@@ -224,6 +224,15 @@ describe("normalize", () => {
     expect(() => normalizeEvm({ ...req, tx: rest })).toThrow(ChainError);
   });
 
+  it("rejects a priority fee above the fee cap", () => {
+    expect(() =>
+      normalizeEvm(txReq({ type: "eip1559", maxFeePerGas: "0x1", maxPriorityFeePerGas: "0x2" })),
+    ).toThrow("maxPriorityFeePerGas exceeds maxFeePerGas");
+    expect(
+      normalizeEvm(txReq({ type: "eip1559", maxFeePerGas: "0x2", maxPriorityFeePerGas: "0x2" })),
+    ).toBeDefined();
+  });
+
   it("rejects a chainId/network mismatch", () => {
     expect(() => normalizeEvm(txReq({ type: "eip1559" }, "eip155:5"))).toThrow(ChainError);
   });
@@ -454,6 +463,41 @@ describe("verifiability + decode", () => {
     for (const bad of [-1, 1.5, "abc", "", true, null, 2 ** 60]) {
       expect(() => withChain(bad)).toThrow(expect.objectContaining({ code: "invalid-typed-data" }));
     }
+  });
+
+  it("rejects typed data without EIP712Domain, too deep or missing a nested struct", () => {
+    const normalize = (doc: unknown) => () =>
+      normalizeEvm({
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: ACCOUNT,
+        typedData: JSON.stringify(doc),
+      });
+    const noDomainType = JSON.parse(vectors.typedData);
+    delete noDomainType.types.EIP712Domain;
+    expect(normalize(noDomainType)).toThrow("typedData must declare types.EIP712Domain");
+
+    const nested = (depth: number) => {
+      let message: Record<string, unknown> = { leaf: 1 };
+      for (let i = 0; i < depth; i++) {
+        message = { node: message };
+      }
+      return {
+        types: {
+          EIP712Domain: [{ name: "chainId", type: "uint256" }],
+          Root: [{ name: "node", type: "Node" }],
+          Node: [{ name: "node", type: "Node" }],
+        },
+        primaryType: "Root",
+        domain: { chainId: 1 },
+        message,
+      };
+    };
+    expect(normalize(nested(2000))).toThrow(
+      expect.objectContaining({ code: "invalid-typed-data" }),
+    );
+    // A self-referencing struct needs a value at every level; a finite message runs out of them.
+    expect(normalize(nested(3))).toThrow(expect.objectContaining({ code: "invalid-typed-data" }));
   });
 
   it("parses CAIP-2 chain ids", () => {

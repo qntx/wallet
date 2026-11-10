@@ -57,12 +57,29 @@ const safeTx = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const doc = (message: Record<string, unknown>, domain: Record<string, unknown> = {}) => ({
-  types: { SafeTx: SAFE_TX_FIELDS },
-  primaryType: "SafeTx",
-  domain: { verifyingContract: SAFE, chainId: 1, ...domain },
-  message,
-});
+/** The EIP712Domain struct for exactly the keys `domain` carries, in EIP-712 order. */
+const domainType = (domain: Record<string, unknown>) =>
+  (
+    [
+      ["name", "string"],
+      ["version", "string"],
+      ["chainId", "uint256"],
+      ["verifyingContract", "address"],
+      ["salt", "bytes32"],
+    ] as const
+  )
+    .filter(([name]) => domain[name] !== undefined)
+    .map(([name, type]) => ({ name, type }));
+
+const doc = (message: Record<string, unknown>, overrides: Record<string, unknown> = {}) => {
+  const domain = { verifyingContract: SAFE, chainId: 1, ...overrides };
+  return {
+    types: { EIP712Domain: domainType(domain), SafeTx: SAFE_TX_FIELDS },
+    primaryType: "SafeTx",
+    domain,
+    message,
+  };
+};
 
 const decode = (d: unknown) =>
   decodeEvm(

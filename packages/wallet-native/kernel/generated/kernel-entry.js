@@ -17508,7 +17508,7 @@
 	function validateReference(type) {
 		if (type === "address" || type === "bool" || type === "string" || type.startsWith("bytes") || type.startsWith("uint") || type.startsWith("int")) throw new InvalidStructTypeError({ type });
 	}
-	// packages/wallet-chains/dist/typed-data-B4PJ1v8F.mjs
+	// packages/wallet-chains/dist/typed-data-M-0IlEpr.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -17724,6 +17724,7 @@
 			maxFeePerGas: quantity(tx["maxFeePerGas"], "maxFeePerGas"),
 			maxPriorityFeePerGas: quantity(tx["maxPriorityFeePerGas"], "maxPriorityFeePerGas")
 		};
+		if (BigInt(fees.maxPriorityFeePerGas) > BigInt(fees.maxFeePerGas)) throw new ChainError("invalid-request", "maxPriorityFeePerGas exceeds maxFeePerGas");
 		const list = accessList(tx["accessList"]);
 		if (type === "eip1559") return _objectSpread2(_objectSpread2({ type }, base), {}, { accessList: list }, fees);
 		if (to === void 0) throw new ChainError("invalid-request", "tx.to is required for eip7702");
@@ -17771,7 +17772,30 @@
 	var isHexBytes = (value) => typeof value === "string" && /^0x[0-9a-fA-F]*$/.test(value);
 	/** A `bytes` field value: `0x`-prefixed hex of even length. */
 	var typedDataBytes = (value) => isHexBytes(value) ? value : void 0;
-	/** Parses the EIP-712 JSON source and validates its shape with ox. */
+	/**
+	* Walks `value` along `type`: every struct-typed value must be an object carrying its fields, and
+	* struct/array nesting stays within MAX_TYPED_DATA_DEPTH — so a recursive type is bounded by its
+	* message and a missing nested struct fails here rather than inside the encoder.
+	*/
+	var checkStructure = (types, type, value, depth) => {
+		const array = /^(.+)\[\d*\]$/.exec(type);
+		const struct = array === null ? types[type] : void 0;
+		if (array === null && struct === void 0) return;
+		if (depth >= 32) throw new ChainError("invalid-typed-data", "typedData nests too deeply");
+		if (array !== null) {
+			var _array$;
+			if (!Array.isArray(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an array`);
+			for (const item of value) checkStructure(types, (_array$ = array[1]) !== null && _array$ !== void 0 ? _array$ : "", item, depth + 1);
+			return;
+		}
+		if (!isRecord$3(value)) throw new ChainError("invalid-typed-data", `typedData ${type} value is not an object`);
+		for (const field of struct !== null && struct !== void 0 ? struct : []) checkStructure(types, field.type, value[field.name], depth + 1);
+	};
+	/**
+	* Parses the EIP-712 JSON source and validates it with ox. `types.EIP712Domain` is required:
+	* without it ox derives the domain type from the domain object while MetaMask hashes an empty
+	* domain, so the same document would sign differently across wallets.
+	*/
 	var parseTypedData = (typedData) => {
 		let json;
 		try {
@@ -17780,11 +17804,13 @@
 			throw new ChainError("invalid-typed-data", "typedData is not valid JSON");
 		}
 		if (!isTypedDataInput(json)) throw new ChainError("invalid-typed-data", "typedData must be a JSON object with types, primaryType, domain and message");
+		if (json.types["EIP712Domain"] === void 0) throw new ChainError("invalid-typed-data", "typedData must declare types.EIP712Domain");
 		try {
 			validate$1(json);
 		} catch (_unused3) {
 			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
 		}
+		checkStructure(json.types, json.primaryType, json.message, 0);
 		return { json };
 	};
 	/**
@@ -22765,7 +22791,7 @@ zoo`.split("\n"));
 		"uint256 startAmount",
 		"uint256 endAmount"
 	];
-	var typesMatch = (types) => Object.keys(types).length === 3 && sameFields(types, "OrderComponents", [
+	var typesMatch = (types) => Object.keys(types).filter((name) => name !== "EIP712Domain").length === 3 && sameFields(types, "OrderComponents", [
 		"address offerer",
 		"address zone",
 		"OfferItem[] offer",
@@ -31354,7 +31380,13 @@ zoo`.split("\n"));
 	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmTypedData = (typedData, privateKey) => {
 		const { json } = parseTypedData(typedData);
-		return rs_v(from(sign$1(getSignPayload$6(json), key(privateKey))));
+		let payload;
+		try {
+			payload = getSignPayload$6(json);
+		} catch (_unused) {
+			throw new ChainError("invalid-typed-data", "typedData failed to encode");
+		}
+		return rs_v(from(sign$1(payload, key(privateKey))));
 	};
 	// packages/wallet-kernel/src/modules/chains/evm.ts
 	init_secp256k1();

@@ -250,12 +250,13 @@ describe("Permit2 permits", () => {
     expect(
       decode({ ...base, message: { details: [], spender: SPENDER, sigDeadline: 1 } }).summary,
     ).toBe("message");
-    expect(
+    // A non-object where a PermitDetails struct belongs is malformed EIP-712, not a message.
+    expect(() =>
       decode({
         ...base,
         message: { details: [details(TOKEN), "x"], spender: SPENDER, sigDeadline: 1 },
-      }).summary,
-    ).toBe("message");
+      }),
+    ).toThrow("typedData PermitDetails value is not an object");
   });
 
   const transferTypes = {
