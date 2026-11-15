@@ -47,7 +47,7 @@ export async function smokeCreate(): Promise<void> {
   const { walletId } = await draft.confirm(draft.quiz.map((i) => words[i]!));
   result(
     "hardware-factor",
-    wallet.getSnapshot().factors.map((f) => f.kind).join(",") === "hardware",
+    wallet.getSnapshot().factors.map((f) => f.kind).join(",") === "device,hardware",
     "",
   );
 
@@ -71,7 +71,7 @@ export async function smokeUnlock(): Promise<void> {
   let cancelled = false;
   let outcome = "approved";
   try {
-    await wallet.vault.unlock();
+    await wallet.vault.unlock(HARDWARE);
   } catch (error) {
     outcome = error instanceof WalletError ? error.code : String(error);
     if (error instanceof WalletError && error.code === "factor-invalidated") {
@@ -91,7 +91,7 @@ export async function smokeUnlock(): Promise<void> {
     `outcome=${outcome}`,
   );
 
-  await wallet.vault.unlock();
+  await wallet.vault.unlock(HARDWARE);
   const snapshot = wallet.getSnapshot();
   const walletId = snapshot.wallets[0]?.walletId;
   result(

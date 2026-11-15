@@ -7,6 +7,7 @@ import type { HybridObject } from "react-native-nitro-modules";
 import { closeKernel, openKernel, report, runProbe, sendToKernel } from "@qntx/v1-probe";
 
 import { engineSmoke } from "./engine-smoke.ts";
+import { sessionSmoke, sessionSmokePhase } from "./session-smoke.ts";
 import { smokeCreate, smokePhase, smokeUnlock } from "./social-smoke.ts";
 
 type ProbeResult = {
@@ -116,7 +117,12 @@ const runNitroStress = async (mode: string): Promise<ProbeResult> => {
     ...hammer,
     ...churn,
   });
-  report("nitro-stress", mode, kernelResult.ok, kernelResult.ok ? payload : String(kernelResult.json));
+  report(
+    "nitro-stress",
+    mode,
+    kernelResult.ok,
+    kernelResult.ok ? payload : String(kernelResult.json),
+  );
   return {
     probe: "nitro-stress",
     mode,
@@ -271,13 +277,24 @@ export const App = (): React.JSX.Element => {
           await engineSmoke();
           report("smoke-engine-done", "release", true, "{}");
         } catch (e) {
-          report("smoke-engine-fail", "release", false, JSON.stringify(e instanceof Error ? e.message : String(e)));
+          report(
+            "smoke-engine-fail",
+            "release",
+            false,
+            JSON.stringify(e instanceof Error ? e.message : String(e)),
+          );
         }
         setDone(true);
         return;
       }
       if (process.env.EXPO_PUBLIC_V1_PROBES !== "1") {
         try {
+          const session = await sessionSmokePhase();
+          if (session !== null) {
+            await sessionSmoke(session);
+            setDone(true);
+            return;
+          }
           const phase = await smokePhase();
           report("smoke-phase", "release", true, phase);
           if (phase === "create") {
@@ -343,7 +360,11 @@ export const App = (): React.JSX.Element => {
       <View style={styles.header}>
         <Text style={styles.title}>V1 kernel runtime probes</Text>
         <Text style={styles.status}>
-          {running !== null ? `running ${running}` : done ? `done (${results.length} probes)` : "starting"}
+          {running !== null
+            ? `running ${running}`
+            : done
+              ? `done (${results.length} probes)`
+              : "starting"}
         </Text>
       </View>
       <ScrollView style={styles.list}>

@@ -114,7 +114,7 @@ function boot(pbkdf2: Pbkdf2): Kernel {
       new Promise((resolve) => {
         const id = nextId++;
         pending.set(id, resolve);
-        handler?.({ v: 2, id, method, session, params: params ?? null });
+        handler?.({ v: 3, id, method, session, params: params ?? null });
       }),
   };
 }
