@@ -17,6 +17,7 @@ import type {
   WalletInfo,
   WalletSnapshot,
   UnlockFactor,
+  VerifyFactor,
   InitialFactor,
 } from "@qntx/wallet";
 import { parseBackupHeader } from "@qntx/wallet";
@@ -177,7 +178,7 @@ export class BackupController extends Controller<BackupControllerState> {
   }
 
   async enable(options: {
-    readonly verify: UnlockFactor;
+    readonly verify: VerifyFactor;
     readonly factors: ReadonlyArray<UnlockFactor>;
   }): Promise<void> {
     // Check before the ceremony: the user must not verify and retain a BEK when there is

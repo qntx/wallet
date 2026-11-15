@@ -46,7 +46,7 @@ std::optional<qntx::KeystoreStatus> scriptedFailure(const std::string& title) {
       {"fail:invalidated", qntx::KeystoreStatus::invalidated},
       {"fail:unavailable", qntx::KeystoreStatus::unavailable},
       {"fail:failed", qntx::KeystoreStatus::failed},
-      {"fail:nodevice", qntx::KeystoreStatus::noDeviceCredential},
+      {"fail:nolockscreen", qntx::KeystoreStatus::noLockScreen},
   };
   auto found = kScripts.find(title);
   return found == kScripts.end() ? std::nullopt : std::optional(found->second);
@@ -161,6 +161,57 @@ void keystoreOpen(
       Call{"open", id, prompt.title, prompt.description, sealed.size()},
       std::move(done),
       std::move(success));
+}
+
+void keystoreSealDevice(const std::string& id, SecretBytes secret, KeystoreDone done) {
+  auto sealed = qntxTestKeystore::xorBytes(secret.data(), secret.size());
+  {
+    auto& s = qntxTestKeystore::state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.keys[id] = std::vector<uint8_t>(sealed.data(), sealed.data() + sealed.size());
+  }
+  qntxTestKeystore::finish(
+      Call{"sealDevice", id, "", "", secret.size()},
+      std::move(done),
+      KeystoreResult{KeystoreStatus::ok, std::move(sealed)});
+}
+
+void keystoreOpenDevice(const std::string& id, std::vector<uint8_t> sealed, KeystoreDone done) {
+  bool known = false;
+  {
+    auto& s = qntxTestKeystore::state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    auto key = s.keys.find(id);
+    known = key != s.keys.end() && key->second == sealed;
+  }
+  KeystoreResult success = known
+      ? KeystoreResult{KeystoreStatus::ok, qntxTestKeystore::xorBytes(sealed.data(), sealed.size())}
+      : KeystoreResult{KeystoreStatus::invalidated, {}};
+  qntxTestKeystore::finish(
+      Call{"openDevice", id, "", "", sealed.size()}, std::move(done), std::move(success));
+}
+
+void keystoreProbe(const std::string& id, KeyProtection protection, KeystoreDone done) {
+  bool known = false;
+  {
+    auto& s = qntxTestKeystore::state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    known = s.keys.find(id) != s.keys.end();
+  }
+  qntxTestKeystore::finish(
+      Call{"probe", id, protection == KeyProtection::presence ? "presence" : "device", "", 0},
+      std::move(done),
+      KeystoreResult{known ? KeystoreStatus::ok : KeystoreStatus::invalidated, {}});
+}
+
+void keystoreRemove(const std::string& id, KeystoreDone done) {
+  {
+    auto& s = qntxTestKeystore::state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.keys.erase(id);
+  }
+  qntxTestKeystore::finish(
+      Call{"remove", id, "", "", 0}, std::move(done), KeystoreResult{KeystoreStatus::ok, {}});
 }
 
 void keystoreAuthenticate(KeystorePrompt prompt, KeystoreDone done) {

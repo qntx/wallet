@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-DaRwkTaV.mjs
+	// packages/wallet/dist/core-B6RH1bAz.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -646,7 +646,15 @@
 	});
 	/** Identity indices stop below 2^31 - 1 — the top segment derives the wallet sync key. */
 	var identityIndex = int(0, 2147483646);
-	var factor = union(obj({ kind: literal("hardware") }), obj({
+	var factor = union(obj({ kind: literal("device") }), obj({ kind: literal("hardware") }), obj({
+		kind: literal("password"),
+		password: bytes(1, 1024)
+	}), obj({
+		kind: literal("passkey"),
+		credentialId: bytes(1, 1023),
+		prf: bytes(32)
+	}));
+	var verifier = union(obj({ kind: literal("hardware") }), obj({
 		kind: literal("password"),
 		password: bytes(1, 1024)
 	}), obj({
@@ -655,6 +663,10 @@
 		prf: bytes(32)
 	}));
 	var factorInfo$1 = union(obj({
+		kind: literal("device"),
+		id: sessionId,
+		createdAt: safeTime
+	}), obj({
 		kind: literal("hardware"),
 		id: sessionId,
 		createdAt: safeTime
@@ -724,7 +736,7 @@
 	});
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("no-device-credential"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
 	var createdResult = obj({
 		wallet: walletInfo$1,
 		session: sessionId
@@ -752,7 +764,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				factor
 			}),
 			result: factorInfo$1
@@ -761,8 +773,23 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				id: sessionId
+			}),
+			result: nullValue
+		},
+		"vault.enrolVerification": {
+			session: true,
+			presence: true,
+			params: nullValue,
+			result: nullValue
+		},
+		"vault.setAppLock": {
+			session: true,
+			presence: true,
+			params: obj({
+				enabled: bool,
+				verify: verifier
 			}),
 			result: nullValue
 		},
@@ -811,7 +838,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				factors: arr(backupFactor, 5, 1)
 			}),
 			result: nullValue
@@ -860,7 +887,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				walletId
 			}),
 			result: obj({
@@ -872,7 +899,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				walletId
 			}),
 			result: nullValue
@@ -902,7 +929,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				keyId
 			}),
 			result: nullValue
@@ -911,7 +938,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				keyId
 			}),
 			result: bytes(1, 256)
@@ -942,7 +969,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DE7yvA3t.mjs
+	// packages/wallet/dist/protocol-C2N8e08z.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1136,7 +1163,7 @@
 			presence: true,
 			params: obj({
 				request: signRequest,
-				verify: factor
+				verify: verifier
 			}),
 			result: signResult
 		}
@@ -1222,7 +1249,7 @@
 			session: true,
 			presence: true,
 			params: obj({
-				verify: factor,
+				verify: verifier,
 				publicKey,
 				format: nostrExportFormat
 			}),
@@ -1664,7 +1691,7 @@
 			params: obj({
 				account: account$1,
 				intent: approveIntent,
-				verify: factor
+				verify: verifier
 			}),
 			result: approvalSummary
 		}
@@ -1711,9 +1738,11 @@
 	}
 	/** The status payload: core sections plus one object section per protocol module. */
 	var statusPayload$1 = obj({
-		protocol: literal(2),
+		protocol: literal(3),
 		vault: union(literal("uninitialized"), literal("locked"), literal("unlocked"), literal("corrupted"), literal("unsupported"), literal("unavailable")),
 		factors: arr(factorInfo$1, MAX_SNAPSHOT_ITEMS),
+		appLock: bool,
+		verification: union(literal("available"), literal("unavailable")),
 		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
 		nostr: nostrStatus$1,
 		importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
@@ -1732,15 +1761,15 @@
 		detail: opt(str(80, /^[A-Za-z0-9_.:-]+$/))
 	});
 	obj({
-		v: literal(2),
+		v: literal(3),
 		event: literal("status"),
 		status: statusPayload$1
 	}), obj({
-		v: literal(2),
+		v: literal(3),
 		event: literal("locked"),
 		reason: lockReason
 	}), obj({
-		v: literal(2),
+		v: literal(3),
 		event: literal("ceremony"),
 		active: bool
 	});
@@ -3740,10 +3769,12 @@
 		return platform.passkey;
 	}
 	/**
-	* Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
-	* create/get share one queue, because the platform can show only one verification at a time. A
-	* rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony` fires `true` when
-	* a ceremony's work starts and `false` when it settles, strictly paired per queued call.
+	* Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear and
+	* passkey create/get share one queue, because the platform can show only one verification at a
+	* time. Silent keystore work (device seal/open, probe, remove) bypasses the queue and never fires
+	* `onCeremony`. A rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony`
+	* fires `true` when a ceremony's work starts and `false` when it settles, strictly paired per
+	* queued call.
 	*/
 	function serializeCeremonies(platform, onCeremony) {
 		let tail = Promise.resolve();
@@ -3766,8 +3797,10 @@
 		return _objectSpread2(_objectSpread2({}, platform), {}, {
 			keystore: keystore === void 0 ? void 0 : {
 				locale: keystore.locale,
-				seal: async (id, secret, prompt) => queue(async () => keystore.seal(id, secret, prompt)),
-				open: async (id, sealed, prompt) => queue(async () => keystore.open(id, sealed, prompt)),
+				seal: async (id, secret, use) => use.protection === "presence" ? queue(async () => keystore.seal(id, secret, use)) : keystore.seal(id, secret, use),
+				open: async (id, sealed, use) => use.protection === "presence" ? queue(async () => keystore.open(id, sealed, use)) : keystore.open(id, sealed, use),
+				probe: async (id, protection) => keystore.probe(id, protection),
+				remove: async (id) => keystore.remove(id),
 				authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
 				clear: async () => queue(async () => keystore.clear())
 			},
@@ -3778,13 +3811,22 @@
 		});
 	}
 	/**
-	* Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
-	* password there would let a compromised main runtime satisfy per-operation verification without
+	* Factor-kind gate by platform: a keystore host (RN) takes only `device`/`hardware` vault factors —
+	* a password there would let a compromised main runtime satisfy per-operation verification without
 	* the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
 	* factors are exempt.
 	*/
 	function assertFactorKindAvailable(platform, kind) {
-		if (platform.keystore !== void 0 !== (kind === "hardware")) throw new KernelError("unsupported", "this factor kind is not available here");
+		const native = kind === "device" || kind === "hardware";
+		if (platform.keystore !== void 0 !== native) throw new KernelError("unsupported", "this factor kind is not available here");
+	}
+	/**
+	* Gate for the factor a vault is established with: a keystore host always begins with the silent
+	* `device` factor (the host then adds `hardware` itself when the device supports presence), and a
+	* host without a keystore accepts `password`/`passkey` only.
+	*/
+	function assertInitialFactor(platform, factor) {
+		if (!(platform.keystore === void 0 ? factor.kind === "password" || factor.kind === "passkey" : factor.kind === "device")) throw new KernelError("unsupported", "this factor cannot establish a vault here");
 	}
 	/** The platform keystore, or `unsupported` on hosts without secure hardware. */
 	function requireKeystore(platform) {
@@ -3829,6 +3871,10 @@
 				title: "管理解锁方式",
 				description: "验证身份以更改钱包的解锁方式"
 			},
+			"app-lock": {
+				title: "应用锁",
+				description: "验证身份以更改应用锁"
+			},
 			reset: {
 				title: "重置钱包",
 				description: "验证设备所有者身份以删除本设备上的全部钱包数据"
@@ -3866,6 +3912,10 @@
 			"manage-factors": {
 				title: "Manage unlock methods",
 				description: "Verify your identity to change how the wallet unlocks"
+			},
+			"app-lock": {
+				title: "App lock",
+				description: "Verify your identity to change the app lock"
 			},
 			reset: {
 				title: "Reset wallet",
@@ -7694,7 +7744,7 @@
 			createdAt: asCreatedAt(object["createdAt"])
 		};
 	}
-	function parseHardwareFactorHeader(text) {
+	function parseKeystoreFactorHeader(text) {
 		const object = headerObject(text);
 		expectKeys(object, [
 			"sealedKek",
@@ -7833,7 +7883,7 @@
 	}
 	/** The `publicKey` a factor header declares, decoded; malformed headers throw `integrity`. */
 	function factorHeaderPublicKey(stored) {
-		const header = stored.kind === "password" ? parsePasswordFactorHeader(stored.header) : stored.kind === "hardware" ? parseHardwareFactorHeader(stored.header) : parsePasskeyFactorHeader(stored.header);
+		const header = stored.kind === "password" ? parsePasswordFactorHeader(stored.header) : stored.kind === "passkey" ? parsePasskeyFactorHeader(stored.header) : parseKeystoreFactorHeader(stored.header);
 		return base64urlnopad.decode(header.publicKey);
 	}
 	/** The binding tag a `sealed` factor row must carry for `dek` (constant-time verified). */
@@ -7895,7 +7945,7 @@
 		const factorSk = hkdf(sha256$1, kek, /* @__PURE__ */ new Uint8Array(0), FACTOR_KEY_INFO, 32);
 		try {
 			const factorPk = x25519.getPublicKey(factorSk);
-			if (!equalBytes$4(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "hardware" ? corruptError("hardware factor returned a key that does not match its header") : new KernelError("wrong-passkey", "passkey does not match the factor");
+			if (!equalBytes$4(factorPk, factorHeaderPublicKey(stored))) throw stored.kind === "password" ? new KernelError("wrong-password", "password did not open the vault") : stored.kind === "passkey" ? new KernelError("wrong-passkey", "passkey does not match the factor") : corruptError("keystore factor returned a key that does not match its header");
 			const { sealed } = stored;
 			if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) throw corruptError("malformed factor wrapping");
 			const ephPk = sealed.subarray(1, 33);
@@ -7999,19 +8049,21 @@
 		};
 	}
 	/**
-	* A hardware factor's KEK: 32 random bytes sealed by the platform keystore under key alias `id`
-	* (the factor id). Only the sealed form is stored — in the public header, beside the X25519 key the
-	* DEK wraps to, so rotation never needs a prompt.
+	* A keystore factor's KEK: 32 random bytes sealed by the platform keystore under key alias `id`
+	* (the factor id) with `use`'s protection — silent for `device`, a presence prompt for `hardware`.
+	* Only the sealed form is stored — in the public header, beside the X25519 key the DEK wraps to, so
+	* rotation never needs a prompt.
 	*/
-	async function newHardwareKek(platform, id) {
-		assertFactorKindAvailable(platform, "hardware");
+	async function newKeystoreKek(platform, id, use) {
 		const keystore = requireKeystore(platform);
+		assertFactorKindAvailable(platform, use.protection === "device" ? "device" : "hardware");
 		const kek = platform.random(32);
 		try {
+			const sealedKek = await keystore.seal(id, kek, use);
 			return {
-				kind: "hardware",
+				kind: use.protection === "device" ? "device" : "hardware",
 				kek,
-				sealedKek: await keystore.seal(id, kek, corePromptFor(keystore, "create")())
+				sealedKek
 			};
 		} catch (error) {
 			wipe(kek);
@@ -8027,7 +8079,7 @@
 			publicKey: pk,
 			createdAt
 		});
-		if (material.kind === "hardware") return encodeHeader({
+		if (material.kind === "device" || material.kind === "hardware") return encodeHeader({
 			sealedKek: base64urlnopad.encode(material.sealedKek),
 			publicKey: pk,
 			createdAt
@@ -8062,19 +8114,50 @@
 			if (material.kind === "password") wipe(material.salt);
 		}
 	}
-	/** Builds a new factor record wrapping `dek`. The id comes first: it is the hardware key alias. */
+	/** Builds a new factor record wrapping `dek`. The id comes first: it is the keystore key alias. */
 	async function makeFactor(platform, factor, dek) {
 		const id = factorId(platform.random);
-		return factorRow(platform, factor.kind === "hardware" ? await newHardwareKek(platform, id) : await newFactorKek(platform, factor), id, dek);
+		return factorRow(platform, await factorKekFor(platform, factor, id), id, dek);
+	}
+	async function factorKekFor(platform, factor, id) {
+		if (factor.kind === "device") return newKeystoreKek(platform, id, { protection: "device" });
+		if (factor.kind === "hardware") return newKeystoreKek(platform, id, {
+			protection: "presence",
+			prompt: corePromptFor(platform.keystore, "create")()
+		});
+		return newFactorKek(platform, factor);
 	}
 	/**
-	* KEK for an existing factor record; `factor`'s secret bytes are consumed. A hardware factor runs
-	* the keystore ceremony with the prompt the caller rendered.
+	* The factor rows a fresh vault on a keystore host starts with: always the silent `device` row,
+	* plus the verifying `hardware` row when the device can show a presence prompt. A `cancelled` (or
+	* any other) hardware-seal rejection aborts the establish — the caller's clear-on-failure path
+	* drops the keys already made; `verification-unavailable` (no lock screen) leaves device only.
+	*/
+	async function keystoreFactorRows(platform, dek) {
+		const device = await makeFactor(platform, { kind: "device" }, dek);
+		try {
+			return [device, await makeFactor(platform, { kind: "hardware" }, dek)];
+		} catch (error) {
+			if (error instanceof KernelError && error.code === "verification-unavailable") return [device];
+			throw error;
+		}
+	}
+	/**
+	* KEK for an existing factor record; `factor`'s secret bytes are consumed. A `device` factor opens
+	* its keystore key silently; a `hardware` factor runs the presence ceremony with the prompt the
+	* caller rendered.
 	*/
 	async function kekFor(platform, factor, stored, prompt) {
+		if (factor.kind === "device") {
+			const { sealedKek } = parseKeystoreFactorHeader(stored.header);
+			return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), { protection: "device" });
+		}
 		if (factor.kind === "hardware") {
-			const { sealedKek } = parseHardwareFactorHeader(stored.header);
-			return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), prompt());
+			const { sealedKek } = parseKeystoreFactorHeader(stored.header);
+			return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), {
+				protection: "presence",
+				prompt: prompt()
+			});
 		}
 		if (factor.kind === "password") {
 			const { salt } = parsePasswordFactorHeader(stored.header);
@@ -8098,9 +8181,9 @@
 		if (meta === void 0) throw new KernelError("invalid-input", "vault is not initialized");
 		assertFactorKindAvailable(platform, factor.kind);
 		let dek;
-		if (factor.kind === "hardware") {
-			const stored = image.factors.find((f) => f.kind === "hardware");
-			if (stored === void 0) throw new KernelError("not-found", "no hardware factor exists");
+		if (factor.kind === "device" || factor.kind === "hardware") {
+			const stored = image.factors.find((f) => f.kind === factor.kind);
+			if (stored === void 0) throw new KernelError("not-found", `no ${factor.kind} factor exists`);
 			const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
 			try {
 				dek = unwrapDek(kek, stored);
@@ -8168,6 +8251,7 @@
 	* `reset-failures` commit on a success.
 	*/
 	async function verifyFactor(platform, image, factor, dek, commit, prompt) {
+		if (factor.kind === "device") throw new KernelError("invalid-input", "the device factor cannot verify");
 		assertFactorKindAvailable(platform, factor.kind);
 		const candidates = image.factors.filter((stored) => {
 			if (factor.kind !== stored.kind) return false;
@@ -8180,7 +8264,21 @@
 		}
 		let verified = false;
 		for (const stored of candidates) {
-			const kek = await kekFor(platform, factor, stored, prompt);
+			let kek;
+			try {
+				kek = await kekFor(platform, factor, stored, prompt);
+			} catch (error) {
+				if (factor.kind === "hardware" && error instanceof KernelError && error.code === "factor-invalidated" && image.factors.length > 1) {
+					var _platform$keystore;
+					await commit([{
+						op: "delete-factor",
+						id: stored.id
+					}]);
+					await ((_platform$keystore = platform.keystore) === null || _platform$keystore === void 0 ? void 0 : _platform$keystore.remove(stored.id).catch(() => void 0));
+					throw new KernelError("verification-unavailable", "the verifying factor is gone");
+				}
+				throw error;
+			}
 			try {
 				if (dek.wiped) throw new KernelError("locked", "the session ended during verification");
 				const opened = unwrapDek(kek, stored);
@@ -8208,7 +8306,7 @@
 			}]);
 			throw new KernelError(candidates.length > 0 ? "wrong-password" : "invalid-input", "password did not verify");
 		}
-		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("not-found", "no hardware factor exists");
+		if (factor.kind === "hardware") throw candidates.length > 0 ? new KernelError("integrity", "hardware factor does not open this vault", void 0, true) : new KernelError("verification-unavailable", "no verifying factor exists");
 		throw new KernelError("wrong-passkey", "passkey did not verify");
 	}
 	/**
@@ -8341,7 +8439,7 @@
 	* Ops that establish the vault in one atomic `init` commit, rejected by `conflict` if the store is
 	* not empty. The caller keeps `keyId` for the session it opens afterwards.
 	*/
-	function establishOps(platform, factor, records) {
+	function establishOps(platform, factors, records) {
 		const keyId = bytesToHex$4(platform.random(16));
 		return {
 			keyId,
@@ -8349,17 +8447,17 @@
 				{
 					op: "init",
 					meta: {
-						format: 3,
+						format: 4,
 						revision: 1,
 						keyId,
 						failedAttempts: 0,
 						lastFailureAt: 0
 					}
 				},
-				{
+				...factors.map((factor) => ({
 					op: "put-factor",
 					factor
-				},
+				})),
 				...records.map((record) => ({
 					op: "put-record",
 					record
@@ -8369,10 +8467,10 @@
 	}
 	/** The `FactorInfo` a stored factor reports: kind, id, creation time, passkey credentialId. */
 	function factorInfo(stored) {
-		if (stored.kind === "hardware") return {
-			kind: "hardware",
+		if (stored.kind === "device" || stored.kind === "hardware") return {
+			kind: stored.kind,
 			id: stored.id,
-			createdAt: parseHardwareFactorHeader(stored.header).createdAt
+			createdAt: parseKeystoreFactorHeader(stored.header).createdAt
 		};
 		if (stored.kind === "password") return {
 			kind: "password",
@@ -25942,6 +26040,7 @@ zoo`.split("\n"));
 		}
 	}
 	// packages/wallet-kernel/src/commands/vault.ts
+	init_utils$2();
 	/**
 	* Opens a wallet's sealed entropy record, then withSeed over its entropy and passphrase; wipes both
 	* on every path.
@@ -25965,11 +26064,68 @@ zoo`.split("\n"));
 		if (ctx.health === "corrupted") throw new KernelError("integrity", "the vault is corrupted");
 		if (ctx.health === "unsupported") throw new KernelError("unsupported", "the vault needs a newer build");
 		const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor, ctx.commit);
+		if (ctx.image.meta !== void 0 && ctx.image.meta.format === 3) try {
+			await upgradeVault(ctx, dek);
+		} catch (error) {
+			dek.wipe();
+			throw error;
+		}
 		if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
 			dek.wipe();
 			return { session: ctx.session.current().id };
 		}
-		return { session: openSession(ctx, dek, keyId) };
+		const session = openSession(ctx, dek, keyId);
+		await probeKeystoreFactor(ctx, params.factor.kind).catch(() => void 0);
+		return { session };
+	}
+	/**
+	* The format-3 → format-4 upgrade a successful unlock performs before any session opens: sets the
+	* format and — on a keystore host — adds the silent `device` factor wrapping the freshly unlocked
+	* DEK. On failure the new device key is removed best-effort and the caller drops the DEK, so no
+	* session can exist for a format-3 vault.
+	*/
+	async function upgradeVault(ctx, dek) {
+		const { keystore } = ctx.platform;
+		if (keystore === void 0) {
+			await ctx.commit([{
+				op: "set-format",
+				format: 4
+			}]);
+			return;
+		}
+		const id = bytesToHex$4(ctx.platform.random(16));
+		try {
+			const material = await newKeystoreKek(ctx.platform, id, { protection: "device" });
+			const row = factorRow(ctx.platform, material, id, dek);
+			await ctx.commit([{
+				op: "set-format",
+				format: 4
+			}, {
+				op: "put-factor",
+				factor: row
+			}]);
+		} catch (error) {
+			await keystore.remove(id).catch(() => void 0);
+			throw error;
+		}
+	}
+	/**
+	* Probes the keystore factor of the kind `unlockedKind` did not use (device unlock → hardware row;
+	* hardware unlock → device row). A `false` probe means the key is gone for good: the row is dropped
+	* — never the vault's last factor — and the stale key removed best-effort.
+	*/
+	async function probeKeystoreFactor(ctx, unlockedKind) {
+		const { keystore } = ctx.platform;
+		if (keystore === void 0 || unlockedKind !== "device" && unlockedKind !== "hardware") return;
+		const other = unlockedKind === "device" ? "hardware" : "device";
+		const row = ctx.image.factors.find((f) => f.kind === other);
+		if (row === void 0 || ctx.image.factors.length <= 1) return;
+		if (await keystore.probe(row.id, other === "device" ? "device" : "presence")) return;
+		await ctx.commit([{
+			op: "delete-factor",
+			id: row.id
+		}]);
+		await keystore.remove(row.id).catch(() => void 0);
 	}
 	/**
 	* Opens a session over `ctx.image` and rebuilds live state in one pass: every module drops stale
@@ -26003,13 +26159,14 @@ zoo`.split("\n"));
 	* Adds a factor after re-verifying with an existing one. A password factor REPLACES the existing
 	* password factor and rotates the DEK (change password): every record re-seals and every retained
 	* factor re-wraps in one guarded commit — other hosts see the keyId change and invalidate. A
-	* passkey or hardware factor wraps the current DEK only: no rotation, keyId unchanged. At most one
-	* hardware factor exists. Kind and uniqueness are checked before the verification prompt.
+	* passkey factor wraps the current DEK only: no rotation, keyId unchanged. Factor management does
+	* not exist on keystore hosts — `enrolVerification` covers their single verifying factor. Kind is
+	* checked before the verification prompt.
 	*/
 	async function addFactor(ctx, params, requestSession) {
+		if (ctx.platform.keystore !== void 0) throw new KernelError("unsupported", "factor management is not available on this host");
 		const { dek } = ctx.session.require(requestSession);
 		assertFactorKindAvailable(ctx.platform, params.factor.kind);
-		if (params.factor.kind === "hardware" && ctx.image.factors.some((f) => f.kind === "hardware")) throw new KernelError("already-exists", "the vault already has a hardware factor");
 		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "manage-factors"));
 		if (params.factor.kind !== "password") {
 			const stored = await makeFactor(ctx.platform, params.factor, dek);
@@ -26031,6 +26188,7 @@ zoo`.split("\n"));
 		return info;
 	}
 	async function removeFactor(ctx, params, requestSession) {
+		if (ctx.platform.keystore !== void 0) throw new KernelError("unsupported", "factor management is not available on this host");
 		const { dek } = ctx.session.require(requestSession);
 		if (ctx.image.factors.find((f) => f.id === params.id) === void 0) throw new KernelError("not-found", "no such factor");
 		if (ctx.image.factors.length <= 1) throw new KernelError("invalid-input", "the vault must keep at least one factor");
@@ -26040,6 +26198,81 @@ zoo`.split("\n"));
 			dek: rotation.dek,
 			keyId: rotation.keyId
 		} });
+		return null;
+	}
+	/**
+	* Registers the verifying (hardware) factor on a keystore vault that has none — or replaces one the
+	* keystore reports dead. The only unguarded enrolment: it exists so a device-only vault can gain
+	* presence verification without already having it. A live hardware row is `already-exists`; no lock
+	* screen is `verification-unavailable` and writes nothing.
+	*/
+	async function enrolVerification(ctx, _params, requestSession) {
+		const keystore = requireKeystore(ctx.platform);
+		const { dek } = ctx.session.require(requestSession);
+		const existing = ctx.image.factors.find((f) => f.kind === "hardware");
+		if (existing !== void 0) {
+			if (await keystore.probe(existing.id, "presence")) throw new KernelError("already-exists", "the vault already has a verifying factor");
+			await ctx.commit([{
+				op: "delete-factor",
+				id: existing.id
+			}]);
+			await keystore.remove(existing.id).catch(() => void 0);
+		}
+		const id = bytesToHex$4(ctx.platform.random(16));
+		try {
+			const material = await newKeystoreKek(ctx.platform, id, {
+				protection: "presence",
+				prompt: corePromptFor(keystore, "create")()
+			});
+			ctx.session.require(requestSession);
+			const row = factorRow(ctx.platform, material, id, dek);
+			await ctx.commit([{
+				op: "put-factor",
+				factor: row
+			}]);
+		} catch (error) {
+			await keystore.remove(id).catch(() => void 0);
+			throw error;
+		}
+		return null;
+	}
+	/**
+	* The native app lock: `enabled` drops the silent device factor — the DEK rotates so the key the
+	* device key protected dies with it, and every other host's session invalidates — and `disabled`
+	* restores it. Already in the target state is a prompt-free no-op; otherwise a presence ceremony
+	* verifies first.
+	*/
+	async function setAppLock(ctx, params, requestSession) {
+		const keystore = requireKeystore(ctx.platform);
+		const { dek } = ctx.session.require(requestSession);
+		const locked = !ctx.image.factors.some((f) => f.kind === "device");
+		if (params.enabled === locked) return null;
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(keystore, "app-lock"));
+		const session = ctx.session.require(requestSession);
+		const deviceRow = ctx.image.factors.find((f) => f.kind === "device");
+		if (params.enabled) {
+			if (deviceRow === void 0) return null;
+			const rotation = await rotateVault(ctx.platform, ctx.image, session.dek, /* @__PURE__ */ new Set([deviceRow.id]), []);
+			await ctx.commit(rotation.ops, { rotate: {
+				dek: rotation.dek,
+				keyId: rotation.keyId
+			} });
+			await keystore.remove(deviceRow.id).catch(() => void 0);
+			return null;
+		}
+		if (deviceRow !== void 0) return null;
+		const id = bytesToHex$4(ctx.platform.random(16));
+		try {
+			const material = await newKeystoreKek(ctx.platform, id, { protection: "device" });
+			const row = factorRow(ctx.platform, material, id, session.dek);
+			await ctx.commit([{
+				op: "put-factor",
+				factor: row
+			}]);
+		} catch (error) {
+			await keystore.remove(id).catch(() => void 0);
+			throw error;
+		}
 		return null;
 	}
 	// packages/wallet-kernel/src/commands/keys.ts
@@ -26226,7 +26459,7 @@ zoo`.split("\n"));
 	init_defineProperty();
 	init_objectSpread2();
 	function wipePendingFactor(pending) {
-		if (pending.kind === "hardware") return;
+		if (pending.kind === "device") return;
 		pending.kek.wipe();
 		if (pending.kind === "password") wipe(pending.salt);
 		else wipe(pending.credentialId);
@@ -26445,6 +26678,7 @@ zoo`.split("\n"));
 	function gate(ctx, factor, requestSession) {
 		if (ctx.image.meta === void 0) {
 			if (factor === void 0) throw new KernelError("invalid-input", "an initial factor is required");
+			assertInitialFactor(ctx.platform, factor);
 			return {
 				uninitialized: true,
 				dek: Secret.take(ctx.platform.random(32))
@@ -26465,7 +26699,7 @@ zoo`.split("\n"));
 	async function commitRecords(ctx, gated, factor, records) {
 		if (gated.uninitialized) {
 			if (factor === void 0) throw new KernelError("integrity", "unreachable: initial factor missing");
-			return establishVault(ctx, gated.dek, async () => makeFactor(ctx.platform, factor, gated.dek), records);
+			return establishVault(ctx, gated.dek, async () => ctx.platform.keystore === void 0 ? [await makeFactor(ctx.platform, factor, gated.dek)] : keystoreFactorRows(ctx.platform, gated.dek), records);
 		}
 		await ctx.commit(records.map((record) => ({
 			op: "put-record",
@@ -26479,12 +26713,12 @@ zoo`.split("\n"));
 	* hardware key this app left behind (a reinstall keeps iOS keychain items, a failed establish) is
 	* cleared before the new key is sealed — and again if the establish fails after sealing.
 	*/
-	async function establishVault(ctx, dek, factorRowFor, records) {
+	async function establishVault(ctx, dek, factorRowsFor, records) {
 		const { keystore } = ctx.platform;
 		let keyId;
 		try {
 			await (keystore === null || keystore === void 0 ? void 0 : keystore.clear());
-			const established = establishOps(ctx.platform, await factorRowFor(), records);
+			const established = establishOps(ctx.platform, await factorRowsFor(), records);
 			({keyId} = established);
 			await ctx.commit(established.ops);
 		} catch (error) {
@@ -26521,10 +26755,9 @@ zoo`.split("\n"));
 	* inside `newFactorKek` because the factor is being created.
 	*/
 	async function pendingFactorOf(ctx, factor) {
-		if (factor.kind === "hardware") {
-			assertFactorKindAvailable(ctx.platform, "hardware");
-			return { kind: "hardware" };
-		}
+		assertInitialFactor(ctx.platform, factor);
+		if (factor.kind === "device") return { kind: "device" };
+		if (factor.kind === "hardware") throw new KernelError("unsupported", "this host chooses its own vault factors");
 		const material = await newFactorKek(ctx.platform, factor);
 		return material.kind === "password" ? {
 			kind: "password",
@@ -26569,13 +26802,13 @@ zoo`.split("\n"));
 		};
 	}
 	/**
-	* Turns a draft's pending factor into its stored record once the DEK exists: the header gets the
-	* public key derived from the held KEK, and the DEK wraps to that key. A hardware factor seals its
-	* KEK now, under a key created for this factor id.
+	* Turns a draft's pending factor into its stored rows once the DEK exists: a software factor's
+	* header gets the public key derived from the held KEK, and the DEK wraps to that key. A `device`
+	* pending factor builds the full keystore row set (device plus hardware when supported).
 	*/
-	async function storedFactorForPending(ctx, pending, dek) {
+	async function storedFactorsForPending(ctx, pending, dek) {
+		if (pending.kind === "device") return keystoreFactorRows(ctx.platform, dek);
 		const id = bytesToHex$4(ctx.platform.random(16));
-		if (pending.kind === "hardware") return factorRow(ctx.platform, await newHardwareKek(ctx.platform, id), id, dek);
 		const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
 		const header = factorHeader(pending, publicKey, ctx.platform.now());
 		const sealed = wrapDek(dek, publicKey, {
@@ -26583,12 +26816,12 @@ zoo`.split("\n"));
 			id,
 			header
 		}, ctx.platform.random);
-		return {
+		return [{
 			kind: pending.kind,
 			id,
 			header,
 			sealed
-		};
+		}];
 	}
 	async function confirmMnemonic(ctx, params) {
 		const passphrase = params.passphrase === void 0 ? void 0 : normalizePassphrase(params.passphrase);
@@ -26615,7 +26848,7 @@ zoo`.split("\n"));
 				const { pendingFactor } = taken;
 				if (pendingFactor !== void 0) {
 					const dek = Secret.take(ctx.platform.random(32));
-					const session = await establishVault(ctx, dek, async () => storedFactorForPending(ctx, pendingFactor, dek), [walletRecord(ctx, dek, material, "mnemonic", createdAt)]);
+					const session = await establishVault(ctx, dek, async () => storedFactorsForPending(ctx, pendingFactor, dek), [walletRecord(ctx, dek, material, "mnemonic", createdAt)]);
 					return {
 						wallet: walletInfoOf(material, "mnemonic", createdAt),
 						session
@@ -27313,6 +27546,8 @@ zoo`.split("\n"));
 		"vault.reset": async (ctx, _params, session) => resetVault(ctx, session),
 		"vault.addFactor": async (ctx, params, session) => addFactor(ctx, params, session),
 		"vault.removeFactor": async (ctx, params, session) => removeFactor(ctx, params, session),
+		"vault.enrolVerification": async (ctx, params, session) => enrolVerification(ctx, params, session),
+		"vault.setAppLock": async (ctx, params, session) => setAppLock(ctx, params, session),
 		"wallet.createWithPasskey": async (ctx, params, session) => createWithPasskey(ctx, params, session),
 		"wallet.restoreWithPasskey": async (ctx, params, session) => createWithPasskey(ctx, params, session),
 		"wallet.createMnemonic": async (ctx, params, session) => createMnemonic(ctx, params, session),
@@ -43259,10 +43494,11 @@ zoo`.split("\n"));
 		const { meta } = image;
 		if (meta === void 0) return image.records.length > 0 || image.factors.length > 0 ? "corrupted" : "ok";
 		if (!Number.isSafeInteger(meta.format)) return "corrupted";
-		if (meta.format !== 3) return "unsupported";
+		if (meta.format !== 4 && meta.format !== 3) return "unsupported";
 		if (!Number.isSafeInteger(meta.revision) || meta.revision < 1 || typeof meta.keyId !== "string" || !/^[0-9a-f]{32}$/.test(meta.keyId) || !Number.isSafeInteger(meta.failedAttempts) || meta.failedAttempts < 0 || !Number.isSafeInteger(meta.lastFailureAt) || meta.lastFailureAt < 0) return "corrupted";
 	}
 	var FACTOR_KINDS = /* @__PURE__ */ new Set([
+		"device",
 		"hardware",
 		"password",
 		"passkey"
@@ -43284,6 +43520,7 @@ zoo`.split("\n"));
 		const meta = metaHealth(image);
 		let corrupted = meta === "corrupted";
 		let unsupported = meta === "unsupported";
+		for (const kind of ["device", "hardware"]) if (image.factors.filter((factor) => factor.kind === kind).length > 1) corrupted = true;
 		for (const factor of image.factors) {
 			if (!FACTOR_KINDS.has(factor.kind)) {
 				unsupported = true;
@@ -43331,8 +43568,10 @@ zoo`.split("\n"));
 	function statusPayload(ctx, nostr) {
 		const { factors, wallets, keys, importedKeys, backup } = statusContents(ctx.image, ctx.modules, nostr);
 		return {
-			protocol: 2,
+			protocol: 3,
 			vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
+			appLock: ctx.image.meta !== void 0 && !ctx.image.factors.some((f) => f.kind === "device"),
+			verification: factors.some((f) => f.kind === "hardware" || f.kind === "passkey" || f.kind === "password") ? "available" : "unavailable",
 			factors,
 			wallets,
 			nostr: { keys },
@@ -43396,7 +43635,7 @@ zoo`.split("\n"));
 	function startKernel(host, port) {
 		const platform = serializeCeremonies(host, (active) => {
 			post({
-				v: 2,
+				v: 3,
 				event: "ceremony",
 				active
 			});
@@ -43486,7 +43725,7 @@ zoo`.split("\n"));
 		};
 		const postStatus = () => {
 			const event = {
-				v: 2,
+				v: 3,
 				event: "status",
 				status: statusPayload(ctx, nostr)
 			};
@@ -43499,7 +43738,7 @@ zoo`.split("\n"));
 				return;
 			}
 			post({
-				v: 2,
+				v: 3,
 				event: "locked",
 				reason
 			});
@@ -43578,7 +43817,7 @@ zoo`.split("\n"));
 			const lockedReason = pendingLock;
 			pendingLock = void 0;
 			if (lockedReason !== void 0) post({
-				v: 2,
+				v: 3,
 				event: "locked",
 				reason: lockedReason
 			});
@@ -43591,7 +43830,7 @@ zoo`.split("\n"));
 				if (Object.getPrototypeOf(raw) !== Object.prototype) throw new KernelError("integrity", "malformed request");
 				const request = raw;
 				const { v, id: requestId, method, session: sessionField } = request;
-				if (v !== 2) throw new KernelError("integrity", "protocol version mismatch");
+				if (v !== 3) throw new KernelError("integrity", "protocol version mismatch");
 				if (typeof requestId !== "number" || !Number.isSafeInteger(requestId) || requestId < 0) throw new KernelError("integrity", "malformed request id");
 				id = requestId;
 				for (const key of Object.keys(request)) if (key !== "v" && key !== "id" && key !== "method" && key !== "session" && key !== "params") throw new KernelError("integrity", "unexpected request field");
@@ -43611,7 +43850,7 @@ zoo`.split("\n"));
 				const result = await dispatch(method, params, typeof sessionField === "string" ? sessionField : void 0);
 				if (ctx.session.unlocked && (METHODS[method].presence || ((_platform$policy$idle = platform.policy.idle) === null || _platform$policy$idle === void 0 ? void 0 : _platform$policy$idle.activity) === "request")) ctx.session.touch();
 				return {
-					v: 2,
+					v: 3,
 					id,
 					ok: result
 				};
@@ -43622,7 +43861,7 @@ zoo`.split("\n"));
 				}
 				const err = error instanceof KernelError ? _objectSpread2(_objectSpread2({ code: error.code }, error.retryAt === void 0 ? {} : { retryAt: error.retryAt }), error.detail === void 0 ? {} : { detail: error.detail }) : { code: "integrity" };
 				return {
-					v: 2,
+					v: 3,
 					id,
 					err
 				};
@@ -43660,12 +43899,14 @@ zoo`.split("\n"));
 	/**
 	* Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
 	* completes each call with `(bytes, code, detail)`; a failure code is already the kernel error code
-	* (`cancelled`, `factor-invalidated`, `no-device-credential`, `unavailable`) and becomes a
-	* `KernelError` so the vault reports it verbatim instead of as an integrity failure.
+	* (`cancelled`, `factor-invalidated`, `verification-unavailable`, `unavailable`) and becomes a
+	* `KernelError` so the vault reports it verbatim instead of as an integrity failure. Presence work
+	* carries the prompt strings; device work runs silently (`sealDevice`/`openDevice`); `probe` never
+	* shows UI and reports a gone key as `factor-invalidated` without result bytes.
 	*/
 	function failure$1(code, detail) {
 		const diagnostic = detailOf(detail);
-		return code === "cancelled" || code === "factor-invalidated" || code === "no-device-credential" || code === "unavailable" ? new KernelError(code, "the platform keystore did not complete", void 0, false, diagnostic) : new KernelError("unavailable", "the platform keystore reported no outcome", void 0, false, diagnostic);
+		return code === "cancelled" || code === "factor-invalidated" || code === "verification-unavailable" || code === "unavailable" ? new KernelError(code, "the platform keystore did not complete", void 0, false, diagnostic) : new KernelError("unavailable", "the platform keystore reported no outcome", void 0, false, diagnostic);
 	}
 	async function bytesOf$1(start) {
 		return new Promise((resolve, reject) => {
@@ -43689,14 +43930,32 @@ zoo`.split("\n"));
 			});
 		});
 	}
+	/** A `probe` completion: `factor-invalidated` means the key is gone for good — `false`. */
+	async function probeOf(start) {
+		return new Promise((resolve, reject) => {
+			start((_result, code, detail) => {
+				if (code === void 0) resolve(true);
+				else if (code === "factor-invalidated") resolve(false);
+				else reject(failure$1(code, detail));
+			});
+		});
+	}
 	function bindNativeKeystore(raw) {
 		return {
 			locale: raw.locale,
-			seal: async (id, secret, prompt) => bytesOf$1((done) => {
-				raw.seal(id, secret, prompt.title, prompt.description, done);
+			seal: async (id, secret, use) => bytesOf$1((done) => {
+				if (use.protection === "presence") raw.seal(id, secret, use.prompt.title, use.prompt.description, done);
+				else raw.sealDevice(id, secret, done);
 			}),
-			open: async (id, sealed, prompt) => bytesOf$1((done) => {
-				raw.open(id, sealed, prompt.title, prompt.description, done);
+			open: async (id, sealed, use) => bytesOf$1((done) => {
+				if (use.protection === "presence") raw.open(id, sealed, use.prompt.title, use.prompt.description, done);
+				else raw.openDevice(id, sealed, done);
+			}),
+			probe: async (id, protection) => probeOf((done) => {
+				raw.probe(id, protection, done);
+			}),
+			remove: async (id) => outcomeOf((done) => {
+				raw.remove(id, done);
 			}),
 			authenticate: async (prompt) => outcomeOf((done) => {
 				raw.authenticate(prompt.title, prompt.description, done);
@@ -46335,6 +46594,10 @@ zoo`.split("\n"));
 				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, { keyId: op.keyId });
 				bump = true;
 				break;
+			case "set-format":
+				meta = _objectSpread2(_objectSpread2({}, requireMeta(meta)), {}, { format: op.format });
+				bump = true;
+				break;
 			case "record-failure": {
 				const current = requireMeta(meta);
 				meta = _objectSpread2(_objectSpread2({}, current), {}, {
@@ -46412,8 +46675,8 @@ zoo`.split("\n"));
 	/**
 	* Strict shape check for a vault image. Returns the input typed as VaultImage; throws KernelError
 	* "integrity" on any structural violation so a tampered store fails closed. `meta.format` is
-	* checked before anything else: a non-integer is integrity, a different format is "unsupported"
-	* (data written by another build — left untouched).
+	* checked before anything else: a non-integer is integrity, a format that is neither VAULT_FORMAT
+	* nor UPGRADABLE_FORMAT is "unsupported" (data written by another build — left untouched).
 	*/
 	function assertVaultImage(value) {
 		const image = plainObject(value);
@@ -46423,7 +46686,7 @@ zoo`.split("\n"));
 			const metaRow = plainObject(meta);
 			const { format } = metaRow;
 			if (typeof format !== "number" || !Number.isSafeInteger(format)) throw bad("meta format is not a safe integer");
-			if (format !== 3) throw new KernelError("unsupported", "vault store: meta format needs a newer build");
+			if (format !== 4 && format !== 3) throw new KernelError("unsupported", "vault store: meta format needs a newer build");
 			exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
 			if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) throw bad("meta keyId is not 32 lowercase hex");
 			if (typeof metaRow["revision"] !== "number" || !Number.isSafeInteger(metaRow["revision"]) || metaRow["revision"] < 1) throw bad("meta revision is not a safe integer ≥ 1");

@@ -233,6 +233,14 @@ export function createIndexedDbStore(): RecordStore {
               }
               break;
             }
+            case "set-format": {
+              const meta = await requireMeta();
+              if (meta !== undefined) {
+                writeMeta({ ...meta, format: op.format });
+                bump = true;
+              }
+              break;
+            }
             case "record-failure": {
               const meta = await requireMeta();
               if (meta !== undefined) {

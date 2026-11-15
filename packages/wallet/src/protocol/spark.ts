@@ -8,8 +8,8 @@
  * presence-bearing (signer work must not hold a session open). List params are capped at MAX_BATCH;
  * the leaf lists of prepareTransfer/prepareClaim are capped at the signer's own 256.
  */
-import { factor, groupIndex, MAX_BATCH, safeTime, walletId } from "./core.ts";
-import type { Factor, MethodSpec } from "./core.ts";
+import { verifier, groupIndex, MAX_BATCH, safeTime, walletId } from "./core.ts";
+import type { VerifyFactor, MethodSpec } from "./core.ts";
 import type { Validator } from "./validate.ts";
 import {
   arr,
@@ -568,7 +568,7 @@ export const SPARK_METHODS: {
     {
       readonly account: SparkAccountRef;
       readonly intent: SparkApproveIntent;
-      readonly verify: Factor;
+      readonly verify: VerifyFactor;
     },
     SparkApprovalSummary
   >;
@@ -654,7 +654,7 @@ export const SPARK_METHODS: {
   "spark.approve": {
     session: true,
     presence: true,
-    params: obj({ account, intent: approveIntent, verify: factor }),
+    params: obj({ account, intent: approveIntent, verify: verifier }),
     result: approvalSummary,
   },
 };

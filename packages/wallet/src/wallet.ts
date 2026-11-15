@@ -23,6 +23,7 @@ import {
   wireSecretText,
   resolveBackupFactor,
   resolveBackupUnlockFactor,
+  resolveVerifyFactor,
   defaultUnlockFactor,
 } from "./factors.ts";
 import type { FactorMode, FactorSource, PasskeyCeremony, PrfResult } from "./factors.ts";
@@ -44,6 +45,7 @@ import type {
   StatusPayload,
   UnlockFactor,
   VaultApi,
+  VerifyFactor,
   Wallet,
   WalletInfo,
   WalletSnapshot,
@@ -130,6 +132,8 @@ export class KernelWallet implements Wallet {
       vault: "uninitialized",
       lockReason: undefined,
       verifying: false,
+      appLock: false,
+      verification: "unavailable",
       factors: [],
       wallets: [],
       nostr: { keys: [] },
@@ -164,6 +168,8 @@ export class KernelWallet implements Wallet {
       verifyEvent: options.verifyEvent,
       withVerifying: async (fn) => this.withVerifying(fn),
       resolveFactor: async (factor, transfer) => resolveFactor(this.factorSource, factor, transfer),
+      resolveVerifyFactor: async (factor, transfer) =>
+        resolveVerifyFactor(this.factorSource, factor, transfer),
       createFactorParam: async (factor, transfer) => this.createFactorParam(factor, transfer),
       sessionOf: (result) => {
         this.sessionOf(result);
@@ -254,6 +260,8 @@ export class KernelWallet implements Wallet {
       vault: status === undefined ? "uninitialized" : status.vault,
       lockReason: this.lockReason,
       verifying: this.verifying > 0,
+      appLock: status === undefined ? false : status.appLock,
+      verification: status === undefined ? "unavailable" : status.verification,
       factors: status === undefined ? [] : status.factors,
       wallets: status === undefined ? [] : status.wallets,
       nostr: { keys: status === undefined ? [] : status.nostr.keys },
@@ -265,6 +273,8 @@ export class KernelWallet implements Wallet {
       current.vault === next.vault &&
       current.lockReason === next.lockReason &&
       current.verifying === next.verifying &&
+      current.appLock === next.appLock &&
+      current.verification === next.verification &&
       deepEqual(current.factors, next.factors) &&
       deepEqual(current.wallets, next.wallets) &&
       deepEqual(current.nostr, next.nostr) &&
@@ -295,6 +305,7 @@ export class KernelWallet implements Wallet {
       passkey: this.passkeyCfg,
       ceremony: this.ceremony,
       factors: () => this.snapshotValue.factors,
+      appLock: () => this.snapshotValue.appLock,
     };
   }
 
@@ -337,17 +348,17 @@ export class KernelWallet implements Wallet {
   }
 
   readonly vault: VaultApi = {
-    unlock: async (factor?: UnlockFactor): Promise<void> =>
-      this.withVerifying(async () => {
+    unlock: async (factor?: UnlockFactor): Promise<void> => {
+      const resolved = factor ?? defaultUnlockFactor(this.factorSource);
+      const run = async (): Promise<void> => {
         const transfer: ArrayBuffer[] = [];
-        const wire = await resolveFactor(
-          this.factorSource,
-          factor ?? defaultUnlockFactor(this.factorSource),
-          transfer,
-        );
+        const wire = await resolveFactor(this.factorSource, resolved, transfer);
         const result = await this.channel.call("vault.unlock", { factor: wire }, transfer);
         this.sessionOf(result);
-      }),
+      };
+      // A device unlock shows no UI — the snapshot never marks it verifying.
+      await (resolved.kind === "device" ? run() : this.withVerifying(run));
+    },
     // Host-side lock: immediate, no kernel round trip — fails pending calls, clears the session
     // and respawns the port. Idempotent: re-locking is a no-op.
     // oxlint-disable-next-line typescript/require-await -- the interface's Promise is resolved synchronously
@@ -355,10 +366,10 @@ export class KernelWallet implements Wallet {
       this.channel.lockNow();
       this.markLocked();
     },
-    addFactor: async (factor: InitialFactor, verify: UnlockFactor): Promise<FactorInfo> =>
+    addFactor: async (factor: InitialFactor, verify: VerifyFactor): Promise<FactorInfo> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         const wireFactor = await resolveInitialFactor(this.factorSource, factor, transfer);
         return this.channel.call(
           "vault.addFactor",
@@ -366,11 +377,21 @@ export class KernelWallet implements Wallet {
           transfer,
         );
       }),
-    removeFactor: async (id: string, verify: UnlockFactor): Promise<void> =>
+    removeFactor: async (id: string, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         await this.channel.call("vault.removeFactor", { verify: wireVerify, id }, transfer);
+      }),
+    enrolVerification: async (): Promise<void> =>
+      this.withVerifying(async () => {
+        await this.channel.call("vault.enrolVerification", null);
+      }),
+    setAppLock: async (enabled: boolean, verify: VerifyFactor): Promise<void> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
+        await this.channel.call("vault.setAppLock", { enabled, verify: wireVerify }, transfer);
       }),
     reset: async (): Promise<void> => {
       await this.channel.call("vault.reset", null);
@@ -398,16 +419,16 @@ export class KernelWallet implements Wallet {
         }
       }),
     list: async (): Promise<ReadonlyArray<KeyInfo>> => this.channel.call("keys.list", null, []),
-    remove: async (keyId: string, verify: UnlockFactor): Promise<void> =>
+    remove: async (keyId: string, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         await this.channel.call("keys.remove", { verify: wireVerify, keyId }, transfer);
       }),
-    export: async (keyId: string, verify: UnlockFactor): Promise<Uint8Array> =>
+    export: async (keyId: string, verify: VerifyFactor): Promise<Uint8Array> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         return this.channel.call("keys.export", { verify: wireVerify, keyId }, transfer);
       }),
   };
@@ -555,10 +576,10 @@ export class KernelWallet implements Wallet {
       this.sessionOf(created);
       return created.wallet;
     },
-    exportMnemonic: async (walletId: string, verify: UnlockFactor): Promise<ExportedMnemonic> =>
+    exportMnemonic: async (walletId: string, verify: VerifyFactor): Promise<ExportedMnemonic> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         const exported = await this.channel.call(
           "wallet.exportMnemonic",
           { verify: wireVerify, walletId },
@@ -571,10 +592,10 @@ export class KernelWallet implements Wallet {
             : { passphrase: new SingleUseSecret(exported.passphrase) }),
         };
       }),
-    delete: async (walletId: string, verify: UnlockFactor): Promise<void> =>
+    delete: async (walletId: string, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         await this.channel.call("wallet.delete", { verify: wireVerify, walletId }, transfer);
       }),
   };
@@ -586,12 +607,12 @@ export class KernelWallet implements Wallet {
 
   readonly backup: BackupApi = {
     enable: async (options: {
-      readonly verify: UnlockFactor;
+      readonly verify: VerifyFactor;
       readonly factors: ReadonlyArray<UnlockFactor>;
     }): Promise<void> =>
       this.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveFactor(this.factorSource, options.verify, transfer);
+        const wireVerify = await resolveVerifyFactor(this.factorSource, options.verify, transfer);
         const wireFactors = await Promise.all(
           options.factors.map(async (factor) =>
             resolveBackupFactor(this.factorSource, factor, transfer),

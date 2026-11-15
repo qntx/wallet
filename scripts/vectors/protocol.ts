@@ -5,9 +5,9 @@
  *
  * Message shapes:
  *
- * - Request: `{ v: 2, id, method, session?, params }`
- * - Response: `{ v: 2, id, ok }` or `{ v: 2, id, err: { code, retryAt? } }`
- * - Event: `{ v: 2, event: "status", status }` or `{ v: 2, event: "locked", reason }` or `{ v: 2,
+ * - Request: `{ v: 3, id, method, session?, params }`
+ * - Response: `{ v: 3, id, ok }` or `{ v: 3, id, err: { code, retryAt? } }`
+ * - Event: `{ v: 3, event: "status", status }` or `{ v: 3, event: "locked", reason }` or `{ v: 3,
  *   event: "ceremony", active }`
  *
  * `check` names the contract a sample exercises:
@@ -83,6 +83,8 @@ const PASSPHRASE = $b(hexOf("p\u00E4ss word"));
 const passwordFactorInfo = { kind: "password", id: FACTOR_ID, createdAt: CREATED_AT };
 const hardwareFactor = { kind: "hardware" };
 const hardwareFactorInfo = { kind: "hardware", id: FACTOR_ID, createdAt: CREATED_AT };
+const deviceFactor = { kind: "device" };
+const deviceFactorInfo = { kind: "device", id: FACTOR_ID, createdAt: CREATED_AT };
 const derivedKey = {
   ref: { kind: "derived", walletId: WALLET_ID, index: 0 },
   publicKey: PEER,
@@ -95,7 +97,9 @@ const backupInfo = {
 };
 
 const statusUnlocked = {
-  protocol: 2,
+  protocol: 3,
+  appLock: true,
+  verification: "available",
   vault: "unlocked",
   factors: [passwordFactorInfo],
   wallets: [walletInfo],
@@ -114,27 +118,31 @@ const signedEvent = {
 };
 
 const requests: Array<{ name: string; message: Record<string, unknown> }> = [
-  { name: "status", message: { v: 2, id: 1, method: "status", params: null } },
+  { name: "status", message: { v: 3, id: 1, method: "status", params: null } },
   {
     name: "session.touch",
-    message: { v: 2, id: 24, method: "session.touch", session: SESSION, params: null },
+    message: { v: 3, id: 24, method: "session.touch", session: SESSION, params: null },
   },
   {
     name: "vault.unlock",
-    message: { v: 2, id: 2, method: "vault.unlock", params: { factor: passwordFactor } },
+    message: { v: 3, id: 2, method: "vault.unlock", params: { factor: passwordFactor } },
   },
   {
     name: "vault.unlock-hardware",
-    message: { v: 2, id: 2, method: "vault.unlock", params: { factor: hardwareFactor } },
+    message: { v: 3, id: 2, method: "vault.unlock", params: { factor: hardwareFactor } },
+  },
+  {
+    name: "vault.unlock-device",
+    message: { v: 3, id: 2, method: "vault.unlock", params: { factor: deviceFactor } },
   },
   {
     name: "vault.reset",
-    message: { v: 2, id: 3, method: "vault.reset", session: SESSION, params: null },
+    message: { v: 3, id: 3, method: "vault.reset", session: SESSION, params: null },
   },
   {
     name: "vault.addFactor",
     message: {
-      v: 2,
+      v: 3,
       id: 4,
       method: "vault.addFactor",
       session: SESSION,
@@ -144,7 +152,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "vault.removeFactor",
     message: {
-      v: 2,
+      v: 3,
       id: 5,
       method: "vault.removeFactor",
       session: SESSION,
@@ -152,9 +160,23 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
     },
   },
   {
+    name: "vault.enrolVerification",
+    message: { v: 3, id: 5, method: "vault.enrolVerification", session: SESSION, params: null },
+  },
+  {
+    name: "vault.setAppLock",
+    message: {
+      v: 3,
+      id: 6,
+      method: "vault.setAppLock",
+      session: SESSION,
+      params: { enabled: true, verify: hardwareFactor },
+    },
+  },
+  {
     name: "wallet.createWithPasskey",
     message: {
-      v: 2,
+      v: 3,
       id: 6,
       method: "wallet.createWithPasskey",
       params: {
@@ -168,7 +190,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.createWithPasskey-kernel",
     message: {
-      v: 2,
+      v: 3,
       id: 6,
       method: "wallet.createWithPasskey",
       params: {
@@ -184,7 +206,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.restoreWithPasskey-kernel",
     message: {
-      v: 2,
+      v: 3,
       id: 7,
       method: "wallet.restoreWithPasskey",
       params: {
@@ -197,7 +219,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.restoreWithPasskey",
     message: {
-      v: 2,
+      v: 3,
       id: 7,
       method: "wallet.restoreWithPasskey",
       params: {
@@ -211,12 +233,12 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   },
   {
     name: "wallet.createMnemonic",
-    message: { v: 2, id: 8, method: "wallet.createMnemonic", params: { words: 12 } },
+    message: { v: 3, id: 8, method: "wallet.createMnemonic", params: { words: 12 } },
   },
   {
     name: "wallet.confirmMnemonic",
     message: {
-      v: 2,
+      v: 3,
       id: 9,
       method: "wallet.confirmMnemonic",
       params: {
@@ -228,7 +250,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.confirmMnemonic-passphrase",
     message: {
-      v: 2,
+      v: 3,
       id: 9,
       method: "wallet.confirmMnemonic",
       params: {
@@ -240,12 +262,12 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   },
   {
     name: "wallet.discardMnemonic",
-    message: { v: 2, id: 10, method: "wallet.discardMnemonic", params: { draft: DRAFT } },
+    message: { v: 3, id: 10, method: "wallet.discardMnemonic", params: { draft: DRAFT } },
   },
   {
     name: "wallet.importMnemonic-passphrase",
     message: {
-      v: 2,
+      v: 3,
       id: 11,
       method: "wallet.importMnemonic",
       params: {
@@ -259,7 +281,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "backup.restore-passphrases",
     message: {
-      v: 2,
+      v: 3,
       id: 15,
       method: "backup.restore",
       params: {
@@ -272,7 +294,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.importMnemonic",
     message: {
-      v: 2,
+      v: 3,
       id: 11,
       method: "wallet.importMnemonic",
       params: {
@@ -285,7 +307,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.exportMnemonic",
     message: {
-      v: 2,
+      v: 3,
       id: 12,
       method: "wallet.exportMnemonic",
       session: SESSION,
@@ -295,7 +317,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "wallet.delete",
     message: {
-      v: 2,
+      v: 3,
       id: 13,
       method: "wallet.delete",
       session: SESSION,
@@ -305,7 +327,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "dataKeys.get",
     message: {
-      v: 2,
+      v: 3,
       id: 14,
       method: "dataKeys.get",
       session: SESSION,
@@ -315,7 +337,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.removeKey",
     message: {
-      v: 2,
+      v: 3,
       id: 18,
       method: "nostr.removeKey",
       session: SESSION,
@@ -325,7 +347,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.exportKey",
     message: {
-      v: 2,
+      v: 3,
       id: 19,
       method: "nostr.exportKey",
       session: SESSION,
@@ -339,7 +361,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.signEvent",
     message: {
-      v: 2,
+      v: 3,
       id: 20,
       method: "nostr.signEvent",
       session: SESSION,
@@ -357,7 +379,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.nip44Encrypt",
     message: {
-      v: 2,
+      v: 3,
       id: 21,
       method: "nostr.nip44Encrypt",
       session: SESSION,
@@ -367,7 +389,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.unwrapGiftWraps",
     message: {
-      v: 2,
+      v: 3,
       id: 22,
       method: "nostr.unwrapGiftWraps",
       session: SESSION,
@@ -377,7 +399,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.syncKey",
     message: {
-      v: 2,
+      v: 3,
       id: 23,
       method: "nostr.syncKey",
       session: SESSION,
@@ -387,7 +409,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.syncSign",
     message: {
-      v: 2,
+      v: 3,
       id: 24,
       method: "nostr.syncSign",
       session: SESSION,
@@ -405,7 +427,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.syncEncrypt",
     message: {
-      v: 2,
+      v: 3,
       id: 25,
       method: "nostr.syncEncrypt",
       session: SESSION,
@@ -415,7 +437,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "nostr.syncDecrypt",
     message: {
-      v: 2,
+      v: 3,
       id: 26,
       method: "nostr.syncDecrypt",
       session: SESSION,
@@ -425,7 +447,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.identityPublicKey",
     message: {
-      v: 2,
+      v: 3,
       id: 30,
       method: "spark.identityPublicKey",
       session: SESSION,
@@ -435,7 +457,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.publicKeys",
     message: {
-      v: 2,
+      v: 3,
       id: 31,
       method: "spark.publicKeys",
       session: SESSION,
@@ -451,7 +473,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.receivedPublicKeys",
     message: {
-      v: 2,
+      v: 3,
       id: 32,
       method: "spark.receivedPublicKeys",
       session: SESSION,
@@ -461,7 +483,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.newCommitments",
     message: {
-      v: 2,
+      v: 3,
       id: 33,
       method: "spark.newCommitments",
       session: SESSION,
@@ -471,7 +493,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.signFrost",
     message: {
-      v: 2,
+      v: 3,
       id: 34,
       method: "spark.signFrost",
       session: SESSION,
@@ -492,7 +514,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.signFrost (cooperative exit)",
     message: {
-      v: 2,
+      v: 3,
       id: 34,
       method: "spark.signFrost",
       session: SESSION,
@@ -514,7 +536,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.aggregateFrost",
     message: {
-      v: 2,
+      v: 3,
       id: 35,
       method: "spark.aggregateFrost",
       session: SESSION,
@@ -543,7 +565,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.signIdentity",
     message: {
-      v: 2,
+      v: 3,
       id: 36,
       method: "spark.signIdentity",
       session: SESSION,
@@ -556,7 +578,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.signKeySpend",
     message: {
-      v: 2,
+      v: 3,
       id: 37,
       method: "spark.signKeySpend",
       session: SESSION,
@@ -570,7 +592,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.signHtlcTimeout",
     message: {
-      v: 2,
+      v: 3,
       id: 38,
       method: "spark.signHtlcTimeout",
       session: SESSION,
@@ -589,7 +611,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.prepareTransfer",
     message: {
-      v: 2,
+      v: 3,
       id: 39,
       method: "spark.prepareTransfer",
       session: SESSION,
@@ -611,7 +633,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.prepareClaim",
     message: {
-      v: 2,
+      v: 3,
       id: 40,
       method: "spark.prepareClaim",
       session: SESSION,
@@ -627,7 +649,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.prepareLightningReceive",
     message: {
-      v: 2,
+      v: 3,
       id: 41,
       method: "spark.prepareLightningReceive",
       session: SESSION,
@@ -637,7 +659,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "keys.import",
     message: {
-      v: 2,
+      v: 3,
       id: 50,
       method: "keys.import",
       session: SESSION,
@@ -646,12 +668,12 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   },
   {
     name: "keys.list",
-    message: { v: 2, id: 51, method: "keys.list", session: SESSION, params: null },
+    message: { v: 3, id: 51, method: "keys.list", session: SESSION, params: null },
   },
   {
     name: "keys.remove",
     message: {
-      v: 2,
+      v: 3,
       id: 52,
       method: "keys.remove",
       session: SESSION,
@@ -661,7 +683,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "keys.export",
     message: {
-      v: 2,
+      v: 3,
       id: 53,
       method: "keys.export",
       session: SESSION,
@@ -671,7 +693,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "chain.sign-imported-account",
     message: {
-      v: 2,
+      v: 3,
       id: 54,
       method: "chain.sign",
       session: SESSION,
@@ -689,7 +711,7 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
   {
     name: "spark.claimStaticDeposit",
     message: {
-      v: 2,
+      v: 3,
       id: 42,
       method: "spark.claimStaticDeposit",
       session: SESSION,
@@ -720,23 +742,23 @@ const accept = [
   {
     name: "response-ok-status",
     check: "response:status",
-    message: { v: 2, id: 1, ok: statusUnlocked },
+    message: { v: 3, id: 1, ok: statusUnlocked },
   },
   {
     name: "response-ok-vault.unlock",
     check: "response:vault.unlock",
-    message: { v: 2, id: 2, ok: { session: SESSION } },
+    message: { v: 3, id: 2, ok: { session: SESSION } },
   },
   {
     name: "response-ok-vault.reset",
     check: "response:vault.reset",
-    message: { v: 2, id: 3, ok: null },
+    message: { v: 3, id: 3, ok: null },
   },
   {
     name: "response-ok-vault.addFactor",
     check: "response:vault.addFactor",
     message: {
-      v: 2,
+      v: 3,
       id: 4,
       ok: {
         kind: "passkey",
@@ -747,10 +769,20 @@ const accept = [
     },
   },
   {
+    name: "response-ok-vault.enrolVerification",
+    check: "response:vault.enrolVerification",
+    message: { v: 3, id: 5, ok: null },
+  },
+  {
+    name: "response-ok-vault.setAppLock",
+    check: "response:vault.setAppLock",
+    message: { v: 3, id: 6, ok: null },
+  },
+  {
     name: "response-ok-wallet.createMnemonic",
     check: "response:wallet.createMnemonic",
     message: {
-      v: 2,
+      v: 3,
       id: 8,
       ok: { draft: DRAFT, words: $b(hexOf("legal winner thank year")), quiz: [0, 5, 11] },
     },
@@ -758,23 +790,23 @@ const accept = [
   {
     name: "response-ok-wallet.importMnemonic",
     check: "response:wallet.importMnemonic",
-    message: { v: 2, id: 11, ok: { wallet: walletInfo, session: SESSION } },
+    message: { v: 3, id: 11, ok: { wallet: walletInfo, session: SESSION } },
   },
   {
     name: "response-ok-wallet.importMnemonic-passphrase",
     check: "response:wallet.importMnemonic",
-    message: { v: 2, id: 11, ok: { wallet: passphraseWalletInfo, session: SESSION } },
+    message: { v: 3, id: 11, ok: { wallet: passphraseWalletInfo, session: SESSION } },
   },
   {
     name: "response-ok-wallet.exportMnemonic",
     check: "response:wallet.exportMnemonic",
-    message: { v: 2, id: 12, ok: { mnemonic: $b(hexOf("legal winner thank year")) } },
+    message: { v: 3, id: 12, ok: { mnemonic: $b(hexOf("legal winner thank year")) } },
   },
   {
     name: "response-ok-wallet.exportMnemonic-passphrase",
     check: "response:wallet.exportMnemonic",
     message: {
-      v: 2,
+      v: 3,
       id: 12,
       ok: { mnemonic: $b(hexOf("legal winner thank year")), passphrase: PASSPHRASE },
     },
@@ -783,7 +815,7 @@ const accept = [
     name: "response-ok-backup.restore",
     check: "response:backup.restore",
     message: {
-      v: 2,
+      v: 3,
       id: 15,
       ok: {
         wallets: [walletInfo],
@@ -795,42 +827,42 @@ const accept = [
   {
     name: "response-ok-dataKeys.get",
     check: "response:dataKeys.get",
-    message: { v: 2, id: 14, ok: $b(PRF) },
+    message: { v: 3, id: 14, ok: $b(PRF) },
   },
   {
     name: "response-ok-keys.import",
     check: "response:keys.import",
-    message: { v: 2, id: 50, ok: evmKeyInfo },
+    message: { v: 3, id: 50, ok: evmKeyInfo },
   },
   {
     name: "response-ok-keys.list",
     check: "response:keys.list",
-    message: { v: 2, id: 51, ok: [keyInfo, evmKeyInfo] },
+    message: { v: 3, id: 51, ok: [keyInfo, evmKeyInfo] },
   },
   {
     name: "response-ok-keys.remove",
     check: "response:keys.remove",
-    message: { v: 2, id: 52, ok: null },
+    message: { v: 3, id: 52, ok: null },
   },
   {
     name: "response-ok-keys.export",
     check: "response:keys.export",
-    message: { v: 2, id: 53, ok: $b("cd".repeat(32)) },
+    message: { v: 3, id: 53, ok: $b("cd".repeat(32)) },
   },
   {
     name: "response-ok-nostr.deriveKey",
     check: "response:nostr.deriveKey",
-    message: { v: 2, id: 23, ok: derivedKey },
+    message: { v: 3, id: 23, ok: derivedKey },
   },
   {
     name: "response-ok-nostr.signEvent",
     check: "response:nostr.signEvent",
-    message: { v: 2, id: 20, ok: signedEvent },
+    message: { v: 3, id: 20, ok: signedEvent },
   },
   {
     name: "response-ok-nostr.nip44Encrypt",
     check: "response:nostr.nip44Encrypt",
-    message: { v: 2, id: 21, ok: "ciphertext?iv=1" },
+    message: { v: 3, id: 21, ok: "ciphertext?iv=1" },
   },
   {
     name: "response-ok-nostr.syncKey",
@@ -855,18 +887,18 @@ const accept = [
   {
     name: "response-ok-spark.identityPublicKey",
     check: "response:spark.identityPublicKey",
-    message: { v: 2, id: 30, ok: COMPRESSED },
+    message: { v: 3, id: 30, ok: COMPRESSED },
   },
   {
     name: "response-ok-spark.newCommitments",
     check: "response:spark.newCommitments",
-    message: { v: 2, id: 33, ok: [sparkCommitment, sparkCommitment] },
+    message: { v: 3, id: 33, ok: [sparkCommitment, sparkCommitment] },
   },
   {
     name: "response-ok-spark.prepareLightningReceive",
     check: "response:spark.prepareLightningReceive",
     message: {
-      v: 2,
+      v: 3,
       id: 41,
       ok: {
         paymentHash: BYTES32,
@@ -878,7 +910,7 @@ const accept = [
     name: "response-ok-spark.prepareTransfer",
     check: "response:spark.prepareTransfer",
     message: {
-      v: 2,
+      v: 3,
       id: 39,
       ok: {
         operatorPackages: { [OPERATOR]: $b("ab".repeat(96)) },
@@ -897,7 +929,7 @@ const accept = [
     name: "response-ok-spark.claimStaticDeposit",
     check: "response:spark.claimStaticDeposit",
     message: {
-      v: 2,
+      v: 3,
       id: 42,
       ok: { encryptedSecretKey: $b("ab".repeat(96)), signature: SIG64 },
     },
@@ -905,46 +937,56 @@ const accept = [
   {
     name: "response-err-wrong-password",
     check: "responseError",
-    message: { v: 2, id: 2, err: { code: "wrong-password" } },
+    message: { v: 3, id: 2, err: { code: "wrong-password" } },
+  },
+  {
+    name: "response-err-verification-unavailable",
+    check: "responseError",
+    message: { v: 3, id: 2, err: { code: "verification-unavailable" } },
   },
   {
     name: "response-err-rate-limited",
     check: "responseError",
-    message: { v: 2, id: 2, err: { code: "rate-limited", retryAt: CREATED_AT + 30_000 } },
+    message: { v: 3, id: 2, err: { code: "rate-limited", retryAt: CREATED_AT + 30_000 } },
   },
   {
     name: "event-status",
     check: "event",
-    message: { v: 2, event: "status", status: statusUnlocked },
+    message: { v: 3, event: "status", status: statusUnlocked },
   },
   {
     name: "event-status-hardware",
     check: "event",
     message: {
-      v: 2,
+      v: 3,
       event: "status",
-      status: { ...statusUnlocked, factors: [hardwareFactorInfo], backup: null },
+      status: {
+        ...statusUnlocked,
+        appLock: false,
+        factors: [deviceFactorInfo, hardwareFactorInfo],
+        backup: null,
+      },
     },
   },
   {
     name: "event-locked-idle",
     check: "event",
-    message: { v: 2, event: "locked", reason: "idle" },
+    message: { v: 3, event: "locked", reason: "idle" },
   },
   {
     name: "event-locked-invalidated",
     check: "event",
-    message: { v: 2, event: "locked", reason: "invalidated" },
+    message: { v: 3, event: "locked", reason: "invalidated" },
   },
   {
     name: "event-ceremony-start",
     check: "event",
-    message: { v: 2, event: "ceremony", active: true },
+    message: { v: 3, event: "ceremony", active: true },
   },
   {
     name: "event-ceremony-end",
     check: "event",
-    message: { v: 2, event: "ceremony", active: false },
+    message: { v: 3, event: "ceremony", active: false },
   },
 ];
 
@@ -952,12 +994,34 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
   {
     name: "request-extra-envelope-key",
     check: "request",
-    message: { v: 2, id: 1, method: "status", params: null, debug: true },
+    message: { v: 3, id: 1, method: "status", params: null, debug: true },
+  },
+  {
+    name: "params-device-cannot-verify",
+    check: "request",
+    message: {
+      v: 3,
+      id: 12,
+      method: "wallet.exportMnemonic",
+      session: SESSION,
+      params: { verify: deviceFactor, walletId: WALLET_ID },
+    },
+  },
+  {
+    name: "params-setapplock-device-verify",
+    check: "request",
+    message: {
+      v: 3,
+      id: 6,
+      method: "vault.setAppLock",
+      session: SESSION,
+      params: { enabled: true, verify: deviceFactor },
+    },
   },
   {
     name: "request-prototype-named-envelope-key",
     check: "request",
-    message: JSON.parse('{"v":2,"id":1,"method":"status","params":null,"__proto__":{}}') as unknown,
+    message: JSON.parse('{"v":3,"id":1,"method":"status","params":null,"__proto__":{}}') as unknown,
   },
   {
     name: "request-wrong-version",
@@ -967,23 +1031,23 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
   {
     name: "request-id-not-an-integer",
     check: "request",
-    message: { v: 2, id: "1", method: "status", params: null },
+    message: { v: 3, id: "1", method: "status", params: null },
   },
   {
     name: "request-unknown-method",
     check: "request",
-    message: { v: 2, id: 1, method: "vault.nuke", params: null },
+    message: { v: 3, id: 1, method: "vault.nuke", params: null },
   },
   {
     name: "request-missing-params",
     check: "request",
-    message: { v: 2, id: 1, method: "status" },
+    message: { v: 3, id: 1, method: "status" },
   },
   {
     name: "request-non-integer-number",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 1,
       method: "nostr.signEvent",
       session: SESSION,
@@ -997,7 +1061,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-unknown-key",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 2,
       method: "vault.unlock",
       params: { factor: passwordFactor, extra: 1 },
@@ -1007,7 +1071,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-prototype-named-key",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 2,
       method: "vault.unlock",
       params: JSON.parse(`{"factor":${JSON.stringify(passwordFactor)},"toString":1}`) as unknown,
@@ -1017,7 +1081,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-kernel-ceremony-with-evidence",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 7,
       method: "wallet.restoreWithPasskey",
       params: {
@@ -1032,7 +1096,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-kernel-ceremony-bad-rp-id",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 7,
       method: "wallet.restoreWithPasskey",
       params: { ceremony: "kernel", rpId: "https://qntx.org", walletSalt: "harness/wallet/v1" },
@@ -1042,7 +1106,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-hardware-with-material",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 2,
       method: "vault.unlock",
       params: { factor: { ...hardwareFactor, password: passwordFactor.password } },
@@ -1052,7 +1116,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-wrong-type",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 2,
       method: "vault.unlock",
       params: { factor: { kind: "password", password: "correct horse battery staple" } },
@@ -1062,7 +1126,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-over-length-string",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 14,
       method: "dataKeys.get",
       session: SESSION,
@@ -1073,7 +1137,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-spark-batch-over-cap",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 31,
       method: "spark.publicKeys",
       session: SESSION,
@@ -1087,7 +1151,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-spark-count-out-of-range",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 33,
       method: "spark.newCommitments",
       session: SESSION,
@@ -1098,7 +1162,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-spark-bad-identifier",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 34,
       method: "spark.signFrost",
       session: SESSION,
@@ -1120,7 +1184,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-spark-extra-field",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 30,
       method: "spark.identityPublicKey",
       session: SESSION,
@@ -1131,14 +1195,14 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "response-spark-record-proto-key",
     check: "response:spark.prepareLightningReceive",
     message: JSON.parse(
-      `{"v":2,"id":41,"ok":{"paymentHash":${JSON.stringify(BYTES32)},"operatorPackages":{"__proto__":{"$bytes":"abcd"}}}}`,
+      `{"v":3,"id":41,"ok":{"paymentHash":${JSON.stringify(BYTES32)},"operatorPackages":{"__proto__":{"$bytes":"abcd"}}}}`,
     ) as unknown,
   },
   {
     name: "params-passphrase-empty",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 11,
       method: "wallet.importMnemonic",
       params: {
@@ -1153,7 +1217,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-passphrase-over-cap",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 9,
       method: "wallet.confirmMnemonic",
       params: {
@@ -1167,7 +1231,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-passphrase-as-text",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 11,
       method: "wallet.importMnemonic",
       params: {
@@ -1182,7 +1246,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-restore-passphrase-empty",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 15,
       method: "backup.restore",
       params: {
@@ -1196,7 +1260,7 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
     name: "params-restore-passphrase-extra-key",
     check: "request",
     message: {
-      v: 2,
+      v: 3,
       id: 15,
       method: "backup.restore",
       params: {
@@ -1209,18 +1273,18 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
   {
     name: "response-export-bare-bytes",
     check: "response:wallet.exportMnemonic",
-    message: { v: 2, id: 12, ok: $b(hexOf("legal winner thank year")) },
+    message: { v: 3, id: 12, ok: $b(hexOf("legal winner thank year")) },
   },
   {
     name: "response-restore-missing-passphraseRequired",
     check: "response:backup.restore",
-    message: { v: 2, id: 15, ok: { wallets: [walletInfo], session: SESSION } },
+    message: { v: 3, id: 15, ok: { wallets: [walletInfo], session: SESSION } },
   },
   {
     name: "response-wallet-info-missing-passphrase",
     check: "response:wallet.importMnemonic",
     message: {
-      v: 2,
+      v: 3,
       id: 11,
       ok: {
         wallet: {
@@ -1237,43 +1301,43 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
   {
     name: "params-session-wrong-type",
     check: "request",
-    message: { v: 2, id: 14, method: "dataKeys.get", session: 42, params: { purpose: "backup" } },
+    message: { v: 3, id: 14, method: "dataKeys.get", session: 42, params: { purpose: "backup" } },
   },
   {
     name: "response-wrong-result-shape",
     check: "response:vault.unlock",
-    message: { v: 2, id: 2, ok: { session: 42 } },
+    message: { v: 3, id: 2, ok: { session: 42 } },
   },
   {
     name: "response-err-unknown-code",
     check: "responseError",
-    message: { v: 2, id: 2, err: { code: "nope" } },
+    message: { v: 3, id: 2, err: { code: "nope" } },
   },
   {
     name: "response-err-extra-key",
     check: "responseError",
-    message: { v: 2, id: 2, err: { code: "wrong-password", nope: "extra" } },
+    message: { v: 3, id: 2, err: { code: "wrong-password", nope: "extra" } },
   },
   {
     name: "event-unknown-field",
     check: "event",
-    message: { v: 2, event: "locked", reason: "idle", extra: true },
+    message: { v: 3, event: "locked", reason: "idle", extra: true },
   },
   {
     name: "event-unknown-reason",
     check: "event",
-    message: { v: 2, event: "locked", reason: "forgotten" },
+    message: { v: 3, event: "locked", reason: "forgotten" },
   },
   {
     name: "event-ceremony-active-not-boolean",
     check: "event",
-    message: { v: 2, event: "ceremony", active: "yes" },
+    message: { v: 3, event: "ceremony", active: "yes" },
   },
 ];
 
 const out = {
   comment:
-    'PROTOCOL_VERSION 2 wire samples generated by scripts/vectors/protocol.ts — independent of @qntx/wallet. Uint8Array fields are { "$bytes": "<hex>" }; `check` names the contract each sample exercises.',
+    'PROTOCOL_VERSION 3 wire samples generated by scripts/vectors/protocol.ts — independent of @qntx/wallet. Uint8Array fields are { "$bytes": "<hex>" }; `check` names the contract each sample exercises.',
   accept,
   reject,
 };

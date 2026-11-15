@@ -1,5 +1,5 @@
 import type { SparkCrypto } from "@qntx/spark/crypto";
-import type { ProtocolValue } from "@qntx/wallet/protocol";
+import type { Factor, ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "./errors.ts";
 /**
@@ -94,16 +94,32 @@ export type KeystorePrompt = {
 };
 
 /**
- * The platform keystore contract (W5): a hardware-backed sealer that owns the vault factor's KEK.
- * `seal` creates the key alias `id` and encrypts `secret` under it after a user-presence prompt;
- * `open` decrypts after the same presence check; `authenticate` only proves the device owner is
- * present (reset); `clear` deletes every vault key this app created. The host rejects with
- * KernelError codes `cancelled` | `factor-invalidated` | `no-device-credential` | `unavailable`.
+ * How one keystore operation protects its key. `device` seals and opens silently — the factor
+ * exists so the vault can unlock without user presence. `presence` requires the system verification
+ * prompt and carries the text the kernel renders.
+ */
+export type KeyUse =
+  | { readonly protection: "device" }
+  | { readonly protection: "presence"; readonly prompt: KeystorePrompt };
+
+/**
+ * The platform keystore contract (W5): a hardware-backed sealer that owns the vault factors' KEKs.
+ * `seal` creates the key alias `id` and encrypts `secret` under it; `open` decrypts; `probe`
+ * reports whether the key still exists without any UI; `remove` deletes one key; `authenticate`
+ * only proves the device owner is present (reset); `clear` deletes every vault key this app
+ * created. The host rejects with KernelError codes `cancelled` | `factor-invalidated` |
+ * `verification-unavailable` | `unavailable`.
  */
 export type Keystore = {
   readonly locale: string; // host-preferred BCP 47 language tag
-  readonly seal: (id: string, secret: Uint8Array, prompt: KeystorePrompt) => Promise<Uint8Array>;
-  readonly open: (id: string, sealed: Uint8Array, prompt: KeystorePrompt) => Promise<Uint8Array>;
+  readonly seal: (id: string, secret: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
+  readonly open: (id: string, sealed: Uint8Array, use: KeyUse) => Promise<Uint8Array>;
+  /**
+   * `false` only when key `id` is gone for good (deleted, permanently invalidated, or — for
+   * presence keys — the lock screen is off); never shows UI. Any other failure rejects.
+   */
+  readonly probe: (id: string, protection: KeyUse["protection"]) => Promise<boolean>;
+  readonly remove: (id: string) => Promise<void>;
   readonly authenticate: (prompt: KeystorePrompt) => Promise<void>;
   readonly clear: () => Promise<void>;
 };
@@ -156,10 +172,12 @@ export function requirePasskey(platform: KernelPlatform): PasskeyAuthenticator {
 }
 
 /**
- * Serializes every system-UI ceremony — keystore seal/open/authenticate/clear and passkey
- * create/get share one queue, because the platform can show only one verification at a time. A
- * rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony` fires `true` when
- * a ceremony's work starts and `false` when it settles, strictly paired per queued call.
+ * Serializes every system-UI ceremony — presence keystore seal/open, authenticate, clear and
+ * passkey create/get share one queue, because the platform can show only one verification at a
+ * time. Silent keystore work (device seal/open, probe, remove) bypasses the queue and never fires
+ * `onCeremony`. A rejection does not wedge the queue. Applied once by `startKernel`. `onCeremony`
+ * fires `true` when a ceremony's work starts and `false` when it settles, strictly paired per
+ * queued call.
  */
 export function serializeCeremonies(
   platform: KernelPlatform,
@@ -189,10 +207,16 @@ export function serializeCeremonies(
         ? undefined
         : {
             locale: keystore.locale,
-            seal: async (id, secret, prompt) =>
-              queue(async () => keystore.seal(id, secret, prompt)),
-            open: async (id, sealed, prompt) =>
-              queue(async () => keystore.open(id, sealed, prompt)),
+            seal: async (id, secret, use) =>
+              use.protection === "presence"
+                ? queue(async () => keystore.seal(id, secret, use))
+                : keystore.seal(id, secret, use),
+            open: async (id, sealed, use) =>
+              use.protection === "presence"
+                ? queue(async () => keystore.open(id, sealed, use))
+                : keystore.open(id, sealed, use),
+            probe: async (id, protection) => keystore.probe(id, protection),
+            remove: async (id) => keystore.remove(id),
             authenticate: async (prompt) => queue(async () => keystore.authenticate(prompt)),
             clear: async () => queue(async () => keystore.clear()),
           },
@@ -207,17 +231,33 @@ export function serializeCeremonies(
 }
 
 /**
- * Factor-kind gate by platform: a keystore host (RN) takes only `hardware` vault factors — a
- * password there would let a compromised main runtime satisfy per-operation verification without
+ * Factor-kind gate by platform: a keystore host (RN) takes only `device`/`hardware` vault factors —
+ * a password there would let a compromised main runtime satisfy per-operation verification without
  * the system prompt — and a host without one (web/node) takes only `password`/`passkey`. Backup
  * factors are exempt.
  */
 export function assertFactorKindAvailable(
   platform: KernelPlatform,
-  kind: "hardware" | "password" | "passkey",
+  kind: "device" | "hardware" | "password" | "passkey",
 ): void {
-  if ((platform.keystore !== undefined) !== (kind === "hardware")) {
+  const native = kind === "device" || kind === "hardware";
+  if ((platform.keystore !== undefined) !== native) {
     throw new KernelError("unsupported", "this factor kind is not available here");
+  }
+}
+
+/**
+ * Gate for the factor a vault is established with: a keystore host always begins with the silent
+ * `device` factor (the host then adds `hardware` itself when the device supports presence), and a
+ * host without a keystore accepts `password`/`passkey` only.
+ */
+export function assertInitialFactor(platform: KernelPlatform, factor: Factor): void {
+  const initial =
+    platform.keystore === undefined
+      ? factor.kind === "password" || factor.kind === "passkey"
+      : factor.kind === "device";
+  if (!initial) {
+    throw new KernelError("unsupported", "this factor cannot establish a vault here");
   }
 }
 

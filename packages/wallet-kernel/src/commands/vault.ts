@@ -1,17 +1,22 @@
-import type { Factor, NullValue } from "@qntx/wallet/protocol";
+import { bytesToHex } from "@noble/hashes/utils.js";
+
+import type { Factor, NullValue, VerifyFactor } from "@qntx/wallet/protocol";
 import type { FactorInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
-import { assertFactorKindAvailable } from "../platform.ts";
+import { assertFactorKindAvailable, requireKeystore } from "../platform.ts";
 import type { Pbkdf2 } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { withSeed } from "../seed/seed.ts";
-import type { VaultImage, StoredRecord } from "../vault/store.ts";
+import type { StoredRecord, VaultImage } from "../vault/store.ts";
+import { UPGRADABLE_FORMAT, VAULT_FORMAT } from "../vault/store.ts";
 import {
   factorInfo,
+  factorRow,
   makeFactor,
+  newKeystoreKek,
   openWalletSecret,
   rotateVault,
   unlock,
@@ -57,13 +62,73 @@ export async function unlockVault(
     throw new KernelError("unsupported", "the vault needs a newer build");
   }
   const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor, ctx.commit);
+  if (ctx.image.meta !== undefined && ctx.image.meta.format === UPGRADABLE_FORMAT) {
+    try {
+      await upgradeVault(ctx, dek);
+    } catch (error) {
+      dek.wipe();
+      throw error;
+    }
+  }
   // Already unlocked on the same vault key: keep the live session — rotating it would orphan
   // every in-flight request the engine issued against the current id.
   if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
     dek.wipe();
     return { session: ctx.session.current().id };
   }
-  return { session: openSession(ctx, dek, keyId) };
+  const session = openSession(ctx, dek, keyId);
+  // Best-effort cleanup of a dead keystore key of the other kind: probe/commit failures never
+  // break the session the unlock just opened.
+  await probeKeystoreFactor(ctx, params.factor.kind).catch(() => undefined);
+  return { session };
+}
+
+/**
+ * The format-3 → format-4 upgrade a successful unlock performs before any session opens: sets the
+ * format and — on a keystore host — adds the silent `device` factor wrapping the freshly unlocked
+ * DEK. On failure the new device key is removed best-effort and the caller drops the DEK, so no
+ * session can exist for a format-3 vault.
+ */
+async function upgradeVault(ctx: KernelContext, dek: Secret): Promise<void> {
+  const { keystore } = ctx.platform;
+  if (keystore === undefined) {
+    await ctx.commit([{ op: "set-format", format: VAULT_FORMAT }]);
+    return;
+  }
+  const id = bytesToHex(ctx.platform.random(16));
+  try {
+    const material = await newKeystoreKek(ctx.platform, id, { protection: "device" });
+    const row = factorRow(ctx.platform, material, id, dek);
+    await ctx.commit([
+      { op: "set-format", format: VAULT_FORMAT },
+      { op: "put-factor", factor: row },
+    ]);
+  } catch (error) {
+    await keystore.remove(id).catch(() => undefined);
+    throw error;
+  }
+}
+
+/**
+ * Probes the keystore factor of the kind `unlockedKind` did not use (device unlock → hardware row;
+ * hardware unlock → device row). A `false` probe means the key is gone for good: the row is dropped
+ * — never the vault's last factor — and the stale key removed best-effort.
+ */
+async function probeKeystoreFactor(ctx: KernelContext, unlockedKind: string): Promise<void> {
+  const { keystore } = ctx.platform;
+  if (keystore === undefined || (unlockedKind !== "device" && unlockedKind !== "hardware")) {
+    return;
+  }
+  const other = unlockedKind === "device" ? "hardware" : "device";
+  const row = ctx.image.factors.find((f) => f.kind === other);
+  if (row === undefined || ctx.image.factors.length <= 1) {
+    return;
+  }
+  if (await keystore.probe(row.id, other === "device" ? "device" : "presence")) {
+    return;
+  }
+  await ctx.commit([{ op: "delete-factor", id: row.id }]);
+  await keystore.remove(row.id).catch(() => undefined);
 }
 
 /**
@@ -116,19 +181,20 @@ export async function resetVault(
  * Adds a factor after re-verifying with an existing one. A password factor REPLACES the existing
  * password factor and rotates the DEK (change password): every record re-seals and every retained
  * factor re-wraps in one guarded commit — other hosts see the keyId change and invalidate. A
- * passkey or hardware factor wraps the current DEK only: no rotation, keyId unchanged. At most one
- * hardware factor exists. Kind and uniqueness are checked before the verification prompt.
+ * passkey factor wraps the current DEK only: no rotation, keyId unchanged. Factor management does
+ * not exist on keystore hosts — `enrolVerification` covers their single verifying factor. Kind is
+ * checked before the verification prompt.
  */
 export async function addFactor(
   ctx: KernelContext,
-  params: { verify: Factor; factor: Factor },
+  params: { verify: VerifyFactor; factor: Factor },
   requestSession: string | undefined,
 ): Promise<FactorInfo> {
+  if (ctx.platform.keystore !== undefined) {
+    throw new KernelError("unsupported", "factor management is not available on this host");
+  }
   const { dek } = ctx.session.require(requestSession);
   assertFactorKindAvailable(ctx.platform, params.factor.kind);
-  if (params.factor.kind === "hardware" && ctx.image.factors.some((f) => f.kind === "hardware")) {
-    throw new KernelError("already-exists", "the vault already has a hardware factor");
-  }
   await verifyFactor(
     ctx.platform,
     ctx.image,
@@ -163,9 +229,12 @@ export async function addFactor(
 
 export async function removeFactor(
   ctx: KernelContext,
-  params: { verify: Factor; id: string },
+  params: { verify: VerifyFactor; id: string },
   requestSession: string | undefined,
 ): Promise<NullValue> {
+  if (ctx.platform.keystore !== undefined) {
+    throw new KernelError("unsupported", "factor management is not available on this host");
+  }
   const { dek } = ctx.session.require(requestSession);
   const stored = ctx.image.factors.find((f) => f.id === params.id);
   if (stored === undefined) {
@@ -186,5 +255,103 @@ export async function removeFactor(
   await ctx.commit(rotation.ops, {
     rotate: { dek: rotation.dek, keyId: rotation.keyId },
   });
+  return null;
+}
+
+/**
+ * Registers the verifying (hardware) factor on a keystore vault that has none — or replaces one the
+ * keystore reports dead. The only unguarded enrolment: it exists so a device-only vault can gain
+ * presence verification without already having it. A live hardware row is `already-exists`; no lock
+ * screen is `verification-unavailable` and writes nothing.
+ */
+export async function enrolVerification(
+  ctx: KernelContext,
+  _params: NullValue,
+  requestSession: string | undefined,
+): Promise<NullValue> {
+  const keystore = requireKeystore(ctx.platform);
+  const { dek } = ctx.session.require(requestSession);
+  const existing = ctx.image.factors.find((f) => f.kind === "hardware");
+  if (existing !== undefined) {
+    if (await keystore.probe(existing.id, "presence")) {
+      throw new KernelError("already-exists", "the vault already has a verifying factor");
+    }
+    // The hardware key is gone for good — drop the dead row before the new one lands.
+    await ctx.commit([{ op: "delete-factor", id: existing.id }]);
+    await keystore.remove(existing.id).catch(() => undefined);
+  }
+  const id = bytesToHex(ctx.platform.random(16));
+  try {
+    const material = await newKeystoreKek(ctx.platform, id, {
+      protection: "presence",
+      prompt: corePromptFor(keystore, "create")(),
+    });
+    // The session can end while the system prompt is up — the row must not outlive it.
+    ctx.session.require(requestSession);
+    const row = factorRow(ctx.platform, material, id, dek);
+    await ctx.commit([{ op: "put-factor", factor: row }]);
+  } catch (error) {
+    await keystore.remove(id).catch(() => undefined);
+    throw error;
+  }
+  return null;
+}
+
+/**
+ * The native app lock: `enabled` drops the silent device factor — the DEK rotates so the key the
+ * device key protected dies with it, and every other host's session invalidates — and `disabled`
+ * restores it. Already in the target state is a prompt-free no-op; otherwise a presence ceremony
+ * verifies first.
+ */
+export async function setAppLock(
+  ctx: KernelContext,
+  params: { enabled: boolean; verify: VerifyFactor },
+  requestSession: string | undefined,
+): Promise<NullValue> {
+  const keystore = requireKeystore(ctx.platform);
+  const { dek } = ctx.session.require(requestSession);
+  const locked = !ctx.image.factors.some((f) => f.kind === "device");
+  if (params.enabled === locked) {
+    return null;
+  }
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    ctx.commit,
+    corePromptFor(keystore, "app-lock"),
+  );
+  const session = ctx.session.require(requestSession);
+  const deviceRow = ctx.image.factors.find((f) => f.kind === "device");
+  if (params.enabled) {
+    if (deviceRow === undefined) {
+      return null; // the state changed between the image read and the verify
+    }
+    const rotation = await rotateVault(
+      ctx.platform,
+      ctx.image,
+      session.dek,
+      new Set([deviceRow.id]),
+      [],
+    );
+    await ctx.commit(rotation.ops, {
+      rotate: { dek: rotation.dek, keyId: rotation.keyId },
+    });
+    await keystore.remove(deviceRow.id).catch(() => undefined);
+    return null;
+  }
+  if (deviceRow !== undefined) {
+    return null;
+  }
+  const id = bytesToHex(ctx.platform.random(16));
+  try {
+    const material = await newKeystoreKek(ctx.platform, id, { protection: "device" });
+    const row = factorRow(ctx.platform, material, id, session.dek);
+    await ctx.commit([{ op: "put-factor", factor: row }]);
+  } catch (error) {
+    await keystore.remove(id).catch(() => undefined);
+    throw error;
+  }
   return null;
 }

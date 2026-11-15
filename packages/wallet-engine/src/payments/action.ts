@@ -4,7 +4,7 @@ import type {
   SparkNetwork,
   SparkTransfer,
 } from "@qntx/spark";
-import type { UnlockFactor } from "@qntx/wallet";
+import type { VerifyFactor } from "@qntx/wallet";
 
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { SparkController } from "../spark/controller.ts";
@@ -40,7 +40,7 @@ export type PreparedSparkAction = {
   /** Why the action can no longer be paid at `now` (an expiring invoice), if so. */
   readonly staleReason: (now: number) => string | undefined;
   /** Runs the controller's approve-first payment call. */
-  readonly execute: (spark: SparkController, verify: UnlockFactor) => Promise<SparkResult>;
+  readonly execute: (spark: SparkController, verify: VerifyFactor) => Promise<SparkResult>;
 };
 
 /** An invoice must have more than this much life left when approved. */

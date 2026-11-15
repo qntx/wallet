@@ -24,6 +24,10 @@ export const CORE_HANDLERS: {
   "vault.addFactor": async (ctx, params, session) => vaultCommands.addFactor(ctx, params, session),
   "vault.removeFactor": async (ctx, params, session) =>
     vaultCommands.removeFactor(ctx, params, session),
+  "vault.enrolVerification": async (ctx, params, session) =>
+    vaultCommands.enrolVerification(ctx, params, session),
+  "vault.setAppLock": async (ctx, params, session) =>
+    vaultCommands.setAppLock(ctx, params, session),
   "wallet.createWithPasskey": async (ctx, params, session) =>
     walletCommands.createWithPasskey(ctx, params, session),
   "wallet.restoreWithPasskey": async (ctx, params, session) =>

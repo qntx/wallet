@@ -71,8 +71,8 @@ const char* errorCode(KeystoreStatus status) {
       return "cancelled";
     case KeystoreStatus::invalidated:
       return "factor-invalidated";
-    case KeystoreStatus::noDeviceCredential:
-      return "no-device-credential";
+    case KeystoreStatus::noLockScreen:
+      return "verification-unavailable";
     case KeystoreStatus::ok:
     case KeystoreStatus::unavailable:
     case KeystoreStatus::failed:
@@ -209,6 +209,81 @@ void installKernelKeystore(
         auto prompt = promptFrom(rt, args + 2, "__qntx.keystore.open prompt");
         auto done = park(state, calls, callbackFrom(rt, args[4], "__qntx.keystore.open"), true);
         keystoreOpen(id, std::move(sealed), std::move(prompt), std::move(done));
+        return jsi::Value::undefined();
+      }));
+  keystore.setProperty(
+      rt,
+      "sealDevice",
+      hostFn(rt, "keystore.sealDevice", 3, [state, calls](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 3) {
+          throw jsi::JSError(
+              rt, "__qntx.keystore.sealDevice expects (id, secret, done)");
+        }
+        auto id = factorId(rt, args[0], "__qntx.keystore.sealDevice");
+        auto view =
+            byteViewFromValue(rt, args[1], "__qntx.keystore.sealDevice secret", *state->intrinsics);
+        if (view.size != kSecretLength) {
+          throw jsi::JSError(rt, "__qntx.keystore.sealDevice secret must be 32 bytes");
+        }
+        SecretBytes secret(view.data, view.size);
+        auto done = park(state, calls, callbackFrom(rt, args[2], "__qntx.keystore.sealDevice"), true);
+        keystoreSealDevice(id, std::move(secret), std::move(done));
+        return jsi::Value::undefined();
+      }));
+  keystore.setProperty(
+      rt,
+      "openDevice",
+      hostFn(rt, "keystore.openDevice", 3, [state, calls](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 3) {
+          throw jsi::JSError(
+              rt, "__qntx.keystore.openDevice expects (id, sealed, done)");
+        }
+        auto id = factorId(rt, args[0], "__qntx.keystore.openDevice");
+        auto view =
+            byteViewFromValue(rt, args[1], "__qntx.keystore.openDevice sealed", *state->intrinsics);
+        if (view.size == 0 || view.size > kSealedMax) {
+          throw jsi::JSError(rt, "__qntx.keystore.openDevice sealed length is out of range");
+        }
+        std::vector<uint8_t> sealed(view.data, view.data + view.size);
+        auto done = park(state, calls, callbackFrom(rt, args[2], "__qntx.keystore.openDevice"), true);
+        keystoreOpenDevice(id, std::move(sealed), std::move(done));
+        return jsi::Value::undefined();
+      }));
+  keystore.setProperty(
+      rt,
+      "probe",
+      hostFn(rt, "keystore.probe", 3, [state, calls](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 3) {
+          throw jsi::JSError(rt, "__qntx.keystore.probe expects (id, protection, done)");
+        }
+        auto id = factorId(rt, args[0], "__qntx.keystore.probe");
+        if (!args[1].isString()) {
+          throw jsi::JSError(rt, "__qntx.keystore.probe protection must be a string");
+        }
+        const auto protection = args[1].asString(rt).utf8(rt);
+        KeyProtection kind;
+        if (protection == "device") {
+          kind = KeyProtection::device;
+        } else if (protection == "presence") {
+          kind = KeyProtection::presence;
+        } else {
+          throw jsi::JSError(
+              rt, "__qntx.keystore.probe protection must be \"device\" or \"presence\"");
+        }
+        auto done = park(state, calls, callbackFrom(rt, args[2], "__qntx.keystore.probe"), false);
+        keystoreProbe(id, kind, std::move(done));
+        return jsi::Value::undefined();
+      }));
+  keystore.setProperty(
+      rt,
+      "remove",
+      hostFn(rt, "keystore.remove", 2, [state, calls](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        if (count < 2) {
+          throw jsi::JSError(rt, "__qntx.keystore.remove expects (id, done)");
+        }
+        auto id = factorId(rt, args[0], "__qntx.keystore.remove");
+        auto done = park(state, calls, callbackFrom(rt, args[1], "__qntx.keystore.remove"), false);
+        keystoreRemove(id, std::move(done));
         return jsi::Value::undefined();
       }));
   keystore.setProperty(

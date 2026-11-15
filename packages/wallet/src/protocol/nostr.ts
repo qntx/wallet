@@ -6,7 +6,7 @@
  */
 import type { DerivedNostrKey, NostrKeyInfo, WalletErrorCode } from "../types.ts";
 import {
-  factor,
+  verifier,
   identityIndex,
   MAX_BATCH,
   MAX_SNAPSHOT_ITEMS,
@@ -19,7 +19,7 @@ import {
   walletErrorCode,
   walletId,
 } from "./core.ts";
-import type { Factor, MethodSpec } from "./core.ts";
+import type { VerifyFactor, MethodSpec } from "./core.ts";
 import type { NullValue, Validator } from "./validate.ts";
 import { arr, bytes, int, literal, nullValue, obj, opt, str, union } from "./validate.ts";
 
@@ -130,7 +130,11 @@ export const NOSTR_METHODS: {
   >;
   readonly "nostr.removeKey": MethodSpec<{ readonly publicKey: string }, NullValue>;
   readonly "nostr.exportKey": MethodSpec<
-    { readonly verify: Factor; readonly publicKey: string; readonly format: NostrExportFormat },
+    {
+      readonly verify: VerifyFactor;
+      readonly publicKey: string;
+      readonly format: NostrExportFormat;
+    },
     Uint8Array
   >;
   readonly "nostr.signEvent": MethodSpec<
@@ -195,7 +199,7 @@ export const NOSTR_METHODS: {
   "nostr.exportKey": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, publicKey, format: nostrExportFormat }),
+    params: obj({ verify: verifier, publicKey, format: nostrExportFormat }),
     result: bytes(16, 4096),
   },
   "nostr.signEvent": {

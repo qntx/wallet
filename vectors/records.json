@@ -122,8 +122,8 @@
       "text": "{\"credentialId\":\"3q2-78r-\",\"publicKey\":\"JqRYFT66Kmogg041szL7sSC6lKDj6VPKh-5HsP3DbAE\",\"createdAt\":1767225600000}"
     },
     {
-      "name": "factor-hardware",
-      "kind": "factor-hardware",
+      "name": "factor-keystore",
+      "kind": "factor-keystore",
       "input": {
         "sealedKek": "BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8",
         "publicKey": "PxLfxal_e43m4jpaNusYyCfYFXOkFoQAQ1lQI1s0HUM",
@@ -157,13 +157,13 @@
       "name": "meta",
       "kind": "meta",
       "input": {
-        "format": 3,
+        "format": 4,
         "revision": 1,
         "keyId": "00112233445566778899aabbccddeeff",
         "failedAttempts": 0,
         "lastFailureAt": 0
       },
-      "text": "{\"format\":3,\"revision\":1,\"keyId\":\"00112233445566778899aabbccddeeff\",\"failedAttempts\":0,\"lastFailureAt\":0}"
+      "text": "{\"format\":4,\"revision\":1,\"keyId\":\"00112233445566778899aabbccddeeff\",\"failedAttempts\":0,\"lastFailureAt\":0}"
     }
   ]
 }

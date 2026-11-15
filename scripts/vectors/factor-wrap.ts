@@ -92,6 +92,15 @@ const cases = [
     id: "ffeeddccbbaa99887766554433221100",
     createdAt: 1767225600000,
   },
+  {
+    name: "device",
+    kek: "5a6b7c8d9e0f102132435465768798a9b0c1d2e3f40516273849a5b6c7d8e9f0",
+    eph: "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+    nonce: "303132333435363738393a3b3c3d3e3f4041424344454647",
+    kind: "device",
+    id: "11223344556677889900aabbccddeeff",
+    createdAt: 1767225600000,
+  },
 ];
 
 const vectors = [];
@@ -107,11 +116,17 @@ for (const c of cases) {
           publicKey,
           createdAt: c.createdAt,
         })
-      : JSON.stringify({
-          credentialId: "3q2-78r-",
-          publicKey,
-          createdAt: c.createdAt,
-        });
+      : c.kind === "passkey"
+        ? JSON.stringify({
+            credentialId: "3q2-78r-",
+            publicKey,
+            createdAt: c.createdAt,
+          })
+        : JSON.stringify({
+            sealedKek: "BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8",
+            publicKey,
+            createdAt: c.createdAt,
+          });
   vectors.push({
     name: c.name,
     kek: c.kek,

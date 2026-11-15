@@ -74,7 +74,7 @@ function textOf(kind: string, input: Input): string {
         publicKey: i["publicKey"],
         createdAt: i["createdAt"],
       });
-    case "factor-hardware":
+    case "factor-keystore":
       return JSON.stringify({
         sealedKek: i["sealedKek"],
         publicKey: i["publicKey"],
@@ -207,8 +207,8 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     },
   },
   {
-    name: "factor-hardware",
-    kind: "factor-hardware",
+    name: "factor-keystore",
+    kind: "factor-keystore",
     input: {
       sealedKek: "BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8",
       publicKey: "PxLfxal_e43m4jpaNusYyCfYFXOkFoQAQ1lQI1s0HUM",
@@ -240,7 +240,7 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
     name: "meta",
     kind: "meta",
     input: {
-      format: 3,
+      format: 4,
       revision: 1,
       keyId: "00112233445566778899aabbccddeeff",
       failedAttempts: 0,

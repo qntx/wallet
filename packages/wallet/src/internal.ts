@@ -1,11 +1,18 @@
-import type { Factor, MethodName, ParamsOf, ResultOf, SignedEvent } from "./protocol/index.ts";
+import type {
+  Factor,
+  MethodName,
+  ParamsOf,
+  ResultOf,
+  SignedEvent,
+  VerifyFactor as WireVerifyFactor,
+} from "./protocol/index.ts";
 /**
  * Channel internals shared between the core Wallet and the protocol subpath modules
  * (@qntx/wallet/nostr, later spark/chains). This file is NOT a package subpath — modules look a
  * Wallet up in the WeakMap, so a foreign object has no channel to reach.
  */
 import { WalletError } from "./types.ts";
-import type { InitialFactor, UnlockFactor, Wallet, WalletSnapshot } from "./types.ts";
+import type { InitialFactor, UnlockFactor, VerifyFactor, Wallet, WalletSnapshot } from "./types.ts";
 
 export type WalletInternals = {
   /** One validated request on the kernel channel (awaits the live port's first status). */
@@ -23,6 +30,11 @@ export type WalletInternals = {
   readonly withVerifying: <T>(fn: () => Promise<T>) => Promise<T>;
   /** Public UnlockFactor → wire factor material (the passkey ceremony runs here). */
   readonly resolveFactor: (factor: UnlockFactor, transfer: ArrayBuffer[]) => Promise<Factor>;
+  /** Public VerifyFactor → wire factor material; a device factor is invalid-input. */
+  readonly resolveVerifyFactor: (
+    factor: VerifyFactor,
+    transfer: ArrayBuffer[],
+  ) => Promise<WireVerifyFactor>;
   /** The create/import factor gate: required on an uninitialized vault, forbidden after. */
   readonly createFactorParam: (
     factor: InitialFactor | undefined,

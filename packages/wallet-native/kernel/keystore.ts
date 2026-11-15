@@ -1,8 +1,10 @@
 /**
  * Binds the native `__qntx.keystore` object to the kernel's `Keystore` contract. The C++ side
  * completes each call with `(bytes, code, detail)`; a failure code is already the kernel error code
- * (`cancelled`, `factor-invalidated`, `no-device-credential`, `unavailable`) and becomes a
- * `KernelError` so the vault reports it verbatim instead of as an integrity failure.
+ * (`cancelled`, `factor-invalidated`, `verification-unavailable`, `unavailable`) and becomes a
+ * `KernelError` so the vault reports it verbatim instead of as an integrity failure. Presence work
+ * carries the prompt strings; device work runs silently (`sealDevice`/`openDevice`); `probe` never
+ * shows UI and reports a gone key as `factor-invalidated` without result bytes.
  */
 import { KernelError } from "../../wallet-kernel/src/errors.ts";
 import type { Keystore } from "../../wallet-kernel/src/platform.ts";
@@ -31,6 +33,10 @@ export type KernelKeystoreNative = {
     description: string,
     done: Completion,
   ) => void;
+  readonly sealDevice: (id: string, secret: Uint8Array, done: Completion) => void;
+  readonly openDevice: (id: string, sealed: Uint8Array, done: Completion) => void;
+  readonly probe: (id: string, protection: "device" | "presence", done: Completion) => void;
+  readonly remove: (id: string, done: Completion) => void;
   readonly authenticate: (title: string, description: string, done: Completion) => void;
   readonly clear: (done: Completion) => void;
 };
@@ -39,7 +45,7 @@ function failure(code: string | undefined, detail: string | undefined): KernelEr
   const diagnostic = detailOf(detail);
   return code === "cancelled" ||
     code === "factor-invalidated" ||
-    code === "no-device-credential" ||
+    code === "verification-unavailable" ||
     code === "unavailable"
     ? new KernelError(code, "the platform keystore did not complete", undefined, false, diagnostic)
     : new KernelError(
@@ -75,16 +81,47 @@ async function outcomeOf(start: (done: Completion) => void): Promise<void> {
   });
 }
 
+/** A `probe` completion: `factor-invalidated` means the key is gone for good — `false`. */
+async function probeOf(start: (done: Completion) => void): Promise<boolean> {
+  return new Promise((resolve, reject) => {
+    start((_result, code, detail) => {
+      if (code === undefined) {
+        resolve(true);
+      } else if (code === "factor-invalidated") {
+        resolve(false);
+      } else {
+        reject(failure(code, detail));
+      }
+    });
+  });
+}
+
 export function bindNativeKeystore(raw: KernelKeystoreNative): Keystore {
   return {
     locale: raw.locale,
-    seal: async (id, secret, prompt) =>
+    seal: async (id, secret, use) =>
       bytesOf((done) => {
-        raw.seal(id, secret, prompt.title, prompt.description, done);
+        if (use.protection === "presence") {
+          raw.seal(id, secret, use.prompt.title, use.prompt.description, done);
+        } else {
+          raw.sealDevice(id, secret, done);
+        }
       }),
-    open: async (id, sealed, prompt) =>
+    open: async (id, sealed, use) =>
       bytesOf((done) => {
-        raw.open(id, sealed, prompt.title, prompt.description, done);
+        if (use.protection === "presence") {
+          raw.open(id, sealed, use.prompt.title, use.prompt.description, done);
+        } else {
+          raw.openDevice(id, sealed, done);
+        }
+      }),
+    probe: async (id, protection) =>
+      probeOf((done) => {
+        raw.probe(id, protection, done);
+      }),
+    remove: async (id) =>
+      outcomeOf((done) => {
+        raw.remove(id, done);
       }),
     authenticate: async (prompt) =>
       outcomeOf((done) => {

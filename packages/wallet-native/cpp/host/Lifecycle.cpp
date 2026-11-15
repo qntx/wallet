@@ -15,6 +15,17 @@ void KernelLifecycleDispatcher::registerHost(
   entries_.push_back(Entry{host, seconds, std::nullopt});
 }
 
+void KernelLifecycleDispatcher::update(const LifecycleLockTarget* host, int seconds) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  for (auto& entry : entries_) {
+    const auto target = entry.host.lock();
+    if (target && target.get() == host) {
+      entry.seconds = seconds;
+      return;
+    }
+  }
+}
+
 void KernelLifecycleDispatcher::unregister(const LifecycleLockTarget* host) {
   std::lock_guard<std::mutex> lock(mutex_);
   std::erase_if(entries_, [&](const Entry& entry) {

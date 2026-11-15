@@ -19,6 +19,8 @@ export type KernelHostLike = {
   readonly post: (frame: ArrayBuffer) => void;
   readonly onMessage: (cb: (frame: ArrayBuffer) => void) => void;
   readonly onExit: (cb: (reason: KernelExitReason) => void) => void;
+  /** Changes the background lock budget of the live kernel — applied by `setAutoLock`. */
+  readonly setBackgroundLock: (seconds: number) => void;
   readonly lock: () => void;
 };
 

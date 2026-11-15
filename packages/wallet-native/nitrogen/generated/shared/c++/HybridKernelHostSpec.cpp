@@ -18,6 +18,7 @@ namespace margelo::nitro::qntxwallet {
       prototype.registerHybridMethod("post", &HybridKernelHostSpec::post);
       prototype.registerHybridMethod("onMessage", &HybridKernelHostSpec::onMessage);
       prototype.registerHybridMethod("onExit", &HybridKernelHostSpec::onExit);
+      prototype.registerHybridMethod("setBackgroundLock", &HybridKernelHostSpec::setBackgroundLock);
       prototype.registerHybridMethod("lock", &HybridKernelHostSpec::lock);
     });
   }

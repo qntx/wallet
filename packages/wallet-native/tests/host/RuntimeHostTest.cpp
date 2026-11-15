@@ -655,6 +655,22 @@ int lifecycleDispatcher() {
   dispatcher.onForeground();
   CHECK(g_failures == 0, "lifecycle: stale registrations fired");
 
+  // update keeps the recorded background stamp: shortening a running budget
+  // past its already-elapsed time locks on the next foreground.
+  {
+    const auto upd = std::make_shared<FakeLockTarget>();
+    const auto stranger = std::make_shared<FakeLockTarget>();
+    dispatcher.registerHost(upd, 900);
+    dispatcher.onBackground();
+    now += 70000;
+    dispatcher.update(upd.get(), 60);
+    dispatcher.update(stranger.get(), 0); // an unregistered host: a no-op
+    dispatcher.onForeground();
+    CHECK(upd->locks == 1, "lifecycle: a shortened running budget did not expire");
+    CHECK(stranger->locks == 0, "lifecycle: update on an unregistered host fired");
+    dispatcher.unregister(upd.get());
+  }
+
   dispatcher.unregister(zero.get());
   dispatcher.unregister(sixty.get());
   dispatcher.unregister(nine.get());
@@ -726,6 +742,7 @@ int keystoreBinding() {
   const std::string js = std::string(kSendHelper) + R"JS(
 var ks = __qntx.keystore;
 var r = ["locale=" + ks.locale, "frozen=" + Object.isFrozen(ks)];
+r.push("names=" + Object.getOwnPropertyNames(ks).sort().join(","));
 var id = "0123456789abcdef0123456789abcdef";
 var kek = new Uint8Array(32);
 for (var i = 0; i < 32; i++) kek[i] = i;
@@ -739,6 +756,11 @@ throws("emptyTitle", function () { ks.open(id, new Uint8Array(4), "", "d", done)
 throws("longDescription", function () { ks.open(id, new Uint8Array(4), "t", new Array(1026).join("x"), done); });
 throws("emptySealed", function () { ks.open(id, new Uint8Array(0), "t", "d", done); });
 throws("noCallback", function () { ks.clear(1); });
+throws("deviceBadId", function () { ks.sealDevice("xyz", kek, done); });
+throws("deviceShortSecret", function () { ks.sealDevice(id, new Uint8Array(8), done); });
+throws("deviceEmptySealed", function () { ks.openDevice(id, new Uint8Array(0), done); });
+throws("badProtection", function () { ks.probe(id, "presence-ish", done); });
+throws("removeNoCallback", function () { ks.remove(id); });
 function step(fn) { return new Promise(function (resolve) { fn(function (value, code, detail) { resolve([value, code, detail]); }); }); }
 step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).then(function (sealed) {
   r.push("sealed=" + (sealed[0] instanceof Uint8Array && sealed[0].length === 32 && sealed[1] === undefined));
@@ -747,6 +769,26 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
   var same = opened[0] instanceof Uint8Array && opened[0].length === 32;
   for (var j = 0; same && j < 32; j++) same = opened[0][j] === j;
   r.push("opened=" + same);
+  return step(function (cb) { ks.sealDevice(id, kek, cb); });
+}).then(function (dsealed) {
+  r.push("dsealed=" + (dsealed[0] instanceof Uint8Array && dsealed[0].length === 32));
+  return step(function (cb) { ks.openDevice(id, dsealed[0], cb); });
+}).then(function (dopened) {
+  var dsame = dopened[0] instanceof Uint8Array && dopened[0].length === 32;
+  for (var k = 0; dsame && k < 32; k++) dsame = dopened[0][k] === k;
+  r.push("dopened=" + dsame);
+  return step(function (cb) { ks.probe(id, "device", cb); });
+}).then(function (pd) {
+  r.push("probeDevice=" + (pd[0] === undefined && pd[1] === undefined));
+  return step(function (cb) { ks.probe(id, "presence", cb); });
+}).then(function (pp) {
+  r.push("probePresence=" + (pp[0] === undefined && pp[1] === undefined));
+  return step(function (cb) { ks.remove(id, cb); });
+}).then(function (rm) {
+  r.push("removed=" + (rm[0] === undefined && rm[1] === undefined));
+  return step(function (cb) { ks.probe(id, "device", cb); });
+}).then(function (gone) {
+  r.push("probeGone=" + gone[1]);
   return step(function (cb) { ks.authenticate("重置钱包", "验证设备所有者", cb); });
 }).then(function (auth) {
   r.push("auth=" + (auth[0] === undefined && auth[1] === undefined));
@@ -759,9 +801,9 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
   return step(function (cb) { ks.authenticate("fail:unavailable", "d", cb); });
 }).then(function (c2) {
   r.push("unavailable=" + c2[1] + "/" + c2[2]);
-  return step(function (cb) { ks.authenticate("fail:nodevice", "d", cb); });
+  return step(function (cb) { ks.authenticate("fail:nolockscreen", "d", cb); });
 }).then(function (c2b) {
-  r.push("nodevice=" + c2b[1] + "/" + c2b[2]);
+  r.push("nolockscreen=" + c2b[1] + "/" + c2b[2]);
   return step(function (cb) { ks.open(id, new Uint8Array(4), "fail:failed", "d", cb); });
 }).then(function (c3) {
   r.push("failed=" + c3[1]);
@@ -779,14 +821,19 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "locale=zh-Hans-CN frozen=true badId=ok shortSecret=ok emptyTitle=ok "
-                "longDescription=ok emptySealed=ok noCallback=ok sealed=true opened=true "
-                "auth=true missing=factor-invalidated cancelled=cancelled "
-                "unavailable=unavailable/fail:unavailable "
-                "nodevice=no-device-credential/fail:nodevice failed=unavailable clear=true",
+                "locale=zh-Hans-CN frozen=true "
+                "names=authenticate,clear,locale,open,openDevice,probe,remove,seal,sealDevice "
+                "badId=ok shortSecret=ok emptyTitle=ok longDescription=ok emptySealed=ok "
+                "noCallback=ok deviceBadId=ok deviceShortSecret=ok deviceEmptySealed=ok "
+                "badProtection=ok removeNoCallback=ok sealed=true opened=true dsealed=true "
+                "dopened=true probeDevice=true probePresence=true removed=true "
+                "probeGone=factor-invalidated auth=true missing=factor-invalidated "
+                "cancelled=cancelled unavailable=unavailable/fail:unavailable "
+                "nolockscreen=verification-unavailable/fail:nolockscreen "
+                "failed=unavailable clear=true",
       "keystore-binding: bridge behaviour drifted");
   const auto calls = qntxTestKeystore::calls();
-  CHECK(calls.size() == 9, "keystore-binding: expected nine platform calls");
+  CHECK(calls.size() == 15, "keystore-binding: expected fifteen platform calls");
   CHECK(!calls.empty() && calls[0].op == "seal" && calls[0].title == "保护钱包" &&
             calls[0].bytes == 32,
       "keystore-binding: seal did not reach the platform verbatim");

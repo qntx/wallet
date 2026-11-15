@@ -28,11 +28,14 @@ const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 60 };
 
 /**
  * A `__qntx.keystore` stand-in with the native completion shape: sealing reverses the bytes, keys
- * live per id, and `failNext` makes the next prompting call complete with a native failure code.
+ * live per id, presence work needs the lock screen, and `failNext` makes the next call complete
+ * with a native failure code.
  */
 function fakeNativeKeystore() {
   const keys = new Map<string, Uint8Array>();
+  const presence = new Set<string>();
   const failures: string[] = [];
+  let lockScreen = true;
   const later = (fn: () => void) => {
     setTimeout(fn);
   };
@@ -41,6 +44,29 @@ function fakeNativeKeystore() {
   const native: KernelKeystoreNative = {
     locale: "en-US",
     seal: (id, secret, _title, _description, done) => {
+      const code = failures.shift() ?? (lockScreen ? undefined : "verification-unavailable");
+      const sealed = seal(secret);
+      if (code === undefined) {
+        keys.set(id, sealed);
+        presence.add(id);
+      }
+      later(() => {
+        done(code === undefined ? sealed : undefined, code, undefined);
+      });
+    },
+    open: (id, sealed, _title, _description, done) => {
+      const code =
+        failures.shift() ?? (!lockScreen || !presence.has(id) ? "factor-invalidated" : undefined);
+      const known = keys.get(id);
+      later(() => {
+        if (code !== undefined) {
+          done(undefined, code, undefined);
+          return;
+        }
+        done(known === undefined ? undefined : seal(sealed), undefined, undefined);
+      });
+    },
+    sealDevice: (id, secret, done) => {
       const code = failures.shift();
       const sealed = seal(secret);
       if (code === undefined) {
@@ -50,7 +76,7 @@ function fakeNativeKeystore() {
         done(code === undefined ? sealed : undefined, code, undefined);
       });
     },
-    open: (id, sealed, _title, _description, done) => {
+    openDevice: (id, sealed, done) => {
       const code = failures.shift();
       const known = keys.get(id);
       later(() => {
@@ -65,26 +91,51 @@ function fakeNativeKeystore() {
         );
       });
     },
+    probe: (id, protection, done) => {
+      const alive = keys.has(id) && (protection === "device" || (lockScreen && presence.has(id)));
+      later(() => {
+        done(undefined, alive ? undefined : "factor-invalidated", undefined);
+      });
+    },
+    remove: (id, done) => {
+      keys.delete(id);
+      presence.delete(id);
+      later(() => {
+        done(undefined, undefined, undefined);
+      });
+    },
     authenticate: (_title, _description, done) => {
-      const code = failures.shift();
+      const code = failures.shift() ?? (lockScreen ? undefined : "verification-unavailable");
       later(() => {
         done(undefined, code, undefined);
       });
     },
     clear: (done) => {
       keys.clear();
+      presence.clear();
       later(() => {
         done(undefined, undefined, undefined);
       });
     },
   };
-  return { native, failNext: (code: string) => failures.push(code) };
+  return {
+    native,
+    failNext: (code: string) => failures.push(code),
+    removeLockScreen: () => {
+      lockScreen = false;
+      for (const id of presence) {
+        keys.delete(id);
+      }
+      presence.clear();
+    },
+  };
 }
 
 /** In-memory frame pipe: host wrapper (MainPort) ↔ kernel-side transport (Port). */
 type FakeHost = KernelHostLike & {
   readonly inbound: (f: ArrayBuffer) => void;
   readonly locked: () => boolean;
+  readonly backgroundLock: () => number | undefined;
   readonly _integrity: () => void;
 };
 
@@ -94,6 +145,7 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   let exitCb: ((r: KernelExitReason) => void) | undefined;
   let integCb: (() => void) | undefined;
   let locked = false;
+  let backgroundLock: number | undefined;
   const pipe: KernelFramePipe = {
     post: (frame) => {
       if (!locked) {
@@ -120,6 +172,9 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     onExit: (cb) => {
       exitCb = cb;
     },
+    setBackgroundLock: (seconds: number) => {
+      backgroundLock = seconds;
+    },
     lock: () => {
       locked = true;
       exitCb?.("locked");
@@ -128,10 +183,12 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
       hostCb?.(f);
     },
     locked: () => locked,
+    backgroundLock: () => backgroundLock,
     _integrity: () => integCb?.(),
   } as KernelHostLike & {
     inbound: (f: ArrayBuffer) => void;
     locked: () => boolean;
+    backgroundLock: () => number | undefined;
     _integrity: () => void;
   };
   return { host, pipe };
@@ -226,7 +283,7 @@ describe("createNativeWallet", () => {
     const draft = await walletA.wallets.createMnemonic({ words: 12 });
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
     await draft.confirm(draft.quiz.map((i) => words[i]!));
-    expect(walletA.getSnapshot().factors.map((f) => f.kind)).toStrictEqual(["hardware"]);
+    expect(walletA.getSnapshot().factors.map((f) => f.kind)).toStrictEqual(["device", "hardware"]);
 
     const bytesB = { value: undefined as Uint8Array | undefined };
     const host = boot(fileStore(bytesB), keystore.native);

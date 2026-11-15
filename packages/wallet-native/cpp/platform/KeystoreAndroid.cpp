@@ -116,6 +116,49 @@ void keystoreOpen(
   });
 }
 
+void keystoreSealDevice(const std::string& id, SecretBytes secret, KeystoreDone done) {
+  dispatch(std::move(done), [&](jlong token) {
+    auto method = keystoreClass()->getStaticMethod<void(
+        jlong, jni::alias_ref<jstring>, jni::alias_ref<jni::JArrayByte>)>("sealDevice");
+    method(
+        keystoreClass(),
+        token,
+        jni::make_jstring(id),
+        byteArray(secret.data(), secret.size()));
+  });
+}
+
+void keystoreOpenDevice(const std::string& id, std::vector<uint8_t> sealed, KeystoreDone done) {
+  dispatch(std::move(done), [&](jlong token) {
+    auto method = keystoreClass()->getStaticMethod<void(
+        jlong, jni::alias_ref<jstring>, jni::alias_ref<jni::JArrayByte>)>("openDevice");
+    method(
+        keystoreClass(),
+        token,
+        jni::make_jstring(id),
+        byteArray(sealed.data(), sealed.size()));
+  });
+}
+
+void keystoreProbe(const std::string& id, KeyProtection protection, KeystoreDone done) {
+  dispatch(std::move(done), [&](jlong token) {
+    auto method =
+        keystoreClass()->getStaticMethod<void(jlong, jni::alias_ref<jstring>, jboolean)>("probe");
+    method(
+        keystoreClass(),
+        token,
+        jni::make_jstring(id),
+        protection == KeyProtection::presence ? JNI_TRUE : JNI_FALSE);
+  });
+}
+
+void keystoreRemove(const std::string& id, KeystoreDone done) {
+  dispatch(std::move(done), [&](jlong token) {
+    auto method = keystoreClass()->getStaticMethod<void(jlong, jni::alias_ref<jstring>)>("remove");
+    method(keystoreClass(), token, jni::make_jstring(id));
+  });
+}
+
 void keystoreAuthenticate(KeystorePrompt prompt, KeystoreDone done) {
   dispatch(std::move(done), [&](jlong token) {
     auto method = keystoreClass()->getStaticMethod<void(
@@ -161,7 +204,7 @@ Java_com_margelo_nitro_qntxwallet_Keystore_nativeComplete(
   qntx::KeystoreResult result;
   result.status = static_cast<qntx::KeystoreStatus>(status);
   if (status < 0 ||
-      status > static_cast<jint>(qntx::KeystoreStatus::noDeviceCredential)) {
+      status > static_cast<jint>(qntx::KeystoreStatus::noLockScreen)) {
     result.status = qntx::KeystoreStatus::failed;
   }
   if (bytes != nullptr && result.status == qntx::KeystoreStatus::ok) {

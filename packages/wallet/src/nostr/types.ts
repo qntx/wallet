@@ -11,7 +11,7 @@ import type {
   ExportedSecret,
   NostrKeyInfo,
   NostrKeyRef,
-  UnlockFactor,
+  VerifyFactor,
   WalletErrorCode,
 } from "../types.ts";
 
@@ -57,6 +57,6 @@ export type NostrApi = {
   readonly exportKey: (
     ref: NostrKeyRef,
     format: NostrExportKeyFormat,
-    verify: UnlockFactor,
+    verify: VerifyFactor,
   ) => Promise<ExportedSecret>;
 };

@@ -24,6 +24,8 @@ const keystore: Keystore = {
   locale: "en",
   seal: async (_id, secret) => Promise.resolve(new Uint8Array(secret)),
   open: async (_id, sealed) => Promise.resolve(new Uint8Array(sealed)),
+  probe: async () => Promise.resolve(true),
+  remove: async () => Promise.resolve(),
   authenticate: async () => Promise.resolve(),
   clear: async () => Promise.resolve(),
 };
@@ -93,7 +95,7 @@ const create = async (h: Harness) => {
     ...RP,
     name: "alice",
     walletSalt: WALLET_SALT,
-    factor: { kind: "hardware" },
+    factor: { kind: "device" },
   });
 };
 
@@ -103,7 +105,7 @@ const restore = async (h: Harness) => {
     ceremony: "kernel",
     rpId: RP.rpId,
     walletSalt: WALLET_SALT,
-    factor: { kind: "hardware" },
+    factor: { kind: "device" },
   });
 };
 
@@ -203,7 +205,7 @@ describe("ceremony shape follows the platform", () => {
       credentialId: new Uint8Array(CREDENTIAL),
       prfWallet: new Uint8Array(PRF),
       synced: true,
-      factor: { kind: "hardware" },
+      factor: { kind: "device" },
     });
     expect(errCode(response)).toBe("unsupported");
     expect(calls).toStrictEqual([]);
@@ -261,7 +263,7 @@ describe("kernel passkey ceremony: backup factor", () => {
     const result = await fresh.call("backup.restore", {
       envelope: update.envelope,
       backupFactor: { kind: "passkey", ceremony: "kernel", rpId: RP.rpId, backupSalt: BACKUP_SALT },
-      factor: { kind: "hardware" },
+      factor: { kind: "device" },
     });
     expect(result).toMatchObject({ ok: { wallets: [{ origin: "passkey" }] } });
     const get = restored.calls[0]?.input as Parameters<PasskeyAuthenticator["get"]>[0];

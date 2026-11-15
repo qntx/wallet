@@ -21,6 +21,7 @@ export type CorePromptKind =
   | "remove-private-key"
   | "backup"
   | "manage-factors"
+  | "app-lock"
   | "reset";
 
 const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, KeystorePrompt>>>> = {
@@ -33,6 +34,7 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     "remove-private-key": { title: "删除密钥", description: "验证身份以删除此密钥" },
     backup: { title: "开启云备份", description: "验证身份以开启云备份" },
     "manage-factors": { title: "管理解锁方式", description: "验证身份以更改钱包的解锁方式" },
+    "app-lock": { title: "应用锁", description: "验证身份以更改应用锁" },
     reset: {
       title: "重置钱包",
       description: "验证设备所有者身份以删除本设备上的全部钱包数据",
@@ -67,6 +69,10 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     "manage-factors": {
       title: "Manage unlock methods",
       description: "Verify your identity to change how the wallet unlocks",
+    },
+    "app-lock": {
+      title: "App lock",
+      description: "Verify your identity to change the app lock",
     },
     reset: {
       title: "Reset wallet",

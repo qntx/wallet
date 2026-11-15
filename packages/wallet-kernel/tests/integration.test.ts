@@ -1872,7 +1872,7 @@ describe("integrity", () => {
     await h.settle();
     expect(errCode(await h.call("no.such.method"))).toBe("integrity");
     expect(errCode(await h.call("status", { unexpected: 1 }))).toBe("integrity");
-    expect(field(ok(await h.call("status")), "protocol")).toBe(2);
+    expect(field(ok(await h.call("status")), "protocol")).toBe(3);
   });
 
   it("a store that fails to load reports corrupted until reset re-establishes it", async () => {
@@ -1916,13 +1916,13 @@ describe("vault health", () => {
     const h = createHarness();
     await h.settle();
     // A newer build initialized this vault.
-    await h.store.commit([{ op: "init", meta: metaOf({ format: 4 }) }]);
+    await h.store.commit([{ op: "init", meta: metaOf({ format: 5 }) }]);
     await h.settle();
     expect(lastStatus(h).vault).toBe("unsupported");
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
     // Nothing is rewritten and reset still recovers.
     const metaAfter = await storedMeta(h.store);
-    expect(metaAfter.format).toBe(4);
+    expect(metaAfter.format).toBe(5);
     expect(ok(await h.call("vault.reset"))).toBeNull();
     expect(lastStatus(h).vault).toBe("uninitialized");
   });
@@ -2540,7 +2540,7 @@ describe("request size cap", () => {
     const h = createHarness();
     await h.settle();
     const res = await h.sendRaw({
-      v: 2,
+      v: 3,
       id: 7,
       method: "nostr.signEvent",
       params: {
@@ -2557,7 +2557,7 @@ describe("request size cap", () => {
     const { session, walletId } = await createPasskeyWallet(h);
     const publicKey = await deriveKey(h, session, walletId);
     const res = await h.sendRaw({
-      v: 2,
+      v: 3,
       id: 8,
       method: "nostr.signEvent",
       session,

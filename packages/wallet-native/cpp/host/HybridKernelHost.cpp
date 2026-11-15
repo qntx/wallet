@@ -33,6 +33,15 @@ void logKernelCrash(const std::string& reason) {
 #endif
 }
 
+// Compare as doubles before converting: casting NaN or an out-of-range value
+// to int is undefined behaviour.
+int validBackgroundSeconds(double value) {
+  if (value != 0 && value != 60 && value != 300 && value != 900) {
+    throw std::runtime_error("backgroundLockSeconds must be one of 0, 60, 300, 900");
+  }
+  return static_cast<int>(value);
+}
+
 } // namespace
 
 HybridKernelHost::~HybridKernelHost() {
@@ -47,13 +56,7 @@ HybridKernelHost::~HybridKernelHost() {
 }
 
 void HybridKernelHost::start(double backgroundLockSeconds) {
-  // Compare as doubles before converting: casting NaN or an out-of-range value
-  // to int is undefined behaviour.
-  if (backgroundLockSeconds != 0 && backgroundLockSeconds != 60 &&
-      backgroundLockSeconds != 300 && backgroundLockSeconds != 900) {
-    throw std::runtime_error("backgroundLockSeconds must be one of 0, 60, 300, 900");
-  }
-  const int seconds = static_cast<int>(backgroundLockSeconds);
+  const int seconds = validBackgroundSeconds(backgroundLockSeconds);
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (runtime_ || exited_) {
@@ -139,6 +142,17 @@ void HybridKernelHost::onMessage(
 void HybridKernelHost::onExit(const std::function<void(KernelExitReason)>& listener) {
   std::lock_guard<std::mutex> lock(mutex_);
   exitListener_ = listener;
+}
+
+void HybridKernelHost::setBackgroundLock(double backgroundLockSeconds) {
+  const int seconds = validBackgroundSeconds(backgroundLockSeconds);
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!runtime_ || exited_) {
+      return;
+    }
+  }
+  qntx::KernelLifecycleDispatcher::shared().update(this, seconds);
 }
 
 void HybridKernelHost::lock() {

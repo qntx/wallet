@@ -30,6 +30,9 @@ class HybridKernelHost final : public HybridKernelHostSpec,
   void onMessage(const std::function<void(const std::shared_ptr<ArrayBuffer>&)>& listener)
       override;
   void onExit(const std::function<void(KernelExitReason)>& listener) override;
+  // Updates this host's background-lock budget; a no-op before start or after
+  // exit. The dispatcher keeps any background stamp it already recorded.
+  void setBackgroundLock(double backgroundLockSeconds) override;
   void lock() override;
 
  private:

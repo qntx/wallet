@@ -9,6 +9,56 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
+React Native: everyday use without prompts, a fresh verification for everything that guards
+funds or secrets. A new silent `device` factor opens the vault; the user-presence `hardware`
+factor is the only factor that can verify. Devices without a lock screen can now create and use
+a wallet. App lock is optional and off by default. The Web host is unchanged.
+
+### Added
+
+- `FactorInfo` and `UnlockFactor` gain the React Native `device` factor: a device-bound keystore
+  key without user presence (iOS Secure Enclave `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage`;
+  Android Keystore AES-256-GCM, `setUnlockedDeviceRequired` from API 35). It unlocks without UI
+  and is rejected by every verification.
+- `VerifyFactor` (`UnlockFactor` without `device`): the type of every `verify` parameter.
+- `WalletSnapshot.appLock` (no `device` factor: every unlock verifies) and
+  `WalletSnapshot.verification` (`"available" | "unavailable"`: whether guarded operations can
+  run). The Web reports `appLock: true`, `verification: "available"`.
+- `wallet.vault.enrolVerification()`: registers the `hardware` factor once a lock screen exists
+  (Android prompts once); replaces a `hardware` factor the keystore reports dead.
+- `wallet.vault.setAppLock(enabled, verify)`: `true` removes the `device` factor and rotates the
+  DEK (other sessions lock `invalidated`); `false` restores it. Both verify with `hardware`.
+- `@qntx/wallet-native`: `createNativeWallet` returns `NativeWallet` with
+  `setAutoLock({ platform: "native", backgroundSeconds })`, applied to the live kernel at once;
+  `KernelHost.setBackgroundLock(seconds)`.
+- Error code `verification-unavailable`: a guarded call on React Native without a verifying
+  factor, or a reset without a lock screen. No prompt is shown.
+
+### Changed
+
+- **BREAKING:** React Native vaults are created with the `device` factor plus, when the device
+  has a lock screen, the `hardware` factor; creation no longer requires a lock screen. Hosts must
+  not pass `factor` to create/import/restore on React Native (`unsupported`); `InitialFactor`
+  loses its `hardware` arm.
+- **BREAKING:** `vault.unlock()` without arguments on React Native uses `device` (no prompt)
+  unless `appLock` is on, then `hardware`.
+- **BREAKING:** guarded operations take `verify: VerifyFactor`; `{ kind: "device" }` is rejected
+  as `invalid-input` by the client, the wire validator and the kernel. Without a `hardware` factor
+  they fail with `verification-unavailable` instead of `not-found`.
+- **BREAKING:** removing the lock screen no longer destroys a React Native vault while the
+  `device` factor exists: the dead `hardware` factor is dropped and `verification` becomes
+  `"unavailable"`. With app lock on the previous DEK-loss behaviour applies.
+- **BREAKING:** `vault.addFactor` / `vault.removeFactor` are `unsupported` on React Native.
+- **BREAKING:** protocol version 3; vault format 4. A format-3 vault upgrades on its first
+  successful unlock: React Native adds the `device` factor during that `hardware` unlock, the Web
+  only bumps the format. No other migration code exists.
+- The platform keystore contract (`sealDevice`, `openDevice`, `probe`, `remove` alongside the
+  presence `seal`/`open`) is implemented natively on iOS and Android.
+
+### Removed
+
+- **BREAKING:** error code `no-device-credential` (replaced by `verification-unavailable`).
+
 ## [0.13.0] - 2026-11-09
 
 DeFi on top of verified signing: EIP-7702 smart accounts and EIP-5792 call batches, same-chain

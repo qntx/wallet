@@ -53,15 +53,30 @@ export const keyInfo: Validator<{
 export const identityIndex: Validator<number> = int(0, 0x7ffffffe);
 
 /**
- * Vault factor material on the wire. `hardware` carries nothing: the kernel runs the platform
- * keystore ceremony itself, so the main runtime never touches the KEK.
+ * Vault factor material on the wire. `device` and `hardware` carry nothing: the kernel runs the
+ * platform keystore operations itself, so the main runtime never touches the KEK. `device` opens a
+ * session without user presence — it can never appear in a `verify` field.
  */
 export type Factor =
+  | { readonly kind: "device" }
   | { readonly kind: "hardware" }
   | { readonly kind: "password"; readonly password: Uint8Array }
   | { readonly kind: "passkey"; readonly credentialId: Uint8Array; readonly prf: Uint8Array };
 
 export const factor: Validator<Factor> = union(
+  obj({ kind: literal("device") }),
+  obj({ kind: literal("hardware") }),
+  obj({ kind: literal("password"), password: bytes(1, 1024) }),
+  obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prf: bytes(32) }),
+);
+
+/**
+ * A factor that may prove user presence — every `verify` field uses this validator, so a device
+ * factor never reaches `verifyFactor` through the protocol (the kernel rejects it again anyway).
+ */
+export type VerifyFactor = Exclude<Factor, { readonly kind: "device" }>;
+
+export const verifier: Validator<VerifyFactor> = union(
   obj({ kind: literal("hardware") }),
   obj({ kind: literal("password"), password: bytes(1, 1024) }),
   obj({ kind: literal("passkey"), credentialId: bytes(1, 1023), prf: bytes(32) }),
@@ -106,6 +121,7 @@ export type BackupUnlockFactor =
     };
 
 export const factorInfo: Validator<FactorInfo> = union(
+  obj({ kind: literal("device"), id: sessionId, createdAt: safeTime }),
   obj({ kind: literal("hardware"), id: sessionId, createdAt: safeTime }),
   obj({
     kind: literal("passkey"),
@@ -236,7 +252,7 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("locked"),
   literal("cancelled"),
   literal("factor-invalidated"),
-  literal("no-device-credential"),
+  literal("verification-unavailable"),
   literal("passkey-not-configured"),
   literal("passkey-prf-unsupported"),
   literal("wrong-password"),
@@ -270,11 +286,16 @@ export const CORE_METHODS: {
   readonly "vault.unlock": MethodSpec<{ readonly factor: Factor }, { readonly session: string }>;
   readonly "vault.reset": MethodSpec<NullValue, NullValue>;
   readonly "vault.addFactor": MethodSpec<
-    { readonly verify: Factor; readonly factor: Factor },
+    { readonly verify: VerifyFactor; readonly factor: Factor },
     FactorInfo
   >;
   readonly "vault.removeFactor": MethodSpec<
-    { readonly verify: Factor; readonly id: string },
+    { readonly verify: VerifyFactor; readonly id: string },
+    NullValue
+  >;
+  readonly "vault.enrolVerification": MethodSpec<NullValue, NullValue>;
+  readonly "vault.setAppLock": MethodSpec<
+    { readonly enabled: boolean; readonly verify: VerifyFactor },
     NullValue
   >;
   readonly "session.touch": MethodSpec<NullValue, NullValue>;
@@ -295,7 +316,7 @@ export const CORE_METHODS: {
   readonly "wallet.discardMnemonic": MethodSpec<{ readonly draft: string }, NullValue>;
   readonly "backup.enable": MethodSpec<
     {
-      readonly verify: Factor;
+      readonly verify: VerifyFactor;
       readonly factors: ReadonlyArray<BackupFactor>;
     },
     NullValue
@@ -323,11 +344,11 @@ export const CORE_METHODS: {
     CreatedResult
   >;
   readonly "wallet.exportMnemonic": MethodSpec<
-    { readonly verify: Factor; readonly walletId: string },
+    { readonly verify: VerifyFactor; readonly walletId: string },
     { readonly mnemonic: Uint8Array; readonly passphrase?: Uint8Array }
   >;
   readonly "wallet.delete": MethodSpec<
-    { readonly verify: Factor; readonly walletId: string },
+    { readonly verify: VerifyFactor; readonly walletId: string },
     NullValue
   >;
   readonly "dataKeys.get": MethodSpec<{ readonly purpose: string }, Uint8Array>;
@@ -350,11 +371,11 @@ export const CORE_METHODS: {
     }>
   >;
   readonly "keys.remove": MethodSpec<
-    { readonly verify: Factor; readonly keyId: string },
+    { readonly verify: VerifyFactor; readonly keyId: string },
     NullValue
   >;
   readonly "keys.export": MethodSpec<
-    { readonly verify: Factor; readonly keyId: string },
+    { readonly verify: VerifyFactor; readonly keyId: string },
     Uint8Array
   >;
 } = {
@@ -374,13 +395,25 @@ export const CORE_METHODS: {
   "vault.addFactor": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, factor }),
+    params: obj({ verify: verifier, factor }),
     result: factorInfo,
   },
   "vault.removeFactor": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, id: sessionId }),
+    params: obj({ verify: verifier, id: sessionId }),
+    result: nullValue,
+  },
+  "vault.enrolVerification": {
+    session: true,
+    presence: true,
+    params: nullValue,
+    result: nullValue,
+  },
+  "vault.setAppLock": {
+    session: true,
+    presence: true,
+    params: obj({ enabled: bool, verify: verifier }),
     result: nullValue,
   },
   "wallet.createWithPasskey": {
@@ -424,7 +457,7 @@ export const CORE_METHODS: {
   "backup.enable": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, factors: arr(backupFactor, 5, 1) }),
+    params: obj({ verify: verifier, factors: arr(backupFactor, 5, 1) }),
     result: nullValue,
   },
   "backup.update": {
@@ -467,13 +500,13 @@ export const CORE_METHODS: {
   "wallet.exportMnemonic": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, walletId }),
+    params: obj({ verify: verifier, walletId }),
     result: obj({ mnemonic: bytes(16, 1024), passphrase: opt(passphraseBytes) }),
   },
   "wallet.delete": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, walletId }),
+    params: obj({ verify: verifier, walletId }),
     result: nullValue,
   },
   "dataKeys.get": {
@@ -497,13 +530,13 @@ export const CORE_METHODS: {
   "keys.remove": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, keyId }),
+    params: obj({ verify: verifier, keyId }),
     result: nullValue,
   },
   "keys.export": {
     session: true,
     presence: true,
-    params: obj({ verify: factor, keyId }),
+    params: obj({ verify: verifier, keyId }),
     result: bytes(1, 256),
   },
 };

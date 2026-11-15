@@ -13,7 +13,7 @@ import type {
   ExportedSecret,
   NostrKeyInfo,
   NostrKeyRef,
-  UnlockFactor,
+  VerifyFactor,
   Wallet,
 } from "../types.ts";
 import { keyInfoOf, proxySigner, syncSigner } from "./signer.ts";
@@ -57,12 +57,12 @@ function createNostrApi(internals: WalletInternals): NostrApi {
     exportKey: async (
       ref: NostrKeyRef,
       format: NostrExportKeyFormat,
-      verify: UnlockFactor,
+      verify: VerifyFactor,
     ): Promise<ExportedSecret> =>
       internals.withVerifying(async () => {
         const { publicKey } = keyInfoOf(internals, ref);
         const transfer: ArrayBuffer[] = [];
-        const wireVerify = await internals.resolveFactor(verify, transfer);
+        const wireVerify = await internals.resolveVerifyFactor(verify, transfer);
         const wireFormat =
           format.kind === "nsec"
             ? { kind: "nsec" as const }

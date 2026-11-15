@@ -32,7 +32,16 @@ function randomMalformed(next: () => number): unknown {
   let method =
     pick(10) === 0 ? "no.such.method" : (METHOD_NAMES[pick(METHOD_NAMES.length)] ?? "status");
   // These three methods accept `params: null` — keep them malformed by construction.
-  const nullParamMethods = new Set(["status", "vault.reset", "nostr.createNip46ClientKey"]);
+  const nullParamMethods = new Set([
+    "status",
+    "session.touch",
+    "vault.reset",
+    "vault.enrolVerification",
+    "backup.update",
+    "backup.disable",
+    "keys.list",
+    "nostr.createNip46ClientKey",
+  ]);
   const style = pick(8);
   if (nullParamMethods.has(method) && (style === 4 || style === 5 || style === 7)) {
     method = "vault.unlock"; // a method whose null params are malformed
@@ -42,19 +51,19 @@ function randomMalformed(next: () => number): unknown {
     case 0:
       return malformedScalar(); // not even an object
     case 1:
-      return { v: pick(2) + 3, id: pick(100), method, params: null }; // bad version
+      return { v: pick(2) + 4, id: pick(100), method, params: null }; // bad version
     case 2:
-      return { v: 2, id: "nope", method, params: null }; // bad id type
+      return { v: 3, id: "nope", method, params: null }; // bad id type
     case 3:
-      return { v: 2, id: pick(100), method, params: malformedScalar() };
+      return { v: 3, id: pick(100), method, params: malformedScalar() };
     case 4:
-      return { v: 2, id: pick(100), method, params: null, extra: "field" };
+      return { v: 3, id: pick(100), method, params: null, extra: "field" };
     case 5:
-      return { v: 2, id: pick(100), method }; // missing params
+      return { v: 3, id: pick(100), method }; // missing params
     case 6:
-      return { v: 2, id: pick(100), method, params: { factor: malformedScalar() } };
+      return { v: 3, id: pick(100), method, params: { factor: malformedScalar() } };
     default:
-      return { v: 2, id: pick(100), method: "no.such.method", params: null };
+      return { v: 3, id: pick(100), method: "no.such.method", params: null };
   }
 }
 
