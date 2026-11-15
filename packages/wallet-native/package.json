@@ -44,7 +44,7 @@
     "check:pkg": "vp pack && bun ../../scripts/check-dist-deps.ts . && publint && attw --pack . --profile esm-only && bun ../../scripts/check-native-pack.ts ."
   },
   "dependencies": {
-    "cborg": "6.1.5"
+    "cborg": "6.2.1"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "0.18.5",
@@ -54,9 +54,9 @@
     "@qntx/spark-native": "0.5.2",
     "@qntx/tsconfig": "1.0.1",
     "@scure/base": "2.4.0",
-    "nitrogen": "0.37.1",
+    "nitrogen": "0.37.2",
     "publint": "0.3.25",
-    "react-native-nitro-modules": "0.37.1"
+    "react-native-nitro-modules": "0.37.2"
   },
   "peerDependencies": {
     "@qntx/nostr-native": "0.15.4",
