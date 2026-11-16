@@ -10,11 +10,11 @@ import { wipe } from "../secret/secret.ts";
 /**
  * Factor material resolved while creating a wallet on an uninitialized vault. A software KEK is
  * expensive (600k PBKDF2) or single-use (PRF), so it is derived once at `createMnemonic` and held
- * in the draft until `confirm`/`discard`/`lock`. A hardware factor holds nothing: its key is
+ * in the draft until `confirm`/`discard`/`lock`. A `device` factor holds nothing: its rows are
  * created at `confirm`, so a discarded draft leaves no key behind.
  */
 export type PendingFactor =
-  | { readonly kind: "hardware" }
+  | { readonly kind: "device" }
   | { readonly kind: "password"; readonly kek: Secret; readonly salt: Uint8Array }
   | { readonly kind: "passkey"; readonly kek: Secret; readonly credentialId: Uint8Array };
 
@@ -41,7 +41,7 @@ type State =
     };
 
 export function wipePendingFactor(pending: PendingFactor): void {
-  if (pending.kind === "hardware") {
+  if (pending.kind === "device") {
     return;
   }
   pending.kek.wipe();

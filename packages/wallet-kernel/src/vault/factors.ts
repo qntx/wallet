@@ -11,7 +11,7 @@ import type { Pbkdf2, Random } from "../platform.ts";
 import { Secret, decodeUtf8Secret, wipe } from "../secret/secret.ts";
 import { aadOf, factorContext, open, seal } from "./envelope.ts";
 import {
-  parseHardwareFactorHeader,
+  parseKeystoreFactorHeader,
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
 } from "./headers.ts";
@@ -114,9 +114,9 @@ export function factorHeaderPublicKey(stored: StoredFactor): Uint8Array {
   const header =
     stored.kind === "password"
       ? parsePasswordFactorHeader(stored.header)
-      : stored.kind === "hardware"
-        ? parseHardwareFactorHeader(stored.header)
-        : parsePasskeyFactorHeader(stored.header);
+      : stored.kind === "passkey"
+        ? parsePasskeyFactorHeader(stored.header)
+        : parseKeystoreFactorHeader(stored.header);
   return base64urlnopad.decode(header.publicKey);
 }
 
@@ -206,13 +206,13 @@ export function unwrapDek(kek: Uint8Array, stored: StoredFactor): Secret {
   try {
     const factorPk = x25519.getPublicKey(factorSk);
     if (!equalBytes(factorPk, factorHeaderPublicKey(stored))) {
-      // A hardware public-key miss is corruption: the keystore handed back a KEK that does
-      // not match its own header — there is no "wrong" hardware attempt.
+      // A keystore-factor public-key miss is corruption: the keystore handed back a KEK that
+      // does not match its own header — there is no "wrong" hardware or device attempt.
       throw stored.kind === "password"
         ? new KernelError("wrong-password", "password did not open the vault")
-        : stored.kind === "hardware"
-          ? corruptError("hardware factor returned a key that does not match its header")
-          : new KernelError("wrong-passkey", "passkey does not match the factor");
+        : stored.kind === "passkey"
+          ? new KernelError("wrong-passkey", "passkey does not match the factor")
+          : corruptError("keystore factor returned a key that does not match its header");
     }
     const { sealed } = stored;
     if (sealed.length !== WRAPPED_DEK_LENGTH || sealed[0] !== WRAP_VERSION) {

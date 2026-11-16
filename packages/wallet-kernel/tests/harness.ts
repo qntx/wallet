@@ -240,7 +240,7 @@ export function createHarness(opts?: {
       new Promise<KernelResponse>((resolve) => {
         const id = nextId++;
         pending.set(id, resolve);
-        handler?.({ v: 2, id, method, session, params: params ?? null });
+        handler?.({ v: 3, id, method, session, params: params ?? null });
       }),
     advance: (ms) => {
       elapsed += ms;
@@ -269,7 +269,7 @@ export function createHarness(opts?: {
       if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
         const fields = raw as { v?: unknown; id?: unknown };
         if (
-          fields.v === 2 &&
+          fields.v === 3 &&
           typeof fields.id === "number" &&
           Number.isSafeInteger(fields.id) &&
           fields.id >= 0

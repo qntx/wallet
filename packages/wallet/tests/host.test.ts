@@ -87,7 +87,7 @@ export class FakeKernel {
     this.active = port;
     // A real kernel delivers its first status asynchronously (the worker has to boot).
     setTimeout(() => {
-      port.send({ v: 2, event: "status", status: this.status });
+      port.send({ v: 3, event: "status", status: this.status });
     });
   }
 
@@ -101,7 +101,7 @@ export class FakeKernel {
     this.received.push(request.method);
     const handler = this.handlers.get(request.method);
     const respond = (reply: Reply): void => {
-      port.send({ v: 2, id: request.id, ...reply });
+      port.send({ v: 3, id: request.id, ...reply });
     };
     if (handler === undefined) {
       respond({ err: { code: "integrity" } });
@@ -112,12 +112,12 @@ export class FakeKernel {
 
   lock(reason: LockReason): void {
     this.status = { ...this.status, vault: "locked" };
-    this.active?.send({ v: 2, event: "locked", reason });
-    this.active?.send({ v: 2, event: "status", status: this.status });
+    this.active?.send({ v: 3, event: "locked", reason });
+    this.active?.send({ v: 3, event: "status", status: this.status });
   }
 
   pushStatus(): void {
-    this.active?.send({ v: 2, event: "status", status: this.status });
+    this.active?.send({ v: 3, event: "status", status: this.status });
   }
 
   /** A raw kernel → host message (e.g. the trailing locked event of an in-request lock). */
@@ -186,7 +186,9 @@ export class ScriptedPort implements MainPort {
 
 export function unlockedStatus(): StatusPayload {
   return {
-    protocol: 2,
+    protocol: 3,
+    appLock: true,
+    verification: "available",
     vault: "unlocked",
     factors: [{ kind: "passkey", id: "f".repeat(32), credentialId: "Y3JlZA", createdAt: 1 }],
     wallets: [],
@@ -452,7 +454,7 @@ describe("response validation", () => {
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     }); // let the request reach the kernel
-    spawned.at(0)?.send({ v: 2, id: 0, ok: null }); // UNATTRIBUTED_ID — cannot be a live request
+    spawned.at(0)?.send({ v: 3, id: 0, ok: null }); // UNATTRIBUTED_ID — cannot be a live request
     await expect(pending).rejects.toSatisfy((e) => walletError(e).code === "integrity");
     // Poison is terminal: the port is terminated, nothing respawns, every later call fails
     // integrity, and the snapshot is untouched.
@@ -579,7 +581,7 @@ describe("connect lifecycle", () => {
         // A kernel speaking a different protocol version: the status event fails validation.
         setTimeout(() => {
           port.send({
-            v: 2,
+            v: 3,
             event: "status",
             status: { ...kernel.status, protocol: 1 },
           });
@@ -898,7 +900,7 @@ describe("message ordering", () => {
       kernel.status = { ...kernel.status, vault: "uninitialized" };
       kernel.pushStatus();
       setTimeout(() => {
-        kernel.send({ v: 2, event: "locked", reason: "user" });
+        kernel.send({ v: 3, event: "locked", reason: "user" });
       });
       return { ok: null };
     });
@@ -1247,7 +1249,7 @@ describe("kernel-run passkey ceremonies (hardware host)", () => {
         rpName: PASSKEY.rpName,
         name: "alice",
         walletSalt: PASSKEY.walletSalt,
-        factor: { kind: "hardware" },
+        factor: { kind: "device" },
       },
     ]);
   });
@@ -1332,11 +1334,11 @@ describe("ceremony watchdog", () => {
     const { wallet, kernel } = await connectFake(unlockedStatus(), timers.setTimer);
     let gate: (() => void) | undefined;
     kernel.handlers.set("dataKeys.get", async () => {
-      kernel.send({ v: 2, event: "ceremony", active: true });
+      kernel.send({ v: 3, event: "ceremony", active: true });
       await new Promise<void>((resolve) => {
         gate = resolve;
       });
-      kernel.send({ v: 2, event: "ceremony", active: false });
+      kernel.send({ v: 3, event: "ceremony", active: false });
       return { ok: new Uint8Array(32) };
     });
     const call = wallet.dataKeys.get("p");
@@ -1365,8 +1367,8 @@ describe("ceremony watchdog", () => {
     const timers = new FakeTimers();
     const { wallet, kernel } = await connectFake(unlockedStatus(), timers.setTimer);
     kernel.handlers.set("dataKeys.get", async () => {
-      kernel.send({ v: 2, event: "ceremony", active: true });
-      kernel.send({ v: 2, event: "ceremony", active: false });
+      kernel.send({ v: 3, event: "ceremony", active: true });
+      kernel.send({ v: 3, event: "ceremony", active: false });
       await new Promise(() => undefined);
       return { ok: null };
     });
@@ -1382,7 +1384,7 @@ describe("ceremony watchdog", () => {
     const timers = new FakeTimers();
     const { wallet, kernel, spawned } = await connectFake(unlockedStatus(), timers.setTimer);
     kernel.handlers.set("dataKeys.get", async () => {
-      kernel.send({ v: 2, event: "ceremony", active: true });
+      kernel.send({ v: 3, event: "ceremony", active: true });
       spawned.at(0)?.crash();
       await new Promise(() => undefined);
       return { ok: null };
@@ -1579,5 +1581,48 @@ describe("nostr api methods", () => {
 
   it("rejects a foreign wallet object", () => {
     expect(() => nostr({} as never)).toThrow(WalletError);
+  });
+});
+
+describe("backup api", () => {
+  it("enable resolves the verify and factor parameters", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    let params: ProtocolValue | undefined;
+    kernel.handlers.set("backup.enable", (request) => {
+      ({ params } = request);
+      return { ok: null };
+    });
+    await wallet.backup.enable({
+      verify: { kind: "password", password: "verify password" },
+      factors: [{ kind: "password", password: "backup password" }],
+    });
+    const wire = params as {
+      verify: { kind: string; password: Uint8Array };
+      factors: [{ kind: string; password: Uint8Array }];
+    };
+    expect(new TextDecoder().decode(wire.verify.password)).toBe("verify password");
+    expect(new TextDecoder().decode(wire.factors[0].password)).toBe("backup password");
+    expect(kernel.received).toContain("backup.enable");
+  });
+
+  it("disable resolves the verify parameter", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    let params: ProtocolValue | undefined;
+    kernel.handlers.set("backup.disable", (request) => {
+      ({ params } = request);
+      return { ok: null };
+    });
+    await wallet.backup.disable({ kind: "password", password: "verify password" });
+    const wire = params as { verify: { kind: string; password: Uint8Array } };
+    expect(new TextDecoder().decode(wire.verify.password)).toBe("verify password");
+    expect(kernel.received).toContain("backup.disable");
+  });
+
+  it("rejects a device verifier without reaching the kernel", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    await expect(wallet.backup.disable({ kind: "device" } as never)).rejects.toSatisfy(
+      (e) => walletError(e).code === "invalid-input",
+    );
+    expect(kernel.received).not.toContain("backup.disable");
   });
 });

@@ -3,8 +3,6 @@
  * every guarded command's prompt, cancellation and invalidation, the platform/kind gate, ceremony
  * serialization, reset, and the chain.sign rule that no seed outlives the prepare pass.
  */
-import { equalBytes } from "@noble/ciphers/utils.js";
-import { sha256 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
@@ -21,7 +19,7 @@ import type { ProtocolValue } from "@qntx/wallet/protocol";
 import { KernelError } from "../src/errors.ts";
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
-import type { Keystore, KeystorePrompt, KernelPlatform, Pbkdf2 } from "../src/platform.ts";
+import type { KeystorePrompt, KernelPlatform, Pbkdf2 } from "../src/platform.ts";
 import { serializeCeremonies } from "../src/platform.ts";
 import { corePrompt } from "../src/prompts.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
@@ -29,91 +27,16 @@ import type { RecordStore } from "../src/vault/store.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
+import { fakeKeystore } from "./keystore.ts";
+import type { KeystoreCall } from "./keystore.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 
 const MNEMONIC =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
 const SOL_ADDRESS = "HAgk14JpMQLgt6rVgv7cBQFJWFto5Dqxi472uT3DKpqk";
+const DEVICE = { kind: "device" } as const;
 const HARDWARE = { kind: "hardware" } as const;
-
-type Call =
-  | { readonly op: "seal" | "open"; readonly id: string; readonly prompt: KeystorePrompt }
-  | { readonly op: "authenticate"; readonly prompt: KeystorePrompt }
-  | { readonly op: "clear" };
-
-type Outcome = "cancelled" | "factor-invalidated" | "no-device-credential";
-
-/**
- * An in-memory keystore: `seal` keeps the secret under its id and returns SHA-256(id) as the opaque
- * ciphertext; `open` checks both. `fail` scripts the next prompting call's rejection and `gate`
- * holds the next `open` until released.
- */
-function fakeKeystore(locale = "en-US") {
-  const keys = new Map<string, Uint8Array>();
-  const calls: Call[] = [];
-  const failures: Outcome[] = [];
-  let gate: Promise<void> | undefined;
-  let onOpen: (() => void) | undefined;
-  const reject = (): void => {
-    const outcome = failures.shift();
-    if (outcome !== undefined) {
-      throw new KernelError(outcome, "scripted keystore failure");
-    }
-  };
-  const keystore: Keystore = {
-    locale,
-    seal: async (id, secret, prompt) => {
-      calls.push({ op: "seal", id, prompt });
-      await Promise.resolve();
-      reject();
-      if (keys.has(id)) {
-        throw new Error("duplicate key alias");
-      }
-      keys.set(id, new Uint8Array(secret));
-      return sha256(utf8ToBytes(id));
-    },
-    open: async (id, sealed, prompt) => {
-      calls.push({ op: "open", id, prompt });
-      onOpen?.();
-      const held = gate;
-      gate = undefined;
-      await (held ?? Promise.resolve());
-      reject();
-      const secret = keys.get(id);
-      if (secret === undefined || !equalBytes(sealed, sha256(utf8ToBytes(id)))) {
-        throw new KernelError("factor-invalidated", "no such key");
-      }
-      return new Uint8Array(secret);
-    },
-    authenticate: async (prompt) => {
-      calls.push({ op: "authenticate", prompt });
-      await Promise.resolve();
-      reject();
-    },
-    clear: async () => {
-      calls.push({ op: "clear" });
-      await Promise.resolve();
-      keys.clear();
-    },
-  };
-  return {
-    keystore,
-    calls,
-    keys,
-    fail: (outcome: Outcome) => failures.push(outcome),
-    hold: () => {
-      let release!: () => void;
-      gate = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return release;
-    },
-    watchOpen: (fn: () => void) => {
-      onOpen = fn;
-    },
-  };
-}
 
 function ok(response: KernelResponse): ProtocolValue {
   if ("err" in response) {
@@ -148,13 +71,13 @@ const str = (value: ProtocolValue, key: string): string => {
 async function importHardware(h: Harness): Promise<{ session: string; walletId: string }> {
   await h.settle();
   const res = ok(
-    await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: HARDWARE }),
+    await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: DEVICE }),
   );
   return { session: str(res, "session"), walletId: str(field(res, "wallet"), "walletId") };
 }
 
-const prompts = (calls: ReadonlyArray<Call>, op: Call["op"]): KeystorePrompt[] =>
-  calls.flatMap((call) => (call.op === op && "prompt" in call ? [call.prompt] : []));
+const prompts = (calls: ReadonlyArray<KeystoreCall>, op: "seal" | "open"): KeystorePrompt[] =>
+  calls.flatMap((call) => (call.op === op && call.prompt !== undefined ? [call.prompt] : []));
 
 describe("hardware factor: establish and unlock", () => {
   it("clears leftover keys, seals the KEK under the factor id, and unlocks after a restart", async () => {
@@ -163,15 +86,14 @@ describe("hardware factor: establish and unlock", () => {
     const store = createMemoryStore();
     const h = createHarness({ keystore: fake.keystore, store });
     await importHardware(h);
-    expect(fake.calls.map((call) => call.op)).toStrictEqual(["clear", "seal"]);
+    expect(fake.calls.map((call) => call.op)).toStrictEqual(["clear", "seal", "seal"]);
     expect(prompts(fake.calls, "seal")).toStrictEqual([corePrompt("en", "create")]);
     const aliases = [...fake.keys.keys()];
-    expect(aliases).toHaveLength(1);
+    expect(aliases).toHaveLength(2);
     const status = ok(await h.call("status"));
     const factors = field(status, "factors") as ReadonlyArray<Record<string, ProtocolValue>>;
-    expect(factors).toHaveLength(1);
-    expect(factors[0]?.["kind"]).toBe("hardware");
-    expect(factors[0]?.["id"]).toBe(aliases[0]);
+    expect(factors.map((factor) => factor["kind"])).toStrictEqual(["device", "hardware"]);
+    expect(factors.map((factor) => factor["id"])).toStrictEqual(aliases);
 
     const restarted = createHarness({ keystore: fake.keystore, store });
     await restarted.settle();
@@ -196,12 +118,12 @@ describe("hardware factor: establish and unlock", () => {
     const fake = fakeKeystore();
     const h = createHarness({ keystore: fake.keystore });
     await h.settle();
-    const draft = ok(await h.call("wallet.createMnemonic", { words: 12, factor: HARDWARE }));
+    const draft = ok(await h.call("wallet.createMnemonic", { words: 12, factor: DEVICE }));
     expect(fake.calls).toStrictEqual([]);
     ok(await h.call("wallet.discardMnemonic", { draft: str(draft, "draft") }));
     expect(fake.calls).toStrictEqual([]);
 
-    const next = ok(await h.call("wallet.createMnemonic", { words: 12, factor: HARDWARE }));
+    const next = ok(await h.call("wallet.createMnemonic", { words: 12, factor: DEVICE }));
     const words = new TextDecoder().decode(field(next, "words") as Uint8Array).split(" ");
     const quiz = field(next, "quiz") as number[];
     ok(
@@ -210,7 +132,7 @@ describe("hardware factor: establish and unlock", () => {
         answers: quiz.map((position) => utf8ToBytes(String(words[position]))),
       }),
     );
-    expect(fake.calls.map((call) => call.op)).toStrictEqual(["clear", "seal"]);
+    expect(fake.calls.map((call) => call.op)).toStrictEqual(["clear", "seal", "seal"]);
   });
 
   it("clears the new key when the establish commit fails, surfacing the commit error", async () => {
@@ -228,10 +150,10 @@ describe("hardware factor: establish and unlock", () => {
     await h.settle();
     const res = await h.call("wallet.importMnemonic", {
       mnemonic: utf8ToBytes(MNEMONIC),
-      factor: HARDWARE,
+      factor: DEVICE,
     });
     expect(errCode(res)).toBe("conflict");
-    expect(fake.calls.map((call) => call.op)).toStrictEqual(["clear", "seal", "clear"]);
+    expect(fake.calls.map((call) => call.op)).toStrictEqual(["clear", "seal", "seal", "clear"]);
     expect(fake.keys.size).toBe(0);
   });
 });
@@ -247,8 +169,21 @@ describe("hardware factor: platform gate", () => {
     expect(errCode(res)).toBe("unsupported");
   });
 
-  it("a host without a keystore refuses the hardware factor", async () => {
+  it("a host without a keystore refuses keystore factors", async () => {
     const h = createHarness();
+    await h.settle();
+    for (const factor of [HARDWARE, DEVICE]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential protocol calls
+      const res = await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor,
+      });
+      expect(errCode(res)).toBe("unsupported");
+    }
+  });
+
+  it("a keystore host refuses a hardware factor as the establishing factor", async () => {
+    const h = createHarness({ keystore: fakeKeystore().keystore });
     await h.settle();
     const res = await h.call("wallet.importMnemonic", {
       mnemonic: utf8ToBytes(MNEMONIC),
@@ -257,12 +192,12 @@ describe("hardware factor: platform gate", () => {
     expect(errCode(res)).toBe("unsupported");
   });
 
-  it("a second hardware factor is already-exists, before any prompt", async () => {
+  it("factor management is unsupported on a keystore host, before any prompt", async () => {
     const fake = fakeKeystore();
     const h = createHarness({ keystore: fake.keystore });
     const { session } = await importHardware(h);
     const res = await h.call("vault.addFactor", { verify: HARDWARE, factor: HARDWARE }, session);
-    expect(errCode(res)).toBe("already-exists");
+    expect(errCode(res)).toBe("unsupported");
     expect(prompts(fake.calls, "open")).toStrictEqual([]);
   });
 });
@@ -301,12 +236,11 @@ describe("hardware factor: guarded commands", () => {
     fake.fail("factor-invalidated");
     expect(
       errCode(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session)),
-    ).toBe("factor-invalidated");
-    fake.fail("no-device-credential");
+    ).toBe("verification-unavailable");
+    fake.fail("verification-unavailable");
     expect(
       errCode(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session)),
-    ).toBe("no-device-credential");
-    ok(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session));
+    ).toBe("verification-unavailable");
   });
 
   it("a cancelled unlock leaves the vault locked", async () => {
@@ -613,7 +547,7 @@ describe("hardware factor: reset", () => {
     fake.fail("cancelled");
     expect(errCode(await h.call("vault.reset", null, session))).toBe("cancelled");
     expect(field(ok(await h.call("status")), "vault")).toBe("unlocked");
-    expect(fake.keys.size).toBe(1);
+    expect(fake.keys.size).toBe(2);
   });
 });
 
@@ -628,9 +562,10 @@ describe("serializeCeremonies", () => {
       (active) => events.push(active),
     );
     const prompt = { title: "t", description: "d" };
+    const presence = { protection: "presence", prompt } as const;
     // Sealed through the raw keystore so no ceremony fires before the assertions start.
-    const sealed = await fake.keystore.seal("id", new Uint8Array(8), prompt);
-    const open = platform.keystore!.open("id", sealed, prompt);
+    const sealed = await fake.keystore.seal("id", new Uint8Array(8), presence);
+    const open = platform.keystore!.open("id", sealed, presence);
     await new Promise<void>((resolve) => {
       setTimeout(resolve);
     });
@@ -640,7 +575,7 @@ describe("serializeCeremonies", () => {
     expect(events).toStrictEqual([true, false]);
 
     fake.fail("cancelled");
-    await expect(platform.keystore!.open("id", sealed, prompt)).rejects.toThrow(KernelError);
+    await expect(platform.keystore!.open("id", sealed, presence)).rejects.toThrow(KernelError);
     expect(events).toStrictEqual([true, false, true, false]);
   });
 
@@ -653,8 +588,9 @@ describe("serializeCeremonies", () => {
       (active) => events.push(active),
     );
     const prompt = { title: "t", description: "d" };
-    const sealed = await fake.keystore.seal("a", new Uint8Array(8), prompt);
-    const first = platform.keystore!.open("a", sealed, prompt);
+    const presence = { protection: "presence", prompt } as const;
+    const sealed = await fake.keystore.seal("a", new Uint8Array(8), presence);
+    const first = platform.keystore!.open("a", sealed, presence);
     const second = platform.keystore!.authenticate(prompt);
     await new Promise<void>((resolve) => {
       setTimeout(resolve);

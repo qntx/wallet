@@ -44,6 +44,9 @@ class KernelLifecycleDispatcher {
   static KernelLifecycleDispatcher& shared();
 
   void registerHost(const std::weak_ptr<LifecycleLockTarget>& host, int seconds);
+  /** Change one registration's seconds, keeping a recorded background stamp;
+   *  an unknown host is a no-op. */
+  void update(const LifecycleLockTarget* host, int seconds);
   /** Drop the registration — called on every host exit. */
   void unregister(const LifecycleLockTarget* host);
 

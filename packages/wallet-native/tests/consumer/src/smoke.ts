@@ -47,7 +47,7 @@ export async function runConsumerSmoke(): Promise<void> {
       wallet
         .getSnapshot()
         .factors.map((f) => f.kind)
-        .join(",") === "hardware",
+        .join(",") === "device,hardware",
     );
     const api = nostr(wallet);
     const key = await api.deriveKey(walletId, 0);

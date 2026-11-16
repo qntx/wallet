@@ -55,6 +55,7 @@ namespace margelo::nitro::qntxwallet {
       virtual void post(const std::shared_ptr<ArrayBuffer>& frame) = 0;
       virtual void onMessage(const std::function<void(const std::shared_ptr<ArrayBuffer>& /* frame */)>& listener) = 0;
       virtual void onExit(const std::function<void(KernelExitReason /* reason */)>& listener) = 0;
+      virtual void setBackgroundLock(double backgroundLockSeconds) = 0;
       virtual void lock() = 0;
 
     protected:

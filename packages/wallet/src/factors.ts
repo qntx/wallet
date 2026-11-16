@@ -5,9 +5,20 @@
  */
 import { base64urlnopad } from "@scure/base";
 
-import type { BackupFactor, BackupUnlockFactor, Factor } from "./protocol/index.ts";
+import type {
+  BackupFactor,
+  BackupUnlockFactor,
+  Factor,
+  VerifyFactor as WireVerifyFactor,
+} from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
-import type { FactorInfo, InitialFactor, PasskeyConfig, UnlockFactor } from "./types.ts";
+import type {
+  FactorInfo,
+  InitialFactor,
+  PasskeyConfig,
+  UnlockFactor,
+  VerifyFactor,
+} from "./types.ts";
 
 export type PrfSalts = { readonly first: Uint8Array; readonly second?: Uint8Array };
 
@@ -43,9 +54,10 @@ export type PasskeyCeremony = {
 };
 
 /**
- * Which vault factors a host offers: `hardware` (React Native — the platform keystore is the only
- * factor, and omitted factors mean it) or `software` (web/node — passkey and password). The kernel
- * enforces the same rule; resolving here keeps a doomed request from firing a ceremony.
+ * Which vault factors a host offers: `hardware` (React Native — the platform keystore factors,
+ * device and hardware, and omitted factors mean the silent device one) or `software` (web/node —
+ * passkey and password). The kernel enforces the same rule; resolving here keeps a doomed request
+ * from firing a ceremony.
  */
 export type FactorMode = "hardware" | "software";
 
@@ -55,21 +67,25 @@ export type FactorSource = {
   readonly passkey: PasskeyConfig;
   readonly ceremony: PasskeyCeremony | undefined;
   readonly factors: () => ReadonlyArray<FactorInfo>;
+  /** Whether the vault currently requires a verifying unlock (no device factor). */
+  readonly appLock: () => boolean;
 };
 
-const HARDWARE: Factor = { kind: "hardware" };
-
 function hardwareOnly(): WalletError {
-  return new WalletError("unsupported", "this host unlocks only with the hardware factor");
+  return new WalletError("unsupported", "this host unlocks only with the keystore factors");
 }
 
 function noHardware(): WalletError {
-  return new WalletError("unsupported", "hardware factors exist only on React Native");
+  return new WalletError("unsupported", "keystore factors exist only on React Native");
 }
 
 /** The factor `vault.unlock()` uses when the caller passes none. */
 export function defaultUnlockFactor(source: FactorSource): UnlockFactor {
-  return source.mode === "hardware" ? { kind: "hardware" } : { kind: "passkey" };
+  if (source.mode === "hardware") {
+    // Under app lock there is no device factor — the silent default would just report not-found.
+    return source.appLock() ? { kind: "hardware" } : { kind: "device" };
+  }
+  return { kind: "passkey" };
 }
 
 export function vaultSaltBytes(source: FactorSource): Uint8Array {
@@ -109,7 +125,7 @@ function backupPassword(
   factor: UnlockFactor,
   transfer: ArrayBuffer[],
 ): { readonly kind: "password"; readonly password: Uint8Array } | undefined {
-  if (factor.kind === "hardware") {
+  if (factor.kind === "hardware" || factor.kind === "device") {
     throw new WalletError("invalid-input", "backup factors are passkeys or passwords");
   }
   return factor.kind === "password"
@@ -229,12 +245,12 @@ export async function resolveFactor(
   transfer: ArrayBuffer[],
 ): Promise<Factor> {
   if (source.mode === "hardware") {
-    if (factor.kind !== "hardware") {
+    if (factor.kind !== "device" && factor.kind !== "hardware") {
       throw hardwareOnly();
     }
-    return HARDWARE;
+    return { kind: factor.kind };
   }
-  if (factor.kind === "hardware") {
+  if (factor.kind === "hardware" || factor.kind === "device") {
     throw noHardware();
   }
   if (factor.kind === "password") {
@@ -253,9 +269,27 @@ export async function resolveFactor(
 }
 
 /**
+ * The fail-closed gate on every verify parameter: a `device` factor proves no presence, so it can
+ * never verify — rejected here before any ceremony, and again by the wire validator and the
+ * kernel's `verifyFactor`.
+ */
+export async function resolveVerifyFactor(
+  source: FactorSource,
+  factor: VerifyFactor,
+  transfer: ArrayBuffer[],
+): Promise<WireVerifyFactor> {
+  if ((factor as UnlockFactor).kind === "device") {
+    throw new WalletError("invalid-input", "the device factor cannot verify");
+  }
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- device was rejected above
+  return (await resolveFactor(source, factor, transfer)) as WireVerifyFactor;
+}
+
+/**
  * Resolves a public `InitialFactor` (a factor being created). For `create/restoreWithPasskey` the
  * default passkey factor reuses the wallet ceremony's own credential and `second` PRF output; a
- * hardware host always establishes the hardware factor and drops that output.
+ * hardware host chooses its own vault factors (the wire `device` marker lets the kernel build the
+ * device + hardware set) and drops that output.
  */
 export async function resolveInitialFactor(
   source: FactorSource,
@@ -265,10 +299,10 @@ export async function resolveInitialFactor(
 ): Promise<Factor> {
   if (source.mode === "hardware") {
     walletCeremony?.second?.fill(0);
-    if (factor !== undefined && factor.kind !== "hardware") {
-      throw hardwareOnly();
+    if (factor !== undefined) {
+      throw new WalletError("unsupported", "this host chooses its own vault factors");
     }
-    return HARDWARE;
+    return { kind: "device" };
   }
   if (factor === undefined || factor.kind === "passkey") {
     const name = factor === undefined ? undefined : passkeyName(factor.name);

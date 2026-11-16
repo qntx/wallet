@@ -8,7 +8,7 @@
 namespace qntxTestKeystore {
 
 struct Call {
-  std::string op; // seal | open | authenticate | clear
+  std::string op; // seal | open | sealDevice | openDevice | probe | remove | authenticate | clear
   std::string id;
   std::string title;
   std::string description;
@@ -19,8 +19,9 @@ struct Call {
 std::vector<Call> calls();
 // Forget calls, keys, scripts, cancels and any held completion.
 void reset();
-// A prompt titled "fail:cancelled", "fail:invalidated", "fail:unavailable" or
-// "fail:failed" completes with that status instead of succeeding.
+// A prompt titled "fail:cancelled", "fail:invalidated", "fail:unavailable",
+// "fail:failed" or "fail:nolockscreen" completes with that status instead of
+// succeeding.
 // The next call's completion is held until `cancel` or `releaseHeld`.
 void holdNext();
 // Completes a held call (success, or its scripted failure) on a background

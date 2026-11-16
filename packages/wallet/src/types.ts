@@ -9,6 +9,7 @@ export type LockReason =
   | "invalidated";
 
 export type FactorInfo =
+  | { readonly kind: "device"; readonly id: string; readonly createdAt: number }
   | { readonly kind: "hardware"; readonly id: string; readonly createdAt: number }
   | {
       readonly kind: "passkey";
@@ -54,7 +55,7 @@ export type WalletErrorCode =
   | "locked"
   | "cancelled"
   | "factor-invalidated"
-  | "no-device-credential"
+  | "verification-unavailable"
   | "passkey-not-configured"
   | "passkey-prf-unsupported"
   | "wrong-password"
@@ -89,8 +90,12 @@ export type VaultState =
  * Each protocol module contributes one section (here: `nostr`).
  */
 export type StatusPayload = {
-  readonly protocol: 2; // PROTOCOL_VERSION — literal to keep types.ts import-free
+  readonly protocol: 3; // PROTOCOL_VERSION — literal to keep types.ts import-free
   readonly vault: VaultState;
+  /** Whether the vault requires a verifying unlock (established vaults without a device factor). */
+  readonly appLock: boolean;
+  /** Whether any factor that can prove user presence exists (hardware, passkey or password). */
+  readonly verification: "available" | "unavailable";
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;
   readonly nostr: { readonly keys: ReadonlyArray<NostrKeyInfo> };
@@ -126,20 +131,28 @@ export class WalletError extends Error {
 }
 
 /**
- * A factor the user proves again for a guarded operation. `hardware` is the React Native factor:
- * the kernel shows the system verification prompt with text it renders itself.
+ * A factor that opens the vault. `device` is the silent React Native factor (no user presence);
+ * `hardware` is the React Native factor that proves presence — the kernel shows the system
+ * verification prompt with text it renders itself.
  */
 export type UnlockFactor =
+  | { readonly kind: "device" }
   | { readonly kind: "hardware" }
   | { readonly kind: "passkey" }
   | { readonly kind: "password"; readonly password: string };
 
 /**
- * A factor being created; `hardware` exists only on React Native. `name` is the passkey
- * credential's display name — the host validates it before the ceremony (1–64 characters).
+ * A factor the user proves again for a guarded operation — `device` can never verify: it proves no
+ * user presence.
+ */
+export type VerifyFactor = Exclude<UnlockFactor, { readonly kind: "device" }>;
+
+/**
+ * A factor being created; `name` is the passkey credential's display name — the host validates it
+ * before the ceremony (1–64 characters). React Native hosts choose their own vault factors, so an
+ * initial factor exists only on hosts without a platform keystore.
  */
 export type InitialFactor =
-  | { readonly kind: "hardware" }
   | { readonly kind: "passkey"; readonly name: string }
   | { readonly kind: "password"; readonly password: string };
 
@@ -164,6 +177,8 @@ export type AutoLockPolicy =
   | { readonly platform: "native"; readonly backgroundSeconds: 0 | 60 | 300 | 900 }
   | { readonly platform: "web"; readonly idleMinutes: 5 | 15 | 60 };
 
+export type NativeAutoLockPolicy = Extract<AutoLockPolicy, { readonly platform: "native" }>;
+
 /** Public info for an imported private key — the record id, family and address. */
 export type KeyInfo = {
   readonly keyId: string;
@@ -183,14 +198,18 @@ export type KeysApi = {
     secret: string | Uint8Array,
   ) => Promise<KeyInfo>;
   readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
-  readonly remove: (keyId: string, verify: UnlockFactor) => Promise<void>;
-  readonly export: (keyId: string, verify: UnlockFactor) => Promise<Uint8Array>;
+  readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
+  readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;
 };
 
 export type WalletSnapshot = {
   readonly vault: VaultState;
   readonly lockReason: LockReason | undefined;
   readonly verifying: boolean; // a user verification is in flight
+  /** Established vault without a device factor: every unlock verifies (native app lock). */
+  readonly appLock: boolean;
+  /** Whether any presence-proving factor exists on this vault. */
+  readonly verification: "available" | "unavailable";
   readonly factors: ReadonlyArray<FactorInfo>;
   readonly wallets: ReadonlyArray<WalletInfo>;
   readonly nostr: { readonly keys: ReadonlyArray<NostrKeyInfo> };
@@ -226,8 +245,12 @@ export type MnemonicDraft = {
 export type VaultApi = {
   readonly unlock: (factor?: UnlockFactor) => Promise<void>;
   readonly lock: () => Promise<void>;
-  readonly addFactor: (factor: InitialFactor, verify: UnlockFactor) => Promise<FactorInfo>;
-  readonly removeFactor: (id: string, verify: UnlockFactor) => Promise<void>; // ≥1 factor remains
+  readonly addFactor: (factor: InitialFactor, verify: VerifyFactor) => Promise<FactorInfo>;
+  readonly removeFactor: (id: string, verify: VerifyFactor) => Promise<void>; // ≥1 factor remains
+  /** Registers the verifying (hardware) factor on a native vault that has none — no prior verify. */
+  readonly enrolVerification: () => Promise<void>;
+  /** Turns the native app lock on (drops the silent device factor) or off (restores it). */
+  readonly setAppLock: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
   readonly reset: () => Promise<void>;
 };
 
@@ -251,8 +274,8 @@ export type WalletsApi = {
     readonly factor?: InitialFactor;
   }) => Promise<WalletInfo>;
   /** One-shot mnemonic (and passphrase) export; requires re-verification every call. */
-  readonly exportMnemonic: (walletId: string, verify: UnlockFactor) => Promise<ExportedMnemonic>;
-  readonly delete: (walletId: string, verify: UnlockFactor) => Promise<void>;
+  readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
+  readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
 };
 
 export type DataKeyApi = {
@@ -262,16 +285,17 @@ export type DataKeyApi = {
 /**
  * Cloud-backup entry points. `enable` re-verifies and retains a fresh BEK in the vault; `update`
  * rewrites the sealed envelope JSON with the retained BEK (no factor ceremony, so an auto-sync can
- * run silently); `restore` merges an envelope into the vault. Factor inputs reuse `UnlockFactor` —
- * passkey assertions evaluate the PRF over `backupSalt`.
+ * run silently); `disable` re-verifies and drops the retained BEK; `restore` merges an envelope
+ * into the vault. Factor inputs reuse `UnlockFactor` — passkey assertions evaluate the PRF over
+ * `backupSalt`.
  */
 export type BackupApi = {
   readonly enable: (options: {
-    readonly verify: UnlockFactor;
+    readonly verify: VerifyFactor;
     readonly factors: ReadonlyArray<UnlockFactor>;
   }) => Promise<void>;
   readonly update: () => Promise<string>;
-  readonly disable: () => Promise<void>;
+  readonly disable: (verify: VerifyFactor) => Promise<void>;
   /**
    * Wallets whose header is flagged `passphrase` restore only when `passphrases` carries theirs;
    * the rest are listed in `passphraseRequired` and a later restore can bring them in.

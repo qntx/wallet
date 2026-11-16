@@ -15,5 +15,7 @@ export interface KernelHost extends HybridObject<{ ios: "c++"; android: "c++" }>
   post(frame: ArrayBuffer): void;
   onMessage(listener: (frame: ArrayBuffer) => void): void;
   onExit(listener: (reason: KernelExitReason) => void): void;
+  /** Applies a new background lock budget (0/60/300/900) to the running kernel. */
+  setBackgroundLock(backgroundLockSeconds: number): void;
   lock(): void;
 }

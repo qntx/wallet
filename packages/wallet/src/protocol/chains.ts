@@ -6,8 +6,8 @@
  *
  * @qntx/wallet-chains imports; template names and path shapes are declared here.
  */
-import type { Factor, MethodSpec } from "./core.ts";
-import { factor, groupIndex, walletId } from "./core.ts";
+import type { VerifyFactor, MethodSpec } from "./core.ts";
+import { verifier, groupIndex, walletId } from "./core.ts";
 import type { Validator } from "./validate.ts";
 import { arr, bytes, int, literal, obj, opt, str, union } from "./validate.ts";
 
@@ -188,7 +188,7 @@ export type ChainSignResult =
   | { readonly kind: "bitcoin.psbt"; readonly signedPsbt: Uint8Array }
   | { readonly kind: "bitcoin.message"; readonly signature: string };
 
-export type ChainSignParams = { readonly request: ChainSignRequest; readonly verify: Factor };
+export type ChainSignParams = { readonly request: ChainSignRequest; readonly verify: VerifyFactor };
 
 const accountRef: Validator<AccountRef> = union(
   obj({ kind: literal("hd"), walletId, groupIndex, template }),
@@ -327,7 +327,7 @@ export const CHAINS_METHODS: {
   "chain.sign": {
     session: true,
     presence: true,
-    params: obj({ request: signRequest, verify: factor }),
+    params: obj({ request: signRequest, verify: verifier }),
     result: signResult,
   },
 };

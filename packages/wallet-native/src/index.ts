@@ -1,16 +1,21 @@
 import { WalletError } from "@qntx/wallet";
-import type { Wallet, WalletOptions } from "@qntx/wallet";
+import type { NativeAutoLockPolicy, Wallet, WalletOptions } from "@qntx/wallet";
 import type { SetTimer } from "@qntx/wallet/host";
 /**
  * `@qntx/wallet-native`: the RN host entry. `createNativeWallet` adapts a `KernelHost` (Nitro
- * hybrid from W2b, or any object with the same shape) to the wallet `connectKernel` entry — the
- * returned `Wallet` is the same type as the web/node host.
+ * hybrid from W2b, or any object with the same shape) to the wallet `connectKernel` entry.
+ * `NativeWallet` adds `setAutoLock`: changing the background lock budget applies to the live kernel
+ * immediately and to every runtime spawned afterwards.
  */
 import { connectKernel } from "@qntx/wallet/host";
 
 import { spawnFromHost } from "./host.ts";
 import type { KernelHostLike } from "./host.ts";
 import type { KernelHost } from "./specs/kernel-host.nitro.ts";
+
+export type NativeWallet = Wallet & {
+  readonly setAutoLock: (policy: NativeAutoLockPolicy) => void;
+};
 
 export type NativeWalletOptions = WalletOptions & {
   /**
@@ -34,7 +39,9 @@ async function defaultHostFactory(): Promise<() => KernelHostLike> {
   return () => NitroModules.createHybridObject<KernelHost>("KernelHost");
 }
 
-export async function createNativeWallet(options: NativeWalletOptions): Promise<Wallet> {
+const BACKGROUND_SECONDS: ReadonlySet<number> = new Set([0, 60, 300, 900]);
+
+export async function createNativeWallet(options: NativeWalletOptions): Promise<NativeWallet> {
   const { autoLock } = options;
   if (autoLock.platform !== "native") {
     throw new WalletError(
@@ -43,16 +50,30 @@ export async function createNativeWallet(options: NativeWalletOptions): Promise<
     );
   }
   const createHost = options.createHost ?? (await defaultHostFactory());
+  let seconds: number = autoLock.backgroundSeconds;
+  let live: KernelHostLike | undefined;
   // The native host owns the auto-lock signal: the platform layer calls host.lock() on
   // background expiry — the kernel never sees a presence source here.
-  return connectKernel({
-    spawn: () => spawnFromHost(createHost(), autoLock.backgroundSeconds),
+  const wallet = await connectKernel({
+    spawn: () => {
+      live = createHost();
+      return spawnFromHost(live, seconds);
+    },
     factors: "hardware",
     passkey: options.passkey,
     verifyEvent: options.verifyEvent,
     ceremony: undefined,
     setTimer,
   });
+  const setAutoLock = (policy: NativeAutoLockPolicy): void => {
+    if (policy.platform !== "native" || !BACKGROUND_SECONDS.has(policy.backgroundSeconds)) {
+      throw new WalletError("invalid-input", "not a native auto-lock policy");
+    }
+    seconds = policy.backgroundSeconds;
+    live?.setBackgroundLock(policy.backgroundSeconds);
+  };
+  // Object.assign keeps one identity: nostr(wallet) and friends key their internals on it.
+  return Object.assign(wallet, { setAutoLock });
 }
 
 export { spawnFromHost, type KernelHostLike, type KernelExitReason } from "./host.ts";

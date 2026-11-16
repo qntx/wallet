@@ -13,7 +13,7 @@ import type { WalletInfo } from "@qntx/wallet/types";
 import { masterKey } from "../derive/hd.ts";
 import { walletIdOf } from "../derive/wallet-id.ts";
 import { KernelError } from "../errors.ts";
-import { assertFactorKindAvailable, requirePasskey } from "../platform.ts";
+import { assertInitialFactor, requirePasskey } from "../platform.ts";
 import type { KernelPlatform, PasskeyResult } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
 import { decodeUtf8Secret, Secret, wipe } from "../secret/secret.ts";
@@ -30,11 +30,10 @@ import type { StoredFactor, StoredRecord } from "../vault/store.ts";
 import {
   establishOps,
   factorHeader,
-  factorRow,
   findRecord,
+  keystoreFactorRows,
   makeFactor,
   newFactorKek,
-  newHardwareKek,
   sealRecord,
   verifyFactor,
   walletInfo,
@@ -142,6 +141,7 @@ export function gate(
     if (factor === undefined) {
       throw new KernelError("invalid-input", "an initial factor is required");
     }
+    assertInitialFactor(ctx.platform, factor);
     return { uninitialized: true, dek: Secret.take(ctx.platform.random(32)) };
   }
   if (factor !== undefined) {
@@ -170,7 +170,10 @@ export async function commitRecords(
     return establishVault(
       ctx,
       gated.dek,
-      async () => makeFactor(ctx.platform, factor, gated.dek),
+      async () =>
+        ctx.platform.keystore === undefined
+          ? [await makeFactor(ctx.platform, factor, gated.dek)]
+          : keystoreFactorRows(ctx.platform, gated.dek),
       records,
     );
   }
@@ -187,14 +190,14 @@ export async function commitRecords(
 async function establishVault(
   ctx: KernelContext,
   dek: Secret,
-  factorRowFor: () => Promise<StoredFactor>,
+  factorRowsFor: () => Promise<StoredFactor[]>,
   records: ReadonlyArray<StoredRecord>,
 ): Promise<string> {
   const { keystore } = ctx.platform;
   let keyId: string;
   try {
     await keystore?.clear();
-    const established = establishOps(ctx.platform, await factorRowFor(), records);
+    const established = establishOps(ctx.platform, await factorRowsFor(), records);
     ({ keyId } = established);
     await ctx.commit(established.ops);
   } catch (error) {
@@ -235,9 +238,12 @@ function quizPositions(random: KernelPlatform["random"], count: number): [number
  * inside `newFactorKek` because the factor is being created.
  */
 async function pendingFactorOf(ctx: KernelContext, factor: Factor): Promise<PendingFactor> {
+  assertInitialFactor(ctx.platform, factor);
+  if (factor.kind === "device") {
+    return { kind: "device" };
+  }
   if (factor.kind === "hardware") {
-    assertFactorKindAvailable(ctx.platform, "hardware");
-    return { kind: "hardware" };
+    throw new KernelError("unsupported", "this host chooses its own vault factors");
   }
   const material = await newFactorKek(ctx.platform, factor);
   return material.kind === "password"
@@ -280,23 +286,23 @@ export async function createMnemonic(
 }
 
 /**
- * Turns a draft's pending factor into its stored record once the DEK exists: the header gets the
- * public key derived from the held KEK, and the DEK wraps to that key. A hardware factor seals its
- * KEK now, under a key created for this factor id.
+ * Turns a draft's pending factor into its stored rows once the DEK exists: a software factor's
+ * header gets the public key derived from the held KEK, and the DEK wraps to that key. A `device`
+ * pending factor builds the full keystore row set (device plus hardware when supported).
  */
-async function storedFactorForPending(
+async function storedFactorsForPending(
   ctx: KernelContext,
   pending: PendingFactor,
   dek: Secret,
-): Promise<StoredFactor> {
-  const id = bytesToHex(ctx.platform.random(16));
-  if (pending.kind === "hardware") {
-    return factorRow(ctx.platform, await newHardwareKek(ctx.platform, id), id, dek);
+): Promise<StoredFactor[]> {
+  if (pending.kind === "device") {
+    return keystoreFactorRows(ctx.platform, dek);
   }
+  const id = bytesToHex(ctx.platform.random(16));
   const publicKey = pending.kek.use((kek) => factorPublicKey(kek));
   const header = factorHeader(pending, publicKey, ctx.platform.now());
   const sealed = wrapDek(dek, publicKey, { kind: pending.kind, id, header }, ctx.platform.random);
-  return { kind: pending.kind, id, header, sealed };
+  return [{ kind: pending.kind, id, header, sealed }];
 }
 
 export async function confirmMnemonic(
@@ -354,7 +360,7 @@ async function confirmWithPassphrase(
         const session = await establishVault(
           ctx,
           dek,
-          async () => storedFactorForPending(ctx, pendingFactor, dek),
+          async () => storedFactorsForPending(ctx, pendingFactor, dek),
           [record],
         );
         return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };

@@ -1,6 +1,6 @@
 import { pbkdf2 as nodePbkdf2 } from "node:crypto";
 
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { AutoLockPolicy, PasskeyConfig } from "@qntx/wallet";
@@ -17,6 +17,10 @@ import { FRAME_MAX_BYTES } from "../src/cbor.ts";
 import type { KernelHostLike, KernelExitReason } from "../src/host.ts";
 import { createNativeWallet, spawnFromHost } from "../src/index.ts";
 
+vi.mock("react-native-nitro-modules", () => ({
+  NitroModules: { createHybridObject: vi.fn() },
+}));
+
 const PASSKEY: PasskeyConfig = {
   rpId: "harness.test",
   rpName: "Harness",
@@ -28,11 +32,14 @@ const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 60 };
 
 /**
  * A `__qntx.keystore` stand-in with the native completion shape: sealing reverses the bytes, keys
- * live per id, and `failNext` makes the next prompting call complete with a native failure code.
+ * live per id, presence work needs the lock screen, and `failNext` makes the next call complete
+ * with a native failure code.
  */
 function fakeNativeKeystore() {
   const keys = new Map<string, Uint8Array>();
+  const presence = new Set<string>();
   const failures: string[] = [];
+  let lockScreen = true;
   const later = (fn: () => void) => {
     setTimeout(fn);
   };
@@ -41,6 +48,29 @@ function fakeNativeKeystore() {
   const native: KernelKeystoreNative = {
     locale: "en-US",
     seal: (id, secret, _title, _description, done) => {
+      const code = failures.shift() ?? (lockScreen ? undefined : "verification-unavailable");
+      const sealed = seal(secret);
+      if (code === undefined) {
+        keys.set(id, sealed);
+        presence.add(id);
+      }
+      later(() => {
+        done(code === undefined ? sealed : undefined, code, undefined);
+      });
+    },
+    open: (id, sealed, _title, _description, done) => {
+      const code =
+        failures.shift() ?? (!lockScreen || !presence.has(id) ? "factor-invalidated" : undefined);
+      const known = keys.get(id);
+      later(() => {
+        if (code !== undefined) {
+          done(undefined, code, undefined);
+          return;
+        }
+        done(known === undefined ? undefined : seal(sealed), undefined, undefined);
+      });
+    },
+    sealDevice: (id, secret, done) => {
       const code = failures.shift();
       const sealed = seal(secret);
       if (code === undefined) {
@@ -50,7 +80,7 @@ function fakeNativeKeystore() {
         done(code === undefined ? sealed : undefined, code, undefined);
       });
     },
-    open: (id, sealed, _title, _description, done) => {
+    openDevice: (id, sealed, done) => {
       const code = failures.shift();
       const known = keys.get(id);
       later(() => {
@@ -65,27 +95,54 @@ function fakeNativeKeystore() {
         );
       });
     },
+    probe: (id, protection, done) => {
+      const alive = keys.has(id) && (protection === "device" || (lockScreen && presence.has(id)));
+      later(() => {
+        done(undefined, alive ? undefined : "factor-invalidated", undefined);
+      });
+    },
+    remove: (id, done) => {
+      keys.delete(id);
+      presence.delete(id);
+      later(() => {
+        done(undefined, undefined, undefined);
+      });
+    },
     authenticate: (_title, _description, done) => {
-      const code = failures.shift();
+      const code = failures.shift() ?? (lockScreen ? undefined : "verification-unavailable");
       later(() => {
         done(undefined, code, undefined);
       });
     },
     clear: (done) => {
       keys.clear();
+      presence.clear();
       later(() => {
         done(undefined, undefined, undefined);
       });
     },
   };
-  return { native, failNext: (code: string) => failures.push(code) };
+  return {
+    native,
+    failNext: (code: string) => failures.push(code),
+    removeLockScreen: () => {
+      lockScreen = false;
+      for (const id of presence) {
+        keys.delete(id);
+      }
+      presence.clear();
+    },
+  };
 }
 
 /** In-memory frame pipe: host wrapper (MainPort) ↔ kernel-side transport (Port). */
 type FakeHost = KernelHostLike & {
   readonly inbound: (f: ArrayBuffer) => void;
   readonly locked: () => boolean;
+  readonly backgroundLock: () => number | undefined;
+  readonly started: () => number[];
   readonly _integrity: () => void;
+  readonly _exit: (reason: KernelExitReason) => void;
 };
 
 function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
@@ -94,6 +151,8 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   let exitCb: ((r: KernelExitReason) => void) | undefined;
   let integCb: (() => void) | undefined;
   let locked = false;
+  let backgroundLock: number | undefined;
+  const starts: number[] = [];
   const pipe: KernelFramePipe = {
     post: (frame) => {
       if (!locked) {
@@ -108,7 +167,9 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     },
   };
   const host = {
-    start: (_seconds: number) => {},
+    start: (seconds: number) => {
+      starts.push(seconds);
+    },
     post: (frame) => {
       if (!locked) {
         kernelCb?.(frame);
@@ -120,6 +181,9 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     onExit: (cb) => {
       exitCb = cb;
     },
+    setBackgroundLock: (seconds: number) => {
+      backgroundLock = seconds;
+    },
     lock: () => {
       locked = true;
       exitCb?.("locked");
@@ -128,11 +192,17 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
       hostCb?.(f);
     },
     locked: () => locked,
+    backgroundLock: () => backgroundLock,
+    started: () => [...starts],
     _integrity: () => integCb?.(),
+    _exit: (reason: KernelExitReason) => exitCb?.(reason),
   } as KernelHostLike & {
     inbound: (f: ArrayBuffer) => void;
     locked: () => boolean;
+    backgroundLock: () => number | undefined;
+    started: () => number[];
     _integrity: () => void;
+    _exit: (reason: KernelExitReason) => void;
   };
   return { host, pipe };
 }
@@ -226,7 +296,7 @@ describe("createNativeWallet", () => {
     const draft = await walletA.wallets.createMnemonic({ words: 12 });
     const words = new TextDecoder().decode(draft.words.read()).split(" ");
     await draft.confirm(draft.quiz.map((i) => words[i]!));
-    expect(walletA.getSnapshot().factors.map((f) => f.kind)).toStrictEqual(["hardware"]);
+    expect(walletA.getSnapshot().factors.map((f) => f.kind)).toStrictEqual(["device", "hardware"]);
 
     const bytesB = { value: undefined as Uint8Array | undefined };
     const host = boot(fileStore(bytesB), keystore.native);
@@ -276,32 +346,32 @@ describe("createNativeWallet", () => {
   });
 });
 
+/** A wallet whose every kernel runtime gets a fresh host over one persistent vault. */
+async function openWallet() {
+  const keystore = fakeNativeKeystore();
+  const bytes = { value: undefined as Uint8Array | undefined };
+  const hosts: FakeHost[] = [];
+  const wallet = await createNativeWallet({
+    verifyEvent,
+    passkey: PASSKEY,
+    autoLock: AUTOLOCK,
+    createHost: () => {
+      const host = boot(fileStore(bytes), keystore.native);
+      hosts.push(host);
+      return host;
+    },
+  });
+  return { wallet, hosts };
+}
+
+async function createMnemonicWallet(wallet: Awaited<ReturnType<typeof openWallet>>["wallet"]) {
+  const draft = await wallet.wallets.createMnemonic({ words: 12 });
+  const words = new TextDecoder().decode(draft.words.read()).split(" ");
+  const created = await draft.confirm(draft.quiz.map((i) => words[i]!));
+  return { walletId: created.walletId, phrase: words.join(" ") };
+}
+
 describe("kernel restarts", () => {
-  /** A wallet whose every kernel runtime gets a fresh host over one persistent vault. */
-  async function openWallet() {
-    const keystore = fakeNativeKeystore();
-    const bytes = { value: undefined as Uint8Array | undefined };
-    const hosts: FakeHost[] = [];
-    const wallet = await createNativeWallet({
-      verifyEvent,
-      passkey: PASSKEY,
-      autoLock: AUTOLOCK,
-      createHost: () => {
-        const host = boot(fileStore(bytes), keystore.native);
-        hosts.push(host);
-        return host;
-      },
-    });
-    return { wallet, hosts };
-  }
-
-  async function createMnemonicWallet(wallet: Awaited<ReturnType<typeof openWallet>>["wallet"]) {
-    const draft = await wallet.wallets.createMnemonic({ words: 12 });
-    const words = new TextDecoder().decode(draft.words.read()).split(" ");
-    const created = await draft.confirm(draft.quiz.map((i) => words[i]!));
-    return { walletId: created.walletId, phrase: words.join(" ") };
-  }
-
   it("unlocks in the same process after a lock, twice in a row", async () => {
     const { wallet, hosts } = await openWallet();
     await createMnemonicWallet(wallet);
@@ -331,6 +401,54 @@ describe("kernel restarts", () => {
   });
 });
 
+describe("setAutoLock and the host factory", () => {
+  it("rejects policies outside the native background-seconds set", async () => {
+    const { wallet } = await openWallet();
+    expect(() => wallet.setAutoLock({ platform: "web", idleMinutes: 5 } as never)).toThrow(
+      expect.objectContaining({ code: "invalid-input" }),
+    );
+    expect(() => wallet.setAutoLock({ platform: "native", backgroundSeconds: 5 } as never)).toThrow(
+      expect.objectContaining({ code: "invalid-input" }),
+    );
+  });
+
+  it("applies the budget to the live host and to every later spawn", async () => {
+    const { wallet, hosts } = await openWallet();
+    await createMnemonicWallet(wallet);
+    expect(hosts).toHaveLength(1);
+    expect(hosts[0]!.started()).toStrictEqual([60]);
+
+    wallet.setAutoLock({ platform: "native", backgroundSeconds: 300 });
+    expect(hosts[0]!.backgroundLock()).toBe(300);
+
+    await wallet.vault.lock();
+    await wallet.vault.unlock();
+    expect(hosts).toHaveLength(2);
+    expect(hosts[1]!.started()).toStrictEqual([300]);
+
+    wallet.setAutoLock({ platform: "native", backgroundSeconds: 0 });
+    expect(hosts[1]!.backgroundLock()).toBe(0);
+  });
+
+  it("builds the Nitro KernelHost when no createHost is given", async () => {
+    const { NitroModules } = await import("react-native-nitro-modules");
+    const createHybridObject = vi.mocked(NitroModules.createHybridObject);
+    const bytes = { value: undefined as Uint8Array | undefined };
+    const keystore = fakeNativeKeystore();
+    // oxlint-disable-next-line vitest/prefer-mock-return-shorthand -- every spawn needs a fresh host
+    createHybridObject.mockImplementation(() => boot(fileStore(bytes), keystore.native) as never);
+    const wallet = await createNativeWallet({
+      verifyEvent,
+      passkey: PASSKEY,
+      autoLock: AUTOLOCK,
+    });
+    await expect(wallet.vault.unlock()).rejects.toThrow(
+      expect.objectContaining({ code: expect.any(String) as string }),
+    );
+    expect(createHybridObject).toHaveBeenCalledWith("KernelHost");
+  });
+});
+
 describe("frame discipline", () => {
   it("oversized inbound frame exits the port and locks the host", () => {
     const { host } = makePipe();
@@ -354,6 +472,26 @@ describe("frame discipline", () => {
     host.inbound(Uint8Array.from([0xff, 0xff, 0xff]).buffer);
     expect(exited).toBe(true);
     expect(host.locked()).toBe(true);
+  });
+
+  it("maps a platform background exit to background and other exits to crashed", () => {
+    const { host } = makePipe();
+    const port = spawnFromHost(host, 0);
+    const background: string[] = [];
+    port.onExit((reason) => {
+      background.push(reason);
+    });
+    host._exit("background");
+    expect(background).toStrictEqual(["background"]);
+
+    const { host: other } = makePipe();
+    const port2 = spawnFromHost(other, 0);
+    const crashed: string[] = [];
+    port2.onExit((reason) => {
+      crashed.push(reason);
+    });
+    other._exit("integrity");
+    expect(crashed).toStrictEqual(["crashed"]);
   });
 
   it("post zero-fills the transfer buffers", () => {

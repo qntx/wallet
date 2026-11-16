@@ -47,7 +47,7 @@ export type PasskeyFactorHeader = {
   readonly createdAt: number;
 };
 
-export type HardwareFactorHeader = {
+export type KeystoreFactorHeader = {
   /** Base64url (no padding), decodes to 1–512 bytes — the keystore-sealed KEK. */
   readonly sealedKek: string;
   readonly publicKey: string; // base64url (no padding) X25519 wrapping key, 32 bytes
@@ -73,7 +73,7 @@ export type CoreHeader =
   | KeyHeader
   | PasswordFactorHeader
   | PasskeyFactorHeader
-  | HardwareFactorHeader
+  | KeystoreFactorHeader
   | BackupKeyHeader;
 
 const PURPOSE_PATTERN = /^[a-z0-9-]{1,32}$/;
@@ -206,7 +206,7 @@ export function parsePasskeyFactorHeader(text: string): PasskeyFactorHeader {
   };
 }
 
-export function parseHardwareFactorHeader(text: string): HardwareFactorHeader {
+export function parseKeystoreFactorHeader(text: string): KeystoreFactorHeader {
   const object = headerObject(text);
   expectKeys(object, ["sealedKek", "publicKey", "createdAt"]);
   return {

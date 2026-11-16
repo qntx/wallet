@@ -29,7 +29,7 @@ import type { NullValue, Validator } from "./validate.ts";
 
 export type { WalletErrorCode } from "../types.ts";
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /**
  * Responses to requests whose `id` cannot be parsed (malformed envelope) carry id 0. Main-side
@@ -162,6 +162,8 @@ const statusPayload: Validator<StatusPayload> = obj({
     literal("unavailable"),
   ),
   factors: arr(factorInfo, MAX_SNAPSHOT_ITEMS),
+  appLock: bool,
+  verification: union(literal("available"), literal("unavailable")),
   wallets: arr(walletInfo, MAX_SNAPSHOT_ITEMS),
   nostr: nostrStatus,
   importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
@@ -255,7 +257,9 @@ export type {
   CreateWithPasskeyParams,
   Factor,
   RestoreWithPasskeyParams,
+  VerifyFactor,
 } from "./core.ts";
+export { verifier } from "./core.ts";
 export type {
   BackupEnvelopeFactor,
   BackupEnvelopeWire,

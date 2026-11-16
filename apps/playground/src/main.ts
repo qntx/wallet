@@ -1,5 +1,5 @@
 import { verifyEvent } from "@qntx/nostr";
-import type { UnlockFactor } from "@qntx/wallet";
+import type { UnlockFactor, VerifyFactor } from "@qntx/wallet";
 import { createWalletEngine } from "@qntx/wallet-engine";
 import type { PaymentOption } from "@qntx/wallet-engine";
 import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "@qntx/wallet-engine/idb";
@@ -45,7 +45,7 @@ const say = (msg: string, err = false): void => {
   el("status").textContent = msg;
   el("status").className = err ? "err" : "ok";
 };
-const verify = (): UnlockFactor => ({ kind: "password", password: input("password").value });
+const verify = (): VerifyFactor => ({ kind: "password", password: input("password").value });
 const random = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));
 
 // Init is async — the listener registrations below attach synchronously so an early click is

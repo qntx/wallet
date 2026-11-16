@@ -15,7 +15,7 @@ import {
   parseBackupKeyHeader,
   parseDataKeyHeader,
   parseEntropyHeader,
-  parseHardwareFactorHeader,
+  parseKeystoreFactorHeader,
   parseKeyHeader,
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
@@ -83,8 +83,8 @@ describe("record and factor header vectors", () => {
     expect(encodeHeader(parsed)).toBe(vector.text);
   });
 
-  it.each(byKind("factor-hardware"))("$name encodes and parses byte-for-byte", (vector) => {
-    const parsed = parseHardwareFactorHeader(vector.text);
+  it.each(byKind("factor-keystore"))("$name encodes and parses byte-for-byte", (vector) => {
+    const parsed = parseKeystoreFactorHeader(vector.text);
     expect(parsed).toStrictEqual(vector.input);
     expect(encodeHeader(parsed)).toBe(vector.text);
   });
@@ -130,7 +130,7 @@ describe("vault meta vector", () => {
       header: "{}",
       sealed: new Uint8Array([0x02]),
     };
-    const { ops } = establishOps(platform, factor, []);
+    const { ops } = establishOps(platform, [factor], []);
     const meta = initMeta(ops);
     expect(meta).toStrictEqual(metaVector.input);
     expect(JSON.stringify(meta)).toBe(metaVector.text);

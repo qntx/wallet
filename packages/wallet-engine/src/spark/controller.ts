@@ -17,7 +17,7 @@ import type {
   SparkTransfer,
 } from "@qntx/spark";
 import { registerLightningAddress, unregisterLightningAddress } from "@qntx/spark/lnurl";
-import type { UnlockFactor } from "@qntx/wallet";
+import type { VerifyFactor } from "@qntx/wallet";
 import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
 import type { SparkSigner } from "@qntx/wallet/spark";
 
@@ -48,7 +48,7 @@ type SparkApis = {
   readonly approve: (params: {
     account: SparkAccountRef;
     intent: SparkApproveIntent;
-    verify: UnlockFactor;
+    verify: VerifyFactor;
   }) => Promise<unknown>;
 };
 
@@ -466,7 +466,7 @@ export class SparkController extends Controller<SparkControllerState> {
     params: {
       receiver: string;
       amountSats: number;
-      verify: UnlockFactor;
+      verify: VerifyFactor;
     },
   ): Promise<SparkTransfer> {
     return this.guarded(async () => {
@@ -540,7 +540,7 @@ export class SparkController extends Controller<SparkControllerState> {
       invoice: string;
       amountSats?: number;
       maxFeeSats: number;
-      verify: UnlockFactor;
+      verify: VerifyFactor;
       /** Local annotation written under the payment's transfer id after it succeeds. */
       note?: PaymentNote;
     },
@@ -586,7 +586,7 @@ export class SparkController extends Controller<SparkControllerState> {
    */
   async paySparkInvoice(
     ref: SparkAccountRef,
-    params: { invoice: string; amountSats?: number; verify: UnlockFactor },
+    params: { invoice: string; amountSats?: number; verify: VerifyFactor },
   ): Promise<SparkTransfer> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
@@ -697,7 +697,7 @@ export class SparkController extends Controller<SparkControllerState> {
       amountSats?: number;
       speed: "FAST" | "MEDIUM" | "SLOW";
       maxFeeSats?: number;
-      verify: UnlockFactor;
+      verify: VerifyFactor;
     },
   ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {

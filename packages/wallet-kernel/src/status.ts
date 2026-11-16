@@ -12,7 +12,7 @@ import {
   parseKeyHeader,
 } from "./vault/headers.ts";
 import type { StoredRecord, VaultImage } from "./vault/store.ts";
-import { VAULT_FORMAT } from "./vault/store.ts";
+import { UPGRADABLE_FORMAT, VAULT_FORMAT } from "./vault/store.ts";
 import { factorInfo, walletInfo } from "./vault/vault.ts";
 
 /** The kernel's read on a loaded vault image; `unavailable` never appears here (load threw). */
@@ -27,7 +27,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
   if (!Number.isSafeInteger(meta.format)) {
     return "corrupted";
   }
-  if (meta.format !== VAULT_FORMAT) {
+  if (meta.format !== VAULT_FORMAT && meta.format !== UPGRADABLE_FORMAT) {
     return "unsupported";
   }
   if (
@@ -45,7 +45,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
   return undefined;
 }
 
-const FACTOR_KINDS = new Set(["hardware", "password", "passkey"]);
+const FACTOR_KINDS = new Set(["device", "hardware", "password", "passkey"]);
 
 /**
  * Snapshot contents for the `status` payload — the record-ownership composition point, and the
@@ -85,6 +85,12 @@ export function statusContents(
   const meta = metaHealth(image);
   let corrupted = meta === "corrupted";
   let unsupported = meta === "unsupported";
+  // Keystore factor kinds are singular: a second row of either means the vault was torn.
+  for (const kind of ["device", "hardware"]) {
+    if (image.factors.filter((factor) => factor.kind === kind).length > 1) {
+      corrupted = true;
+    }
+  }
   for (const factor of image.factors) {
     if (!FACTOR_KINDS.has(factor.kind)) {
       unsupported = true; // a factor kind written by another build
@@ -152,6 +158,13 @@ export function statusPayload(ctx: KernelContext, nostr: NostrModule): StatusPay
   return {
     protocol: PROTOCOL_VERSION,
     vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
+    // App lock is the absence of the silent device factor on an established vault.
+    appLock: ctx.image.meta !== undefined && !ctx.image.factors.some((f) => f.kind === "device"),
+    verification: factors.some(
+      (f) => f.kind === "hardware" || f.kind === "passkey" || f.kind === "password",
+    )
+      ? "available"
+      : "unavailable",
     factors,
     wallets,
     nostr: { keys },

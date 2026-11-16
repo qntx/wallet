@@ -11,7 +11,7 @@ import type {
   SparkApprovalSummary,
   SparkApproveIntent,
 } from "../protocol/index.ts";
-import type { UnlockFactor } from "../types.ts";
+import type { VerifyFactor } from "../types.ts";
 
 export type {
   SparkAccountRef,
@@ -37,6 +37,6 @@ export type SparkApi = {
   readonly approve: (params: {
     readonly account: SparkAccountRef;
     readonly intent: SparkApproveIntent;
-    readonly verify: UnlockFactor;
+    readonly verify: VerifyFactor;
   }) => Promise<SparkApprovalSummary>;
 };

@@ -18,7 +18,7 @@ function createSparkApi(internals: WalletInternals): SparkApi {
     approve: async (params) =>
       internals.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const verify = await internals.resolveFactor(params.verify, transfer);
+        const verify = await internals.resolveVerifyFactor(params.verify, transfer);
         return internals.call("spark.approve", { ...params, verify });
       }),
   };

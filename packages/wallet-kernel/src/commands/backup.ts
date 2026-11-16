@@ -525,13 +525,21 @@ export function updateBackup(
   }
 }
 
-/** Deletes the retained BEK; a missing record still succeeds. */
+/** Deletes the retained BEK after re-verification; a missing record still succeeds. */
 export async function disableBackup(
   ctx: KernelContext,
-  _params: NullValue,
+  params: { verify: Factor },
   requestSession: string | undefined,
 ): Promise<NullValue> {
-  ctx.session.require(requestSession);
+  const { dek } = ctx.session.require(requestSession);
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    ctx.commit,
+    corePromptFor(ctx.platform.keystore, "disable-backup"),
+  );
   const record = ctx.image.records.find(
     (r) => r.kind === BACKUP_KEY_KIND && r.id === BACKUP_KEY_ID,
   );

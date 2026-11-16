@@ -7,7 +7,7 @@ import type { FactorInfo, WalletInfo } from "@qntx/wallet/types";
 
 import { KernelError } from "../errors.ts";
 import { assertFactorKindAvailable, requireKeystore } from "../platform.ts";
-import type { KernelPlatform, KeystorePrompt } from "../platform.ts";
+import type { KernelPlatform, KeystorePrompt, KeyUse } from "../platform.ts";
 import { corePromptFor } from "../prompts.ts";
 import { Secret, wipe } from "../secret/secret.ts";
 import { open, recordContext, seal } from "./envelope.ts";
@@ -25,7 +25,7 @@ import type { EntropyHeader } from "./headers.ts";
 import {
   encodeHeader,
   parseEntropyHeader,
-  parseHardwareFactorHeader,
+  parseKeystoreFactorHeader,
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
 } from "./headers.ts";
@@ -72,11 +72,12 @@ function factorId(random: KernelPlatform["random"]): string {
 export type FactorKekMaterial =
   | { readonly kind: "password"; readonly kek: Uint8Array; readonly salt: Uint8Array }
   | { readonly kind: "passkey"; readonly kek: Uint8Array; readonly credentialId: Uint8Array }
+  | { readonly kind: "device"; readonly kek: Uint8Array; readonly sealedKek: Uint8Array }
   | { readonly kind: "hardware"; readonly kek: Uint8Array; readonly sealedKek: Uint8Array };
 
-export type SoftwareFactor = Exclude<Factor, { readonly kind: "hardware" }>;
-type SoftwareKekMaterial = Exclude<FactorKekMaterial, { readonly kind: "hardware" }>;
-type HardwareKekMaterial = Extract<FactorKekMaterial, { readonly kind: "hardware" }>;
+export type SoftwareFactor = Exclude<Factor, { readonly kind: "device" | "hardware" }>;
+type SoftwareKekMaterial = Exclude<FactorKekMaterial, { readonly kind: "device" | "hardware" }>;
+type KeystoreKekMaterial = Extract<FactorKekMaterial, { readonly kind: "device" | "hardware" }>;
 
 /**
  * The single "derive KEK for a new software factor" path, shared by `makeFactor` and mnemonic-draft
@@ -99,20 +100,22 @@ export async function newFactorKek(
 }
 
 /**
- * A hardware factor's KEK: 32 random bytes sealed by the platform keystore under key alias `id`
- * (the factor id). Only the sealed form is stored — in the public header, beside the X25519 key the
- * DEK wraps to, so rotation never needs a prompt.
+ * A keystore factor's KEK: 32 random bytes sealed by the platform keystore under key alias `id`
+ * (the factor id) with `use`'s protection — silent for `device`, a presence prompt for `hardware`.
+ * Only the sealed form is stored — in the public header, beside the X25519 key the DEK wraps to, so
+ * rotation never needs a prompt.
  */
-export async function newHardwareKek(
+export async function newKeystoreKek(
   platform: KernelPlatform,
   id: string,
-): Promise<HardwareKekMaterial> {
-  assertFactorKindAvailable(platform, "hardware");
+  use: KeyUse,
+): Promise<KeystoreKekMaterial> {
   const keystore = requireKeystore(platform);
+  assertFactorKindAvailable(platform, use.protection === "device" ? "device" : "hardware");
   const kek = platform.random(32);
   try {
-    const sealedKek = await keystore.seal(id, kek, corePromptFor(keystore, "create")());
-    return { kind: "hardware", kek, sealedKek };
+    const sealedKek = await keystore.seal(id, kek, use);
+    return { kind: use.protection === "device" ? "device" : "hardware", kek, sealedKek };
   } catch (error) {
     wipe(kek);
     throw error;
@@ -122,6 +125,7 @@ export async function newHardwareKek(
 type FactorHeaderMaterial =
   | { readonly kind: "password"; readonly salt: Uint8Array }
   | { readonly kind: "passkey"; readonly credentialId: Uint8Array }
+  | { readonly kind: "device"; readonly sealedKek: Uint8Array }
   | { readonly kind: "hardware"; readonly sealedKek: Uint8Array };
 
 /** Public header text for a new factor (raw bytes → base64url). `publicKey` is not consumed. */
@@ -139,7 +143,7 @@ export function factorHeader(
       createdAt,
     });
   }
-  if (material.kind === "hardware") {
+  if (material.kind === "device" || material.kind === "hardware") {
     return encodeHeader({
       sealedKek: base64urlnopad.encode(material.sealedKek),
       publicKey: pk,
@@ -176,23 +180,60 @@ export function factorRow(
   }
 }
 
-/** Builds a new factor record wrapping `dek`. The id comes first: it is the hardware key alias. */
+/** Builds a new factor record wrapping `dek`. The id comes first: it is the keystore key alias. */
 export async function makeFactor(
   platform: KernelPlatform,
   factor: Factor,
   dek: Secret,
 ): Promise<StoredFactor> {
   const id = factorId(platform.random);
-  const material =
-    factor.kind === "hardware"
-      ? await newHardwareKek(platform, id)
-      : await newFactorKek(platform, factor);
+  const material = await factorKekFor(platform, factor, id);
   return factorRow(platform, material, id, dek);
 }
 
+async function factorKekFor(
+  platform: KernelPlatform,
+  factor: Factor,
+  id: string,
+): Promise<FactorKekMaterial> {
+  if (factor.kind === "device") {
+    return newKeystoreKek(platform, id, { protection: "device" });
+  }
+  if (factor.kind === "hardware") {
+    return newKeystoreKek(platform, id, {
+      protection: "presence",
+      prompt: corePromptFor(platform.keystore, "create")(),
+    });
+  }
+  return newFactorKek(platform, factor);
+}
+
 /**
- * KEK for an existing factor record; `factor`'s secret bytes are consumed. A hardware factor runs
- * the keystore ceremony with the prompt the caller rendered.
+ * The factor rows a fresh vault on a keystore host starts with: always the silent `device` row,
+ * plus the verifying `hardware` row when the device can show a presence prompt. A `cancelled` (or
+ * any other) hardware-seal rejection aborts the establish — the caller's clear-on-failure path
+ * drops the keys already made; `verification-unavailable` (no lock screen) leaves device only.
+ */
+export async function keystoreFactorRows(
+  platform: KernelPlatform,
+  dek: Secret,
+): Promise<StoredFactor[]> {
+  const device = await makeFactor(platform, { kind: "device" }, dek);
+  try {
+    const hardware = await makeFactor(platform, { kind: "hardware" }, dek);
+    return [device, hardware];
+  } catch (error) {
+    if (error instanceof KernelError && error.code === "verification-unavailable") {
+      return [device];
+    }
+    throw error;
+  }
+}
+
+/**
+ * KEK for an existing factor record; `factor`'s secret bytes are consumed. A `device` factor opens
+ * its keystore key silently; a `hardware` factor runs the presence ceremony with the prompt the
+ * caller rendered.
  */
 async function kekFor(
   platform: KernelPlatform,
@@ -200,9 +241,18 @@ async function kekFor(
   stored: StoredFactor,
   prompt: () => KeystorePrompt,
 ): Promise<Uint8Array> {
+  if (factor.kind === "device") {
+    const { sealedKek } = parseKeystoreFactorHeader(stored.header);
+    return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), {
+      protection: "device",
+    });
+  }
   if (factor.kind === "hardware") {
-    const { sealedKek } = parseHardwareFactorHeader(stored.header);
-    return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), prompt());
+    const { sealedKek } = parseKeystoreFactorHeader(stored.header);
+    return requireKeystore(platform).open(stored.id, base64urlnopad.decode(sealedKek), {
+      protection: "presence",
+      prompt: prompt(),
+    });
   }
   if (factor.kind === "password") {
     const { salt } = parsePasswordFactorHeader(stored.header);
@@ -246,10 +296,10 @@ export async function unlock(
 
   assertFactorKindAvailable(platform, factor.kind);
   let dek: Secret | undefined;
-  if (factor.kind === "hardware") {
-    const stored = image.factors.find((f) => f.kind === "hardware");
+  if (factor.kind === "device" || factor.kind === "hardware") {
+    const stored = image.factors.find((f) => f.kind === factor.kind);
     if (stored === undefined) {
-      throw new KernelError("not-found", "no hardware factor exists");
+      throw new KernelError("not-found", `no ${factor.kind} factor exists`);
     }
     const kek = await kekFor(platform, factor, stored, corePromptFor(platform.keystore, "unlock"));
     try {
@@ -336,6 +386,11 @@ export async function verifyFactor(
   commit: (ops: ReadonlyArray<StoreOp>) => Promise<void>,
   prompt: () => KeystorePrompt,
 ): Promise<void> {
+  // Checked before anything else: a device factor proves no presence, so it can never verify —
+  // the protocol's `verifier` validator rejects it on the wire, and this is the kernel's own gate.
+  if (factor.kind === "device") {
+    throw new KernelError("invalid-input", "the device factor cannot verify");
+  }
   assertFactorKindAvailable(platform, factor.kind);
   const candidates = image.factors.filter((stored) => {
     if (factor.kind !== stored.kind) {
@@ -355,8 +410,27 @@ export async function verifyFactor(
   }
   let verified = false;
   for (const stored of candidates) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
-    const kek = await kekFor(platform, factor, stored, prompt);
+    let kek: Uint8Array;
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- factors are tried sequentially, not in parallel
+      kek = await kekFor(platform, factor, stored, prompt);
+    } catch (error) {
+      // A hardware key the keystore reports dead is dropped — while another factor can still open
+      // the vault (never the last one) — and the operation reports `verification-unavailable`.
+      if (
+        factor.kind === "hardware" &&
+        error instanceof KernelError &&
+        error.code === "factor-invalidated" &&
+        image.factors.length > 1
+      ) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential: the row dies before the key
+        await commit([{ op: "delete-factor", id: stored.id }]);
+        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential: the row dies before the key
+        await platform.keystore?.remove(stored.id).catch(() => undefined);
+        throw new KernelError("verification-unavailable", "the verifying factor is gone");
+      }
+      throw error;
+    }
     try {
       // The session can end while the system prompt is up: its DEK is then wiped, and the
       // operation fails as locked rather than comparing against nothing.
@@ -402,7 +476,7 @@ export async function verifyFactor(
   if (factor.kind === "hardware") {
     throw candidates.length > 0
       ? new KernelError("integrity", "hardware factor does not open this vault", undefined, true)
-      : new KernelError("not-found", "no hardware factor exists");
+      : new KernelError("verification-unavailable", "no verifying factor exists");
   }
   throw new KernelError("wrong-passkey", "passkey did not verify");
 }
@@ -577,7 +651,7 @@ export function findRecord(image: VaultImage, kind: string, id: string): StoredR
  */
 export function establishOps(
   platform: KernelPlatform,
-  factor: StoredFactor,
+  factors: ReadonlyArray<StoredFactor>,
   records: ReadonlyArray<StoredRecord>,
 ): { ops: StoreOp[]; keyId: string } {
   const keyId = bytesToHex(platform.random(16));
@@ -592,7 +666,7 @@ export function establishOps(
     keyId,
     ops: [
       { op: "init", meta },
-      { op: "put-factor", factor },
+      ...factors.map((factor) => ({ op: "put-factor" as const, factor })),
       ...records.map((record) => ({ op: "put-record" as const, record })),
     ],
   };
@@ -600,11 +674,11 @@ export function establishOps(
 
 /** The `FactorInfo` a stored factor reports: kind, id, creation time, passkey credentialId. */
 export function factorInfo(stored: StoredFactor): FactorInfo {
-  if (stored.kind === "hardware") {
+  if (stored.kind === "device" || stored.kind === "hardware") {
     return {
-      kind: "hardware",
+      kind: stored.kind,
       id: stored.id,
-      createdAt: parseHardwareFactorHeader(stored.header).createdAt,
+      createdAt: parseKeystoreFactorHeader(stored.header).createdAt,
     };
   }
   if (stored.kind === "password") {

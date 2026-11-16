@@ -26,6 +26,19 @@
       "publicKey": "JqRYFT66Kmogg041szL7sSC6lKDj6VPKh-5HsP3DbAE",
       "binding": "4b9c13519995bd6fac167aedb99c67948c5ecf2f9f44d693ac71e1f2c5893978",
       "sealed": "02493e82fc74464a59268817623d2053c5eb8e2cc4a988b4fee179ec6b010d531d4b9c13519995bd6fac167aedb99c67948c5ecf2f9f44d693ac71e1f2c589397801e0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f746f1e2a5b591d83a180a440a98c9d50272a573063fd8ae96065ecc22f8a87e05047045b39a019e32faaeec206634de28"
+    },
+    {
+      "name": "device",
+      "kek": "5a6b7c8d9e0f102132435465768798a9b0c1d2e3f40516273849a5b6c7d8e9f0",
+      "dek": "0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
+      "eph": "a0a1a2a3a4a5a6a7a8a9aaabacadaeafb0b1b2b3b4b5b6b7b8b9babbbcbdbebf",
+      "nonce": "303132333435363738393a3b3c3d3e3f4041424344454647",
+      "kind": "device",
+      "id": "11223344556677889900aabbccddeeff",
+      "header": "{\"sealedKek\":\"BEEtHwKDkZ8R7gtb2AqUQ2Hcj8uLsMLtzHWiXaOL8mPZ2LsHvKG7vPDhWmrUTe0f8x8\",\"publicKey\":\"2ybKXMf7dhdwT1PfpSPTYBr_116aAN_OA_g2kx8FLis\",\"createdAt\":1767225600000}",
+      "publicKey": "2ybKXMf7dhdwT1PfpSPTYBr_116aAN_OA_g2kx8FLis",
+      "binding": "e35c455d7eadc312d85e661574d259a1c9213014e686abb8d7ac6534be75598a",
+      "sealed": "02605a725d2a4adfeeb1a29e17edd621c1b7593ee8cdbc44ac6c4ab6e2f805d23ce35c455d7eadc312d85e661574d259a1c9213014e686abb8d7ac6534be75598a01303132333435363738393a3b3c3d3e3f404142434445464737abb78a5b892861979f125f6082c679bf9b6596c94102d61feb21ee6bc94c825be6be2c36ae0d0d22ffc98a789c5a74"
     }
   ]
 }

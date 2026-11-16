@@ -3,6 +3,7 @@ package com.margelo.nitro.qntxwallet
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.LocaleList
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
@@ -21,6 +22,7 @@ import com.facebook.proguard.annotations.DoNotStrip
 import com.margelo.nitro.NitroModules
 import java.security.KeyStore
 import java.util.concurrent.Executor
+import java.util.concurrent.Executors
 import java.security.UnrecoverableKeyException
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -29,11 +31,14 @@ import javax.crypto.spec.GCMParameterSpec
 
 /**
  * Android keystore (W5): one AndroidKeyStore AES-256-GCM key per vault factor
- * (`qntx-wallet.vault.<factor id>`), StrongBox-backed when present. Every use
- * needs a fresh BiometricPrompt (strong biometric or device credential) bound
- * to the cipher through a CryptoObject; the key survives biometric enrollment
- * changes and dies with the lock screen. The C++ host calls these entry points
- * with a completion token and receives the result through [nativeComplete].
+ * (`qntx-wallet.vault.<factor id>`), StrongBox-backed when present. A presence
+ * key needs a fresh BiometricPrompt (strong biometric or device credential)
+ * bound to the cipher through a CryptoObject on every use, survives biometric
+ * enrollment changes and dies with the lock screen. A device key requires no
+ * authentication, is used by the silent unlock factor and its crypto runs on a
+ * dedicated single-thread executor — never through BiometricPrompt and never
+ * on the main thread. The C++ host calls these entry points with a completion
+ * token and receives the result through [nativeComplete].
  * Sealed bytes are `iv(12) ‖ ciphertext ‖ tag(16)`.
  */
 @DoNotStrip
@@ -51,9 +56,13 @@ object Keystore {
   private const val INVALIDATED = 2
   private const val UNAVAILABLE = 3
   private const val FAILED = 4
-  private const val NO_DEVICE_CREDENTIAL = 5
+  private const val NO_LOCK_SCREEN = 5
 
   @Volatile private var current: BiometricPrompt? = null
+
+  // All device-key work — key generation, GCM seal/open, probes, removes —
+  // serialized off the main thread; presence work never touches it.
+  private val deviceExecutor: Executor = Executors.newSingleThreadExecutor()
 
   @JvmStatic
   fun locale(): String = LocaleList.getDefault()[0]?.toLanguageTag() ?: "en"
@@ -67,7 +76,7 @@ object Keystore {
     }
     if (!deviceSecure(activity)) {
       secret.fill(0)
-      return nativeComplete(token, NO_DEVICE_CREDENTIAL, null, null)
+      return nativeComplete(token, NO_LOCK_SCREEN, null, null)
     }
     val alias = PREFIX + id
     val cipher = try {
@@ -138,13 +147,113 @@ object Keystore {
   }
 
   @JvmStatic
+  fun sealDevice(token: Long, id: String, secret: ByteArray) {
+    deviceExecutor.execute {
+      try {
+        val context = NitroModules.applicationContext
+        val alias = PREFIX + id
+        keyStore().deleteEntry(alias)
+        val cipher = Cipher.getInstance(TRANSFORMATION).apply {
+          init(Cipher.ENCRYPT_MODE, generateDevice(alias, context))
+        }
+        nativeComplete(token, OK, cipher.iv + cipher.doFinal(secret), null)
+      } catch (e: Exception) {
+        nativeComplete(token, UNAVAILABLE, null, detailOf(e))
+      } finally {
+        secret.fill(0)
+      }
+    }
+  }
+
+  @JvmStatic
+  fun openDevice(token: Long, id: String, sealed: ByteArray) {
+    deviceExecutor.execute {
+      if (sealed.size <= IV_BYTES + TAG_BITS / 8) {
+        return@execute nativeComplete(token, FAILED, null, null)
+      }
+      val alias = PREFIX + id
+      val key = try {
+        keyStore().getKey(alias, null) as? SecretKey
+      } catch (e: UnrecoverableKeyException) {
+        null
+      } ?: return@execute nativeComplete(token, INVALIDATED, null, null)
+      val cipher = try {
+        Cipher.getInstance(TRANSFORMATION).apply {
+          init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, sealed, 0, IV_BYTES))
+        }
+      } catch (e: KeyPermanentlyInvalidatedException) {
+        return@execute nativeComplete(token, INVALIDATED, null, detailOf(e))
+      } catch (e: Exception) {
+        return@execute nativeComplete(token, FAILED, null, detailOf(e))
+      }
+      val plain = try {
+        cipher.doFinal(sealed, IV_BYTES, sealed.size - IV_BYTES)
+      } catch (e: Exception) {
+        return@execute nativeComplete(token, FAILED, null, detailOf(e))
+      }
+      try {
+        nativeComplete(token, OK, plain, null)
+      } finally {
+        plain.fill(0)
+      }
+    }
+  }
+
+  @JvmStatic
+  fun probe(token: Long, id: String, presence: Boolean) {
+    deviceExecutor.execute {
+      val alias = PREFIX + id
+      val key = try {
+        keyStore().getKey(alias, null) as? SecretKey
+      } catch (e: UnrecoverableKeyException) {
+        null
+      } catch (e: Exception) {
+        return@execute nativeComplete(token, FAILED, null, detailOf(e))
+      }
+      if (key == null) {
+        return@execute nativeComplete(token, INVALIDATED, null, null)
+      }
+      try {
+        Cipher.getInstance(TRANSFORMATION).init(
+          Cipher.DECRYPT_MODE,
+          key,
+          GCMParameterSpec(TAG_BITS, ByteArray(IV_BYTES)),
+        )
+      } catch (e: KeyPermanentlyInvalidatedException) {
+        return@execute nativeComplete(token, INVALIDATED, null, detailOf(e))
+      } catch (e: Exception) {
+        return@execute nativeComplete(token, FAILED, null, detailOf(e))
+      }
+      // A per-use-authentication key cannot be alive while the device has no
+      // lock screen at all.
+      if (presence && NitroModules.applicationContext?.let(::deviceSecure) != true) {
+        return@execute nativeComplete(token, INVALIDATED, null, null)
+      }
+      nativeComplete(token, OK, null, null)
+    }
+  }
+
+  @JvmStatic
+  fun remove(token: Long, id: String) {
+    deviceExecutor.execute {
+      val status = try {
+        keyStore().deleteEntry(PREFIX + id)
+        OK
+      } catch (e: Exception) {
+        FAILED
+      }
+      nativeComplete(token, status, null, null)
+    }
+  }
+
+  @JvmStatic
   fun authenticate(token: Long, title: String, description: String) {
     val activity = foregroundActivity()
     if (activity == null) {
       return nativeComplete(token, UNAVAILABLE, null, "android:no-activity")
     }
     if (!deviceSecure(activity)) {
-      return nativeComplete(token, NO_DEVICE_CREDENTIAL, null, null)
+      return nativeComplete(token, NO_LOCK_SCREEN, null, null)
     }
     prompt(activity, title, description, null) { status, detail, _ ->
       nativeComplete(token, status, null, detail)
@@ -202,6 +311,36 @@ object Keystore {
       .setUnlockedDeviceRequired(true)
       .setInvalidatedByBiometricEnrollment(false)
       .setIsStrongBoxBacked(strongBox)
+      .build()
+    return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
+      .apply { init(spec) }
+      .generateKey()
+  }
+
+  private fun generateDevice(alias: String, context: Context?): SecretKey {
+    val strongBox =
+      context?.packageManager?.hasSystemFeature(PackageManager.FEATURE_STRONGBOX_KEYSTORE) == true
+    return try {
+      generateDevice(alias, strongBox)
+    } catch (e: StrongBoxUnavailableException) {
+      generateDevice(alias, false)
+    }
+  }
+
+  private fun generateDevice(alias: String, strongBox: Boolean): SecretKey {
+    val spec = KeyGenParameterSpec.Builder(
+      alias,
+      KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+    )
+      .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+      .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+      .setKeySize(256)
+      .setIsStrongBoxBacked(strongBox)
+      .apply {
+        // Android 12–14 bug: such keys cannot be created or used without a
+        // secure lock screen and are deleted when it is removed (fixed in 15).
+        if (Build.VERSION.SDK_INT >= 35) setUnlockedDeviceRequired(true)
+      }
       .build()
     return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, PROVIDER)
       .apply { init(spec) }
@@ -280,7 +419,7 @@ object Keystore {
     BiometricPrompt.ERROR_NEGATIVE_BUTTON,
     BiometricPrompt.ERROR_CANCELED,
     BiometricPrompt.ERROR_TIMEOUT -> CANCELLED
-    BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> NO_DEVICE_CREDENTIAL
+    BiometricPrompt.ERROR_NO_DEVICE_CREDENTIAL -> NO_LOCK_SCREEN
     BiometricPrompt.ERROR_HW_UNAVAILABLE,
     BiometricPrompt.ERROR_HW_NOT_PRESENT,
     BiometricPrompt.ERROR_NO_BIOMETRICS -> UNAVAILABLE

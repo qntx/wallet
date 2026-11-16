@@ -1,11 +1,13 @@
 // iOS keystore (W5): one Secure Enclave P-256 key per vault factor, tagged
-// org.qntx.wallet.vault.<factor id>, readable only while a device passcode is
-// set and usable only after a fresh user-presence check. Sealing is ECIES with
-// the public key (no prompt); opening decrypts with the private key behind a
-// new LAContext whose reason is the kernel's prompt text, so every unlock,
-// re-verification and per-operation verification is its own system prompt.
+// org.qntx.wallet.vault.<factor id>. A presence key is readable only while a
+// device passcode is set and usable only after a fresh user-presence check; a
+// device key is accessible whenever the device is unlocked and never prompts.
+// Sealing is ECIES with the public key (no prompt); opening decrypts with the
+// private key — presence behind a new LAContext whose reason is the kernel's
+// prompt text (every unlock, re-verification and per-operation verification is
+// its own system prompt), device behind an interactionNotAllowed context.
 // The simulator has no Secure Enclave: there the key lives in the software
-// keychain with the same user-presence access control.
+// keychain with the same access control.
 #include "../host/Keystore.hpp"
 
 #import <Foundation/Foundation.h>
@@ -62,7 +64,7 @@ KeystoreStatus statusOf(NSError* error) {
       case LAErrorUserFallback:
         return KeystoreStatus::cancelled;
       case LAErrorPasscodeNotSet:
-        return KeystoreStatus::noDeviceCredential;
+        return KeystoreStatus::noLockScreen;
       default:
         return KeystoreStatus::failed;
     }
@@ -111,7 +113,7 @@ KeystoreResult credentialProbeFailure(NSError* error) {
   return {
       error != nil && [error.domain isEqualToString:LAErrorDomain] &&
               error.code == LAErrorPasscodeNotSet
-          ? KeystoreStatus::noDeviceCredential
+          ? KeystoreStatus::noLockScreen
           : KeystoreStatus::unavailable,
       {},
       detailOf(error)};
@@ -135,19 +137,28 @@ std::optional<KeystoreResult> deviceCredentialMissing() {
   return credentialProbeFailure(error);
 }
 
-KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
-  if (auto missing = deviceCredentialMissing()) {
-    return std::move(*missing);
+KeystoreResult sealNow(
+    const std::string& factorId, const SecretBytes& secret, bool presence) {
+  // A presence key cannot exist while the policy cannot be evaluated at all;
+  // a device key has no such gate.
+  if (presence) {
+    if (auto missing = deviceCredentialMissing()) {
+      return std::move(*missing);
+    }
   }
   NSData* tag = tagFor(factorId);
   deleteKey(tag);
-  SecAccessControlCreateFlags flags = kSecAccessControlUserPresence;
+  SecAccessControlCreateFlags flags = presence ? kSecAccessControlUserPresence : 0;
 #if !TARGET_OS_SIMULATOR
   flags |= kSecAccessControlPrivateKeyUsage;
 #endif
   CFErrorRef error = nullptr;
   SecAccessControlRef access = SecAccessControlCreateWithFlags(
-      kCFAllocatorDefault, kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly, flags, &error);
+      kCFAllocatorDefault,
+      presence ? kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly
+               : kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+      flags,
+      &error);
   if (access == nullptr) {
     KeystoreResult out{KeystoreStatus::unavailable, {}, detailOf(error)};
     if (error != nullptr) {
@@ -203,10 +214,7 @@ KeystoreResult sealNow(const std::string& factorId, const SecretBytes& secret) {
 KeystoreResult openNow(
     const std::string& factorId,
     const std::vector<uint8_t>& sealed,
-    const KeystorePrompt& prompt) {
-  LAContext* context = [LAContext new];
-  context.touchIDAuthenticationAllowableReuseDuration = 0;
-  context.localizedReason = @(prompt.description.c_str());
+    LAContext* context) {
   CFTypeRef keyRef = nullptr;
   const OSStatus found = SecItemCopyMatching(
       (__bridge CFDictionaryRef) @{
@@ -249,6 +257,41 @@ KeystoreResult openNow(
   return {KeystoreStatus::ok, std::move(out)};
 }
 
+// Reads only keychain state: item attributes under an interactionNotAllowed
+// context, and for a presence key the device-credential policy — a
+// WhenPasscodeSet key cannot be valid while no passcode is set.
+KeystoreResult probeNow(const std::string& factorId, KeyProtection protection) {
+  LAContext* context = [LAContext new];
+  context.interactionNotAllowed = YES;
+  CFTypeRef found = nullptr;
+  const OSStatus status = SecItemCopyMatching(
+      (__bridge CFDictionaryRef) @{
+        (id)kSecClass : (id)kSecClassKey,
+        (id)kSecAttrKeyType : (id)kSecAttrKeyTypeECSECPrimeRandom,
+        (id)kSecAttrApplicationTag : tagFor(factorId),
+        (id)kSecReturnAttributes : @YES,
+        (id)kSecUseAuthenticationContext : context,
+      },
+      &found);
+  if (found != nullptr) {
+    CFRelease(found);
+  }
+  if (status == errSecItemNotFound) {
+    return {KeystoreStatus::invalidated, {}};
+  }
+  if (status != errSecSuccess && status != errSecInteractionNotAllowed) {
+    return {KeystoreStatus::failed, {}};
+  }
+  if (protection == KeyProtection::presence) {
+    NSError* error = nil;
+    if (![context canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication error:&error] &&
+        [error.domain isEqualToString:LAErrorDomain] && error.code == LAErrorPasscodeNotSet) {
+      return {KeystoreStatus::invalidated, {}};
+    }
+  }
+  return {KeystoreStatus::ok, {}};
+}
+
 } // namespace
 
 void keystoreSeal(
@@ -262,7 +305,7 @@ void keystoreSeal(
   auto input = std::make_shared<SecretBytes>(std::move(secret));
   auto finish = std::make_shared<KeystoreDone>(std::move(done));
   dispatch_async(keystoreQueue(), ^{
-    (*finish)(sealNow(alias, *input));
+    (*finish)(sealNow(alias, *input, true));
   });
 }
 
@@ -272,9 +315,52 @@ void keystoreOpen(
     KeystorePrompt prompt,
     KeystoreDone done) {
   const std::string alias = factorId;
+  const std::string reason = prompt.description;
   auto finish = std::make_shared<KeystoreDone>(std::move(done));
   dispatch_async(keystoreQueue(), ^{
-    (*finish)(openNow(alias, sealed, prompt));
+    LAContext* context = [LAContext new];
+    context.touchIDAuthenticationAllowableReuseDuration = 0;
+    context.localizedReason = @(reason.c_str());
+    (*finish)(openNow(alias, sealed, context));
+  });
+}
+
+void keystoreSealDevice(const std::string& id, SecretBytes secret, KeystoreDone done) {
+  const std::string alias = id;
+  auto input = std::make_shared<SecretBytes>(std::move(secret));
+  auto finish = std::make_shared<KeystoreDone>(std::move(done));
+  dispatch_async(keystoreQueue(), ^{
+    (*finish)(sealNow(alias, *input, false));
+  });
+}
+
+void keystoreOpenDevice(
+    const std::string& id,
+    std::vector<uint8_t> sealed,
+    KeystoreDone done) {
+  const std::string alias = id;
+  auto finish = std::make_shared<KeystoreDone>(std::move(done));
+  dispatch_async(keystoreQueue(), ^{
+    LAContext* context = [LAContext new];
+    context.interactionNotAllowed = YES;
+    (*finish)(openNow(alias, sealed, context));
+  });
+}
+
+void keystoreProbe(const std::string& id, KeyProtection protection, KeystoreDone done) {
+  const std::string alias = id;
+  auto finish = std::make_shared<KeystoreDone>(std::move(done));
+  dispatch_async(keystoreQueue(), ^{
+    (*finish)(probeNow(alias, protection));
+  });
+}
+
+void keystoreRemove(const std::string& id, KeystoreDone done) {
+  const std::string alias = id;
+  auto finish = std::make_shared<KeystoreDone>(std::move(done));
+  dispatch_async(keystoreQueue(), ^{
+    deleteKey(tagFor(alias));
+    (*finish)(KeystoreResult{KeystoreStatus::ok, {}});
   });
 }
 

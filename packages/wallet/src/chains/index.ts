@@ -24,7 +24,7 @@ import type {
   ChainSignRequest,
   ChainSignResult,
 } from "../protocol/chains.ts";
-import type { UnlockFactor, Wallet } from "../types.ts";
+import type { VerifyFactor, Wallet } from "../types.ts";
 
 export type {
   ChainAccount,
@@ -38,7 +38,7 @@ export type ChainsApi = {
   readonly account: (params: ChainAccountsParams) => Promise<ChainAccount>;
   readonly sign: (params: {
     readonly request: ChainSignRequest;
-    readonly verify: UnlockFactor;
+    readonly verify: VerifyFactor;
   }) => Promise<ChainSignResult>;
 };
 
@@ -161,7 +161,7 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
     sign: async (params) =>
       internals.withVerifying(async () => {
         const transfer: ArrayBuffer[] = [];
-        const verify = await internals.resolveFactor(params.verify, transfer);
+        const verify = await internals.resolveVerifyFactor(params.verify, transfer);
         const result = await internals.call("chain.sign", { request: params.request, verify });
         if (params.request.kind === "bitcoin.psbt") {
           await checkPsbt(internals, params.request, result);
