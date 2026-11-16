@@ -322,7 +322,7 @@ export const CORE_METHODS: {
     NullValue
   >;
   readonly "backup.update": MethodSpec<NullValue, { readonly envelope: string }>;
-  readonly "backup.disable": MethodSpec<NullValue, NullValue>;
+  readonly "backup.disable": MethodSpec<{ readonly verify: VerifyFactor }, NullValue>;
   readonly "backup.restore": MethodSpec<
     {
       readonly envelope: string;
@@ -469,7 +469,7 @@ export const CORE_METHODS: {
   "backup.disable": {
     session: true,
     presence: true,
-    params: nullValue,
+    params: obj({ verify: verifier }),
     result: nullValue,
   },
   "backup.restore": {

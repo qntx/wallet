@@ -707,9 +707,9 @@ describe("backup enable/update/disable", () => {
     await h.settle();
     const { session } = await createPasskeyWallet(h);
     await createBackupEnvelope(h, session, [backupPassword()]);
-    ok(await h.call("backup.disable", null, session));
+    ok(await h.call("backup.disable", { verify: verifyPasskey() }, session));
     await expect(statusBackup(h, session)).resolves.toBeNull();
-    ok(await h.call("backup.disable", null, session)); // second disable succeeds
+    ok(await h.call("backup.disable", { verify: verifyPasskey() }, session)); // still idempotent
     expect(errCode(await h.call("backup.update", null, session))).toBe("not-found");
   });
 

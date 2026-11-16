@@ -628,9 +628,12 @@ export class KernelWallet implements Wallet {
       const result = await this.channel.call("backup.update", null);
       return result.envelope;
     },
-    disable: async (): Promise<void> => {
-      await this.channel.call("backup.disable", null);
-    },
+    disable: async (verify: VerifyFactor): Promise<void> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
+        await this.channel.call("backup.disable", { verify: wireVerify }, transfer);
+      }),
     restore: async (options: {
       readonly envelope: string;
       readonly backupFactor: UnlockFactor;

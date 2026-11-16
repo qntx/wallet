@@ -11,6 +11,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
+import { corePrompt } from "../src/prompts.ts";
 import { Secret } from "../src/secret/secret.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore, StoreOp } from "../src/vault/store.ts";
@@ -139,8 +140,12 @@ describe("device factor cannot verify", () => {
       ["nostr.exportKey", { verify: DEVICE, publicKey, format: { kind: "nsec" } }],
       [
         "backup.enable",
-        { verify: DEVICE, factors: [{ kind: "password", password: utf8ToBytes("backup pw") }] },
+        {
+          verify: DEVICE,
+          factors: [{ kind: "password", password: utf8ToBytes("backup password") }],
+        },
       ],
+      ["backup.disable", { verify: DEVICE }],
       [
         "chain.sign",
         {
@@ -204,8 +209,12 @@ describe("no verifying factor", () => {
       ["nostr.exportKey", { verify: HARDWARE, publicKey, format: { kind: "nsec" } }],
       [
         "backup.enable",
-        { verify: HARDWARE, factors: [{ kind: "password", password: utf8ToBytes("backup pw") }] },
+        {
+          verify: HARDWARE,
+          factors: [{ kind: "password", password: utf8ToBytes("backup password") }],
+        },
       ],
+      ["backup.disable", { verify: HARDWARE }],
       ["vault.setAppLock", { enabled: true, verify: HARDWARE }],
     ];
     for (const [method, params] of guarded) {
@@ -214,6 +223,38 @@ describe("no verifying factor", () => {
       expect(errCode(await h.call(method, params, session))).toBe("verification-unavailable");
       expect(fake.calls).toStrictEqual([]);
     }
+  });
+});
+
+describe("backup.disable", () => {
+  it("re-verifies with hardware and drops the retained backup key in one ceremony", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    const { session } = await establish(h);
+    ok(
+      await h.call(
+        "backup.enable",
+        {
+          verify: HARDWARE,
+          factors: [{ kind: "password", password: utf8ToBytes("backup password") }],
+        },
+        session,
+      ),
+    );
+    expect(field(ok(await h.call("status")), "backup")).not.toBeNull();
+    const hardware = await findFactor(h, "hardware");
+    fake.calls.length = 0;
+    ok(await h.call("backup.disable", { verify: HARDWARE }, session));
+    expect(field(ok(await h.call("status")), "backup")).toBeNull();
+    // Exactly one presence ceremony — the hardware re-verification's open.
+    expect(fake.calls).toStrictEqual([
+      {
+        op: "open",
+        id: hardware?.["id"],
+        protection: "presence",
+        prompt: corePrompt("en", "disable-backup"),
+      },
+    ]);
   });
 });
 

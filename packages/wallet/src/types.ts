@@ -285,8 +285,9 @@ export type DataKeyApi = {
 /**
  * Cloud-backup entry points. `enable` re-verifies and retains a fresh BEK in the vault; `update`
  * rewrites the sealed envelope JSON with the retained BEK (no factor ceremony, so an auto-sync can
- * run silently); `restore` merges an envelope into the vault. Factor inputs reuse `UnlockFactor` —
- * passkey assertions evaluate the PRF over `backupSalt`.
+ * run silently); `disable` re-verifies and drops the retained BEK; `restore` merges an envelope
+ * into the vault. Factor inputs reuse `UnlockFactor` — passkey assertions evaluate the PRF over
+ * `backupSalt`.
  */
 export type BackupApi = {
   readonly enable: (options: {
@@ -294,7 +295,7 @@ export type BackupApi = {
     readonly factors: ReadonlyArray<UnlockFactor>;
   }) => Promise<void>;
   readonly update: () => Promise<string>;
-  readonly disable: () => Promise<void>;
+  readonly disable: (verify: VerifyFactor) => Promise<void>;
   /**
    * Wallets whose header is flagged `passphrase` restore only when `passphrases` carries theirs;
    * the rest are listed in `passphraseRequired` and a later restore can bring them in.

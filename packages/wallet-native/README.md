@@ -6,7 +6,7 @@ shuttles CBOR messages to it across JSI), keeps the
 encrypted vault under the platform's never-backed-up directory, and makes the platform keystore
 (Secure Enclave on iOS, Android Keystore) the vault factors: a silent `device` key opens the
 vault for everyday use (Nostr signing, DMs, reading state, receiving), and every guarded
-operation — exports, cloud-backup enable, wallet and key deletion, app-lock changes, reset and
+operation — exports, cloud-backup enable and disable, wallet and key deletion, app-lock changes, reset and
 every outgoing payment — is gated by a fresh system user-presence prompt (`hardware` key) with
 kernel-owned text.
 

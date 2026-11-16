@@ -378,7 +378,7 @@ describe("BackupController", () => {
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
       const name = remoteName(r.files);
       r.faults.del = true;
-      await expect(r.engine.backup.disable()).rejects.toThrow("backup sync failed");
+      await expect(r.engine.backup.disable(PW)).rejects.toThrow("backup sync failed");
       expect(r.files.has(name)).toBe(true); // deletion failed, file survives
       r.faults.del = false;
       await settle(r);

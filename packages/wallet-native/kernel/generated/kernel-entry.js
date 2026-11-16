@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-B6RH1bAz.mjs
+	// packages/wallet/dist/core-D1gQOBZ3.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -852,7 +852,7 @@
 		"backup.disable": {
 			session: true,
 			presence: true,
-			params: nullValue,
+			params: obj({ verify: verifier }),
 			result: nullValue
 		},
 		"backup.restore": {
@@ -969,7 +969,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-C2N8e08z.mjs
+	// packages/wallet/dist/protocol-Bpt8R9Ux.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -3867,6 +3867,10 @@
 				title: "开启云备份",
 				description: "验证身份以开启云备份"
 			},
+			"disable-backup": {
+				title: "关闭云备份",
+				description: "验证身份以关闭云备份"
+			},
 			"manage-factors": {
 				title: "管理解锁方式",
 				description: "验证身份以更改钱包的解锁方式"
@@ -3908,6 +3912,10 @@
 			backup: {
 				title: "Turn on cloud backup",
 				description: "Verify your identity to turn on cloud backup"
+			},
+			"disable-backup": {
+				title: "Turn off cloud backup",
+				description: "Verify your identity to turn off cloud backup"
 			},
 			"manage-factors": {
 				title: "Manage unlock methods",
@@ -27339,9 +27347,10 @@ zoo`.split("\n"));
 			wipeContents(contents);
 		}
 	}
-	/** Deletes the retained BEK; a missing record still succeeds. */
-	async function disableBackup(ctx, _params, requestSession) {
-		ctx.session.require(requestSession);
+	/** Deletes the retained BEK after re-verification; a missing record still succeeds. */
+	async function disableBackup(ctx, params, requestSession) {
+		const { dek } = ctx.session.require(requestSession);
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "disable-backup"));
 		if (ctx.image.records.find((r) => r.kind === BACKUP_KEY_KIND && r.id === BACKUP_KEY_ID) === void 0) return null;
 		await ctx.commit([{
 			op: "delete-record",

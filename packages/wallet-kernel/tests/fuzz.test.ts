@@ -38,7 +38,6 @@ function randomMalformed(next: () => number): unknown {
     "vault.reset",
     "vault.enrolVerification",
     "backup.update",
-    "backup.disable",
     "keys.list",
     "nostr.createNip46ClientKey",
   ]);

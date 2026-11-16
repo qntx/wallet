@@ -36,6 +36,9 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 
 ### Changed
 
+- **BREAKING:** `backup.disable` is a guarded operation like `backup.enable`: it takes a
+  `verify: VerifyFactor` and re-verifies before dropping the retained backup key, so a holder of
+  an unlocked phone can no longer switch cloud backup off.
 - **BREAKING:** React Native vaults are created with the `device` factor plus, when the device
   has a lock screen, the `hardware` factor; creation no longer requires a lock screen. Hosts must
   not pass `factor` to create/import/restore on React Native (`unsupported`); `InitialFactor`

@@ -37,6 +37,8 @@ const OPS = [
   "keys-export-device",
   "nostr-export-hardware",
   "nostr-export-device",
+  "backup-disable-hardware",
+  "backup-disable-device",
   "reset",
 ] as const;
 
@@ -261,6 +263,21 @@ describe("session factor: presence ceremony invariants", () => {
                     publicKey,
                     format: { kind: "nsec" },
                   });
+                  expect(ok(res)).toBe(false);
+                  expect(presence).toBe(0);
+                  break;
+                }
+                case "backup-disable-hardware": {
+                  const { res, presence } = await guarded("backup.disable", {
+                    verify: HARDWARE,
+                  });
+                  if (ok(res)) {
+                    expect(presence).toBe(1);
+                  }
+                  break;
+                }
+                case "backup-disable-device": {
+                  const { res, presence } = await guarded("backup.disable", { verify: DEVICE });
                   expect(ok(res)).toBe(false);
                   expect(presence).toBe(0);
                   break;

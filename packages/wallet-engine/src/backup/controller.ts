@@ -190,8 +190,8 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.reconcileOrThrow();
   }
 
-  async disable(): Promise<void> {
-    await this.wallet.backup.disable();
+  async disable(verify: VerifyFactor): Promise<void> {
+    await this.wallet.backup.disable(verify);
     await this.reconcileOrThrow();
   }
 
