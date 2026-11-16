@@ -42,13 +42,13 @@
     "@scure/bip32": "2.4.0",
     "@scure/bip39": "2.4.0",
     "@types/node": "26.6.6",
-    "@vitest/coverage-v8": "5.0.5",
+    "@vitest/coverage-v8": "5.1.0",
     "bumpp": "12.3.0",
-    "cborg": "6.1.5",
+    "cborg": "6.2.1",
     "madge": "8.0.0",
     "typescript": "7.0.2",
     "vite": "npm:@voidzero-dev/vite-plus-core@1.4.0",
-    "vite-plus": "1.4.0"
+    "vite-plus": "1.5.0"
   },
   "overrides": {
     "minimatch": "11.0.4",
