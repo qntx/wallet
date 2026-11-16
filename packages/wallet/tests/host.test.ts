@@ -1583,3 +1583,46 @@ describe("nostr api methods", () => {
     expect(() => nostr({} as never)).toThrow(WalletError);
   });
 });
+
+describe("backup api", () => {
+  it("enable resolves the verify and factor parameters", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    let params: ProtocolValue | undefined;
+    kernel.handlers.set("backup.enable", (request) => {
+      ({ params } = request);
+      return { ok: null };
+    });
+    await wallet.backup.enable({
+      verify: { kind: "password", password: "verify password" },
+      factors: [{ kind: "password", password: "backup password" }],
+    });
+    const wire = params as {
+      verify: { kind: string; password: Uint8Array };
+      factors: [{ kind: string; password: Uint8Array }];
+    };
+    expect(new TextDecoder().decode(wire.verify.password)).toBe("verify password");
+    expect(new TextDecoder().decode(wire.factors[0].password)).toBe("backup password");
+    expect(kernel.received).toContain("backup.enable");
+  });
+
+  it("disable resolves the verify parameter", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    let params: ProtocolValue | undefined;
+    kernel.handlers.set("backup.disable", (request) => {
+      ({ params } = request);
+      return { ok: null };
+    });
+    await wallet.backup.disable({ kind: "password", password: "verify password" });
+    const wire = params as { verify: { kind: string; password: Uint8Array } };
+    expect(new TextDecoder().decode(wire.verify.password)).toBe("verify password");
+    expect(kernel.received).toContain("backup.disable");
+  });
+
+  it("rejects a device verifier without reaching the kernel", async () => {
+    const { wallet, kernel } = await connectFake(unlockedStatus());
+    await expect(wallet.backup.disable({ kind: "device" } as never)).rejects.toSatisfy(
+      (e) => walletError(e).code === "invalid-input",
+    );
+    expect(kernel.received).not.toContain("backup.disable");
+  });
+});
