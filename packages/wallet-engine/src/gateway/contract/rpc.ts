@@ -22,6 +22,7 @@ export const EVM_RPC_METHODS = [
   "eth_getBlockTransactionCountByHash",
   "eth_getBlockTransactionCountByNumber",
   "eth_getCode",
+  "eth_getLogs",
   "eth_getProof",
   "eth_getStorageAt",
   "eth_getTransactionByBlockHashAndIndex",
@@ -81,7 +82,77 @@ const bodySchema = <C extends z.ZodMiniType>(call: C) =>
 /** Method-agnostic wire shape of a call or batch (the gateway narrows by family). */
 export const rpcRequest = bodySchema(callSchema(z.string()));
 
-export const evmRpcRequest = bodySchema(callSchema(z.enum(EVM_RPC_METHODS)));
+/** `eth_getLogs` is the one read whose cost the caller chooses: these bound it. */
+export const LOGS_BLOCK_RANGE_MAX = 500;
+export const LOGS_ADDRESS_MAX = 20;
+export const LOGS_TOPIC_ALTERNATIVES_MAX = 20;
+
+const quantity = z.string().check(z.regex(/^0x[0-9a-fA-F]{1,64}$/));
+const hash32 = z.string().check(z.regex(/^0x[0-9a-fA-F]{64}$/));
+const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
+/** The tags that name a recent block; `earliest` would make a range unbounded. */
+const recentBlock = z.enum(["latest", "safe", "finalized", "pending"]);
+
+const logsScope = {
+  address: z.optional(
+    z.union([evmAddress, z.array(evmAddress).check(z.minLength(1), z.maxLength(LOGS_ADDRESS_MAX))]),
+  ),
+  topics: z.optional(
+    z
+      .array(
+        z.union([
+          z.null(),
+          hash32,
+          z.array(hash32).check(z.maxLength(LOGS_TOPIC_ALTERNATIVES_MAX)),
+        ]),
+      )
+      .check(z.maxLength(4)),
+  ),
+};
+const logsFilter = z.union([
+  z.strictObject({ ...logsScope, blockHash: hash32 }),
+  z.strictObject({
+    ...logsScope,
+    fromBlock: z.optional(z.union([recentBlock, quantity])),
+    toBlock: z.optional(z.union([recentBlock, quantity])),
+  }),
+]);
+
+const isNumbered = (block: string | undefined): block is string => block?.startsWith("0x") === true;
+
+/**
+ * Why an `eth_getLogs` call is refused, or `undefined` when its filter is bounded: one block by
+ * hash, a numbered range of at most {@link LOGS_BLOCK_RANGE_MAX} blocks, or recent-block tags.
+ */
+export function logsFilterViolation(params: unknown): string | undefined {
+  const parsed = z.safeParse(z.tuple([logsFilter]), params);
+  if (!parsed.success) {
+    return `eth_getLogs takes one filter of at most ${LOGS_ADDRESS_MAX} addresses and ${LOGS_TOPIC_ALTERNATIVES_MAX} alternatives per topic, by blockHash or by a bounded block range`;
+  }
+  const [filter] = parsed.data;
+  if ("blockHash" in filter) {
+    return undefined;
+  }
+  const { fromBlock, toBlock } = filter;
+  if (isNumbered(fromBlock) !== isNumbered(toBlock)) {
+    return "eth_getLogs needs fromBlock and toBlock to be both block numbers or both block tags";
+  }
+  if (!isNumbered(fromBlock) || !isNumbered(toBlock)) {
+    return undefined;
+  }
+  const span = BigInt(toBlock) - BigInt(fromBlock);
+  return span < 0n || span >= BigInt(LOGS_BLOCK_RANGE_MAX)
+    ? `eth_getLogs is limited to a range of ${LOGS_BLOCK_RANGE_MAX} blocks`
+    : undefined;
+}
+
+export const evmRpcRequest = bodySchema(
+  callSchema(z.enum(EVM_RPC_METHODS)).check(
+    z.refine(
+      (call) => call.method !== "eth_getLogs" || logsFilterViolation(call.params) === undefined,
+    ),
+  ),
+);
 export const solanaRpcRequest = bodySchema(callSchema(z.enum(SOLANA_RPC_METHODS)));
 
 const successResponse = z.object({
