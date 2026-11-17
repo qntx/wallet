@@ -21,7 +21,7 @@ import { createWebWallet } from "@qntx/wallet-worker/browser";
 
 const wallet = await createWebWallet({
   passkey: {
-    rpId: "app.example.com", // permanent — see Security notes
+    rpId: "wallet.example.com", // permanent, wallet-only — see Security notes
     rpName: "Example",
     walletSalt: "example/wallet",
     vaultSalt: "example/vault",
@@ -69,6 +69,9 @@ const wallet = await createNodeWallet({
   the record to `"mnemonic"`.
 - `createSoftwarePasskey(seed, { synced })` — `synced` defaults to `true` and lands in every
   `PrfResult`; pass `{ synced: false }` to exercise the device-bound path.
+- The `rpId` scope is the wallet's trust boundary: any origin that may claim the RP id (its
+  subdomains, its related origins) can derive a passkey wallet's seed with one passkey prompt.
+  Serve the wallet from a domain of its own and use that domain as the `rpId`.
 - `passkey.rpId` and the two salts are permanent identifiers: changing them makes existing
   passkey factors and passkey-derived wallets unrecoverable. Moving domains needs WebAuthn
   related origins (`/.well-known/webauthn`); offer `exportMnemonic` for passkey-derived wallets.
