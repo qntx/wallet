@@ -16,7 +16,7 @@ if (baseUrl === undefined || (env !== "staging" && env !== "production")) {
   console.error("usage: bun scripts/smoke.ts <baseUrl> <staging|production>");
   process.exit(2);
 }
-const installId = [...crypto.getRandomValues(new Uint8Array(16))]
+const clientId = [...crypto.getRandomValues(new Uint8Array(16))]
   .map((b) => b.toString(16).padStart(2, "0"))
   .join("");
 const networks = indexNetworks(env === "production" ? PRODUCTION_NETWORKS : STAGING_NETWORKS, {});
@@ -32,11 +32,11 @@ const check = async (name: string, run: () => Promise<void>): Promise<void> => {
 };
 
 const get = async (path: string): Promise<Response> =>
-  fetch(`${baseUrl}${path}`, { headers: { "x-install-id": installId } });
+  fetch(`${baseUrl}${path}`, { headers: { "x-client-id": clientId } });
 const post = async (path: string, body: unknown): Promise<Response> =>
   fetch(`${baseUrl}${path}`, {
     method: "POST",
-    headers: { "x-install-id": installId, "content-type": "application/json" },
+    headers: { "x-client-id": clientId, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 

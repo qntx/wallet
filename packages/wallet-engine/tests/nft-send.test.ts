@@ -116,7 +116,15 @@ const evmWorld = (o: {
     rpc: { [net]: [HOST] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
-    gateway: { url: GW, installId: "a".repeat(32) },
+    gateway: {
+      url: GW,
+      clientIds: {
+        evm: "a".repeat(32),
+        solana: "a".repeat(32),
+        bitcoin: "a".repeat(32),
+        service: "a".repeat(32),
+      },
+    },
   });
   const apis = {
     account: async () => Promise.resolve({ template: "evm.bip44", network: net, address: ADDR }),
@@ -349,7 +357,15 @@ const solanaWorld = (o: {
     rpc: { [SOL_NET]: [HOST] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
-    gateway: { url: GW, installId: "a".repeat(32) },
+    gateway: {
+      url: GW,
+      clientIds: {
+        evm: "a".repeat(32),
+        solana: "a".repeat(32),
+        bitcoin: "a".repeat(32),
+        service: "a".repeat(32),
+      },
+    },
   });
   const apis = {
     account: async () =>

@@ -27,7 +27,7 @@ import {
   evmRpcRequest,
   gatewayError,
   health,
-  installId,
+  clientId,
   networkById,
   networksPath,
   PHISHING_MAX_PATH_SEGMENTS,
@@ -228,12 +228,12 @@ const SOLANA_REFUSED: ReadonlyArray<readonly [string, unknown[]]> = [
 ];
 
 describe("primitives", () => {
-  it("installId is 32 lowercase hex characters", () => {
-    expect(ok(installId, "0123456789abcdef0123456789abcdef")).toBe(true);
-    expect(ok(installId, "0123456789ABCDEF0123456789ABCDEF")).toBe(false);
-    expect(ok(installId, "0123456789abcdef")).toBe(false);
-    expect(ok(installId, "g".repeat(32))).toBe(false);
-    expect(ok(installId, undefined)).toBe(false);
+  it("clientId is 32 lowercase hex characters", () => {
+    expect(ok(clientId, "0123456789abcdef0123456789abcdef")).toBe(true);
+    expect(ok(clientId, "0123456789ABCDEF0123456789ABCDEF")).toBe(false);
+    expect(ok(clientId, "0123456789abcdef")).toBe(false);
+    expect(ok(clientId, "g".repeat(32))).toBe(false);
+    expect(ok(clientId, undefined)).toBe(false);
   });
 
   it("caip2 accepts every registry network and rejects malformed ids", () => {

@@ -3,8 +3,8 @@ import type { MiddlewareHandler } from "hono";
 import { health } from "@qntx/wallet-engine/gateway/contract";
 
 import type { Limiters, RateLimiter } from "../types.ts";
+import type { ClientIdVariables } from "./client-id.ts";
 import { GatewayHttpError } from "./errors.ts";
-import type { InstallIdVariables } from "./install-id.ts";
 
 /** Matches the `period` of the Workers rate-limit bindings in wrangler.jsonc. */
 export const RATE_LIMIT_RETRY_AFTER_SECONDS = 10;
@@ -35,21 +35,21 @@ const TRANSPORT_PREFIXES = ["/v1/rpc/", "/v1/esplora/"];
 
 export type RateLimitVariables = {
   /**
-   * Charges `units` more on this request's two limiter keys (IP prefix, then install id + prefix);
+   * Charges `units` more on this request's two limiter keys (IP prefix, then client id + prefix);
    * throws `429 rate-limited` when either refuses. `units <= 0` is a no-op.
    */
   charge: (units: number) => Promise<void>;
 };
 
 /**
- * Two counters per request, health exempt: the IP-prefix limiter first (install ids are chosen by
- * the client, so this is the only bound a script rotating them meets), then "install id + IP
- * prefix" in the group's binding (transport routes use the RPC limiter, everything else the
- * default). Either refusing answers 429 with `Retry-After`. Routes charge extra units through the
- * `charge` variable: a batch costs the sum of its calls, not one request.
+ * Two counters per request, health exempt: the IP-prefix limiter first (client ids are chosen by
+ * the client, so this is the only bound a script rotating them meets), then "client id + IP prefix"
+ * in the group's binding (transport routes use the RPC limiter, everything else the default).
+ * Either refusing answers 429 with `Retry-After`. Routes charge extra units through the `charge`
+ * variable: a batch costs the sum of its calls, not one request.
  */
 export const rateLimit =
-  (limiters: Limiters): MiddlewareHandler<{ Variables: InstallIdVariables & RateLimitVariables }> =>
+  (limiters: Limiters): MiddlewareHandler<{ Variables: ClientIdVariables & RateLimitVariables }> =>
   async (c, next) => {
     if (c.req.path === health.path) {
       await next();
@@ -59,7 +59,7 @@ export const rateLimit =
     const limiter: RateLimiter = TRANSPORT_PREFIXES.some((p) => c.req.path.startsWith(p))
       ? limiters.rpc
       : limiters.default;
-    const groupKey = `${c.get("installId")}:${prefix}`;
+    const groupKey = `${c.get("clientId")}:${prefix}`;
     const charge = async (units: number): Promise<void> => {
       if (units <= 0) {
         return;

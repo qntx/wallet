@@ -31,7 +31,15 @@ describe.skipIf(!GATEWAY)("hosted gateway e2e", () => {
       rpc: {},
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       logger: { warn: (message) => console.log(`warn: ${message}`) },
-      gateway: { url: URL_BASE, installId: bytesToHex(crypto.getRandomValues(new Uint8Array(16))) },
+      gateway: {
+        url: URL_BASE,
+        clientIds: {
+          evm: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
+          solana: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
+          bitcoin: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
+          service: bytesToHex(crypto.getRandomValues(new Uint8Array(16))),
+        },
+      },
     });
     await networks.init();
 

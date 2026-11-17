@@ -6,13 +6,13 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 
 | Route                            | Behavior                                                                                                                                                                                     |
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                                                                                    |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                     |
 | `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                     |
 | ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic |
 | `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                              |
 | `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                            |
 
-Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Responses carry
+Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
 `400 invalid-request`, `404 unknown-network`/`not-found`, `429 rate-limited` and `503 unavailable`
 (both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
@@ -33,7 +33,7 @@ double-broadcast it.
 ## Rate limiting
 
 Three Workers limiters count weighted units per 10 s window (values in `wrangler.jsonc`): the
-client IP prefix, then `x-install-id` + prefix on either the RPC limiter (transport routes) or the
+client IP prefix, then `x-client-id` + prefix on either the RPC limiter (transport routes) or the
 default one. Every request — valid or not — pays one unit up front; an RPC request then pays the
 summed cost of its calls minus the unit already charged. `RPC_COST_WEIGHTS` in the contract prices
 a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_getLogs`,
@@ -86,10 +86,10 @@ Smoke against the real public providers while `dev` is running:
 
 ```bash
 ID=0123456789abcdef0123456789abcdef
-curl -s -H "x-install-id: $ID" -H content-type:application/json \
+curl -s -H "x-client-id: $ID" -H content-type:application/json \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
   http://127.0.0.1:8787/v1/rpc/eip155:11155111
-curl -s -H "x-install-id: $ID" \
+curl -s -H "x-client-id: $ID" \
   http://127.0.0.1:8787/v1/esplora/bip122:00000008819873e925422c1ff0f99f7c/block-height/0
 ```
 

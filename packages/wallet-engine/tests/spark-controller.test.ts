@@ -684,7 +684,7 @@ describe("lock transition serialization", () => {
     const timers: Array<{ ms: number; cancelled: boolean }> = [];
     const engine = createWalletEngine({
       publicStore: createMemoryPublicStore(),
-      gateway: { url: "https://gateway.test", installId: "0123456789abcdef0123456789abcdef" },
+      gateway: { url: "https://gateway.test" },
       verifyEvent,
       weblnAlias: "test",
       lightningMaxFee: () => 0,

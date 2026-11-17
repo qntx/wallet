@@ -31,6 +31,7 @@ import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
+import { gatewaySession } from "./gateway/client.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
 import { MetaSyncController } from "./meta/controller.ts";
@@ -103,9 +104,10 @@ export type EngineOptions = {
   readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /**
    * The wallet gateway: tried first for the networks it serves (read at each unlock) unless a
-   * network has custom endpoints. The install id is sent only to the gateway's origin.
+   * network has custom endpoints. The engine draws per-session, per-scope client ids — sent only to
+   * the gateway's origin — so requests cannot be joined across families or installs.
    */
-  readonly gateway?: { readonly url: string; readonly installId: string };
+  readonly gateway?: { readonly url: string };
   /** Development builds: also accept `http://localhost` as a dApp origin. */
   readonly allowLocalhostOrigins?: boolean;
   /** Injected timer for polling and refresh loops; defaults to setTimeout. */
@@ -224,10 +226,12 @@ const defaultSetTimer = (ms: number, fn: () => void): (() => void) => {
 
 export function createWalletEngine(options: EngineOptions): WalletEngine {
   const setTimer = options.setTimer ?? defaultSetTimer;
+  const gateway =
+    options.gateway === undefined ? undefined : gatewaySession(options.gateway.url, options.random);
 
   const phishing = new PhishingController({
     publicStore: options.publicStore,
-    gateway: options.gateway,
+    gateway,
     fetch: options.fetch,
     now: options.now,
     setTimer,
@@ -269,7 +273,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     rpc: options.rpc ?? {},
     openStore: options.openStore,
     logger: options.logger,
-    gateway: options.gateway,
+    gateway,
     setTimer,
     random: options.random,
   });
@@ -822,7 +826,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         fetchBridgeQuote(
           {
             fetch: options.fetch,
-            gateway: options.gateway,
+            gateway,
             address: evmAddressOf,
             now: options.now,
           },
@@ -841,7 +845,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         (params.network.startsWith("solana:") ? fetchJupiterQuote : fetchSwapQuote)(
           {
             fetch: options.fetch,
-            gateway: options.gateway,
+            gateway,
             address: evmAddressOf,
             now: options.now,
           },

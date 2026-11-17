@@ -12,7 +12,7 @@ import { ipPrefix } from "../src/middleware/rate-limit.ts";
 import type { RateLimiter } from "../src/types.ts";
 import {
   DEVNET,
-  INSTALL_ID,
+  CLIENT_ID,
   MAINNET_BITCOIN,
   ORIGIN,
   SEPOLIA,
@@ -65,7 +65,7 @@ afterEach(() => {
 });
 
 describe("health and identity", () => {
-  it("serves health without an install id and matches the contract", async () => {
+  it("serves health without an client id and matches the contract", async () => {
     const app = gateway({ fetch: fakeFetch({}).fetch });
     const res = await app.request("/v1/health");
     expect(res.status).toBe(200);
@@ -74,10 +74,10 @@ describe("health and identity", () => {
 
   it.each([
     ["missing", {}],
-    ["too short", { "x-install-id": "abcd" }],
-    ["uppercase", { "x-install-id": INSTALL_ID.toUpperCase() }],
-    ["not hex", { "x-install-id": "z".repeat(32) }],
-  ])("rejects a %s install id with 400", async (_name, h) => {
+    ["too short", { "x-client-id": "abcd" }],
+    ["uppercase", { "x-client-id": CLIENT_ID.toUpperCase() }],
+    ["not hex", { "x-client-id": "z".repeat(32) }],
+  ])("rejects a %s client id with 400", async (_name, h) => {
     const upstream = fakeFetch({});
     const app = gateway({ fetch: upstream.fetch });
     const res = await app.request(`/v1/rpc/${SEPOLIA}`, {
@@ -109,7 +109,7 @@ describe("served networks", () => {
     });
   });
 
-  it("requires an install id and counts against the default limiter", async () => {
+  it("requires an client id and counts against the default limiter", async () => {
     const rpc = recordingLimiter();
     const dflt = recordingLimiter();
     const app = gateway({
@@ -470,7 +470,7 @@ describe("rpc forwarding", () => {
         method: "POST",
         headers: headers({
           "content-type": "application/json",
-          "x-install-id": "f".repeat(32),
+          "x-client-id": "f".repeat(32),
         }),
         body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
       } as const;
@@ -501,7 +501,7 @@ describe("rpc forwarding", () => {
         method: "POST",
         headers: headers({
           "content-type": "application/json",
-          "x-install-id": "f".repeat(32),
+          "x-client-id": "f".repeat(32),
         }),
         body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
       } as const;
@@ -981,7 +981,7 @@ describe("rate limiting", () => {
     expect(up.calls).toHaveLength(0);
   });
 
-  it("keys the transport limiter by install id and client prefix, not the full address", async () => {
+  it("keys the transport limiter by client id and client prefix, not the full address", async () => {
     const rpc = recordingLimiter();
     const dflt = recordingLimiter();
     const up = fakeFetch({
@@ -997,13 +997,13 @@ describe("rate limiting", () => {
       headers: headers({ "cf-connecting-ip": "2001:db8:abcd:1234::1" }),
     });
     expect(rpc.keys).toStrictEqual([
-      `${INSTALL_ID}:203.0.113.0/24`,
-      `${INSTALL_ID}:2001:0db8:abcd::/48`,
+      `${CLIENT_ID}:203.0.113.0/24`,
+      `${CLIENT_ID}:2001:0db8:abcd::/48`,
     ]);
     expect(dflt.keys).toHaveLength(0);
   });
 
-  it("bounds a client that rotates install ids by its IP prefix", async () => {
+  it("bounds a client that rotates client ids by its IP prefix", async () => {
     const ip = recordingLimiter();
     let budget = 2;
     const app = gateway({
@@ -1028,7 +1028,7 @@ describe("rate limiting", () => {
         headers: headers({
           "content-type": "application/json",
           "cf-connecting-ip": "203.0.113.77",
-          "x-install-id": id.repeat(32),
+          "x-client-id": id.repeat(32),
         }),
       });
       statuses.push(res.status);
@@ -1146,7 +1146,7 @@ describe("rate limiting", () => {
 });
 
 describe("cors", () => {
-  it("answers preflight for an allowed origin without an install id", async () => {
+  it("answers preflight for an allowed origin without an client id", async () => {
     const res = await gateway({ fetch: fakeFetch({}).fetch }).request(`/v1/rpc/${SEPOLIA}`, {
       method: "OPTIONS",
       headers: { origin: ORIGIN, "access-control-request-method": "POST" },
@@ -1197,7 +1197,7 @@ describe("request log", () => {
       address.toLowerCase(),
       HASH,
       "203.0.113",
-      INSTALL_ID,
+      CLIENT_ID,
       "eth_getBalance",
     ]) {
       expect(text).not.toContain(secret);

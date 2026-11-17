@@ -6,7 +6,7 @@ import { createGateway } from "../src/app.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
 import type { GatewayNetwork, Limiters, RateLimiter } from "../src/types.ts";
 
-export const INSTALL_ID = "0123456789abcdef0123456789abcdef";
+export const CLIENT_ID = "0123456789abcdef0123456789abcdef";
 export const SEPOLIA = "eip155:11155111";
 export const DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 export const SIGNET = "bip122:00000008819873e925422c1ff0f99f7c";
@@ -149,7 +149,7 @@ export function gateway(options: {
 }
 
 export const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
-  "x-install-id": INSTALL_ID,
+  "x-client-id": CLIENT_ID,
   ...extra,
 });
 
