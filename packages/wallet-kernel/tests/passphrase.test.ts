@@ -5,7 +5,7 @@ import { schnorr } from "@noble/curves/secp256k1.js";
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
 import { HDKey } from "@scure/bip32";
-import { describe, expect, it } from "vite-plus/test";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode, WalletInfo } from "@qntx/wallet/types";
@@ -517,6 +517,16 @@ const backupPassword = () => ({
 });
 
 describe("cloud backup", () => {
+  // These replay the committed vector, so they pay the real Argon2id cost (64 MiB, 3 passes) in
+  // pure JS, several times a test and slower still under coverage instrumentation.
+  beforeAll(() => {
+    vi.setConfig({ testTimeout: 120_000 });
+  });
+
+  afterAll(() => {
+    vi.resetConfig();
+  });
+
   it("never puts the passphrase in the payload; the header only flags it", async () => {
     const h = createHarness({ seed: 21, argon2id: realArgon2id });
     await h.settle();
