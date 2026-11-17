@@ -8,7 +8,7 @@
  *   bun scripts/session-smoke.ts android <serial> <scenario...>
  *
  * Scenarios: a (a1,a2,a3) | auto | b (b1,b2,b3; Android toggles the lock
- * screen) | or a bare phase name (a1..b3, upg, silent, phys) to run once.
+ * screen) | or a bare phase name (a1..b3, silent, phys) to run once.
  */
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import {
