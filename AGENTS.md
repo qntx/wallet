@@ -59,5 +59,10 @@ change to code bundled into the kernel (kernel modules, `@qntx/wallet-chains`, k
 dependencies) needs `bun run native:kernel` and the regenerated files in the same PR; CI's
 native-host-test fails on a stale bundle.
 
+`@qntx/wallet-worker` has two Vitest projects: `node` (`bun run test`) and `web`, which runs the
+Web enclave's source in Chromium (`bun run --cwd packages/wallet-worker test:web`, after
+`bunx playwright install chromium`). Its coverage gate (`coverage`) counts both and runs in the
+Browser workflow, not in `test:coverage`.
+
 The root scripts build consumed workspace packages first; per-package scripts must stay
 build-free — never nest `vp run …#build` inside a package's own lint/typecheck/test script.

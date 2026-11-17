@@ -1,0 +1,9 @@
+{
+  // Vitest browser-mode tests: they run in the page and import DOM and worker source directly.
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": []
+  },
+  "include": ["."]
+}
