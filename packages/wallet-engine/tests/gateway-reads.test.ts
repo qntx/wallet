@@ -421,11 +421,11 @@ describe("gatewayScope", () => {
 
   it("scopes ids per family under a gateway mounted on a base path", async () => {
     const gateway = gatewaySession(`${GATEWAY}/base/`, random);
-    const seen = new Map<string, string>();
+    const seen = new Map<string, string | null>();
     const wrapped = gatewayFetch(async (input, init) => {
       const path = new URL(String(input)).pathname;
-      seen.set(path, new Headers(init?.headers).get(CLIENT_ID_HEADER) ?? "");
-      return new Response("{}");
+      seen.set(path, new Headers(init?.headers).get(CLIENT_ID_HEADER));
+      return Promise.resolve(new Response("{}"));
     }, gateway);
     const paths = [
       `/base${rpcPath(SEPOLIA)}`,
@@ -433,9 +433,7 @@ describe("gatewayScope", () => {
       `/base${esploraBasePath(SIGNET)}/block-height/0`,
       `/base${networksPath}`,
     ];
-    for (const path of paths) {
-      await wrapped(`${GATEWAY}${path}`);
-    }
+    await Promise.all(paths.map(async (path) => wrapped(`${GATEWAY}${path}`)));
     const ids = [...seen.values()];
     expect(new Set(ids).size).toBe(4);
     expect(seen.get(`/base${rpcPath(SEPOLIA)}`)).toBe(gateway.clientIds.evm);
