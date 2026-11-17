@@ -28,6 +28,7 @@ import {
   rpcFailure,
   rpcOk,
 } from "./helpers.ts";
+import type { Upstream } from "./helpers.ts";
 
 const HASH = "ab".repeat(32);
 
@@ -182,6 +183,30 @@ describe("rpc validation", () => {
   });
 
   it.each([
+    ["a null id", JSON.stringify({ jsonrpc: "2.0", id: null, method: "eth_chainId" })],
+    ["a fractional id", JSON.stringify({ jsonrpc: "2.0", id: 1.5, method: "eth_chainId" })],
+    [
+      "a malformed address",
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getBalance",
+        params: ["0xzz", "latest"],
+      }),
+    ],
+    [
+      "a wrong arity",
+      JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [] }),
+    ],
+  ])("400s %s without calling upstream", async (_name, body) => {
+    const up = upstream();
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/rpc/${SEPOLIA}`, post(body));
+    expect(res.status).toBe(400);
+    await expectContract(res, gatewayError);
+    expect(up.calls).toHaveLength(0);
+  });
+
+  it.each([
     "eth_sign",
     "personal_sign",
     "eth_signTypedData_v4",
@@ -309,7 +334,7 @@ describe("rpc forwarding", () => {
     });
     const res = await gateway({ fetch: up.fetch }).request(
       `/v1/rpc/${SEPOLIA}`,
-      post(call("eth_call")),
+      post(call("eth_call", [{ to: `0x${"11".repeat(20)}` }])),
     );
     expect(res.status).toBe(200);
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("a");
@@ -363,18 +388,94 @@ describe("rpc forwarding", () => {
     expect(res.headers.get(PROVIDERS_HEADER)).toBe("a");
   });
 
-  it("forwards eth_sendRawTransaction and fails over like any read", async () => {
+  it("forwards eth_sendRawTransaction to the first provider", async () => {
     const up = fakeFetch({
-      "https://a.test/evm": () => new Response("", { status: 503 }),
-      "https://b.test/evm": () => rpcOk(`0x${HASH}`),
+      "https://a.test/evm": () => rpcOk(`0x${HASH}`),
+      "https://b.test/evm": () => rpcOk("0x1"),
     });
     const res = await gateway({ fetch: up.fetch }).request(
       `/v1/rpc/${SEPOLIA}`,
       post(call("eth_sendRawTransaction", ["0x02"])),
     );
     expect(res.status).toBe(200);
-    expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("a");
+    await expect(res.json()).resolves.toStrictEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: `0x${HASH}`,
+    });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
   });
+
+  it.each([400, 413, 422])(
+    "answers a request-caused upstream %i with 400, never retries and never trips the breaker",
+    async (status) => {
+      const onlyGetLogs =
+        (answer: () => Response): Upstream =>
+        (upstream) =>
+          upstream.body.includes("eth_getLogs") ? answer() : rpcOk("0xaa36a7");
+      const up = fakeFetch({
+        "https://a.test/evm": onlyGetLogs(() => new Response("x", { status })),
+        "https://b.test/evm": onlyGetLogs(() => rpcOk([])),
+      });
+      const app = gateway({ fetch: up.fetch });
+      const attackerPost = {
+        method: "POST",
+        headers: headers({
+          "content-type": "application/json",
+          "x-install-id": "f".repeat(32),
+        }),
+        body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
+      } as const;
+      for (let n = 0; n < 5; n += 1) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential requests share the breaker
+        const res = await app.request(`/v1/rpc/${SEPOLIA}`, attackerPost);
+        expect(res.status).toBe(400);
+        await expect(res.clone().json()).resolves.toStrictEqual({ error: "invalid-request" });
+      }
+      expect(up.callsTo("https://a.test")).toHaveLength(5);
+      expect(up.callsTo("https://b.test")).toHaveLength(0);
+
+      const victim = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+      expect(victim.status).toBe(200);
+      expect(victim.headers.get(PROVIDERS_HEADER)).toBe("a");
+    },
+  );
+
+  it.each([404, 429, 500, 502])(
+    "upstream %i stays a provider failure: failover, and the shared breaker opens after 5",
+    async (status) => {
+      const onlyGetLogs =
+        (answer: () => Response): Upstream =>
+        (upstream) =>
+          upstream.body.includes("eth_getLogs") ? answer() : rpcOk("0xaa36a7");
+      const up = fakeFetch({
+        "https://a.test/evm": onlyGetLogs(() => new Response("x", { status })),
+        "https://b.test/evm": onlyGetLogs(() => new Response("x", { status })),
+      });
+      const app = gateway({ fetch: up.fetch });
+      const attackerPost = {
+        method: "POST",
+        headers: headers({
+          "content-type": "application/json",
+          "x-install-id": "f".repeat(32),
+        }),
+        body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
+      } as const;
+      for (let n = 0; n < 5; n += 1) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential requests build the streak
+        const res = await app.request(`/v1/rpc/${SEPOLIA}`, attackerPost);
+        expect(res.status).toBe(503);
+      }
+
+      const callsBeforeVictim = up.calls.length;
+      const victim = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+      expect(victim.status).toBe(503);
+      await expect(victim.json()).resolves.toStrictEqual({ error: "unavailable" });
+      expect(victim.headers.get("retry-after")).toBe("30");
+      expect(up.calls).toHaveLength(callsBeforeVictim);
+    },
+  );
 
   it("opens a provider's breaker after 5 consecutive failures and skips it", async () => {
     const up = fakeFetch({

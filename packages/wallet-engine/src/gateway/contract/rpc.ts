@@ -54,11 +54,13 @@ export const SOLANA_RPC_METHODS = [
   "getSignatureStatuses",
   "getSignaturesForAddress",
   "getSlot",
+  "getStakeMinimumDelegation",
   "getTokenAccountBalance",
   "getTokenAccountsByOwner",
   "getTokenSupply",
   "getTransaction",
   "getVersion",
+  "getVoteAccounts",
   "isBlockhashValid",
   "sendTransaction",
   "simulateTransaction",
@@ -67,20 +69,27 @@ export const SOLANA_RPC_METHODS = [
 export type EvmRpcMethod = (typeof EVM_RPC_METHODS)[number];
 export type SolanaRpcMethod = (typeof SOLANA_RPC_METHODS)[number];
 
+/**
+ * A request id is an int or a short string the caller chose — never `null`. `null` only exists on
+ * responses, where it reports a request that could not be parsed at all ({@link jsonRpcId}).
+ */
+export const jsonRpcRequestId = z.union([z.int(), z.string().check(z.maxLength(64))]);
+
+/** A response id echoes the request's; a parse-level error legitimately answers with `null`. */
 export const jsonRpcId = z.union([z.string(), z.number(), z.null()]);
 
 const jsonRpcParams = z.optional(
   z.union([z.array(z.unknown()), z.record(z.string(), z.unknown())]),
 );
 
-const callSchema = <M extends z.ZodMiniType<string>>(method: M) =>
-  z.object({ jsonrpc: z.literal("2.0"), id: jsonRpcId, method, params: jsonRpcParams });
+const callSchema = <M extends z.ZodMiniType<string>>(method: M, params: z.ZodMiniType) =>
+  z.object({ jsonrpc: z.literal("2.0"), id: jsonRpcRequestId, method, params });
 
 const bodySchema = <C extends z.ZodMiniType>(call: C) =>
   z.union([call, z.array(call).check(z.minLength(1), z.maxLength(RPC_BATCH_MAX))]);
 
 /** Method-agnostic wire shape of a call or batch (the gateway narrows by family). */
-export const rpcRequest = bodySchema(callSchema(z.string()));
+export const rpcRequest = bodySchema(callSchema(z.string(), jsonRpcParams));
 
 /** `eth_getLogs` is the one read whose cost the caller chooses: these bound it. */
 export const LOGS_BLOCK_RANGE_MAX = 500;
@@ -90,8 +99,29 @@ export const LOGS_TOPIC_ALTERNATIVES_MAX = 20;
 const quantity = z.string().check(z.regex(/^0x[0-9a-fA-F]{1,64}$/));
 const hash32 = z.string().check(z.regex(/^0x[0-9a-fA-F]{64}$/));
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
+/** Even-length hex calldata; `0x` alone is legal (an empty payload). */
+const hexData = z.string().check(z.regex(/^0x([0-9a-fA-F]{2})*$/));
 /** The tags that name a recent block; `earliest` would make a range unbounded. */
 const recentBlock = z.enum(["latest", "safe", "finalized", "pending"]);
+const blockTag = z.enum(["latest", "earliest", "pending", "safe", "finalized"]);
+const tagOrNumber = z.union([blockTag, quantity]);
+
+/** A "default block" parameter: tag, quantity, or the EIP-1898 object form. */
+const blockParam = z.union([
+  tagOrNumber,
+  z.strictObject({ blockNumber: quantity }),
+  z.strictObject({ blockHash: hash32, requireCanonical: z.optional(z.boolean()) }),
+]);
+
+/** Params may be omitted or `[]` for the methods that take none. */
+const noParams = z.optional(z.tuple([]));
+const optional = <T extends z.ZodMiniType>(inner: T) => z.optional(inner);
+
+/** A transaction call object; `from`/`to` are the only fields the gateway constrains. */
+const callTx = z.looseObject({
+  from: z.optional(evmAddress),
+  to: z.optional(z.union([evmAddress, z.null()])),
+});
 
 const logsScope = {
   address: z.optional(
@@ -146,14 +176,107 @@ export function logsFilterViolation(params: unknown): string | undefined {
     : undefined;
 }
 
+/** The params shape each allow-listed EVM method accepts — one entry per method, no wildcards. */
+const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
+  eth_blobBaseFee: noParams,
+  eth_blockNumber: noParams,
+  eth_call: z.tuple([callTx, optional(blockParam)], z.unknown()),
+  eth_chainId: noParams,
+  eth_createAccessList: z.tuple([callTx, optional(blockParam)], z.unknown()),
+  eth_estimateGas: z.tuple([callTx, optional(blockParam)], z.unknown()),
+  eth_feeHistory: z.tuple([
+    z.union([quantity, z.int().check(z.nonnegative())]),
+    tagOrNumber,
+    optional(z.union([z.array(z.number()), z.null()])),
+  ]),
+  eth_gasPrice: noParams,
+  eth_getBalance: z.tuple([evmAddress, optional(blockParam)]),
+  eth_getBlockByHash: z.tuple([hash32, z.boolean()]),
+  eth_getBlockByNumber: z.tuple([tagOrNumber, z.boolean()]),
+  eth_getBlockReceipts: z.tuple([blockParam]),
+  eth_getBlockTransactionCountByHash: z.tuple([hash32]),
+  eth_getBlockTransactionCountByNumber: z.tuple([tagOrNumber]),
+  eth_getCode: z.tuple([evmAddress, optional(blockParam)]),
+  eth_getLogs: z.array(z.unknown()).check(
+    z.refine((params) => logsFilterViolation(params) === undefined),
+  ),
+  eth_getProof: z.tuple([evmAddress, z.array(z.union([hash32, quantity])), blockParam]),
+  eth_getStorageAt: z.tuple([evmAddress, z.union([quantity, hash32]), optional(blockParam)]),
+  eth_getTransactionByBlockHashAndIndex: z.tuple([hash32, quantity]),
+  eth_getTransactionByBlockNumberAndIndex: z.tuple([tagOrNumber, quantity]),
+  eth_getTransactionByHash: z.tuple([hash32]),
+  eth_getTransactionCount: z.tuple([evmAddress, optional(blockParam)]),
+  eth_getTransactionReceipt: z.tuple([hash32]),
+  eth_maxPriorityFeePerGas: noParams,
+  eth_sendRawTransaction: z.tuple([hexData]),
+  eth_simulateV1: z.tuple([z.looseObject({}), optional(blockParam)]),
+  net_version: noParams,
+  web3_clientVersion: noParams,
+};
+
+const solanaPubkey = z.string().check(z.regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/));
+const solanaSignature = z.string().check(z.regex(/^[1-9A-HJ-NP-Za-km-z]{64,88}$/));
+/** Trailing `{ encoding, commitment, … }` config object; its contents pass through. */
+const solanaConfig = z.looseObject({});
+/** Params `[pubkey]` or `[pubkey, config]`. */
+const pubkeyCall = z.tuple([solanaPubkey, optional(solanaConfig)]);
+/** Params omitted, `[]` or `[config]`. */
+const configOnly = z.optional(z.tuple([z.optional(solanaConfig)]));
+
+const SOLANA_PARAMS: Record<SolanaRpcMethod, z.ZodMiniType> = {
+  getAccountInfo: pubkeyCall,
+  getBalance: pubkeyCall,
+  getBlock: z.tuple([z.int().check(z.nonnegative()), optional(solanaConfig)]),
+  getBlockHeight: configOnly,
+  getBlockTime: z.tuple([z.int().check(z.nonnegative())]),
+  getEpochInfo: configOnly,
+  getFeeForMessage: z.tuple([z.string().check(z.minLength(1)), optional(solanaConfig)]),
+  getGenesisHash: noParams,
+  getLatestBlockhash: configOnly,
+  getMinimumBalanceForRentExemption: z.tuple([
+    z.int().check(z.nonnegative()),
+    optional(solanaConfig),
+  ]),
+  getMultipleAccounts: z.tuple([
+    z.array(solanaPubkey).check(z.minLength(1), z.maxLength(100)),
+    optional(solanaConfig),
+  ]),
+  getRecentPrioritizationFees: z.optional(
+    z.tuple([z.optional(z.array(solanaPubkey).check(z.maxLength(128)))]),
+  ),
+  getSignatureStatuses: z.tuple([
+    z.array(solanaSignature).check(z.minLength(1), z.maxLength(256)),
+    optional(solanaConfig),
+  ]),
+  getSignaturesForAddress: pubkeyCall,
+  getSlot: configOnly,
+  getStakeMinimumDelegation: configOnly,
+  getTokenAccountBalance: pubkeyCall,
+  getTokenAccountsByOwner: z.tuple([
+    solanaPubkey,
+    z.union([
+      z.strictObject({ mint: solanaPubkey }),
+      z.strictObject({ programId: solanaPubkey }),
+    ]),
+    optional(solanaConfig),
+  ]),
+  getTokenSupply: pubkeyCall,
+  getTransaction: z.tuple([solanaSignature, optional(solanaConfig)]),
+  getVersion: noParams,
+  getVoteAccounts: configOnly,
+  isBlockhashValid: pubkeyCall,
+  sendTransaction: z.tuple([z.string().check(z.minLength(1)), optional(solanaConfig)]),
+  simulateTransaction: z.tuple([z.string().check(z.minLength(1)), optional(solanaConfig)]),
+};
+
 export const evmRpcRequest = bodySchema(
-  callSchema(z.enum(EVM_RPC_METHODS)).check(
-    z.refine(
-      (call) => call.method !== "eth_getLogs" || logsFilterViolation(call.params) === undefined,
-    ),
+  z.union(EVM_RPC_METHODS.map((method) => callSchema(z.literal(method), EVM_PARAMS[method]))),
+);
+export const solanaRpcRequest = bodySchema(
+  z.union(
+    SOLANA_RPC_METHODS.map((method) => callSchema(z.literal(method), SOLANA_PARAMS[method])),
   ),
 );
-export const solanaRpcRequest = bodySchema(callSchema(z.enum(SOLANA_RPC_METHODS)));
 
 const successResponse = z.object({
   jsonrpc: z.literal("2.0"),
