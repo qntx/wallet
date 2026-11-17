@@ -1,6 +1,7 @@
 import * as AbiFunction from "ox/AbiFunction";
+import * as ContractAddress from "ox/ContractAddress";
 
-import { ChainError } from "../index.ts";
+import { ChainError, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
   AssetFlow,
@@ -13,7 +14,6 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { withNativeAmountMeta } from "../networks.ts";
-import { parseSignIn } from "../sign-in.ts";
 import { decodeAcross } from "./across.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
@@ -181,40 +181,31 @@ const nftFlow = (asset: string, to: string, id: bigint, value = 1n): ReadonlyArr
   },
 ];
 
-/** One EVM call, `to` absent for contract creation; `value` and `data` are always present. */
+/**
+ * One EVM call; `value` and `data` are always present. A contract creation has no `to` and names
+ * the address it deploys to in `created`.
+ */
 type EvmCall = {
   readonly to: string | undefined;
+  readonly created?: string;
   readonly value: bigint;
   readonly data: string;
 };
 
-/**
- * The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
- * produces the intent; `fee` is `undefined` for a call that is not itself a transaction.
- */
-const decodeCall = (
-  call: EvmCall,
-  network: string,
-  fee: DisplayIntent["fee"],
-  table: EvmTokenTable,
-  signer: string,
-): DisplayIntent => {
-  const chainId = networkChainId(network);
-  const data = call.data.toLowerCase();
-  const base = { family: "evm" as const, network, approvals: [], warnings: [] };
+type CallContext = {
+  readonly network: string;
+  readonly fee: DisplayIntent["fee"];
+  readonly table: EvmTokenTable;
+  readonly signer: string;
+};
 
-  if (data === "0x") {
-    if (call.to === undefined) {
-      return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
-    }
-    return {
-      ...base,
-      summary: "transfer",
-      outflows: nativeOutflow(call.value, call.to),
-      fee,
-      verifiability: "full",
-    };
-  }
+/** A call into a protocol the decoder models in full, native value included. */
+const protocolIntent = (
+  call: EvmCall,
+  { network, fee, table, signer }: CallContext,
+): DisplayIntent | undefined => {
+  const chainId = networkChainId(network);
+  const base = { family: "evm" as const, network, approvals: [], warnings: [] };
 
   const zeroX = decodeZeroX(chainId, call, table);
   if (zeroX !== undefined) {
@@ -254,6 +245,15 @@ const decodeCall = (
       verifiability: "partial",
     };
   }
+
+  return undefined;
+};
+
+/** The token-standard selectors, else an opaque call. None of them accounts for native value. */
+const standardIntent = (call: EvmCall, { network, fee, table }: CallContext): DisplayIntent => {
+  const chainId = networkChainId(network);
+  const data = call.data.toLowerCase();
+  const base = { family: "evm" as const, network, approvals: [], warnings: [] };
 
   const transferArgs = tryCall(ERC20_TRANSFER, data);
   if (transferArgs !== undefined) {
@@ -406,6 +406,42 @@ const decodeCall = (
   return { ...base, summary: "contract-call", outflows: [], fee, verifiability: "opaque" };
 };
 
+/**
+ * The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
+ * produces the intent; `fee` is `undefined` for a call that is not itself a transaction. Native
+ * value sent along with calldata is always an outflow to the contract that receives it.
+ */
+const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
+  if (call.data === "0x" && call.to !== undefined) {
+    return {
+      family: "evm",
+      network: context.network,
+      summary: "transfer",
+      outflows: nativeOutflow(call.value, call.to),
+      approvals: [],
+      fee: context.fee,
+      warnings: [],
+      verifiability: "full",
+    };
+  }
+  const address = call.to ?? call.created;
+  const contract =
+    address === undefined ? {} : { contract: { address, created: call.to === undefined } };
+  const protocol = protocolIntent(call, context);
+  if (protocol !== undefined) {
+    return { ...protocol, ...contract };
+  }
+  const standard = standardIntent(call, context);
+  return {
+    ...standard,
+    ...contract,
+    outflows:
+      call.value > 0n && address !== undefined
+        ? [...nativeOutflow(call.value, address), ...standard.outflows]
+        : standard.outflows,
+  };
+};
+
 /** The delegation field a request carries, present iff the transaction is eip7702. */
 const delegationOf = (tx: EvmTransaction): DisplayIntent["delegation"] => {
   if (tx.type !== "eip7702") {
@@ -427,6 +463,12 @@ const weakest = (intents: ReadonlyArray<DisplayIntent>): Verifiability =>
     : intents.some((i) => i.verifiability === "partial")
       ? "partial"
       : "full";
+
+/** The address a contract creation from `signer` at `nonce` deploys to (CREATE). */
+const createdAddress = (signer: string, nonce: number): string => {
+  assertHex(signer, "signer");
+  return checksumEvmAddress(ContractAddress.fromCreate({ from: signer, nonce: BigInt(nonce) }));
+};
 
 const decodeTransaction = (
   request: Extract<SignRequest, { kind: "evm.transaction" }>,
@@ -455,27 +497,16 @@ const decodeTransaction = (
     };
   }
   const calls = isSelf ? decodeBatchExecute(tx.data) : undefined;
-  const intent = decodeCall(
-    { to: tx.to, value: quantityBigInt(tx.value, "tx.value"), data: tx.data },
-    request.network,
-    fee,
-    table,
-    signer,
-  );
+  const context = { network: request.network, table, signer };
   if (calls !== undefined && calls.length > 0) {
-    const decoded = calls.map((call) =>
-      decodeCall(
-        { to: call.to, value: call.value, data: call.data },
-        request.network,
-        undefined,
-        table,
-        signer,
-      ),
-    );
+    const decoded = calls.map((call) => decodeCall(call, { ...context, fee: undefined }));
     const minimumReceived = decoded.flatMap((d) => d.minimumReceived ?? []);
     const staking = decoded.flatMap((d) => d.staking ?? []);
     return {
-      ...intent,
+      family: "evm",
+      network: request.network,
+      warnings: [],
+      fee,
       summary: "batch",
       calls: decoded,
       outflows: decoded.flatMap((d) => d.outflows),
@@ -486,6 +517,15 @@ const decodeTransaction = (
       ...(delegation === undefined ? {} : { delegation }),
     };
   }
+  const intent = decodeCall(
+    {
+      to: tx.to,
+      ...(tx.to === undefined ? { created: createdAddress(signer, tx.nonce) } : {}),
+      value: quantityBigInt(tx.value, "tx.value"),
+      data: tx.data,
+    },
+    { ...context, fee },
+  );
   return { ...intent, ...(delegation === undefined ? {} : { delegation }) };
 };
 
@@ -502,20 +542,6 @@ const displayDomain = (domain: TypedDataInput["domain"]): TypedDataDomain => {
       : {}),
     ...(typeof salt === "string" ? { salt } : {}),
   };
-};
-
-/** Strict UTF-8 text with any sign-in recognition, else the raw bytes as hex. */
-const messageContent = (bytes: Uint8Array): MessageContent => {
-  try {
-    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    const signIn = parseSignIn(text, "evm");
-    return signIn === undefined ? { kind: "text", text } : { kind: "text", text, signIn };
-  } catch {
-    return {
-      kind: "bytes",
-      hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
-    };
-  }
 };
 
 /** What the signer can guarantee about this request (WD-065). */
@@ -548,7 +574,7 @@ export const decodeEvm = (
       approvals: [],
       fee: undefined,
       warnings: [],
-      message: messageContent(request.message),
+      message: messageContent(request.message, "evm"),
       verifiability: "opaque",
     };
   }
@@ -562,7 +588,9 @@ export const decodeEvm = (
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
-      ? recognizeSafe(json, (call) => decodeCall(call, request.network, undefined, table, signer))
+      ? recognizeSafe(json, (call) =>
+          decodeCall(call, { network: request.network, fee: undefined, table, signer }),
+        )
       : undefined;
   const message: MessageContent = {
     kind: "typed-data",
