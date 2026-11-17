@@ -10,7 +10,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
-import { parseSignIn } from "@qntx/wallet-chains";
+import { isBlindIntent, parseSignIn } from "@qntx/wallet-chains";
 import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
@@ -332,7 +332,7 @@ export class SignInOriginError extends Error {
   }
 }
 
-/** Message bytes that cannot be shown as text for a group that did not opt in to blind signing. */
+/** A request whose content cannot be shown, for a vault whose owner has not allowed blind signing. */
 export class BlindSigningDisabledError extends Error {
   constructor() {
     super(BLIND_SIGNING_MESSAGE);
@@ -448,7 +448,8 @@ export type RequestControllerOptions = {
     readonly add: (network: string, address: string) => Promise<void>;
   };
   /** Whether the account group opted in to signing messages that cannot be shown as text. */
-  readonly blindSigning: (walletId: string, groupIndex: number) => boolean;
+  /** The vault's blind-signing setting (`WalletSnapshot.blindSigning`); the kernel enforces it. */
+  readonly blindSigning: () => boolean;
   /** Simulates one `solana-sign` transaction for display; failures are the caller's `unavailable`. */
   readonly simulateSolana: (
     account: SolanaAccount,
@@ -958,8 +959,7 @@ export class RequestController extends Controller<RequestControllerState> {
         "signer" in prepared && prepared.intent.message?.kind === "text"
           ? this.signInRisk(prepared.intent.message.signIn, input.origin, prepared.signer, "evm")
           : [];
-      const blindRisk =
-        prepared.intent.message?.kind === "bytes" ? this.blindRisk(input.account) : [];
+      const blindRisk = this.blindRisk(prepared.intent);
       const { message } = prepared.intent;
       const permitRisk =
         message?.kind === "typed-data" ? assessPermits(prepared.intent, this.options.now()) : [];
@@ -1014,7 +1014,10 @@ export class RequestController extends Controller<RequestControllerState> {
         risk: mergeRisk(
           mergeRisk(
             this.signInRisk(signIn, input.origin, input.account.address, "solana"),
-            message?.kind === "bytes" ? this.blindRisk(input.account) : [],
+            [
+              ...(message === undefined ? [] : [{ verifiability: "opaque" as const, message }]),
+              ...intents.filter((intent) => "verifiability" in intent),
+            ].flatMap((intent) => this.blindRisk(intent)),
           ),
           intents.flatMap((intent) => ("approvals" in intent ? assessApprovals(intent) : [])),
         ),
@@ -1053,7 +1056,10 @@ export class RequestController extends Controller<RequestControllerState> {
         checks: collectChecks(
           intents.some((i) => i.verifiability !== "full") ? ["decode-partial"] : [],
         ),
-        risk: assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
+        risk: mergeRisk(
+          assessBitcoinPsbts(prepared.flatMap((p) => p.inputs)),
+          intents.flatMap((intent) => this.blindRisk(intent)),
+        ),
         run: {
           factor: "required",
           staleReason: () => undefined,
@@ -1208,7 +1214,10 @@ export class RequestController extends Controller<RequestControllerState> {
         prepared.intent.verifiability === "full" ? undefined : "decode-partial",
         ...prepared.checks,
       ]),
-      risk: input.method === "send" || internal ? this.chainRisk(prepared.intent) : [],
+      risk:
+        input.method === "send" || internal
+          ? this.chainRisk(prepared.intent)
+          : this.blindRisk(prepared.intent),
       run: { ...prepared, factor: "required" },
     };
     return input.method === "send" || internal
@@ -1534,13 +1543,14 @@ export class RequestController extends Controller<RequestControllerState> {
     return [...contacts, ...paid];
   }
 
-  /** A blind-sign request carries one danger; a group that did not opt in refuses it outright. */
-  private blindRisk(account: AccountRef | SolanaAccount): ReadonlyArray<RiskFinding> {
-    const allowed =
-      "groupIndex" in account && "walletId" in account
-        ? this.options.blindSigning(account.walletId, account.groupIndex)
-        : false;
-    if (!allowed) {
+  /** A blind request carries one danger; a vault that has not allowed blind signing refuses it. */
+  private blindRisk(
+    intent: Pick<DisplayIntent, "verifiability" | "message">,
+  ): ReadonlyArray<RiskFinding> {
+    if (!isBlindIntent(intent)) {
+      return [];
+    }
+    if (!this.options.blindSigning()) {
       throw new BlindSigningDisabledError();
     }
     return [{ code: "blind-signing", level: "danger" }];
@@ -1571,12 +1581,15 @@ export class RequestController extends Controller<RequestControllerState> {
 
   private chainRisk(intent: DisplayIntent): ReadonlyArray<RiskFinding> {
     return mergeRisk(
-      assessRecipients(
-        intent.family,
-        intent.outflows.map((o) => o.to),
-        this.knownAddresses(intent.family),
+      mergeRisk(
+        assessRecipients(
+          intent.family,
+          intent.outflows.map((o) => o.to),
+          this.knownAddresses(intent.family),
+        ),
+        assessApprovals(intent),
       ),
-      assessApprovals(intent),
+      this.blindRisk(intent),
     );
   }
 

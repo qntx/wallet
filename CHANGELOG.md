@@ -34,6 +34,21 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - Error code `verification-unavailable`: a guarded call on React Native without a verifying
   factor, or a reset without a lock screen. No prompt is shown.
 
+- Blind signing is a vault setting enforced in the kernel. A request whose content the kernel
+  cannot show — a raw-byte message, typed data of no recognised shape, a transaction whose effects
+  it cannot verify — fails with the new error code `blind-signing-disabled` before any
+  verification prompt, until the owner turns it on with `wallet.vault.setBlindSigning(enabled,
+  verify)`. `WalletSnapshot.blindSigning` reports the setting; it is off on a new vault and is not
+  part of a cloud backup. Text, sign-in messages, permits, Seaport orders and Safe transactions of
+  decoded calls are never blind.
+- The verification prompt shows what is signed. A message shows a sanitised excerpt of its text; a
+  Sign-In with Ethereum/Solana message its domain, account, network and URI; typed data its app
+  name, network, verifying contract and primary type, plus the order of a Seaport message or the
+  calls of a Safe transaction. A transaction the kernel cannot verify still lists the contract it
+  calls or deploys, its native value and its fee cap. Bitcoin and Solana messages show their text.
+- `@qntx/wallet-chains`: `displayExcerpt` / `isUnsafeCodePoint` (bounded, sanitised display text),
+  `messageContent`, `isBlindIntent`, and `DisplayIntent.contract`.
+
 ### Changed
 
 - **BREAKING:** `backup.disable` is a guarded operation like `backup.enable`: it takes a
@@ -58,8 +73,23 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - The platform keystore contract (`sealDevice`, `openDevice`, `probe`, `remove` alongside the
   presence `seal`/`open`) is implemented natively on iOS and Android.
 
+- **BREAKING:** protocol: `vault.setBlindSigning`; the status payload carries `blindSigning`.
+- **BREAKING:** `@qntx/wallet-engine`: `RequestController`'s `blindSigning` option is
+  `() => boolean` (the vault's setting). Every blind request — not only raw-byte messages — is
+  refused with `BlindSigningDisabledError` while it is off and carries the `blind-signing` danger
+  while it is on.
+
+### Fixed
+
+- `@qntx/wallet-chains/evm`: native value sent along with calldata is always an outflow. An
+  unrecognised payable call, a payable token call and a contract creation used to decode with no
+  outflow, so neither the prompt nor the engine's recipient and fee checks saw the amount (#224).
+
 ### Removed
 
+- **BREAKING:** `@qntx/wallet-engine`: the per-account-group blind-signing flag
+  (`AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`). It lived
+  in the main runtime, where the code it was meant to restrain could switch it on.
 - **BREAKING:** error code `no-device-credential` (replaced by `verification-unavailable`).
 
 ## [0.13.0] - 2026-11-09

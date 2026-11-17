@@ -23,6 +23,7 @@ export type CorePromptKind =
   | "disable-backup"
   | "manage-factors"
   | "app-lock"
+  | "blind-signing"
   | "reset";
 
 const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, KeystorePrompt>>>> = {
@@ -37,6 +38,10 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     "disable-backup": { title: "关闭云备份", description: "验证身份以关闭云备份" },
     "manage-factors": { title: "管理解锁方式", description: "验证身份以更改钱包的解锁方式" },
     "app-lock": { title: "应用锁", description: "验证身份以更改应用锁" },
+    "blind-signing": {
+      title: "盲签设置",
+      description: "验证身份以更改是否允许签署钱包无法显示内容的请求",
+    },
     reset: {
       title: "重置钱包",
       description: "验证设备所有者身份以删除本设备上的全部钱包数据",
@@ -79,6 +84,11 @@ const CORE: Readonly<Record<PromptLocale, Readonly<Record<CorePromptKind, Keysto
     "app-lock": {
       title: "App lock",
       description: "Verify your identity to change the app lock",
+    },
+    "blind-signing": {
+      title: "Blind signing",
+      description:
+        "Verify your identity to change whether requests the wallet cannot display may be signed",
     },
     reset: {
       title: "Reset wallet",

@@ -23,7 +23,7 @@ const ORIGIN = { kind: "browser", origin: "https://app.example" } as const;
 
 function rig(
   simulate: (message: Uint8Array) => Promise<SimulationOutcome>,
-  blindSigning: (walletId: string, groupIndex: number) => boolean = () => false,
+  blindSigning: () => boolean = () => false,
 ) {
   const calls: Uint8Array[] = [];
   const openStore = async () => Promise.resolve(createMemoryEngineStore());
@@ -150,7 +150,7 @@ describe("solana-sign simulation", () => {
     expect(request.display).toMatchObject({ message: { text: "text" }, signIn });
   });
 
-  it("rejects non-UTF-8 message bytes unless the group opted in to blind signing", async () => {
+  it("rejects non-UTF-8 message bytes unless the vault allows blind signing", async () => {
     const { requests } = rig(async () => Promise.reject(new Error("never")));
     await requests.init();
     await expect(

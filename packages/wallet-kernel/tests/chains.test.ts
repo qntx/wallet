@@ -544,11 +544,9 @@ describe("chain.sign", () => {
         factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
       }),
     );
-    return {
-      h,
-      session: strField(res, "session"),
-      walletId: strField(field(res, "wallet"), "walletId"),
-    };
+    const session = strField(res, "session");
+    ok(await h.call("vault.setBlindSigning", { enabled: true, verify: PASSKEY() }, session));
+    return { h, session, walletId: strField(field(res, "wallet"), "walletId") };
   };
 
   const callSign = async (

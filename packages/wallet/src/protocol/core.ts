@@ -253,6 +253,7 @@ export const walletErrorCode: Validator<WalletErrorCode> = union(
   literal("cancelled"),
   literal("factor-invalidated"),
   literal("verification-unavailable"),
+  literal("blind-signing-disabled"),
   literal("passkey-not-configured"),
   literal("passkey-prf-unsupported"),
   literal("wrong-password"),
@@ -295,6 +296,10 @@ export const CORE_METHODS: {
   >;
   readonly "vault.enrolVerification": MethodSpec<NullValue, NullValue>;
   readonly "vault.setAppLock": MethodSpec<
+    { readonly enabled: boolean; readonly verify: VerifyFactor },
+    NullValue
+  >;
+  readonly "vault.setBlindSigning": MethodSpec<
     { readonly enabled: boolean; readonly verify: VerifyFactor },
     NullValue
   >;
@@ -411,6 +416,12 @@ export const CORE_METHODS: {
     result: nullValue,
   },
   "vault.setAppLock": {
+    session: true,
+    presence: true,
+    params: obj({ enabled: bool, verify: verifier }),
+    result: nullValue,
+  },
+  "vault.setBlindSigning": {
     session: true,
     presence: true,
     params: obj({ enabled: bool, verify: verifier }),

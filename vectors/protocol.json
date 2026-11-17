@@ -152,6 +152,22 @@
       }
     },
     {
+      "name": "request-vault.setBlindSigning",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 6,
+        "method": "vault.setBlindSigning",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "enabled": true,
+          "verify": {
+            "kind": "hardware"
+          }
+        }
+      }
+    },
+    {
       "name": "request-wallet.createWithPasskey",
       "check": "request",
       "message": {
@@ -1245,7 +1261,8 @@
               "password"
             ],
             "createdAt": 1
-          }
+          },
+          "blindSigning": false
         }
       }
     },
@@ -1783,7 +1800,8 @@
               "password"
             ],
             "createdAt": 1
-          }
+          },
+          "blindSigning": false
         }
       }
     },
@@ -1856,7 +1874,8 @@
               "createdAt": 1767225600000
             }
           ],
-          "backup": null
+          "backup": null,
+          "blindSigning": false
         }
       }
     },
@@ -1932,6 +1951,22 @@
         "v": 3,
         "id": 6,
         "method": "vault.setAppLock",
+        "session": "00112233445566778899aabbccddeeff",
+        "params": {
+          "enabled": true,
+          "verify": {
+            "kind": "device"
+          }
+        }
+      }
+    },
+    {
+      "name": "request-blind-signing-device-verify",
+      "check": "request",
+      "message": {
+        "v": 3,
+        "id": 6,
+        "method": "vault.setBlindSigning",
         "session": "00112233445566778899aabbccddeeff",
         "params": {
           "enabled": true,

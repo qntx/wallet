@@ -28,6 +28,8 @@ export const CORE_HANDLERS: {
     vaultCommands.enrolVerification(ctx, params, session),
   "vault.setAppLock": async (ctx, params, session) =>
     vaultCommands.setAppLock(ctx, params, session),
+  "vault.setBlindSigning": async (ctx, params, session) =>
+    vaultCommands.setBlindSigning(ctx, params, session),
   "wallet.createWithPasskey": async (ctx, params, session) =>
     walletCommands.createWithPasskey(ctx, params, session),
   "wallet.restoreWithPasskey": async (ctx, params, session) =>

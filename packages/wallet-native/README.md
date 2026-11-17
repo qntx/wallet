@@ -128,6 +128,15 @@ Passkey wallets need the platform's domain association:
   and the kernel. Without a `hardware` factor (no lock screen) guarded calls fail with
   `verification-unavailable` and show nothing — `snapshot.verification` says so up front; send
   the user to system settings, then call `vault.enrolVerification()`.
+- A `chain.sign` prompt is rendered by the kernel from its own decode of the request: amounts,
+  recipients, approvals and the fee cap of a transaction; the text, sign-in fields or typed-data
+  domain of a message. Android's `BiometricPrompt` shows the title and description. iOS shows the
+  description on the Touch ID and device-passcode sheets only — **the Face ID sheet shows no
+  custom text**, so there the verification proves presence, not that the user read the content.
+- Blind signing is off on a new vault. A request the kernel cannot show (raw bytes, typed data of
+  no recognised shape, a transaction with unverifiable effects) fails with
+  `blind-signing-disabled` and no prompt until `vault.setBlindSigning(true, { kind: "hardware" })`.
+  This is the one kernel-side control that also holds on a Face ID device.
 - App lock is optional and off by default: `vault.setAppLock(true, { kind: "hardware" })` removes
   the `device` factor and rotates the DEK, so every unlock prompts again; `false` restores it.
   With app lock off, removing the lock screen keeps the vault usable (the dead `hardware` factor

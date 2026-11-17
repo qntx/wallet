@@ -10,7 +10,9 @@ import {
   parseDataKeyHeader,
   parseEntropyHeader,
   parseKeyHeader,
+  parsePolicyHeader,
 } from "./vault/headers.ts";
+import { BLIND_SIGNING, POLICY_KIND } from "./vault/policy.ts";
 import type { StoredRecord, VaultImage } from "./vault/store.ts";
 import { UPGRADABLE_FORMAT, VAULT_FORMAT } from "./vault/store.ts";
 import { factorInfo, walletInfo } from "./vault/vault.ts";
@@ -70,6 +72,7 @@ export function statusContents(
     createdAt: number;
   }>;
   backup: BackupInfo | NullValue;
+  blindSigning: boolean;
   health: ImageHealth;
 } {
   const factors: FactorInfo[] = [];
@@ -81,6 +84,7 @@ export function statusContents(
     createdAt: number;
   }> = [];
   let backup: BackupInfo | NullValue = null;
+  let blindSigning = false;
   const owned: StoredRecord[] = [];
   const meta = metaHealth(image);
   let corrupted = meta === "corrupted";
@@ -127,6 +131,14 @@ export function statusContents(
         } else {
           corrupted = true;
         }
+      } else if (record.kind === POLICY_KIND) {
+        // One known policy; any other id was written by another build.
+        if (record.id === BLIND_SIGNING) {
+          parsePolicyHeader(record.header);
+          blindSigning = true;
+        } else {
+          unsupported = true;
+        }
       } else if (modules.some((module) => module.ownsRecord(record.kind))) {
         owned.push(record);
       } else {
@@ -144,13 +156,14 @@ export function statusContents(
     keys: section.keys,
     importedKeys,
     backup,
+    blindSigning,
     health: unsupported ? "unsupported" : corrupted ? "corrupted" : "ok",
   };
 }
 
 /** The `status` payload for the current session + image; shared by `status` and `postStatus`. */
 export function statusPayload(ctx: KernelContext, nostr: NostrModule): StatusPayload {
-  const { factors, wallets, keys, importedKeys, backup } = statusContents(
+  const { factors, wallets, keys, importedKeys, backup, blindSigning } = statusContents(
     ctx.image,
     ctx.modules,
     nostr,
@@ -170,5 +183,6 @@ export function statusPayload(ctx: KernelContext, nostr: NostrModule): StatusPay
     nostr: { keys },
     importedKeys,
     backup,
+    blindSigning,
   };
 }

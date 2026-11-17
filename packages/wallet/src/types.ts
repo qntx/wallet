@@ -68,6 +68,7 @@ export type WalletErrorCode =
   | "unsupported"
   | "unavailable"
   | "integrity"
+  | "blind-signing-disabled"
   | "approval-required"
   | "crashed";
 
@@ -102,6 +103,8 @@ export type StatusPayload = {
   readonly importedKeys: ReadonlyArray<KeyInfo>;
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
   readonly backup: BackupInfo | null;
+  /** Whether the vault signs requests whose content the kernel cannot show. */
+  readonly blindSigning: boolean;
 };
 
 /** Public summary of a retained backup key — factors are the unwrap paths, never secrets. */
@@ -217,6 +220,8 @@ export type WalletSnapshot = {
   /** The retained backup key's public id, or null when cloud backup is off. */
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
   readonly backup: BackupInfo | null;
+  /** Whether the vault signs requests whose content the kernel cannot show. */
+  readonly blindSigning: boolean;
 };
 
 /** A one-shot secret buffer: `read` detaches the bytes to the caller, `wipe` zeroes them. */
@@ -251,6 +256,12 @@ export type VaultApi = {
   readonly enrolVerification: () => Promise<void>;
   /** Turns the native app lock on (drops the silent device factor) or off (restores it). */
   readonly setAppLock: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+  /**
+   * Allows or refuses blind signing: raw-byte messages, typed data of no recognised shape and
+   * transactions whose effects cannot be verified. Off on a new vault; while off such a request
+   * fails with `blind-signing-disabled` before any verification prompt.
+   */
+  readonly setBlindSigning: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
   readonly reset: () => Promise<void>;
 };
 

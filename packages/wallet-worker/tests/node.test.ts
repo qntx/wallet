@@ -9,6 +9,7 @@ import { WalletError } from "@qntx/wallet";
 import type { Wallet } from "@qntx/wallet";
 import { KernelError, createMemoryStore } from "@qntx/wallet-kernel";
 import type { RecordStore } from "@qntx/wallet-kernel";
+import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 
 import { createNodeWallet, createSoftwarePasskey } from "../src/node/index.ts";
@@ -216,6 +217,34 @@ describe("node host end to end", () => {
     expect(new TextDecoder().decode(nsec.read())).toMatch(/^nsec1[0-9a-z]+$/);
     await wallet.destroy();
   }, 120_000);
+
+  it("refuses a blind request until the vault's owner allows blind signing", async () => {
+    const { wallet } = await nodeWallet(createSoftwarePasskey(SEED));
+    const verify = { kind: "password" as const, password: PASSWORD };
+    const created = await wallet.wallets.importMnemonic({
+      mnemonic:
+        "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+      factor: verify,
+    });
+    const sign = async () =>
+      chains(wallet).sign({
+        request: {
+          kind: "evm.personal-message",
+          network: "eip155:1",
+          account: { kind: "hd", walletId: created.walletId, groupIndex: 0, template: "evm.bip44" },
+          message: Uint8Array.of(0xff),
+        },
+        verify,
+      });
+    expect(wallet.getSnapshot().blindSigning).toBe(false);
+    await expect(sign()).rejects.toMatchObject({ code: "blind-signing-disabled" });
+    await wallet.vault.setBlindSigning(true, verify);
+    expect(wallet.getSnapshot().blindSigning).toBe(true);
+    await expect(sign()).resolves.toMatchObject({ kind: "evm.personal-message" });
+    await wallet.vault.setBlindSigning(false, verify);
+    await expect(sign()).rejects.toMatchObject({ code: "blind-signing-disabled" });
+    await wallet.destroy();
+  });
 
   it("resolves vault.reset while unlocked and lands on uninitialized", async () => {
     const passkey = createSoftwarePasskey(hexToBytes("dd".repeat(32)));

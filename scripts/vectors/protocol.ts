@@ -106,6 +106,7 @@ const statusUnlocked = {
   nostr: { keys: [derivedKey, derivedKey] },
   importedKeys: [keyInfo, evmKeyInfo],
   backup: backupInfo,
+  blindSigning: false,
 };
 const signedEvent = {
   id: "e".repeat(64),
@@ -169,6 +170,16 @@ const requests: Array<{ name: string; message: Record<string, unknown> }> = [
       v: 3,
       id: 6,
       method: "vault.setAppLock",
+      session: SESSION,
+      params: { enabled: true, verify: hardwareFactor },
+    },
+  },
+  {
+    name: "vault.setBlindSigning",
+    message: {
+      v: 3,
+      id: 6,
+      method: "vault.setBlindSigning",
       session: SESSION,
       params: { enabled: true, verify: hardwareFactor },
     },
@@ -1014,6 +1025,17 @@ const reject: Array<{ name: string; check: string; message: unknown }> = [
       v: 3,
       id: 6,
       method: "vault.setAppLock",
+      session: SESSION,
+      params: { enabled: true, verify: deviceFactor },
+    },
+  },
+  {
+    name: "request-blind-signing-device-verify",
+    check: "request",
+    message: {
+      v: 3,
+      id: 6,
+      method: "vault.setBlindSigning",
       session: SESSION,
       params: { enabled: true, verify: deviceFactor },
     },
