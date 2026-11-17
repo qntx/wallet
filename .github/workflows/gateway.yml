@@ -1,51 +1,62 @@
 name: Gateway
 
+# Staging follows main: every commit whose CI run passed is deployed. Production is a manual
+# dispatch from main that redeploys a commit CI has passed, behind the environment's reviewer.
+# Nothing runs until the repository variable GATEWAY_DEPLOY is "true": each environment needs its
+# own Cloudflare token first (.github/rulesets/apply.sh).
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-    paths:
-      - "apps/gateway/**"
-      - "packages/wallet-engine/src/gateway/**"
-      - "packages/wallet-engine/src/networks/**"
-      - "bun.lock"
-      - ".github/workflows/gateway.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: gateway-${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
   cancel-in-progress: false
 
 jobs:
-  staging:
-    if: github.event_name == 'push'
-    environment: staging
+  deploy:
+    if: >-
+      vars.GATEWAY_DEPLOY == 'true' && (
+        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+        (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')
+      )
+    environment: ${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
     runs-on: ubuntu-latest
+    env:
+      TARGET: ${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
+      - name: Require a passed CI run for the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$COMMIT" \
+            --status success --json databaseId --jq length)"
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run for $COMMIT"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.COMMIT }}
+          persist-credentials: false
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
       - run: bunx vp run @qntx/wallet-engine#build
       - working-directory: apps/gateway
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler deploy --env staging
+        run: bunx wrangler deploy --env "$TARGET"
       - working-directory: apps/gateway
-        run: bun scripts/smoke.ts https://wallet-gateway-staging.qntx.org staging
-  production:
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
-    environment: production
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - run: bun install --frozen-lockfile
-      - run: bunx vp run @qntx/wallet-engine#build
-      - working-directory: apps/gateway
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler deploy --env production
-      - working-directory: apps/gateway
-        run: bun scripts/smoke.ts https://gateway.meowl.xyz production
+        run: |
+          case "$TARGET" in
+            production) url=https://gateway.meowl.xyz ;;
+            *) url=https://wallet-gateway-staging.qntx.org ;;
+          esac
+          bun scripts/smoke.ts "$url" "$TARGET"

@@ -24,5 +24,9 @@ jobs:
         run: bunx playwright install --with-deps chromium webkit firefox
       - name: Build and run browser tests
         run: bun run test:browser
+      # The worker package's coverage gate lives here: half of its code only runs in a browser,
+      # so the thresholds count the Node and the browser-mode projects together.
+      - name: Check the Web enclave's coverage
+        run: bun run --cwd packages/wallet-worker coverage
       - name: Run the consumer smoke
         run: bun run test:consumer

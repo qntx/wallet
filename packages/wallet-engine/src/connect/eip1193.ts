@@ -8,7 +8,7 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import { ChainError } from "@qntx/wallet-chains";
 import type { SignRequest } from "@qntx/wallet-chains";
 
-import { EVM_RPC_METHODS } from "../gateway/contract/rpc.ts";
+import { EVM_RPC_METHODS, logsFilterViolation } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
   BlindSigningDisabledError,
@@ -31,6 +31,7 @@ import {
   ProviderError,
   internalError,
   invalidParams,
+  limitExceeded,
   unauthorized,
   unrecognizedChain,
   unsupportedMethod,
@@ -88,6 +89,12 @@ const REFUSED: ReadonlySet<string> = new Set([
 const READ_ONLY: ReadonlySet<string> = new Set(
   EVM_RPC_METHODS.filter((m) => m !== "eth_sendRawTransaction" && m !== "eth_chainId"),
 );
+
+/** The RPC of a network never comes from a page: only the user can enable one. */
+const chainNotEnabled = (chainId: string): ProviderError =>
+  unrecognizedChain(
+    `chain ${chainId} is not enabled in the wallet; enable the network in the wallet first`,
+  );
 
 const hexChainId = (network: string): string => `0x${(evmChainId(network) ?? 0).toString(16)}`;
 
@@ -187,6 +194,12 @@ export class Eip1193Handler {
       default:
         break;
     }
+    if (method === "eth_getLogs") {
+      const violation = logsFilterViolation(params);
+      if (violation !== undefined) {
+        throw limitExceeded(violation);
+      }
+    }
     if (READ_ONLY.has(method)) {
       return this.read(origin, method, params);
     }
@@ -224,7 +237,7 @@ export class Eip1193Handler {
     }
     const network = `eip155:${Number.parseInt(chainId, 16)}`;
     if (!connections.isEnabled(network)) {
-      throw unrecognizedChain(`chain ${chainId} is not enabled`);
+      throw chainNotEnabled(chainId);
     }
     const session = connections.session(origin);
     if (session === undefined) {
@@ -274,7 +287,7 @@ export class Eip1193Handler {
     }
     const network = `eip155:${Number.parseInt(chainId, 16)}`;
     if (!connections.isEnabled(network)) {
-      throw unrecognizedChain(`chain ${chainId} is not enabled`);
+      throw chainNotEnabled(chainId);
     }
     const session = connections.session(origin);
     if (session !== undefined && session.scopes[network] === undefined) {

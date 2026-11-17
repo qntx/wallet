@@ -37,6 +37,13 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - `@qntx/wallet-engine`: `backupPasswordStrength(password)` (zxcvbn, loaded on first use), and
   `backup.enable` refuses a guessable backup password with category `weak-password` before any
   kernel call.
+- dApps can read event logs: `eth_getLogs` is passed through by the EIP-1193 provider and the
+  gateway, bounded to one block by hash, a numbered range of at most 500 blocks or recent-block
+  tags, with at most 20 addresses and 20 alternatives per topic. An unbounded filter fails with
+  `-32005` in the provider and `400 invalid-request` at the gateway. Filter and subscription
+  methods stay unsupported; viem and ethers event watchers fall back to polling `eth_getLogs`.
+  `wallet_addEthereumChain` / `wallet_switchEthereumChain` now say that the network must be
+  enabled in the wallet.
 
 ### Changed
 

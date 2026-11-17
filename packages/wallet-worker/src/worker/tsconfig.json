@@ -6,5 +6,5 @@
     "lib": ["es2022", "webworker"],
     "types": []
   },
-  "include": ["worker.ts", "indexeddb.ts"]
+  "include": ["worker.ts", "browser-kernel.ts", "indexeddb.ts"]
 }

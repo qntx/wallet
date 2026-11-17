@@ -4,12 +4,13 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to upstream providers with failover. Private, never published. It holds provider and
 quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                          |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                         |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`          |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                   |
-| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build |
+| Route                            | Behavior                                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                                                                                   |
+| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                    |
+| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or recent-block tags; at most 20 addresses and 20 alternatives per topic. Anything else is `400 invalid-request` |
+| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                             |
+| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                           |
 
 Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
@@ -102,13 +103,22 @@ for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY          
 done
 ```
 
-(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional.) Deploys run from GitHub Actions →
-**Gateway → Run workflow** on `main` into the `production` environment; a push to `main` touching
-`apps/gateway/**`, `packages/wallet-engine/src/gateway/**` or `.../networks/**` redeploys staging
-automatically. GitHub setup: create environments `staging` and `production`, require reviewers on
-`production`, and put `CLOUDFLARE_API_TOKEN` in each environment's secrets — an account token
-with **Account › Workers Scripts › Edit** on this account and **Zone › Workers Routes › Edit** on
-`qntx.org` and `meowl.xyz` (custom domains are created and changed through the zone's Workers
-Routes permission). Bindings need no extra permission to deploy.
+(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional.)
+
+## Deployment pipeline
+
+`.github/workflows/gateway.yml` deploys only commits whose CI run passed:
+
+- **staging** follows `main`: each time the CI workflow succeeds on a push to `main`, that commit
+  is deployed and `scripts/smoke.ts` runs against it.
+- **production** is **Gateway → Run workflow** on `main`. It deploys the dispatched commit after
+  checking it has a passed CI run, and waits for the `production` environment's reviewer.
+
+Both environments accept deployments from `main` only. `.github/rulesets/apply.sh <reviewer>`
+creates them with those rules. Each needs its own `CLOUDFLARE_API_TOKEN` as an **environment**
+secret — an account token with **Account › Workers Scripts › Edit** on this account and
+**Zone › Workers Routes › Edit** on the environment's zone (`qntx.org` for staging, `meowl.xyz`
+for production; custom domains are created through the zone's Workers Routes permission). The
+workflow stays off until the repository variable `GATEWAY_DEPLOY` is `true`.
 
 Roll back with `bunx wrangler rollback --env production`.

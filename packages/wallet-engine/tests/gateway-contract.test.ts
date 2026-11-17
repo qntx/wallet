@@ -122,9 +122,12 @@ describe("rpc requests", () => {
   });
 
   it("evm allow-list: every listed method passes, signing and admin methods fail", () => {
-    for (const m of EVM_RPC_METHODS) {
+    // eth_getLogs is the one method with rules on its params (logs-filter.test.ts).
+    for (const m of EVM_RPC_METHODS.filter((method) => method !== "eth_getLogs")) {
       expect(ok(evmRpcRequest, call(m))).toBe(true);
     }
+    expect(ok(evmRpcRequest, call("eth_getLogs", 1, [{}]))).toBe(true);
+    expect(ok(evmRpcRequest, call("eth_getLogs"))).toBe(false);
     for (const m of [
       "eth_sign",
       "personal_sign",
@@ -133,7 +136,8 @@ describe("rpc requests", () => {
       "eth_sendTransaction",
       "eth_signTransaction",
       "eth_accounts",
-      "eth_getLogs",
+      "eth_newFilter",
+      "eth_subscribe",
       "admin_peers",
       "debug_traceTransaction",
       "txpool_content",
