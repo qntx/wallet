@@ -190,6 +190,8 @@ async function statusBackup(h: Harness, session?: string): Promise<ProtocolValue
   return field(status, "backup");
 }
 
+const zeroed = (bytes: Uint8Array): boolean => bytes.every((b) => b === 0);
+
 describe("backup.enable", () => {
   it("requires a valid verify factor", async () => {
     const h = createHarness();
@@ -837,6 +839,29 @@ describe("establishing restore and the envelope's backup key", () => {
     );
   };
 
+  /** A native harness whose authenticator records every PRF buffer it hands to the kernel. */
+  const captureHarness = (seed: number, captured: Uint8Array[]) => {
+    const answer = async () => {
+      await Promise.resolve();
+      const first = new Uint8Array(OWNER_PRF);
+      captured.push(first);
+      return {
+        credentialId: new Uint8Array([7, 7, 7, 7]),
+        first,
+        second: undefined,
+        userHandle: undefined,
+        synced: true,
+        userVerified: true,
+      };
+    };
+    return createHarness({
+      seed,
+      keystore: fakeKeystore().keystore,
+      passkey: { create: answer, get: answer },
+      noIdle: true,
+    });
+  };
+
   it("adopts it when a kernel passkey ceremony unwrapped the envelope", async () => {
     const { h: a } = nativeHarness(110);
     await a.settle();
@@ -987,6 +1012,72 @@ describe("establishing restore and the envelope's backup key", () => {
   it("leaves backup off when a password unwrapped it on the web", async () => {
     await expect(restoreOnWeb(backupPassword())).resolves.toBeNull();
   });
+
+  it("zeroes the ceremony's PRF output after backup.enable", async () => {
+    const captured: Uint8Array[] = [];
+    const a = captureHarness(140, captured);
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(created, "session");
+    ok(
+      await a.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }],
+        },
+        session,
+      ),
+    );
+    expect(captured).toHaveLength(1);
+    expect(captured.at(0)).toStrictEqual(new Uint8Array(32));
+  });
+
+  it("zeroes the ceremony's PRF output after backup.restore", async () => {
+    const aCaptured: Uint8Array[] = [];
+    const a = captureHarness(141, aCaptured);
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(created, "session");
+    ok(
+      await a.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }],
+        },
+        session,
+      ),
+    );
+    const envelope = strField(ok(await a.call("backup.update", null, session)), "envelope");
+    const bCaptured: Uint8Array[] = [];
+    const b = captureHarness(142, bCaptured);
+    ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: {
+          kind: "passkey",
+          ceremony: "kernel",
+          rpId: RP.rpId,
+          backupSalt: BACKUP_SALT,
+        },
+        factor: { kind: "device" },
+      }),
+    );
+    expect(bCaptured).toHaveLength(1);
+    expect(bCaptured.at(0)).toStrictEqual(new Uint8Array(32));
+    expect(aCaptured.at(0)).toStrictEqual(new Uint8Array(32));
+  });
 });
 
 describe("backup payload parsing", () => {
@@ -1046,5 +1137,155 @@ describe("backup payload parsing", () => {
 
   it("rejects a payload ending in an entry tag with half its header", async () => {
     await expect(restoreCode(await withPayloadTail([0x01, 0x01]))).resolves.toBe("integrity");
+  });
+});
+
+describe("backup factor secrets", () => {
+  it("zeroes the caller's password and PRF buffers after a successful enable", async () => {
+    const h = createHarness({ seed: 130 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const password = utf8ToBytes("a valid backup password!");
+    const prf = new Uint8Array(32).fill(0x33);
+    ok(
+      await h.call(
+        "backup.enable",
+        {
+          verify: verifyPasskey(),
+          factors: [
+            { kind: "password", password },
+            { kind: "passkey", ceremony: "host", credentialId: CREDENTIAL_ID, prfBackup: prf },
+          ],
+        },
+        session,
+      ),
+    );
+    expect(zeroed(password)).toBe(true);
+    expect(zeroed(prf)).toBe(true);
+  });
+
+  it("zeroes every factor buffer when a factor fails the enable", async () => {
+    const h = createHarness({ seed: 131 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const good = utf8ToBytes("a valid backup password!");
+    const short = utf8ToBytes("short");
+    const prf = new Uint8Array(32).fill(0x44);
+    expect(
+      errCode(
+        await h.call(
+          "backup.enable",
+          {
+            verify: verifyPasskey(),
+            factors: [
+              { kind: "password", password: good },
+              { kind: "password", password: short },
+              { kind: "passkey", ceremony: "host", credentialId: CREDENTIAL_ID, prfBackup: prf },
+            ],
+          },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    expect(zeroed(good)).toBe(true);
+    expect(zeroed(short)).toBe(true);
+    expect(zeroed(prf)).toBe(true);
+  });
+
+  it("zeroes the caller's password buffer after a successful restore", async () => {
+    const a = createHarness({ seed: 132 });
+    await a.settle();
+    const { session: aSession } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, aSession, [backupPassword()]);
+    const b = createHarness({ seed: 133 });
+    await b.settle();
+    const password = new Uint8Array(PASSWORD);
+    ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: { kind: "password", password },
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(zeroed(password)).toBe(true);
+  });
+
+  it("zeroes the caller's PRF buffer after a successful restore", async () => {
+    const a = createHarness({ seed: 134 });
+    await a.settle();
+    const { session: aSession } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, aSession, [backupPasskeyF()]);
+    const b = createHarness({ seed: 135 });
+    await b.settle();
+    const prf = new Uint8Array(PRF_BACKUP);
+    ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: {
+          kind: "passkey",
+          ceremony: "host",
+          credentialId: CREDENTIAL_ID,
+          prfBackup: prf,
+        },
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(zeroed(prf)).toBe(true);
+  });
+
+  it("zeroes the password buffer when a wrong password fails the restore", async () => {
+    const a = createHarness({ seed: 136 });
+    await a.settle();
+    const { session: aSession } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, aSession, [backupPassword()]);
+    const b = createHarness({ seed: 137 });
+    await b.settle();
+    const wrong = utf8ToBytes("wrong backup password");
+    expect(
+      errCode(
+        await b.call("backup.restore", {
+          envelope,
+          backupFactor: { kind: "password", password: wrong },
+          factor: vaultPasswordFactor(),
+        }),
+      ),
+    ).toBe("wrong-password");
+    expect(zeroed(wrong)).toBe(true);
+  });
+
+  it("zeroes the factor buffers when the envelope cannot be parsed", async () => {
+    const h = createHarness({ seed: 138 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const password = utf8ToBytes("a valid backup password!");
+    const prf = new Uint8Array(32).fill(0x55);
+    expect(
+      errCode(
+        await h.call(
+          "backup.restore",
+          { envelope: "not json", backupFactor: { kind: "password", password } },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    expect(zeroed(password)).toBe(true);
+    expect(
+      errCode(
+        await h.call(
+          "backup.restore",
+          {
+            envelope: "not json",
+            backupFactor: {
+              kind: "passkey",
+              ceremony: "host",
+              credentialId: CREDENTIAL_ID,
+              prfBackup: prf,
+            },
+          },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    expect(zeroed(prf)).toBe(true);
   });
 });
