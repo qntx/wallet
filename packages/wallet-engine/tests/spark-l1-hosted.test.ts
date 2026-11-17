@@ -21,6 +21,7 @@ import { spark } from "@qntx/wallet/spark";
 import { createWalletEngine } from "../src/engine.ts";
 import { SPARK_L1_NETWORK } from "../src/spark/l1.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import { approval } from "./approval.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const ESPLORA = process.env["WALLET_E2E_ESPLORA"];
@@ -131,7 +132,7 @@ describe.skipIf(!HOSTED || esplora === "")("hosted spark exit", () => {
         maxFeeSats: 2000,
       });
       expect(exit.display).toMatchObject({ family: "spark", kind: "exit" });
-      const result = await engine.requests.approve(exit.id, "spark-exit", VERIFY);
+      const result = await engine.requests.approve(exit.id, "spark-exit", approval(exit, VERIFY));
       expect(result.kind).toBe("withdraw");
       await wallet.destroy();
     },

@@ -195,6 +195,7 @@ export function unlockedStatus(): StatusPayload {
     nostr: { keys: [NOSTR_KEY] },
     importedKeys: [],
     backup: null,
+    blindSigning: false,
   };
 }
 

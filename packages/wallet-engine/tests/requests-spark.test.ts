@@ -16,6 +16,7 @@ import type { PayInput } from "../src/requests/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
 
@@ -158,7 +159,7 @@ describe("Spark requests", () => {
         description: "coffee",
       },
     });
-    const result = await w.requests.approve(request.id, "pay", VERIFY);
+    const result = await w.requests.approve(request.id, "pay", approval(request, VERIFY));
     expect(result.kind).toBe("lightning");
     expect(w.calls).toStrictEqual([
       {
@@ -186,7 +187,7 @@ describe("Spark requests", () => {
       amountSats: 42,
       receiver: address,
     });
-    await w.requests.approve(request.id, "pay", VERIFY);
+    await w.requests.approve(request.id, "pay", approval(request, VERIFY));
     expect(w.calls[0]).toStrictEqual({
       method: "send",
       params: { receiver: address, amountSats: 42, verify: VERIFY },
@@ -203,7 +204,9 @@ describe("Spark requests", () => {
       maxFeeSats: 5,
     });
     w.advance(60_001);
-    await expect(w.requests.approve(request.id, "pay", VERIFY)).rejects.toThrow("expired");
+    await expect(w.requests.approve(request.id, "pay", approval(request, VERIFY))).rejects.toThrow(
+      "expired",
+    );
     expect(w.requests.getState().requests[request.id]).toMatchObject({ stage: "failed" });
     expect(w.calls).toStrictEqual([]);
   });
@@ -220,7 +223,7 @@ describe("Spark requests", () => {
     });
     expect(w.fetchCalls).toHaveLength(1);
     expect(request.display).toMatchObject({ amountSats: 50, description: "pay Alice" });
-    await w.requests.approve(request.id, "pay", VERIFY);
+    await w.requests.approve(request.id, "pay", approval(request, VERIFY));
     expect(w.fetchCalls).toHaveLength(1);
     expect(w.calls.map((c) => c.method)).toStrictEqual(["payInvoice"]);
   });
@@ -272,7 +275,7 @@ describe("Spark requests", () => {
     };
     const request = await w.requests.prepare({ method: "zap", account: REF, zap, maxFeeSats: 5 });
     expect(request.display).toMatchObject({ kind: "lightning", amountSats: 21, description: "gm" });
-    await w.requests.approve(request.id, "zap", VERIFY);
+    await w.requests.approve(request.id, "zap", approval(request, VERIFY));
     expect(w.calls[0]).toMatchObject({
       method: "payInvoice",
       params: { invoice: LIGHTNING_INVOICE, maxFeeSats: 5, note: { kind: "zap" } },
@@ -290,7 +293,9 @@ describe("Spark requests", () => {
     });
     w.requests.lock();
     expect(w.requests.getState().requests[request.id]?.stage).toBe("invalidated");
-    await expect(w.requests.approve(request.id, "pay", VERIFY)).rejects.toThrow("invalidated");
+    await expect(w.requests.approve(request.id, "pay", approval(request, VERIFY))).rejects.toThrow(
+      "invalidated",
+    );
     expect(w.calls).toStrictEqual([]);
   });
 
@@ -306,12 +311,14 @@ describe("Spark requests", () => {
       });
     w.failWith(new Error("route not found"));
     const a = await prepare();
-    await expect(w.requests.approve(a.id, "pay", VERIFY)).rejects.toThrow("route not found");
+    await expect(w.requests.approve(a.id, "pay", approval(a, VERIFY))).rejects.toThrow(
+      "route not found",
+    );
     expect(w.requests.getState().requests[a.id]?.stage).toBe("failed");
 
     w.failWith(new WalletError("cancelled", "user cancelled"));
     const b = await prepare();
-    await expect(w.requests.approve(b.id, "pay", VERIFY)).rejects.toThrow("cancelled");
+    await expect(w.requests.approve(b.id, "pay", approval(b, VERIFY))).rejects.toThrow("cancelled");
     expect(w.requests.getState().requests[b.id]?.stage).toBe("rejected");
   });
 
@@ -324,7 +331,9 @@ describe("Spark requests", () => {
       option: lightningOption(NOW + 120_000),
       maxFeeSats: 5,
     });
-    await expect(w.requests.approve(request.id, "zap", VERIFY)).rejects.toThrow("not zap");
+    await expect(w.requests.approve(request.id, "zap", approval(request, VERIFY))).rejects.toThrow(
+      "not zap",
+    );
     expect(w.calls).toStrictEqual([]);
   });
 

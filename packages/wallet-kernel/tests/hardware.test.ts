@@ -479,8 +479,121 @@ describe("hardware factor: chain.sign", () => {
     );
     expect(seeds.length - before).toBe(1);
     expect(prompts(fake.calls, "open")).toStrictEqual([
-      { title: "Confirm signature", description: "Sign a request from an app" },
+      { title: "Confirm signature", description: "Message:\nhello" },
     ]);
+  });
+});
+
+describe("blind signing policy", () => {
+  const blindRequest = (walletId: string) =>
+    normalizeEvm({
+      kind: "evm.transaction",
+      network: "eip155:1",
+      account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+      tx: {
+        type: "eip1559",
+        chainId: 1,
+        nonce: 0,
+        gas: "0x5208",
+        value: "0x1",
+        data: "0xdeadbeef",
+        to: "0x00000000000000000000000000000000deadbeef",
+        maxFeePerGas: "0x59682f00",
+        maxPriorityFeePerGas: "0x1",
+        accessList: [],
+      },
+    });
+  const textRequest = (walletId: string) =>
+    normalizeEvm({
+      kind: "evm.personal-message",
+      network: "eip155:1",
+      account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+      message: utf8ToBytes("hello"),
+    });
+  const blindSigning = async (h: Harness): Promise<ProtocolValue> =>
+    field(ok(await h.call("status")), "blindSigning");
+  const signResult = async (h: Harness, session: string, request: unknown): Promise<string> =>
+    errCode(await h.call("chain.sign", { request, verify: HARDWARE }, session)) ?? "signed";
+
+  it("is off on a new vault and refuses a blind request before any prompt", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    const { session, walletId } = await importHardware(h);
+    await expect(blindSigning(h)).resolves.toBe(false);
+    const opened = prompts(fake.calls, "open").length;
+    const response = await h.call(
+      "chain.sign",
+      { request: blindRequest(walletId), verify: HARDWARE },
+      session,
+    );
+    expect(errCode(response)).toBe("blind-signing-disabled");
+    expect(prompts(fake.calls, "open")).toHaveLength(opened);
+  });
+
+  it("signs content it can show while blind signing is off", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    const { session, walletId } = await importHardware(h);
+    await expect(signResult(h, session, textRequest(walletId))).resolves.toBe("signed");
+  });
+
+  it("turns on and off only after a verification, and survives a restart", async () => {
+    const fake = fakeKeystore();
+    const store = createMemoryStore();
+    const h = createHarness({ keystore: fake.keystore, store });
+    const { session, walletId } = await importHardware(h);
+    const sign = async (on: Harness, at: string) =>
+      on.call("chain.sign", { request: blindRequest(walletId), verify: HARDWARE }, at);
+
+    fake.fail("cancelled");
+    expect(
+      errCode(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session)),
+    ).toBe("cancelled");
+    await expect(blindSigning(h)).resolves.toBe(false);
+
+    ok(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session));
+    expect(prompts(fake.calls, "open").at(-1)).toStrictEqual(corePrompt("en", "blind-signing"));
+    await expect(blindSigning(h)).resolves.toBe(true);
+    ok(await sign(h, session));
+
+    const before = prompts(fake.calls, "open").length;
+    ok(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session));
+    expect(prompts(fake.calls, "open")).toHaveLength(before);
+
+    const restarted = createHarness({ keystore: fake.keystore, store });
+    await restarted.settle();
+    const again = str(ok(await restarted.call("vault.unlock", { factor: DEVICE })), "session");
+    await expect(blindSigning(restarted)).resolves.toBe(true);
+    ok(await restarted.call("vault.setBlindSigning", { enabled: false, verify: HARDWARE }, again));
+    await expect(blindSigning(restarted)).resolves.toBe(false);
+    expect(errCode(await sign(restarted, again))).toBe("blind-signing-disabled");
+  });
+
+  it("a policy row that was not sealed by this vault is not consent", async () => {
+    const fake = fakeKeystore();
+    const store = createMemoryStore();
+    const h = createHarness({ keystore: fake.keystore, store });
+    const { session, walletId } = await importHardware(h);
+    await store.commit([
+      {
+        op: "put-record",
+        record: {
+          kind: "policy",
+          id: "blind-signing",
+          header: JSON.stringify({ createdAt: 0 }),
+          sealed: new Uint8Array(64),
+        },
+      },
+    ]);
+    const response = await h.call(
+      "chain.sign",
+      { request: blindRequest(walletId), verify: HARDWARE },
+      session,
+    );
+    expect(errCode(response)).toBe("integrity");
+    expect(prompts(fake.calls, "open").some((p) => p.title === "Confirm contract call")).toBe(
+      false,
+    );
   });
 });
 

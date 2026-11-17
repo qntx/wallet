@@ -13,6 +13,7 @@ import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { ZeroExSwapQuote } from "../src/swaps/index.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const AH_CODE = readFileSync(
@@ -375,7 +376,7 @@ describe("evm-swap", () => {
     const w = world({ allowance: 10000000n });
     await w.start();
     const request = await prepareSwap(w);
-    await w.requests.approve(request.id, "evm-swap", VERIFY);
+    await w.requests.approve(request.id, "evm-swap", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     expect(tx.to.toLowerCase()).toBe(AH.toLowerCase());
     expect(tx.data).toBe(EXEC_DATA);
@@ -404,7 +405,7 @@ describe("evm-swap", () => {
     });
     await w.start();
     const request = await prepareSwap(w, nativeQuote());
-    await w.requests.approve(request.id, "evm-swap", VERIFY);
+    await w.requests.approve(request.id, "evm-swap", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     expect(tx.to.toLowerCase()).toBe(AH.toLowerCase());
     expect(tx.data).toBe(NATIVE_EXEC);
@@ -435,7 +436,7 @@ describe("evm-swap", () => {
     const w = world({ allowance: 10000000n, prevFail: true });
     await w.start();
     const request = await prepareSwap(w);
-    await w.requests.approve(request.id, "evm-swap", VERIFY);
+    await w.requests.approve(request.id, "evm-swap", approval(request, VERIFY));
     expect(w.signedRequests).toHaveLength(1);
   });
 
@@ -467,7 +468,7 @@ describe("evm-swap allowance routing", () => {
     const w = world({ allowance: 0n, code: OURS });
     await w.start();
     const request = await prepareSwap(w);
-    await w.requests.approve(request.id, "evm-swap", VERIFY);
+    await w.requests.approve(request.id, "evm-swap", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     /* The batch is a self-call whose data is the encoded [approve(AllowanceHolder), exec]. */
     expect(tx.to.toLowerCase()).toBe(ADDR.toLowerCase());
@@ -478,7 +479,7 @@ describe("evm-swap allowance routing", () => {
     const w = world({ allowance: 1n, code: OURS });
     await w.start();
     const request = await prepareSwap(w);
-    await w.requests.approve(request.id, "evm-swap", VERIFY);
+    await w.requests.approve(request.id, "evm-swap", approval(request, VERIFY));
     expect(w.signedRequests).toHaveLength(1);
   });
 
@@ -523,7 +524,7 @@ describe("evm-approve", () => {
     const w = world({ allowance: 0n });
     await w.start();
     const request = await prepareApprove(w);
-    await w.requests.approve(request.id, "evm-approve", VERIFY);
+    await w.requests.approve(request.id, "evm-approve", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     expect(tx.to.toLowerCase()).toBe(USDC.toLowerCase());
     expect(tx.data.startsWith("0x095ea7b3")).toBe(true);

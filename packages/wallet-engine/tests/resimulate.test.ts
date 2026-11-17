@@ -3,9 +3,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 
 import {
+  AcknowledgementRequiredError,
   RESIMULATE_AFTER_MS,
   RequestController,
   SimulationChangedError,
+  requiredAcknowledgement,
 } from "../src/requests/controller.ts";
 import { simulationChanged } from "../src/requests/simulation.ts";
 import type { AssetChange, SimulationOutcome } from "../src/requests/simulation.ts";
@@ -18,6 +20,7 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
@@ -289,7 +292,7 @@ describe("approval-time re-simulation", () => {
     const request = await f.requests.prepare(PARAMS);
     expect(request.simulatedAt).toBe(START);
     f.advance(RESIMULATE_AFTER_MS - 1);
-    await f.requests.approve(request.id, "send", VERIFY);
+    await f.requests.approve(request.id, "send", approval(request, VERIFY));
     expect(f.resimCalls).toHaveLength(0);
     expect(f.signed).toHaveLength(1);
   });
@@ -299,7 +302,7 @@ describe("approval-time re-simulation", () => {
     await f.requests.init();
     const request = await f.requests.prepare(PARAMS);
     f.advance(RESIMULATE_AFTER_MS);
-    await f.requests.approve(request.id, "send", VERIFY);
+    await f.requests.approve(request.id, "send", approval(request, VERIFY));
     expect(f.resimCalls).toHaveLength(1);
     expect(f.signed).toHaveLength(1);
     expect(f.requests.getState().requests[request.id]).toMatchObject({
@@ -314,9 +317,9 @@ describe("approval-time re-simulation", () => {
     await f.requests.init();
     const request = await f.requests.prepare(PARAMS);
     f.advance(RESIMULATE_AFTER_MS);
-    await expect(f.requests.approve(request.id, "send", VERIFY)).rejects.toBeInstanceOf(
-      SimulationChangedError,
-    );
+    await expect(
+      f.requests.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toBeInstanceOf(SimulationChangedError);
     const pending = f.requests.getState().requests[request.id];
     expect(pending).toMatchObject({
       stage: "awaiting-approval",
@@ -327,7 +330,13 @@ describe("approval-time re-simulation", () => {
     expect(pending?.risk).toContainEqual({ code: "simulation-mismatch", level: "danger" });
     expect(f.signed).toHaveLength(0);
 
-    const tx = await f.requests.approve(request.id, "send", VERIFY);
+    // What was confirmed before the re-simulation no longer covers the request.
+    await expect(
+      f.requests.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toBeInstanceOf(AcknowledgementRequiredError);
+    expect(f.signed).toHaveLength(0);
+
+    const tx = await f.requests.approve(request.id, "send", approval(pending, VERIFY));
     expect(f.resimCalls).toHaveLength(1);
     expect(f.signed).toHaveLength(1);
     expect(tx.state).toBe("submitted");
@@ -340,9 +349,9 @@ describe("approval-time re-simulation", () => {
     await f.requests.init();
     const request = await f.requests.prepare(PARAMS);
     f.advance(RESIMULATE_AFTER_MS);
-    await expect(f.requests.approve(request.id, "send", VERIFY)).rejects.toBeInstanceOf(
-      SimulationChangedError,
-    );
+    await expect(
+      f.requests.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toBeInstanceOf(SimulationChangedError);
     expect(f.requests.getState().requests[request.id]).toMatchObject({
       stage: "awaiting-approval",
       simulation: { status: "unavailable", error: "node down" },
@@ -361,7 +370,9 @@ describe("approval-time re-simulation", () => {
     f.duringResimulate(() => {
       f.requests.lock();
     });
-    await expect(f.requests.approve(request.id, "send", VERIFY)).rejects.toThrow("invalidated");
+    await expect(f.requests.approve(request.id, "send", approval(request, VERIFY))).rejects.toThrow(
+      "invalidated",
+    );
     expect(f.requests.getState().requests[request.id]?.stage).toBe("invalidated");
     expect(f.signed).toHaveLength(0);
   });
@@ -372,7 +383,7 @@ describe("approval-time re-simulation", () => {
     const request = await f.requests.prepare({ method: "speed-up", txId: "tx-old" });
     expect(request.simulation).toBeUndefined();
     f.advance(RESIMULATE_AFTER_MS);
-    await f.requests.approve(request.id, "speed-up", VERIFY);
+    await f.requests.approve(request.id, "speed-up", approval(request, VERIFY));
     expect(f.resimCalls).toHaveLength(0);
     expect(f.signed).toHaveLength(1);
   });
@@ -397,7 +408,7 @@ describe("solana-sign re-simulation", () => {
     const message = new Uint8Array([1, 2, 3]);
     const request = await f.requests.prepare(sign([message]));
     f.advance(RESIMULATE_AFTER_MS);
-    const result = await f.requests.approve(request.id, "solana-sign", VERIFY);
+    const result = await f.requests.approve(request.id, "solana-sign", approval(request, VERIFY));
     expect(f.simulateCalls).toStrictEqual([message, message]);
     expect(f.signCalls).toHaveLength(1);
     expect(result).toMatchObject({ kind: "solana.transactions" });
@@ -409,8 +420,68 @@ describe("solana-sign re-simulation", () => {
     const request = await f.requests.prepare(sign([new Uint8Array([1]), new Uint8Array([2])]));
     expect(request.simulation).toStrictEqual({ status: "unavailable", error: "batch" });
     f.advance(RESIMULATE_AFTER_MS);
-    await f.requests.approve(request.id, "solana-sign", VERIFY);
+    await f.requests.approve(request.id, "solana-sign", approval(request, VERIFY));
     expect(f.simulateCalls).toHaveLength(0);
     expect(f.signCalls).toHaveLength(1);
+  });
+});
+
+describe("acknowledgement at approval", () => {
+  const REVERTED: SimulationOutcome = { status: "reverted", error: "boom" };
+  const UNAVAILABLE: SimulationOutcome = { status: "unavailable", error: "node down" };
+
+  it("a request with nothing flagged needs no acknowledgement", async () => {
+    const f = rig(succeed("-100"));
+    await f.requests.init();
+    const request = await f.requests.prepare(PARAMS);
+    expect(requiredAcknowledgement(request)).toStrictEqual({ risk: [], checks: [] });
+    await f.requests.approve(request.id, "send", { verify: VERIFY });
+    expect(f.signed).toHaveLength(1);
+  });
+
+  it("refuses a danger finding that was not acknowledged, before anything is signed", async () => {
+    const f = rig(REVERTED);
+    await f.requests.init();
+    const request = await f.requests.prepare(PARAMS);
+    const required = requiredAcknowledgement(request);
+    expect(required.risk).toStrictEqual(["simulation-reverted"]);
+
+    const refused = f.requests.approve(request.id, "send", { verify: VERIFY });
+    await expect(refused).rejects.toBeInstanceOf(AcknowledgementRequiredError);
+    await expect(refused).rejects.toMatchObject({ required });
+    expect(f.signed).toHaveLength(0);
+    expect(f.requests.getState().requests[request.id]?.stage).toBe("awaiting-approval");
+
+    await f.requests.approve(request.id, "send", { verify: VERIFY, acknowledged: required });
+    expect(f.signed).toHaveLength(1);
+  });
+
+  it("refuses a recorded check that was not acknowledged", async () => {
+    const f = rig(UNAVAILABLE);
+    await f.requests.init();
+    const request = await f.requests.prepare(PARAMS);
+    expect(requiredAcknowledgement(request).checks).toStrictEqual(["simulation-unavailable"]);
+    await expect(
+      f.requests.approve(request.id, "send", {
+        verify: VERIFY,
+        acknowledged: { risk: [], checks: [] },
+      }),
+    ).rejects.toBeInstanceOf(AcknowledgementRequiredError);
+    expect(f.signed).toHaveLength(0);
+  });
+
+  it.each([
+    ["a missing code", { risk: [], checks: [] }],
+    ["another code", { risk: ["address-poisoning"], checks: [] }],
+    ["an extra code", { risk: ["simulation-reverted", "address-poisoning"], checks: [] }],
+    ["an extra check", { risk: ["simulation-reverted"], checks: ["nonce-mismatch"] }],
+  ] as const)("accepts only the exact findings, not %s", async (_name, acknowledged) => {
+    const f = rig(REVERTED);
+    await f.requests.init();
+    const request = await f.requests.prepare(PARAMS);
+    await expect(
+      f.requests.approve(request.id, "send", { verify: VERIFY, acknowledged }),
+    ).rejects.toBeInstanceOf(AcknowledgementRequiredError);
+    expect(f.signed).toHaveLength(0);
   });
 });

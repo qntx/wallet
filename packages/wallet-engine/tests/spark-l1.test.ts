@@ -21,6 +21,7 @@ import type {
   SparkDepositTag,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, simulateSolanaStub, tokensStub, realTimer } from "./send-helpers.ts";
 
 const MAINNET_L1 = "bip122:000000000019d6689c085ae165831e93";
@@ -161,7 +162,7 @@ describe("spark deposit request", () => {
         tag: { walletId: "w", groupIndex: 1, network: "mainnet" },
       },
     ]);
-    const tx = await r.requests.approve(request.id, "spark-deposit", VERIFY);
+    const tx = await r.requests.approve(request.id, "spark-deposit", approval(request, VERIFY));
     expect(tx.sparkDeposit).toStrictEqual({ walletId: "w", groupIndex: 1, network: "mainnet" });
   });
 
@@ -215,7 +216,7 @@ describe("spark exit request", () => {
     });
     expect(request.risk).toStrictEqual([]);
     expect(request.checks).toStrictEqual([]);
-    await r.requests.approve(request.id, "spark-exit", VERIFY);
+    await r.requests.approve(request.id, "spark-exit", approval(request, VERIFY));
     expect(r.calls).toContain(`withdraw ${RECEIVE_ADDRESS}`);
   });
 

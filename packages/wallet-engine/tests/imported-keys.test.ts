@@ -9,6 +9,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import {
   bookDeps,
   fakeSignedEvm,
@@ -159,7 +160,11 @@ describe("imported keys in the request pipeline", () => {
       fee: "normal",
     });
     expect(pending.id).not.toBe("");
-    await w.requests.approve(pending.id, "send", { kind: "password", password: "pw" });
+    await w.requests.approve(
+      pending.id,
+      "send",
+      approval(pending, { kind: "password", password: "pw" }),
+    );
     const signed = w.signedRequests.at(-1) as { account?: { kind: string; keyId?: string } };
     expect(signed.account?.kind).toBe("imported");
     expect(signed.account?.keyId).toBe(KEY.keyId);
@@ -299,7 +304,7 @@ describe("replacements of imported-key transactions", () => {
       amount: 1n,
       fee: "normal",
     });
-    return w.requests.approve(pending.id, "send", verify);
+    return w.requests.approve(pending.id, "send", approval(pending, verify));
   };
 
   it("persists the signer ref in the build record", async () => {
@@ -314,7 +319,7 @@ describe("replacements of imported-key transactions", () => {
     await w.start();
     const tx = await sendImported(w);
     const pending = await w.requests.prepare({ method: "speed-up", txId: tx.id });
-    await w.requests.approve(pending.id, "speed-up", verify);
+    await w.requests.approve(pending.id, "speed-up", approval(pending, verify));
     const signed = w.signedRequests.at(-1) as { account?: { kind: string; keyId?: string } };
     expect(signed.account?.kind).toBe("imported");
     expect(signed.account?.keyId).toBe(KEY.keyId);
@@ -325,7 +330,7 @@ describe("replacements of imported-key transactions", () => {
     await w.start();
     const tx = await sendImported(w);
     const pending = await w.requests.prepare({ method: "cancel", txId: tx.id });
-    await w.requests.approve(pending.id, "cancel", verify);
+    await w.requests.approve(pending.id, "cancel", approval(pending, verify));
     const signed = w.signedRequests.at(-1) as { account?: { kind: string; keyId?: string } };
     expect(signed.account?.kind).toBe("imported");
     expect(signed.account?.keyId).toBe(KEY.keyId);
@@ -348,10 +353,10 @@ describe("replacements of imported-key transactions", () => {
       amount: 1n,
       fee: "normal",
     });
-    const tx = await w.requests.approve(pending.id, "send", verify);
+    const tx = await w.requests.approve(pending.id, "send", approval(pending, verify));
     expect(tx.evm?.account).toStrictEqual(hdRef);
     const bumped = await w.requests.prepare({ method: "speed-up", txId: tx.id });
-    await w.requests.approve(bumped.id, "speed-up", verify);
+    await w.requests.approve(bumped.id, "speed-up", approval(bumped, verify));
     const signed = w.signedRequests.at(-1) as { account?: { kind: string; walletId?: string } };
     expect(signed.account?.kind).toBe("hd");
     expect(signed.account?.walletId).toBe("w");

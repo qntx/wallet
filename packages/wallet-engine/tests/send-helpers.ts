@@ -12,6 +12,7 @@ import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { BitcoinRoute } from "../src/transactions/bitcoin.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import type { RouteContext, SendParams, TrackedTransaction } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 
 const isSparkController = (_value: unknown): _value is SparkController => true;
 
@@ -110,7 +111,7 @@ export const send = async (
   const { verify, ...rest } = params;
   const requests = await requestsFor(transactions);
   const request = await requests.prepare({ method: "send", ...rest });
-  return requests.approve(request.id, "send", verify);
+  return requests.approve(request.id, "send", approval(request, verify));
 };
 
 /** Speed up or cancel a transaction through the pipeline. */
@@ -122,7 +123,7 @@ export const replaceVia = async (
 ): Promise<TrackedTransaction> => {
   const requests = await requestsFor(transactions);
   const request = await requests.prepare({ method: mode, txId });
-  return requests.approve(request.id, mode, verify);
+  return requests.approve(request.id, mode, approval(request, verify));
 };
 
 /** CPFP a bitcoin transaction through the pipeline. */
@@ -134,7 +135,7 @@ export const cpfpVia = async (
 ): Promise<TrackedTransaction> => {
   const requests = await requestsFor(transactions);
   const request = await requests.prepare({ method: "cpfp", txId, feeRate });
-  return requests.approve(request.id, "cpfp", verify);
+  return requests.approve(request.id, "cpfp", approval(request, verify));
 };
 
 /** Route-level send for tests that drive a bitcoin route directly. */

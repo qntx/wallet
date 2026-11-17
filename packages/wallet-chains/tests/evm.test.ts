@@ -7,7 +7,7 @@ import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import * as AbiFunction from "ox/AbiFunction";
 import { privateKeyToAccount } from "viem/accounts";
-import { keccak256 } from "viem/utils";
+import { getContractAddress, keccak256 } from "viem/utils";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -343,6 +343,59 @@ describe("verifiability + decode", () => {
     expect(
       decodeEvm({ ...noTo, tx: { ...noTo.tx, to: undefined } } as never, SIGNER).verifiability,
     ).toBe("opaque");
+  });
+
+  it("reports the native value sent along with calldata", () => {
+    const tenEth = "0x8ac7230489e80000";
+    const callee = txReq({ type: "eip1559" }).tx.to;
+    const value = { asset: EVM_NATIVE_ASSET, amount: "10000000000000000000" };
+    const unknown = decodeEvm(
+      txReq({ type: "eip1559", data: "0xdeadbeef", value: tenEth }) as never,
+      SIGNER,
+    );
+    expect(unknown).toMatchObject({
+      verifiability: "opaque",
+      contract: { address: callee, created: false },
+      outflows: [{ to: callee, amount: value, verified: true }],
+    });
+    const payableApprove = decodeEvm(
+      txReq({ type: "eip1559", data: approve, value: tenEth }) as never,
+      SIGNER,
+    );
+    expect(payableApprove.outflows).toMatchObject([{ to: callee, amount: value }]);
+    expect(payableApprove.approvals).toHaveLength(1);
+    const withoutValue = decodeEvm(txReq({ type: "eip1559", data: "0xdeadbeef" }) as never, SIGNER);
+    expect(withoutValue.outflows).toStrictEqual([]);
+    expect(
+      decodeEvm(txReq({ type: "eip1559", value: tenEth }) as never, SIGNER).contract,
+    ).toBeUndefined();
+  });
+
+  it("sends a creation's value to the address it deploys", () => {
+    const base = txReq({ type: "eip1559", data: "0x6000", value: "0x1" });
+    const creation = { ...base, tx: { ...base.tx, to: undefined, nonce: 7 } } as never;
+    const deployed = getContractAddress({ from: SIGNER, nonce: 7n });
+    expect(decodeEvm(creation, SIGNER)).toMatchObject({
+      verifiability: "opaque",
+      contract: { address: deployed, created: true },
+      outflows: [{ to: deployed, amount: { amount: "1" } }],
+    });
+  });
+
+  it("reports the value of a payable call inside a batch", () => {
+    const target = "0x0000000000000000000000000000000000C0FFEE";
+    const batch = encodeBatchExecute([{ to: target, value: 5n, data: "0x12345678" }]);
+    const intent = decodeEvm(
+      txReq({ type: "eip1559", to: SIGNER, value: "0x0", data: batch }) as never,
+      SIGNER,
+    );
+    expect(intent.contract).toBeUndefined();
+    expect(intent).toMatchObject({
+      summary: "batch",
+      verifiability: "opaque",
+      outflows: [{ to: target, amount: { amount: "5" } }],
+      calls: [{ contract: { address: target, created: false } }],
+    });
   });
 
   it("eip7702 → authorization intent with delegation; batch → calls and weakest verifiability", () => {

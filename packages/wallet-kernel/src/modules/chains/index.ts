@@ -9,6 +9,7 @@ import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey } from "@scure/bip32";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
+import { isBlindIntent } from "@qntx/wallet-chains";
 import { BITCOIN_NETWORKS, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
@@ -27,11 +28,13 @@ import { promptLocale } from "../../prompts.ts";
 import type { Secret } from "../../secret/secret.ts";
 import { wipe } from "../../secret/secret.ts";
 import { parseKeyHeader } from "../../vault/headers.ts";
+import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
 import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
 import { chainPrompt } from "./prompt.ts";
+import type { PromptIntent } from "./prompt.ts";
 import type { ExecuteResult } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
 import { executeSolana } from "./solana.ts";
@@ -149,6 +152,17 @@ const walletAccounts = async (
   return account;
 };
 
+/** A blind request is refused before any prompt unless the vault's owner allowed blind signing. */
+const assertSignable = (
+  ctx: Parameters<Handler<"chain.sign">>[0],
+  dek: Secret,
+  intent: PromptIntent,
+): void => {
+  if (isBlindIntent(intent) && !policyEnabled(ctx.image, dek, BLIND_SIGNING)) {
+    throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
+  }
+};
+
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   const { dek } = ctx.session.require(session);
   const { request, verify } = params;
@@ -207,6 +221,7 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   if (!("prompt" in prepared)) {
     throw new KernelError("integrity", "unreachable: prepare pass signed");
   }
+  assertSignable(ctx, dek, prepared.prompt);
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
@@ -277,6 +292,7 @@ const chainSignImported = async (
   if (!("prompt" in prepared)) {
     throw new KernelError("integrity", "unreachable: prepare pass signed");
   }
+  assertSignable(ctx, dek, prepared.prompt);
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );

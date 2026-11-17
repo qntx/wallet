@@ -16,6 +16,7 @@ import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { JupiterSwapQuote } from "../src/swaps/index.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { AccountRef } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const logger = { warn: () => undefined };
@@ -327,7 +328,7 @@ describe("solana-swap through requests.prepare", () => {
     const pending = await prepare(w, solQuote());
     const display = pending.display as { summary?: string; minimumReceived?: unknown };
     expect(display.summary).toBe("swap");
-    const approved = await w.requests.approve(pending.id, "solana-swap", VERIFY);
+    const approved = await w.requests.approve(pending.id, "solana-swap", approval(pending, VERIFY));
     expect(approved.state).toBe("submitted");
     const request = w.signed[0] as Extract<SignRequest, { kind: "solana.transaction" }>;
     expect(request.lookupTables?.length).toBe(4);

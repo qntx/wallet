@@ -34,6 +34,7 @@ import { spark } from "@qntx/wallet/spark";
 import { createWalletEngine } from "../src/engine.ts";
 import type { WalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import { approval } from "./approval.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const PASSWORD = "correct horse battery staple";
@@ -172,7 +173,7 @@ async function sweep(
     },
     amountSats: balance,
   });
-  await engine.requests.approve(request.id, "pay", VERIFY);
+  await engine.requests.approve(request.id, "pay", approval(request, VERIFY));
 }
 
 /** Returns the server wallet's leftovers to the funder; best-effort. */
@@ -340,7 +341,11 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
           zap: prepared,
           maxFeeSats: 50,
         });
-        const zap = await engine.requests.approve(zapRequest.id, "zap", VERIFY);
+        const zap = await engine.requests.approve(
+          zapRequest.id,
+          "zap",
+          approval(zapRequest, VERIFY),
+        );
         expect(zap).toMatchObject({ kind: "lightning", payment: { amountSats: 700 } });
 
         // The server settles once the SSP verifies the preimage; A sees the credit.

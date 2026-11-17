@@ -27,12 +27,26 @@ export type { AddressBookErrorCategory } from "./addresses/errors.ts";
 export { PhishingController, PHISHING_REFRESH_MS } from "./phishing/controller.ts";
 export type { PhishingControllerOptions, PhishingState } from "./phishing/controller.ts";
 export type { PhishingStatus } from "./phishing/status.ts";
-export { RequestController, REQUEST_TTL_MS, RESIMULATE_AFTER_MS } from "./requests/controller.ts";
+export {
+  AcknowledgementRequiredError,
+  BlindSigningDisabledError,
+  InvalidTokenError,
+  OriginBusyError,
+  REQUEST_TTL_MS,
+  RESIMULATE_AFTER_MS,
+  RequestController,
+  RequestEndedError,
+  SignInOriginError,
+  SimulationChangedError,
+  requiredAcknowledgement,
+} from "./requests/controller.ts";
 export type {
+  ApproveOptions,
   BrowserOrigin,
   EvmSignInput,
   PayInput,
   PendingRequest,
+  RequestAcknowledgement,
   RequestCheckCode,
   RequestInput,
   RequestMethod,

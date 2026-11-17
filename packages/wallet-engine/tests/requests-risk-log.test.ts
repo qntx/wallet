@@ -19,6 +19,7 @@ import type {
   PreparedRequest,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import { simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
@@ -310,19 +311,23 @@ describe("signature record", () => {
     const w = world();
     await w.start();
     const submitted = await w.requests.prepare(send());
-    await w.requests.approve(submitted.id, "send", VERIFY);
+    await w.requests.approve(submitted.id, "send", approval(submitted, VERIFY));
 
     const rejected = await w.requests.prepare(send());
     w.requests.reject(rejected.id);
 
     const failed = await w.requests.prepare(send());
     w.state.stale = "nonce taken";
-    await expect(w.requests.approve(failed.id, "send", VERIFY)).rejects.toThrow("nonce taken");
+    await expect(w.requests.approve(failed.id, "send", approval(failed, VERIFY))).rejects.toThrow(
+      "nonce taken",
+    );
     w.state.stale = undefined;
 
     const expired = await w.requests.prepare(send());
     w.advance(REQUEST_TTL_MS);
-    await expect(w.requests.approve(expired.id, "send", VERIFY)).rejects.toThrow("expired");
+    await expect(w.requests.approve(expired.id, "send", approval(expired, VERIFY))).rejects.toThrow(
+      "expired",
+    );
 
     const invalidated = await w.requests.prepare(send());
     w.requests.lock();
@@ -474,7 +479,7 @@ describe("signature record", () => {
     w.state.gate = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const approving = w.requests.approve(request.id, "send", VERIFY);
+    const approving = w.requests.approve(request.id, "send", approval(request, VERIFY));
     await Promise.resolve();
     w.requests.lock();
     release();
@@ -581,7 +586,7 @@ describe("seaport and safe typed data", () => {
       }),
     );
     expect(request.risk.map((r) => r.code)).toContain("order-receives-nothing");
-    const result = await w.requests.approve(request.id, "evm-sign", VERIFY);
+    const result = await w.requests.approve(request.id, "evm-sign", approval(request, VERIFY));
     expect(result).toMatchObject({ kind: "evm.typed-data" });
     const [entry] = await w.requests.signLog();
     expect(entry).toMatchObject({ summary: "seaport order", outcome: "submitted" });
@@ -599,7 +604,7 @@ describe("seaport and safe typed data", () => {
       }),
     );
     expect(request.risk.map((r) => r.code)).toContain("safe-delegatecall");
-    await w.requests.approve(request.id, "evm-sign", VERIFY);
+    await w.requests.approve(request.id, "evm-sign", approval(request, VERIFY));
     const [entry] = await w.requests.signLog();
     expect(entry).toMatchObject({ summary: "safe tx 7" });
   });

@@ -1,14 +1,22 @@
 /**
  * The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
- * request (WD-065): `full` lists every outflow, approval and the fee cap; `partial` leads with a
- * warning that other outflows may exist; `opaque` shows only the generic line. Addresses are never
- * truncated — a shortened address is what address poisoning relies on.
+ * request (WD-065). A transaction lists every fact the signed bytes prove — outflows, approvals,
+ * the fee cap — and says so when other effects may exist (`partial`) or cannot be verified at all
+ * (`opaque`). A message shows what is signed: its text, the sign-in it carries, or the typed data's
+ * domain and recognised content. Addresses are never truncated — a shortened address is what
+ * address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
+ * excerpt.
  */
+import { displayExcerpt } from "@qntx/wallet-chains";
 import type {
   ApprovalChange,
   AssetAmount,
   DisplayIntent,
   IntentSummary,
+  MessageContent,
+  SafeTransaction,
+  SeaportOrder,
+  SignInParse,
   StakeAction,
 } from "@qntx/wallet-chains";
 import { networkMeta } from "@qntx/wallet-chains/networks";
@@ -28,45 +36,56 @@ export type PromptIntent = Pick<
   | "delegation"
   | "minimumReceived"
   | "bridge"
+  | "contract"
+  | "calls"
 > & {
-  /** Decoders always set it; message intents and hand-built intents may omit it. */
+  /** Decoders always set it; a message without a chain of its own omits it. */
   readonly network?: string;
   readonly warnings?: DisplayIntent["warnings"];
   readonly staking?: DisplayIntent["staking"];
 };
 
-/** Off-chain messages carry no decodable value flow. */
-export const MESSAGE_INTENT: PromptIntent = {
+/** The prompt intent of an off-chain message: it moves no value and pays no fee. */
+export const messagePromptIntent = (message: MessageContent): PromptIntent => ({
   summary: "message",
   outflows: [],
   approvals: [],
   fee: undefined,
   verifiability: "opaque",
-};
+  message,
+});
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
-
-/** The prompt intent of a raw message: its UTF-8 text, or the bytes as hex for a blind sign. */
-export const messageIntent = (message: Uint8Array): PromptIntent => {
-  try {
-    return { ...MESSAGE_INTENT, message: { kind: "text", text: utf8.decode(message) } };
-  } catch {
-    return {
-      ...MESSAGE_INTENT,
-      message: {
-        kind: "bytes",
-        hex: `0x${[...message].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
-      },
-    };
-  }
-};
+/** How much requester-chosen text one prompt shows. */
+const MESSAGE_LINES = 6;
+const MESSAGE_CODE_POINTS = 320;
+const FIELD_CODE_POINTS = 96;
+const ORDER_ITEMS = 4;
 
 type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
   readonly blindTitle: string;
   readonly blindDescription: string;
-  readonly generic: string;
   readonly otherOutflows: string;
+  readonly unverifiedEffects: string;
+  readonly callContract: (address: string) => string;
+  readonly deployContract: (address: string) => string;
+  readonly signInTitle: string;
+  readonly signInTo: (domain: string) => string;
+  readonly signInAccount: (address: string) => string;
+  readonly signInUri: (uri: string) => string;
+  readonly signInMalformed: string;
+  readonly messageHeading: string;
+  readonly omitted: (count: number) => string;
+  readonly typedApp: (name: string) => string;
+  readonly typedContract: (address: string) => string;
+  readonly typedType: (name: string) => string;
+  readonly typedUnshown: string;
+  readonly orderGive: (amount: string) => string;
+  readonly orderReceive: (recipient: string, amount: string) => string;
+  readonly moreItems: (count: number) => string;
+  readonly safeTransaction: (safe: string, nonce: string) => string;
+  readonly safeDelegatecall: (target: string) => string;
+  readonly safeRefund: (receiver: string) => string;
   readonly send: (amount: string, to: string) => string;
   readonly allow: (spender: string, amount: string) => string;
   readonly unlimited: (asset: string) => string;
@@ -115,8 +134,27 @@ const zh: Catalog = {
   },
   blindTitle: "确认盲签",
   blindDescription: "签署无法显示为文字的数据",
-  generic: "签署来自应用的请求",
   otherOutflows: "可能还有其他转出",
+  unverifiedEffects: "无法核实此调用的效果",
+  callContract: (address) => `调用合约 ${address}`,
+  deployContract: (address) => `部署合约 ${address}`,
+  signInTitle: "确认登录",
+  signInTo: (domain) => `登录 ${domain}`,
+  signInAccount: (address) => `账户 ${address}`,
+  signInUri: (uri) => `地址 ${uri}`,
+  signInMalformed: "内容像登录请求，但格式不合规",
+  messageHeading: "消息：",
+  omitted: (count) => `… 还有 ${count} 个字符未显示`,
+  typedApp: (name) => `应用：${name}`,
+  typedContract: (address) => `验证合约 ${address}`,
+  typedType: (name) => `类型：${name}`,
+  typedUnshown: "无法显示此请求的内容",
+  orderGive: (amount) => `付出 ${amount}`,
+  orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
+  moreItems: (count) => `… 还有 ${count} 项未显示`,
+  safeTransaction: (safe, nonce) => `Safe ${safe} 的第 ${nonce} 笔交易`,
+  safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
+  safeRefund: (receiver) => `向 ${receiver} 退还 gas 费`,
   send: (amount, to) => `发送 ${amount} 到 ${to}`,
   allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
   unlimited: (asset) => `全部 ${asset}`,
@@ -174,8 +212,28 @@ const en: Catalog = {
   },
   blindTitle: "Confirm blind signing",
   blindDescription: "Sign data that cannot be shown as text",
-  generic: "Sign a request from an app",
   otherOutflows: "There may be other outflows",
+  unverifiedEffects: "The effects of this call cannot be verified",
+  callContract: (address) => `Call contract ${address}`,
+  deployContract: (address) => `Deploy contract ${address}`,
+  signInTitle: "Confirm sign-in",
+  signInTo: (domain) => `Sign in to ${domain}`,
+  signInAccount: (address) => `Account ${address}`,
+  signInUri: (uri) => `URI ${uri}`,
+  signInMalformed: "This looks like a sign-in request but is not a valid one",
+  messageHeading: "Message:",
+  omitted: (count) => `… ${count} more characters not shown`,
+  typedApp: (name) => `App: ${name}`,
+  typedContract: (address) => `Verifying contract ${address}`,
+  typedType: (name) => `Type: ${name}`,
+  typedUnshown: "The content of this request cannot be shown",
+  orderGive: (amount) => `Give ${amount}`,
+  orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
+  moreItems: (count) => `… ${count} more items not shown`,
+  safeTransaction: (safe, nonce) => `Safe ${safe}, transaction ${nonce}`,
+  safeDelegatecall: (target) =>
+    `Runs the code of ${target} with the Safe's full authority (delegatecall)`,
+  safeRefund: (receiver) => `Refunds gas to ${receiver}`,
   send: (amount, to) => `Send ${amount} to ${to}`,
   allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
   unlimited: (asset) => `unlimited ${asset}`,
@@ -307,14 +365,27 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
   return `${line}${via}${until}`;
 }
 
-export function chainPrompt(locale: PromptLocale, intent: PromptIntent): KeystorePrompt {
-  const catalog = CATALOGS[locale];
-  if (intent.message?.kind === "bytes") {
-    return { title: catalog.blindTitle, description: catalog.blindDescription };
-  }
-  const title = catalog.titles[intent.summary];
-  const caution = intent.warnings?.some((w) => w.kind === "sighash-single-anyonecanpay") === true;
-  const tail = caution ? [catalog.sighashSingle] : [];
+/** One requester-chosen value on a single line. */
+const field = (raw: string): string => displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0] ?? "";
+
+/** The contracts an unverifiable transaction runs: its own, or each opaque call of a batch. */
+function contractLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> {
+  const calls = intent.calls ?? [intent];
+  return calls.flatMap(({ contract, verifiability }) =>
+    contract === undefined || verifiability !== "opaque"
+      ? []
+      : [
+          contract.created
+            ? catalog.deployContract(contract.address)
+            : catalog.callContract(contract.address),
+        ],
+  );
+}
+
+/** What the decoded content does: contracts run, delegation, outflows, receipts, approvals. */
+function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> {
+  const sol = (lamports: string): string =>
+    `${formatUnits(lamports, 9)} ${networkMeta(intent.network ?? "")?.symbol ?? "SOL"}`;
   const delegation =
     intent.delegation === undefined
       ? []
@@ -323,23 +394,8 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
             ? catalog.delegateTo(intent.delegation.name, intent.delegation.version)
             : catalog.revokeDelegation,
         ];
-  const network =
-    intent.message === undefined && intent.network !== undefined
-      ? [catalog.networkLine(networkLabel(catalog, intent.network))]
-      : [];
-  const sol = (lamports: string): string =>
-    `${formatUnits(lamports, 9)} ${networkMeta(intent.network ?? "")?.symbol ?? "SOL"}`;
-  if (intent.verifiability === "opaque") {
-    return {
-      title,
-      description: joinLines([...network, ...delegation, catalog.generic, ...tail]),
-    };
-  }
-  const lines = [
-    ...delegation,
-    ...intent.outflows.map((flow) => catalog.send(formatAmount(catalog, flow.amount), flow.to)),
-    ...(intent.staking ?? []).map((action) => catalog.stakeLine(action, sol)),
-    ...(intent.bridge === undefined
+  const received =
+    intent.bridge === undefined
       ? (intent.minimumReceived ?? []).map((entry) =>
           catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to),
         )
@@ -353,23 +409,163 @@ export function chainPrompt(locale: PromptLocale, intent: PromptIntent): Keystor
             utcDateTime(intent.bridge.fillDeadline),
             intent.bridge.refundTo,
           ),
-        ]),
+        ];
+  return [
+    ...delegation,
+    ...contractLines(catalog, intent),
+    ...intent.outflows.map((flow) => catalog.send(formatAmount(catalog, flow.amount), flow.to)),
+    ...(intent.staking ?? []).map((action) => catalog.stakeLine(action, sol)),
+    ...received,
     ...intent.approvals.map((change) => approvalLine(catalog, change)),
-    ...(intent.fee === undefined
-      ? intent.message === undefined
-        ? [catalog.feeUnknown]
-        : []
-      : [catalog.maxFee(formatAmount(catalog, intent.fee.max))]),
-    ...(intent.warnings ?? [])
-      .filter((w) => w.kind === "platform-fee")
-      .map((w) => catalog.platformFee(w.message)),
-    ...tail,
   ];
-  if (intent.verifiability === "partial") {
-    return { title, description: joinLines([...network, catalog.otherOutflows, ...lines]) };
+}
+
+function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystorePrompt {
+  const network =
+    intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))];
+  const caveat =
+    intent.verifiability === "opaque"
+      ? [catalog.unverifiedEffects]
+      : intent.verifiability === "partial"
+        ? [catalog.otherOutflows]
+        : [];
+  const warnings = intent.warnings ?? [];
+  return {
+    title: catalog.titles[intent.summary],
+    description: joinLines([
+      ...network,
+      ...caveat,
+      ...effectLines(catalog, intent),
+      intent.fee === undefined
+        ? catalog.feeUnknown
+        : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
+      ...warnings
+        .filter((w) => w.kind === "platform-fee")
+        .map((w) => catalog.platformFee(w.message)),
+      ...(warnings.some((w) => w.kind === "sighash-single-anyonecanpay")
+        ? [catalog.sighashSingle]
+        : []),
+    ]),
+  };
+}
+
+function signInLines(catalog: Catalog, signIn: SignInParse): ReadonlyArray<string> {
+  if (signIn.status === "malformed") {
+    return [catalog.signInMalformed];
+  }
+  const { domain, address, chainId, uri } = signIn.fields;
+  return [
+    catalog.signInTo(field(domain)),
+    catalog.signInAccount(field(address)),
+    catalog.networkLine(
+      /^\d+$/.test(chainId) ? networkLabel(catalog, `eip155:${chainId}`) : field(chainId),
+    ),
+    catalog.signInUri(field(uri)),
+  ];
+}
+
+function textLines(catalog: Catalog, text: string): ReadonlyArray<string> {
+  const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
+  return [catalog.messageHeading, ...lines, ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
+}
+
+function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string> {
+  const amount = (item: SeaportOrder["offer"][number]): string => {
+    const start = formatAmount(catalog, item.startAmount);
+    const end = formatAmount(catalog, item.endAmount);
+    return start === end ? start : `${start} → ${end}`;
+  };
+  const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
+    lines.length > ORDER_ITEMS
+      ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)]
+      : lines;
+  return [
+    ...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),
+    ...capped(
+      order.consideration.map((item) => catalog.orderReceive(item.recipient, amount(item))),
+    ),
+  ];
+}
+
+function safeLines(catalog: Catalog, safe: SafeTransaction): ReadonlyArray<string> {
+  return [
+    catalog.safeTransaction(safe.safe, safe.nonce),
+    ...(safe.operation === "delegatecall" ? [catalog.safeDelegatecall(safe.to)] : []),
+    ...safe.calls.flatMap((call) => [
+      ...(call.verifiability === "opaque" ? [catalog.unverifiedEffects] : []),
+      ...effectLines(catalog, call),
+    ]),
+    ...(safe.refund === undefined ? [] : [catalog.safeRefund(safe.refund.refundReceiver)]),
+  ];
+}
+
+/** What recognised typed data does; unrecognised content is named as not shown. */
+function typedContentLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  message: Extract<MessageContent, { kind: "typed-data" }>,
+): ReadonlyArray<string> {
+  if (message.seaport !== undefined) {
+    return orderLines(catalog, message.seaport);
+  }
+  if (message.safe !== undefined) {
+    return safeLines(catalog, message.safe);
+  }
+  return intent.approvals.length > 0
+    ? [catalog.otherOutflows, ...effectLines(catalog, intent)]
+    : [catalog.typedUnshown];
+}
+
+function typedDataLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  message: Extract<MessageContent, { kind: "typed-data" }>,
+): ReadonlyArray<string> {
+  const { name, chainId, verifyingContract } = message.domain;
+  const network = chainId === undefined ? intent.network : `eip155:${chainId}`;
+  return [
+    ...(name === undefined ? [] : [catalog.typedApp(field(name))]),
+    ...(network === undefined ? [] : [catalog.networkLine(networkLabel(catalog, network))]),
+    ...(verifyingContract === undefined ? [] : [catalog.typedContract(verifyingContract)]),
+    catalog.typedType(field(message.primaryType)),
+    ...typedContentLines(catalog, intent, message),
+  ];
+}
+
+function messagePrompt(
+  catalog: Catalog,
+  intent: PromptIntent,
+  message: MessageContent,
+): KeystorePrompt {
+  if (message.kind === "bytes") {
+    return { title: catalog.blindTitle, description: catalog.blindDescription };
+  }
+  if (message.kind === "typed-data") {
+    return {
+      title: catalog.titles[intent.summary],
+      description: joinLines(typedDataLines(catalog, intent, message)),
+    };
+  }
+  if (message.signIn?.status === "valid") {
+    return {
+      title: catalog.signInTitle,
+      description: joinLines(signInLines(catalog, message.signIn)),
+    };
   }
   return {
-    title,
-    description: joinLines([...network, ...(lines.length === 0 ? [catalog.generic] : lines)]),
+    title: catalog.titles.message,
+    description: joinLines([
+      ...(message.signIn === undefined ? [] : signInLines(catalog, message.signIn)),
+      ...textLines(catalog, message.text),
+    ]),
   };
+}
+
+export function chainPrompt(locale: PromptLocale, intent: PromptIntent): KeystorePrompt {
+  const catalog = CATALOGS[locale];
+  return intent.message === undefined
+    ? transactionPrompt(catalog, intent)
+    : messagePrompt(catalog, intent, intent.message);
 }

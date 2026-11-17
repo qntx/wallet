@@ -240,7 +240,7 @@ const payNow = async (
     option,
     ...extra,
   });
-  return engine.requests.approve(request.id, "pay", verify());
+  return engine.requests.approve(request.id, "pay", { verify: verify() });
 };
 action("payInvoice", "pay", async (engine) => {
   const parsed = engine.payments.parse(input("invoice").value, ref(engine).network);

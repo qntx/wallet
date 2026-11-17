@@ -168,6 +168,7 @@ const statusPayload: Validator<StatusPayload> = obj({
   nostr: nostrStatus,
   importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
   backup: union(backupInfo, nullValue),
+  blindSigning: bool,
 });
 
 // The explicit annotation is the composition contract: a key missing from either table fails

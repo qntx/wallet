@@ -20,6 +20,7 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import { rpc, sleep, waitReceipt } from "./fork-helpers.ts";
 import { idleNetworkDeps, requestsFor } from "./send-helpers.ts";
 
@@ -119,7 +120,7 @@ describe.skipIf(!RUN)("lido mainnet fork", () => {
           fee: "normal",
           ...extra,
         } as never);
-        return requests.approve(pending.id, method, BVERIFY);
+        return requests.approve(pending.id, method, approval(pending, BVERIFY));
       };
       const stakeTx = await run("evm-lido", { action: { kind: "stake", amount: stakeAmount } });
       expect(stakeTx.intent?.summary).toBe("stake");

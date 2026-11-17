@@ -350,7 +350,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const requests = new RequestController({
     phishing,
-    blindSigning: (walletId, groupIndex) => accounts.blindSigning(walletId, groupIndex),
+    blindSigning: () => options.wallet.getSnapshot().blindSigning,
     tokens: {
       metadata: async (network, address) => assets.tokenMetadata(network, address),
       add: async (network, address) => assets.addToken(network, address),

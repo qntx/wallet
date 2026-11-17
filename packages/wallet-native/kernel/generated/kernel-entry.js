@@ -497,7 +497,7 @@
 	var init_defineProperty = __esmMin((() => {
 		init_toPropertyKey();
 	}));
-	// packages/wallet/dist/core-D1gQOBZ3.mjs
+	// packages/wallet/dist/core-2ddSUGnS.mjs
 	init_defineProperty();
 	/**
 	* Strict validator combinators for the secret-area protocol. Both sides share them: the kernel
@@ -736,7 +736,7 @@
 	});
 	/** A BIP-39 passphrase on the wire: raw UTF-8 bytes, never empty (the host omits "none"). */
 	var passphraseBytes = bytes(1, 1024);
-	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
+	var walletErrorCode = union(literal("locked"), literal("cancelled"), literal("factor-invalidated"), literal("verification-unavailable"), literal("blind-signing-disabled"), literal("passkey-not-configured"), literal("passkey-prf-unsupported"), literal("wrong-password"), literal("wrong-passkey"), literal("rate-limited"), literal("invalid-input"), literal("not-found"), literal("already-exists"), literal("conflict"), literal("unsupported"), literal("unavailable"), literal("integrity"), literal("approval-required"), literal("crashed"));
 	var createdResult = obj({
 		wallet: walletInfo$1,
 		session: sessionId
@@ -785,6 +785,15 @@
 			result: nullValue
 		},
 		"vault.setAppLock": {
+			session: true,
+			presence: true,
+			params: obj({
+				enabled: bool,
+				verify: verifier
+			}),
+			result: nullValue
+		},
+		"vault.setBlindSigning": {
 			session: true,
 			presence: true,
 			params: obj({
@@ -969,7 +978,7 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-DK7NyyMK.mjs
+	// packages/wallet/dist/protocol-BSKruAcc.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
@@ -1749,7 +1758,8 @@
 		wallets: arr(walletInfo$1, MAX_SNAPSHOT_ITEMS),
 		nostr: nostrStatus$1,
 		importedKeys: arr(keyInfo, MAX_SNAPSHOT_ITEMS),
-		backup: union(backupInfo, nullValue)
+		backup: union(backupInfo, nullValue),
+		blindSigning: bool
 	});
 	var METHODS = _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({ status: {
 		session: false,
@@ -3882,6 +3892,10 @@
 				title: "应用锁",
 				description: "验证身份以更改应用锁"
 			},
+			"blind-signing": {
+				title: "盲签设置",
+				description: "验证身份以更改是否允许签署钱包无法显示内容的请求"
+			},
 			reset: {
 				title: "重置钱包",
 				description: "验证设备所有者身份以删除本设备上的全部钱包数据"
@@ -3927,6 +3941,10 @@
 			"app-lock": {
 				title: "App lock",
 				description: "Verify your identity to change the app lock"
+			},
+			"blind-signing": {
+				title: "Blind signing",
+				description: "Verify your identity to change whether requests the wallet cannot display may be signed"
 			},
 			reset: {
 				title: "Reset wallet",
@@ -7713,6 +7731,13 @@
 			backup,
 			createdAt: asCreatedAt(object["createdAt"])
 		});
+	}
+	/** The header of a `policy` record: a setting the vault holds has no public content. */
+	var encodePolicyHeader = (createdAt) => JSON.stringify({ createdAt });
+	function parsePolicyHeader(text) {
+		const object = headerObject(text);
+		expectKeys(object, ["createdAt"]);
+		return { createdAt: asCreatedAt(object["createdAt"]) };
 	}
 	function parseDataKeyHeader(text) {
 		const object = headerObject(text);
@@ -12988,7 +13013,7 @@
 		return parse(text);
 	}
 	new Uint8Array([255, ...utf8Encode("solana offchain")]);
-	// packages/wallet-chains/dist/src-8NZeEnrW.mjs
+	// packages/wallet-chains/dist/src-B2N0Fs5Q.mjs
 	init_defineProperty();
 	var PREAMBLE = " wants you to sign in with your ";
 	var OPTIONAL_KEYS = [
@@ -13042,6 +13067,97 @@
 			return text.includes(PREAMBLE) ? { status: "malformed" } : void 0;
 		}
 	}
+	/**
+	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show: the
+	* characters that hide, reorder or fake content are never passed through.
+	*/
+	var UNSAFE_RANGES = [
+		[0, 31],
+		[127, 159],
+		[173, 173],
+		[1564, 1564],
+		[6158, 6158],
+		[8203, 8207],
+		[8232, 8238],
+		[8288, 8288],
+		[8294, 8297],
+		[65279, 65279],
+		[917504, 917631]
+	];
+	/** Control, bidi-control, zero-width, line-separator and tag characters. */
+	var isUnsafeCodePoint = (codePoint) => UNSAFE_RANGES.some(([low, high]) => codePoint >= low && codePoint <= high);
+	var REPLACEMENT = "�";
+	var LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
+	/** The code points of one line: tabs as spaces, trimmed, every other unsafe character replaced. */
+	var safeLine = (line) => Array.from(line.replaceAll("	", " ").trim(), (char) => {
+		var _char$codePointAt;
+		return isUnsafeCodePoint((_char$codePointAt = char.codePointAt(0)) !== null && _char$codePointAt !== void 0 ? _char$codePointAt : 0) ? REPLACEMENT : char;
+	});
+	/**
+	* The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines
+	* are dropped, so padding cannot push content out of view; the last line may be cut.
+	*/
+	function displayExcerpt(raw, maxLines, maxCodePoints) {
+		const lines = [];
+		let used = 0;
+		let omitted = 0;
+		for (const line of raw.split(LINE_BREAK)) {
+			const chars = safeLine(line);
+			const room = lines.length < maxLines ? maxCodePoints - used : 0;
+			const shown = chars.slice(0, room);
+			if (shown.length > 0) {
+				lines.push(shown.join(""));
+				used += shown.length;
+			}
+			omitted += chars.length - shown.length;
+		}
+		return {
+			lines,
+			omitted
+		};
+	}
+	/**
+	* @qntx/wallet-chains — shared chain semantics for the wallet.
+	* Types here are wire-safe: values crossing the main↔kernel protocol are
+	* Uint8Array, safe integers, strings, booleans, arrays and plain objects.
+	* Quantities are canonical `0x` hex (lowercase, no leading zeros, `0x0` for
+	* zero), token amounts are decimal strings of the smallest unit.
+	*/
+	var utf8$1 = new TextDecoder("utf-8", { fatal: true });
+	/** Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex. */
+	var messageContent = (bytes, family) => {
+		let text;
+		try {
+			text = utf8$1.decode(bytes);
+		} catch (_unused2) {
+			return {
+				kind: "bytes",
+				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
+			};
+		}
+		const signIn = parseSignIn(text, family);
+		return signIn === void 0 ? {
+			kind: "text",
+			text
+		} : {
+			kind: "text",
+			text,
+			signIn
+		};
+	};
+	/**
+	* A request whose content the signer cannot show: raw bytes, typed data of no recognised shape, or
+	* a transaction whose effects it cannot verify. Text, sign-in messages and recognised typed data
+	* are shown in full and are never blind.
+	*/
+	var isBlindIntent = (intent) => {
+		var _message$safe$calls$s, _message$safe;
+		const { message } = intent;
+		if (message === void 0) return intent.verifiability === "opaque";
+		if (message.kind !== "typed-data") return message.kind === "bytes";
+		if (intent.verifiability !== "opaque" || message.seaport !== void 0) return false;
+		return (_message$safe$calls$s = (_message$safe = message.safe) === null || _message$safe === void 0 ? void 0 : _message$safe.calls.some((call) => call.verifiability === "opaque")) !== null && _message$safe$calls$s !== void 0 ? _message$safe$calls$s : true;
+	};
 	var ChainError = class extends Error {
 		constructor(code, message) {
 			super(message);
@@ -13050,7 +13166,7 @@
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-D2rW_qlI.mjs
+	// packages/wallet-chains/dist/account-ref-CkVsqMAD.mjs
 	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
@@ -13416,6 +13532,57 @@
 		});
 		return num;
 	}
+	/**
+	* Encodes a number/bigint into a big-endian `Uint8Array` of the given byte
+	* size (or minimal size when `size` is omitted).
+	*
+	* @internal
+	*/
+	function bigIntToBytes(value, options = {}) {
+		const { signed, size } = options;
+		let value_;
+		if (typeof value === "bigint") value_ = value;
+		else if (Number.isSafeInteger(value)) value_ = BigInt(value);
+		else value_ = BigInt(value);
+		let maxValue;
+		if (size) {
+			if (signed) maxValue = (1n << BigInt(size) * 8n - 1n) - 1n;
+			else maxValue = (1n << BigInt(size) * 8n) - 1n;
+		} else if (typeof value === "number") maxValue = BigInt(Number.MAX_SAFE_INTEGER);
+		const minValue = typeof maxValue === "bigint" && signed ? -maxValue - 1n : 0n;
+		if (maxValue && value_ > maxValue || value_ < minValue) {
+			const suffix = typeof value === "bigint" ? "n" : "";
+			throw new IntegerOutOfRangeError$1({
+				max: maxValue ? `${maxValue}${suffix}` : void 0,
+				min: `${minValue}${suffix}`,
+				signed,
+				size,
+				value: `${value}${suffix}`
+			});
+		}
+		const n = signed && value_ < 0 ? BigInt.asUintN((size !== null && size !== void 0 ? size : bigIntByteLength(-value_) + 1) * 8, value_) : value_;
+		const minBytes = bigIntByteLength(n);
+		const length = size !== null && size !== void 0 ? size : Math.max(minBytes, 1);
+		const out = new Uint8Array(length);
+		let i = length - 1;
+		let rem = n;
+		while (rem > 0n && i >= 0) {
+			out[i--] = Number(rem & 255n);
+			rem >>= 8n;
+		}
+		return out;
+	}
+	/** @internal */
+	function bigIntByteLength(n) {
+		if (n === 0n) return 0;
+		let len = 0;
+		let v = n < 0n ? -n : n;
+		while (v > 0n) {
+			len++;
+			v >>= 8n;
+		}
+		return len;
+	}
 	/** Thrown when a value cannot be represented as a safe integer. */
 	var IntegerOutOfRangeError$1 = class extends BaseError {
 		constructor({ max, min, signed, size, value }) {
@@ -13542,9 +13709,9 @@
 	* @param value - The {@link ox#Bytes.Bytes} value to encode.
 	* @returns The encoded {@link ox#Hex.Hex} value.
 	*/
-	function from$5(value) {
-		if (value instanceof Uint8Array) return fromBytes$1(value);
-		if (Array.isArray(value)) return fromBytes$1(new Uint8Array(value));
+	function from$6(value) {
+		if (value instanceof Uint8Array) return fromBytes$2(value);
+		if (Array.isArray(value)) return fromBytes$2(new Uint8Array(value));
 		assert$8(value);
 		return value;
 	}
@@ -13596,7 +13763,7 @@
 	* @param options - Options.
 	* @returns The encoded {@link ox#Hex.Hex} value.
 	*/
-	function fromBytes$1(value, options = {}) {
+	function fromBytes$2(value, options = {}) {
 		const hex = bytesToHex$2(value);
 		if (typeof options.size === "number") {
 			assertSize(hex, options.size);
@@ -13622,7 +13789,7 @@
 	* @param options - Options.
 	* @returns The encoded {@link ox#Hex.Hex} value.
 	*/
-	function fromNumber(value, options = {}) {
+	function fromNumber$1(value, options = {}) {
 		const { signed, size } = options;
 		if (!signed && typeof value === "number" && value >= 0 && Number.isSafeInteger(value)) {
 			if (size) {
@@ -13677,7 +13844,7 @@
 	* @returns The encoded {@link ox#Hex.Hex} value.
 	*/
 	function fromString$2(value, options = {}) {
-		return fromBytes$1(encoder$1.encode(value), options);
+		return fromBytes$2(encoder$1.encode(value), options);
 	}
 	/**
 	* Pads a {@link ox#Hex.Hex} value to the left with zero bytes until it reaches the given `size` (default: 32 bytes).
@@ -14017,7 +14184,7 @@
 	* @param value - Value to convert.
 	* @returns A {@link ox#Bytes.Bytes} instance.
 	*/
-	function from$4(value) {
+	function from$5(value) {
 		if (value instanceof Uint8Array) return value;
 		if (typeof value === "string") return fromHex$2(value);
 		return fromArray$1(value);
@@ -14074,6 +14241,32 @@
 			}));
 		}
 		return hexToBytes(value);
+	}
+	/**
+	* Encodes a number value into {@link ox#Bytes.Bytes}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Bytes } from 'ox'
+	*
+	* const data = Bytes.fromNumber(420)
+	* // @log: Uint8Array([1, 164])
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Bytes } from 'ox'
+	*
+	* const data = Bytes.fromNumber(420, { size: 4 })
+	* // @log: Uint8Array([0, 0, 1, 164])
+	* ```
+	*
+	* @param value - Number value to encode.
+	* @param options - Encoding options.
+	* @returns Encoded {@link ox#Bytes.Bytes}.
+	*/
+	function fromNumber(value, options) {
+		return bigIntToBytes(value, options);
 	}
 	/**
 	* Encodes a string into {@link ox#Bytes.Bytes}.
@@ -14442,9 +14635,9 @@
 	function keccak256(value, options = {}) {
 		const isBytes = value instanceof Uint8Array;
 		const { as = isBytes ? "Bytes" : "Hex" } = options;
-		const bytes = keccak256$1(isBytes ? value : from$4(value));
+		const bytes = keccak256$1(isBytes ? value : from$5(value));
 		if (as === "Bytes") return bytes;
-		return fromBytes$1(bytes);
+		return fromBytes$2(bytes);
 	}
 	var ZERO$1 = 48;
 	var NINE = 57;
@@ -14597,6 +14790,45 @@
 		checksum$1.set(key, result);
 		if (key !== address) checksum$1.set(address, result);
 		return result;
+	}
+	/**
+	* Converts a stringified address to a typed (optionally checksummed) {@link ox#Address.Address}.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('0xa0cf798816d4b9b9866b5330eea46a18382f251e')
+	* // @log: '0xa0cf798816d4b9b9866b5330eea46a18382f251e'
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('0xa0cf798816d4b9b9866b5330eea46a18382f251e', {
+	*   checksum: true
+	* })
+	* // @log: '0xA0Cf798816D4b9b9866b5330EEa46a18382f251e'
+	* ```
+	*
+	* @example
+	* ```ts twoslash
+	* import { Address } from 'ox'
+	*
+	* Address.from('hello')
+	* // @error: InvalidAddressError: Address "0xa" is invalid.
+	* ```
+	*
+	* @param address - An address string to convert to a typed Address.
+	* @param options - Conversion options.
+	* @returns The typed Address.
+	*/
+	function from$4(address, options = {}) {
+		const { checksum: checksumVal = false } = options;
+		assert$7(address);
+		if (checksumVal) return checksum(address);
+		return address;
 	}
 	/**
 	* Checks if the given address is a valid {@link ox#Address.Address}.
@@ -15573,7 +15805,7 @@
 		const cursor = create$1(bytes);
 		if (size(bytes) === 0 && parameters.length > 0) throw new ZeroDataError();
 		if (size(bytes) && size(bytes) < 32) throw new DataSizeTooSmallError({
-			data: typeof data === "string" ? data : fromBytes$1(data),
+			data: typeof data === "string" ? data : fromBytes$2(data),
 			parameters,
 			size: size(bytes)
 		});
@@ -15593,7 +15825,7 @@
 				else values[(_param$name = param.name) !== null && _param$name !== void 0 ? _param$name : i] = data_;
 			} catch (err) {
 				if (err instanceof PositionOutOfBoundsError) throw new DataSizeTooSmallError({
-					data: typeof data === "string" ? data : fromBytes$1(data),
+					data: typeof data === "string" ? data : fromBytes$2(data),
 					parameters,
 					size: size(bytes)
 				});
@@ -15689,7 +15921,7 @@
 			if (intMatch) {
 				const [_type, baseType, bits = "256"] = intMatch;
 				const size = Number.parseInt(bits, 10) / 8;
-				return fromNumber(value, {
+				return fromNumber$1(value, {
 					size: isArray ? 32 : size,
 					signed: baseType === "int"
 				});
@@ -15985,7 +16217,7 @@
 		const { checksum: checksum$3 = false } = options;
 		const value = cursor.readBytes(32);
 		const wrap = (address) => checksum$3 ? checksum(address) : address;
-		return [wrap(fromBytes$1(slice$1(value, -20))), 32];
+		return [wrap(fromBytes$2(slice$1(value, -20))), 32];
 	}
 	/** @internal */
 	function decodeArray(cursor, param, options) {
@@ -16061,9 +16293,9 @@
 			}
 			const data = cursor.readBytes(length);
 			cursor.setPosition(staticPosition + 32);
-			return [fromBytes$1(data), 32];
+			return [fromBytes$2(data), 32];
 		}
-		return [fromBytes$1(cursor.readBytes(Number.parseInt(size, 10), 32)), 32];
+		return [fromBytes$2(cursor.readBytes(Number.parseInt(size, 10), 32)), 32];
 	}
 	/** @internal */
 	function decodeNumber(cursor, param) {
@@ -16135,7 +16367,7 @@
 		};
 		if (prefix) writeHex(writer, 0, prefix);
 		writeParameters(writer, prefixSize, compiled, values);
-		let data = fromBytes$1(bytes);
+		let data = fromBytes$2(bytes);
 		for (let i = 0; i < writer.patches.length; i++) {
 			const patch = writer.patches[i];
 			const start = 2 + patch.offset * 2;
@@ -17181,7 +17413,7 @@
 			const integerMatch = type.match(integerRegex);
 			if (integerMatch && (typeof value === "number" || typeof value === "bigint")) {
 				const [, base, size_] = integerMatch;
-				fromNumber(value, {
+				fromNumber$1(value, {
 					signed: base === "int",
 					size: Number.parseInt(size_ !== null && size_ !== void 0 ? size_ : "", 10) / 8
 				});
@@ -17740,7 +17972,7 @@
 	function quantityToHex(value) {
 		if (value === void 0 || value === null) return "0x";
 		if (typeof value === "bigint" ? value === 0n : value === 0) return "0x";
-		return fromNumber(value);
+		return fromNumber$1(value);
 	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/Rlp.js
 	init_defineProperty();
@@ -17788,8 +18020,32 @@
 			lengths: ctx.lengths,
 			cursor: 0
 		});
-		if (as === "Hex") return fromBytes$1(bytes);
+		if (as === "Hex") return fromBytes$2(bytes);
 		return bytes;
+	}
+	/**
+	* Encodes a {@link ox#Bytes.Bytes} value into a Recursive-Length Prefix (RLP) value.
+	*
+	* @example
+	* ```ts twoslash
+	* import { Bytes, Rlp } from 'ox'
+	*
+	* Rlp.fromBytes(
+	*   Bytes.from([
+	*     139, 104, 101, 108, 108, 111, 32, 119, 111, 114, 108,
+	*     100
+	*   ])
+	* )
+	* // @log: Uint8Array([104, 101, 108, 108, 111,  32, 119, 111, 114, 108, 100])
+	* ```
+	*
+	* @param bytes - The {@link ox#Bytes.Bytes} value to encode.
+	* @param options - Options.
+	* @returns The RLP value.
+	*/
+	function fromBytes$1(bytes, options = {}) {
+		const { as = "Bytes" } = options;
+		return from$1(bytes, { as });
 	}
 	/**
 	* Encodes a {@link ox#Hex.Hex} value into a Recursive-Length Prefix (RLP) value.
@@ -18108,7 +18364,7 @@
 	* @returns The deserialized {@link ox#Signature.Signature}.
 	*/
 	function fromBytes(signature) {
-		return fromHex(fromBytes$1(signature));
+		return fromHex(fromBytes$2(signature));
 	}
 	/**
 	* Deserializes a {@link ox#Hex.Hex} signature into a structured {@link ox#Signature.Signature}.
@@ -18355,8 +18611,8 @@
 		const yParity = bytes[0];
 		if (yParity !== 0 && yParity !== 1) throw new InvalidYParityError({ value: yParity });
 		return {
-			r: fromBytes$1(bytes.subarray(1, 33)),
-			s: fromBytes$1(bytes.subarray(33, 65)),
+			r: fromBytes$2(bytes.subarray(1, 33)),
+			s: fromBytes$2(bytes.subarray(33, 65)),
 			yParity
 		};
 	}
@@ -18380,7 +18636,7 @@
 	*/
 	function toHex(signature) {
 		assert$5(signature);
-		return concat$2(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber(yParityToV(signature.yParity), { size: 1 }) : "0x");
+		return concat$2(padLeft(signature.r, 32), padLeft(signature.s, 32), typeof signature.yParity === "number" ? fromNumber$1(yParityToV(signature.yParity), { size: 1 }) : "0x");
 	}
 	/**
 	* Converts a {@link ox#Signature.Signature} to a serialized {@link ox#Signature.Tuple} to be used for signatures in Transaction Envelopes, EIP-7702 Authorization Lists, etc.
@@ -18450,7 +18706,7 @@
 	/** Thrown when the serialized signature is of an invalid size. */
 	var InvalidSerializedSizeError = class extends BaseError {
 		constructor({ expectedSize, signature }) {
-			super(`Value \`${signature}\` is an invalid signature size.`, { metaMessages: [typeof expectedSize === "number" ? `Expected: ${expectedSize} bytes.` : "Expected: 64 bytes or 65 bytes.", `Received ${size$1(from$5(signature))} bytes.`] });
+			super(`Value \`${signature}\` is an invalid signature size.`, { metaMessages: [typeof expectedSize === "number" ? `Expected: ${expectedSize} bytes.` : "Expected: 64 bytes or 65 bytes.", `Received ${size$1(from$6(signature))} bytes.`] });
 			_defineProperty(this, "name", "Signature.InvalidSerializedSizeError");
 		}
 	};
@@ -18603,11 +18859,11 @@
 		});
 		if (signature && typeof yParity !== "undefined") assertYParity(yParity);
 		return [
-			chainId ? fromNumber(chainId) : "0x",
+			chainId ? fromNumber$1(chainId) : "0x",
 			address,
-			nonce ? fromNumber(nonce) : "0x",
+			nonce ? fromNumber$1(nonce) : "0x",
 			...signature ? [
-				yParity ? fromNumber(yParity, { size: 1 }) : "0x",
+				yParity ? fromNumber$1(yParity, { size: 1 }) : "0x",
 				trimLeft$1(signature.r),
 				trimLeft$1(signature.s)
 			] : []
@@ -18827,7 +19083,7 @@
 		const accessTupleList = toTupleList$1(accessList);
 		const signature = extract(options.signature || envelope);
 		return concat$2("0x01", fromHex$1([
-			fromNumber(chainId),
+			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(gasPrice),
 			quantityToHex(gas),
@@ -19024,7 +19280,7 @@
 		const authorizationTupleList = toTupleList(authorizationList);
 		const signature = extract(options.signature || envelope);
 		return concat$2(serializedType$1, fromHex$1([
-			fromNumber(chainId),
+			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
 			quantityToHex(maxFeePerGas),
@@ -19229,13 +19485,13 @@
 			})();
 			serialized = [
 				...serialized,
-				fromNumber(v),
+				fromNumber$1(v),
 				trimLeft$1(signature.r),
 				trimLeft$1(signature.s)
 			];
 		} else if (chainId > 0) serialized = [
 			...serialized,
-			fromNumber(chainId),
+			fromNumber$1(chainId),
 			"0x",
 			"0x"
 		];
@@ -19557,7 +19813,7 @@
 		const accessTupleList = toTupleList$1(accessList);
 		const signature = extract(options.signature || envelope);
 		return concat$2(serializedType, fromHex$1([
-			fromNumber(chainId),
+			fromNumber$1(chainId),
 			quantityToHex(nonce),
 			quantityToHex(maxPriorityFeePerGas),
 			quantityToHex(maxFeePerGas),
@@ -19569,7 +19825,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-IkSTlTiE.mjs
+	// packages/wallet-chains/dist/envelope-Borca_HA.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -20075,6 +20331,30 @@
 		}) : a) }), i.fee === void 0 ? {} : { fee: _objectSpread2(_objectSpread2({}, i.fee), {}, { max: amount(i.fee.max) }, i.fee.l1Data === void 0 ? {} : { l1Data: amount(i.fee.l1Data) }) }), i.calls === void 0 ? {} : { calls: i.calls.map(decorate) });
 		return decorate(intent);
 	};
+	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/ContractAddress.js
+	/**
+	* Computes contract address via [CREATE](https://ethereum.stackexchange.com/questions/68943/create-opcode-what-does-it-really-do/68945#68945) opcode.
+	*
+	* @example
+	* ```ts twoslash
+	* import { ContractAddress } from 'ox'
+	*
+	* ContractAddress.fromCreate({
+	*   from: '0x1a1e021a302c237453d3d45c7b82b19ceeb7e2e6',
+	*   nonce: 0n
+	* })
+	* // @log: '0xFBA3912Ca04dd458c843e2EE08967fC04f3579c2'
+	* ```
+	*
+	* @param options - Options for retrieving address.
+	* @returns Contract Address.
+	*/
+	function fromCreate(options) {
+		const from = fromHex$2(from$4(options.from));
+		let nonce = fromNumber(options.nonce);
+		if (nonce[0] === 0) nonce = new Uint8Array([]);
+		return from$4(`0x${keccak256(fromBytes$1([from, nonce], { as: "Hex" })).slice(26)}`);
+	}
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/PersonalMessage.js
 	/**
 	* Precomputed `0x19 ‖ "Ethereum Signed Message:\n"` prefix (the invariant part
@@ -20102,7 +20382,7 @@
 	* @returns The encoded personal sign message.
 	*/
 	function encode$1(data) {
-		const message = from$5(data);
+		const message = from$6(data);
 		return concat$2(erc191PrefixHex, fromString$2(String(size$1(message))), message);
 	}
 	/**
@@ -22452,8 +22732,8 @@ zoo`.split("\n"));
 	*/
 	function sign$2(options) {
 		const { as = "Object", extraEntropy: extraEntropy$1 = extraEntropy, hash, payload, privateKey } = options;
-		return formatSignature(fromRecoveredBytes(sign$3(from$4(payload), from$4(privateKey), {
-			extraEntropy: typeof extraEntropy$1 === "boolean" ? extraEntropy$1 : from$4(extraEntropy$1),
+		return formatSignature(fromRecoveredBytes(sign$3(from$5(payload), from$5(privateKey), {
+			extraEntropy: typeof extraEntropy$1 === "boolean" ? extraEntropy$1 : from$5(extraEntropy$1),
 			prehash: hash === true
 		})), as);
 	}
@@ -23349,34 +23629,15 @@ zoo`.split("\n"));
 		},
 		verified: false
 	}];
-	/**
-	* The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
-	* produces the intent; `fee` is `undefined` for a call that is not itself a transaction.
-	*/
-	var decodeCall = (call, network, fee, table, signer) => {
-		var _call$to2;
+	/** A call into a protocol the decoder models in full, native value included. */
+	var protocolIntent = (call, { network, fee, table, signer }) => {
 		const chainId = networkChainId(network);
-		const data = call.data.toLowerCase();
 		const base = {
 			family: "evm",
 			network,
 			approvals: [],
 			warnings: []
 		};
-		if (data === "0x") {
-			if (call.to === void 0) return _objectSpread2(_objectSpread2({}, base), {}, {
-				summary: "contract-call",
-				outflows: [],
-				fee,
-				verifiability: "opaque"
-			});
-			return _objectSpread2(_objectSpread2({}, base), {}, {
-				summary: "transfer",
-				outflows: nativeOutflow(call.value, call.to),
-				fee,
-				verifiability: "full"
-			});
-		}
 		const zeroX = decodeZeroX(chainId, call, table);
 		if (zeroX !== void 0) {
 			const { summary, outflows, approvals, verifiability, minimumReceived } = zeroX;
@@ -23406,6 +23667,18 @@ zoo`.split("\n"));
 			fee,
 			verifiability: "partial"
 		});
+	};
+	/** The token-standard selectors, else an opaque call. None of them accounts for native value. */
+	var standardIntent = (call, { network, fee, table }) => {
+		var _call$to2;
+		const chainId = networkChainId(network);
+		const data = call.data.toLowerCase();
+		const base = {
+			family: "evm",
+			network,
+			approvals: [],
+			warnings: []
+		};
 		const transferArgs = tryCall(ERC20_TRANSFER, data);
 		if (transferArgs !== void 0) {
 			var _call$to;
@@ -23485,6 +23758,33 @@ zoo`.split("\n"));
 			verifiability: "opaque"
 		});
 	};
+	/**
+	* The call rules shared by a whole transaction and a Safe's inner calls: the same selector table
+	* produces the intent; `fee` is `undefined` for a call that is not itself a transaction. Native
+	* value sent along with calldata is always an outflow to the contract that receives it.
+	*/
+	var decodeCall = (call, context) => {
+		var _call$to3;
+		if (call.data === "0x" && call.to !== void 0) return {
+			family: "evm",
+			network: context.network,
+			summary: "transfer",
+			outflows: nativeOutflow(call.value, call.to),
+			approvals: [],
+			fee: context.fee,
+			warnings: [],
+			verifiability: "full"
+		};
+		const address = (_call$to3 = call.to) !== null && _call$to3 !== void 0 ? _call$to3 : call.created;
+		const contract = address === void 0 ? {} : { contract: {
+			address,
+			created: call.to === void 0
+		} };
+		const protocol = protocolIntent(call, context);
+		if (protocol !== void 0) return _objectSpread2(_objectSpread2({}, protocol), contract);
+		const standard = standardIntent(call, context);
+		return _objectSpread2(_objectSpread2(_objectSpread2({}, standard), contract), {}, { outflows: call.value > 0n && address !== void 0 ? [...nativeOutflow(call.value, address), ...standard.outflows] : standard.outflows });
+	};
 	/** The delegation field a request carries, present iff the transaction is eip7702. */
 	var delegationOf = (tx) => {
 		if (tx.type !== "eip7702") return;
@@ -23496,6 +23796,14 @@ zoo`.split("\n"));
 		};
 	};
 	var weakest = (intents) => intents.some((i) => i.verifiability === "opaque") ? "opaque" : intents.some((i) => i.verifiability === "partial") ? "partial" : "full";
+	/** The address a contract creation from `signer` at `nonce` deploys to (CREATE). */
+	var createdAddress = (signer, nonce) => {
+		assertHex$1(signer, "signer");
+		return checksumEvmAddress(fromCreate({
+			from: signer,
+			nonce: BigInt(nonce)
+		}));
+	};
 	var decodeTransaction$1 = (request, signer, table) => {
 		const { tx } = request;
 		const fee = { max: weiAmount(feeWei(tx)) };
@@ -23511,17 +23819,13 @@ zoo`.split("\n"));
 			verifiability: "full"
 		}, delegation === void 0 ? {} : { delegation }), {}, { summary: tx.type === "eip7702" ? "authorization" : "transfer" });
 		const calls = isSelf ? decodeBatchExecute(tx.data) : void 0;
-		const intent = decodeCall({
-			to: tx.to,
-			value: quantityBigInt(tx.value, "tx.value"),
-			data: tx.data
-		}, request.network, fee, table, signer);
+		const context = {
+			network: request.network,
+			table,
+			signer
+		};
 		if (calls !== void 0 && calls.length > 0) {
-			const decoded = calls.map((call) => decodeCall({
-				to: call.to,
-				value: call.value,
-				data: call.data
-			}, request.network, void 0, table, signer));
+			const decoded = calls.map((call) => decodeCall(call, _objectSpread2(_objectSpread2({}, context), {}, { fee: void 0 })));
 			const minimumReceived = decoded.flatMap((d) => {
 				var _d$minimumReceived;
 				return (_d$minimumReceived = d.minimumReceived) !== null && _d$minimumReceived !== void 0 ? _d$minimumReceived : [];
@@ -23530,40 +23834,27 @@ zoo`.split("\n"));
 				var _d$staking;
 				return (_d$staking = d.staking) !== null && _d$staking !== void 0 ? _d$staking : [];
 			});
-			return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, intent), {}, {
+			return _objectSpread2(_objectSpread2(_objectSpread2({
+				family: "evm",
+				network: request.network,
+				warnings: [],
+				fee,
 				summary: "batch",
 				calls: decoded,
 				outflows: decoded.flatMap((d) => d.outflows),
 				approvals: decoded.flatMap((d) => d.approvals)
 			}, staking.length === 0 ? {} : { staking }), minimumReceived.length === 0 ? {} : { minimumReceived }), {}, { verifiability: weakest(decoded) }, delegation === void 0 ? {} : { delegation });
 		}
-		return _objectSpread2(_objectSpread2({}, intent), delegation === void 0 ? {} : { delegation });
+		return _objectSpread2(_objectSpread2({}, decodeCall(_objectSpread2(_objectSpread2({ to: tx.to }, tx.to === void 0 ? { created: createdAddress(signer, tx.nonce) } : {}), {}, {
+			value: quantityBigInt(tx.value, "tx.value"),
+			data: tx.data
+		}), _objectSpread2(_objectSpread2({}, context), {}, { fee }))), delegation === void 0 ? {} : { delegation });
 	};
 	/** The five EIP-712 domain fields a wallet shows; anything malformed is left out. */
 	var displayDomain = (domain) => {
 		const { name, version, verifyingContract, salt } = domain;
 		const chainId = domainChainId(domain);
 		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, typeof name === "string" ? { name } : {}), typeof version === "string" ? { version } : {}), chainId === void 0 ? {} : { chainId }), typeof verifyingContract === "string" && /^0x[0-9a-fA-F]{40}$/.test(verifyingContract) ? { verifyingContract: checksumEvmAddress(verifyingContract) } : {}), typeof salt === "string" ? { salt } : {});
-	};
-	/** Strict UTF-8 text with any sign-in recognition, else the raw bytes as hex. */
-	var messageContent = (bytes) => {
-		try {
-			const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-			const signIn = parseSignIn(text, "evm");
-			return signIn === void 0 ? {
-				kind: "text",
-				text
-			} : {
-				kind: "text",
-				text,
-				signIn
-			};
-		} catch (_unused7) {
-			return {
-				kind: "bytes",
-				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
-			};
-		}
 	};
 	/**
 	* Decodes a normalized request into a DisplayIntent. `signer` is the address of the signing
@@ -23580,7 +23871,7 @@ zoo`.split("\n"));
 			approvals: [],
 			fee: void 0,
 			warnings: [],
-			message: messageContent(request.message),
+			message: messageContent(request.message, "evm"),
 			verifiability: "opaque"
 		};
 		if (request.kind !== "evm.typed-data") throw new ChainError("unsupported", `unsupported sign request kind: ${request.kind}`);
@@ -23589,7 +23880,12 @@ zoo`.split("\n"));
 		const chainId = networkChainId(request.network);
 		const permit = recognizePermit(json, chainId, table);
 		const seaport = permit === void 0 ? recognizeSeaport(json, chainId, table) : void 0;
-		const safe = permit === void 0 && seaport === void 0 ? recognizeSafe(json, (call) => decodeCall(call, request.network, void 0, table, signer)) : void 0;
+		const safe = permit === void 0 && seaport === void 0 ? recognizeSafe(json, (call) => decodeCall(call, {
+			network: request.network,
+			fee: void 0,
+			table,
+			signer
+		})) : void 0;
 		const message = _objectSpread2(_objectSpread2({
 			kind: "typed-data",
 			primaryType: json.primaryType,
@@ -26053,6 +26349,19 @@ zoo`.split("\n"));
 			wipe(seed);
 		}
 	}
+	// packages/wallet-kernel/src/vault/policy.ts
+	var POLICY_KIND = "policy";
+	var BLIND_SIGNING = "blind-signing";
+	var MARKER = 1;
+	var policyRecord = (image, id) => image.records.find((record) => record.kind === "policy" && record.id === id);
+	var sealPolicy = (platform, dek, id) => sealRecord(platform, dek, POLICY_KIND, id, encodePolicyHeader(platform.now()), new Uint8Array([MARKER]));
+	/** Whether the vault's owner turned the policy `id` on. */
+	function policyEnabled(image, dek, id) {
+		const record = policyRecord(image, id);
+		if (record === void 0) return false;
+		wipe(openRecord(dek, record));
+		return true;
+	}
 	// packages/wallet-kernel/src/commands/passphrase.ts
 	init_utils$2();
 	/**
@@ -26310,6 +26619,26 @@ zoo`.split("\n"));
 			await keystore.remove(id).catch(() => void 0);
 			throw error;
 		}
+		return null;
+	}
+	/**
+	* Blind signing: whether `chain.sign` accepts requests whose content the kernel cannot show. Off
+	* until the owner turns it on; already in the target state is a prompt-free no-op, otherwise a
+	* verification comes first — in both directions, so the setting only ever follows its owner.
+	*/
+	async function setBlindSigning(ctx, params, requestSession) {
+		const { dek } = ctx.session.require(requestSession);
+		if (params.enabled === (policyRecord(ctx.image, "blind-signing") !== void 0)) return null;
+		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "blind-signing"));
+		const session = ctx.session.require(requestSession);
+		await ctx.commit([params.enabled ? {
+			op: "put-record",
+			record: sealPolicy(ctx.platform, session.dek, BLIND_SIGNING)
+		} : {
+			op: "delete-record",
+			kind: POLICY_KIND,
+			id: BLIND_SIGNING
+		}]);
 		return null;
 	}
 	// packages/wallet-kernel/src/commands/keys.ts
@@ -27586,6 +27915,7 @@ zoo`.split("\n"));
 		"vault.removeFactor": async (ctx, params, session) => removeFactor(ctx, params, session),
 		"vault.enrolVerification": async (ctx, params, session) => enrolVerification(ctx, params, session),
 		"vault.setAppLock": async (ctx, params, session) => setAppLock(ctx, params, session),
+		"vault.setBlindSigning": async (ctx, params, session) => setBlindSigning(ctx, params, session),
 		"wallet.createWithPasskey": async (ctx, params, session) => createWithPasskey(ctx, params, session),
 		"wallet.restoreWithPasskey": async (ctx, params, session) => createWithPasskey(ctx, params, session),
 		"wallet.createMnemonic": async (ctx, params, session) => createMnemonic(ctx, params, session),
@@ -30780,7 +31110,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-_Jfs46Lm.mjs
+	// packages/wallet-chains/dist/message-DF2CkjM9.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -30840,9 +31170,9 @@ zoo`.split("\n"));
 	* BIP-322 message signing ("simple" + legacy) built on btc-signer primitives.
 	* https://github.com/bitcoin/bips/blob/master/bip-0322.mediawiki
 	*/
-	var utf8$1 = (s) => new TextEncoder().encode(s);
+	var utf8 = (s) => new TextEncoder().encode(s);
 	var BIP322_TAG = "BIP0322-signed-message";
-	var LEGACY_MAGIC = utf8$1("Bitcoin Signed Message:\n");
+	var LEGACY_MAGIC = utf8("Bitcoin Signed Message:\n");
 	var concat$1 = (...parts) => {
 		const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
 		let o = 0;
@@ -30872,8 +31202,8 @@ zoo`.split("\n"));
 	};
 	/** BIP340 tagged hash: sha256(sha256(tag) || sha256(tag) || m). */
 	var bip322MessageHash = (message) => {
-		const tag = sha256$1(utf8$1(BIP322_TAG));
-		return sha256$1(concat$1(tag, tag, utf8$1(message)));
+		const tag = sha256$1(utf8(BIP322_TAG));
+		return sha256$1(concat$1(tag, tag, utf8(message)));
 	};
 	/**
 	* Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
@@ -30948,7 +31278,7 @@ zoo`.split("\n"));
 	* 64-byte compact ECDSA sig), header = 27 + recovery + 4 (compressed pubkey).
 	*/
 	/** The double-SHA256 digest a legacy "Bitcoin Signed Message" signature commits to. */
-	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8$1(message)))));
+	var legacyMessageHash = (message) => sha256$1(sha256$1(concat$1(pushData(LEGACY_MAGIC), pushData(utf8(message)))));
 	var signLegacyMessage = (message, privateKey) => {
 		var _recovered$;
 		const hash = legacyMessageHash(message);
@@ -31250,30 +31580,29 @@ zoo`.split("\n"));
 		return signBip322Simple(request.message, scriptPubKey, privateKey, auxRand);
 	};
 	// packages/wallet-kernel/src/modules/chains/prompt.ts
-	init_objectSpread2();
-	/** Off-chain messages carry no decodable value flow. */
-	var MESSAGE_INTENT = {
+	/**
+	* The system verification prompt for `chain.sign`, rendered from the kernel's own decode of the
+	* request (WD-065). A transaction lists every fact the signed bytes prove — outflows, approvals,
+	* the fee cap — and says so when other effects may exist (`partial`) or cannot be verified at all
+	* (`opaque`). A message shows what is signed: its text, the sign-in it carries, or the typed data's
+	* domain and recognised content. Addresses are never truncated — a shortened address is what
+	* address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
+	* excerpt.
+	*/
+	/** The prompt intent of an off-chain message: it moves no value and pays no fee. */
+	var messagePromptIntent = (message) => ({
 		summary: "message",
 		outflows: [],
 		approvals: [],
 		fee: void 0,
-		verifiability: "opaque"
-	};
-	var utf8 = new TextDecoder("utf-8", { fatal: true });
-	/** The prompt intent of a raw message: its UTF-8 text, or the bytes as hex for a blind sign. */
-	var messageIntent = (message) => {
-		try {
-			return _objectSpread2(_objectSpread2({}, MESSAGE_INTENT), {}, { message: {
-				kind: "text",
-				text: utf8.decode(message)
-			} });
-		} catch (_unused) {
-			return _objectSpread2(_objectSpread2({}, MESSAGE_INTENT), {}, { message: {
-				kind: "bytes",
-				hex: `0x${[...message].map((b) => b.toString(16).padStart(2, "0")).join("")}`
-			} });
-		}
-	};
+		verifiability: "opaque",
+		message
+	});
+	/** How much requester-chosen text one prompt shows. */
+	var MESSAGE_LINES = 6;
+	var MESSAGE_CODE_POINTS = 320;
+	var FIELD_CODE_POINTS = 96;
+	var ORDER_ITEMS = 4;
 	var zh = {
 		titles: {
 			transfer: "确认转账",
@@ -31288,8 +31617,27 @@ zoo`.split("\n"));
 		},
 		blindTitle: "确认盲签",
 		blindDescription: "签署无法显示为文字的数据",
-		generic: "签署来自应用的请求",
 		otherOutflows: "可能还有其他转出",
+		unverifiedEffects: "无法核实此调用的效果",
+		callContract: (address) => `调用合约 ${address}`,
+		deployContract: (address) => `部署合约 ${address}`,
+		signInTitle: "确认登录",
+		signInTo: (domain) => `登录 ${domain}`,
+		signInAccount: (address) => `账户 ${address}`,
+		signInUri: (uri) => `地址 ${uri}`,
+		signInMalformed: "内容像登录请求，但格式不合规",
+		messageHeading: "消息：",
+		omitted: (count) => `… 还有 ${count} 个字符未显示`,
+		typedApp: (name) => `应用：${name}`,
+		typedContract: (address) => `验证合约 ${address}`,
+		typedType: (name) => `类型：${name}`,
+		typedUnshown: "无法显示此请求的内容",
+		orderGive: (amount) => `付出 ${amount}`,
+		orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
+		moreItems: (count) => `… 还有 ${count} 项未显示`,
+		safeTransaction: (safe, nonce) => `Safe ${safe} 的第 ${nonce} 笔交易`,
+		safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
+		safeRefund: (receiver) => `向 ${receiver} 退还 gas 费`,
 		send: (amount, to) => `发送 ${amount} 到 ${to}`,
 		allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
 		unlimited: (asset) => `全部 ${asset}`,
@@ -31334,8 +31682,27 @@ zoo`.split("\n"));
 		},
 		blindTitle: "Confirm blind signing",
 		blindDescription: "Sign data that cannot be shown as text",
-		generic: "Sign a request from an app",
 		otherOutflows: "There may be other outflows",
+		unverifiedEffects: "The effects of this call cannot be verified",
+		callContract: (address) => `Call contract ${address}`,
+		deployContract: (address) => `Deploy contract ${address}`,
+		signInTitle: "Confirm sign-in",
+		signInTo: (domain) => `Sign in to ${domain}`,
+		signInAccount: (address) => `Account ${address}`,
+		signInUri: (uri) => `URI ${uri}`,
+		signInMalformed: "This looks like a sign-in request but is not a valid one",
+		messageHeading: "Message:",
+		omitted: (count) => `… ${count} more characters not shown`,
+		typedApp: (name) => `App: ${name}`,
+		typedContract: (address) => `Verifying contract ${address}`,
+		typedType: (name) => `Type: ${name}`,
+		typedUnshown: "The content of this request cannot be shown",
+		orderGive: (amount) => `Give ${amount}`,
+		orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
+		moreItems: (count) => `… ${count} more items not shown`,
+		safeTransaction: (safe, nonce) => `Safe ${safe}, transaction ${nonce}`,
+		safeDelegatecall: (target) => `Runs the code of ${target} with the Safe's full authority (delegatecall)`,
+		safeRefund: (receiver) => `Refunds gas to ${receiver}`,
 		send: (amount, to) => `Send ${amount} to ${to}`,
 		allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
 		unlimited: (asset) => `unlimited ${asset}`,
@@ -31420,52 +31787,125 @@ zoo`.split("\n"));
 		const until = change.expiration === void 0 || change.expiration === 0 ? "" : catalog.until(utcDate(change.expiration));
 		return `${line}${via}${until}`;
 	}
-	function chainPrompt(locale, intent) {
-		var _intent$message, _intent$warnings, _intent$staking, _intent$minimumReceiv, _intent$minimumReceiv2, _intent$minimumReceiv3, _intent$minimumReceiv4, _intent$warnings2;
-		const catalog = CATALOGS$1[locale];
-		if (((_intent$message = intent.message) === null || _intent$message === void 0 ? void 0 : _intent$message.kind) === "bytes") return {
-			title: catalog.blindTitle,
-			description: catalog.blindDescription
-		};
-		const title = catalog.titles[intent.summary];
-		const tail = ((_intent$warnings = intent.warnings) === null || _intent$warnings === void 0 ? void 0 : _intent$warnings.some((w) => w.kind === "sighash-single-anyonecanpay")) === true ? [catalog.sighashSingle] : [];
-		const delegation = intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation];
-		const network = intent.message === void 0 && intent.network !== void 0 ? [catalog.networkLine(networkLabel(catalog, intent.network))] : [];
+	/** One requester-chosen value on a single line. */
+	var field = (raw) => {
+		var _displayExcerpt$lines;
+		return (_displayExcerpt$lines = displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0]) !== null && _displayExcerpt$lines !== void 0 ? _displayExcerpt$lines : "";
+	};
+	/** The contracts an unverifiable transaction runs: its own, or each opaque call of a batch. */
+	function contractLines(catalog, intent) {
+		var _intent$calls;
+		return ((_intent$calls = intent.calls) !== null && _intent$calls !== void 0 ? _intent$calls : [intent]).flatMap(({ contract, verifiability }) => contract === void 0 || verifiability !== "opaque" ? [] : [contract.created ? catalog.deployContract(contract.address) : catalog.callContract(contract.address)]);
+	}
+	/** What the decoded content does: contracts run, delegation, outflows, receipts, approvals. */
+	function effectLines(catalog, intent) {
+		var _intent$minimumReceiv, _intent$minimumReceiv2, _intent$minimumReceiv3, _intent$minimumReceiv4, _intent$staking;
 		const sol = (lamports) => {
 			var _networkMeta$symbol, _networkMeta, _intent$network;
 			return `${formatUnits(lamports, 9)} ${(_networkMeta$symbol = (_networkMeta = networkMeta((_intent$network = intent.network) !== null && _intent$network !== void 0 ? _intent$network : "")) === null || _networkMeta === void 0 ? void 0 : _networkMeta.symbol) !== null && _networkMeta$symbol !== void 0 ? _networkMeta$symbol : "SOL"}`;
 		};
-		if (intent.verifiability === "opaque") return {
-			title,
-			description: joinLines([
-				...network,
-				...delegation,
-				catalog.generic,
-				...tail
-			])
-		};
-		const lines = [
+		const delegation = intent.delegation === void 0 ? [] : [intent.delegation.kind === "set" ? catalog.delegateTo(intent.delegation.name, intent.delegation.version) : catalog.revokeDelegation];
+		const received = intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to)) : [catalog.bridgeLine(networkLabel(catalog, intent.bridge.destinationNetwork), ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(catalog, intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, utcDateTime(intent.bridge.fillDeadline), intent.bridge.refundTo)];
+		return [
 			...delegation,
+			...contractLines(catalog, intent),
 			...intent.outflows.map((flow) => catalog.send(formatAmount(catalog, flow.amount), flow.to)),
 			...((_intent$staking = intent.staking) !== null && _intent$staking !== void 0 ? _intent$staking : []).map((action) => catalog.stakeLine(action, sol)),
-			...intent.bridge === void 0 ? ((_intent$minimumReceiv = intent.minimumReceived) !== null && _intent$minimumReceiv !== void 0 ? _intent$minimumReceiv : []).map((entry) => catalog.receiveMin(formatAmount(catalog, entry.amount), entry.to)) : [catalog.bridgeLine(networkLabel(catalog, intent.bridge.destinationNetwork), ((_intent$minimumReceiv2 = intent.minimumReceived) === null || _intent$minimumReceiv2 === void 0 ? void 0 : _intent$minimumReceiv2[0]) === void 0 ? "?" : formatAmount(catalog, intent.minimumReceived[0].amount), (_intent$minimumReceiv3 = (_intent$minimumReceiv4 = intent.minimumReceived) === null || _intent$minimumReceiv4 === void 0 || (_intent$minimumReceiv4 = _intent$minimumReceiv4[0]) === null || _intent$minimumReceiv4 === void 0 ? void 0 : _intent$minimumReceiv4.to) !== null && _intent$minimumReceiv3 !== void 0 ? _intent$minimumReceiv3 : intent.bridge.refundTo, utcDateTime(intent.bridge.fillDeadline), intent.bridge.refundTo)],
-			...intent.approvals.map((change) => approvalLine(catalog, change)),
-			...intent.fee === void 0 ? intent.message === void 0 ? [catalog.feeUnknown] : [] : [catalog.maxFee(formatAmount(catalog, intent.fee.max))],
-			...((_intent$warnings2 = intent.warnings) !== null && _intent$warnings2 !== void 0 ? _intent$warnings2 : []).filter((w) => w.kind === "platform-fee").map((w) => catalog.platformFee(w.message)),
-			...tail
+			...received,
+			...intent.approvals.map((change) => approvalLine(catalog, change))
 		];
-		if (intent.verifiability === "partial") return {
-			title,
+	}
+	function transactionPrompt(catalog, intent) {
+		var _intent$warnings;
+		const network = intent.network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, intent.network))];
+		const caveat = intent.verifiability === "opaque" ? [catalog.unverifiedEffects] : intent.verifiability === "partial" ? [catalog.otherOutflows] : [];
+		const warnings = (_intent$warnings = intent.warnings) !== null && _intent$warnings !== void 0 ? _intent$warnings : [];
+		return {
+			title: catalog.titles[intent.summary],
 			description: joinLines([
 				...network,
-				catalog.otherOutflows,
-				...lines
+				...caveat,
+				...effectLines(catalog, intent),
+				intent.fee === void 0 ? catalog.feeUnknown : catalog.maxFee(formatAmount(catalog, intent.fee.max)),
+				...warnings.filter((w) => w.kind === "platform-fee").map((w) => catalog.platformFee(w.message)),
+				...warnings.some((w) => w.kind === "sighash-single-anyonecanpay") ? [catalog.sighashSingle] : []
 			])
 		};
-		return {
-			title,
-			description: joinLines([...network, ...lines.length === 0 ? [catalog.generic] : lines])
+	}
+	function signInLines(catalog, signIn) {
+		if (signIn.status === "malformed") return [catalog.signInMalformed];
+		const { domain, address, chainId, uri } = signIn.fields;
+		return [
+			catalog.signInTo(field(domain)),
+			catalog.signInAccount(field(address)),
+			catalog.networkLine(/^\d+$/.test(chainId) ? networkLabel(catalog, `eip155:${chainId}`) : field(chainId)),
+			catalog.signInUri(field(uri))
+		];
+	}
+	function textLines(catalog, text) {
+		const { lines, omitted } = displayExcerpt(text, MESSAGE_LINES, MESSAGE_CODE_POINTS);
+		return [
+			catalog.messageHeading,
+			...lines,
+			...omitted === 0 ? [] : [catalog.omitted(omitted)]
+		];
+	}
+	function orderLines(catalog, order) {
+		const amount = (item) => {
+			const start = formatAmount(catalog, item.startAmount);
+			const end = formatAmount(catalog, item.endAmount);
+			return start === end ? start : `${start} → ${end}`;
 		};
+		const capped = (lines) => lines.length > ORDER_ITEMS ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)] : lines;
+		return [...capped(order.offer.map((item) => catalog.orderGive(amount(item)))), ...capped(order.consideration.map((item) => catalog.orderReceive(item.recipient, amount(item))))];
+	}
+	function safeLines(catalog, safe) {
+		return [
+			catalog.safeTransaction(safe.safe, safe.nonce),
+			...safe.operation === "delegatecall" ? [catalog.safeDelegatecall(safe.to)] : [],
+			...safe.calls.flatMap((call) => [...call.verifiability === "opaque" ? [catalog.unverifiedEffects] : [], ...effectLines(catalog, call)]),
+			...safe.refund === void 0 ? [] : [catalog.safeRefund(safe.refund.refundReceiver)]
+		];
+	}
+	/** What recognised typed data does; unrecognised content is named as not shown. */
+	function typedContentLines(catalog, intent, message) {
+		if (message.seaport !== void 0) return orderLines(catalog, message.seaport);
+		if (message.safe !== void 0) return safeLines(catalog, message.safe);
+		return intent.approvals.length > 0 ? [catalog.otherOutflows, ...effectLines(catalog, intent)] : [catalog.typedUnshown];
+	}
+	function typedDataLines(catalog, intent, message) {
+		const { name, chainId, verifyingContract } = message.domain;
+		const network = chainId === void 0 ? intent.network : `eip155:${chainId}`;
+		return [
+			...name === void 0 ? [] : [catalog.typedApp(field(name))],
+			...network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, network))],
+			...verifyingContract === void 0 ? [] : [catalog.typedContract(verifyingContract)],
+			catalog.typedType(field(message.primaryType)),
+			...typedContentLines(catalog, intent, message)
+		];
+	}
+	function messagePrompt(catalog, intent, message) {
+		var _message$signIn;
+		if (message.kind === "bytes") return {
+			title: catalog.blindTitle,
+			description: catalog.blindDescription
+		};
+		if (message.kind === "typed-data") return {
+			title: catalog.titles[intent.summary],
+			description: joinLines(typedDataLines(catalog, intent, message))
+		};
+		if (((_message$signIn = message.signIn) === null || _message$signIn === void 0 ? void 0 : _message$signIn.status) === "valid") return {
+			title: catalog.signInTitle,
+			description: joinLines(signInLines(catalog, message.signIn))
+		};
+		return {
+			title: catalog.titles.message,
+			description: joinLines([...message.signIn === void 0 ? [] : signInLines(catalog, message.signIn), ...textLines(catalog, message.text)])
+		};
+	}
+	function chainPrompt(locale, intent) {
+		const catalog = CATALOGS$1[locale];
+		return intent.message === void 0 ? transactionPrompt(catalog, intent) : messagePrompt(catalog, intent, intent.message);
 	}
 	// packages/wallet-kernel/src/modules/chains/shared.ts
 	/**
@@ -31655,7 +32095,10 @@ zoo`.split("\n"));
 		} catch (error) {
 			mapChainError(error);
 		}
-		if (intentOnly) return { prompt: MESSAGE_INTENT };
+		if (intentOnly) return { prompt: messagePromptIntent({
+			kind: "text",
+			text: request.message
+		}) };
 		return {
 			kind: "bitcoin.message",
 			signature: signBitcoinMessage(request, priv, () => random(32))
@@ -31693,7 +32136,7 @@ zoo`.split("\n"));
 	*/
 	var key = (privateKey) => {
 		if (privateKey.length !== 32) throw new ChainError("invalid-request", "private key must be 32 bytes");
-		return fromBytes$1(privateKey);
+		return fromBytes$2(privateKey);
 	};
 	var sign$1 = (payload, privateKey) => sign$2({
 		payload,
@@ -31710,7 +32153,7 @@ zoo`.split("\n"));
 	var rs_v = (signature) => toBytes(signature);
 	/** EIP-191 personal_sign; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmPersonalMessage = (message, privateKey) => {
-		return rs_v(from(sign$1(getSignPayload(fromBytes$1(message)), key(privateKey))));
+		return rs_v(from(sign$1(getSignPayload(fromBytes$2(message)), key(privateKey))));
 	};
 	/** EIP-712 typed data; returns the 65-byte signature r‖s‖v with v∈{27,28}. */
 	var signEvmTypedData = (typedData, privateKey) => {
@@ -31813,7 +32256,7 @@ zoo`.split("\n"));
 			mapChainError(error);
 		}
 		if (!deepEqual(normalized, request)) throw new KernelError("invalid-input", "request is not normalized");
-		let intent = messageIntent(request.message);
+		let intent = messagePromptIntent(messageContent(request.message, "solana"));
 		if (request.kind === "solana.transaction") try {
 			intent = decodeSolana(request, signer);
 		} catch (error) {
@@ -31906,6 +32349,10 @@ zoo`.split("\n"));
 		cache.set(record, accounts);
 		return account;
 	};
+	/** A blind request is refused before any prompt unless the vault's owner allowed blind signing. */
+	var assertSignable = (ctx, dek, intent) => {
+		if (isBlindIntent(intent) && !policyEnabled(ctx.image, dek, "blind-signing")) throw new KernelError("blind-signing-disabled", "blind signing is turned off for this vault");
+	};
 	var chainSign = async (ctx, params, session) => {
 		const { dek } = ctx.session.require(session);
 		const { request, verify } = params;
@@ -31940,6 +32387,7 @@ zoo`.split("\n"));
 		const withSeed = async (run) => withWalletSeed(ctx.platform.pbkdf2, dek, record, run);
 		const prepared = await withSeed((seed) => execute(seed, true));
 		if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
+		assertSignable(ctx, dek, prepared.prompt);
 		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor, _ctx$platform$keystor2;
 			return chainPrompt(promptLocale((_ctx$platform$keystor = (_ctx$platform$keystor2 = ctx.platform.keystore) === null || _ctx$platform$keystor2 === void 0 ? void 0 : _ctx$platform$keystor2.locale) !== null && _ctx$platform$keystor !== void 0 ? _ctx$platform$keystor : "en"), prepared.prompt);
@@ -31978,6 +32426,7 @@ zoo`.split("\n"));
 		};
 		const prepared = await withKey((secret) => execute(secret, true));
 		if (!("prompt" in prepared)) throw new KernelError("integrity", "unreachable: prepare pass signed");
+		assertSignable(ctx, dek, prepared.prompt);
 		await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () => {
 			var _ctx$platform$keystor3, _ctx$platform$keystor4;
 			return chainPrompt(promptLocale((_ctx$platform$keystor3 = (_ctx$platform$keystor4 = ctx.platform.keystore) === null || _ctx$platform$keystor4 === void 0 ? void 0 : _ctx$platform$keystor4.locale) !== null && _ctx$platform$keystor3 !== void 0 ? _ctx$platform$keystor3 : "en"), prepared.prompt);
@@ -43554,6 +44003,7 @@ zoo`.split("\n"));
 		const wallets = [];
 		const importedKeys = [];
 		let backup = null;
+		let blindSigning = false;
 		const owned = [];
 		const meta = metaHealth(image);
 		let corrupted = meta === "corrupted";
@@ -43586,6 +44036,11 @@ zoo`.split("\n"));
 						createdAt: header.createdAt
 					};
 				} else corrupted = true;
+			} else if (record.kind === "policy") {
+				if (record.id === "blind-signing") {
+					parsePolicyHeader(record.header);
+					blindSigning = true;
+				} else unsupported = true;
 			} else if (modules.some((module) => module.ownsRecord(record.kind))) owned.push(record);
 			else unsupported = true;
 		} catch (_unused) {
@@ -43599,12 +44054,13 @@ zoo`.split("\n"));
 			keys: section.keys,
 			importedKeys,
 			backup,
+			blindSigning,
 			health: unsupported ? "unsupported" : corrupted ? "corrupted" : "ok"
 		};
 	}
 	/** The `status` payload for the current session + image; shared by `status` and `postStatus`. */
 	function statusPayload(ctx, nostr) {
-		const { factors, wallets, keys, importedKeys, backup } = statusContents(ctx.image, ctx.modules, nostr);
+		const { factors, wallets, keys, importedKeys, backup, blindSigning } = statusContents(ctx.image, ctx.modules, nostr);
 		return {
 			protocol: 3,
 			vault: ctx.health === "ok" ? ctx.session.status : ctx.health,
@@ -43614,7 +44070,8 @@ zoo`.split("\n"));
 			wallets,
 			nostr: { keys },
 			importedKeys,
-			backup
+			backup,
+			blindSigning
 		};
 	}
 	// packages/wallet-kernel/src/kernel.ts
