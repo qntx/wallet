@@ -87,6 +87,7 @@ type Catalog = {
   readonly safeDelegatecall: (target: string) => string;
   readonly safeRefund: (receiver: string) => string;
   readonly send: (amount: string, to: string) => string;
+  readonly burn: (amount: string) => string;
   readonly allow: (spender: string, amount: string) => string;
   readonly unlimited: (asset: string) => string;
   readonly revoke: (spender: string, asset: string) => string;
@@ -156,6 +157,7 @@ const zh: Catalog = {
   safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
   safeRefund: (receiver) => `向 ${receiver} 退还 gas 费`,
   send: (amount, to) => `发送 ${amount} 到 ${to}`,
+  burn: (amount) => `销毁 ${amount}：转入无法花费的输出，永久丢失`,
   allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
   unlimited: (asset) => `全部 ${asset}`,
   revoke: (spender, asset) => `撤销 ${spender} 对 ${asset} 的授权`,
@@ -235,6 +237,7 @@ const en: Catalog = {
     `Runs the code of ${target} with the Safe's full authority (delegatecall)`,
   safeRefund: (receiver) => `Refunds gas to ${receiver}`,
   send: (amount, to) => `Send ${amount} to ${to}`,
+  burn: (amount) => `Burn ${amount}: it goes to an unspendable output and is lost`,
   allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
   unlimited: (asset) => `unlimited ${asset}`,
   revoke: (spender, asset) => `Revoke ${spender}'s allowance for ${asset}`,
@@ -413,7 +416,11 @@ function effectLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<stri
   return [
     ...delegation,
     ...contractLines(catalog, intent),
-    ...intent.outflows.map((flow) => catalog.send(formatAmount(catalog, flow.amount), flow.to)),
+    ...intent.outflows.map((flow) =>
+      flow.burn === true
+        ? catalog.burn(formatAmount(catalog, flow.amount))
+        : catalog.send(formatAmount(catalog, flow.amount), flow.to),
+    ),
     ...(intent.staking ?? []).map((action) => catalog.stakeLine(action, sol)),
     ...received,
     ...intent.approvals.map((change) => approvalLine(catalog, change)),

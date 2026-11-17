@@ -648,6 +648,35 @@ describe("chain prompts via the real decoders", () => {
     expect(zh).toContain("最高手续费 0.0001 BTC");
   });
 
+  it("value sent to an unspendable output is shown as burned, in both locales", () => {
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hexToBytes("07".repeat(32)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: BTC_SCRIPT, amount: 100_000_000n });
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: BTC_SCRIPT, amount: 100_000_000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+    });
+    tx.addOutput({
+      script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xab)]),
+      amount: 1_000_000n,
+    });
+    tx.addOutput({
+      script: new Uint8Array([0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]),
+      amount: 98_000_000n,
+    });
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    expect(chainPrompt("en", intent).description).toBe(
+      "Network: Bitcoin\nSend 0.01 BTC to bc1q4w46h2at4w46h2at4w46h2at4w46h2at25y74s\nBurn 0.98 BTC: it goes to an unspendable output and is lost\nMax fee 0.01 BTC",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      "网络：Bitcoin\n发送 0.01 BTC 到 bc1q4w46h2at4w46h2at4w46h2at4w46h2at25y74s\n销毁 0.98 BTC：转入无法花费的输出，永久丢失\n最高手续费 0.01 BTC",
+    );
+  });
+
   it("a SIGHASH_SINGLE listing shows the fee-unknown line and the warning", () => {
     const intent = decodeBitcoinPsbt(btcReq(btcPsbt(0x83)), new Set());
     expect(intent.verifiability).toBe("partial");

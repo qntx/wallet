@@ -162,6 +162,11 @@ export type AssetFlow = {
   readonly to: string;
   readonly amount: AssetAmount;
   readonly verified: boolean;
+  /**
+   * The output is provably unspendable (a Bitcoin script that starts with OP_RETURN or exceeds the
+   * 10,000-byte script limit): `amount` is destroyed and `to` is the script hex.
+   */
+  readonly burn?: true;
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
