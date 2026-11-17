@@ -8,13 +8,13 @@ import type { chains } from "@qntx/wallet/chains";
 
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
-import { TransactionController } from "../src/transactions/controller.ts";
 import {
-  DROP_CONFIRMATIONS,
   RESUBMIT_BASE_MS,
   RESUBMIT_MAX_MS,
   UNKNOWN_DROP_MS,
-} from "../src/transactions/evm.ts";
+} from "../src/transactions/broadcast.ts";
+import { TransactionController } from "../src/transactions/controller.ts";
+import { DROP_CONFIRMATIONS } from "../src/transactions/evm.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
 import { fakeSignedEvm, idleNetworkDeps, replaceVia, send } from "./send-helpers.ts";
 import { manualTimers } from "./support/timers.ts";
@@ -325,7 +325,7 @@ describe("EVM poll — unknown to the node", () => {
     const w = world();
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
-    const raw = tx.evm?.raw;
+    const { raw } = tx;
     w.primary.known.delete(hashOf(tx));
     w.primary.accepting = false;
     w.primary.sent.length = 0;
@@ -440,7 +440,7 @@ describe("EVM replacement after restart", () => {
     const original = await send(first.ctl, SEND);
     const second = await w.boot();
     const reloaded = second.ctl.getState().txs[original.id];
-    expect(reloaded?.evm?.raw).toBe(original.evm?.raw);
+    expect(reloaded?.raw).toBe(original.raw);
     const replacement = await replaceVia(second.ctl, original.id, mode, VERIFY);
     return { w, original, replacement };
   };
@@ -489,13 +489,12 @@ describe("EVM build record persistence", () => {
     const w = world();
     const first = await w.boot();
     const tx = await send(first.ctl, SEND);
-    expect(tx.evm).toStrictEqual({
-      from: ADDR,
-      account: ACCOUNT,
-      raw: expect.stringMatching(/^0x/),
-    });
+    expect(tx.evm).toStrictEqual({ from: ADDR, account: ACCOUNT });
+    expect(tx.raw).toMatch(/^0x/);
     const second = await w.boot();
-    expect(second.ctl.getState().txs[tx.id]?.evm).toStrictEqual(tx.evm);
+    const reloaded = second.ctl.getState().txs[tx.id];
+    expect(reloaded?.evm).toStrictEqual(tx.evm);
+    expect(reloaded?.raw).toBe(tx.raw);
   });
 
   it("drops a malformed record on load", async () => {
@@ -507,7 +506,7 @@ describe("EVM build record persistence", () => {
     const record = JSON.parse(new TextDecoder().decode(stored)) as {
       evm: Record<string, unknown>;
     };
-    record.evm["raw"] = "not hex";
+    delete record.evm["account"];
     await collection.put(tx.id, new TextEncoder().encode(JSON.stringify(record)));
     const second = await w.boot();
     expect(second.ctl.getState().txs[tx.id]).toBeDefined();

@@ -100,6 +100,9 @@ const TX_STATES: ReadonlySet<string> = new Set([
 
 const isTxState = (v: unknown): v is TxState => typeof v === "string" && TX_STATES.has(v);
 
+/** States whose signed bytes may be on the network: tracked until they end. */
+const LIVE_STATES: ReadonlySet<TxState> = new Set(["signed", "submitted", "pending"]);
+
 type BtcRecord = NonNullable<TrackedTransaction["btc"]>;
 const isBtcRecord = (v: unknown): v is BtcRecord => {
   if (!isObject(v)) {
@@ -141,11 +144,7 @@ const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
     typeof v["template"] === "string") ||
     (v["kind"] === "imported" && typeof v["keyId"] === "string" && v["family"] === "evm"));
 const isEvmRecord = (v: unknown): v is EvmRecord =>
-  isObject(v) &&
-  typeof v["from"] === "string" &&
-  isEvmAccountRef(v["account"]) &&
-  typeof v["raw"] === "string" &&
-  /^0x(?:[0-9a-fA-F]{2})+$/.test(v["raw"]);
+  isObject(v) && typeof v["from"] === "string" && isEvmAccountRef(v["account"]);
 
 const isSparkDeposit = (v: unknown): v is SparkDepositTag =>
   isObject(v) &&
@@ -177,8 +176,10 @@ const decode = (
     state,
     intent,
     nonce,
+    lastValidBlockHeight,
     replaces,
     parentId,
+    raw: signedRaw,
     evm,
     btc,
     sparkDeposit,
@@ -205,8 +206,12 @@ const decode = (
     state,
     intent: isIntent(intent) ? intent : undefined,
     nonce,
+    ...(typeof lastValidBlockHeight === "number" && Number.isSafeInteger(lastValidBlockHeight)
+      ? { lastValidBlockHeight }
+      : {}),
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
+    ...(typeof signedRaw === "string" && signedRaw !== "" ? { raw: signedRaw } : {}),
     ...(isEvmRecord(evm)
       ? { evm }
       : (() => {
@@ -244,15 +249,27 @@ export class TransactionController extends Controller<TransactionControllerState
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
     for (const raw of rows) {
-      const tx =
+      const loaded =
         raw === undefined ? undefined : decode(raw, (msg) => this.options.logger.warn(msg));
-      if (tx === undefined) {
+      if (loaded === undefined) {
         continue;
       }
-      this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: tx } }));
-      if ((tx.state === "submitted" || tx.state === "pending") && tx.hash !== undefined) {
-        this.track(tx.id, tx.hash);
+      this.update((s) => ({ ...s, txs: { ...s.txs, [loaded.id]: loaded } }));
+      const { hash } = loaded;
+      if (!LIVE_STATES.has(loaded.state) || hash === undefined) {
+        continue;
       }
+      // Signed bytes persisted but the broadcast never settled (the app stopped mid-send): the
+      // outcome is unknown, so the transaction is tracked like any submitted one.
+      const tx =
+        loaded.state === "signed"
+          ? // oxlint-disable-next-line eslint/no-await-in-loop -- rows load in order
+            await this.transition(loaded, { state: "submitted" })
+          : loaded;
+      if (tx.family === "evm") {
+        this.evmRoute.resume(tx);
+      }
+      this.track(tx.id, hash);
     }
     const batches = this.engineStore.collection("call-batches");
     const batchKeys = await batches.list();

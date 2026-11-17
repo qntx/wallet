@@ -122,6 +122,13 @@ export type Booted = {
   readonly polls: (n?: number) => Promise<void>;
 };
 
+export type PostMode =
+  | { readonly kind: "ok" }
+  /** The node keeps the transaction but the answer is lost (5xx, timeout). */
+  | { readonly kind: "accept-then-throw"; readonly error: unknown }
+  /** The answer says nothing reliable — a transport failure or a node refusal. */
+  | { readonly kind: "throw"; readonly error: unknown };
+
 export type BtcWorld = {
   readonly boot: (backing?: Backing) => Promise<Booted>;
   readonly send: (booted: Booted, amount: bigint, requestId: string) => Promise<TrackedTransaction>;
@@ -129,12 +136,18 @@ export type BtcWorld = {
   readonly spend: (txid: string, vout: number) => void;
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
+  readonly setIndependentStatus: (txid: string, s: unknown) => void;
+  readonly setPost: (mode: PostMode) => void;
   readonly utxos: Map<string, FakeUtxo[]>;
   readonly statuses: Map<string, unknown>;
   readonly broadcasts: string[];
+  /** Every POST /tx body the endpoint was asked about, in order — accepted or not. */
+  readonly posts: string[];
   /** Every esplora `get` path, in order — filter to count a particular endpoint's calls. */
   readonly requests: string[];
   readonly signedCalls: SignParams[];
+  /** Every message the engine's logger warned about, in order. */
+  readonly warnings: string[];
   readonly clock: { t: number };
   readonly persistedUtxos: (
     backing: Backing,
@@ -229,7 +242,7 @@ export const persistedTx = async (
   return asRecord(readJson(raw));
 };
 
-export const world = (): BtcWorld => {
+export const world = (options: { readonly independent?: boolean } = {}): BtcWorld => {
   /** Txid → raw transaction bytes (funding txs and everything the wallet broadcasts). */
   const raws = new Map<string, Uint8Array>();
   /** Scripthash → currently-unspent outputs (the test moves coins by hand). */
@@ -238,9 +251,14 @@ export const world = (): BtcWorld => {
   const history = new Map<string, Set<string>>();
   /** Txid → the /status payload; "404" makes the esplora get throw like electrs does. */
   const statuses = new Map<string, unknown>();
+  /** A second endpoint's statuses, when `options.independent` asks for one. */
+  const independentStatuses = new Map<string, unknown>();
   const broadcasts: string[] = [];
+  const posts: string[] = [];
   const requests: string[] = [];
   const signedCalls: SignParams[] = [];
+  const warnings: string[] = [];
+  let postMode: PostMode = { kind: "ok" };
 
   const markUsed = (hash: string, txid: string): void => {
     const set = history.get(hash) ?? new Set<string>();
@@ -295,6 +313,10 @@ export const world = (): BtcWorld => {
     const sm = /^\/tx\/([0-9a-f]{64})\/status$/.exec(url);
     if (sm !== null) {
       const s = statuses.get(sm[1] ?? "");
+      // A scripted Error answers the read with that failure — a 503, a timeout, a 4xx.
+      if (s instanceof Error) {
+        throw s;
+      }
       // A real Esplora answers 404 for an unknown/evicted txid — the client throws.
       if (s === undefined || s === "404") {
         throw new EsploraError(`esplora ${url}: 404`, false);
@@ -311,11 +333,41 @@ export const world = (): BtcWorld => {
     },
     post: async (_u: string, body: string) => {
       await Promise.resolve();
+      posts.push(body);
+      if (postMode.kind === "throw") {
+        throw postMode.error;
+      }
       const raw = new Uint8Array(Buffer.from(body, "hex"));
       const tx = Transaction.fromRaw(raw, { allowUnknownInputs: true });
       raws.set(tx.id, raw);
       broadcasts.push(tx.id);
+      if (postMode.kind === "accept-then-throw") {
+        throw postMode.error;
+      }
       return tx.id;
+    },
+  };
+
+  /** The independent endpoint: only /status is asked of it (esploraKnows). */
+  const independentStub = {
+    get: async (u: string) => {
+      await Promise.resolve();
+      const sm = /^\/tx\/([0-9a-f]{64})\/status$/.exec(u);
+      if (sm !== null) {
+        const s = independentStatuses.get(sm[1] ?? "");
+        if (s instanceof Error) {
+          throw s;
+        }
+        if (s === undefined) {
+          throw new EsploraError(`esplora ${u}: 404`, false);
+        }
+        return s;
+      }
+      throw new Error(`unmocked independent esplora get ${u}`);
+    },
+    post: async () => {
+      await Promise.resolve();
+      throw new Error("unmocked independent esplora post");
     },
   };
 
@@ -363,7 +415,10 @@ export const world = (): BtcWorld => {
         {
           info: () => ({ family: "bitcoin" }),
           esplora: () => esploraStub,
-          independentEsplora: () => ({ kind: "not-needed" }),
+          independentEsplora: () =>
+            options.independent === true
+              ? { kind: "available", client: independentStub }
+              : { kind: "not-needed" },
         },
         isNetworks,
       ),
@@ -377,7 +432,11 @@ export const world = (): BtcWorld => {
       },
       setTimer: timers.setTimer,
       now: () => clock.t,
-      logger: { warn: () => undefined },
+      logger: {
+        warn: (msg) => {
+          warnings.push(msg);
+        },
+      },
       pollMs: POLL_MS,
       chains: apis,
     });
@@ -400,11 +459,19 @@ export const world = (): BtcWorld => {
     setStatus: (txid: string, s: unknown) => {
       statuses.set(txid, s);
     },
+    setIndependentStatus: (txid: string, s: unknown) => {
+      independentStatuses.set(txid, s);
+    },
+    setPost: (mode: PostMode) => {
+      postMode = mode;
+    },
     statuses,
     utxos,
     broadcasts,
+    posts,
     requests,
     signedCalls,
+    warnings,
     clock,
     persistedUtxos,
     persistedTx,

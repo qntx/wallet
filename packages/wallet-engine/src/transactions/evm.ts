@@ -1,5 +1,7 @@
 /** EVM route: native/ERC-20 send build → fee → decode → sign → broadcast, plus status poll. */
 import {
+  BaseError,
+  RpcRequestError,
   encodeFunctionData,
   getAddress,
   isAddress,
@@ -7,6 +9,7 @@ import {
   keccak256,
   parseTransaction,
 } from "viem";
+import type { PublicClient } from "viem";
 import { readContract } from "viem/actions";
 
 import { ChainError } from "@qntx/wallet-chains";
@@ -50,10 +53,12 @@ import {
   assertSwapIntent,
   assertSwapSimulation,
 } from "../swaps/index.ts";
+import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
+import type { BroadcastVerdict } from "./broadcast.ts";
 import {
   accountAddressOf,
-  errorMessage,
   EVM_BATCH_LIMIT,
+  failTx,
   newId,
   replacementStaleReason,
 } from "./route.ts";
@@ -75,10 +80,68 @@ import type {
 
 /** Consecutive polls that must see the nonce mined without our receipt before the tx is settled. */
 export const DROP_CONFIRMATIONS = 3;
-export const RESUBMIT_BASE_MS = 15_000;
-export const RESUBMIT_MAX_MS = 600_000;
-/** How long a transaction may stay unknown to the node before it is given up as dropped. */
-export const UNKNOWN_DROP_MS = 1_800_000;
+
+/**
+ * The node already holds this exact transaction: geth/reth/Erigon/Nethermind `already known`, Besu
+ * `Known transaction`, OpenEthereum `Transaction already imported`, Erigon `existing txn with same
+ * hash`.
+ */
+const EVM_HELD = /already known|known transaction|already imported|existing txn with same hash/i;
+
+/**
+ * Pool validation refusals: the transaction as signed did not enter the pool. Messages from geth
+ * (core/error.go, core/txpool/errors.go), reth (rpc-eth-types), Erigon (txpoolcfg), Nethermind
+ * (TxPoolErrorMessages) and Besu (RpcErrorType). Capacity errors (`txpool is full`, `account limit
+ * exceeded`) are not here: they say nothing about the bytes, so they stay unknown.
+ */
+const EVM_REFUSED = new RegExp(
+  [
+    "nonce too (?:low|high|far in future)",
+    "nonce has max value",
+    "nonce gap too large",
+    "insufficient funds",
+    "exceeds account balance",
+    "underpriced",
+    "fee too low",
+    "gas price below",
+    "fee per gas less than block base fee",
+    "intrinsic ?gas",
+    "exceeds block gas limit",
+    "gas limit (?:is )?too high",
+    "gas limit reached",
+    "transaction type not supported",
+    "unsupported transaction type",
+    "invalid transaction type",
+    "invalid sender",
+    "failed to recover sender",
+    "invalid (?:transaction )?signature",
+    "max priority fee per gas higher than max fee per gas",
+    String.raw`higher than 2\^256-1`,
+    "oversized data",
+    "transaction too large",
+    "rlptoolong",
+    "not an eoa",
+    "could not replace existing tx",
+    "failed to decode signed transaction",
+  ].join("|"),
+  "i",
+);
+
+/**
+ * What a failed `eth_sendRawTransaction` says about the bytes. Only a JSON-RPC error the node
+ * returned counts (EIP-1474 -32003 is "transaction rejected"); an HTTP failure, timeout or
+ * transport error says nothing.
+ */
+export const evmBroadcastVerdict = (error: unknown): BroadcastVerdict => {
+  const found = error instanceof BaseError ? error.walk((e) => e instanceof RpcRequestError) : null;
+  if (!(found instanceof RpcRequestError)) {
+    return undefined;
+  }
+  if (EVM_HELD.test(found.details)) {
+    return "held";
+  }
+  return found.code === -32003 || EVM_REFUSED.test(found.details) ? "refused" : undefined;
+};
 
 type Watch = {
   consumed: number;
@@ -134,6 +197,16 @@ export type EvmRoute = {
     old: TrackedTransaction,
     mode: "speed-up" | "cancel",
   ) => Promise<PreparedRequest>;
+  /** Re-holds the nonce of a live transaction reloaded at unlock. */
+  readonly resume: (tx: TrackedTransaction) => void;
+};
+
+type EvmWire = {
+  readonly evm: EvmChainAdapter;
+  readonly client: PublicClient;
+  readonly finalize: (signed: SignResult) => string;
+  /** False for a replacement: its nonce belongs to the original, which stays live if it fails. */
+  readonly ownsNonce: boolean;
 };
 
 const signSubmit = async (
@@ -143,32 +216,39 @@ const signSubmit = async (
   request: SignParams["request"],
   verify: SignParams["verify"],
   account: { readonly from: string; readonly account: AccountRef },
-  broadcast: (signed: SignResult) => Promise<{ readonly hash: string; readonly raw: string }>,
+  wire: EvmWire,
 ): Promise<TrackedTransaction> => {
-  let signed: SignResult;
   let tracked = tx;
+  let raw: string;
   try {
     const result = await apis.sign({ request, verify });
     tracked = await ctx.transition(tracked, { state: "signed" });
-    signed = result;
+    raw = wire.finalize(result);
   } catch (error) {
-    await ctx.transition(tracked, { state: "rejected", error: errorMessage(error) });
+    await failTx(ctx, tracked, error);
     throw error;
   }
-  try {
-    const { hash, raw } = await broadcast(signed);
-    tracked = await ctx.transition(tracked, {
-      state: "submitted",
-      hash,
-      evm: { from: account.from, account: account.account, raw },
-      submittedAt: ctx.options.now(),
-    });
-    ctx.track(tracked.id, hash);
-    return tracked;
-  } catch (error) {
-    await ctx.transition(tracked, { state: "failed", error: errorMessage(error) });
-    throw error;
-  }
+  const hash = keccak256(checkedHex(raw));
+  const { evm, client } = wire;
+  return submitSigned(ctx, tracked, {
+    id: hash,
+    raw,
+    record: { evm: account },
+    hold: () => {
+      evm.commitNonce(tx.network, account.from, tx.nonce);
+    },
+    release: () => {
+      if (wire.ownsNonce) {
+        evm.releaseNonce(tx.network, account.from, tx.nonce);
+      }
+    },
+    send: async () => {
+      const reported = await evm.broadcast(client, raw);
+      return reported.toLowerCase();
+    },
+    verdict: evmBroadcastVerdict,
+    known: async () => evm.known(client, hash),
+  });
 };
 
 /** The unsigned transaction a persisted signed `raw` was built from. */
@@ -901,12 +981,15 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      return signSubmit(ctx, tx, apis, request, verify, { from, account }, async (signed) => {
-        const raw = evm.finalize(feed, signed);
-        const hash = await evm.broadcast(client, raw);
-        evm.commitNonce(network, from, unsigned.nonce);
-        return { hash, raw };
-      });
+      return signSubmit(
+        ctx,
+        tx,
+        apis,
+        request,
+        verify,
+        { from, account },
+        { evm, client, finalize: (signed) => evm.finalize(feed, signed), ownsNonce: true },
+      );
     };
 
     return {
@@ -1636,7 +1719,7 @@ export const createEvmRoute = (): EvmRoute => {
     mode: "speed-up" | "cancel",
   ): Promise<PreparedRequest> => {
     const record = old.evm;
-    if (record === undefined) {
+    if (record === undefined || old.raw === undefined) {
       throw new Error("transaction has no build record — cannot replace");
     }
     const { networks } = ctx.options;
@@ -1644,7 +1727,7 @@ export const createEvmRoute = (): EvmRoute => {
     const independent = networks.independentClient(old.network);
     const apis = ctx.options.chains ?? chains(ctx.options.wallet);
     const { chainId } = networks.info(old.network);
-    const original = rebuild(old, record.from, record.raw, chainId);
+    const original = rebuild(old, record.from, old.raw, chainId);
     const { account } = record;
     const estimates = await evm.estimateFee(client);
     let estimate = estimates.find((q) => q.tier === "fast") ?? estimates[1];
@@ -1729,10 +1812,7 @@ export const createEvmRoute = (): EvmRoute => {
         request,
         verify,
         { from: record.from, account: record.account },
-        async (signed) => {
-          const raw = evm.finalize(unsigned, signed);
-          return { hash: await evm.broadcast(client, raw), raw };
-        },
+        { evm, client, finalize: (signed) => evm.finalize(unsigned, signed), ownsNonce: false },
       );
     };
 
@@ -1789,7 +1869,8 @@ export const createEvmRoute = (): EvmRoute => {
       return settled;
     }
     const record = tx.evm;
-    if (record === undefined) {
+    const { raw } = tx;
+    if (record === undefined || raw === undefined) {
       return undefined;
     }
     const watch: Watch = watching.get(tx.id) ?? {
@@ -1845,7 +1926,7 @@ export const createEvmRoute = (): EvmRoute => {
       }
     }
     if (watch.nextResubmit === undefined || now >= watch.nextResubmit) {
-      await evm.broadcast(client, record.raw).catch(() => "");
+      await evm.broadcast(client, raw).catch(() => "");
       watch.nextResubmit = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
       watch.attempt += 1;
     }
@@ -1876,5 +1957,10 @@ export const createEvmRoute = (): EvmRoute => {
     prepareEvmInternal,
     poll,
     prepareReplace,
+    resume: (tx) => {
+      if (tx.evm !== undefined) {
+        evm.commitNonce(tx.network, tx.evm.from, tx.nonce);
+      }
+    },
   };
 };
