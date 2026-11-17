@@ -12,7 +12,7 @@ import { SigHash, Transaction } from "@scure/btc-signer/transaction.js";
 import { equalBytes, taprootTweakPubkey } from "@scure/btc-signer/utils.js";
 
 import type { BitcoinAccountTemplate } from "./account.ts";
-import { bip322ToSpendTxid, legacyMessageHash } from "./message.ts";
+import { bip322ToSign, legacyMessageHash } from "./message.ts";
 import { bitcoinNetwork } from "./networks.ts";
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
@@ -280,14 +280,7 @@ export const verifyBitcoinMessage = (
     if (witness === undefined || witness.length === 0) {
       return false;
     }
-    const tx = new Transaction({ version: 0, lockTime: 0, allowUnknownOutputs: true });
-    tx.addInput({
-      txid: Uint8Array.from([...bip322ToSpendTxid(scriptPubKey, message)].reverse()),
-      index: 0,
-      sequence: 0,
-      witnessUtxo: { script: scriptPubKey, amount: 0n },
-    });
-    tx.addOutput({ script: Uint8Array.of(0x6a), amount: 0n });
+    const tx = bip322ToSign(scriptPubKey, message);
     if (scriptPubKey.at(0) === 0x51) {
       const [rawSig] = witness;
       const xonly = scriptPubKey.slice(2);
