@@ -104,6 +104,19 @@ describe("phishing list generation", () => {
     expect(decodeHashList(snapshot.allow)).toStrictEqual(listOf(["ok.org", "fine.dev"]));
   });
 
+  it("skips the build and logs when a source body exceeds the cap", async () => {
+    const { store, logs, build } = setup();
+    await build(
+      { deny: ["a.com"], allow: [] },
+      { deny: [], allow: [] },
+      {
+        metamask: () => Response.json({ blacklist: ["a".repeat(17 * 1024 * 1024)], whitelist: [] }),
+      },
+    );
+    expect(store.data.get(SNAPSHOT_KEY)).toBeUndefined();
+    expect(logAt(logs, -1)).toMatchObject({ reason: "source-failed" });
+  });
+
   it("skips a build whose deny list shrank by more than half", async () => {
     const { store, logs, build, advance } = setup();
     const many = Array.from({ length: 10 }, (_, i) => `host${String(i)}.com`);

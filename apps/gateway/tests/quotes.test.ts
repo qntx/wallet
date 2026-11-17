@@ -125,6 +125,16 @@ describe("GET /v1/quotes/swap", () => {
     const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
     expect(res.status).toBe(503);
   });
+
+  it("answers 503 when the upstream quote body exceeds the cap", async () => {
+    const upstream = fakeFetch({
+      [`${API}/swap/allowance-holder/quote`]: () =>
+        Response.json({ ...filled(), zid: "a".repeat(1024 * 1024) }),
+    });
+    const app = gateway({ fetch: upstream.fetch, zeroEx: { apiKey: "k" } });
+    const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
+    expect(res.status).toBe(503);
+  });
 });
 
 describe("zeroExConfig", () => {

@@ -12,11 +12,14 @@ import {
 import type { HashList, PhishingListResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { PhishingEntries, PhishingSource } from "../config/phishing.ts";
+import { readCapped } from "../providers/body.ts";
 
 export const SNAPSHOT_KEY = "phishing:snapshot";
 export const JOURNAL_KEY = "phishing:journal";
 
 const FETCH_TIMEOUT_MS = 30_000;
+/** 4.4x the largest list measured (MetaMask's 3.6 MB phishing config). */
+const SOURCE_MAX_BYTES = 16 * 1024 * 1024;
 const JOURNAL_MAX_AGE_MS = 7 * 24 * 3_600_000;
 const JOURNAL_MAX_ENTRIES = 168;
 const SHRINK_FLOOR = 0.5;
@@ -117,7 +120,7 @@ const fetchSource = async (
   if (!response.ok) {
     throw new Error(`${source.id}: upstream status ${response.status}`);
   }
-  return source.parse(await response.json());
+  return source.parse(JSON.parse(await readCapped(response, SOURCE_MAX_BYTES)));
 };
 
 /**

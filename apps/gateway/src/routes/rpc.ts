@@ -16,11 +16,18 @@ import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
+import { ResponseTooLarge, readCapped } from "../providers/body.ts";
 import type { Forwarder } from "../providers/forward.ts";
 import { ProviderFailure } from "../providers/forward.ts";
 
 /** Well above the largest raw transaction a node relays (128 kB of bytes, hex-encoded) in a batch. */
 const MAX_BODY_BYTES = 512 * 1024;
+
+/**
+ * ~10x the largest ordinary response measured (0.84 MB of eth_getBlockReceipts); parsed it peaks
+ * near 30 MB, leaving headroom for concurrent requests under the 128 MB isolate limit.
+ */
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 /** Upstream statuses the request provoked: the caller's own 400 answer, never retried. */
 const REQUEST_ERROR_STATUSES: ReadonlySet<number> = new Set([400, 413, 422]);
@@ -84,7 +91,17 @@ export function rpcRoutes({
               REFUSED_STATUSES.has(response.status),
             );
           }
-          const text = await response.text();
+          let text: string;
+          try {
+            text = await readCapped(response, MAX_RESPONSE_BYTES);
+          } catch (error) {
+            if (error instanceof ResponseTooLarge) {
+              // The caller chose a response too large to relay; the next provider would
+              // return the same, so this is the request's own answer — no failover.
+              throw new GatewayHttpError(400, "invalid-request");
+            }
+            throw error;
+          }
           let parsed: unknown;
           try {
             parsed = JSON.parse(text);

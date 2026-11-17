@@ -21,6 +21,7 @@ export const UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
  * rejected auth call. `refused` marks the attempts the provider provably never processed — an auth
  * failure where nothing was sent, or a 401/403/429 refusal.
  */
+// oxlint-disable-next-line unicorn/custom-error-definition -- a marker type, not a generic Error
 export class ProviderFailure extends Error {
   readonly reason: string;
   readonly refused: boolean;
@@ -111,10 +112,15 @@ export function createForwarder(): Forwarder {
 
 function makePolicy() {
   return wrap(
-    circuitBreaker(handleWhen((error) => !(error instanceof GatewayHttpError)), {
-      halfOpenAfter: BREAKER_HALF_OPEN_MS,
-      breaker: new ConsecutiveBreaker(BREAKER_FAILURES),
-    }),
-    timeout(UPSTREAM_TIMEOUT_MS, TimeoutStrategy.Aggressive),
+    circuitBreaker(
+      handleWhen((error) => !(error instanceof GatewayHttpError)),
+      {
+        halfOpenAfter: BREAKER_HALF_OPEN_MS,
+        breaker: new ConsecutiveBreaker(BREAKER_FAILURES),
+      },
+    ),
+    // abortOnReturn: a streamed Esplora body outlives its attempt and is bounded by its own
+    // deadline, so the attempt's signal must not be aborted when execute() returns.
+    timeout(UPSTREAM_TIMEOUT_MS, { strategy: TimeoutStrategy.Aggressive, abortOnReturn: false }),
   );
 }

@@ -32,6 +32,12 @@ import type { Upstream } from "./helpers.ts";
 
 const HASH = "ab".repeat(32);
 
+/** Answers `eth_getLogs` calls from `answer`; every other call gets a canned chain id. */
+const onlyLogsCalls =
+  (answer: () => Response): Upstream =>
+  (call) =>
+    call.body.includes("eth_getLogs") ? answer() : rpcOk("0xaa36a7");
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -410,13 +416,9 @@ describe("rpc forwarding", () => {
   it.each([400, 413, 422])(
     "answers a request-caused upstream %i with 400, never retries and never trips the breaker",
     async (status) => {
-      const onlyGetLogs =
-        (answer: () => Response): Upstream =>
-        (upstream) =>
-          upstream.body.includes("eth_getLogs") ? answer() : rpcOk("0xaa36a7");
       const up = fakeFetch({
-        "https://a.test/evm": onlyGetLogs(() => new Response("x", { status })),
-        "https://b.test/evm": onlyGetLogs(() => rpcOk([])),
+        "https://a.test/evm": onlyLogsCalls(() => new Response("x", { status })),
+        "https://b.test/evm": onlyLogsCalls(() => rpcOk([])),
       });
       const app = gateway({ fetch: up.fetch });
       const attackerPost = {
@@ -427,12 +429,12 @@ describe("rpc forwarding", () => {
         }),
         body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
       } as const;
-      for (let n = 0; n < 5; n += 1) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential requests share the breaker
-        const res = await app.request(`/v1/rpc/${SEPOLIA}`, attackerPost);
-        expect(res.status).toBe(400);
-        await expect(res.clone().json()).resolves.toStrictEqual({ error: "invalid-request" });
-      }
+      const refused = await Promise.all(
+        Array.from({ length: 5 }, async () => app.request(`/v1/rpc/${SEPOLIA}`, attackerPost)),
+      );
+      expect(refused.map((res) => res.status)).toStrictEqual([400, 400, 400, 400, 400]);
+      const bodies = await Promise.all(refused.map(async (res) => res.json()));
+      expect(bodies).toStrictEqual(Array.from({ length: 5 }, () => ({ error: "invalid-request" })));
       expect(up.callsTo("https://a.test")).toHaveLength(5);
       expect(up.callsTo("https://b.test")).toHaveLength(0);
 
@@ -445,13 +447,9 @@ describe("rpc forwarding", () => {
   it.each([404, 429, 500, 502])(
     "upstream %i stays a provider failure: failover, and the shared breaker opens after 5",
     async (status) => {
-      const onlyGetLogs =
-        (answer: () => Response): Upstream =>
-        (upstream) =>
-          upstream.body.includes("eth_getLogs") ? answer() : rpcOk("0xaa36a7");
       const up = fakeFetch({
-        "https://a.test/evm": onlyGetLogs(() => new Response("x", { status })),
-        "https://b.test/evm": onlyGetLogs(() => new Response("x", { status })),
+        "https://a.test/evm": onlyLogsCalls(() => new Response("x", { status })),
+        "https://b.test/evm": onlyLogsCalls(() => new Response("x", { status })),
       });
       const app = gateway({ fetch: up.fetch });
       const attackerPost = {
@@ -462,11 +460,10 @@ describe("rpc forwarding", () => {
         }),
         body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
       } as const;
-      for (let n = 0; n < 5; n += 1) {
-        // oxlint-disable-next-line eslint/no-await-in-loop -- sequential requests build the streak
-        const res = await app.request(`/v1/rpc/${SEPOLIA}`, attackerPost);
-        expect(res.status).toBe(503);
-      }
+      const refused = await Promise.all(
+        Array.from({ length: 5 }, async () => app.request(`/v1/rpc/${SEPOLIA}`, attackerPost)),
+      );
+      expect(refused.map((res) => res.status)).toStrictEqual([503, 503, 503, 503, 503]);
 
       const callsBeforeVictim = up.calls.length;
       const victim = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
@@ -584,6 +581,7 @@ describe("broadcasts", () => {
     const up = fakeFetch({
       "https://a.test/evm": () => new Response("", { status: 500 }),
       "https://b.test/evm": (call) =>
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- picks the answer by method
         call.body.includes("eth_sendRawTransaction") ? rpcOk(`0x${HASH}`) : rpcOk("0x1"),
     });
     const app = gateway({ fetch: up.fetch });
@@ -814,6 +812,111 @@ describe("esplora forwarding", () => {
     });
     expect(res.status).toBe(503);
     expect(res.headers.get("retry-after")).toBe("30");
+  });
+});
+
+describe("upstream response bounds", () => {
+  const MIB = 1024 * 1024;
+  const chunked = (chunks: ReadonlyArray<string>): Response =>
+    new Response(
+      new ReadableStream<string>({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(chunk);
+          }
+          controller.close();
+        },
+      }).pipeThrough(new TextEncoderStream()),
+    );
+
+  it("answers 400 when an rpc response exceeds 8 MiB, without failover or breaker cost", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": onlyLogsCalls(() =>
+        Response.json({ jsonrpc: "2.0", id: 1, result: "a".repeat(9 * MIB) }),
+      ),
+      "https://b.test/evm": onlyLogsCalls(() => rpcOk("0x1")),
+    });
+    const app = gateway({ fetch: up.fetch });
+    const getLogs = post(call("eth_getLogs", [{ blockHash: `0x${HASH}` }]));
+    const refused = await Promise.all(
+      Array.from({ length: 5 }, async () => app.request(`/v1/rpc/${SEPOLIA}`, getLogs)),
+    );
+    expect(refused.map((res) => res.status)).toStrictEqual([400, 400, 400, 400, 400]);
+    for (const res of refused) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- sequential body reads
+      await expect(res.json()).resolves.toStrictEqual({ error: "invalid-request" });
+    }
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("a");
+  });
+
+  it("passes an rpc response just under the cap", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => rpcOk(`0x${"ab".repeat(3 * MIB)}`),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_getBalance", [`0x${"11".repeat(20)}`])),
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toStrictEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: `0x${"ab".repeat(3 * MIB)}`,
+    });
+  });
+
+  it("cuts off a chunked rpc body with no content-length once it exceeds the cap", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () =>
+        chunked([`{"jsonrpc":"2.0","id":1,"result":"`, "a".repeat(9 * MIB), `"}`]),
+      "https://b.test/evm": () => rpcOk("0x1"),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_chainId")),
+    );
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toStrictEqual({ error: "invalid-request" });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("answers 400 when an Esplora content-length exceeds the cap", async () => {
+    const up = fakeFetch({
+      "https://a.test/btc": () =>
+        new Response("x", { headers: { "content-length": String(17 * MIB) } }),
+      "https://b.test/btc": () => new Response("late"),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx/${HASH}/hex`, {
+      headers: headers(),
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toStrictEqual({ error: "invalid-request" });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("errors the stream when an Esplora body grows past the cap while read", async () => {
+    const up = fakeFetch({
+      "https://a.test/btc": () => chunked(["0".repeat(8 * MIB), "0".repeat(8 * MIB), "0"]),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx/${HASH}/hex`, {
+      headers: headers(),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.text()).rejects.toThrow(/upstream body exceeds/);
+  });
+
+  it("streams a normal Esplora response intact across chunks", async () => {
+    const up = fakeFetch({
+      "https://a.test/btc": () => chunked(["0000", "1111", HASH]),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx/${HASH}/hex`, {
+      headers: headers(),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.text()).resolves.toBe(`00001111${HASH}`);
   });
 });
 

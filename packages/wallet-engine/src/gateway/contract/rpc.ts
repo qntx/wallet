@@ -41,7 +41,6 @@ export const EVM_RPC_METHODS = [
 export const SOLANA_RPC_METHODS = [
   "getAccountInfo",
   "getBalance",
-  "getBlock",
   "getBlockHeight",
   "getBlockTime",
   "getEpochInfo",
@@ -200,9 +199,9 @@ const EVM_PARAMS: Record<EvmRpcMethod, z.ZodMiniType> = {
   eth_getBlockTransactionCountByHash: z.tuple([hash32]),
   eth_getBlockTransactionCountByNumber: z.tuple([tagOrNumber]),
   eth_getCode: z.tuple([evmAddress, optional(blockParam)]),
-  eth_getLogs: z.array(z.unknown()).check(
-    z.refine((params) => logsFilterViolation(params) === undefined),
-  ),
+  eth_getLogs: z
+    .array(z.unknown())
+    .check(z.refine((params) => logsFilterViolation(params) === undefined)),
   eth_getProof: z.tuple([evmAddress, z.array(z.union([hash32, quantity])), blockParam]),
   eth_getStorageAt: z.tuple([evmAddress, z.union([quantity, hash32]), optional(blockParam)]),
   eth_getTransactionByBlockHashAndIndex: z.tuple([hash32, quantity]),
@@ -229,7 +228,6 @@ const configOnly = z.optional(z.tuple([z.optional(solanaConfig)]));
 const SOLANA_PARAMS: Record<SolanaRpcMethod, z.ZodMiniType> = {
   getAccountInfo: pubkeyCall,
   getBalance: pubkeyCall,
-  getBlock: z.tuple([z.int().check(z.nonnegative()), optional(solanaConfig)]),
   getBlockHeight: configOnly,
   getBlockTime: z.tuple([z.int().check(z.nonnegative())]),
   getEpochInfo: configOnly,
@@ -257,10 +255,7 @@ const SOLANA_PARAMS: Record<SolanaRpcMethod, z.ZodMiniType> = {
   getTokenAccountBalance: pubkeyCall,
   getTokenAccountsByOwner: z.tuple([
     solanaPubkey,
-    z.union([
-      z.strictObject({ mint: solanaPubkey }),
-      z.strictObject({ programId: solanaPubkey }),
-    ]),
+    z.union([z.strictObject({ mint: solanaPubkey }), z.strictObject({ programId: solanaPubkey })]),
     optional(solanaConfig),
   ]),
   getTokenSupply: pubkeyCall,
@@ -276,9 +271,7 @@ export const evmRpcRequest = bodySchema(
   z.union(EVM_RPC_METHODS.map((method) => callSchema(z.literal(method), EVM_PARAMS[method]))),
 );
 export const solanaRpcRequest = bodySchema(
-  z.union(
-    SOLANA_RPC_METHODS.map((method) => callSchema(z.literal(method), SOLANA_PARAMS[method])),
-  ),
+  z.union(SOLANA_RPC_METHODS.map((method) => callSchema(z.literal(method), SOLANA_PARAMS[method]))),
 );
 
 const successResponse = z.object({

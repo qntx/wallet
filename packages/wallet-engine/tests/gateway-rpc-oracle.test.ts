@@ -1,3 +1,4 @@
+/* oxlint-disable vitest/expect-expect -- every assertion runs through the expectAccepted helper */
 import { createPublicClient, http } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -8,8 +9,8 @@ const HASH = `0x${"ab".repeat(32)}` as const;
 const STORAGE_KEY = `0x${"01".repeat(32)}` as const;
 
 /**
- * A viem public client whose `http` transport posts to a fake `fetchFn` that captures every
- * request body — the oracle for "the gateway accepts every JSON-RPC shape the engine sends".
+ * A viem public client whose `http` transport posts to a fake `fetchFn` that captures every request
+ * body — the oracle for "the gateway accepts every JSON-RPC shape the engine sends".
  */
 function capture() {
   const bodies: unknown[] = [];
@@ -33,9 +34,7 @@ function capture() {
 }
 
 const expectAccepted = (bodies: ReadonlyArray<unknown>): void => {
-  for (const body of bodies) {
-    expect(accepts(evmRpcRequest, body), JSON.stringify(body)).toBe(true);
-  }
+  expect(bodies.filter((body) => !accepts(evmRpcRequest, body))).toStrictEqual([]);
 };
 
 describe("the gateway accepts every evm read shape viem sends", () => {
@@ -50,9 +49,7 @@ describe("the gateway accepts every evm read shape viem sends", () => {
 
   it("getProof by tag and by EIP-1898 hash", async () => {
     const { client, sent } = capture();
-    expectAccepted(
-      await sent(client.getProof({ address: ADDRESS, storageKeys: [STORAGE_KEY] })),
-    );
+    expectAccepted(await sent(client.getProof({ address: ADDRESS, storageKeys: [STORAGE_KEY] })));
     expectAccepted(
       await sent(
         client.getProof({ address: ADDRESS, blockHash: HASH, storageKeys: [STORAGE_KEY] }),
@@ -110,7 +107,9 @@ describe("the gateway accepts every evm read shape viem sends", () => {
 
   it("getLogs inside the bounded range", async () => {
     const { client, sent } = capture();
-    expectAccepted(await sent(client.getLogs({ address: ADDRESS, fromBlock: 100n, toBlock: 200n })));
+    expectAccepted(
+      await sent(client.getLogs({ address: ADDRESS, fromBlock: 100n, toBlock: 200n })),
+    );
     expectAccepted(await sent(client.getLogs({ blockHash: HASH })));
   });
 
@@ -133,7 +132,9 @@ describe("the gateway accepts every evm read shape viem sends", () => {
       ),
     );
     expectAccepted(
-      await sent(client.transport.request({ method: "eth_getBlockByNumber", params: ["finalized", false] })),
+      await sent(
+        client.transport.request({ method: "eth_getBlockByNumber", params: ["finalized", false] }),
+      ),
     );
   });
 });
@@ -145,14 +146,8 @@ describe("the gateway rejects malformed calls before any upstream", () => {
       "a malformed address",
       { jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: ["0xzz", "latest"] },
     ],
-    [
-      "a missing address",
-      { jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [] },
-    ],
-    [
-      "an extra arg",
-      { jsonrpc: "2.0", id: 1, method: "eth_chainId", params: ["latest"] },
-    ],
+    ["a missing address", { jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [] }],
+    ["an extra arg", { jsonrpc: "2.0", id: 1, method: "eth_chainId", params: ["latest"] }],
   ])("rejects %s", (_name, body) => {
     expect(accepts(evmRpcRequest, body)).toBe(false);
   });

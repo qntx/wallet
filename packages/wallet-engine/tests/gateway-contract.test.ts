@@ -149,8 +149,6 @@ const SOLANA_ACCEPTED: ReadonlyArray<readonly [string, unknown[]]> = [
   ["getAccountInfo", [PUBKEY, { encoding: "base64", commitment: "confirmed" }]],
   ["getAccountInfo", [PUBKEY, { encoding: "jsonParsed" }]],
   ["getBalance", [PUBKEY, { commitment: "confirmed" }]],
-  ["getBlock", [500]],
-  ["getBlock", [500, { encoding: "json", commitment: "confirmed" }]],
   ["getBlockHeight", [{ commitment: "confirmed" }]],
   ["getBlockTime", [500]],
   ["getEpochInfo", []],
@@ -282,9 +280,9 @@ describe("rpc requests", () => {
       expect(ok(rpcRequest, { jsonrpc: "2.0", id, method: "a", params: [] })).toBe(false);
     }
     // Error responses legitimately answer with `id: null` — that id is response-only.
-    expect(ok(rpcResponse, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "x" } })).toBe(
-      true,
-    );
+    expect(
+      ok(rpcResponse, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "x" } }),
+    ).toBe(true);
   });
 
   it("rejects empty batches, oversized batches and malformed calls", () => {
