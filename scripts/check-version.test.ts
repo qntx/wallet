@@ -104,10 +104,11 @@ describe("checkReleaseTag", () => {
     path,
     pkg: { name: path, version, ...extra },
   });
+  const kernel = pkg("packages/wallet-kernel/package.json", "0.0.0", { private: true });
   const packages = [
     pkg("packages/wallet/package.json", "0.14.0"),
     pkg("packages/wallet-engine/package.json", "0.14.0"),
-    pkg("packages/wallet-kernel/package.json", "0.0.0", { private: true }),
+    kernel,
   ];
 
   it("accepts a tag naming the version of every published package", () => {
@@ -134,8 +135,6 @@ describe("checkReleaseTag", () => {
   );
 
   it("fails when nothing would be published", () => {
-    expect(checkReleaseTag("v0.0.0", [packages[2] ?? pkg("x", "0.0.0")])).toStrictEqual([
-      "no published package found",
-    ]);
+    expect(checkReleaseTag("v0.0.0", [kernel])).toStrictEqual(["no published package found"]);
   });
 });
