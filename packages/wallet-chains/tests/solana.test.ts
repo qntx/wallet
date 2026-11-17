@@ -1,3 +1,4 @@
+import { isUtf8 } from "node:buffer";
 import { sign } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -51,11 +52,15 @@ import {
 } from "@solana/transaction-messages";
 import { describe, expect, it } from "vite-plus/test";
 
+import { createMessage } from "@qntx/siwx";
+import { siws } from "@qntx/siwx/svm";
+
 import { ChainError } from "../src/index.ts";
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import {
   SOLANA_NATIVE_ASSET,
   decodeSolana,
+  mayBeTransactionMessage,
   parseCompiledMessage,
   isSolanaAddress,
   normalizeSolana,
@@ -166,7 +171,7 @@ const LOOKUP_TABLE = address("AddressLookupTab1e1111111111111111111111111");
 
 const compile = (
   instructions: ReadonlyArray<unknown>,
-  version: "legacy" | 0 = "legacy",
+  version: "legacy" | 0 | 1 = "legacy",
   lookupAddresses?: Record<string, ReadonlyArray<string>>,
 ): Uint8Array => {
   let message = setTransactionMessageLifetimeUsingBlockhash(
@@ -191,6 +196,19 @@ const compile = (
 };
 
 const feePayerSigner = createNoopSigner(FEE_PAYER);
+
+/** A code point whose UTF-8 encoding starts with `lead` (0xc2–0xf4) — the tests' UTF-8 oracle. */
+const utf8LeadChar = (lead: number): string =>
+  String.fromCodePoint(
+    lead <= 0xdf
+      ? (lead - 0xc0) * 0x40 + 0x20
+      : lead <= 0xef
+        ? // The 0xed range holds the surrogates — take a code point below them.
+          (lead - 0xe0) * 0x1000 + (lead === 0xed ? 0 : 0x800)
+        : lead === 0xf4
+          ? 0x10ffff
+          : (lead - 0xf0) * 0x40000 + 0x10000,
+  );
 
 const transferIx = () =>
   getTransferSolInstruction({ source: feePayerSigner, destination: DEST, amount: 1000n });
@@ -288,6 +306,110 @@ describe("normalize", () => {
   it("rejects a non-raw solana.message format", () => {
     const bad = { ...req(new Uint8Array([1, 2, 3])), kind: "solana.message", format: "offchain" };
     expect(() => normalizeSolana(bad, FEE_PAYER)).toThrow(ChainError);
+  });
+});
+
+describe("transaction-message refusal of raw solana.message", () => {
+  const asRaw = (message: Uint8Array) => ({
+    ...req(message),
+    kind: "solana.message",
+    format: "raw",
+  });
+  const codeOf = (fn: () => unknown): string | undefined => {
+    try {
+      fn();
+    } catch (error) {
+      return error instanceof ChainError ? error.code : "other";
+    }
+    return undefined;
+  };
+
+  it("refuses a kit-compiled v1 message passed as a raw message", () => {
+    expect(() => normalizeSolana(asRaw(compile([transferIx()], 1)), FEE_PAYER)).toThrow(ChainError);
+  });
+
+  it("refuses a v1 transaction and every other versioned prefix as unsupported", () => {
+    expect(codeOf(() => normalizeSolana(req(compile([transferIx()], 1)), FEE_PAYER))).toBe(
+      "unsupported",
+    );
+    for (const first of [0x81, 0x82, 0xfe]) {
+      expect(codeOf(() => parseCompiledMessage(new Uint8Array([first, 0])))).toBe("unsupported");
+    }
+  });
+
+  const byteRange = (from: number, to: number): number[] =>
+    Array.from({ length: to - from + 1 }, (_, i) => from + i);
+
+  const hexByte = (b: number): [string, number] => [b.toString(16).padStart(2, "0"), b];
+
+  it.each(byteRange(0x00, 0x7f).map(hexByte))("a short payload starting 0x%s is raw-signable", (_label, b) => {
+    expect(mayBeTransactionMessage(new Uint8Array([b]))).toBe(false);
+    expect(mayBeTransactionMessage(new Uint8Array([b, 0xff]))).toBe(false);
+  });
+
+  it("refuses a complete legacy message but not one with a trailing byte", () => {
+    const legacy = compile([transferIx()]);
+    expect(mayBeTransactionMessage(legacy)).toBe(true);
+    expect(mayBeTransactionMessage(new Uint8Array([...legacy, 0]))).toBe(false);
+    expect(mayBeTransactionMessage(new Uint8Array(0))).toBe(false);
+  });
+
+  it.each([...byteRange(0x80, 0xc1), ...byteRange(0xf5, 0xfe)].map(hexByte))(
+    "a versioned prefix 0x%s is refused with any suffix",
+    (_label, b) => {
+      expect(mayBeTransactionMessage(new Uint8Array([b, ...Buffer.from("tail", "utf8")]))).toBe(
+        true,
+      );
+      expect(mayBeTransactionMessage(new Uint8Array([b, 0x01, 0x02]))).toBe(true);
+    },
+  );
+
+  it.each(byteRange(0xc2, 0xf4).map(hexByte))(
+    "a lead byte 0x%s passes only as well-formed UTF-8",
+    (_label, b) => {
+    expect(mayBeTransactionMessage(new Uint8Array([b, 0x00]))).toBe(true);
+    expect(mayBeTransactionMessage(new Uint8Array([b, 0xff]))).toBe(true);
+    const text = Buffer.from(`${utf8LeadChar(b)} sign in`, "utf8");
+    expect(text[0]).toBe(b);
+    expect(isUtf8(text)).toBe(true);
+    expect(mayBeTransactionMessage(new Uint8Array(text))).toBe(false);
+  });
+
+  it("0xff is always raw-signable, including the off-chain envelope", () => {
+    expect(mayBeTransactionMessage(new Uint8Array([0xff]))).toBe(false);
+    const envelope = Buffer.concat([
+      Buffer.from([0xff]),
+      Buffer.from("solana offchain"),
+      Buffer.alloc(16),
+    ]);
+    expect(mayBeTransactionMessage(new Uint8Array(envelope))).toBe(false);
+  });
+
+  it("keeps real-world texts signable and refuses transaction-shaped bytes", () => {
+    const siwsText = siws.format(
+      createMessage({
+        domain: "example.com",
+        address: FEE_PAYER,
+        uri: "https://example.com/login",
+        version: "1",
+        chainId: "mainnet",
+        nonce: "12341234",
+        issuedAt: "2022-03-17T12:45:13.610Z",
+      }),
+    );
+    for (const text of [siwsText, "你好，签名", "🔐 Sign in to example.com", "plain ascii"]) {
+      const bytes = new TextEncoder().encode(text);
+      expect(mayBeTransactionMessage(bytes)).toBe(false);
+      expect(normalizeSolana(asRaw(bytes), FEE_PAYER).kind).toBe("solana.message");
+    }
+    const v0 = compile([transferIx()], 0);
+    const v1 = compile([transferIx()], 1);
+    expect(mayBeTransactionMessage(v0)).toBe(true);
+    expect(mayBeTransactionMessage(new Uint8Array([...v0, 0]))).toBe(true);
+    expect(mayBeTransactionMessage(new Uint8Array([...v1, 0]))).toBe(true);
+    for (let b = 0x82; b <= 0xfe; b += 1) {
+      expect(mayBeTransactionMessage(new Uint8Array([b, ...v1.slice(1)]))).toBe(true);
+    }
   });
 });
 

@@ -2,7 +2,7 @@ import { isRecord, requestBase } from "../account-ref.ts";
 import { ChainError } from "../index.ts";
 import type { SignRequest } from "../index.ts";
 import { SOLANA_NETWORKS, isSolanaAddress } from "./ids.ts";
-import { parseCompiledMessage, validateLookupTables } from "./message.ts";
+import { mayBeTransactionMessage, parseCompiledMessage, validateLookupTables } from "./message.ts";
 
 export {
   PROGRAM_IDS,
@@ -17,7 +17,7 @@ export { SOLANA_NATIVE_ASSET } from "./assets.ts";
 export { associatedTokenAddress } from "./ata.ts";
 export { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 export { JUPITER_PROGRAM, WSOL_MINT } from "./jupiter.ts";
-export { parseCompiledMessage } from "./message.ts";
+export { mayBeTransactionMessage, parseCompiledMessage } from "./message.ts";
 export type { LookupReference, ParsedSolanaMessage } from "./message.ts";
 export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";
@@ -61,7 +61,8 @@ const validateLookupTablesRaw = (tables: unknown): ReadonlyArray<LookupTable> | 
  * Normalizes a Solana sign request. `signer` is the fee payer the wallet is about to sign for — the
  * message must declare it as the first static account. A raw `solana.message` must not decode as a
  * transaction message (chains.mdx rule — a bytes-to-sign path that produces a transaction signature
- * is a wallet-drainer). Idempotent.
+ * is a wallet-drainer): bytes a cluster could accept as a transaction message of any version are
+ * never signed as a raw message. Idempotent.
  */
 export const normalizeSolana = (request: unknown, signer: string): SignRequest => {
   if (!isRecord(request) || typeof request["kind"] !== "string") {
@@ -108,16 +109,10 @@ export const normalizeSolana = (request: unknown, signer: string): SignRequest =
         `solana.message format ${String(format)} is not supported`,
       );
     }
-    let decodesAsTransaction = true;
-    try {
-      parseCompiledMessage(message);
-    } catch {
-      decodesAsTransaction = false;
-    }
-    if (decodesAsTransaction) {
+    if (mayBeTransactionMessage(message)) {
       throw new ChainError(
         "invalid-request",
-        "solana.message payload decodes as a transaction message — use solana.transaction",
+        "solana.message payload could be a transaction message — use solana.transaction",
       );
     }
     return { kind: "solana.message", network, account, message, format };
