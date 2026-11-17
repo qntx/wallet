@@ -102,13 +102,22 @@ for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY          
 done
 ```
 
-(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional.) Deploys run from GitHub Actions →
-**Gateway → Run workflow** on `main` into the `production` environment; a push to `main` touching
-`apps/gateway/**`, `packages/wallet-engine/src/gateway/**` or `.../networks/**` redeploys staging
-automatically. GitHub setup: create environments `staging` and `production`, require reviewers on
-`production`, and put `CLOUDFLARE_API_TOKEN` in each environment's secrets — an account token
-with **Account › Workers Scripts › Edit** on this account and **Zone › Workers Routes › Edit** on
-`qntx.org` and `meowl.xyz` (custom domains are created and changed through the zone's Workers
-Routes permission). Bindings need no extra permission to deploy.
+(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional.)
+
+## Deployment pipeline
+
+`.github/workflows/gateway.yml` deploys only commits whose CI run passed:
+
+- **staging** follows `main`: each time the CI workflow succeeds on a push to `main`, that commit
+  is deployed and `scripts/smoke.ts` runs against it.
+- **production** is **Gateway → Run workflow** on `main`. It deploys the dispatched commit after
+  checking it has a passed CI run, and waits for the `production` environment's reviewer.
+
+Both environments accept deployments from `main` only. `.github/rulesets/apply.sh <reviewer>`
+creates them with those rules. Each needs its own `CLOUDFLARE_API_TOKEN` as an **environment**
+secret — an account token with **Account › Workers Scripts › Edit** on this account and
+**Zone › Workers Routes › Edit** on the environment's zone (`qntx.org` for staging, `meowl.xyz`
+for production; custom domains are created through the zone's Workers Routes permission). The
+workflow stays off until the repository variable `GATEWAY_DEPLOY` is `true`.
 
 Roll back with `bunx wrangler rollback --env production`.
