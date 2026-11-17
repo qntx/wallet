@@ -9,6 +9,7 @@ import * as AbiFunction from "ox/AbiFunction";
 import type { DisplayIntent, SafeTransaction } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT256 } from "./approval.ts";
+import type { EvmTokenTable } from "./tokens.ts";
 import { sameFields, typedDataAddress, typedDataBytes, typedDataUint } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 
@@ -107,6 +108,11 @@ const multiSendEntries = (data: `0x${string}`): ReadonlyArray<Call> | undefined 
  */
 export function recognizeSafe(
   json: TypedDataInput,
+  context: {
+    readonly network: string;
+    readonly chainId: number;
+    readonly table: EvmTokenTable;
+  },
   decode: (call: Call) => DisplayIntent,
 ): SafeRecognition | undefined {
   const { types, primaryType, message, domain } = json;
@@ -144,7 +150,26 @@ export function recognizeSafe(
     operation === 1n && SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase())
       ? multiSendEntries(data)
       : undefined;
-  const calls = (inner ?? [{ to, value, data }]).map(decode);
+  // A delegatecall runs the target's code with the Safe's full authority (Executor.sol:
+  // `delegatecall(txGas, to, add(data, 0x20), mload(data), 0, 0)` — no value moves). Only
+  // canonical MultiSendCallOnly calldata can be unpacked into checkable calls; anything else is
+  // opaque — the call decoder would misread it as an ordinary call, claimed value included.
+  const calls =
+    operation === 1n && inner === undefined
+      ? [
+          {
+            family: "evm" as const,
+            network: context.network,
+            summary: "contract-call" as const,
+            outflows: [],
+            approvals: [],
+            fee: undefined,
+            warnings: [],
+            verifiability: "opaque" as const,
+            contract: { address: to, created: false },
+          },
+        ]
+      : (inner ?? [{ to, value, data }]).map(decode);
   return {
     safe: {
       safe,

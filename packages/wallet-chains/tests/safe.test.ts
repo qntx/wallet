@@ -1,7 +1,9 @@
 import * as AbiFunction from "ox/AbiFunction";
+import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
-import { checksumEvmAddress, decodeEvm } from "../src/evm/index.ts";
+import { SAFE_MULTISEND_CALL_ONLY, checksumEvmAddress, decodeEvm } from "../src/evm/index.ts";
+import { isBlindIntent } from "../src/index.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 
@@ -186,6 +188,116 @@ describe("decodeEvm: Safe transactions", () => {
       gasToken: "0x0000000000000000000000000000000000000000",
       refundReceiver: REFUND,
     });
+  });
+
+  it("a delegatecall outside MultiSendCallOnly stays a single opaque call", () => {
+    const cases = [
+      // Empty data to an arbitrary target.
+      doc(safeTx({ to: TO, operation: 1 })),
+      // Recognised ERC-20 calldata to an arbitrary target — it runs with the Safe's authority.
+      doc(safeTx({ to: TOKEN, operation: 1, data: transferData })),
+      // A canonical MultiSendCallOnly target whose data is not a valid multiSend.
+      doc(safeTx({ to: MULTISEND, operation: 1, data: transferData })),
+    ];
+    const targets = [TO, TOKEN, MULTISEND];
+    for (const [i, d] of cases.entries()) {
+      const safe = safeOf(d);
+      expect(safe?.calls).toHaveLength(1);
+      expect(safe?.calls[0]?.summary).toBe("contract-call");
+      expect(safe?.calls[0]?.verifiability).toBe("opaque");
+      expect(safe?.calls[0]?.outflows).toHaveLength(0);
+      expect(safe?.calls[0]?.contract).toStrictEqual({
+        address: targets[i],
+        created: false,
+      });
+      expect(isBlindIntent(decode(d))).toBe(true);
+    }
+  });
+
+  it("blind exactly when the delegatecall is not a verifiable MultiSend", () => {
+    const hexOf = (b: Uint8Array): string =>
+      [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    const evmAddress = fc
+      .uint8Array({ minLength: 20, maxLength: 20 })
+      .map((b) => `0x${hexOf(b)}`);
+    // Shorter than any 4-byte selector, so never a decodable call.
+    const shortData = fc
+      .uint8Array({ minLength: 1, maxLength: 3 })
+      .map((b) => `0x${hexOf(b)}`);
+    const entryData = fc.oneof(fc.constant("0x"), shortData);
+    const entry = fc.record({
+      to: evmAddress,
+      value: fc.bigInt({ min: 0n, max: 10n ** 20n }),
+      data: entryData,
+      operation: fc.constantFrom(0, 1),
+    });
+    const packed = fc
+      .array(entry, { maxLength: 3 })
+      .map((es) =>
+        AbiFunction.encodeData(MULTISEND_ABI, [
+          `0x${es.map((e) => packEntry(e.to, e.value, e.data, e.operation)).join("")}`,
+        ]),
+      );
+    const data = fc.oneof(packed, fc.constant("0x"), fc.constant(transferData), shortData);
+
+    /** Oracle: re-parses packed MultiSend entries; `undefined` unless every byte is valid. */
+    const packedEntries = (d: string) => {
+      if (!d.toLowerCase().startsWith("0x8d80ff0a")) {
+        return undefined;
+      }
+      let body: string;
+      try {
+        const decoded: unknown = AbiFunction.decodeData(MULTISEND_ABI, d as `0x${string}`);
+        const first: unknown = Array.isArray(decoded) ? decoded[0] : undefined;
+        if (typeof first !== "string" || !first.startsWith("0x")) {
+          return undefined;
+        }
+        body = first.slice(2);
+      } catch {
+        return undefined;
+      }
+      const entries: Array<{ data: string }> = [];
+      let offset = 0;
+      while (offset < body.length) {
+        if (body.length - offset < 170) {
+          return undefined;
+        }
+        const operation = Number.parseInt(body.slice(offset, offset + 2), 16);
+        if (operation !== 0) {
+          return undefined;
+        }
+        const length = Number(BigInt(`0x${body.slice(offset + 106, offset + 170)}`));
+        offset += 170;
+        if (length * 2 > body.length - offset) {
+          return undefined;
+        }
+        entries.push({ data: `0x${body.slice(offset, offset + length * 2)}` });
+        offset += length * 2;
+      }
+      return entries;
+    };
+
+    fc.assert(
+      fc.property(
+        fc.record({
+          operation: fc.constantFrom(0, 1),
+          to: fc.oneof(evmAddress, fc.constantFrom(...SAFE_MULTISEND_CALL_ONLY)),
+          data,
+        }),
+        ({ operation, to, data }) => {
+          const intent = decode(doc(safeTx({ to, operation, data })));
+          const entries = packedEntries(data);
+          // Only a canonical target with fully valid MultiSend packing unpacks; its calls are
+          // then blind iff an inner call is opaque (our entry data is "0x" or a short blob).
+          const expected =
+            operation === 0
+              ? data !== "0x" && data !== transferData
+              : !(SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase()) && entries !== undefined) ||
+                (entries?.some((e) => e.data !== "0x") ?? false);
+          expect(isBlindIntent(intent)).toBe(expected);
+        },
+      ),
+    );
   });
 
   it("does not recognize a bad operation, malformed field or missing contract", () => {

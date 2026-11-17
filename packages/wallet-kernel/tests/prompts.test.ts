@@ -1132,6 +1132,50 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 
+  it("a Safe delegatecall to arbitrary code is opaque, not decoded as a call", () => {
+    const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+    // ERC-20 transfer calldata — decodeable as a call, but a delegatecall runs it with the
+    // Safe's full authority, so its stated effects would be a lie.
+    const data = `0xa9059cbb${TO.slice(2).toLowerCase().padStart(64, "0")}${(1_000_000).toString(16).padStart(64, "0")}`;
+    const intent = typedOn("eip155:1", {
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeTx: [
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "data", type: "bytes" },
+          { name: "operation", type: "uint8" },
+          { name: "safeTxGas", type: "uint256" },
+          { name: "baseGas", type: "uint256" },
+          { name: "gasPrice", type: "uint256" },
+          { name: "gasToken", type: "address" },
+          { name: "refundReceiver", type: "address" },
+          { name: "nonce", type: "uint256" },
+        ],
+      },
+      primaryType: "SafeTx",
+      domain: { chainId: 1, verifyingContract: safe },
+      message: {
+        to: TO,
+        value: "0",
+        data,
+        operation: 1,
+        safeTxGas: "0",
+        baseGas: "0",
+        gasPrice: "0",
+        gasToken: "0x0000000000000000000000000000000000000000",
+        refundReceiver: "0x0000000000000000000000000000000000000000",
+        nonce: "7",
+      },
+    });
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Ethereum\nVerifying contract ${safe}\nType: SafeTx\nSafe ${safe}, transaction 7\nRuns the code of ${TO} with the Safe's full authority (delegatecall)\nThe effects of this call cannot be verified\nCall contract ${TO}`,
+    );
+  });
+
   const nft = { asset: "0x3333333333333333333333333333333333333333", amount: "1", tokenId: "7" };
   const eth = (amount: string) => ({
     asset: "eip155:1/slip44:60",
