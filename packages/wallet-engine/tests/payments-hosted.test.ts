@@ -31,6 +31,7 @@ import type { WalletEngine } from "../src/engine.ts";
 import type { PaymentParse } from "../src/payments/parse.ts";
 import type { PayInput } from "../src/requests/controller.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import { approval } from "./approval.ts";
 
 const HOSTED = process.env["WALLET_E2E_HOSTED"] === "1";
 const PASSWORD = "correct horse battery staple";
@@ -174,7 +175,7 @@ async function sweep(
     },
     amountSats: balance,
   });
-  await engine.requests.approve(request.id, "pay", VERIFY);
+  await engine.requests.approve(request.id, "pay", approval(request, VERIFY));
 }
 
 async function payViaRequest(
@@ -182,7 +183,7 @@ async function payViaRequest(
   params: Omit<PayInput, "method">,
 ): Promise<void> {
   const request = await engine.requests.prepare({ method: "pay", ...params });
-  await engine.requests.approve(request.id, "pay", VERIFY);
+  await engine.requests.approve(request.id, "pay", approval(request, VERIFY));
 }
 
 async function sweepClient(client: SparkClient, funderIdentity: Uint8Array): Promise<void> {

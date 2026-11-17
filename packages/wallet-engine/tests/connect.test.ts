@@ -26,6 +26,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, simulateSolanaStub, idleNetworkDeps } from "./send-helpers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -258,7 +259,7 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
         r.origin.origin === origin &&
         r.stage === "awaiting-approval",
     );
-    await requests.approve(request?.id ?? "", "evm-sign", VERIFY);
+    await requests.approve(request?.id ?? "", "evm-sign", approval(request, VERIFY));
   };
 
   return {
@@ -921,7 +922,7 @@ describe("phishing enforcement", () => {
     });
     const request = awaiting(r);
     r.setPhishing("blocked");
-    await expect(r.requests.approve(idOf(request), "evm-sign", VERIFY)).rejects.toThrow(
+    await expect(r.requests.approve(idOf(request), "evm-sign", { verify: VERIFY })).rejects.toThrow(
       "origin is on the phishing list",
     );
     expect(r.requests.getState().requests[idOf(request)]?.stage).toBe("failed");

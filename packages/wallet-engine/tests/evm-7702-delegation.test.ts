@@ -14,6 +14,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import {
   bookDeps,
   idleNetworkDeps,
@@ -250,7 +251,7 @@ describe("eip7702 request pipeline", () => {
       action: "upgrade",
       fee: "normal",
     });
-    await w.requests.approve(request.id, "evm-delegation", VERIFY);
+    await w.requests.approve(request.id, "evm-delegation", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]!);
     expect(tx.type).toBe("eip7702");
     expect(tx.authorization).toMatchObject({ address: DELEGATOR });
@@ -278,7 +279,7 @@ describe("eip7702 request pipeline", () => {
       action: "revoke",
       fee: "normal",
     });
-    await w.requests.approve(request.id, "evm-delegation", VERIFY);
+    await w.requests.approve(request.id, "evm-delegation", approval(request, VERIFY));
     expect(signTx(w.signedRequests[0]!).authorization).toMatchObject({ address: ZERO });
     expect((request.display as DisplayIntent).delegation).toMatchObject({ kind: "revoke" });
   });
@@ -337,7 +338,7 @@ describe("eip7702 request pipeline", () => {
       ],
       fee: "normal",
     });
-    await w.requests.approve(request.id, "evm-batch", VERIFY);
+    await w.requests.approve(request.id, "evm-batch", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]!);
     expect(tx.type).not.toBe("eip7702");
     expect(tx.authorization).toBeUndefined();
@@ -374,7 +375,7 @@ describe("eip7702 request pipeline", () => {
       ],
       fee: "normal",
     });
-    await w.requests.approve(request.id, "evm-batch", VERIFY);
+    await w.requests.approve(request.id, "evm-batch", approval(request, VERIFY));
     expect(signTx(w.signedRequests[0]!).authorization).toMatchObject({ address: DELEGATOR });
     expect((request.display as DisplayIntent).summary).toBe("batch");
   });
@@ -587,7 +588,7 @@ describe("eip7702 request pipeline", () => {
       action: "revoke",
       fee: "normal",
     });
-    await w.requests.approve(request.id, "evm-delegation", VERIFY);
+    await w.requests.approve(request.id, "evm-delegation", approval(request, VERIFY));
     const params = estimate.params as unknown[];
     expect(params[2]).toBeUndefined();
     const tx = signTx(w.signedRequests[0]!);
@@ -607,9 +608,9 @@ describe("eip7702 request pipeline", () => {
       ],
       fee: "normal",
     });
-    const tracked = await w.requests.approve(request.id, "evm-batch", VERIFY);
+    const tracked = await w.requests.approve(request.id, "evm-batch", approval(request, VERIFY));
     const sped = await w.requests.prepare({ method: "speed-up", txId: tracked.id });
-    await w.requests.approve(sped.id, "speed-up", VERIFY);
+    await w.requests.approve(sped.id, "speed-up", approval(sped, VERIFY));
     const spedTx = signTx(w.signedRequests[1]!);
     expect(spedTx.type).toBe("eip7702");
     expect(spedTx.authorization).toMatchObject({ address: DELEGATOR });
@@ -624,9 +625,9 @@ describe("eip7702 request pipeline", () => {
       ],
       fee: "normal",
     });
-    const tracked2 = await w.requests.approve(second.id, "evm-batch", VERIFY);
+    const tracked2 = await w.requests.approve(second.id, "evm-batch", approval(second, VERIFY));
     const cancel = await w.requests.prepare({ method: "cancel", txId: tracked2.id });
-    await w.requests.approve(cancel.id, "cancel", VERIFY);
+    await w.requests.approve(cancel.id, "cancel", approval(cancel, VERIFY));
     const cancelTx = signTx(w.signedRequests[3]!);
     expect(cancelTx.authorization).toBeUndefined();
     expect(cancelTx.to.toLowerCase()).toBe(ADDR.toLowerCase());
@@ -648,7 +649,7 @@ describe("eip7702 request pipeline", () => {
         ],
         fee: "normal",
       });
-      const tracked = await w.requests.approve(request.id, "evm-batch", VERIFY);
+      const tracked = await w.requests.approve(request.id, "evm-batch", approval(request, VERIFY));
       await expect(w.requests.prepare({ method: "speed-up", txId: tracked.id })).rejects.toThrow(
         "build record authorization is unexpected",
       );

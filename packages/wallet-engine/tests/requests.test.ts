@@ -31,6 +31,7 @@ import type {
   SendParams,
   TrackedTransaction,
 } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import {
   bookDeps,
   fakeSignedEvm,
@@ -217,7 +218,7 @@ describe("RequestController lifecycle", () => {
       createdAt: 1000,
       expiresAt: 1000 + REQUEST_TTL_MS,
     });
-    const tx = await f.controller.approve(request.id, "send", VERIFY);
+    const tx = await f.controller.approve(request.id, "send", approval(request, VERIFY));
     expect(tx.state).toBe("submitted");
     expect(f.controller.getState().requests[request.id]).toMatchObject({
       stage: "submitted",
@@ -243,19 +244,25 @@ describe("RequestController lifecycle", () => {
     await f.controller.init();
     const request = await f.controller.prepare(PARAMS);
 
-    await expect(f.controller.approve("req-nope", "send", VERIFY)).rejects.toThrow("unknown");
+    await expect(f.controller.approve("req-nope", "send", { verify: VERIFY })).rejects.toThrow(
+      "unknown",
+    );
     await expect(
-      f.controller.approve(request.id, "swap" as unknown as "send", VERIFY),
+      f.controller.approve(request.id, "swap" as unknown as "send", approval(request, VERIFY)),
     ).rejects.toThrow("not swap");
     expect(f.events.some((e) => e.startsWith("sign"))).toBe(false);
 
-    await f.controller.approve(request.id, "send", VERIFY);
-    await expect(f.controller.approve(request.id, "send", VERIFY)).rejects.toThrow("not awaiting");
+    await f.controller.approve(request.id, "send", approval(request, VERIFY));
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toThrow("not awaiting");
     expect(f.events.filter((e) => e.startsWith("sign"))).toHaveLength(1);
 
     const late = await f.controller.prepare(PARAMS);
     f.advance(REQUEST_TTL_MS);
-    await expect(f.controller.approve(late.id, "send", VERIFY)).rejects.toThrow("expired");
+    await expect(f.controller.approve(late.id, "send", approval(late, VERIFY))).rejects.toThrow(
+      "expired",
+    );
     expect(f.controller.getState().requests[late.id]?.stage).toBe("expired");
     expect(f.events.filter((e) => e.startsWith("sign"))).toHaveLength(1);
     expect(f.events).toContain(`release ${late.id}`);
@@ -268,7 +275,9 @@ describe("RequestController lifecycle", () => {
     f.controller.reject(request.id);
     expect(f.controller.getState().requests[request.id]?.stage).toBe("rejected");
     expect(f.events).toContain(`release ${request.id}`);
-    await expect(f.controller.approve(request.id, "send", VERIFY)).rejects.toThrow("rejected");
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toThrow("rejected");
     expect(() => {
       f.controller.reject("req-nope");
     }).toThrow("unknown");
@@ -290,7 +299,7 @@ describe("RequestController lifecycle", () => {
     await f.controller.init();
     const waiting = await f.controller.prepare(PARAMS);
     const done = await f.controller.prepare(PARAMS);
-    await f.controller.approve(done.id, "send", VERIFY);
+    await f.controller.approve(done.id, "send", approval(done, VERIFY));
 
     f.controller.lock();
     const { requests } = f.controller.getState();
@@ -298,7 +307,9 @@ describe("RequestController lifecycle", () => {
     expect(requests[done.id]?.stage).toBe("submitted");
     expect(f.events).toContain(`release ${waiting.id}`);
     expect(f.timers.every((t) => t.stopped)).toBe(true);
-    await expect(f.controller.approve(waiting.id, "send", VERIFY)).rejects.toThrow("invalidated");
+    await expect(
+      f.controller.approve(waiting.id, "send", approval(waiting, VERIFY)),
+    ).rejects.toThrow("invalidated");
     await expect(f.controller.prepare(PARAMS)).rejects.toThrow("unlocked");
 
     await f.controller.init();
@@ -310,9 +321,9 @@ describe("RequestController lifecycle", () => {
     await f.controller.init();
     const request = await f.controller.prepare(PARAMS);
     f.makeStale("nonce already used");
-    await expect(f.controller.approve(request.id, "send", VERIFY)).rejects.toThrow(
-      "nonce already used",
-    );
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toThrow("nonce already used");
     expect(f.controller.getState().requests[request.id]).toMatchObject({
       stage: "failed",
       error: "nonce already used",
@@ -326,9 +337,9 @@ describe("RequestController lifecycle", () => {
     await f.controller.init();
     const request = await f.controller.prepare(PARAMS);
     f.failSubmit(new Error("broadcast failed"));
-    await expect(f.controller.approve(request.id, "send", VERIFY)).rejects.toThrow(
-      "broadcast failed",
-    );
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toThrow("broadcast failed");
     expect(f.controller.getState().requests[request.id]?.stage).toBe("failed");
     expect(f.events).toContain(`release ${request.id}`);
   });
@@ -545,13 +556,15 @@ describe("EVM pipeline", () => {
     const w = evmWorld({});
     await w.start();
     const [a, b] = await Promise.all([w.requests.prepare(PARAMS), w.requests.prepare(PARAMS)]);
-    await w.requests.approve(a.id, "send", VERIFY);
-    await expect(w.requests.approve(b.id, "send", VERIFY)).rejects.toThrow("start over");
+    await w.requests.approve(a.id, "send", approval(a, VERIFY));
+    await expect(w.requests.approve(b.id, "send", approval(b, VERIFY))).rejects.toThrow(
+      "start over",
+    );
     expect(w.requests.getState().requests[b.id]?.stage).toBe("failed");
     expect(w.signCount()).toBe(1);
 
     const c = await w.requests.prepare(PARAMS);
-    const tx = await w.requests.approve(c.id, "send", VERIFY);
+    const tx = await w.requests.approve(c.id, "send", approval(c, VERIFY));
     expect(tx.nonce).toBe(1);
   });
 
@@ -559,7 +572,7 @@ describe("EVM pipeline", () => {
     const w = evmWorld({ lockDuringSign: true });
     await w.start();
     const r = await w.requests.prepare(PARAMS);
-    const tx = await w.requests.approve(r.id, "send", VERIFY);
+    const tx = await w.requests.approve(r.id, "send", approval(r, VERIFY));
     expect(tx.state).toBe("submitted");
     expect(w.warnings.some((m) => m.includes("after the vault locked"))).toBe(true);
     expect(w.warnings.some((m) => m.includes("not persisted: vault locked"))).toBe(true);
@@ -570,7 +583,9 @@ describe("EVM pipeline", () => {
     await w.start();
     w.rejectSigning();
     const a = await w.requests.prepare(PARAMS);
-    await expect(w.requests.approve(a.id, "send", VERIFY)).rejects.toThrow("cancelled");
+    await expect(w.requests.approve(a.id, "send", approval(a, VERIFY))).rejects.toThrow(
+      "cancelled",
+    );
     expect(w.requests.getState().requests[a.id]?.stage).toBe("rejected");
     const b = await w.requests.prepare(PARAMS);
     const tracked = Object.values(w.transactions.getState().txs);
@@ -675,7 +690,7 @@ describe("EVM pipeline", () => {
     const r = await w.requests.prepare(PARAMS);
     expect(r.checks).toContain("fee-mismatch");
     expect(r.verification).toBe("unverifiable");
-    const tx = await w.requests.approve(r.id, "send", VERIFY);
+    const tx = await w.requests.approve(r.id, "send", approval(r, VERIFY));
     expect(tx.state).toBe("submitted");
   });
 
@@ -687,7 +702,7 @@ describe("EVM pipeline", () => {
     await w.start();
     const r = await w.requests.prepare(PARAMS);
     expect(r.checks).toContain("nonce-mismatch");
-    const tx = await w.requests.approve(r.id, "send", VERIFY);
+    const tx = await w.requests.approve(r.id, "send", approval(r, VERIFY));
     expect(tx.nonce).toBe(5);
   });
 
@@ -743,7 +758,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
   const sendAndPrepare = async (w: ReturnType<typeof evmWorld>) => {
     await w.start();
     const first = await w.requests.prepare(PARAMS);
-    const original = await w.requests.approve(first.id, "send", VERIFY);
+    const original = await w.requests.approve(first.id, "send", approval(first, VERIFY));
     return original;
   };
 
@@ -756,7 +771,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
       target: original.id,
       stage: "awaiting-approval",
     });
-    const tx = await w.requests.approve(r.id, "speed-up", VERIFY);
+    const tx = await w.requests.approve(r.id, "speed-up", approval(r, VERIFY));
     expect(tx).toMatchObject({ replaces: original.id, nonce: original.nonce });
   });
 
@@ -765,7 +780,9 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     const original = await sendAndPrepare(w);
     const r = await w.requests.prepare({ method: "cancel", txId: original.id });
     const before = w.signCount();
-    await expect(w.requests.approve(r.id, "speed-up", VERIFY)).rejects.toThrow("not speed-up");
+    await expect(w.requests.approve(r.id, "speed-up", approval(r, VERIFY))).rejects.toThrow(
+      "not speed-up",
+    );
     expect(w.signCount()).toBe(before);
   });
 
@@ -776,7 +793,9 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     await w.timers[0]?.();
     expect(w.transactions.getState().txs[original.id]?.state).toBe("confirmed");
     const before = w.signCount();
-    await expect(w.requests.approve(r.id, "speed-up", VERIFY)).rejects.toThrow("already finished");
+    await expect(w.requests.approve(r.id, "speed-up", approval(r, VERIFY))).rejects.toThrow(
+      "already finished",
+    );
     expect(w.requests.getState().requests[r.id]).toMatchObject({ stage: "failed" });
     expect(w.signCount()).toBe(before);
   });
@@ -804,10 +823,12 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     const w = evmWorld({});
     const original = await sendAndPrepare(w);
     const a = await w.requests.prepare({ method: "speed-up", txId: original.id });
-    await w.requests.approve(a.id, "speed-up", VERIFY);
+    await w.requests.approve(a.id, "speed-up", approval(a, VERIFY));
     const b = await w.requests.prepare({ method: "cancel", txId: original.id });
     const before = w.signCount();
-    await expect(w.requests.approve(b.id, "cancel", VERIFY)).rejects.toThrow("already replaced");
+    await expect(w.requests.approve(b.id, "cancel", approval(b, VERIFY))).rejects.toThrow(
+      "already replaced",
+    );
     expect(w.signCount()).toBe(before);
   });
 
@@ -816,7 +837,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     await w.start();
     const first = await w.requests.prepare({ ...PARAMS, amount: 1n });
     expect(first.checks).toContain("fee-exceeds-amount");
-    const original = await w.requests.approve(first.id, "send", VERIFY);
+    const original = await w.requests.approve(first.id, "send", approval(first, VERIFY));
     const cancel = await w.requests.prepare({ method: "cancel", txId: original.id });
     expect(cancel.checks).not.toContain("fee-exceeds-amount");
   });
@@ -829,7 +850,9 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     );
     w.rejectSigning();
     const first = await w.requests.prepare(PARAMS);
-    await expect(w.requests.approve(first.id, "send", VERIFY)).rejects.toThrow("cancelled");
+    await expect(w.requests.approve(first.id, "send", approval(first, VERIFY))).rejects.toThrow(
+      "cancelled",
+    );
     const rejected = Object.values(w.transactions.getState().txs).map((t) => t.id);
     await expect(
       w.requests.prepare({ method: "speed-up", txId: String(rejected[0]) }),
@@ -843,7 +866,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     });
     await w.start();
     const first = await w.requests.prepare(PARAMS);
-    const original = await w.requests.approve(first.id, "send", VERIFY);
+    const original = await w.requests.approve(first.id, "send", approval(first, VERIFY));
     const oldRequest = w.signedRequests[0] as {
       tx: { maxFeePerGas: string; maxPriorityFeePerGas: string };
     };
@@ -854,7 +877,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     w.hostTable["eth_feeHistory"] = feeHistory("0x3e8", "0x3e8");
     const r = await w.requests.prepare({ method: "speed-up", txId: original.id });
     expect(r.checks).toContain("fee-mismatch");
-    await w.requests.approve(r.id, "speed-up", VERIFY);
+    await w.requests.approve(r.id, "speed-up", approval(r, VERIFY));
     const bumped = w.signedRequests[1] as {
       tx: { maxFeePerGas: string; maxPriorityFeePerGas: string };
     };
@@ -883,7 +906,7 @@ describe("nostr-sign approval", () => {
       ref,
       event,
     });
-    const result = await f.controller.approve(pending.id, "nostr-sign");
+    const result = await f.controller.approve(pending.id, "nostr-sign", approval(pending));
     expect(result).toMatchObject({
       kind: "nostr.event",
       event: { id: f.nostrSigned.id },
@@ -895,9 +918,11 @@ describe("nostr-sign approval", () => {
     const f = fake();
     await f.controller.init();
     const request = await f.controller.prepare(PARAMS);
-    await expect(f.controller.approve(request.id, "send")).rejects.toMatchObject({
-      code: "invalid-input",
-    });
+    await expect(f.controller.approve(request.id, "send", approval(request))).rejects.toMatchObject(
+      {
+        code: "invalid-input",
+      },
+    );
   });
 });
 
@@ -912,7 +937,7 @@ describe("webln-invoice and browser-origin pay", () => {
       amountSats: 100,
       memo: "test",
     });
-    const result = await f.controller.approve(pending.id, "webln-invoice");
+    const result = await f.controller.approve(pending.id, "webln-invoice", approval(pending));
     expect(result).toMatchObject({
       kind: "lightning.invoice",
       paymentRequest: expect.any(String),

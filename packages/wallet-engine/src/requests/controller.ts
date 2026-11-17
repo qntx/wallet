@@ -2,7 +2,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 
 /**
  * Request pipeline for internal sends, speed-ups, cancellations and CPFP: `prepare` builds,
- * estimates and cross-checks without signing; `approve(id, method, verify)` is the only way to
+ * estimates and cross-checks without signing; `approve(id, method, options)` is the only way to
  * sign, and only for a live, unexpired request of the right method; locking invalidates everything
  * that has not finished. The unsigned content stays in a private table, never in the state
  * snapshot, and cannot change after prepare.
@@ -351,6 +351,70 @@ export class SimulationChangedError extends Error {
   }
 }
 
+/**
+ * What the user must have confirmed for a request to be approved: its `danger` findings and every
+ * recorded check. The host passes back the codes it showed, so a finding that appeared after the
+ * approval screen was drawn is never confirmed unseen.
+ */
+export type RequestAcknowledgement = {
+  readonly risk: ReadonlyArray<RiskFinding["code"]>;
+  readonly checks: ReadonlyArray<RequestCheckCode>;
+};
+
+export type ApproveOptions = {
+  /** The factor for requests that sign with a secret; requests that do not take none. */
+  readonly verify?: SendParams["verify"];
+  /** Required, and exact, whenever {@link requiredAcknowledgement} is not empty. */
+  readonly acknowledged?: RequestAcknowledgement;
+};
+
+/** The acknowledgement `approve` requires for the request as it stands now. */
+export const requiredAcknowledgement = (
+  request: Pick<PendingRequest, "risk" | "checks">,
+): RequestAcknowledgement => ({
+  risk: request.risk.filter((finding) => finding.level === "danger").map((finding) => finding.code),
+  checks: request.checks,
+});
+
+const sameCodes = (a: ReadonlyArray<string>, b: ReadonlyArray<string>): boolean => {
+  const codes = new Set(a);
+  return codes.size === new Set(b).size && b.every((code) => codes.has(code));
+};
+
+const NOTHING_ACKNOWLEDGED: RequestAcknowledgement = { risk: [], checks: [] };
+
+const acknowledges = (
+  request: Pick<PendingRequest, "risk" | "checks">,
+  acknowledged: RequestAcknowledgement | undefined,
+): boolean => {
+  const required = requiredAcknowledgement(request);
+  const given = acknowledged ?? NOTHING_ACKNOWLEDGED;
+  return sameCodes(required.risk, given.risk) && sameCodes(required.checks, given.checks);
+};
+
+/**
+ * `approve` was called without confirming exactly the request's current danger findings and checks.
+ * The request stays `awaiting-approval`; `required` is what to show and pass back.
+ */
+export class AcknowledgementRequiredError extends Error {
+  readonly required: RequestAcknowledgement;
+
+  constructor(required: RequestAcknowledgement) {
+    super("the request has findings the user has not acknowledged");
+    this.name = "AcknowledgementRequiredError";
+    this.required = required;
+  }
+}
+
+function assertAcknowledged(
+  request: Pick<PendingRequest, "risk" | "checks">,
+  acknowledged: RequestAcknowledgement | undefined,
+): void {
+  if (!acknowledges(request, acknowledged)) {
+    throw new AcknowledgementRequiredError(requiredAcknowledgement(request));
+  }
+}
+
 /** A request that ended without a result: `stage` says how, `message` is the failure if any. */
 export class RequestEndedError extends Error {
   readonly stage: "rejected" | "failed" | "expired" | "invalidated";
@@ -400,12 +464,12 @@ export type PendingRequest = {
     | TokenWatchDisplay
     | SolanaDisplay
     | BitcoinDisplay;
-  /** `unverifiable` as soon as any check is recorded; the host must ask for explicit confirmation. */
+  /** `unverifiable` as soon as any check is recorded; `approve` requires each to be acknowledged. */
   readonly verification: "verified" | "unverifiable";
   readonly checks: ReadonlyArray<RequestCheckCode>;
   /**
-   * Recipient risk; independent of `verification`. A `danger` needs the user's explicit
-   * acknowledgement.
+   * Recipient risk; independent of `verification`. `approve` requires each `danger` to be
+   * acknowledged.
    */
   readonly risk: ReadonlyArray<RiskFinding>;
   /** Present for simulated requests: sends and dApp transactions; absent otherwise. */
@@ -1226,41 +1290,55 @@ export class RequestController extends Controller<RequestControllerState> {
   }
 
   /**
-   * Signs and submits a request. Anything but a live, unexpired `send` request with this id throws
-   * before any signing; a stale build (nonce taken, blockhash expired) fails without signing.
+   * Signs and submits a request. Anything but a live, unexpired request of this method throws
+   * before any signing; a stale build (nonce taken, blockhash expired) fails without signing. So
+   * does a request with `danger` findings or checks unless `options.acknowledged` names exactly
+   * those — including the ones a re-simulation at approval adds ({@link requiredAcknowledgement}).
    */
   async approve(
     id: string,
     method: ChainRequestMethod | "spark-deposit",
-    verify?: SendParams["verify"],
+    options?: ApproveOptions,
   ): Promise<TrackedTransaction>;
   async approve(
     id: string,
     method: "pay" | "zap" | "spark-exit",
-    verify?: SendParams["verify"],
+    options?: ApproveOptions,
   ): Promise<SparkResult>;
   async approve(
     id: string,
     method: "evm-sign",
-    verify?: SendParams["verify"],
+    options?: ApproveOptions,
   ): Promise<TrackedTransaction | SignatureResult>;
-  async approve(id: string, method: "nostr-sign"): Promise<NostrSignResult>;
-  async approve(id: string, method: "webln-invoice"): Promise<WeblnInvoiceResult>;
-  async approve(id: string, method: "watch-asset"): Promise<TokenWatchResult>;
+  async approve(
+    id: string,
+    method: "nostr-sign",
+    options?: ApproveOptions,
+  ): Promise<NostrSignResult>;
+  async approve(
+    id: string,
+    method: "webln-invoice",
+    options?: ApproveOptions,
+  ): Promise<WeblnInvoiceResult>;
+  async approve(
+    id: string,
+    method: "watch-asset",
+    options?: ApproveOptions,
+  ): Promise<TokenWatchResult>;
   async approve(
     id: string,
     method: "solana-sign",
-    verify?: SendParams["verify"],
+    options?: ApproveOptions,
   ): Promise<SolanaSignResult>;
   async approve(
     id: string,
     method: "bitcoin-sign",
-    verify?: SendParams["verify"],
+    options?: ApproveOptions,
   ): Promise<BitcoinSignResult>;
   async approve(
     id: string,
     method: RequestMethod,
-    verify?: SendParams["verify"],
+    options: ApproveOptions = {},
   ): Promise<RequestResult> {
     const request = this.getState().requests[id];
     if (request === undefined) {
@@ -1284,6 +1362,7 @@ export class RequestController extends Controller<RequestControllerState> {
       this.finish(id, "failed", PHISHING_BLOCKED_MESSAGE);
       throw new Error(PHISHING_BLOCKED_MESSAGE);
     }
+    assertAcknowledged(request, options.acknowledged);
     const { session } = this;
     this.put({ ...request, stage: "signing" });
 
@@ -1329,13 +1408,17 @@ export class RequestController extends Controller<RequestControllerState> {
         this.put({ ...refreshed, stage: "awaiting-approval" });
         throw new SimulationChangedError();
       }
+      if (!acknowledges(refreshed, options.acknowledged)) {
+        this.put({ ...refreshed, stage: "awaiting-approval" });
+        throw new AcknowledgementRequiredError(requiredAcknowledgement(refreshed));
+      }
       this.put(refreshed);
     }
     try {
       const result =
         entry.prepared.factor === "none"
           ? await entry.prepared.submit()
-          : await entry.prepared.submit(this.requireVerify(verify));
+          : await entry.prepared.submit(this.requireVerify(options.verify));
       if (session === this.session) {
         entry.stopTimer();
         this.entries.delete(id);

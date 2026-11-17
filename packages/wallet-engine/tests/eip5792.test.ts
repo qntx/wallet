@@ -16,6 +16,7 @@ import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import {
   bookDeps,
   idleNetworkDeps,
@@ -229,9 +230,17 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     );
     // oxlint-disable-next-line unicorn/prefer-ternary -- dispatch on the pending method
     if (request?.method === "evm-batch") {
-      await requests.approve(request.id, "evm-batch", { kind: "password", password: "pw" });
+      await requests.approve(
+        request.id,
+        "evm-batch",
+        approval(request, { kind: "password", password: "pw" }),
+      );
     } else {
-      await requests.approve(request?.id ?? "", "evm-sign", { kind: "password", password: "pw" });
+      await requests.approve(
+        request?.id ?? "",
+        "evm-sign",
+        approval(request, { kind: "password", password: "pw" }),
+      );
     }
   };
   return {

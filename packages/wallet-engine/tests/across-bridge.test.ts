@@ -13,6 +13,7 @@ import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { AcrossBridgeQuote } from "../src/swaps/bridge.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import { bookDeps, idleNetworkDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
 
 const DEL_CODE = readFileSync(
@@ -304,7 +305,7 @@ describe("evm-bridge", () => {
     const w = world({ allowance: 10000000n });
     await w.start();
     const request = await prepareBridge(w);
-    await w.requests.approve(request.id, "evm-bridge", VERIFY);
+    await w.requests.approve(request.id, "evm-bridge", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     expect(tx.to.toLowerCase()).toBe(POOL.toLowerCase());
     expect(tx.data.startsWith("0xad5425c6")).toBe(true);
@@ -318,7 +319,7 @@ describe("evm-bridge", () => {
     });
     await w.start();
     const request = await prepareBridge(w, nativeQuote());
-    await w.requests.approve(request.id, "evm-bridge", VERIFY);
+    await w.requests.approve(request.id, "evm-bridge", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     expect(tx.to.toLowerCase()).toBe(POOL.toLowerCase());
     expect(tx.value).toBe(`0x${10000000000000000n.toString(16)}`);
@@ -364,7 +365,7 @@ describe("evm-bridge", () => {
     });
     await w.start();
     const request = await prepareBridge(w);
-    await w.requests.approve(request.id, "evm-bridge", VERIFY);
+    await w.requests.approve(request.id, "evm-bridge", approval(request, VERIFY));
     const tx = signTx(w.signedRequests[0]);
     /* The batch executes approve+deposit through the delegator on the account itself. */
     expect(tx.to.toLowerCase()).toBe(ADDR.toLowerCase());

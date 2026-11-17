@@ -319,8 +319,10 @@ describe("solana-stake delegate", () => {
       },
     ]);
     const tx = await w.requests.approve(pending.id, "solana-stake", {
-      kind: "password",
-      password: "pw",
+      verify: {
+        kind: "password",
+        password: "pw",
+      },
     });
     expect(tx.state).not.toBe("failed");
     expect(w.signed).toHaveLength(1);

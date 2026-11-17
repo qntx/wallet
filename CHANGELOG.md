@@ -74,6 +74,14 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
   presence `seal`/`open`) is implemented natively on iOS and Android.
 
 - **BREAKING:** protocol: `vault.setBlindSigning`; the status payload carries `blindSigning`.
+- **BREAKING:** `@qntx/wallet-engine`: `requests.approve(id, method, options)` takes
+  `{ verify, acknowledged }` instead of a positional `verify`, and refuses a request with `danger`
+  findings or recorded checks unless `acknowledged` names exactly those codes
+  (`requiredAcknowledgement(request)`); otherwise it throws `AcknowledgementRequiredError` before
+  anything is signed and the request stays approvable. Findings a re-simulation adds at approval
+  are covered by the same rule. The request error classes (`AcknowledgementRequiredError`,
+  `SimulationChangedError`, `BlindSigningDisabledError`, `SignInOriginError`, `InvalidTokenError`,
+  `RequestEndedError`, `OriginBusyError`) are exported from the package root.
 - **BREAKING:** `@qntx/wallet-engine`: `RequestController`'s `blindSigning` option is
   `() => boolean` (the vault's setting). Every blind request — not only raw-byte messages — is
   refused with `BlindSigningDisabledError` while it is off and carries the `blind-signing` danger
