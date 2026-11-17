@@ -1,6 +1,6 @@
 /**
  * Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
- * the host-side `parseBackupHeader` share — version 1, bounded fields, `obj` rejects unknown keys.
+ * the host-side `parseBackupHeader` share — version 2, bounded fields, `obj` rejects unknown keys.
  * Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
  * the JSON.
  */
@@ -17,13 +17,20 @@ export type BackupEnvelopeFactor =
   | { readonly kind: "passkey"; readonly credentialId: string; readonly sealedBek: string }
   | {
       readonly kind: "password";
-      readonly iterations: 600_000;
+      /**
+       * Argon2id, RFC 9106 second recommended option; fixed, recorded so the file says how to open
+       * it.
+       */
+      readonly kdf: "argon2id";
+      readonly memoryKiB: 65_536;
+      readonly passes: 3;
+      readonly lanes: 4;
       readonly salt: string;
       readonly sealedBek: string;
     };
 
 export type BackupEnvelopeWire = {
-  readonly version: 1;
+  readonly version: 2;
   readonly createdAt: number;
   /** Raw JSON text — authenticated by the payload tag before it is parsed. */
   readonly header: string;
@@ -40,14 +47,17 @@ export const backupEnvelopeFactor: Validator<BackupEnvelopeFactor> = union(
   }),
   obj({
     kind: literal("password"),
-    iterations: literal(600_000),
+    kdf: literal("argon2id"),
+    memoryKiB: literal(65_536),
+    passes: literal(3),
+    lanes: literal(4),
     salt: str(128),
     sealedBek: str(MAX_FACTOR_CHARS),
   }),
 );
 
 export const backupEnvelope: Validator<BackupEnvelopeWire> = obj({
-  version: literal(1),
+  version: literal(2),
   createdAt: int(0, Number.MAX_SAFE_INTEGER),
   header: str(MAX_STRING_BYTES),
   factors: arr(backupEnvelopeFactor, 5, 1),

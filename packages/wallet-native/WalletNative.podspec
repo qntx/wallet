@@ -19,7 +19,10 @@ Pod::Spec.new do |s|
     "cpp/runtime/**/*.{h,hpp,c,cpp,mm}",
     "cpp/host/**/*.{h,hpp,c,cpp,mm}",
     "cpp/platform/**/*.{h,hpp,c,cpp,mm}",
+    # The Argon2 reference implementation (cpp/vendor/argon2/README.md).
+    "cpp/vendor/argon2/**/*.{h,c}",
   ]
+  s.private_header_files = "cpp/vendor/**/*.h"
   s.public_header_files = "cpp/**/*.hpp"
   s.header_mappings_dir = "cpp"
 
@@ -28,6 +31,8 @@ Pod::Spec.new do |s|
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",
     "HEADER_SEARCH_PATHS" => [
       '"$(PODS_TARGET_SRCROOT)/cpp"',
+      '"$(PODS_TARGET_SRCROOT)/cpp/vendor/argon2/include"',
+      '"$(PODS_TARGET_SRCROOT)/cpp/vendor/argon2/src"',
       '"$(PODS_ROOT)/hermes-engine/destroot/include"',
       '"$(PODS_ROOT)/Headers/Public/SparkNative"',
       '"$(DERIVED_FILE_DIR)/qntx-kernel"',

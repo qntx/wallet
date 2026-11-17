@@ -14,6 +14,7 @@ import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
 import { createMemoryStore, startKernel } from "../../../packages/wallet-kernel/src/index.ts";
 import type {
+  Argon2id,
   KernelPlatform,
   Pbkdf2,
   Port,
@@ -95,6 +96,7 @@ function boot(pbkdf2: Pbkdf2): Kernel {
     elapsed: () => __qntx.elapsed(),
     setTimer: (ms, fn) => __qntx.setTimer(ms, fn),
     pbkdf2,
+    argon2id: nativeArgon2id,
     store,
     keystore: undefined,
     passkey: undefined,
@@ -148,6 +150,17 @@ const nativePbkdf2: Pbkdf2 = (hash, password, salt, iterations, length) =>
     __qntx.pbkdf2(hash, password, salt, iterations, length, (result, error) => {
       if (error !== undefined || result === undefined) {
         reject(new Error(error ?? "pbkdf2 returned nothing"));
+      } else {
+        resolve(result);
+      }
+    });
+  });
+
+const nativeArgon2id: Argon2id = (password, salt, cost, length) =>
+  new Promise((resolve, reject) => {
+    __qntx.argon2id(password, salt, cost.memoryKiB, cost.passes, cost.lanes, length, (result, error) => {
+      if (error !== undefined || result === undefined) {
+        reject(new Error(error ?? "argon2id returned nothing"));
       } else {
         resolve(result);
       }
@@ -216,6 +229,16 @@ async function pbkdf2Vectors(): Promise<Record<string, unknown>> {
   const t0 = __qntx.elapsed();
   await nativePbkdf2("sha256", utf8ToBytes(PASSWORD), utf8ToBytes("v1-bench"), 600_000, 32);
   timings["pbkdf2-600k-sha256"] = __qntx.elapsed() - t0;
+
+  // Backup-scale benchmark: the backup password KEK is Argon2id at 64 MiB, 3 passes, 4 lanes.
+  const t1 = __qntx.elapsed();
+  await nativeArgon2id(
+    utf8ToBytes(PASSWORD),
+    utf8ToBytes("v1-bench-argon2"),
+    { memoryKiB: 65_536, passes: 3, lanes: 4 },
+    32,
+  );
+  timings["argon2id-64MiB-t3-p4"] = __qntx.elapsed() - t1;
   return timings;
 }
 

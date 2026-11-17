@@ -23,7 +23,7 @@ import {
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { StoreOp, StoredFactor } from "../src/vault/store.ts";
 import { establishOps } from "../src/vault/vault.ts";
-import { fixedRandom, loadVectors, subtlePbkdf2 } from "./helpers.ts";
+import { fixedRandom, loadVectors, quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 
 type VectorCase = {
   readonly name: string;
@@ -112,6 +112,7 @@ describe("vault meta vector", () => {
       elapsed: () => 0,
       setTimer: () => () => {},
       pbkdf2: subtlePbkdf2,
+      argon2id: quickArgon2id,
       store: createMemoryStore(),
       policy: { maxSessionMs: 0, maxScryptLogN: 20, idle: { ms: 0, activity: "presence" } },
       keystore: undefined,

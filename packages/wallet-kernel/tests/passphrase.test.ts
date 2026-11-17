@@ -13,13 +13,13 @@ import type { WalletErrorCode, WalletInfo } from "@qntx/wallet/types";
 import type { KernelPlatform } from "../src/platform.ts";
 import { Secret } from "../src/secret/secret.ts";
 import { open as openEnvelope } from "../src/vault/envelope.ts";
-import { passwordKek } from "../src/vault/factors.ts";
+import { backupPasswordKek } from "../src/vault/factors.ts";
 import { encodeHeader, parseEntropyHeader } from "../src/vault/headers.ts";
 import type { StoredRecord } from "../src/vault/store.ts";
 import { openWalletSecret, sealRecord } from "../src/vault/vault.ts";
 import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { kernelError, loadVectors, subtlePbkdf2 } from "./helpers.ts";
+import { kernelError, loadVectors, realArgon2id } from "./helpers.ts";
 
 type PassphraseVector = {
   name: string;
@@ -518,7 +518,7 @@ const backupPassword = () => ({
 
 describe("cloud backup", () => {
   it("never puts the passphrase in the payload; the header only flags it", async () => {
-    const h = createHarness({ seed: 21 });
+    const h = createHarness({ seed: 21, argon2id: realArgon2id });
     await h.settle();
     const { session } = await importFirst(h, text("p\u00E4ssw\u00F6rd"));
     ok(
@@ -546,10 +546,10 @@ describe("cloud backup", () => {
       ],
     });
     const factor = onlyFactor(envelope.factors);
-    const kek = await passwordKek(
+    const kek = await backupPasswordKek(
       backupPassword().password,
       base64urlnopad.decode(factor.salt),
-      subtlePbkdf2,
+      realArgon2id,
     );
     const bek = openEnvelope(
       kek,
@@ -585,7 +585,7 @@ describe("cloud backup", () => {
     );
 
   it("restores what it can, lists passphrase wallets, and a second restore completes them", async () => {
-    const h = createHarness({ seed: 31 });
+    const h = createHarness({ seed: 31, argon2id: realArgon2id });
     await h.settle();
     const first = ok(await restoreInto(h, undefined));
     expect(listField(first, "wallets").map((w) => strField(w, "walletId"))).toStrictEqual([
@@ -616,7 +616,7 @@ describe("cloud backup", () => {
   });
 
   it("restores a passphrase wallet straight into a fresh vault", async () => {
-    const h = createHarness({ seed: 32 });
+    const h = createHarness({ seed: 32, argon2id: realArgon2id });
     await h.settle();
     const res = ok(
       await restoreInto(h, undefined, {
@@ -644,7 +644,7 @@ describe("cloud backup", () => {
   });
 
   it("a wrong passphrase is invalid-input and commits nothing", async () => {
-    const h = createHarness({ seed: 33 });
+    const h = createHarness({ seed: 33, argon2id: realArgon2id });
     await h.settle();
     const first = ok(await restoreInto(h, undefined));
     const session = strField(first, "session");
@@ -663,7 +663,7 @@ describe("cloud backup", () => {
   });
 
   it("a passphrase for an unflagged or unknown wallet, or a duplicate, is invalid-input", async () => {
-    const h = createHarness({ seed: 34 });
+    const h = createHarness({ seed: 34, argon2id: realArgon2id });
     await h.settle();
     const session = strField(ok(await restoreInto(h, undefined)), "session");
     const attempts = [

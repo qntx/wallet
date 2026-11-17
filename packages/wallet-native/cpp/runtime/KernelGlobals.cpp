@@ -7,6 +7,7 @@
 #include "KernelPasskey.hpp"
 #include "KernelBuffer.hpp"
 #include "KernelJs.hpp"
+#include "platform/KernelArgon2.hpp"
 #include "platform/KernelPbkdf2.hpp"
 
 #include <atomic>
@@ -42,6 +43,14 @@ constexpr size_t kRandomLimit = 65536;
 constexpr double kTimerDelayMax = 2147483647.0;
 constexpr double kPbkdf2IterationsMax = 10000000.0;
 constexpr size_t kPbkdf2LengthMax = 1024;
+// Argon2id bounds: generous around the one cost the kernel asks for, tight
+// enough that a script cannot make the worker allocate without limit.
+constexpr double kArgon2MemoryKiBMin = 8.0;
+constexpr double kArgon2MemoryKiBMax = 1048576.0;
+constexpr double kArgon2PassesMax = 16.0;
+constexpr double kArgon2LanesMax = 16.0;
+constexpr double kArgon2LengthMin = 4.0;
+constexpr double kArgon2LengthMax = 1024.0;
 constexpr size_t kKdfQueueLimit = 8;
 
 void fillRandom(uint8_t* out, size_t size) {
@@ -64,16 +73,14 @@ void fillRandom(uint8_t* out, size_t size) {
 #endif
 }
 
-// One process-wide worker runs every PBKDF2 job, so concurrent kernels cannot
-// spawn unbounded derivation threads. The queue is bounded; the worker thread
-// is intentionally leaked rather than joined (it parks on the condition
+// One process-wide worker runs every key derivation, so concurrent kernels
+// cannot spawn unbounded derivation threads. The queue is bounded; the worker
+// thread is intentionally leaked rather than joined (it parks on the condition
 // variable and holds no runtime state).
 struct KdfJob {
-  KernelPbkdf2Hash hash;
-  SecretBytes password;
-  SecretBytes salt;
-  uint32_t iterations;
-  size_t length;
+  // Owns its inputs as SecretBytes behind shared_ptr (std::function needs a
+  // copyable closure); whichever copy drops last wipes them.
+  std::function<SecretBytes()> derive;
   std::shared_ptr<KernelPendingCall> call;
   std::shared_ptr<KernelGlobalsState> state;
 };
@@ -106,12 +113,11 @@ void kdfWorkerRun() {
     SecretBytes derived;
     std::string error;
     try {
-      derived = kernelPbkdf2(
-          job.hash, job.password, job.salt, job.iterations, job.length);
+      derived = job.derive();
     } catch (const std::exception& e) {
       error = e.what();
     } catch (...) {
-      error = "unknown pbkdf2 error";
+      error = "unknown key derivation error";
     }
     if (!job.state->active->load(std::memory_order_acquire)) {
       // Runtime torn down mid-derivation: drop the job; the parked call's
@@ -177,6 +183,30 @@ bool kdfSubmit(KdfJob job) {
   return true;
 }
 
+// Parks `done` as a pending call and queues the derivation; a full queue
+// answers through `done` on the kernel thread like any other failure.
+void submitDerivation(
+    jsi::Runtime& rt,
+    const std::shared_ptr<KernelGlobalsState>& state,
+    const jsi::Value& done,
+    std::function<SecretBytes()> derive) {
+  auto call = std::make_shared<KernelPendingCall>();
+  call->done = done.asObject(rt).asFunction(rt);
+  state->pending.insert(call);
+  if (!kdfSubmit(KdfJob{std::move(derive), call, state})) {
+    state->enqueueTask([state, call](jsi::Runtime& rt) mutable {
+      auto parked = std::move(call->done);
+      state->pending.erase(call);
+      if (parked.has_value()) {
+        parked->call(
+            rt,
+            jsi::Value::undefined(),
+            jsi::Value(rt, jsi::String::createFromAscii(rt, "kdf queue full")));
+      }
+    });
+  }
+}
+
 void installPbkdf2(
     jsi::Runtime& rt,
     jsi::Object& qntx,
@@ -205,10 +235,11 @@ void installPbkdf2(
         }
         auto passwordView =
             byteViewFromValue(rt, args[1], "__qntx.pbkdf2 password", intrinsics);
-        SecretBytes password(passwordView.data, passwordView.size);
+        auto password =
+            std::make_shared<SecretBytes>(passwordView.data, passwordView.size);
         auto saltView =
             byteViewFromValue(rt, args[2], "__qntx.pbkdf2 salt", intrinsics);
-        SecretBytes salt(saltView.data, saltView.size);
+        auto salt = std::make_shared<SecretBytes>(saltView.data, saltView.size);
         if (!args[5].isObject() || !args[5].asObject(rt).isFunction(rt)) {
           throw jsi::JSError(
               rt, "__qntx.pbkdf2 expects (hash, password, salt, iterations, length, done)");
@@ -217,30 +248,45 @@ void installPbkdf2(
             integerInRange(rt, args[3], "__qntx.pbkdf2 iterations", 1, kPbkdf2IterationsMax));
         const auto length = static_cast<size_t>(
             integerInRange(rt, args[4], "__qntx.pbkdf2 length", 1, kPbkdf2LengthMax));
-        auto call = std::make_shared<KernelPendingCall>();
-        call->done = args[5].asObject(rt).asFunction(rt);
-        state->pending.insert(call);
+        submitDerivation(rt, state, args[5], [hash, password, salt, iterations, length] {
+          return kernelPbkdf2(hash, *password, *salt, iterations, length);
+        });
+        return jsi::Value::undefined();
+      }));
+}
 
-        KdfJob job{
-            hash,
-            std::move(password),
-            std::move(salt),
-            iterations,
-            length,
-            call,
-            state};
-        if (!kdfSubmit(std::move(job))) {
-          state->enqueueTask([state, call](jsi::Runtime& rt) mutable {
-            auto done = std::move(call->done);
-            state->pending.erase(call);
-            if (done.has_value()) {
-              done->call(
-                  rt,
-                  jsi::Value::undefined(),
-                  jsi::Value(rt, jsi::String::createFromAscii(rt, "kdf queue full")));
-            }
-          });
+void installArgon2id(
+    jsi::Runtime& rt,
+    jsi::Object& qntx,
+    const std::shared_ptr<KernelGlobalsState>& state) {
+  qntx.setProperty(
+      rt,
+      "argon2id",
+      hostFn(rt, "argon2id", 7, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+        const char* usage =
+            "__qntx.argon2id expects (password, salt, memoryKiB, passes, lanes, length, done)";
+        if (count < 7 || !args[6].isObject() || !args[6].asObject(rt).isFunction(rt)) {
+          throw jsi::JSError(rt, usage);
         }
+        const auto& intrinsics = *state->intrinsics;
+        auto passwordView =
+            byteViewFromValue(rt, args[0], "__qntx.argon2id password", intrinsics);
+        auto password =
+            std::make_shared<SecretBytes>(passwordView.data, passwordView.size);
+        auto saltView =
+            byteViewFromValue(rt, args[1], "__qntx.argon2id salt", intrinsics);
+        auto salt = std::make_shared<SecretBytes>(saltView.data, saltView.size);
+        const auto memoryKiB = static_cast<uint32_t>(integerInRange(
+            rt, args[2], "__qntx.argon2id memoryKiB", kArgon2MemoryKiBMin, kArgon2MemoryKiBMax));
+        const auto passes = static_cast<uint32_t>(
+            integerInRange(rt, args[3], "__qntx.argon2id passes", 1, kArgon2PassesMax));
+        const auto lanes = static_cast<uint32_t>(
+            integerInRange(rt, args[4], "__qntx.argon2id lanes", 1, kArgon2LanesMax));
+        const auto length = static_cast<size_t>(integerInRange(
+            rt, args[5], "__qntx.argon2id length", kArgon2LengthMin, kArgon2LengthMax));
+        submitDerivation(rt, state, args[6], [password, salt, memoryKiB, passes, lanes, length] {
+          return kernelArgon2id(*password, *salt, memoryKiB, passes, lanes, length);
+        });
         return jsi::Value::undefined();
       }));
 }
@@ -382,6 +428,7 @@ void installKernelGlobals(
   qntx.setProperty(rt, "setTimer", makeSetTimer(rt));
 
   installPbkdf2(rt, qntx, state);
+  installArgon2id(rt, qntx, state);
 
   // __qntx.frames — the W2b injection-table shape over the same plumbing:
   // post, onMessage, and onIntegrityViolation (the host fires that handler

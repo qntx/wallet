@@ -8,13 +8,16 @@ const header = JSON.stringify({
 });
 
 const envelope = JSON.stringify({
-  version: 1,
+  version: 2,
   createdAt: 1_700_000_000_000,
   header,
   factors: [
     {
       kind: "password",
-      iterations: 600_000,
+      kdf: "argon2id",
+      memoryKiB: 65_536,
+      passes: 3,
+      lanes: 4,
       salt: "AAAA",
       sealedBek: "BBBB",
     },
@@ -51,19 +54,26 @@ describe("parseBackupHeader", () => {
     expect(() => parseBackupHeader(JSON.stringify(obj))).toThrow(WalletError);
   });
 
-  it("rejects a second password factor and non-600k iterations", () => {
+  it("rejects a second password factor, a weaker cost and the PBKDF2 envelope", () => {
     const obj = JSON.parse(envelope) as {
       factors: Array<Record<string, unknown>>;
     };
     obj.factors.push({
       kind: "password",
-      iterations: 600_000,
+      kdf: "argon2id",
+      memoryKiB: 65_536,
+      passes: 3,
+      lanes: 4,
       salt: "AAAA",
       sealedBek: "DDDD",
     });
     expect(() => parseBackupHeader(JSON.stringify(obj))).toThrow(WalletError);
-    const bad = JSON.parse(envelope) as { factors: Array<{ iterations: number }> };
-    bad.factors[0]!.iterations = 100_000;
-    expect(() => parseBackupHeader(JSON.stringify(bad))).toThrow(WalletError);
+    const weak = JSON.parse(envelope) as { factors: Array<{ memoryKiB: number }> };
+    weak.factors[0]!.memoryKiB = 19_456;
+    expect(() => parseBackupHeader(JSON.stringify(weak))).toThrow(WalletError);
+    const legacy = JSON.parse(envelope) as { version: number; factors: unknown[] };
+    legacy.version = 1;
+    legacy.factors[0] = { kind: "password", iterations: 600_000, salt: "AAAA", sealedBek: "BBBB" };
+    expect(() => parseBackupHeader(JSON.stringify(legacy))).toThrow(WalletError);
   });
 });

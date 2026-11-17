@@ -1,4 +1,4 @@
-import { pbkdf2Sync } from "node:crypto";
+import { argon2Sync, pbkdf2Sync } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 /// <reference types="node" />
 /**
@@ -102,6 +102,7 @@ const runtimeSources = [
   resolve(cppDir, "runtime/KernelKeystore.cpp"),
   resolve(cppDir, "runtime/KernelPasskey.cpp"),
   resolve(cppDir, "runtime/platform/KernelPbkdf2.cpp"),
+  resolve(cppDir, "runtime/platform/KernelArgon2.cpp"),
   resolve(cppDir, "host/KernelFile.cpp"),
   resolve(cppDir, "host/Lifecycle.cpp"),
   resolve(moduleDir, "tests/host/HostLifecycle.cpp"),
@@ -110,6 +111,10 @@ const runtimeSources = [
   resolve(moduleDir, "tests/host/HostNostrNative.cpp"),
   resolve(moduleDir, "tests/host/HostQntxSpark.cpp"),
 ];
+// The vendored Argon2 reference implementation is C: compiled apart from the C++ sources, with
+// the same sanitizers, and linked in as objects.
+const argon2Dir = resolve(cppDir, "vendor/argon2");
+const argon2Sources = ["argon2.c", "core.c", "ref.c", "thread.c", "encoding.c", "blake2/blake2b.c"];
 const cxxFlags = [
   "-std=c++20",
   "-Wall",
@@ -161,6 +166,31 @@ const variants: ReadonlyArray<{ name: string; flags: string[]; env: Record<strin
 
 for (const variant of variants) {
   const binary = resolve(buildDir, `RuntimeHostTest-${variant.name}`);
+  const argon2Objects = argon2Sources.map((source) => {
+    const object = resolve(buildDir, `argon2-${variant.name}-${source.replaceAll("/", "-")}.o`);
+    const compiled = Bun.spawnSync(
+      [
+        "xcrun",
+        "clang",
+        "-std=c99",
+        "-Wall",
+        "-I",
+        resolve(argon2Dir, "include"),
+        "-I",
+        resolve(argon2Dir, "src"),
+        ...variant.flags,
+        "-c",
+        resolve(argon2Dir, "src", source),
+        "-o",
+        object,
+      ],
+      { stdout: "inherit", stderr: "inherit" },
+    );
+    if (compiled.exitCode !== 0) {
+      throw new Error(`clang failed for ${source} (${variant.name})`);
+    }
+    return object;
+  });
   const proc = Bun.spawnSync(
     [
       "xcrun",
@@ -168,6 +198,7 @@ for (const variant of variants) {
       ...cxxFlags,
       ...variant.flags,
       ...runtimeSources,
+      ...argon2Objects,
       ...linkFlags,
       "-o",
       binary,
@@ -198,7 +229,7 @@ writeFileSync(
   }
 }
 
-// Reference PBKDF2 outputs (node:crypto is the independent oracle).
+// Reference KDF outputs (node:crypto is the independent oracle).
 const utf8 = (s: string): Buffer => Buffer.from(s, "utf8");
 const vectorEnv: Record<string, string> = {
   V1_PBKDF2_SHA256_1: pbkdf2Sync(utf8("passwd"), utf8("salt"), 1, 64, "sha256").toString("hex"),
@@ -212,6 +243,22 @@ const vectorEnv: Record<string, string> = {
     48,
     "sha512",
   ).toString("hex"),
+  V1_ARGON2ID_BACKUP: argon2Sync("argon2id", {
+    message: utf8("backup vector password"),
+    nonce: utf8("0123456789abcdef"),
+    memory: 65_536,
+    passes: 3,
+    parallelism: 4,
+    tagLength: 32,
+  }).toString("hex"),
+  V1_ARGON2ID_SMALL: argon2Sync("argon2id", {
+    message: utf8("password"),
+    nonce: utf8("somesalt"),
+    memory: 64,
+    passes: 2,
+    parallelism: 1,
+    tagLength: 24,
+  }).toString("hex"),
 };
 
 // Footprint and wall-clock assertions are meaningless under sanitizers — these cases run only on

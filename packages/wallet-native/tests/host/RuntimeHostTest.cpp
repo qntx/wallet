@@ -1,7 +1,8 @@
 // Host test driver for the kernel runtime. One binary, one case per process:
 // argv[1] selects the case, argv[2] optionally names a .hbc file for the
-// bytecode variants. PBKDF2 reference values arrive via env vars
-// V1_PBKDF2_SHA256_1 / V1_PBKDF2_SHA256_80000 / V1_PBKDF2_SHA512_UTF8.
+// bytecode variants. KDF reference values arrive via env vars
+// V1_PBKDF2_SHA256_1 / V1_PBKDF2_SHA256_80000 / V1_PBKDF2_SHA512_UTF8 and
+// V1_ARGON2ID_BACKUP / V1_ARGON2ID_SMALL.
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
 #include "host/Lifecycle.hpp"
@@ -725,7 +726,7 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
             box.posts[0] ==
-                "backends,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,setTimer"
+                "argon2id,backends,elapsed,file,frames,keystore,now,passkey,pbkdf2,random,setTimer"
                 "|frozen=true|objectsFrozen=true|sparkFrozen=true|sparkAbi=number"
                 "|nostrFrozen=true|nostrAbi=number",
       "qntx-globals: __qntx inventory or freeze state drifted — reconcile enclave.mdx");
@@ -1418,6 +1419,71 @@ __qntx.pbkdf2("sha512", new Uint8Array([
   return g_failures;
 }
 
+// The reference implementation behind __qntx.argon2id against node:crypto's
+// Argon2id: the backup password's cost, and a small case with one lane.
+int argon2idVectors() {
+  const char* expectBackup = std::getenv("V1_ARGON2ID_BACKUP");
+  const char* expectSmall = std::getenv("V1_ARGON2ID_SMALL");
+  CHECK(expectBackup && expectSmall, "argon2id: expected vectors not in env");
+  Mailbox box;
+  const std::string js = std::string(kSendHelper) + R"JS(
+var pending = 2;
+var out = ["", ""];
+function hex(b) {
+  var h = "";
+  for (var i = 0; i < b.length; i++) {
+    var x = b[i].toString(16);
+    h += x.length < 2 ? "0" + x : x;
+  }
+  return h;
+}
+function ascii(s) {
+  var a = new Uint8Array(s.length);
+  for (var i = 0; i < s.length; i++) { a[i] = s.charCodeAt(i); }
+  return a;
+}
+function done(slot) {
+  return function (r, e) {
+    out[slot] = e ? "err:" + e : hex(r);
+    if (--pending === 0) { __send(out.join(",")); }
+  };
+}
+var rejected = [];
+function refuses(name, call) {
+  try { call(); rejected.push(name + ":accepted"); } catch (e) { rejected.push(name + ":threw"); }
+}
+refuses("memory", function () {
+  __qntx.argon2id(ascii("p"), ascii("saltsalt"), 4, 1, 1, 32, function () {});
+});
+refuses("lanes", function () {
+  __qntx.argon2id(ascii("p"), ascii("saltsalt"), 64, 1, 0, 32, function () {});
+});
+refuses("length", function () {
+  __qntx.argon2id(ascii("p"), ascii("saltsalt"), 64, 1, 1, 2, function () {});
+});
+__send(rejected.join(","));
+__qntx.argon2id(ascii("backup vector password"), ascii("0123456789abcdef"), 65536, 3, 4, 32, done(0));
+__qntx.argon2id(ascii("password"), ascii("somesalt"), 64, 2, 1, 24, done(1));
+)JS";
+  auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
+  CHECK(box.waitPosts(2, std::chrono::seconds(180)) == 2, "argon2id: no report");
+  {
+    std::lock_guard<std::mutex> lock(box.m);
+    if (box.posts.size() == 2 && expectBackup && expectSmall) {
+      CHECK(box.posts[0] == "memory:threw,lanes:threw,length:threw",
+          "argon2id: an out-of-range cost was accepted");
+      const std::string want = std::string(expectBackup) + "," + expectSmall;
+      CHECK(box.posts[1] == want, "argon2id: vector mismatch");
+      if (box.posts[1] != want) {
+        std::fprintf(stderr, "argon2id got:  %s\nwant: %s\n", box.posts[1].c_str(), want.c_str());
+      }
+    }
+  }
+  rt->destroy();
+  CHECK(box.errors.empty(), "argon2id: unexpected onError");
+  return g_failures;
+}
+
 int kdfQueueFull() {
   Mailbox box;
   const std::string js = std::string(kSendHelper) + R"JS(
@@ -1592,6 +1658,7 @@ int main(int argc, char** argv) {
        [](const char*) { return globalInventory(KernelProfile::hardened); }},
       {"textdecoder", [](const char*) { return textDecoderCase(); }},
       {"pbkdf2-vectors", [](const char*) { return pbkdf2Vectors(); }},
+      {"argon2id-vectors", [](const char*) { return argon2idVectors(); }},
       {"kdf-queue-full", [](const char*) { return kdfQueueFull(); }},
       {"elapsed-monotonic", [](const char*) { return elapsedMonotonic(); }},
       {"kernel-probe-source-standard",

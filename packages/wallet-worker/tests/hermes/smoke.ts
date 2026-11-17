@@ -9,6 +9,7 @@
  * settled. The OK line is the pass contract: Hermes exits 0 even for unhandled async errors, so
  * runners must assert the marker appears in stdout.
  */
+import { argon2idAsync } from "@noble/hashes/argon2.js";
 import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
 import { utf8ToBytes } from "@noble/hashes/utils.js";
@@ -16,7 +17,7 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
 import { createMemoryStore, startKernel } from "@qntx/wallet-kernel";
-import type { KernelPlatform, Pbkdf2, Port, Random } from "@qntx/wallet-kernel";
+import type { Argon2id, KernelPlatform, Pbkdf2, Port, Random } from "@qntx/wallet-kernel";
 import type { ProtocolValue, WalletErrorCode } from "@qntx/wallet/protocol";
 
 // vectors/wallet/nip06.json — NIP-06 derivation path m/44'/1237'/0'/0/0.
@@ -69,6 +70,15 @@ const random: Random = (length) => {
 const noblePbkdf2: Pbkdf2 = async (hash, password, salt, iterations, length) =>
   pbkdf2Async(hash === "sha256" ? sha256 : sha512, password, salt, {
     c: iterations,
+    dkLen: length,
+  });
+
+/** Pure-JS Argon2id — what a runtime without a native KDF would have to run. */
+const nobleArgon2id: Argon2id = async (password, salt, cost, length) =>
+  argon2idAsync(password, salt, {
+    m: cost.memoryKiB,
+    t: cost.passes,
+    p: cost.lanes,
     dkLen: length,
   });
 
@@ -128,6 +138,7 @@ function boot(store: ReturnType<typeof createMemoryStore>): Kernel {
     // The session's idle/max timers simply never fire in this smoke — no ambient clock advances.
     setTimer: () => () => undefined,
     pbkdf2: noblePbkdf2,
+    argon2id: nobleArgon2id,
     store,
     policy: {
       maxSessionMs: 12 * 3_600_000,
@@ -337,6 +348,8 @@ export async function main(): Promise<void> {
         }
       })();
     },
+    // The smoke never enables a backup, so the entry only needs the function to exist.
+    argon2id: () => undefined,
     file: __qntxFile,
     // The native kernel entry binds the keystore eagerly; the smoke never
     // reaches a factor ceremony, so only the shape is needed.

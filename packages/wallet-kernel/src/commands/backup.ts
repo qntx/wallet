@@ -37,7 +37,11 @@ import { backupCredentialName, corePromptFor, promptLocale } from "../prompts.ts
 import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { open as openEnvelope, seal } from "../vault/envelope.ts";
-import { assertPasswordPolicy, passwordKek } from "../vault/factors.ts";
+import {
+  BACKUP_PASSWORD_COST,
+  assertBackupPasswordPolicy,
+  backupPasswordKek,
+} from "../vault/factors.ts";
 import {
   encodeHeader,
   parseBackupKeyHeader,
@@ -57,8 +61,6 @@ import {
   walletMaterial,
   walletRecord,
 } from "./wallets.ts";
-
-const PASSWORD_ITERATIONS = 600_000;
 
 /** Payload tag byte: wallet entry. */
 const ORIGIN_BYTE: Readonly<Record<"passkey" | "mnemonic", number>> = {
@@ -375,12 +377,12 @@ async function sealBackupFactors(
           32,
         );
       }
-      assertPasswordPolicy(factor.password);
+      assertBackupPasswordPolicy(factor.password);
       const salt = salts[index];
       if (salt === undefined) {
         throw new KernelError("integrity", "backup: missing password salt");
       }
-      return passwordKek(factor.password, salt, platform.pbkdf2);
+      return backupPasswordKek(factor.password, salt, platform.argon2id);
     }),
   );
   return backupFactors.map((factor, index): BackupEnvelopeFactor => {
@@ -407,7 +409,8 @@ async function sealBackupFactors(
     }
     return {
       kind: "password" as const,
-      iterations: PASSWORD_ITERATIONS,
+      kdf: "argon2id" as const,
+      ...BACKUP_PASSWORD_COST,
       salt: b64.enc(salt),
       sealedBek: b64.enc(sealedBek),
     };
@@ -508,7 +511,7 @@ export function updateBackup(
     );
     try {
       const envelope: BackupEnvelopeWire = {
-        version: 1,
+        version: 2,
         createdAt: ctx.platform.now(),
         header: contents.header,
         factors: keyHeader.factors,
@@ -586,7 +589,11 @@ async function bekFromFactor(
   if (entry === undefined) {
     throw new KernelError("not-found", "backup: no password factor");
   }
-  const kek = await passwordKek(backupFactor.password, b64.dec(entry.salt), platform.pbkdf2);
+  const kek = await backupPasswordKek(
+    backupFactor.password,
+    b64.dec(entry.salt),
+    platform.argon2id,
+  );
   try {
     return openEnvelope(kek, b64.dec(entry.sealedBek), factorContextOf("password"), "");
   } catch {

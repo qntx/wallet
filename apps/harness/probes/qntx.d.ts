@@ -16,6 +16,15 @@ declare const __qntx: {
     length: number,
     done: (result: Uint8Array | undefined, error: string | undefined) => void,
   ) => void;
+  readonly argon2id: (
+    password: Uint8Array,
+    salt: Uint8Array,
+    memoryKiB: number,
+    passes: number,
+    lanes: number,
+    length: number,
+    done: (result: Uint8Array | undefined, error: string | undefined) => void,
+  ) => void;
 };
 
 declare const NitroModulesProxy:

@@ -8,7 +8,15 @@
 export { KernelError } from "./errors.ts";
 export type { KernelErrorCode } from "./errors.ts";
 export { startKernel } from "./kernel.ts";
-export type { KernelPlatform, KernelPolicy, Pbkdf2, Port, Random } from "./platform.ts";
+export type {
+  Argon2Cost,
+  Argon2id,
+  KernelPlatform,
+  KernelPolicy,
+  Pbkdf2,
+  Port,
+  Random,
+} from "./platform.ts";
 export { applyStoreOps, cloneImage, createMemoryStore } from "./vault/memory.ts";
 export { isRecordKind, VAULT_FORMAT } from "./vault/store.ts";
 export type {

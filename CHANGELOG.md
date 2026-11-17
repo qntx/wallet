@@ -34,6 +34,10 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - Error code `verification-unavailable`: a guarded call on React Native without a verifying
   factor, or a reset without a lock screen. No prompt is shown.
 
+- `@qntx/wallet-engine`: `backupPasswordStrength(password)` (zxcvbn, loaded on first use), and
+  `backup.enable` refuses a guessable backup password with category `weak-password` before any
+  kernel call.
+
 ### Changed
 
 - **BREAKING:** `backup.disable` is a guarded operation like `backup.enable`: it takes a
@@ -57,6 +61,15 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
   only bumps the format. No other migration code exists.
 - The platform keystore contract (`sealDevice`, `openDevice`, `probe`, `remove` alongside the
   presence `seal`/`open`) is implemented natively on iOS and Android.
+
+- **BREAKING:** the cloud-backup password is stretched with Argon2id (RFC 9106 second
+  recommended option: 64 MiB, 3 passes, 4 lanes) instead of PBKDF2-SHA256. The envelope leaves
+  the device, so its password is attacked offline with no rate limit. Backup envelope version 2;
+  version 1 envelopes are not read, and a backup with a password factor has to be enabled again.
+  A backup password needs at least 12 characters. The vault password factor is unchanged.
+- **BREAKING:** `KernelPlatform` requires `argon2id`. `@qntx/wallet-native` runs the vendored
+  Argon2 reference implementation on the KDF worker thread (`__qntx.argon2id`); the Web and Node
+  workers run `@noble/hashes`.
 
 ### Removed
 

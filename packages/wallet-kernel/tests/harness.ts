@@ -4,6 +4,7 @@ import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import { startKernel } from "../src/kernel.ts";
 import type {
+  Argon2id,
   KernelPlatform,
   Keystore,
   PasskeyAuthenticator,
@@ -13,7 +14,7 @@ import type {
 } from "../src/platform.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
 import type { RecordStore } from "../src/vault/store.ts";
-import { subtlePbkdf2 } from "./helpers.ts";
+import { quickArgon2id, subtlePbkdf2 } from "./helpers.ts";
 
 /** Mulberry32: small deterministic PRNG for tests only. */
 export function mulberry32(seed: number): () => number {
@@ -147,6 +148,8 @@ export function createHarness(opts?: {
   passkey?: PasskeyAuthenticator;
   /** Overrides the WebCrypto PBKDF2 (spies observing seed derivation). */
   pbkdf2?: Pbkdf2;
+  /** The real cost, for the vector tests; every other test stretches at a token cost. */
+  argon2id?: Argon2id;
 }): Harness {
   let now = opts?.start ?? 1_700_000_000_000; // wall clock — persisted timestamps only
   let elapsed = 0; // monotonic clock — session deadlines and timers
@@ -209,6 +212,7 @@ export function createHarness(opts?: {
       };
     },
     pbkdf2: opts?.pbkdf2 ?? subtlePbkdf2,
+    argon2id: opts?.argon2id ?? quickArgon2id,
     store,
     policy: {
       maxSessionMs: opts?.maxSessionMs ?? 12 * 3_600_000,
