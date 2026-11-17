@@ -47,10 +47,24 @@ export type SetTimer = (delayMs: number, fn: () => void) => () => void;
  */
 const CALL_TIMEOUT_MS = 60_000;
 
+/**
+ * Posted-but-unanswered requests. Kept well below the native runtime's inbound cap of 64
+ * (KernelRuntime's kMaxInboundFrames, past which it fails closed) so a busy kernel delays requests
+ * instead of killing the session; Web/Node get the same bound so all hosts behave alike.
+ */
+export const MAX_IN_FLIGHT = 32;
+
 type Pending = {
   readonly method: MethodName;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: WalletError) => void;
+};
+
+/** A fully validated request waiting for an in-flight slot; only posted entries are in `pending`. */
+type Outbound = Pending & {
+  readonly id: number;
+  readonly message: Record<string, ProtocolValue>;
+  readonly wire: SecretWire | undefined;
 };
 
 /**
@@ -76,6 +90,7 @@ export class Channel {
   private ceremony = false;
 
   private readonly pending = new Map<number, Pending>();
+  private readonly queue: Outbound[] = [];
   /** Times the earliest pending request — the one the kernel is working on. */
   private watchdog: { readonly id: number; readonly cancel: () => void } | undefined;
   private nextId = 1;
@@ -228,6 +243,12 @@ export class Channel {
       pending.reject(error);
     }
     this.pending.clear();
+    // Queued requests never reached the port — their wires are still live buffers to wipe.
+    for (const outbound of this.queue) {
+      outbound.wire?.wipe();
+      outbound.reject(error);
+    }
+    this.queue.length = 0;
   }
 
   /** (Re)arms the watchdog on `pending`'s insertion-ordered head, or clears it when empty. */
@@ -268,6 +289,35 @@ export class Channel {
         this.armWatchdog();
       }
       fn(pending);
+      this.drainQueue();
+    }
+  }
+
+  /**
+   * Posts queued requests in FIFO order while under the in-flight bound. Only posted requests are
+   * in `pending` (and timed by the watchdog) — queued ones are not the kernel's head yet.
+   */
+  private drainQueue(): void {
+    while (this.queue.length > 0 && this.pending.size < MAX_IN_FLIGHT && this.port !== undefined) {
+      const outbound = this.queue.shift();
+      if (outbound === undefined) {
+        return;
+      }
+      this.pending.set(outbound.id, outbound);
+      if (this.watchdog === undefined) {
+        // Pending went empty → non-empty: this request is the head the kernel works on next.
+        this.armWatchdog();
+      }
+      try {
+        this.port.post(outbound.message, outbound.wire?.transfer ?? []);
+      } catch {
+        this.pending.delete(outbound.id);
+        if (this.watchdog?.id === outbound.id) {
+          this.armWatchdog();
+        }
+        outbound.wire?.wipe();
+        outbound.reject(integrity("the kernel port refused the message"));
+      }
     }
   }
 
@@ -453,20 +503,8 @@ export class Channel {
         throw new WalletError("invalid-input", "request exceeds the size limit");
       }
       const result = await new Promise<unknown>((resolve, reject) => {
-        this.pending.set(id, { method, resolve, reject });
-        if (this.watchdog === undefined) {
-          // Pending went empty → non-empty: this request is the head the kernel works on next.
-          this.armWatchdog();
-        }
-        try {
-          port.post(message, wire?.transfer ?? []);
-        } catch {
-          this.pending.delete(id);
-          if (this.watchdog?.id === id) {
-            this.armWatchdog();
-          }
-          reject(integrity("the kernel port refused the message"));
-        }
+        this.queue.push({ id, method, message, wire, resolve, reject });
+        this.drainQueue();
       });
       // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- validated by METHODS[method].result
       return result as ResultOf<M>;
