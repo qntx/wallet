@@ -610,15 +610,20 @@ export const decodeEvm = (
           ? "batch"
           : (safe.safe.calls[0]?.summary ?? "contract-call")
       : "swap";
-  return {
-    family: "evm",
-    network: request.network,
-    summary,
-    outflows: [],
-    approvals: permit?.approvals ?? [],
-    fee: undefined,
-    warnings: permit?.warnings ?? [],
-    message,
-    verifiability: permit === undefined ? "opaque" : "partial",
-  };
+  return withNativeAmountMeta(
+    {
+      family: "evm",
+      network: request.network,
+      summary,
+      outflows: [],
+      approvals: permit?.approvals ?? [],
+      fee: undefined,
+      warnings: permit?.warnings ?? [],
+      message,
+      verifiability: permit === undefined ? "opaque" : "partial",
+    },
+    request.network,
+    EVM_NATIVE_ASSET,
+    18,
+  );
 };

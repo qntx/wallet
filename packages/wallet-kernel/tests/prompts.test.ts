@@ -946,11 +946,12 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       },
       SIGNER,
     );
-  const typed = (doc: unknown) =>
+  const typedOn = (network: string, doc: unknown) =>
     decodeEvm(
-      { kind: "evm.typed-data", network: "eip155:1", account, typedData: JSON.stringify(doc) },
+      { kind: "evm.typed-data", network, account, typedData: JSON.stringify(doc) },
       SIGNER,
     );
+  const typed = (doc: unknown) => typedOn("eip155:1", doc);
   const signIn = [
     "app.example.com wants you to sign in with your Ethereum account:",
     SIGNER,
@@ -1023,6 +1024,112 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       title: "Confirm signature",
       description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe content of this request cannot be shown`,
     });
+  });
+
+  it("a Polygon Seaport order renders native amounts as POL, never ETH", () => {
+    const item = (wei: string) => ({
+      itemType: 0,
+      token: "0x0000000000000000000000000000000000000000",
+      identifierOrCriteria: "0",
+      startAmount: wei,
+      endAmount: wei,
+    });
+    const itemFields = [
+      { name: "itemType", type: "uint8" },
+      { name: "token", type: "address" },
+      { name: "identifierOrCriteria", type: "uint256" },
+      { name: "startAmount", type: "uint256" },
+      { name: "endAmount", type: "uint256" },
+    ];
+    const intent = typedOn("eip155:137", {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        OrderComponents: [
+          { name: "offerer", type: "address" },
+          { name: "zone", type: "address" },
+          { name: "offer", type: "OfferItem[]" },
+          { name: "consideration", type: "ConsiderationItem[]" },
+          { name: "orderType", type: "uint8" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "zoneHash", type: "bytes32" },
+          { name: "salt", type: "uint256" },
+          { name: "conduitKey", type: "bytes32" },
+          { name: "counter", type: "uint256" },
+        ],
+        OfferItem: itemFields,
+        ConsiderationItem: [...itemFields, { name: "recipient", type: "address" }],
+      },
+      primaryType: "OrderComponents",
+      domain: {
+        name: "Seaport",
+        version: "1.6",
+        chainId: 137,
+        verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+      },
+      message: {
+        offerer: SIGNER,
+        zone: "0x0000000000000000000000000000000000000000",
+        offer: [item("2000000000000000000")],
+        consideration: [{ ...item("100000000000000000000"), recipient: SIGNER }],
+        orderType: 0,
+        startTime: "1700000000",
+        endTime: "1700001000",
+        zoneHash: `0x${"00".repeat(32)}`,
+        salt: "123",
+        conduitKey: `0x${"00".repeat(32)}`,
+        counter: "0",
+      },
+    });
+    expect(chainPrompt("en", intent).description).toBe(
+      `App: Seaport\nNetwork: Polygon\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 2 POL\n${SIGNER} receives 100 POL`,
+    );
+  });
+
+  it("a Safe inner call's native value is formatted in the network's units", () => {
+    const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+    const intent = typedOn("eip155:1", {
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeTx: [
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "data", type: "bytes" },
+          { name: "operation", type: "uint8" },
+          { name: "safeTxGas", type: "uint256" },
+          { name: "baseGas", type: "uint256" },
+          { name: "gasPrice", type: "uint256" },
+          { name: "gasToken", type: "address" },
+          { name: "refundReceiver", type: "address" },
+          { name: "nonce", type: "uint256" },
+        ],
+      },
+      primaryType: "SafeTx",
+      domain: { chainId: 1, verifyingContract: safe },
+      message: {
+        to: TO,
+        value: "1000000000000000000",
+        data: "0x",
+        operation: 0,
+        safeTxGas: "0",
+        baseGas: "0",
+        gasPrice: "0",
+        gasToken: "0x0000000000000000000000000000000000000000",
+        refundReceiver: "0x0000000000000000000000000000000000000000",
+        nonce: "7",
+      },
+    });
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Ethereum\nVerifying contract ${safe}\nType: SafeTx\nSafe ${safe}, transaction 7\nSend 1 ETH to ${TO}`,
+    );
   });
 
   const nft = { asset: "0x3333333333333333333333333333333333333333", amount: "1", tokenId: "7" };

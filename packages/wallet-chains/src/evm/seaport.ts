@@ -68,7 +68,7 @@ const amount = (
   table: EvmTokenTable,
 ): AssetAmount => {
   if (kind === "native") {
-    return { asset: EVM_NATIVE_ASSET, amount: value.toString(10), symbol: "ETH", decimals: 18 };
+    return { asset: EVM_NATIVE_ASSET, amount: value.toString(10) };
   }
   if (kind === "erc20") {
     const found = lookupEvmToken(table, chainId, token);
