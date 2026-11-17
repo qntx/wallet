@@ -265,10 +265,10 @@ export async function enrolVerification(
 }
 
 /**
- * The native app lock: `enabled` drops the silent device factor — the DEK rotates so the key the
- * device key protected dies with it, and every other host's session invalidates — and `disabled`
- * restores it. Already in the target state is a prompt-free no-op; otherwise a presence ceremony
- * verifies first.
+ * The native app lock: `enabled` drops the silent device factor — its keystore key is removed, the
+ * DEK rotates so the key the device key protected dies with it, and every other host's session
+ * invalidates — and `disabled` restores it. Already in the target state is a prompt-free no-op;
+ * otherwise a presence ceremony verifies first.
  */
 export async function setAppLock(
   ctx: KernelContext,
@@ -302,10 +302,18 @@ export async function setAppLock(
       new Set([deviceRow.id]),
       [],
     );
+    // The device key dies first: a key that outlived the commit would open any earlier image of
+    // the vault put back by a store writer. If it cannot be removed nothing changes; if the commit
+    // then fails, the row is dead and the next hardware unlock's probe drops it.
+    try {
+      await keystore.remove(deviceRow.id);
+    } catch {
+      rotation.dek.wipe();
+      throw new KernelError("unavailable", "the device key could not be removed");
+    }
     await ctx.commit(rotation.ops, {
       rotate: { dek: rotation.dek, keyId: rotation.keyId },
     });
-    await keystore.remove(deviceRow.id).catch(() => undefined);
     return null;
   }
   if (deviceRow !== undefined) {

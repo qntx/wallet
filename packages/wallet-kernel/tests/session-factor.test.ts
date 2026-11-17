@@ -10,9 +10,11 @@ import { describe, expect, it } from "vite-plus/test";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { KernelError } from "../src/errors.ts";
+import type { Keystore } from "../src/platform.ts";
 import { corePrompt } from "../src/prompts.ts";
 import { Secret } from "../src/secret/secret.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
+import type { RecordStore, VaultImage } from "../src/vault/store.ts";
 import { verifyFactor } from "../src/vault/vault.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
@@ -66,6 +68,20 @@ async function establish(h: Harness): Promise<{ session: string; walletId: strin
     await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: DEVICE }),
   );
   return { session: str(res, "session"), walletId: str(field(res, "wallet"), "walletId") };
+}
+
+/** A store writer rewrites the store to `image` wholesale (meta included) — no DEK needed. */
+async function rewriteStore(store: RecordStore, image: VaultImage): Promise<void> {
+  const { meta } = image;
+  if (meta === undefined) {
+    throw new Error("vault is not initialized");
+  }
+  await store.commit([{ op: "clear" }]);
+  await store.commit([
+    { op: "init", meta },
+    ...image.factors.map((factor) => ({ op: "put-factor" as const, factor })),
+    ...image.records.map((record) => ({ op: "put-record" as const, record })),
+  ]);
 }
 
 const keystoreCalls = (calls: ReadonlyArray<KeystoreCall>): ReadonlyArray<string> =>
@@ -363,6 +379,41 @@ describe("vault.setAppLock", () => {
     fake.calls.length = 0;
     ok(await restarted.call("vault.unlock", { factor: DEVICE }));
     expect(fake.calls.some((call) => "prompt" in call)).toBe(false);
+  });
+
+  it("enabling destroys the device key before the vault stops using it", async () => {
+    const fake = fakeKeystore();
+    const store = createMemoryStore();
+    const h = createHarness({ keystore: fake.keystore, store });
+    const { session } = await establish(h);
+    const before = await store.load();
+    ok(await h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, session));
+
+    // A store writer puts the whole pre-app-lock image back: its device row has no key left.
+    await rewriteStore(store, before);
+    const rolledBack = createHarness({ keystore: fake.keystore, store });
+    await rolledBack.settle();
+    expect(errCode(await rolledBack.call("vault.unlock", { factor: DEVICE }))).toBeDefined();
+  });
+
+  it("a device key the keystore cannot remove leaves the app lock off", async () => {
+    const fake = fakeKeystore();
+    const keystore: Keystore = {
+      ...fake.keystore,
+      remove: async () => Promise.reject(new Error("keystore remove failed")),
+    };
+    const store = createMemoryStore();
+    const h = createHarness({ keystore, store });
+    const { session } = await establish(h);
+    const before = await store.load();
+    const deviceRow = await findFactor(h, "device");
+
+    expect(
+      errCode(await h.call("vault.setAppLock", { enabled: true, verify: HARDWARE }, session)),
+    ).toBe("unavailable");
+    await expect(store.load()).resolves.toStrictEqual(before);
+    expect(fake.keys.has(deviceRow?.["id"] as string)).toBe(true);
+    await expect(factorKinds(h)).resolves.toStrictEqual(["device", "hardware"]);
   });
 });
 
