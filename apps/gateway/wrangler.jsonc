@@ -1,5 +1,4 @@
 {
-  "account_id": "9241dfd75bea0009a3870173f7e1acd2",
   // The top level is never deployed — a bare `wrangler deploy` lands on this local-only name.
   "name": "wallet-gateway-local",
   "main": "src/index.ts",
@@ -11,6 +10,10 @@
   "observability": { "enabled": true, "logs": { "invocation_logs": false } },
   "env": {
     "staging": {
+      // Must differ from production's account: Workers Scripts Edit is account-wide, so a staging
+      // token in the production account could replace the production Worker. The deploy workflow
+      // refuses to deploy staging until it has its own account (README "Deployment pipeline").
+      "account_id": "9241dfd75bea0009a3870173f7e1acd2",
       "name": "wallet-gateway-staging",
       "workers_dev": false,
       "preview_urls": false,
@@ -47,6 +50,7 @@
       ],
     },
     "production": {
+      "account_id": "9241dfd75bea0009a3870173f7e1acd2",
       "name": "wallet-gateway",
       "workers_dev": false,
       "preview_urls": false,

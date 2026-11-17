@@ -90,7 +90,7 @@ Staging serves testnets only (Sepolia, Base Sepolia, Solana devnet, Bitcoin sign
 through keyless public endpoints, at `https://wallet-gateway-staging.qntx.org`.
 
 ```bash
-bunx wrangler login                     # once; the Cloudflare account owning qntx.org
+bunx wrangler login                     # once; the staging account (env.staging.account_id)
 bun run --cwd apps/gateway deploy:staging
 ```
 
@@ -99,7 +99,7 @@ Roll back with `bunx wrangler rollback --env staging`.
 ## Production
 
 Production serves mainnets only at `https://gateway.meowl.xyz` on account
-`9241dfd75bea0009a3870173f7e1acd2`: the eight EVM mainnets plus Solana through Alchemy first and
+`9241dfd75bea0009a3870173f7e1acd2` (`env.production.account_id`): the eight EVM mainnets plus Solana through Alchemy first and
 dRPC second (keys in request headers, never URLs — `Authorization: Bearer` and `Drpc-Key`), and
 Bitcoin mainnet through Blockstream Enterprise's Esplora (client-credentials token, cached per
 isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
@@ -121,13 +121,25 @@ done
 - **staging** follows `main`: each time the CI workflow succeeds on a push to `main`, that commit
   is deployed and `scripts/smoke.ts` runs against it.
 - **production** is **Gateway → Run workflow** on `main`. It deploys the dispatched commit after
-  checking it has a passed CI run, and waits for the `production` environment's reviewer.
+  checking it has a passed CI run, and waits for a `production` reviewer other than the person who
+  dispatched it.
+- A failed smoke rolls the environment back to its previous version (`wrangler rollback`).
 
-Both environments accept deployments from `main` only. `.github/rulesets/apply.sh <reviewer>`
-creates them with those rules. Each needs its own `CLOUDFLARE_API_TOKEN` as an **environment**
-secret — an account token with **Account › Workers Scripts › Edit** on this account and
-**Zone › Workers Routes › Edit** on the environment's zone (`qntx.org` for staging, `meowl.xyz`
-for production; custom domains are created through the zone's Workers Routes permission). The
-workflow stays off until the repository variable `GATEWAY_DEPLOY` is `true`.
+**Staging and production live in different Cloudflare accounts.** Workers Scripts Edit is
+account-wide, so a staging token in the production account could replace the production Worker,
+read its secrets and write its KV. Each environment pins its `account_id` in `wrangler.jsonc`, and
+the staging job refuses to deploy while staging's account equals production's or while the staging
+token is not refused by the production account. Staging still shares production's account today
+and stays blocked until it moves: create a separate account holding the staging zone, create its
+RISK KV namespace, and update `env.staging.account_id` and the KV ids in `wrangler.jsonc`.
 
-Roll back with `bunx wrangler rollback --env production`.
+Both environments accept deployments from `main` only.
+`.github/rulesets/apply.sh <reviewer> <reviewer> [...]` creates them with those rules (two or more
+reviewers, self-review prevented) and fails while a repository or organization secret named
+`CLOUDFLARE_API_TOKEN` exists. Each environment's `CLOUDFLARE_API_TOKEN` is an **environment**
+secret — an account token with **Account › Workers Scripts › Edit** on that environment's account
+and **Zone › Workers Routes › Edit** on its zone (custom domains are created through the zone's
+Workers Routes permission). The workflow stays off until the repository variable `GATEWAY_DEPLOY`
+is `true`.
+
+Roll back by hand with `bunx wrangler rollback --env production`.
