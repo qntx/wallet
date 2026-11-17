@@ -142,6 +142,33 @@ export const scanUtxos = async (
   );
 };
 
+export const BITCOIN_TEMPLATES = ["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const;
+
+/** What a Bitcoin balance is read from: one account template's xpub, or one watched address. */
+export type BitcoinSource =
+  | { readonly kind: "xpub"; readonly template: BitcoinAccountTemplate; readonly xpub: string }
+  | { readonly kind: "address"; readonly address: string };
+
+/** The addresses to read: the xpub's gap-scanned receive and change chains, or the address itself. */
+export const scanSource = async (
+  es: Esplora,
+  source: BitcoinSource,
+  network: string,
+  params: typeof BTC_NETWORK,
+): Promise<ReadonlyArray<ScanAddress>> => {
+  if (source.kind === "address") {
+    try {
+      Address(params).decode(source.address);
+    } catch {
+      throw new TypeError(`${source.address} is not a bitcoin address on ${network}`);
+    }
+    return [{ chain: 0, index: 0, address: source.address, used: true }];
+  }
+  const receive = await scanChain(es, source.xpub, source.template, network, params, 0);
+  const change = await scanChain(es, source.xpub, source.template, network, params, 1);
+  return [...receive, ...change];
+};
+
 export class BitcoinScanStore {
   private engineStore: EngineStore | undefined;
 

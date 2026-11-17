@@ -276,6 +276,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const assets = new AssetsController({
     networks,
+    chains: chains(options.wallet),
     openStore: options.openStore,
     setTimer,
     logger: options.logger,

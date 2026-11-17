@@ -53,9 +53,14 @@ const fakeNetworks = (c: PublicClient, multicall3?: string) =>
     info: () => ({ chainId: 1, multicall3 }),
   }) as never;
 
+const chains = {
+  account: async () => Promise.reject(new Error("unmocked chains.account")),
+};
+
 const controller = (c: PublicClient, multicall3?: string) =>
   new AssetsController({
     networks: fakeNetworks(c, multicall3),
+    chains,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: () => () => {},
     logger,
@@ -144,6 +149,7 @@ describe("AssetsController", () => {
     const mk = () =>
       new AssetsController({
         networks: fakeNetworks(c),
+        chains,
         openStore: async () => Promise.resolve(store),
         setTimer: (_ms, fn) => {
           timers.push(fn);
@@ -273,6 +279,7 @@ describe("AssetsController solana", () => {
         info: solNetInfo,
         solanaRpc: () => r,
       } as never,
+      chains,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: () => () => {},
       logger,
@@ -311,6 +318,7 @@ describe("AssetsController polling", () => {
             },
           }),
       } as never,
+      chains,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: (_ms, fn) => {
         timers.push(fn);

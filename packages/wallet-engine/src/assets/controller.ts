@@ -8,17 +8,19 @@
 import { encodeFunctionData, decodeFunctionResult, isAddress, isHex } from "viem";
 import type { PublicClient } from "viem";
 
-import { bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
+import type { ChainsApi } from "@qntx/wallet/chains";
 
-import { BtcUtxoStore, scanChain, scanUtxos } from "../chains/bitcoin-scan.ts";
-import { isFrozen } from "../chains/bitcoin.ts";
+import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
+import type { BitcoinSource } from "../chains/bitcoin-scan.ts";
 import { ERC20_ABI, evmRpcHex } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
+import { bitcoinBalances, readBitcoin } from "./bitcoin.ts";
+import type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./bitcoin.ts";
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
 
@@ -42,6 +44,10 @@ export type AccountBalances = {
   /** Bitcoin only — confirmed + own unconfirmed change; frozen 546/330-sat UTXOs shown apart. */
   readonly unconfirmed?: string;
   readonly frozen?: string;
+  /** Bitcoin only — the same totals split by the source they were read from. */
+  readonly sources?: Readonly<Partial<Record<BitcoinSourceKey, BitcoinTotals>>>;
+  /** Bitcoin only — every UTXO seen, with the source that produced it and its spend protection. */
+  readonly utxos?: ReadonlyArray<BitcoinUtxoView>;
 };
 
 export type AssetsControllerState = {
@@ -50,6 +56,7 @@ export type AssetsControllerState = {
 
 type Options = {
   readonly networks: NetworkController;
+  readonly chains: Pick<ChainsApi, "account">;
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
   readonly logger: EngineLogger;
@@ -98,18 +105,14 @@ export const MULTICALL3_ABI = [
 export class AssetsController extends Controller<AssetsControllerState> {
   private readonly options: Options;
   private engineStore: EngineStore | undefined;
-  private readonly bitcoinUtxos = new BtcUtxoStore();
   private visible = false;
   private cancelPoll: (() => void) | undefined;
   private readonly customTokens = new Map<
     string,
     ReadonlyArray<{ address: string; verified: boolean }>
   >();
-  /** State key → the `refresh` arguments that produced it (the address is the xpub for BTC). */
-  private readonly tracked = new Map<
-    string,
-    { readonly network: string; readonly address: string }
-  >();
+  /** State key → the read that produced it, so a poll re-runs whichever entry was written. */
+  private readonly tracked = new Map<string, () => Promise<AccountBalances>>();
 
   constructor(options: Options) {
     super({ name: "assets", defaultState: () => ({ balances: {} }) });
@@ -179,21 +182,16 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   private async refreshAll(): Promise<void> {
-    await Promise.all(
-      [...this.tracked.values()].map(async ({ network, address }) =>
-        this.refresh(address, network),
-      ),
-    );
+    await Promise.all([...this.tracked.values()].map(async (read) => read()));
   }
 
-  /** Writes `balances` under `stateKey` and remembers how to refresh it. */
+  /** Writes `balances` under `stateKey` and remembers the read that produced it. */
   private record(
     stateKey: string,
-    network: string,
-    address: string,
     balances: AccountBalances,
+    reread: () => Promise<AccountBalances>,
   ): AccountBalances {
-    this.tracked.set(stateKey, { network, address });
+    this.tracked.set(stateKey, reread);
     this.update((s) => ({ balances: { ...s.balances, [stateKey]: balances } }));
     return balances;
   }
@@ -205,7 +203,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
       return this.refreshSolana(address, network);
     }
     if (info.family === "bitcoin") {
-      return this.refreshBitcoin(address, network);
+      return this.refreshBitcoinAddress(address, network);
     }
     const client = this.options.networks.client(network);
     const native = BigInt(
@@ -218,7 +216,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
       address,
       custom.map((t) => ({ address: t.address, verified: t.verified })),
     );
-    return this.record(key(network, address), network, address, { native, tokens });
+    return this.record(key(network, address), { native, tokens }, async () =>
+      this.refresh(address, network),
+    );
   }
 
   /** SOL via getBalance; SPL via getTokenAccountsByOwner (jsonParsed) for known mints. */
@@ -258,7 +258,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
         };
       }),
     );
-    return this.record(key(network, owner), network, owner, { native, tokens });
+    return this.record(key(network, owner), { native, tokens }, async () =>
+      this.refresh(owner, network),
+    );
   }
 
   private async readTokens(
@@ -446,35 +448,42 @@ export class AssetsController extends Controller<AssetsControllerState> {
     }
   }
 
-  /** BTC balance = confirmed spendable + own unconfirmed change; frozen 546/330 shown separately. */
-  async refreshBitcoin(xpub: string, network: string): Promise<AccountBalances> {
+  /** A watched Bitcoin address's balance, keyed `${network}:${address}` like the other families. */
+  private async refreshBitcoinAddress(address: string, network: string): Promise<AccountBalances> {
     const es = this.options.networks.esplora(network);
-    const net = bitcoinNetwork(network);
-    const template = "btc.bip84" as const;
-    const receive = await scanChain(es, xpub, template, network, net.params, 0);
-    const change = await scanChain(es, xpub, template, network, net.params, 1);
-    const addresses = [...receive, ...change];
-    const scanned = await scanUtxos(es, addresses, net.params);
-    this.bitcoinUtxos.replace(scanned);
-    const changeSet = new Set(change.map((a) => a.address));
-    let confirmed = 0n;
-    let ownUnconfirmed = 0n;
-    let frozen = 0n;
-    for (const u of this.bitcoinUtxos.all()) {
-      const v = BigInt(u.value);
-      if (isFrozen(u.value)) {
-        frozen += v;
-      } else if (u.height > 0) {
-        confirmed += v;
-      } else if (changeSet.has(u.address)) {
-        ownUnconfirmed += v;
-      }
+    const source: BitcoinSource = { kind: "address", address };
+    const read = await readBitcoin(es, network, [source]);
+    return this.record(key(network, address), bitcoinBalances(read), async () =>
+      this.refresh(address, network),
+    );
+  }
+
+  /**
+   * BTC balance of an account group = confirmed spendable + own unconfirmed change across every
+   * account template's xpub; frozen 546/330-sat UTXOs shown separately.
+   */
+  async refreshBitcoinGroup(
+    group: { readonly walletId: string; readonly groupIndex: number },
+    network: string,
+  ): Promise<AccountBalances> {
+    if (this.options.networks.info(network).family !== "bitcoin") {
+      throw new TypeError(`${network} is not a bitcoin network`);
     }
-    return this.record(`${xpub}:${network}:BTC`, network, xpub, {
-      native: confirmed.toString(),
-      tokens: [],
-      unconfirmed: ownUnconfirmed.toString(),
-      frozen: frozen.toString(),
-    });
+    const es = this.options.networks.esplora(network);
+    const sources = await Promise.all(
+      BITCOIN_TEMPLATES.map(async (template): Promise<BitcoinSource> => {
+        const account = await this.options.chains.account({ ...group, template, network });
+        if (!("xpub" in account)) {
+          throw new TypeError(`bitcoin account ${template} on ${network} has no xpub`);
+        }
+        return { kind: "xpub", template, xpub: account.xpub };
+      }),
+    );
+    const read = await readBitcoin(es, network, sources);
+    return this.record(
+      `${network}:${group.walletId}:${group.groupIndex}`,
+      bitcoinBalances(read),
+      async () => this.refreshBitcoinGroup(group, network),
+    );
   }
 }

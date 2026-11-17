@@ -27,6 +27,7 @@ const stubbedAssets = (): AssetsController => {
       client: () => c,
       info: () => ({ family: "evm", chainId: 1 }),
     } as never,
+    chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: () => () => {},
     logger,
