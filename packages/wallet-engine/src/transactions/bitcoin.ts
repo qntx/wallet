@@ -851,21 +851,13 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     );
   };
 
-  const pollAndRelease = async (
-    ctx: RouteContext,
-    tx: TrackedTransaction,
-  ): Promise<TxState | undefined> => {
-    const state = await poll(ctx, tx);
-    if (state === "confirmed") {
-      bitcoinUtxos.endTx(tx.id, "confirmed");
-    }
-    return state;
-  };
-
   return {
     prepare,
     nextReceiveAddress,
-    poll: pollAndRelease,
+    poll,
+    settle: (id, state) => {
+      bitcoinUtxos.endTx(id, state === "confirmed" ? "confirmed" : "dropped");
+    },
     prepareReplace,
     prepareCpfp,
     unlock: async (store) => bitcoinUtxos.unlock(store),
@@ -891,6 +883,11 @@ export type BitcoinRoute = {
     network: string,
   ) => Promise<string>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
+  /**
+   * A transaction that reached a terminal state frees the outputs it locked; a confirmed one's
+   * inputs are spent and leave the lock table.
+   */
+  readonly settle: (id: string, state: TxState) => void;
   readonly prepareReplace: (
     ctx: RouteContext,
     old: TrackedTransaction,

@@ -589,6 +589,7 @@ export class TransactionController extends Controller<TransactionControllerState
     }
     this.untrack(id);
     const updated = await this.transition(tx, { state: next });
+    this.settle(updated);
     if (updated.state !== "confirmed" && updated.state !== "failed") {
       return;
     }
@@ -605,8 +606,15 @@ export class TransactionController extends Controller<TransactionControllerState
     await Promise.all(
       siblings.map(async (sibling) => {
         this.untrack(sibling.id);
-        await this.transition(sibling, { state: "replaced" });
+        this.settle(await this.transition(sibling, { state: "replaced" }));
       }),
     );
+  }
+
+  /** A Bitcoin transaction that ended frees what it locked, whichever way it ended. */
+  private settle(tx: TrackedTransaction): void {
+    if (tx.family === "bitcoin") {
+      this.bitcoinRoute.settle(tx.id, tx.state);
+    }
   }
 }
