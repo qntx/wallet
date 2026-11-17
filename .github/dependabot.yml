@@ -13,6 +13,17 @@ updates:
       bun-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+  # apps/harness has its own bun.lock outside the root workspace.
+  - package-ecosystem: "bun"
+    directory: "/apps/harness"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      harness-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
