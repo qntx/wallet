@@ -4,6 +4,8 @@
  * client, close the store and reset account state. Transitions are serialized on one promise chain,
  * so an unlock→lock flip can never overlap a still-opening store.
  */
+import { base58 } from "@scure/base";
+
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
@@ -655,14 +657,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         template: "solana.bip44-change",
         network,
       });
-      if (
-        !("address" in account) ||
-        !("publicKey" in account) ||
-        !(account.publicKey instanceof Uint8Array)
-      ) {
+      if (!("address" in account)) {
         throw new Error("no Solana account for the group");
       }
-      return { address: account.address, publicKey: account.publicKey };
+      // A Solana address is the base58 of the ed25519 public key itself.
+      return { address: account.address, publicKey: base58.decode(account.address) };
     },
     activeGroup: () => connections.activeGroup(),
     solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",
