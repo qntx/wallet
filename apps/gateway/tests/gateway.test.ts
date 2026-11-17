@@ -388,7 +388,30 @@ describe("rpc forwarding", () => {
   });
 
   it.each([
+    ["latest to pending", { fromBlock: "latest", toBlock: "pending" }],
+    ["pending to latest", { fromBlock: "pending", toBlock: "latest" }],
+    ["finalized to finalized", { fromBlock: "finalized", toBlock: "finalized" }],
+    ["safe to safe", { fromBlock: "safe", toBlock: "safe" }],
+    ["an omitted end", { toBlock: "latest" }],
+    ["an omitted start", { fromBlock: "latest" }],
+  ])("forwards eth_getLogs over %s", async (_name, filter) => {
+    const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_getLogs", [filter])),
+    );
+    expect(res.status).toBe(200);
+    expect(up.calls.map((sent) => JSON.parse(sent.body) as unknown)).toMatchObject([
+      { params: [filter] },
+    ]);
+  });
+
+  it.each([
     ["the whole chain", { fromBlock: "earliest", toBlock: "latest" }],
+    ["finalized to latest", { fromBlock: "finalized", toBlock: "latest" }],
+    ["safe to pending", { fromBlock: "safe", toBlock: "pending" }],
+    ["safe to latest", { fromBlock: "safe", toBlock: "latest" }],
+    ["pending to finalized", { fromBlock: "pending", toBlock: "finalized" }],
     ["an open-ended range", { fromBlock: "0x10" }],
     ["a range above the limit", { fromBlock: "0x0", toBlock: "0x1f4" }],
     ["too many addresses", { address: Array.from({ length: 21 }, () => `0x${"11".repeat(20)}`) }],

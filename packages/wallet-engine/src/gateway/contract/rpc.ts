@@ -152,9 +152,14 @@ const logsFilter = z.union([
 
 const isNumbered = (block: string | undefined): block is string => block?.startsWith("0x") === true;
 
+/** The only tags that move with the head; `safe` and `finalized` can trail it by thousands. */
+const HEAD_TAGS: ReadonlySet<string> = new Set(["latest", "pending"]);
+
 /**
  * Why an `eth_getLogs` call is refused, or `undefined` when its filter is bounded: one block by
- * hash, a numbered range of at most {@link LOGS_BLOCK_RANGE_MAX} blocks, or recent-block tags.
+ * hash, a numbered range of at most {@link LOGS_BLOCK_RANGE_MAX} blocks, or tags that name the same
+ * block or the head. `safe`/`finalized` may not pair with the head: on Arbitrum that span is
+ * thousands of blocks.
  */
 export function logsFilterViolation(params: unknown): string | undefined {
   const parsed = z.safeParse(z.tuple([logsFilter]), params);
@@ -165,14 +170,17 @@ export function logsFilterViolation(params: unknown): string | undefined {
   if ("blockHash" in filter) {
     return undefined;
   }
-  const { fromBlock, toBlock } = filter;
-  if (isNumbered(fromBlock) !== isNumbered(toBlock)) {
+  const from = filter.fromBlock ?? "latest";
+  const to = filter.toBlock ?? "latest";
+  if (isNumbered(from) !== isNumbered(to)) {
     return "eth_getLogs needs fromBlock and toBlock to be both block numbers or both block tags";
   }
-  if (!isNumbered(fromBlock) || !isNumbered(toBlock)) {
-    return undefined;
+  if (!isNumbered(from) || !isNumbered(to)) {
+    return from === to || (HEAD_TAGS.has(from) && HEAD_TAGS.has(to))
+      ? undefined
+      : "eth_getLogs block tags must match or both name the head (latest or pending)";
   }
-  const span = BigInt(toBlock) - BigInt(fromBlock);
+  const span = BigInt(to) - BigInt(from);
   return span < 0n || span >= BigInt(LOGS_BLOCK_RANGE_MAX)
     ? `eth_getLogs is limited to a range of ${LOGS_BLOCK_RANGE_MAX} blocks`
     : undefined;
