@@ -70,7 +70,7 @@ const taprootFixture = () => {
 };
 
 describe("DS PoC — Bitcoin balance read", () => {
-  it("DS-01: a watched Bitcoin address cannot be read — refresh treats it as an xpub", async () => {
+  it("DS-02: a watched Bitcoin address cannot be read — refresh treats it as an xpub", async () => {
     /* engine.ts:781-786 `watch.assets` → `assets.refresh(account.address, network)`;
        a bitcoin watch account stores a plain address (accounts/watch.ts:39-55). */
     const assets = make(btcNetworks(esplora({}, [])));
@@ -80,7 +80,7 @@ describe("DS PoC — Bitcoin balance read", () => {
     ).rejects.toThrow(/xpub/);
   });
 
-  it("DS-02: funds on BIP-86 (taproot) addresses read as 0 — refreshBitcoin hard-codes btc.bip84", async () => {
+  it("DS-01: funds on BIP-86 (taproot) addresses read as 0 — refreshBitcoin hard-codes btc.bip84", async () => {
     const { xpub, taprootAddress, p2wpkhAddress } = taprootFixture();
     const funded = {
       [scripthash(taprootAddress, NETWORK)]: {
