@@ -165,9 +165,17 @@ export type InitialFactor =
  * and passkey-derived wallet unrecoverable, and the two salts must differ. Moving a wallet to a
  * different domain requires WebAuthn related origins (`/.well-known/webauthn`); hosts should offer
  * `exportMnemonic` for passkey-derived wallets so they survive an RP migration.
+ *
+ * The `rpId` scope is the wallet's trust boundary. WebAuthn binds a credential, and its PRF, to the
+ * RP id, not to one origin: a script on any origin that may claim this RP id — every subdomain of
+ * it, every related origin, every associated app — can evaluate the PRF over `walletSalt` and
+ * derive the seed of a passkey wallet from one ordinary-looking passkey prompt.
  */
 export type PasskeyConfig = {
-  /** RP id — the origin's effective domain or a registrable parent of it (e.g. meowl.social). */
+  /**
+   * RP id — a domain that serves nothing but the wallet (e.g. `wallet.example.com`), never a
+   * registrable parent shared with other content.
+   */
   readonly rpId: string;
   readonly rpName: string;
   readonly walletSalt: string;

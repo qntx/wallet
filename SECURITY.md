@@ -14,6 +14,11 @@ disclosure timeline with you.
 
 ## Threat model by platform
 
+- **Passkey wallets:** the seed is the passkey's PRF output, and WebAuthn scopes a
+  passkey to its RP id, not to one origin. Every origin and app entitled to the
+  configured `rpId` is inside the trust boundary; hosts must use a wallet-only
+  domain. A finding that needs script execution on such an origin is in the same
+  class as script execution on the wallet's own page.
 - **React Native:** secrets, the password and the passkey PRF output stay
   inside the isolated kernel runtime, and every fund-moving signature is
   confirmed on a kernel-rendered system prompt.

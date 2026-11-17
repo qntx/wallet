@@ -26,4 +26,7 @@ export const invalidParams = (message: string): ProviderError => new ProviderErr
 export const requestPending = (message: string): ProviderError =>
   new ProviderError(-32002, message);
 
+/** EIP-1474 "limit exceeded": the request is valid but asks for more than the wallet serves. */
+export const limitExceeded = (message: string): ProviderError => new ProviderError(-32005, message);
+
 export const internalError = (message: string): ProviderError => new ProviderError(-32603, message);

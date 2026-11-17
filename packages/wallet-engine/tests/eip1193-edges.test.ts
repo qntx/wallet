@@ -263,6 +263,19 @@ describe("Eip1193Handler chain switching and reads", () => {
     await expect(codeOf(run(r, "eth_blockNumber", []))).resolves.toBe(-32_603);
     await expect(codeOf(run(r, "net_peerCount", []))).resolves.toBe(-32_601);
   });
+
+  it("forwards a bounded eth_getLogs and refuses an unbounded one before any read", async () => {
+    const r = rig({ session: session() });
+    const bounded = [{ address: ADDR, fromBlock: "0x10", toBlock: "0x20" }];
+    await run(r, "eth_getLogs", bounded);
+    expect(r.transport).toHaveBeenCalledWith({ method: "eth_getLogs", params: bounded });
+    r.transport.mockClear();
+    await expect(
+      codeOf(run(r, "eth_getLogs", [{ fromBlock: "earliest", toBlock: "latest" }])),
+    ).resolves.toBe(-32_005);
+    expect(r.transport).not.toHaveBeenCalled();
+    await expect(codeOf(run(r, "eth_newFilter", [{}]))).resolves.toBe(-32_601);
+  });
 });
 
 describe("Eip1193Handler error conversion", () => {

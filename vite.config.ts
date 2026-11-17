@@ -355,7 +355,11 @@ const config: UserConfig = defineConfig({
         // builtin they may touch is worker_threads. The store wire (shared.ts,
         // store-client.ts, subtle.ts) stays platform-neutral for the W4 browser
         // worker.
-        files: ["packages/wallet-worker/src/node/**", "packages/wallet-worker/src/worker/node.ts"],
+        files: [
+          "packages/wallet-worker/src/node/**",
+          "packages/wallet-worker/src/worker/node.ts",
+          "packages/wallet-worker/src/worker/node-kernel.ts",
+        ],
         rules: {
           "eslint/no-restricted-imports": [
             "error",

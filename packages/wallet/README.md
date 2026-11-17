@@ -17,7 +17,7 @@ import { createWebWallet } from "@qntx/wallet-worker/browser";
 
 const wallet = await createWebWallet({
   passkey: {
-    rpId: "app.example.com", // the origin's effective domain or a registrable parent
+    rpId: "wallet.example.com", // a wallet-only domain — see the notes on its trust boundary
     rpName: "Example",
     walletSalt: "example/wallet",
     vaultSalt: "example/vault",
@@ -115,6 +115,13 @@ React Native the device owner proves presence before anything is erased.
   blind.
 - Changing the password or removing a factor rotates the vault DEK: sessions in other tabs lock
   with reason `invalidated` and must re-unlock. Adding a passkey factor keeps the current DEK.
+- **The `rpId` scope is the wallet's trust boundary.** WebAuthn binds a credential and its PRF
+  to the RP id, not to an origin, and a passkey wallet's seed is the PRF over `walletSalt`. A
+  script on any origin that may claim the RP id — each of its subdomains, each origin listed in
+  `/.well-known/webauthn`, each app associated with it — can derive that seed from one passkey
+  prompt that looks like a sign-in. Use a domain that serves only the wallet
+  (`wallet.example.com`), never a registrable parent shared with other pages, user content or
+  third-party scripts, and treat every related origin and associated app as part of the wallet.
 - `passkey.rpId`, `walletSalt` and `vaultSalt` are permanent identifiers — changing any of them
   makes every existing passkey factor and passkey-derived wallet unrecoverable, and the salts
   must differ. Moving domains requires WebAuthn related origins (`/.well-known/webauthn`); offer

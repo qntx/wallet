@@ -13,7 +13,7 @@ import { connectKernel } from "@qntx/wallet/host";
 import type { MainPort, PasskeyCeremony } from "@qntx/wallet/host";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import type { NodeWorkerData } from "../worker/node.ts";
+import type { NodeWorkerData } from "../worker/node-kernel.ts";
 import { serveStore } from "./store-server.ts";
 
 export { createSoftwarePasskey } from "./software-passkey.ts";

@@ -1,65 +1,7 @@
-import { nobleBackend } from "@qntx/nostr";
 /**
- * The browser kernel worker, bundled to dist/kernel.worker.js by `bun build`. All platform
- * capabilities are wired here: subtle PBKDF2, the IndexedDB vault store, timers through
- * platform.setTimer, and the session policy from the host's init message — the kernel does not
- * start until a strictly-validated init arrives. The kernel itself stays platform-neutral.
+ * The browser kernel worker entry, bundled to dist/kernel.worker.js by `bun build`: the kernel runs
+ * on this worker's global scope and reads spark.wasm from next to the bundle.
  */
-import { startKernel } from "@qntx/wallet-kernel";
-import type { KernelPlatform, Port } from "@qntx/wallet-kernel";
+import { startBrowserKernel } from "./browser-kernel.ts";
 
-import { MAX_SESSION_MS, idleMsOf, isBrowserWorkerInit } from "../shared.ts";
-import { createIndexedDbStore } from "./indexeddb.ts";
-import { basePlatform } from "./platform.ts";
-import { loadSparkBackend } from "./spark.ts";
-
-const onInit = (event: MessageEvent<unknown>): void => {
-  const { data } = event;
-  if (!isBrowserWorkerInit(data)) {
-    return; // not the init message — the kernel must not start without a valid policy
-  }
-  removeEventListener("message", onInit);
-
-  const platform: KernelPlatform = {
-    ...basePlatform(),
-    store: createIndexedDbStore(),
-    // Session limits are owned here, not by the page: idle from the validated init message,
-    // the fixed maximum, and the scrypt ceiling for this platform. Only presence-bearing
-    // methods refresh the idle timer — request traffic does not keep a session alive.
-    policy: {
-      idle: { ms: idleMsOf(data.idleMinutes), activity: "presence" },
-      maxSessionMs: MAX_SESSION_MS,
-      maxScryptLogN: 18,
-    },
-    backends: {
-      nostr: nobleBackend,
-      spark: async () =>
-        loadSparkBackend(async () => {
-          const response = await fetch(new URL("spark.wasm", import.meta.url));
-          if (!response.ok) {
-            throw new Error(`spark.wasm fetch failed (HTTP ${response.status})`);
-          }
-          return new Uint8Array(await response.arrayBuffer());
-        }),
-    },
-  };
-
-  const port: Port = {
-    post: (message, transfer) => {
-      postMessage(message, transfer);
-    },
-    listen: (handler) => {
-      const listener = (messageEvent: MessageEvent<unknown>): void => {
-        handler(messageEvent.data);
-      };
-      addEventListener("message", listener);
-      return () => {
-        removeEventListener("message", listener);
-      };
-    },
-  };
-
-  startKernel(platform, port);
-};
-
-addEventListener("message", onInit);
+startBrowserKernel(globalThis, new URL("spark.wasm", import.meta.url));
