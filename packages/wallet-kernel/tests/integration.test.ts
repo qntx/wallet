@@ -2542,6 +2542,46 @@ describe("live-state reconciliation across kernels", () => {
   });
 });
 
+describe("request structure", () => {
+  /**
+   * A depth-64 binary DAG: every level shares one live array as both children, so a validator that
+   * re-walks shared references would take 2^64 steps on a value under 1 KiB on the wire.
+   */
+  const dag = (depth: number): unknown[] => {
+    let node: unknown[] = [];
+    for (let i = 0; i < depth; i++) {
+      node = [node, node];
+    }
+    return node;
+  };
+
+  it("sizes a shared-reference params DAG without expanding it and keeps serving", async () => {
+    const h = createHarness();
+    await h.settle();
+    // Tiny on the wire, 2^64 nodes as a tree: over the size cap, found without walking it all.
+    const res = await h.sendRaw({ v: 3, id: 9, method: "status", params: dag(64) });
+    expect(errCode(res)).toBe("invalid-input");
+    expect("ok" in (await h.call("status"))).toBe(true);
+  });
+
+  it("answers cyclic params with integrity", async () => {
+    const h = createHarness();
+    await h.settle();
+    const params: unknown[] = [];
+    params.push({ inner: [params] });
+    expect(errCode(await h.sendRaw({ v: 3, id: 10, method: "status", params }))).toBe("integrity");
+  });
+
+  it("answers methods named after Object.prototype members with integrity", async () => {
+    const h = createHarness();
+    await h.settle();
+    for (const method of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- raw requests are sequential
+      expect(errCode(await h.sendRaw({ v: 3, id: 1, method, params: null }))).toBe("integrity");
+    }
+  });
+});
+
 describe("request size cap", () => {
   it("answers an over-cap raw request with invalid-input", async () => {
     const h = createHarness();

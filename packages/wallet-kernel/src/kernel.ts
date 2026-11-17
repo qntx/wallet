@@ -92,7 +92,7 @@ function openChecked(dek: Secret, record: StoredRecord): Uint8Array {
 }
 
 function isMethodName(method: string): method is MethodName {
-  return method in METHODS;
+  return Object.hasOwn(METHODS, method);
 }
 
 /** Counter ops never fence: they fold into the store atomically against whatever is there. */
