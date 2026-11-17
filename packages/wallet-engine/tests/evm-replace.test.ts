@@ -8,6 +8,8 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { fakeSignedEvm, replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -133,7 +135,7 @@ const receiptFetch = (confirmed: string | undefined): typeof fetch => {
   }) as typeof fetch;
 };
 
-const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: Array<() => unknown>) => {
+const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: ManualTimers) => {
   let tag = 0;
   return new TransactionController({
     wallet: {} as Wallet,
@@ -149,10 +151,7 @@ const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: Array<() => unk
       tag += 1;
       return new Uint8Array(n).fill(tag);
     },
-    setTimer: (_ms, fn) => {
-      timers.push(fn);
-      return () => {};
-    },
+    setTimer: timers.setTimer,
     now: () => 1000,
     logger,
     pollMs: 1,
@@ -248,7 +247,7 @@ describe("TransactionController.replace", () => {
 
 describe("TransactionController.replace — state resolution", () => {
   it("replacement confirms → the original flips to replaced", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = ctlWithFetch(
       receiptFetch(`0x${"bb".repeat(32)}`),
       async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
@@ -257,18 +256,14 @@ describe("TransactionController.replace — state resolution", () => {
     await ctl.init();
     const original = await send(ctl, SEND);
     const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
-    await Promise.all(
-      timers.map(async (fn) => {
-        await fn();
-      }),
-    );
+    await timers.fire();
     const { txs } = ctl.getState();
     expect(txs[bumped.id]?.state).toBe("confirmed");
     expect(txs[original.id]?.state).toBe("replaced");
   });
 
   it("original confirms first → the replacement flips to replaced", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = ctlWithFetch(
       receiptFetch(`0x${"aa".repeat(32)}`),
       async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
@@ -277,11 +272,7 @@ describe("TransactionController.replace — state resolution", () => {
     await ctl.init();
     const original = await send(ctl, SEND);
     const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
-    await Promise.all(
-      timers.map(async (fn) => {
-        await fn();
-      }),
-    );
+    await timers.fire();
     const { txs } = ctl.getState();
     expect(txs[original.id]?.state).toBe("confirmed");
     expect(txs[bumped.id]?.state).toBe("replaced");
@@ -301,7 +292,7 @@ describe("TransactionController.replace — state resolution", () => {
   });
 
   it("a new send while a replace is pending gets the next nonce, not the replaced one", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = ctlWithFetch(
       receiptFetch(undefined),
       async ({ request }) => Promise.resolve(fakeSignedEvm(request)),

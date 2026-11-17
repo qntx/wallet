@@ -29,6 +29,8 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { cpfpVia, replaceVia, send } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -355,7 +357,7 @@ describe.runIf(RUN)("bitcoin e2e: taproot engine send", () => {
 
 const taprootFlow = async (): Promise<void> => {
   const base = startEsplora(`${NAME}-tr`);
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
   try {
     await waitFor(nodeReady(`${NAME}-tr`), 3000, Date.now() + 120_000, () => {
       throw new Error(`bitcoind never warmed up\n${logsOf(`${NAME}-tr`)}`);
@@ -407,7 +409,7 @@ const taprootFlow = async (): Promise<void> => {
     rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
     await waitFor(
       async () => {
-        await Promise.all(timers.map((fn) => fn()));
+        await timers.fire();
         return ctl.getState().txs[tx.id]?.state === "confirmed";
       },
       3000,
@@ -458,7 +460,7 @@ const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
 
 const ctlRig = async (
   base: string,
-  timers: Array<() => unknown>,
+  timers: ManualTimers,
   template: "btc.bip84" | "btc.bip86" = "btc.bip84",
 ): Promise<{ ctl: TransactionController; walletId: string; xpub: string }> => {
   const { wallet, walletId } = await realWallet();
@@ -480,10 +482,7 @@ const ctlRig = async (
     }),
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random: taggedRandom(),
-    setTimer: (_ms, fn) => {
-      timers.push(fn);
-      return () => {};
-    },
+    setTimer: timers.setTimer,
     now: () => 1000,
     logger: quiet,
     pollMs: 1,
@@ -494,7 +493,7 @@ const ctlRig = async (
 
 const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
   const base = startEsplora(`${NAME}-rbf`);
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
   try {
     await waitFor(nodeReady(`${NAME}-rbf`), 3000, Date.now() + 120_000, () => {
       throw new Error(`bitcoind never warmed up\n${logsOf(`${NAME}-rbf`)}`);
@@ -550,7 +549,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
       rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
       await waitFor(
         async () => {
-          await Promise.all(timers.map((fn) => fn()));
+          await timers.fire();
           return (
             ctl.getState().txs[child.id]?.state === "confirmed" &&
             ctl.getState().txs[original.id]?.state === "confirmed"
@@ -570,7 +569,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
     rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
     await waitFor(
       async () => {
-        await Promise.all(timers.map((fn) => fn()));
+        await timers.fire();
         const { txs } = ctl.getState();
         return txs[bumped.id]?.state === "confirmed" && txs[original.id]?.state === "replaced";
       },
@@ -615,7 +614,7 @@ const LEGACY = `${NAME}-legacy`;
 
 const legacyFlow = async (): Promise<void> => {
   const base = startEsplora(LEGACY);
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
   try {
     await step("esplora up", async () =>
       waitFor(nodeReady(LEGACY), 3000, Date.now() + 120_000, () => {
@@ -734,10 +733,7 @@ const legacyFlow = async (): Promise<void> => {
       }),
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       random: taggedRandom(),
-      setTimer: (_ms, fn) => {
-        timers.push(fn);
-        return () => {};
-      },
+      setTimer: timers.setTimer,
       now: () => 1000,
       logger: quiet,
       pollMs: 1,
@@ -768,7 +764,7 @@ const legacyFlow = async (): Promise<void> => {
         waitFor(
           async () => {
             try {
-              await Promise.all(timers.map((fn) => fn()));
+              await timers.fire();
               return txCtl.getState().txs[tx.id]?.state === "confirmed";
             } catch (error) {
               if (!(error instanceof EsploraError && error.transient)) {

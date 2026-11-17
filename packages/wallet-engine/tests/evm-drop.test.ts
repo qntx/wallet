@@ -17,6 +17,8 @@ import {
 } from "../src/transactions/evm.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
 import { fakeSignedEvm, idleNetworkDeps, replaceVia, send } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const POLL_MS = 1;
 const GATEWAY = "https://gateway.test";
@@ -143,7 +145,7 @@ const world = (options: { gateway?: boolean } = {}) => {
   } as unknown as ReturnType<typeof chains>;
 
   const boot = async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const networks = new NetworkController({
       ...idleNetworkDeps,
       fetch: fetchImpl,
@@ -164,12 +166,7 @@ const world = (options: { gateway?: boolean } = {}) => {
         tag += 1;
         return new Uint8Array(n).fill(tag);
       },
-      setTimer: (ms, fn) => {
-        if (ms === POLL_MS) {
-          timers.push(fn);
-        }
-        return () => {};
-      },
+      setTimer: timers.setTimer,
       now: () => clock.t,
       logger,
       pollMs: POLL_MS,
@@ -182,14 +179,11 @@ const world = (options: { gateway?: boolean } = {}) => {
   return { primary, independent, clock, backing, signed, boot };
 };
 
-const tick = async (timers: Array<() => unknown>, index = 0): Promise<void> => {
-  await timers[index]?.();
-};
-
-const ticks = async (timers: Array<() => unknown>, count: number, index = 0): Promise<void> => {
-  if (count > 0) {
-    await tick(timers, index);
-    await ticks(timers, count - 1, index);
+/** `count` poll turns: every live poll timer fires once per turn, like the real loop schedule. */
+const polls = async (timers: ManualTimers, count = 1): Promise<void> => {
+  for (let i = 0; i < count; i += 1) {
+    // oxlint-disable-next-line eslint/no-await-in-loop -- each poll re-arms the next
+    await timers.fire(POLL_MS);
   }
 };
 
@@ -209,7 +203,7 @@ const attemptTimes = (): number[] => {
  */
 const walkBackoff = async (
   w: ReturnType<typeof world>,
-  timers: Array<() => unknown>,
+  timers: ManualTimers,
   start: number,
   attempt = 0,
   at = 0,
@@ -220,10 +214,10 @@ const walkBackoff = async (
   const delay = Math.min(RESUBMIT_BASE_MS * 2 ** attempt, RESUBMIT_MAX_MS);
   const before = w.primary.sent.length;
   w.clock.t = start + at;
-  await tick(timers);
+  await polls(timers);
   const hit = w.primary.sent.length - before;
   w.clock.t = start + Math.min(at + delay, UNKNOWN_DROP_MS) - 1;
-  await tick(timers);
+  await polls(timers);
   const early = w.primary.sent.length - before - hit;
   return [hit, early, ...(await walkBackoff(w, timers, start, attempt + 1, at + delay))];
 };
@@ -259,7 +253,7 @@ describe("EVM poll — receipts", () => {
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
     w.primary.receipts.set(hashOf(tx), RECEIPT);
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("confirmed");
   });
 
@@ -268,7 +262,7 @@ describe("EVM poll — receipts", () => {
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
     w.primary.receipts.set(hashOf(tx), REVERTED);
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("failed");
   });
 });
@@ -279,9 +273,9 @@ describe("EVM poll — nonce consumed without our receipt", () => {
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
     w.primary.latest = tx.nonce + 1;
-    await ticks(timers, DROP_CONFIRMATIONS - 1);
+    await polls(timers, DROP_CONFIRMATIONS - 1);
     expect(stateOf(ctl, tx)).toBe("submitted");
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("dropped");
   });
 
@@ -290,15 +284,15 @@ describe("EVM poll — nonce consumed without our receipt", () => {
     const { ctl, timers } = await w.boot();
     const tx = await send(ctl, SEND);
     w.primary.latest = tx.nonce + 1;
-    await tick(timers);
-    await tick(timers);
+    await polls(timers);
+    await polls(timers);
     w.primary.latest = tx.nonce;
-    await tick(timers);
+    await polls(timers);
     w.primary.latest = tx.nonce + 1;
-    await tick(timers);
-    await tick(timers);
+    await polls(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("submitted");
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("dropped");
   });
 
@@ -309,7 +303,7 @@ describe("EVM poll — nonce consumed without our receipt", () => {
     const bumped = await replaceVia(ctl, original.id, "speed-up", VERIFY);
     w.primary.latest = original.nonce + 1;
     w.primary.receipts.set(hashOf(bumped), RECEIPT);
-    await ticks(timers, DROP_CONFIRMATIONS);
+    await polls(timers, DROP_CONFIRMATIONS);
     expect(stateOf(ctl, original)).toBe("replaced");
   });
 
@@ -321,7 +315,7 @@ describe("EVM poll — nonce consumed without our receipt", () => {
     w.primary.onLatestCount = () => {
       w.primary.receipts.set(hashOf(tx), RECEIPT);
     };
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("confirmed");
   });
 });
@@ -347,10 +341,10 @@ describe("EVM poll — unknown to the node", () => {
     const tx = await send(ctl, SEND);
     w.primary.known.delete(hashOf(tx));
     w.primary.sent.length = 0;
-    await tick(timers);
+    await polls(timers);
     expect(w.primary.sent).toHaveLength(1);
     w.clock.t += RESUBMIT_BASE_MS;
-    await tick(timers);
+    await polls(timers);
     expect(w.primary.sent).toHaveLength(1);
   });
 
@@ -360,12 +354,12 @@ describe("EVM poll — unknown to the node", () => {
     const tx = await send(ctl, SEND);
     w.primary.known.delete(hashOf(tx));
     w.primary.accepting = false;
-    await tick(timers);
+    await polls(timers);
     w.clock.t += UNKNOWN_DROP_MS - 1;
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("submitted");
     w.clock.t += 1;
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("dropped");
     w.primary.accepting = true;
     const next = await send(ctl, SEND);
@@ -379,12 +373,12 @@ describe("EVM poll — unknown to the node", () => {
     w.primary.known.delete(hashOf(tx));
     w.primary.accepting = false;
     w.independent.known.add(hashOf(tx));
-    await tick(timers);
+    await polls(timers);
     w.clock.t += UNKNOWN_DROP_MS;
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("submitted");
     w.independent.known.delete(hashOf(tx));
-    await tick(timers);
+    await polls(timers);
     expect(stateOf(ctl, tx)).toBe("dropped");
   });
 
@@ -396,9 +390,9 @@ describe("EVM poll — unknown to the node", () => {
     w.primary.known.delete(hashOf(original));
     w.primary.accepting = false;
     w.primary.sent.length = 0;
-    await tick(timers, 0);
+    await polls(timers);
     w.clock.t += UNKNOWN_DROP_MS + 1;
-    await ticks(timers, 2, 0);
+    await polls(timers, 2);
     expect(w.primary.sent).toHaveLength(0);
     expect(stateOf(ctl, original)).toBe("submitted");
     w.primary.accepting = true;
@@ -414,16 +408,16 @@ describe("EVM poll — unknown to the node", () => {
     w.primary.known.delete(hashOf(original));
     w.primary.known.delete(hashOf(bumped));
     w.primary.accepting = false;
-    await tick(timers, 0);
-    await tick(timers, 1);
+    await polls(timers);
+    await polls(timers);
     w.clock.t += UNKNOWN_DROP_MS;
-    await tick(timers, 1);
+    await polls(timers);
     expect(stateOf(ctl, bumped)).toBe("dropped");
     w.primary.sent.length = 0;
-    await tick(timers, 0);
+    await polls(timers);
     expect(w.primary.sent).toHaveLength(1);
     w.clock.t += UNKNOWN_DROP_MS;
-    await tick(timers, 0);
+    await polls(timers);
     expect(stateOf(ctl, original)).toBe("dropped");
   });
 
@@ -433,9 +427,9 @@ describe("EVM poll — unknown to the node", () => {
     const original = await send(ctl, SEND);
     const bumped = await replaceVia(ctl, original.id, "speed-up", VERIFY);
     w.primary.latest = original.nonce + 1;
-    await ticks(timers, DROP_CONFIRMATIONS, 0);
+    await polls(timers, DROP_CONFIRMATIONS);
     expect(stateOf(ctl, original)).toBe("dropped");
-    expect(stateOf(ctl, bumped)).toBe("submitted");
+    expect(stateOf(ctl, bumped)).toBe("dropped");
   });
 });
 

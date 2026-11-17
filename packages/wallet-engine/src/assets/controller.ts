@@ -19,6 +19,7 @@ import type { EngineLogger } from "../events.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
+import { repeat } from "../timer.ts";
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
 
@@ -167,15 +168,14 @@ export class AssetsController extends Controller<AssetsControllerState> {
     if (this.cancelPoll !== undefined) {
       return;
     }
-    this.cancelPoll = this.options.setTimer(POLL_MS, () => {
-      void (async () => {
-        try {
-          await this.refreshAll();
-        } catch (error) {
-          this.options.logger.warn("assets refresh failed", error);
-        }
-      })();
-    });
+    this.cancelPoll = repeat(
+      this.options.setTimer,
+      POLL_MS,
+      async () => this.refreshAll(),
+      (error) => {
+        this.options.logger.warn("assets refresh failed", error);
+      },
+    );
   }
 
   private async refreshAll(): Promise<void> {

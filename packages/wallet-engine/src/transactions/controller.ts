@@ -10,6 +10,7 @@ import { chains } from "@qntx/wallet/chains";
 import { Controller } from "../controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
+import { repeat } from "../timer.ts";
 import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
@@ -551,54 +552,61 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.timers.has(id) || hash === "") {
       return;
     }
-    const poll = this.options.pollMs ?? 4000;
-    const stop = this.options.setTimer(poll, async () => {
-      if (this.locked) {
-        return;
-      }
-      try {
-        const tx = this.getState().txs[id];
-        if (tx === undefined) {
-          return;
-        }
-        const ctx = this.routeCtx();
-        const next =
-          tx.family === "solana"
-            ? await pollSolana(ctx, tx)
-            : tx.family === "bitcoin"
-              ? await this.bitcoinRoute.poll(ctx, tx)
-              : await this.evmRoute.poll(ctx, tx);
-        if (next === undefined) {
-          return;
-        }
-        const updated = await this.transition(tx, { state: next });
-        this.timers.delete(id);
-        stop();
-        if (updated.state !== "confirmed" && updated.state !== "failed") {
-          return;
-        }
-        // When one of a replace pair is mined, the sibling is `replaced`.
-        const siblings = Object.values(this.getState().txs).filter(
-          (t) =>
-            t.id !== updated.id &&
-            t.hash !== undefined &&
-            t.state !== "replaced" &&
-            ((updated.replaces !== undefined && t.id === updated.replaces) ||
-              (t.replaces !== undefined && t.replaces === updated.id)) &&
-            (t.state === "submitted" || t.state === "pending"),
-        );
-        await Promise.all(
-          siblings.map(async (sibling) => {
-            await this.transition(sibling, { state: "replaced" });
-            const siblingStop = this.timers.get(sibling.id);
-            this.timers.delete(sibling.id);
-            siblingStop?.();
-          }),
-        );
-      } catch (error) {
-        this.options.logger.warn("tx status poll failed", error);
-      }
-    });
-    this.timers.set(id, stop);
+    this.timers.set(
+      id,
+      repeat(
+        this.options.setTimer,
+        this.options.pollMs ?? 4000,
+        async () => this.pollOnce(id),
+        (error) => {
+          this.options.logger.warn("tx status poll failed", error);
+        },
+      ),
+    );
+  }
+
+  private untrack(id: string): void {
+    this.timers.get(id)?.();
+    this.timers.delete(id);
+  }
+
+  /** One status poll; a terminal answer stops the transaction's loop and settles a replace pair. */
+  private async pollOnce(id: string): Promise<void> {
+    const tx = this.getState().txs[id];
+    if (tx === undefined) {
+      this.untrack(id);
+      return;
+    }
+    const ctx = this.routeCtx();
+    const next =
+      tx.family === "solana"
+        ? await pollSolana(ctx, tx)
+        : tx.family === "bitcoin"
+          ? await this.bitcoinRoute.poll(ctx, tx)
+          : await this.evmRoute.poll(ctx, tx);
+    if (next === undefined || this.locked) {
+      return;
+    }
+    this.untrack(id);
+    const updated = await this.transition(tx, { state: next });
+    if (updated.state !== "confirmed" && updated.state !== "failed") {
+      return;
+    }
+    // When one of a replace pair is mined, the sibling is `replaced`.
+    const siblings = Object.values(this.getState().txs).filter(
+      (t) =>
+        t.id !== updated.id &&
+        t.hash !== undefined &&
+        t.state !== "replaced" &&
+        ((updated.replaces !== undefined && t.id === updated.replaces) ||
+          (t.replaces !== undefined && t.replaces === updated.id)) &&
+        (t.state === "submitted" || t.state === "pending"),
+    );
+    await Promise.all(
+      siblings.map(async (sibling) => {
+        this.untrack(sibling.id);
+        await this.transition(sibling, { state: "replaced" });
+      }),
+    );
   }
 }
