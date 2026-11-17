@@ -17,7 +17,7 @@ import {
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 
 import { KernelError } from "../../errors.ts";
-import { MESSAGE_INTENT } from "./prompt.ts";
+import { messagePromptIntent } from "./prompt.ts";
 import type { BitcoinRequest, ExecuteResult } from "./shared.ts";
 import { BTC_PURPOSE, deepEqual, mapChainError } from "./shared.ts";
 
@@ -308,7 +308,7 @@ const executeBitcoinMessage = (
     mapChainError(error);
   }
   if (intentOnly) {
-    return { prompt: MESSAGE_INTENT };
+    return { prompt: messagePromptIntent({ kind: "text", text: request.message }) };
   }
   return {
     kind: "bitcoin.message",
