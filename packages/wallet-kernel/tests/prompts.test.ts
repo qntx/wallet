@@ -1026,18 +1026,40 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     },
   });
 
+  const order = {
+    offerer: SIGNER,
+    zone: TO,
+    startTime: 0,
+    endTime: 0,
+    offer: [{ ...item("0", "0"), kind: "erc721" as const, startAmount: nft, endAmount: nft }],
+    consideration: [
+      { ...item("1000000000000000000", "500000000000000000"), recipient: SIGNER },
+      ...[1, 2, 3, 4].map(() => ({ ...item("1", "1"), recipient: TO })),
+    ],
+  };
+  const safe = {
+    safe: SPENDER,
+    nonce: "12",
+    operation: "delegatecall" as const,
+    to: TO,
+    value: "0",
+    data: "0x12345678",
+    calls: [
+      {
+        ...ethTransfer,
+        family: "evm" as const,
+        network: "eip155:1",
+        warnings: [],
+        fee: undefined,
+        summary: "contract-call" as const,
+        verifiability: "opaque" as const,
+        contract: { address: TO, created: false },
+      },
+    ],
+    refund: { gasPrice: "1", gasToken: TO, refundReceiver: SIGNER },
+  };
+
   it("a Seaport order lists what is given and who receives what", () => {
-    const order = {
-      offerer: SIGNER,
-      zone: TO,
-      startTime: 0,
-      endTime: 0,
-      offer: [{ ...item("0", "0"), kind: "erc721" as const, startAmount: nft, endAmount: nft }],
-      consideration: [
-        { ...item("1000000000000000000", "500000000000000000"), recipient: SIGNER },
-        ...[1, 2, 3, 4].map(() => ({ ...item("1", "1"), recipient: TO })),
-      ],
-    };
     expect(chainPrompt("en", typedIntent({ seaport: order })).description).toBe(
       [
         "App: Seaport",
@@ -1053,27 +1075,6 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
   });
 
   it("a Safe transaction shows its calls, a delegatecall and the gas refund", () => {
-    const safe = {
-      safe: SPENDER,
-      nonce: "12",
-      operation: "delegatecall" as const,
-      to: TO,
-      value: "0",
-      data: "0x12345678",
-      calls: [
-        {
-          ...ethTransfer,
-          family: "evm" as const,
-          network: "eip155:1",
-          warnings: [],
-          fee: undefined,
-          summary: "contract-call" as const,
-          verifiability: "opaque" as const,
-          contract: { address: TO, created: false },
-        },
-      ],
-      refund: { gasPrice: "1", gasToken: TO, refundReceiver: SIGNER },
-    };
     expect(chainPrompt("en", typedIntent({ primaryType: "SafeTx", safe })).description).toBe(
       [
         "App: Seaport",
@@ -1086,6 +1087,47 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         `Call contract ${TO}`,
         `Send 0.05 ETH to ${TO}`,
         `Refunds gas to ${SIGNER}`,
+      ].join("\n"),
+    );
+  });
+
+  it("renders every message line in Chinese under a zh locale", () => {
+    expect(chainPrompt("zh-Hans", personal(signIn)).description).toBe(
+      `登录 app.example.com\n账户 ${SIGNER}\n网络：Base\n地址 https://app.example.com/login`,
+    );
+    expect(
+      chainPrompt("zh-Hans", personal("x wants you to sign in with your Ethereum account:"))
+        .description,
+    ).toBe(
+      "内容像登录请求，但格式不合规\n消息：\nx wants you to sign in with your Ethereum account:",
+    );
+    expect(chainPrompt("zh-Hans", typedIntent({})).description).toBe(
+      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n无法显示此请求的内容`,
+    );
+    expect(chainPrompt("zh-Hans", typedIntent({ seaport: order })).description).toBe(
+      [
+        "应用：Seaport",
+        "网络：Ethereum",
+        `验证合约 ${SPENDER}`,
+        "类型：OrderComponents",
+        "付出 0x3333333333333333333333333333333333333333 #7",
+        `${SIGNER} 收到 1 ETH → 0.5 ETH`,
+        ...[1, 2, 3].map(() => `${TO} 收到 0.000000000000000001 ETH`),
+        "… 还有 1 项未显示",
+      ].join("\n"),
+    );
+    expect(chainPrompt("zh-Hans", typedIntent({ primaryType: "SafeTx", safe })).description).toBe(
+      [
+        "应用：Seaport",
+        "网络：Ethereum",
+        `验证合约 ${SPENDER}`,
+        "类型：SafeTx",
+        `Safe ${SPENDER} 的第 12 笔交易`,
+        `以 Safe 的全部权限执行 ${TO} 的代码（delegatecall）`,
+        "无法核实此调用的效果",
+        `调用合约 ${TO}`,
+        `发送 0.05 ETH 到 ${TO}`,
+        `向 ${SIGNER} 退还 gas 费`,
       ].join("\n"),
     );
   });
