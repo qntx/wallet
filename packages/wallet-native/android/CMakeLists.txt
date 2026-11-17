@@ -1,4 +1,4 @@
-project(WalletNative)
+project(WalletNative C CXX)
 cmake_minimum_required(VERSION 3.16)
 
 set(PACKAGE_NAME WalletNative)
@@ -10,6 +10,8 @@ file(GLOB_RECURSE runtime_files CONFIGURE_DEPENDS
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/host/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/platform/*.cpp"
      "${CMAKE_CURRENT_SOURCE_DIR}/src/main/cpp/*.cpp"
+     # The Argon2 reference implementation (cpp/vendor/argon2/README.md).
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/vendor/argon2/src/*.c"
 )
 
 add_library(${PACKAGE_NAME} SHARED ${runtime_files})
@@ -18,6 +20,10 @@ target_include_directories(${PACKAGE_NAME} PUBLIC
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/host"
      "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/platform"
      "${CMAKE_CURRENT_BINARY_DIR}/qntx-kernel"
+)
+target_include_directories(${PACKAGE_NAME} PRIVATE
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/vendor/argon2/include"
+     "${CMAKE_CURRENT_SOURCE_DIR}/../cpp/vendor/argon2/src"
 )
 
 # Compile the shipped kernel bundle to bytecode with the app's own hermesc —

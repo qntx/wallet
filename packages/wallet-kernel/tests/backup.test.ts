@@ -12,7 +12,7 @@ import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { loadVectors } from "./helpers.ts";
+import { loadVectors, realArgon2id } from "./helpers.ts";
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("11".repeat(32));
@@ -104,7 +104,7 @@ const TAMPERS: ReadonlyArray<readonly [string, (e: Record<string, unknown>) => v
       if (Array.isArray(factors)) {
         const [first] = factors;
         if (typeof first === "object" && first !== null) {
-          Reflect.set(first, "iterations", 599999); // fixed-iteration check fails → integrity
+          Reflect.set(first, "memoryKiB", 8); // a weaker cost than the fixed one → integrity
         }
       }
     },
@@ -112,7 +112,7 @@ const TAMPERS: ReadonlyArray<readonly [string, (e: Record<string, unknown>) => v
   [
     "version",
     (e) => {
-      e["version"] = 2;
+      e["version"] = 1; // the PBKDF2 envelope this build no longer reads
     },
   ],
   [
@@ -467,7 +467,9 @@ function makeReplay(
   };
 }
 
-describe("backup vector", () => {
+// These replay the committed vector, so they pay the real Argon2id cost (64 MiB, 3 passes) in
+// pure JS, several times a test and slower still under coverage instrumentation.
+describe("backup vector", { timeout: 120_000 }, () => {
   const vector = loadVectors("backup.json") as BackupVector;
 
   it("reproduces enable's record and both update envelopes byte for byte", async () => {
@@ -477,7 +479,7 @@ describe("backup vector", () => {
     const prfVault = hexToBytes(inputs.prfVault);
     const prfBackup = hexToBytes(inputs.prfBackup);
 
-    const h = createHarness({ random: replay, start: inputs.start });
+    const h = createHarness({ random: replay, start: inputs.start, argon2id: realArgon2id });
     await h.settle();
     const res = ok(
       await h.call("wallet.createWithPasskey", {

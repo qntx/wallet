@@ -223,7 +223,10 @@ const cases: Array<{ name: string; kind: string; input: Input }> = [
       factors: [
         {
           kind: "password",
-          iterations: 600000,
+          kdf: "argon2id",
+          memoryKiB: 65536,
+          passes: 3,
+          lanes: 4,
           salt: "EhISEhISEhISEhISEhISEg",
           sealedBek: "ARM3VgDqQ6vS7Jy5N7o8pP0xV1cQW4J0jR8vS0zP8y3lM9uR2wQ6y8xL1nB4vQ7y8xK1",
         },

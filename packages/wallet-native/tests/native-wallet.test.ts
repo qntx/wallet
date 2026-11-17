@@ -1,4 +1,4 @@
-import { pbkdf2 as nodePbkdf2 } from "node:crypto";
+import { argon2Sync, pbkdf2 as nodePbkdf2 } from "node:crypto";
 
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -221,6 +221,19 @@ function platform(
       const t = setTimeout(fn, ms);
       return () => clearTimeout(t);
     },
+    argon2id: async (password, salt, cost, length) =>
+      Promise.resolve(
+        new Uint8Array(
+          argon2Sync("argon2id", {
+            message: password,
+            nonce: salt,
+            memory: cost.memoryKiB,
+            passes: cost.passes,
+            parallelism: cost.lanes,
+            tagLength: length,
+          }),
+        ),
+      ),
     pbkdf2: async (hash, password, salt, iterations, length) =>
       new Promise((resolve, reject) => {
         nodePbkdf2(

@@ -7,7 +7,7 @@ import { concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base64urlnopad } from "@scure/base";
 
 import { KernelError } from "../errors.ts";
-import type { Pbkdf2, Random } from "../platform.ts";
+import type { Argon2id, Pbkdf2, Random } from "../platform.ts";
 import { Secret, decodeUtf8Secret, wipe } from "../secret/secret.ts";
 import { aadOf, factorContext, open, seal } from "./envelope.ts";
 import {
@@ -63,6 +63,39 @@ export function assertPasswordPolicy(password: Uint8Array): void {
   // oxlint-disable-next-line typescript/no-misused-spread -- counts Unicode code points of the NFKC password
   if ([...decodePassword(password)].length < 10) {
     throw new KernelError("invalid-input", "password must be at least 10 characters");
+  }
+}
+
+/** The cost every backup password is stretched with: RFC 9106's second recommended option. */
+export const BACKUP_PASSWORD_COST = { memoryKiB: 65_536, passes: 3, lanes: 4 } as const;
+
+const BACKUP_PASSWORD_MIN = 12;
+
+/**
+ * Policy for a backup password, at creation only: at least 12 Unicode code points after NFKC. The
+ * envelope leaves the device, so unlike a vault password its guesses are never rate limited.
+ */
+export function assertBackupPasswordPolicy(password: Uint8Array): void {
+  // oxlint-disable-next-line typescript/no-misused-spread -- counts Unicode code points of the NFKC password
+  if ([...decodePassword(password)].length < BACKUP_PASSWORD_MIN) {
+    throw new KernelError("invalid-input", "backup password must be at least 12 characters");
+  }
+}
+
+/**
+ * Backup password KEK: Argon2id(UTF-8(NFKC(password)), salt, BACKUP_PASSWORD_COST, 32). The
+ * password arrives as UTF-8 bytes (protocol rule) and is wiped afterwards.
+ */
+export async function backupPasswordKek(
+  password: Uint8Array,
+  salt: Uint8Array,
+  argon2id: Argon2id,
+): Promise<Uint8Array> {
+  const normalizedBytes = utf8ToBytes(decodeUtf8Secret(password).normalize("NFKC")); // wipes `password`
+  try {
+    return await argon2id(normalizedBytes, salt, BACKUP_PASSWORD_COST, 32);
+  } finally {
+    wipe(normalizedBytes);
   }
 }
 

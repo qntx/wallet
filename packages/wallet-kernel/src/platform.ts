@@ -20,6 +20,21 @@ export type Pbkdf2 = (
   length: number,
 ) => Promise<Uint8Array>;
 
+/** Argon2 cost: memory in KiB, passes over it, and lanes (RFC 9106 `m`, `t`, `p`). */
+export type Argon2Cost = {
+  readonly memoryKiB: number;
+  readonly passes: number;
+  readonly lanes: number;
+};
+
+/** Argon2id version 0x13 with no secret and no associated data. */
+export type Argon2id = (
+  password: Uint8Array,
+  salt: Uint8Array,
+  cost: Argon2Cost,
+  length: number,
+) => Promise<Uint8Array>;
+
 /** Session limits owned by the worker entry (Web and Node: idle 5/15/60 min, max 12 h). */
 export type KernelPolicy = {
   readonly maxSessionMs: number;
@@ -56,6 +71,8 @@ export type KernelPlatform = {
   readonly elapsed: () => number;
   readonly setTimer: SetTimer;
   readonly pbkdf2: Pbkdf2;
+  /** Memory-hard KDF for secrets an attacker can take offline: the cloud-backup password. */
+  readonly argon2id: Argon2id;
   readonly store: RecordStore;
   readonly policy: KernelPolicy;
   /**

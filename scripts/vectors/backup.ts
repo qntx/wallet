@@ -7,8 +7,8 @@
  * sealed(X) = 0x01 ‖ nonce(24) ‖ XChaCha20-Poly1305(key, nonce, aad).encrypt(plaintext) aad = 0x01
  * ‖ u16be(len(UTF-8(context))) ‖ UTF-8(context) ‖ UTF-8(header) payload.context =
  * "qntx-wallet/backup/v1/payload/" + hex(SHA-256(headerText)) factor.context =
- * "qntx-wallet/backup/v1/factor/" + kind password KEK = PBKDF2-HMAC-SHA256(NFKC(password), salt16,
- * 600000, 32) passkey KEK = HKDF-SHA256(prfBackup, salt=credentialId,
+ * "qntx-wallet/backup/v1/factor/" + kind password KEK = Argon2id(NFKC(password), salt16, m=65536
+ * KiB, t=3, p=4, 32) passkey KEK = HKDF-SHA256(prfBackup, salt=credentialId,
  * info="qntx-wallet/kek/backup/v1") backup-key id = hex(HKDF-SHA256(BEK, salt=empty,
  * info="qntx-wallet/backup/v1/id", 16)) backup-key header text = {"id","factors","createdAt"} in
  * that key order passkey wallet : entropy = prfWallet[0..16), origin byte 0x02
@@ -26,6 +26,7 @@
  *
  * Run from the repo root: bun scripts/vectors/backup.ts
  */
+import { argon2Sync } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
@@ -132,11 +133,17 @@ const id = bytesToHex(
   hkdf(sha256, bek, new Uint8Array(0), utf8ToBytes("qntx-wallet/backup/v1/id"), 16),
 );
 
-const passwordKek = pbkdf2(
-  sha256,
-  new TextEncoder().encode(PASSWORD.normalize("NFKC")),
-  passwordSalt,
-  { c: 600_000, dkLen: 32 },
+// The platform's own Argon2id, not the library the Web kernel runs: the kernel-side replay
+// then checks one implementation against another.
+const passwordKek = new Uint8Array(
+  argon2Sync("argon2id", {
+    message: new TextEncoder().encode(PASSWORD.normalize("NFKC")),
+    nonce: passwordSalt,
+    memory: 65_536,
+    passes: 3,
+    parallelism: 4,
+    tagLength: 32,
+  }),
 );
 const passwordSealedBek = seal(
   passwordKek,
@@ -161,7 +168,10 @@ const passkeySealedBek = seal(
 const factors = [
   {
     kind: "password",
-    iterations: 600_000,
+    kdf: "argon2id",
+    memoryKiB: 65_536,
+    passes: 3,
+    lanes: 4,
     salt: base64urlnopad.encode(passwordSalt),
     sealedBek: base64urlnopad.encode(passwordSealedBek),
   },
@@ -182,7 +192,7 @@ const payloadContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8To
 
 const envelopeOf = (nonce: Uint8Array): string =>
   JSON.stringify({
-    version: 1,
+    version: 2,
     createdAt: START,
     header,
     factors,
@@ -210,7 +220,7 @@ const passphrasePayload = concatBytes(
 );
 const passphraseContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(passphraseHeader)))}`;
 const passphraseEnvelope = JSON.stringify({
-  version: 1,
+  version: 2,
   createdAt: START,
   header: passphraseHeader,
   factors,
@@ -254,7 +264,7 @@ const keysPayload = concatBytes(
 );
 const keysContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(keysHeader)))}`;
 const keysEnvelope = JSON.stringify({
-  version: 1,
+  version: 2,
   createdAt: START,
   header: keysHeader,
   factors,

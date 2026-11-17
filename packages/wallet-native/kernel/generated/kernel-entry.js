@@ -978,11 +978,11 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-xbA0gHUH.mjs
+	// packages/wallet/dist/protocol-BSKruAcc.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
-	* the host-side `parseBackupHeader` share — version 1, bounded fields, `obj` rejects unknown keys.
+	* the host-side `parseBackupHeader` share — version 2, bounded fields, `obj` rejects unknown keys.
 	* Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
 	* the JSON.
 	*/
@@ -996,12 +996,15 @@
 		sealedBek: str(MAX_FACTOR_CHARS)
 	}), obj({
 		kind: literal("password"),
-		iterations: literal(6e5),
+		kdf: literal("argon2id"),
+		memoryKiB: literal(65536),
+		passes: literal(3),
+		lanes: literal(4),
 		salt: str(128),
 		sealedBek: str(MAX_FACTOR_CHARS)
 	}));
 	var backupEnvelope = obj({
-		version: literal(1),
+		version: literal(2),
 		createdAt: int(0, Number.MAX_SAFE_INTEGER),
 		header: str(MAX_STRING_BYTES),
 		factors: arr(backupEnvelopeFactor, 5, 1),
@@ -7650,7 +7653,7 @@
 	// packages/wallet-kernel/src/vault/headers.ts
 	init_objectSpread2();
 	var PURPOSE_PATTERN = /^[a-z0-9-]{1,32}$/;
-	var PASSWORD_ITERATIONS$2 = 6e5;
+	var PASSWORD_ITERATIONS$1 = 6e5;
 	function encodeHeader(header) {
 		if ("id" in header) return JSON.stringify({
 			id: header.id,
@@ -7756,10 +7759,10 @@
 		]);
 		const { iterations } = object;
 		if (typeof iterations !== "number" || !Number.isSafeInteger(iterations)) throw headerFailure();
-		if (iterations !== PASSWORD_ITERATIONS$2) throw new KernelError("unsupported", "password factor uses unknown KDF parameters");
+		if (iterations !== PASSWORD_ITERATIONS$1) throw new KernelError("unsupported", "password factor uses unknown KDF parameters");
 		return {
 			salt: asBase64url(object["salt"], 16, 16),
-			iterations: PASSWORD_ITERATIONS$2,
+			iterations: PASSWORD_ITERATIONS$1,
 			publicKey: asBase64url(object["publicKey"], 32, 32),
 			createdAt: asCreatedAt(object["createdAt"])
 		};
@@ -7840,7 +7843,7 @@
 	init_sha2();
 	init_utils$2();
 	init_base();
-	var PASSWORD_ITERATIONS$1 = 6e5;
+	var PASSWORD_ITERATIONS = 6e5;
 	/**
 	* Factor wrapping v2: each factor carries a static X25519 key pair derived from its KEK; the public
 	* half lives in the factor's header so a DEK can be wrapped to a factor without knowing its KEK.
@@ -7881,6 +7884,32 @@
 	function assertPasswordPolicy(password) {
 		if ([...decodePassword(password)].length < 10) throw new KernelError("invalid-input", "password must be at least 10 characters");
 	}
+	/** The cost every backup password is stretched with: RFC 9106's second recommended option. */
+	var BACKUP_PASSWORD_COST = {
+		memoryKiB: 65536,
+		passes: 3,
+		lanes: 4
+	};
+	var BACKUP_PASSWORD_MIN = 12;
+	/**
+	* Policy for a backup password, at creation only: at least 12 Unicode code points after NFKC. The
+	* envelope leaves the device, so unlike a vault password its guesses are never rate limited.
+	*/
+	function assertBackupPasswordPolicy(password) {
+		if ([...decodePassword(password)].length < BACKUP_PASSWORD_MIN) throw new KernelError("invalid-input", "backup password must be at least 12 characters");
+	}
+	/**
+	* Backup password KEK: Argon2id(UTF-8(NFKC(password)), salt, BACKUP_PASSWORD_COST, 32). The
+	* password arrives as UTF-8 bytes (protocol rule) and is wiped afterwards.
+	*/
+	async function backupPasswordKek(password, salt, argon2id) {
+		const normalizedBytes = utf8ToBytes$1(decodeUtf8Secret(password).normalize("NFKC"));
+		try {
+			return await argon2id(normalizedBytes, salt, BACKUP_PASSWORD_COST, 32);
+		} finally {
+			wipe(normalizedBytes);
+		}
+	}
 	/**
 	* Password factor KEK: PBKDF2-HMAC-SHA256(UTF-8(NFKC(password)), salt, 600000, 32). The password
 	* arrives as UTF-8 bytes (protocol rule) and is wiped afterwards.
@@ -7888,7 +7917,7 @@
 	async function passwordKek(password, salt, pbkdf2) {
 		const normalizedBytes = utf8ToBytes$1(decodeUtf8Secret(password).normalize("NFKC"));
 		try {
-			return await pbkdf2("sha256", normalizedBytes, salt, PASSWORD_ITERATIONS$1, 32);
+			return await pbkdf2("sha256", normalizedBytes, salt, PASSWORD_ITERATIONS, 32);
 		} finally {
 			wipe(normalizedBytes);
 		}
@@ -27351,7 +27380,6 @@ zoo`.split("\n"));
 	init_utils$2();
 	init_base();
 	init_objectSpread2();
-	var PASSWORD_ITERATIONS = 6e5;
 	/** Payload tag byte: wallet entry. */
 	var ORIGIN_BYTE = {
 		mnemonic: 1,
@@ -27579,10 +27607,10 @@ zoo`.split("\n"));
 		const salts = backupFactors.map((factor) => factor.kind === "password" ? platform.random(16) : void 0);
 		const keks = await Promise.all(backupFactors.map(async (factor, index) => {
 			if (factor.kind === "passkey") return hkdf(sha256$1, factor.prfBackup, factor.credentialId, utf8ToBytes$1("qntx-wallet/kek/backup/v1"), 32);
-			assertPasswordPolicy(factor.password);
+			assertBackupPasswordPolicy(factor.password);
 			const salt = salts[index];
 			if (salt === void 0) throw new KernelError("integrity", "backup: missing password salt");
-			return passwordKek(factor.password, salt, platform.pbkdf2);
+			return backupPasswordKek(factor.password, salt, platform.argon2id);
 		}));
 		return backupFactors.map((factor, index) => {
 			const kek = keks[index];
@@ -27600,12 +27628,13 @@ zoo`.split("\n"));
 			};
 			const salt = salts[index];
 			if (salt === void 0) throw new KernelError("integrity", "backup: missing password salt");
-			return {
+			return _objectSpread2(_objectSpread2({
 				kind: "password",
-				iterations: PASSWORD_ITERATIONS,
+				kdf: "argon2id"
+			}, BACKUP_PASSWORD_COST), {}, {
 				salt: b64$2.enc(salt),
 				sealedBek: b64$2.enc(sealedBek)
-			};
+			});
 		});
 	}
 	/** The backup record's public id: HKDF over the BEK — a verifier can never reach the BEK from it. */
@@ -27660,7 +27689,7 @@ zoo`.split("\n"));
 			const sealedPayload = seal(bek, plaintext, payloadContext(contents.header), "", ctx.platform.random);
 			try {
 				const envelope = {
-					version: 1,
+					version: 2,
 					createdAt: ctx.platform.now(),
 					header: contents.header,
 					factors: keyHeader.factors,
@@ -27704,7 +27733,7 @@ zoo`.split("\n"));
 		}
 		const entry = envelope.factors.find((f) => f.kind === "password");
 		if (entry === void 0) throw new KernelError("not-found", "backup: no password factor");
-		const kek = await passwordKek(backupFactor.password, b64$2.dec(entry.salt), platform.pbkdf2);
+		const kek = await backupPasswordKek(backupFactor.password, b64$2.dec(entry.salt), platform.argon2id);
 		try {
 			return open(kek, b64$2.dec(entry.sealedBek), factorContextOf("password"), "");
 		} catch (_unused5) {
@@ -47378,6 +47407,15 @@ zoo`.split("\n"));
 			__qntx.pbkdf2(hash, password, salt, iterations, length, (result, error) => {
 				if (result === void 0) {
 					reject(new Error(error !== null && error !== void 0 ? error : "pbkdf2 failed"));
+					return;
+				}
+				resolve(result);
+			});
+		}),
+		argon2id: async (password, salt, cost, length) => new Promise((resolve, reject) => {
+			__qntx.argon2id(password, salt, cost.memoryKiB, cost.passes, cost.lanes, length, (result, error) => {
+				if (result === void 0) {
+					reject(new Error(error !== null && error !== void 0 ? error : "argon2id failed"));
 					return;
 				}
 				resolve(result);

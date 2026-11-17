@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { argon2id } from "@noble/hashes/argon2.js";
+
 import { KernelError } from "../src/errors.ts";
 import type { KernelErrorCode } from "../src/errors.ts";
-import type { Pbkdf2, Random } from "../src/platform.ts";
+import type { Argon2id, Pbkdf2, Random } from "../src/platform.ts";
 
 const VECTORS = join(import.meta.dirname, "../../../vectors");
 
@@ -46,3 +48,20 @@ export function kernelError(fn: () => unknown): KernelErrorCode | undefined {
   }
   return undefined;
 }
+
+/**
+ * The platform's Argon2id for tests that are not about its output: the same function at a token
+ * cost, so a suite does not spend seconds per backup password. It still fails on any cost but the
+ * one the kernel is specified to ask for. The vector test runs the real cost.
+ */
+// oxlint-disable-next-line typescript/require-await -- an Argon2id is asynchronous by contract
+export const quickArgon2id: Argon2id = async (password, salt, cost, length) => {
+  if (cost.memoryKiB !== 65_536 || cost.passes !== 3 || cost.lanes !== 4) {
+    throw new Error(`unexpected argon2id cost ${JSON.stringify(cost)}`);
+  }
+  return argon2id(password, salt, { m: 32, t: 1, p: 4, dkLen: length });
+};
+
+// oxlint-disable-next-line typescript/require-await -- an Argon2id is asynchronous by contract
+export const realArgon2id: Argon2id = async (password, salt, cost, length) =>
+  argon2id(password, salt, { m: cost.memoryKiB, t: cost.passes, p: cost.lanes, dkLen: length });

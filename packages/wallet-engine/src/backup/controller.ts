@@ -28,6 +28,7 @@ import type { EngineStore } from "../store/port.ts";
 import { BackupControllerError } from "./errors.ts";
 import type { BackupErrorCategory } from "./errors.ts";
 import type { CloudStore } from "./port.ts";
+import { backupPasswordStrength } from "./strength.ts";
 
 export type BackupControllerState = {
   readonly status: "locked" | "unavailable" | "off" | "syncing" | "synced" | "conflict" | "error";
@@ -185,6 +186,17 @@ export class BackupController extends Controller<BackupControllerState> {
     // nowhere to upload it.
     if (this.cloud === undefined || !(await this.cloud.available())) {
       throw new BackupControllerError("unavailable", "the cloud store is unavailable");
+    }
+    const strengths = await Promise.all(
+      options.factors.flatMap((factor) =>
+        factor.kind === "password" ? [backupPasswordStrength(factor.password)] : [],
+      ),
+    );
+    if (strengths.some((strength) => !strength.acceptable)) {
+      throw new BackupControllerError(
+        "weak-password",
+        "the backup password is too easy to guess for a file that leaves the device",
+      );
     }
     await this.wallet.backup.enable(options);
     await this.reconcileOrThrow();

@@ -32,6 +32,15 @@ export type KernelGlobals = {
     length: number,
     callback: (result: Uint8Array | undefined, error: string | undefined) => void,
   ) => void;
+  readonly argon2id: (
+    password: Uint8Array,
+    salt: Uint8Array,
+    memoryKiB: number,
+    passes: number,
+    lanes: number,
+    length: number,
+    callback: (result: Uint8Array | undefined, error: string | undefined) => void,
+  ) => void;
   readonly file: KernelFile;
   readonly keystore: KernelKeystoreNative;
   readonly passkey: KernelPasskeyNative;
@@ -58,6 +67,24 @@ const platform: KernelPlatform = {
         }
         resolve(result);
       });
+    }),
+  argon2id: async (password, salt, cost, length) =>
+    new Promise((resolve, reject) => {
+      __qntx.argon2id(
+        password,
+        salt,
+        cost.memoryKiB,
+        cost.passes,
+        cost.lanes,
+        length,
+        (result, error) => {
+          if (result === undefined) {
+            reject(new Error(error ?? "argon2id failed"));
+            return;
+          }
+          resolve(result);
+        },
+      );
     }),
   store: createFileStore(__qntx.file),
   keystore: bindNativeKeystore(__qntx.keystore),
