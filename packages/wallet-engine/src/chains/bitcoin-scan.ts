@@ -383,12 +383,6 @@ export class BtcUtxoStore {
     void this.persist();
   }
 
-  spendable(): ReadonlyArray<LockedUtxo> {
-    return [...this.utxos.values()].filter(
-      (u) => u.status === "confirmed" && !(u.value === 546 || u.value === 330),
-    );
-  }
-
   all(): ReadonlyArray<LockedUtxo> {
     return [...this.utxos.values()];
   }

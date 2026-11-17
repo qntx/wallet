@@ -1,8 +1,9 @@
 /**
  * Bitcoin balance read: one path for every source kind — an account template's xpub (its
  * gap-scanned receive and change chains) or one watched address. Totals are display-only;
- * `unconfirmed` holds the account's own unconfirmed change, `frozen` the dust-value UTXOs coin
- * selection never spends, and other unconfirmed outputs count nowhere.
+ * `unconfirmed` holds the account's own unconfirmed change, `frozen` the protected UTXOs — every
+ * taproot output and anything at or below ord's MAX_POSTAGE, which may carry an inscription — and
+ * other unconfirmed outputs count nowhere.
  */
 import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 
@@ -11,7 +12,7 @@ import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 
 import { scanSource, scanUtxos } from "../chains/bitcoin-scan.ts";
 import type { BitcoinSource } from "../chains/bitcoin-scan.ts";
-import { isFrozen } from "../chains/bitcoin.ts";
+import { isTaprootAddress, mayCarryInscription } from "../chains/bitcoin.ts";
 import type { Esplora } from "../chains/bitcoin.ts";
 
 export type BitcoinSourceKey = BitcoinAccountTemplate | "address";
@@ -50,7 +51,7 @@ const readSource = async (
   let frozen = 0n;
   const utxos = scanned.map((u): BitcoinUtxoView => {
     const value = BigInt(u.value);
-    const protect = isFrozen(u.value);
+    const protect = mayCarryInscription(isTaprootAddress(u.address, params), u.value);
     if (protect) {
       frozen += value;
     } else if (u.height > 0) {

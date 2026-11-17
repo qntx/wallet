@@ -1,12 +1,12 @@
 import { hex } from "@scure/base";
-import { Transaction } from "@scure/btc-signer";
+import { Address, Transaction } from "@scure/btc-signer";
 import type { NETWORK as BTC_MAINNET } from "@scure/btc-signer";
 import { p2wpkh } from "@scure/btc-signer/payment.js";
 /**
  * Bitcoin chain adapter — Esplora client, gap-20 address scanning, PSBT construction with
  *
  * @scure/btc-signer selectUTXO (bip69), fee tiers from /fee-estimates (targets 1/3/6/144),
- * dust floors per output type, frozen 546/330-sat UTXOs, and POST /tx broadcasting. Custom
+ * dust floors per output type, ord-postage UTXO protection, and POST /tx broadcasting. Custom
  * endpoints are validated by the genesis block hash via /block-height/0. RBF/CPFP are out
  * of scope for this layer.
  */
@@ -19,7 +19,6 @@ import type { SetTimer } from "../timer.ts";
 const GAP_LIMIT = 20;
 export { GAP_LIMIT };
 const DUST: Record<string, number> = { p2wpkh: 294, p2tr: 330, p2pkh: 546 };
-const FROZEN_AMOUNTS = new Set([546, 330]);
 
 export type BtcNetworkId = `bip122:${string}`;
 
@@ -222,7 +221,51 @@ export const feeTiers = async (
 
 export const dustFor = (scriptType: string): number => DUST[scriptType] ?? 546;
 
-export const isFrozen = (value: number): boolean => FROZEN_AMOUNTS.has(value);
+/**
+ * Ord builds inscription and rune outputs at TARGET_POSTAGE (10_000 sat) and never leaves more than
+ * MAX_POSTAGE (20_000 sat) in one (ordinals/ord@1c2c8de: src/lib.rs:156,
+ * src/wallet/transaction_builder.rs:17,138).
+ */
+export const ORD_MAX_POSTAGE = 20_000;
+
+/**
+ * Whether a UTXO may carry an inscription or rune the wallet cannot see without an indexer, so it
+ * is protected by default: every taproot output (the `ordinals` account; ord's own wallet is a
+ * bip86 descriptor over /0/* and /1/*, docs/src/guides/wallet.md) and any output within ord's
+ * postage.
+ */
+export const mayCarryInscription = (taproot: boolean, value: number): boolean =>
+  taproot || value <= ORD_MAX_POSTAGE;
+
+/** Whether `address` decodes to a taproot (P2TR) output on `network`. */
+export const isTaprootAddress = (address: string, network: typeof BTC_MAINNET): boolean =>
+  Address(network).decode(address).type === "tr";
+
+/**
+ * The spendable subset of `utxos`: every output that cannot carry an inscription, plus any
+ * protected outpoint (`txid:vout`) named in `spendProtected`. Naming an outpoint that is not among
+ * `utxos` throws — it is not an unspent output of this account.
+ */
+export const selectableUtxos = <
+  U extends { txid: string; vout: number; value: number; address: string },
+>(
+  utxos: ReadonlyArray<U>,
+  network: typeof BTC_MAINNET,
+  spendProtected: ReadonlyArray<string>,
+): U[] => {
+  const chosen = new Set(spendProtected);
+  const held = new Set(utxos.map((u) => `${u.txid}:${String(u.vout)}`));
+  for (const outpoint of chosen) {
+    if (!held.has(outpoint)) {
+      throw new Error(`${outpoint} is not an unspent output of this account`);
+    }
+  }
+  return utxos.filter(
+    (u) =>
+      chosen.has(`${u.txid}:${String(u.vout)}`) ||
+      !mayCarryInscription(isTaprootAddress(u.address, network), u.value),
+  );
+};
 
 export type BtcInput = TransactionInputUpdate;
 
@@ -237,8 +280,10 @@ export class BitcoinChainAdapter {
     template: string,
     rawTxOf?: (utxo: BtcUtxo) => Uint8Array | undefined,
   ): BtcInput[] {
+    // Inscription protection is the caller's: a send passes selectableUtxos' result, while CPFP
+    // spends the parent's own outputs by name.
     return utxos
-      .filter((u) => u.status === "confirmed" && !isFrozen(u.value))
+      .filter((u) => u.status === "confirmed")
       .map((u) => {
         const pub = pubkeyOf(u);
         // Taproot carries only witnessUtxo: the BIP-341 sighash commits to every input amount.

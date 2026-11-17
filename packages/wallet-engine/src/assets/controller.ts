@@ -43,7 +43,7 @@ export type TokenBalance = {
 export type AccountBalances = {
   readonly native: string;
   readonly tokens: ReadonlyArray<TokenBalance>;
-  /** Bitcoin only — confirmed + own unconfirmed change; frozen 546/330-sat UTXOs shown apart. */
+  /** Bitcoin only — confirmed + own unconfirmed change; protected (inscription) UTXOs apart. */
   readonly unconfirmed?: string;
   readonly frozen?: string;
   /** Bitcoin only — the same totals split by the source they were read from. */
@@ -345,7 +345,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /**
    * BTC balance of an account group = confirmed spendable + own unconfirmed change across every
-   * account template's xpub; frozen 546/330-sat UTXOs shown separately.
+   * account template's xpub; protected (inscription) UTXOs shown separately.
    */
   async refreshBitcoinGroup(
     group: { readonly walletId: string; readonly groupIndex: number },

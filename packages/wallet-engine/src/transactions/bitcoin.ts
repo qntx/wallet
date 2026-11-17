@@ -19,7 +19,7 @@ import {
   scriptPubKey,
 } from "../chains/bitcoin-scan.ts";
 import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
-import { BitcoinChainAdapter, feeTiers } from "../chains/bitcoin.ts";
+import { BitcoinChainAdapter, feeTiers, selectableUtxos } from "../chains/bitcoin.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
   collectChecks,
@@ -180,7 +180,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     requestId: string,
     sparkDeposit?: SparkDepositTag,
   ): Promise<PreparedRequest> => {
-    const { account, network, to, amount, fee } = params;
+    const { account, network, to, amount, fee, spendProtected } = params;
     if (account.kind !== "hd") {
       throw new ChainError("unsupported", "imported keys cannot sign bitcoin transactions");
     }
@@ -224,10 +224,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }));
     const byAddr = new Map(addresses.map((a) => [a.address, a]));
     const base = accountPath(path);
+    const spendable = selectableUtxos(utxos, net.params, spendProtected ?? []);
     const rawTxes =
-      template === "btc.bip44" ? await fetchRawTxes(es, utxos) : new Map<string, Uint8Array>();
+      template === "btc.bip44" ? await fetchRawTxes(es, spendable) : new Map<string, Uint8Array>();
     const inputs = bitcoin.toInputs(
-      utxos,
+      spendable,
       fp,
       (u) => {
         const a = byAddr.get(u.address);
@@ -306,7 +307,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const selectedKeys = new Set(
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
-    const selectedUtxos = utxos.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+    const selectedUtxos = spendable.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
     // Reserve before the first post-selection await: a concurrent prepare must not see them.
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
@@ -375,7 +376,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const id0 = newId(ctx.options.random);
     const stash: BtcStash = {
       inputs: selected,
-      allUtxos: utxos,
+      allUtxos: spendable,
       groupIndex: account.groupIndex,
       pathOf: (u) => {
         const a = byAddr.get(u.address);

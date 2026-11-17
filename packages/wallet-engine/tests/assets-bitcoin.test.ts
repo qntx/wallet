@@ -119,6 +119,12 @@ const make = (
     logger,
   });
 
+/** Per-template totals: taproot outputs are protected under the ord-postage rule → frozen. */
+const sourceTotals = (template: BitcoinAccountTemplate, value: number) =>
+  template === "btc.bip86"
+    ? { native: "0", unconfirmed: "0", frozen: String(value) }
+    : { native: String(value), unconfirmed: "0", frozen: "0" };
+
 describe("AssetsController bitcoin group", () => {
   it("sums every account template's xpub into one entry, each source reported apart", async () => {
     const values: ReadonlyArray<readonly [BitcoinAccountTemplate, number, string]> = [
@@ -142,15 +148,11 @@ describe("AssetsController bitcoin group", () => {
       "btc.bip86",
     ]);
     for (const [template, value] of values) {
-      expect(balances.sources?.[template]).toStrictEqual({
-        native: String(value),
-        unconfirmed: "0",
-        frozen: "0",
-      });
+      expect(balances.sources?.[template]).toStrictEqual(sourceTotals(template, value));
     }
-    expect(balances.native).toBe("1000000");
+    expect(balances.native).toBe("600000");
     expect(balances.unconfirmed).toBe("0");
-    expect(balances.frozen).toBe("0");
+    expect(balances.frozen).toBe("400000");
     expect(balances.utxos?.map((u) => u.source)).toStrictEqual([
       "btc.bip44",
       "btc.bip49",
@@ -178,7 +180,7 @@ describe("AssetsController bitcoin group", () => {
     expect(balances.unconfirmed).toBe("50000");
   });
 
-  it("shows a dust-value UTXO under frozen and marks it protected, out of native", async () => {
+  it("shows a protected UTXO under frozen and marks it protected, out of native", async () => {
     const funded: Funded = {};
     fund(funded, addressOf("btc.bip84", 0, 0), [
       utxo("aa".repeat(32), 90_000, 800_000),
@@ -194,6 +196,40 @@ describe("AssetsController bitcoin group", () => {
     expect(dust?.source).toBe("btc.bip84");
     const spendable = balances.utxos?.find((u) => u.value === 90_000);
     expect(spendable?.protected).toBe(false);
+  });
+
+  it("the ord-postage boundary: 20_000 sat is protected, 20_001 is spendable", async () => {
+    const funded: Funded = {};
+    fund(funded, addressOf("btc.bip84", 0, 0), [
+      utxo("aa".repeat(32), 20_000, 800_000),
+      { txid: "bb".repeat(32), vout: 1, value: 20_001, status: { block_height: 800_000 } },
+    ]);
+    const assets = make(esplora(funded, []));
+    await assets.init();
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.native).toBe("20001");
+    expect(balances.frozen).toBe("20000");
+    expect(balances.utxos?.find((u) => u.value === 20_000)?.protected).toBe(true);
+    expect(balances.utxos?.find((u) => u.value === 20_001)?.protected).toBe(false);
+  });
+
+  it("a taproot output of any value is protected — inscription postage is not a dust floor", async () => {
+    const funded: Funded = {};
+    fund(funded, addressOf("btc.bip86", 0, 0), [
+      utxo("aa".repeat(32), 1_000_000, 800_000),
+      { txid: "bb".repeat(32), vout: 1, value: 45_000, status: { block_height: 800_000 } },
+    ]);
+    const assets = make(esplora(funded, []));
+    await assets.init();
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.native).toBe("0");
+    expect(balances.frozen).toBe("1045000");
+    expect(balances.sources?.["btc.bip86"]).toStrictEqual({
+      native: "0",
+      unconfirmed: "0",
+      frozen: "1045000",
+    });
+    expect(balances.utxos?.every((u) => u.protected)).toBe(true);
   });
 
   it("rejects when the kernel answers a bitcoin template with no xpub", async () => {
@@ -239,11 +275,13 @@ describe("AssetsController watched bitcoin address", () => {
     await assets.init();
     const balances = await assets.refresh(address, BTC_NET);
     expect(asked).toStrictEqual([scripthash(address, NETWORK)]);
-    expect(balances.native).toBe("125000");
+    // A taproot address's funds are protected under the ord-postage rule: visible, not
+    // spendable by default.
+    expect(balances.native).toBe("0");
     expect(balances.unconfirmed).toBe("0");
-    expect(balances.frozen).toBe("0");
+    expect(balances.frozen).toBe("125000");
     expect(balances.sources).toStrictEqual({
-      address: { native: "125000", unconfirmed: "0", frozen: "0" },
+      address: { native: "0", unconfirmed: "0", frozen: "125000" },
     });
     expect(balances.utxos?.map((u) => u.source)).toStrictEqual(["address"]);
     expect(assets.getState().balances[`${BTC_NET}:${address}`]).toStrictEqual(balances);
