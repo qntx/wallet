@@ -1,0 +1,4 @@
+# CMD: curl -sS -o /dev/null -w %{http_code} https://www.hyperscan.com/api/v2/stats
+# DATE: 2026-11-17T21:28:25Z
+---
+301

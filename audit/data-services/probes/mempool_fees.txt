@@ -1,0 +1,4 @@
+# CMD: curl -sS --max-time 20 https://mempool.space/api/v1/fees/recommended
+# DATE: 2026-11-17T21:30:23Z
+---
+{"fastestFee":4,"halfHourFee":3,"hourFee":3,"economyFee":2,"minimumFee":1}

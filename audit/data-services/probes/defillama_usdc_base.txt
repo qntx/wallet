@@ -1,0 +1,4 @@
+# CMD: curl -sS https://coins.llama.fi/prices/current/base:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913
+# DATE: 2026-11-17T21:22:36Z
+---
+{"coins":{"base:0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913":{"decimals":6,"symbol":"USDC","price":0.9998090970000001,"timestamp":1794950546,"confidence":0.999}}}

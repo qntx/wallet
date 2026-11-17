@@ -1,0 +1,133 @@
+# CMD: curl -sSL --max-time 30 https://api.etherscan.io/v2/chainlist
+# DATE: 2026-11-17T21:30:23Z
+---
+{
+  "comments": "List of API endpoints maintained by Etherscan EAAS. Available Status codes are (0)=Offline, (1)=Ok, (2)=Degraded",
+  "totalcount": 55,
+  "result": [
+    {
+      "chainname": "Ethereum Mainnet",
+      "chainid": "1",
+      "blockexplorer": "https://etherscan.io/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=1",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Sepolia Testnet",
+      "chainid": "11155111",
+      "blockexplorer": "https://sepolia.etherscan.io/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=11155111",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Hoodi Testnet",
+      "chainid": "560048",
+      "blockexplorer": "https://hoodi.etherscan.io/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=560048",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "BNB Smart Chain Mainnet",
+      "chainid": "56",
+      "blockexplorer": "https://bscscan.com/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=56",
+      "status": 1,
+      "comment": "Paid Plan required"
+    },
+    {
+      "chainname": "BNB Smart Chain Testnet",
+      "chainid": "97",
+      "blockexplorer": "https://testnet.bscscan.com/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=97",
+      "status": 1,
+      "comment": "Paid Plan required"
+    },
+    {
+      "chainname": "Polygon Mainnet",
+      "chainid": "137",
+      "blockexplorer": "https://polygonscan.com/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=137",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Polygon Amoy Testnet",
+      "chainid": "80002",
+      "blockexplorer": "https://amoy.polygonscan.com/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=80002",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Base Mainnet",
+      "chainid": "8453",
+      "blockexplorer": "https://basescan.org/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=8453",
+      "status": 1,
+      "comment": "Paid Plan required"
+    },
+    {
+      "chainname": "Base Sepolia Testnet",
+      "chainid": "84532",
+      "blockexplorer": "https://sepolia.basescan.org/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=84532",
+      "status": 1,
+      "comment": "Paid Plan required"
+    },
+    {
+      "chainname": "Arbitrum One Mainnet",
+      "chainid": "42161",
+      "blockexplorer": "https://arbiscan.io/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=42161",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Arbitrum Sepolia Testnet",
+      "chainid": "421614",
+      "blockexplorer": "https://sepolia.arbiscan.io/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=421614",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Linea Mainnet",
+      "chainid": "59144",
+      "blockexplorer": "https://lineascan.build/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=59144",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "Linea Sepolia Testnet",
+      "chainid": "59141",
+      "blockexplorer": "https://sepolia.lineascan.build/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=59141",
+      "status": 1,
+      "comment": "Free-tier available"
+    },
+    {
+      "chainname": "OP Mainnet",
+      "chainid": "10",
+      "blockexplorer": "https://optimistic.etherscan.io/",
+      "apiurl": "https://api.etherscan.io/v2/api?chainid=10",
+      "status": 1,
+      "comment": "Paid Plan required"
+    },
+    {
+      "chainname": "OP Sepolia Testnet",
+      "chainid": "11155420",
+      "blockexplorer": "https://sepolia-optimism.etherscan.io/",
+      "apiurl": "https:
+# extracted entries for qntx chains:
+1	Ethereum Mainnet	https://etherscan.io/	Free-tier available
+56	BNB Smart Chain Mainnet	https://bscscan.com/	Paid Plan required
+137	Polygon Mainnet	https://polygonscan.com/	Free-tier available
+8453	Base Mainnet	https://basescan.org/	Paid Plan required
+42161	Arbitrum One Mainnet	https://arbiscan.io/	Free-tier available
+10	OP Mainnet	https://optimistic.etherscan.io/	Paid Plan required
+43114	Avalanche C-Chain	https://snowscan.xyz/	Paid Plan required
+999	HyperEVM Mainnet	https://hyperevmscan.io/	Free-tier available

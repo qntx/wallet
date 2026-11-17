@@ -1,0 +1,11 @@
+# CMD: curl -sS https://optimism.blockscout.com/api/v2/addresses/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045/token-balances
+# DATE: 2026-11-17T21:28:25Z
+---
+<html>
+<head><title>301 Moved Permanently</title></head>
+<body>
+<center><h1>301 Moved Permanently</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+

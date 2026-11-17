@@ -1,0 +1,69 @@
+# CMD: curl -sS https://api.mainnet-beta.solana.com -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"getTokenAccountsByOwner","params":["9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",{"programId":"TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"},{"encoding":"jsonParsed"}]}'
+# DATE: 2026-11-17T21:24:01Z
+---
+# works keyless: yes (HTTP 200, no key). 2837 token accounts returned.
+# mints with >1 token account (dedup evidence):
+  14x EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+  8x Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB
+# first 2 raw account entries:
+[
+  {
+    "pubkey": "15ayAdh4NbuUd2esBCHNuM8XUrTZBKkxY3YzRFRjKat",
+    "account": {
+      "lamports": 2039280,
+      "data": {
+        "program": "spl-token",
+        "parsed": {
+          "info": {
+            "isNative": false,
+            "mint": "CHWqgrCM9BsRM6Mhd75sHbUsSNFNW8azTyjjqNLfK3Ue",
+            "owner": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+            "state": "initialized",
+            "tokenAmount": {
+              "amount": "12535511518525",
+              "decimals": 4,
+              "uiAmount": 1253551151.8525,
+              "uiAmountString": "1253551151.8525"
+            }
+          },
+          "type": "account"
+        },
+        "space": 165
+      },
+      "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "executable": false,
+      "rentEpoch": 18446744073709551615,
+      "space": 165
+    }
+  },
+  {
+    "pubkey": "1FVw93L21bKpMXNe8Ue5a7m8inuYVMpup6zXJtYTjdu",
+    "account": {
+      "lamports": 2039280,
+      "data": {
+        "program": "spl-token",
+        "parsed": {
+          "info": {
+            "isNative": false,
+            "mint": "mGdZhfuFWbhwNH88WuyeTDqMhaoh361QJZXHZsbpump",
+            "owner": "9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM",
+            "state": "initialized",
+            "tokenAmount": {
+              "amount": "69000000",
+              "decimals": 6,
+              "uiAmount": 69.0,
+              "uiAmountString": "69"
+            }
+          },
+          "type": "account"
+        },
+        "space": 165
+      },
+      "owner": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+      "executable": false,
+      "rentEpoch": 18446744073709551615,
+      "space": 165
+    }
+  }
+]
+# NOTE: getTokenLargestAccounts on same endpoint returned HTTP-200 RPC error 429 'Too many requests for a specific RPC call'; solana-rpc.publicnode.com returned -32602 'Request blocked'.

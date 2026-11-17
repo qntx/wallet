@@ -1,0 +1,4 @@
+# CMD: curl -sS https://api.llama.fi/v2/chains -o /tmp/llama_chains.json
+# DATE: 2026-11-17T21:22:38Z
+---
+

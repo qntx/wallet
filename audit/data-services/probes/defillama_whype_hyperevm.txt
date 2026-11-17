@@ -1,0 +1,4 @@
+# CMD: curl -sS https://coins.llama.fi/prices/current/hyperliquid:0x5555555555555555555555555555555555555555
+# DATE: 2026-11-17T21:22:37Z
+---
+{"coins":{"hyperliquid:0x5555555555555555555555555555555555555555":{"decimals":18,"symbol":"WHYPE","price":68.10373903390065,"timestamp":1794949923,"confidence":0.99}}}

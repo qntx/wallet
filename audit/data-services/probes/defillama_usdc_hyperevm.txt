@@ -1,0 +1,4 @@
+# CMD: curl -sS https://coins.llama.fi/prices/current/hyperliquid:0xb88339CB7199b77E23DB6E890353E22632Ba630f
+# DATE: 2026-11-17T21:22:37Z
+---
+{"coins":{"hyperliquid:0xb88339CB7199b77E23DB6E890353E22632Ba630f":{"decimals":6,"symbol":"USDC","price":0.9998090970000001,"timestamp":1794950546,"confidence":0.999}}}

@@ -1,0 +1,4 @@
+# CMD: curl -sS https://mempool.space/api/address/bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh
+# DATE: 2026-11-17T21:22:47Z
+---
+{"address":"bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh","chain_stats":{"funded_txo_count":1201,"funded_txo_sum":1681905005,"spent_txo_count":434,"spent_txo_sum":1287005839,"tx_count":1158},"mempool_stats":{"funded_txo_count":0,"funded_txo_sum":0,"spent_txo_count":0,"spent_txo_sum":0,"tx_count":0}}

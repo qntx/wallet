@@ -1,0 +1,7 @@
+# chainscout (github.com/blockscout/chainscout data/chains.json, fetched 2026-11-17T21:31:23Z) entries for qntx chains:
+1	Ethereum	https://eth.blockscout.com/
+10	OP Mainnet	https://explorer.optimism.io/
+137	Polygon PoS	https://polygon.blockscout.com/
+999	HyperEVM Mainnet	https://www.hyperscan.com/
+8453	Base	https://base.blockscout.com/
+42161	Arbitrum One Nitro	https://arbitrum.blockscout.com/

@@ -1,0 +1,4 @@
+# CMD: curl -sS https://coins.llama.fi/prices/current/ethereum:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
+# DATE: 2026-11-17T21:22:36Z
+---
+{"coins":{"ethereum:0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48":{"decimals":6,"symbol":"USDC","price":0.9998090970000001,"timestamp":1794950546,"confidence":0.999}}}
