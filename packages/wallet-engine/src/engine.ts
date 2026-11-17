@@ -276,7 +276,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
 
   const assets = new AssetsController({
     networks,
-    chains: chains(options.wallet),
+    // Deferred like every other chains() call here — resolving the api at construction would
+    // validate the wallet before any balance read needs it.
+    chains: {
+      account: async (params) => chains(options.wallet).account(params),
+    },
     openStore: options.openStore,
     setTimer,
     logger: options.logger,
