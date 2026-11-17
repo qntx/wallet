@@ -2,6 +2,8 @@ import { encodeFunctionData, encodeFunctionResult } from "viem";
 import type { PublicClient } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
+import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
+
 import { AssetsController, MULTICALL3_ABI } from "../src/assets/controller.ts";
 import { ERC20_ABI, EvmChainAdapter } from "../src/chains/evm.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
@@ -195,6 +197,7 @@ const T22_ACCOUNT = {
         info: {
           mint: T22_MINT,
           owner: SOL_OWNER,
+          state: "initialized",
           tokenAmount: { amount: "7", decimals: 6 },
         },
         type: "account",
@@ -205,6 +208,12 @@ const T22_ACCOUNT = {
 };
 
 const solNetInfo = (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm" });
+
+/** The program-filtered account answer: the wallet's one Token-2022 account, nothing else. */
+const t22Accounts = (params?: unknown[]) => {
+  const filter = (params?.[1] ?? {}) as Record<string, unknown>;
+  return { value: filter["programId"] === PROGRAM_IDS.token2022 ? [T22_ACCOUNT] : [] };
+};
 
 const balancesOf = (ctl: AssetsController, k: string) => {
   const entry = ctl.getState().balances[k];
@@ -264,7 +273,7 @@ describe("AssetsController token tracking", () => {
 });
 
 describe("AssetsController solana", () => {
-  it("reports a Token-2022 token account in balances (mint-filtered query covers it)", async () => {
+  it("reports a Token-2022 token account in balances (program-filtered query covers it)", async () => {
     const r = solRpc({
       getBalance: { value: 5_000_000 },
       getAccountInfo: {
@@ -272,7 +281,7 @@ describe("AssetsController solana", () => {
           data: { parsed: { info: { decimals: 6 } }, program: "spl-token-2022" },
         },
       },
-      getTokenAccountsByOwner: () => ({ value: [T22_ACCOUNT] }),
+      getTokenAccountsByOwner: t22Accounts,
     });
     const ctl = new AssetsController({
       networks: {
@@ -316,6 +325,7 @@ describe("AssetsController polling", () => {
               solReads.push(params?.[0]);
               return { value: 1 };
             },
+            getTokenAccountsByOwner: { value: [] },
           }),
       } as never,
       chains,

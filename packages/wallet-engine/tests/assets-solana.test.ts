@@ -1,0 +1,269 @@
+/**
+ * Solana SPL balance reads: the holdings read queries each token program once per refresh and sums
+ * every token account per mint — attacker-created empty accounts, account order and foreign
+ * accounts cannot change the total. Frozen accounts are reported apart from the balance.
+ *
+ * The fixture is a recorded mainnet `getTokenAccountsByOwner` answer for a real owner. The fake
+ * still answers a `{ mint }` filter with that mint's fixture accounts in order so the pre-fix
+ * first-account read fails on values rather than on an unmocked call.
+ */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import { describe, expect, it } from "vite-plus/test";
+
+import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
+
+import { AssetsController } from "../src/assets/controller.ts";
+import type { AccountBalances } from "../src/assets/controller.ts";
+import type { SolanaRpc } from "../src/networks/controller.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
+
+const logger = { warn: () => {} };
+const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+
+const fixture = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "fixtures/solana-token-accounts.json"), "utf8"),
+) as {
+  readonly owner: string;
+  readonly tokenProgram: { readonly context: unknown; readonly value: unknown[] };
+  readonly token2022Program: { readonly context: unknown; readonly value: unknown[] };
+};
+
+const OWNER = fixture.owner;
+const USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+const USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+const T22_MINT = "zZs2Buajob4MLf1UYzVRhNFuimSmiXVY1VRSPc9bysi";
+const FROZEN_A = "CdDgU2F7DNnGrjbqcFUhbEd2VbK6W4unszLD34aDbtnP";
+const FROZEN_B = "vrF9iUxduAGbdA1fHBST3jhJgRQ89PLkgQbfPMLcV8z";
+
+const MINT_DECIMALS: Record<string, number> = {
+  [USDC]: 6,
+  [USDT]: 6,
+  [T22_MINT]: 9,
+  [FROZEN_A]: 6,
+  [FROZEN_B]: 6,
+};
+
+const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
+
+const entryMint = (entry: unknown): string | undefined => {
+  const account = obj(obj(entry)?.["account"]);
+  const info = obj(obj(obj(account?.["data"])?.["parsed"])?.["info"]);
+  const mint = info?.["mint"];
+  return typeof mint === "string" ? mint : undefined;
+};
+
+type Accounts = {
+  readonly token: ReadonlyArray<unknown>;
+  readonly token2022: ReadonlyArray<unknown>;
+};
+
+const fixtureAccounts = (): Accounts => ({
+  token: fixture.tokenProgram.value,
+  token2022: fixture.token2022Program.value,
+});
+
+type Call = { readonly method: string; readonly params: unknown[] };
+
+/** A token-account entry as the RPC returns it — `program` is the account's program owner. */
+const tokenAccount = (opts: {
+  readonly program: string;
+  readonly mint: string;
+  readonly owner: string;
+  readonly amount: string;
+  readonly decimals?: number;
+  readonly state?: string;
+}): unknown => ({
+  pubkey: "InjectedTokenAcct1111111111111111111111111111",
+  account: {
+    owner: opts.program,
+    data: {
+      parsed: {
+        info: {
+          mint: opts.mint,
+          owner: opts.owner,
+          state: opts.state ?? "initialized",
+          tokenAmount: { amount: opts.amount, decimals: opts.decimals ?? 6 },
+        },
+        type: "account",
+      },
+      program: "spl-token",
+    },
+  },
+});
+
+const solRpc = (accounts: Accounts, calls: Call[]): SolanaRpc => ({
+  call: async (method, params) => {
+    calls.push({ method, params });
+    if (method === "getBalance") {
+      return Promise.resolve({ value: 0 });
+    }
+    if (method === "getAccountInfo") {
+      const [mint] = params;
+      return Promise.resolve({
+        value: {
+          data: {
+            parsed: {
+              info: { decimals: MINT_DECIMALS[String(mint)] ?? 6 },
+            },
+            program: "spl-token",
+          },
+        },
+      });
+    }
+    if (method === "getTokenAccountsByOwner") {
+      const filter = obj(params[1]) ?? {};
+      if (filter["programId"] === PROGRAM_IDS.token) {
+        return Promise.resolve({ context: { slot: 0 }, value: accounts.token });
+      }
+      if (filter["programId"] === PROGRAM_IDS.token2022) {
+        return Promise.resolve({ context: { slot: 0 }, value: accounts.token2022 });
+      }
+      if (typeof filter["mint"] === "string") {
+        // The pre-fix read path: keep answering so its first-account bug fails on values.
+        return Promise.resolve({
+          context: { slot: 0 },
+          value: [...accounts.token, ...accounts.token2022].filter(
+            (e) => entryMint(e) === filter["mint"],
+          ),
+        });
+      }
+      return Promise.reject(new Error("unexpected getTokenAccountsByOwner filter"));
+    }
+    return Promise.reject(new Error(`unmocked ${method}`));
+  },
+});
+
+const filterKey = (call: Call): unknown => obj(call.params[1])?.["programId"];
+const mintKey = (call: Call): unknown => obj(call.params[1])?.["mint"];
+
+const make = (accounts: Accounts, calls: Call[]): AssetsController =>
+  new AssetsController({
+    networks: {
+      info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
+      solanaRpc: () => solRpc(accounts, calls),
+    } as never,
+    chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
+    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    setTimer: () => () => {},
+    logger,
+  });
+
+const tokenBalance = (balances: AccountBalances, mint: string) => {
+  const token = balances.tokens.find((t) => t.address === mint);
+  if (token === undefined) {
+    throw new Error(`no token entry for ${mint}`);
+  }
+  return token;
+};
+
+const tokenAccountCalls = (calls: Call[]): Call[] =>
+  calls.filter((c) => c.method === "getTokenAccountsByOwner");
+
+describe("AssetsController solana token holdings", () => {
+  it("sums every token account per mint over both programs, two account calls per refresh", async () => {
+    const calls: Call[] = [];
+    const assets = make(fixtureAccounts(), calls);
+    await assets.init();
+    await assets.addToken(SOL_NET, USDC);
+    await assets.addToken(SOL_NET, USDT);
+    await assets.addToken(SOL_NET, T22_MINT);
+    calls.length = 0;
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(tokenBalance(balances, USDC).balance).toBe("1110038251");
+    expect(tokenBalance(balances, USDT).balance).toBe("0");
+    expect(tokenBalance(balances, T22_MINT).balance).toBe("0");
+    expect(tokenBalance(balances, T22_MINT).decimals).toBe(9);
+    expect(tokenBalance(balances, USDC).frozen).toBeUndefined();
+    const accounts = tokenAccountCalls(calls);
+    expect(accounts.map(filterKey)).toStrictEqual([PROGRAM_IDS.token, PROGRAM_IDS.token2022]);
+    expect(accounts.every((c) => mintKey(c) === undefined)).toBe(true);
+  });
+
+  it("is independent of the account order in the RPC answer", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        token: fixture.tokenProgram.value.toReversed(),
+        token2022: fixture.token2022Program.value.toReversed(),
+      },
+      calls,
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, USDC);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(tokenBalance(balances, USDC).balance).toBe("1110038251");
+  });
+
+  it("an attacker-created empty account listed first does not hide the balance", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        token: [
+          tokenAccount({ program: PROGRAM_IDS.token, mint: USDC, owner: OWNER, amount: "0" }),
+          ...fixture.tokenProgram.value,
+        ],
+        token2022: fixture.token2022Program.value,
+      },
+      calls,
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, USDC);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(tokenBalance(balances, USDC).balance).toBe("1110038251");
+  });
+
+  it("ignores entries whose account owner is not the queried program or the wallet, and non-counted states", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token2022,
+            mint: USDC,
+            owner: OWNER,
+            amount: "777000",
+          }),
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: "NotTheWallet111111111111111111111111111111",
+            amount: "777000",
+          }),
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "777000",
+            state: "uninitialized",
+          }),
+          ...fixture.tokenProgram.value,
+        ],
+        token2022: fixture.token2022Program.value,
+      },
+      calls,
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, USDC);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(tokenBalance(balances, USDC).balance).toBe("1110038251");
+  });
+
+  it("reports frozen token accounts apart from the balance", async () => {
+    const calls: Call[] = [];
+    const assets = make(fixtureAccounts(), calls);
+    await assets.init();
+    await assets.addToken(SOL_NET, FROZEN_A);
+    await assets.addToken(SOL_NET, FROZEN_B);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    const a = tokenBalance(balances, FROZEN_A);
+    const b = tokenBalance(balances, FROZEN_B);
+    expect(a.balance).toBe("0");
+    expect(a.frozen).toBe("150500000");
+    expect(b.balance).toBe("0");
+    expect(b.frozen).toBe("225750000");
+  });
+});

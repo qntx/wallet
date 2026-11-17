@@ -16,15 +16,15 @@ import type { BitcoinSource } from "../chains/bitcoin-scan.ts";
 import { ERC20_ABI, evmRpcHex } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
-import type { NetworkController } from "../networks/controller.ts";
+import type { NetworkController, SolanaRpc } from "../networks/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { bitcoinBalances, readBitcoin } from "./bitcoin.ts";
 import type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./bitcoin.ts";
+import { solanaTokenHoldings } from "./solana.ts";
+import type { SolanaTokenHolding } from "./solana.ts";
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
-
-const arr = (v: unknown): v is ReadonlyArray<unknown> => Array.isArray(v);
 
 const COLLECTION = "assets-custom-tokens";
 const POLL_MS = 60_000;
@@ -34,6 +34,8 @@ export type TokenBalance = {
   readonly symbol: string;
   readonly decimals: number;
   readonly balance: string;
+  /** Solana only, present when non-zero — a frozen token account cannot be moved until thawed. */
+  readonly frozen?: string;
   /** False for user-added tokens until they appear in the built-in table. */
   readonly verified: boolean;
 };
@@ -221,7 +223,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     );
   }
 
-  /** SOL via getBalance; SPL via getTokenAccountsByOwner (jsonParsed) for known mints. */
+  /** SOL via getBalance; SPL holdings summed per mint over both token programs. */
   private async refreshSolana(owner: string, network: string): Promise<AccountBalances> {
     const rpc = this.options.networks.solanaRpc(network);
     const bal = obj(await rpc.call("getBalance", [owner, { commitment: "confirmed" }]));
@@ -232,35 +234,35 @@ export class AssetsController extends Controller<AssetsControllerState> {
         : typeof balValue === "number"
           ? String(balValue)
           : "0";
+    const holdings = await solanaTokenHoldings(rpc, owner);
     const custom = this.customTokens.get(network) ?? [];
     const tokens = await Promise.all(
-      custom.map(async (t) => {
-        const accounts = obj(
-          await rpc.call("getTokenAccountsByOwner", [
-            owner,
-            { mint: t.address },
-            { encoding: "jsonParsed" },
-          ]),
-        );
-        const first = arr(accounts?.["value"]) ? accounts?.["value"][0] : undefined;
-        const parsed = obj(obj(obj(obj(obj(first)?.["account"])?.["data"])?.["parsed"])?.["info"]);
-        const amount = obj(parsed?.["tokenAmount"]);
-        const mintInfo = obj(
-          await rpc.call("getAccountInfo", [t.address, { encoding: "jsonParsed" }]),
-        );
-        const mintParsed = obj(obj(obj(obj(mintInfo?.["value"])?.["data"])?.["parsed"])?.["info"]);
-        return {
-          address: t.address,
-          symbol: "?",
-          decimals: typeof mintParsed?.["decimals"] === "number" ? mintParsed["decimals"] : 9,
-          balance: typeof amount?.["amount"] === "string" ? amount["amount"] : "0",
-          verified: t.verified,
-        };
-      }),
+      custom.map(async (t) => this.solanaToken(rpc, t, holdings.get(t.address))),
     );
     return this.record(key(network, owner), { native, tokens }, async () =>
       this.refresh(owner, network),
     );
+  }
+
+  /** One mint's entry: balance/frozen from the holdings map, decimals from the mint read. */
+  private async solanaToken(
+    rpc: SolanaRpc,
+    token: { readonly address: string; readonly verified: boolean },
+    held: SolanaTokenHolding | undefined,
+  ): Promise<TokenBalance> {
+    const mintInfo = obj(
+      await rpc.call("getAccountInfo", [token.address, { encoding: "jsonParsed" }]),
+    );
+    const mintParsed = obj(obj(obj(obj(mintInfo?.["value"])?.["data"])?.["parsed"])?.["info"]);
+    const frozen = held !== undefined && held.frozen > 0n ? held.frozen.toString() : undefined;
+    return {
+      address: token.address,
+      symbol: "?",
+      decimals: typeof mintParsed?.["decimals"] === "number" ? mintParsed["decimals"] : 9,
+      balance: held?.balance.toString() ?? "0",
+      ...(frozen === undefined ? {} : { frozen }),
+      verified: token.verified,
+    };
   }
 
   private async readTokens(
