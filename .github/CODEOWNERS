@@ -1,0 +1,16 @@
+# Review ownership. The `main` ruleset requires an approval from a code owner other than the
+# author, so every path needs at least two owners to stay mergeable.
+* @gitctrlx @qntxc
+
+# The secret boundary and everything that decides what it signs or how it is built and released.
+/packages/wallet-kernel/ @gitctrlx @qntxc
+/packages/wallet-chains/ @gitctrlx @qntxc
+/packages/wallet-native/cpp/ @gitctrlx @qntxc
+/packages/wallet-native/android/ @gitctrlx @qntxc
+/packages/wallet-native/kernel/ @gitctrlx @qntxc
+/packages/wallet-worker/src/worker/ @gitctrlx @qntxc
+/packages/wallet/src/protocol/ @gitctrlx @qntxc
+/vectors/ @gitctrlx @qntxc
+/.github/ @gitctrlx @qntxc
+/bun.lock @gitctrlx @qntxc
+/bunfig.toml @gitctrlx @qntxc

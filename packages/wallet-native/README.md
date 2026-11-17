@@ -59,7 +59,7 @@ import { createNativeWallet } from "@qntx/wallet-native";
 
 const wallet = await createNativeWallet({
   passkey: {
-    rpId: "example.com",
+    rpId: "wallet.example.com",
     rpName: "Example",
     walletSalt: "example/wallet",
     vaultSalt: "example/vault",
@@ -91,7 +91,10 @@ const wallet = await createNativeWallet({
 
 ## Passkey domains
 
-Passkey wallets need the platform's domain association:
+Passkey wallets need the platform's domain association. That association is also the wallet's
+trust boundary: every app and every web origin entitled to the `rpId` can evaluate the passkey's
+PRF and derive a passkey wallet's seed. Use a domain that serves only the wallet, and list only
+the wallet app in its association files.
 
 - **iOS** — `webcredentials:<rpId>` associated domain (requires a paid developer account; free
   signing cannot hold the entitlement). Without the entitlement the ceremony returns
