@@ -539,6 +539,11 @@ export async function rotateVault(
       addedRows.push(stored);
       ops.push({ op: "put-factor", factor: stored });
     }
+    // A new password's KEK takes a while: the session may have ended meanwhile, wiping `dek`. That
+    // is a lock, not a record failing authentication — nothing below may read it as corruption.
+    if (dek.wiped) {
+      throw new KernelError("locked", "the session ended during the rotation");
+    }
     for (const record of image.records.filter((r) => !isManifestRecord(r))) {
       let plaintext: Uint8Array;
       try {

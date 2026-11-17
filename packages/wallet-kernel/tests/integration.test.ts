@@ -12,6 +12,7 @@ import type { FactorInfo, StatusPayload as StatusT } from "@qntx/wallet/types";
 
 import { KernelError } from "../src/errors.ts";
 import { NOSTR_KEY_KIND, encodeNostrKeyHeader } from "../src/modules/nostr/record.ts";
+import type { Pbkdf2 } from "../src/platform.ts";
 import { Secret, wipe } from "../src/secret/secret.ts";
 import { recordContext, seal } from "../src/vault/envelope.ts";
 import {
@@ -2661,5 +2662,69 @@ describe("backend routing (WD-054)", () => {
     await h.call("nostr.unwrapGiftWraps", { publicKey, events: [wrap] }, session);
     expect(counts.verifySerialized).toBeGreaterThan(0);
     wrapSigner.dispose();
+  });
+});
+
+describe("rotation and the session", () => {
+  /**
+   * WebCrypto PBKDF2 that runs `onNth` right after the `nth` 600 000-iteration derivation once
+   * armed — while the command awaiting it is still suspended, exactly where a timer can fire.
+   */
+  function tripwire(onNth: () => void, nth: number): { pbkdf2: Pbkdf2; arm: () => void } {
+    let armed = false;
+    let derived = 0;
+    return {
+      pbkdf2: async (hash, password, salt, iterations, length) => {
+        const out = await subtlePbkdf2(hash, password, salt, iterations, length);
+        if (armed && iterations === 600_000) {
+          derived += 1;
+          if (derived === nth) {
+            onNth();
+          }
+        }
+        return out;
+      },
+      arm: () => {
+        armed = true;
+      },
+    };
+  }
+
+  it("a session that ends during a password change fails it as locked, never corrupted", async () => {
+    const ref: { h?: Harness } = {};
+    // The second derivation after arming is the new password's KEK, inside the rotation.
+    const { pbkdf2, arm } = tripwire(() => ref.h?.advance(5 * 60_000 + 1), 2);
+    const h = createHarness({ idleMs: 5 * 60_000, pbkdf2 });
+    ref.h = h;
+    await h.settle();
+    const oldPassword = () => ({
+      kind: "password" as const,
+      password: utf8ToBytes("old-password-123"),
+    });
+    const session = strField(
+      ok(
+        await h.call("wallet.importMnemonic", {
+          mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+          factor: oldPassword(),
+        }),
+      ),
+      "session",
+    );
+    arm();
+    const changed = await h.call(
+      "vault.addFactor",
+      {
+        verify: oldPassword(),
+        factor: { kind: "password", password: utf8ToBytes("new-password-456") },
+      },
+      session,
+    );
+    expect(errCode(changed)).toBe("locked");
+    expect(lastStatus(h).vault).toBe("locked");
+    // Nothing landed: the old password still opens the vault, in this kernel and a fresh one.
+    ok(await h.call("vault.unlock", { factor: oldPassword() }));
+    const fresh = createHarness({ store: h.store });
+    await fresh.settle();
+    ok(await fresh.call("vault.unlock", { factor: oldPassword() }));
   });
 });
