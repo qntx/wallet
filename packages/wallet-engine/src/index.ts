@@ -51,6 +51,8 @@ export type { EngineOptions, WalletEngine } from "./engine.ts";
 export { BackupController } from "./backup/controller.ts";
 export type { BackupControllerState } from "./backup/controller.ts";
 export { BackupControllerError } from "./backup/errors.ts";
+export { backupPasswordStrength } from "./backup/strength.ts";
+export type { BackupPasswordStrength } from "./backup/strength.ts";
 export type { BackupErrorCategory } from "./backup/errors.ts";
 export { createMemoryCloudStore } from "./backup/memory.ts";
 export type { CloudStore } from "./backup/port.ts";

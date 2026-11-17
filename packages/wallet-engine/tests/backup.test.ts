@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 /**
  * BackupController over a REAL Node kernel + a memory CloudStore (wrapped to inject failures and
@@ -13,6 +13,7 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import { BackupControllerError } from "../src/backup/errors.ts";
 import { createMemoryCloudStore } from "../src/backup/memory.ts";
 import type { CloudStore } from "../src/backup/port.ts";
+import { backupPasswordStrength } from "../src/backup/strength.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
@@ -225,6 +226,10 @@ function remoteName(files: Map<string, string>): string {
   }
   return names[0]!;
 }
+
+// Every backup password here is stretched with the real Argon2id (64 MiB, 3 passes) inside the
+// kernel worker, in pure JS: a test that enables and restores pays for it several times.
+vi.setConfig({ testTimeout: 30_000 });
 
 describe("BackupController", () => {
   it("no cloud store → unavailable, unprotected lists the mnemonic-unbacked wallet", async () => {
@@ -605,6 +610,33 @@ describe("BackupController", () => {
     } finally {
       await r.close();
     }
+  });
+
+  it.each(["password1234", "qwertyuiopas", "Summer2026!!!"])(
+    "enable refuses the guessable backup password %s before any kernel call",
+    async (password) => {
+      const r = await rig();
+      try {
+        await vaultWithMnemonic(r.wallet);
+        await expect(
+          r.engine.backup.enable({ verify: PW, factors: [{ kind: "password", password }] }),
+        ).rejects.toMatchObject({ name: "BackupControllerError", category: "weak-password" });
+        expect(r.wallet.getSnapshot().backup).toBeNull();
+        expect(r.files.size).toBe(0);
+      } finally {
+        await r.close();
+      }
+    },
+  );
+
+  it("scores a passphrase above a common password", async () => {
+    await expect(backupPasswordStrength("password1234")).resolves.toMatchObject({
+      acceptable: false,
+    });
+    await expect(backupPasswordStrength(BACKUP_PASSWORD)).resolves.toStrictEqual({
+      score: 4,
+      acceptable: true,
+    });
   });
 
   it("enable rejects unavailable before any kernel call and enables nothing", async () => {
