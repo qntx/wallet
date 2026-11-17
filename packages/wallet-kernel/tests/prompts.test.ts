@@ -5,6 +5,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  */
 import { base58 } from "@scure/base";
 import { Transaction } from "@scure/btc-signer/transaction.js";
+import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent } from "@qntx/wallet-chains";
@@ -1091,6 +1092,199 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 
+  const SEAPORT_ITEM_FIELDS = [
+    { name: "itemType", type: "uint8" },
+    { name: "token", type: "address" },
+    { name: "identifierOrCriteria", type: "uint256" },
+    { name: "startAmount", type: "uint256" },
+    { name: "endAmount", type: "uint256" },
+  ];
+  const seaportDoc = (message: Record<string, unknown>, domain: Record<string, unknown> = {}) => ({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      OrderComponents: [
+        { name: "offerer", type: "address" },
+        { name: "zone", type: "address" },
+        { name: "offer", type: "OfferItem[]" },
+        { name: "consideration", type: "ConsiderationItem[]" },
+        { name: "orderType", type: "uint8" },
+        { name: "startTime", type: "uint256" },
+        { name: "endTime", type: "uint256" },
+        { name: "zoneHash", type: "bytes32" },
+        { name: "salt", type: "uint256" },
+        { name: "conduitKey", type: "bytes32" },
+        { name: "counter", type: "uint256" },
+      ],
+      OfferItem: SEAPORT_ITEM_FIELDS,
+      ConsiderationItem: [...SEAPORT_ITEM_FIELDS, { name: "recipient", type: "address" }],
+    },
+    primaryType: "OrderComponents",
+    domain: {
+      name: "Seaport",
+      version: "1.6",
+      chainId: 1,
+      verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+      ...domain,
+    },
+    message: {
+      offerer: SIGNER,
+      zone: "0x0000000000000000000000000000000000000000",
+      offer: [],
+      consideration: [],
+      orderType: 0,
+      startTime: "1700000000",
+      endTime: "1700001000",
+      zoneHash: `0x${"00".repeat(32)}`,
+      salt: "123",
+      conduitKey: `0x${"00".repeat(32)}`,
+      counter: "0",
+      ...message,
+    },
+  });
+
+  it("a Seaport NFT offer names the token and its id", () => {
+    const intent = typed(
+      seaportDoc({
+        offer: [
+          {
+            itemType: 2,
+            token: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+            identifierOrCriteria: "7090",
+            startAmount: "1",
+            endAmount: "1",
+          },
+        ],
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D #7090`,
+    );
+  });
+
+  it("Seaport criteria items and a non-zero zone are named", () => {
+    const nft = "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D";
+    // 12345 = 0x3039 as a 32-byte root.
+    const root = `0x${(12345n).toString(16).padStart(64, "0")}`;
+    const intent = typed(
+      seaportDoc({
+        zone: TO,
+        offer: [
+          {
+            itemType: 4,
+            token: nft,
+            identifierOrCriteria: "0",
+            startAmount: "1",
+            endAmount: "1",
+          },
+          {
+            itemType: 5,
+            token: nft,
+            identifierOrCriteria: "12345",
+            startAmount: "3",
+            endAmount: "3",
+          },
+        ],
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive any token of ${nft}\nGive a token of ${nft} from the set with Merkle root ${root} ×3\nZone ${TO} can restrict or cancel this order`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 ${nft} 中的任意代币\n付出 ${nft} 中 Merkle 根 ${root} 所列的代币 ×3\n区域合约 ${TO} 可限制或取消此订单`,
+    );
+  });
+
+  it("every Seaport item kind renders its token, id or criteria and the zone", () => {
+    const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+    const hexOf = (b: Uint8Array): string =>
+      [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+    const evmAddress = fc.uint8Array({ minLength: 20, maxLength: 20 }).map((b) => `0x${hexOf(b)}`);
+    const kind = fc.constantFrom(
+      "native",
+      "erc20",
+      "erc721",
+      "erc1155",
+      "erc721-criteria",
+      "erc1155-criteria",
+    );
+    const item = fc
+      .record({
+        kind,
+        token: evmAddress,
+        identifier: fc.bigInt({ min: 0n, max: 2n ** 200n }).map((n) => n.toString(10)),
+        count: fc.bigInt({ min: 1n, max: 9n }).map((n) => n.toString(10)),
+      })
+      .map(({ kind, token, identifier, count }) => {
+        const amount = {
+          asset: kind === "native" ? "native" : token,
+          amount: count,
+          ...(kind === "erc721" || kind === "erc1155" ? { tokenId: identifier } : {}),
+        };
+        return { kind, token, identifier, startAmount: amount, endAmount: amount };
+      });
+    fc.assert(
+      fc.property(
+        fc.array(item, { minLength: 1, maxLength: 6 }),
+        fc.array(item, { maxLength: 2 }),
+        fc.oneof(fc.constant(ZERO_ADDR), evmAddress),
+        (offer, extra, zone) => {
+          const seaport = {
+            offerer: SIGNER,
+            zone,
+            startTime: 0,
+            endTime: 0,
+            offer,
+            consideration: extra.map((i) => ({ ...i, recipient: TO })),
+          };
+          const description = chainPrompt("en", typedIntent({ seaport })).description;
+          const lines = description.split("\n");
+          const gives = lines.filter((l) => l.startsWith("Give "));
+          expect(gives).toHaveLength(Math.min(offer.length, 4));
+          for (const [i, it] of offer.slice(0, 4).entries()) {
+            const line = gives[i] ?? "";
+            switch (it.kind) {
+              case "erc721":
+              case "erc1155":
+                expect(line).toContain(`${it.token} #${it.identifier}`);
+                expect(line.includes(`×${it.startAmount.amount}`)).toBe(
+                  it.startAmount.amount !== "1",
+                );
+                break;
+              case "erc721-criteria":
+              case "erc1155-criteria":
+                if (it.identifier === "0") {
+                  expect(line).toContain(`any token of ${it.token}`);
+                } else {
+                  expect(line).toContain(
+                    `0x${BigInt(it.identifier).toString(16).padStart(64, "0")}`,
+                  );
+                }
+                expect(line.includes(`×${it.startAmount.amount}`)).toBe(
+                  it.startAmount.amount !== "1",
+                );
+                break;
+              case "native":
+                expect(line).toContain("native");
+                break;
+              case "erc20":
+                expect(line).toContain(it.token);
+                break;
+            }
+          }
+          const last = lines[lines.length - 1];
+          expect(last === `Zone ${zone} can restrict or cancel this order`).toBe(
+            zone !== ZERO_ADDR,
+          );
+        },
+      ),
+    );
+  });
+
   it("a Safe inner call's native value is formatted in the network's units", () => {
     const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
     const intent = typedOn("eip155:1", {
@@ -1327,6 +1521,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         `${SIGNER} receives 1 ETH → 0.5 ETH`,
         ...[1, 2, 3].map(() => `${TO} receives 0.000000000000000001 ETH`),
         "… 1 more items not shown",
+        `Zone ${TO} can restrict or cancel this order`,
       ].join("\n"),
     );
   });
@@ -1371,6 +1566,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         `${SIGNER} 收到 1 ETH → 0.5 ETH`,
         ...[1, 2, 3].map(() => `${TO} 收到 0.000000000000000001 ETH`),
         "… 还有 1 项未显示",
+        `区域合约 ${TO} 可限制或取消此订单`,
       ].join("\n"),
     );
     expect(chainPrompt("zh-Hans", typedIntent({ primaryType: "SafeTx", safe })).description).toBe(

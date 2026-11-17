@@ -82,6 +82,9 @@ type Catalog = {
   readonly typedUnshown: string;
   readonly orderGive: (amount: string) => string;
   readonly orderReceive: (recipient: string, amount: string) => string;
+  readonly anyTokenOf: (token: string) => string;
+  readonly tokenInSet: (token: string, root: string) => string;
+  readonly zoneRestriction: (zone: string) => string;
   readonly moreItems: (count: number) => string;
   readonly safeTransaction: (safe: string, nonce: string) => string;
   readonly safeDelegatecall: (target: string) => string;
@@ -152,6 +155,9 @@ const zh: Catalog = {
   typedUnshown: "无法显示此请求的内容",
   orderGive: (amount) => `付出 ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
+  anyTokenOf: (token) => `${token} 中的任意代币`,
+  tokenInSet: (token, root) => `${token} 中 Merkle 根 ${root} 所列的代币`,
+  zoneRestriction: (zone) => `区域合约 ${zone} 可限制或取消此订单`,
   moreItems: (count) => `… 还有 ${count} 项未显示`,
   safeTransaction: (safe, nonce) => `Safe ${safe} 的第 ${nonce} 笔交易`,
   safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
@@ -232,6 +238,9 @@ const en: Catalog = {
   typedUnshown: "The content of this request cannot be shown",
   orderGive: (amount) => `Give ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
+  anyTokenOf: (token) => `any token of ${token}`,
+  tokenInSet: (token, root) => `a token of ${token} from the set with Merkle root ${root}`,
+  zoneRestriction: (zone) => `Zone ${zone} can restrict or cancel this order`,
   moreItems: (count) => `… ${count} more items not shown`,
   safeTransaction: (safe, nonce) => `Safe ${safe}, transaction ${nonce}`,
   safeDelegatecall: (target) =>
@@ -480,8 +489,27 @@ function textLines(catalog: Catalog, text: string): ReadonlyArray<string> {
   return [catalog.messageHeading, ...lines, ...(omitted === 0 ? [] : [catalog.omitted(omitted)])];
 }
 
+/** The zero address in an order's `zone`: no zone contract gates fulfilment. */
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+
 function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string> {
   const amount = (item: SeaportOrder["offer"][number]): string => {
+    if (item.kind === "erc721-criteria" || item.kind === "erc1155-criteria") {
+      // A criteria identifier of 0 means any token of the collection; otherwise it is the Merkle
+      // root of the allowed set. The count is a number of tokens, not an asset amount.
+      const base =
+        item.identifier === "0"
+          ? catalog.anyTokenOf(item.token)
+          : catalog.tokenInSet(
+              item.token,
+              `0x${BigInt(item.identifier).toString(16).padStart(64, "0")}`,
+            );
+      const count =
+        item.startAmount.amount === item.endAmount.amount
+          ? item.startAmount.amount
+          : `${item.startAmount.amount} → ${item.endAmount.amount}`;
+      return count === "1" ? base : `${base} ×${count}`;
+    }
     const start = formatAmount(catalog, item.startAmount);
     const end = formatAmount(catalog, item.endAmount);
     return start === end ? start : `${start} → ${end}`;
@@ -495,6 +523,7 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
     ...capped(
       order.consideration.map((item) => catalog.orderReceive(item.recipient, amount(item))),
     ),
+    ...(order.zone === ZERO_ADDRESS ? [] : [catalog.zoneRestriction(order.zone)]),
   ];
 }
 
