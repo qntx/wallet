@@ -29,6 +29,7 @@ it for funds.**
 | `chains/evm-across.json` | Two real Across SpokePool mainnet transactions (block ~26375k) with their expected `DisplayIntent` — a bytes32 `deposit` (USDC → Base) and a `depositV3` (native ETH → Arbitrum, SDK data suffix) | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
 | `chains/evm-lido.json` | Five real Lido mainnet transactions (block ~26372k) with their expected `DisplayIntent` — two `submit` stakes, `requestWithdrawalsWithPermit`, `requestWithdrawalsWstETHWithPermit` and `claimWithdrawals` — plus three ABI-built request variants (foreign owner, chunked amounts) | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
 | `chains/solana.json` (jupiter) | One real Jupiter Swap API V2 `/build` SOL→USDC exact-in v0 message (Metis, block ~44505k): compute-budget, wSOL ATA create + wrap transfer + SyncNative, `route_v2`, wSOL CloseAccount, one lookup table — with expected `DisplayIntent` | `/build` response, 2026-11-08 |
+| `chains/solana-wire.json` | Serialized dApp transactions (Wallet Standard unit) — legacy/v0 single-signer, cosigner pre-signed, and sponsored — with each compiled message and the kit partially-signed result | `bun packages/wallet-chains/scripts/solana-wire-vectors.ts` — `@solana/kit` 8.5.0 |
 
 ## factor vectors
 

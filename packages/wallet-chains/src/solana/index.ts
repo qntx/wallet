@@ -19,6 +19,8 @@ export { MPL_CORE_PROGRAM, decodeCoreIx } from "./core.ts";
 export { JUPITER_PROGRAM, WSOL_MINT } from "./jupiter.ts";
 export { mayBeTransactionMessage, parseCompiledMessage } from "./message.ts";
 export type { LookupReference, ParsedSolanaMessage } from "./message.ts";
+export { addSolanaSignature, decodeSolanaTransaction } from "./transaction.ts";
+export type { SolanaTransactionForSigner } from "./transaction.ts";
 export { verifySolanaSignature } from "./verify.ts";
 export type { SolanaTokenTable } from "./tokens.ts";
 export { solanaTokenTable } from "./tokens.ts";
@@ -58,11 +60,11 @@ const validateLookupTablesRaw = (tables: unknown): ReadonlyArray<LookupTable> | 
 };
 
 /**
- * Normalizes a Solana sign request. `signer` is the fee payer the wallet is about to sign for — the
- * message must declare it as the first static account. A raw `solana.message` must not decode as a
- * transaction message (chains.mdx rule — a bytes-to-sign path that produces a transaction signature
- * is a wallet-drainer): bytes a cluster could accept as a transaction message of any version are
- * never signed as a raw message. Idempotent.
+ * Normalizes a Solana sign request. `signer` is a required signer the wallet is about to sign for —
+ * the message must declare it among the first `numRequiredSignatures` static accounts. A raw
+ * `solana.message` must not decode as a transaction message (chains.mdx rule — a bytes-to-sign path
+ * that produces a transaction signature is a wallet-drainer): bytes a cluster could accept as a
+ * transaction message of any version are never signed as a raw message. Idempotent.
  */
 export const normalizeSolana = (request: unknown, signer: string): SignRequest => {
   if (!isRecord(request) || typeof request["kind"] !== "string") {
@@ -80,9 +82,8 @@ export const normalizeSolana = (request: unknown, signer: string): SignRequest =
   if (request["kind"] === "solana.transaction") {
     const lookupTables = validateLookupTablesRaw(request["lookupTables"]);
     const parsed = parseCompiledMessage(message);
-    const [feePayer] = parsed.staticAccounts;
-    if (feePayer === undefined || feePayer !== signer) {
-      throw new ChainError("fee-payer-mismatch", "signer is not the transaction fee payer");
+    if (!parsed.staticAccounts.slice(0, parsed.numRequiredSignatures).includes(signer)) {
+      throw new ChainError("invalid-request", "signer is not a required signer of the transaction");
     }
     return {
       kind: "solana.transaction",

@@ -14,7 +14,12 @@ import { isBlindIntent, parseSignIn } from "@qntx/wallet-chains";
 import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
-import { decodeSolana, normalizeSolana, SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
+import {
+  decodeSolana,
+  decodeSolanaTransaction,
+  normalizeSolana,
+  SOLANA_NATIVE_ASSET,
+} from "@qntx/wallet-chains/solana";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import type { AddressBookController } from "../addresses/controller.ts";
@@ -187,6 +192,7 @@ export type SolanaSignInput = {
   readonly request:
     | {
         readonly kind: "transactions";
+        /** Serialized transactions as the Wallet Standard passes them. */
         readonly transactions: ReadonlyArray<Uint8Array>;
         readonly send: boolean;
       }
@@ -650,39 +656,34 @@ const messageContent = (message: Uint8Array, signIn: SignInParse | undefined): M
   return signIn === undefined ? { kind: "text", text } : { kind: "text", text, signIn };
 };
 
-type SolanaDecoded = DisplayIntent | { readonly error: string };
-
 const solanaIntent = (
   account: SolanaAccount,
   network: string,
   message: Uint8Array,
-): SolanaDecoded => {
-  try {
-    const request = normalizeSolana(
-      {
-        kind: "solana.transaction",
-        network,
-        account: {
-          kind: "hd",
-          walletId: account.walletId,
-          groupIndex: account.groupIndex,
-          template: "solana.bip44-change",
-        },
-        message,
+): DisplayIntent => {
+  const request = normalizeSolana(
+    {
+      kind: "solana.transaction",
+      network,
+      account: {
+        kind: "hd",
+        walletId: account.walletId,
+        groupIndex: account.groupIndex,
+        template: "solana.bip44-change",
       },
-      account.address,
-    );
-    return request.kind === "solana.transaction"
-      ? decodeSolana(request, account.address, undefined)
-      : { error: "not a transaction" };
-  } catch (error) {
-    return { error: errorMessage(error) };
+      message,
+    },
+    account.address,
+  );
+  if (request.kind !== "solana.transaction") {
+    throw new Error("not a transaction");
   }
+  return decodeSolana(request, account.address, undefined);
 };
 
 /** The transaction's declared lamport outflows are swallowed whole by its maximum fee. */
-const feeExceedsLamports = (intent: SolanaDecoded): boolean => {
-  if ("error" in intent || intent.fee === undefined) {
+const feeExceedsLamports = (intent: DisplayIntent): boolean => {
+  if (intent.fee === undefined) {
     return false;
   }
   const lamports = intent.outflows
@@ -1049,7 +1050,12 @@ export class RequestController extends Controller<RequestControllerState> {
         : built;
     }
     if (input.method === "solana-sign") {
-      const txs = input.request.kind === "transactions" ? input.request.transactions : [];
+      const txs =
+        input.request.kind === "transactions"
+          ? input.request.transactions.map(
+              (wire) => decodeSolanaTransaction(wire, input.account.address).message,
+            )
+          : [];
       const [only] = txs;
       const intents = txs.map((tx) => solanaIntent(input.account, input.network, tx));
       const [decoded] = intents;
@@ -1080,10 +1086,10 @@ export class RequestController extends Controller<RequestControllerState> {
             this.signInRisk(signIn, input.origin, input.account.address, "solana"),
             [
               ...(message === undefined ? [] : [{ verifiability: "opaque" as const, message }]),
-              ...intents.filter((intent) => "verifiability" in intent),
+              ...intents,
             ].flatMap((intent) => this.blindRisk(intent)),
           ),
-          intents.flatMap((intent) => ("approvals" in intent ? assessApprovals(intent) : [])),
+          intents.flatMap((intent) => assessApprovals(intent)),
         ),
         run: {
           factor: "required",
@@ -1102,7 +1108,7 @@ export class RequestController extends Controller<RequestControllerState> {
         : { status: "unavailable", error: "batch" };
       return withSimulation(
         built,
-        decoded !== undefined && "verifiability" in decoded ? decoded : OPAQUE_INTENT,
+        decoded ?? OPAQUE_INTENT,
         simulation,
         single ? async () => this.simulateOne(input.account, input.network, only) : undefined,
       );

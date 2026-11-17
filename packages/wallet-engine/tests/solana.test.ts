@@ -1,4 +1,19 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  blockhash,
+  compileTransaction,
+  createKeyPairFromBytes,
+  createTransactionMessage,
+  getTransactionEncoder,
+  partiallySignTransaction,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
+import type { Instruction } from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ProviderError, invalidParams } from "../src/connect/errors.ts";
@@ -7,9 +22,68 @@ import { SolanaWalletHandler, walletStandardChain } from "../src/connect/solana.
 
 const SITE = "https://app.example.com";
 const ORIGIN = { kind: "browser" as const, origin: SITE };
-const SOL_ADDR = "SoLaNaBase58Address1111111111111111111";
-const TX = new Uint8Array([1, 2, 3, 4]);
-const PUBKEY = new Uint8Array(32).fill(2);
+const WALLET_SEED = new Uint8Array(32).fill(7);
+const COSIGNER_SEED = new Uint8Array(32).fill(9);
+const SOL_ADDR = base58.encode(ed25519.getPublicKey(WALLET_SEED));
+const COSIGNER = base58.encode(ed25519.getPublicKey(COSIGNER_SEED));
+const PUBKEY = ed25519.getPublicKey(WALLET_SEED);
+
+const wire = async (options: {
+  feePayer: string;
+  ixs: ReadonlyArray<Instruction>;
+  version?: "legacy" | 0 | 1;
+  presign?: TestKeyPair[];
+}): Promise<Uint8Array> => {
+  let message = setTransactionMessageLifetimeUsingBlockhash(
+    { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+    setTransactionMessageFeePayer(
+      address(options.feePayer),
+      createTransactionMessage({ version: options.version ?? "legacy" }),
+    ),
+  );
+  for (const ix of options.ixs) {
+    message = appendTransactionMessageInstruction(ix, message as never);
+  }
+  const compiled = compileTransaction(message as never);
+  const tx =
+    options.presign === undefined
+      ? compiled
+      : await partiallySignTransaction(options.presign, compiled);
+  return new Uint8Array(getTransactionEncoder().encode(tx));
+};
+
+const transfer = (from: string, lamports: bigint): Instruction => {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, lamports, true);
+  return {
+    programAddress: address("11111111111111111111111111111111"),
+    accounts: [
+      { address: address(from), role: AccountRole.WRITABLE_SIGNER },
+      {
+        address: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+        role: AccountRole.WRITABLE,
+      },
+    ],
+    data,
+  };
+};
+
+type TestKeyPair = Awaited<ReturnType<typeof createKeyPairFromBytes>>;
+
+const keyPair = async (seed: Uint8Array): Promise<TestKeyPair> =>
+  createKeyPairFromBytes(new Uint8Array([...seed, ...ed25519.getPublicKey(seed)]));
+
+const TX = await wire({ feePayer: SOL_ADDR, ixs: [transfer(SOL_ADDR, 1000n)] });
+const V1_TX = await wire({ feePayer: SOL_ADDR, ixs: [transfer(SOL_ADDR, 1000n)], version: 1 });
+const COSIGNER_TX = await wire({ feePayer: SOL_ADDR, ixs: [transfer(COSIGNER, 1000n)] });
+const SIGNED_COSIGNER_TX = await wire({
+  feePayer: SOL_ADDR,
+  ixs: [transfer(COSIGNER, 1000n)],
+  presign: [await keyPair(COSIGNER_SEED)],
+});
+const FOREIGN_TX = await wire({ feePayer: COSIGNER, ixs: [transfer(COSIGNER, 1000n)] });
 
 const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
   let { session } = options;
@@ -104,8 +178,11 @@ describe("SolanaWalletHandler", () => {
       method: "solana:signTransaction",
       params: { transactions: [TX] },
     });
-    const input = requestsCalls[0] as { request: { kind: string; send: boolean } };
+    const input = requestsCalls[0] as {
+      request: { kind: string; send: boolean; transactions: Uint8Array[] };
+    };
     expect(input.request.send).toBe(false);
+    expect(input.request.transactions).toStrictEqual([TX]);
     expect(result).toMatchObject({ signedTransactions: signed });
   });
 
@@ -121,6 +198,70 @@ describe("SolanaWalletHandler", () => {
     });
     const input = requestsCalls[0] as { request: { send: boolean } };
     expect(input.request.send).toBe(true);
+    expect(result).toStrictEqual({ signatures: [raw] });
+  });
+
+  it("rejects malformed transactions before prepare", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signTransaction",
+        params: { transactions: [new Uint8Array([1, 2, 3, 4])] },
+      }),
+    ).rejects.toMatchObject({ code: -32_602 });
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("rejects a v1 transaction and a transaction the wallet does not sign", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    for (const transactions of [[V1_TX], [FOREIGN_TX]]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
+      await expect(
+        handler.handle(SITE, {
+          method: "solana:signTransaction",
+          params: { transactions },
+        }),
+      ).rejects.toMatchObject({ code: -32_602 });
+    }
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("signAndSend refuses a transaction whose other signers have not signed", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signAndSendTransaction",
+        params: { transactions: [COSIGNER_TX], chains: ["solana:mainnet"] },
+      }),
+    ).rejects.toMatchObject({ code: -32_602, message: expect.stringContaining("signatures") });
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("signTransaction still accepts a transaction missing a cosigner signature", async () => {
+    const signed = [new Uint8Array([9])];
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: false, signedTransactions: signed },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signTransaction",
+      params: { transactions: [COSIGNER_TX] },
+    });
+    expect(requestsCalls).toHaveLength(1);
+    expect(result).toMatchObject({ signedTransactions: signed });
+  });
+
+  it("signAndSend accepts a fully cosigned transaction", async () => {
+    const raw = new Uint8Array(64).fill(5);
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: true, signatures: [base58.encode(raw)] },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signAndSendTransaction",
+      params: { transactions: [SIGNED_COSIGNER_TX], chains: ["solana:mainnet"] },
+    });
+    expect(requestsCalls).toHaveLength(1);
     expect(result).toStrictEqual({ signatures: [raw] });
   });
 

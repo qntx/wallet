@@ -398,7 +398,6 @@ export const isBlindIntent = (
 export type ChainErrorCode =
   | "unknown-field"
   | "chain-id-mismatch"
-  | "fee-payer-mismatch"
   | "invalid-quantity"
   | "invalid-address"
   | "invalid-typed-data"

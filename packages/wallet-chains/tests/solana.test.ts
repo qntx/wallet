@@ -173,10 +173,11 @@ const compile = (
   instructions: ReadonlyArray<unknown>,
   version: "legacy" | 0 | 1 = "legacy",
   lookupAddresses?: Record<string, ReadonlyArray<string>>,
+  payer: string = FEE_PAYER,
 ): Uint8Array => {
   let message = setTransactionMessageLifetimeUsingBlockhash(
     { blockhash: BLOCKHASH, lastValidBlockHeight: 1000n } as never,
-    setTransactionMessageFeePayer(FEE_PAYER, createTransactionMessage({ version })),
+    setTransactionMessageFeePayer(address(payer), createTransactionMessage({ version })),
   );
   for (const ix of instructions) {
     message = appendTransactionMessageInstruction(ix as never, message as never);
@@ -279,8 +280,16 @@ describe("normalize", () => {
     }
   });
 
-  it("rejects a fee-payer mismatch", () => {
-    expect(() => normalizeSolana(req(compile([transferIx()])), DEST)).toThrow(ChainError);
+  it("accepts the wallet as a required signer that is not the fee payer", () => {
+    // DEST sponsors the fee; the transfer source keeps FEE_PAYER a required signer.
+    const sponsored = compile([transferIx()], "legacy", undefined, DEST);
+    expect(normalizeSolana(req(sponsored), FEE_PAYER).kind).toBe("solana.transaction");
+  });
+
+  it("rejects a signer that is not among the required signers", () => {
+    expect(() => normalizeSolana(req(compile([transferIx()])), DEST)).toThrow(
+      /not a required signer/,
+    );
   });
 
   it("rejects >1232-byte and non-message payloads", () => {
@@ -342,10 +351,13 @@ describe("transaction-message refusal of raw solana.message", () => {
 
   const hexByte = (b: number): [string, number] => [b.toString(16).padStart(2, "0"), b];
 
-  it.each(byteRange(0x00, 0x7f).map(hexByte))("a short payload starting 0x%s is raw-signable", (_label, b) => {
-    expect(mayBeTransactionMessage(new Uint8Array([b]))).toBe(false);
-    expect(mayBeTransactionMessage(new Uint8Array([b, 0xff]))).toBe(false);
-  });
+  it.each(byteRange(0x00, 0x7f).map(hexByte))(
+    "a short payload starting 0x%s is raw-signable",
+    (_label, b) => {
+      expect(mayBeTransactionMessage(new Uint8Array([b]))).toBe(false);
+      expect(mayBeTransactionMessage(new Uint8Array([b, 0xff]))).toBe(false);
+    },
+  );
 
   it("refuses a complete legacy message but not one with a trailing byte", () => {
     const legacy = compile([transferIx()]);
@@ -367,13 +379,14 @@ describe("transaction-message refusal of raw solana.message", () => {
   it.each(byteRange(0xc2, 0xf4).map(hexByte))(
     "a lead byte 0x%s passes only as well-formed UTF-8",
     (_label, b) => {
-    expect(mayBeTransactionMessage(new Uint8Array([b, 0x00]))).toBe(true);
-    expect(mayBeTransactionMessage(new Uint8Array([b, 0xff]))).toBe(true);
-    const text = Buffer.from(`${utf8LeadChar(b)} sign in`, "utf8");
-    expect(text[0]).toBe(b);
-    expect(isUtf8(text)).toBe(true);
-    expect(mayBeTransactionMessage(new Uint8Array(text))).toBe(false);
-  });
+      expect(mayBeTransactionMessage(new Uint8Array([b, 0x00]))).toBe(true);
+      expect(mayBeTransactionMessage(new Uint8Array([b, 0xff]))).toBe(true);
+      const text = Buffer.from(`${utf8LeadChar(b)} sign in`, "utf8");
+      expect(text[0]).toBe(b);
+      expect(isUtf8(text)).toBe(true);
+      expect(mayBeTransactionMessage(new Uint8Array(text))).toBe(false);
+    },
+  );
 
   it("0xff is always raw-signable, including the off-chain envelope", () => {
     expect(mayBeTransactionMessage(new Uint8Array([0xff]))).toBe(false);
@@ -496,6 +509,11 @@ describe("verifiability + decode", () => {
     const intent = decodeSolana(req(compile([limitIx, priceIx, transferIx()])) as never, FEE_PAYER);
     expect(intent.verifiability).toBe("full");
     expect(intent.fee?.max.amount).toBe("5200");
+  });
+
+  it("shows a zero max fee when the wallet is not the fee payer", () => {
+    const sponsored = compile([transferIx()], "legacy", undefined, DEST);
+    expect(decodeSolana(req(sponsored) as never, FEE_PAYER).fee?.max.amount).toBe("0");
   });
 
   const tokenIxForFee = () =>
