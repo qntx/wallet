@@ -1176,6 +1176,83 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 
+  const SAFE_TX_TYPES = [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" },
+    { name: "baseGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" },
+    { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ];
+  const safeTxDoc = (message: Record<string, unknown>, domain: Record<string, unknown> = {}) => {
+    const d = {
+      chainId: 1,
+      verifyingContract: "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52",
+      ...domain,
+    };
+    return {
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeTx: SAFE_TX_TYPES,
+      },
+      primaryType: "SafeTx",
+      domain: d,
+      message: {
+        to: TO,
+        value: "0",
+        data: "0x",
+        operation: 0,
+        safeTxGas: "0",
+        baseGas: "0",
+        gasPrice: "0",
+        gasToken: "0x0000000000000000000000000000000000000000",
+        refundReceiver: "0x0000000000000000000000000000000000000000",
+        nonce: "7",
+        ...message,
+      },
+    };
+  };
+
+  it("a Safe gas refund is priced in the gas token and named for its receiver", () => {
+    const attacker = "0xBAd0000000000000000000000000000000000Bad";
+    // baseGas 1e6 × gasPrice 1e24 = 1e30 base units of USDC = 1e24 USDC.
+    const intent = typed(
+      safeTxDoc({
+        gasPrice: "1000000000000000000000000",
+        baseGas: "1000000",
+        gasToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        refundReceiver: attacker,
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52, transaction 7\nSend 0 ETH to ${TO}\nPays ${attacker} a gas refund of up to 1000000000000000000000000 USDC, plus 1000000000000000000 USDC per gas of call overhead`,
+    );
+  });
+
+  it("a Safe gas refund without a receiver pays whoever executes, in the network's units", () => {
+    const intent = typedOn(
+      "eip155:137",
+      safeTxDoc(
+        {
+          gasPrice: "1000000000000000000",
+          baseGas: "21000",
+          safeTxGas: "0",
+        },
+        { chainId: 137 },
+      ),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Polygon\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52, transaction 7\nSend 0 POL to ${TO}\nPays whoever executes it a gas refund of up to 21000 POL, plus 1 POL per gas of call overhead`,
+    );
+  });
+
   const nft = { asset: "0x3333333333333333333333333333333333333333", amount: "1", tokenId: "7" };
   const eth = (amount: string) => ({
     asset: "eip155:1/slip44:60",
@@ -1236,7 +1313,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         contract: { address: TO, created: false },
       },
     ],
-    refund: { gasPrice: "1", gasToken: TO, refundReceiver: SIGNER },
+    refund: { receiver: SIGNER, gasPrice: eth("1"), amount: eth("5000000") },
   };
 
   it("a Seaport order lists what is given and who receives what", () => {
@@ -1266,7 +1343,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "The effects of this call cannot be verified",
         `Call contract ${TO}`,
         `Send 0.05 ETH to ${TO}`,
-        `Refunds gas to ${SIGNER}`,
+        `Pays ${SIGNER} a gas refund of up to 0.000000000005 ETH, plus 0.000000000000000001 ETH per gas of call overhead`,
       ].join("\n"),
     );
   });
@@ -1307,7 +1384,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "无法核实此调用的效果",
         `调用合约 ${TO}`,
         `发送 0.05 ETH 到 ${TO}`,
-        `向 ${SIGNER} 退还 gas 费`,
+        `向 ${SIGNER} 支付 gas 退款：最多 0.000000000005 ETH，另按每单位 gas 0.000000000000000001 ETH 支付调用开销`,
       ].join("\n"),
     );
   });

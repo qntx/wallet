@@ -85,7 +85,7 @@ type Catalog = {
   readonly moreItems: (count: number) => string;
   readonly safeTransaction: (safe: string, nonce: string) => string;
   readonly safeDelegatecall: (target: string) => string;
-  readonly safeRefund: (receiver: string) => string;
+  readonly safeRefund: (receiver: string | undefined, amount: string, price: string) => string;
   readonly send: (amount: string, to: string) => string;
   readonly burn: (amount: string) => string;
   readonly allow: (spender: string, amount: string) => string;
@@ -155,7 +155,8 @@ const zh: Catalog = {
   moreItems: (count) => `… 还有 ${count} 项未显示`,
   safeTransaction: (safe, nonce) => `Safe ${safe} 的第 ${nonce} 笔交易`,
   safeDelegatecall: (target) => `以 Safe 的全部权限执行 ${target} 的代码（delegatecall）`,
-  safeRefund: (receiver) => `向 ${receiver} 退还 gas 费`,
+  safeRefund: (receiver, amount, price) =>
+    `向 ${receiver ?? "执行者"} 支付 gas 退款：最多 ${amount}，另按每单位 gas ${price} 支付调用开销`,
   send: (amount, to) => `发送 ${amount} 到 ${to}`,
   burn: (amount) => `销毁 ${amount}：转入无法花费的输出，永久丢失`,
   allow: (spender, amount) => `授权 ${spender} 使用 ${amount}`,
@@ -235,7 +236,8 @@ const en: Catalog = {
   safeTransaction: (safe, nonce) => `Safe ${safe}, transaction ${nonce}`,
   safeDelegatecall: (target) =>
     `Runs the code of ${target} with the Safe's full authority (delegatecall)`,
-  safeRefund: (receiver) => `Refunds gas to ${receiver}`,
+  safeRefund: (receiver, amount, price) =>
+    `Pays ${receiver ?? "whoever executes it"} a gas refund of up to ${amount}, plus ${price} per gas of call overhead`,
   send: (amount, to) => `Send ${amount} to ${to}`,
   burn: (amount) => `Burn ${amount}: it goes to an unspendable output and is lost`,
   allow: (spender, amount) => `Allow ${spender} to spend ${amount}`,
@@ -504,7 +506,15 @@ function safeLines(catalog: Catalog, safe: SafeTransaction): ReadonlyArray<strin
       ...(call.verifiability === "opaque" ? [catalog.unverifiedEffects] : []),
       ...effectLines(catalog, call),
     ]),
-    ...(safe.refund === undefined ? [] : [catalog.safeRefund(safe.refund.refundReceiver)]),
+    ...(safe.refund === undefined
+      ? []
+      : [
+          catalog.safeRefund(
+            safe.refund.receiver,
+            formatAmount(catalog, safe.refund.amount),
+            formatAmount(catalog, safe.refund.gasPrice),
+          ),
+        ]),
   ];
 }
 

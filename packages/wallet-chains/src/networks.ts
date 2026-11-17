@@ -194,6 +194,15 @@ export const withNativeAmountMeta = (
                   safe: {
                     ...i.message.safe,
                     calls: i.message.safe.calls.map(decorate),
+                    ...(i.message.safe.refund === undefined
+                      ? {}
+                      : {
+                          refund: {
+                            ...i.message.safe.refund,
+                            gasPrice: amount(i.message.safe.refund.gasPrice),
+                            amount: amount(i.message.safe.refund.amount),
+                          },
+                        }),
                   },
                 }),
           },

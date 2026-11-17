@@ -178,16 +178,74 @@ describe("decodeEvm: Safe transactions", () => {
       doc(
         safeTx({
           gasPrice: "5000000000",
+          baseGas: "21000",
+          safeTxGas: "100000",
           gasToken: "0x0000000000000000000000000000000000000000",
           refundReceiver: REFUND,
         }),
       ),
     );
+    // (21000 + 100000) × 5 gwei, in the zero gas token — the native asset.
     expect(refunded?.refund).toStrictEqual({
-      gasPrice: "5000000000",
-      gasToken: "0x0000000000000000000000000000000000000000",
-      refundReceiver: REFUND,
+      receiver: REFUND,
+      gasPrice: { asset: "native", amount: "5000000000", decimals: 18, symbol: "ETH" },
+      amount: { asset: "native", amount: "605000000000000", decimals: 18, symbol: "ETH" },
     });
+  });
+
+  it("prices the refund, drops a zero receiver and is blind", () => {
+    const evmAddress = fc
+      .uint8Array({ minLength: 20, maxLength: 20 })
+      .map(
+        (b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`,
+      );
+    const uint256 = fc.bigInt({ min: 0n, max: 2n ** 256n - 1n });
+    const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+    fc.assert(
+      fc.property(
+        fc.record({
+          gasPrice: uint256,
+          baseGas: uint256,
+          safeTxGas: uint256,
+          gasToken: fc.oneof(fc.constant(ZERO_ADDR), fc.constant(TOKEN), evmAddress),
+          refundReceiver: fc.oneof(fc.constant(ZERO_ADDR), evmAddress),
+        }),
+        ({ gasPrice, baseGas, safeTxGas, gasToken, refundReceiver }) => {
+          const d = doc(
+            safeTx({
+              gasPrice: gasPrice.toString(10),
+              baseGas: baseGas.toString(10),
+              safeTxGas: safeTxGas.toString(10),
+              gasToken,
+              refundReceiver,
+            }),
+          );
+          const safe = safeOf(d);
+          const intent = decode(d);
+          if (gasPrice === 0n) {
+            expect(safe?.refund).toBeUndefined();
+            // The single inner call ("0x" data) is a plain transfer — nothing opaque.
+            expect(isBlindIntent(intent)).toBe(false);
+            return;
+          }
+          const total = ((baseGas + safeTxGas) * gasPrice).toString(10);
+          const token =
+            gasToken === ZERO_ADDR
+              ? { asset: "native", decimals: 18, symbol: "ETH" }
+              : gasToken.toLowerCase() === TOKEN.toLowerCase()
+                ? { asset: TOKEN, decimals: 6, symbol: "USDC" }
+                : { asset: checksumEvmAddress(gasToken) };
+          expect(safe?.refund).toStrictEqual({
+            ...(refundReceiver === ZERO_ADDR
+              ? {}
+              : { receiver: checksumEvmAddress(refundReceiver) }),
+            gasPrice: { ...token, amount: gasPrice.toString(10) },
+            amount: { ...token, amount: total },
+          });
+          expect(isBlindIntent(intent)).toBe(true);
+        },
+      ),
+    );
   });
 
   it("a delegatecall outside MultiSendCallOnly stays a single opaque call", () => {
