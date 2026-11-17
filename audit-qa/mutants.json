@@ -1,0 +1,213 @@
+[
+  {
+    "id": "K1",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/session/session.ts",
+    "find": "if (now - state.unlockedAt > this.platform.policy.maxSessionMs) {",
+    "replace": "if (false) {",
+    "why": "max-session deadline never expires"
+  },
+  {
+    "id": "K2",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/session/session.ts",
+    "find": "if (idle !== undefined && now - state.lastActivityAt > idle.ms) {",
+    "replace": "if (false) {",
+    "why": "idle deadline never expires"
+  },
+  {
+    "id": "K3",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/vault/policy.ts",
+    "find": "  wipe(openRecord(dek, record));\n  return true;",
+    "replace": "  return true;",
+    "why": "a policy row that does not open under the DEK (forged by T4) counts as blind-signing consent"
+  },
+  {
+    "id": "K4",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/chains/index.ts",
+    "find": "  assertSignable(ctx, dek, prepared.prompt);\n",
+    "replace": "\n",
+    "nth": 2,
+    "why": "imported-key chain.sign skips the blind-signing policy"
+  },
+  {
+    "id": "K5",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/chains/index.ts",
+    "find": "  ctx.session.require(session);\n  const signed = await withKey(",
+    "replace": "  const signed = await withKey(",
+    "why": "imported-key chain.sign signs after the session ended during verification"
+  },
+  {
+    "id": "K6",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/chains/index.ts",
+    "find": "if (header.family !== (isEvm ? \"evm\" : \"solana\")) {",
+    "replace": "if (false) {",
+    "why": "an imported key of one family signs a request of the other family"
+  },
+  {
+    "id": "K7",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/vault/validate.ts",
+    "find": "    if (seenRecords.has(recordKey)) {\n      throw bad(\"duplicate record kind+id\");\n    }\n",
+    "replace": "",
+    "why": "a tampered store image with duplicate kind+id rows is accepted"
+  },
+  {
+    "id": "K8",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/vault/envelope.ts",
+    "find": "  aad.set(headerBytes, 3 + contextBytes.length);\n",
+    "replace": "",
+    "why": "the public header is no longer bound into the AEAD"
+  },
+  {
+    "id": "K9",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/chains/index.ts",
+    "find": "if (template.startsWith(\"evm.\") && !network.startsWith(\"eip155:\")) {",
+    "replace": "if (false) {",
+    "why": "wallet.accounts accepts an evm template on a non-eip155 network"
+  },
+
+  {
+    "id": "C1",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/evm/grants.ts",
+    "find": "if (lower === signer.toLowerCase()) {",
+    "replace": "if (false) {",
+    "why": "typed data addressed to the signer's own (7702-delegated) account is signed"
+  },
+  {
+    "id": "C2",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/evm/grants.ts",
+    "find": "if (lower === ENTRY_POINT_V08.toLowerCase()) {",
+    "replace": "if (false) {",
+    "why": "typed data addressed to EntryPoint v0.8 is signed"
+  },
+  {
+    "id": "C3",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/bitcoin/psbt.ts",
+    "find": "if (template !== \"btc.bip86\" && input.nonWitnessUtxo === undefined) {",
+    "replace": "if (false) {",
+    "why": "F-001 regression: a SegWit v0 input without nonWitnessUtxo is signed"
+  },
+  {
+    "id": "C4",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/bitcoin/psbt.ts",
+    "find": "if (sighash === SIGHASH_SINGLE_ANYONECANPAY && idx >= tx.outputsLength) {",
+    "replace": "if (false) {",
+    "why": "SIGHASH_SINGLE without a same-index output (signs the constant 1)"
+  },
+  {
+    "id": "C5",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/bitcoin/decode.ts",
+    "find": ": listing || undecodable || fee === undefined",
+    "replace": ": listing || undecodable",
+    "why": "F-012 regression: unknown fee still classified full"
+  },
+  {
+    "id": "C6",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/solana/decode.ts",
+    "find": "    calls.filter((c) => c.kind === \"cu-limit\").length > 1 ||\n",
+    "replace": "",
+    "why": "F-036 regression: duplicate compute-unit-limit instructions accepted"
+  },
+  {
+    "id": "C7",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/solana/decode.ts",
+    "find": "const limit = requested === undefined ? defaultLimit : BigInt(requested);",
+    "replace": "const limit = requested === undefined ? 0n : BigInt(requested);",
+    "why": "F-036 regression: priority fee hidden when no cu-limit is set"
+  },
+  {
+    "id": "C8",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/solana/index.ts",
+    "find": "    if (decodesAsTransaction) {",
+    "replace": "    if (false) {",
+    "why": "solana.message that decodes as a transaction is signed as a message"
+  },
+  {
+    "id": "C9",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/index.ts",
+    "find": "    return message.kind === \"bytes\";",
+    "replace": "    return false;",
+    "why": "raw-byte messages are not blind (bypasses the kernel blind-signing policy)"
+  },
+  {
+    "id": "C10",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/evm/transaction.ts",
+    "find": "  if (unknown.length > 0) {",
+    "replace": "  if (false) {",
+    "why": "EVM transactions with unknown fields are accepted"
+  },
+
+  {
+    "id": "E1",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/requests/controller.ts",
+    "find": "return sameCodes(required.risk, given.risk) && sameCodes(required.checks, given.checks);",
+    "replace": "return sameCodes(required.risk, given.risk);",
+    "why": "approve without acknowledging recorded checks"
+  },
+  {
+    "id": "E2",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/requests/controller.ts",
+    "find": "return codes.size === new Set(b).size && b.every((code) => codes.has(code));",
+    "replace": "return b.every((code) => codes.has(code));",
+    "why": "approve with a strict subset (or none) of the danger codes acknowledged"
+  },
+  {
+    "id": "E3",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/requests/risk.ts",
+    "find": "found.set(\"address-poisoning\", { code: \"address-poisoning\", level: \"danger\" });",
+    "replace": "found.set(\"address-poisoning\", { code: \"address-poisoning\", level: \"warning\" });",
+    "why": "address poisoning downgraded so no acknowledgement is required"
+  },
+  {
+    "id": "E4",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/requests/risk.ts",
+    "find": "  if (findings.some((f) => f.severity === \"reject\")) {",
+    "replace": "  if (false) {",
+    "why": "SIWE for another domain is not refused"
+  },
+  {
+    "id": "E5",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/gateway/contract/rpc.ts",
+    "find": "return span < 0n || span >= BigInt(LOGS_BLOCK_RANGE_MAX)",
+    "replace": "return span < 0n",
+    "why": "unbounded eth_getLogs ranges pass"
+  },
+  {
+    "id": "E6",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/backup/strength.ts",
+    "find": "acceptable: score >= REQUIRED_SCORE",
+    "replace": "acceptable: score >= 0",
+    "why": "guessable backup passwords accepted"
+  },
+  {
+    "id": "E7",
+    "pkg": "wallet-engine",
+    "file": "packages/wallet-engine/src/connect/solana.ts",
+    "find": "if (input.domain !== undefined && input.domain !== host) {",
+    "replace": "if (false) {",
+    "why": "Solana signIn input for another domain accepted"
+  }
+]

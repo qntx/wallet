@@ -1,0 +1,162 @@
+[
+  {
+    "id": "S1",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/spark/index.ts",
+    "find": "  if (total > budget + intent.maxFeeSats) {",
+    "replace": "  if (false) {",
+    "why": "lightning approval: leaves beyond invoice amount + max fee are still signed",
+    "followups": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      },
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bunx", "vp", "test", "--project", "node", "--bail", "1"]
+      }
+    ],
+    "rebuild": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      }
+    ]
+  },
+  {
+    "id": "S2",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/spark/index.ts",
+    "find": "  if (total > intent.amountSats + intent.maxFeeSats) {",
+    "replace": "  if (false) {",
+    "why": "cooperative-exit approval: leaves beyond amount + max fee are still signed",
+    "followups": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      },
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bunx", "vp", "test", "--project", "node", "--bail", "1"]
+      }
+    ],
+    "rebuild": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      }
+    ]
+  },
+  {
+    "id": "S3",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/spark/index.ts",
+    "find": "equalBytes(output.script, addressScript) && output.amountSats >= intent.amountSats,",
+    "replace": "equalBytes(output.script, addressScript),",
+    "why": "cooperative-exit approval: an exit paying less than the approved amount to the address is signed",
+    "followups": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      },
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bunx", "vp", "test", "--project", "node", "--bail", "1"]
+      }
+    ],
+    "rebuild": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      }
+    ]
+  },
+  {
+    "id": "S4",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/spark/index.ts",
+    "find": "  return fee <= intent.maxFeeSats;",
+    "replace": "  return true;",
+    "why": "control: onchain approval fee cap (a worker test names this case)",
+    "followups": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      },
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bunx", "vp", "test", "--project", "node", "--bail", "1"]
+      }
+    ],
+    "rebuild": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      }
+    ]
+  },
+  {
+    "id": "S5",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/spark/index.ts",
+    "find": "  if (!equalBytes(expected, outflow.htlcOutputScript)) {",
+    "replace": "  if (false) {",
+    "why": "lightning approval: an HTLC to a different payment hash / SSP is covered by the approval",
+    "followups": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      },
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bunx", "vp", "test", "--project", "node", "--bail", "1"]
+      }
+    ],
+    "rebuild": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      }
+    ]
+  },
+  {
+    "id": "S6",
+    "pkg": "wallet-kernel",
+    "file": "packages/wallet-kernel/src/modules/spark/index.ts",
+    "find": ".filter((approval) => approval.deadline > now);",
+    "replace": ".filter((approval) => true);",
+    "why": "spark approvals never expire (60 s TTL ignored)",
+    "followups": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      },
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bunx", "vp", "test", "--project", "node", "--bail", "1"]
+      }
+    ],
+    "rebuild": [
+      {
+        "cwd": "packages/wallet-worker",
+        "cmd": ["bun", "run", "build"]
+      }
+    ]
+  },
+  {
+    "id": "Z1",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/evm/zerox.ts",
+    "find": "    isZeroExSettler(chainId, target) &&\n",
+    "replace": "    true &&\n",
+    "why": "F-041 regression: any exec target is shown as a 0x Settler swap"
+  },
+  {
+    "id": "Z2",
+    "pkg": "wallet-chains",
+    "file": "packages/wallet-chains/src/evm/decode.ts",
+    "find": "    verified: token !== undefined,\n  };",
+    "replace": "    verified: true,\n  };",
+    "why": "F-041 regression: an unknown ERC-20 outflow counts as verified (full)"
+  }
+]
