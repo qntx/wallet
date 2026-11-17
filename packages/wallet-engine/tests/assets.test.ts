@@ -4,7 +4,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 
-import { AssetsController, MULTICALL3_ABI } from "../src/assets/controller.ts";
+import { AssetsController } from "../src/assets/controller.ts";
+import { MULTICALL3_ABI } from "../src/assets/evm.ts";
 import { ERC20_ABI, EvmChainAdapter } from "../src/chains/evm.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -26,6 +27,9 @@ const logger = { warn: () => {} };
 const TOKEN = "0x1111111111111111111111111111111111111111" as `0x${string}`;
 const OWNER = "0x2222222222222222222222222222222222222222" as `0x${string}`;
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
+// chainId 1 built-ins, in table order — every refresh on this network tracks them.
+const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48" as `0x${string}`;
+const USDT = "0xdAC17F958D2ee523a2206206994597C13D831ec7" as `0x${string}`;
 
 const balOf = encodeFunctionData({
   abi: ERC20_ABI,
@@ -46,13 +50,13 @@ const AGG = (callData: `0x${string}`): string =>
   encodeFunctionData({
     abi: MULTICALL3_ABI,
     functionName: "aggregate3",
-    args: [[{ target: TOKEN, allowFailure: true, callData }]],
+    args: [[USDC, USDT, TOKEN].map((target) => ({ target, allowFailure: true, callData }))],
   });
 
 const fakeNetworks = (c: PublicClient, multicall3?: string) =>
   ({
     client: () => c,
-    info: () => ({ chainId: 1, multicall3 }),
+    info: () => ({ family: "evm", chainId: 1, multicall3 }),
   }) as never;
 
 const chains = {
@@ -102,7 +106,11 @@ describe("AssetsController", () => {
           [AGG(balOf)]: encodeFunctionResult({
             abi: MULTICALL3_ABI,
             functionName: "aggregate3",
-            result: [{ success: true, returnData: enc(5n) as `0x${string}` }],
+            result: [
+              { success: true, returnData: enc(5n) as `0x${string}` },
+              { success: true, returnData: enc(7n) as `0x${string}` },
+              { success: true, returnData: enc(5n) as `0x${string}` },
+            ],
           }),
           [encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" })]: encodeFunctionResult({
             abi: ERC20_ABI,
@@ -123,10 +131,15 @@ describe("AssetsController", () => {
     await assets.refresh(OWNER, "eip155:1");
     const s = assets.getState().balances[`eip155:1:${OWNER}`];
     expect(s?.native).toBe("1000000000000000000");
-    expect(s?.tokens[0]?.balance).toBe("5");
-    expect(s?.tokens[0]?.symbol).toBe("TST");
-    expect(s?.tokens[0]?.decimals).toBe(6);
-    expect(s?.tokens[0]?.verified).toBe(false);
+    // built-ins read through the same aggregate3; the added token stays last, unverified
+    expect(s?.tokens).toHaveLength(3);
+    expect(s?.tokens[0]?.verified).toBe(true);
+    const tst = s?.tokens[2];
+    expect(tst?.address).toBe(TOKEN);
+    expect(tst?.balance).toBe("5");
+    expect(tst?.symbol).toBe("TST");
+    expect(tst?.decimals).toBe(6);
+    expect(tst?.verified).toBe(false);
     // one aggregate3 for all balances + one eth_call each for symbol/decimals
     expect(calls).toBe(3);
 
@@ -138,7 +151,8 @@ describe("AssetsController", () => {
     await assets2.init();
     await assets2.addToken("eip155:1", TOKEN);
     await assets2.refresh(OWNER, "eip155:1");
-    expect(assets2.getState().balances[`eip155:1:${OWNER}`]?.tokens[0]?.balance).toBe("9");
+    const tokens2 = assets2.getState().balances[`eip155:1:${OWNER}`]?.tokens;
+    expect(tokens2?.find((t) => t.address === TOKEN)?.balance).toBe("9");
   });
 
   it("persists custom tokens across init and polls only while visible", async () => {
