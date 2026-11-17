@@ -2,6 +2,7 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 
+import { messageContent } from "@qntx/wallet-chains";
 import {
   decodeSolana,
   normalizeSolana,
@@ -11,7 +12,7 @@ import { signSolanaMessage } from "@qntx/wallet-chains/solana/sign";
 
 import { KernelError } from "../../errors.ts";
 import { wipe } from "../../secret/secret.ts";
-import { messageIntent } from "./prompt.ts";
+import { messagePromptIntent } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
 import type { ExecuteResult, SolanaKeySource, SolanaRequest } from "./shared.ts";
 import { deepEqual, mapChainError } from "./shared.ts";
@@ -53,7 +54,7 @@ const solanaBody = (
   if (!deepEqual(normalized, request)) {
     throw new KernelError("invalid-input", "request is not normalized");
   }
-  let intent: PromptIntent = messageIntent(request.message);
+  let intent: PromptIntent = messagePromptIntent(messageContent(request.message, "solana"));
   if (request.kind === "solana.transaction") {
     try {
       intent = decodeSolana(request, signer);

@@ -7,11 +7,12 @@ import { base58 } from "@scure/base";
 import { Transaction } from "@scure/btc-signer/transaction.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { DisplayIntent } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 
-import { chainPrompt, MESSAGE_INTENT, messageIntent } from "../src/modules/chains/prompt.ts";
+import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
 import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
 import { backupCredentialName, corePrompt, formatUnits, promptLocale } from "../src/prompts.ts";
@@ -389,13 +390,11 @@ describe("chain prompts", () => {
     };
     expect(chainPrompt("en", set)).toStrictEqual({
       title: "Confirm batch",
-      description:
-        "Delegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSign a request from an app",
+      description: `The effects of this call cannot be verified\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
     });
-    expect(chainPrompt("en", { ...set, delegation: { kind: "revoke" } })).toStrictEqual({
-      title: "Confirm batch",
-      description: "Revoke this account's contract delegation\nSign a request from an app",
-    });
+    expect(chainPrompt("en", { ...set, delegation: { kind: "revoke" } }).description).toBe(
+      `The effects of this call cannot be verified\nRevoke this account's contract delegation\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
+    );
   });
 
   it("an unknown fee renders its own line; off-chain messages never get one", () => {
@@ -407,38 +406,73 @@ describe("chain prompts", () => {
     expect(chainPrompt("zh-Hans", message).description).not.toContain("手续费未知");
   });
 
-  it("opaque and messages show only the generic line", () => {
-    expect(chainPrompt("en", { ...ethTransfer, verifiability: "opaque" })).toStrictEqual({
-      title: "Confirm transfer",
-      description: "Sign a request from an app",
+  it("an opaque transaction still states every fact the signed bytes prove", () => {
+    const call: PromptIntent = {
+      ...ethTransfer,
+      network: "eip155:1",
+      summary: "contract-call",
+      verifiability: "opaque",
+      contract: { address: TO, created: false },
+    };
+    expect(chainPrompt("en", call)).toStrictEqual({
+      title: "Confirm contract call",
+      description: `Network: Ethereum\nThe effects of this call cannot be verified\nCall contract ${TO}\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
     });
-    expect(chainPrompt("zh-Hans", MESSAGE_INTENT)).toStrictEqual({
-      title: "确认签名",
-      description: "签署来自应用的请求",
+    expect(
+      chainPrompt("zh-Hans", { ...call, contract: { address: TO, created: true } }).description,
+    ).toBe(
+      `网络：Ethereum\n无法核实此调用的效果\n部署合约 ${TO}\n发送 0.05 ETH 到 ${TO}\n最高手续费 0.0004 ETH`,
+    );
+  });
+
+  it("a batch names the contract of each opaque call only", () => {
+    const inner = (
+      verifiability: DisplayIntent["verifiability"],
+      address: string,
+    ): DisplayIntent => ({
+      family: "evm",
+      network: "eip155:1",
+      summary: "contract-call",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      warnings: [],
+      verifiability,
+      contract: { address, created: false },
     });
+    const batch: PromptIntent = {
+      ...ethTransfer,
+      summary: "batch",
+      outflows: [],
+      verifiability: "opaque",
+      calls: [inner("partial", SPENDER), inner("opaque", TO)],
+    };
+    expect(chainPrompt("en", batch).description).toBe(
+      `The effects of this call cannot be verified\nCall contract ${TO}\nMax fee 0.0004 ETH`,
+    );
   });
 
   it("message bytes prompt a blind sign in both locales", () => {
-    const evm = { ...MESSAGE_INTENT, message: { kind: "bytes" as const, hex: "0xff" } };
-    expect(chainPrompt("en", evm)).toStrictEqual({
+    const bytes = messagePromptIntent({ kind: "bytes", hex: "0xff" });
+    expect(chainPrompt("en", bytes)).toStrictEqual({
       title: "Confirm blind signing",
       description: "Sign data that cannot be shown as text",
     });
-    expect(chainPrompt("zh-Hans", evm)).toStrictEqual({
+    expect(chainPrompt("zh-Hans", bytes)).toStrictEqual({
       title: "确认盲签",
       description: "签署无法显示为文字的数据",
     });
-    const solana = messageIntent(new Uint8Array([0xff]));
-    expect(solana.message).toStrictEqual({ kind: "bytes", hex: "0xff" });
-    expect(chainPrompt("en", solana)).toStrictEqual({
-      title: "Confirm blind signing",
-      description: "Sign data that cannot be shown as text",
-    });
-    const text = messageIntent(new TextEncoder().encode("hello"));
-    expect(chainPrompt("en", text)).toStrictEqual({
+  });
+
+  it("a text message shows a sanitised, bounded excerpt", () => {
+    expect(chainPrompt("en", messagePromptIntent({ kind: "text", text: "hello" }))).toStrictEqual({
       title: "Confirm signature",
-      description: "Sign a request from an app",
+      description: "Message:\nhello",
     });
+    const hostile = `pay \u202Ebob\n\n\n${"x".repeat(400)}\nhidden`;
+    expect(
+      chainPrompt("zh-Hans", messagePromptIntent({ kind: "text", text: hostile })).description,
+    ).toBe(`消息：\npay \uFFFDbob\n${"x".repeat(312)}\n… 还有 94 个字符未显示`);
   });
 });
 
@@ -867,5 +901,234 @@ describe("solana stake", () => {
       });
       expect(JSON.stringify(p)).toContain(needle);
     });
+  });
+});
+
+describe("message and unverifiable-call prompts via the real decoders", () => {
+  const account = { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "evm" };
+  const SIGNER = "0x52908400098527886E0F7030069857D2E4169EE7";
+  const personal = (text: string) =>
+    decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: new TextEncoder().encode(text),
+      },
+      SIGNER,
+    );
+  const typed = (doc: unknown) =>
+    decodeEvm(
+      { kind: "evm.typed-data", network: "eip155:1", account, typedData: JSON.stringify(doc) },
+      SIGNER,
+    );
+  const signIn = [
+    "app.example.com wants you to sign in with your Ethereum account:",
+    SIGNER,
+    "",
+    "",
+    "URI: https://app.example.com/login",
+    "Version: 1",
+    "Chain ID: 8453",
+    "Nonce: 12345678",
+    "Issued At: 2026-01-01T00:00:00Z",
+  ].join("\n");
+
+  it("a payable call to an unknown contract shows the amount, the contract and the fee", () => {
+    const intent = decodeEvm(
+      {
+        kind: "evm.transaction",
+        network: "eip155:1",
+        account,
+        tx: {
+          chainId: 1,
+          to: TO,
+          data: "0xdeadbeef",
+          value: "0x8ac7230489e80000",
+          nonce: 0,
+          gas: "0x5208",
+          maxFeePerGas: "0x174876e800",
+          maxPriorityFeePerGas: "0x1",
+          accessList: [],
+          type: "eip1559",
+        },
+      },
+      SIGNER,
+    );
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm contract call",
+      description: `Network: Ethereum\nThe effects of this call cannot be verified\nCall contract ${TO}\nSend 10 ETH to ${TO}\nMax fee 0.0021 ETH`,
+    });
+  });
+
+  it("a sign-in message shows where, as whom and on which network", () => {
+    expect(chainPrompt("en", personal(signIn))).toStrictEqual({
+      title: "Confirm sign-in",
+      description: `Sign in to app.example.com\nAccount ${SIGNER}\nNetwork: Base\nURI https://app.example.com/login`,
+    });
+    expect(chainPrompt("zh-Hans", personal(signIn)).title).toBe("确认登录");
+  });
+
+  it("text that imitates a sign-in is flagged and shown as text", () => {
+    const fake = "evil.example wants you to sign in with your Ethereum account:\nnot-an-address";
+    expect(chainPrompt("en", personal(fake)).description).toBe(
+      `This looks like a sign-in request but is not a valid one\nMessage:\nevil.example wants you to sign in with your Ethereum account:\nnot-an-address`,
+    );
+  });
+
+  it("unrecognised typed data shows its domain and type and says the content is not shown", () => {
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Order: [{ name: "maker", type: "address" }],
+      },
+      primaryType: "Order",
+      domain: { name: "Some\u202EExchange", chainId: 1, verifyingContract: TO },
+      message: { maker: SIGNER },
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm signature",
+      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe content of this request cannot be shown`,
+    });
+  });
+
+  const nft = { asset: "0x3333333333333333333333333333333333333333", amount: "1", tokenId: "7" };
+  const eth = (amount: string) => ({
+    asset: "eip155:1/slip44:60",
+    amount,
+    decimals: 18,
+    symbol: "ETH",
+  });
+  const item = (start: string, end: string) => ({
+    kind: "native" as const,
+    token: "0x0000000000000000000000000000000000000000",
+    identifier: "0",
+    startAmount: eth(start),
+    endAmount: eth(end),
+  });
+  const typedIntent = (extra: object): PromptIntent => ({
+    summary: "swap",
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability: "opaque",
+    network: "eip155:1",
+    message: {
+      kind: "typed-data",
+      primaryType: "OrderComponents",
+      domain: { name: "Seaport", chainId: 1, verifyingContract: SPENDER },
+      data: {},
+      ...extra,
+    },
+  });
+
+  const order = {
+    offerer: SIGNER,
+    zone: TO,
+    startTime: 0,
+    endTime: 0,
+    offer: [{ ...item("0", "0"), kind: "erc721" as const, startAmount: nft, endAmount: nft }],
+    consideration: [
+      { ...item("1000000000000000000", "500000000000000000"), recipient: SIGNER },
+      ...[1, 2, 3, 4].map(() => ({ ...item("1", "1"), recipient: TO })),
+    ],
+  };
+  const safe = {
+    safe: SPENDER,
+    nonce: "12",
+    operation: "delegatecall" as const,
+    to: TO,
+    value: "0",
+    data: "0x12345678",
+    calls: [
+      {
+        ...ethTransfer,
+        family: "evm" as const,
+        network: "eip155:1",
+        warnings: [],
+        fee: undefined,
+        summary: "contract-call" as const,
+        verifiability: "opaque" as const,
+        contract: { address: TO, created: false },
+      },
+    ],
+    refund: { gasPrice: "1", gasToken: TO, refundReceiver: SIGNER },
+  };
+
+  it("a Seaport order lists what is given and who receives what", () => {
+    expect(chainPrompt("en", typedIntent({ seaport: order })).description).toBe(
+      [
+        "App: Seaport",
+        "Network: Ethereum",
+        `Verifying contract ${SPENDER}`,
+        "Type: OrderComponents",
+        "Give 0x3333333333333333333333333333333333333333 #7",
+        `${SIGNER} receives 1 ETH → 0.5 ETH`,
+        ...[1, 2, 3].map(() => `${TO} receives 0.000000000000000001 ETH`),
+        "… 1 more items not shown",
+      ].join("\n"),
+    );
+  });
+
+  it("a Safe transaction shows its calls, a delegatecall and the gas refund", () => {
+    expect(chainPrompt("en", typedIntent({ primaryType: "SafeTx", safe })).description).toBe(
+      [
+        "App: Seaport",
+        "Network: Ethereum",
+        `Verifying contract ${SPENDER}`,
+        "Type: SafeTx",
+        `Safe ${SPENDER}, transaction 12`,
+        `Runs the code of ${TO} with the Safe's full authority (delegatecall)`,
+        "The effects of this call cannot be verified",
+        `Call contract ${TO}`,
+        `Send 0.05 ETH to ${TO}`,
+        `Refunds gas to ${SIGNER}`,
+      ].join("\n"),
+    );
+  });
+
+  it("renders every message line in Chinese under a zh locale", () => {
+    expect(chainPrompt("zh-Hans", personal(signIn)).description).toBe(
+      `登录 app.example.com\n账户 ${SIGNER}\n网络：Base\n地址 https://app.example.com/login`,
+    );
+    expect(
+      chainPrompt("zh-Hans", personal("x wants you to sign in with your Ethereum account:"))
+        .description,
+    ).toBe(
+      "内容像登录请求，但格式不合规\n消息：\nx wants you to sign in with your Ethereum account:",
+    );
+    expect(chainPrompt("zh-Hans", typedIntent({})).description).toBe(
+      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n无法显示此请求的内容`,
+    );
+    expect(chainPrompt("zh-Hans", typedIntent({ seaport: order })).description).toBe(
+      [
+        "应用：Seaport",
+        "网络：Ethereum",
+        `验证合约 ${SPENDER}`,
+        "类型：OrderComponents",
+        "付出 0x3333333333333333333333333333333333333333 #7",
+        `${SIGNER} 收到 1 ETH → 0.5 ETH`,
+        ...[1, 2, 3].map(() => `${TO} 收到 0.000000000000000001 ETH`),
+        "… 还有 1 项未显示",
+      ].join("\n"),
+    );
+    expect(chainPrompt("zh-Hans", typedIntent({ primaryType: "SafeTx", safe })).description).toBe(
+      [
+        "应用：Seaport",
+        "网络：Ethereum",
+        `验证合约 ${SPENDER}`,
+        "类型：SafeTx",
+        `Safe ${SPENDER} 的第 12 笔交易`,
+        `以 Safe 的全部权限执行 ${TO} 的代码（delegatecall）`,
+        "无法核实此调用的效果",
+        `调用合约 ${TO}`,
+        `发送 0.05 ETH 到 ${TO}`,
+        `向 ${SIGNER} 退还 gas 费`,
+      ].join("\n"),
+    );
   });
 });

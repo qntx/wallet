@@ -25,8 +25,6 @@ export type AccountGroup = {
   readonly hidden: boolean;
   /** A social identity (64 lowercase hex) bound to this group; one identity binds one group. */
   readonly boundPubkey?: string;
-  /** Device-local opt-in to signing messages that cannot be shown as text; absent means off. */
-  readonly blindSigning?: true;
   /** Last local modification time (ms); reconcile-created entries start at 0. */
   readonly updatedAt: number;
 };
@@ -126,7 +124,6 @@ const KNOWN_GROUP_KEYS = new Set([
   "name",
   "hidden",
   "boundPubkey",
-  "blindSigning",
   "updatedAt",
 ]);
 const KNOWN_TOP_KEYS = new Set(["wallets", "groups", "selected", "totals"]);
@@ -214,9 +211,6 @@ function decodeTree(bytes: Uint8Array): PersistedTree | undefined {
         ) {
           return undefined;
         }
-        if (item["blindSigning"] !== undefined && item["blindSigning"] !== true) {
-          return undefined;
-        }
         list.push({
           walletId,
           index,
@@ -224,7 +218,6 @@ function decodeTree(bytes: Uint8Array): PersistedTree | undefined {
           updatedAt,
           ...(name === undefined ? {} : { name }),
           ...(boundPubkey === undefined ? {} : { boundPubkey }),
-          ...(item["blindSigning"] === true ? { blindSigning: true as const } : {}),
         });
       }
       list.sort((a, b) => a.index - b.index);
@@ -467,34 +460,6 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     }
   }
 
-  /**
-   * Device-local opt-in to blind signing: no factor, the setting lives in the main runtime —
-   * per-request verification and the kernel's blind prompt are the real protection.
-   */
-  setBlindSigning(walletId: string, index: number, enabled: boolean): void {
-    this.mustGroup(walletId, index);
-    const updatedAt = this.options.now();
-    this.mutateGroups(walletId, (list) =>
-      list.map((g) => {
-        if (g.index !== index) {
-          return g;
-        }
-        const { blindSigning: _removed, ...rest } = g;
-        void _removed;
-        return enabled
-          ? { ...rest, blindSigning: true as const, updatedAt }
-          : { ...rest, updatedAt };
-      }),
-    );
-  }
-
-  /** Whether the group opted in to signing messages that cannot be shown as text. */
-  blindSigning(walletId: string, index: number): boolean {
-    return (this.getState().groups[walletId] ?? []).some(
-      (g) => g.index === index && g.blindSigning === true,
-    );
-  }
-
   select(walletId: string, index: number): void {
     const state = this.getState();
     const group = (state.groups[walletId] ?? []).find((g) => g.index === index);
@@ -652,8 +617,6 @@ export class AccountTreeController extends Controller<AccountTreeState> {
           updatedAt: remote.updatedAt,
           ...(remote.name === undefined ? {} : { name: remote.name }),
           ...(remote.boundPubkey === undefined ? {} : { boundPubkey: remote.boundPubkey }),
-          // Device-local settings survive a remote replace — they never leave this device.
-          ...(local.blindSigning === true ? { blindSigning: true as const } : {}),
         };
         const at = groups.findIndex((g) => g.index === remote.index);
         groups[at] = replaced;

@@ -20,6 +20,7 @@ import { createWalletEngine } from "../src/engine.ts";
 import type { PaymentOption, PaymentParse } from "../src/payments/parse.ts";
 import { sparkStore } from "../src/spark/store.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import { approval } from "./approval.ts";
 
 const lightningOptionOf = (parsed: PaymentParse): PaymentOption => {
   const option = parsed.kind === "request" ? parsed.request.options[0] : undefined;
@@ -94,7 +95,7 @@ async function sweepEngine(engine: Engine, ref: never, funderIdentity: Uint8Arra
     },
     amountSats: balance,
   });
-  await engine.requests.approve(request.id, "pay", VERIFY);
+  await engine.requests.approve(request.id, "pay", approval(request, VERIFY));
 }
 
 describe.skipIf(!HOSTED)("hosted engine e2e", () => {
@@ -203,7 +204,7 @@ describe.skipIf(!HOSTED)("hosted engine e2e", () => {
           option: lightningOptionOf(engine.payments.parse(createdInvoice.invoice, "regtest")),
           maxFeeSats: 100,
         });
-        await engine.requests.approve(paid.id, "pay", VERIFY);
+        await engine.requests.approve(paid.id, "pay", approval(paid, VERIFY));
 
         // Exit chains survive a store reopen (the same backing collections).
         const colName = `spark-exit-chains:${keyB}`;

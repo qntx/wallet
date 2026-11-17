@@ -1,19 +1,7 @@
+import { isUnsafeCodePoint } from "@qntx/wallet-chains";
+
 export const TOKEN_SYMBOL_MAX = 32;
 export const TOKEN_DECIMALS_MAX = 36;
-
-const UNSAFE_RANGES: ReadonlyArray<readonly [number, number]> = [
-  [0x00, 0x1f],
-  [0x7f, 0x9f],
-  [0x061c, 0x061c],
-  [0x200b, 0x200f],
-  [0x202a, 0x202e],
-  [0x2060, 0x2060],
-  [0x2066, 0x2069],
-  [0xfeff, 0xfeff],
-];
-
-const isUnsafe = (codePoint: number): boolean =>
-  UNSAFE_RANGES.some(([low, high]) => codePoint >= low && codePoint <= high);
 
 /**
  * Untrusted contract text (a token symbol) as safe-to-show text: trimmed, non-empty, at most `max`
@@ -24,7 +12,7 @@ export function safeDisplayText(raw: string, max: number): string | undefined {
   let count = 0;
   for (const char of text) {
     count += 1;
-    if (count > max || isUnsafe(char.codePointAt(0) ?? 0)) {
+    if (count > max || isUnsafeCodePoint(char.codePointAt(0) ?? 0)) {
       return undefined;
     }
   }

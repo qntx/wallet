@@ -24,6 +24,7 @@ import type { Limiters } from "../../../apps/gateway/src/types.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { ZeroExSwapQuote } from "../src/swaps/index.ts";
+import { approval } from "./approval.ts";
 import { rpc, sleep, waitReceipt } from "./fork-helpers.ts";
 
 const FORK = process.env["ENGINE_E2E_FORK_RPC"];
@@ -216,7 +217,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         };
         expect(display.summary).toBe("swap");
         expect(display.minimumReceived).toHaveLength(1);
-        const tx = await engine.requests.approve(pending.id, "evm-swap", VERIFY);
+        const tx = await engine.requests.approve(pending.id, "evm-swap", approval(pending, VERIFY));
         expect(tx.intent?.summary).toBe("swap");
         await waitReceipt(RPC_URL, tx.hash ?? "", Date.now() + 180_000);
         return tx;
@@ -245,7 +246,9 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         amount: sellUsdc,
         fee: "normal",
       });
-      const approveTx = await engine.requests.approve(approvePending.id, "evm-approve", VERIFY);
+      const approveTx = await engine.requests.approve(approvePending.id, "evm-approve", {
+        verify: VERIFY,
+      });
       await waitReceipt(RPC_URL, approveTx.hash ?? "", Date.now() + 180_000);
       await expect(erc20Allowance(USDC, from)).resolves.toBeGreaterThanOrEqual(sellUsdc);
       const qErc2 = await quote(USDC, WETH, sellUsdc);

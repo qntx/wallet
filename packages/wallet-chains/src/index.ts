@@ -6,8 +6,11 @@
  * zero), token amounts are decimal strings of the smallest unit.
  */
 
+import { parseSignIn } from "./sign-in.ts";
 import type { SignInParse } from "./sign-in.ts";
 
+export { displayExcerpt, isUnsafeCodePoint } from "./display.ts";
+export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInParse } from "./sign-in.ts";
 
@@ -301,6 +304,23 @@ export type MessageContent =
       readonly safe?: SafeTransaction;
     };
 
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+/** Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex. */
+export const messageContent = (bytes: Uint8Array, family: "evm" | "solana"): MessageContent => {
+  let text: string;
+  try {
+    text = utf8.decode(bytes);
+  } catch {
+    return {
+      kind: "bytes",
+      hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+    };
+  }
+  const signIn = parseSignIn(text, family);
+  return signIn === undefined ? { kind: "text", text } : { kind: "text", text, signIn };
+};
+
 export type DisplayIntent = {
   readonly family: ChainFamily;
   readonly network: string;
@@ -350,6 +370,29 @@ export type DisplayIntent = {
     | { readonly kind: "revoke" };
   /** The decoded inner calls of a recognized ERC-7821 batch execute. */
   readonly calls?: ReadonlyArray<DisplayIntent>;
+  /** The contract an EVM call with calldata runs: the callee, or the address a creation deploys. */
+  readonly contract?: { readonly address: string; readonly created: boolean };
+};
+
+/**
+ * A request whose content the signer cannot show: raw bytes, typed data of no recognised shape, or
+ * a transaction whose effects it cannot verify. Text, sign-in messages and recognised typed data
+ * are shown in full and are never blind.
+ */
+export const isBlindIntent = (
+  intent: Pick<DisplayIntent, "verifiability" | "message">,
+): boolean => {
+  const { message } = intent;
+  if (message === undefined) {
+    return intent.verifiability === "opaque";
+  }
+  if (message.kind !== "typed-data") {
+    return message.kind === "bytes";
+  }
+  if (intent.verifiability !== "opaque" || message.seaport !== undefined) {
+    return false;
+  }
+  return message.safe?.calls.some((call) => call.verifiability === "opaque") ?? true;
 };
 
 export type ChainErrorCode =

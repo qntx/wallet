@@ -167,6 +167,15 @@ export function parseEntropyHeader(text: string): EntropyHeader {
   };
 }
 
+/** The header of a `policy` record: a setting the vault holds has no public content. */
+export const encodePolicyHeader = (createdAt: number): string => JSON.stringify({ createdAt });
+
+export function parsePolicyHeader(text: string): { readonly createdAt: number } {
+  const object = headerObject(text);
+  expectKeys(object, ["createdAt"]);
+  return { createdAt: asCreatedAt(object["createdAt"]) };
+}
+
 export function parseDataKeyHeader(text: string): DataKeyHeader {
   const object = headerObject(text);
   expectKeys(object, ["purpose", "createdAt"]);

@@ -21,6 +21,7 @@ import { chains } from "@qntx/wallet/chains";
 import type { BitcoinEvent, BitcoinWalletAccount } from "../src/connect/bitcoin.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import { approval } from "./approval.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -165,7 +166,8 @@ async function sign(r: Rig, address: string, text: string) {
   return {
     request,
     settled,
-    approve: async () => r.engine.requests.approve(request.id, "bitcoin-sign", PW),
+    approve: async () =>
+      r.engine.requests.approve(request.id, "bitcoin-sign", approval(request, PW)),
   };
 }
 
@@ -334,7 +336,8 @@ async function signPsbt(r: Rig, inputs: unknown[], method = "bitcoin:signTransac
   return {
     request,
     settled,
-    approve: async () => r.engine.requests.approve(request?.id ?? "", "bitcoin-sign", PW),
+    approve: async () =>
+      r.engine.requests.approve(request?.id ?? "", "bitcoin-sign", approval(request, PW)),
   };
 }
 

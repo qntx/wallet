@@ -139,6 +139,7 @@ export class KernelWallet implements Wallet {
       nostr: { keys: [] },
       importedKeys: [],
       backup: null,
+      blindSigning: false,
     };
     this.channel = new Channel(
       options.spawn,
@@ -267,6 +268,7 @@ export class KernelWallet implements Wallet {
       nostr: { keys: status === undefined ? [] : status.nostr.keys },
       importedKeys: status === undefined ? [] : status.importedKeys,
       backup: status === undefined ? null : status.backup,
+      blindSigning: status === undefined ? false : status.blindSigning,
     };
     const current = this.snapshotValue;
     if (
@@ -279,7 +281,8 @@ export class KernelWallet implements Wallet {
       deepEqual(current.wallets, next.wallets) &&
       deepEqual(current.nostr, next.nostr) &&
       deepEqual(current.importedKeys, next.importedKeys) &&
-      deepEqual(current.backup, next.backup)
+      deepEqual(current.backup, next.backup) &&
+      current.blindSigning === next.blindSigning
     ) {
       return;
     }
@@ -392,6 +395,12 @@ export class KernelWallet implements Wallet {
         const transfer: ArrayBuffer[] = [];
         const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
         await this.channel.call("vault.setAppLock", { enabled, verify: wireVerify }, transfer);
+      }),
+    setBlindSigning: async (enabled: boolean, verify: VerifyFactor): Promise<void> =>
+      this.withVerifying(async () => {
+        const transfer: ArrayBuffer[] = [];
+        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
+        await this.channel.call("vault.setBlindSigning", { enabled, verify: wireVerify }, transfer);
       }),
     reset: async (): Promise<void> => {
       await this.channel.call("vault.reset", null);

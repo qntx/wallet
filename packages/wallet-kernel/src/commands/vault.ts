@@ -10,6 +10,7 @@ import { corePromptFor } from "../prompts.ts";
 import { wipe } from "../secret/secret.ts";
 import type { Secret } from "../secret/secret.ts";
 import { withSeed } from "../seed/seed.ts";
+import { BLIND_SIGNING, POLICY_KIND, policyRecord, sealPolicy } from "../vault/policy.ts";
 import type { StoredRecord, VaultImage } from "../vault/store.ts";
 import { UPGRADABLE_FORMAT, VAULT_FORMAT } from "../vault/store.ts";
 import {
@@ -353,5 +354,36 @@ export async function setAppLock(
     await keystore.remove(id).catch(() => undefined);
     throw error;
   }
+  return null;
+}
+
+/**
+ * Blind signing: whether `chain.sign` accepts requests whose content the kernel cannot show. Off
+ * until the owner turns it on; already in the target state is a prompt-free no-op, otherwise a
+ * verification comes first — in both directions, so the setting only ever follows its owner.
+ */
+export async function setBlindSigning(
+  ctx: KernelContext,
+  params: { enabled: boolean; verify: VerifyFactor },
+  requestSession: string | undefined,
+): Promise<NullValue> {
+  const { dek } = ctx.session.require(requestSession);
+  if (params.enabled === (policyRecord(ctx.image, BLIND_SIGNING) !== undefined)) {
+    return null;
+  }
+  await verifyFactor(
+    ctx.platform,
+    ctx.image,
+    params.verify,
+    dek,
+    ctx.commit,
+    corePromptFor(ctx.platform.keystore, "blind-signing"),
+  );
+  const session = ctx.session.require(requestSession);
+  await ctx.commit([
+    params.enabled
+      ? { op: "put-record", record: sealPolicy(ctx.platform, session.dek, BLIND_SIGNING) }
+      : { op: "delete-record", kind: POLICY_KIND, id: BLIND_SIGNING },
+  ]);
   return null;
 }

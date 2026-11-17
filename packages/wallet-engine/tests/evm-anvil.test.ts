@@ -23,6 +23,7 @@ import { RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import {
   bookDeps,
   replaceVia,
@@ -695,7 +696,7 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         changes: [{ asset: "native", amount: (-0x38d7ea4c68000n).toString(), verified: true }],
       });
       expect(pending.checks).not.toContain("simulation-unavailable");
-      await requests.approve(pending.id, "evm-sign", VERIFY);
+      await requests.approve(pending.id, "evm-sign", approval(pending, VERIFY));
       const hash = (await sending) as string;
 
       const state = await waitFor(
@@ -858,10 +859,10 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
         );
         // oxlint-disable-next-line unicorn/prefer-ternary, vitest/no-conditional-in-test -- dispatch on the pending method
         if (pending?.method === "evm-batch") {
-          await requests.approve(pending.id, "evm-batch", VERIFY);
+          await requests.approve(pending.id, "evm-batch", approval(pending, VERIFY));
         } else {
           // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find
-          await requests.approve(pending?.id ?? "", "evm-sign", VERIFY);
+          await requests.approve(pending?.id ?? "", "evm-sign", approval(pending, VERIFY));
         }
         return (await pending_) as { id: string };
       };

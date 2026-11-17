@@ -37,6 +37,7 @@ import { stakePositions } from "../src/staking/index.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import type { ChainRequestInput, TrackedTransaction } from "../src/transactions/route.ts";
+import { approval } from "./approval.ts";
 import { send as sendTx, idleNetworkDeps, requestsFor } from "./send-helpers.ts";
 
 const RUN = process.env["ENGINE_E2E_SOLANA"] === "1";
@@ -396,7 +397,7 @@ const stakeAction = async (
     action,
     fee: "slow",
   });
-  const tx = await requests.approve(pending.id, "solana-stake", BVERIFY);
+  const tx = await requests.approve(pending.id, "solana-stake", approval(pending, BVERIFY));
   await waitConfirmed(a, r, txHashOf(tx), Date.now() + 120_000);
   return tx;
 };

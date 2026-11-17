@@ -43,6 +43,7 @@ import { RequestController } from "../../src/requests/controller.ts";
 import type { SparkController } from "../../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
+import { approval } from "../approval.ts";
 import { bookDeps, simulateSolanaStub, tokensStub, idleNetworkDeps } from "../send-helpers.ts";
 
 const KERNEL_URL = new URL("../../../wallet-worker/dist/kernel.node.js", import.meta.url);
@@ -459,7 +460,7 @@ test("connect → accountsChanged → personal_sign recovers the approved accoun
   const sign = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(sign?.id ?? "", "evm-sign", VERIFY);
+  await rig.requests.approve(sign?.id ?? "", "evm-sign", approval(sign, VERIFY));
   expect(String(await recover).toLowerCase()).toBe(account.toLowerCase());
 });
 
@@ -491,7 +492,7 @@ test("window.nostr getPublicKey → approve → signEvent verifies", async ({ co
   const pendingSign = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(pendingSign?.id ?? "", "nostr-sign");
+  await rig.requests.approve(pendingSign?.id ?? "", "nostr-sign", approval(pendingSign));
   const signed: Event = await sign;
   expect(verifyEvent(signed)).toBe(true);
   expect(signed.id).toMatch(/^[0-9a-f]{64}$/);
@@ -550,7 +551,7 @@ test("window.webln enable → getInfo → makeInvoice approved through the pipel
   const pendingInvoice = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(pendingInvoice?.id ?? "", "webln-invoice");
+  await rig.requests.approve(pendingInvoice?.id ?? "", "webln-invoice", approval(pendingInvoice));
   const invoice = await invoicePromise;
   expect(invoice).toStrictEqual({ paymentRequest: "lnbc1testinvoice" });
 });
@@ -647,7 +648,7 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   const pendingSign = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(pendingSign?.id ?? "", "solana-sign", VERIFY);
+  await rig.requests.approve(pendingSign?.id ?? "", "solana-sign", approval(pendingSign, VERIFY));
   const outputs = (await result) as Array<{ signature: Uint8Array; signatureType: string }>;
   expect(outputs).toHaveLength(1);
   expect(outputs[0]?.signatureType).toBe("ed25519");
@@ -684,7 +685,7 @@ test("window wallet-standard solana:signIn verifies with verifySignIn in the pag
     (r) => r.stage === "awaiting-approval",
   );
   expect(sign?.display).toMatchObject({ signIn: { nonce: "n-123" } });
-  await rig.requests.approve(sign?.id ?? "", "solana-sign", VERIFY);
+  await rig.requests.approve(sign?.id ?? "", "solana-sign", approval(sign, VERIFY));
   expect((await signedIn) as { ok: boolean; type: string }).toStrictEqual({
     ok: true,
     type: "ed25519",
@@ -752,7 +753,7 @@ test("window wallet-standard bitcoin connect → signMessage verifies in the pag
   const pendingSign = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", VERIFY);
+  await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", approval(pendingSign, VERIFY));
   const outputs = (await result) as Array<{ signedMessage: Uint8Array; signature: Uint8Array }>;
   expect(outputs).toHaveLength(1);
   const [paymentAddress] = accounts.slice(1).map((a) => a.address);
@@ -819,7 +820,7 @@ test("window wallet-standard bitcoin:signTransaction signs a PSBT in the page", 
   const pendingSign = Object.values(rig.requests.getState().requests).find(
     (r) => r.stage === "awaiting-approval",
   );
-  await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", VERIFY);
+  await rig.requests.approve(pendingSign?.id ?? "", "bitcoin-sign", approval(pendingSign, VERIFY));
   const outputs = (await result) as Array<{ signedPsbt: Uint8Array }>;
   expect(outputs).toHaveLength(1);
   const signed = Transaction.fromPSBT(new Uint8Array(Object.values(outputs[0]?.signedPsbt ?? {})));
