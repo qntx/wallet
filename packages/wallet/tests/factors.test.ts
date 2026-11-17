@@ -12,6 +12,7 @@ import {
   resolveFactor,
   resolveInitialFactor,
   resolveVerifyFactor,
+  SecretWire,
 } from "../src/factors.ts";
 import type { FactorMode, FactorSource, PasskeyCeremony } from "../src/factors.ts";
 import { WalletError } from "../src/types.ts";
@@ -64,23 +65,25 @@ describe("hardware host", () => {
   });
 
   it("resolves device and hardware unlock factors without material", async () => {
-    const transfer: ArrayBuffer[] = [];
-    await expect(resolveFactor(hardware, { kind: "device" }, transfer)).resolves.toStrictEqual({
+    const wire = new SecretWire();
+    await expect(resolveFactor(hardware, { kind: "device" }, wire)).resolves.toStrictEqual({
       kind: "device",
     });
-    await expect(resolveFactor(hardware, { kind: "hardware" }, transfer)).resolves.toStrictEqual({
+    await expect(resolveFactor(hardware, { kind: "hardware" }, wire)).resolves.toStrictEqual({
       kind: "hardware",
     });
-    expect(transfer).toStrictEqual([]);
+    expect(wire.transfer).toStrictEqual([]);
   });
 
   it("lets the host choose its own factors, wiping a vault PRF", async () => {
-    await expect(resolveInitialFactor(hardware, undefined, [])).resolves.toStrictEqual({
+    await expect(
+      resolveInitialFactor(hardware, undefined, new SecretWire()),
+    ).resolves.toStrictEqual({
       kind: "device",
     });
     const second = new Uint8Array(32).fill(7);
     await expect(
-      resolveInitialFactor(hardware, undefined, [], {
+      resolveInitialFactor(hardware, undefined, new SecretWire(), {
         credentialId: new Uint8Array([1]),
         first: new Uint8Array(32),
         second,
@@ -93,33 +96,35 @@ describe("hardware host", () => {
         resolveInitialFactor(
           hardware,
           { kind: "password", password: "long enough pw" } as never,
-          [],
+          new SecretWire(),
         ),
       ),
     ).resolves.toBe("unsupported");
   });
 
   it("refuses software factors before any ceremony", async () => {
-    await expect(code(resolveFactor(hardware, { kind: "passkey" }, []))).resolves.toBe(
-      "unsupported",
-    );
     await expect(
-      code(resolveFactor(hardware, { kind: "password", password: "long enough pw" }, [])),
+      code(resolveFactor(hardware, { kind: "passkey" }, new SecretWire())),
     ).resolves.toBe("unsupported");
     await expect(
-      code(resolveInitialFactor(hardware, { kind: "passkey", name: "me" }, [])),
+      code(
+        resolveFactor(hardware, { kind: "password", password: "long enough pw" }, new SecretWire()),
+      ),
+    ).resolves.toBe("unsupported");
+    await expect(
+      code(resolveInitialFactor(hardware, { kind: "passkey", name: "me" }, new SecretWire())),
     ).resolves.toBe("unsupported");
   });
 
   it("rejects a device verifier before any ceremony", async () => {
     await expect(
-      code(resolveVerifyFactor(hardware, { kind: "device" } as never, [])),
+      code(resolveVerifyFactor(hardware, { kind: "device" } as never, new SecretWire())),
     ).resolves.toBe("invalid-input");
-    const transfer: ArrayBuffer[] = [];
-    await expect(
-      resolveVerifyFactor(hardware, { kind: "hardware" }, transfer),
-    ).resolves.toStrictEqual({ kind: "hardware" });
-    expect(transfer).toStrictEqual([]);
+    const wire = new SecretWire();
+    await expect(resolveVerifyFactor(hardware, { kind: "hardware" }, wire)).resolves.toStrictEqual({
+      kind: "hardware",
+    });
+    expect(wire.transfer).toStrictEqual([]);
   });
 });
 
@@ -128,31 +133,27 @@ describe("software host", () => {
 
   it("defaults unlock to passkey and refuses hardware", async () => {
     expect(defaultUnlockFactor(software)).toStrictEqual({ kind: "passkey" });
-    await expect(code(resolveFactor(software, { kind: "hardware" }, []))).resolves.toBe(
-      "unsupported",
-    );
-    await expect(code(resolveFactor(software, { kind: "device" }, []))).resolves.toBe(
+    await expect(
+      code(resolveFactor(software, { kind: "hardware" }, new SecretWire())),
+    ).resolves.toBe("unsupported");
+    await expect(code(resolveFactor(software, { kind: "device" }, new SecretWire()))).resolves.toBe(
       "unsupported",
     );
     await expect(
-      code(resolveInitialFactor(software, { kind: "hardware" } as never, [])),
+      code(resolveInitialFactor(software, { kind: "hardware" } as never, new SecretWire())),
     ).resolves.toBe("unsupported");
   });
 
   it("resolves a password factor to UTF-8 bytes on the transfer list", async () => {
-    const transfer: ArrayBuffer[] = [];
-    const wire = await resolveFactor(
-      software,
-      { kind: "password", password: "pässword!" },
-      transfer,
-    );
-    expect(wire.kind).toBe("password");
-    expect(transfer).toHaveLength(1);
+    const wire = new SecretWire();
+    const factor = await resolveFactor(software, { kind: "password", password: "pässword!" }, wire);
+    expect(factor.kind).toBe("password");
+    expect(wire.transfer).toHaveLength(1);
   });
 });
 
 it("backup factors are never hardware", async () => {
   await expect(
-    code(resolveBackupFactor(source("hardware"), { kind: "hardware" }, [])),
+    code(resolveBackupFactor(source("hardware"), { kind: "hardware" }, new SecretWire())),
   ).resolves.toBe("invalid-input");
 });

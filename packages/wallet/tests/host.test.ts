@@ -136,7 +136,7 @@ export class ScriptedPort implements MainPort {
     this.kernel = kernel;
   }
 
-  post(message: ProtocolValue): void {
+  post(message: ProtocolValue, _transfer?: ArrayBuffer[]): void {
     if (this.dead) {
       return;
     }

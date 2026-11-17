@@ -9,6 +9,8 @@ import type {
   BackupFactor,
   BackupUnlockFactor,
   Factor,
+  MethodName,
+  ParamsOf,
   VerifyFactor as WireVerifyFactor,
 } from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
@@ -75,7 +77,7 @@ function hardwareOnly(): WalletError {
   return new WalletError("unsupported", "this host unlocks only with the keystore factors");
 }
 
-function noHardware(): WalletError {
+export function noHardware(): WalletError {
   return new WalletError("unsupported", "keystore factors exist only on React Native");
 }
 
@@ -106,7 +108,7 @@ export function backupSaltBytes(source: FactorSource): Uint8Array {
  */
 async function hostBackupPasskey(
   source: FactorSource,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
 ): Promise<Extract<BackupFactor, { ceremony: "host" }>> {
   const ceremony = requireCeremony(source);
   const result = await ceremony.assert({
@@ -116,20 +118,20 @@ async function hostBackupPasskey(
   return {
     kind: "passkey",
     ceremony: "host",
-    credentialId: wireBytes(result.credentialId, transfer),
-    prfBackup: wireBytes(result.first, transfer, true),
+    credentialId: wire.bytes(result.credentialId),
+    prfBackup: wire.bytes(result.first, true),
   };
 }
 
 function backupPassword(
   factor: UnlockFactor,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
 ): { readonly kind: "password"; readonly password: Uint8Array } | undefined {
   if (factor.kind === "hardware" || factor.kind === "device") {
     throw new WalletError("invalid-input", "backup factors are passkeys or passwords");
   }
   return factor.kind === "password"
-    ? { kind: "password", password: wireSecretText(factor.password, transfer) }
+    ? { kind: "password", password: wire.text(factor.password) }
     : undefined;
 }
 
@@ -140,9 +142,9 @@ function backupPassword(
 export async function resolveBackupFactor(
   source: FactorSource,
   factor: UnlockFactor,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
 ): Promise<BackupFactor> {
-  const password = backupPassword(factor, transfer);
+  const password = backupPassword(factor, wire);
   if (password !== undefined) {
     return password;
   }
@@ -155,16 +157,16 @@ export async function resolveBackupFactor(
       backupSalt: source.passkey.backupSalt,
     };
   }
-  return hostBackupPasskey(source, transfer);
+  return hostBackupPasskey(source, wire);
 }
 
 /** Resolves a public `UnlockFactor` to a factor that opens a backup envelope. */
 export async function resolveBackupUnlockFactor(
   source: FactorSource,
   factor: UnlockFactor,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
 ): Promise<BackupUnlockFactor> {
-  const password = backupPassword(factor, transfer);
+  const password = backupPassword(factor, wire);
   if (password !== undefined) {
     return password;
   }
@@ -176,7 +178,7 @@ export async function resolveBackupUnlockFactor(
       backupSalt: source.passkey.backupSalt,
     };
   }
-  return hostBackupPasskey(source, transfer);
+  return hostBackupPasskey(source, wire);
 }
 
 /** Passkey credential ids of the current vault factors, for `assert`'s allowCredentials. */
@@ -189,35 +191,83 @@ function passkeyCredentialIds(source: FactorSource): Uint8Array[] {
 }
 
 /**
- * A Uint8Array is placed on the wire in a fresh exact-size buffer whose ArrayBuffer goes into the
- * transfer list — the bytes move to the kernel and cannot detach caller-owned memory. Secret
- * sources are wiped after copying.
+ * The secret buffers of one request. Every byte array that carries a secret to the kernel is placed
+ * here in a fresh exact-size buffer (transferring must never detach caller-owned memory, and a
+ * secret source is zeroed once copied); the channel either moves the whole set on the post's
+ * transfer list or calls `wipe()`. A wire is never half-detached and never left resident.
  */
-export function wireBytes(
-  source: Uint8Array,
-  transfer: ArrayBuffer[],
-  wipeSource = false,
-): Uint8Array {
-  // Always a fresh exact-size buffer: transferring must never detach caller-owned memory.
-  const wire = new Uint8Array(source);
-  if (wipeSource) {
-    source.fill(0);
+export class SecretWire {
+  private readonly buffers: ArrayBuffer[] = [];
+
+  /** A wire copy of `source`; `wipeSource` zeroes a secret original after copying. */
+  bytes(source: Uint8Array, wipeSource = false): Uint8Array {
+    const wire = new Uint8Array(source);
+    if (wipeSource) {
+      source.fill(0);
+    }
+    this.buffers.push(wire.buffer);
+    return wire;
   }
-  transfer.push(wire.buffer);
-  return wire;
+
+  /** A wire copy of a secret string (passwords, mnemonics, passphrases). */
+  text(text: string): Uint8Array {
+    return this.bytes(new TextEncoder().encode(text));
+  }
+
+  /** The `passphrase` wire field for a BIP-39 passphrase: absent for none (undefined or ""). */
+  passphrase(text: string | undefined): { readonly passphrase?: Uint8Array } {
+    return text === undefined || text === "" ? {} : { passphrase: this.text(text) };
+  }
+
+  /** Every buffer this wire recorded — the post's transfer list. */
+  get transfer(): ArrayBuffer[] {
+    return this.buffers;
+  }
+
+  /** Zeroes every recorded buffer still attached — already-transferred ones are gone. */
+  wipe(): void {
+    for (const buffer of this.buffers) {
+      if (buffer.byteLength > 0) {
+        new Uint8Array(buffer).fill(0);
+      }
+    }
+  }
 }
 
-export function wireSecretText(text: string, transfer: ArrayBuffer[]): Uint8Array {
-  return wireBytes(new TextEncoder().encode(text), transfer);
-}
+/**
+ * Param field names whose bytes are secrets. Everything else on the wire — credential ids, public
+ * keys, unsigned payloads, ciphertexts — is public material.
+ */
+type SecretField =
+  | "password"
+  | "prf"
+  | "prfWallet"
+  | "prfBackup"
+  | "mnemonic"
+  | "passphrase"
+  | "secret"
+  | "answers";
 
-/** The `passphrase` wire field for a BIP-39 passphrase: absent for none (undefined or ""). */
-export function wirePassphrase(
-  text: string | undefined,
-  transfer: ArrayBuffer[],
-): { readonly passphrase?: Uint8Array } {
-  return text === undefined || text === "" ? {} : { passphrase: wireSecretText(text, transfer) };
-}
+/** True when any field reachable through T's objects, arrays or union members is a SecretField. */
+type CarriesSecret<T> = T extends Uint8Array
+  ? false
+  : T extends ReadonlyArray<infer E>
+    ? CarriesSecret<E>
+    : T extends Readonly<Record<PropertyKey, unknown>>
+      ? true extends {
+          [K in keyof T]: K extends SecretField ? true : CarriesSecret<T[K]>;
+        }[keyof T]
+        ? true
+        : false
+      : false;
+
+/** Methods whose params can carry secret bytes — they may only be sent through callWithSecrets. */
+export type SecretMethod = {
+  [M in MethodName]: true extends CarriesSecret<ParamsOf<M>> ? M : never;
+}[MethodName];
+
+/** Methods whose params never carry secret bytes. */
+export type PlainMethod = Exclude<MethodName, SecretMethod>;
 
 export function requireCeremony(source: FactorSource): PasskeyCeremony {
   if (source.ceremony === undefined) {
@@ -236,13 +286,13 @@ export function passkeyName(name: string): string {
 }
 
 /**
- * Resolves a public `UnlockFactor` to wire factor material. `transfer` collects every buffer the
- * port must move. Ceremony errors surface as they are (cancelled / passkey-prf-unsupported).
+ * Resolves a public `UnlockFactor` to wire factor material. `wire` collects every buffer the port
+ * must move. Ceremony errors surface as they are (cancelled / passkey-prf-unsupported).
  */
 export async function resolveFactor(
   source: FactorSource,
   factor: UnlockFactor,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
 ): Promise<Factor> {
   if (source.mode === "hardware") {
     if (factor.kind !== "device" && factor.kind !== "hardware") {
@@ -254,7 +304,7 @@ export async function resolveFactor(
     throw noHardware();
   }
   if (factor.kind === "password") {
-    return { kind: "password", password: wireSecretText(factor.password, transfer) };
+    return { kind: "password", password: wire.text(factor.password) };
   }
   const ceremony = requireCeremony(source);
   const result = await ceremony.assert({
@@ -263,8 +313,8 @@ export async function resolveFactor(
   });
   return {
     kind: "passkey",
-    credentialId: wireBytes(result.credentialId, transfer),
-    prf: wireBytes(result.first, transfer, true),
+    credentialId: wire.bytes(result.credentialId),
+    prf: wire.bytes(result.first, true),
   };
 }
 
@@ -276,13 +326,13 @@ export async function resolveFactor(
 export async function resolveVerifyFactor(
   source: FactorSource,
   factor: VerifyFactor,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
 ): Promise<WireVerifyFactor> {
   if ((factor as UnlockFactor).kind === "device") {
     throw new WalletError("invalid-input", "the device factor cannot verify");
   }
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- device was rejected above
-  return (await resolveFactor(source, factor, transfer)) as WireVerifyFactor;
+  return (await resolveFactor(source, factor, wire)) as WireVerifyFactor;
 }
 
 /**
@@ -294,7 +344,7 @@ export async function resolveVerifyFactor(
 export async function resolveInitialFactor(
   source: FactorSource,
   factor: InitialFactor | undefined,
-  transfer: ArrayBuffer[],
+  wire: SecretWire,
   walletCeremony?: PrfResult,
 ): Promise<Factor> {
   if (source.mode === "hardware") {
@@ -316,8 +366,8 @@ export async function resolveInitialFactor(
       }
       return {
         kind: "passkey",
-        credentialId: wireBytes(walletCeremony.credentialId, transfer),
-        prf: wireBytes(second, transfer, true),
+        credentialId: wire.bytes(walletCeremony.credentialId),
+        prf: wire.bytes(second, true),
       };
     }
     if (name === undefined) {
@@ -332,13 +382,13 @@ export async function resolveInitialFactor(
     });
     return {
       kind: "passkey",
-      credentialId: wireBytes(result.credentialId, transfer),
-      prf: wireBytes(result.first, transfer, true),
+      credentialId: wire.bytes(result.credentialId),
+      prf: wire.bytes(result.first, true),
     };
   }
   if (factor.kind === "password") {
     walletCeremony?.second?.fill(0); // the passkey vault factor is not needed
-    return { kind: "password", password: wireSecretText(factor.password, transfer) };
+    return { kind: "password", password: wire.text(factor.password) };
   }
   throw noHardware();
 }

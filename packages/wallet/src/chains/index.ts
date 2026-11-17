@@ -160,9 +160,10 @@ function createChainsApi(internals: WalletInternals): ChainsApi {
     account: async (params) => internals.call("wallet.accounts", params),
     sign: async (params) =>
       internals.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const verify = await internals.resolveVerifyFactor(params.verify, transfer);
-        const result = await internals.call("chain.sign", { request: params.request, verify });
+        const result = await internals.secretCall("chain.sign", async (wire) => ({
+          request: params.request,
+          verify: await internals.resolveVerifyFactor(params.verify, wire),
+        }));
         if (params.request.kind === "bitcoin.psbt") {
           await checkPsbt(internals, params.request, result);
         } else if (params.request.account.kind === "hd") {

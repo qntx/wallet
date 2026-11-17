@@ -4,7 +4,6 @@
  * wallet so repeated calls return the same object (stable React identity); a foreign object is
  * rejected because only a Wallet from this package holds a registered channel.
  */
-import { wireSecretText } from "../factors.ts";
 import { internalsOf } from "../internal.ts";
 import type { WalletInternals } from "../internal.ts";
 import { SingleUseSecret } from "../secret.ts";
@@ -61,20 +60,20 @@ function createNostrApi(internals: WalletInternals): NostrApi {
     ): Promise<ExportedSecret> =>
       internals.withVerifying(async () => {
         const { publicKey } = keyInfoOf(internals, ref);
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await internals.resolveVerifyFactor(verify, transfer);
-        const wireFormat =
-          format.kind === "nsec"
-            ? { kind: "nsec" as const }
-            : {
-                kind: "ncryptsec" as const,
-                password: wireSecretText(format.password, transfer),
-              };
-        const bytes = await internals.call(
-          "nostr.exportKey",
-          { verify: wireVerify, publicKey, format: wireFormat },
-          transfer,
-        );
+        const bytes = await internals.secretCall("nostr.exportKey", async (wire) => {
+          const wireFormat =
+            format.kind === "nsec"
+              ? { kind: "nsec" as const }
+              : {
+                  kind: "ncryptsec" as const,
+                  password: wire.text(format.password),
+                };
+          return {
+            verify: await internals.resolveVerifyFactor(verify, wire),
+            publicKey,
+            format: wireFormat,
+          };
+        });
         return new SingleUseSecret(bytes);
       }),
   };

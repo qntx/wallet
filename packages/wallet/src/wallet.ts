@@ -11,24 +11,29 @@ import { base58, hex } from "@scure/base";
 import { Channel } from "./channel.ts";
 import type { MainPort, SetTimer } from "./channel.ts";
 import {
+  defaultUnlockFactor,
+  noHardware,
   PASSKEY_PURPOSE_WALLET,
   passkeyName,
   requireCeremony,
-  resolveFactor,
-  resolveInitialFactor,
-  vaultSaltBytes,
-  walletSaltBytes,
-  wireBytes,
-  wirePassphrase,
-  wireSecretText,
   resolveBackupFactor,
   resolveBackupUnlockFactor,
+  resolveFactor,
+  resolveInitialFactor,
   resolveVerifyFactor,
-  defaultUnlockFactor,
+  SecretWire,
+  vaultSaltBytes,
+  walletSaltBytes,
 } from "./factors.ts";
-import type { FactorMode, FactorSource, PasskeyCeremony, PrfResult } from "./factors.ts";
+import type {
+  FactorMode,
+  FactorSource,
+  PasskeyCeremony,
+  PrfResult,
+  SecretMethod,
+} from "./factors.ts";
 import { registerInternals } from "./internal.ts";
-import type { Factor, SignedEvent } from "./protocol/index.ts";
+import type { Factor, ParamsOf, ResultOf, SignedEvent } from "./protocol/index.ts";
 import { SingleUseSecret } from "./secret.ts";
 import { WalletError } from "./types.ts";
 import type {
@@ -163,18 +168,14 @@ export class KernelWallet implements Wallet {
       this.onPresence();
     });
     registerInternals(this, {
-      call: async (method, params, transfer) => this.channel.call(method, params, transfer),
+      call: async (method, params) => this.channel.call(method, params),
+      secretCall: async (method, build) => this.secretCall(method, build),
       ready: async () => this.channel.ready,
       snapshot: () => this.snapshotValue,
       verifyEvent: options.verifyEvent,
       withVerifying: async (fn) => this.withVerifying(fn),
-      resolveFactor: async (factor, transfer) => resolveFactor(this.factorSource, factor, transfer),
-      resolveVerifyFactor: async (factor, transfer) =>
-        resolveVerifyFactor(this.factorSource, factor, transfer),
-      createFactorParam: async (factor, transfer) => this.createFactorParam(factor, transfer),
-      sessionOf: (result) => {
-        this.sessionOf(result);
-      },
+      resolveVerifyFactor: async (factor, wire) =>
+        resolveVerifyFactor(this.factorSource, factor, wire),
     });
   }
 
@@ -184,26 +185,44 @@ export class KernelWallet implements Wallet {
     return wallet;
   }
 
-  /** Runs a host-ceremony passkey call and adopts the returned session and wallet info. */
-  private async hostPasskeyWallet(
-    method: "wallet.createWithPasskey" | "wallet.restoreWithPasskey",
+  /**
+   * One request whose params carry secret bytes: `build` places them on a fresh wire, a build
+   * failure wipes it, and the channel either transfers it or wipes it from there.
+   */
+  private async secretCall<M extends SecretMethod>(
+    method: M,
+    build: (wire: SecretWire) => ParamsOf<M> | Promise<ParamsOf<M>>,
+  ): Promise<ResultOf<M>> {
+    const wire = new SecretWire();
+    let params: ParamsOf<M>;
+    try {
+      params = await build(wire);
+    } catch (error) {
+      wire.wipe();
+      throw error;
+    }
+    return this.channel.callWithSecrets(method, params, wire);
+  }
+
+  /** The host-ceremony arm of a create/restoreWithPasskey request, with `result` on the wire. */
+  private hostPasskeyParams(
+    wire: SecretWire,
     result: PrfResult,
     factor: Factor | undefined,
-    transfer: ArrayBuffer[],
-  ): Promise<WalletInfo> {
-    const created = await this.channel.call(
-      method,
-      {
-        ceremony: "host",
-        credentialId: wireBytes(result.credentialId, transfer),
-        prfWallet: wireBytes(result.first, transfer, true),
-        synced: result.synced,
-        ...(factor === undefined ? {} : { factor }),
-      },
-      transfer,
-    );
-    this.sessionOf(created);
-    return created.wallet;
+  ): {
+    readonly ceremony: "host";
+    readonly credentialId: Uint8Array;
+    readonly prfWallet: Uint8Array;
+    readonly synced: boolean;
+    readonly factor?: Factor;
+  } {
+    return {
+      ceremony: "host",
+      credentialId: wire.bytes(result.credentialId),
+      prfWallet: wire.bytes(result.first, true),
+      synced: result.synced,
+      ...(factor === undefined ? {} : { factor }),
+    };
   }
 
   /**
@@ -328,10 +347,31 @@ export class KernelWallet implements Wallet {
     return this.snapshotValue.vault !== "uninitialized";
   }
 
+  /**
+   * Locally decidable rejections for a software host's create/restore factor. Runs before the
+   * WebAuthn ceremony so a doomed call never prompts — and again inside the request build, because
+   * the vault may have initialized while the ceremony was pending.
+   */
+  private checkSoftwareFactor(factor: InitialFactor | undefined): void {
+    if (factor === undefined) {
+      return;
+    }
+    if (this.initialized()) {
+      throw new WalletError("invalid-input", "the vault is already initialized");
+    }
+    if (factor.kind !== "passkey" && factor.kind !== "password") {
+      // An untyped caller can still hand a keystore factor to a software host.
+      throw noHardware();
+    }
+    if (factor.kind === "passkey") {
+      passkeyName(factor.name);
+    }
+  }
+
   /** The factor gate on create/import commands; keeps useless ceremonies from firing. */
   private async createFactorParam(
     factor: InitialFactor | undefined,
-    transfer: ArrayBuffer[],
+    wire: SecretWire,
   ): Promise<Factor | undefined> {
     if (this.initialized()) {
       if (factor !== undefined) {
@@ -342,7 +382,7 @@ export class KernelWallet implements Wallet {
     if (factor === undefined && this.factorMode === "software") {
       throw new WalletError("invalid-input", "an initial factor is required");
     }
-    return resolveInitialFactor(this.factorSource, factor, transfer);
+    return resolveInitialFactor(this.factorSource, factor, wire);
   }
 
   private sessionOf(result: { readonly session: string }): void {
@@ -354,9 +394,9 @@ export class KernelWallet implements Wallet {
     unlock: async (factor?: UnlockFactor): Promise<void> => {
       const resolved = factor ?? defaultUnlockFactor(this.factorSource);
       const run = async (): Promise<void> => {
-        const transfer: ArrayBuffer[] = [];
-        const wire = await resolveFactor(this.factorSource, resolved, transfer);
-        const result = await this.channel.call("vault.unlock", { factor: wire }, transfer);
+        const result = await this.secretCall("vault.unlock", async (wire) => ({
+          factor: await resolveFactor(this.factorSource, resolved, wire),
+        }));
         this.sessionOf(result);
       };
       // A device unlock shows no UI — the snapshot never marks it verifying.
@@ -370,21 +410,18 @@ export class KernelWallet implements Wallet {
       this.markLocked();
     },
     addFactor: async (factor: InitialFactor, verify: VerifyFactor): Promise<FactorInfo> =>
-      this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        const wireFactor = await resolveInitialFactor(this.factorSource, factor, transfer);
-        return this.channel.call(
-          "vault.addFactor",
-          { verify: wireVerify, factor: wireFactor },
-          transfer,
-        );
-      }),
+      this.withVerifying(async () =>
+        this.secretCall("vault.addFactor", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+          factor: await resolveInitialFactor(this.factorSource, factor, wire),
+        })),
+      ),
     removeFactor: async (id: string, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        await this.channel.call("vault.removeFactor", { verify: wireVerify, id }, transfer);
+        await this.secretCall("vault.removeFactor", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+          id,
+        }));
       }),
     enrolVerification: async (): Promise<void> =>
       this.withVerifying(async () => {
@@ -392,15 +429,17 @@ export class KernelWallet implements Wallet {
       }),
     setAppLock: async (enabled: boolean, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        await this.channel.call("vault.setAppLock", { enabled, verify: wireVerify }, transfer);
+        await this.secretCall("vault.setAppLock", async (wire) => ({
+          enabled,
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+        }));
       }),
     setBlindSigning: async (enabled: boolean, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        await this.channel.call("vault.setBlindSigning", { enabled, verify: wireVerify }, transfer);
+        await this.secretCall("vault.setBlindSigning", async (wire) => ({
+          enabled,
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+        }));
       }),
     reset: async (): Promise<void> => {
       await this.channel.call("vault.reset", null);
@@ -413,33 +452,33 @@ export class KernelWallet implements Wallet {
       secret: string | Uint8Array,
     ): Promise<KeyInfo> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
         const decoded = decodeKeySecret(family, secret);
         try {
-          return await this.channel.call(
-            "keys.import",
-            { family, secret: wireBytes(decoded, transfer) },
-            transfer,
-          );
+          return await this.secretCall("keys.import", (wire) => ({
+            family,
+            secret: wire.bytes(decoded),
+          }));
         } finally {
           if (decoded !== secret) {
             decoded.fill(0);
           }
         }
       }),
-    list: async (): Promise<ReadonlyArray<KeyInfo>> => this.channel.call("keys.list", null, []),
+    list: async (): Promise<ReadonlyArray<KeyInfo>> => this.channel.call("keys.list", null),
     remove: async (keyId: string, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        await this.channel.call("keys.remove", { verify: wireVerify, keyId }, transfer);
+        await this.secretCall("keys.remove", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+          keyId,
+        }));
       }),
     export: async (keyId: string, verify: VerifyFactor): Promise<Uint8Array> =>
-      this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        return this.channel.call("keys.export", { verify: wireVerify, keyId }, transfer);
-      }),
+      this.withVerifying(async () =>
+        this.secretCall("keys.export", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+          keyId,
+        })),
+      ),
   };
 
   readonly wallets: WalletsApi = {
@@ -449,101 +488,101 @@ export class KernelWallet implements Wallet {
     }): Promise<WalletInfo> =>
       this.withVerifying(async () => {
         const name = passkeyName(options.name);
-        const transfer: ArrayBuffer[] = [];
         if (this.factorMode === "hardware") {
           // The kernel runs the platform ceremony: nothing secret crosses the channel.
-          const factor = await this.createFactorParam(options.factor, transfer);
-          const created = await this.channel.call(
-            "wallet.createWithPasskey",
-            {
-              ceremony: "kernel",
+          const created = await this.secretCall("wallet.createWithPasskey", async (wire) => {
+            const factor = await this.createFactorParam(options.factor, wire);
+            return {
+              ceremony: "kernel" as const,
               rpId: this.passkeyCfg.rpId,
               rpName: this.passkeyCfg.rpName,
               name,
               walletSalt: this.passkeyCfg.walletSalt,
               ...(factor === undefined ? {} : { factor }),
-            },
-            transfer,
-          );
+            };
+          });
           this.sessionOf(created);
           return created.wallet;
         }
+        this.checkSoftwareFactor(options.factor);
         const ceremony = requireCeremony(this.factorSource);
-        const result = await ceremony.create({
-          purpose: "wallet",
-          name,
-          salts: {
-            first: walletSaltBytes(this.factorSource),
-            second: vaultSaltBytes(this.factorSource),
-          },
-        });
-        let factor: Factor | undefined;
-        if (this.initialized()) {
-          if (options.factor !== undefined) {
-            throw new WalletError("invalid-input", "the vault is already initialized");
+        const created = await this.secretCall("wallet.createWithPasskey", async (wire) => {
+          const result = await ceremony.create({
+            purpose: "wallet",
+            name,
+            salts: {
+              first: walletSaltBytes(this.factorSource),
+              second: vaultSaltBytes(this.factorSource),
+            },
+          });
+          try {
+            this.checkSoftwareFactor(options.factor);
+            const factor = this.initialized()
+              ? undefined
+              : await resolveInitialFactor(this.factorSource, options.factor, wire, result);
+            return this.hostPasskeyParams(wire, result, factor);
+          } finally {
+            result.first.fill(0);
+            result.second?.fill(0);
           }
-          result.second?.fill(0); // the vault factor slot is not needed
-        } else {
-          factor = await resolveInitialFactor(this.factorSource, options.factor, transfer, result);
-        }
-        return this.hostPasskeyWallet("wallet.createWithPasskey", result, factor, transfer);
+        });
+        this.sessionOf(created);
+        return created.wallet;
       }),
     restoreWithPasskey: async (options?: {
       readonly factor?: InitialFactor;
     }): Promise<WalletInfo> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
         if (this.factorMode === "hardware") {
-          const factor = await this.createFactorParam(options?.factor, transfer);
-          const created = await this.channel.call(
-            "wallet.restoreWithPasskey",
-            {
-              ceremony: "kernel",
+          const created = await this.secretCall("wallet.restoreWithPasskey", async (wire) => {
+            const factor = await this.createFactorParam(options?.factor, wire);
+            return {
+              ceremony: "kernel" as const,
               rpId: this.passkeyCfg.rpId,
               walletSalt: this.passkeyCfg.walletSalt,
               ...(factor === undefined ? {} : { factor }),
-            },
-            transfer,
-          );
+            };
+          });
           this.sessionOf(created);
           return created.wallet;
         }
+        this.checkSoftwareFactor(options?.factor);
         const ceremony = requireCeremony(this.factorSource);
-        const result = await ceremony.assert({
-          salts: {
-            first: walletSaltBytes(this.factorSource),
-            second: vaultSaltBytes(this.factorSource),
-          },
-        });
-        // The asserted credential must be a wallet-purpose passkey: a vault-purpose credential
-        // would silently derive a different wallet. Rejected assertions never reach the kernel.
-        if (result.userHandle?.[0] !== PASSKEY_PURPOSE_WALLET) {
-          result.first.fill(0);
-          result.second?.fill(0);
-          throw new WalletError("wrong-passkey", "the passkey is not a wallet credential");
-        }
-        let factor: Factor | undefined;
-        if (this.initialized()) {
-          if (options?.factor !== undefined) {
-            throw new WalletError("invalid-input", "the vault is already initialized");
+        const created = await this.secretCall("wallet.restoreWithPasskey", async (wire) => {
+          const result = await ceremony.assert({
+            salts: {
+              first: walletSaltBytes(this.factorSource),
+              second: vaultSaltBytes(this.factorSource),
+            },
+          });
+          try {
+            // The asserted credential must be a wallet-purpose passkey: a vault-purpose
+            // credential would silently derive a different wallet. Rejected assertions
+            // never reach the kernel.
+            if (result.userHandle?.[0] !== PASSKEY_PURPOSE_WALLET) {
+              throw new WalletError("wrong-passkey", "the passkey is not a wallet credential");
+            }
+            this.checkSoftwareFactor(options?.factor);
+            const factor = this.initialized()
+              ? undefined
+              : await resolveInitialFactor(this.factorSource, options?.factor, wire, result);
+            return this.hostPasskeyParams(wire, result, factor);
+          } finally {
+            result.first.fill(0);
+            result.second?.fill(0);
           }
-          result.second?.fill(0);
-        } else {
-          factor = await resolveInitialFactor(this.factorSource, options?.factor, transfer, result);
-        }
-        return this.hostPasskeyWallet("wallet.restoreWithPasskey", result, factor, transfer);
+        });
+        this.sessionOf(created);
+        return created.wallet;
       }),
     createMnemonic: async (options: {
       readonly words: 12 | 24;
       readonly factor?: InitialFactor;
     }): Promise<MnemonicDraft> => {
-      const transfer: ArrayBuffer[] = [];
-      const factor = await this.createFactorParam(options.factor, transfer);
-      const created = await this.channel.call(
-        "wallet.createMnemonic",
-        { words: options.words, ...(factor === undefined ? {} : { factor }) },
-        transfer,
-      );
+      const created = await this.secretCall("wallet.createMnemonic", async (wire) => {
+        const factor = await this.createFactorParam(options.factor, wire);
+        return { words: options.words, ...(factor === undefined ? {} : { factor }) };
+      });
       const draftId = created.draft;
       return {
         words: new SingleUseSecret(created.words),
@@ -552,14 +591,11 @@ export class KernelWallet implements Wallet {
           answers: ReadonlyArray<string>,
           confirmOptions?: { readonly passphrase?: string },
         ): Promise<WalletInfo> => {
-          const answerTransfer: ArrayBuffer[] = [];
-          const encoded = answers.map((word) => wireSecretText(word, answerTransfer));
-          const passphrase = wirePassphrase(confirmOptions?.passphrase, answerTransfer);
-          const confirmed = await this.channel.call(
-            "wallet.confirmMnemonic",
-            { draft: draftId, answers: encoded, ...passphrase },
-            answerTransfer,
-          );
+          const confirmed = await this.secretCall("wallet.confirmMnemonic", (wire) => ({
+            draft: draftId,
+            answers: answers.map((word) => wire.text(word)),
+            ...wire.passphrase(confirmOptions?.passphrase),
+          }));
           this.sessionOf(confirmed);
           return confirmed.wallet;
         },
@@ -573,27 +609,23 @@ export class KernelWallet implements Wallet {
       readonly passphrase?: string;
       readonly factor?: InitialFactor;
     }): Promise<WalletInfo> => {
-      const transfer: ArrayBuffer[] = [];
-      const factor = await this.createFactorParam(options.factor, transfer);
-      const mnemonic = wireSecretText(options.mnemonic, transfer);
-      const passphrase = wirePassphrase(options.passphrase, transfer);
-      const created = await this.channel.call(
-        "wallet.importMnemonic",
-        { mnemonic, ...passphrase, ...(factor === undefined ? {} : { factor }) },
-        transfer,
-      );
+      const created = await this.secretCall("wallet.importMnemonic", async (wire) => {
+        const factor = await this.createFactorParam(options.factor, wire);
+        return {
+          mnemonic: wire.text(options.mnemonic),
+          ...wire.passphrase(options.passphrase),
+          ...(factor === undefined ? {} : { factor }),
+        };
+      });
       this.sessionOf(created);
       return created.wallet;
     },
     exportMnemonic: async (walletId: string, verify: VerifyFactor): Promise<ExportedMnemonic> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        const exported = await this.channel.call(
-          "wallet.exportMnemonic",
-          { verify: wireVerify, walletId },
-          transfer,
-        );
+        const exported = await this.secretCall("wallet.exportMnemonic", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+          walletId,
+        }));
         return {
           mnemonic: new SingleUseSecret(exported.mnemonic),
           ...(exported.passphrase === undefined
@@ -603,9 +635,10 @@ export class KernelWallet implements Wallet {
       }),
     delete: async (walletId: string, verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        await this.channel.call("wallet.delete", { verify: wireVerify, walletId }, transfer);
+        await this.secretCall("wallet.delete", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+          walletId,
+        }));
       }),
   };
 
@@ -620,18 +653,14 @@ export class KernelWallet implements Wallet {
       readonly factors: ReadonlyArray<UnlockFactor>;
     }): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, options.verify, transfer);
-        const wireFactors = await Promise.all(
-          options.factors.map(async (factor) =>
-            resolveBackupFactor(this.factorSource, factor, transfer),
+        await this.secretCall("backup.enable", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, options.verify, wire),
+          factors: await Promise.all(
+            options.factors.map(async (factor) =>
+              resolveBackupFactor(this.factorSource, factor, wire),
+            ),
           ),
-        );
-        await this.channel.call(
-          "backup.enable",
-          { verify: wireVerify, factors: wireFactors },
-          transfer,
-        );
+        }));
       }),
     update: async (): Promise<string> => {
       const result = await this.channel.call("backup.update", null);
@@ -639,9 +668,9 @@ export class KernelWallet implements Wallet {
     },
     disable: async (verify: VerifyFactor): Promise<void> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const wireVerify = await resolveVerifyFactor(this.factorSource, verify, transfer);
-        await this.channel.call("backup.disable", { verify: wireVerify }, transfer);
+        await this.secretCall("backup.disable", async (wire) => ({
+          verify: await resolveVerifyFactor(this.factorSource, verify, wire),
+        }));
       }),
     restore: async (options: {
       readonly envelope: string;
@@ -656,27 +685,24 @@ export class KernelWallet implements Wallet {
       readonly passphraseRequired: ReadonlyArray<string>;
     }> =>
       this.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const backupFactor = await resolveBackupUnlockFactor(
-          this.factorSource,
-          options.backupFactor,
-          transfer,
-        );
-        const factor = await this.createFactorParam(options.factor, transfer);
-        const passphrases = options.passphrases?.map(({ walletId, passphrase }) => ({
-          walletId,
-          passphrase: wireSecretText(passphrase, transfer),
-        }));
-        const result = await this.channel.call(
-          "backup.restore",
-          {
+        const result = await this.secretCall("backup.restore", async (wire) => {
+          const backupFactor = await resolveBackupUnlockFactor(
+            this.factorSource,
+            options.backupFactor,
+            wire,
+          );
+          const factor = await this.createFactorParam(options.factor, wire);
+          const passphrases = options.passphrases?.map(({ walletId, passphrase }) => ({
+            walletId,
+            passphrase: wire.text(passphrase),
+          }));
+          return {
             envelope: options.envelope,
             backupFactor,
             ...(passphrases === undefined ? {} : { passphrases }),
             ...(factor === undefined ? {} : { factor }),
-          },
-          transfer,
-        );
+          };
+        });
         this.sessionOf(result);
         return { wallets: result.wallets, passphraseRequired: result.passphraseRequired };
       }),

@@ -3,6 +3,7 @@
  * request/response correlation and wire validation. Internal to the `./host` subpath — reserved for
  * host packages (wallet-worker, wallet-native); applications must not use it.
  */
+import type { PlainMethod, SecretMethod, SecretWire } from "./factors.ts";
 import {
   isProtocolValue,
   kernelEvent,
@@ -406,51 +407,73 @@ export class Channel {
   }
 
   /**
-   * Sends one request and resolves with the validated result. The kernel answers with status →
-   * response → locked, so the snapshot is already current when this promise settles.
+   * Sends one request carrying no secret bytes and resolves with the validated result. The kernel
+   * answers with status → response → locked, so the snapshot is already current when this settles.
    */
-  async call<M extends MethodName>(
+  async call<M extends PlainMethod>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
+    return this.send(method, params);
+  }
+
+  /**
+   * Sends one request whose params carry secret bytes. Invariant: every wire handed in is either on
+   * the transfer list of exactly one successful `port.post`, or wiped — on every path that does not
+   * post: ready-gate rejection, broken, destroyed/no port, oversize, `port.post` throwing.
+   */
+  async callWithSecrets<M extends SecretMethod>(
     method: M,
     params: ParamsOf<M>,
-    transfer: ArrayBuffer[] = [],
+    wire: SecretWire,
   ): Promise<ResultOf<M>> {
-    await this.readyPromise;
-    if (this.broken !== undefined) {
-      throw this.broken;
-    }
-    const { port } = this;
-    if (this.destroyed || port === undefined) {
-      throw new WalletError("locked", "wallet is destroyed");
-    }
-    const id = this.nextId++;
-    const message: Record<string, ProtocolValue> = { v: PROTOCOL_VERSION, id, method, params };
-    // Attach the session whenever we hold one: the create/import methods are session:false
-    // in the table because the rule is dynamic (required exactly when the vault is initialized).
-    if (this.session !== undefined) {
-      message["session"] = this.session;
-    }
-    // The whole envelope counts against the cap — an oversized request never reaches the port.
-    if (requestBytes(message) > MAX_REQUEST_BYTES) {
-      throw new WalletError("invalid-input", "request exceeds the size limit");
-    }
-    const result = await new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { method, resolve, reject });
-      if (this.watchdog === undefined) {
-        // Pending went empty → non-empty: this request is the head the kernel works on next.
-        this.armWatchdog();
+    return this.send(method, params, wire);
+  }
+
+  private async send<M extends MethodName>(
+    method: M,
+    params: ParamsOf<M>,
+    wire?: SecretWire,
+  ): Promise<ResultOf<M>> {
+    try {
+      await this.readyPromise;
+      if (this.broken !== undefined) {
+        throw this.broken;
       }
-      try {
-        port.post(message, transfer);
-      } catch {
-        this.pending.delete(id);
-        if (this.watchdog?.id === id) {
+      const { port } = this;
+      if (this.destroyed || port === undefined) {
+        throw new WalletError("locked", "wallet is destroyed");
+      }
+      const id = this.nextId++;
+      const message: Record<string, ProtocolValue> = { v: PROTOCOL_VERSION, id, method, params };
+      // Attach the session whenever we hold one: the create/import methods are session:false
+      // in the table because the rule is dynamic (required exactly when the vault is initialized).
+      if (this.session !== undefined) {
+        message["session"] = this.session;
+      }
+      // The whole envelope counts against the cap — an oversized request never reaches the port.
+      if (requestBytes(message) > MAX_REQUEST_BYTES) {
+        throw new WalletError("invalid-input", "request exceeds the size limit");
+      }
+      const result = await new Promise<unknown>((resolve, reject) => {
+        this.pending.set(id, { method, resolve, reject });
+        if (this.watchdog === undefined) {
+          // Pending went empty → non-empty: this request is the head the kernel works on next.
           this.armWatchdog();
         }
-        reject(integrity("the kernel port refused the message"));
-      }
-    });
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- validated by METHODS[method].result
-    return result as ResultOf<M>;
+        try {
+          port.post(message, wire?.transfer ?? []);
+        } catch {
+          this.pending.delete(id);
+          if (this.watchdog?.id === id) {
+            this.armWatchdog();
+          }
+          reject(integrity("the kernel port refused the message"));
+        }
+      });
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- validated by METHODS[method].result
+      return result as ResultOf<M>;
+    } catch (error) {
+      wire?.wipe();
+      throw error;
+    }
   }
 
   /** Fires the deferred unlocked status, if any, once the session is installed. */
