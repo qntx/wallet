@@ -227,6 +227,30 @@ export function checkExactDeps(manifests: PackageEntry[]): string[] {
   return errors;
 }
 
+const RELEASE_TAG = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/;
+
+/**
+ * A release tag names the version of every published package: the publish workflow skips a version
+ * already on the registry, so a tag that disagrees with the manifests would publish nothing (or a
+ * stale subset) while reporting success.
+ */
+export function checkReleaseTag(tag: string, packages: PackageEntry[]): string[] {
+  const version = RELEASE_TAG.exec(tag)?.[1];
+  if (version === undefined) {
+    return [`release tag ${JSON.stringify(tag)} is not v<major>.<minor>.<patch>[-prerelease]`];
+  }
+  const published = packages.filter(({ pkg }) => asRecord(pkg)["private"] !== true);
+  if (published.length === 0) {
+    return ["no published package found"];
+  }
+  return published
+    .filter(({ pkg }) => asRecord(pkg)["version"] !== version)
+    .map(
+      ({ path, pkg }) =>
+        `${path}: version ${JSON.stringify(asRecord(pkg)["version"])} does not match release tag ${tag}`,
+    );
+}
+
 if (import.meta.main) {
   // Only directories with a package.json are workspaces; bare leftovers may
   // exist under packages/.
@@ -238,6 +262,10 @@ if (import.meta.main) {
     ...scanDir("apps"),
   ];
   errors.push(...checkViteAliases(manifests), ...checkExactDeps(manifests));
+  const tagFlag = process.argv.indexOf("--release-tag");
+  if (tagFlag !== -1) {
+    errors.push(...checkReleaseTag(process.argv[tagFlag + 1] ?? "", packages));
+  }
   for (const error of errors) {
     console.error(`check-version: ${error}`);
   }
