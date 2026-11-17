@@ -8,6 +8,7 @@ import {
   evmRpcRequest,
   rpc,
   rpcRequest,
+  rpcRequestCost,
   rpcResponse,
   solanaRpcRequest,
 } from "@qntx/wallet-engine/gateway/contract";
@@ -16,6 +17,7 @@ import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
+import type { RateLimitVariables } from "../middleware/rate-limit.ts";
 import { ResponseTooLarge, readCapped } from "../providers/body.ts";
 import type { Forwarder } from "../providers/forward.ts";
 import { ProviderFailure } from "../providers/forward.ts";
@@ -45,8 +47,8 @@ export function rpcRoutes({
   fetch,
   forwarder,
   served,
-}: Deps): Hono<{ Variables: NetworkVariables }> {
-  const routes = new Hono<{ Variables: NetworkVariables }>();
+}: Deps): Hono<{ Variables: NetworkVariables & RateLimitVariables }> {
+  const routes = new Hono<{ Variables: NetworkVariables & RateLimitVariables }>();
   routes.post(
     rpc.path,
     limitBody(MAX_BODY_BYTES),
@@ -63,6 +65,8 @@ export function rpcRoutes({
       if (!accepts(allowed, body)) {
         throw new GatewayHttpError(400, "invalid-request");
       }
+      // The request paid one unit up front; a batch's calls now pay their real summed cost.
+      await c.get("charge")(rpcRequestCost(body) - 1);
       const payload = JSON.stringify(body);
 
       const { value, providerId } = await forwarder.run(

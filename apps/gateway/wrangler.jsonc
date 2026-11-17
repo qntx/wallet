@@ -31,6 +31,8 @@
           "preview_id": "41f33427d52a480784d01947ef604d7a",
         },
       ],
+      // Limits count weighted units, not requests: RPC_COST_WEIGHTS classes in the contract
+      // (point 1, heavy 3, scan 10) price every call of an RPC batch.
       "ratelimits": [
         {
           "name": "RPC_LIMITER",
@@ -68,6 +70,8 @@
         ],
       },
       "kv_namespaces": [{ "binding": "RISK", "id": "983019ff51a54c5abea1a0a8189d299d" }],
+      // Limits count weighted units, not requests: RPC_COST_WEIGHTS classes in the contract
+      // (point 1, heavy 3, scan 10) price every call of an RPC batch.
       "ratelimits": [
         {
           "name": "RPC_LIMITER",

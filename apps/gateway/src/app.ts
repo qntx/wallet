@@ -8,6 +8,7 @@ import { requireInstallId } from "./middleware/install-id.ts";
 import type { InstallIdVariables } from "./middleware/install-id.ts";
 import { indexNetworks } from "./middleware/network.ts";
 import { rateLimit } from "./middleware/rate-limit.ts";
+import type { RateLimitVariables } from "./middleware/rate-limit.ts";
 import { requestLog } from "./middleware/request-log.ts";
 import { createForwarder } from "./providers/forward.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
@@ -21,13 +22,15 @@ import type { GatewayOptions } from "./types.ts";
 export type { GatewayOptions } from "./types.ts";
 
 /** Builds the gateway; every upstream call goes through `options.fetch`. */
-export function createGateway(options: GatewayOptions): Hono<{ Variables: InstallIdVariables }> {
+export function createGateway(
+  options: GatewayOptions,
+): Hono<{ Variables: InstallIdVariables & RateLimitVariables }> {
   const served = indexNetworks(options.networks, options.auth);
   const forwarder = createForwarder();
   const deps = { fetch: options.fetch, forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);
 
-  const app = new Hono<{ Variables: InstallIdVariables }>();
+  const app = new Hono<{ Variables: InstallIdVariables & RateLimitVariables }>();
   app.use(requestLog(options.log ?? ((line) => console.log(line))));
   app.use(
     cors({

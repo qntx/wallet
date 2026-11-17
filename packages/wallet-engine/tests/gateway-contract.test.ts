@@ -7,6 +7,8 @@ import {
   EVM_RPC_METHODS,
   NETWORKS,
   RPC_BATCH_MAX,
+  RPC_COST_WEIGHTS,
+  RPC_METHOD_COST,
   accepts,
   applyDiff,
   contains,
@@ -35,8 +37,10 @@ import {
   phishingList,
   phishingListResponse,
   rpc,
+  rpcCallCost,
   rpcPath,
   rpcRequest,
+  rpcRequestCost,
   rpcResponse,
   servedNetworks,
   swapQuoteRequest,
@@ -406,6 +410,57 @@ describe("rpc responses", () => {
     );
     expect(ok(rpcResponse, { id: 1, result: 1 })).toBe(false);
     expect(ok(rpcResponse, "<html>")).toBe(false);
+  });
+});
+
+describe("rpc call cost", () => {
+  it("classifies every allow-listed method", () => {
+    for (const method of [...EVM_RPC_METHODS, ...SOLANA_RPC_METHODS]) {
+      expect(RPC_COST_WEIGHTS[RPC_METHOD_COST[method]]).toBeTypeOf("number");
+    }
+  });
+
+  it.each([
+    ["eth_chainId", 1],
+    ["eth_getBalance", 1],
+    ["eth_feeHistory", 1],
+    ["eth_call", 3],
+    ["eth_estimateGas", 3],
+    ["eth_getProof", 3],
+    ["eth_sendRawTransaction", 3],
+    ["eth_getLogs", 10],
+    ["eth_getBlockReceipts", 10],
+    ["getAccountInfo", 1],
+    ["getSlot", 1],
+    ["getSignatureStatuses", 1],
+    ["sendTransaction", 3],
+    ["simulateTransaction", 3],
+    ["getTransaction", 3],
+    ["getSignaturesForAddress", 3],
+    ["getMultipleAccounts", 10],
+    ["getVoteAccounts", 10],
+  ])("costs %s at %i units", (method, units) => {
+    expect(rpcCallCost(call(method))).toBe(units);
+  });
+
+  it("charges a full-transaction block as a scan", () => {
+    expect(rpcCallCost(call("eth_getBlockByNumber", 1, ["latest", false]))).toBe(1);
+    expect(rpcCallCost(call("eth_getBlockByNumber", 1, ["latest", true]))).toBe(10);
+    expect(rpcCallCost(call("eth_getBlockByHash", 1, [`0x${HASH}`, false]))).toBe(1);
+    expect(rpcCallCost(call("eth_getBlockByHash", 1, [`0x${HASH}`, true]))).toBe(10);
+  });
+
+  it("charges getTokenAccountsByOwner by its filter", () => {
+    const owner = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+    expect(rpcCallCost(call("getTokenAccountsByOwner", 1, [owner, { mint: owner }]))).toBe(1);
+    expect(rpcCallCost(call("getTokenAccountsByOwner", 1, [owner, { programId: owner }]))).toBe(10);
+  });
+
+  it("sums a batch and charges a single call alone", () => {
+    expect(rpcRequestCost(call("eth_chainId"))).toBe(1);
+    expect(rpcRequestCost([call("eth_chainId"), call("eth_getLogs")])).toBe(11);
+    const batch = Array.from({ length: RPC_BATCH_MAX }, (_v, i) => call("eth_getLogs", i));
+    expect(rpcRequestCost(batch)).toBe(RPC_BATCH_MAX * 10);
   });
 });
 

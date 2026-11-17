@@ -30,6 +30,18 @@ transport error, 5xx, malformed body) is ambiguous: the provider may have relaye
 so the request is answered 502 `outcome-unknown` rather than retried on a provider that could
 double-broadcast it.
 
+## Rate limiting
+
+Three Workers limiters count weighted units per 10 s window (values in `wrangler.jsonc`): the
+client IP prefix, then `x-install-id` + prefix on either the RPC limiter (transport routes) or the
+default one. Every request — valid or not — pays one unit up front; an RPC request then pays the
+summed cost of its calls minus the unit already charged. `RPC_COST_WEIGHTS` in the contract prices
+a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_getLogs`,
+`eth_getBlockReceipts`, `getMultipleAccounts`, `getVoteAccounts`, full-transaction blocks,
+programId-filtered `getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a
+batch of 20 `eth_getLogs` costs 200. Esplora requests stay at one unit: every allow-listed path is
+bounded.
+
 ## Phishing list
 
 `buildPhishingList` (the `scheduled` handler) fetches every source, keeps

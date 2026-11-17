@@ -1,7 +1,7 @@
 import type { RiskStore } from "./risk/phishing.ts";
 
 export type RateLimiter = {
-  limit: (options: { key: string }) => Promise<{ success: boolean }>;
+  limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;
 };
 
 export type Limiters = {

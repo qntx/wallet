@@ -44,6 +44,8 @@ export function esploraRoutes({
       if (!esploraPathAllowed(c.req.method, path)) {
         throw new GatewayHttpError(400, "invalid-request");
       }
+      // One unit per request, charged up front: every allow-listed path is bounded (block
+      // heights, fee estimates, 25-tx pages, one transaction), so there is no call-cost to add.
       const body = c.req.method === "POST" ? await c.req.text() : undefined;
 
       const { value, providerId } = await forwarder.run(

@@ -76,12 +76,36 @@ const decide = async (success: boolean): Promise<{ success: boolean }> => {
 export const allowAll: RateLimiter = { limit: async () => decide(true) };
 export const denyAll: RateLimiter = { limit: async () => decide(false) };
 
-export function recordingLimiter(): RateLimiter & { readonly keys: string[] } {
+export function recordingLimiter(): RateLimiter & {
+  readonly keys: string[];
+  readonly deltas: number[];
+} {
   const keys: string[] = [];
+  const deltas: number[] = [];
   return {
     keys,
-    limit: async ({ key }) => {
+    deltas,
+    limit: async ({ key, delta }: { key: string; delta?: number }) => {
       keys.push(key);
+      deltas.push(delta ?? 1);
+      return decide(true);
+    },
+  };
+}
+
+/** Faithful binding fake: decides on the count before the call; a refused call adds nothing. */
+export function countBefore(limit: number): RateLimiter & {
+  readonly counts: ReadonlyMap<string, number>;
+} {
+  const counts = new Map<string, number>();
+  return {
+    counts,
+    limit: async ({ key, delta = 1 }: { key: string; delta?: number }) => {
+      const count = counts.get(key) ?? 0;
+      if (count >= limit) {
+        return decide(false);
+      }
+      counts.set(key, count + delta);
       return decide(true);
     },
   };

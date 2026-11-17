@@ -9,6 +9,7 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 
 import { ipPrefix } from "../src/middleware/rate-limit.ts";
+import type { RateLimiter } from "../src/types.ts";
 import {
   DEVNET,
   INSTALL_ID,
@@ -18,6 +19,7 @@ import {
   SIGNET,
   allowAll,
   call,
+  countBefore,
   denyAll,
   expectContract,
   fakeFetch,
@@ -37,6 +39,26 @@ const onlyLogsCalls =
   (answer: () => Response): Upstream =>
   (call) =>
     call.body.includes("eth_getLogs") ? answer() : rpcOk("0xaa36a7");
+
+/** A batch of `eth_getLogs` at every filter bound — the maximum cost one request can carry. */
+const maxCostLogsBatch = () =>
+  Array.from({ length: 20 }, (_v, i) =>
+    call(
+      "eth_getLogs",
+      [
+        {
+          fromBlock: "0x1",
+          toBlock: "0x1f4",
+          address: Array.from(
+            { length: 20 },
+            (_a, j) => `0x${(i * 20 + j).toString(16).padStart(40, "0")}`,
+          ),
+          topics: [Array.from({ length: 20 }, (_t, k) => `0x${k.toString(16).padStart(64, "0")}`)],
+        },
+      ],
+      i,
+    ),
+  );
 
 afterEach(() => {
   vi.useRealTimers();
@@ -990,6 +1012,97 @@ describe("rate limiting", () => {
     }
     expect(statuses).toStrictEqual([200, 200, 429]);
     expect(ip.keys).toStrictEqual(Array.from({ length: 3 }, () => "203.0.113.0/24"));
+  });
+
+  it("charges a batch by the summed cost of its calls, not once per request", async () => {
+    const ip = recordingLimiter();
+    const rpc = recordingLimiter();
+    const up = fakeFetch({
+      "https://a.test/evm": () =>
+        Response.json(
+          Array.from({ length: 20 }, (_v, i) => ({ jsonrpc: "2.0", id: i, result: [] })),
+        ),
+    });
+    const app = gateway({ fetch: up.fetch, limiters: { ip, rpc, default: allowAll } });
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(maxCostLogsBatch()));
+    expect(res.status).toBe(200);
+    expect(up.callsTo("https://a.test")).toHaveLength(1);
+    // One unit up front, then the batch's 200 scan units minus the unit already paid.
+    expect(ip.deltas).toStrictEqual([1, 199]);
+    expect(rpc.deltas).toStrictEqual([1, 199]);
+  });
+
+  it("refuses the next request once a batch spends the window's units", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () =>
+        Response.json(
+          Array.from({ length: 20 }, (_v, i) => ({ jsonrpc: "2.0", id: i, result: [] })),
+        ),
+    });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip: countBefore(100), rpc: countBefore(100), default: allowAll },
+    });
+    const first = await app.request(`/v1/rpc/${SEPOLIA}`, post(maxCostLogsBatch()));
+    expect(first.status).toBe(200);
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(res.status).toBe(429);
+    await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
+      error: "rate-limited",
+    });
+    expect(up.calls).toHaveLength(1);
+  });
+
+  it("charges a single point call one unit and calls each limiter once", async () => {
+    const ip = recordingLimiter();
+    const rpc = recordingLimiter();
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/evm": () => rpcOk("0xaa36a7") }).fetch,
+      limiters: { ip, rpc, default: allowAll },
+    });
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(res.status).toBe(200);
+    expect(ip.deltas).toStrictEqual([1]);
+    expect(rpc.deltas).toStrictEqual([1]);
+  });
+
+  it("answers 429 without an upstream call when the batch's extra charge is refused", async () => {
+    let limitCalls = 0;
+    const refuseSecond: RateLimiter = {
+      limit: async () => {
+        limitCalls += 1;
+        await Promise.resolve();
+        return { success: limitCalls === 1 };
+      },
+    };
+    const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
+    const app = gateway({
+      fetch: up.fetch,
+      limiters: { ip: refuseSecond, rpc: allowAll, default: allowAll },
+    });
+    const res = await app.request(
+      `/v1/rpc/${SEPOLIA}`,
+      post([call("eth_chainId"), call("eth_getLogs", [{ fromBlock: "0x1", toBlock: "0x1f4" }])]),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get("retry-after")).toBe("10");
+    await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
+      error: "rate-limited",
+    });
+    expect(up.calls).toHaveLength(0);
+  });
+
+  it("charges an Esplora request one unit — every allow-listed path is bounded", async () => {
+    const rpc = recordingLimiter();
+    const app = gateway({
+      fetch: fakeFetch({ "https://a.test/btc": () => new Response("0") }).fetch,
+      limiters: { ip: allowAll, rpc, default: allowAll },
+    });
+    const res = await app.request(`/v1/esplora/${SIGNET}/block-height/0`, {
+      headers: headers(),
+    });
+    expect(res.status).toBe(200);
+    expect(rpc.deltas).toStrictEqual([1]);
   });
 
   it("does not count health", async () => {

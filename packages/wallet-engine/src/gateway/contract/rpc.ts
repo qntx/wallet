@@ -274,6 +274,107 @@ export const solanaRpcRequest = bodySchema(
   z.union(SOLANA_RPC_METHODS.map((method) => callSchema(z.literal(method), SOLANA_PARAMS[method]))),
 );
 
+/**
+ * Rate-limit units one call costs, by class — a request's price is the sum of its calls. The
+ * classes follow Alchemy's compute units (alchemy.com/docs/reference/compute-unit-costs): point
+ * reads are single indexed lookups (0–20 CU), heavy calls run the VM, build a proof or relay a
+ * transaction (20–40 CU), and scans scale with chain contents the caller picks (eth_getLogs 60 CU —
+ * 30.4 MB measured for 500 blocks of USDC logs; getBlockReceipts ~500 throughput CU — 0.84 MB for
+ * one block's receipts).
+ */
+export const RPC_COST_WEIGHTS = { point: 1, heavy: 3, scan: 10 } as const;
+export type RpcCostClass = keyof typeof RPC_COST_WEIGHTS;
+
+/** The cost class of every allow-listed method; the param-dependent ones list their base class. */
+export const RPC_METHOD_COST: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, RpcCostClass>> = {
+  eth_blobBaseFee: "point",
+  eth_blockNumber: "point",
+  eth_call: "heavy",
+  eth_chainId: "point",
+  eth_createAccessList: "heavy",
+  eth_estimateGas: "heavy",
+  eth_feeHistory: "point",
+  eth_gasPrice: "point",
+  eth_getBalance: "point",
+  eth_getBlockByHash: "point",
+  eth_getBlockByNumber: "point",
+  eth_getBlockReceipts: "scan",
+  eth_getBlockTransactionCountByHash: "point",
+  eth_getBlockTransactionCountByNumber: "point",
+  eth_getCode: "point",
+  eth_getLogs: "scan",
+  eth_getProof: "heavy",
+  eth_getStorageAt: "point",
+  eth_getTransactionByBlockHashAndIndex: "point",
+  eth_getTransactionByBlockNumberAndIndex: "point",
+  eth_getTransactionByHash: "point",
+  eth_getTransactionCount: "point",
+  eth_getTransactionReceipt: "point",
+  eth_maxPriorityFeePerGas: "point",
+  eth_sendRawTransaction: "heavy",
+  eth_simulateV1: "heavy",
+  net_version: "point",
+  web3_clientVersion: "point",
+  getAccountInfo: "point",
+  getBalance: "point",
+  getBlockHeight: "point",
+  getBlockTime: "point",
+  getEpochInfo: "point",
+  getFeeForMessage: "point",
+  getGenesisHash: "point",
+  getLatestBlockhash: "point",
+  getMinimumBalanceForRentExemption: "point",
+  getMultipleAccounts: "scan",
+  getRecentPrioritizationFees: "point",
+  getSignatureStatuses: "point",
+  getSignaturesForAddress: "heavy",
+  getSlot: "point",
+  getStakeMinimumDelegation: "point",
+  getTokenAccountBalance: "point",
+  getTokenAccountsByOwner: "point",
+  getTokenSupply: "point",
+  getTransaction: "heavy",
+  getVersion: "point",
+  getVoteAccounts: "scan",
+  isBlockhashValid: "point",
+  sendTransaction: "heavy",
+  simulateTransaction: "heavy",
+};
+
+const costClass = new Map<string, RpcCostClass>(Object.entries(RPC_METHOD_COST));
+
+type RpcCall = { readonly method: string; readonly params?: unknown };
+
+const secondParam = (call: RpcCall): unknown => {
+  const params = z.safeParse(z.array(z.unknown()), call.params);
+  return params.success ? params.data[1] : undefined;
+};
+
+/** Rate-limit units one validated call costs, including its param-dependent upgrades. */
+export function rpcCallCost(call: RpcCall): number {
+  const second = secondParam(call);
+  if (call.method === "eth_getBlockByHash" || call.method === "eth_getBlockByNumber") {
+    // `params[1] === true` returns full transactions — the answer grows with the block.
+    return RPC_COST_WEIGHTS[second === true ? "scan" : "point"];
+  }
+  if (call.method === "getTokenAccountsByOwner") {
+    // `{ programId }` enumerates every token account of the owner; `{ mint }` is one lookup.
+    return RPC_COST_WEIGHTS[
+      typeof second === "object" && second !== null && "programId" in second ? "scan" : "point"
+    ];
+  }
+  return RPC_COST_WEIGHTS[costClass.get(call.method) ?? "point"];
+}
+
+/** The units a validated single call or batch costs on each rate limiter. */
+export function rpcRequestCost(body: RpcCall | ReadonlyArray<RpcCall>): number {
+  let total = 0;
+  for (const call of "method" in body ? [body] : body) {
+    total += rpcCallCost(call);
+  }
+  return total;
+}
+
 const successResponse = z.object({
   jsonrpc: z.literal("2.0"),
   id: jsonRpcId,
