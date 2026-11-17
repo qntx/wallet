@@ -4,12 +4,13 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to upstream providers with failover. Private, never published. It holds provider and
 quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                          |
-| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                         |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`          |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                   |
-| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build |
+| Route                            | Behavior                                                                                                                                                                                    |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                                                                                   |
+| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                    |
+| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or recent-block tags; at most 20 addresses and 20 alternatives per topic. Anything else is `400 invalid-request` |
+| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                             |
+| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                           |
 
 Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:

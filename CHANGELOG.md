@@ -34,6 +34,14 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - Error code `verification-unavailable`: a guarded call on React Native without a verifying
   factor, or a reset without a lock screen. No prompt is shown.
 
+- dApps can read event logs: `eth_getLogs` is passed through by the EIP-1193 provider and the
+  gateway, bounded to one block by hash, a numbered range of at most 500 blocks or recent-block
+  tags, with at most 20 addresses and 20 alternatives per topic. An unbounded filter fails with
+  `-32005` in the provider and `400 invalid-request` at the gateway. Filter and subscription
+  methods stay unsupported; viem and ethers event watchers fall back to polling `eth_getLogs`.
+  `wallet_addEthereumChain` / `wallet_switchEthereumChain` now say that the network must be
+  enabled in the wallet.
+
 ### Changed
 
 - **BREAKING:** `backup.disable` is a guarded operation like `backup.enable`: it takes a

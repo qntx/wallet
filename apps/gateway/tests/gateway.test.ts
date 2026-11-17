@@ -321,6 +321,38 @@ describe("rpc forwarding", () => {
     expect(up.callsTo("https://b.test")).toHaveLength(0);
   });
 
+  it("forwards a bounded eth_getLogs", async () => {
+    const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
+    const filter = { address: `0x${"11".repeat(20)}`, fromBlock: "0x10", toBlock: "0x20" };
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_getLogs", [filter])),
+    );
+    expect(res.status).toBe(200);
+    expect(up.calls.map((sent) => JSON.parse(sent.body) as unknown)).toMatchObject([
+      { params: [filter] },
+    ]);
+  });
+
+  it.each([
+    ["the whole chain", { fromBlock: "earliest", toBlock: "latest" }],
+    ["an open-ended range", { fromBlock: "0x10" }],
+    ["a range above the limit", { fromBlock: "0x0", toBlock: "0x1f4" }],
+    ["too many addresses", { address: Array.from({ length: 21 }, () => `0x${"11".repeat(20)}`) }],
+  ])("rejects eth_getLogs over %s without calling upstream", async (_name, filter) => {
+    const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
+    const app = gateway({ fetch: up.fetch });
+    const single = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_getLogs", [filter])));
+    expect(single.status).toBe(400);
+    await expectContract(single, gatewayError);
+    const batch = await app.request(
+      `/v1/rpc/${SEPOLIA}`,
+      post([call("eth_blockNumber"), call("eth_getLogs", [filter], 2)]),
+    );
+    expect(batch.status).toBe(400);
+    expect(up.calls).toHaveLength(0);
+  });
+
   it("forwards eth_simulateV1 as a read", async () => {
     const up = fakeFetch({ "https://a.test/evm": () => rpcOk([]) });
     const res = await gateway({ fetch: up.fetch }).request(
