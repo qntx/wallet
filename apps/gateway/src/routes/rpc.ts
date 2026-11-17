@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import {
   PROVIDERS_HEADER,
   accepts,
+  containsBroadcast,
   evmRpcRequest,
   rpc,
   rpcRequest,
@@ -97,6 +98,7 @@ export function rpcRoutes({
           }
           return text;
         },
+        { broadcast: containsBroadcast(body) },
       );
 
       return c.body(value, 200, {

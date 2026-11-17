@@ -7,10 +7,12 @@ import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
 import type { Forwarder } from "../providers/forward.ts";
+import { ProviderFailure } from "../providers/forward.ts";
 
 /** Raw transactions are at most ~400 kB; hex doubles that. */
 const MAX_BODY_BYTES = 1_000_000;
-const FAILOVER_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
+/** Upstream statuses where the provider provably refused the call before processing it. */
+const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
 const PREFIX_SEGMENTS = 4; // "", "v1", "esplora", ":caip2"
 
 type Deps = {
@@ -42,7 +44,12 @@ export function esploraRoutes({
       const { value, providerId } = await forwarder.run(
         network.providers,
         async (provider, signal) => {
-          const authHeaders = (await provider.auth?.()) ?? {};
+          let authHeaders: Readonly<Record<string, string>>;
+          try {
+            authHeaders = (await provider.auth?.()) ?? {};
+          } catch {
+            throw new ProviderFailure("auth", true);
+          }
           const response = await fetch(`${provider.url}${path}`, {
             method: c.req.method,
             headers: {
@@ -53,9 +60,12 @@ export function esploraRoutes({
             signal,
           });
           // 400/404 (bad request, unknown tx) are the upstream's real answer. 401 and 403 (an
-          // access or bot block), 429 and 5xx mean this provider cannot serve right now.
-          if (FAILOVER_STATUSES.has(response.status) || response.status >= 500) {
-            throw new Error(`upstream status ${response.status}`);
+          // access or bot block) and 429 refused the call; 5xx is an ambiguous provider failure.
+          if (REFUSED_STATUSES.has(response.status) || response.status >= 500) {
+            throw new ProviderFailure(
+              `status-${response.status}`,
+              REFUSED_STATUSES.has(response.status),
+            );
           }
           return {
             status: response.status,
@@ -63,6 +73,7 @@ export function esploraRoutes({
             bytes: await response.arrayBuffer(),
           };
         },
+        { broadcast: path === "/tx" },
       );
 
       return new Response(value.bytes, {

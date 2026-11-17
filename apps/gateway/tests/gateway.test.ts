@@ -519,6 +519,183 @@ describe("rpc forwarding", () => {
   });
 });
 
+describe("broadcasts", () => {
+  const RAW_TX = `0x02${"ab".repeat(64)}`;
+
+  it("answers outcome-unknown when the provider may have relayed the transaction", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => new Response("bad gateway", { status: 502 }),
+      "https://b.test/evm": () => rpcFailure(-32000, "already known"),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_sendRawTransaction", [RAW_TX])),
+    );
+    expect(res.status).toBe(502);
+    await expect(expectContract(res, gatewayError)).resolves.toStrictEqual({
+      error: "outcome-unknown",
+    });
+    expect(res.headers.get("retry-after")).toBeNull();
+    expect(up.callsTo("https://a.test")).toHaveLength(1);
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("answers outcome-unknown when a broadcast attempt hangs past the upstream timeout", async () => {
+    vi.useFakeTimers();
+    const up = fakeFetch({
+      "https://a.test/evm": async (_c, signal) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+      "https://b.test/evm": () => rpcFailure(-32000, "already known"),
+    });
+    const pending = gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_sendRawTransaction", [RAW_TX])),
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toStrictEqual({ error: "outcome-unknown" });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("fails a broadcast over when the provider provably refused the call", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => new Response("slow down", { status: 429 }),
+      "https://b.test/evm": () => rpcOk(`0x${HASH}`),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_sendRawTransaction", [RAW_TX])),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+    await expect(res.json()).resolves.toStrictEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: `0x${HASH}`,
+    });
+  });
+
+  it("sends a broadcast to the next provider when the first provider's breaker is open", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => new Response("", { status: 500 }),
+      "https://b.test/evm": (call) =>
+        call.body.includes("eth_sendRawTransaction") ? rpcOk(`0x${HASH}`) : rpcOk("0x1"),
+    });
+    const app = gateway({ fetch: up.fetch });
+    const first = await Promise.all(
+      Array.from({ length: 5 }, async () =>
+        app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId"))),
+      ),
+    );
+    expect(first.map((res) => res.status)).toStrictEqual([200, 200, 200, 200, 200]);
+    expect(up.callsTo("https://a.test")).toHaveLength(5);
+    const res = await app.request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_sendRawTransaction", [RAW_TX])),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+    expect(up.callsTo("https://a.test")).toHaveLength(5);
+  });
+
+  it("returns a provider's definitive rejection of a broadcast as the answer", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => rpcFailure(-32000, "already known"),
+      "https://b.test/evm": () => rpcOk(`0x${HASH}`),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_sendRawTransaction", [RAW_TX])),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("a");
+    await expect(res.json()).resolves.toStrictEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      error: { code: -32000, message: "already known" },
+    });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("treats a batch containing a broadcast as a broadcast", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => new Response("", { status: 500 }),
+      "https://b.test/evm": () => rpcOk("0x1"),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post([call("eth_chainId", [], 1), call("eth_sendRawTransaction", [RAW_TX], 2)]),
+    );
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toStrictEqual({ error: "outcome-unknown" });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("still fails a read over on an ambiguous failure", async () => {
+    const up = fakeFetch({
+      "https://a.test/evm": () => new Response("", { status: 500 }),
+      "https://b.test/evm": () => rpcOk("0x1"),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_chainId")),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+  });
+
+  it("answers outcome-unknown for an ambiguous Solana broadcast", async () => {
+    const up = fakeFetch({
+      "https://a.test/sol": () => new Response("bad gateway", { status: 502 }),
+      "https://b.test/sol": () => rpcOk("sig"),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(
+      `/v1/rpc/${DEVNET}`,
+      post(call("sendTransaction", ["AQID"])),
+    );
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toStrictEqual({ error: "outcome-unknown" });
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("answers outcome-unknown for an ambiguous Esplora broadcast", async () => {
+    const up = fakeFetch({
+      "https://a.test/btc": () => new Response("bad gateway", { status: 502 }),
+      "https://b.test/btc": () => new Response(HASH, { status: 200 }),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx`, {
+      method: "POST",
+      headers: headers({ "content-type": "text/plain" }),
+      body: "0200000001",
+    });
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toStrictEqual({ error: "outcome-unknown" });
+    expect(up.callsTo("https://a.test")).toHaveLength(1);
+    expect(up.callsTo("https://b.test")).toHaveLength(0);
+  });
+
+  it("fails an Esplora broadcast over when the provider provably refused the call", async () => {
+    const up = fakeFetch({
+      "https://a.test/btc": () => new Response("slow down", { status: 429 }),
+      "https://b.test/btc": () =>
+        new Response(HASH, { status: 200, headers: { "content-type": "text/plain" } }),
+    });
+    const res = await gateway({ fetch: up.fetch }).request(`/v1/esplora/${SIGNET}/tx`, {
+      method: "POST",
+      headers: headers({ "content-type": "text/plain" }),
+      body: "0200000001",
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("b");
+    await expect(res.text()).resolves.toBe(HASH);
+  });
+});
+
 describe("esplora forwarding", () => {
   const base = `/v1/esplora/${SIGNET}`;
 

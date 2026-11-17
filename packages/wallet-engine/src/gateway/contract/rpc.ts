@@ -69,6 +69,9 @@ export const SOLANA_RPC_METHODS = [
 export type EvmRpcMethod = (typeof EVM_RPC_METHODS)[number];
 export type SolanaRpcMethod = (typeof SOLANA_RPC_METHODS)[number];
 
+/** Methods that relay a signed transaction — retrying one can double-broadcast it. */
+export const RPC_BROADCAST_METHODS = ["eth_sendRawTransaction", "sendTransaction"] as const;
+
 /**
  * A request id is an int or a short string the caller chose — never `null`. `null` only exists on
  * responses, where it reports a request that could not be parsed at all ({@link jsonRpcId}).
@@ -296,3 +299,11 @@ export const rpc = endpoint("POST", "/v1/rpc/:caip2", rpcRequest, rpcResponse);
 
 /** The JSON-RPC URL path for one network. */
 export const rpcPath = (caip2: string): string => rpc.path.replace(":caip2", caip2);
+
+const broadcastMethods: ReadonlySet<string> = new Set(RPC_BROADCAST_METHODS);
+
+/** Whether a validated call or batch relays a signed transaction. */
+export function containsBroadcast(body: z.infer<typeof rpcRequest>): boolean {
+  const calls = Array.isArray(body) ? body : [body];
+  return calls.some((call) => broadcastMethods.has(call.method));
+}

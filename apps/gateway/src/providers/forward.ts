@@ -1,4 +1,5 @@
 import {
+  BrokenCircuitError,
   ConsecutiveBreaker,
   TimeoutStrategy,
   circuitBreaker,
@@ -34,6 +35,16 @@ export class ProviderFailure extends Error {
 
 export type Forwarded<T> = { readonly value: T; readonly providerId: string };
 
+export type ForwardOptions = {
+  /**
+   * The call relays a signed transaction. Retrying it on another provider can broadcast the same
+   * transaction twice, so failover is allowed only when the failed attempt provably never reached
+   * the provider: its breaker was open, or it refused the call (`ProviderFailure.refused`). Any
+   * other failure stops the walk with a 502 outcome-unknown.
+   */
+  readonly broadcast?: boolean;
+};
+
 export type Forwarder = {
   /**
    * Tries `attempt` against each provider in order, skipping any whose breaker is open. A thrown
@@ -45,6 +56,7 @@ export type Forwarder = {
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,
     attempt: (provider: ResolvedProvider, signal: AbortSignal) => Promise<T>,
+    options?: ForwardOptions,
   ) => Promise<Forwarded<T>>;
 };
 
@@ -65,6 +77,7 @@ export function createForwarder(): Forwarder {
     async run<T>(
       providers: ReadonlyArray<ResolvedProvider>,
       attempt: (provider: ResolvedProvider, signal: AbortSignal) => Promise<T>,
+      options?: ForwardOptions,
     ): Promise<Forwarded<T>> {
       const from = async (index: number): Promise<Forwarded<T>> => {
         const provider = providers[index];
@@ -79,6 +92,14 @@ export function createForwarder(): Forwarder {
         } catch (error) {
           if (error instanceof GatewayHttpError) {
             throw error;
+          }
+          if (
+            options?.broadcast === true &&
+            !(error instanceof BrokenCircuitError) &&
+            !(error instanceof ProviderFailure && error.refused)
+          ) {
+            // The provider may have relayed the transaction; no other answer is safe to invent.
+            throw new GatewayHttpError(502, "outcome-unknown");
           }
           return from(index + 1);
         }

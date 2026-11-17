@@ -15,11 +15,20 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
 `400 invalid-request`, `404 unknown-network`/`not-found`, `429 rate-limited` and `503 unavailable`
-(both with `Retry-After`), `500 internal`.
+(both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
 
-Providers are tried in the order of `src/config/networks.ts`. A transport error, timeout (10 s), 5xx
-or 429, or a malformed body moves on to the next provider; five consecutive failures open that
-provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is returned as-is.
+Providers are tried in the order of `src/config/networks.ts`. A transport error, timeout (10 s), a
+non-2xx upstream status, or a malformed body moves on to the next provider; five consecutive
+failures open that provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is
+returned as-is. An upstream 400, 413 or 422 was provoked by the request itself: it is answered 400
+`invalid-request` without failover and without counting against the breaker.
+
+A request that relays a signed transaction (`eth_sendRawTransaction`, Solana `sendTransaction`,
+Esplora `POST /tx`) fails over only when the failed attempt provably never reached the provider —
+an open breaker, a 401/403/429 refusal, or a rejected auth lookup. Any other failure (timeout,
+transport error, 5xx, malformed body) is ambiguous: the provider may have relayed the transaction,
+so the request is answered 502 `outcome-unknown` rather than retried on a provider that could
+double-broadcast it.
 
 ## Phishing list
 

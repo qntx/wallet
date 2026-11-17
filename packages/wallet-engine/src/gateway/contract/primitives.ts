@@ -18,6 +18,7 @@ export const GATEWAY_ERRORS = [
   "not-found",
   "rate-limited",
   "unavailable",
+  "outcome-unknown",
   "internal",
 ] as const;
 
