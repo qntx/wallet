@@ -277,8 +277,8 @@ export type SafeTransaction = {
   /** The inner call(s) decoded with the transaction rules (no fee); one per MultiSend entry. */
   readonly calls: ReadonlyArray<DisplayIntent>;
   /**
-   * The gas refund the Safe pays when `gasPrice` is not zero: `(gasUsed + baseGas) × gasPrice`
-   * of the gas token, where `gasUsed` is at most `safeTxGas` for the call plus the call's own
+   * The gas refund the Safe pays when `gasPrice` is not zero: `(gasUsed + baseGas) × gasPrice` of
+   * the gas token, where `gasUsed` is at most `safeTxGas` for the call plus the call's own
    * overhead, which the executor can raise — so the total is not bounded by the signed fields.
    */
   readonly refund?: {

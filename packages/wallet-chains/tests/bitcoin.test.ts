@@ -171,7 +171,6 @@ describe("derivation", () => {
 
 describe("bip322 + legacy message", () => {
   const simpleEntry = (e: (typeof vectors.bip322.simple)[number]) => ({
-    type: e.type ?? "p2wpkh",
     wif: e.wif ?? vectors.bip322.wif,
     address: e.address ?? vectors.bip322.address,
   });
@@ -187,10 +186,27 @@ describe("bip322 + legacy message", () => {
     },
   );
 
-  it.each(vectors.bip322.simple)(
-    "BIP-322 simple signature for message $message has the spec structure",
+  it.each(vectors.bip322.simple.filter((e) => e.type === "p2tr"))(
+    "BIP-322 simple p2tr signature for message $message has the spec structure",
     (entry) => {
-      const { type, wif, address } = simpleEntry(entry);
+      const { wif, address } = simpleEntry(entry);
+      const sig = signBitcoinMessage(
+        { network: MAINNET, address, message: entry.message, format: "bip322-simple" },
+        wifKey(wif),
+        auxRand,
+      );
+      const witness = Buffer.from(sig.slice(3), "base64");
+      expect(sig.startsWith("smp")).toBe(true);
+      expect(witness[0]).toBe(1);
+      expect(witness[1]).toBe(64);
+      expect(witness).toHaveLength(66);
+    },
+  );
+
+  it.each(vectors.bip322.simple.filter((e) => e.type !== "p2tr"))(
+    "BIP-322 simple p2wpkh signature for message $message has the spec structure",
+    (entry) => {
+      const { wif, address } = simpleEntry(entry);
       const key = wifKey(wif);
       const sig = signBitcoinMessage(
         { network: MAINNET, address, message: entry.message, format: "bip322-simple" },
@@ -199,12 +215,6 @@ describe("bip322 + legacy message", () => {
       );
       const witness = Buffer.from(sig.slice(3), "base64");
       expect(sig.startsWith("smp")).toBe(true);
-      if (type === "p2tr") {
-        expect(witness[0]).toBe(1);
-        expect(witness[1]).toBe(64);
-        expect(witness).toHaveLength(66);
-        return;
-      }
       expect(witness[0]).toBe(2);
       const sigLen = Number(witness[1]);
       expect(sigLen).toBeGreaterThan(70);
@@ -236,9 +246,11 @@ describe("bip322 + legacy message", () => {
       const { address } = simpleEntry(entry);
       for (const sig of entry.signatures) {
         const raw = Buffer.from(sig.slice(3), "base64");
-        // Bit 3 of byte 3 lands inside the first witness item's signature for both p2wpkh (DER)
-        // and p2tr (64-byte schnorr), so the witness still parses but no longer verifies.
-        raw[3] = (raw[3] ?? 0) ^ 0x08;
+        // Byte 3 lands inside the first witness item's signature for both p2wpkh (DER) and
+        // p2tr (64-byte schnorr); adding 0x40 changes it (mod 256), so the witness still
+        // parses but no longer verifies.
+        const b3 = Number(raw.at(3));
+        raw[3] = (b3 + 0x40) % 256;
         expect(
           verifyBitcoinMessage(address, entry.message, `smp${raw.toString("base64")}`, MAINNET),
         ).toBe(false);
@@ -246,7 +258,7 @@ describe("bip322 + legacy message", () => {
     },
   );
 
-  it.each(vectors.bip322.simple.filter((e) => (e.type ?? "p2wpkh") === "p2wpkh"))(
+  it.each(vectors.bip322.simple.filter((e) => e.type !== "p2tr"))(
     "our deterministic p2wpkh signature for message $message byte-matches an official one",
     (entry) => {
       const { wif, address } = simpleEntry(entry);

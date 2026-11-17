@@ -588,11 +588,8 @@ export const decodeEvm = (
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
-      ? recognizeSafe(
-          json,
-          { network: request.network, chainId, table },
-          (call) =>
-            decodeCall(call, { network: request.network, fee: undefined, table, signer }),
+      ? recognizeSafe(json, { network: request.network, chainId, table }, (call) =>
+          decodeCall(call, { network: request.network, fee: undefined, table, signer }),
         )
       : undefined;
   const message: MessageContent = {

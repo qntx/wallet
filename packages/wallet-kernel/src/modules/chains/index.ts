@@ -15,7 +15,6 @@ import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
 import type {
   ChainAccount,
-  ChainSignResult,
   ChainTemplate,
   CHAINS_METHODS,
   MethodName,
@@ -35,7 +34,7 @@ import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
 import { chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
-import type { ExecuteResult } from "./shared.ts";
+import type { ExecuteResult, SignRequest } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
 import { executeSolana } from "./solana.ts";
 
@@ -164,7 +163,7 @@ const assertSignable = (
 };
 
 /** One pass over the request with its signing secret, which exists only for the call. */
-type SignPass = (intentOnly: boolean) => Promise<ExecuteResult>;
+type SignPass = (intentOnly: boolean) => ExecuteResult | Promise<ExecuteResult>;
 
 /** The HD pass: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
 const hdPass = (
@@ -266,7 +265,7 @@ const importedPass = (
     }
     throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
   };
-  return async (intentOnly) => {
+  return (intentOnly) => {
     const secret = openRecord(dek, record);
     try {
       return execute(secret, intentOnly);

@@ -58,21 +58,25 @@ const setup = async (h: Harness): Promise<{ session: string; walletId: string }>
   await h.settle();
   const res = ok(
     // Fresh bytes every call — the kernel wipes the mnemonic once consumed.
-      await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: DEVICE }),
+    await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: DEVICE }),
   );
   return { session: str(res, "session"), walletId: str(field(res, "wallet"), "walletId") };
 };
 
 type Source = {
   /** Resolves the request's account ref for this key source. */
-  readonly account: (h: Harness, session: string, walletId: string) => Promise<ProtocolValue>;
+  readonly account: (
+    h: Harness,
+    session: string,
+    walletId: string,
+  ) => ProtocolValue | Promise<ProtocolValue>;
 };
 
 const sources: ReadonlyArray<readonly [string, Source]> = [
   [
     "hd",
     {
-      account: async (_h, _session, walletId) => ({
+      account: (_h, _session, walletId) => ({
         kind: "hd",
         walletId,
         groupIndex: 0,

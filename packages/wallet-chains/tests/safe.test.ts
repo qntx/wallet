@@ -1,5 +1,5 @@
-import * as AbiFunction from "ox/AbiFunction";
 import * as fc from "fast-check";
+import * as AbiFunction from "ox/AbiFunction";
 import { describe, expect, it } from "vite-plus/test";
 
 import { SAFE_MULTISEND_CALL_ONLY, checksumEvmAddress, decodeEvm } from "../src/evm/index.ts";
@@ -99,6 +99,83 @@ const safeOf = (d: unknown) => {
   return message?.kind === "typed-data" ? message.safe : undefined;
 };
 
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+/** The token model the decoder should report for a Safe refund paid in `gasToken`. */
+const refundToken = (gasToken: string) => {
+  if (gasToken === ZERO_ADDR) {
+    return { asset: "native", decimals: 18, symbol: "ETH" };
+  }
+  if (gasToken.toLowerCase() === TOKEN.toLowerCase()) {
+    return { asset: TOKEN, decimals: 6, symbol: "USDC" };
+  }
+  return { asset: checksumEvmAddress(gasToken) };
+};
+
+/** The expected decoded refund, including the dropped-receiver and priced-amount rules. */
+const expectedRefund = (
+  gasPrice: bigint,
+  baseGas: bigint,
+  safeTxGas: bigint,
+  gasToken: string,
+  refundReceiver: string,
+) => ({
+  ...(refundReceiver === ZERO_ADDR ? {} : { receiver: checksumEvmAddress(refundReceiver) }),
+  gasPrice: { ...refundToken(gasToken), amount: gasPrice.toString(10) },
+  amount: { ...refundToken(gasToken), amount: ((baseGas + safeTxGas) * gasPrice).toString(10) },
+});
+
+/** Oracle: re-parses packed MultiSend entries; `undefined` unless every byte is valid. */
+const packedEntries = (d: string) => {
+  if (!d.toLowerCase().startsWith("0x8d80ff0a")) {
+    return undefined;
+  }
+  let body: string;
+  try {
+    const decoded: unknown = AbiFunction.decodeData(MULTISEND_ABI, d as `0x${string}`);
+    const first: unknown = Array.isArray(decoded) ? decoded[0] : undefined;
+    if (typeof first !== "string" || !first.startsWith("0x")) {
+      return undefined;
+    }
+    body = first.slice(2);
+  } catch {
+    return undefined;
+  }
+  const entries: Array<{ data: string }> = [];
+  let offset = 0;
+  while (offset < body.length) {
+    if (body.length - offset < 170) {
+      return undefined;
+    }
+    const operation = Number.parseInt(body.slice(offset, offset + 2), 16);
+    if (operation !== 0) {
+      return undefined;
+    }
+    const length = Number(BigInt(`0x${body.slice(offset + 106, offset + 170)}`));
+    offset += 170;
+    if (length * 2 > body.length - offset) {
+      return undefined;
+    }
+    entries.push({ data: `0x${body.slice(offset, offset + length * 2)}` });
+    offset += length * 2;
+  }
+  return entries;
+};
+
+/** Whether the intent for this outer SafeTx should be blind — the property's oracle. */
+const expectedBlind = (operation: number, to: string, data: string): boolean => {
+  const entries = packedEntries(data);
+  // A call is blind unless the inner call decodes; a delegatecall is blind unless it unpacks
+  // on a canonical MultiSendCallOnly target with no opaque inner calls.
+  if (operation === 0) {
+    return data !== "0x" && data !== transferData;
+  }
+  return (
+    !(SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase()) && entries !== undefined) ||
+    (entries?.some((e) => e.data !== "0x") ?? false)
+  );
+};
+
 describe("decodeEvm: Safe transactions", () => {
   it("recognizes a call SafeTx and decodes the inner call", () => {
     const intent = decode(doc(safeTx({ value: "1000000000000000000" })));
@@ -193,14 +270,25 @@ describe("decodeEvm: Safe transactions", () => {
     });
   });
 
+  it("exposes no refund and stays verifiable when gasPrice is zero", () => {
+    const d = doc(
+      safeTx({
+        gasPrice: "0",
+        baseGas: "21000",
+        safeTxGas: "100000",
+        refundReceiver: REFUND,
+      }),
+    );
+    expect(safeOf(d)?.refund).toBeUndefined();
+    // The single inner call ("0x" data) is a plain transfer — nothing opaque.
+    expect(isBlindIntent(decode(d))).toBe(false);
+  });
+
   it("prices the refund, drops a zero receiver and is blind", () => {
     const evmAddress = fc
       .uint8Array({ minLength: 20, maxLength: 20 })
-      .map(
-        (b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`,
-      );
+      .map((b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`);
     const uint256 = fc.bigInt({ min: 0n, max: 2n ** 256n - 1n });
-    const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
     fc.assert(
       fc.property(
         fc.record({
@@ -211,6 +299,8 @@ describe("decodeEvm: Safe transactions", () => {
           refundReceiver: fc.oneof(fc.constant(ZERO_ADDR), evmAddress),
         }),
         ({ gasPrice, baseGas, safeTxGas, gasToken, refundReceiver }) => {
+          // The zero-gasPrice branch (no refund, verifiable) is the dedicated test above.
+          fc.pre(gasPrice !== 0n);
           const d = doc(
             safeTx({
               gasPrice: gasPrice.toString(10),
@@ -220,29 +310,10 @@ describe("decodeEvm: Safe transactions", () => {
               refundReceiver,
             }),
           );
-          const safe = safeOf(d);
-          const intent = decode(d);
-          if (gasPrice === 0n) {
-            expect(safe?.refund).toBeUndefined();
-            // The single inner call ("0x" data) is a plain transfer — nothing opaque.
-            expect(isBlindIntent(intent)).toBe(false);
-            return;
-          }
-          const total = ((baseGas + safeTxGas) * gasPrice).toString(10);
-          const token =
-            gasToken === ZERO_ADDR
-              ? { asset: "native", decimals: 18, symbol: "ETH" }
-              : gasToken.toLowerCase() === TOKEN.toLowerCase()
-                ? { asset: TOKEN, decimals: 6, symbol: "USDC" }
-                : { asset: checksumEvmAddress(gasToken) };
-          expect(safe?.refund).toStrictEqual({
-            ...(refundReceiver === ZERO_ADDR
-              ? {}
-              : { receiver: checksumEvmAddress(refundReceiver) }),
-            gasPrice: { ...token, amount: gasPrice.toString(10) },
-            amount: { ...token, amount: total },
-          });
-          expect(isBlindIntent(intent)).toBe(true);
+          expect(safeOf(d)?.refund).toStrictEqual(
+            expectedRefund(gasPrice, baseGas, safeTxGas, gasToken, refundReceiver),
+          );
+          expect(isBlindIntent(decode(d))).toBe(true);
         },
       ),
     );
@@ -275,13 +346,9 @@ describe("decodeEvm: Safe transactions", () => {
   it("blind exactly when the delegatecall is not a verifiable MultiSend", () => {
     const hexOf = (b: Uint8Array): string =>
       [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-    const evmAddress = fc
-      .uint8Array({ minLength: 20, maxLength: 20 })
-      .map((b) => `0x${hexOf(b)}`);
+    const evmAddress = fc.uint8Array({ minLength: 20, maxLength: 20 }).map((b) => `0x${hexOf(b)}`);
     // Shorter than any 4-byte selector, so never a decodable call.
-    const shortData = fc
-      .uint8Array({ minLength: 1, maxLength: 3 })
-      .map((b) => `0x${hexOf(b)}`);
+    const shortData = fc.uint8Array({ minLength: 1, maxLength: 3 }).map((b) => `0x${hexOf(b)}`);
     const entryData = fc.oneof(fc.constant("0x"), shortData);
     const entry = fc.record({
       to: evmAddress,
@@ -298,43 +365,6 @@ describe("decodeEvm: Safe transactions", () => {
       );
     const data = fc.oneof(packed, fc.constant("0x"), fc.constant(transferData), shortData);
 
-    /** Oracle: re-parses packed MultiSend entries; `undefined` unless every byte is valid. */
-    const packedEntries = (d: string) => {
-      if (!d.toLowerCase().startsWith("0x8d80ff0a")) {
-        return undefined;
-      }
-      let body: string;
-      try {
-        const decoded: unknown = AbiFunction.decodeData(MULTISEND_ABI, d as `0x${string}`);
-        const first: unknown = Array.isArray(decoded) ? decoded[0] : undefined;
-        if (typeof first !== "string" || !first.startsWith("0x")) {
-          return undefined;
-        }
-        body = first.slice(2);
-      } catch {
-        return undefined;
-      }
-      const entries: Array<{ data: string }> = [];
-      let offset = 0;
-      while (offset < body.length) {
-        if (body.length - offset < 170) {
-          return undefined;
-        }
-        const operation = Number.parseInt(body.slice(offset, offset + 2), 16);
-        if (operation !== 0) {
-          return undefined;
-        }
-        const length = Number(BigInt(`0x${body.slice(offset + 106, offset + 170)}`));
-        offset += 170;
-        if (length * 2 > body.length - offset) {
-          return undefined;
-        }
-        entries.push({ data: `0x${body.slice(offset, offset + length * 2)}` });
-        offset += length * 2;
-      }
-      return entries;
-    };
-
     fc.assert(
       fc.property(
         fc.record({
@@ -344,15 +374,7 @@ describe("decodeEvm: Safe transactions", () => {
         }),
         ({ operation, to, data }) => {
           const intent = decode(doc(safeTx({ to, operation, data })));
-          const entries = packedEntries(data);
-          // Only a canonical target with fully valid MultiSend packing unpacks; its calls are
-          // then blind iff an inner call is opaque (our entry data is "0x" or a short blob).
-          const expected =
-            operation === 0
-              ? data !== "0x" && data !== transferData
-              : !(SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase()) && entries !== undefined) ||
-                (entries?.some((e) => e.data !== "0x") ?? false);
-          expect(isBlindIntent(intent)).toBe(expected);
+          expect(isBlindIntent(intent)).toBe(expectedBlind(operation, to, data));
         },
       ),
     );

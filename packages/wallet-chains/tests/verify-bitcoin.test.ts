@@ -391,69 +391,82 @@ describe("BIP-322 differential vs bitcoinjs-lib", () => {
   const toBytes32 = (n: bigint): Uint8Array =>
     Uint8Array.from(Buffer.from(n.toString(16).padStart(64, "0"), "hex"));
 
-  it("to_spend/to_sign txids and signatures match an independent implementation", () => {
+  const randomCase = fc.record({
+    priv: fc.bigInt({ min: 1n, max: secp256k1.Point.Fn.ORDER - 1n }).map((n) => toBytes32(n)),
+    message: fc.oneof(
+      fc.constant(""),
+      fc.constant("UTF-8 support: öäüéàè 测试文本 😄"),
+      fc.string({ maxLength: 40 }),
+    ),
+  });
+
+  it("to_spend/to_sign txids and p2wpkh signatures match an independent implementation", () => {
     fc.assert(
-      fc.property(
-        fc.record({
-          priv: fc
-            .bigInt({ min: 1n, max: secp256k1.Point.Fn.ORDER - 1n })
-            .map((n) => toBytes32(n)),
-          message: fc.oneof(
-            fc.constant(""),
-            fc.constant("UTF-8 support: öäüéàè 测试文本 😄"),
-            fc.string({ maxLength: 40 }),
-          ),
-          type: fc.constantFrom("p2wpkh", "p2tr"),
-        }),
-        ({ priv, message, type }) => {
-          const pub = secp256k1.getPublicKey(priv, true);
-          const pay =
-            type === "p2tr" ? p2tr(pub.slice(1), undefined, NETWORK) : p2wpkh(pub, NETWORK);
-          const scriptPubKey = Buffer.from(pay.script);
-          const address = pay.address!;
+      fc.property(randomCase, ({ priv, message }) => {
+        const pay = p2wpkh(secp256k1.getPublicKey(priv, true), NETWORK);
+        const scriptPubKey = Buffer.from(pay.script);
+        const { address } = pay;
 
-          const toSpend = toSpendBjs(scriptPubKey, message);
-          expect(toSpend.getId()).toBe(
-            Buffer.from(bip322ToSpendTxid(pay.script, message)).toString("hex"),
-          );
-          const toSign = toSignBjs(toSpend);
-          expect(toSign.getId()).toBe(bip322ToSign(pay.script, message).id);
+        const toSpend = toSpendBjs(scriptPubKey, message);
+        expect(toSpend.getId()).toBe(
+          Buffer.from(bip322ToSpendTxid(pay.script, message)).toString("hex"),
+        );
+        const toSign = toSignBjs(toSpend);
+        expect(toSign.getId()).toBe(bip322ToSign(pay.script, message).id);
 
-          const sig = signBitcoinMessage(
-            { network: NETWORK_CAIP, address, message, format: "bip322-simple" },
-            priv,
-            auxRand,
-          );
-          const items = witnessItems(sig);
-          if (type === "p2tr") {
-            const rawSig = items[0]!;
-            expect(items).toHaveLength(1);
-            expect(rawSig).toHaveLength(64);
-            const hash = toSign.hashForWitnessV1(
-              0,
-              [scriptPubKey],
-              [0n],
-              BjsTransaction.SIGHASH_DEFAULT,
-            );
-            expect(ecc.verifySchnorr(hash, scriptPubKey.subarray(2), rawSig)).toBe(true);
-          } else {
-            const [rawSig, sigPub] = items;
-            const hashType = rawSig!.at(-1)!;
-            const scriptCode = Buffer.concat([
-              Buffer.of(0x76, 0xa9, 0x14),
-              scriptPubKey.subarray(2),
-              Buffer.of(0x88, 0xac),
-            ]);
-            const hash = toSign.hashForWitnessV0(0, scriptCode, 0n, hashType);
-            const compact = secp256k1.Signature.fromBytes(
-              rawSig!.subarray(0, -1),
-              "der",
-            ).toBytes();
-            expect(ecc.verify(hash, sigPub!, compact)).toBe(true);
-          }
-          expect(verifyBitcoinMessage(address, message, sig, NETWORK_CAIP)).toBe(true);
-        },
-      ),
+        const sig = signBitcoinMessage(
+          { network: NETWORK_CAIP, address, message, format: "bip322-simple" },
+          priv,
+          auxRand,
+        );
+        const [rawSig, sigPub] = witnessItems(sig);
+        const hashType = rawSig!.at(-1)!;
+        const scriptCode = Buffer.concat([
+          Buffer.of(0x76, 0xa9, 0x14),
+          scriptPubKey.subarray(2),
+          Buffer.of(0x88, 0xac),
+        ]);
+        const hash = toSign.hashForWitnessV0(0, scriptCode, 0n, hashType);
+        const compact = secp256k1.Signature.fromBytes(rawSig!.subarray(0, -1), "der").toBytes();
+        expect(ecc.verify(hash, sigPub!, compact)).toBe(true);
+        expect(verifyBitcoinMessage(address, message, sig, NETWORK_CAIP)).toBe(true);
+      }),
+      { numRuns: 40 },
+    );
+  });
+
+  it("to_spend/to_sign txids and p2tr signatures match an independent implementation", () => {
+    fc.assert(
+      fc.property(randomCase, ({ priv, message }) => {
+        const pay = p2tr(secp256k1.getPublicKey(priv, true).slice(1), undefined, NETWORK);
+        const scriptPubKey = Buffer.from(pay.script);
+        const { address } = pay;
+
+        const toSpend = toSpendBjs(scriptPubKey, message);
+        expect(toSpend.getId()).toBe(
+          Buffer.from(bip322ToSpendTxid(pay.script, message)).toString("hex"),
+        );
+        const toSign = toSignBjs(toSpend);
+        expect(toSign.getId()).toBe(bip322ToSign(pay.script, message).id);
+
+        const sig = signBitcoinMessage(
+          { network: NETWORK_CAIP, address, message, format: "bip322-simple" },
+          priv,
+          auxRand,
+        );
+        const items = witnessItems(sig);
+        const rawSig = items[0]!;
+        expect(items).toHaveLength(1);
+        expect(rawSig).toHaveLength(64);
+        const hash = toSign.hashForWitnessV1(
+          0,
+          [scriptPubKey],
+          [0n],
+          BjsTransaction.SIGHASH_DEFAULT,
+        );
+        expect(ecc.verifySchnorr(hash, scriptPubKey.subarray(2), rawSig)).toBe(true);
+        expect(verifyBitcoinMessage(address, message, sig, NETWORK_CAIP)).toBe(true);
+      }),
       { numRuns: 40 },
     );
   });

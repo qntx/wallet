@@ -948,10 +948,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       SIGNER,
     );
   const typedOn = (network: string, doc: unknown) =>
-    decodeEvm(
-      { kind: "evm.typed-data", network, account, typedData: JSON.stringify(doc) },
-      SIGNER,
-    );
+    decodeEvm({ kind: "evm.typed-data", network, account, typedData: JSON.stringify(doc) }, SIGNER);
   const typed = (doc: unknown) => typedOn("eip155:1", doc);
   const signIn = [
     "app.example.com wants you to sign in with your Ethereum account:",
@@ -1169,7 +1166,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
   it("Seaport criteria items and a non-zero zone are named", () => {
     const nft = "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D";
     // 12345 = 0x3039 as a 32-byte root.
-    const root = `0x${(12345n).toString(16).padStart(64, "0")}`;
+    const root = `0x${12345n.toString(16).padStart(64, "0")}`;
     const intent = typed(
       seaportDoc({
         zone: TO,
@@ -1199,39 +1196,68 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 
+  const ZERO_EVM_ADDR = "0x0000000000000000000000000000000000000000";
+  const seaportAddress = fc
+    .uint8Array({ minLength: 20, maxLength: 20 })
+    .map((b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`);
+  /** A Seaport offer/consideration item with the asset fields the prompt renders. */
+  const seaportItem = fc
+    .record({
+      kind: fc.constantFrom(
+        "native",
+        "erc20",
+        "erc721",
+        "erc1155",
+        "erc721-criteria",
+        "erc1155-criteria",
+      ),
+      token: seaportAddress,
+      identifier: fc.bigInt({ min: 0n, max: 2n ** 200n }).map((n) => n.toString(10)),
+      count: fc.bigInt({ min: 1n, max: 9n }).map((n) => n.toString(10)),
+    })
+    .map(({ kind, token, identifier, count }) => {
+      const amount = {
+        asset: kind === "native" ? "native" : token,
+        amount: count,
+        ...(kind === "erc721" || kind === "erc1155" ? { tokenId: identifier } : {}),
+      };
+      return { kind, token, identifier, startAmount: amount, endAmount: amount };
+    });
+  type SeaportItem = typeof seaportItem extends fc.Arbitrary<infer T> ? T : never;
+  /** The per-kind "Give" line assertions — kept out of the property to satisfy the suite. */
+  const expectGiveLine = (line: string | undefined, it: SeaportItem): void => {
+    const text = line ?? "";
+    const count = it.startAmount.amount;
+    switch (it.kind) {
+      case "erc721":
+      case "erc1155":
+        expect(text).toContain(`${it.token} #${it.identifier}`);
+        expect(text.includes(`×${count}`)).toBe(count !== "1");
+        break;
+      case "erc721-criteria":
+      case "erc1155-criteria":
+        if (it.identifier === "0") {
+          expect(text).toContain(`any token of ${it.token}`);
+        } else {
+          expect(text).toContain(`0x${BigInt(it.identifier).toString(16).padStart(64, "0")}`);
+        }
+        expect(text.includes(`×${count}`)).toBe(count !== "1");
+        break;
+      case "native":
+        expect(text).toContain("native");
+        break;
+      case "erc20":
+        expect(text).toContain(it.token);
+        break;
+    }
+  };
+
   it("every Seaport item kind renders its token, id or criteria and the zone", () => {
-    const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
-    const hexOf = (b: Uint8Array): string =>
-      [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-    const evmAddress = fc.uint8Array({ minLength: 20, maxLength: 20 }).map((b) => `0x${hexOf(b)}`);
-    const kind = fc.constantFrom(
-      "native",
-      "erc20",
-      "erc721",
-      "erc1155",
-      "erc721-criteria",
-      "erc1155-criteria",
-    );
-    const item = fc
-      .record({
-        kind,
-        token: evmAddress,
-        identifier: fc.bigInt({ min: 0n, max: 2n ** 200n }).map((n) => n.toString(10)),
-        count: fc.bigInt({ min: 1n, max: 9n }).map((n) => n.toString(10)),
-      })
-      .map(({ kind, token, identifier, count }) => {
-        const amount = {
-          asset: kind === "native" ? "native" : token,
-          amount: count,
-          ...(kind === "erc721" || kind === "erc1155" ? { tokenId: identifier } : {}),
-        };
-        return { kind, token, identifier, startAmount: amount, endAmount: amount };
-      });
     fc.assert(
       fc.property(
-        fc.array(item, { minLength: 1, maxLength: 6 }),
-        fc.array(item, { maxLength: 2 }),
-        fc.oneof(fc.constant(ZERO_ADDR), evmAddress),
+        fc.array(seaportItem, { minLength: 1, maxLength: 6 }),
+        fc.array(seaportItem, { maxLength: 2 }),
+        fc.oneof(fc.constant(ZERO_EVM_ADDR), seaportAddress),
         (offer, extra, zone) => {
           const seaport = {
             offerer: SIGNER,
@@ -1241,44 +1267,16 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
             offer,
             consideration: extra.map((i) => ({ ...i, recipient: TO })),
           };
-          const description = chainPrompt("en", typedIntent({ seaport })).description;
+          const { description } = chainPrompt("en", typedIntent({ seaport }));
           const lines = description.split("\n");
           const gives = lines.filter((l) => l.startsWith("Give "));
           expect(gives).toHaveLength(Math.min(offer.length, 4));
           for (const [i, it] of offer.slice(0, 4).entries()) {
-            const line = gives[i] ?? "";
-            switch (it.kind) {
-              case "erc721":
-              case "erc1155":
-                expect(line).toContain(`${it.token} #${it.identifier}`);
-                expect(line.includes(`×${it.startAmount.amount}`)).toBe(
-                  it.startAmount.amount !== "1",
-                );
-                break;
-              case "erc721-criteria":
-              case "erc1155-criteria":
-                if (it.identifier === "0") {
-                  expect(line).toContain(`any token of ${it.token}`);
-                } else {
-                  expect(line).toContain(
-                    `0x${BigInt(it.identifier).toString(16).padStart(64, "0")}`,
-                  );
-                }
-                expect(line.includes(`×${it.startAmount.amount}`)).toBe(
-                  it.startAmount.amount !== "1",
-                );
-                break;
-              case "native":
-                expect(line).toContain("native");
-                break;
-              case "erc20":
-                expect(line).toContain(it.token);
-                break;
-            }
+            expectGiveLine(gives[i], it);
           }
-          const last = lines[lines.length - 1];
+          const last = lines.at(-1);
           expect(last === `Zone ${zone} can restrict or cancel this order`).toBe(
-            zone !== ZERO_ADDR,
+            zone !== ZERO_EVM_ADDR,
           );
         },
       ),

@@ -1,5 +1,5 @@
-import * as AbiFunction from "ox/AbiFunction";
 import * as fc from "fast-check";
+import * as AbiFunction from "ox/AbiFunction";
 import { describe, expect, it } from "vite-plus/test";
 
 import { EVM_NATIVE_ASSET, checksumEvmAddress, decodeEvm } from "../src/evm/index.ts";
@@ -144,7 +144,8 @@ const typedReq = (network: string, doc: unknown): SignRequest => ({
 
 /**
  * Every amount a prompt can show: outflows, minimum-received, fee, staking, nested calls, and
- * typed-data content (Seaport items, Safe calls). The requester's raw `message.data` is not walked.
+ * typed-data content (Seaport items, Safe calls). The requester's raw `message.data` is not
+ * walked.
  */
 const amountsOf = (intent: DisplayIntent): AssetAmount[] => {
   const out: AssetAmount[] = [];
@@ -162,7 +163,9 @@ const amountsOf = (intent: DisplayIntent): AssetAmount[] => {
         out.push(a.amount, a.receive);
       }
     }
-    (i.calls ?? []).forEach(walk);
+    for (const call of i.calls ?? []) {
+      walk(call);
+    }
     const { message } = i;
     if (message !== undefined && message.kind === "typed-data") {
       if (message.seaport !== undefined) {
@@ -170,7 +173,9 @@ const amountsOf = (intent: DisplayIntent): AssetAmount[] => {
           out.push(item.startAmount, item.endAmount);
         }
       }
-      (message.safe?.calls ?? []).forEach(walk);
+      for (const call of message.safe?.calls ?? []) {
+        walk(call);
+      }
     }
   };
   walk(intent);
@@ -208,7 +213,9 @@ describe("decodeEvm native amounts carry the request network's metadata", () => 
   it("a native transaction's send and fee", () => {
     fc.assert(
       fc.property(networks, wei, (network, value) => {
-        expectNativeMeta(decodeEvm(txReq(network, value), SIGNER, {}), network);
+        const intent = decodeEvm(txReq(network, value), SIGNER, {});
+        expect(intent.fee?.max.asset).toBe(EVM_NATIVE_ASSET);
+        expectNativeMeta(intent, network);
       }),
     );
   });
@@ -217,7 +224,9 @@ describe("decodeEvm native amounts carry the request network's metadata", () => 
     fc.assert(
       fc.property(networks, wei, (network, value) => {
         const doc = safeDoc(network, safeTx({ value: value.toString(10) }));
-        expectNativeMeta(decodeEvm(typedReq(network, doc), SIGNER, {}), network);
+        const intent = decodeEvm(typedReq(network, doc), SIGNER, {});
+        expect(intent.message?.kind).toBe("typed-data");
+        expectNativeMeta(intent, network);
       }),
     );
   });
@@ -228,7 +237,9 @@ describe("decodeEvm native amounts carry the request network's metadata", () => 
         const packed = packEntry(TO, a, "0x") + packEntry(SAFE, b, "0x");
         const data = AbiFunction.encodeData(MULTISEND_ABI, [`0x${packed}`]);
         const doc = safeDoc(network, safeTx({ to: MULTISEND, operation: 1, data }));
-        expectNativeMeta(decodeEvm(typedReq(network, doc), SIGNER, {}), network);
+        const intent = decodeEvm(typedReq(network, doc), SIGNER, {});
+        expect(intent.message?.kind).toBe("typed-data");
+        expectNativeMeta(intent, network);
       }),
     );
   });
@@ -237,7 +248,9 @@ describe("decodeEvm native amounts carry the request network's metadata", () => 
     fc.assert(
       fc.property(networks, wei, wei, (network, offerWei, considerationWei) => {
         const doc = seaportDoc(network, offerWei, considerationWei);
-        expectNativeMeta(decodeEvm(typedReq(network, doc), SIGNER, {}), network);
+        const intent = decodeEvm(typedReq(network, doc), SIGNER, {});
+        expect(intent.message?.kind).toBe("typed-data");
+        expectNativeMeta(intent, network);
       }),
     );
   });

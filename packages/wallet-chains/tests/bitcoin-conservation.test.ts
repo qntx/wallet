@@ -1,8 +1,8 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
-import * as fc from "fast-check";
 import { p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
+import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeBitcoinPsbt } from "../src/bitcoin/index.ts";
@@ -52,25 +52,35 @@ const outSpec: fc.Arbitrary<OutSpec> = fc.oneof(
 
 /** The script the generated output spec carries. */
 const scriptOf = (spec: OutSpec): Uint8Array => {
-  switch (spec.kind) {
-    case "p2wpkh":
-      return p2wpkh(pub33(spec.priv)).script;
-    case "p2tr":
-      return p2tr(xonly(spec.priv)).script;
-    case "change":
-      return ownScript;
-    case "opReturn":
-      return Uint8Array.of(OP_RETURN, spec.data.length, ...spec.data);
-    case "weird":
-      // A spendable-looking but nonstandard script: OP_2 then a 33-byte push.
-      return Uint8Array.of(0x52, 0x21, ...new Uint8Array(33).fill(0xab));
-    case "oversized": {
-      const script = new Uint8Array(MAX_SCRIPT_SIZE + 1);
-      script[0] = 0x51;
-      return script;
-    }
+  if (spec.kind === "p2wpkh") {
+    return p2wpkh(pub33(spec.priv)).script;
   }
+  if (spec.kind === "p2tr") {
+    return p2tr(xonly(spec.priv)).script;
+  }
+  if (spec.kind === "change") {
+    return ownScript;
+  }
+  if (spec.kind === "opReturn") {
+    return Uint8Array.of(OP_RETURN, spec.data.length, ...spec.data);
+  }
+  if (spec.kind === "weird") {
+    // A spendable-looking but nonstandard script: OP_2 then a 33-byte push.
+    return Uint8Array.of(0x52, 0x21, ...new Uint8Array(33).fill(0xab));
+  }
+  // "oversized": one byte over the consensus script limit.
+  const script = new Uint8Array(MAX_SCRIPT_SIZE + 1);
+  script[0] = 0x51;
+  return script;
 };
+
+/** True when the spec moves value: not change, and not a zero-value unspendable output. */
+const isMoved = (spec: OutSpec): boolean =>
+  spec.kind !== "change" && (spec.amount > 0n || !unspendable(scriptOf(spec)));
+
+/** The decoded intent's max fee as a bigint, or -1 when it reports none. */
+const feeOf = (intent: ReturnType<typeof decodeBitcoinPsbt>): bigint =>
+  BigInt(intent.fee?.max.amount ?? "-1");
 
 type Generated = {
   readonly inputs: ReadonlyArray<bigint>;
@@ -125,21 +135,15 @@ describe("decodeBitcoinPsbt conservation", () => {
       fc.property(generated, ({ inputs, outputs }) => {
         const inSum = inputs.reduce((a, b) => a + b, 0n);
         const outSum = outputs.reduce((a, o) => a + o.amount, 0n);
+        // Consensus-invalid cases (outputs exceed the proven inputs) are covered by the
+        // dedicated invalid-request test below.
+        fc.pre(outSum <= inSum);
         const psbt = psbtOf(inputs, outputs);
         const own = new Set([hex(ownScript)]);
-        if (outSum > inSum) {
-          // Consensus-invalid: the outputs exceed everything the inputs prove.
-          expect(() => decodeBitcoinPsbt(request(psbt, inputs.length), own)).toThrow(
-            expect.objectContaining({ code: "invalid-request" }) as Error,
-          );
-          return;
-        }
         const intent = decodeBitcoinPsbt(request(psbt, inputs.length), own);
         // Every non-change output is an outflow except a zero-value unspendable one, which moves
         // nothing; a burn is exactly an unspendable output with value.
-        const moved = outputs.filter(
-          (o) => o.kind !== "change" && (o.amount > 0n || !unspendable(scriptOf(o))),
-        );
+        const moved = outputs.filter(isMoved);
         expect(intent.outflows).toHaveLength(moved.length);
         const outflowSum = intent.outflows.reduce(
           (sum, flow) => sum + BigInt(flow.amount.amount),
@@ -148,13 +152,13 @@ describe("decodeBitcoinPsbt conservation", () => {
         const change = outputs
           .filter((o) => o.kind === "change")
           .reduce((a, o) => a + o.amount, 0n);
-        expect(inSum - outflowSum - change).toBe(BigInt(intent.fee?.max.amount ?? "-1"));
-        moved.forEach((spec, i) => {
+        expect(inSum - outflowSum - change).toBe(feeOf(intent));
+        for (const [i, spec] of moved.entries()) {
           const flow = intent.outflows[i];
           expect(flow?.amount.asset).toBe("sats");
           expect(flow?.amount.amount).toBe(spec.amount.toString(10));
           expect(flow?.burn === true).toBe(unspendable(scriptOf(spec)));
-        });
+        }
       }),
       { numRuns: 300 },
     );
