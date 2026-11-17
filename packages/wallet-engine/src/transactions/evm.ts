@@ -144,6 +144,7 @@ const signSubmit = async (
   verify: SignParams["verify"],
   account: { readonly from: string; readonly account: AccountRef },
   broadcast: (signed: SignResult) => Promise<{ readonly hash: string; readonly raw: string }>,
+  commit: () => void,
 ): Promise<TrackedTransaction> => {
   let signed: SignResult;
   let tracked = tx;
@@ -156,6 +157,7 @@ const signSubmit = async (
     throw error;
   }
   try {
+    commit();
     const { hash, raw } = await broadcast(signed);
     tracked = await ctx.transition(tracked, {
       state: "submitted",
@@ -887,7 +889,10 @@ export const createEvmRoute = (): EvmRoute => {
       delegatedCode,
     );
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       let tx: TrackedTransaction = {
         id: txId,
         family: "evm",
@@ -901,12 +906,21 @@ export const createEvmRoute = (): EvmRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
-      return signSubmit(ctx, tx, apis, request, verify, { from, account }, async (signed) => {
-        const raw = evm.finalize(feed, signed);
-        const hash = await evm.broadcast(client, raw);
-        evm.commitNonce(network, from, unsigned.nonce);
-        return { hash, raw };
-      });
+      return signSubmit(
+        ctx,
+        tx,
+        apis,
+        request,
+        verify,
+        { from, account },
+        async (signed) => {
+          const raw = evm.finalize(feed, signed);
+          const hash = await evm.broadcast(client, raw);
+          evm.commitNonce(network, from, unsigned.nonce);
+          return { hash, raw };
+        },
+        commit,
+      );
     };
 
     return {
@@ -1707,7 +1721,10 @@ export const createEvmRoute = (): EvmRoute => {
     const intent = withL1Fee(decodeEvm(request, original.from), l1);
     const txId = newId(ctx.options.random);
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       let tx: TrackedTransaction = {
         id: txId,
         family: "evm",
@@ -1733,6 +1750,7 @@ export const createEvmRoute = (): EvmRoute => {
           const raw = evm.finalize(unsigned, signed);
           return { hash: await evm.broadcast(client, raw), raw };
         },
+        commit,
       );
     };
 

@@ -211,7 +211,10 @@ const finishPrepared = async (
   const id = newId(ctx.options.random);
   const simulation = await solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer);
 
-  const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+  const submit = async (
+    verify: SendParams["verify"],
+    commit: () => void,
+  ): Promise<TrackedTransaction> => {
     let tx: TrackedTransaction = {
       id,
       family: "solana",
@@ -233,6 +236,7 @@ const finishPrepared = async (
         throw new Error("unexpected solana sign result");
       }
       const wire = solana.finalize(messageBytes, [result.signature]);
+      commit();
       const hash = await solana.broadcast(rpc, wire);
       wires.set(id, wire);
       return await submitTx(ctx, tx, hash);

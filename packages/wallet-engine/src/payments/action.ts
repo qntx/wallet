@@ -39,8 +39,16 @@ export type PreparedSparkAction = {
   readonly checks: ReadonlyArray<RequestCheckCode>;
   /** Why the action can no longer be paid at `now` (an expiring invoice), if so. */
   readonly staleReason: (now: number) => string | undefined;
-  /** Runs the controller's approve-first payment call. */
-  readonly execute: (spark: SparkController, verify: VerifyFactor) => Promise<SparkResult>;
+  /**
+   * Runs the controller's approve-first payment call. `commit` is the request's point of no
+   * return — the controller calls it immediately before the client call that sends, and a throw
+   * there means nothing may be sent.
+   */
+  readonly execute: (
+    spark: SparkController,
+    verify: VerifyFactor,
+    commit: () => void,
+  ) => Promise<SparkResult>;
 };
 
 /** An invoice must have more than this much life left when approved. */

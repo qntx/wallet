@@ -27,7 +27,7 @@ const pay = async (
 ): Promise<unknown> => {
   const { verify, ...rest } = params;
   const action = await preparePay(ctx, rest);
-  return action.execute(ctx.spark, verify as never);
+  return action.execute(ctx.spark, verify as never, () => undefined);
 };
 
 const NOW = 1_800_000_000_000;
@@ -452,7 +452,7 @@ describe("payments.pay", () => {
     });
     expect(calls[0]).toStrictEqual({
       method: "send",
-      params: { receiver: "spark1x", amountSats: 42, verify: VERIFY },
+      params: { receiver: "spark1x", amountSats: 42, verify: VERIFY, commit: expect.any(Function) },
     });
   });
 
@@ -475,7 +475,7 @@ describe("payments.pay", () => {
     });
     expect(calls[0]).toStrictEqual({
       method: "paySparkInvoice",
-      params: { invoice, amountSats: 7, verify: VERIFY },
+      params: { invoice, amountSats: 7, verify: VERIFY, commit: expect.any(Function) },
     });
   });
 
@@ -511,7 +511,7 @@ describe("payments.pay", () => {
     // the declared option amount is not forwarded — the kernel derives it from the invoice.
     expect(calls[0]).toStrictEqual({
       method: "payInvoice",
-      params: { invoice: REGTEST_BOLT11, maxFeeSats: 3, verify: VERIFY },
+      params: { invoice: REGTEST_BOLT11, maxFeeSats: 3, verify: VERIFY, commit: expect.any(Function) },
     });
   });
 
@@ -605,6 +605,7 @@ describe("payments.pay", () => {
         maxFeeSats: 1,
         speed: "MEDIUM",
         verify: VERIFY,
+        commit: expect.any(Function),
       },
     });
   });

@@ -164,7 +164,12 @@ describe("Spark requests", () => {
     expect(w.calls).toStrictEqual([
       {
         method: "payInvoice",
-        params: { invoice: LIGHTNING_INVOICE, maxFeeSats: 5, verify: VERIFY },
+        params: {
+          invoice: LIGHTNING_INVOICE,
+          maxFeeSats: 5,
+          verify: VERIFY,
+          commit: expect.any(Function),
+        },
       },
     ]);
     expect(w.requests.getState().requests[request.id]?.stage).toBe("submitted");
@@ -190,7 +195,7 @@ describe("Spark requests", () => {
     await w.requests.approve(request.id, "pay", approval(request, VERIFY));
     expect(w.calls[0]).toStrictEqual({
       method: "send",
-      params: { receiver: address, amountSats: 42, verify: VERIFY },
+      params: { receiver: address, amountSats: 42, verify: VERIFY, commit: expect.any(Function) },
     });
   });
 

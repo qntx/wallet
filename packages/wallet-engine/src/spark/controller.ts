@@ -467,6 +467,8 @@ export class SparkController extends Controller<SparkControllerState> {
       receiver: string;
       amountSats: number;
       verify: VerifyFactor;
+      /** Called immediately before the send; a throw there means nothing may be sent. */
+      commit: () => void;
     },
   ): Promise<SparkTransfer> {
     return this.guarded(async () => {
@@ -484,6 +486,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      params.commit();
       const transfer = await client.transfers.send({
         receiver: params.receiver,
         amountSats: params.amountSats,
@@ -541,6 +544,8 @@ export class SparkController extends Controller<SparkControllerState> {
       amountSats?: number;
       maxFeeSats: number;
       verify: VerifyFactor;
+      /** Called immediately before the send; a throw there means nothing may be sent. */
+      commit: () => void;
       /** Local annotation written under the payment's transfer id after it succeeds. */
       note?: PaymentNote;
     },
@@ -557,6 +562,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      params.commit();
       const payment = await client.lightning.pay({
         invoice: params.invoice,
         maxFeeSats: params.maxFeeSats,
@@ -586,7 +592,13 @@ export class SparkController extends Controller<SparkControllerState> {
    */
   async paySparkInvoice(
     ref: SparkAccountRef,
-    params: { invoice: string; amountSats?: number; verify: VerifyFactor },
+    params: {
+      invoice: string;
+      amountSats?: number;
+      verify: VerifyFactor;
+      /** Called immediately before the send; a throw there means nothing may be sent. */
+      commit: () => void;
+    },
   ): Promise<SparkTransfer> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
@@ -630,6 +642,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      params.commit();
       const result = await client.invoices.pay(params.invoice, {
         amount: amountSats,
         transferId: transferId(this.options.random, this.options.now),
@@ -698,6 +711,8 @@ export class SparkController extends Controller<SparkControllerState> {
       speed: "FAST" | "MEDIUM" | "SLOW";
       maxFeeSats?: number;
       verify: VerifyFactor;
+      /** Called immediately before the send; a throw there means nothing may be sent. */
+      commit: () => void;
     },
   ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {
@@ -735,6 +750,7 @@ export class SparkController extends Controller<SparkControllerState> {
         },
         verify: params.verify,
       });
+      params.commit();
       const exit = await client.withdrawals.cooperativeExit({
         address: params.address,
         speed: params.speed,

@@ -215,7 +215,7 @@ async function engineRig() {
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(apis, fakeEsplora, account, network, psbts),
     bitcoinSignPsbts: async (_account, _network, prepared, send, verify) => {
-      const { signedPsbts, txids } = await signDappPsbts(apis, fakeEsplora, prepared, send, verify);
+      const { signedPsbts, txids } = await signDappPsbts(apis, fakeEsplora, prepared, send, verify, () => undefined);
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
     bitcoinSign: async (account, network, request, verify) => {

@@ -416,7 +416,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     flags.push(feeReachesAmount(BigInt(record.fee), amount) ? "fee-exceeds-amount" : undefined);
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       pending.set(id0, stash);
       let tx: TrackedTransaction = {
         id: id0,
@@ -436,6 +439,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       try {
         const result = await apis.sign({ request, verify });
         tx = await ctx.transition(tx, { state: "signed" });
+        commit();
         const hash = await broadcastPsbt(es, result);
         bitcoinUtxos.lock(selectedUtxos, tx.id);
         releaseReservation(requestId);
@@ -506,7 +510,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       reserved.set(key, requestId);
     }
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       let tx: TrackedTransaction = {
         id: txId,
         family: "bitcoin",
@@ -525,6 +532,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       try {
         const result = await apis.sign({ request, verify });
         tx = await ctx.transition(tx, { state: "signed" });
+        commit();
         const hash = await broadcastPsbt(es, result);
         if (link.replaces !== undefined) {
           bitcoinUtxos.endTx(old.id, "dropped");

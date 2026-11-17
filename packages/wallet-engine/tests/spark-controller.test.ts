@@ -101,6 +101,12 @@ function fakeClient(
         return Promise.resolve(o);
       },
     },
+    invoices: {
+      pay: async (_invoice: unknown, o: unknown) => {
+        calls.push("invoicePay");
+        return Promise.resolve(o);
+      },
+    },
     withdrawals: {
       quoteCooperativeExit: async () => Promise.resolve({ fees: { fast: 5, medium: 3, slow: 1 } }),
       cooperativeExit: async (o: unknown) => {
@@ -242,7 +248,7 @@ describe("SparkController", () => {
     c.setStore(store);
     await c.init();
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
     expect(approvals).toHaveLength(1);
     expect(calls.filter((x) => x === "claimPending").length).toBeGreaterThan(0);
     expect(calls).toContain("send");
@@ -285,7 +291,7 @@ describe("send network check", () => {
     // PK on mainnet — ref is regtest.
     const wrongNet = encodeSparkAddress({ network: "mainnet", identityPublicKey: PK });
     await expect(
-      c.send(REF, { receiver: wrongNet, amountSats: 10, verify: VERIFY }),
+      c.send(REF, { receiver: wrongNet, amountSats: 10, verify: VERIFY, commit: () => undefined }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
     expect(approvals).toHaveLength(0);
     await c.destroy();
@@ -312,7 +318,7 @@ describe("withdraw approval intent", () => {
       address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
       amountSats: 1000,
       speed: "FAST",
-      verify: VERIFY,
+      verify: VERIFY, commit: () => undefined,
     });
     // fast fee = 5, payout = 995
     expect(approval(approvals).intent).toStrictEqual({
@@ -332,7 +338,7 @@ describe("withdraw approval intent", () => {
     await c.withdraw(REF, {
       address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
       speed: "SLOW",
-      verify: VERIFY,
+      verify: VERIFY, commit: () => undefined,
     });
     // balance 42, slow fee 1, payout 41
     expect(approval(approvals).intent).toStrictEqual({
@@ -354,7 +360,7 @@ describe("withdraw approval intent", () => {
         amountSats: 1000,
         speed: "FAST",
         maxFeeSats: 2,
-        verify: VERIFY,
+        verify: VERIFY, commit: () => undefined,
       }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
     expect(approvals).toHaveLength(0);
@@ -371,7 +377,7 @@ describe("withdraw approval intent", () => {
         address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
         amountSats: 5,
         speed: "FAST",
-        verify: VERIFY,
+        verify: VERIFY, commit: () => undefined,
       }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
     expect(approvals).toHaveLength(0);
@@ -889,7 +895,7 @@ describe("history and notes", () => {
     const { c, calls } = await started();
     expect(c.getState().accounts[K]?.recent?.[0]).toMatchObject({ id: "t1" });
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
     expect(calls).toContain("send");
     // The refresh is fire-and-forget — it runs after send returns.
     await until(
@@ -907,7 +913,7 @@ describe("history and notes", () => {
     ]);
     expect(c.getState().accounts[K]?.recent).toHaveLength(1);
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
     // The failing refresh lands after send returns — status and the previous page survive.
     await until(
       () => c.getState().accounts[K]?.recent,
@@ -923,7 +929,7 @@ describe("history and notes", () => {
     const payment = (await c.payInvoice(REF, {
       invoice: "lnbcrt1",
       maxFeeSats: 5,
-      verify: VERIFY,
+      verify: VERIFY, commit: () => undefined,
       note: NOTE,
     })) as { transferId: string };
     const record = await store.collection(`spark-notes:${K}`).get(payment.transferId);
@@ -948,7 +954,7 @@ describe("history and notes", () => {
     const payment = (await c.payInvoice(REF, {
       invoice: "lnbcrt1",
       maxFeeSats: 5,
-      verify: VERIFY,
+      verify: VERIFY, commit: () => undefined,
       note: NOTE,
     })) as { transferId: string };
     expect(payment.transferId).toMatch(/^[0-9a-f-]{36}$/);
@@ -1000,7 +1006,7 @@ describe("history and notes", () => {
     c.setStore(createMemoryEngineStore());
     await c.init();
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    const sendPromise = c.send(REF, { receiver, amountSats: 10, verify: VERIFY });
+    const sendPromise = c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
     // The send's refresh (seq 2) lands while the init refresh (seq 1) is still gated.
     await until(
       () => c.getState().accounts[K]?.recent,
@@ -1039,9 +1045,13 @@ describe("paySparkInvoice pre-approval checks", () => {
         payment: { type: "tokens", amount: new Uint8Array([0, 1]) },
       },
     });
-    await expect(c.paySparkInvoice(REF, { invoice: tokenInvoice, verify: VERIFY })).rejects.toThrow(
-      /only sats invoices are supported/,
-    );
+    await expect(
+      c.paySparkInvoice(REF, {
+        invoice: tokenInvoice,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
+    ).rejects.toThrow(/only sats invoices are supported/);
     expect(approvals).toHaveLength(0);
     await c.destroy();
   });
@@ -1060,9 +1070,97 @@ describe("paySparkInvoice pre-approval checks", () => {
       },
     });
     await expect(
-      c.paySparkInvoice(REF, { invoice: fixedInvoice, amountSats: 999, verify: VERIFY }),
+      c.paySparkInvoice(REF, {
+        invoice: fixedInvoice,
+        amountSats: 999,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
     ).rejects.toThrow(/conflicts with the invoice amount/);
     expect(approvals).toHaveLength(0);
+    await c.destroy();
+  });
+});
+
+describe("commit before the client send", () => {
+  const gone = (): never => {
+    throw new Error("gone");
+  };
+
+  async function setup(calls: string[], approvals: unknown[]) {
+    const { c, client } = controller(calls, approvals);
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    return { c, client };
+  }
+
+  it("a throwing commit stops a Spark send after approval", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+    await expect(
+      c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: gone }),
+    ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
+    expect(approvals).toHaveLength(1);
+    expect(calls).not.toContain("send");
+    await c.destroy();
+  });
+
+  it("a throwing commit stops a lightning payment after approval", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await expect(
+      c.payInvoice(REF, {
+        invoice: "lnbc1fake",
+        maxFeeSats: 5,
+        verify: VERIFY,
+        commit: gone,
+      }),
+    ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
+    expect(approvals).toHaveLength(1);
+    expect(calls).not.toContain("pay");
+    await c.destroy();
+  });
+
+  it("a throwing commit stops a Spark invoice payment after approval", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    const invoice = encodeSparkAddress({
+      network: "regtest",
+      identityPublicKey: PK,
+      invoice: {
+        version: 1,
+        id: "01936f00-0000-7000-8000-000000000001",
+        payment: { type: "sats", amount: 500 },
+      },
+    });
+    await expect(
+      c.paySparkInvoice(REF, { invoice, verify: VERIFY, commit: gone }),
+    ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
+    expect(approvals).toHaveLength(1);
+    expect(calls).not.toContain("invoicePay");
+    await c.destroy();
+  });
+
+  it("a throwing commit stops a cooperative exit after approval", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await expect(
+      c.withdraw(REF, {
+        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+        amountSats: 1000,
+        speed: "FAST",
+        verify: VERIFY,
+        commit: gone,
+      }),
+    ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
+    expect(approvals).toHaveLength(1);
+    expect(calls).not.toContain("exit");
     await c.destroy();
   });
 });

@@ -65,6 +65,8 @@ import {
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
+import { nextStage } from "./stage.ts";
+import type { RequestEvent, RequestStage } from "./stage.ts";
 import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
 import type {
@@ -433,14 +435,7 @@ export class OriginBusyError extends Error {
   }
 }
 
-export type RequestStage =
-  | "awaiting-approval"
-  | "signing"
-  | "submitted"
-  | "rejected"
-  | "failed"
-  | "expired"
-  | "invalidated";
+export type { RequestStage } from "./stage.ts";
 
 export type PendingRequest = {
   readonly id: string;
@@ -526,6 +521,7 @@ export type RequestControllerOptions = {
     network: string,
     request: SolanaSignInput["request"],
     verify: SendParams["verify"],
+    commit: () => void,
   ) => Promise<SolanaSignResult>;
   /** Signs a `bitcoin-sign` message — `chains.sign` with the account's template. */
   readonly bitcoinSign: (
@@ -547,6 +543,7 @@ export type RequestControllerOptions = {
     prepared: ReadonlyArray<PreparedBitcoinPsbt>,
     send: boolean,
     verify: SendParams["verify"],
+    commit: () => void,
   ) => Promise<BitcoinSignResult>;
 };
 
@@ -564,8 +561,14 @@ type Run =
       /** The tracked transaction `submit` creates (chain requests only). */
       readonly txId?: string;
       readonly staleReason: () => string | undefined | Promise<string | undefined>;
+      /**
+       * `commit` moves the request to `signed` — the point of no return. Call it immediately (no
+       * await in between) before anything is broadcast or sent; it throws when the request was
+       * invalidated, and then nothing may be sent.
+       */
       readonly submit: (
         verify: SendParams["verify"],
+        commit: () => void,
       ) => Promise<
         TrackedTransaction | SparkResult | SignatureResult | SolanaSignResult | BitcoinSignResult
       >;
@@ -733,7 +736,34 @@ const withSimulation = (
 const browserOriginOf = (input: RequestInput): BrowserOrigin | undefined =>
   "origin" in input ? input.origin : undefined;
 
-const LIVE: ReadonlySet<RequestStage> = new Set(["awaiting-approval", "signing"]);
+/** Terminal events and the stage and sign-log outcome each maps to. */
+const END_OUTCOMES = {
+  reject: "rejected",
+  fail: "failed",
+  expire: "expired",
+  invalidate: "invalidated",
+} as const satisfies Partial<Record<RequestEvent, SignLogOutcome>>;
+
+type EndEvent = keyof typeof END_OUTCOMES;
+
+/** The `RequestEndedError` stage for a request that can no longer proceed. */
+const endedStage = (request: PendingRequest | undefined): RequestEndedError["stage"] => {
+  switch (request?.stage) {
+    case "rejected":
+    case "failed":
+    case "expired":
+    case "invalidated":
+      return request.stage;
+    default:
+      return "invalidated";
+  }
+};
+
+/** A `prepare` still building: invalidation voids it so it never reaches the state. */
+type Preparing = {
+  readonly origin: BrowserOrigin | undefined;
+  voided: boolean;
+};
 
 export class RequestController extends Controller<RequestControllerState> {
   private readonly options: RequestControllerOptions;
@@ -742,9 +772,9 @@ export class RequestController extends Controller<RequestControllerState> {
   private readonly settlers = new Map<string, Settler>();
   /** Original transaction id → the unfinished request replacing or accelerating it. */
   private readonly targets = new Map<string, string>();
+  /** Requests still being built, request id → the prepare in flight. */
+  private readonly preparing = new Map<string, Preparing>();
   private locked = true;
-  /** Bumped on every unlock and lock so work that outlives a session never touches the next one. */
-  private session = 0;
 
   constructor(options: RequestControllerOptions) {
     super({ name: "requests", defaultState: () => ({ requests: {} }) });
@@ -753,8 +783,11 @@ export class RequestController extends Controller<RequestControllerState> {
   }
 
   async init(): Promise<void> {
-    this.session += 1;
     this.locked = false;
+    for (const preparing of this.preparing.values()) {
+      preparing.voided = true;
+    }
+    this.preparing.clear();
     this.entries.clear();
     this.targets.clear();
     this.settlers.clear();
@@ -769,25 +802,40 @@ export class RequestController extends Controller<RequestControllerState> {
 
   /** Locking is not consent: every unfinished request becomes `invalidated` and frees its resources. */
   lock(): void {
-    this.session += 1;
     this.locked = true;
+    this.invalidateAll();
+    this.log.close();
+  }
+
+  /**
+   * Locking, unlocking and switching account group void every unfinished request
+   * (requests.mdx invariant 1).
+   */
+  invalidateAll(): void {
+    for (const preparing of this.preparing.values()) {
+      preparing.voided = true;
+    }
     for (const [id, request] of Object.entries(this.getState().requests)) {
-      if (LIVE.has(request.stage)) {
-        this.finish(id, "invalidated");
+      if (nextStage(request.stage, "invalidate") !== undefined) {
+        this.end(id, "invalidate");
       }
     }
-    this.log.close();
   }
 
   /** A page navigated away, was revoked or changed network: its unfinished requests are void. */
   invalidateOrigin(origin: string): void {
+    for (const preparing of this.preparing.values()) {
+      if (preparing.origin?.origin === origin) {
+        preparing.voided = true;
+      }
+    }
     for (const [id, request] of Object.entries(this.getState().requests)) {
       if (
-        LIVE.has(request.stage) &&
+        nextStage(request.stage, "invalidate") !== undefined &&
         request.origin.kind === "browser" &&
         request.origin.origin === origin
       ) {
-        this.finish(id, "invalidated");
+        this.end(id, "invalidate");
       }
     }
   }
@@ -805,7 +853,6 @@ export class RequestController extends Controller<RequestControllerState> {
     if (this.locked) {
       throw new Error("requests require an unlocked vault");
     }
-    const { session } = this;
     const id = newRequestId(this.options.random);
     // A transaction can have one unfinished replacement at a time; claimed synchronously so two
     // concurrent prepares cannot both pass.
@@ -829,17 +876,24 @@ export class RequestController extends Controller<RequestControllerState> {
       }
       this.targets.set(target, id);
     }
+    const preparing: Preparing = { origin: browserOrigin, voided: false };
+    this.preparing.set(id, preparing);
     let built: Built;
     try {
       built = await this.build(input, id);
     } catch (error) {
       this.unclaim(id);
       throw error;
+    } finally {
+      this.preparing.delete(id);
     }
-    if (session !== this.session) {
+    if (preparing.voided) {
       built.run.release();
       this.unclaim(id);
-      throw new Error("the vault was locked while the request was being prepared");
+      throw new RequestEndedError(
+        "invalidated",
+        "the request was invalidated while it was being prepared",
+      );
     }
     const { checks } = built;
     const createdAt = this.options.now();
@@ -863,7 +917,7 @@ export class RequestController extends Controller<RequestControllerState> {
     };
     const stopTimer = this.options.setTimer(REQUEST_TTL_MS, () => {
       if (this.getState().requests[id]?.stage === "awaiting-approval") {
-        this.finish(id, "expired");
+        this.end(id, "expire");
       }
     });
     const resimulation =
@@ -941,7 +995,7 @@ export class RequestController extends Controller<RequestControllerState> {
       run: {
         factor: "required",
         staleReason: () => action.staleReason(this.options.now()),
-        submit: async (verify) => action.execute(this.options.spark, verify),
+        submit: async (verify, commit) => action.execute(this.options.spark, verify, commit),
         release: () => undefined,
       },
     };
@@ -1088,8 +1142,8 @@ export class RequestController extends Controller<RequestControllerState> {
         run: {
           factor: "required",
           staleReason: () => undefined,
-          submit: async (verify) =>
-            this.options.solanaSign(input.account, input.network, input.request, verify),
+          submit: async (verify, commit) =>
+            this.options.solanaSign(input.account, input.network, input.request, verify, commit),
           release: () => undefined,
         },
       };
@@ -1127,8 +1181,15 @@ export class RequestController extends Controller<RequestControllerState> {
         run: {
           factor: "required",
           staleReason: () => undefined,
-          submit: async (verify) =>
-            this.options.bitcoinSignPsbts(input.account, input.network, prepared, send, verify),
+          submit: async (verify, commit) =>
+            this.options.bitcoinSignPsbts(
+              input.account,
+              input.network,
+              prepared,
+              send,
+              verify,
+              commit,
+            ),
           release: () => undefined,
         },
       };
@@ -1352,19 +1413,20 @@ export class RequestController extends Controller<RequestControllerState> {
       throw new Error(`request ${id} is ${request.stage}, not awaiting approval`);
     }
     if (this.options.now() >= request.expiresAt) {
-      this.finish(id, "expired");
+      this.end(id, "expire");
       throw new Error(`request ${id} expired`);
     }
     if (
       request.origin.kind === "browser" &&
       this.options.phishing.check(request.origin.origin) === "blocked"
     ) {
-      this.finish(id, "failed", PHISHING_BLOCKED_MESSAGE);
+      this.end(id, "fail", PHISHING_BLOCKED_MESSAGE);
       throw new Error(PHISHING_BLOCKED_MESSAGE);
     }
     assertAcknowledged(request, options.acknowledged);
-    const { session } = this;
-    this.put({ ...request, stage: "signing" });
+    // Before the first await, so a second `approve` cannot reach the checks below while this one
+    // runs.
+    this.transition(id, "approve");
 
     let stale: string | undefined;
     try {
@@ -1372,11 +1434,9 @@ export class RequestController extends Controller<RequestControllerState> {
     } catch (error) {
       stale = errorMessage(error);
     }
-    if (session !== this.session) {
-      throw new Error(`request ${id} was invalidated`);
-    }
+    this.assertSigning(id);
     if (stale !== undefined) {
-      this.finish(id, "failed", stale);
+      this.end(id, "fail", stale);
       throw new Error(stale);
     }
     const { resimulation } = entry;
@@ -1391,72 +1451,79 @@ export class RequestController extends Controller<RequestControllerState> {
       } catch (error) {
         outcome = { status: "unavailable", error: errorMessage(error) };
       }
-      if (session !== this.session) {
-        throw new Error(`request ${id} was invalidated`);
-      }
+      this.assertSigning(id);
       const assessed = assessSimulation(resimulation.intent, outcome);
       const checks = collectChecks([...resimulation.checks, ...assessed.checks]);
-      const refreshed: PendingRequest = {
-        ...this.requireRequest(id),
-        simulation: outcome,
-        simulatedAt: this.options.now(),
-        verification: checks.length > 0 ? "unverifiable" : "verified",
-        checks,
-        risk: mergeRisk(resimulation.risk, assessed.risk),
+      const risk = mergeRisk(resimulation.risk, assessed.risk);
+      const refresh = (): void => {
+        this.put({
+          ...this.requireRequest(id),
+          simulation: outcome,
+          simulatedAt: this.options.now(),
+          verification: checks.length > 0 ? "unverifiable" : "verified",
+          checks,
+          risk,
+        });
       };
       if (request.simulation !== undefined && simulationChanged(request.simulation, outcome)) {
-        this.put({ ...refreshed, stage: "awaiting-approval" });
+        this.transition(id, "review");
+        refresh();
         throw new SimulationChangedError();
       }
-      if (!acknowledges(refreshed, options.acknowledged)) {
-        this.put({ ...refreshed, stage: "awaiting-approval" });
-        throw new AcknowledgementRequiredError(requiredAcknowledgement(refreshed));
+      if (!acknowledges({ checks, risk }, options.acknowledged)) {
+        this.transition(id, "review");
+        refresh();
+        throw new AcknowledgementRequiredError(requiredAcknowledgement({ checks, risk }));
       }
-      this.put(refreshed);
+      refresh();
     }
     try {
       const result =
         entry.prepared.factor === "none"
           ? await entry.prepared.submit()
-          : await entry.prepared.submit(this.requireVerify(options.verify));
-      if (session === this.session) {
-        entry.stopTimer();
-        this.entries.delete(id);
-        this.unclaim(id);
+          : await entry.prepared.submit(this.requireVerify(options.verify), () => {
+              this.commit(id);
+            });
+      this.commit(id);
+      entry.stopTimer();
+      this.entries.delete(id);
+      this.unclaim(id);
+      const current = this.getState().requests[id];
+      if (current !== undefined && nextStage(current.stage, "complete") === "submitted") {
         const done: PendingRequest = {
-          ...this.requireRequest(id),
+          ...current,
           stage: "submitted",
           ...("id" in result ? { txId: result.id } : {}),
         };
         this.put(done);
         this.record(done, "submitted", undefined, result);
-      } else {
-        this.record(request, "submitted");
       }
       this.settle(id, result);
       return result;
     } catch (error) {
-      if (session === this.session) {
-        this.finish(id, this.failureStage(entry.prepared, error), errorMessage(error));
-      } else {
-        this.record(request, "failed", errorMessage(error));
-      }
+      this.end(
+        id,
+        this.getState().requests[id]?.stage === "signed"
+          ? "fail"
+          : this.failureEvent(entry.prepared, error),
+        errorMessage(error),
+      );
       throw error;
     }
   }
 
   /**
-   * A cancelled or refused verification is `rejected`; anything after it is `failed`. Chain
-   * requests record which step failed on the tracked transaction; for Spark, the approval round is
-   * the only source of `WalletError`.
+   * A cancelled or refused verification is `reject`; anything after it is `fail`. Chain requests
+   * record which step failed on the tracked transaction; for Spark, the approval round is the only
+   * source of `WalletError`.
    */
-  private failureStage(run: Run, error: unknown): "rejected" | "failed" {
+  private failureEvent(run: Run, error: unknown): "reject" | "fail" {
     if (run.txId === undefined) {
-      return error instanceof WalletError ? "rejected" : "failed";
+      return error instanceof WalletError ? "reject" : "fail";
     }
     return this.options.transactions.getState().txs[run.txId]?.state === "rejected"
-      ? "rejected"
-      : "failed";
+      ? "reject"
+      : "fail";
   }
 
   reject(id: string): void {
@@ -1464,10 +1531,10 @@ export class RequestController extends Controller<RequestControllerState> {
     if (request === undefined) {
       throw new Error(`unknown request ${id}`);
     }
-    if (request.stage !== "awaiting-approval") {
+    if (nextStage(request.stage, "reject") === undefined) {
       throw new Error(`request ${id} is ${request.stage}, not awaiting approval`);
     }
-    this.finish(id, "rejected");
+    this.end(id, "reject");
   }
 
   /** `approve` for a factor-required run: a missing factor is invalid input. */
@@ -1498,12 +1565,17 @@ export class RequestController extends Controller<RequestControllerState> {
     }
   }
 
-  /** Ends a request in a terminal stage and frees what it reserved. */
-  private finish(
-    id: string,
-    stage: "rejected" | "failed" | "expired" | "invalidated",
-    error?: string,
-  ): void {
+  /**
+   * Applies a terminal event: the request ends in the stage `event` maps to and frees what it
+   * reserved. A no-op when the event cannot happen in the current stage, so a terminal stage, its
+   * sign-log record and its settlement each happen exactly once.
+   */
+  private end(id: string, event: EndEvent, error?: string): boolean {
+    const request = this.getState().requests[id];
+    const stage = request === undefined ? undefined : nextStage(request.stage, event);
+    if (request === undefined || stage === undefined) {
+      return false;
+    }
     this.unclaim(id);
     const entry = this.entries.get(id);
     if (entry !== undefined) {
@@ -1515,16 +1587,53 @@ export class RequestController extends Controller<RequestControllerState> {
         this.options.logger.warn("request release failed", releaseError);
       }
     }
+    const ended: PendingRequest = {
+      ...request,
+      stage,
+      ...(error === undefined ? {} : { error }),
+    };
+    this.put(ended);
+    this.record(ended, END_OUTCOMES[event], error);
+    this.settle(id, new RequestEndedError(END_OUTCOMES[event], error));
+    return true;
+  }
+
+  /** Applies `event` to `id`'s stage; returns the new stage, `undefined` when it cannot happen. */
+  private transition(id: string, event: RequestEvent): RequestStage | undefined {
     const request = this.getState().requests[id];
-    if (request !== undefined) {
-      const ended: PendingRequest = {
-        ...request,
-        stage,
-        ...(error === undefined ? {} : { error }),
-      };
-      this.put(ended);
-      this.record(ended, stage, error);
-      this.settle(id, new RequestEndedError(stage, error));
+    const stage = request === undefined ? undefined : nextStage(request.stage, event);
+    if (request === undefined || stage === undefined) {
+      return undefined;
+    }
+    if (stage !== request.stage) {
+      this.put({ ...request, stage });
+    }
+    return stage;
+  }
+
+  /** `approve` resumes after each await here: the request must still be `signing`. */
+  private assertSigning(id: string): void {
+    const request = this.getState().requests[id];
+    if (request?.stage === "signing") {
+      return;
+    }
+    throw new RequestEndedError(
+      endedStage(request),
+      `request ${id} is ${request?.stage ?? "gone"}`,
+    );
+  }
+
+  /**
+   * `signing` → `signed` — the point of no return: the signature exists and is being returned or
+   * broadcast, so invalidation no longer applies. Idempotent while `signed`; throws otherwise.
+   */
+  private commit(id: string): void {
+    if (this.transition(id, "commit") === undefined) {
+      const request = this.getState().requests[id];
+      throw new RequestEndedError(
+        endedStage(request),
+        `request ${id} is ${request?.stage ?? "gone"}`,
+      );
     }
   }
 

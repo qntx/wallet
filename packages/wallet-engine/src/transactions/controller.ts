@@ -22,6 +22,7 @@ import type {
   PreparedRequest,
   ChainRequestInput,
   RouteContext,
+  SendParams,
   SparkDepositTag,
   TrackedTransaction,
   TxState,
@@ -418,7 +419,7 @@ export class TransactionController extends Controller<TransactionControllerState
       checks: [],
       staleReason: () => undefined,
       release: () => undefined,
-      submit: async (verify) => {
+      submit: async (verify: SendParams["verify"]) => {
         const result = await apis.sign({
           request:
             normalized.kind === "evm.personal-message"

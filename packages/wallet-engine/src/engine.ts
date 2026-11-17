@@ -368,7 +368,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
-    solanaSign: async (account, network, request, verify) => {
+    solanaSign: async (account, network, request, verify, commit) => {
       const rpc = networks.solanaRpc(network);
       const adapter = new SolanaChainAdapter();
       const hdAccount = {
@@ -378,8 +378,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         template: "solana.bip44-change" as const,
       };
       if (request.kind === "transactions") {
-        const signatures: string[] = [];
-        const signedTransactions: Uint8Array[] = [];
+        const wires: Uint8Array[] = [];
         for (const messageBytes of request.transactions) {
           // normalizeSolana validates the fee payer; chains.sign then verifies/signs it.
           normalizeSolana(
@@ -404,17 +403,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
             throw new Error("unexpected solana sign result");
           }
-          const wire = adapter.finalize(messageBytes, [result.signature]);
-          if (request.send) {
-            // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
-            signatures.push(await adapter.broadcast(rpc, wire));
-          } else {
-            signedTransactions.push(wire);
-          }
+          wires.push(adapter.finalize(messageBytes, [result.signature]));
         }
-        return request.send
-          ? { kind: "solana.transactions" as const, send: true, signatures }
-          : { kind: "solana.transactions" as const, send: false, signedTransactions };
+        if (!request.send) {
+          return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
+        }
+        commit();
+        const signatures: string[] = [];
+        for (const wire of wires) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
+          signatures.push(await adapter.broadcast(rpc, wire));
+        }
+        return { kind: "solana.transactions" as const, send: true, signatures };
       }
       normalizeSolana(
         {
@@ -443,13 +443,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
-    bitcoinSignPsbts: async (_account, network, prepared, send, verify) => {
+    bitcoinSignPsbts: async (_account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids } = await signDappPsbts(
         chains(options.wallet),
         networks.esplora(network),
         prepared,
         send,
         verify,
+        commit,
       );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },

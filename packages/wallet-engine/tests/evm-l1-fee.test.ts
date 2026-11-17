@@ -228,7 +228,7 @@ describe("OP Stack L1 fee", () => {
     w.primary.l1 = 1000n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    const original = await prepared.submit(VERIFY);
+    const original = await prepared.submit(VERIFY, () => undefined);
     w.primary.l1 = 3000n;
     const replacement = await ctl.prepareReplacement(
       { method: "speed-up", txId: original.id },
@@ -242,7 +242,7 @@ describe("OP Stack L1 fee", () => {
     w.primary.l1 = 1000n;
     const ctl = await w.boot();
     const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    const tx = await prepared.submit(VERIFY);
+    const tx = await prepared.submit(VERIFY, () => undefined);
     const reloaded = await w.boot();
     expect(reloaded.getState().txs[tx.id]?.intent?.fee?.l1Data).toStrictEqual({
       asset: "native",

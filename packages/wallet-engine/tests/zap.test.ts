@@ -273,7 +273,7 @@ describe("prepareZapAction", () => {
       prepared({ eventId: "ff".repeat(32), comment: "gm" }),
       { maxFeeSats: 50, now: () => Date.now() },
     );
-    const out = await action.execute(fakeSpark, verify);
+    const out = await action.execute(fakeSpark, verify, () => undefined);
     expect(out).toMatchObject({ kind: "lightning", payment: { state: "succeeded" } });
     expect(paid).toHaveLength(1);
     expect(paid[0]).toMatchObject({

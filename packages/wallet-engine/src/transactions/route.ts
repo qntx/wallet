@@ -260,8 +260,15 @@ export type PreparedRequest = {
   readonly resimulate?: () => Promise<SimulationOutcome>;
   /** Why the build can no longer be signed (nonce taken, blockhash expired), if so. */
   readonly staleReason: () => string | undefined | Promise<string | undefined>;
-  /** Signs, finalizes, broadcasts and hands the transaction to tracking. */
-  readonly submit: (verify: SendParams["verify"]) => Promise<TrackedTransaction>;
+  /**
+   * Signs, finalizes, broadcasts and hands the transaction to tracking. `commit` must run
+   * immediately (no await in between) before the network send; a throw there means nothing may be
+   * sent.
+   */
+  readonly submit: (
+    verify: SendParams["verify"],
+    commit: () => void,
+  ) => Promise<TrackedTransaction>;
   /** Frees what `prepare` reserved; safe to call more than once. */
   readonly release: () => void;
 };
