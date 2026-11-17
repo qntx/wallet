@@ -57,7 +57,6 @@ function commits(seed: number, count: number): ReadonlyArray<ReadonlyArray<Store
       { op: "init", meta: META },
       { op: "expect-revision", revision: 1 + next(4) },
       { op: "set-key-id", keyId: next(16).toString(16).repeat(32) },
-      { op: "set-format", format: VAULT_FORMAT },
       { op: "record-failure", at: 1000 + next(1000) },
       { op: "reset-failures" },
       { op: "put-record", record: record("entropy", `w${next(3)}`, next(255)) },

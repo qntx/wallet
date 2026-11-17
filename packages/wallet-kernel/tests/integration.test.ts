@@ -1856,15 +1856,21 @@ describe("integrity", () => {
     const words = new TextDecoder().decode(bytesField(created, "words")).split(" ");
 
     // Another tab establishes a vault first.
-    await h.store.commit([{ op: "init", meta: metaOf() }]);
+    const other = createHarness({ store: h.store, seed: 2 });
+    await other.settle();
+    ok(
+      await other.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+      }),
+    );
+    const established = await h.store.load();
     await h.settle();
 
     const answers = quiz.map((p) => utf8ToBytes(words[p]!));
     const res = await h.call("wallet.confirmMnemonic", { draft, answers });
     expect(errCode(res)).toBe("conflict");
-    const image = await h.store.load();
-    expect(image.records).toHaveLength(0);
-    expect(image.factors).toHaveLength(0);
+    await expect(h.store.load()).resolves.toStrictEqual(established);
   });
 
   it("rejects malformed requests with integrity and keeps serving", async () => {
@@ -1916,13 +1922,13 @@ describe("vault health", () => {
     const h = createHarness();
     await h.settle();
     // A newer build initialized this vault.
-    await h.store.commit([{ op: "init", meta: metaOf({ format: 5 }) }]);
+    await h.store.commit([{ op: "init", meta: metaOf({ format: VAULT_FORMAT + 1 }) }]);
     await h.settle();
     expect(lastStatus(h).vault).toBe("unsupported");
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
     // Nothing is rewritten and reset still recovers.
     const metaAfter = await storedMeta(h.store);
-    expect(metaAfter.format).toBe(5);
+    expect(metaAfter.format).toBe(VAULT_FORMAT + 1);
     expect(ok(await h.call("vault.reset"))).toBeNull();
     expect(lastStatus(h).vault).toBe("uninitialized");
   });

@@ -12,7 +12,6 @@ import type { Secret } from "../secret/secret.ts";
 import { withSeed } from "../seed/seed.ts";
 import { BLIND_SIGNING, POLICY_KIND, policyRecord, sealPolicy } from "../vault/policy.ts";
 import type { StoredRecord, VaultImage } from "../vault/store.ts";
-import { UPGRADABLE_FORMAT, VAULT_FORMAT } from "../vault/store.ts";
 import {
   factorInfo,
   factorRow,
@@ -63,14 +62,6 @@ export async function unlockVault(
     throw new KernelError("unsupported", "the vault needs a newer build");
   }
   const { dek, keyId } = await unlock(ctx.platform, ctx.image, params.factor, ctx.commit);
-  if (ctx.image.meta !== undefined && ctx.image.meta.format === UPGRADABLE_FORMAT) {
-    try {
-      await upgradeVault(ctx, dek);
-    } catch (error) {
-      dek.wipe();
-      throw error;
-    }
-  }
   // Already unlocked on the same vault key: keep the live session — rotating it would orphan
   // every in-flight request the engine issued against the current id.
   if (ctx.session.unlocked && ctx.session.current().keyId === keyId) {
@@ -82,32 +73,6 @@ export async function unlockVault(
   // break the session the unlock just opened.
   await probeKeystoreFactor(ctx, params.factor.kind).catch(() => undefined);
   return { session };
-}
-
-/**
- * The format-3 → format-4 upgrade a successful unlock performs before any session opens: sets the
- * format and — on a keystore host — adds the silent `device` factor wrapping the freshly unlocked
- * DEK. On failure the new device key is removed best-effort and the caller drops the DEK, so no
- * session can exist for a format-3 vault.
- */
-async function upgradeVault(ctx: KernelContext, dek: Secret): Promise<void> {
-  const { keystore } = ctx.platform;
-  if (keystore === undefined) {
-    await ctx.commit([{ op: "set-format", format: VAULT_FORMAT }]);
-    return;
-  }
-  const id = bytesToHex(ctx.platform.random(16));
-  try {
-    const material = await newKeystoreKek(ctx.platform, id, { protection: "device" });
-    const row = factorRow(ctx.platform, material, id, dek);
-    await ctx.commit([
-      { op: "set-format", format: VAULT_FORMAT },
-      { op: "put-factor", factor: row },
-    ]);
-  } catch (error) {
-    await keystore.remove(id).catch(() => undefined);
-    throw error;
-  }
 }
 
 /**
@@ -134,9 +99,10 @@ async function probeKeystoreFactor(ctx: KernelContext, unlockedKind: string): Pr
 
 /**
  * Opens a session over `ctx.image` and rebuilds live state in one pass: every module drops stale
- * state, then the whole image reconciles in from empty — every record opens under the DEK and every
- * factor binding verifies. A failure latches corrupted and invalidates the session it just opened.
- * Shared by `vault.unlock` and the establish paths that open a session on commit.
+ * state, then the whole image reconciles in from empty — the manifest vouches for the vault's
+ * structure, every record opens under the DEK and every factor binding verifies. A failure latches
+ * corrupted and invalidates the session it just opened. Shared by `vault.unlock` and the establish
+ * paths that open a session on commit.
  */
 export function openSession(ctx: KernelContext, dek: Secret, keyId: string): string {
   for (const module of ctx.modules) {

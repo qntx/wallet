@@ -33,6 +33,12 @@ import { Session } from "./session/session.ts";
 import { statusContents, statusPayload } from "./status.ts";
 import { factorBindingOk } from "./vault/factors.ts";
 import { parseEntropyHeader } from "./vault/headers.ts";
+import {
+  assertManifest,
+  changesStructure,
+  isManifestRecord,
+  withManifest,
+} from "./vault/manifest.ts";
 import type { StoredRecord, StoreOp, VaultImage } from "./vault/store.ts";
 import { openRecord, splitWalletSecret } from "./vault/vault.ts";
 import type { OpenedRecord } from "./vault/vault.ts";
@@ -152,11 +158,13 @@ export function startKernel(host: KernelPlatform, port: Port): void {
   };
 
   /**
-   * Reconciles live module state from `prev` to `ctx.image` under the unlocked session (S6):
-   * records are diffed by (kind, id) — removals go to the owning module's `forget`, additions and
-   * changes are opened with the session DEK and claimed (unclaimed plaintexts are wiped); changed
-   * factor rows are verified against the session DEK's binding tag. A keyId mismatch or any
-   * authentication failure latches `corrupted` and invalidates the session. No-op while locked.
+   * Reconciles live module state from `prev` to `ctx.image` under the unlocked session (S6): the
+   * image must match its manifest first — no row reaches a module from a structure the DEK did not
+   * seal — then records (the manifest aside) are diffed by (kind, id) — removals go to the owning
+   * module's `forget`, additions and changes are opened with the session DEK and claimed (unclaimed
+   * plaintexts are wiped); changed factor rows are verified against the session DEK's binding tag.
+   * A keyId mismatch or any authentication failure latches `corrupted` and invalidates the session.
+   * No-op while locked.
    */
   const reconcile = (prev: VaultImage): void => {
     if (!ctx.session.unlocked) {
@@ -172,11 +180,12 @@ export function startKernel(host: KernelPlatform, port: Port): void {
     const opened: OpenedRecord[] = [];
     let handedOff = false;
     try {
+      assertManifest(dek, next);
       const before = new Map<string, StoredRecord>();
-      for (const record of prev.records) {
+      for (const record of prev.records.filter((r) => !isManifestRecord(r))) {
         before.set(`${record.kind}/${record.id}`, record);
       }
-      for (const record of next.records) {
+      for (const record of next.records.filter((r) => !isManifestRecord(r))) {
         const prior = before.get(`${record.kind}/${record.id}`);
         if (prior === undefined) {
           opened.push({ kind: record.kind, id: record.id, plaintext: openChecked(dek, record) });
@@ -287,6 +296,18 @@ export function startKernel(host: KernelPlatform, port: Port): void {
     applyImage(image);
   };
 
+  /** The DEK a structural commit's image is sealed under (see KernelContext.commit). */
+  const sealingDek = (options: CommitOptions | undefined): Secret => {
+    const dek = options?.rotate?.dek ?? options?.dek;
+    if (dek !== undefined) {
+      return dek;
+    }
+    if (!ctx.session.unlocked) {
+      throw new KernelError("locked", "the session ended before the commit");
+    }
+    return ctx.session.current().dek;
+  };
+
   const ctx: KernelContext = {
     platform,
     session: new Session(platform, onLock),
@@ -298,7 +319,11 @@ export function startKernel(host: KernelPlatform, port: Port): void {
         ? [{ op: "expect-revision", revision: ctx.image.meta?.revision ?? 0 }, ...ops]
         : [...ops];
       try {
-        await platform.store.commit(guarded);
+        await platform.store.commit(
+          changesStructure(guarded)
+            ? withManifest(platform, ctx.image, guarded, sealingDek(options))
+            : guarded,
+        );
       } catch (error) {
         options?.rotate?.dek.wipe();
         if (error instanceof KernelError) {

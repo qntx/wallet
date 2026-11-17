@@ -2,10 +2,9 @@
  * The session-factor model on a keystore host (React Native): the silent `device` factor unlocks
  * without presence and can never verify; the `hardware` factor is the only verifier and every
  * guarded command runs one fresh ceremony. App lock is the absence of the device row;
- * `vault.enrolVerification` and `vault.setAppLock` manage the pair; a format-3 vault upgrades to
- * format 4 on first unlock.
+ * `vault.enrolVerification` and `vault.setAppLock` manage the pair.
  */
-import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
@@ -14,12 +13,9 @@ import { KernelError } from "../src/errors.ts";
 import { corePrompt } from "../src/prompts.ts";
 import { Secret } from "../src/secret/secret.ts";
 import { createMemoryStore } from "../src/vault/memory.ts";
-import type { RecordStore, StoreOp } from "../src/vault/store.ts";
-import { VAULT_FORMAT } from "../src/vault/store.ts";
 import { verifyFactor } from "../src/vault/vault.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { loadVectors } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
 
@@ -408,151 +404,6 @@ describe("dead hardware factor cleanup", () => {
       errCode(await h.call("wallet.exportMnemonic", { verify: HARDWARE, walletId }, session)),
     ).toBe("factor-invalidated");
     await expect(factorKinds(h)).resolves.toStrictEqual(["hardware"]);
-  });
-});
-
-type V013 = {
-  readonly dek: string;
-  readonly kek: string;
-  readonly factorId: string;
-  readonly walletId: string;
-  readonly nostrPublicKey: string;
-  readonly image: {
-    meta: Record<string, unknown>;
-    factors: ReadonlyArray<{ kind: string; id: string; header: string; sealed: string }>;
-    records: ReadonlyArray<{ kind: string; id: string; header: string; sealed: string }>;
-  };
-};
-
-const v013 = loadVectors("vault-v013.json") as V013;
-
-/** A store wrapper that rejects any commit carrying a `set-format` op until released. */
-function breakOnSetFormat(): { wrap: (store: RecordStore) => RecordStore; release: () => void } {
-  let broken = true;
-  return {
-    wrap: (inner) => ({
-      ...inner,
-      commit: async (ops) => {
-        if (broken && ops.some((op) => op.op === "set-format")) {
-          throw new KernelError("unavailable", "commit failed");
-        }
-        await inner.commit(ops);
-      },
-    }),
-    release: () => {
-      broken = false;
-    },
-  };
-}
-
-async function seedV013(store: RecordStore): Promise<void> {
-  const factorOps: StoreOp[] = v013.image.factors.map((factor) => ({
-    op: "put-factor",
-    factor: {
-      kind: factor.kind,
-      id: factor.id,
-      header: factor.header,
-      sealed: hexToBytes(factor.sealed),
-    },
-  }));
-  const recordOps: StoreOp[] = v013.image.records.map((record) => ({
-    op: "put-record",
-    record: {
-      kind: record.kind,
-      id: record.id,
-      header: record.header,
-      sealed: hexToBytes(record.sealed),
-    },
-  }));
-  const ops: StoreOp[] = [
-    { op: "init", meta: v013.image.meta as never },
-    ...factorOps,
-    ...recordOps,
-  ];
-  await store.commit(ops);
-}
-
-function v013Keystore(): ReturnType<typeof fakeKeystore> {
-  const fake = fakeKeystore();
-  fake.adopt(v013.factorId, hexToBytes(v013.kek), "presence");
-  return fake;
-}
-
-describe("format-3 upgrade", () => {
-  it("hardware unlock upgrades to format 4, adds a device row, keeps wallet and nostr key", async () => {
-    const fake = v013Keystore();
-    const store = createMemoryStore();
-    await seedV013(store);
-    const h = createHarness({ keystore: fake.keystore, store });
-    await h.settle();
-    expect(str(ok(await h.call("vault.unlock", { factor: HARDWARE })), "session")).toBeTypeOf(
-      "string",
-    );
-    const image = await h.store.load();
-    expect(image.meta?.format).toBe(VAULT_FORMAT);
-    await expect(factorKinds(h)).resolves.toStrictEqual(["hardware", "device"]);
-    const status = ok(await h.call("status"));
-    const wallets = field(status, "wallets") as ReadonlyArray<ProtocolValue>;
-    expect(str(wallets[0] as ProtocolValue, "walletId")).toBe(v013.walletId);
-    const keys = field(field(status, "nostr"), "keys") as ReadonlyArray<ProtocolValue>;
-    expect(str(keys[0] as ProtocolValue, "publicKey")).toBe(v013.nostrPublicKey);
-  });
-
-  it("device unlock on the format-3 image is not-found and writes nothing", async () => {
-    const fake = v013Keystore();
-    const store = createMemoryStore();
-    await seedV013(store);
-    const h = createHarness({ keystore: fake.keystore, store });
-    await h.settle();
-    expect(errCode(await h.call("vault.unlock", { factor: DEVICE }))).toBe("not-found");
-    const image = await h.store.load();
-    expect(image.meta?.format).toBe(3);
-    expect(image.factors).toHaveLength(1);
-  });
-
-  it("a failing upgrade commit opens no session", async () => {
-    const fake = v013Keystore();
-    const store = createMemoryStore();
-    await seedV013(store);
-    const breaker = breakOnSetFormat();
-    const h = createHarness({
-      keystore: fake.keystore,
-      store,
-      wrapStore: breaker.wrap,
-    });
-    await h.settle();
-    expect(errCode(await h.call("vault.unlock", { factor: HARDWARE }))).toBeDefined();
-    breaker.release();
-    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
-    const failedImage = await h.store.load();
-    expect(failedImage.meta?.format).toBe(3);
-  });
-
-  it("a software host upgrades a format-3 password vault without factor changes", async () => {
-    const store = createMemoryStore();
-    const plain = createHarness({ store });
-    await plain.settle();
-    ok(
-      await plain.call("wallet.importMnemonic", {
-        mnemonic: utf8ToBytes(MNEMONIC),
-        factor: { kind: "password", password: utf8ToBytes("correct horse battery staple") },
-      }),
-    );
-    // Back-date the vault to format 3 exactly as an older build left it.
-    await store.commit([{ op: "set-format", format: 3 }]);
-    const beforeImage = await store.load();
-    const before = beforeImage.factors.map((factor) => factor.id);
-
-    const restarted = createHarness({ store });
-    await restarted.settle();
-    ok(
-      await restarted.call("vault.unlock", {
-        factor: { kind: "password", password: utf8ToBytes("correct horse battery staple") },
-      }),
-    );
-    const image = await store.load();
-    expect(image.meta?.format).toBe(VAULT_FORMAT);
-    expect(image.factors.map((factor) => factor.id)).toStrictEqual(before);
   });
 });
 

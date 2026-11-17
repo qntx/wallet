@@ -12,9 +12,10 @@ import {
   parseKeyHeader,
   parsePolicyHeader,
 } from "./vault/headers.ts";
+import { MANIFEST_HEADER, MANIFEST_ID, MANIFEST_KIND } from "./vault/manifest.ts";
 import { BLIND_SIGNING, POLICY_KIND } from "./vault/policy.ts";
 import type { StoredRecord, VaultImage } from "./vault/store.ts";
-import { UPGRADABLE_FORMAT, VAULT_FORMAT } from "./vault/store.ts";
+import { VAULT_FORMAT } from "./vault/store.ts";
 import { factorInfo, walletInfo } from "./vault/vault.ts";
 
 /** The kernel's read on a loaded vault image; `unavailable` never appears here (load threw). */
@@ -29,7 +30,7 @@ function metaHealth(image: VaultImage): ImageHealth | undefined {
   if (!Number.isSafeInteger(meta.format)) {
     return "corrupted";
   }
-  if (meta.format !== VAULT_FORMAT && meta.format !== UPGRADABLE_FORMAT) {
+  if (meta.format !== VAULT_FORMAT) {
     return "unsupported";
   }
   if (
@@ -131,6 +132,9 @@ export function statusContents(
         } else {
           corrupted = true;
         }
+      } else if (record.kind === MANIFEST_KIND) {
+        // Authenticated at unlock; structurally there is one, with no public content.
+        corrupted ||= record.id !== MANIFEST_ID || record.header !== MANIFEST_HEADER;
       } else if (record.kind === POLICY_KIND) {
         // One known policy; any other id was written by another build.
         if (record.id === BLIND_SIGNING) {
@@ -147,6 +151,13 @@ export function statusContents(
     } catch {
       corrupted = true;
     }
+  }
+  // An established vault carries exactly one manifest — without it nothing vouches for the rest.
+  if (
+    image.meta !== undefined &&
+    image.records.filter((r) => r.kind === MANIFEST_KIND).length !== 1
+  ) {
+    corrupted = true;
   }
   const section = nostr.status(owned.filter((record) => nostr.vault.ownsRecord(record.kind)));
   corrupted = corrupted || section.corrupted;

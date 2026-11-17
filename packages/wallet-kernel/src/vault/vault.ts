@@ -29,6 +29,7 @@ import {
   parsePasskeyFactorHeader,
   parsePasswordFactorHeader,
 } from "./headers.ts";
+import { isManifestRecord } from "./manifest.ts";
 import type { StoredFactor, StoredRecord, StoreOp, VaultImage, VaultMeta } from "./store.ts";
 import { VAULT_FORMAT } from "./store.ts";
 
@@ -486,7 +487,9 @@ export async function verifyFactor(
  * public header; every retained factor re-wraps the new DEK to the public key of a row whose
  * binding verified under the current DEK (an unverified row is never re-wrapped — it latches
  * corrupted instead); added factors are built under the new DEK. One guarded commit lands it all:
- * `set-key-id`, `delete-factor`s, `put-factor`s, `put-record`s.
+ * `set-key-id`, `delete-factor`s, `put-factor`s, `put-record`s — the commit itself adds the
+ * manifest of the rotated vault, sealed under the new DEK, so the old manifest is not carried
+ * over.
  *
  * Everything secret is wiped on failure; on success the caller hands `dek` to `ctx.commit(ops, {
  * rotate })` or wipes it.
@@ -536,7 +539,7 @@ export async function rotateVault(
       addedRows.push(stored);
       ops.push({ op: "put-factor", factor: stored });
     }
-    for (const record of image.records) {
+    for (const record of image.records.filter((r) => !isManifestRecord(r))) {
       let plaintext: Uint8Array;
       try {
         plaintext = openRecord(dek, record);

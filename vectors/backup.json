@@ -40,6 +40,11 @@
       "site": "nostr record id"
     },
     {
+      "length": 24,
+      "bytes": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "site": "establish: vault manifest seal nonce"
+    },
+    {
       "length": 16,
       "bytes": "07070707070707070707070707070707",
       "site": "session id (second)"
@@ -68,6 +73,11 @@
       "length": 24,
       "bytes": "151515151515151515151515151515151515151515151515",
       "site": "enable: backup-key record seal nonce"
+    },
+    {
+      "length": 24,
+      "bytes": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+      "site": "enable: vault manifest seal nonce"
     },
     {
       "length": 24,

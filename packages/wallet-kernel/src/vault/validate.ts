@@ -4,7 +4,7 @@
  * any structural violation so a tampered or wrong-shaped file fails closed.
  */
 import { KernelError } from "../errors.ts";
-import { UPGRADABLE_FORMAT, VAULT_FORMAT, isRecordKind } from "./store.ts";
+import { VAULT_FORMAT, isRecordKind } from "./store.ts";
 import type { VaultImage } from "./store.ts";
 
 // Bounds for a vault image read back from an untrusted store (IndexedDB, the Node host's
@@ -63,8 +63,8 @@ function sealedBytes(value: unknown): void {
 /**
  * Strict shape check for a vault image. Returns the input typed as VaultImage; throws KernelError
  * "integrity" on any structural violation so a tampered store fails closed. `meta.format` is
- * checked before anything else: a non-integer is integrity, a format that is neither VAULT_FORMAT
- * nor UPGRADABLE_FORMAT is "unsupported" (data written by another build — left untouched).
+ * checked before anything else: a non-integer is integrity, a format other than VAULT_FORMAT is
+ * "unsupported" (data written by another build — left untouched).
  */
 export function assertVaultImage(value: unknown): VaultImage {
   const image = plainObject(value);
@@ -78,8 +78,8 @@ export function assertVaultImage(value: unknown): VaultImage {
     if (typeof format !== "number" || !Number.isSafeInteger(format)) {
       throw bad("meta format is not a safe integer");
     }
-    if (format !== VAULT_FORMAT && format !== UPGRADABLE_FORMAT) {
-      throw new KernelError("unsupported", "vault store: meta format needs a newer build");
+    if (format !== VAULT_FORMAT) {
+      throw new KernelError("unsupported", "vault store: meta format is not this build's");
     }
     exactKeys(metaRow, "failedAttempts,format,keyId,lastFailureAt,revision");
     if (typeof metaRow["keyId"] !== "string" || !HEX_32.test(metaRow["keyId"])) {

@@ -15,6 +15,7 @@ import { Secret } from "../src/secret/secret.ts";
 import { open as openEnvelope } from "../src/vault/envelope.ts";
 import { backupPasswordKek } from "../src/vault/factors.ts";
 import { encodeHeader, parseEntropyHeader } from "../src/vault/headers.ts";
+import { withManifest } from "../src/vault/manifest.ts";
 import type { StoredRecord } from "../src/vault/store.ts";
 import { openWalletSecret, sealRecord } from "../src/vault/vault.ts";
 import { createHarness, seededRandom } from "./harness.ts";
@@ -414,7 +415,15 @@ describe("record integrity", () => {
       nextHeader,
       nextPlaintext,
     );
-    await h.store.commit([{ op: "put-record", record: sealed }]);
+    // A DEK holder's edit: the manifest is rewritten with it, so only the record layout is tested.
+    await h.store.commit(
+      withManifest(
+        platform,
+        image,
+        [{ op: "put-record", record: sealed }],
+        Secret.take(new Uint8Array(DEK)),
+      ),
+    );
     const h2 = createHarness({ store: h.store });
     await h2.settle();
     return h2;
