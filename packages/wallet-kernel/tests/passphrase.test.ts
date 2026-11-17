@@ -594,10 +594,10 @@ describe("cloud backup", { timeout: 120_000 }, () => {
       pv.plainWalletId,
     ]);
     expect(listField(first, "passphraseRequired")).toStrictEqual([pv.walletId]);
-    // The envelope's backup key is adopted while the vault is established.
+    // A password restore never adopts the envelope's backup key.
     const session = strField(first, "session");
     const status = ok(await h.call("status", undefined, session));
-    expect(strField(field(status, "backup"), "id")).toBe(backupVector.id);
+    expect(field(status, "backup")).toBeNull();
 
     const second = ok(
       await restoreInto(h, session, {

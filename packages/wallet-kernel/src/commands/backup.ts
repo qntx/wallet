@@ -1,8 +1,9 @@
 // Cloud backup (design/backup.mdx, E1-d-3): a 32-byte BEK is retained in the vault as the
 // `backup-key` record, so `backup.update` rewrites the cloud envelope without a fresh factor
 // ceremony. `backup.enable` still re-verifies and wraps the new BEK under each backup factor;
-// `backup.restore` adopts the envelope's BEK only when the restore establishes the vault — a
-// forged envelope must never hijack an existing vault's future backups. The payload is compact
+// `backup.restore` adopts the envelope's BEK only when the restore establishes the vault and a
+// kernel passkey ceremony unwrapped it — a forged envelope must never hijack the vault's future
+// backups. The payload is compact
 // binary secrets only — per wallet `origin(1) ‖ len(1) ‖ entropy`;
 // `secretKey(32)`, per chain key `family(1) ‖ secretKey(32)` — sealed under the BEK with the
 // vault envelope v1 format; each sealedBek rides the same seal under the factor's KEK.
@@ -296,10 +297,18 @@ function wipeContents(contents: BackupContents): void {
  * factor-array order, then every sealedBek nonce in factor-array order — no random draw follows an
  * await, so async scheduling (pbkdf2 suspending) can never reorder it.
  */
-/** Backup factor material once any passkey ceremony ran: a password or the PRF evidence. */
+/**
+ * Backup factor material once any passkey ceremony ran: a password or the PRF evidence, tagged with
+ * the runtime whose ceremony produced it.
+ */
 type BackupMaterial =
   | { readonly kind: "password"; readonly password: Uint8Array }
-  | { readonly kind: "passkey"; readonly credentialId: Uint8Array; readonly prfBackup: Uint8Array };
+  | {
+      readonly kind: "passkey";
+      readonly ceremony: "kernel" | "host";
+      readonly credentialId: Uint8Array;
+      readonly prfBackup: Uint8Array;
+    };
 
 const PURPOSE_PROTECTION = 0x02;
 
@@ -313,7 +322,12 @@ function backupMaterialOf(result: PasskeyResult): BackupMaterial {
     result.first?.fill(0);
     throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
   }
-  return { kind: "passkey", credentialId: result.credentialId, prfBackup: result.first };
+  return {
+    kind: "passkey",
+    ceremony: "kernel",
+    credentialId: result.credentialId,
+    prfBackup: result.first,
+  };
 }
 
 /**
@@ -334,7 +348,12 @@ async function backupMaterial(
     throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
   }
   if (factor.ceremony === "host") {
-    return factor;
+    return {
+      kind: "passkey",
+      ceremony: "host",
+      credentialId: factor.credentialId,
+      prfBackup: factor.prfBackup,
+    };
   }
   const passkey = requirePasskey(ctx.platform);
   const salts = { first: utf8ToBytes(factor.backupSalt) };
@@ -553,6 +572,17 @@ export async function disableBackup(
   return null;
 }
 
+/**
+ * Whether an establishing restore may keep the envelope's BEK. Adopting it turns backup on, so it
+ * needs what `backup.enable` needs: a user verification the main runtime cannot stand in for, by
+ * the owner of a factor of this very envelope. Only a kernel passkey ceremony is both — a
+ * user-verified assertion whose PRF never leaves the kernel runtime. A password and a host
+ * ceremony's PRF arrive over the wire: the main runtime may have minted the envelope around them,
+ * and adopting its BEK would hand it every secret a later `backup.update` seals.
+ */
+const adoptsBackupKey = (material: BackupMaterial): boolean =>
+  material.kind === "passkey" && material.ceremony === "kernel";
+
 /** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 async function bekFromFactor(
   platform: KernelPlatform,
@@ -651,11 +681,8 @@ async function restoreWithPassphrases(
   const credentials = envelope.factors.flatMap((f) =>
     f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
   );
-  const bek = await bekFromFactor(
-    ctx.platform,
-    envelope,
-    await backupMaterial(ctx, params.backupFactor, credentials),
-  );
+  const material = await backupMaterial(ctx, params.backupFactor, credentials);
+  const bek = await bekFromFactor(ctx.platform, envelope, material);
   try {
     // The payload tag authenticates the raw header text — parse the header only after this open.
     let plaintext: Uint8Array;
@@ -770,10 +797,10 @@ async function restoreWithPassphrases(
             }
           }
         }
-        if (gated.uninitialized) {
+        if (gated.uninitialized && adoptsBackupKey(material)) {
           // Adoption — only while the vault is being established, inside the same atomic
-          // commit: a forged envelope merging into an existing vault can never hijack its
-          // future backups.
+          // commit: a merge keeps the vault's own backup key (or none). Otherwise backup stays
+          // off until the owner turns it on with `backup.enable`.
           records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
         }
         const session = await commitRecords(ctx, gated, params.factor, records);

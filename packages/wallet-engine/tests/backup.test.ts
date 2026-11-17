@@ -301,46 +301,18 @@ describe("BackupController", () => {
       await r.engine.backup.enable({ verify: PW, factors: [BPW] });
       const name = remoteName(r.files);
 
-      // A second device: fresh vault restored from the same envelope — it adopts the BEK, adds
-      // a wallet and uploads first. Device 1 then changes coverage and sees the foreign digest.
-      const wallet2 = await createNodeWallet({
-        verifyEvent,
-        passkey: PASSKEY_CONFIG,
-        autoLock: { platform: "web", idleMinutes: 15 },
-        authenticator: createSoftwarePasskey(randomBytes(32)),
-        kernelUrl: KERNEL_URL,
+      // Another device of the same backup lineage uploads a wallet this one does not hold:
+      // recorded here by importing it, syncing, then deleting it again.
+      const foreign = await r.wallet.wallets.importMnemonic({
+        mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
       });
-      const engine2 = createWalletEngine({
-        publicStore: createMemoryPublicStore(),
-        verifyEvent,
-        weblnAlias: "test",
-        lightningMaxFee: () => 0,
-        wallet: wallet2,
-        sparkNetwork: "regtest",
-        fetch: async () => Promise.reject(new Error("offline")),
-        random: (n) => randomBytes(n),
-        now: () => Date.now(),
-        logger: LOGGER,
-        showCallsStatus: () => undefined,
-        openStore: async () => Promise.resolve(createMemoryEngineStore()),
-        cloud: r.cloud,
-      });
-      try {
-        await engine2.backup.restore({ name, backupFactor: BPW, factor: PW });
-        // Device 2 adds its own wallet and uploads it over the shared file.
-        await wallet2.wallets.importMnemonic({
-          mnemonic: "legal winner thank year wave sausage worth useful legal winner thank yellow",
-        });
-        await engine2.backup.sync();
-        const listed2 = await engine2.backup.list();
-        const { header: header2 } = listed2[0]!;
-        expect(header2.wallets).toHaveLength(2);
-      } finally {
-        engine2.unsubscribe();
-        await wallet2.destroy();
-      }
+      await settle(r);
+      const foreignText = r.files.get(name)!;
+      await r.wallet.wallets.delete(foreign.walletId, PW);
+      await settle(r);
+      r.files.set(name, foreignText);
 
-      // Device 1 changes coverage → reconcile takes the update path → foreign digest → conflict.
+      // This device changes coverage → reconcile takes the update path → foreign digest → conflict.
       await r.wallet.wallets.importMnemonic({
         mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
       });
@@ -348,13 +320,13 @@ describe("BackupController", () => {
       expect(r.engine.backup.getState().status).toBe("conflict");
 
       // Own-lineage restore merges the foreign file, then the next sync uploads the superset:
-      // device 1's two wallets plus device 2's one.
+      // this device's two wallets plus the foreign one.
       const merged = await r.engine.backup.restore({ name, backupFactor: BPW });
-      expect(merged.wallets).toHaveLength(1); // device 2's wallet is the only new one
+      expect(merged.wallets.map((w) => w.walletId)).toStrictEqual([foreign.walletId]);
       await settle(r);
       expect(r.engine.backup.getState().status).toBe("synced");
-      const listed3 = await r.engine.backup.list();
-      const { header } = listed3[0]!;
+      const listed = await r.engine.backup.list();
+      const { header } = listed[0]!;
       expect(header.wallets).toHaveLength(3);
     } finally {
       await r.close();
@@ -394,7 +366,7 @@ describe("BackupController", () => {
     }
   });
 
-  it("fresh-vault restore adopts the file: first sync overwrites, third vault restores", async () => {
+  it("a password restore into a fresh vault leaves the file alone and backup off", async () => {
     const r = await rig();
     try {
       await vaultWithMnemonic(r.wallet);
@@ -402,7 +374,8 @@ describe("BackupController", () => {
       const name = remoteName(r.files);
       const original = r.files.get(name)!;
 
-      // Second device, uninitialized vault: restore from the cloud file directly.
+      // Second device, uninitialized vault: the backup password crossed the host, so the kernel
+      // restores the wallets without adopting the file's backup key.
       const wallet2 = await createNodeWallet({
         verifyEvent,
         passkey: PASSKEY_CONFIG,
@@ -425,44 +398,29 @@ describe("BackupController", () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         cloud: r.cloud,
       });
-      const restored = await engine2.backup.restore({
-        name,
-        backupFactor: BPW,
-        factor: { kind: "password", password: PASSWORD },
-      });
       try {
-        expect(restored.wallets).toHaveLength(1);
-        // No explicit sync(): restore converges its own reconcile — the adopted baseline
-        // makes the first pass overwrite the same file in place, never a conflict.
-        const state = await until(() => engine2.backup.getState().status, isSettled);
-        expect(state).toBe("synced");
-        expect(r.files.size).toBe(1);
-        expect(r.files.get(name)).toBeDefined();
-        expect(r.files.get(name)).not.toBe(original);
-      } finally {
-        engine2.unsubscribe();
-        await wallet2.destroy();
-      }
-
-      // A third fresh vault restores the rewritten file with the original backup password.
-      const wallet3 = await createNodeWallet({
-        verifyEvent,
-        passkey: PASSKEY_CONFIG,
-        autoLock: { platform: "web", idleMinutes: 15 },
-        authenticator: createSoftwarePasskey(randomBytes(32)),
-        kernelUrl: KERNEL_URL,
-      });
-      try {
-        const restored3 = await wallet3.backup.restore({
-          envelope: r.files.get(name)!,
+        const restored = await engine2.backup.restore({
+          name,
           backupFactor: BPW,
           factor: { kind: "password", password: PASSWORD },
         });
-        expect(restored3.wallets).toHaveLength(1);
-        expect(restored3.passphraseRequired).toStrictEqual([]);
-        expect(restored3.wallets[0]!.walletId).toBe(restored.wallets[0]!.walletId);
+        expect(restored.wallets).toHaveLength(1);
+        expect(wallet2.getSnapshot().backup).toBeNull();
+        const state = await until(
+          () => engine2.backup.getState().status,
+          (s) => s === "off",
+        );
+        expect(state).toBe("off");
+        expect([...r.files.keys()]).toStrictEqual([name]);
+        expect(r.files.get(name)).toBe(original);
+
+        // Turning backup on there is the owner's own verified decision: a new key, a new file.
+        await engine2.backup.enable({ verify: PW, factors: [BPW] });
+        expect(r.files.size).toBe(2);
+        expect(r.files.get(name)).toBe(original);
       } finally {
-        await wallet3.destroy();
+        engine2.unsubscribe();
+        await wallet2.destroy();
       }
     } finally {
       await r.close();
