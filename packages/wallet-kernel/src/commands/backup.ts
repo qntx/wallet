@@ -190,9 +190,6 @@ function decodePayload(bytes: Uint8Array): {
   while (off < bytes.length) {
     const tag = bytes[off++];
     if (tag === PAYLOAD_WALLET || tag === PAYLOAD_KEY) {
-      if (off + 2 > bytes.length) {
-        break;
-      }
       const ob = bytes[off];
       const len = bytes[off + 1];
       if (ob === undefined || len === undefined || off + 2 + len > bytes.length) {
@@ -216,9 +213,6 @@ function decodePayload(bytes: Uint8Array): {
     } else {
       throw new KernelError("integrity", "backup: unknown payload tag");
     }
-  }
-  if (off !== bytes.length) {
-    throw new KernelError("integrity", "backup: payload length mismatch");
   }
   return { wallets, keys };
 }

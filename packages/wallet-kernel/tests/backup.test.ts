@@ -3,7 +3,8 @@
 // unwraps with a backup factor and merges — adopting the envelope's BEK only while establishing
 // the vault, and only after a kernel passkey ceremony proved the owner holds one of its factors.
 
-import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58, base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -12,9 +13,11 @@ import type { WalletErrorCode } from "@qntx/wallet/types";
 
 import type { PasskeyAuthenticator } from "../src/platform.ts";
 import { mnemonicBytes } from "../src/seed/mnemonic.ts";
-import { createHarness } from "./harness.ts";
+import { open, seal } from "../src/vault/envelope.ts";
+import { backupPasswordKek } from "../src/vault/factors.ts";
+import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { loadVectors, realArgon2id } from "./helpers.ts";
+import { loadVectors, quickArgon2id, realArgon2id } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
 
@@ -983,5 +986,65 @@ describe("establishing restore and the envelope's backup key", () => {
 
   it("leaves backup off when a password unwrapped it on the web", async () => {
     await expect(restoreOnWeb(backupPassword())).resolves.toBeNull();
+  });
+});
+
+describe("backup payload parsing", () => {
+  /** An envelope whose payload plaintext gets `tail` appended, re-sealed under the real BEK. */
+  async function withPayloadTail(tail: ReadonlyArray<number>): Promise<string> {
+    const a = createHarness({ seed: 120 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    const envelope = JSON.parse(await createBackupEnvelope(a, session, [backupPassword()])) as {
+      header: string;
+      factors: ReadonlyArray<{ salt: string; sealedBek: string }>;
+      payload: string;
+    };
+    const [entry] = envelope.factors;
+    if (entry === undefined) {
+      throw new Error("no backup factor");
+    }
+    const kek = await backupPasswordKek(
+      new Uint8Array(PASSWORD),
+      base64urlnopad.decode(entry.salt),
+      quickArgon2id,
+    );
+    const bek = open(
+      kek,
+      base64urlnopad.decode(entry.sealedBek),
+      "qntx-wallet/backup/v1/factor/password",
+      "",
+    );
+    const context = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(envelope.header)))}`;
+    const plaintext = open(bek, base64urlnopad.decode(envelope.payload), context, "");
+    const payload = seal(
+      bek,
+      concatBytes(plaintext, Uint8Array.from(tail)),
+      context,
+      "",
+      seededRandom(121).random,
+    );
+    return JSON.stringify({ ...envelope, payload: base64urlnopad.encode(payload) });
+  }
+
+  const restoreCode = async (envelope: string) => {
+    const b = createHarness({ seed: 122 });
+    await b.settle();
+    return errCode(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+  };
+
+  it("rejects a payload ending in a lone entry tag", async () => {
+    await expect(restoreCode(await withPayloadTail([0x01]))).resolves.toBe("integrity");
+    await expect(restoreCode(await withPayloadTail([0x02]))).resolves.toBe("integrity");
+  });
+
+  it("rejects a payload ending in an entry tag with half its header", async () => {
+    await expect(restoreCode(await withPayloadTail([0x01, 0x01]))).resolves.toBe("integrity");
   });
 });
