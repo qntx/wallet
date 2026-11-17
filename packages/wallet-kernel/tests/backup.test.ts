@@ -5,7 +5,7 @@
 
 import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58, base64urlnopad } from "@scure/base";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
@@ -467,17 +467,9 @@ function makeReplay(
   };
 }
 
-describe("backup vector", () => {
-  // These replay the committed vector, so they pay the real Argon2id cost (64 MiB, 3 passes) in
-  // pure JS, several times a test and slower still under coverage instrumentation.
-  beforeAll(() => {
-    vi.setConfig({ testTimeout: 120_000 });
-  });
-
-  afterAll(() => {
-    vi.resetConfig();
-  });
-
+// These replay the committed vector, so they pay the real Argon2id cost (64 MiB, 3 passes) in
+// pure JS, several times a test and slower still under coverage instrumentation.
+describe("backup vector", { timeout: 120_000 }, () => {
   const vector = loadVectors("backup.json") as BackupVector;
 
   it("reproduces enable's record and both update envelopes byte for byte", async () => {
