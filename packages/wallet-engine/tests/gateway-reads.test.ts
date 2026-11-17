@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { gatewayScope, gatewaySession } from "../src/gateway/client.ts";
+import { gatewayFetch, gatewayScope, gatewaySession } from "../src/gateway/client.ts";
 import {
   CLIENT_ID_HEADER,
   accepts,
@@ -417,5 +417,32 @@ describe("gatewayScope", () => {
     ["/v1/unknown", "service"],
   ])("maps %s to %s", (path, expected) => {
     expect(scope(path)).toBe(expected);
+  });
+
+  it("scopes ids per family under a gateway mounted on a base path", async () => {
+    const gateway = gatewaySession(`${GATEWAY}/base/`, random);
+    const seen = new Map<string, string>();
+    const wrapped = gatewayFetch(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      seen.set(path, new Headers(init?.headers).get(CLIENT_ID_HEADER) ?? "");
+      return new Response("{}");
+    }, gateway);
+    const paths = [
+      `/base${rpcPath(SEPOLIA)}`,
+      `/base${rpcPath(DEVNET)}`,
+      `/base${esploraBasePath(SIGNET)}/block-height/0`,
+      `/base${networksPath}`,
+    ];
+    for (const path of paths) {
+      await wrapped(`${GATEWAY}${path}`);
+    }
+    const ids = [...seen.values()];
+    expect(new Set(ids).size).toBe(4);
+    expect(seen.get(`/base${rpcPath(SEPOLIA)}`)).toBe(gateway.clientIds.evm);
+    expect(seen.get(`/base${rpcPath(DEVNET)}`)).toBe(gateway.clientIds.solana);
+    expect(seen.get(`/base${esploraBasePath(SIGNET)}/block-height/0`)).toBe(
+      gateway.clientIds.bitcoin,
+    );
+    expect(seen.get(`/base${networksPath}`)).toBe(gateway.clientIds.service);
   });
 });

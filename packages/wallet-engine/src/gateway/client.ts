@@ -21,9 +21,16 @@ const routePrefix = (template: string): string => template.split("/:")[0] ?? tem
 const RPC_PREFIX = `${routePrefix(rpc.path)}/`;
 const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
 
-/** The scope a gateway URL belongs to — which client id its requests carry. */
-export function gatewayScope(url: URL): GatewayScope {
-  const { pathname } = url;
+/**
+ * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
+ * configured gateway URL's path prefix, stripped before matching so a gateway mounted under a base
+ * path still resolves its routes.
+ */
+export function gatewayScope(url: URL, basePath = ""): GatewayScope {
+  const pathname =
+    basePath !== "" && url.pathname.startsWith(`${basePath}/`)
+      ? url.pathname.slice(basePath.length)
+      : url.pathname;
   if (pathname.startsWith(RPC_PREFIX)) {
     return networkById(pathname.slice(RPC_PREFIX.length))?.family ?? "service";
   }
@@ -60,7 +67,9 @@ export function gatewayFetch(
   fetch: typeof globalThis.fetch,
   gateway: GatewayConfig | undefined,
 ): typeof globalThis.fetch {
-  const origin = gateway === undefined ? undefined : new URL(gateway.url).origin;
+  const base = gateway === undefined ? undefined : new URL(gateway.url);
+  const origin = base?.origin;
+  const basePath = base === undefined ? "" : base.pathname.replace(/\/+$/, "");
   return async (input, init) => {
     const target = input instanceof Request ? input.url : String(input);
     const url = new URL(target);
@@ -68,7 +77,7 @@ export function gatewayFetch(
       return fetch(input, init);
     }
     const headers = new Headers(init?.headers);
-    headers.set(CLIENT_ID_HEADER, gateway.clientIds[gatewayScope(url)]);
+    headers.set(CLIENT_ID_HEADER, gateway.clientIds[gatewayScope(url, basePath)]);
     return fetch(input, { ...init, headers });
   };
 }
