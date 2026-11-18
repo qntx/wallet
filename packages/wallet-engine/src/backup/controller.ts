@@ -48,6 +48,17 @@ type BackupRecord = {
   readonly digest: string | undefined;
   readonly uploadedAt: number | undefined;
   readonly walletIds: ReadonlyArray<string>;
+  /**
+   * The envelope this device last started uploading, persisted before `cloud.write`: a read-back
+   * that lags or a write that throws after landing is confirmed next pass instead of reported as a
+   * foreign file. `id` is the backup id the upload was for — a record surviving from an older
+   * backup id keeps it bound to the file it actually wrote.
+   */
+  readonly pending?: {
+    readonly id: string;
+    readonly digest: string;
+    readonly walletIds: ReadonlyArray<string>;
+  };
 };
 
 const COLLECTION = "backup";
@@ -106,7 +117,32 @@ function parseRecord(bytes: Uint8Array | undefined): BackupRecord | undefined {
     if (!isStringArray(walletIds)) {
       return undefined;
     }
-    return { id, digest, uploadedAt, walletIds };
+    const { pending } = o;
+    if (pending === undefined) {
+      return { id, digest, uploadedAt, walletIds };
+    }
+    if (
+      !isObject(pending) ||
+      !Object.keys(pending).every((k) => k === "id" || k === "digest" || k === "walletIds") ||
+      typeof pending["id"] !== "string" ||
+      !/^[0-9a-f]{32}$/.test(pending["id"]) ||
+      typeof pending["digest"] !== "string" ||
+      !/^[0-9a-f]{64}$/.test(pending["digest"]) ||
+      !isStringArray(pending["walletIds"])
+    ) {
+      return undefined;
+    }
+    return {
+      id,
+      digest,
+      uploadedAt,
+      walletIds,
+      pending: {
+        id: pending["id"],
+        digest: pending["digest"],
+        walletIds: pending["walletIds"],
+      },
+    };
   } catch {
     return undefined;
   }
@@ -325,6 +361,18 @@ export class BackupController extends Controller<BackupControllerState> {
     await this.engineStore?.collection(COLLECTION).delete(RECORD_KEY);
   }
 
+  /** Best-effort: the superseded backup id's file should not linger once a new id is the baseline. */
+  private async deleteStaleFile(generation: number, oldId: string): Promise<void> {
+    try {
+      if (generation !== this.generation) {
+        return;
+      }
+      await this.cloud?.delete(fileName(oldId));
+    } catch (error) {
+      this.logger.warn("stale backup file delete failed", error);
+    }
+  }
+
   private snapshot(): WalletSnapshot {
     return this.wallet.getSnapshot();
   }
@@ -455,6 +503,38 @@ export class BackupController extends Controller<BackupControllerState> {
       return;
     }
 
+    // An earlier pass may have landed its `pending` envelope without confirming it — when the
+    // remote proves it landed, promote it to the baseline and converge from there. The pending
+    // marker is bound to the backup id it was written for, not to the record carrying it.
+    if (record !== undefined && record.pending !== undefined && record.pending.id === backup.id) {
+      try {
+        const remote = await this.cloud.read(fileName(backup.id));
+        if (remote !== undefined && digestOf(remote) === record.pending.digest) {
+          const promoted: BackupRecord = {
+            id: backup.id,
+            digest: record.pending.digest,
+            uploadedAt: this.now(),
+            walletIds: record.pending.walletIds,
+          };
+          if (generation !== this.generation) {
+            return;
+          }
+          await this.writeRecord(promoted);
+          if (record.id !== backup.id) {
+            await this.deleteStaleFile(generation, record.id);
+          }
+          record = promoted;
+        }
+      } catch (error) {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.logger.warn("backup reconcile failed", error);
+        this.setStatus(generation, "error", "cloud", record);
+        return;
+      }
+    }
+
     const baseline = record !== undefined && record.id === backup.id ? record.digest : undefined;
     const cov = this.coverage(snapshot);
     if (
@@ -475,13 +555,28 @@ export class BackupController extends Controller<BackupControllerState> {
       const name = fileName(backup.id);
       const remote = await this.cloud.read(name);
       const digest = digestOf(envelope);
-      if (remote !== undefined && digestOf(remote) !== baseline) {
+      const pendingDigest = record?.pending?.id === backup.id ? record.pending.digest : undefined;
+      if (
+        remote !== undefined &&
+        digestOf(remote) !== baseline &&
+        digestOf(remote) !== pendingDigest
+      ) {
         this.setStatus(generation, "conflict", "conflict", record);
         return;
       }
       if (generation !== this.generation) {
         return;
       }
+      const staged: BackupRecord = {
+        ...(record ?? {
+          id: backup.id,
+          digest: undefined,
+          uploadedAt: undefined,
+          walletIds: [],
+        }),
+        pending: { id: backup.id, digest, walletIds: cov.walletIds },
+      };
+      await this.writeRecord(staged);
       await this.cloud.write(name, envelope);
       const readBack = await this.cloud.read(name);
       if (readBack !== envelope) {
@@ -499,14 +594,7 @@ export class BackupController extends Controller<BackupControllerState> {
       }
       await this.writeRecord(next);
       if (record !== undefined && record.id !== backup.id) {
-        try {
-          if (generation !== this.generation) {
-            return;
-          }
-          await this.cloud.delete(fileName(record.id));
-        } catch (error) {
-          this.logger.warn("stale backup file delete failed", error);
-        }
+        await this.deleteStaleFile(generation, record.id);
       }
       this.setStatus(generation, "synced", undefined, next);
     } catch (error) {

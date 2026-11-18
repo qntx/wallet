@@ -25,6 +25,7 @@ const wallet = await createWebWallet({
     rpName: "Example",
     walletSalt: "example/wallet",
     vaultSalt: "example/vault",
+    backupSalt: "example/backup",
   },
   autoLock: { platform: "web", idleMinutes: 15 }, // 5 | 15 | 60; max session 12 h
   verifyEvent, // verifies every event the kernel signs; pass your app's verifier

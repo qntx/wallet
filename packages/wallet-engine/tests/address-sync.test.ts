@@ -7,9 +7,11 @@ import { AddressBookController } from "../src/addresses/controller.ts";
 import { AddressBookError } from "../src/addresses/errors.ts";
 import {
   ADDRESS_BOOK_LIMIT,
+  MAX_CLOCK_SKEW_MS,
   TOMBSTONE_TTL_MS,
   evictTombstones,
   mergeRecords,
+  mergeWithReport,
   pickWinner,
   pruneTombstones,
 } from "../src/addresses/merge.ts";
@@ -78,20 +80,56 @@ describe("mergeRecords", () => {
     expect(merged.map((r) => r.id)).toStrictEqual(["a", "b"]);
   });
 
-  it("is last-writer-wins per id and symmetric", () => {
+  it("is last-writer-wins per id and symmetric while the identity matches", () => {
     const local = [entry("a", 5, { name: "local" })];
     const remote = [entry("a", 9, { name: "remote" })];
     expect(mergeRecords(local, remote, NOW)).toStrictEqual(mergeRecords(remote, local, NOW));
     expect(mergeRecords(local, remote, NOW)[0]).toMatchObject({ name: "remote" });
   });
 
-  it("a tombstone removes an older entry and an older tombstone does not remove a newer one", () => {
+  it("a remote tombstone removes a local entry whatever the stamps", () => {
     expect(mergeRecords([entry("a", NOW - 2)], [tomb("a", NOW - 1)], NOW)).toStrictEqual([
       tomb("a", NOW - 1),
     ]);
     expect(mergeRecords([entry("a", NOW - 1)], [tomb("a", NOW - 2)], NOW)).toStrictEqual([
-      entry("a", NOW - 1),
+      tomb("a", NOW - 2),
     ]);
+  });
+
+  it("a tombstone is never resurrected by a newer remote entry", () => {
+    const local = tomb("a", NOW - 100);
+    const remote = entry("a", NOW + 100);
+    const { records, refused } = mergeWithReport([local], [remote], NOW);
+    expect(records).toStrictEqual([local]);
+    expect(refused).toBe(0);
+  });
+
+  it("two tombstones keep the later stamp", () => {
+    const older = tomb("a", NOW - 200);
+    const newer = tomb("a", NOW - 100);
+    expect(mergeWithReport([older], [newer], NOW).records).toStrictEqual([newer]);
+    expect(mergeWithReport([newer], [older], NOW).records).toStrictEqual([newer]);
+  });
+
+  it.each<[string, Partial<AddressBookEntry>]>([
+    ["address", { address: EVM }],
+    ["family", { family: "solana", address: "11111111111111111111111111111111" }],
+    ["createdAt", { createdAt: 2 }],
+  ])("refuses a remote entry that rewrites the %s of a local one", (_part, over) => {
+    const local = entry("a", 5, { name: "local" });
+    const { records, refused } = mergeWithReport([local], [entry("a", 9, over)], NOW);
+    expect(records).toStrictEqual([local]);
+    expect(refused).toBe(1);
+  });
+
+  it("refuses a remote record stamped past the clock bound but accepts the boundary", () => {
+    const { records, refused } = mergeWithReport(
+      [],
+      [entry("late", NOW + MAX_CLOCK_SKEW_MS + 1), entry("edge", NOW + MAX_CLOCK_SKEW_MS)],
+      NOW,
+    );
+    expect(records).toStrictEqual([entry("edge", NOW + MAX_CLOCK_SKEW_MS)]);
+    expect(refused).toBe(1);
   });
 
   it("drops tombstones past 90 days and keeps the boundary", () => {
@@ -343,5 +381,108 @@ describe("address book notes, tombstones and limit", () => {
     await expect(
       failure(controller.add({ name: "z", family: "evm", address: `0x${"2".repeat(40)}` })),
     ).resolves.toBe("limit");
+  });
+});
+
+describe("address book merge refuses poisoned remote records", () => {
+  const ALICE = `0x${"aa".repeat(20)}`;
+  const ATTACKER = `0x${"bb".repeat(20)}`;
+  const TEN_YEARS = 10 * 365 * 24 * 60 * 60 * 1000;
+
+  const rig = () => {
+    const clock = { t: 1_000_000 };
+    const warnings: string[] = [];
+    const controller = new AddressBookController({
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      random: (n) => new Uint8Array(n).fill(1),
+      now: () => clock.t,
+      logger: { warn: (m) => warnings.push(m) },
+    });
+    return { controller, clock, warnings };
+  };
+
+  it("keeps the local address when a same-id remote entry re-points it, and warns", async () => {
+    const { controller, clock, warnings } = rig();
+    await controller.init();
+    const alice = await controller.add({ name: "Alice", family: "evm", address: ALICE });
+    // A stamp far past the clock bound is refused before any comparison…
+    await controller.merge([{ ...alice, address: ATTACKER, updatedAt: clock.t + TEN_YEARS }]);
+    // …and inside the bound a rewritten address is refused as a changed identity.
+    await controller.merge([
+      { ...alice, address: ATTACKER, updatedAt: clock.t + MAX_CLOCK_SKEW_MS },
+    ]);
+    expect(controller.getState().entries[alice.id]).toStrictEqual(alice);
+    expect(warnings).toStrictEqual([
+      "address book sync: 1 remote records refused (future timestamp or changed address)",
+      "address book sync: 1 remote records refused (future timestamp or changed address)",
+    ]);
+  });
+
+  it("a remote entry never resurrects a removed contact", async () => {
+    const { controller, clock } = rig();
+    await controller.init();
+    const alice = await controller.add({ name: "Alice", family: "evm", address: ALICE });
+    await controller.remove(alice.id);
+    const result = await controller.merge([{ ...alice, updatedAt: clock.t + MAX_CLOCK_SKEW_MS }]);
+    expect(controller.getState().entries[alice.id]).toBeUndefined();
+    expect(controller.syncEntries()).toMatchObject([{ id: alice.id, deleted: true }]);
+    expect(result).toStrictEqual({ changed: false, localNewer: true });
+  });
+
+  it("a local rename stamps above the remote entry it replaces and sticks", async () => {
+    const { controller, clock } = rig();
+    await controller.init();
+    const alice = await controller.add({ name: "Alice", family: "evm", address: ALICE });
+    const remote: AddressBookEntry = {
+      ...alice,
+      name: "remote-name",
+      updatedAt: clock.t + MAX_CLOCK_SKEW_MS,
+    };
+    await controller.merge([remote]);
+    expect(controller.getState().entries[alice.id]?.name).toBe("remote-name");
+    const renamed = await controller.rename(alice.id, "Alice");
+    expect(renamed.updatedAt).toBe(remote.updatedAt + 1);
+    await controller.merge([remote]);
+    expect(controller.getState().entries[alice.id]?.name).toBe("Alice");
+  });
+
+  it("a local setNote stamps above the remote entry it replaces and sticks", async () => {
+    const { controller, clock } = rig();
+    await controller.init();
+    const alice = await controller.add({ name: "Alice", family: "evm", address: ALICE });
+    const remote: AddressBookEntry = {
+      ...alice,
+      note: "remote-note",
+      updatedAt: clock.t + MAX_CLOCK_SKEW_MS,
+    };
+    await controller.merge([remote]);
+    expect(controller.getState().entries[alice.id]?.note).toBe("remote-note");
+    const edited = await controller.setNote(alice.id, "my note");
+    expect(edited.updatedAt).toBe(remote.updatedAt + 1);
+    await controller.merge([remote]);
+    expect(controller.getState().entries[alice.id]?.note).toBe("my note");
+  });
+
+  it("a local remove stamps above the remote entry it deletes", async () => {
+    const { controller, clock } = rig();
+    await controller.init();
+    const alice = await controller.add({ name: "Alice", family: "evm", address: ALICE });
+    const remote: AddressBookEntry = {
+      ...alice,
+      name: "remote-name",
+      updatedAt: clock.t + MAX_CLOCK_SKEW_MS,
+    };
+    await controller.merge([remote]);
+    await controller.remove(alice.id);
+    expect(controller.syncEntries().find((r) => r.id === alice.id)?.updatedAt).toBe(
+      remote.updatedAt + 1,
+    );
+    // The remote tombstone stamped below the local one loses — the local stamp is kept.
+    await controller.merge([
+      { id: alice.id, deleted: true, updatedAt: clock.t + MAX_CLOCK_SKEW_MS },
+    ]);
+    expect(controller.syncEntries().find((r) => r.id === alice.id)?.updatedAt).toBe(
+      remote.updatedAt + 1,
+    );
   });
 });

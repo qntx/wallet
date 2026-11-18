@@ -2,9 +2,11 @@
 
 Public API surface of the qntx wallet: the `Wallet` interface, the immutable `WalletSnapshot`,
 `WalletError`, the core API groups (vault, wallets, dataKeys), the host/kernel wire protocol, and
-the `@qntx/wallet/nostr` subpath — the first protocol module. This package contains no runtime of
+the `@qntx/wallet/nostr` subpath — the first protocol module (`./spark` and `./chains` are the
+other module subpaths). This package contains no runtime of
 its own — a `Wallet` comes from a host package that spawns the kernel, currently
-[`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node.
+[`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node and
+[`@qntx/wallet-native`](https://www.npmjs.com/package/@qntx/wallet-native) for React Native.
 
 ```bash
 npm install @qntx/wallet @qntx/wallet-worker
@@ -21,6 +23,7 @@ const wallet = await createWebWallet({
     rpName: "Example",
     walletSalt: "example/wallet",
     vaultSalt: "example/vault",
+    backupSalt: "example/backup",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
   // Verifies every event the kernel signs; pass your app's native verifier where one exists.
@@ -122,11 +125,11 @@ React Native the device owner proves presence before anything is erased.
   prompt that looks like a sign-in. Use a domain that serves only the wallet
   (`wallet.example.com`), never a registrable parent shared with other pages, user content or
   third-party scripts, and treat every related origin and associated app as part of the wallet.
-- `passkey.rpId`, `walletSalt` and `vaultSalt` are permanent identifiers — changing any of them
-  makes every existing passkey factor and passkey-derived wallet unrecoverable, and the salts
-  must differ. Moving domains requires WebAuthn related origins (`/.well-known/webauthn`); offer
-  `exportMnemonic` for passkey-derived wallets so they survive an RP migration. `connectKernel`
-  rejects an empty or colliding config before the worker spawns.
+- `passkey.rpId`, `walletSalt`, `vaultSalt` and `backupSalt` are permanent identifiers — changing
+  any of them makes every existing passkey factor and passkey-derived wallet unrecoverable, and
+  the salts must differ. Moving domains requires WebAuthn related origins
+  (`/.well-known/webauthn`); offer `exportMnemonic` for passkey-derived wallets so they survive an
+  RP migration. `connectKernel` rejects an empty or colliding config before the worker spawns.
 - Standalone Nostr keys carry `backedUp`: imports start `true`, generated keys `false`, and a
   successful `nostr.exportKey` marks the record — surface the flag so users actually back up.
   `ncryptsec` always carries NIP-49 key-security byte `0x02` and its scrypt `logN` is capped

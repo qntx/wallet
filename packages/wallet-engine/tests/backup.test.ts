@@ -61,10 +61,17 @@ type Rig = {
   readonly wallet: Wallet;
   readonly cloud: CloudStore;
   readonly files: Map<string, string>;
+  readonly storeBacking: Map<string, Map<string, Uint8Array>>;
   readonly faults: {
     write: boolean;
     read: boolean;
     del: boolean;
+    /** Next write lands, then throws like a timed-out call. */
+    landThenThrow: boolean;
+    /** Next write lands; the following read serves the pre-write value once (eventual consistency). */
+    lagRead: boolean;
+    stale: { readonly v: string | undefined } | undefined;
+    writeCalls: number;
     stall: Promise<void> | undefined;
     stallCalls: number;
   };
@@ -86,6 +93,10 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     write: false,
     read: false,
     del: false,
+    landThenThrow: false,
+    lagRead: false,
+    stale: undefined as { readonly v: string | undefined } | undefined,
+    writeCalls: 0,
     stall: undefined as Promise<void> | undefined,
     stallCalls: 0,
   };
@@ -95,6 +106,11 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     read: async (name) => {
       if (faults.read) {
         throw new Error("read failed");
+      }
+      if (faults.stale !== undefined) {
+        const { v } = faults.stale;
+        faults.stale = undefined;
+        return v;
       }
       return inner.read(name);
     },
@@ -110,6 +126,17 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
         faults.stallCalls += 1;
         await stall;
         throw new Error("stalled write aborted");
+      }
+      faults.writeCalls += 1;
+      if (faults.lagRead) {
+        faults.lagRead = false;
+        faults.stale = { v: await inner.read(name) };
+        return inner.write(name, text);
+      }
+      if (faults.landThenThrow) {
+        faults.landThenThrow = false;
+        await inner.write(name, text);
+        throw new Error("write timed out after landing");
       }
       return inner.write(name, text);
     },
@@ -140,6 +167,7 @@ async function rig(opts: { cloud?: boolean } = {}): Promise<Rig> {
     wallet,
     cloud,
     files,
+    storeBacking,
     faults,
     engine,
     close: async () => {
@@ -179,6 +207,14 @@ async function until<T>(read: () => T, want: (v: T) => boolean, ms = 5000): Prom
 }
 
 const isSettled = (s: string): boolean => s === "synced" || s === "conflict" || s === "error";
+
+/** Arms `faults.read` the moment the controller reports `error` — parks a run at error. */
+const holdAtError = (r: Rig): (() => void) =>
+  r.engine.backup.store.subscribe((s) => {
+    if (s.status === "error") {
+      r.faults.read = true;
+    }
+  });
 
 const tick = Promise.resolve();
 
@@ -515,9 +551,8 @@ describe("BackupController", () => {
       try {
         await vaultWithMnemonic(wallet2);
         await engine2.backup.sync();
-        // The read-back mismatch surfaces as `error`; the enabled snapshot trigger then runs
-        // once more and the orphaned upload reads as foreign-with-no-baseline → conflict.
-        // Assert the error state was actually visited.
+        // The read-back mismatch surfaces as `error`; the persisted pending marker lets the
+        // next pass confirm the landed write instead of conflicting with it.
         const seen: string[] = [];
         const un = engine2.backup.store.subscribe((s) => {
           seen.push(s.status);
@@ -529,6 +564,190 @@ describe("BackupController", () => {
         engine2.unsubscribe();
         await wallet2.destroy();
       }
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a lagged read-back confirms the landed write on the next pass — no self-conflict", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const update = vi.spyOn(r.wallet.backup, "update");
+      const writesBefore = r.faults.writeCalls;
+
+      const seen: string[] = [];
+      const un = r.engine.backup.store.subscribe((s) => {
+        seen.push(s.status);
+      });
+      // Coverage change → upload; the read-back lags and serves the pre-write file once.
+      r.faults.lagRead = true;
+      await r.wallet.wallets.importMnemonic({
+        mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+      });
+      await settle(r);
+      un();
+
+      // The error pass visited; the pending digest then confirmed our own landed write —
+      // converging to synced without another backup.update or cloud write.
+      expect(seen).toContain("error");
+      expect(r.engine.backup.getState().status).toBe("synced");
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(r.faults.writeCalls).toBe(writesBefore + 1);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a write that lands then throws is confirmed on the next pass", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+
+      const seen: string[] = [];
+      const un = r.engine.backup.store.subscribe((s) => {
+        seen.push(s.status);
+      });
+      r.faults.landThenThrow = true;
+      await r.wallet.wallets.importMnemonic({
+        mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+      });
+      await settle(r);
+      un();
+
+      // The timed-out write actually landed: pending confirms it and the pass converges to
+      // synced instead of declaring a conflict with itself.
+      expect(seen).toContain("error");
+      expect(r.engine.backup.getState().status).toBe("synced");
+      const listed = await r.engine.backup.list();
+      expect(listed[0]?.header.wallets).toHaveLength(2);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a foreign overwrite after a lagged read-back still reports conflict", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const name = remoteName(r.files);
+
+      // Hold the run at `error`: once the failed read-back lands, fail further reads so the
+      // pending write stays unconfirmed while another device overwrites the remote file.
+      const un = holdAtError(r);
+      r.faults.lagRead = true;
+      await r.wallet.wallets.importMnemonic({
+        mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+      });
+      await settle(r);
+      un();
+      expect(r.engine.backup.getState().status).toBe("error");
+
+      r.faults.read = false;
+      r.files.set(name, '{"device":"other"}');
+      await r.engine.backup.sync();
+      expect(r.engine.backup.getState().status).toBe("conflict");
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a write that never landed is retried as a normal upload — no conflict", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const name = remoteName(r.files);
+      const baseline = r.files.get(name);
+
+      r.faults.write = true;
+      await r.wallet.wallets.importMnemonic({
+        mnemonic: "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
+      });
+      await settle(r);
+      expect(r.engine.backup.getState().status).toBe("error");
+      expect(r.files.get(name)).toBe(baseline);
+
+      // The remote still holds the baseline file: pending does not match, the pass falls
+      // through to the ordinary upload path.
+      r.faults.write = false;
+      await r.engine.backup.sync();
+      expect(r.engine.backup.getState().status).toBe("synced");
+      expect(r.files.get(name)).not.toBe(baseline);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a rotated backup key whose first upload's read-back lagged is confirmed next pass", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const first = remoteName(r.files);
+      const update = vi.spyOn(r.wallet.backup, "update");
+      const writesBefore = r.faults.writeCalls;
+
+      const seen: string[] = [];
+      const un = r.engine.backup.store.subscribe((s) => {
+        seen.push(s.status);
+      });
+      // The new backup key uploads under a NEW id while the stored record still carries the
+      // old one; the read-back lags and serves the pre-write (absent) file once.
+      r.faults.lagRead = true;
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] }).catch(() => undefined);
+      await settle(r);
+      un();
+
+      // The error pass visited; pending is bound to the new backup id, so the landed write
+      // confirms on the next pass — no conflict, no second update or cloud write, and the
+      // superseded old-id file is gone.
+      expect(seen).toContain("error");
+      expect(r.engine.backup.getState().status).toBe("synced");
+      expect(seen).not.toContain("conflict");
+      expect(update).toHaveBeenCalledTimes(1);
+      expect(r.faults.writeCalls).toBe(writesBefore + 1);
+      expect(remoteName(r.files)).not.toBe(first);
+      expect(r.files.has(first)).toBe(false);
+    } finally {
+      await r.close();
+    }
+  });
+
+  it("a stored record with a malformed pending marker reads as absent", async () => {
+    const r = await rig();
+    try {
+      await vaultWithMnemonic(r.wallet);
+      await r.engine.backup.enable({ verify: PW, factors: [BPW] });
+      const name = remoteName(r.files);
+      const id = name.slice("qntx-wallet-backup-".length, -".json".length);
+      const stage = async (pending: unknown): Promise<void> =>
+        persistentEngineStore(r.storeBacking)
+          .collection("backup")
+          .put(
+            "state",
+            new TextEncoder().encode(
+              JSON.stringify({
+                id,
+                digest: "0".repeat(64),
+                uploadedAt: 1,
+                walletIds: [],
+                pending,
+              }),
+            ),
+          );
+      // A pending digest that is not 64 lowercase hex drops the whole record → the remote file
+      // reads as foreign → conflict.
+      await stage({ id, digest: "not-a-digest", walletIds: [] });
+      await r.engine.backup.sync();
+      expect(r.engine.backup.getState().status).toBe("conflict");
+      // Same for a pending id that is not a backup id.
+      await stage({ id: "not-a-backup-id", digest: "0".repeat(64), walletIds: [] });
+      await r.engine.backup.sync();
+      expect(r.engine.backup.getState().status).toBe("conflict");
     } finally {
       await r.close();
     }

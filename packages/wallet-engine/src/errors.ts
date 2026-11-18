@@ -1,6 +1,6 @@
-export type EngineErrorCode = "closed" | "integrity" | "invalid-input";
+export type EngineErrorCode = "closed" | "invalid-input";
 
-/** Typed engine errors: store codes are `closed` and `integrity` (decrypt or bind failure). */
+/** Typed engine errors: store codes are `closed` and `invalid-input`. */
 export class EngineStoreError extends Error {
   readonly code: EngineErrorCode;
 
