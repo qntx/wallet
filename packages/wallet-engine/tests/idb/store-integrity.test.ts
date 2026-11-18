@@ -16,7 +16,7 @@ import { openIndexedDbEngineStore } from "../../src/idb/indexeddb.ts";
 import { NetworkController } from "../../src/networks/controller.ts";
 import type { EngineStore } from "../../src/store/port.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
-import { corruptByte, rawGet, rawPut } from "./raw.ts";
+import { corruptByte, oracleId, rawGet, rawPut } from "./raw.ts";
 
 const DATA_KEY = new Uint8Array(32).fill(7);
 const random = (n: number) => new Uint8Array(n).fill(3);
@@ -31,7 +31,7 @@ function useFakeIdb(): void {
 const open = async (): Promise<EngineStore> =>
   openIndexedDbEngineStore({ name: "t", dataKey: DATA_KEY, random });
 
-/** Seeds `collection` with `records` and corrupts the raw row under `badKey`. */
+/** Seeds `collection` with `records` and corrupts the raw body and index header under `badKey`. */
 async function seedWithPoison(
   store: EngineStore,
   collection: string,
@@ -42,9 +42,13 @@ async function seedWithPoison(
     // oxlint-disable-next-line eslint/no-await-in-loop -- writes are few; ordering keeps it simple
     await store.collection(collection).put(key, bytes);
   }
-  const raw = await rawGet(`${collection}\u0000${badKey}`);
-  corruptByte(raw, 30);
-  await rawPut(`${collection}\u0000${badKey}`, raw);
+  const recId = await oracleId(DATA_KEY, collection, badKey);
+  const body = await rawGet("records", recId);
+  corruptByte(body, 30);
+  await rawPut("records", recId, body);
+  const header = await rawGet("index", recId);
+  corruptByte(header, 30);
+  await rawPut("index", recId, header);
 }
 
 describe("a poisoned engine-store row", () => {
@@ -114,9 +118,13 @@ describe("a poisoned engine-store row", () => {
       random,
     });
     await store.collection("networks").put("customRpc", json({ "eip155:1": ["http://rpc.good"] }));
-    const raw = await rawGet("networks\u0000customRpc");
-    corruptByte(raw, 30);
-    await rawPut("networks\u0000customRpc", raw);
+    const recId = await oracleId(DATA_KEY, "networks", "customRpc");
+    const body = await rawGet("records", recId);
+    corruptByte(body, 30);
+    await rawPut("records", recId, body);
+    const header = await rawGet("index", recId);
+    corruptByte(header, 30);
+    await rawPut("index", recId, header);
     await networks.init();
     expect(networks.getState().customRpc).toStrictEqual({});
     await store.close();
