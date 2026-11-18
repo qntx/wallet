@@ -95,7 +95,11 @@ const tokenAccount = (opts: {
   },
 });
 
-const solRpc = (accounts: Accounts, calls: Call[]): SolanaRpc => ({
+const solRpc = (
+  accounts: Accounts,
+  calls: Call[],
+  mintAnswers?: Record<string, unknown>,
+): SolanaRpc => ({
   call: async (method, params) => {
     calls.push({ method, params });
     if (method === "getBalance") {
@@ -103,6 +107,10 @@ const solRpc = (accounts: Accounts, calls: Call[]): SolanaRpc => ({
     }
     if (method === "getAccountInfo") {
       const [mint] = params;
+      const scripted = mintAnswers?.[String(mint)];
+      if (scripted !== undefined) {
+        return Promise.resolve(scripted);
+      }
       return Promise.resolve({
         value: {
           data: {
@@ -140,11 +148,15 @@ const solRpc = (accounts: Accounts, calls: Call[]): SolanaRpc => ({
 const filterKey = (call: Call): unknown => obj(call.params[1])?.["programId"];
 const mintKey = (call: Call): unknown => obj(call.params[1])?.["mint"];
 
-const make = (accounts: Accounts, calls: Call[]): AssetsController =>
+const make = (
+  accounts: Accounts,
+  calls: Call[],
+  mintAnswers?: Record<string, unknown>,
+): AssetsController =>
   new AssetsController({
     networks: {
       info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
-      solanaRpc: () => solRpc(accounts, calls),
+      solanaRpc: () => solRpc(accounts, calls, mintAnswers),
     } as never,
     chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -265,5 +277,56 @@ describe("AssetsController solana token holdings", () => {
     expect(a.frozen).toBe("150500000");
     expect(b.balance).toBe("0");
     expect(b.frozen).toBe("225750000");
+  });
+
+  it("a held custom mint takes decimals from its token accounts, not the mint read", async () => {
+    const calls: Call[] = [];
+    const weird = "WeirdMint111111111111111111111111111111111";
+    const mintAnswers: Record<string, unknown> = {
+      // Good while addToken validates, then the mint read goes dark.
+      [weird]: {
+        value: { data: { parsed: { info: { decimals: 2 } }, program: "spl-token" } },
+      },
+    };
+    const assets = make(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: weird,
+            owner: OWNER,
+            amount: "700",
+            decimals: 2,
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+      mintAnswers,
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, weird);
+    mintAnswers[weird] = { value: null };
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    const token = tokenBalance(balances, weird);
+    expect(token.balance).toBe("700");
+    expect(token.decimals).toBe(2);
+  });
+
+  it("a custom mint whose mint account cannot be read is omitted, not shown at 9", async () => {
+    const calls: Call[] = [];
+    const weird = "WeirdMint111111111111111111111111111111111";
+    const mintAnswers: Record<string, unknown> = {
+      [weird]: {
+        value: { data: { parsed: { info: { decimals: 4 } }, program: "spl-token" } },
+      },
+    };
+    const assets = make({ token: [], token2022: [] }, calls, mintAnswers);
+    await assets.init();
+    await assets.addToken(SOL_NET, weird);
+    mintAnswers[weird] = { value: null };
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(balances.tokens.find((t) => t.address === weird)).toBeUndefined();
+    expect(balances.tokens.every((t) => t.decimals !== 9)).toBe(true);
   });
 });

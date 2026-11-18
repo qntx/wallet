@@ -54,6 +54,21 @@ const AGG = (callData: `0x${string}`): string =>
     args: [[USDC, USDT, TOKEN].map((target) => ({ target, allowFailure: true, callData }))],
   });
 
+const SYMBOL_CALL = encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" });
+const DECIMALS_CALL = encodeFunctionData({ abi: ERC20_ABI, functionName: "decimals" });
+
+/** The metadata batch for the added token: decimals and symbol inside one aggregate3. */
+const AGG_META = encodeFunctionData({
+  abi: MULTICALL3_ABI,
+  functionName: "aggregate3",
+  args: [
+    [
+      { target: TOKEN, allowFailure: true, callData: DECIMALS_CALL },
+      { target: TOKEN, allowFailure: true, callData: SYMBOL_CALL },
+    ],
+  ],
+});
+
 const fakeNetworks = (c: PublicClient, multicall3?: string) =>
   ({
     client: () => c,
@@ -113,12 +128,27 @@ describe("AssetsController", () => {
               { success: true, returnData: enc(5n) as `0x${string}` },
             ],
           }),
-          [encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" })]: encodeFunctionResult({
+          [AGG_META]: encodeFunctionResult({
+            abi: MULTICALL3_ABI,
+            functionName: "aggregate3",
+            result: [
+              { success: true, returnData: enc(6n) as `0x${string}` },
+              {
+                success: true,
+                returnData: encodeFunctionResult({
+                  abi: ERC20_ABI,
+                  functionName: "symbol",
+                  result: "TST",
+                }),
+              },
+            ],
+          }),
+          [SYMBOL_CALL]: encodeFunctionResult({
             abi: ERC20_ABI,
             functionName: "symbol",
             result: "TST",
           }),
-          [encodeFunctionData({ abi: ERC20_ABI, functionName: "decimals" })]: enc(6n),
+          [DECIMALS_CALL]: enc(6n),
         },
         () => {
           calls += 1;
@@ -141,12 +171,20 @@ describe("AssetsController", () => {
     expect(tst?.symbol).toBe("TST");
     expect(tst?.decimals).toBe(6);
     expect(tst?.verified).toBe(false);
-    // one aggregate3 for all balances + one eth_call each for symbol/decimals
-    expect(calls).toBe(3);
+    // one aggregate3 for all balances — the custom's symbol/decimals were read at addToken.
+    expect(calls).toBe(1);
 
     const c2 = client({
       eth_getBalance: "0x0",
-      eth_call: ethCall({ [balOf]: enc(9n) }),
+      eth_call: ethCall({
+        [balOf]: enc(9n),
+        [SYMBOL_CALL]: encodeFunctionResult({
+          abi: ERC20_ABI,
+          functionName: "symbol",
+          result: "TST",
+        }),
+        [DECIMALS_CALL]: enc(6n),
+      }),
     });
     const assets2 = controller(c2);
     await assets2.init();
@@ -160,7 +198,15 @@ describe("AssetsController", () => {
     const store = createMemoryEngineStore();
     const c = client({
       eth_getBalance: "0x0",
-      eth_call: ethCall({ [balOf]: enc(1n) }),
+      eth_call: ethCall({
+        [balOf]: enc(1n),
+        [SYMBOL_CALL]: encodeFunctionResult({
+          abi: ERC20_ABI,
+          functionName: "symbol",
+          result: "TST",
+        }),
+        [DECIMALS_CALL]: enc(6n),
+      }),
     });
     const timers = manualTimers();
     const mk = () =>

@@ -25,6 +25,8 @@ const DECIMAL = /^\d+$/;
 export type SolanaTokenHolding = {
   readonly balance: bigint;
   readonly frozen: bigint;
+  /** Decimals the counted token accounts report — the mint's own, never assumed. */
+  readonly decimals: number;
 };
 
 const collect = (
@@ -57,7 +59,11 @@ const collect = (
     }
     const { mint } = info;
     const amount = BigInt(tokenAmount["amount"]);
-    const held = holdings.get(mint) ?? { balance: 0n, frozen: 0n };
+    const held = holdings.get(mint) ?? {
+      balance: 0n,
+      frozen: 0n,
+      decimals: tokenAmount["decimals"],
+    };
     if (info["state"] === "initialized") {
       holdings.set(mint, { ...held, balance: held.balance + amount });
     } else if (info["state"] === "frozen") {

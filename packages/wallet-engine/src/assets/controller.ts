@@ -5,6 +5,8 @@
  * never persisted. Custom tokens persist in the EngineStore as `{ address }` records. State values
  * are display-only: transaction build always re-reads the chain.
  */
+import type { PublicClient } from "viem";
+
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
 import { solanaTokenTable } from "@qntx/wallet-chains/solana";
 import type { ChainsApi } from "@qntx/wallet/chains";
@@ -20,8 +22,8 @@ import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
 import { bitcoinBalances, readBitcoin } from "./bitcoin.ts";
 import type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./bitcoin.ts";
-import { callToken, readEvmTokens } from "./evm.ts";
-import type { EvmTokenSpec } from "./evm.ts";
+import { callToken, readEvmBalances, readEvmMetadata } from "./evm.ts";
+import type { EvmTokenMetadata } from "./evm.ts";
 import { solanaTokenHoldings } from "./solana.ts";
 import type { SolanaTokenHolding } from "./solana.ts";
 
@@ -94,6 +96,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
   private visible = false;
   private cancelPoll: (() => void) | undefined;
   private readonly customTokens = new Map<string, ReadonlyArray<string>>();
+  /**
+   * Chain-read ERC-20 metadata per `network:lowercase-address` for this unlock; entries without
+   * readable decimals are never cached so a later read can succeed.
+   */
+  private readonly meta = new Map<string, EvmTokenMetadata>();
   /** State key → the read that produced it, so a poll re-runs whichever entry was written. */
   private readonly tracked = new Map<string, () => Promise<AccountBalances>>();
 
@@ -127,6 +134,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.cancelPoll?.();
     this.cancelPoll = undefined;
     this.customTokens.clear();
+    this.meta.clear();
     this.tracked.clear();
     this.engineStore = undefined;
     this.update(() => ({ balances: {} }));
@@ -189,29 +197,86 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const native = BigInt(
       await evmRpcHex(client, "eth_getBalance", [address, "latest"]),
     ).toString();
-    const tokens = await readEvmTokens(client, info.multicall3, address, this.evmTracked(network));
+    const tokens = await this.evmTokens(client, info.multicall3, address, network);
     return this.record(key(network, address), { native, tokens }, async () =>
       this.refresh(address, network),
     );
   }
 
   /**
-   * Tracked tokens = built-in table entries in table order (metadata from the table), then custom
-   * tokens not matching a table key — EVM addresses compare case-insensitively.
+   * The tracked tokens' balances: built-in table entries in table order (metadata from the table),
+   * then custom tokens not matching a table key — EVM addresses compare case-insensitively. Custom
+   * metadata comes from the chain via the per-unlock cache; a token whose decimals cannot be read
+   * is omitted rather than shown with a guess.
    */
-  private evmTracked(network: string): ReadonlyArray<EvmTokenSpec> {
+  private async evmTokens(
+    client: PublicClient,
+    multicall3: string | undefined,
+    owner: string,
+    network: string,
+  ): Promise<ReadonlyArray<TokenBalance>> {
     const table = evmTokenTable[String(this.options.networks.info(network).chainId)] ?? {};
     const keys = Object.keys(table);
-    const custom = (this.customTokens.get(network) ?? [])
-      .filter((a) => !keys.some((k) => k.toLowerCase() === a.toLowerCase()))
-      .map((address): EvmTokenSpec => ({ address }));
-    return [
-      ...Object.entries(table).map(([address, t]): EvmTokenSpec => ({
-        address,
-        known: { symbol: t.symbol, decimals: t.decimals },
-      })),
-      ...custom,
-    ];
+    const custom = (this.customTokens.get(network) ?? []).filter(
+      (a) => !keys.some((k) => k.toLowerCase() === a.toLowerCase()),
+    );
+    const tracked = [...keys, ...custom];
+    const balances = await readEvmBalances(client, multicall3, owner, tracked);
+    await this.loadEvmMetadata(
+      client,
+      multicall3,
+      network,
+      custom.map((address) => ({ address, symbol: true })),
+    );
+    return tracked.flatMap((address, i): TokenBalance[] => {
+      const known = table[address];
+      if (known !== undefined) {
+        return [
+          {
+            address,
+            symbol: known.symbol,
+            decimals: known.decimals,
+            balance: (balances[i] ?? 0n).toString(),
+            verified: true,
+          },
+        ];
+      }
+      const read = this.meta.get(`${network}:${address.toLowerCase()}`);
+      if (read?.decimals === undefined) {
+        return [];
+      }
+      return [
+        {
+          address,
+          symbol: read.symbol ?? "?",
+          decimals: read.decimals,
+          balance: (balances[i] ?? 0n).toString(),
+          verified: false,
+        },
+      ];
+    });
+  }
+
+  /** Fills the per-unlock metadata cache for `wants` in one batched read; failures stay uncached. */
+  private async loadEvmMetadata(
+    client: PublicClient,
+    multicall3: string | undefined,
+    network: string,
+    wants: ReadonlyArray<{ readonly address: string; readonly symbol: boolean }>,
+  ): Promise<void> {
+    const missing = wants.filter(
+      (want) => this.meta.get(`${network}:${want.address.toLowerCase()}`) === undefined,
+    );
+    if (missing.length === 0) {
+      return;
+    }
+    const read = await readEvmMetadata(client, multicall3, missing);
+    for (const [i, want] of missing.entries()) {
+      const got = read[i];
+      if (got !== undefined && got.decimals !== undefined) {
+        this.meta.set(`${network}:${want.address.toLowerCase()}`, got);
+      }
+    }
   }
 
   /** SOL via getBalance; SPL holdings summed per mint over both token programs. */
@@ -233,32 +298,40 @@ export class AssetsController extends Controller<AssetsControllerState> {
     const custom = (this.customTokens.get(network) ?? []).filter(
       (mint) => table[mint] === undefined,
     );
+    const customs = await Promise.all(
+      custom.map(async (mint) => this.solanaToken(rpc, mint, holdings.get(mint))),
+    );
     const tokens = [
       ...builtin,
-      ...(await Promise.all(
-        custom.map(async (mint) => this.solanaToken(rpc, mint, holdings.get(mint))),
-      )),
+      ...customs.flatMap((token) => (token === undefined ? [] : [token])),
     ];
     return this.record(key(network, owner), { native, tokens }, async () =>
       this.refresh(owner, network),
     );
   }
 
-  /** A custom mint's entry: balance/frozen from the holdings map, decimals from the mint read. */
+  /**
+   * A custom mint's entry: balance/frozen from the holdings map, decimals from the counted token
+   * accounts or the mint itself — `undefined` when neither can be read, and the mint is omitted
+   * rather than shown with a guess.
+   */
   private async solanaToken(
     rpc: SolanaRpc,
     mint: string,
     held: SolanaTokenHolding | undefined,
-  ): Promise<TokenBalance> {
+  ): Promise<TokenBalance | undefined> {
+    const decimals = held?.decimals ?? (await this.mintDecimals(rpc, mint));
+    return decimals === undefined ? undefined : solanaEntry(mint, "?", decimals, held, false);
+  }
+
+  /** The mint's `decimals` via a parsed mint read, or `undefined` when it cannot be read. */
+  private async mintDecimals(rpc: SolanaRpc, mint: string): Promise<number | undefined> {
     const mintInfo = obj(await rpc.call("getAccountInfo", [mint, { encoding: "jsonParsed" }]));
-    const mintParsed = obj(obj(obj(obj(mintInfo?.["value"])?.["data"])?.["parsed"])?.["info"]);
-    return solanaEntry(
-      mint,
-      "?",
-      typeof mintParsed?.["decimals"] === "number" ? mintParsed["decimals"] : 9,
-      held,
-      false,
-    );
+    const parsed = obj(obj(obj(mintInfo?.["value"])?.["data"])?.["parsed"]);
+    const decimals = obj(parsed?.["info"])?.["decimals"];
+    return typeof decimals === "number" && Number.isInteger(decimals) && decimals >= 0
+      ? decimals
+      : undefined;
   }
 
   /** Whether `address` is in the built-in token table of `network` or among the custom tokens. */
@@ -294,6 +367,9 @@ export class AssetsController extends Controller<AssetsControllerState> {
   async addToken(network: string, address: string): Promise<void> {
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
+      if ((solanaTokenTable[network] ?? {})[address] !== undefined) {
+        return;
+      }
       const rpc = this.options.networks.solanaRpc(network);
       const mint = obj(await rpc.call("getAccountInfo", [address, { encoding: "jsonParsed" }]));
       const decimals = obj(obj(obj(mint?.["value"])?.["data"])?.["parsed"])?.["info"];
@@ -303,9 +379,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
       await this.persistToken(network, address);
       return;
     }
-    const client = this.options.networks.client(network);
-    await callToken(client, address, "symbol");
-    await callToken(client, address, "decimals");
+    const table = evmTokenTable[String(info.chainId)] ?? {};
+    if (Object.keys(table).some((a) => a.toLowerCase() === address.toLowerCase())) {
+      return;
+    }
+    const meta = await this.tokenMetadata(network, address);
+    this.meta.set(`${network}:${address.toLowerCase()}`, meta);
     await this.persistToken(network, address);
   }
 
