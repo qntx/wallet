@@ -4,10 +4,10 @@
  * Post-deploy smoke: health, the served network list, one real call per family per network. `bun
  * scripts/smoke.ts <baseUrl> <staging|production>` — exits non-zero listing every failure.
  */
-import { accepts, health } from "@qntx/wallet-engine/gateway/contract";
+import { health } from "@qntx/wallet-engine/gateway/contract";
 
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
-import { indexNetworks } from "../src/middleware/network.ts";
+import { healthy, smokePlan } from "./smoke-plan.ts";
 
 declare const process: { readonly argv: ReadonlyArray<string>; exit: (code: number) => never };
 
@@ -19,7 +19,7 @@ if (baseUrl === undefined || (env !== "staging" && env !== "production")) {
 const clientId = [...crypto.getRandomValues(new Uint8Array(16))]
   .map((b) => b.toString(16).padStart(2, "0"))
   .join("");
-const networks = indexNetworks(env === "production" ? PRODUCTION_NETWORKS : STAGING_NETWORKS, {});
+const plan = smokePlan(env === "production" ? PRODUCTION_NETWORKS : STAGING_NETWORKS);
 const failures: string[] = [];
 const check = async (name: string, run: () => Promise<void>): Promise<void> => {
   try {
@@ -41,21 +41,21 @@ const post = async (path: string, body: unknown): Promise<Response> =>
   });
 
 await check("health", async () => {
-  const body = (await (await get(health.path)).json()) as { status?: string };
-  if (!accepts(health.response ?? {}, body) && body?.status !== "ok") {
+  const body: unknown = await (await get(health.path)).json();
+  if (!healthy(body)) {
     throw new Error("unexpected health body");
   }
 });
 await check("networks", async () => {
   const body = (await (await get("/v1/networks")).json()) as { networks?: string[] };
-  const expected = [...networks.keys()];
+  const expected = plan.map(({ caip2 }) => caip2);
   const got = body.networks ?? [];
   if (JSON.stringify(got) !== JSON.stringify(expected)) {
     throw new Error(`served ${got.join(",")} != configured ${expected.join(",")}`);
   }
 });
-for (const [caip2, info] of networks) {
-  if (info.family === "evm") {
+for (const { caip2, family } of plan) {
+  if (family === "evm") {
     await check(`${caip2} eth_chainId`, async () => {
       const r = await post(`/v1/rpc/${caip2}`, {
         jsonrpc: "2.0",
@@ -83,7 +83,7 @@ for (const [caip2, info] of networks) {
         throw new Error(`rpc error: ${body.error?.message ?? String(r.status)}`);
       }
     });
-  } else if (info.family === "solana") {
+  } else if (family === "solana") {
     await check(`${caip2} getGenesisHash`, async () => {
       const r = await post(`/v1/rpc/${caip2}`, {
         jsonrpc: "2.0",
