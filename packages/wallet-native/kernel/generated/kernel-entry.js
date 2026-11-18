@@ -13245,9 +13245,18 @@
 		return parse(text);
 	}
 	new Uint8Array([255, ...utf8Encode("solana offchain")]);
-	// packages/wallet-chains/dist/src-XGAdRa6m.mjs
+	// packages/wallet-chains/dist/src-CQ6l_G1W.mjs
 	init_defineProperty();
 	var PREAMBLE = " wants you to sign in with your ";
+	var CLAIM$1 = new RegExp("^(?:(?<scheme>[A-Za-z][A-Za-z0-9+.-]*):\\/\\/)?(?<domain>.*?) wants you to sign in with your (?:Ethereum|Solana) account:$", "");
+	var claims = (text) => text.split("\n").flatMap((line) => {
+		var _CLAIM$exec, _groups$domain;
+		const groups = (_CLAIM$exec = CLAIM$1.exec(line.endsWith("\r") ? line.slice(0, -1) : line)) === null || _CLAIM$exec === void 0 ? void 0 : _CLAIM$exec.groups;
+		if (groups === void 0) return [];
+		const claim = { domain: (_groups$domain = groups["domain"]) !== null && _groups$domain !== void 0 ? _groups$domain : "" };
+		if (groups["scheme"] !== void 0) claim.scheme = groups["scheme"];
+		return [claim];
+	});
 	var OPTIONAL_KEYS = [
 		"scheme",
 		"statement",
@@ -13296,7 +13305,10 @@
 				fields: parseValid(text, family)
 			};
 		} catch (_unused) {
-			return text.includes(PREAMBLE) ? { status: "malformed" } : void 0;
+			return text.includes(PREAMBLE) ? {
+				status: "malformed",
+				claims: claims(text)
+			} : void 0;
 		}
 	}
 	/**
@@ -13399,7 +13411,7 @@
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-BIvI_SYu.mjs
+	// packages/wallet-chains/dist/account-ref-plum9tye.mjs
 	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
@@ -20058,7 +20070,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-DtppNydD.mjs
+	// packages/wallet-chains/dist/envelope-DaYDD68h.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -31555,7 +31567,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-Bqo-M_Xx.mjs
+	// packages/wallet-chains/dist/message-BhnHlOql.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
