@@ -152,8 +152,9 @@ describe("indexeddb EngineStore", () => {
     await s.collection("sign-log").put("2024-06-01T12:00:00Z", utf8.encode("signed-sig"));
     const probe = ["spark-w1-0-mainnet", "https://dapp.example#7", "secret-note", "sign-log"];
     const decoder = new TextDecoder();
-    for (const store of ["records", "index"] as const) {
-      for (const { key, value } of await rawEntries(store)) {
+    const stores = await Promise.all((["records", "index"] as const).map(rawEntries));
+    for (const entries of stores) {
+      for (const { key, value } of entries) {
         for (const marker of probe) {
           expect(key).not.toContain(marker);
           expect(decoder.decode(value)).not.toContain(marker);
