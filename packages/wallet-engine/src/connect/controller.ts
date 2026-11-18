@@ -54,7 +54,8 @@ export type ConnectionSession = {
  * How much a `nostr` session may do without per-call approval: `signing` is `"ask"` (every
  * `signEvent` goes through the pipeline), `"always"` (any kind signs directly), or a kind list (`{
  * kinds }` — only those kinds sign directly, the rest ask); `decrypt` gates `nip04/nip44 .decrypt`.
- * The four forced-confirm kinds `{0,3,5,10002}` always ask regardless.
+ * Kinds `0`, `3` and `5` and every replaceable, ephemeral or addressable event (10000–39999) always
+ * ask regardless.
  */
 export type NostrPolicy = {
   readonly signing: "ask" | "always" | { readonly kinds: ReadonlyArray<number> };

@@ -38,14 +38,14 @@ export type Nip07HandlerOptions = {
 
 /**
  * `signEvent` of these kinds always asks for explicit confirmation, whatever the policy allows:
- * metadata/contact-list/deletion plus every replaceable and addressable event.
+ * metadata/contact-list/deletion plus every replaceable, ephemeral and addressable event —
+ * ephemeral events are by convention authentication and remote-control messages, not content.
  */
 const forcesConfirmation = (kind: number): boolean =>
   kind === 0 ||
   kind === 3 ||
   kind === 5 ||
-  (kind >= 10_000 && kind < 20_000) ||
-  (kind >= 30_000 && kind < 40_000);
+  (kind >= 10_000 && kind < 40_000);
 
 const MAX_TAGS = 64;
 const MAX_TAG_ITEMS = 32;
