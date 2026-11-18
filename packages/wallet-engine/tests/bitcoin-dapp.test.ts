@@ -263,22 +263,19 @@ describe("signDappPsbts", () => {
       { psbt, sign: [signEntry(0, "btc.bip84")] },
     ]);
     const posted: string[] = [];
-    const broadcasting: Pick<Esplora, "post"> = {
-      post: async (_path: string, body: string) => {
-        posted.push(body);
-        return Promise.resolve("");
-      },
-    };
     const signing: Pick<ChainsApi, "sign"> = { sign: signPsbt };
     await expect(
       signDappPsbts(
         signing,
-        broadcasting,
         [prepared!],
         true,
         { kind: "password", password: "pw" },
         () => {
           throw new Error("invalidated");
+        },
+        async () => {
+          posted.push("broadcast");
+          return Promise.resolve("txid");
         },
       ),
     ).rejects.toThrow("invalidated");

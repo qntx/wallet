@@ -10,10 +10,25 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 
+import { prepareDappPsbts, signDappPsbts } from "../src/chains/bitcoin-dapp.ts";
+import { scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import { EsploraError, estimateVsize } from "../src/chains/bitcoin.ts";
+import type { PreparedBitcoinPsbt } from "../src/requests/types.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
-import type { TrackedTransaction } from "../src/transactions/route.ts";
-import { flush, hashOf, inputTxidsOf, stateOf, VERIFY, world } from "./support/btc-world.ts";
+import type { TransactionController } from "../src/transactions/controller.ts";
+import type { SignResult, TrackedTransaction } from "../src/transactions/route.ts";
+import {
+  flush,
+  hashOf,
+  inputTxidsOf,
+  stateOf,
+  NET,
+  OUR_ADDR,
+  RECIP,
+  VERIFY,
+  world,
+} from "./support/btc-world.ts";
+import type { Booted, BtcWorld, FakeUtxo } from "./support/btc-world.ts";
 
 const isObjectRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === "object" && v !== null && !Array.isArray(v);
@@ -494,5 +509,175 @@ describe("a Bitcoin replacement pays for its own size", () => {
     await flush();
     const saved = await w.persistedUtxos(first.backing);
     expect(saved[`${u546.txid}:${u546.vout}`]).not.toMatchObject({ status: "locked" });
+  });
+});
+
+const soleTx = (ctl: TransactionController): TrackedTransaction => {
+  const txs = Object.values(ctl.getState().txs);
+  const [tx] = txs;
+  if (tx === undefined || txs.length !== 1) {
+    throw new Error(`expected exactly one tracked transaction, found ${String(txs.length)}`);
+  }
+  return tx;
+};
+
+/** A minimal dApp PSBT spending `utxo` to the world recipient, a 1000-sat fee. */
+const dappPsbt = (utxo: FakeUtxo, script: Uint8Array): Uint8Array => {
+  const tx = new Transaction({ version: 2 });
+  tx.addInput({
+    txid: utxo.txid,
+    index: utxo.vout,
+    sequence: 0xfffffffd,
+    witnessUtxo: { script, amount: BigInt(utxo.value) },
+  });
+  tx.addOutputAddress(RECIP, BigInt(utxo.value - 1000), NETWORK);
+  return tx.toPSBT(0);
+};
+
+const prepareDapp = async (w: BtcWorld, utxo: FakeUtxo): Promise<PreparedBitcoinPsbt> => {
+  const [prepared] = await prepareDappPsbts(w.apis, w.es, { walletId: "w", groupIndex: 0 }, NET, [
+    {
+      psbt: dappPsbt(utxo, scriptPubKey(OUR_ADDR, NETWORK)),
+      sign: [{ index: 0, sigHash: "ALL", template: "btc.bip84" }],
+    },
+  ]);
+  if (prepared === undefined) {
+    throw new Error("prepareDappPsbts returned nothing");
+  }
+  return prepared;
+};
+
+const broadcastVia =
+  (booted: Booted) =>
+  async (p: PreparedBitcoinPsbt, r: SignResult): Promise<string> =>
+    booted.ctl.submitDappBitcoin(NET, "w", p, r);
+
+/** A broadcast callback that switches the endpoint to refuse on call number `failAt`. */
+const broadcastRefusingCall = (
+  w: BtcWorld,
+  booted: Booted,
+  failAt: number,
+): ((p: PreparedBitcoinPsbt, r: SignResult) => Promise<string>) => {
+  let calls = 0;
+  return async (p, r) => {
+    calls += 1;
+    if (calls === failAt) {
+      w.setPost({ kind: "throw", error: new EsploraError("esplora /tx: 400 bad-txns", false) });
+    }
+    return booted.ctl.submitDappBitcoin(NET, "w", p, r);
+  };
+};
+
+describe("a dApp-signed Bitcoin broadcast", () => {
+  it("an accept-then-502 returns the local txid and tracking confirms it", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const first = await w.boot();
+    const prepared = await prepareDapp(w, u);
+    w.setPost({ kind: "accept-then-throw", error: new EsploraError("esplora /tx: 502", true) });
+    const { txids } = await signDappPsbts(
+      w.apis,
+      [prepared],
+      true,
+      VERIFY,
+      () => undefined,
+      broadcastVia(first),
+    );
+    const tx = soleTx(first.ctl);
+    expect(tx.hash).toBe(txids[0]);
+    expect(tx.state).toBe("submitted");
+    expect(tx.btc).toBeUndefined();
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    await first.polls();
+    expect(stateOf(first.ctl, tx)).toBe("confirmed");
+  });
+
+  it("a transport failure still returns the local txid and stays submitted", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const first = await w.boot();
+    const prepared = await prepareDapp(w, u);
+    w.setPost({ kind: "throw", error: new Error("socket hangup") });
+    const { txids } = await signDappPsbts(
+      w.apis,
+      [prepared],
+      true,
+      VERIFY,
+      () => undefined,
+      broadcastVia(first),
+    );
+    const tx = soleTx(first.ctl);
+    expect(tx.hash).toBe(txids[0]);
+    expect(tx.state).toBe("submitted");
+    w.setPost({ kind: "ok" });
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    await first.polls();
+    expect(stateOf(first.ctl, tx)).toBe("confirmed");
+  });
+
+  it("a 4xx refusal fails the transaction and frees its inputs", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const first = await w.boot();
+    const prepared = await prepareDapp(w, u);
+    w.setPost({ kind: "throw", error: new EsploraError("esplora /tx: 400 bad-txns", false) });
+    await expect(
+      signDappPsbts(w.apis, [prepared], true, VERIFY, () => undefined, broadcastVia(first)),
+    ).rejects.toThrow(/400|bad-txns/);
+    expect(Object.values(first.ctl.getState().txs).map((t) => t.state)).toStrictEqual(["failed"]);
+    await flush();
+    const saved = await w.persistedUtxos(first.backing);
+    expect(saved[`${u.txid}:${u.vout}`]).not.toMatchObject({ status: "locked" });
+  });
+
+  it("a live dApp transaction's inputs cannot be selected by a wallet send", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const first = await w.boot();
+    const prepared = await prepareDapp(w, u);
+    await signDappPsbts(w.apis, [prepared], true, VERIFY, () => undefined, broadcastVia(first));
+    await expect(w.send(first, 10_000n, "req-c")).rejects.toThrow(/insufficient/);
+  });
+
+  it("a tracked dApp transaction refuses speed-up and CPFP", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const first = await w.boot();
+    const prepared = await prepareDapp(w, u);
+    await signDappPsbts(w.apis, [prepared], true, VERIFY, () => undefined, broadcastVia(first));
+    const tx = soleTx(first.ctl);
+    await expect(
+      first.ctl.prepareReplacement({ method: "speed-up", txId: tx.id }, "req-b"),
+    ).rejects.toThrow(/build record/);
+    await expect(
+      first.ctl.prepareReplacement({ method: "cpfp", txId: tx.id, feeRate: 50 }, "req-c"),
+    ).rejects.toThrow(/build record/);
+  });
+
+  it("a refused second broadcast leaves the first transaction tracked", async () => {
+    const w = world();
+    const u1 = w.fund(1, 50_000);
+    const u2 = w.fund(2, 30_000);
+    const first = await w.boot();
+    const p1 = await prepareDapp(w, u1);
+    const p2 = await prepareDapp(w, u2);
+    await expect(
+      signDappPsbts(
+        w.apis,
+        [p1, p2],
+        true,
+        VERIFY,
+        () => undefined,
+        broadcastRefusingCall(w, first, 2),
+      ),
+    ).rejects.toThrow(/400|bad-txns/);
+    const states = Object.values(first.ctl.getState().txs)
+      .map((t) => t.state)
+      .toSorted();
+    expect(states).toStrictEqual(["failed", "submitted"]);
+    await flush();
+    const saved = await w.persistedUtxos(first.backing);
+    expect(saved[`${u1.txid}:${u1.vout}`]).toMatchObject({ status: "locked" });
+    expect(saved[`${u2.txid}:${u2.vout}`]).not.toMatchObject({ status: "locked" });
   });
 });

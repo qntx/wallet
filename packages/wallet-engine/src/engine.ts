@@ -451,14 +451,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
-    bitcoinSignPsbts: async (_account, network, prepared, send, verify, commit) => {
+    bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids } = await signDappPsbts(
         chains(options.wallet),
-        networks.esplora(network),
         prepared,
         send,
         verify,
         commit,
+        async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
       );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },

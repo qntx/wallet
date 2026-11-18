@@ -15,6 +15,7 @@ import type { chains } from "@qntx/wallet/chains";
 
 import { scripthash, scriptPubKey } from "../../src/chains/bitcoin-scan.ts";
 import { EsploraError } from "../../src/chains/bitcoin.ts";
+import type { Esplora } from "../../src/chains/bitcoin.ts";
 import type { NetworkController } from "../../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
@@ -169,6 +170,9 @@ export type BtcWorld = {
   /** Every message the engine's logger warned about, in order. */
   readonly warnings: string[];
   readonly clock: { t: number };
+  /** The same chains api and endpoint the controller was wired with — for the dApp paths. */
+  readonly apis: ReturnType<typeof chains>;
+  readonly es: Esplora;
   readonly persistedUtxos: (
     backing: Backing,
   ) => Promise<Record<string, { status?: string; txId?: string }>>;
@@ -544,6 +548,8 @@ export const world = (
     signedCalls,
     warnings,
     clock,
+    apis,
+    es: esploraStub,
     persistedUtxos,
     persistedTx,
     OUR_HASH: ownHash,

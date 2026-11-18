@@ -9,6 +9,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import { Controller } from "../controller.ts";
+import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
@@ -25,6 +26,7 @@ import type {
   ChainRequestInput,
   RouteContext,
   SendParams,
+  SignResult,
   SparkDepositTag,
   TrackedTransaction,
   TxState,
@@ -401,6 +403,27 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return this.bitcoinRoute.nextReceiveAddress(this.routeCtx(), walletId, groupIndex, network);
+  }
+
+  /**
+   * Internal entry for the dApp `signTransaction` send path: a dApp-built transaction has no build
+   * record; it joins tracking under its signed bytes like a wallet send.
+   */
+  async submitDappBitcoin(
+    network: string,
+    walletId: string,
+    prepared: PreparedBitcoinPsbt,
+    result: SignResult,
+  ): Promise<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return this.bitcoinRoute.submitDapp(this.routeCtx(), {
+      network,
+      walletId,
+      prepared,
+      result,
+    });
   }
 
   /** Records that a Spark deposit was credited; persisted with the transaction. */

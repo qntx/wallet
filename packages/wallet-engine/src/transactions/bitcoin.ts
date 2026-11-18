@@ -35,6 +35,7 @@ import {
   mergeSatPerByte,
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
+import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import type { EngineStore } from "../store/port.ts";
 import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
 import type { BroadcastVerdict, SignedBroadcast } from "./broadcast.ts";
@@ -82,11 +83,6 @@ const extractSigned = (result: SignResult): { readonly raw: string; readonly txi
   signed.finalize();
   return { raw: hex.encode(signed.extract()), txid: signed.id };
 };
-
-export const broadcastPsbt = async (
-  es: { post: (path: string, body: string) => Promise<unknown> },
-  result: SignResult,
-): Promise<string> => String(await es.post("/tx", extractSigned(result).raw));
 
 /**
  * What a failed `POST /tx` says about the bytes: Esplora answers a node rejection
@@ -1091,6 +1087,69 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     );
   };
 
+  /**
+   * A dApp-signed PSBT joins tracking like a wallet send: its signed bytes and locally computed
+   * txid are persisted before anything leaves, its signed inputs are held under the tracked id, and
+   * a definite node refusal fails it and frees them. It carries no `btc` record — it was not
+   * wallet-built — so speed-up/CPFP refuse it and its outputs are nobody's own change.
+   */
+  const submitDapp = async (
+    ctx: RouteContext,
+    params: {
+      readonly network: string;
+      readonly walletId: string;
+      readonly prepared: PreparedBitcoinPsbt;
+      readonly result: SignResult;
+    },
+  ): Promise<string> => {
+    const { network, walletId, prepared, result } = params;
+    const es = ctx.options.networks.esplora(network);
+    const signed = extractSigned(result);
+    const net = bitcoinNetwork(network);
+    const txP = Transaction.fromPSBT(prepared.request.psbt);
+    const inputs = prepared.inputs.map(({ index }) => {
+      const input = txP.getInput(index);
+      const prev = input.witnessUtxo;
+      if (input.txid === undefined || input.index === undefined || prev === undefined) {
+        throw new Error(`signed input ${String(index)} carries no prevout`);
+      }
+      return {
+        txid: hex.encode(input.txid),
+        vout: input.index,
+        value: Number(prev.amount),
+        address: Address(net.params).encode(OutScript.decode(prev.script)),
+        status: "confirmed" as const,
+        height: 0,
+      };
+    });
+    let tx: TrackedTransaction = {
+      id: ctx.newId(),
+      family: "bitcoin",
+      network,
+      account: walletId,
+      hash: undefined,
+      state: "signed",
+      intent: decodeBitcoinPsbt(prepared.request, prepared.ownScripts),
+      nonce: 0,
+      submittedAt: ctx.options.now(),
+      error: undefined,
+    };
+    tx = await ctx.transition(tx, {});
+    await submitSigned(
+      ctx,
+      tx,
+      esploraBroadcast(es, signed, {
+        hold: () => {
+          bitcoinUtxos.lock(inputs, tx.id);
+        },
+        release: () => {
+          bitcoinUtxos.endTx(tx.id, "failed");
+        },
+      }),
+    );
+    return signed.txid;
+  };
+
   return {
     prepare,
     nextReceiveAddress,
@@ -1100,6 +1159,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     },
     prepareReplace,
     prepareCpfp,
+    submitDapp,
     unlock: async (store) => bitcoinUtxos.unlock(store),
     lock: () => {
       reserved.clear();
@@ -1142,4 +1202,14 @@ export type BitcoinRoute = {
     targetRate: number,
     requestId: string,
   ) => Promise<PreparedRequest>;
+  /** Tracks and broadcasts a dApp-signed PSBT like a wallet send; resolves its local txid. */
+  readonly submitDapp: (
+    ctx: RouteContext,
+    params: {
+      readonly network: string;
+      readonly walletId: string;
+      readonly prepared: PreparedBitcoinPsbt;
+      readonly result: SignResult;
+    },
+  ) => Promise<string>;
 };
