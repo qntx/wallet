@@ -62,8 +62,14 @@ export type TrackedTransaction = {
   readonly parentId?: string;
   /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
   readonly sparkDeposit?: SparkDepositTag;
-  /** EVM build record persisted at broadcast for rebroadcast, drop detection and replacement. */
-  readonly evm?: { readonly from: string; readonly account: AccountRef; readonly raw: string };
+  /**
+   * The signed transaction exactly as broadcast — EVM and Bitcoin hex, Solana base64 wire —
+   * persisted with `hash` before it leaves, so an unknown outcome is rebroadcast, even after a
+   * restart. Cleared when the node refuses it.
+   */
+  readonly raw?: string | undefined;
+  /** EVM build record persisted with `raw`, for drop detection and replacement. */
+  readonly evm?: { readonly from: string; readonly account: AccountRef };
   /** Bitcoin build record persisted at send for RBF/CPFP rebuilds. */
   readonly btc?: {
     readonly inputs: ReadonlyArray<{

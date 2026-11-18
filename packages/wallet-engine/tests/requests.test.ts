@@ -20,7 +20,6 @@ import type { chains } from "@qntx/wallet/chains";
 import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
-import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -40,6 +39,7 @@ import {
   simulateV1Result,
   idleNetworkDeps,
 } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 const ACCOUNT = {
@@ -139,7 +139,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     created_at: 0,
     tags: [],
   };
-  const timers: Array<{ ms: number; fn: () => unknown; stopped: boolean }> = [];
+  const timers = manualTimers();
   let counter = 0;
   const nextCounter = (): number => {
     counter += 1;
@@ -176,13 +176,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => now,
-    setTimer: (ms, fn) => {
-      const timer = { ms, fn, stopped: false };
-      timers.push(timer);
-      return () => {
-        timer.stopped = true;
-      };
-    },
+    setTimer: timers.setTimer,
     logger,
   });
   return {
@@ -287,9 +281,8 @@ describe("RequestController lifecycle", () => {
     const f = fake();
     await f.controller.init();
     const request = await f.controller.prepare(PARAMS);
-    const [timer] = f.timers;
-    expect(timer?.ms).toBe(REQUEST_TTL_MS);
-    await timer?.fn();
+    expect(f.timers.armed(REQUEST_TTL_MS)).toBe(1);
+    await f.timers.fire(REQUEST_TTL_MS);
     expect(f.controller.getState().requests[request.id]?.stage).toBe("expired");
     expect(f.events).toContain(`release ${request.id}`);
   });
@@ -306,7 +299,7 @@ describe("RequestController lifecycle", () => {
     expect(requests[waiting.id]?.stage).toBe("invalidated");
     expect(requests[done.id]?.stage).toBe("submitted");
     expect(f.events).toContain(`release ${waiting.id}`);
-    expect(f.timers.every((t) => t.stopped)).toBe(true);
+    expect(f.timers.armed()).toBe(0);
     await expect(
       f.controller.approve(waiting.id, "send", approval(waiting, VERIFY)),
     ).rejects.toThrow("invalidated");
@@ -394,7 +387,8 @@ function evmWorld(options: {
   const calls: Array<{ url: string; method: string }> = [];
   const gatewayTable: Rpc = options.gateway ?? {};
   const hostTable: Rpc = options.host ?? {};
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
+  const POLL_MS = 1;
   const signedRequests: unknown[] = [];
   let txCounter = 100;
   const nextTx = (): number => {
@@ -472,15 +466,10 @@ function evmWorld(options: {
     networks,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random: (n) => new Uint8Array(n).fill(nextTx()),
-    setTimer: (ms, fn) => {
-      if (ms !== SIMULATION_TIMEOUT_MS) {
-        timers.push(fn);
-      }
-      return () => undefined;
-    },
+    setTimer: timers.setTimer,
     now: () => 0,
     logger: warn,
-    pollMs: 1,
+    pollMs: POLL_MS,
     chains: apis,
   });
   lockTransactions = () => {
@@ -543,6 +532,7 @@ function evmWorld(options: {
     gatewayTable,
     hostTable,
     timers,
+    POLL_MS,
     signedRequests,
     warnings,
     rejectSigning: () => {
@@ -790,7 +780,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     const w = evmWorld({});
     const original = await sendAndPrepare(w);
     const r = await w.requests.prepare({ method: "speed-up", txId: original.id });
-    await w.timers[0]?.();
+    await w.timers.fire(w.POLL_MS);
     expect(w.transactions.getState().txs[original.id]?.state).toBe("confirmed");
     const before = w.signCount();
     await expect(w.requests.approve(r.id, "speed-up", approval(r, VERIFY))).rejects.toThrow(

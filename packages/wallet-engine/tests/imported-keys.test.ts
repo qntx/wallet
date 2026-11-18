@@ -379,7 +379,8 @@ describe("replacements of imported-key transactions", () => {
           state: "submitted",
           nonce: 0,
           submittedAt: 1,
-          evm: { from: EVM_ADDR, groupIndex: 0, raw: "0x12" },
+          raw: "0x12",
+          evm: { from: EVM_ADDR, groupIndex: 0 },
         }),
       ),
     );

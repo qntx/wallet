@@ -108,7 +108,10 @@ export type EngineOptions = {
   readonly gateway?: { readonly url: string; readonly installId: string };
   /** Development builds: also accept `http://localhost` as a dApp origin. */
   readonly allowLocalhostOrigins?: boolean;
-  /** Injected timer for polling and refresh loops; defaults to setTimeout. */
+  /**
+   * Injected one-shot timer with `setTimeout` semantics (each call runs `fn` at most once); polling
+   * loops re-arm it after every run. Defaults to setTimeout.
+   */
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;

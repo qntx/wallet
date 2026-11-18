@@ -6,6 +6,7 @@ import { AssetsController, MULTICALL3_ABI } from "../src/assets/controller.ts";
 import { ERC20_ABI, EvmChainAdapter } from "../src/chains/evm.ts";
 import type { SolanaRpc } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
+import { manualTimers } from "./support/timers.ts";
 
 const client = (handlers: Record<string, unknown>): PublicClient =>
   ({
@@ -140,15 +141,12 @@ describe("AssetsController", () => {
       eth_getBalance: "0x0",
       eth_call: ethCall({ [balOf]: enc(1n) }),
     });
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const mk = () =>
       new AssetsController({
         networks: fakeNetworks(c),
         openStore: async () => Promise.resolve(store),
-        setTimer: (_ms, fn) => {
-          timers.push(fn);
-          return () => {};
-        },
+        setTimer: timers.setTimer,
         logger,
       });
     const assets = mk();
@@ -157,10 +155,9 @@ describe("AssetsController", () => {
     const fresh = mk();
     await fresh.init();
     fresh.setVisible(true);
-    expect(timers).toHaveLength(1);
+    expect(timers.armed()).toBe(1);
     await fresh.refresh(OWNER, "eip155:1");
-    void timers[0]?.();
-    await new Promise((resolve) => setTimeout(resolve));
+    await timers.fire();
     fresh.setVisible(false);
     fresh.lock();
     expect(fresh.getState().balances).toStrictEqual({});
@@ -292,7 +289,7 @@ describe("AssetsController polling", () => {
   it("re-reads every tracked account with its own network and address", async () => {
     const evmReads: unknown[] = [];
     const solReads: unknown[] = [];
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = new AssetsController({
       networks: {
         info: solNetInfo,
@@ -312,18 +309,14 @@ describe("AssetsController polling", () => {
           }),
       } as never,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
-      setTimer: (_ms, fn) => {
-        timers.push(fn);
-        return () => {};
-      },
+      setTimer: timers.setTimer,
       logger,
     });
     await ctl.init();
     ctl.setVisible(true);
     await ctl.refresh(OWNER, "eip155:1");
     await ctl.refresh(SOL_OWNER, SOL_NET);
-    void timers[0]?.();
-    await new Promise((resolve) => setTimeout(resolve));
+    await timers.fire();
     expect(evmReads).toStrictEqual([OWNER, OWNER]);
     expect(solReads).toStrictEqual([SOL_OWNER, SOL_OWNER]);
   });
