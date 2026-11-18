@@ -16,7 +16,11 @@ type SessionLike = {
   group?: typeof GROUP;
   scopes: Record<string, { accounts: string[] }>;
 };
-const solSession = (accounts = [ADDR], origin = SITE, group: typeof GROUP | null = GROUP): SessionLike => ({
+const solSession = (
+  accounts = [ADDR],
+  origin = SITE,
+  group: typeof GROUP | null = GROUP,
+): SessionLike => ({
   origin: { kind: "browser", origin },
   ...(group === null ? {} : { group }),
   scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
@@ -49,9 +53,7 @@ function rig(
       },
       sessionAccounts: () => {
         const bound = "group" in options ? options.group : GROUP;
-        return !connected || bound === undefined
-          ? undefined
-          : { group: bound, addresses: [ADDR] };
+        return !connected || bound === undefined ? undefined : { group: bound, addresses: [ADDR] };
       },
       request: async () => {
         await Promise.resolve();

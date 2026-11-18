@@ -318,7 +318,8 @@ describe("withdraw approval intent", () => {
       address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
       amountSats: 1000,
       speed: "FAST",
-      verify: VERIFY, commit: () => undefined,
+      verify: VERIFY,
+      commit: () => undefined,
     });
     // fast fee = 5, payout = 995
     expect(approval(approvals).intent).toStrictEqual({
@@ -338,7 +339,8 @@ describe("withdraw approval intent", () => {
     await c.withdraw(REF, {
       address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
       speed: "SLOW",
-      verify: VERIFY, commit: () => undefined,
+      verify: VERIFY,
+      commit: () => undefined,
     });
     // balance 42, slow fee 1, payout 41
     expect(approval(approvals).intent).toStrictEqual({
@@ -360,7 +362,8 @@ describe("withdraw approval intent", () => {
         amountSats: 1000,
         speed: "FAST",
         maxFeeSats: 2,
-        verify: VERIFY, commit: () => undefined,
+        verify: VERIFY,
+        commit: () => undefined,
       }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
     expect(approvals).toHaveLength(0);
@@ -377,7 +380,8 @@ describe("withdraw approval intent", () => {
         address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
         amountSats: 5,
         speed: "FAST",
-        verify: VERIFY, commit: () => undefined,
+        verify: VERIFY,
+        commit: () => undefined,
       }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
     expect(approvals).toHaveLength(0);
@@ -929,7 +933,8 @@ describe("history and notes", () => {
     const payment = (await c.payInvoice(REF, {
       invoice: "lnbcrt1",
       maxFeeSats: 5,
-      verify: VERIFY, commit: () => undefined,
+      verify: VERIFY,
+      commit: () => undefined,
       note: NOTE,
     })) as { transferId: string };
     const record = await store.collection(`spark-notes:${K}`).get(payment.transferId);
@@ -954,7 +959,8 @@ describe("history and notes", () => {
     const payment = (await c.payInvoice(REF, {
       invoice: "lnbcrt1",
       maxFeeSats: 5,
-      verify: VERIFY, commit: () => undefined,
+      verify: VERIFY,
+      commit: () => undefined,
       note: NOTE,
     })) as { transferId: string };
     expect(payment.transferId).toMatch(/^[0-9a-f-]{36}$/);
@@ -1006,7 +1012,12 @@ describe("history and notes", () => {
     c.setStore(createMemoryEngineStore());
     await c.init();
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    const sendPromise = c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
+    const sendPromise = c.send(REF, {
+      receiver,
+      amountSats: 10,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
     // The send's refresh (seq 2) lands while the init refresh (seq 1) is still gated.
     await until(
       () => c.getState().accounts[K]?.recent,

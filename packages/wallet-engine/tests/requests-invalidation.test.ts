@@ -1,8 +1,5 @@
 import { randomBytes } from "node:crypto";
 
-import { describe, expect, it, vi } from "vite-plus/test";
-
-import { verifyEvent } from "@qntx/nostr";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
   address,
@@ -14,11 +11,13 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
+import { describe, expect, it, vi } from "vite-plus/test";
 
+import { verifyEvent } from "@qntx/nostr";
 import type { Wallet } from "@qntx/wallet";
-import type { PasskeyCeremony } from "@qntx/wallet/host";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
+import type { PasskeyCeremony } from "@qntx/wallet/host";
 
 import { ConnectionController } from "../src/connect/controller.ts";
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
@@ -58,10 +57,36 @@ const settled = async (
 const awaiting = (r: Awaited<ReturnType<typeof rig>>): PendingRequest | undefined =>
   Object.values(r.requests.getState().requests).find((x) => x.stage === "awaiting-approval");
 
+const awaitingRequest = (r: Awaited<ReturnType<typeof rig>>): PendingRequest => {
+  const request = awaiting(r);
+  if (request === undefined) {
+    throw new Error("no request");
+  }
+  return request;
+};
+
+const firstPendingId = (r: Awaited<ReturnType<typeof rig>>): string =>
+  r.connections.pending()[0]?.id ?? "";
+
+const solanaResult = (method: string): unknown =>
+  method === "simulateTransaction"
+    ? { value: { err: null, logs: [], unitsConsumed: 21_000 } }
+    : method === "sendTransaction"
+      ? `sig${"a".repeat(80)}`
+      : null;
+
+const payerAddress = (account: unknown): string =>
+  typeof account === "object" &&
+  account !== null &&
+  "address" in account &&
+  typeof account.address === "string"
+    ? account.address
+    : "";
+
 const latch = (): { readonly promise: Promise<void>; readonly resolve: () => void } => {
   let resolve: () => void = () => undefined;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  const promise = new Promise<void>((_resolve) => {
+    resolve = _resolve;
   });
   return { promise, resolve };
 };
@@ -120,10 +145,11 @@ async function rig() {
     return new Uint8Array(n).fill(counter % 251);
   };
   const rpcCalls: string[] = [];
-  const fetchImpl: typeof globalThis.fetch = (_input, init) => {
+  const fetchImpl: typeof globalThis.fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body)) as { id: number; method: string; params?: unknown };
     rpcCalls.push(body.method);
-    const result = body.method === "eth_simulateV1" ? simulateV1Result(body.params) : EVM_ANSWERS[body.method];
+    const result =
+      body.method === "eth_simulateV1" ? simulateV1Result(body.params) : EVM_ANSWERS[body.method];
     return Promise.resolve(
       result === undefined
         ? Response.json({
@@ -147,7 +173,7 @@ async function rig() {
   const seam: { afterSign: (() => void) | undefined } = { afterSign: undefined };
   const wrapped = {
     account: apis.account,
-    sign: (params: Parameters<typeof apis.sign>[0]) => {
+    sign: async (params: Parameters<typeof apis.sign>[0]) => {
       const { request } = params;
       if (request.kind === "evm.transaction") {
         signedNonces.push(request.tx.nonce);
@@ -169,7 +195,7 @@ async function rig() {
     chains: wrapped,
   });
   await transactions.init();
-  let phishingStatus: PhishingStatus = "clear";
+  const phishingStatus: PhishingStatus = "clear";
   const phishing = { check: () => phishingStatus };
   const requests = new RequestController({
     phishing,
@@ -253,7 +279,9 @@ async function rig() {
   };
 
   /** Stage history of one request, from subscribe time on. */
-  const stagesOf = (id: string): { readonly stages: string[]; readonly unsubscribe: () => void } => {
+  const stagesOf = (
+    id: string,
+  ): { readonly stages: string[]; readonly unsubscribe: () => void } => {
     const stages: string[] = [];
     const unsubscribe = requests.store.subscribe((state) => {
       const stage = state.requests[id]?.stage;
@@ -310,7 +338,8 @@ const expectInvalidated = async (
   });
   await expect(dapp).resolves.toStrictEqual({ code: 4001 });
   expect(r.requests.getState().requests[id]?.stage).toBe("invalidated");
-  const entries = (await r.requests.signLog()).filter((entry) => entry.id === id);
+  const signLog = await r.requests.signLog();
+  const entries = signLog.filter((entry) => entry.id === id);
   expect(entries.map((entry) => entry.outcome)).toStrictEqual(["invalidated"]);
 };
 
@@ -354,7 +383,7 @@ describe("invalidation during approval", () => {
     await vi.waitFor(() => {
       expect(r.connections.pending()).toHaveLength(1);
     });
-    await r.connections.approveConnection(r.connections.pending()[0]?.id ?? "", {
+    await r.connections.approveConnection(firstPendingId(r), {
       accounts: [await r.addressAt(0, SEPOLIA)],
       network: SEPOLIA,
     });
@@ -371,7 +400,7 @@ describe("invalidation after signing, before broadcast", () => {
     const r = await rig();
     await r.connect();
     const from = await r.addressAt(0);
-    const send = () =>
+    const send = async () =>
       settled(
         r.handler.handle(SITE, {
           method: "eth_sendTransaction",
@@ -382,10 +411,7 @@ describe("invalidation after signing, before broadcast", () => {
     await vi.waitFor(() => {
       expect(awaiting(r)).toBeDefined();
     });
-    const request = awaiting(r);
-    if (request === undefined) {
-      throw new Error("no request");
-    }
+    const request = awaitingRequest(r);
     // The real signature comes back; the request is invalidated before the broadcast runs.
     r.seam.afterSign = () => {
       r.requests.invalidateOrigin(SITE);
@@ -405,10 +431,7 @@ describe("invalidation after signing, before broadcast", () => {
         Object.values(r.requests.getState().requests).some((x) => x.stage === "awaiting-approval"),
       ).toBe(true);
     });
-    const next = awaiting(r);
-    if (next === undefined) {
-      throw new Error("no second request");
-    }
+    const next = awaitingRequest(r);
     await r.requests.approve(next.id, "evm-sign", approval(next, VERIFY));
     await expect(second).resolves.toStrictEqual({ value: `0x${"ab".repeat(32)}` });
     expect(r.rpcCalls).toContain("eth_sendRawTransaction");
@@ -426,7 +449,12 @@ describe("invalidation while prepare is building", () => {
     const input = {
       method: "evm-sign" as const,
       origin: { kind: "browser" as const, origin: SITE },
-      account: { kind: "hd" as const, walletId: r.walletId, groupIndex: 0, template: "evm.bip44" as const },
+      account: {
+        kind: "hd" as const,
+        walletId: r.walletId,
+        groupIndex: 0,
+        template: "evm.bip44" as const,
+      },
       network: MAINNET,
       request: {
         kind: "evm.personal-message" as const,
@@ -463,7 +491,7 @@ describe("engine solana-sign send", () => {
     const release = latch();
     const authenticator = createSoftwarePasskey(randomBytes(32));
     const gated: PasskeyCeremony = {
-      create: (input) => authenticator.create(input),
+      create: async (input) => authenticator.create(input),
       assert: async (input) => {
         entered.resolve();
         await release.promise;
@@ -488,15 +516,10 @@ describe("engine solana-sign send", () => {
       factor: { kind: "passkey", name: "main" },
     });
     const solanaCalls: string[] = [];
-    const fetchImpl: typeof globalThis.fetch = (_input, init) => {
+    const fetchImpl: typeof globalThis.fetch = async (_input, init) => {
       const body = JSON.parse(String(init?.body)) as { id: number; method: string };
       solanaCalls.push(body.method);
-      const result =
-        body.method === "simulateTransaction"
-          ? { value: { err: null, logs: [], unitsConsumed: 21_000 } }
-          : body.method === "sendTransaction"
-            ? `sig${"a".repeat(80)}`
-            : null;
+      const result = solanaResult(body.method);
       return Promise.resolve(Response.json({ jsonrpc: "2.0", id: body.id, result }));
     };
     const engine = createWalletEngine({
@@ -526,7 +549,7 @@ describe("engine solana-sign send", () => {
       template: "solana.bip44-change",
       network: SOL_NET,
     });
-    const payer = "address" in account ? account.address : "";
+    const payer = payerAddress(account);
     let message = setTransactionMessageLifetimeUsingBlockhash(
       {
         blockhash: address("11111111111111111111111111111111"),

@@ -102,13 +102,11 @@ export class SolanaWalletHandler implements SolanaHandler {
     this.options = options;
     this.events = new SessionEvents(options.connections, async (before, after) =>
       Promise.all(
-        diffSessions(before, after).map(
-          async ({ origin, session }): Promise<SolanaEvent> => ({
-            name: "solanaAccountsChanged",
-            origin,
-            accounts: await this.sessionAccountsChanged(session),
-          }),
-        ),
+        diffSessions(before, after).map(async ({ origin, session }): Promise<SolanaEvent> => ({
+          name: "solanaAccountsChanged",
+          origin,
+          accounts: await this.sessionAccountsChanged(session),
+        })),
       ),
     );
   }

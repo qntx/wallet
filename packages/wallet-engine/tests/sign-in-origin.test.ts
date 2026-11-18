@@ -1,11 +1,9 @@
+import { createSignInMessageText, parseSignInMessageText } from "@solana/wallet-standard-util";
 import * as fc from "fast-check";
 import { parseSiweMessage, validateSiweMessage } from "viem/siwe";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createSignInMessageText, parseSignInMessageText } from "@solana/wallet-standard-util";
-
 import { parseSignIn } from "@qntx/wallet-chains";
-import type { SignInParse } from "@qntx/wallet-chains";
 
 import { assessSignIn } from "../src/requests/risk.ts";
 
@@ -28,7 +26,7 @@ const BODY = [
   "Issued At: 2026-11-17T12:45:13.610Z",
 ].join("\n");
 
-/** viem's `verifySiweMessage` parser path — what a relying party accepting `victim.example` runs. */
+/** Viem's `verifySiweMessage` parser path — what a relying party accepting `victim.example` runs. */
 const relyingPartyAccepts = (text: string): boolean =>
   validateSiweMessage({
     message: parseSiweMessage(text),
@@ -53,6 +51,10 @@ const assess = (text: string, origin = EVIL, family: "evm" | "solana" = "evm") =
 
 const FOREIGN_WARNING = [{ code: "sign-in-malformed", level: "warning" }] as const;
 
+/** The risk a matching-origin page sees: the malformed warning, unless siwx parsed the text. */
+const matchingRisk = (text: string) =>
+  parseSignIn(text, "evm")?.status === "malformed" ? [...FOREIGN_WARNING] : [];
+
 describe("a malformed sign-in text is bound to every domain it claims", () => {
   it.each([
     ["a trailing line", `${BODY}\n\nthanks`],
@@ -62,9 +64,7 @@ describe("a malformed sign-in text is bound to every domain it claims", () => {
   ])("with %s viem accepts it for victim.example and the page is bound", (_name, text) => {
     expect(relyingPartyAccepts(text)).toBe(true);
     expect(assess(text).reject).toContain("victim.example");
-    const expected =
-      parseSignIn(text, "evm")?.status === "malformed" ? [...FOREIGN_WARNING] : [];
-    expect(assess(text, "https://victim.example")).toStrictEqual({ risk: expected });
+    expect(assess(text, "https://victim.example")).toStrictEqual({ risk: matchingRisk(text) });
     expect(assess(text, LOCAL).risk).toContainEqual({
       code: "sign-in-domain-mismatch",
       level: "danger",
@@ -133,11 +133,12 @@ const siweText = (m: {
   if (m.padField !== "none") {
     const index = lines.findIndex((line) => line.startsWith(`${m.padField}:`));
     if (index !== -1) {
-      lines[index] = `${m.padField}:${" ".repeat(m.padSpaces)}${(lines[index] ?? "").slice(m.padField.length + 2)}`;
+      lines[index] =
+        `${m.padField}:${" ".repeat(m.padSpaces)}${(lines[index] ?? "").slice(m.padField.length + 2)}`;
     }
   }
   if (m.lowercaseAddress) {
-    const index = lines.findIndex((line) => line === ADDRESS);
+    const index = lines.indexOf(ADDRESS);
     if (index !== -1) {
       lines[index] = ADDRESS.toLowerCase();
     }
@@ -193,54 +194,49 @@ const siweAccepted = (text: string): boolean => {
   }
 };
 
+/** `false` only when the lenient verifier accepts the text yet the wallet does not refuse it. */
+const evilRefuses = (text: string, family: "evm" | "solana", accepted: boolean): boolean => {
+  if (!accepted) {
+    return true;
+  }
+  const signIn = parseSignIn(text, family) ?? { status: "malformed" as const, claims: [] };
+  return (
+    assessSignIn({
+      signIn,
+      origin: EVIL,
+      signer: family === "evm" ? ADDRESS : SOLANA_ADDRESS,
+      family,
+      now: NOW,
+    }).reject !== undefined
+  );
+};
+
 describe("differential: whatever a lenient verifier accepts is origin-bound", () => {
   it("every SIWE variant viem accepts for victim.example is refused from another origin", () => {
-    let runs = 0;
     let accepted = 0;
     fc.assert(
       fc.property(siweVariant, (m) => {
-        runs += 1;
         const text = siweText(m);
-        if (siweAccepted(text)) {
-          accepted += 1;
-          const assessed = assessSignIn({
-            signIn: parseSignIn(text, "evm") ?? ({ status: "malformed", claims: [] } as SignInParse),
-            origin: EVIL,
-            signer: ADDRESS,
-            family: "evm",
-            now: NOW,
-          });
-          expect(assessed.reject).toBeDefined();
-        }
+        const ok = siweAccepted(text);
+        accepted += Number(ok);
+        return evilRefuses(text, "evm", ok);
       }),
       { numRuns: 500, seed: 20261118 },
     );
-    expect(accepted / runs).toBeGreaterThanOrEqual(0.2);
+    expect(accepted).toBeGreaterThanOrEqual(100);
   });
 
   it("every SIWS text wallet-standard-util reads as victim.example is refused from another origin", () => {
-    let runs = 0;
     let accepted = 0;
     fc.assert(
       fc.property(siwsVariant, (m) => {
-        runs += 1;
         const text = siwsText(m);
-        if (parseSignInMessageText(text)?.domain === "victim.example") {
-          accepted += 1;
-          const assessed = assessSignIn({
-            signIn:
-              parseSignIn(text, "solana") ??
-              ({ status: "malformed", claims: [] } as SignInParse),
-            origin: EVIL,
-            signer: SOLANA_ADDRESS,
-            family: "solana",
-            now: NOW,
-          });
-          expect(assessed.reject).toBeDefined();
-        }
+        const ok = parseSignInMessageText(text)?.domain === "victim.example";
+        accepted += Number(ok);
+        return evilRefuses(text, "solana", ok);
       }),
       { numRuns: 500, seed: 20261118 },
     );
-    expect(accepted / runs).toBeGreaterThanOrEqual(0.2);
+    expect(accepted).toBeGreaterThanOrEqual(100);
   });
 });

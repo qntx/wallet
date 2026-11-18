@@ -9,7 +9,6 @@ import { evm } from "@qntx/siwx/evm";
 import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
-
 import { nostr } from "@qntx/wallet/nostr";
 
 import {
@@ -301,10 +300,7 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
     rpcCalls,
     connect,
     approveNext,
-    select: (
-      group: { walletId: string; groupIndex: number } | undefined,
-      notify = true,
-    ) => {
+    select: (group: { walletId: string; groupIndex: number } | undefined, notify = true) => {
       selected = group;
       if (notify) {
         for (const listener of selectionListeners) {
@@ -516,7 +512,8 @@ describe("session binding", () => {
     await expect(r.handler.handle(SITE, { method: "eth_accounts" })).resolves.toStrictEqual([
       second,
     ]);
-    expect(r.events.filter((e) => e.name === "accountsChanged").at(-1)).toStrictEqual({
+    const changed = r.events.filter((e) => e.name === "accountsChanged");
+    expect(changed.at(-1)).toStrictEqual({
       name: "accountsChanged",
       origin: SITE,
       accounts: [second],
@@ -718,12 +715,12 @@ describe("session binding", () => {
     expect(isSession({ ...base, group: { walletId: "w", groupIndex: -1 } })).toBe(false);
     expect(isSession({ ...base, group: { walletId: "w", groupIndex: 0.5 } })).toBe(false);
     expect(isSession({ ...base, group: { walletId: 1, groupIndex: 0 } })).toBe(false);
-    expect(
-      isSession({ ...base, identity: { kind: "imported", walletId: "w", index: 0 } }),
-    ).toBe(false);
-    expect(
-      isSession({ ...base, identity: { kind: "derived", walletId: "w", index: -1 } }),
-    ).toBe(false);
+    expect(isSession({ ...base, identity: { kind: "imported", walletId: "w", index: 0 } })).toBe(
+      false,
+    );
+    expect(isSession({ ...base, identity: { kind: "derived", walletId: "w", index: -1 } })).toBe(
+      false,
+    );
     expect(isSession({ ...base, identity: { kind: "derived", walletId: "w", index: 0 } })).toBe(
       true,
     );
@@ -869,7 +866,7 @@ describe("nostr connections", () => {
   it("an identity switch voids a pending nostr-sign and crypt runs on the bound identity", async () => {
     const r = await rig();
     await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
-    await nostrConnect(r, NOSTR_PUBKEYS[0] ?? "", { signing: "ask", decrypt: true });
+    await nostrConnect(r, NOSTR_PUBKEYS[0], { signing: "ask", decrypt: true });
     const refs: unknown[] = [];
     const nip07 = new Nip07Handler({
       connections: r.connections,
@@ -885,9 +882,7 @@ describe("nostr connections", () => {
     });
     await vi.waitFor(() => {
       expect(
-        Object.values(r.requests.getState().requests).some(
-          (x) => x.stage === "awaiting-approval",
-        ),
+        Object.values(r.requests.getState().requests).some((x) => x.stage === "awaiting-approval"),
       ).toBe(true);
     });
     await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 1 });
@@ -901,10 +896,12 @@ describe("nostr connections", () => {
       walletId: r.walletId,
       index: 1,
     });
-    await nip07.handle(SITE, {
-      method: "nip44.decrypt",
-      params: ["c".repeat(64), "ciphertext"],
-    }).catch(() => undefined);
+    await nip07
+      .handle(SITE, {
+        method: "nip44.decrypt",
+        params: ["c".repeat(64), "ciphertext"],
+      })
+      .catch(() => undefined);
     expect(refs.at(-1)).toStrictEqual({ kind: "derived", walletId: r.walletId, index: 1 });
     await r.destroy();
   });

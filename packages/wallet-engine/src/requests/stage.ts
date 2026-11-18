@@ -1,4 +1,7 @@
-/** `signed` is the point of no return: the signature exists and is being returned or broadcast, so invalidation no longer applies. */
+/**
+ * `signed` is the point of no return: the signature exists and is being returned or broadcast, so
+ * invalidation no longer applies.
+ */
 export type RequestStage =
   | "awaiting-approval"
   | "signing"
@@ -19,9 +22,7 @@ export type RequestEvent =
   | "expire"
   | "invalidate";
 
-const TABLE: {
-  readonly [S in RequestStage]: Partial<Record<RequestEvent, RequestStage>>;
-} = {
+const TABLE: Readonly<Record<RequestStage, Partial<Record<RequestEvent, RequestStage>>>> = {
   "awaiting-approval": {
     approve: "signing",
     reject: "rejected",
@@ -44,7 +45,10 @@ const TABLE: {
   invalidated: {},
 };
 
-/** The next stage, or `undefined` when `event` cannot happen in `stage` (the request is left as it is). */
+/**
+ * The next stage, or `undefined` when `event` cannot happen in `stage` (the request is left as it
+ * is).
+ */
 export function nextStage(stage: RequestStage, event: RequestEvent): RequestStage | undefined {
   return TABLE[stage][event];
 }

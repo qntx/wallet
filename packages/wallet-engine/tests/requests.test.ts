@@ -89,8 +89,8 @@ const logger = { warn: () => undefined };
 
 const latch = (): { readonly promise: Promise<void>; readonly resolve: () => void } => {
   let resolve: () => void = () => undefined;
-  const promise = new Promise<void>((r) => {
-    resolve = r;
+  const promise = new Promise<void>((_resolve) => {
+    resolve = _resolve;
   });
   return { promise, resolve };
 };
@@ -405,9 +405,9 @@ describe("RequestController lifecycle", () => {
     await f.controller.init();
     const waiting = await f.controller.prepare(PARAMS);
     const running = await f.controller.prepare(PARAMS);
-    f.setSubmitHook(() => {
+    f.setSubmitHook(async () => {
       inside.resolve();
-      return continueSign.promise;
+      await continueSign.promise;
     });
     const approving = f.controller.approve(running.id, "send", approval(running, VERIFY));
     await inside.promise;
@@ -442,7 +442,8 @@ describe("RequestController lifecycle", () => {
       f.controller.approve(request.id, "send", approval(request, VERIFY)),
     ).rejects.toThrow("broadcast failed");
     expect(f.controller.getState().requests[request.id]?.stage).toBe("failed");
-    const entries = (await f.controller.signLog()).filter((e) => e.id === request.id);
+    const signLog = await f.controller.signLog();
+    const entries = signLog.filter((e) => e.id === request.id);
     expect(entries.map((e) => e.outcome)).toStrictEqual(["failed"]);
   });
 });

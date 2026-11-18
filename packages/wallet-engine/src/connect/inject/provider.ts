@@ -4,11 +4,11 @@
  * `injectedScript(info)` appends one `qntxProvider.install(<JSON>)` call. Page to host:
  * `ReactNativeWebView.postMessage` of `{ qntx: 1, doc, id, method, params? }`. Host to page:
  * `__qntxReceive(<JSON>)` carrying `{ doc, id, result }`, `{ doc, id, error: { code, message } }`
- * or `{ event, data }`. `doc` is one random UUIDv4 generated per document at install — the
- * EIP-6963 `info.uuid` and the document id in one — so a same-origin reload can never settle a
- * previous document's pending calls, and it is not a cross-site identifier.
- * `__qntxReceive` is defined as a non-writable, non-configurable property so a
- * hostile page cannot replace the host's reply channel.
+ * or `{ event, data }`. `doc` is one random UUIDv4 generated per document at install — the EIP-6963
+ * `info.uuid` and the document id in one — so a same-origin reload can never settle a previous
+ * document's pending calls, and it is not a cross-site identifier. `__qntxReceive` is defined as a
+ * non-writable, non-configurable property so a hostile page cannot replace the host's reply
+ * channel.
  */
 import type {
   SolanaSignAndSendTransactionFeature,
@@ -202,7 +202,9 @@ export function install(info: ProviderInfo): void {
   // host can tell a freshly reloaded document from the one it replaced.
   const docBytes = new Uint8Array(16);
   crypto.getRandomValues(docBytes);
+  // oxlint-disable-next-line eslint/no-bitwise -- UUIDv4 version bits.
   docBytes[6] = ((docBytes[6] ?? 0) & 0x0f) | 0x40;
+  // oxlint-disable-next-line eslint/no-bitwise -- UUIDv4 variant bits.
   docBytes[8] = ((docBytes[8] ?? 0) & 0x3f) | 0x80;
   const docHex = bytesToHex(docBytes);
   const doc = `${docHex.slice(0, 8)}-${docHex.slice(8, 12)}-${docHex.slice(12, 16)}-${docHex.slice(16, 20)}-${docHex.slice(20)}`;

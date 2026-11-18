@@ -267,7 +267,10 @@ const isNostrPolicy = (value: unknown): value is NostrPolicy =>
       Array.isArray(value["signing"]["kinds"]) &&
       (value["signing"]["kinds"] as unknown[]).every((k) => typeof k === "number")));
 
-/** What a session authorized on one network: the addresses the page may see and the group whose keys sign for them. */
+/**
+ * What a session authorized on one network: the addresses the page may see and the group whose keys
+ * sign for them.
+ */
 export type SessionAccounts = {
   readonly group: AccountGroup;
   readonly addresses: ReadonlyArray<string>;
@@ -296,10 +299,7 @@ export const sessionIdentity = (
   return { ref: session.identity, pubkey: addressOf(account) };
 };
 
-const sameGroup = (
-  a: AccountGroup | undefined,
-  b: AccountGroup | undefined,
-): boolean =>
+const sameGroup = (a: AccountGroup | undefined, b: AccountGroup | undefined): boolean =>
   a === undefined || b === undefined
     ? a === b
     : a.walletId === b.walletId && a.groupIndex === b.groupIndex;
@@ -359,9 +359,7 @@ export class ConnectionController extends Controller<ConnectionState> {
     this.update(() => ({ sessions, pending: {} }));
     this.unsubscribeSelection = this.options.onSelectedGroup(() => {
       this.options.invalidateAll();
-      void this.serial(async () => this.repoint()).catch((error: unknown) => {
-        this.options.logger.warn("connection re-point failed", error);
-      });
+      void this.repointQueued();
     });
   }
 
@@ -440,7 +438,9 @@ export class ConnectionController extends Controller<ConnectionState> {
   }
 
   /** The identity the origin's `nostr` scope is bound to, with the pubkey the page sees. */
-  nostrIdentity(origin: string): { readonly ref: NostrKeyRef; readonly pubkey: string } | undefined {
+  nostrIdentity(
+    origin: string,
+  ): { readonly ref: NostrKeyRef; readonly pubkey: string } | undefined {
     return sessionIdentity(this.session(origin));
   }
 
@@ -500,8 +500,8 @@ export class ConnectionController extends Controller<ConnectionState> {
   /**
    * The host's approval, by id: the accounts granted (of the app's selected group for a
    * chain/lightning grant, of the active identity for `nostr`) and the network. The whole
-   * derivation, merge and persist runs inside the session write queue, so a concurrent group
-   * switch cannot interleave.
+   * derivation, merge and persist runs inside the session write queue, so a concurrent group switch
+   * cannot interleave.
    */
   async approveConnection(
     id: string,
@@ -541,9 +541,7 @@ export class ConnectionController extends Controller<ConnectionState> {
        * existing chain/lightning scopes in the same write — a session never mixes groups.
        */
       const repointed =
-        group !== undefined &&
-        existing !== undefined &&
-        !sameGroup(existing.group, group);
+        group !== undefined && existing !== undefined && !sameGroup(existing.group, group);
       const merged = repointed
         ? await this.repointScopes(existing.scopes, group)
         : { ...existing?.scopes };
@@ -571,7 +569,10 @@ export class ConnectionController extends Controller<ConnectionState> {
       };
       await this.persist(store, session);
       this.dropPending(id);
-      if (repointed || (existing !== undefined && existing.currentNetwork !== session.currentNetwork)) {
+      if (
+        repointed ||
+        (existing !== undefined && existing.currentNetwork !== session.currentNetwork)
+      ) {
         this.options.invalidate(entry.origin.origin);
       }
       waiter.resolve(session);
@@ -706,13 +707,26 @@ export class ConnectionController extends Controller<ConnectionState> {
    * touch — queues here so one writer runs at a time and reads the latest session at its turn. A
    * failed task does not break the chain.
    */
-  private serial<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.writeQueue.then(task);
-    this.writeQueue = run.then(
-      () => undefined,
-      () => undefined,
-    );
-    return run;
+  private async serial<T>(task: () => Promise<T>): Promise<T> {
+    const previous = this.writeQueue;
+    let release: (() => void) | undefined;
+    this.writeQueue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    try {
+      return await task();
+    } finally {
+      release?.();
+    }
+  }
+
+  private async repointQueued(): Promise<void> {
+    try {
+      await this.serial(async () => this.repoint());
+    } catch (error: unknown) {
+      this.options.logger.warn("connection re-point failed", error);
+    }
   }
 
   /**
@@ -724,12 +738,10 @@ export class ConnectionController extends Controller<ConnectionState> {
     const store = this.requireStore();
     const target = this.options.selectedGroup();
     for (const session of Object.values(this.getState().sessions)) {
-      if (
-        !Object.keys(session.scopes).some(isChainScope) ||
-        sameGroup(session.group, target)
-      ) {
+      if (!Object.keys(session.scopes).some(isChainScope) || sameGroup(session.group, target)) {
         continue;
       }
+      // oxlint-disable-next-line eslint/no-await-in-loop -- session writes are serialized.
       const scopes = await this.repointScopes(session.scopes, target);
       const { group: _gone, ...rest } = session;
       // oxlint-disable-next-line eslint/no-await-in-loop -- session writes are serialized.

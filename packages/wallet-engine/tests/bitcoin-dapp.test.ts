@@ -236,6 +236,22 @@ describe("prepareDappPsbts", () => {
   );
 });
 
+const signPsbt: ChainsApi["sign"] = async ({ request }) => {
+  if (request.kind !== "bitcoin.psbt") {
+    throw new Error("unexpected kind");
+  }
+  const tx = Transaction.fromPSBT(request.psbt);
+  for (const entry of request.sign) {
+    const path = tx.getInput(entry.index).bip32Derivation?.[0]?.[1].path;
+    if (path === undefined) {
+      throw new Error("missing derivation");
+    }
+    const node = nodeOf(entry.template, path.at(-2) ?? 0, path.at(-1) ?? 0);
+    tx.signIdx(node.privateKey!, entry.index);
+  }
+  return Promise.resolve({ kind: "bitcoin.psbt" as const, signedPsbt: tx.toPSBT(0) });
+};
+
 describe("signDappPsbts", () => {
   it("a throwing commit prevents the broadcast", { timeout: 20_000 }, async () => {
     const { es, apis } = rig();
@@ -246,9 +262,6 @@ describe("signDappPsbts", () => {
     const [prepared] = await prepareDappPsbts(apis, es, GROUP, MAINNET, [
       { psbt, sign: [signEntry(0, "btc.bip84")] },
     ]);
-    if (prepared === undefined) {
-      throw new Error("prepare failed");
-    }
     const posted: string[] = [];
     const broadcasting: Pick<Esplora, "post"> = {
       post: async (_path: string, body: string) => {
@@ -256,28 +269,12 @@ describe("signDappPsbts", () => {
         return Promise.resolve("");
       },
     };
-    const signing: Pick<ChainsApi, "sign"> = {
-      sign: ({ request }) => {
-        if (request.kind !== "bitcoin.psbt") {
-          throw new Error("unexpected kind");
-        }
-        const tx = Transaction.fromPSBT(request.psbt);
-        for (const entry of request.sign) {
-          const path = tx.getInput(entry.index).bip32Derivation?.[0]?.[1].path;
-          if (path === undefined) {
-            throw new Error("missing derivation");
-          }
-          const node = nodeOf(entry.template, path.at(-2) ?? 0, path.at(-1) ?? 0);
-          tx.signIdx(node.privateKey!, entry.index);
-        }
-        return Promise.resolve({ kind: "bitcoin.psbt" as const, signedPsbt: tx.toPSBT(0) });
-      },
-    };
+    const signing: Pick<ChainsApi, "sign"> = { sign: signPsbt };
     await expect(
       signDappPsbts(
         signing,
         broadcasting,
-        [prepared],
+        [prepared!],
         true,
         { kind: "password", password: "pw" },
         () => {

@@ -40,9 +40,9 @@ export type PreparedSparkAction = {
   /** Why the action can no longer be paid at `now` (an expiring invoice), if so. */
   readonly staleReason: (now: number) => string | undefined;
   /**
-   * Runs the controller's approve-first payment call. `commit` is the request's point of no
-   * return — the controller calls it immediately before the client call that sends, and a throw
-   * there means nothing may be sent.
+   * Runs the controller's approve-first payment call. `commit` is the request's point of no return
+   * — the controller calls it immediately before the client call that sends, and a throw there
+   * means nothing may be sent.
    */
   readonly execute: (
     spark: SparkController,

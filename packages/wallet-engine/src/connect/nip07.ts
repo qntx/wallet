@@ -23,13 +23,7 @@ export type Nip07Request = {
 export type Nip07HandlerOptions = {
   readonly connections: Pick<
     ConnectionController,
-    | "checkOrigin"
-    | "authorize"
-    | "session"
-    | "nostrIdentity"
-    | "nostrPolicy"
-    | "request"
-    | "touch"
+    "checkOrigin" | "authorize" | "session" | "nostrIdentity" | "nostrPolicy" | "request" | "touch"
   >;
   readonly requests: Pick<RequestController, "prepare" | "outcome">;
   /** `nostr(wallet).signer(ref)` — the session identity's signer. */
@@ -42,10 +36,7 @@ export type Nip07HandlerOptions = {
  * ephemeral events are by convention authentication and remote-control messages, not content.
  */
 const forcesConfirmation = (kind: number): boolean =>
-  kind === 0 ||
-  kind === 3 ||
-  kind === 5 ||
-  (kind >= 10_000 && kind < 40_000);
+  kind === 0 || kind === 3 || kind === 5 || (kind >= 10_000 && kind < 40_000);
 
 const MAX_TAGS = 64;
 const MAX_TAG_ITEMS = 32;
@@ -164,7 +155,7 @@ export class Nip07Handler {
     if (bound === undefined) {
       throw unauthorized();
     }
-    const pubkey = bound.pubkey;
+    const { pubkey } = bound;
     const event = checkEvent(Array.isArray(params) ? params[0] : params);
     // A page-supplied pubkey must equal the session identity's or be absent.
     if (event.pubkey !== undefined && event.pubkey !== pubkey) {
@@ -192,12 +183,7 @@ export class Nip07Handler {
     return outcome.event;
   }
 
-  private async crypt(
-    origin: string,
-    method: string,
-    peer: string,
-    text: string,
-  ): Promise<string> {
+  private async crypt(origin: string, method: string, peer: string, text: string): Promise<string> {
     const { connections, signerFor } = this.options;
     if (method.endsWith(".decrypt") && connections.nostrPolicy(origin)?.decrypt !== true) {
       throw unauthorized();

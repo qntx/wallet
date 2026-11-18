@@ -3,7 +3,10 @@ import type { Message, MessageFields } from "@qntx/siwx";
 import { evm } from "@qntx/siwx/evm";
 import { siws, validateAddress as validateSolanaAddress } from "@qntx/siwx/svm";
 
-/** A domain a sign-in line claims: `[scheme://]domain wants you to sign in with your Ethereum|Solana account:` at the start of a line. */
+/**
+ * A domain a sign-in line claims: `[scheme://]domain wants you to sign in with your Ethereum|Solana
+ * account:` at the start of a line.
+ */
 export type SignInClaim = { readonly scheme?: string; readonly domain: string };
 
 /** A Sign-In with X message found in signed text (ERC-4361 / SIWS). */

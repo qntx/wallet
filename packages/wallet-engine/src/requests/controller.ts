@@ -65,10 +65,10 @@ import {
 import type { RiskFinding } from "./risk.ts";
 import { createSignLog } from "./sign-log.ts";
 import type { SignLog, SignLogEntry, SignLogOutcome } from "./sign-log.ts";
-import { nextStage } from "./stage.ts";
-import type { RequestEvent, RequestStage } from "./stage.ts";
 import { simulationChanged } from "./simulation.ts";
 import type { SimulationOutcome } from "./simulation.ts";
+import { nextStage } from "./stage.ts";
+import type { RequestEvent, RequestStage } from "./stage.ts";
 import type {
   BitcoinAccount,
   BitcoinGroup,
@@ -808,8 +808,8 @@ export class RequestController extends Controller<RequestControllerState> {
   }
 
   /**
-   * Locking, unlocking and switching account group void every unfinished request
-   * (requests.mdx invariant 1).
+   * Locking, unlocking and switching account group void every unfinished request (requests.mdx
+   * invariant 1).
    */
   invalidateAll(): void {
     for (const preparing of this.preparing.values()) {

@@ -214,7 +214,14 @@ async function engineRig() {
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(apis, fakeEsplora, account, network, psbts),
     bitcoinSignPsbts: async (_account, _network, prepared, send, verify) => {
-      const { signedPsbts, txids } = await signDappPsbts(apis, fakeEsplora, prepared, send, verify, () => undefined);
+      const { signedPsbts, txids } = await signDappPsbts(
+        apis,
+        fakeEsplora,
+        prepared,
+        send,
+        verify,
+        () => undefined,
+      );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
     bitcoinSign: async (account, network, request, verify) => {
@@ -382,7 +389,7 @@ async function openConnect(context: BrowserContext) {
 const request = async (page: Page, method: string, params?: unknown): Promise<unknown> =>
   page.evaluate(`window.ethereum.request(${JSON.stringify({ method, params })})`);
 
-const announcedUuid = (page: Page): Promise<unknown> =>
+const announcedUuid = async (page: Page): Promise<unknown> =>
   page.evaluate(`new Promise((resolve) => {
     window.addEventListener("eip6963:announceProvider", (e) => resolve(e.detail.info.uuid));
     window.dispatchEvent(new Event("eip6963:requestProvider"));

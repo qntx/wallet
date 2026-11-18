@@ -171,7 +171,11 @@ describe("createBrowserBridge", () => {
     expect(handledNostr).toStrictEqual([
       { origin: SITE, request: { method: "getPublicKey", params: [] } },
     ]);
-    expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 2, result: "nostr-result" });
+    expect(payloadOf(injections.at(-1))).toStrictEqual({
+      doc: DOC_A,
+      id: 2,
+      result: "nostr-result",
+    });
   });
 
   it("drops the messages of an origin on the phishing list, whichever provider they address", async () => {
@@ -442,7 +446,11 @@ it("routes provider: solana to the solana handler", async () => {
   expect(handledSolana).toStrictEqual([
     { origin: SITE, request: { method: "solana:signMessage", params: [] } },
   ]);
-  expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 4, result: "solana-result" });
+  expect(payloadOf(injections.at(-1))).toStrictEqual({
+    doc: DOC_A,
+    id: 4,
+    result: "solana-result",
+  });
 });
 
 it("routes provider: bitcoin to the bitcoin handler", async () => {
@@ -455,5 +463,9 @@ it("routes provider: bitcoin to the bitcoin handler", async () => {
   expect(handledBitcoin).toStrictEqual([
     { origin: SITE, request: { method: "bitcoin:signMessage", params: [] } },
   ]);
-  expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 5, result: "bitcoin-result" });
+  expect(payloadOf(injections.at(-1))).toStrictEqual({
+    doc: DOC_A,
+    id: 5,
+    result: "bitcoin-result",
+  });
 });

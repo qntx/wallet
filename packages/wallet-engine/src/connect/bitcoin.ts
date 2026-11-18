@@ -115,13 +115,11 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     this.options = options;
     this.events = new SessionEvents(options.connections, async (before, after) =>
       Promise.all(
-        diffSessions(before, after).map(
-          async ({ origin, session }): Promise<BitcoinEvent> => ({
-            name: "bitcoinAccountsChanged",
-            origin,
-            accounts: await this.sessionAccountsChanged(session),
-          }),
-        ),
+        diffSessions(before, after).map(async ({ origin, session }): Promise<BitcoinEvent> => ({
+          name: "bitcoinAccountsChanged",
+          origin,
+          accounts: await this.sessionAccountsChanged(session),
+        })),
       ),
     );
   }
@@ -158,14 +156,14 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     const purposes = purposesOf(request.params);
     const network = this.options.bitcoinNetwork();
     let binding = this.options.connections.sessionAccounts(checked.origin, network);
-    await (binding !== undefined
-      ? this.options.connections.touch(checked.origin)
-      : this.options.connections.request(checked.origin, { kind: "connect", namespace: "bip122" }));
+    await (binding === undefined
+      ? this.options.connections.request(checked.origin, { kind: "connect", namespace: "bip122" })
+      : this.options.connections.touch(checked.origin));
     binding = this.options.connections.sessionAccounts(checked.origin, network);
     if (binding === undefined) {
       throw new ProviderError(4100, "the wallet is not connected");
     }
-    const group = binding.group;
+    const { group } = binding;
     const accounts = await Promise.all(
       purposes.map(async (purpose) => {
         const account = await this.walletAccount(group, network, purpose);

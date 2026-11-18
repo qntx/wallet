@@ -511,7 +511,12 @@ describe("payments.pay", () => {
     // the declared option amount is not forwarded — the kernel derives it from the invoice.
     expect(calls[0]).toStrictEqual({
       method: "payInvoice",
-      params: { invoice: REGTEST_BOLT11, maxFeeSats: 3, verify: VERIFY, commit: expect.any(Function) },
+      params: {
+        invoice: REGTEST_BOLT11,
+        maxFeeSats: 3,
+        verify: VERIFY,
+        commit: expect.any(Function),
+      },
     });
   });
 

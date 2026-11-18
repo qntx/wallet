@@ -343,18 +343,20 @@ describe("BitcoinWalletHandler", () => {
     expect(events.at(-1)?.accounts).toStrictEqual([]);
   });
 
+  const sessionRow = (accounts: string[], group?: { walletId: string; groupIndex: number }) => ({
+    s1: {
+      id: "s1",
+      origin: ORIGIN,
+      ...(group === undefined ? {} : { group }),
+      scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
+    },
+  });
+
   it("an emptied bip122 session changes to an empty account list", async () => {
     const { handler, setSessions } = rig();
     const events: BitcoinEvent[] = [];
     const off = handler.subscribe((event) => events.push(event));
-    const session = (accounts: string[], group?: { walletId: string; groupIndex: number }) => ({
-      s1: {
-        id: "s1",
-        origin: ORIGIN,
-        ...(group === undefined ? {} : { group }),
-        scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
-      },
-    });
+    const session = sessionRow;
     setSessions(session([PAYMENT, ORDINALS], { walletId: "w1", groupIndex: 0 }));
     await new Promise((resolve) => setTimeout(resolve));
     setSessions(session([]));
