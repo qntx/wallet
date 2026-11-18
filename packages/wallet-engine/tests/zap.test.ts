@@ -8,7 +8,9 @@ import { encodeLnurl } from "@qntx/spark/lnurl";
 
 import { prepareZap, prepareZapAction } from "../src/payments/zap.ts";
 import type { PreparedZap, PrepareZapParams } from "../src/payments/zap.ts";
+import { sparkTransferId } from "../src/spark/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
+import { SparkControllerError } from "../src/spark/errors.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
 
 const PAY_BODY = {
@@ -232,6 +234,7 @@ describe("prepareZapAction", () => {
       prepareZapAction(account, prepared({ expiresAt: Date.now() + 30_000 }), {
         maxFeeSats: 50,
         now: () => Date.now(),
+        requestId: "req-zap",
       }),
     ).toThrow("zap invoice expired");
     expect(paid).toHaveLength(0);
@@ -242,6 +245,7 @@ describe("prepareZapAction", () => {
     const action = prepareZapAction(account, prepared({ expiresAt: soon }), {
       maxFeeSats: 50,
       now: () => Date.now(),
+      requestId: "req-zap",
     });
     expect(action.staleReason(soon - 61_000)).toBeUndefined();
     expect(action.staleReason(soon - 60_000)).toBe("zap invoice expired");
@@ -251,6 +255,7 @@ describe("prepareZapAction", () => {
     const action = prepareZapAction(account, prepared({ comment: "gm" }), {
       maxFeeSats: 50,
       now: () => Date.now(),
+      requestId: "req-zap",
     });
     expect(action.display).toMatchObject({
       family: "spark",
@@ -262,7 +267,11 @@ describe("prepareZapAction", () => {
     });
     expect(action.display.receiver).toMatch(/^0[23][0-9a-f]{64}$/);
     expect(action.checks).toStrictEqual([]);
-    const tight = prepareZapAction(account, prepared(), { maxFeeSats: 700, now: () => Date.now() });
+    const tight = prepareZapAction(account, prepared(), {
+      maxFeeSats: 700,
+      now: () => Date.now(),
+      requestId: "req-zap",
+    });
     expect(tight.checks).toStrictEqual(["fee-exceeds-amount"]);
   });
 
@@ -271,7 +280,7 @@ describe("prepareZapAction", () => {
     const action = prepareZapAction(
       account,
       prepared({ eventId: "ff".repeat(32), comment: "gm" }),
-      { maxFeeSats: 50, now: () => Date.now() },
+      { maxFeeSats: 50, now: () => Date.now(), requestId: "req-zap" },
     );
     const out = await action.execute(fakeSpark, verify, () => undefined);
     expect(out).toMatchObject({ kind: "lightning", payment: { state: "succeeded" } });
@@ -286,6 +295,23 @@ describe("prepareZapAction", () => {
         comment: "gm",
         lightning: "alice@svc.test",
       },
+    });
+  });
+
+  test("a lost commit response reports the zap pending under its transfer id", async () => {
+    const now = Date.now();
+    const failing = {
+      payInvoice: async () =>
+        Promise.reject(new SparkControllerError("unknown", "payment outcome unknown")),
+    } as unknown as SparkController;
+    const action = prepareZapAction(account, prepared(), {
+      maxFeeSats: 50,
+      now: () => now,
+      requestId: "req-zap",
+    });
+    await expect(action.execute(failing, verify, () => undefined)).resolves.toStrictEqual({
+      kind: "pending",
+      transferId: sparkTransferId("req-zap", now),
     });
   });
 });

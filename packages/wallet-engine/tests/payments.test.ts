@@ -14,7 +14,9 @@ import { parsePayment } from "../src/payments/parse.ts";
 import type { PaymentOption, PaymentParse } from "../src/payments/parse.ts";
 import { preparePay, withdrawLnurl } from "../src/payments/pay.ts";
 import type { PayContext, PayParams } from "../src/payments/pay.ts";
+import { sparkTransferId } from "../src/spark/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
+import { SparkControllerError } from "../src/spark/errors.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
 import { mulberry32 } from "./support/mulberry32.ts";
 
@@ -383,6 +385,8 @@ const WITHDRAW_REQUEST: LnurlWithdrawRequest = {
   maxWithdrawableMsat: 100_000,
 };
 
+const CTX_ID = "req-test";
+
 describe("payments.pay", () => {
   function context() {
     const calls: Array<{ method: string; params: unknown }> = [];
@@ -431,7 +435,7 @@ describe("payments.pay", () => {
       }
       return Response.json({ status: "OK" }, { status: 200 });
     }) as typeof globalThis.fetch;
-    const ctx: TestContext = { spark, fetch, now: () => NOW };
+    const ctx: TestContext = { spark, fetch, now: () => NOW, requestId: CTX_ID };
     return { ctx, calls, fetchCalls };
   }
 
@@ -452,7 +456,13 @@ describe("payments.pay", () => {
     });
     expect(calls[0]).toStrictEqual({
       method: "send",
-      params: { receiver: "spark1x", amountSats: 42, verify: VERIFY, commit: expect.any(Function) },
+      params: {
+        receiver: "spark1x",
+        amountSats: 42,
+        transferId: sparkTransferId(CTX_ID, NOW),
+        verify: VERIFY,
+        commit: expect.any(Function),
+      },
     });
   });
 
@@ -475,7 +485,13 @@ describe("payments.pay", () => {
     });
     expect(calls[0]).toStrictEqual({
       method: "paySparkInvoice",
-      params: { invoice, amountSats: 7, verify: VERIFY, commit: expect.any(Function) },
+      params: {
+        invoice,
+        amountSats: 7,
+        transferId: sparkTransferId(CTX_ID, NOW),
+        verify: VERIFY,
+        commit: expect.any(Function),
+      },
     });
   });
 
@@ -514,6 +530,7 @@ describe("payments.pay", () => {
       params: {
         invoice: REGTEST_BOLT11,
         maxFeeSats: 3,
+        transferId: sparkTransferId(CTX_ID, NOW),
         verify: VERIFY,
         commit: expect.any(Function),
       },
@@ -593,6 +610,80 @@ describe("payments.pay", () => {
     expect(calls).toHaveLength(0);
   });
 
+  const LOST = new SparkControllerError("unknown", "payment outcome unknown");
+  const SATS_SPARK_INVOICE = encodeSparkAddress({
+    network: "regtest",
+    identityPublicKey: PUBKEY,
+    invoice: {
+      version: 1,
+      id: "01936f00-0000-7000-8000-000000000001",
+      payment: { type: "sats" },
+    },
+  });
+
+  it.each([
+    {
+      name: "spark",
+      method: "send",
+      params: { option: { kind: "spark", address: "spark1x" }, amountSats: 42 },
+    },
+    {
+      name: "spark-invoice",
+      method: "paySparkInvoice",
+      params: {
+        option: { kind: "spark-invoice", invoice: SATS_SPARK_INVOICE, amountSats: 7 },
+        amountSats: 7,
+      },
+    },
+    {
+      name: "lightning",
+      method: "payInvoice",
+      params: {
+        option: {
+          kind: "lightning",
+          invoice: REGTEST_BOLT11,
+          amountSats: 5,
+          paymentHash: "h",
+          expiresAt: NOW + 120_000,
+        },
+        maxFeeSats: 3,
+      },
+    },
+    {
+      name: "bitcoin",
+      method: "withdraw",
+      params: {
+        option: { kind: "bitcoin", address: REGTEST_P2TR },
+        amountSats: 10,
+        maxFeeSats: 1,
+      },
+    },
+  ] satisfies ReadonlyArray<{
+    name: string;
+    method: string;
+    params: Omit<PayParams, "account">;
+  }>)(
+    "a lost $name commit response reports the payment pending, not failed",
+    async ({ method, params }) => {
+      const spark = {
+        [method]: async () => Promise.reject(LOST),
+      } as unknown as SparkController;
+      const ctx: TestContext = {
+        spark,
+        fetch: async () => {
+          await Promise.resolve();
+          return Response.json({});
+        },
+        now: () => NOW,
+        requestId: CTX_ID,
+      };
+      await expect(pay(ctx, { account: REF, ...params, verify: VERIFY })).resolves.toStrictEqual({
+        kind: "pending",
+        transferId: sparkTransferId(CTX_ID, NOW),
+      });
+    },
+  );
+
   it("bitcoin delegates to withdraw", async () => {
     const { ctx, calls } = context();
     await pay(ctx, {
@@ -609,6 +700,7 @@ describe("payments.pay", () => {
         amountSats: 10,
         maxFeeSats: 1,
         speed: "MEDIUM",
+        transferId: sparkTransferId(CTX_ID, NOW),
         verify: VERIFY,
         commit: expect.any(Function),
       },
@@ -665,6 +757,7 @@ describe("review fixes", () => {
         return Response.json({});
       },
       now: () => NOW,
+      requestId: CTX_ID,
     };
     await expect(
       pay(ctx, {
@@ -696,6 +789,7 @@ describe("review fixes", () => {
         return Response.json({});
       },
       now: () => NOW,
+      requestId: CTX_ID,
     };
     await expect(
       pay(ctx, {
@@ -726,6 +820,7 @@ describe("review fixes", () => {
         return Response.json({});
       },
       now: () => NOW,
+      requestId: CTX_ID,
     };
     await expect(
       pay(ctx, {
@@ -749,6 +844,7 @@ describe("review fixes", () => {
         return Response.json({});
       },
       now: () => NOW,
+      requestId: CTX_ID,
     };
     await expect(
       pay(ctx, {
@@ -781,6 +877,7 @@ describe("review fixes", () => {
         return Response.json({});
       },
       now: () => NOW,
+      requestId: CTX_ID,
     };
     await expect(
       pay(ctx, {

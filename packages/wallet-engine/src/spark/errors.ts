@@ -4,15 +4,22 @@ export type SparkErrorCategory =
   | "approval-required"
   | "insufficient-funds"
   | "rejected"
+  /** The payment may have committed; it settles under its transfer id. */
+  | "unknown"
   | "internal";
 
 export class SparkControllerError extends Error {
   readonly category: SparkErrorCategory;
+  /** The transfer id under which an "unknown" outcome may have committed. */
+  readonly transferId?: string;
 
-  constructor(category: SparkErrorCategory, message: string, cause?: unknown) {
+  constructor(category: SparkErrorCategory, message: string, cause?: unknown, transferId?: string) {
     super(message, { cause });
     this.name = "SparkControllerError";
     this.category = category;
+    if (transferId !== undefined) {
+      this.transferId = transferId;
+    }
   }
 }
 

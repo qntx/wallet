@@ -14,7 +14,9 @@ import type { PaymentOption } from "../src/payments/parse.ts";
 import { withdrawLnurl } from "../src/payments/pay.ts";
 import type { PayInput } from "../src/requests/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
+import { sparkTransferId } from "../src/spark/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
+import { SparkControllerError } from "../src/spark/errors.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
 import { approval } from "./approval.ts";
 import { bookDeps, simulateSolanaStub, tokensStub } from "./send-helpers.ts";
@@ -167,6 +169,7 @@ describe("Spark requests", () => {
         params: {
           invoice: LIGHTNING_INVOICE,
           maxFeeSats: 5,
+          transferId: sparkTransferId(request.id, NOW),
           verify: VERIFY,
           commit: expect.any(Function),
         },
@@ -195,7 +198,13 @@ describe("Spark requests", () => {
     await w.requests.approve(request.id, "pay", approval(request, VERIFY));
     expect(w.calls[0]).toStrictEqual({
       method: "send",
-      params: { receiver: address, amountSats: 42, verify: VERIFY, commit: expect.any(Function) },
+      params: {
+        receiver: address,
+        amountSats: 42,
+        transferId: sparkTransferId(request.id, NOW),
+        verify: VERIFY,
+        commit: expect.any(Function),
+      },
     });
   });
 
@@ -327,6 +336,46 @@ describe("Spark requests", () => {
     expect(w.requests.getState().requests[b.id]?.stage).toBe("rejected");
   });
 
+  it("a payment whose commit response was lost ends submitted as pending", async () => {
+    const w = world();
+    await w.requests.init();
+    const request = await w.requests.prepare({
+      method: "pay",
+      account: REF,
+      option: {
+        kind: "spark",
+        address: encodeSparkAddress({ network: "regtest", identityPublicKey: PAYEE }),
+      },
+      amountSats: 42,
+    });
+    w.failWith(new SparkControllerError("unknown", "payment outcome unknown"));
+    const result = await w.requests.approve(request.id, "pay", approval(request, VERIFY));
+    expect(result).toStrictEqual({
+      kind: "pending",
+      transferId: sparkTransferId(request.id, NOW),
+    });
+    expect(w.requests.getState().requests[request.id]?.stage).toBe("submitted");
+  });
+
+  it("a definite payment failure fails the request — only a lost response is pending", async () => {
+    const w = world();
+    await w.requests.init();
+    const request = await w.requests.prepare({
+      method: "pay",
+      account: REF,
+      option: {
+        kind: "spark",
+        address: encodeSparkAddress({ network: "regtest", identityPublicKey: PAYEE }),
+      },
+      amountSats: 42,
+    });
+    w.failWith(new SparkControllerError("rejected", "send refused"));
+    await expect(w.requests.approve(request.id, "pay", approval(request, VERIFY))).rejects.toThrow(
+      "send refused",
+    );
+    expect(w.requests.getState().requests[request.id]?.stage).toBe("failed");
+  });
+
   it("the method must match: a pay request cannot be approved as zap", async () => {
     const w = world();
     await w.requests.init();
@@ -345,7 +394,7 @@ describe("Spark requests", () => {
   it("withdrawLnurl needs no verification factor", async () => {
     const w = world();
     await withdrawLnurl(
-      { spark: w.spark, fetch: w.fetch, now: w.now },
+      { spark: w.spark, fetch: w.fetch },
       {
         account: REF,
         option: {

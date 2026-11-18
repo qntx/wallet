@@ -264,7 +264,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const controller = new SparkController({
     spark: options.sparkApis ?? spark(options.wallet),
     fetch: options.fetch,
-    random: options.random,
     now: options.now,
     logger: options.logger,
     setTimer,
@@ -818,7 +817,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       resolve: async (input, network) =>
         resolvePayment(input, { network, now: options.now(), fetch: options.fetch }),
       withdrawLnurl: async (params) =>
-        withdrawLnurl({ spark: controller, fetch: options.fetch, now: options.now }, params),
+        withdrawLnurl({ spark: controller, fetch: options.fetch }, params),
     },
     names: {
       resolve: async (name, network) => resolveEns(networks, name, network),

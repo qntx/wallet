@@ -1018,10 +1018,14 @@ export class RequestController extends Controller<RequestControllerState> {
     if (input.method === "pay" || input.method === "zap") {
       const action: PreparedSparkAction =
         input.method === "pay"
-          ? await preparePay({ fetch: this.options.fetch, now: this.options.now }, input)
+          ? await preparePay(
+              { fetch: this.options.fetch, now: this.options.now, requestId: id },
+              input,
+            )
           : prepareZapAction(input.account, input.zap, {
               maxFeeSats: input.maxFeeSats,
               now: this.options.now,
+              requestId: id,
             });
       return this.sparkBuilt(input.account, action);
     }
@@ -1060,7 +1064,7 @@ export class RequestController extends Controller<RequestControllerState> {
         l1,
       );
       const action = await preparePay(
-        { fetch: this.options.fetch, now: this.options.now },
+        { fetch: this.options.fetch, now: this.options.now, requestId: id },
         {
           account: input.account,
           option: { kind: "bitcoin", address },

@@ -1,3 +1,6 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
+
 import {
   bitcoinAddressScript,
   decodeSparkAddress,
@@ -62,7 +65,6 @@ export type SparkClientFactory = (options: {
 export type SparkControllerOptions = {
   readonly spark: SparkApis;
   readonly fetch: typeof globalThis.fetch;
-  readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
   readonly logger: EngineLogger;
   readonly setTimer: (ms: number, fn: () => void) => () => void;
@@ -71,9 +73,16 @@ export type SparkControllerOptions = {
 
 const key = (ref: SparkAccountRef): string => `${ref.walletId}:${ref.groupIndex}:${ref.network}`;
 
-/** TransferId: the client and SO expect a UUIDv7 — mint it from the injected clock+random. */
-const transferId = (random: (n: number) => Uint8Array, now: () => number): string =>
-  uuidv7(random, now);
+/**
+ * A request's idempotent transfer id: a UUIDv7 — the shape the SO expects — whose random bits are
+ * keyed by the request id, so a retry after a lost response resumes the same payment instead of
+ * paying twice.
+ */
+export const sparkTransferId = (requestId: string, createdAt: number): string =>
+  uuidv7(
+    () => sha256(utf8ToBytes(`qntx/spark/transfer-id\0${requestId}`)).subarray(0, 10),
+    () => createdAt,
+  );
 
 /** Catch-up sync for one pass: claim every pending transfer, then read balance and identity. */
 async function resync(
@@ -404,6 +413,33 @@ export class SparkController extends Controller<SparkControllerState> {
   }
 
   /**
+   * Runs the committing client call: a network failure leaves the outcome unknown, so the same call
+   * retries under the same transfer id — the SO/SSP deduplicates it — up to three times (1 s, 2 s,
+   * 4 s). A definite error propagates; network exhaustion reports "unknown".
+   */
+  private async committed<T>(transferId: string, call: () => Promise<T>): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= 3; attempt += 1) {
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- idempotent retries stay sequential
+        return await call();
+      } catch (error) {
+        if (categorize(error) !== "network") {
+          throw error;
+        }
+        lastError = error;
+        if (attempt < 3) {
+          // oxlint-disable-next-line no-await-in-loop -- backoff between idempotent retries
+          await new Promise<void>((resolve) => {
+            this.options.setTimer(2 ** attempt * 1000, resolve);
+          });
+        }
+      }
+    }
+    throw new SparkControllerError("unknown", "payment outcome unknown", lastError, transferId);
+  }
+
+  /**
    * One-off balance + activity probe for an account that may not be running: builds a temporary
    * client through the same factory on the account's own exit-chain collection (nothing diverges —
    * `balance()`/`transfers.history` never write it), reads, and closes it in `finally`.
@@ -466,6 +502,8 @@ export class SparkController extends Controller<SparkControllerState> {
     params: {
       receiver: string;
       amountSats: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -487,11 +525,13 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const transfer = await client.transfers.send({
-        receiver: params.receiver,
-        amountSats: params.amountSats,
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const transfer = await this.committed(params.transferId, async () =>
+        client.transfers.send({
+          receiver: params.receiver,
+          amountSats: params.amountSats,
+          transferId: params.transferId,
+        }),
+      );
       void this.refreshRecent(key(ref), client);
       return transfer;
     });
@@ -543,6 +583,8 @@ export class SparkController extends Controller<SparkControllerState> {
       invoice: string;
       amountSats?: number;
       maxFeeSats: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -563,12 +605,14 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const payment = await client.lightning.pay({
-        invoice: params.invoice,
-        maxFeeSats: params.maxFeeSats,
-        ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const payment = await this.committed(params.transferId, async () =>
+        client.lightning.pay({
+          invoice: params.invoice,
+          maxFeeSats: params.maxFeeSats,
+          ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
+          transferId: params.transferId,
+        }),
+      );
       if (params.note !== undefined) {
         try {
           await this.notesCollection(key(ref))?.put(
@@ -595,6 +639,8 @@ export class SparkController extends Controller<SparkControllerState> {
     params: {
       invoice: string;
       amountSats?: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -643,10 +689,12 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const result = await client.invoices.pay(params.invoice, {
-        amount: amountSats,
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const result = await this.committed(params.transferId, async () =>
+        client.invoices.pay(params.invoice, {
+          amount: amountSats,
+          transferId: params.transferId,
+        }),
+      );
       void this.refreshRecent(key(ref), client);
       // invoices.pay returns a string for token invoices — unreachable after the pre-approval
       // sats check above, kept as the internal guard.
@@ -710,6 +758,8 @@ export class SparkController extends Controller<SparkControllerState> {
       amountSats?: number;
       speed: "FAST" | "MEDIUM" | "SLOW";
       maxFeeSats?: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -751,13 +801,15 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const exit = await client.withdrawals.cooperativeExit({
-        address: params.address,
-        speed: params.speed,
-        maxFeeSats: fee,
-        amountSats: exitAmount,
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const exit = await this.committed(params.transferId, async () =>
+        client.withdrawals.cooperativeExit({
+          address: params.address,
+          speed: params.speed,
+          maxFeeSats: fee,
+          amountSats: exitAmount,
+          transferId: params.transferId,
+        }),
+      );
       void this.refreshRecent(key(ref), client);
       return exit;
     });

@@ -8,6 +8,7 @@ import type { VerifyFactor } from "@qntx/wallet";
 
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { SparkController } from "../spark/controller.ts";
+import { SparkControllerError } from "../spark/errors.ts";
 
 /**
  * What the host shows for a Spark, Lightning or exit request; `family` tells it apart from a chain
@@ -28,7 +29,9 @@ export type SparkDisplay = {
 export type SparkResult =
   | { readonly kind: "spark"; readonly transfer: SparkTransfer }
   | { readonly kind: "lightning"; readonly payment: LightningPayment }
-  | { readonly kind: "withdraw"; readonly exit: CooperativeExitResult };
+  | { readonly kind: "withdraw"; readonly exit: CooperativeExitResult }
+  /** The commit call's response was lost; the payment may settle under `transferId`. */
+  | { readonly kind: "pending"; readonly transferId: string };
 
 /**
  * A validated, fixed Spark payment: everything that does not need the user's verification has
@@ -49,6 +52,24 @@ export type PreparedSparkAction = {
     verify: VerifyFactor,
     commit: () => void,
   ) => Promise<SparkResult>;
+};
+
+/**
+ * Runs the committing call: an "unknown" controller error means the response was lost after the
+ * payment may have committed under `transferId` — the request reports `pending`, never `failed`.
+ */
+export const pendingOnUnknown = async (
+  transferId: string,
+  run: () => Promise<SparkResult>,
+): Promise<SparkResult> => {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof SparkControllerError && error.category === "unknown") {
+      return { kind: "pending", transferId };
+    }
+    throw error;
+  }
 };
 
 /** An invoice must have more than this much life left when approved. */
