@@ -161,6 +161,9 @@ const make = (
     openStore: async () => Promise.resolve(store),
     setTimer: () => () => {},
     logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
   });
 
 const solanaFixture = JSON.parse(
@@ -182,6 +185,11 @@ const solRpc = (
     calls.push({ method, params });
     if (method === "getBalance") {
       return Promise.resolve({ value: 0 });
+    }
+    if (method === "getMultipleAccounts") {
+      const [keys] = params;
+      // Held unknown mints cannot be inspected — they come back missing and stay hidden.
+      return Promise.resolve({ value: (keys as string[]).map(() => null) });
     }
     if (method === "getAccountInfo") {
       return Promise.resolve({
@@ -217,6 +225,9 @@ const makeSolana = (calls: Array<{ readonly method: string; readonly params: unk
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: () => () => {},
     logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
   });
 
 describe("AssetsController built-in tokens", () => {
@@ -236,16 +247,22 @@ describe("AssetsController built-in tokens", () => {
     expect(balances.tokens[0]).toStrictEqual({
       address: USDC,
       symbol: "USDC",
+      name: "USD Coin",
       decimals: 6,
       balance: "1000001",
       verified: true,
+      spam: [],
+      hidden: false,
     });
     expect(balances.tokens[1]).toStrictEqual({
       address: USDT,
       symbol: "USDT",
+      name: "Tether USD",
       decimals: 6,
       balance: "2000002",
       verified: true,
+      spam: [],
+      hidden: false,
     });
     // one eth_call total — the aggregate3 to Multicall3, targeting table keys in table order.
     expect(calls).toHaveLength(1);
@@ -347,13 +364,18 @@ describe("AssetsController built-in tokens", () => {
     expect(balances.tokens[0]).toStrictEqual({
       address: SOL_USDC,
       symbol: "USDC",
+      name: "USD Coin",
       decimals: 6,
       balance: "1110038251",
       verified: true,
+      spam: [],
+      hidden: false,
     });
     expect(balances.tokens[1]?.balance).toBe("0");
-    // decimals/symbol came from the table — no getAccountInfo mint reads.
+    // Table rows need no mint read; the held unknown mints in the fixture are inspected once
+    // in a single getMultipleAccounts and stay hidden while they come back missing.
     expect(calls.filter((c) => c.method === "getAccountInfo")).toHaveLength(0);
+    expect(calls.filter((c) => c.method === "getMultipleAccounts")).toHaveLength(1);
   });
 
   it("reads a custom token's metadata at addToken; refreshes batch balances only", async () => {

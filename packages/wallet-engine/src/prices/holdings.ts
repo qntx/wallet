@@ -52,14 +52,21 @@ export function balanceHoldings(key: string, balances: AccountBalances): Readonl
   };
   return [
     native,
-    ...balances.tokens.map((token): Holding => ({
-      key,
-      network,
-      asset: tokenAssetId(network, token.address),
-      symbol: token.symbol,
-      decimals: token.decimals,
-      amount: BigInt(token.balance) + BigInt(token.frozen ?? "0"),
-    })),
+    ...balances.tokens.flatMap((token): Holding[] =>
+      // A hidden token is display-only dead weight — no price is fetched and it has no value.
+      token.hidden
+        ? []
+        : [
+            {
+              key,
+              network,
+              asset: tokenAssetId(network, token.address),
+              symbol: token.symbol,
+              decimals: token.decimals,
+              amount: BigInt(token.balance) + BigInt(token.frozen ?? "0"),
+            },
+          ],
+    ),
   ];
 }
 

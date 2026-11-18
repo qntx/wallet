@@ -1,10 +1,23 @@
 /**
- * Balances per (account address, network). EVM native via eth_getBalance; the tracked token set is
- * the built-in table (EVM `evmTokenTable[chainId]`, Solana `solanaTokenTable[network]`) plus the
- * user's custom tokens — `verified` is decided at read time, true exactly for table entries, and is
- * never persisted. Custom tokens persist in the EngineStore as `{ address }` records. State values
- * are display-only: transaction build always re-reads the chain.
+ * Balances per (account address, network). EVM native via eth_getBalance; Solana native via
+ * getBalance. The shown token set is the built-in table plus the user's custom tokens plus — on
+ * networks with a Multicall3 and a gateway token list — list tokens discovered with a non-zero
+ * balance; on Solana every held mint, known or not, appears.
+ *
+ * RPC budget per refresh: EVM spends 1 eth_getBalance plus ceil(T/300) aggregate3 eth_calls with T
+ * = table + custom + held-discovered; a discovery poll (first read of an unlock, then every
+ * {@link DISCOVERY_MS}) reads ceil((T+L)/300) instead, L the network's list size. Chain metadata
+ * costs one extra aggregate3 per network per unlock, only when new tokens appear. Solana spends the
+ * native balance call plus two getTokenAccountsByOwner scans, and at most one getMultipleAccounts
+ * per refresh while uninspected mints remain — each mint inspected once per unlock.
+ *
+ * Decimals are never assumed: a token whose decimals cannot be read is omitted from the refresh,
+ * not shown with a guess. `verified` is decided at read time — built-in table entries, or list
+ * entries whose on-chain decimals equal the list's. Spam reasons are computed for unverified tokens
+ * only, and `hidden` follows the persisted visibility record plus the spam verdict.
  */
+import { address as solanaAddress } from "@solana/kit";
+import { isAddress } from "viem";
 import type { PublicClient } from "viem";
 
 import { evmTokenTable } from "@qntx/wallet-chains/evm";
@@ -16,7 +29,8 @@ import type { BitcoinSource } from "../chains/bitcoin-scan.ts";
 import { evmRpcHex } from "../chains/evm.ts";
 import { Controller } from "../controller.ts";
 import type { EngineLogger } from "../events.ts";
-import type { NetworkController, SolanaRpc } from "../networks/controller.ts";
+import type { GatewayConfig } from "../gateway/client.ts";
+import type { NetworkController } from "../networks/controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
@@ -24,23 +38,34 @@ import { bitcoinBalances, readBitcoin } from "./bitcoin.ts";
 import type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./bitcoin.ts";
 import { callToken, readEvmBalances, readEvmMetadata } from "./evm.ts";
 import type { EvmTokenMetadata } from "./evm.ts";
-import { solanaTokenHoldings } from "./solana.ts";
-import type { SolanaTokenHolding } from "./solana.ts";
+import { inspectMints, solanaTokenHoldings } from "./solana.ts";
+import type { MintFacts } from "./solana.ts";
+import { spamReasons, symbolOwners } from "./spam.ts";
+import type { SpamReason } from "./spam.ts";
+import { TokenLists } from "./token-lists.ts";
 
 const obj = (v: unknown): Record<string, unknown> | undefined => (isObject(v) ? v : undefined);
 
 const COLLECTION = "assets-custom-tokens";
 const POLL_MS = 60_000;
+const DISCOVERY_MS = 10 * 60_000;
+const INSPECT_PER_REFRESH = 50;
+const SOLANA_MINT = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
 export type TokenBalance = {
   readonly address: string;
   readonly symbol: string;
+  readonly name?: string;
   readonly decimals: number;
   readonly balance: string;
   /** Solana only, present when non-zero — a frozen token account cannot be moved until thawed. */
   readonly frozen?: string;
-  /** True exactly when the token is a built-in-table entry; computed at read time. */
+  /** Built-in table entry, or a list token whose on-chain decimals match the list's. */
   readonly verified: boolean;
+  /** Display-time spam verdict; always empty on a verified token. */
+  readonly spam: ReadonlyArray<SpamReason>;
+  /** Hidden by the user, or flagged spam without an explicit keep. */
+  readonly hidden: boolean;
 };
 
 export type AccountBalances = {
@@ -65,48 +90,50 @@ type Options = {
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
   readonly logger: EngineLogger;
+  readonly gateway: GatewayConfig | undefined;
+  readonly fetch: typeof globalThis.fetch;
+  readonly now: () => number;
 };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
 const key = (network: string, address: string): string => `${network}:${address}`;
 
-/** One mint's entry; `frozen` only appears when the holdings read counted frozen accounts. */
-const solanaEntry = (
-  mint: string,
-  symbol: string,
-  decimals: number,
-  held: SolanaTokenHolding | undefined,
-  verified: boolean,
-): TokenBalance => {
-  const frozen = held !== undefined && held.frozen > 0n ? held.frozen.toString() : undefined;
-  return {
-    address: mint,
-    symbol,
-    decimals,
-    balance: held?.balance.toString() ?? "0",
-    ...(frozen === undefined ? {} : { frozen }),
-    verified,
-  };
-};
+type Visibility = "hidden" | "shown";
 
 export class AssetsController extends Controller<AssetsControllerState> {
   private readonly options: Options;
+  private readonly lists: TokenLists;
   private engineStore: EngineStore | undefined;
   private visible = false;
   private cancelPoll: (() => void) | undefined;
   private readonly customTokens = new Map<string, ReadonlyArray<string>>();
+  private readonly visibility = new Map<string, Map<string, Visibility>>();
   /**
    * Chain-read ERC-20 metadata per `network:lowercase-address` for this unlock; entries without
    * readable decimals are never cached so a later read can succeed.
    */
   private readonly meta = new Map<string, EvmTokenMetadata>();
+  /** Mint facts per `network:mint` for this unlock — each mint is inspected at most once. */
+  private readonly mints = new Map<string, MintFacts | "missing">();
+  /** State key → the held list tokens found on the last discovery scan, and when it ran. */
+  private readonly discovered = new Map<
+    string,
+    { readonly addresses: ReadonlySet<string>; readonly at: number }
+  >();
   /** State key → the read that produced it, so a poll re-runs whichever entry was written. */
   private readonly tracked = new Map<string, () => Promise<AccountBalances>>();
 
   constructor(options: Options) {
     super({ name: "assets", defaultState: () => ({ balances: {} }) });
     this.options = options;
+    this.lists = new TokenLists({
+      gateway: options.gateway,
+      fetch: options.fetch,
+      setTimer: options.setTimer,
+      now: options.now,
+      logger: options.logger,
+    });
   }
 
   async init(): Promise<void> {
@@ -125,6 +152,25 @@ export class AssetsController extends Controller<AssetsControllerState> {
         }
       }
     }
+    const hidden = await this.engineStore.collection(COLLECTION).get("visibility");
+    const parsed = hidden === undefined ? undefined : readJson(hidden);
+    if (isObject(parsed)) {
+      for (const [network, entries] of Object.entries(parsed)) {
+        if (!isObject(entries)) {
+          continue;
+        }
+        this.visibility.set(
+          network,
+          new Map(
+            Object.entries(entries).flatMap(
+              ([address, v]): ReadonlyArray<readonly [string, Visibility]> =>
+                v === "hidden" || v === "shown" ? [[address, v]] : [],
+            ),
+          ),
+        );
+      }
+    }
+    await this.lists.load(this.engineStore);
     if (this.visible) {
       this.armPoll();
     }
@@ -134,8 +180,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
     this.cancelPoll?.();
     this.cancelPoll = undefined;
     this.customTokens.clear();
+    this.visibility.clear();
     this.meta.clear();
+    this.mints.clear();
+    this.discovered.clear();
     this.tracked.clear();
+    this.lists.clear();
     this.engineStore = undefined;
     this.update(() => ({ balances: {} }));
   }
@@ -184,6 +234,15 @@ export class AssetsController extends Controller<AssetsControllerState> {
     return balances;
   }
 
+  /**
+   * The visibility verdict of one token: explicit `hidden` wins, explicit `shown` keeps even a
+   * flagged token, and anything else hides exactly when it carries a spam reason.
+   */
+  private hiddenFor(network: string, canonical: string, spam: ReadonlyArray<SpamReason>): boolean {
+    const verdict = this.visibility.get(network)?.get(canonical);
+    return verdict === "hidden" || (verdict !== "shown" && spam.length > 0);
+  }
+
   /** Reads the address's balances and returns exactly what it wrote under its state key. */
   async refresh(address: string, network: string): Promise<AccountBalances> {
     const info = this.options.networks.info(network);
@@ -204,10 +263,42 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   /**
-   * The tracked tokens' balances: built-in table entries in table order (metadata from the table),
-   * then custom tokens not matching a table key — EVM addresses compare case-insensitively. Custom
-   * metadata comes from the chain via the per-unlock cache; a token whose decimals cannot be read
-   * is omitted rather than shown with a guess.
+   * The network's eligible list tokens keyed by canonical (lowercase) address: list entries whose
+   * symbol does not impersonate a built-in table token at a different address — an impersonator is
+   * never a verified entry, however it got on the list.
+   */
+  private async eligibleEvmList(
+    network: string,
+    table: Readonly<Record<string, { readonly symbol: string }>>,
+  ): Promise<{
+    readonly entries: ReadonlyMap<
+      string,
+      { readonly symbol: string; readonly name: string; readonly decimals: number }
+    >;
+    readonly owners: ReadonlyMap<string, ReadonlySet<string>>;
+  }> {
+    const list = await this.lists.entries(network);
+    const tableSymbols = new Set(Object.values(table).map((token) => token.symbol.toLowerCase()));
+    const tableAddresses = new Set(Object.keys(table).map((k) => k.toLowerCase()));
+    const eligible = [...list].filter(
+      ([address, entry]) =>
+        tableAddresses.has(address) || !tableSymbols.has(entry.symbol.toLowerCase()),
+    );
+    const owners = symbolOwners([
+      ...Object.entries(table).map(([address, token]) => [address.toLowerCase(), token] as const),
+      ...eligible,
+    ]);
+    // Entries sharing a table address are table tokens — they are not "the rest".
+    const entries = new Map(eligible.filter(([address]) => !tableAddresses.has(address)));
+    return { entries, owners };
+  }
+
+  /**
+   * The shown EVM tokens: table rows in table order, custom rows in add order, then discovered list
+   * tokens by address. Discovery — reading every list token's balance — runs on the first poll of
+   * an unlock and every {@link DISCOVERY_MS} after, and only when the network has a Multicall3;
+   * between scans only the discovered (still held) list tokens are read. Decimals come from the
+   * per-unlock cache, filled in one aggregate3 for the tokens still missing one.
    */
   private async evmTokens(
     client: PublicClient,
@@ -215,46 +306,128 @@ export class AssetsController extends Controller<AssetsControllerState> {
     owner: string,
     network: string,
   ): Promise<ReadonlyArray<TokenBalance>> {
-    const table = evmTokenTable[String(this.options.networks.info(network).chainId)] ?? {};
-    const keys = Object.keys(table);
+    const info = this.options.networks.info(network);
+    const table = evmTokenTable[String(info.chainId)] ?? {};
+    const tableKeys = Object.keys(table);
+    const tableByLower = new Map(tableKeys.map((k) => [k.toLowerCase(), k]));
     const custom = (this.customTokens.get(network) ?? []).filter(
-      (a) => !keys.some((k) => k.toLowerCase() === a.toLowerCase()),
+      (a) => !tableByLower.has(a.toLowerCase()),
     );
-    const tracked = [...keys, ...custom];
-    const balances = await readEvmBalances(client, multicall3, owner, tracked);
-    await this.loadEvmMetadata(
-      client,
-      multicall3,
-      network,
-      custom.map((address) => ({ address, symbol: true })),
-    );
-    return tracked.flatMap((address, i): TokenBalance[] => {
+    const customLower = new Set(custom.map((a) => a.toLowerCase()));
+    const { entries: list, owners } = await this.eligibleEvmList(network, table);
+    const listOnly = [...list.keys()].filter((a) => !customLower.has(a));
+
+    const stateKey = key(network, owner);
+    const scan = this.discovered.get(stateKey);
+    const due =
+      multicall3 !== undefined &&
+      (scan === undefined || this.options.now() - scan.at >= DISCOVERY_MS);
+    const wanted = due ? listOnly : [...(scan?.addresses ?? new Set<string>())];
+    const tracked = [...tableKeys, ...custom];
+    const targets = multicall3 === undefined ? tracked : [...tracked, ...wanted];
+    const balances = await readEvmBalances(client, multicall3, owner, targets);
+
+    const held = new Map<string, bigint>();
+    for (const [i, address] of wanted.entries()) {
+      const balance = balances[tracked.length + i];
+      if (balance !== undefined && balance > 0n) {
+        held.set(address, balance);
+      }
+    }
+    if (multicall3 !== undefined) {
+      this.discovered.set(stateKey, {
+        addresses: new Set(held.keys()),
+        at: due ? this.options.now() : (scan?.at ?? this.options.now()),
+      });
+    }
+
+    await this.loadEvmMetadata(client, multicall3, network, [
+      ...custom.map((address) => ({ address, symbol: true })),
+      ...[...held.keys()].map((address) => ({ address, symbol: false })),
+    ]);
+
+    const rows: TokenBalance[] = [];
+    for (const [i, address] of tableKeys.entries()) {
       const known = table[address];
-      if (known !== undefined) {
-        return [
-          {
-            address,
-            symbol: known.symbol,
-            decimals: known.decimals,
-            balance: (balances[i] ?? 0n).toString(),
-            verified: true,
-          },
-        ];
+      if (known === undefined) {
+        continue;
       }
-      const read = this.meta.get(`${network}:${address.toLowerCase()}`);
+      rows.push({
+        address,
+        symbol: known.symbol,
+        ...(known.name === undefined ? {} : { name: known.name }),
+        decimals: known.decimals,
+        balance: (balances[i] ?? 0n).toString(),
+        verified: true,
+        spam: [],
+        hidden: this.hiddenFor(network, address.toLowerCase(), []),
+      });
+    }
+    for (const [j, address] of custom.entries()) {
+      const canonical = address.toLowerCase();
+      const read = this.meta.get(`${network}:${canonical}`);
       if (read?.decimals === undefined) {
-        return [];
+        continue;
       }
-      return [
-        {
+      const balance = (balances[tableKeys.length + j] ?? 0n).toString();
+      // A custom token that is an eligible list entry is a list token: list symbol and name,
+      // chain decimals, verified when they match — still always shown in the custom position.
+      const entry = list.get(canonical);
+      if (entry !== undefined) {
+        const verified = entry.decimals === read.decimals;
+        const spam = verified
+          ? []
+          : spamReasons({
+              address: canonical,
+              symbol: entry.symbol,
+              name: entry.name,
+              owners,
+            });
+        rows.push({
           address,
-          symbol: read.symbol ?? "?",
+          symbol: entry.symbol,
+          name: entry.name,
           decimals: read.decimals,
-          balance: (balances[i] ?? 0n).toString(),
-          verified: false,
-        },
-      ];
-    });
+          balance,
+          verified,
+          spam,
+          hidden: this.hiddenFor(network, canonical, spam),
+        });
+        continue;
+      }
+      const spam = spamReasons({ address: canonical, symbol: read.symbol, owners });
+      rows.push({
+        address,
+        symbol: read.symbol ?? "?",
+        decimals: read.decimals,
+        balance,
+        verified: false,
+        spam,
+        hidden: this.hiddenFor(network, canonical, spam),
+      });
+    }
+    for (const address of [...held.keys()].sort()) {
+      const entry = list.get(address);
+      const read = this.meta.get(`${network}:${address}`);
+      if (entry === undefined || read?.decimals === undefined) {
+        continue;
+      }
+      const verified = entry.decimals === read.decimals;
+      const spam = verified
+        ? []
+        : spamReasons({ address, symbol: entry.symbol, name: entry.name, owners });
+      rows.push({
+        address,
+        symbol: entry.symbol,
+        name: entry.name,
+        decimals: read.decimals,
+        balance: (held.get(address) ?? 0n).toString(),
+        verified,
+        spam,
+        hidden: this.hiddenFor(network, address, spam),
+      });
+    }
+    return rows;
   }
 
   /** Fills the per-unlock metadata cache for `wants` in one batched read; failures stay uncached. */
@@ -292,46 +465,195 @@ export class AssetsController extends Controller<AssetsControllerState> {
           : "0";
     const holdings = await solanaTokenHoldings(rpc, owner);
     const table = solanaTokenTable[network] ?? {};
-    const builtin = Object.entries(table).map(([mint, t]) =>
-      solanaEntry(mint, t.symbol, t.decimals, holdings.get(mint), true),
+    const list = await this.lists.entries(network);
+    const tableSymbols = new Set(Object.values(table).map((token) => token.symbol.toLowerCase()));
+    const eligible = new Map(
+      [...list].filter(
+        ([mint, entry]) =>
+          table[mint] !== undefined || !tableSymbols.has(entry.symbol.toLowerCase()),
+      ),
     );
+    const owners = symbolOwners([...Object.entries(table), ...eligible]);
+    for (const mint of Object.keys(table)) {
+      eligible.delete(mint);
+    }
     const custom = (this.customTokens.get(network) ?? []).filter(
       (mint) => table[mint] === undefined,
     );
-    const customs = await Promise.all(
-      custom.map(async (mint) => this.solanaToken(rpc, mint, holdings.get(mint))),
+    const customSet = new Set(custom);
+    const held = [...holdings.entries()].filter(
+      ([, holding]) => holding.balance + holding.frozen > 0n,
     );
-    const tokens = [
-      ...builtin,
-      ...customs.flatMap((token) => (token === undefined ? [] : [token])),
+
+    // Inspection queue: custom and unverified held-list mints first (they may carry extensions),
+    // then held unknown mints in mint order — at most 50 uncached per refresh.
+    const cached = (mint: string): boolean => this.mints.has(`${network}:${mint}`);
+    const heldUnknown = held
+      .map(([mint]) => mint)
+      .filter(
+        (mint) =>
+          table[mint] === undefined && !customSet.has(mint) && !eligible.has(mint) && !cached(mint),
+      )
+      .sort();
+    const queue = [
+      ...custom.filter((mint) => !cached(mint)),
+      ...held
+        .map(([mint]) => mint)
+        .filter(
+          (mint) =>
+            eligible.has(mint) &&
+            !customSet.has(mint) &&
+            eligible.get(mint)?.decimals !== holdings.get(mint)?.decimals &&
+            !cached(mint),
+        )
+        .sort(),
+      ...heldUnknown,
     ];
-    return this.record(key(network, owner), { native, tokens }, async () =>
+    const wanted = queue.slice(0, INSPECT_PER_REFRESH);
+    if (wanted.length > 0) {
+      const inspected = await inspectMints(rpc, wanted);
+      for (const [mint, facts] of inspected) {
+        this.mints.set(`${network}:${mint}`, facts);
+      }
+    }
+    const facts = (mint: string): MintFacts | "missing" | undefined =>
+      this.mints.get(`${network}:${mint}`);
+
+    const rows: TokenBalance[] = [];
+    for (const [mint, known] of Object.entries(table)) {
+      const holding = holdings.get(mint);
+      rows.push({
+        address: mint,
+        symbol: known.symbol,
+        ...(known.name === undefined ? {} : { name: known.name }),
+        decimals: known.decimals,
+        balance: holding?.balance.toString() ?? "0",
+        ...(holding !== undefined && holding.frozen > 0n
+          ? { frozen: holding.frozen.toString() }
+          : {}),
+        verified: true,
+        spam: [],
+        hidden: this.hiddenFor(network, mint, []),
+      });
+    }
+    for (const mint of custom) {
+      const read = facts(mint);
+      if (read === undefined || read === "missing") {
+        continue;
+      }
+      const holding = holdings.get(mint);
+      const balance = holding?.balance.toString() ?? "0";
+      const frozen =
+        holding !== undefined && holding.frozen > 0n ? { frozen: holding.frozen.toString() } : {};
+      // A custom mint that is an eligible list entry is a list token (see the EVM rule above).
+      const entry = eligible.get(mint);
+      if (entry !== undefined) {
+        const verified = entry.decimals === read.decimals;
+        const spam = verified
+          ? []
+          : spamReasons({
+              address: mint,
+              symbol: entry.symbol,
+              name: entry.name,
+              owners,
+              permanentDelegate: read.permanentDelegate,
+              nonTransferable: read.nonTransferable,
+            });
+        rows.push({
+          address: mint,
+          symbol: entry.symbol,
+          name: entry.name,
+          decimals: read.decimals,
+          balance,
+          ...frozen,
+          verified,
+          spam,
+          hidden: this.hiddenFor(network, mint, spam),
+        });
+        continue;
+      }
+      const spam = spamReasons({
+        address: mint,
+        symbol: read.symbol,
+        name: read.name,
+        owners,
+        permanentDelegate: read.permanentDelegate,
+        nonTransferable: read.nonTransferable,
+      });
+      rows.push({
+        address: mint,
+        symbol: read.symbol ?? "?",
+        ...(read.name === undefined ? {} : { name: read.name }),
+        decimals: read.decimals,
+        balance,
+        ...frozen,
+        verified: false,
+        spam,
+        hidden: this.hiddenFor(network, mint, spam),
+      });
+    }
+    const rest = held
+      .filter(([mint]) => table[mint] === undefined && !customSet.has(mint))
+      .sort(([a], [b]) => (a < b ? -1 : 1));
+    for (const [mint, holding] of rest) {
+      const entry = eligible.get(mint);
+      if (entry !== undefined) {
+        const verified = entry.decimals === holding.decimals;
+        const read = facts(mint);
+        const facts0 = read === undefined || read === "missing" ? undefined : read;
+        const spam = verified
+          ? []
+          : spamReasons({
+              address: mint,
+              symbol: entry.symbol,
+              name: entry.name,
+              owners,
+              permanentDelegate: facts0?.permanentDelegate,
+              nonTransferable: facts0?.nonTransferable,
+            });
+        rows.push({
+          address: mint,
+          symbol: entry.symbol,
+          name: entry.name,
+          decimals: holding.decimals,
+          balance: holding.balance.toString(),
+          ...(holding.frozen > 0n ? { frozen: holding.frozen.toString() } : {}),
+          verified,
+          spam,
+          hidden: this.hiddenFor(network, mint, spam),
+        });
+        continue;
+      }
+      const read = facts(mint);
+      if (read === undefined || read === "missing") {
+        continue;
+      }
+      if (read.decimals === 0 && read.supply === "1") {
+        continue;
+      }
+      const spam = spamReasons({
+        address: mint,
+        symbol: read.symbol,
+        name: read.name,
+        owners,
+        permanentDelegate: read.permanentDelegate,
+        nonTransferable: read.nonTransferable,
+      });
+      rows.push({
+        address: mint,
+        symbol: read.symbol ?? "?",
+        ...(read.name === undefined ? {} : { name: read.name }),
+        decimals: read.decimals,
+        balance: holding.balance.toString(),
+        ...(holding.frozen > 0n ? { frozen: holding.frozen.toString() } : {}),
+        verified: false,
+        spam,
+        hidden: this.hiddenFor(network, mint, spam),
+      });
+    }
+    return this.record(key(network, owner), { native, tokens: rows }, async () =>
       this.refresh(owner, network),
     );
-  }
-
-  /**
-   * A custom mint's entry: balance/frozen from the holdings map, decimals from the counted token
-   * accounts or the mint itself — `undefined` when neither can be read, and the mint is omitted
-   * rather than shown with a guess.
-   */
-  private async solanaToken(
-    rpc: SolanaRpc,
-    mint: string,
-    held: SolanaTokenHolding | undefined,
-  ): Promise<TokenBalance | undefined> {
-    const decimals = held?.decimals ?? (await this.mintDecimals(rpc, mint));
-    return decimals === undefined ? undefined : solanaEntry(mint, "?", decimals, held, false);
-  }
-
-  /** The mint's `decimals` via a parsed mint read, or `undefined` when it cannot be read. */
-  private async mintDecimals(rpc: SolanaRpc, mint: string): Promise<number | undefined> {
-    const mintInfo = obj(await rpc.call("getAccountInfo", [mint, { encoding: "jsonParsed" }]));
-    const parsed = obj(obj(obj(mintInfo?.["value"])?.["data"])?.["parsed"]);
-    const decimals = obj(parsed?.["info"])?.["decimals"];
-    return typeof decimals === "number" && Number.isInteger(decimals) && decimals >= 0
-      ? decimals
-      : undefined;
   }
 
   /** Whether `address` is in the built-in token table of `network` or among the custom tokens. */
@@ -363,7 +685,65 @@ export class AssetsController extends Controller<AssetsControllerState> {
     return { symbol, decimals };
   }
 
-  /** Reads symbol/decimals on-chain, marks unverified, persists; throws when the calls fail. */
+  /**
+   * Persists the visibility verdict of one token — EVM addresses must be hex, Solana mints base58 —
+   * and re-derives `hidden` on that network's state rows without touching the chain. The same
+   * verdict applies on the next refresh: a flag stays hidden until explicitly shown.
+   */
+  async setTokenHidden(network: string, address: string, hidden: boolean): Promise<void> {
+    const info = this.options.networks.info(network);
+    let canonical: string;
+    if (info.family === "evm") {
+      if (!isAddress(address)) {
+        throw new TypeError(`malformed evm address: ${address}`);
+      }
+      canonical = address.toLowerCase();
+    } else if (info.family === "solana") {
+      if (!SOLANA_MINT.test(address)) {
+        throw new TypeError(`malformed solana mint: ${address}`);
+      }
+      canonical = solanaAddress(address);
+    } else {
+      throw new TypeError(`${network} has no tokens`);
+    }
+    const entries = this.visibility.get(network) ?? new Map<string, Visibility>();
+    entries.set(canonical, hidden ? "hidden" : "shown");
+    this.visibility.set(network, entries);
+    await this.persistVisibility();
+    const evm = info.family === "evm";
+    this.update((state) => ({
+      balances: Object.fromEntries(
+        Object.entries(state.balances).map(([stateKey, balances]) => [
+          stateKey,
+          stateKey.startsWith(`${network}:`)
+            ? {
+                ...balances,
+                tokens: balances.tokens.map((token) => ({
+                  ...token,
+                  hidden: this.hiddenFor(
+                    network,
+                    evm ? token.address.toLowerCase() : token.address,
+                    token.spam,
+                  ),
+                })),
+              }
+            : balances,
+        ]),
+      ),
+    }));
+  }
+
+  private async persistVisibility(): Promise<void> {
+    const merged: Record<string, Record<string, Visibility>> = {};
+    for (const [network, entries] of this.visibility) {
+      merged[network] = Object.fromEntries(entries);
+    }
+    await this.engineStore
+      ?.collection(COLLECTION)
+      .put("visibility", new TextEncoder().encode(JSON.stringify(merged)));
+  }
+
+  /** Reads the mint on-chain, marks unverified, persists; throws when the read fails. */
   async addToken(network: string, address: string): Promise<void> {
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
@@ -371,11 +751,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
         return;
       }
       const rpc = this.options.networks.solanaRpc(network);
-      const mint = obj(await rpc.call("getAccountInfo", [address, { encoding: "jsonParsed" }]));
-      const decimals = obj(obj(obj(mint?.["value"])?.["data"])?.["parsed"])?.["info"];
-      if (typeof obj(decimals)?.["decimals"] !== "number") {
+      const inspected = await inspectMints(rpc, [address]);
+      const facts = inspected.get(address);
+      if (facts === undefined || facts === "missing") {
         throw new TypeError(`${address} is not a readable SPL mint on ${network}`);
       }
+      this.mints.set(`${network}:${address}`, facts);
       await this.persistToken(network, address);
       return;
     }

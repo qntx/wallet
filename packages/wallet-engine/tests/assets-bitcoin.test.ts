@@ -117,6 +117,9 @@ const make = (
       return () => {};
     },
     logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
   });
 
 /** Per-template totals: taproot outputs are protected under the ord-postage rule → frozen. */
