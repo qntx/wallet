@@ -244,27 +244,21 @@ export const isTaprootAddress = (address: string, network: typeof BTC_MAINNET): 
   Address(network).decode(address).type === "tr";
 
 /**
- * The spendable subset of `utxos`: every output that cannot carry an inscription, plus any
- * protected outpoint (`txid:vout`) named in `spendProtected`. Naming an outpoint that is not among
- * `utxos` throws — it is not an unspent output of this account.
+ * The spendable subset of `utxos` an automatic selection may pick: every output except the
+ * user-frozen ones and those that may carry an inscription (taproot or at most 20 000 sats).
+ * Inscription protection is a derived property, separate from freezing — unfreezing never
+ * unprotects; a protected output is spendable only by naming it in `PrepareParams.inputs`.
  */
 export const selectableUtxos = <
   U extends { txid: string; vout: number; value: number; address: string },
 >(
   utxos: ReadonlyArray<U>,
   network: typeof BTC_MAINNET,
-  spendProtected: ReadonlyArray<string>,
+  frozen: ReadonlySet<string>,
 ): U[] => {
-  const chosen = new Set(spendProtected);
-  const held = new Set(utxos.map((u) => `${u.txid}:${String(u.vout)}`));
-  for (const outpoint of chosen) {
-    if (!held.has(outpoint)) {
-      throw new Error(`${outpoint} is not an unspent output of this account`);
-    }
-  }
   return utxos.filter(
     (u) =>
-      chosen.has(`${u.txid}:${String(u.vout)}`) ||
+      !frozen.has(`${u.txid}:${String(u.vout)}`) &&
       !mayCarryInscription(isTaprootAddress(u.address, network), u.value),
   );
 };
@@ -368,8 +362,9 @@ export class BitcoinChainAdapter {
     feePerByte: bigint,
     changeAddress: string,
     network: typeof BTC_MAINNET,
+    strategy: "default" | "all" = "default",
   ): { readonly psbt: Uint8Array; readonly inputs: ReadonlyArray<BtcInput> } {
-    const selection = selectUTXO([...inputs], [{ address: to, amount }], "default", {
+    const selection = selectUTXO([...inputs], [{ address: to, amount }], strategy, {
       feePerByte,
       changeAddress,
       bip69: true,

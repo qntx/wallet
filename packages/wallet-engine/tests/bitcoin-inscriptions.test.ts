@@ -1,9 +1,9 @@
 /**
  * Inscription/rune protection (ord's postage rule): every taproot output and every output at or
  * below 20_000 sat may carry an inscription, so it is shown as protected, excluded from wallet-send
- * coin selection unless named in `spendProtected`, and flagged in dApp PSBT risk. Assertions go
- * through the public surfaces — `readBitcoin`, the route, `assessBitcoinPsbts` — so this file
- * exercises the same code on the pre-policy implementation.
+ * coin selection unless named in `inputs`, and flagged in dApp PSBT risk. Assertions go through the
+ * public surfaces — `readBitcoin`, the route, `assessBitcoinPsbts` — so this file exercises the
+ * same code on the pre-policy implementation.
  */
 import { hex } from "@scure/base";
 import { HDKey } from "@scure/bip32";
@@ -213,14 +213,14 @@ const rig = (template: Template) => {
     ctx,
     route,
     inputTxids,
-    send: async (amount: bigint, spendProtected?: ReadonlyArray<string>) =>
+    send: async (amount: bigint, inputs?: ReadonlyArray<string>) =>
       routeSend(route, ctx(), {
         account: { kind: "hd", walletId: "w", groupIndex: 0, template },
         network: NET,
         to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
         amount,
         fee: "slow",
-        ...(spendProtected === undefined ? {} : { spendProtected }),
+        ...(inputs === undefined ? {} : { inputs }),
         verify: { kind: "password", password: "pw" },
       }),
     fund: (seed: number, value: number): string => {
@@ -247,13 +247,13 @@ describe("wallet sends never take inscription-risk UTXOs", () => {
     await expect(r.send(5000n)).rejects.toThrow("insufficient");
   });
 
-  it("a bip86 account cannot send without spendProtected — every taproot output is protected", async () => {
+  it("a bip86 account cannot send without naming inputs — every taproot output is protected", async () => {
     const r = rig("btc.bip86");
     r.fund(1, 50_000);
     await expect(r.send(10_000n)).rejects.toThrow("insufficient");
   });
 
-  it("a named protected outpoint is spent: spendProtected opts the bip86 coin in", async () => {
+  it("a named protected outpoint is spent: `inputs` opts the bip86 coin in", async () => {
     const r = rig("btc.bip86");
     const txid = r.fund(1, 50_000);
     await r.send(10_000n, [`${txid}:0`]);
@@ -265,7 +265,7 @@ describe("wallet sends never take inscription-risk UTXOs", () => {
     r.fund(1, 100_000);
     const unknown = `${TXID(99)}:0`;
     await expect(r.send(5000n, [unknown])).rejects.toThrow(
-      "is not an unspent output of this account",
+      `${unknown} is not a spendable output of this account`,
     );
   });
 });
@@ -286,17 +286,19 @@ describe("cpfp still spends the parent's own small outputs", () => {
 describe("dApp PSBT risk follows the same rule", () => {
   it("a 10_000-sat bip84 input signed ALL is an inscription danger", () => {
     expect(
-      assessBitcoinPsbts([{ value: 10_000, template: "btc.bip84", sigHash: "ALL" }]),
+      assessBitcoinPsbts([{ value: 10_000, template: "btc.bip84", sigHash: "ALL", frozen: false }]),
     ).toStrictEqual([{ code: "bitcoin-inscription-input", level: "danger" }]);
   });
 
   it("a bip86 input is a danger at any value — the ordinals account itself", () => {
     expect(
-      assessBitcoinPsbts([{ value: 100_000, template: "btc.bip86", sigHash: "ALL" }]),
+      assessBitcoinPsbts([
+        { value: 100_000, template: "btc.bip86", sigHash: "ALL", frozen: false },
+      ]),
     ).toStrictEqual([{ code: "bitcoin-inscription-input", level: "danger" }]);
     expect(
       assessBitcoinPsbts([
-        { value: 1_000_000, template: "btc.bip86", sigHash: "SINGLE|ANYONECANPAY" },
+        { value: 1_000_000, template: "btc.bip86", sigHash: "SINGLE|ANYONECANPAY", frozen: false },
       ]),
     ).toStrictEqual([
       { code: "bitcoin-sighash-single", level: "danger" },
@@ -306,7 +308,13 @@ describe("dApp PSBT risk follows the same rule", () => {
 
   it("an ordinary bip84 input raises nothing", () => {
     expect(
-      assessBitcoinPsbts([{ value: 30_000, template: "btc.bip84", sigHash: "ALL" }]),
+      assessBitcoinPsbts([{ value: 30_000, template: "btc.bip84", sigHash: "ALL", frozen: false }]),
     ).toStrictEqual([]);
+  });
+
+  it("a frozen input is a danger finding", () => {
+    expect(
+      assessBitcoinPsbts([{ value: 30_000, template: "btc.bip84", sigHash: "ALL", frozen: true }]),
+    ).toStrictEqual([{ code: "bitcoin-frozen-input", level: "danger" }]);
   });
 });

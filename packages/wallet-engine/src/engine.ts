@@ -450,7 +450,19 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return { kind: "solana.message" as const, signature: result.signature };
     },
     bitcoinPrepare: async (account, network, psbts) =>
-      prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
+      prepareDappPsbts(
+        chains(options.wallet),
+        networks.esplora(network),
+        account,
+        network,
+        psbts,
+        new Set(
+          transactions.frozenUtxos(
+            { walletId: account.walletId, groupIndex: account.groupIndex },
+            network,
+          ),
+        ),
+      ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids } = await signDappPsbts(
         chains(options.wallet),

@@ -41,10 +41,7 @@ const mutableCopy = (v: unknown): Record<string, unknown> => {
 };
 
 /** A recorded input list with the first entry's `value` rewritten. */
-const firstInputValued = (
-  v: unknown,
-  value: number,
-): ReadonlyArray<Record<string, unknown>> => {
+const firstInputValued = (v: unknown, value: number): ReadonlyArray<Record<string, unknown>> => {
   const inputs = Array.isArray(v) ? v.map(mutableCopy) : [];
   const head = inputs.at(0);
   if (head === undefined) {
@@ -592,13 +589,24 @@ const dappPsbt = (utxo: FakeUtxo, script: Uint8Array): Uint8Array => {
   return tx.toPSBT(0);
 };
 
-const prepareDapp = async (w: BtcWorld, utxo: FakeUtxo): Promise<PreparedBitcoinPsbt> => {
-  const [prepared] = await prepareDappPsbts(w.apis, w.es, { walletId: "w", groupIndex: 0 }, NET, [
-    {
-      psbt: dappPsbt(utxo, scriptPubKey(OUR_ADDR, NETWORK)),
-      sign: [{ index: 0, sigHash: "ALL", template: "btc.bip84" }],
-    },
-  ]);
+const prepareDapp = async (
+  w: BtcWorld,
+  utxo: FakeUtxo,
+  frozen: ReadonlySet<string> = new Set(),
+): Promise<PreparedBitcoinPsbt> => {
+  const [prepared] = await prepareDappPsbts(
+    w.apis,
+    w.es,
+    { walletId: "w", groupIndex: 0 },
+    NET,
+    [
+      {
+        psbt: dappPsbt(utxo, scriptPubKey(OUR_ADDR, NETWORK)),
+        sign: [{ index: 0, sigHash: "ALL", template: "btc.bip84" }],
+      },
+    ],
+    frozen,
+  );
   if (prepared === undefined) {
     throw new Error("prepareDappPsbts returned nothing");
   }
@@ -627,6 +635,16 @@ const broadcastRefusingCall = (
 };
 
 describe("a dApp-signed Bitcoin broadcast", () => {
+  it("a frozen outpoint is flagged on the prepared input", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    await w.boot();
+    const prepared = await prepareDapp(w, u, new Set([`${u.txid}:0`]));
+    expect(prepared.inputs.map((i) => i.frozen)).toStrictEqual([true]);
+    const unfrozen = await prepareDapp(w, u);
+    expect(unfrozen.inputs.map((i) => i.frozen)).toStrictEqual([false]);
+  });
+
   it("an accept-then-502 returns the local txid and tracking confirms it", async () => {
     const w = world();
     const u = w.fund(1, 50_000);

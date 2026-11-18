@@ -212,7 +212,7 @@ async function engineRig() {
     } as unknown as SparkController,
     nostrSign: async (_ref, event): Promise<Event> => nostrSigner.signEvent(event),
     bitcoinPrepare: async (account, network, psbts) =>
-      prepareDappPsbts(apis, fakeEsplora, account, network, psbts),
+      prepareDappPsbts(apis, fakeEsplora, account, network, psbts, new Set<string>()),
     bitcoinSignPsbts: async (account, network, prepared, send, verify) => {
       const { signedPsbts, txids } = await signDappPsbts(
         apis,

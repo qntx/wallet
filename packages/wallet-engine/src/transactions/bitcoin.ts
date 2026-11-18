@@ -13,6 +13,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import {
   BitcoinScanStore,
+  BtcFrozenStore,
   BtcUtxoStore,
   scanChain,
   scanUtxos,
@@ -67,7 +68,9 @@ type SpendContext = {
   readonly changeAddr: string | undefined;
   /** Unused addresses of the template's own change chain — the own-scripts set and bump change. */
   readonly changeAddresses: ReadonlyArray<string>;
-  /** The selectable outpoints of a fresh scan (confirmed, or the wallet's own unconfirmed change). */
+  /** The scan's account outputs — confirmed, or the wallet's own unconfirmed change. */
+  readonly candidates: ReadonlyArray<BtcUtxo>;
+  /** `candidates` minus user-frozen and inscription-protected outpoints — the automatic picks. */
   readonly spendable: ReadonlyArray<BtcUtxo>;
   readonly pathOf: (u: { readonly address: string }) => number[];
   readonly pubkeyOf: (u: { readonly address: string }) => Uint8Array;
@@ -241,7 +244,7 @@ const accountContext = async (
   ctx: RouteContext,
   account: { walletId: string; groupIndex: number; template: BitcoinAccountTemplate },
   network: string,
-  spendProtected: ReadonlyArray<string>,
+  frozen: ReadonlySet<string>,
 ): Promise<SpendContext> => {
   const apis = ctx.options.chains ?? chains(ctx.options.wallet);
   const es = ctx.options.networks.esplora(network);
@@ -316,7 +319,8 @@ const accountContext = async (
     fp,
     changeAddr: changeChain.find((a) => !a.used)?.address,
     changeAddresses: changeChain.filter((a) => !a.used).map((a) => a.address),
-    spendable: selectableUtxos(utxos, net.params, spendProtected),
+    candidates: utxos,
+    spendable: selectableUtxos(utxos, net.params, frozen),
     pathOf: (u) => {
       const a = byAddr.get(u.address);
       return a === undefined ? [] : [...base, a.chain, a.index];
@@ -336,6 +340,7 @@ const accountContext = async (
 export const createBitcoinRoute = (): BitcoinRoute => {
   const bitcoin = new BitcoinChainAdapter();
   const bitcoinUtxos = new BtcUtxoStore();
+  const bitcoinFrozen = new BtcFrozenStore();
   /**
    * Outputs held by a request that has not been broadcast yet ("txid:vout" → request id). Memory
    * only: the request queue is not persisted, so a crash must not leave anything locked. The
@@ -429,7 +434,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     requestId: string,
     sparkDeposit?: SparkDepositTag,
   ): Promise<PreparedRequest> => {
-    const { account, network, to, amount, fee, spendProtected } = params;
+    const { account, network, to, amount, fee, inputs: named } = params;
     if (account.kind !== "hd") {
       throw new ChainError("unsupported", "imported keys cannot sign bitcoin transactions");
     }
@@ -440,20 +445,39 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       (["btc.bip44", "btc.bip49", "btc.bip84", "btc.bip86"] as const).find(
         (x) => x === account.template,
       ) ?? "btc.bip84";
+    const accountKey = `${account.walletId}:${String(account.groupIndex)}:${network}`;
+    const frozen = new Set(bitcoinFrozen.frozenOf(accountKey));
     const built = await accountContext(
       ctx,
       { walletId: account.walletId, groupIndex: account.groupIndex, template },
       network,
-      spendProtected ?? [],
+      frozen,
     );
+    // Named inputs are the exact coins this send spends — each must be an account candidate,
+    // unfrozen and unheld. Naming an inscription-protected coin is the explicit opt-in that
+    // automatic selection never grants.
+    const source =
+      named === undefined
+        ? built.spendable
+        : [...new Set(named)].map((outpoint) => {
+            const utxo = built.candidates.find((u) => `${u.txid}:${String(u.vout)}` === outpoint);
+            if (utxo === undefined) {
+              throw new Error(`${outpoint} is not a spendable output of this account`);
+            }
+            if (frozen.has(outpoint)) {
+              throw new Error(`${outpoint} is frozen`);
+            }
+            if (isHeld(outpoint)) {
+              throw new Error(`${outpoint} is held by another transaction`);
+            }
+            return utxo;
+          });
     const net = bitcoinNetwork(network);
     const rawTxes =
-      template === "btc.bip44"
-        ? await fetchRawTxes(es, built.spendable)
-        : new Map<string, Uint8Array>();
+      template === "btc.bip44" ? await fetchRawTxes(es, source) : new Map<string, Uint8Array>();
     const rawTxOf = (u: { readonly txid: string }): Uint8Array | undefined => rawTxes.get(u.txid);
     const inputs = bitcoin.toInputs(
-      built.spendable,
+      source,
       built.fp,
       built.pathOf,
       built.pubkeyOf,
@@ -504,11 +528,12 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       BigInt(rate),
       changeAddr,
       net.params,
+      named === undefined ? "default" : "all",
     );
     const selectedKeys = new Set(
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
-    const selectedUtxos = built.spendable.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+    const selectedUtxos = source.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
     // Reserve before the first post-selection await: a concurrent prepare must not see them.
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
@@ -792,7 +817,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       groupIndex: btc.groupIndex,
       template: btc.template,
     };
-    const built = await accountContext(ctx, account, old.network, []);
+    const frozen = new Set(
+      bitcoinFrozen.frozenOf(`${old.account}:${String(btc.groupIndex)}:${old.network}`),
+    );
+    const built = await accountContext(ctx, account, old.network, frozen);
     const tiers = await feeTiers(es);
     const tierQuote = tiers.find((t) => t.tier === btc.tier) ?? tiers[1];
     let rate = tierQuote === undefined ? 1 : tierQuote.satPerByte;
@@ -842,6 +870,8 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const payeeSum = payee.reduce((a, o) => a + Number(o.amount), 0);
     const usedKeys = new Set(btc.inputs.map((i) => `${i.txid}:${i.vout}`));
     // Confirmed extras only: BIP-125 rule 2 forbids a replacement adding new unconfirmed inputs.
+    // Freezes on the original's own inputs are ignored — they are already spent by it — and
+    // `spendable` already excludes the account's frozen outpoints.
     const spare = built.spendable.filter(
       (u) => u.height > 0 && !usedKeys.has(`${u.txid}:${u.vout}`) && !isHeld(`${u.txid}:${u.vout}`),
     );
@@ -989,12 +1019,19 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       groupIndex: btc.groupIndex,
       template: childTemplate,
     };
-    const built = await accountContext(ctx, account, old.network, []);
+    const frozen = new Set(
+      bitcoinFrozen.frozenOf(`${old.account}:${String(btc.groupIndex)}:${old.network}`),
+    );
+    const built = await accountContext(ctx, account, old.network, frozen);
     const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
     if (own.length === 0) {
       throw new Error("parent has no own outputs to bump");
     }
-    const parentKeys = own.map((o) => `${old.hash ?? ""}:${o.vout}`);
+    const bumpable = own.filter((o) => !frozen.has(`${old.hash ?? ""}:${String(o.vout)}`));
+    if (bumpable.length === 0) {
+      throw new Error("the parent's own outputs are frozen");
+    }
+    const parentKeys = bumpable.map((o) => `${old.hash ?? ""}:${o.vout}`);
     if (parentKeys.some((key) => isHeld(key))) {
       throw new Error("the parent's outputs are already reserved by another request");
     }
@@ -1029,7 +1066,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         : await fetchRawTxes(es, [{ txid: parentTxid }]);
     // The child spends the parent's own unconfirmed outputs — that is what CPFP is for.
     const childInputs = bitcoin.toInputs(
-      own.map((o) => ({
+      bumpable.map((o) => ({
         txid: parentTxid,
         vout: o.vout,
         value: o.value,
@@ -1049,7 +1086,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       throw new Error("no unused change address");
     }
     const net = bitcoinNetwork(old.network);
-    const inTotal = own.reduce((a, o) => a + o.value, 0);
+    const inTotal = bumpable.reduce((a, o) => a + o.value, 0);
     const probe = bitcoin.buildExactPsbt(
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal) }],
@@ -1067,7 +1104,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       childTemplate,
     );
     const record = {
-      inputs: own.map((o) => ({
+      inputs: bumpable.map((o) => ({
         txid: old.hash ?? "",
         vout: o.vout,
         value: o.value,
@@ -1169,10 +1206,17 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     prepareReplace,
     prepareCpfp,
     submitDapp,
-    unlock: async (store) => bitcoinUtxos.unlock(store),
+    setUtxosFrozen: async (accountKey, outpoints, frozen) =>
+      bitcoinFrozen.setFrozen(accountKey, outpoints, frozen),
+    frozenUtxos: (accountKey) => bitcoinFrozen.frozenOf(accountKey),
+    unlock: async (store) => {
+      await bitcoinUtxos.unlock(store);
+      await bitcoinFrozen.unlock(store);
+    },
     lock: () => {
       reserved.clear();
       bitcoinUtxos.lockStore();
+      bitcoinFrozen.lockStore();
     },
   };
 };
@@ -1221,4 +1265,16 @@ export type BitcoinRoute = {
       readonly result: SignResult;
     },
   ) => Promise<string>;
+  /**
+   * Freeze or unfreeze outpoints (`txid:vout`) for the account key `walletId:groupIndex:network`. A
+   * freeze is intent, not utxo state — the outpoint need not exist — and it never lifts the derived
+   * inscription protection.
+   */
+  readonly setUtxosFrozen: (
+    accountKey: string,
+    outpoints: ReadonlyArray<string>,
+    frozen: boolean,
+  ) => Promise<void>;
+  /** The outpoints the account froze. */
+  readonly frozenUtxos: (accountKey: string) => ReadonlyArray<string>;
 };

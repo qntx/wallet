@@ -82,6 +82,7 @@ export const prepareDappPsbts = async (
   group: BitcoinGroup,
   network: string,
   psbts: ReadonlyArray<BitcoinPsbtInput>,
+  frozen: ReadonlySet<string>,
 ): Promise<ReadonlyArray<PreparedBitcoinPsbt>> => {
   const net = bitcoinNetwork(network);
   const signing = new Set(psbts.flatMap((p) => p.sign.map((s) => s.template)));
@@ -161,6 +162,7 @@ export const prepareDappPsbts = async (
         value: number;
         sigHash: BitcoinSigHash;
         template: BitcoinAccount["template"];
+        frozen: boolean;
       }> = [];
       // Validate every sign entry first; the previous transactions are then fetched in one call.
       const signed = entry.sign.map(({ index, sigHash, template }) => {
@@ -220,7 +222,13 @@ export const prepareDappPsbts = async (
           },
           true,
         );
-        inputs.push({ index, value: Number(prev.amount), sigHash, template });
+        inputs.push({
+          index,
+          value: Number(prev.amount),
+          sigHash,
+          template,
+          frozen: frozen.has(`${txidHex}:${String(vout)}`),
+        });
       }
       // Outputs to the group's own scripts are bound as change: the kernel prompt and the
       // engine display agree they are not outflows.

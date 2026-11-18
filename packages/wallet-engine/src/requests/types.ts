@@ -77,5 +77,7 @@ export type PreparedBitcoinPsbt = {
     readonly value: number;
     readonly sigHash: BitcoinSigHash;
     readonly template: BitcoinAccount["template"];
+    /** The user froze this outpoint — signing it is a danger finding. */
+    readonly frozen: boolean;
   }>;
 };

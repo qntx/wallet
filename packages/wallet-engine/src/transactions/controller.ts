@@ -406,6 +406,40 @@ export class TransactionController extends Controller<TransactionControllerState
   }
 
   /**
+   * Freeze or unfreeze bitcoin outpoints (`txid:vout`) for one account on one `network`. Freezing
+   * is intent, not utxo state — the outpoint need not be unspent — and it never lifts the derived
+   * inscription protection.
+   */
+  async setUtxosFrozen(
+    account: { readonly walletId: string; readonly groupIndex: number },
+    network: string,
+    outpoints: ReadonlyArray<string>,
+    frozen: boolean,
+  ): Promise<void> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    await this.bitcoinRoute.setUtxosFrozen(
+      `${account.walletId}:${String(account.groupIndex)}:${network}`,
+      outpoints,
+      frozen,
+    );
+  }
+
+  /** The outpoints the account froze on `network`. */
+  frozenUtxos(
+    account: { readonly walletId: string; readonly groupIndex: number },
+    network: string,
+  ): ReadonlyArray<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return this.bitcoinRoute.frozenUtxos(
+      `${account.walletId}:${String(account.groupIndex)}:${network}`,
+    );
+  }
+
+  /**
    * Internal entry for the dApp `signTransaction` send path: a dApp-built transaction has no build
    * record; it joins tracking under its signed bytes like a wallet send.
    */

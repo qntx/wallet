@@ -33,7 +33,7 @@ const utxo = (txid: string, vout: number, value: number): BtcUtxo => ({
 describe("bitcoin psbt construction", () => {
   it("never selects a 546- or 330-sat UTXO even when it would fund the send", () => {
     const utxos = [utxo(TXID(1), 0, 546), utxo(TXID(2), 0, 330), utxo(TXID(3), 0, 100_000)];
-    const spendable = selectableUtxos(utxos, NETWORK, []);
+    const spendable = selectableUtxos(utxos, NETWORK, new Set());
     const inputs = adapter.toInputs(
       spendable,
       0xdeadbeef,
