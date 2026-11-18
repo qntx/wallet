@@ -13,11 +13,13 @@
 
 namespace margelo::nitro::qntxwallet {
 
-// The only Nitro-registered object: drives one kernel runtime. `start`
-// verifies the embedded bytecode's SHA-256 before loading; `post` enforces the
-// 1 MiB frame cap (the inbound queue cap lives inside KernelRuntime::post and
-// reports through the same integrity exit); `lock` destroys the runtime. Exit
-// reasons reach JS through the `onExit` listener, at most once.
+// The only Nitro-registered object: drives one kernel runtime. `start` loads
+// the kernel bytecode compiled into the signed app binary as a constexpr array
+// (the build-time manifest check only catches a stale artifact); `post`
+// enforces the 1 MiB frame cap (the inbound queue cap lives inside
+// KernelRuntime::post and reports through the same integrity exit); `lock`
+// destroys the runtime. Exit reasons reach JS through the `onExit` listener,
+// at most once.
 class HybridKernelHost final : public HybridKernelHostSpec,
                                public qntx::LifecycleLockTarget {
  public:

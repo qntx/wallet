@@ -469,7 +469,6 @@ void KernelRuntime::Impl::teardown() {
   // Drop every jsi value before the runtime itself.
   globals->intrinsics.reset();
   globals->messageHandler.reset();
-  globals->integrityHandler.reset();
   for (const auto& call : globals->pending) {
     call->done.reset();
   }

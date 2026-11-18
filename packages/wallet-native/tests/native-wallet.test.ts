@@ -141,7 +141,6 @@ type FakeHost = KernelHostLike & {
   readonly locked: () => boolean;
   readonly backgroundLock: () => number | undefined;
   readonly started: () => number[];
-  readonly _integrity: () => void;
   readonly _exit: (reason: KernelExitReason) => void;
 };
 
@@ -149,7 +148,6 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   let hostCb: ((f: ArrayBuffer) => void) | undefined;
   let kernelCb: ((f: ArrayBuffer) => void) | undefined;
   let exitCb: ((r: KernelExitReason) => void) | undefined;
-  let integCb: (() => void) | undefined;
   let locked = false;
   let backgroundLock: number | undefined;
   const starts: number[] = [];
@@ -161,9 +159,6 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     },
     onMessage: (cb) => {
       kernelCb = cb;
-    },
-    onIntegrityViolation: (cb) => {
-      integCb = cb;
     },
   };
   const host = {
@@ -194,14 +189,12 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     locked: () => locked,
     backgroundLock: () => backgroundLock,
     started: () => [...starts],
-    _integrity: () => integCb?.(),
     _exit: (reason: KernelExitReason) => exitCb?.(reason),
   } as KernelHostLike & {
     inbound: (f: ArrayBuffer) => void;
     locked: () => boolean;
     backgroundLock: () => number | undefined;
     started: () => number[];
-    _integrity: () => void;
     _exit: (reason: KernelExitReason) => void;
   };
   return { host, pipe };

@@ -11,8 +11,6 @@ import { decodeFrame, encodeFrame } from "../src/cbor.ts";
 export type KernelFramePipe = {
   readonly post: (frame: ArrayBuffer) => void;
   readonly onMessage: (cb: (frame: ArrayBuffer) => void) => void;
-  /** Called when a frame fails decode — the entry maps it to an `integrity` exit. */
-  readonly onIntegrityViolation: (cb: () => void) => void;
 };
 
 /**
@@ -26,12 +24,12 @@ type Port = {
 
 export function createKernelPort(pipe: KernelFramePipe): Port {
   pipe.onMessage((frame) => {
+    // An undecodable frame is a transport violation, not a message: rethrowing out of the
+    // handler crashes the runtime (deliver → task error → onError) instead of silently
+    // dropping it and serving whatever a confused peer sends next.
     let message: ProtocolValue;
     try {
       message = decodeFrame(frame);
-    } catch {
-      // W3's kernel-entry registers onIntegrityViolation; the transport itself only stops dispatch.
-      return;
     } finally {
       // The frame's bytes are decode-copied or dead either way — never leave the
       // encoded form resident past dispatch.

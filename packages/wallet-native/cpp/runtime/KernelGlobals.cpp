@@ -431,8 +431,7 @@ void installKernelGlobals(
   installArgon2id(rt, qntx, state);
 
   // __qntx.frames — the W2b injection-table shape over the same plumbing:
-  // post, onMessage, and onIntegrityViolation (the host fires that handler
-  // when it refuses a frame on integrity grounds).
+  // post and onMessage.
   auto frames = jsi::Object(rt);
   frames.setProperty(
       rt,
@@ -454,16 +453,6 @@ void installKernelGlobals(
           throw jsi::JSError(rt, "__qntx.frames.onMessage expects a function");
         }
         state->messageHandler = args[0].asObject(rt).asFunction(rt);
-        return jsi::Value::undefined();
-      }));
-  frames.setProperty(
-      rt,
-      "onIntegrityViolation",
-      hostFn(rt, "frames.onIntegrityViolation", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
-        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
-          throw jsi::JSError(rt, "__qntx.frames.onIntegrityViolation expects a function");
-        }
-        state->integrityHandler = args[0].asObject(rt).asFunction(rt);
         return jsi::Value::undefined();
       }));
   intrinsics->freeze.call(rt, jsi::Value(rt, frames));

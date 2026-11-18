@@ -372,10 +372,20 @@ export async function main(): Promise<void> {
       clear: () => undefined,
     },
     passkey: { create: () => undefined, get: () => undefined },
-    // The native kernel entry binds backends.nostr eagerly at platform
-    // construction — the smoke never calls it, so only the ABI pin is real.
+    // The native kernel entry binds backends.nostr and backends.spark eagerly
+    // at platform construction — the smoke never calls either, so only the ABI
+    // pins and call shapes are real.
     backends: {
       nostr: { abiVersion: 2 },
+      spark: {
+        abiVersion: 1,
+        frostCommit: () => new Uint8Array(),
+        frostSign: () => new Uint8Array(),
+        frostAggregate: () => new Uint8Array(),
+        eciesEncrypt: () => new Uint8Array(),
+        eciesDecrypt: () => new Uint8Array(),
+        splitSecretWithProofs: () => new Uint8Array(),
+      },
     },
     frames: {
       post: (frame: ArrayBuffer) => {

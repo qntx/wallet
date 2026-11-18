@@ -1,10 +1,9 @@
 /**
- * Every copy of a channel frame is wiped once its bytes are consumed: the JS
- * transport and host port wipe the encoded frame and the transfer list on
- * every path — success or a throwing post — and wipe the inbound frame after
- * decode. cborg's own `encode` must never be on the path: its module-level
- * writer keeps the first chunk alive across calls, so the frame would stay
- * resident in library state.
+ * Every copy of a channel frame is wiped once its bytes are consumed: the JS transport and host
+ * port wipe the encoded frame and the transfer list on every path — success or a throwing post —
+ * and wipe the inbound frame after decode. cborg's own `encode` must never be on the path: its
+ * module-level writer keeps the first chunk alive across calls, so the frame would stay resident in
+ * library state.
  */
 import { encode } from "cborg";
 import type * as Cborg from "cborg";
@@ -48,7 +47,6 @@ const pipe = (impl: {
 }) => ({
   post: impl.post ?? (() => undefined),
   onMessage: impl.onMessage ?? (() => undefined),
-  onIntegrityViolation: () => undefined,
 });
 
 describe("encodeFrame", () => {
@@ -113,9 +111,9 @@ describe("kernel transport frame hygiene", () => {
       }),
     );
     const secret = new Uint8Array([1, 2, 3]);
-    expect(() =>
-      port.post({ v: 1, id: 1, result: new Uint8Array([9]) }, [secret.buffer]),
-    ).toThrow("pipe down");
+    expect(() => port.post({ v: 1, id: 1, result: new Uint8Array([9]) }, [secret.buffer])).toThrow(
+      "pipe down",
+    );
     expect(captured).toBeDefined();
     expect(isZeroed(bytesOf(captured))).toBe(true);
     expect(isZeroed(secret)).toBe(true);
@@ -141,6 +139,30 @@ describe("kernel transport frame hygiene", () => {
     expect(received).toStrictEqual({ v: 1, id: 1, result: { key: new Uint8Array([9, 8, 7]) } });
   });
 
+  it("rethrows out of the handler on an undecodable frame and still wipes it", () => {
+    let deliver = (_frame: ArrayBuffer): void => {
+      throw new Error("onMessage not registered");
+    };
+    const port = createKernelPort(
+      pipe({
+        onMessage: (cb) => {
+          deliver = cb;
+        },
+      }),
+    );
+    let received: unknown;
+    port.listen((message) => {
+      received = message;
+    });
+    const frame = Uint8Array.from([0xff, 0xff, 0xfe]).buffer;
+    // The throw is the crash path: the C++ deliver turns a task exception into onError.
+    expect(() => {
+      deliver(frame);
+    }).toThrow("cbor");
+    expect(isZeroed(new Uint8Array(frame))).toBe(true);
+    expect(received).toBeUndefined();
+  });
+
   it("leaves no frame bytes in buffers cborg owns or filled", () => {
     cborgSeen.buffers.length = 0;
     const port = createKernelPort(pipe({}));
@@ -153,7 +175,10 @@ describe("kernel transport frame hygiene", () => {
 });
 
 describe("host port frame hygiene", () => {
-  const host = (out: { frame?: ArrayBuffer; inbound?: (f: ArrayBuffer) => void }): KernelHostLike => ({
+  const host = (out: {
+    frame?: ArrayBuffer;
+    inbound?: (f: ArrayBuffer) => void;
+  }): KernelHostLike => ({
     start: () => undefined,
     post: (frame) => {
       out.frame = frame;

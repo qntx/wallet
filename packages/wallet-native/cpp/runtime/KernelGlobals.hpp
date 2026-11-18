@@ -78,11 +78,6 @@ struct KernelGlobalsState {
   // Kernel thread only.
   std::optional<facebook::jsi::Function> messageHandler;
 
-  // Kernel-side handler the host calls when it refuses an inbound frame on
-  // integrity grounds (oversize, queue full); installed through
-  // __qntx.frames.onIntegrityViolation. Kernel thread only.
-  std::optional<facebook::jsi::Function> integrityHandler;
-
   // Dismiss in-flight system prompts (keystore, passkey); each installer adds
   // one and teardown runs them all. Kernel thread only.
   std::vector<std::function<void()>> cancelCeremonies;

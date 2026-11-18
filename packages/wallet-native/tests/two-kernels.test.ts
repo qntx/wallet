@@ -31,8 +31,7 @@ const AUTOLOCK: AutoLockPolicy = { platform: "native", backgroundSeconds: 60 };
 
 const M1 =
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-const M2 =
-  "legal winner thank year wave sausage worth useful legal winner thank yellow";
+const M2 = "legal winner thank year wave sausage worth useful legal winner thank yellow";
 
 /** __qntx.keystore stand-in — identical semantics to the one in tests/native-wallet.test.ts. */
 function fakeNativeKeystore() {
@@ -140,7 +139,6 @@ type FakeHost = KernelHostLike & {
   readonly locked: () => boolean;
   readonly backgroundLock: () => number | undefined;
   readonly started: () => number[];
-  readonly _integrity: () => void;
   readonly _exit: (reason: KernelExitReason) => void;
 };
 
@@ -148,7 +146,6 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   let hostCb: ((f: ArrayBuffer) => void) | undefined;
   let kernelCb: ((f: ArrayBuffer) => void) | undefined;
   let exitCb: ((r: KernelExitReason) => void) | undefined;
-  let integCb: (() => void) | undefined;
   let locked = false;
   let backgroundLock: number | undefined;
   const starts: number[] = [];
@@ -160,9 +157,6 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     },
     onMessage: (cb) => {
       kernelCb = cb;
-    },
-    onIntegrityViolation: (cb) => {
-      integCb = cb;
     },
   };
   const host = {
@@ -193,14 +187,12 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     locked: () => locked,
     backgroundLock: () => backgroundLock,
     started: () => [...starts],
-    _integrity: () => integCb?.(),
     _exit: (reason: KernelExitReason) => exitCb?.(reason),
   } as KernelHostLike & {
     inbound: (f: ArrayBuffer) => void;
     locked: () => boolean;
     backgroundLock: () => number | undefined;
     started: () => number[];
-    _integrity: () => void;
     _exit: (reason: KernelExitReason) => void;
   };
   return { host, pipe };
@@ -265,9 +257,9 @@ function platform(
 
 /**
  * One shared byte holder = one vault.cbor file. Each kernel runtime gets its own createFileStore
- * view over it — the exact arrangement the native side has when two KernelHost hybrid objects
- * exist in one app (or the file is shared across processes). The `replace` fake is the CAS the
- * C++ primitive provides under the vault lock.
+ * view over it — the exact arrangement the native side has when two KernelHost hybrid objects exist
+ * in one app (or the file is shared across processes). The `replace` fake is the CAS the C++
+ * primitive provides under the vault lock.
  */
 const fileStore = (bytes: { value: Uint8Array | undefined }) =>
   createFileStore({

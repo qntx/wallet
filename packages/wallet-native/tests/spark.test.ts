@@ -91,3 +91,21 @@ describe("bindNativeSpark", () => {
     );
   });
 });
+
+describe("kernel-entry", () => {
+  it("refuses startup on a spark ABI mismatch", async () => {
+    // The entry binds the native spark at module scope, before startKernel — a stubbed
+    // __qntx with a wrong abiVersion makes the module evaluation itself reject, which is
+    // how the runtime reports a failed kernel start.
+    (globalThis as { __qntx?: unknown }).__qntx = {
+      backends: { spark: { abiVersion: SPARK_ABI_VERSION + 1 } },
+    };
+    try {
+      await expect(import("../kernel/kernel-entry.ts")).rejects.toThrow(
+        expect.objectContaining({ code: "integrity" }) as Error,
+      );
+    } finally {
+      delete (globalThis as { __qntx?: unknown }).__qntx;
+    }
+  });
+});
