@@ -61,6 +61,18 @@ The list is derived data: entries are normalized and truncated to 8-byte hashes,
 lists are not redistributed. Attribution: phishing data from MetaMask eth-phishing-detect and
 polkadot-js/phishing.
 
+## Observability
+
+All log lines are JSON. Besides the per-request line, the forwarder logs
+`{"event":"upstream-failure","provider","upstream","reason"}` per failed attempt (reason:
+`status-<n>`, `malformed`, `auth`, `timeout`, `breaker-open`, `rejected`, `transport`),
+`{"event":"breaker","provider","upstream","state"}` on every open/half-open/closed transition, and
+`{"event":"all-providers-failed","providers":[…]}` once when every provider of a route is down —
+the alert condition. `mapError` logs `{"event":"internal-error","name"}` (the error class name
+only) for unexpected 500s. Log lines never carry params, bodies, addresses, client ids, IPs, error
+messages or upstream bodies. Alerting is configured on Workers Logs queries against these events;
+there is no alerting code in the worker.
+
 ## Layering
 
 `src/` imports exactly one workspace package: `@qntx/wallet-engine/gateway/contract` (schemas, the

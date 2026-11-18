@@ -26,12 +26,13 @@ export function createGateway(
   options: GatewayOptions,
 ): Hono<{ Variables: ClientIdVariables & RateLimitVariables }> {
   const served = indexNetworks(options.networks, options.auth);
-  const forwarder = createForwarder();
+  const log = options.log ?? ((line) => console.log(line));
+  const forwarder = createForwarder(log);
   const deps = { fetch: options.fetch, forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);
 
   const app = new Hono<{ Variables: ClientIdVariables & RateLimitVariables }>();
-  app.use(requestLog(options.log ?? ((line) => console.log(line))));
+  app.use(requestLog(log));
   app.use(
     cors({
       origin: (origin) => (allowedOrigins.has(origin) ? origin : null),
@@ -57,7 +58,7 @@ export function createGateway(
     }),
   );
   app.route("/", riskRoutes(options.risk));
-  app.onError(mapError);
+  app.onError(mapError(log));
   app.notFound(notFound);
   return app;
 }

@@ -1,6 +1,7 @@
 import {
   BrokenCircuitError,
   ConsecutiveBreaker,
+  TaskCancelledError,
   TimeoutStrategy,
   circuitBreaker,
   handleWhen,
@@ -61,16 +62,41 @@ export type Forwarder = {
   ) => Promise<Forwarded<T>>;
 };
 
-/** Policies are kept per provider id for the life of the isolate, so breaker state accumulates. */
-export function createForwarder(): Forwarder {
+/**
+ * The failure class of one upstream attempt: a provider-owned reason, a timeout, an open breaker, a
+ * request-caused rejection, or a transport error. Logged, never returned to the caller.
+ */
+const failureReason = (error: unknown): string => {
+  if (error instanceof ProviderFailure) {
+    return error.reason;
+  }
+  if (error instanceof TaskCancelledError) {
+    return "timeout";
+  }
+  if (error instanceof BrokenCircuitError) {
+    return "breaker-open";
+  }
+  if (error instanceof GatewayHttpError) {
+    return "rejected";
+  }
+  return "transport";
+};
+
+/**
+ * Policies are kept per provider id for the life of the isolate, so breaker state accumulates.
+ * `log` receives one JSON line per failed attempt, per breaker transition, and once when every
+ * provider of a run fails — observability for attacks, quota exhaustion and upstream outages.
+ */
+export function createForwarder(log: (line: string) => void): Forwarder {
   const policies = new Map<string, ReturnType<typeof makePolicy>>();
-  const policyFor = (id: string): ReturnType<typeof makePolicy> => {
-    const existing = policies.get(id);
+  const policyFor = (provider: ResolvedProvider): ReturnType<typeof makePolicy> => {
+    const key = `${provider.id}|${provider.url}`;
+    const existing = policies.get(key);
     if (existing !== undefined) {
       return existing;
     }
-    const created = makePolicy();
-    policies.set(id, created);
+    const created = makePolicy(log, provider);
+    policies.set(key, created);
     return created;
   };
 
@@ -83,14 +109,28 @@ export function createForwarder(): Forwarder {
       const from = async (index: number): Promise<Forwarded<T>> => {
         const provider = providers[index];
         if (provider === undefined) {
+          log(
+            JSON.stringify({
+              event: "all-providers-failed",
+              providers: providers.map((p) => p.id),
+            }),
+          );
           throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
         }
         try {
-          const value = await policyFor(`${provider.id}|${provider.url}`).execute(
-            async ({ signal }) => attempt(provider, signal),
+          const value = await policyFor(provider).execute(async ({ signal }) =>
+            attempt(provider, signal),
           );
           return { value, providerId: provider.id };
         } catch (error) {
+          log(
+            JSON.stringify({
+              event: "upstream-failure",
+              provider: provider.id,
+              upstream: provider.url,
+              reason: failureReason(error),
+            }),
+          );
           if (error instanceof GatewayHttpError) {
             throw error;
           }
@@ -110,15 +150,28 @@ export function createForwarder(): Forwarder {
   };
 }
 
-function makePolicy() {
+function makePolicy(log: (line: string) => void, provider: ResolvedProvider) {
+  const breaker = circuitBreaker(
+    handleWhen((error) => !(error instanceof GatewayHttpError)),
+    {
+      halfOpenAfter: BREAKER_HALF_OPEN_MS,
+      breaker: new ConsecutiveBreaker(BREAKER_FAILURES),
+    },
+  );
+  const transition = (state: string) => () =>
+    log(
+      JSON.stringify({
+        event: "breaker",
+        provider: provider.id,
+        upstream: provider.url,
+        state,
+      }),
+    );
+  breaker.onBreak(transition("open"));
+  breaker.onHalfOpen(transition("half-open"));
+  breaker.onReset(transition("closed"));
   return wrap(
-    circuitBreaker(
-      handleWhen((error) => !(error instanceof GatewayHttpError)),
-      {
-        halfOpenAfter: BREAKER_HALF_OPEN_MS,
-        breaker: new ConsecutiveBreaker(BREAKER_FAILURES),
-      },
-    ),
+    breaker,
     // abortOnReturn: a streamed Esplora body outlives its attempt and is bounded by its own
     // deadline, so the attempt's signal must not be aborted when execute() returns.
     timeout(UPSTREAM_TIMEOUT_MS, { strategy: TimeoutStrategy.Aggressive, abortOnReturn: false }),

@@ -1212,10 +1212,219 @@ describe("request log", () => {
     });
     const app = gateway({ fetch: up.fetch, log: (line) => lines.push(line) });
     await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
-    expect(JSON.parse(lines.join(""))).toMatchObject({
-      route: "/v1/rpc/:caip2",
-      status: 503,
-      provider: null,
+    expect(lines.map((line) => JSON.parse(line) as Record<string, unknown>)).toContainEqual(
+      expect.objectContaining({
+        route: "/v1/rpc/:caip2",
+        status: 503,
+        provider: null,
+      }),
+    );
+  });
+});
+
+describe("upstream observability", () => {
+  const capture = (): { lines: string[]; log: (line: string) => void } => {
+    const lines: string[] = [];
+    return { lines, log: (line) => lines.push(line) };
+  };
+  const events = (lines: string[]): Array<Record<string, unknown>> =>
+    lines
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry["event"] !== undefined);
+
+  it.each<[string, Upstream, string, number]>([
+    ["status-503", () => new Response("", { status: 503 }), "status-503", 200],
+    ["malformed", () => new Response("not json"), "malformed", 200],
+    [
+      "transport",
+      () => {
+        throw new TypeError("connect refused");
+      },
+      "transport",
+      200,
+    ],
+    ["rejected", () => new Response("nope", { status: 400 }), "rejected", 400],
+  ])(
+    "logs %s for a failed attempt and never logs request data",
+    async (_label, answer, reason, status) => {
+      const { lines, log } = capture();
+      const up = fakeFetch({
+        "https://a.test/evm": answer,
+        "https://b.test/evm": () => rpcOk("0x1"),
+      });
+      const app = gateway({ fetch: up.fetch, log });
+      const res = await app.request(
+        `/v1/rpc/${SEPOLIA}`,
+        post(call("eth_getBalance", ["0xdead00000000000000000000000000000000beef", "latest"])),
+      );
+      expect(res.status).toBe(status);
+      expect(events(lines)).toStrictEqual([
+        {
+          event: "upstream-failure",
+          provider: "a",
+          upstream: "https://a.test/evm",
+          reason,
+        },
+      ]);
+      const joined = lines.join("\n");
+      expect(joined).not.toContain("0xdead00000000000000000000000000000000beef");
+      expect(joined).not.toContain(CLIENT_ID);
+    },
+  );
+
+  it("logs auth for a provider whose auth lookup fails", async () => {
+    const { lines, log } = capture();
+    const up = fakeFetch({ "https://b.test/evm": () => rpcOk("0x1") });
+    const app = gateway({
+      fetch: up.fetch,
+      log,
+      networks: [
+        {
+          id: SEPOLIA,
+          providers: [
+            { id: "a", url: "https://a.test/evm", auth: "alchemy" },
+            { id: "b", url: "https://b.test/evm" },
+          ],
+        },
+      ],
+      auth: {
+        alchemy: async () => Promise.reject(new Error("no credentials")),
+      },
     });
+    const res = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(res.status).toBe(200);
+    expect(up.callsTo("https://a.test")).toHaveLength(0);
+    expect(events(lines)).toStrictEqual([
+      {
+        event: "upstream-failure",
+        provider: "a",
+        upstream: "https://a.test/evm",
+        reason: "auth",
+      },
+    ]);
+    expect(lines.join("\n")).not.toContain("no credentials");
+  });
+
+  it("logs timeout for an upstream that never answers", async () => {
+    vi.useFakeTimers();
+    const { lines, log } = capture();
+    const up = fakeFetch({
+      "https://a.test/evm": async (_c, signal) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("aborted", "AbortError"));
+          });
+        }),
+      "https://b.test/evm": () => rpcOk("0x1"),
+    });
+    const pending = gateway({ fetch: up.fetch, log }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_chainId")),
+    );
+    await vi.advanceTimersByTimeAsync(10_000);
+    const res = await pending;
+    expect(res.status).toBe(200);
+    expect(events(lines)).toStrictEqual([
+      {
+        event: "upstream-failure",
+        provider: "a",
+        upstream: "https://a.test/evm",
+        reason: "timeout",
+      },
+    ]);
+  });
+
+  it("logs breaker-open for a skipped provider and the open, half-open, closed transitions", async () => {
+    vi.useFakeTimers();
+    const { lines, log } = capture();
+    let attempts = 0;
+    const up = fakeFetch({
+      "https://a.test/evm": () => {
+        attempts += 1;
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- staged answers per attempt
+        return attempts <= 5 ? new Response("", { status: 500 }) : rpcOk("0x1");
+      },
+      "https://b.test/evm": () => rpcOk("0x1"),
+    });
+    const app = gateway({ fetch: up.fetch, log });
+    await Promise.all(
+      Array.from({ length: 5 }, async () =>
+        app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId"))),
+      ),
+    );
+    expect(up.callsTo("https://a.test")).toHaveLength(5);
+
+    const skipped = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(skipped.status).toBe(200);
+    expect(up.callsTo("https://a.test")).toHaveLength(5);
+    expect(events(lines)).toContainEqual({
+      event: "upstream-failure",
+      provider: "a",
+      upstream: "https://a.test/evm",
+      reason: "breaker-open",
+    });
+    expect(events(lines)).toContainEqual({
+      event: "breaker",
+      provider: "a",
+      upstream: "https://a.test/evm",
+      state: "open",
+    });
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    const recovered = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(recovered.status).toBe(200);
+    expect(recovered.headers.get(PROVIDERS_HEADER)).toBe("a");
+    expect(events(lines)).toStrictEqual(
+      expect.arrayContaining([
+        { event: "breaker", provider: "a", upstream: "https://a.test/evm", state: "open" },
+        { event: "breaker", provider: "a", upstream: "https://a.test/evm", state: "half-open" },
+        { event: "breaker", provider: "a", upstream: "https://a.test/evm", state: "closed" },
+      ]),
+    );
+  });
+
+  it("logs all-providers-failed once when every provider of a run fails", async () => {
+    const { lines, log } = capture();
+    const up = fakeFetch({
+      "https://a.test/evm": () => new Response("", { status: 500 }),
+      "https://b.test/evm": () => new Response("", { status: 500 }),
+    });
+    const res = await gateway({ fetch: up.fetch, log }).request(
+      `/v1/rpc/${SEPOLIA}`,
+      post(call("eth_chainId")),
+    );
+    expect(res.status).toBe(503);
+    expect(events(lines)).toStrictEqual([
+      {
+        event: "upstream-failure",
+        provider: "a",
+        upstream: "https://a.test/evm",
+        reason: "status-500",
+      },
+      {
+        event: "upstream-failure",
+        provider: "b",
+        upstream: "https://b.test/evm",
+        reason: "status-500",
+      },
+      { event: "all-providers-failed", providers: ["a", "b"] },
+    ]);
+  });
+
+  it("logs only the error name for an unexpected failure", async () => {
+    const { lines, log } = capture();
+    const res = await gateway({
+      fetch: fakeFetch({}).fetch,
+      log,
+      limiters: {
+        ip: { limit: async () => Promise.reject(new RangeError("quota exploded")) },
+        rpc: allowAll,
+        default: allowAll,
+      },
+    }).request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toStrictEqual({ error: "internal" });
+    expect(events(lines)).toStrictEqual([{ event: "internal-error", name: "RangeError" }]);
+    expect(lines.join("\n")).not.toContain("quota exploded");
   });
 });

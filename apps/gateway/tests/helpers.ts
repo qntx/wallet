@@ -128,6 +128,7 @@ export function memoryRiskStore(): RiskStore & { readonly data: Map<string, stri
 
 export function gateway(options: {
   readonly fetch: typeof globalThis.fetch;
+  readonly networks?: ReadonlyArray<GatewayNetwork>;
   readonly risk?: RiskStore;
   readonly limiters?: Limiters;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
@@ -137,7 +138,7 @@ export function gateway(options: {
 }): ReturnType<typeof createGateway> {
   return createGateway({
     fetch: options.fetch,
-    networks: NETWORKS,
+    networks: options.networks ?? NETWORKS,
     limiters: options.limiters ?? { ip: allowAll, rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
