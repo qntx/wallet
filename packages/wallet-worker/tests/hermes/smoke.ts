@@ -12,7 +12,7 @@
 import { argon2idAsync } from "@noble/hashes/argon2.js";
 import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
 import { sha256, sha512 } from "@noble/hashes/sha2.js";
-import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
@@ -33,6 +33,49 @@ const PASSPHRASE_WALLET_ID = "9f043a6d86bd43b4";
 const PASSPHRASE_PUBLIC_KEY = "d487b7a4113a447308c57222d0307d0662ce682ada63ce1fc10d25a5531ef510";
 // vectors/nip44/official.json — a fixed peer for the encrypt/decrypt round trip.
 const PEER_PUBLIC_KEY = "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5";
+// vectors/chains/evm.json — the anvil test mnemonic; its eip1559 expected bytes are reproduced
+// verbatim below so the signature is vector-checked.
+const ANVIL_MNEMONIC = "test test test test test test test test test test test junk";
+const EXPECTED_EVM_SIGNED =
+  "02f87201028459682f0084773594008252089470997970c51812dc3a010c7d01b50e0d17dc79c888016345785d8a000080c001a0ad8d9fc0a96d964860f5513a3e25ae449aaf256299cce84d4639c1ef44f30199a0445b518a2309891c5d4f1efe410d8fc1cd8ede3e2139b59d9961890ef74cd649";
+// A fixed legacy Solana system-transfer message (1000 lamports to a fixed recipient) whose fee
+// payer is the anvil wallet's solana.bip44-change group-0 account (m/44'/501'/0'/0'); it decodes
+// to a "transfer" intent with "full" verifiability. The expected signature is deterministic
+// ed25519, checked byte for byte against an independent oracle — SLIP-10 derivation plus
+// @noble/curves ed25519.sign, computed outside the kernel.
+const SOLANA_MESSAGE = hexToBytes(
+  "010001030bf32b9f0db09672038fea36139b18f98a5f0149ef4ce0332e44b9a77e83c22d" +
+    "2222222222222222222222222222222222222222222222222222222222222222" +
+    "0000000000000000000000000000000000000000000000000000000000000000" +
+    "3333333333333333333333333333333333333333333333333333333333333333" +
+    "01020200010c02000000e803000000000000",
+);
+const EXPECTED_SOLANA_SIG =
+  "535e4ab0fd51631c35be446ee5bee835c600dfdcb32f0cd7adaaf0b6fe899f49d35aca1203cd01ccc74efdf66568d10d1d0c71e363245585c08a4a8d993cc501";
+// A fixed one-input PSBT: a p2wpkh prevout (nonWitnessUtxo + bip32Derivation) the anvil wallet
+// controls at m/84'/0'/0'/0/0, paying 90000 sats to bc1qnjg0jd8228aq7egyzacy8cys3knf9xvrerkf9g.
+// The expected signed PSBT is deterministic (RFC6979), checked byte for byte against an
+// independent oracle — m/84'/0'/0'/0/0 derived with @scure/bip32, the PSBT signed with
+// @scure/btc-signer, outside the kernel.
+const BTC_PSBT = hexToBytes(
+  "70736274ff01005202000000017648902d7b4387dea0bad1d616d431b448734368b04dc8e4ffb390e3798d385b" +
+    "0000000000fdffffff01905f0100000000001600149c90f934ea51fa0f6504177043e0908da6929983" +
+    "0000000000010052020000000107070707070707070707070707070707070707070707070707070707" +
+    "070707070000000000ffffffff01a086010000000000160014a81d55416d14810a14ccf8fe619e8ad6" +
+    "633e4dde0000000001011fa086010000000000160014a81d55416d14810a14ccf8fe619e8ad6633e4dde" +
+    "220603fc2a760d930aa1459b35185f45784f4b42050311b232ed490f05db13f448e1541816a93ed054" +
+    "000080000000800000008000000000000000000000",
+);
+const EXPECTED_BTC_SIGNED_PSBT =
+  "70736274ff01005202000000017648902d7b4387dea0bad1d616d431b448734368b04dc8e4ffb390e3798d385b" +
+  "0000000000fdffffff01905f0100000000001600149c90f934ea51fa0f6504177043e0908da6929983" +
+  "0000000000010052020000000107070707070707070707070707070707070707070707070707070707" +
+  "070707070000000000ffffffff01a086010000000000160014a81d55416d14810a14ccf8fe619e8ad6" +
+  "633e4dde0000000001011fa086010000000000160014a81d55416d14810a14ccf8fe619e8ad6633e4dde" +
+  "220203fc2a760d930aa1459b35185f45784f4b42050311b232ed490f05db13f448e154483045022100ae" +
+  "d4f03f9ae5cc3978c92bd880bbe212585cbc68911286c133ab7c70624bc1dc02203f28883558326e4eb1" +
+  "66349778bd30478f294d9e0a63554ff7f5dc44e9a938bc01220603fc2a760d930aa1459b35185f45784f" +
+  "4b42050311b232ed490f05db13f448e1541816a93ed054000080000000800000008000000000000000000000";
 
 function assert(cond: boolean, name: string): asserts cond {
   if (!cond) {
@@ -221,6 +264,96 @@ export async function main(): Promise<void> {
   const unlockSession = field(unlocked, "session");
   assert(typeof unlockSession === "string" && unlockSession.length === 32, "unlock session");
   const session = unlockSession;
+
+  // One chain.sign per family — ox, @solana/* and btc-signer only run under Hermes if the smoke
+  // calls them. The wallet is the chains/evm.json vector mnemonic (its eip1559 expected bytes are
+  // the vector's own); the Solana and Bitcoin expectations were checked against independent
+  // oracles (@noble/curves ed25519, @scure/bip32 + @scure/btc-signer — see the constants above).
+  const anvil = ok(
+    await kernel2.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(ANVIL_MNEMONIC) }, session),
+  );
+  const anvilWalletId = field(field(anvil, "wallet"), "walletId");
+  // Each verify factor is consumed (wiped) by the kernel — every call needs fresh bytes.
+  const verifyPassword = () => ({ kind: "password", password: utf8ToBytes(PASSWORD) });
+
+  const evmSigned = ok(
+    await kernel2.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "evm.transaction",
+          network: "eip155:1",
+          account: {
+            kind: "hd",
+            walletId: anvilWalletId,
+            groupIndex: 0,
+            template: "evm.bip44",
+          },
+          tx: {
+            type: "eip1559",
+            chainId: 1,
+            nonce: 2,
+            gas: "0x5208",
+            value: "0x16345785d8a0000",
+            data: "0x",
+            to: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+            accessList: [],
+            maxFeePerGas: "0x77359400",
+            maxPriorityFeePerGas: "0x59682f00",
+          },
+        },
+        verify: verifyPassword(),
+      },
+      session,
+    ),
+  );
+  const signedTx = field(evmSigned, "signedTransaction");
+  assert(signedTx instanceof Uint8Array, "chain.sign evm signedTransaction bytes");
+  eq(bytesToHex(signedTx), EXPECTED_EVM_SIGNED, "chain.sign evm eip1559");
+
+  const solSigned = ok(
+    await kernel2.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "solana.transaction",
+          network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+          account: {
+            kind: "hd",
+            walletId: anvilWalletId,
+            groupIndex: 0,
+            template: "solana.bip44-change",
+          },
+          message: new Uint8Array(SOLANA_MESSAGE),
+        },
+        verify: verifyPassword(),
+      },
+      session,
+    ),
+  );
+  const solSig = field(solSigned, "signature");
+  assert(solSig instanceof Uint8Array, "chain.sign solana signature bytes");
+  eq(bytesToHex(solSig), EXPECTED_SOLANA_SIG, "chain.sign solana transaction");
+
+  const btcSigned = ok(
+    await kernel2.call(
+      "chain.sign",
+      {
+        request: {
+          kind: "bitcoin.psbt",
+          network: "bip122:000000000019d6689c085ae165831e93",
+          account: { kind: "hd", walletId: anvilWalletId, groupIndex: 0 },
+          psbt: new Uint8Array(BTC_PSBT),
+          sign: [{ index: 0, template: "btc.bip84" }],
+        },
+        verify: verifyPassword(),
+      },
+      session,
+    ),
+  );
+  const signedPsbt = field(btcSigned, "signedPsbt");
+  assert(signedPsbt instanceof Uint8Array, "chain.sign bitcoin signedPsbt bytes");
+  eq(bytesToHex(signedPsbt), EXPECTED_BTC_SIGNED_PSBT, "chain.sign bitcoin psbt");
 
   // 4. Sign an event with the derived key — the schnorr signature must verify.
   const signed = ok(
