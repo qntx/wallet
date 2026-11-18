@@ -301,14 +301,32 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const change = await scanChain(es, xpub, template, network, net.params, 1);
     const addresses: ScanAddress[] = [...receive, ...change];
     const scannedUtxos: ReadonlyArray<ScanUtxo> = await scanUtxos(es, addresses, net.params);
-    const utxos = scannedUtxos.map((u) => ({
-      txid: u.txid,
-      vout: u.vout,
-      value: u.value,
-      address: u.address,
-      status: "confirmed" as const,
-      height: u.height,
-    }));
+    // A height-0 output pays through an unconfirmed transaction its sender can still revoke or
+    // replace — spendable only when this wallet built that transaction (own unconfirmed change).
+    const ownTxids = new Set(
+      Object.values(ctx.txs()).flatMap((t) =>
+        t.family === "bitcoin" &&
+        t.btc !== undefined &&
+        t.hash !== undefined &&
+        (t.state === "submitted" || t.state === "pending" || t.state === "confirmed")
+          ? [t.hash]
+          : [],
+      ),
+    );
+    const utxos = scannedUtxos.flatMap((u) =>
+      u.height > 0 || ownTxids.has(u.txid)
+        ? [
+            {
+              txid: u.txid,
+              vout: u.vout,
+              value: u.value,
+              address: u.address,
+              status: u.height > 0 ? ("confirmed" as const) : ("unconfirmed" as const),
+              height: u.height,
+            },
+          ]
+        : [],
+    );
     const byAddr = new Map(addresses.map((a) => [a.address, a]));
     const base = accountPath(path);
     const spendable = selectableUtxos(utxos, net.params, spendProtected ?? []);
@@ -742,8 +760,9 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       .filter((o) => !o.own)
       .map((o) => ({ address: o.address, amount: BigInt(o.value) }));
     const usedKeys = new Set(btc.inputs.map((i) => `${i.txid}:${i.vout}`));
+    // Confirmed extras only: BIP-125 rule 2 forbids a replacement adding new unconfirmed inputs.
     const spare = stash.allUtxos.filter(
-      (u) => !usedKeys.has(`${u.txid}:${u.vout}`) && !isHeld(`${u.txid}:${u.vout}`),
+      (u) => u.height > 0 && !usedKeys.has(`${u.txid}:${u.vout}`) && !isHeld(`${u.txid}:${u.vout}`),
     );
     const extraInputs: ReturnType<typeof bitcoin.toInputs> = [];
     const extraUtxos: typeof spare = [];

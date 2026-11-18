@@ -280,10 +280,11 @@ export class BitcoinChainAdapter {
     template: string,
     rawTxOf?: (utxo: BtcUtxo) => Uint8Array | undefined,
   ): BtcInput[] {
-    // Inscription protection is the caller's: a send passes selectableUtxos' result, while CPFP
-    // spends the parent's own outputs by name.
+    // Spendability is the caller's — confirmed outputs, its own unconfirmed change, or a CPFP
+    // parent's outputs are all legitimate; inscription protection likewise. Only a locked
+    // outpoint can never become an input.
     return utxos
-      .filter((u) => u.status === "confirmed")
+      .filter((u) => u.status !== "locked")
       .map((u) => {
         const pub = pubkeyOf(u);
         // Taproot carries only witnessUtxo: the BIP-341 sighash commits to every input amount.

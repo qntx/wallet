@@ -43,7 +43,9 @@ const get = (url: string): unknown => {
     if (sh[1] !== OUR_HASH) {
       return [];
     }
-    return sh[2] === "txs" ? utxoList.map((u) => ({ txid: u.txid })) : utxoList;
+    return sh[2] === "txs"
+      ? utxoList.map((u) => ({ txid: u.txid }))
+      : utxoList.map((u) => ({ ...u, status: { confirmed: true, block_height: 1 } }));
   }
   if (url === "/fee-estimates") {
     return { "1": 20, "3": 10, "6": 5, "144": 1 };
