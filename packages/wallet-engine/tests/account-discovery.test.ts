@@ -135,15 +135,19 @@ const init = async (r: Rig): Promise<void> => {
 };
 
 describe("account discovery", () => {
-  it("always includes group 0 and stops after two consecutive unused", async () => {
-    const r = rig();
-    await init(r);
-    const found = await r.ctl.discoverGroups(W);
-    expect(found).toStrictEqual([0]);
-  });
+  // These cases derive every family's accounts on a real kernel and are CPU-bound — each
+  // carries an explicit timeout so a loaded machine can't push one past the default.
+  it(
+    "always includes group 0 and stops after two consecutive unused",
+    { timeout: 30_000 },
+    async () => {
+      const r = rig();
+      await init(r);
+      const found = await r.ctl.discoverGroups(W);
+      expect(found).toStrictEqual([0]);
+    },
+  );
 
-  // Discovery derives every family's accounts on a real kernel and is CPU-bound — long-running
-  // cases carry an explicit timeout.
   it("returns every used group across families", { timeout: 30_000 }, async () => {
     const r = rig({ sparkUsed: new Set([1, 3]) });
     await init(r);
@@ -151,7 +155,7 @@ describe("account discovery", () => {
     expect(found).toStrictEqual([0, 1, 3]);
   });
 
-  it("checks all four families in parallel per group", async () => {
+  it("checks all four families in parallel per group", { timeout: 30_000 }, async () => {
     const r = rig();
     await init(r);
     await r.ctl.discoverGroups(W);
@@ -160,22 +164,26 @@ describe("account discovery", () => {
     }
   });
 
-  it("account-group discovery never derives or records a nostr key", async () => {
-    // WD-076: identity indices are independent of account groups — a group scan probes the
-    // four chain families only, and the wallet's nostr section stays empty.
-    const r = rig();
-    await init(r);
-    await r.ctl.discoverGroups(W);
-    expect([...new Set(r.calls)].toSorted()).toStrictEqual(["bitcoin", "evm", "solana", "spark"]);
-    expect(r.ctl.getState().groups[W]?.[0]?.used).toStrictEqual({
-      bitcoin: false,
-      evm: false,
-      solana: false,
-      spark: false,
-    });
-  });
+  it(
+    "account-group discovery never derives or records a nostr key",
+    { timeout: 30_000 },
+    async () => {
+      // WD-076: identity indices are independent of account groups — a group scan probes the
+      // four chain families only, and the wallet's nostr section stays empty.
+      const r = rig();
+      await init(r);
+      await r.ctl.discoverGroups(W);
+      expect([...new Set(r.calls)].toSorted()).toStrictEqual(["bitcoin", "evm", "solana", "spark"]);
+      expect(r.ctl.getState().groups[W]?.[0]?.used).toStrictEqual({
+        bitcoin: false,
+        evm: false,
+        solana: false,
+        spark: false,
+      });
+    },
+  );
 
-  it("marks the group's used map per family", async () => {
+  it("marks the group's used map per family", { timeout: 30_000 }, async () => {
     const r = rig({ sparkUsed: new Set([1]), solSigs: new Set([1]) });
     await init(r);
     await r.ctl.discoverGroups(W);
@@ -186,7 +194,7 @@ describe("account discovery", () => {
 
   it(
     "surfaces a failing family on the group instead of marking it unused",
-    { timeout: 15_000 },
+    { timeout: 30_000 },
     async () => {
       const r = rig({ failOn: new Set(["evm"]) });
       await init(r);
@@ -199,7 +207,7 @@ describe("account discovery", () => {
     },
   );
 
-  it("evm counts the group used on nonce or balance", async () => {
+  it("evm counts the group used on nonce or balance", { timeout: 30_000 }, async () => {
     const r = rig();
     await init(r);
     r.usedEvm.add(1);
