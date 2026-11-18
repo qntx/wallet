@@ -213,6 +213,35 @@ const PROBES: Probe[] = [
     source: importing("@qntx/spark/signer"),
     expect: fires(),
   },
+
+  // Fiat prices are display-only: no engine code that builds, approves or
+  // signs reads them — only the composition root at src/ may import prices/.
+  ...[
+    "transactions",
+    "requests",
+    "connect",
+    "chains",
+    "swaps",
+    "payments",
+    "spark",
+    "lido",
+    "staking",
+    "assets",
+  ].map((dir): Probe => ({
+    file: `packages/wallet-engine/src/${dir}/__lint_probe_i__.ts`,
+    source: importing("../prices/controller.ts", "../prices/valuation.ts"),
+    expect: fires(2),
+  })),
+  {
+    file: "packages/wallet-engine/src/connect/inject/__lint_probe_i__.ts",
+    source: importing("../../prices/controller.ts"),
+    expect: fires(),
+  },
+  {
+    file: "packages/wallet-engine/src/__lint_probe_i_control__.ts",
+    source: importing("./prices/controller.ts"),
+    expect: "clean",
+  },
 ];
 
 const created: string[] = [];
