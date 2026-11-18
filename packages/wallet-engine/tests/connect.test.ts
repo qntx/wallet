@@ -10,16 +10,22 @@ import type { Wallet } from "@qntx/wallet";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 
+import { nostr } from "@qntx/wallet/nostr";
+
 import {
   CONNECTION_REQUEST_TTL_MS,
   ConnectionController,
   MAX_PENDING_CONNECTIONS,
   SESSION_TTL_MS,
+  isSession,
+  sessionAccounts,
 } from "../src/connect/controller.ts";
 import type { LightningPolicy, NostrPolicy } from "../src/connect/controller.ts";
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import type { Eip1193Event } from "../src/connect/eip1193.ts";
 import { ProviderError } from "../src/connect/errors.ts";
+import { Nip07Handler } from "../src/connect/nip07.ts";
+import { SOLANA_CHAIN_IDS, SolanaWalletHandler } from "../src/connect/solana.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { PhishingStatus } from "../src/phishing/status.ts";
 import { RequestController } from "../src/requests/controller.ts";
@@ -50,6 +56,8 @@ const siweText = (domain: string, address: string): string =>
   );
 const OTHER_SITE = "https://other.example";
 const MAINNET = "eip155:1";
+const SOL_NET = SOLANA_CHAIN_IDS["solana:mainnet"] ?? "solana:missing";
+const SOL_PUBKEY = new Uint8Array(32).fill(2);
 const NOSTR_PUBKEYS = ["a".repeat(64), "b".repeat(64)] as const;
 const SEPOLIA = "eip155:11155111";
 
@@ -172,6 +180,12 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
   await requests.init();
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
   let clock = 1_800_000_000_000;
+  let selected: { readonly walletId: string; readonly groupIndex: number } | undefined = {
+    walletId,
+    groupIndex: 0,
+  };
+  const selectionListeners = new Set<() => void>();
+  let evmGate: Promise<void> | undefined;
   const connectionTimers: Array<{ ms: number; fn: () => unknown; cancelled: boolean }> = [];
   const connectionOptions = {
     phishing,
@@ -187,14 +201,25 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
     now: () => clock,
     logger,
     allowLocalhost: options.allowLocalhost ?? false,
-    selectedGroup: () => ({ walletId, groupIndex: 0 }),
-    evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
-      addressAt(group.groupIndex, network),
-    enabledNetworks: () => [MAINNET, SEPOLIA],
+    selectedGroup: () => selected,
+    onSelectedGroup: (listener: () => void) => {
+      selectionListeners.add(listener);
+      return () => {
+        selectionListeners.delete(listener);
+      };
+    },
+    invalidateAll: () => {
+      requests.invalidateAll();
+    },
+    evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) => {
+      await evmGate;
+      return addressAt(group.groupIndex, network);
+    },
+    enabledNetworks: () => [MAINNET, SEPOLIA, SOL_NET],
     bitcoinAddress: async () => Promise.resolve("bc1qunused"),
-    solanaAddress: async (group: { walletId: string; groupIndex: number }, network: string) => {
+    solanaAddress: async (group: { walletId: string; groupIndex: number }, _network: string) => {
       await Promise.resolve();
-      return `SoLaNaAdd${String(group.groupIndex)}-${network}`;
+      return `SoLaNaAdd${String(group.groupIndex)}`;
     },
     nostrPubkey: async (ref: { index: number }) =>
       Promise.resolve(NOSTR_PUBKEYS[ref.index] ?? NOSTR_PUBKEYS[0]),
@@ -276,6 +301,28 @@ async function rig(options: { allowLocalhost?: boolean; blindSigning?: boolean }
     rpcCalls,
     connect,
     approveNext,
+    select: (
+      group: { walletId: string; groupIndex: number } | undefined,
+      notify = true,
+    ) => {
+      selected = group;
+      if (notify) {
+        for (const listener of selectionListeners) {
+          listener();
+        }
+      }
+    },
+    /** Gates `evmAddress` derivations until the returned release runs. */
+    gateEvm: () => {
+      let release = (): void => undefined;
+      evmGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return () => {
+        evmGate = undefined;
+        release();
+      };
+    },
     advance: (ms: number) => {
       clock += ms;
     },
@@ -411,8 +458,10 @@ describe("connection sessions", () => {
     const r = await rig();
     const [first] = await r.connect();
     const second = await lower(r.addressAt(1));
-    await r.connections.setActiveGroup(r.walletId, 1);
-    expect(r.connections.accounts(SITE)).toStrictEqual([second]);
+    r.select({ walletId: r.walletId, groupIndex: 1 });
+    await vi.waitFor(() => {
+      expect(r.connections.sessionAccounts(SITE, MAINNET)?.addresses).toStrictEqual([second]);
+    });
     // A fresh session's accounts go [] → [first] (connect emits accountsChanged), then the group
     // switch emits accountsChanged([second]).
     expect(r.events.filter((e) => e.name === "accountsChanged")).toStrictEqual([
@@ -420,6 +469,271 @@ describe("connection sessions", () => {
       { name: "accountsChanged", origin: SITE, accounts: [second] },
     ]);
     await r.destroy();
+  });
+});
+
+describe("session binding", () => {
+  const HELLO = `0x${Buffer.from("hello dapp", "utf8").toString("hex")}`;
+
+  const awaitingRequest = (r: Awaited<ReturnType<typeof rig>>) =>
+    Object.values(r.requests.getState().requests).find((x) => x.stage === "awaiting-approval");
+
+  const pendingId = (r: Awaited<ReturnType<typeof rig>>): string =>
+    r.connections.pending()[0]?.id ?? "";
+
+  const solanaHandler = (r: Awaited<ReturnType<typeof rig>>) =>
+    new SolanaWalletHandler({
+      connections: r.connections,
+      requests: r.requests,
+      solanaAccount: async (group, _network) => {
+        await Promise.resolve();
+        return {
+          address: `SoLaNaAdd${String(group.groupIndex)}`,
+          publicKey: SOL_PUBKEY,
+        };
+      },
+      solanaNetwork: () => SOL_NET,
+    });
+
+  it("a selection change re-points the session, voids a pending request and signs with the new group", async () => {
+    const r = await rig();
+    const [first] = await r.connect();
+    const second = await lower(r.addressAt(1));
+
+    const signing = codeOf(
+      r.handler.handle(SITE, { method: "personal_sign", params: [HELLO, first] }),
+    );
+    await vi.waitFor(() => {
+      expect(awaitingRequest(r)).toBeDefined();
+    });
+    r.select({ walletId: r.walletId, groupIndex: 1 });
+    await vi.waitFor(() => {
+      expect(r.connections.sessionAccounts(SITE, MAINNET)?.addresses).toStrictEqual([second]);
+    });
+    await expect(signing).resolves.toBe(4001);
+    expect(awaitingRequest(r)).toBeUndefined();
+
+    await expect(r.handler.handle(SITE, { method: "eth_accounts" })).resolves.toStrictEqual([
+      second,
+    ]);
+    expect(r.events.filter((e) => e.name === "accountsChanged").at(-1)).toStrictEqual({
+      name: "accountsChanged",
+      origin: SITE,
+      accounts: [second],
+    });
+
+    const signature = r.handler.handle(SITE, {
+      method: "personal_sign",
+      params: [HELLO, second],
+    });
+    await r.approveNext();
+    const recovered = await recoverMessageAddress({
+      message: "hello dapp",
+      signature: (await signature) as `0x${string}`,
+    });
+    expect(recovered.toLowerCase()).toBe(second);
+    await expect(
+      codeOf(r.handler.handle(SITE, { method: "personal_sign", params: [HELLO, first] })),
+    ).resolves.toBe(4100);
+    await r.destroy();
+  });
+
+  it("signs with the session's bound group even when the selection moved unobserved", async () => {
+    const r = await rig();
+    const [first] = await r.connect();
+    /* A selection path the controller's subscription never sees leaves the binding as it is. */
+    r.select({ walletId: r.walletId, groupIndex: 1 }, false);
+    const signature = r.handler.handle(SITE, {
+      method: "personal_sign",
+      params: [HELLO, first],
+    });
+    await r.approveNext();
+    const recovered = await recoverMessageAddress({
+      message: "hello dapp",
+      signature: (await signature) as `0x${string}`,
+    });
+    expect(recovered.toLowerCase()).toBe(first);
+    await r.destroy();
+  });
+
+  it("a silent solana connect returns the session's account after an unobserved selection change", async () => {
+    const r = await rig();
+    const solana = solanaHandler(r);
+    const pending = r.connections.request(SITE, { kind: "connect", namespace: "solana" });
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    await r.connections.approveConnection(pendingId(r), {
+      accounts: [await r.addressAt(0)],
+      network: MAINNET,
+    });
+    await pending;
+    const bound = "SoLaNaAdd0";
+    r.select({ walletId: r.walletId, groupIndex: 1 }, false);
+    await expect(
+      solana.handle(SITE, { method: "standard:connect", params: { silent: true } }),
+    ).resolves.toMatchObject({ accounts: [{ address: bound }] });
+    await expect(
+      solana.handle(OTHER_SITE, { method: "standard:connect", params: { silent: true } }),
+    ).rejects.toMatchObject({ code: 4100 });
+    expect(r.connections.pending()).toHaveLength(0);
+    await r.destroy();
+  });
+
+  it("a request prepared while a re-point is in flight is invalidated once it persists", async () => {
+    const r = await rig();
+    const [first] = await r.connect();
+    const release = r.gateEvm();
+    r.select({ walletId: r.walletId, groupIndex: 1 });
+    const signing = codeOf(
+      r.handler.handle(SITE, { method: "personal_sign", params: [HELLO, first] }),
+    );
+    await vi.waitFor(() => {
+      expect(awaitingRequest(r)).toBeDefined();
+    });
+    release();
+    const second = await lower(r.addressAt(1));
+    await vi.waitFor(() => {
+      expect(r.connections.sessionAccounts(SITE, MAINNET)?.addresses).toStrictEqual([second]);
+    });
+    await expect(signing).resolves.toBe(4001);
+    await r.destroy();
+  });
+
+  it("concurrent touch, re-point and grant writes leave one consistent session", async () => {
+    const r = await rig();
+    await r.connect();
+    const release = r.gateEvm();
+    const grant = r.connections.request(SITE, { kind: "connect" });
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    r.select({ walletId: r.walletId, groupIndex: 1 });
+    const approved = r.connections.approveConnection(pendingId(r), {
+      accounts: [await r.addressAt(1, SEPOLIA)],
+      network: SEPOLIA,
+    });
+    const touched = r.connections.touch(SITE);
+    release();
+    await Promise.all([approved, touched, grant]);
+    const second = await lower(r.addressAt(1));
+    const secondSepolia = await lower(r.addressAt(1, SEPOLIA));
+    await vi.waitFor(() => {
+      expect(r.connections.sessionAccounts(SITE, MAINNET)?.addresses).toStrictEqual([second]);
+    });
+    const session = r.connections.session(SITE);
+    expect(session?.group).toStrictEqual({ walletId: r.walletId, groupIndex: 1 });
+    expect(session?.scopes[MAINNET]?.accounts).toStrictEqual([`${MAINNET}:${second}`]);
+    expect(session?.scopes[SEPOLIA]?.accounts).toStrictEqual([`${SEPOLIA}:${secondSepolia}`]);
+    await r.destroy();
+  });
+
+  it("a grant merging into a session bound to another group re-points it and voids requests", async () => {
+    const r = await rig();
+    const [first] = await r.connect();
+    /* The selection moved unobserved — the session still binds group 0. */
+    r.select({ walletId: r.walletId, groupIndex: 1 }, false);
+    const grant = r.connections.request(SITE, { kind: "connect" });
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    const signing = codeOf(
+      r.handler.handle(SITE, { method: "personal_sign", params: [HELLO, first] }),
+    );
+    await vi.waitFor(() => {
+      expect(awaitingRequest(r)).toBeDefined();
+    });
+    await r.connections.approveConnection(pendingId(r), {
+      accounts: [await r.addressAt(1, SEPOLIA)],
+      network: SEPOLIA,
+    });
+    await grant;
+    await expect(signing).resolves.toBe(4001);
+    const second = await lower(r.addressAt(1));
+    const session = r.connections.session(SITE);
+    expect(session?.group).toStrictEqual({ walletId: r.walletId, groupIndex: 1 });
+    expect(session?.scopes[MAINNET]?.accounts).toStrictEqual([`${MAINNET}:${second}`]);
+    await r.destroy();
+  });
+
+  it("a later grant keeps the session's nostr and lightning policies", async () => {
+    const r = await rig();
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
+    const nostrGrant = r.connections.request(SITE, { kind: "connect", namespace: "nostr" });
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    await r.connections.approveConnection(pendingId(r), {
+      accounts: [await r.addressAt(0)],
+      network: MAINNET,
+      nostr: { pubkey: NOSTR_PUBKEYS[0], policy: { signing: "always", decrypt: true } },
+    });
+    await nostrGrant;
+    const lightningGrant = r.connections.request(SITE, {
+      kind: "connect",
+      namespace: "lightning",
+    });
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    await r.connections.approveConnection(pendingId(r), {
+      accounts: [],
+      network: MAINNET,
+      lightning: { policy: { balance: true } },
+    });
+    await lightningGrant;
+    await r.connect();
+    const session = r.connections.session(SITE);
+    expect(session?.nostrPolicy).toStrictEqual({ signing: "always", decrypt: true });
+    expect(session?.lightningPolicy).toStrictEqual({ balance: true });
+    await r.destroy();
+  });
+
+  it("clearing the selection empties chain scopes and providers resolve no account", async () => {
+    const r = await rig();
+    const [first] = await r.connect();
+    r.select(undefined);
+    await vi.waitFor(() => {
+      expect(r.connections.session(SITE)?.group).toBeUndefined();
+    });
+    expect(r.connections.sessionAccounts(SITE, MAINNET)).toBeUndefined();
+    expect(r.connections.session(SITE)?.scopes[MAINNET]?.accounts).toStrictEqual([]);
+    await expect(r.handler.handle(SITE, { method: "eth_accounts" })).resolves.toStrictEqual([]);
+    await expect(
+      codeOf(r.handler.handle(SITE, { method: "personal_sign", params: [HELLO, first] })),
+    ).resolves.toBe(4100);
+    await r.destroy();
+  });
+
+  it("isSession rejects malformed group and identity fields, a group-less session has no binding", () => {
+    const base = {
+      id: "s1",
+      origin: { kind: "browser" as const, origin: SITE },
+      scopes: {},
+      currentNetwork: MAINNET,
+      createdAt: 0,
+      lastUsedAt: 0,
+    };
+    expect(isSession(base)).toBe(true);
+    expect(isSession({ ...base, group: { walletId: "w", groupIndex: -1 } })).toBe(false);
+    expect(isSession({ ...base, group: { walletId: "w", groupIndex: 0.5 } })).toBe(false);
+    expect(isSession({ ...base, group: { walletId: 1, groupIndex: 0 } })).toBe(false);
+    expect(
+      isSession({ ...base, identity: { kind: "imported", walletId: "w", index: 0 } }),
+    ).toBe(false);
+    expect(
+      isSession({ ...base, identity: { kind: "derived", walletId: "w", index: -1 } }),
+    ).toBe(false);
+    expect(isSession({ ...base, identity: { kind: "derived", walletId: "w", index: 0 } })).toBe(
+      true,
+    );
+    const unbound = {
+      ...base,
+      scopes: {
+        [MAINNET]: { accounts: [`${MAINNET}:0xabc`], methods: [], notifications: [] },
+      },
+    };
+    expect(sessionAccounts(unbound, MAINNET)).toBeUndefined();
   });
 });
 
@@ -456,7 +770,7 @@ describe("nostr connections", () => {
     expect(session?.scopes["nostr"]?.accounts).toStrictEqual([`nostr:${pubkey}`]);
     expect(session?.scopes["nostr"]?.methods).toContain("signEvent");
     expect(r.connections.nostrPolicy(SITE)).toStrictEqual(policy);
-    expect(r.connections.nostrAccount(SITE)).toBe(pubkey);
+    expect(r.connections.nostrIdentity(SITE)?.pubkey).toBe(pubkey);
     expect(r.connections.authorize(SITE, "nostr", "signEvent")).toBe(session);
     await r.destroy();
   });
@@ -486,13 +800,56 @@ describe("nostr connections", () => {
     const [first, second] = NOSTR_PUBKEYS;
     await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
     await nostrConnect(r, first, { signing: "ask", decrypt: false });
-    expect(r.connections.nostrAccount(SITE)).toBe(first);
+    expect(r.connections.nostrIdentity(SITE)?.pubkey).toBe(first);
     // Switching to index 1 re-points the session's nostr account.
     await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 1 });
-    expect(r.connections.nostrAccount(SITE)).toBe(second);
+    expect(r.connections.nostrIdentity(SITE)?.pubkey).toBe(second);
     // Clearing the identity empties it.
     await r.connections.setActiveIdentity(undefined);
-    expect(r.connections.nostrAccount(SITE)).toBeUndefined();
+    expect(r.connections.nostrIdentity(SITE)).toBeUndefined();
+    await r.destroy();
+  });
+
+  it("an identity switch voids a pending nostr-sign and crypt runs on the bound identity", async () => {
+    const r = await rig();
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 0 });
+    await nostrConnect(r, NOSTR_PUBKEYS[0] ?? "", { signing: "ask", decrypt: true });
+    const refs: unknown[] = [];
+    const nip07 = new Nip07Handler({
+      connections: r.connections,
+      requests: r.requests,
+      signerFor: (ref) => {
+        refs.push(ref);
+        return nostr(r.wallet).signer(ref);
+      },
+    });
+    const signing = nip07.handle(SITE, {
+      method: "signEvent",
+      params: { kind: 1, content: "hi", created_at: 1, tags: [] },
+    });
+    await vi.waitFor(() => {
+      expect(
+        Object.values(r.requests.getState().requests).some(
+          (x) => x.stage === "awaiting-approval",
+        ),
+      ).toBe(true);
+    });
+    await r.connections.setActiveIdentity({ kind: "derived", walletId: r.walletId, index: 1 });
+    const settled = await signing.then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(settled).toMatchObject({ stage: "invalidated" });
+    expect(r.connections.session(SITE)?.identity).toStrictEqual({
+      kind: "derived",
+      walletId: r.walletId,
+      index: 1,
+    });
+    await nip07.handle(SITE, {
+      method: "nip44.decrypt",
+      params: ["c".repeat(64), "ciphertext"],
+    }).catch(() => undefined);
+    expect(refs.at(-1)).toStrictEqual({ kind: "derived", walletId: r.walletId, index: 1 });
     await r.destroy();
   });
 });

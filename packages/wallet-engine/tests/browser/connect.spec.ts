@@ -268,6 +268,10 @@ async function engineRig() {
     logger,
     allowLocalhost: true,
     selectedGroup: () => ({ walletId, groupIndex: 0 }),
+    onSelectedGroup: () => () => undefined,
+    invalidateAll: () => {
+      requests.invalidateAll();
+    },
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SOL_NET, BTC_NET],
@@ -327,7 +331,7 @@ async function engineRig() {
         };
       },
     },
-    sparkAccount: () => ({ walletId, groupIndex: 0, network: "regtest" }),
+    sparkNetwork: "regtest",
     alias: "qntx-test",
     lightningMaxFee: () => 10,
     sleep: async () => {
@@ -341,14 +345,12 @@ async function engineRig() {
       await Promise.resolve();
       return { address: SOL_ADDR, publicKey: SOL_PUBKEY };
     },
-    activeGroup: () => ({ walletId, groupIndex: 0 }),
     solanaNetwork: () => SOL_NET,
   });
   const bitcoin = new BitcoinWalletHandler({
     connections,
     requests,
     bitcoinAccount,
-    activeGroup: () => ({ walletId, groupIndex: 0 }),
     bitcoinNetwork: () => BTC_NET,
   });
   await connections.setActiveIdentity(NOSTR_REF);

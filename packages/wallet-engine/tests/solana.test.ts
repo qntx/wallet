@@ -1,9 +1,20 @@
 import { base58 } from "@scure/base";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { ProviderError, invalidParams } from "../src/connect/errors.ts";
 import { signInMessageText } from "../src/connect/siws.ts";
 import { SolanaWalletHandler, walletStandardChain } from "../src/connect/solana.ts";
+import type { SolanaEvent } from "../src/connect/solana.ts";
+
+const SOL_NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+
+/** A stored session row whose solana scope binds `accounts` to group index 0. */
+const solSession = (accounts: string[] = [SOL_ADDR]): unknown => ({
+  id: "s1",
+  origin: ORIGIN,
+  group: { walletId: "w1", groupIndex: 0 },
+  scopes: { [SOL_NETWORK]: { accounts: accounts.map((a) => `${SOL_NETWORK}:${a}`) } },
+});
 
 const SITE = "https://app.example.com";
 const ORIGIN = { kind: "browser" as const, origin: SITE };
@@ -15,6 +26,8 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
   let { session } = options;
   const requestsCalls: unknown[] = [];
   const connectRequests: unknown[][] = [];
+  const sessionListeners: Array<(state: { sessions: unknown }) => void> = [];
+  let sessionsState: Record<string, unknown> = {};
   const handler = new SolanaWalletHandler({
     connections: {
       checkOrigin: (_origin) => ORIGIN,
@@ -25,7 +38,10 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
         }
         return session as never;
       },
-      solanaAccount: () => (session === undefined ? undefined : SOL_ADDR),
+      sessionAccounts: () =>
+        session === undefined
+          ? undefined
+          : { group: { walletId: "w1", groupIndex: 0 }, addresses: [SOL_ADDR] },
       request: async (...args: unknown[]) => {
         await Promise.resolve();
         connectRequests.push(args);
@@ -34,8 +50,13 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       },
       touch: async () => Promise.resolve(),
       revoke: async () => Promise.resolve(),
-      getState: () => ({ sessions: {}, pending: {} }),
-      store: { subscribe: () => () => undefined } as never,
+      getState: () => ({ sessions: sessionsState as never, pending: {} }),
+      store: {
+        subscribe: (listener: (state: { sessions: unknown }) => void) => {
+          sessionListeners.push(listener);
+          return () => undefined;
+        },
+      } as never,
     },
     requests: {
       prepare: async (input) => {
@@ -49,10 +70,15 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       await Promise.resolve();
       return { address: SOL_ADDR, publicKey: PUBKEY };
     },
-    activeGroup: () => ({ walletId: "w1", groupIndex: 0 }),
     solanaNetwork: () => "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   });
-  return { handler, requestsCalls, connectRequests };
+  const setSessions = (next: Record<string, unknown>): void => {
+    sessionsState = next;
+    for (const listener of sessionListeners) {
+      listener({ sessions: next });
+    }
+  };
+  return { handler, requestsCalls, connectRequests, setSessions };
 };
 
 describe("SolanaWalletHandler", () => {
@@ -195,7 +221,10 @@ describe("SolanaWalletHandler", () => {
         checkOrigin: () => ORIGIN,
         session: () => ({}) as never,
         authorize: (_origin: string, network: string) => authorizeOnly(network),
-        solanaAccount: () => SOL_ADDR,
+        sessionAccounts: () => ({
+          group: { walletId: "w1", groupIndex: 0 },
+          addresses: [SOL_ADDR],
+        }),
         request: async () => Promise.resolve({} as never),
         touch: async () => Promise.resolve(),
         revoke: async () => Promise.resolve(),
@@ -207,7 +236,6 @@ describe("SolanaWalletHandler", () => {
         outcome: async () => Promise.reject(new Error("must not be reached")),
       },
       solanaAccount: async () => Promise.resolve({ address: SOL_ADDR, publicKey: PUBKEY }),
-      activeGroup: () => ({ walletId: "w1", groupIndex: 0 }),
       solanaNetwork: () => "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     });
     await expect(
@@ -229,10 +257,15 @@ describe("SolanaWalletHandler", () => {
     expect(requestsCalls).toHaveLength(0);
   });
 
-  it("solanaAccountsChanged returns the new group's wallet account", async () => {
-    const { handler } = rig({});
-    const accounts = await handler.solanaAccountsChanged(SITE);
-    expect(accounts).toStrictEqual([
+  it("a session's solana account arrives as a change event", async () => {
+    const { handler, setSessions } = rig({});
+    const events: SolanaEvent[] = [];
+    handler.subscribe((event) => events.push(event));
+    setSessions({ s1: solSession() });
+    await vi.waitFor(() => {
+      expect(events).toHaveLength(1);
+    });
+    expect(events[0]?.accounts).toStrictEqual([
       {
         address: SOL_ADDR,
         publicKey: PUBKEY,
@@ -269,13 +302,30 @@ describe("walletStandardChain", () => {
     expect(walletStandardChain("eip155:1")).toBeUndefined();
   });
 
-  it("refuses to advertise an account on a network without a short id", async () => {
-    const { handler } = rig({ session: {} });
+  it("a change on a network without a short id carries an empty list", async () => {
+    const { handler, setSessions } = rig({ session: {} });
+    const events: SolanaEvent[] = [];
     const unknown = new SolanaWalletHandler({
       ...handler.options,
       solanaNetwork: () => "solana:unknownnetwork",
     });
-    await expect(unknown.solanaAccountsChanged(SITE)).rejects.toMatchObject({ code: -32_603 });
+    unknown.subscribe((event) => events.push(event));
+    setSessions({
+      s1: {
+        id: "s1",
+        origin: ORIGIN,
+        group: { walletId: "w1", groupIndex: 0 },
+        scopes: {
+          "solana:unknownnetwork": {
+            accounts: [`solana:unknownnetwork:${SOL_ADDR}`],
+          },
+        },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(events.length).toBeGreaterThan(0);
+    });
+    expect(events.at(-1)?.accounts).toStrictEqual([]);
   });
 });
 

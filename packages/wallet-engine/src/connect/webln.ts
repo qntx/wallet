@@ -9,7 +9,7 @@
 import { bytesToHex } from "@noble/hashes/utils.js";
 
 import type { LightningPayment } from "@qntx/spark";
-import type { SparkAccountRef } from "@qntx/wallet/protocol";
+import type { SparkAccountRef, SparkNetwork } from "@qntx/wallet/protocol";
 
 import type { PaymentOption } from "../payments/parse.ts";
 import { parsePayment } from "../payments/parse.ts";
@@ -28,12 +28,18 @@ export type WeblnRequest = {
 export type WeblnHandlerOptions = {
   readonly connections: Pick<
     ConnectionController,
-    "checkOrigin" | "authorize" | "session" | "lightningPolicy" | "request" | "touch"
+    | "checkOrigin"
+    | "authorize"
+    | "session"
+    | "sessionAccounts"
+    | "lightningPolicy"
+    | "request"
+    | "touch"
   >;
   readonly requests: Pick<RequestController, "prepare" | "outcome">;
   readonly spark: Pick<SparkController, "accountBalance" | "paymentStatus">;
-  /** The active group's Spark account — `undefined` when no group is selected. */
-  readonly sparkAccount: () => SparkAccountRef | undefined;
+  /** The Spark network the account's signer runs on. */
+  readonly sparkNetwork: SparkNetwork;
   readonly now: () => number;
   /** The node's display alias — host-configured, never a pubkey. */
   readonly alias: string;
@@ -102,12 +108,13 @@ export class WeblnHandler {
     this.options = options;
   }
 
-  private ref(): SparkAccountRef {
-    const ref = this.options.sparkAccount();
-    if (ref === undefined) {
-      throw unauthorized("no active group");
+  /** The session's `lightning` binding as a Spark ref — the group the session authorized. */
+  private ref(origin: string): SparkAccountRef {
+    const group = this.options.connections.sessionAccounts(origin, "lightning")?.group;
+    if (group === undefined) {
+      throw unauthorized("no lightning account is bound to the session");
     }
-    return ref;
+    return { ...group, network: this.options.sparkNetwork };
   }
 
   async handle(origin: string, request: WeblnRequest): Promise<unknown> {
@@ -120,7 +127,7 @@ export class WeblnHandler {
     }
     this.options.connections.authorize(origin, "lightning", request.method);
     await this.options.connections.touch(origin);
-    const ref = this.ref();
+    const ref = this.ref(origin);
     switch (request.method) {
       case "getInfo":
         return { node: { alias: this.options.alias }, methods: [...LIGHTNING_METHODS] };
@@ -262,7 +269,7 @@ export class WeblnHandler {
     if (policy?.balance !== true) {
       throw unauthorized("balance access is not granted");
     }
-    const balance = this.options.spark.accountBalance(this.ref());
+    const balance = this.options.spark.accountBalance(this.ref(origin));
     if (balance === undefined) {
       throw new ProviderError(-32603, "no cached balance for the active spark account");
     }

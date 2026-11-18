@@ -567,6 +567,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
     allowLocalhost: options.allowLocalhostOrigins ?? false,
     selectedGroup: () => accounts.getState().selected ?? undefined,
+    onSelectedGroup: (listener) =>
+      accounts.store.subscribe((state, previous) => {
+        if (
+          state.selected?.walletId !== previous.selected?.walletId ||
+          state.selected?.groupIndex !== previous.selected?.groupIndex
+        ) {
+          listener();
+        }
+      }),
+    invalidateAll: () => {
+      requests.invalidateAll();
+    },
     evmAddress: async (group, network) => {
       const account = await chains(options.wallet).account({
         ...group,
@@ -628,16 +640,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     spark: controller,
-    sparkAccount: () => {
-      const group = connections.activeGroup();
-      return group === undefined
-        ? undefined
-        : {
-            walletId: group.walletId,
-            groupIndex: group.groupIndex,
-            network: options.sparkNetwork,
-          };
-    },
+    sparkNetwork: options.sparkNetwork,
     now: options.now,
     alias: options.weblnAlias,
     lightningMaxFee: options.lightningMaxFee,
@@ -665,7 +668,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       }
       return { address: account.address, publicKey: account.publicKey };
     },
-    activeGroup: () => connections.activeGroup(),
     solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",
   });
 
@@ -673,7 +675,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     bitcoinAccount,
-    activeGroup: () => connections.activeGroup(),
     bitcoinNetwork: () => {
       const enabled = networks.enabled("bitcoin");
       const mainnet = BITCOIN_CHAIN_IDS["bitcoin:mainnet"] ?? "";

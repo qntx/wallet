@@ -33,6 +33,13 @@ export type ConnectionSession = {
   readonly origin: ConnectionOrigin;
   /** Keyed by CAIP-2. */
   readonly scopes: Readonly<Record<string, ConnectionScope>>;
+  /**
+   * The group whose keys sign for every chain scope (`eip155:*`, `solana:*`, `bip122:*`) and
+   * `lightning`; absent until such a scope is granted.
+   */
+  readonly group?: AccountGroup;
+  /** The identity whose key signs for the `nostr` scope; present with a non-empty nostr scope. */
+  readonly identity?: NostrKeyRef;
   /** The session's current EVM network; only dApp sessions have one. */
   readonly currentNetwork: string;
   /** The origin's Nostr policy — set when the host approves a `nostr` connection. */
@@ -123,6 +130,13 @@ export type ConnectionControllerOptions = {
   readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
   /** Voids a page's unfinished requests (revoked, or its network changed). */
   readonly invalidate: (origin: string) => void;
+  /** Called when the app's group selection changes; returns an unsubscribe. */
+  readonly onSelectedGroup: (listener: () => void) => () => void;
+  /**
+   * Voids every unfinished request — locking, unlocking and switching account group void every
+   * unfinished request (requests.mdx invariant 1).
+   */
+  readonly invalidateAll: () => void;
   readonly phishing: Pick<PhishingController, "check">;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
 };
@@ -207,7 +221,22 @@ const addressOf = (account: string): string => account.slice(account.lastIndexOf
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
-const isSession = (value: unknown): value is ConnectionSession => {
+const isGroup = (value: unknown): value is AccountGroup =>
+  isObject(value) &&
+  typeof value["walletId"] === "string" &&
+  typeof value["groupIndex"] === "number" &&
+  Number.isSafeInteger(value["groupIndex"]) &&
+  value["groupIndex"] >= 0;
+
+const isIdentity = (value: unknown): value is NostrKeyRef =>
+  isObject(value) &&
+  value["kind"] === "derived" &&
+  typeof value["walletId"] === "string" &&
+  typeof value["index"] === "number" &&
+  Number.isSafeInteger(value["index"]) &&
+  value["index"] >= 0;
+
+export const isSession = (value: unknown): value is ConnectionSession => {
   if (!isObject(value) || !isObject(value["origin"]) || !isObject(value["scopes"])) {
     return false;
   }
@@ -218,6 +247,8 @@ const isSession = (value: unknown): value is ConnectionSession => {
     typeof value["currentNetwork"] === "string" &&
     typeof value["createdAt"] === "number" &&
     typeof value["lastUsedAt"] === "number" &&
+    (value["group"] === undefined || isGroup(value["group"])) &&
+    (value["identity"] === undefined || isIdentity(value["identity"])) &&
     (value["nostrPolicy"] === undefined || isNostrPolicy(value["nostrPolicy"])) &&
     (value["lightningPolicy"] === undefined || isLightningPolicy(value["lightningPolicy"]))
   );
@@ -235,6 +266,50 @@ const isNostrPolicy = (value: unknown): value is NostrPolicy =>
       Array.isArray(value["signing"]["kinds"]) &&
       (value["signing"]["kinds"] as unknown[]).every((k) => typeof k === "number")));
 
+/** What a session authorized on one network: the addresses the page may see and the group whose keys sign for them. */
+export type SessionAccounts = {
+  readonly group: AccountGroup;
+  readonly addresses: ReadonlyArray<string>;
+};
+
+/** `undefined` unless the session covers `network` with at least one account and has a group. */
+export const sessionAccounts = (
+  session: ConnectionSession | undefined,
+  network: string,
+): SessionAccounts | undefined => {
+  const scope = session?.scopes[network];
+  if (session?.group === undefined || scope === undefined || scope.accounts.length === 0) {
+    return undefined;
+  }
+  return { group: session.group, addresses: scope.accounts.map(addressOf) };
+};
+
+/** The identity and pubkey a session bound to its `nostr` scope; `undefined` when it has neither. */
+export const sessionIdentity = (
+  session: ConnectionSession | undefined,
+): { readonly ref: NostrKeyRef; readonly pubkey: string } | undefined => {
+  const account = session?.scopes["nostr"]?.accounts[0];
+  if (session?.identity === undefined || account === undefined) {
+    return undefined;
+  }
+  return { ref: session.identity, pubkey: addressOf(account) };
+};
+
+const sameGroup = (
+  a: AccountGroup | undefined,
+  b: AccountGroup | undefined,
+): boolean =>
+  a === undefined || b === undefined
+    ? a === b
+    : a.walletId === b.walletId && a.groupIndex === b.groupIndex;
+
+/** A scope a group signs for — chain networks and `lightning`; `nostr` belongs to the identity. */
+const isChainScope = (network: string): boolean =>
+  network === "lightning" ||
+  network.startsWith("eip155:") ||
+  network.startsWith("solana:") ||
+  network.startsWith("bip122:");
+
 type Waiter = {
   readonly resolve: (session: ConnectionSession) => void;
   readonly reject: (error: Error) => void;
@@ -245,8 +320,9 @@ export class ConnectionController extends Controller<ConnectionState> {
   private engineStore: EngineStore | undefined;
   private readonly waiters = new Map<string, Waiter>();
   private readonly expiries = new Map<string, () => void>();
-  private group: AccountGroup | undefined;
   private identity: NostrKeyRef | undefined;
+  private unsubscribeSelection: (() => void) | undefined;
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(options: ConnectionControllerOptions) {
     super({ name: "connections", defaultState: () => ({ sessions: {}, pending: {} }) });
@@ -256,7 +332,6 @@ export class ConnectionController extends Controller<ConnectionState> {
   async init(): Promise<void> {
     const store = await this.options.openStore();
     this.engineStore = store;
-    this.group = undefined;
     this.identity = undefined;
     const collection = store.collection(COLLECTION);
     const keys = await collection.list();
@@ -281,6 +356,12 @@ export class ConnectionController extends Controller<ConnectionState> {
     }
     await Promise.all(expired.map(async (key) => collection.delete(key)));
     this.update(() => ({ sessions, pending: {} }));
+    this.unsubscribeSelection = this.options.onSelectedGroup(() => {
+      this.options.invalidateAll();
+      void this.serial(async () => this.repoint()).catch((error: unknown) => {
+        this.options.logger.warn("connection re-point failed", error);
+      });
+    });
   }
 
   async destroy(): Promise<void> {
@@ -290,8 +371,9 @@ export class ConnectionController extends Controller<ConnectionState> {
 
   /** Locking is not consent: every pending connection is rejected. */
   lock(): void {
+    this.unsubscribeSelection?.();
+    this.unsubscribeSelection = undefined;
     this.engineStore = undefined;
-    this.group = undefined;
     for (const waiter of this.waiters.values()) {
       waiter.reject(userRejectedRequest("the wallet was locked"));
     }
@@ -351,20 +433,19 @@ export class ConnectionController extends Controller<ConnectionState> {
     return Object.values(this.getState().pending);
   }
 
-  /** The group sessions are bound to: the host's last `setActiveGroup`, else the app's selection. */
-  activeGroup(): AccountGroup | undefined {
-    return this.group ?? this.options.selectedGroup();
+  /** What the origin's session authorized on `network` — `undefined` when nothing. */
+  sessionAccounts(origin: string, network: string): SessionAccounts | undefined {
+    return sessionAccounts(this.session(origin), network);
+  }
+
+  /** The identity the origin's `nostr` scope is bound to, with the pubkey the page sees. */
+  nostrIdentity(origin: string): { readonly ref: NostrKeyRef; readonly pubkey: string } | undefined {
+    return sessionIdentity(this.session(origin));
   }
 
   /** Whether `network` is an EVM network the wallet has enabled. */
   isEnabled(network: string): boolean {
     return this.options.enabledNetworks().includes(network);
-  }
-
-  /** The origin's authorized addresses on its current network; empty when not connected. */
-  accounts(origin: string): ReadonlyArray<string> {
-    const session = this.session(origin);
-    return session?.scopes[session.currentNetwork]?.accounts.map(addressOf) ?? [];
   }
 
   /** Throws `4100` unless the origin's session covers `method` on `network`. */
@@ -416,8 +497,10 @@ export class ConnectionController extends Controller<ConnectionState> {
   }
 
   /**
-   * The host's approval, by id: the accounts granted (EVM addresses of the active group) and the
-   * network.
+   * The host's approval, by id: the accounts granted (of the app's selected group for a
+   * chain/lightning grant, of the active identity for `nostr`) and the network. The whole
+   * derivation, merge and persist runs inside the session write queue, so a concurrent group
+   * switch cannot interleave.
    */
   async approveConnection(
     id: string,
@@ -430,7 +513,6 @@ export class ConnectionController extends Controller<ConnectionState> {
       readonly lightning?: { readonly policy: LightningPolicy };
     },
   ): Promise<ConnectionSession> {
-    const store = this.requireStore();
     const entry = this.getState().pending[id];
     const waiter = this.waiters.get(id);
     if (entry === undefined || waiter === undefined) {
@@ -445,6 +527,277 @@ export class ConnectionController extends Controller<ConnectionState> {
     if (entry.kind === "network" && entry.network !== grant.network) {
       throw new Error(`connection request ${id} is for ${String(entry.network)}`);
     }
+    return this.serial(async () => {
+      const store = this.requireStore();
+      const { scopes, group, identity } = await this.grantScopes(entry, grant);
+      if (this.getState().pending[id] === undefined) {
+        throw new Error(`connection request ${id} is no longer pending`);
+      }
+      const now = this.options.now();
+      const existing = this.session(entry.origin.origin);
+      /*
+       * A grant binds to the current group: merging into a session bound to another re-points the
+       * existing chain/lightning scopes in the same write — a session never mixes groups.
+       */
+      const repointed =
+        group !== undefined &&
+        existing !== undefined &&
+        !sameGroup(existing.group, group);
+      const merged = repointed
+        ? await this.repointScopes(existing.scopes, group)
+        : { ...existing?.scopes };
+      const sessionGroup = group ?? existing?.group;
+      const sessionIdentity = identity ?? existing?.identity;
+      /* A later grant (e.g. an added network) keeps the policies an earlier grant set. */
+      const nostrPolicy = grant.nostr?.policy ?? existing?.nostrPolicy;
+      const lightningPolicy = grant.lightning?.policy ?? existing?.lightningPolicy;
+      const session: ConnectionSession = {
+        id:
+          existing?.id ??
+          `session-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+        origin: entry.origin,
+        scopes: { ...merged, ...scopes },
+        currentNetwork:
+          entry.activate === false && existing !== undefined
+            ? existing.currentNetwork
+            : grant.network,
+        ...(sessionGroup === undefined ? {} : { group: sessionGroup }),
+        ...(sessionIdentity === undefined ? {} : { identity: sessionIdentity }),
+        ...(nostrPolicy === undefined ? {} : { nostrPolicy }),
+        ...(lightningPolicy === undefined ? {} : { lightningPolicy }),
+        createdAt: existing?.createdAt ?? now,
+        lastUsedAt: now,
+      };
+      await this.persist(store, session);
+      this.dropPending(id);
+      if (repointed || (existing !== undefined && existing.currentNetwork !== session.currentNetwork)) {
+        this.options.invalidate(entry.origin.origin);
+      }
+      waiter.resolve(session);
+      return session;
+    });
+  }
+
+  rejectConnection(id: string): void {
+    const waiter = this.waiters.get(id);
+    if (this.getState().pending[id] === undefined || waiter === undefined) {
+      throw new Error(`unknown connection request ${id}`);
+    }
+    this.dropPending(id);
+    waiter.reject(userRejectedRequest());
+  }
+
+  /** Ends the origin's session; its pending connection and unfinished requests are void. */
+  async revoke(origin: string): Promise<void> {
+    await this.serial(async () => {
+      const store = this.requireStore();
+      for (const p of this.pending().filter((x) => x.origin.origin === origin)) {
+        const waiter = this.waiters.get(p.id);
+        this.dropPending(p.id);
+        waiter?.reject(userRejectedRequest("the connection was revoked"));
+      }
+      const session = this.session(origin);
+      if (session !== undefined) {
+        await store.collection(COLLECTION).delete(session.id);
+        this.update((s) => {
+          const { [session.id]: _gone, ...sessions } = s.sessions;
+          return { ...s, sessions };
+        });
+      }
+      this.options.invalidate(origin);
+    });
+  }
+
+  /** Switches within the session's scope; the origin's unfinished requests are void. */
+  async setCurrentNetwork(origin: string, network: string): Promise<void> {
+    await this.serial(async () => {
+      const store = this.requireStore();
+      const session = this.session(origin);
+      if (session === undefined || session.scopes[network] === undefined) {
+        throw unauthorized();
+      }
+      await this.persist(store, { ...session, currentNetwork: network });
+      this.options.invalidate(origin);
+    });
+  }
+
+  async touch(origin: string): Promise<void> {
+    await this.serial(async () => {
+      const store = this.engineStore;
+      const session = this.session(origin);
+      const now = this.options.now();
+      if (
+        store === undefined ||
+        session === undefined ||
+        now - session.lastUsedAt < TOUCH_INTERVAL_MS
+      ) {
+        return;
+      }
+      await this.persist(store, { ...session, lastUsedAt: now });
+    });
+  }
+
+  /** The active Nostr identity — `undefined` until the host picks one. */
+  activeIdentity(): NostrKeyRef | undefined {
+    return this.identity;
+  }
+
+  /** The origin's persisted Nostr policy — `undefined` until it is nostr-authorized. */
+  nostrPolicy(origin: string): NostrPolicy | undefined {
+    return this.session(origin)?.nostrPolicy;
+  }
+
+  /** The origin's persisted Lightning policy — `undefined` until it is lightning-authorized. */
+  lightningPolicy(origin: string): LightningPolicy | undefined {
+    return this.session(origin)?.lightningPolicy;
+  }
+
+  private async bitcoinScope(group: AccountGroup, network: string): Promise<ConnectionScope> {
+    const addresses = await Promise.all(
+      BITCOIN_PURPOSES.map(async (purpose) => this.options.bitcoinAddress(group, network, purpose)),
+    );
+    return {
+      accounts: addresses.map((address) => caip10(network, address)),
+      methods: BITCOIN_METHODS,
+      notifications: ["change"],
+    };
+  }
+
+  /**
+   * The host's Nostr identity selection: the pubkey is derived first, then every session with a
+   * non-empty `nostr` scope is re-pointed — `identity` and the scope's account written together —
+   * and the origin's unfinished requests voided. No event — NIP-07 has none.
+   */
+  async setActiveIdentity(ref: NostrKeyRef | undefined): Promise<void> {
+    await this.serial(async () => {
+      const store = this.requireStore();
+      let pubkey: string | undefined;
+      if (ref !== undefined) {
+        const raw = await this.options.nostrPubkey(ref);
+        pubkey = raw.toLowerCase();
+      }
+      this.identity = ref;
+      for (const session of Object.values(this.getState().sessions)) {
+        const scope = session.scopes["nostr"];
+        if (scope === undefined || scope.accounts.length === 0) {
+          continue;
+        }
+        const { identity: _gone, ...rest } = session;
+        // oxlint-disable-next-line eslint/no-await-in-loop -- session writes are serialized.
+        await this.persist(store, {
+          ...rest,
+          scopes: {
+            ...session.scopes,
+            nostr: {
+              ...scope,
+              accounts: pubkey === undefined ? [] : [`nostr:${pubkey}`],
+            },
+          },
+          ...(ref === undefined ? {} : { identity: ref }),
+        });
+        this.options.invalidate(session.origin.origin);
+      }
+    });
+  }
+
+  /**
+   * Every session write — a re-point, a grant's merge and persist, a revoke, a network switch, a
+   * touch — queues here so one writer runs at a time and reads the latest session at its turn. A
+   * failed task does not break the chain.
+   */
+  private serial<T>(task: () => Promise<T>): Promise<T> {
+    const run = this.writeQueue.then(task);
+    this.writeQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  /**
+   * Re-binds every session's chain/lightning scopes to the app's current group selection: each
+   * scope's accounts become the target's (empty when the selection is cleared or a derivation
+   * fails), `group` written together with them. The origin's unfinished requests are voided.
+   */
+  private async repoint(): Promise<void> {
+    const store = this.requireStore();
+    const target = this.options.selectedGroup();
+    for (const session of Object.values(this.getState().sessions)) {
+      if (
+        !Object.keys(session.scopes).some(isChainScope) ||
+        sameGroup(session.group, target)
+      ) {
+        continue;
+      }
+      const scopes = await this.repointScopes(session.scopes, target);
+      const { group: _gone, ...rest } = session;
+      // oxlint-disable-next-line eslint/no-await-in-loop -- session writes are serialized.
+      await this.persist(store, {
+        ...rest,
+        scopes,
+        ...(target === undefined ? {} : { group: target }),
+      });
+      this.options.invalidate(session.origin.origin);
+    }
+  }
+
+  /**
+   * A session's scopes re-computed for `target`: EVM and Solana scope accounts are the group's
+   * address, `bip122` its two purpose addresses, `lightning` its `spark:` ref; `nostr` is the
+   * identity's and passes through. `target` undefined or a failed derivation → empty accounts.
+   */
+  private async repointScopes(
+    scopes: Readonly<Record<string, ConnectionScope>>,
+    target: AccountGroup | undefined,
+  ): Promise<Record<string, ConnectionScope>> {
+    const entries = await Promise.all(
+      Object.entries(scopes).map(async ([network, scope]): Promise<[string, ConnectionScope]> => {
+        if (network === "nostr") {
+          return [network, scope];
+        }
+        if (target === undefined) {
+          return [network, { ...scope, accounts: [] }];
+        }
+        try {
+          if (network === "lightning") {
+            return [
+              network,
+              { ...scope, accounts: [`spark:${target.walletId}:${String(target.groupIndex)}`] },
+            ];
+          }
+          if (network.startsWith("bip122:")) {
+            return [network, await this.bitcoinScope(target, network)];
+          }
+          if (network.startsWith("solana:")) {
+            const address = await this.options.solanaAddress(target, network);
+            return [network, { ...scope, accounts: [caip10(network, address)] }];
+          }
+          if (network.startsWith("eip155:")) {
+            const address = await this.options.evmAddress(target, network);
+            return [network, { ...scope, accounts: [caip10(network, address.toLowerCase())] }];
+          }
+          return [network, scope];
+        } catch (error) {
+          this.options.logger.warn("connection account unavailable in the new group", error);
+          return [network, { ...scope, accounts: [] }];
+        }
+      }),
+    );
+    return Object.fromEntries(entries);
+  }
+
+  /**
+   * The scopes a grant produces, bound to the app's selected group (chain/lightning namespaces) or
+   * the active identity (`nostr`) — read at write-queue turn, not request time.
+   */
+  private async grantScopes(
+    entry: PendingConnection,
+    grant: Parameters<ConnectionController["approveConnection"]>[1],
+  ): Promise<{
+    readonly scopes: Record<string, ConnectionScope>;
+    readonly group?: AccountGroup;
+    readonly identity?: NostrKeyRef;
+  }> {
     const scopes: Record<string, ConnectionScope> = {};
     if (entry.namespace === "nostr") {
       if (grant.nostr === undefined) {
@@ -464,11 +817,28 @@ export class ConnectionController extends Controller<ConnectionState> {
         methods: NOSTR_METHODS,
         notifications: [],
       };
-    } else if (entry.namespace === "solana") {
-      const group = this.activeGroup();
+      return { scopes, identity };
+    }
+    if (entry.namespace === "lightning") {
+      if (grant.lightning === undefined) {
+        throw invalidParams("a lightning connection needs the origin's policy");
+      }
+      const group = this.options.selectedGroup();
       if (group === undefined) {
         throw new Error("no account group is selected");
       }
+      scopes["lightning"] = {
+        accounts: [`spark:${group.walletId}:${String(group.groupIndex)}`],
+        methods: LIGHTNING_METHODS,
+        notifications: [],
+      };
+      return { scopes, group };
+    }
+    const group = this.options.selectedGroup();
+    if (group === undefined) {
+      throw new Error("no account group is selected");
+    }
+    if (entry.namespace === "solana") {
       const solanaNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("solana:"));
       const solanaEntries = await Promise.all(
         solanaNetworks.map(async (network): Promise<[string, ConnectionScope]> => {
@@ -484,11 +854,9 @@ export class ConnectionController extends Controller<ConnectionState> {
         }),
       );
       Object.assign(scopes, Object.fromEntries(solanaEntries));
-    } else if (entry.namespace === "bip122") {
-      const group = this.activeGroup();
-      if (group === undefined) {
-        throw new Error("no account group is selected");
-      }
+      return { scopes, group };
+    }
+    if (entry.namespace === "bip122") {
       const bitcoinNetworks = this.options.enabledNetworks().filter((n) => n.startsWith("bip122:"));
       const bitcoinEntries = await Promise.all(
         bitcoinNetworks.map(async (network): Promise<[string, ConnectionScope]> => [
@@ -497,241 +865,23 @@ export class ConnectionController extends Controller<ConnectionState> {
         ]),
       );
       Object.assign(scopes, Object.fromEntries(bitcoinEntries));
-    } else if (entry.namespace === "lightning") {
-      if (grant.lightning === undefined) {
-        throw invalidParams("a lightning connection needs the origin's policy");
-      }
-      const group = this.activeGroup();
-      if (group === undefined) {
-        throw new Error("no account group is selected");
-      }
-      scopes["lightning"] = {
-        accounts: [`spark:${group.walletId}:${String(group.groupIndex)}`],
-        methods: LIGHTNING_METHODS,
-        notifications: [],
-      };
-    } else {
-      const chainId = evmChainId(grant.network);
-      if (chainId === undefined || !this.options.enabledNetworks().includes(grant.network)) {
-        throw invalidParams(`${grant.network} is not an enabled EVM network`);
-      }
-      const group = this.activeGroup();
-      if (group === undefined) {
-        throw new Error("no account group is selected");
-      }
-      const derived = await this.options.evmAddress(group, grant.network);
-      const own = derived.toLowerCase();
-      if (grant.accounts.length === 0 || grant.accounts.some((a) => a.toLowerCase() !== own)) {
-        throw invalidParams("only the active group's account can be granted");
-      }
-      scopes[grant.network] = {
-        accounts: [caip10(grant.network, own)],
-        methods: SESSION_METHODS,
-        notifications: SESSION_NOTIFICATIONS,
-      };
+      return { scopes, group };
     }
-    if (this.getState().pending[id] === undefined) {
-      throw new Error(`connection request ${id} is no longer pending`);
+    const chainId = evmChainId(grant.network);
+    if (chainId === undefined || !this.options.enabledNetworks().includes(grant.network)) {
+      throw invalidParams(`${grant.network} is not an enabled EVM network`);
     }
-    const now = this.options.now();
-    const existing = this.session(entry.origin.origin);
-    const currentNetwork =
-      entry.activate === false && existing !== undefined ? existing.currentNetwork : grant.network;
-    const session: ConnectionSession = {
-      id:
-        existing?.id ??
-        `session-${[...this.options.random(8)].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
-      origin: entry.origin,
-      scopes: { ...existing?.scopes, ...scopes },
-      currentNetwork,
-      ...(grant.nostr === undefined ? {} : { nostrPolicy: grant.nostr.policy }),
-      ...(grant.lightning === undefined ? {} : { lightningPolicy: grant.lightning.policy }),
-      createdAt: existing?.createdAt ?? now,
-      lastUsedAt: now,
+    const derived = await this.options.evmAddress(group, grant.network);
+    const own = derived.toLowerCase();
+    if (grant.accounts.length === 0 || grant.accounts.some((a) => a.toLowerCase() !== own)) {
+      throw invalidParams("only the selected group's account can be granted");
+    }
+    scopes[grant.network] = {
+      accounts: [caip10(grant.network, own)],
+      methods: SESSION_METHODS,
+      notifications: SESSION_NOTIFICATIONS,
     };
-    await this.persist(store, session);
-    this.dropPending(id);
-    if (existing !== undefined && existing.currentNetwork !== currentNetwork) {
-      this.options.invalidate(entry.origin.origin);
-    }
-    waiter.resolve(session);
-    return session;
-  }
-
-  rejectConnection(id: string): void {
-    const waiter = this.waiters.get(id);
-    if (this.getState().pending[id] === undefined || waiter === undefined) {
-      throw new Error(`unknown connection request ${id}`);
-    }
-    this.dropPending(id);
-    waiter.reject(userRejectedRequest());
-  }
-
-  /** Ends the origin's session; its pending connection and unfinished requests are void. */
-  async revoke(origin: string): Promise<void> {
-    const store = this.requireStore();
-    for (const p of this.pending().filter((x) => x.origin.origin === origin)) {
-      const waiter = this.waiters.get(p.id);
-      this.dropPending(p.id);
-      waiter?.reject(userRejectedRequest("the connection was revoked"));
-    }
-    const session = this.session(origin);
-    if (session !== undefined) {
-      await store.collection(COLLECTION).delete(session.id);
-      this.update((s) => {
-        const { [session.id]: _gone, ...sessions } = s.sessions;
-        return { ...s, sessions };
-      });
-    }
-    this.options.invalidate(origin);
-  }
-
-  /** Switches within the session's scope; the origin's unfinished requests are void. */
-  async setCurrentNetwork(origin: string, network: string): Promise<void> {
-    const store = this.requireStore();
-    const session = this.session(origin);
-    if (session === undefined || session.scopes[network] === undefined) {
-      throw unauthorized();
-    }
-    await this.persist(store, { ...session, currentNetwork: network });
-    this.options.invalidate(origin);
-  }
-
-  async touch(origin: string): Promise<void> {
-    const store = this.engineStore;
-    const session = this.session(origin);
-    const now = this.options.now();
-    if (
-      store === undefined ||
-      session === undefined ||
-      now - session.lastUsedAt < TOUCH_INTERVAL_MS
-    ) {
-      return;
-    }
-    await this.persist(store, { ...session, lastUsedAt: now });
-  }
-
-  /**
-   * The host switched account group: every session's accounts become the new group's addresses. A
-   * session that cannot get one (no address derivable) is left with an empty list and has to be
-   * authorized again.
-   */
-  async setActiveGroup(walletId: string, groupIndex: number): Promise<void> {
-    const store = this.requireStore();
-    const group = { walletId, groupIndex };
-    this.group = group;
-    await Promise.all(
-      Object.values(this.getState().sessions).map(async (session) => {
-        const entries = await Promise.all(
-          Object.entries(session.scopes).map(
-            async ([network, scope]): Promise<[string, ConnectionScope]> => {
-              if (scope.accounts.length === 0) {
-                return [network, scope];
-              }
-              try {
-                if (network === "nostr" || network === "lightning") {
-                  return [network, scope];
-                }
-                if (network.startsWith("bip122:")) {
-                  return [network, await this.bitcoinScope(group, network)];
-                }
-                if (network.startsWith("solana:")) {
-                  const address = await this.options.solanaAddress(group, network);
-                  return [network, { ...scope, accounts: [caip10(network, address)] }];
-                }
-                const address = await this.options.evmAddress(group, network);
-                return [network, { ...scope, accounts: [caip10(network, address.toLowerCase())] }];
-              } catch (error) {
-                this.options.logger.warn("connection account unavailable in the new group", error);
-                return [network, { ...scope, accounts: [] }];
-              }
-            },
-          ),
-        );
-        await this.persist(store, { ...session, scopes: Object.fromEntries(entries) });
-      }),
-    );
-  }
-
-  /** The active Nostr identity — `undefined` until the host picks one. */
-  activeIdentity(): NostrKeyRef | undefined {
-    return this.identity;
-  }
-
-  /** The origin's persisted Nostr policy — `undefined` until it is nostr-authorized. */
-  nostrPolicy(origin: string): NostrPolicy | undefined {
-    return this.session(origin)?.nostrPolicy;
-  }
-
-  /** The origin's `nostr` namespace scope's pubkey, or `undefined` when not nostr-authorized. */
-  nostrAccount(origin: string): string | undefined {
-    const account = this.session(origin)?.scopes["nostr"]?.accounts[0];
-    return account === undefined ? undefined : addressOf(account);
-  }
-
-  /** The origin's persisted Lightning policy — `undefined` until it is lightning-authorized. */
-  lightningPolicy(origin: string): LightningPolicy | undefined {
-    return this.session(origin)?.lightningPolicy;
-  }
-
-  /** The origin's `solana` scope's address on `network`, or `undefined` when not authorized. */
-  solanaAccount(origin: string, network: string): string | undefined {
-    const account = this.session(origin)?.scopes[network]?.accounts[0];
-    return account === undefined ? undefined : addressOf(account);
-  }
-
-  /**
-   * The origin's `bip122` scope accounts on `network`, in `BITCOIN_PURPOSES` order, or `undefined`
-   * when not authorized.
-   */
-  bitcoinAccounts(origin: string, network: string): Record<BitcoinPurpose, string> | undefined {
-    const [payment, ordinals] = this.session(origin)?.scopes[network]?.accounts ?? [];
-    return payment === undefined || ordinals === undefined
-      ? undefined
-      : { payment: addressOf(payment), ordinals: addressOf(ordinals) };
-  }
-
-  private async bitcoinScope(group: AccountGroup, network: string): Promise<ConnectionScope> {
-    const addresses = await Promise.all(
-      BITCOIN_PURPOSES.map(async (purpose) => this.options.bitcoinAddress(group, network, purpose)),
-    );
-    return {
-      accounts: addresses.map((address) => caip10(network, address)),
-      methods: BITCOIN_METHODS,
-      notifications: ["change"],
-    };
-  }
-
-  /**
-   * The host's Nostr identity selection: every authorized `nostr` session's account becomes the new
-   * identity's pubkey (or empties when the identity is cleared). No event — NIP-07 has none.
-   */
-  async setActiveIdentity(ref: NostrKeyRef | undefined): Promise<void> {
-    const store = this.requireStore();
-    this.identity = ref;
-    let pubkey: string | undefined;
-    if (ref !== undefined) {
-      const raw = await this.options.nostrPubkey(ref);
-      pubkey = raw.toLowerCase();
-    }
-    await Promise.all(
-      Object.values(this.getState().sessions).map(async (session) => {
-        const scope = session.scopes["nostr"];
-        if (scope === undefined || scope.accounts.length === 0) {
-          return;
-        }
-        await this.persist(store, {
-          ...session,
-          scopes: {
-            ...session.scopes,
-            nostr: {
-              ...scope,
-              accounts: pubkey === undefined ? [] : [`nostr:${pubkey}`],
-            },
-          },
-        });
-      }),
-    );
+    return { scopes, group };
   }
 
   private dropPending(id: string): void {

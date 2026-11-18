@@ -179,6 +179,8 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     logger,
     allowLocalhost: false,
     selectedGroup: () => ({ walletId: "0a".repeat(8), groupIndex: 0 }),
+    onSelectedGroup: () => () => undefined,
+    invalidateAll: () => undefined,
     evmAddress: async () => Promise.resolve(ADDR),
     enabledNetworks: () => [N1],
     bitcoinAddress: async () => Promise.resolve("bc1qunused"),

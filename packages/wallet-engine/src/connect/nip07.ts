@@ -26,14 +26,13 @@ export type Nip07HandlerOptions = {
     | "checkOrigin"
     | "authorize"
     | "session"
-    | "nostrAccount"
+    | "nostrIdentity"
     | "nostrPolicy"
-    | "activeIdentity"
     | "request"
     | "touch"
   >;
   readonly requests: Pick<RequestController, "prepare" | "outcome">;
-  /** `nostr(wallet).signer(ref)` — the active identity's signer. */
+  /** `nostr(wallet).signer(ref)` — the session identity's signer. */
   readonly signerFor: (ref: NostrKeyRef) => WalletSigner;
 };
 
@@ -126,57 +125,50 @@ export class Nip07Handler {
   async handle(origin: string, request: Nip07Request): Promise<unknown> {
     const { connections } = this.options;
     connections.checkOrigin(origin);
-    const identity = connections.activeIdentity();
-    if (identity === undefined) {
-      throw unauthorized();
-    }
-    const pubkey = connections.nostrAccount(origin);
     switch (request.method) {
       case "getPublicKey":
-        return this.publicKey(origin, pubkey);
+        return this.publicKey(origin);
       case "signEvent":
-        return this.signEvent(origin, pubkey, identity, request.params);
+        return this.signEvent(origin, request.params);
       case "nip04.encrypt":
       case "nip04.decrypt":
       case "nip44.encrypt":
       case "nip44.decrypt": {
         connections.authorize(origin, "nostr", request.method);
         const { peer, text } = peerText(request.params);
-        return this.crypt(origin, identity, request.method, peer, text);
+        return this.crypt(origin, request.method, peer, text);
       }
       default:
         throw unauthorized();
     }
   }
 
-  private async publicKey(origin: string, pubkey: string | undefined): Promise<string> {
+  /** The session's bound identity pubkey — a `nostr` connection approval when none yet. */
+  private async publicKey(origin: string): Promise<string> {
     const { connections } = this.options;
-    if (pubkey === undefined) {
+    if (connections.nostrIdentity(origin) === undefined) {
       await connections.request(origin, { kind: "connect", namespace: "nostr" });
     }
     await connections.touch(origin);
-    const granted = connections.nostrAccount(origin);
+    const granted = connections.nostrIdentity(origin);
     if (granted === undefined) {
       throw unauthorized();
     }
-    return granted;
+    return granted.pubkey;
   }
 
-  private async signEvent(
-    origin: string,
-    pubkey: string | undefined,
-    identity: NostrKeyRef,
-    params: unknown,
-  ): Promise<Event> {
+  private async signEvent(origin: string, params: unknown): Promise<Event> {
     const { connections, requests, signerFor } = this.options;
     const session = connections.authorize(origin, "nostr", "signEvent");
-    const event = checkEvent(Array.isArray(params) ? params[0] : params);
-    // A page-supplied pubkey must equal the active identity's or be absent.
-    if (event.pubkey !== undefined && event.pubkey !== pubkey) {
-      throw invalidParams("event.pubkey does not match the active identity");
-    }
-    if (pubkey === undefined) {
+    const bound = connections.nostrIdentity(origin);
+    if (bound === undefined) {
       throw unauthorized();
+    }
+    const pubkey = bound.pubkey;
+    const event = checkEvent(Array.isArray(params) ? params[0] : params);
+    // A page-supplied pubkey must equal the session identity's or be absent.
+    if (event.pubkey !== undefined && event.pubkey !== pubkey) {
+      throw invalidParams("event.pubkey does not match the connected identity");
     }
     const policy = session.nostrPolicy ?? { signing: "ask", decrypt: false };
     const direct =
@@ -185,12 +177,12 @@ export class Nip07Handler {
     const signing = { ...event, pubkey };
     if (direct && !forcesConfirmation(event.kind)) {
       await connections.touch(origin);
-      return signerFor(identity).signEvent(signing);
+      return signerFor(bound.ref).signEvent(signing);
     }
     const pending = await requests.prepare({
       method: "nostr-sign",
       origin: { kind: "browser", origin },
-      ref: identity,
+      ref: bound.ref,
       event: signing,
     });
     const outcome = await requests.outcome(pending.id);
@@ -202,7 +194,6 @@ export class Nip07Handler {
 
   private async crypt(
     origin: string,
-    identity: NostrKeyRef,
     method: string,
     peer: string,
     text: string,
@@ -211,8 +202,12 @@ export class Nip07Handler {
     if (method.endsWith(".decrypt") && connections.nostrPolicy(origin)?.decrypt !== true) {
       throw unauthorized();
     }
+    const bound = connections.nostrIdentity(origin);
+    if (bound === undefined) {
+      throw unauthorized();
+    }
     await connections.touch(origin);
-    const signer = signerFor(identity);
+    const signer = signerFor(bound.ref);
     const fn =
       method === "nip04.encrypt"
         ? signer.nip04Encrypt

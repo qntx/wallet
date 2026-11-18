@@ -13,10 +13,12 @@ const GROUP = { walletId: "w", groupIndex: 0 };
 
 type SessionLike = {
   origin: { kind: "browser"; origin: string };
+  group?: typeof GROUP;
   scopes: Record<string, { accounts: string[] }>;
 };
-const solSession = (accounts = [ADDR], origin = SITE): SessionLike => ({
+const solSession = (accounts = [ADDR], origin = SITE, group: typeof GROUP | null = GROUP): SessionLike => ({
   origin: { kind: "browser", origin },
+  ...(group === null ? {} : { group }),
   scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
 });
 
@@ -45,7 +47,12 @@ function rig(
         }
         return {} as never;
       },
-      solanaAccount: () => (connected ? ADDR : undefined),
+      sessionAccounts: () => {
+        const bound = "group" in options ? options.group : GROUP;
+        return !connected || bound === undefined
+          ? undefined
+          : { group: bound, addresses: [ADDR] };
+      },
       request: async () => {
         await Promise.resolve();
         calls.requested += 1;
@@ -77,7 +84,6 @@ function rig(
       outcome: async () => Promise.resolve(options.outcome as never),
     },
     solanaAccount: async () => Promise.resolve({ address: ADDR, publicKey: PUBKEY }),
-    activeGroup: () => ("group" in options ? options.group : GROUP),
     solanaNetwork: () => NETWORK,
   });
   const set = (sessions: Record<string, SessionLike>): void => {
@@ -271,8 +277,12 @@ describe("SolanaWalletHandler events", () => {
     second.off();
   });
 
-  it("answers an empty list for a change when no group is selected", async () => {
-    const r = rig({ group: undefined });
-    await expect(r.handler.solanaAccountsChanged(SITE)).resolves.toStrictEqual([]);
+  it("a session without a bound group changes to an empty account list", async () => {
+    const r = rig();
+    const { events, off } = collect(r);
+    r.set({ a: solSession([ADDR], SITE, null) });
+    await settle();
+    expect(events.at(-1)?.accounts).toStrictEqual([]);
+    off();
   });
 });

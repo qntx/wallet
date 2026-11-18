@@ -158,7 +158,7 @@ export class Eip1193Handler {
     }
     switch (method) {
       case "eth_accounts":
-        return connections.accounts(origin);
+        return this.accounts(origin);
       case "eth_chainId":
         return hexChainId(
           connections.session(origin)?.currentNetwork ?? this.options.defaultNetwork(),
@@ -206,17 +206,24 @@ export class Eip1193Handler {
     throw new ProviderError(-32601, `${method} does not exist`);
   }
 
+  /** The session's bound accounts on its current network — the page's `eth_accounts`. */
+  private accounts(origin: string): ReadonlyArray<string> {
+    const { connections } = this.options;
+    const session = connections.session(origin);
+    return connections.sessionAccounts(origin, session?.currentNetwork ?? "")?.addresses ?? [];
+  }
+
   private async requestAccounts(origin: string): Promise<ReadonlyArray<string>> {
     const { connections } = this.options;
-    if (connections.accounts(origin).length === 0) {
+    if (this.accounts(origin).length === 0) {
       await connections.request(origin, { kind: "connect" });
     }
     await connections.touch(origin);
-    return connections.accounts(origin);
+    return this.accounts(origin);
   }
 
   private permissions(origin: string): ReadonlyArray<unknown> {
-    const accounts = this.options.connections.accounts(origin);
+    const accounts = this.accounts(origin);
     if (accounts.length === 0) {
       return [];
     }
@@ -315,15 +322,15 @@ export class Eip1193Handler {
     if (this.options.isTracked(network, address)) {
       return true;
     }
-    const group: AccountGroup | undefined = connections.activeGroup();
-    if (group === undefined) {
-      throw internalError("no account group is selected");
+    const binding = connections.sessionAccounts(origin, session.currentNetwork);
+    if (binding === undefined) {
+      throw unauthorized("no account is bound to the session network");
     }
     try {
       const pending = await requests.prepare({
         method: "watch-asset",
         origin: { kind: "browser", origin },
-        account: { kind: "hd", ...group, template: "evm.bip44" },
+        account: { kind: "hd", ...binding.group, template: "evm.bip44" },
         network,
         address,
       });
@@ -335,20 +342,32 @@ export class Eip1193Handler {
     }
   }
 
-  private authorizedAccount(session: ConnectionSession, address: unknown): string {
-    const accounts = this.options.connections.accounts(session.origin.origin);
-    const wanted = typeof address === "string" ? address.toLowerCase() : accounts[0];
-    if (wanted === undefined || !accounts.some((a) => a.toLowerCase() === wanted.toLowerCase())) {
+  /** The address the page named, checked against the session binding on its current network. */
+  private authorizedAccount(
+    session: ConnectionSession,
+    address: unknown,
+  ): { readonly group: AccountGroup; readonly address: string } {
+    const binding = this.options.connections.sessionAccounts(
+      session.origin.origin,
+      session.currentNetwork,
+    );
+    const wanted =
+      typeof address === "string" ? address.toLowerCase() : binding?.addresses[0]?.toLowerCase();
+    if (
+      binding === undefined ||
+      wanted === undefined ||
+      !binding.addresses.some((a) => a.toLowerCase() === wanted)
+    ) {
       throw unauthorized("account not authorized");
     }
-    return wanted;
+    return { group: binding.group, address: wanted };
   }
 
   private async personalSign(origin: string, params: ReadonlyArray<unknown>): Promise<string> {
     const session = this.signingSession(origin, "personal_sign");
-    this.authorizedAccount(session, params[1]);
+    const { group } = this.authorizedAccount(session, params[1]);
     const message = textBytes(params[0]);
-    return this.sign(origin, session, (account) => ({
+    return this.sign(origin, session, group, (account) => ({
       kind: "evm.personal-message",
       network: session.currentNetwork,
       account,
@@ -358,10 +377,10 @@ export class Eip1193Handler {
 
   private async typedData(origin: string, params: ReadonlyArray<unknown>): Promise<string> {
     const session = this.signingSession(origin, "eth_signTypedData_v4");
-    this.authorizedAccount(session, params[0]);
+    const { group } = this.authorizedAccount(session, params[0]);
     const [, source] = params;
     const typedData = typeof source === "string" ? source : JSON.stringify(source);
-    return this.sign(origin, session, (account) => ({
+    return this.sign(origin, session, group, (account) => ({
       kind: "evm.typed-data",
       network: session.currentNetwork,
       account,
@@ -374,7 +393,7 @@ export class Eip1193Handler {
     if (!isObject(arg)) {
       throw invalidParams("transaction must be an object");
     }
-    this.authorizedAccount(session, arg["from"]);
+    const { group } = this.authorizedAccount(session, arg["from"]);
     const chainId = evmChainId(session.currentNetwork);
     if (chainId === undefined) {
       throw internalError("session network is not an EVM network");
@@ -391,7 +410,7 @@ export class Eip1193Handler {
       throw invalidParams("to must be an address");
     }
     // Only to, value, data and gas survive; nonce and fees are placeholders the pipeline replaces.
-    return this.sign(origin, session, (account) => ({
+    return this.sign(origin, session, group, (account) => ({
       kind: "evm.transaction",
       network: session.currentNetwork,
       account,
@@ -435,13 +454,10 @@ export class Eip1193Handler {
   private async sign(
     origin: string,
     session: ConnectionSession,
+    group: AccountGroup,
     build: (account: AccountRef) => SignRequest,
   ): Promise<string> {
     const { connections, requests } = this.options;
-    const group: AccountGroup | undefined = connections.activeGroup();
-    if (group === undefined) {
-      throw internalError("no account group is selected");
-    }
     const account = { kind: "hd", ...group, template: "evm.bip44" } as const;
     try {
       const pending = await requests.prepare({
@@ -487,7 +503,7 @@ export class Eip1193Handler {
   ): Promise<Record<string, unknown>> {
     const session = this.requiredSession(origin);
     const [address0, asked] = params;
-    this.authorizedAccount(session, address0);
+    const { group } = this.authorizedAccount(session, address0);
     const networks =
       asked === undefined
         ? Object.keys(session.scopes).filter((s) => s.startsWith("eip155:"))
@@ -502,10 +518,6 @@ export class Eip1193Handler {
               .filter((c): c is string => typeof c === "string")
               .map((c) => `eip155:${Number.parseInt(c, 16)}`);
           })();
-    const group = this.options.connections.activeGroup();
-    if (group === undefined) {
-      throw internalError("no account group is selected");
-    }
     const account = this.accountFor(group);
     const out: Record<string, unknown> = {};
     await Promise.all(
@@ -554,11 +566,7 @@ export class Eip1193Handler {
     if (Number(askedChain) !== chainId) {
       throw new ProviderError(5710, "chainId does not match the session network");
     }
-    this.authorizedAccount(session, arg["from"]);
-    const group = this.options.connections.activeGroup();
-    if (group === undefined) {
-      throw internalError("no account group is selected");
-    }
+    const { group } = this.authorizedAccount(session, arg["from"]);
     const account = this.accountFor(group);
     const rawCalls = arg["calls"];
     if (!Array.isArray(rawCalls) || rawCalls.length === 0) {

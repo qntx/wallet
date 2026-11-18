@@ -12,7 +12,7 @@ import type {
   BrowserOrigin,
 } from "../requests/types.ts";
 import type { BitcoinPurpose, ConnectionController, ConnectionSession } from "./controller.ts";
-import { BITCOIN_METHODS, BITCOIN_PURPOSES } from "./controller.ts";
+import { BITCOIN_METHODS, BITCOIN_PURPOSES, sessionAccounts } from "./controller.ts";
 import { ProviderError, invalidParams } from "./errors.ts";
 import { SessionEvents } from "./subscription.ts";
 import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
@@ -73,7 +73,7 @@ type BitcoinConnections = Pick<
   | "checkOrigin"
   | "session"
   | "authorize"
-  | "bitcoinAccounts"
+  | "sessionAccounts"
   | "request"
   | "touch"
   | "revoke"
@@ -97,9 +97,6 @@ type Options = {
     network: string,
     purpose: BitcoinPurpose,
   ) => Promise<{ readonly address: string; readonly publicKey: Uint8Array }>;
-  readonly activeGroup: () =>
-    | { readonly walletId: string; readonly groupIndex: number }
-    | undefined;
   readonly bitcoinNetwork: () => string;
 };
 
@@ -118,11 +115,13 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     this.options = options;
     this.events = new SessionEvents(options.connections, async (before, after) =>
       Promise.all(
-        diffSessions(before, after).map(async ({ origin }): Promise<BitcoinEvent> => ({
-          name: "bitcoinAccountsChanged",
-          origin,
-          accounts: await this.bitcoinAccountsChanged(),
-        })),
+        diffSessions(before, after).map(
+          async ({ origin, session }): Promise<BitcoinEvent> => ({
+            name: "bitcoinAccountsChanged",
+            origin,
+            accounts: await this.sessionAccountsChanged(session),
+          }),
+        ),
       ),
     );
   }
@@ -158,16 +157,23 @@ export class BitcoinWalletHandler implements BitcoinHandler {
   ): Promise<{ accounts: ReadonlyArray<BitcoinWalletAccount> }> {
     const purposes = purposesOf(request.params);
     const network = this.options.bitcoinNetwork();
-    const known = this.options.connections.bitcoinAccounts(checked.origin, network) !== undefined;
-    await (known
+    let binding = this.options.connections.sessionAccounts(checked.origin, network);
+    await (binding !== undefined
       ? this.options.connections.touch(checked.origin)
       : this.options.connections.request(checked.origin, { kind: "connect", namespace: "bip122" }));
-    const group = this.options.activeGroup();
-    if (group === undefined) {
-      throw new ProviderError(4100, "no account group is selected");
+    binding = this.options.connections.sessionAccounts(checked.origin, network);
+    if (binding === undefined) {
+      throw new ProviderError(4100, "the wallet is not connected");
     }
+    const group = binding.group;
     const accounts = await Promise.all(
-      purposes.map(async (purpose) => this.walletAccount(group, network, purpose)),
+      purposes.map(async (purpose) => {
+        const account = await this.walletAccount(group, network, purpose);
+        if (account.address !== binding.addresses[BITCOIN_PURPOSES.indexOf(purpose)]) {
+          throw new ProviderError(-32603, "the session's account does not derive for its group");
+        }
+        return account;
+      }),
     );
     return { accounts };
   }
@@ -199,12 +205,14 @@ export class BitcoinWalletHandler implements BitcoinHandler {
   private async signMessage(checked: BrowserOrigin, request: BitcoinRequest): Promise<unknown> {
     const network = this.options.bitcoinNetwork();
     this.options.connections.authorize(checked.origin, network, "bitcoin:signMessage");
-    const accounts = this.options.connections.bitcoinAccounts(checked.origin, network);
-    if (accounts === undefined) {
+    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+    if (binding === undefined) {
       throw new ProviderError(4100, "no bitcoin account for this origin");
     }
     const { address, message } = signMessageParams(request.params);
-    const purpose = BITCOIN_PURPOSES.find((p) => accounts[p] === address);
+    const purpose = BITCOIN_PURPOSES.find(
+      (p) => binding.addresses[BITCOIN_PURPOSES.indexOf(p)] === address,
+    );
     if (purpose === undefined) {
       throw new ProviderError(4100, "account is not a connected account");
     }
@@ -212,11 +220,7 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     if (text === undefined) {
       throw new ProviderError(4200, BLIND_SIGNING_MESSAGE);
     }
-    const group = this.options.activeGroup();
-    if (group === undefined) {
-      throw new ProviderError(4100, "no account group is selected");
-    }
-    const account: BitcoinAccount = { ...group, address, template: TEMPLATES[purpose] };
+    const account: BitcoinAccount = { ...binding.group, address, template: TEMPLATES[purpose] };
     const pending = await this.options.requests.prepare({
       method: "bitcoin-sign",
       origin: checked,
@@ -249,8 +253,8 @@ export class BitcoinWalletHandler implements BitcoinHandler {
   ): Promise<unknown> {
     const network = this.options.bitcoinNetwork();
     this.options.connections.authorize(checked.origin, network, request.method);
-    const accounts = this.options.connections.bitcoinAccounts(checked.origin, network);
-    if (accounts === undefined) {
+    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+    if (binding === undefined) {
       throw new ProviderError(4100, "no bitcoin account for this origin");
     }
     const inputs = transactionInputs(request.params);
@@ -265,22 +269,20 @@ export class BitcoinWalletHandler implements BitcoinHandler {
       throw invalidParams("chain is not the connected network");
     }
     const templateOf = (address: string): BitcoinAccount["template"] => {
-      const purpose = BITCOIN_PURPOSES.find((p) => accounts[p] === address);
+      const purpose = BITCOIN_PURPOSES.find(
+        (p) => binding.addresses[BITCOIN_PURPOSES.indexOf(p)] === address,
+      );
       if (purpose === undefined) {
         throw new ProviderError(4100, "account is not a connected account");
       }
       return TEMPLATES[purpose];
     };
-    const group = this.options.activeGroup();
-    if (group === undefined) {
-      throw new ProviderError(4100, "no account group is selected");
-    }
     let outcome: Awaited<ReturnType<BitcoinRequests["outcome"]>>;
     try {
       const pending = await this.options.requests.prepare({
         method: "bitcoin-sign",
         origin: checked,
-        account: group,
+        account: binding.group,
         network,
         request: {
           kind: "psbt",
@@ -309,16 +311,30 @@ export class BitcoinWalletHandler implements BitcoinHandler {
       : outcome.signedPsbts.map((signedPsbt) => ({ signedPsbt }));
   }
 
-  /** The `setActiveGroup` re-point: the bitcoin session's new accounts, `payment` then `ordinals`. */
-  async bitcoinAccountsChanged(): Promise<BitcoinWalletAccount[]> {
+  /**
+   * A `change` event's accounts, derived only from the session after the write: the binding's
+   * `payment` and `ordinals` accounts — empty when the session is gone or none are bound.
+   */
+  private async sessionAccountsChanged(
+    session: ConnectionSession | undefined,
+  ): Promise<BitcoinWalletAccount[]> {
     const network = this.options.bitcoinNetwork();
-    const group = this.options.activeGroup();
-    if (group === undefined) {
+    const binding = sessionAccounts(session, network);
+    if (binding === undefined) {
       return [];
     }
-    return Promise.all(
-      BITCOIN_PURPOSES.map(async (purpose) => this.walletAccount(group, network, purpose)),
-    );
+    try {
+      const accounts = await Promise.all(
+        BITCOIN_PURPOSES.map(async (purpose, index) => {
+          const account = await this.walletAccount(binding.group, network, purpose);
+          return account.address === binding.addresses[index] ? account : undefined;
+        }),
+      );
+      return accounts.filter((account) => account !== undefined);
+    } catch {
+      /* A session whose accounts cannot be derived or advertised changes to an empty list. */
+      return [];
+    }
   }
 }
 
@@ -441,11 +457,15 @@ const bitcoinAccountList = (session: ConnectionSession): ReadonlyArray<string> =
     .filter(([network]) => network.startsWith("bip122:"))
     .flatMap(([, scope]) => scope.accounts.map((a) => a.slice(a.lastIndexOf(":") + 1)));
 
+/**
+ * The origins whose `bip122` scope's accounts changed between the two snapshots, each with the
+ * session after the write (`undefined` when the session is gone).
+ */
 function diffSessions(
   before: Readonly<Record<string, ConnectionSession>>,
   after: Readonly<Record<string, ConnectionSession>>,
-): ReadonlyArray<{ origin: string }> {
-  const events: Array<{ origin: string }> = [];
+): ReadonlyArray<{ origin: string; session: ConnectionSession | undefined }> {
+  const events: Array<{ origin: string; session: ConnectionSession | undefined }> = [];
   const prev = byOrigin(before);
   const next = byOrigin(after);
   for (const [origin, session] of prev) {
@@ -453,12 +473,12 @@ function diffSessions(
     const was = bitcoinAccountList(session).join(",");
     const is = now === undefined ? "" : bitcoinAccountList(now).join(",");
     if (was !== is) {
-      events.push({ origin });
+      events.push({ origin, session: now });
     }
   }
   for (const [origin, session] of next) {
     if (!prev.has(origin) && bitcoinAccountList(session).length > 0) {
-      events.push({ origin });
+      events.push({ origin, session });
     }
   }
   return events;

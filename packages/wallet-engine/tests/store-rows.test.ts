@@ -62,6 +62,8 @@ describe("controller init over a non-JSON row", () => {
       logger,
       allowLocalhost: false,
       selectedGroup: () => undefined,
+      onSelectedGroup: () => () => undefined,
+      invalidateAll: () => undefined,
       evmAddress: async () => Promise.resolve(""),
       solanaAddress: async () => Promise.resolve(""),
       bitcoinAddress: async () => Promise.resolve(""),

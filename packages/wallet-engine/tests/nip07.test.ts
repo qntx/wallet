@@ -60,9 +60,9 @@ const rig = (
     checkOrigin: (origin) => ({ kind: "browser", origin }),
     authorize: () => session(opts.policy),
     session: () => (connected ? session(opts.policy) : undefined),
-    nostrAccount: () => (connected ? PUBKEY : undefined),
+    nostrIdentity: () =>
+      connected && identity !== undefined ? { ref: identity, pubkey: PUBKEY } : undefined,
     nostrPolicy: () => opts.policy,
-    activeIdentity: () => identity,
     request: async () => Promise.resolve(session(opts.policy)),
     touch: async () => Promise.resolve(),
   };

@@ -205,6 +205,8 @@ async function rig() {
     logger,
     allowLocalhost: false,
     selectedGroup: () => ({ walletId, groupIndex: 0 }),
+    onSelectedGroup: () => () => undefined,
+    invalidateAll: () => undefined,
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SEPOLIA],

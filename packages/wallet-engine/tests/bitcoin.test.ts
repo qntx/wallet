@@ -16,7 +16,10 @@ const SIGNATURE_BASE64 = `smp${Buffer.from(SIGNATURE).toString("base64")}`;
 
 const rig = (options: { connected?: boolean; outcome?: unknown; network?: string } = {}) => {
   let connected = options.connected === true;
-  let group = { walletId: "w1", groupIndex: 0 };
+  let bound: { walletId: string; groupIndex: number } | undefined = {
+    walletId: "w1",
+    groupIndex: 0,
+  };
   const requestsCalls: unknown[] = [];
   const connectRequests: unknown[][] = [];
   const revoked: string[] = [];
@@ -32,7 +35,10 @@ const rig = (options: { connected?: boolean; outcome?: unknown; network?: string
         }
         return {} as never;
       },
-      bitcoinAccounts: () => (connected ? { payment: PAYMENT, ordinals: ORDINALS } : undefined),
+      sessionAccounts: () =>
+        connected && bound !== undefined
+          ? { group: bound, addresses: [PAYMENT, ORDINALS] }
+          : undefined,
       request: async (...args: unknown[]) => {
         await Promise.resolve();
         connectRequests.push(args);
@@ -60,13 +66,21 @@ const rig = (options: { connected?: boolean; outcome?: unknown; network?: string
       },
       outcome: async () => Promise.resolve(options.outcome as never),
     },
-    bitcoinAccount: async (_group, _network, purpose) => {
+    bitcoinAccount: async (group, _network, purpose) => {
       await Promise.resolve();
-      return purpose === "payment"
-        ? { address: PAYMENT, publicKey: PAYMENT_KEY }
-        : { address: ORDINALS, publicKey: ORDINALS_KEY };
+      const address =
+        group.groupIndex === 1
+          ? purpose === "payment"
+            ? "bc1qnew"
+            : "bc1pnew"
+          : purpose === "payment"
+            ? PAYMENT
+            : ORDINALS;
+      return {
+        address,
+        publicKey: purpose === "payment" ? PAYMENT_KEY : ORDINALS_KEY,
+      };
     },
-    activeGroup: () => group,
     bitcoinNetwork: () => options.network ?? NETWORK,
   });
   return {
@@ -74,8 +88,8 @@ const rig = (options: { connected?: boolean; outcome?: unknown; network?: string
     requestsCalls,
     connectRequests,
     revoked,
-    switchGroup: (next: { walletId: string; groupIndex: number }) => {
-      group = next;
+    switchGroup: (next: { walletId: string; groupIndex: number } | undefined) => {
+      bound = next;
     },
     setSessions: (next: Record<string, unknown>) => {
       sessions = next;
@@ -260,16 +274,17 @@ describe("BitcoinWalletHandler", () => {
     const { handler, setSessions } = rig();
     const events: BitcoinEvent[] = [];
     const off = handler.subscribe((event) => events.push(event));
-    const session = (accounts: string[]) => ({
+    const session = (groupIndex: number, accounts: string[]) => ({
       s1: {
         id: "s1",
         origin: ORIGIN,
+        group: { walletId: "w1", groupIndex },
         scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
       },
     });
-    setSessions(session([PAYMENT, ORDINALS]));
+    setSessions(session(0, [PAYMENT, ORDINALS]));
     await new Promise((resolve) => setTimeout(resolve));
-    setSessions(session(["bc1qnew", "bc1pnew"]));
+    setSessions(session(1, ["bc1qnew", "bc1pnew"]));
     await new Promise((resolve) => setTimeout(resolve));
     off();
     expect(events.map((e) => e.name)).toStrictEqual([
@@ -277,12 +292,12 @@ describe("BitcoinWalletHandler", () => {
       "bitcoinAccountsChanged",
     ]);
     expect(events[1]?.origin).toBe(SITE);
-    expect(events[1]?.accounts.map((a) => a.address)).toStrictEqual([PAYMENT, ORDINALS]);
+    expect(events[1]?.accounts.map((a) => a.address)).toStrictEqual(["bc1qnew", "bc1pnew"]);
   });
 
-  it("fails with 4100 when no account group is selected", async () => {
+  it("fails with 4100 when the session binds no group", async () => {
     const connect = rig({ connected: true });
-    connect.switchGroup(undefined as never);
+    connect.switchGroup(undefined);
     await expect(
       connect.handler.handle(SITE, {
         method: "bitcoin:connect",
@@ -307,10 +322,44 @@ describe("BitcoinWalletHandler", () => {
     ).rejects.toMatchObject({ code: -32_603 });
   });
 
-  it("bitcoinAccountsChanged is empty without an active group", async () => {
-    const { handler, switchGroup } = rig();
-    await expect(handler.bitcoinAccountsChanged()).resolves.toHaveLength(2);
-    switchGroup(undefined as never);
-    await expect(handler.bitcoinAccountsChanged()).resolves.toStrictEqual([]);
+  it("a revoked session's last change carries an empty account list", async () => {
+    const { handler, setSessions } = rig();
+    const events: BitcoinEvent[] = [];
+    const off = handler.subscribe((event) => events.push(event));
+    setSessions({
+      s1: {
+        id: "s1",
+        origin: ORIGIN,
+        group: { walletId: "w1", groupIndex: 0 },
+        scopes: {
+          [NETWORK]: { accounts: [`${NETWORK}:${PAYMENT}`, `${NETWORK}:${ORDINALS}`] },
+        },
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve));
+    setSessions({});
+    await new Promise((resolve) => setTimeout(resolve));
+    off();
+    expect(events.at(-1)?.accounts).toStrictEqual([]);
+  });
+
+  it("an emptied bip122 session changes to an empty account list", async () => {
+    const { handler, setSessions } = rig();
+    const events: BitcoinEvent[] = [];
+    const off = handler.subscribe((event) => events.push(event));
+    const session = (accounts: string[], group?: { walletId: string; groupIndex: number }) => ({
+      s1: {
+        id: "s1",
+        origin: ORIGIN,
+        ...(group === undefined ? {} : { group }),
+        scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
+      },
+    });
+    setSessions(session([PAYMENT, ORDINALS], { walletId: "w1", groupIndex: 0 }));
+    await new Promise((resolve) => setTimeout(resolve));
+    setSessions(session([]));
+    await new Promise((resolve) => setTimeout(resolve));
+    off();
+    expect(events.at(-1)?.accounts).toStrictEqual([]);
   });
 });
