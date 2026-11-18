@@ -26,7 +26,12 @@ export { recoverEvmSigner } from "./recover.ts";
 export { ALLOWANCE_HOLDER, ZEROX_CHAINS, isZeroExSettler, decodeZeroX } from "./zerox.ts";
 export { ACROSS_SPOKEPOOLS, ACROSS_WRAPPED_NATIVE, decodeAcross } from "./across.ts";
 export { LIDO_CHAIN, LIDO_STETH, LIDO_WSTETH, LIDO_QUEUE } from "./lido.ts";
-export { parseTypedData } from "./typed-data.ts";
+export {
+  TYPED_FIELD_BUDGET,
+  TYPED_FIELD_CODE_POINTS,
+  parseTypedData,
+  typedDataFields,
+} from "./typed-data.ts";
 export { evmTokenTable, lookupEvmToken } from "./tokens.ts";
 export type { EvmToken, EvmTokenTable } from "./tokens.ts";
 

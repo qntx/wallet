@@ -25,11 +25,13 @@ import type { SimulationOutcome } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TransactionController } from "../src/transactions/controller.ts";
+import { approval } from "./approval.ts";
 import { tokensStub } from "./send-helpers.ts";
 
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const ACCOUNT = { walletId: "w", groupIndex: 0, address: "11111111111111111111111111111112" };
 const ORIGIN = { kind: "browser", origin: "https://app.example" } as const;
+const VERIFY = { kind: "password" as const, password: "pw" };
 
 function rig(
   simulate: (message: Uint8Array) => Promise<SimulationOutcome>,
@@ -52,7 +54,8 @@ function rig(
     bitcoinPrepare: async () => Promise.reject(new Error("unused")),
     bitcoinSignPsbts: async () => Promise.reject(new Error("unused")),
     bitcoinSign: async () => Promise.reject(new Error("unused")),
-    solanaSign: async () => Promise.reject(new Error("unused")),
+    solanaSign: async () =>
+      Promise.resolve({ kind: "solana.message", signature: new Uint8Array(64) }),
     addressBook: new AddressBookController({
       openStore,
       random: (n) => new Uint8Array(n),
@@ -70,7 +73,9 @@ function rig(
 }
 
 /** A serialized legacy transaction signed for ACCOUNT: one empty slot, then the message. */
-const solanaTx = (): { tx: Uint8Array; message: Uint8Array } => {
+const solanaTx = (
+  program = "11111111111111111111111111111111",
+): { tx: Uint8Array; message: Uint8Array } => {
   const data = new Uint8Array(12);
   const view = new DataView(data.buffer);
   view.setUint32(0, 2, true);
@@ -80,7 +85,7 @@ const solanaTx = (): { tx: Uint8Array; message: Uint8Array } => {
       compileTransactionMessage(
         appendTransactionMessageInstruction(
           {
-            programAddress: address("11111111111111111111111111111111"),
+            programAddress: address(program),
             accounts: [
               { address: address(ACCOUNT.address), role: AccountRole.WRITABLE_SIGNER },
               {
@@ -156,6 +161,27 @@ describe("solana-sign simulation", () => {
     expect(request.risk).toContainEqual({ code: "simulation-reverted", level: "danger" });
   });
 
+  it("flags an unknown-program transaction decode-partial, described rather than blind", async () => {
+    const { requests } = rig(async () =>
+      Promise.resolve({ status: "success" as const, changes: [] }),
+    );
+    await requests.init();
+    const { tx } = solanaTx(base58.encode(new Uint8Array(32).fill(0x44)));
+    const request = await requests.prepare(sign([tx]));
+    expect(request.checks).toContain("decode-partial");
+    expect(request.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
+  });
+
+  it("a recognised transfer carries no decode-partial", async () => {
+    const { requests } = rig(async () =>
+      Promise.resolve({ status: "success" as const, changes: [] }),
+    );
+    await requests.init();
+    const { tx } = solanaTx();
+    const request = await requests.prepare(sign([tx]));
+    expect(request.checks).not.toContain("decode-partial");
+  });
+
   it("rejects an undecodable transaction at prepare", async () => {
     const { requests } = rig(async () => Promise.reject(new Error("never")));
     await requests.init();
@@ -204,36 +230,36 @@ describe("solana-sign simulation", () => {
     expect(request.display).toMatchObject({ message: { text: "text" }, signIn });
   });
 
-  it("rejects non-UTF-8 message bytes unless the vault allows blind signing", async () => {
+  it("marks non-UTF-8 message bytes blind and gates approval on the setting", async () => {
     const { requests } = rig(async () => Promise.reject(new Error("never")));
     await requests.init();
+    const input = {
+      method: "solana-sign" as const,
+      origin: ORIGIN,
+      account: ACCOUNT,
+      network: NETWORK,
+      request: { kind: "message" as const, message: new Uint8Array([0xff]) },
+    };
+    const request = await requests.prepare(input);
+    expect(request.display).toMatchObject({
+      kind: "solana.sign",
+      message: { kind: "bytes", hex: "0xff" },
+    });
+    expect(request.risk).toContainEqual({ code: "blind-signing", level: "danger" });
     await expect(
-      requests.prepare({
-        method: "solana-sign",
-        origin: ORIGIN,
-        account: ACCOUNT,
-        network: NETWORK,
-        request: { kind: "message", message: new Uint8Array([0xff]) },
-      }),
+      requests.approve(request.id, "solana-sign", approval(request)),
     ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+    expect(requests.getState().requests[request.id]?.stage).toBe("awaiting-approval");
 
     const enabled = rig(
       async () => Promise.reject(new Error("never")),
       () => true,
     );
     await enabled.requests.init();
-    const request = await enabled.requests.prepare({
-      method: "solana-sign",
-      origin: ORIGIN,
-      account: ACCOUNT,
-      network: NETWORK,
-      request: { kind: "message", message: new Uint8Array([0xff]) },
-    });
-    expect(request.display).toMatchObject({
-      kind: "solana.sign",
-      message: { kind: "bytes", hex: "0xff" },
-    });
-    expect(request.risk).toStrictEqual([{ code: "blind-signing", level: "danger" }]);
+    const allowed = await enabled.requests.prepare(input);
+    await expect(
+      enabled.requests.approve(allowed.id, "solana-sign", approval(allowed, VERIFY)),
+    ).resolves.toMatchObject({ kind: "solana.message" });
   });
 });
 

@@ -10,7 +10,7 @@ import { bytesToHex } from "@noble/hashes/utils.js";
 import type { Event, UnsignedEvent } from "@qntx/nostr";
 import { WalletError } from "@qntx/wallet";
 import type { NostrKeyRef } from "@qntx/wallet";
-import { isBlindIntent, parseSignIn } from "@qntx/wallet-chains";
+import { isBlindIntent, messageBlindReason, parseSignIn } from "@qntx/wallet-chains";
 import type { MessageContent, SignInParse, SignRequest } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
@@ -25,7 +25,7 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import type { AddressBookController } from "../addresses/controller.ts";
 import { normalizeAddress } from "../addresses/normalize.ts";
 import type { SignInFields } from "../connect/siws.ts";
-import { BLIND_SIGNING_MESSAGE, utf8Text } from "../connect/text.ts";
+import { utf8Text } from "../connect/text.ts";
 import { Controller } from "../controller.ts";
 import { TOKEN_SYMBOL_MAX, isAscii, safeDecimals, safeDisplayText } from "../display.ts";
 import { errorMessage } from "../errors.ts";
@@ -340,10 +340,12 @@ export class SignInOriginError extends Error {
   }
 }
 
-/** A request whose content cannot be shown, for a vault whose owner has not allowed blind signing. */
+const BLIND_SIGNING_DISABLED_MESSAGE = "blind signing is turned off for this vault";
+
+/** `approve` refused a blind request for a vault whose owner has not allowed blind signing. */
 export class BlindSigningDisabledError extends Error {
   constructor() {
-    super(BLIND_SIGNING_MESSAGE);
+    super(BLIND_SIGNING_DISABLED_MESSAGE);
     this.name = "BlindSigningDisabledError";
   }
 }
@@ -512,8 +514,10 @@ export type RequestControllerOptions = {
     ) => Promise<{ readonly symbol: string; readonly decimals: number }>;
     readonly add: (network: string, address: string) => Promise<void>;
   };
-  /** Whether the account group opted in to signing messages that cannot be shown as text. */
-  /** The vault's blind-signing setting (`WalletSnapshot.blindSigning`); the kernel enforces it. */
+  /**
+   * The vault's blind-signing setting (`WalletSnapshot.blindSigning`); `approve` refuses a blind
+   * request while it is off, and the kernel enforces it again.
+   */
   readonly blindSigning: () => boolean;
   /** Simulates one `solana-sign` transaction for display; failures are the caller's `unavailable`. */
   readonly simulateSolana: (
@@ -1106,6 +1110,9 @@ export class RequestController extends Controller<RequestControllerState> {
         display: prepared.intent,
         checks: collectChecks([
           isTransaction && prepared.intent.verifiability !== "full" ? "decode-partial" : undefined,
+          message?.kind === "typed-data" && message.fields !== undefined
+            ? "decode-partial"
+            : undefined,
           ...prepared.checks,
         ]),
         risk: isTransaction
@@ -1135,6 +1142,7 @@ export class RequestController extends Controller<RequestControllerState> {
         input.request.kind === "message"
           ? messageContent(input.request.message, signIn)
           : undefined;
+      const messageBlind = message === undefined ? undefined : messageBlindReason(message);
       const built: Built = {
         account: input.account,
         network: input.network,
@@ -1148,12 +1156,19 @@ export class RequestController extends Controller<RequestControllerState> {
             ? { signIn: input.request.signIn }
             : {}),
         },
-        checks: collectChecks(intents.some(feeExceedsLamports) ? ["fee-exceeds-amount"] : []),
+        checks: collectChecks([
+          intents.some((intent) => intent.verifiability === "opaque")
+            ? "decode-partial"
+            : undefined,
+          ...(intents.some(feeExceedsLamports) ? (["fee-exceeds-amount"] as const) : []),
+        ]),
         risk: mergeRisk(
           mergeRisk(
             this.signInRisk(signIn, input.origin, input.account.address, "solana"),
             [
-              ...(message === undefined ? [] : [{ verifiability: "opaque" as const, message }]),
+              ...(message === undefined
+                ? []
+                : [messageBlind === undefined ? {} : { blind: messageBlind }]),
               ...intents,
             ].flatMap((intent) => this.blindRisk(intent)),
           ),
@@ -1442,6 +1457,9 @@ export class RequestController extends Controller<RequestControllerState> {
     ) {
       this.end(id, "fail", PHISHING_BLOCKED_MESSAGE);
       throw new Error(PHISHING_BLOCKED_MESSAGE);
+    }
+    if (request.risk.some((f) => f.code === "blind-signing") && !this.options.blindSigning()) {
+      throw new BlindSigningDisabledError();
     }
     assertAcknowledged(request, options.acknowledged);
     // Before the first await, so a second `approve` cannot reach the checks below while this one
@@ -1757,17 +1775,12 @@ export class RequestController extends Controller<RequestControllerState> {
     return [...contacts, ...paid];
   }
 
-  /** A blind request carries one danger; a vault that has not allowed blind signing refuses it. */
-  private blindRisk(
-    intent: Pick<DisplayIntent, "verifiability" | "message">,
-  ): ReadonlyArray<RiskFinding> {
-    if (!isBlindIntent(intent)) {
-      return [];
-    }
-    if (!this.options.blindSigning()) {
-      throw new BlindSigningDisabledError();
-    }
-    return [{ code: "blind-signing", level: "danger" }];
+  /**
+   * A decoder-marked blind request carries one danger; `approve` refuses it while the setting is
+   * off.
+   */
+  private blindRisk(intent: Pick<DisplayIntent, "blind">): ReadonlyArray<RiskFinding> {
+    return isBlindIntent(intent) ? [{ code: "blind-signing", level: "danger" }] : [];
   }
 
   /** Risk of a Sign-In with X message; a message for another domain throws `SignInOriginError`. */

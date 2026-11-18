@@ -54,7 +54,10 @@ const solanaBody = (
   if (!deepEqual(normalized, request)) {
     throw new KernelError("invalid-input", "request is not normalized");
   }
-  let intent: PromptIntent = messagePromptIntent(messageContent(request.message, "solana"));
+  let intent: PromptIntent = {
+    ...messagePromptIntent(messageContent(request.message, "solana")),
+    family: "solana",
+  };
   if (request.kind === "solana.transaction") {
     try {
       intent = decodeSolana(request, signer);

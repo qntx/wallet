@@ -1108,3 +1108,38 @@ describe("stake decode coverage", () => {
     ).toBe("opaque");
   });
 });
+
+describe("undecodable instructions list their program ids", () => {
+  const unknownIx = (program: string) => ({
+    programAddress: address(program),
+    accounts: [],
+    data: new Uint8Array([1]),
+  });
+  const VOTE = "Vote111111111111111111111111111111111111111";
+  const SYSTEM = "11111111111111111111111111111111";
+
+  it("an unknown program is opaque and named, not blind", () => {
+    const intent = decodeSolana(req(compile([unknownIx(VOTE)])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.programs).toStrictEqual([VOTE]);
+    expect(intent.blind).toBeUndefined();
+  });
+
+  it("an unrecognised instruction of a known program names that program", () => {
+    const ix = { programAddress: address(SYSTEM), accounts: [], data: u32le(9) };
+    expect(decodeSolana(req(compile([ix])) as never, FEE_PAYER).programs).toStrictEqual([SYSTEM]);
+  });
+
+  it("repeats of the same program are de-duplicated in first-appearance order", () => {
+    const stake = stakeIx([w0(STAKE_ACCT)], cat(u32le(7), u64le(0n)));
+    const intent = decodeSolana(
+      req(compile([unknownIx(VOTE), unknownIx(VOTE), stake, unknownIx(VOTE)])) as never,
+      FEE_PAYER,
+    );
+    expect(intent.programs).toStrictEqual([VOTE, STAKE_PROG]);
+  });
+
+  it("a fully recognised transaction carries no program list", () => {
+    expect(decodeSolana(req(compile([transferIx()])) as never, FEE_PAYER).programs).toBeUndefined();
+  });
+});

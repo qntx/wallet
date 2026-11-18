@@ -308,7 +308,12 @@ const executeBitcoinMessage = (
     mapChainError(error);
   }
   if (intentOnly) {
-    return { prompt: messagePromptIntent({ kind: "text", text: request.message }) };
+    return {
+      prompt: {
+        ...messagePromptIntent({ kind: "text", text: request.message }),
+        family: "bitcoin",
+      },
+    };
   }
   return {
     kind: "bitcoin.message",

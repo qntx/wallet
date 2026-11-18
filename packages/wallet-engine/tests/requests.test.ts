@@ -13,13 +13,17 @@ import { encodeAbiParameters, parseAbiParameters } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { BlindReason, SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import type { chains } from "@qntx/wallet/chains";
 
 import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
-import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
+import {
+  BlindSigningDisabledError,
+  REQUEST_TTL_MS,
+  RequestController,
+} from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -96,7 +100,13 @@ const latch = (): { readonly promise: Promise<void>; readonly resolve: () => voi
 };
 
 /** A transactions stand-in whose prepared builds expose spies for the pipeline's own rules. */
-function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?: string[] } = {}) {
+function fake(
+  options: {
+    verifiability?: DisplayIntent["verifiability"];
+    checks?: string[];
+    blind?: BlindReason;
+  } = {},
+) {
   const events: string[] = [];
   let submitError: Error | undefined;
   let stale: string | undefined;
@@ -112,7 +122,10 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
         txId: `tx-${requestId}`,
         account: ACCOUNT,
         network: SEPOLIA,
-        intent: intent(options.verifiability ?? "full"),
+        intent: {
+          ...intent(options.verifiability ?? "full"),
+          ...(options.blind === undefined ? {} : { blind: options.blind }),
+        },
         checks: (options.checks ?? []) as PreparedRequest["checks"],
         staleReason: async () => Promise.resolve(stale),
         submit: async (verify: SendParams["verify"], commit: () => void) => {
@@ -440,6 +453,30 @@ describe("RequestController lifecycle", () => {
     const signLog = await f.controller.signLog();
     const entries = signLog.filter((e) => e.id === request.id);
     expect(entries.map((e) => e.outcome)).toStrictEqual(["failed"]);
+  });
+});
+
+describe("blind signing gating", () => {
+  it("a request with no blind-signing finding approves with the setting off", async () => {
+    const f = fake({ verifiability: "opaque" });
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS);
+    expect(request.checks).toContain("decode-partial");
+    expect(request.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).resolves.toMatchObject({ id: `tx-${request.id}` });
+  });
+
+  it("a blind request fails before the acknowledgement check while the setting is off", async () => {
+    const f = fake({ verifiability: "opaque", blind: "account-code" });
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS);
+    expect(request.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    await expect(f.controller.approve(request.id, "send", {})).rejects.toBeInstanceOf(
+      BlindSigningDisabledError,
+    );
+    expect(f.controller.getState().requests[request.id]?.stage).toBe("awaiting-approval");
   });
 });
 

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 
+import { encodeFunctionData, parseAbi } from "viem";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
@@ -11,7 +12,7 @@ import { ConnectionController } from "../src/connect/controller.ts";
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import { ProviderError } from "../src/connect/errors.ts";
 import { NetworkController } from "../src/networks/controller.ts";
-import { RequestController } from "../src/requests/controller.ts";
+import { BlindSigningDisabledError, RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -618,5 +619,76 @@ describe("wallet_getCallsStatus and wallet_showCallsStatus", () => {
     })) as { status: number; atomic: boolean };
     expect(other.atomic).toBe(false);
     expect(other.status).toBe(600);
+  });
+});
+
+describe("dApp transaction signing classes", () => {
+  const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+  const AAVE_V3 = "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2";
+  const ROUTER = "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af";
+  const USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const SUPPLY = encodeFunctionData({
+    abi: parseAbi(["function supply(address,uint256,address,uint16)"]),
+    args: [USDC, 1_000_000n, ADDR, 0],
+  });
+  const EXECUTE = encodeFunctionData({
+    abi: parseAbi(["function execute(bytes,bytes[],uint256)"]),
+    args: ["0x0b00", ["0x", "0x"], 2_000_000_000n],
+  });
+
+  const pending = async (w: ReturnType<typeof world>) => {
+    await vi.waitFor(() => {
+      expect(
+        Object.values(w.requests.getState().requests).some((q) => q.stage === "awaiting-approval"),
+      ).toBe(true);
+    });
+    return Object.values(w.requests.getState().requests).find(
+      (q) => q.stage === "awaiting-approval",
+    );
+  };
+
+  it("everyday opaque transactions are described and sign with blind signing off", async () => {
+    const w = world();
+    await w.start();
+    await w.connect();
+    const txs = [
+      { to: WETH, data: "0xd0e30db0", value: "0xde0b6b3a7640000" },
+      { to: AAVE_V3, data: SUPPLY },
+      { to: ROUTER, data: EXECUTE, value: "0x2386f26fc10000" },
+    ];
+    for (const tx of txs) {
+      const done = w.handler.handle(SITE, {
+        method: "eth_sendTransaction",
+        params: [{ from: ADDR, chainId: 1, ...tx }],
+      });
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one request at a time
+      const request = await pending(w);
+      expect(request?.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
+      expect(request?.checks).toStrictEqual(["decode-partial"]);
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one request at a time
+      await w.approveNext();
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one request at a time
+      await done;
+    }
+  });
+
+  it("an unrecognised token function is blind: approval waits on the setting", async () => {
+    const w = world();
+    await w.start();
+    await w.connect();
+    const done = w.handler.handle(SITE, {
+      method: "eth_sendTransaction",
+      params: [{ from: ADDR, chainId: 1, to: USDC, data: "0xdeadbeef" }],
+    });
+    const request = await pending(w);
+    expect(request?.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find
+    const id = request?.id ?? "";
+    await expect(
+      w.requests.approve(id, "evm-sign", approval(request, { kind: "password", password: "pw" })),
+    ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+    expect(w.requests.getState().requests[id]?.stage).toBe("awaiting-approval");
+    w.requests.reject(id);
+    await expect(done).rejects.toMatchObject({ code: 4001 });
   });
 });

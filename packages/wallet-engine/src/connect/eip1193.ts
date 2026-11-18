@@ -11,7 +11,6 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import { EVM_RPC_METHODS, logsFilterViolation } from "../gateway/contract/rpc.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
-  BlindSigningDisabledError,
   InvalidTokenError,
   OriginBusyError,
   RequestEndedError,
@@ -824,9 +823,6 @@ const reverted = (tx: TrackedTransaction): boolean =>
 function toProviderError(error: unknown): ProviderError {
   if (error instanceof ProviderError) {
     return error;
-  }
-  if (error instanceof BlindSigningDisabledError) {
-    return new ProviderError(4200, error.message);
   }
   if (error instanceof InvalidTokenError || error instanceof SignInOriginError) {
     return invalidParams(error.message);

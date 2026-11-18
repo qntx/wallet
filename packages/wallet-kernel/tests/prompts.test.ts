@@ -10,9 +10,10 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
-import { decodeEvm } from "@qntx/wallet-chains/evm";
+import { checksumEvmAddress, decodeEvm, encodeBatchExecute } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
 
+import { KernelError } from "../src/errors.ts";
 import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
 import type { PromptIntent } from "../src/modules/chains/prompt.ts";
 import { sparkPrompt } from "../src/modules/spark/prompt.ts";
@@ -80,6 +81,23 @@ describe("core prompts", () => {
     });
     expect(corePrompt("zh-Hans", "export-mnemonic").title).toBe("导出助记词");
     expect(corePrompt("en", "create").title).toBe("Protect wallet");
+    expect(corePrompt("en", "enable-blind-signing")).toStrictEqual({
+      title: "Allow blind signing",
+      description:
+        "Verify your identity to allow signing requests whose content the wallet cannot show",
+    });
+    expect(corePrompt("en", "disable-blind-signing")).toStrictEqual({
+      title: "Turn off blind signing",
+      description: "Verify your identity to stop signing requests the wallet cannot show",
+    });
+    expect(corePrompt("zh-Hans", "enable-blind-signing")).toStrictEqual({
+      title: "允许盲签",
+      description: "验证身份以允许签署钱包无法显示内容的请求",
+    });
+    expect(corePrompt("zh-Hans", "disable-blind-signing")).toStrictEqual({
+      title: "关闭盲签",
+      description: "验证身份以停止签署钱包无法显示内容的请求",
+    });
   });
 });
 
@@ -391,10 +409,10 @@ describe("chain prompts", () => {
     };
     expect(chainPrompt("en", set)).toStrictEqual({
       title: "Confirm batch",
-      description: `The effects of this call cannot be verified\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
+      description: `The wallet cannot verify what this call does\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
     });
     expect(chainPrompt("en", { ...set, delegation: { kind: "revoke" } }).description).toBe(
-      `The effects of this call cannot be verified\nRevoke this account's contract delegation\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
+      `The wallet cannot verify what this call does\nRevoke this account's contract delegation\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
     );
   });
 
@@ -413,16 +431,16 @@ describe("chain prompts", () => {
       network: "eip155:1",
       summary: "contract-call",
       verifiability: "opaque",
-      contract: { address: TO, created: false },
+      contract: { address: TO, created: false, selector: "0xdeadbeef" },
     };
     expect(chainPrompt("en", call)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe effects of this call cannot be verified\nCall contract ${TO}\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
+      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${TO}, function 0xdeadbeef\nSend 0.05 ETH to ${TO}\nMax fee 0.0004 ETH`,
     });
     expect(
       chainPrompt("zh-Hans", { ...call, contract: { address: TO, created: true } }).description,
     ).toBe(
-      `网络：Ethereum\n无法核实此调用的效果\n部署合约 ${TO}\n发送 0.05 ETH 到 ${TO}\n最高手续费 0.0004 ETH`,
+      `网络：Ethereum\n钱包无法核实此调用会做什么\n部署合约 ${TO}\n发送 0.05 ETH 到 ${TO}\n最高手续费 0.0004 ETH`,
     );
   });
 
@@ -439,7 +457,7 @@ describe("chain prompts", () => {
       fee: undefined,
       warnings: [],
       verifiability,
-      contract: { address, created: false },
+      contract: { address, created: false, selector: "0xdeadbeef" },
     });
     const batch: PromptIntent = {
       ...ethTransfer,
@@ -449,7 +467,7 @@ describe("chain prompts", () => {
       calls: [inner("partial", SPENDER), inner("opaque", TO)],
     };
     expect(chainPrompt("en", batch).description).toBe(
-      `The effects of this call cannot be verified\nCall contract ${TO}\nMax fee 0.0004 ETH`,
+      `The wallet cannot verify what this call does\nCall contract ${TO}, function 0xdeadbeef\nMax fee 0.0004 ETH`,
     );
   });
 
@@ -457,11 +475,12 @@ describe("chain prompts", () => {
     const bytes = messagePromptIntent({ kind: "bytes", hex: "0xff" });
     expect(chainPrompt("en", bytes)).toStrictEqual({
       title: "Confirm blind signing",
-      description: "Sign data that cannot be shown as text",
+      description:
+        "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0xff",
     });
     expect(chainPrompt("zh-Hans", bytes)).toStrictEqual({
       title: "确认盲签",
-      description: "签署无法显示为文字的数据",
+      description: "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0xff",
     });
   });
 
@@ -709,6 +728,191 @@ describe("chain prompts via the real decoders", () => {
     );
     expect(chainPrompt("en", revoke).description).toContain(
       `Revoke ${SPENDER}'s allowance for USDC`,
+    );
+  });
+
+  const OTHER = checksumEvmAddress("0x00000000000000000000000000000000000bad00");
+  const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+
+  it("an unverifiable call to an unknown contract is described, not blind", () => {
+    const intent = decodeEvm(evmReq("eip155:1", { to: OTHER, data: "0xdeadbeef" }), TO);
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm contract call",
+      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${OTHER}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认合约调用",
+      description: `网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 ${OTHER}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+    });
+  });
+
+  it("a contract creation names the address it deploys", () => {
+    const req = evmReq("eip155:1", { data: "0x60006000" });
+    const { to: _to, ...tx } = req.tx;
+    const intent = decodeEvm({ ...req, tx }, TO);
+    const deployed = intent.contract?.address;
+    expect(intent.contract?.created).toBe(true);
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm contract call",
+      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nDeploy contract ${deployed}\nMax fee 0.000021 ETH`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认合约调用",
+      description: `网络：Ethereum\n钱包无法核实此调用会做什么\n部署合约 ${deployed}\n最高手续费 0.000021 ETH`,
+    });
+  });
+
+  it("an unrecognised function of a listed token is blind", () => {
+    const intent = decodeEvm(evmReq("eip155:1", { to: USDC_ADDR, data: "0xdeadbeef" }), TO);
+    expect(intent.blind).toBe("token-function");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nAn unrecognised function of token USDC ${USDC_ADDR} can move this token\nCall contract ${USDC_ADDR}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Ethereum\n代币 USDC ${USDC_ADDR} 的未知函数，可能转走该代币\n调用合约 ${USDC_ADDR}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+    });
+  });
+
+  it("a batch leads with the blind call's reason before naming the contracts", () => {
+    const data = encodeBatchExecute([
+      { to: OTHER, value: 0n, data: "0xdeadbeef" },
+      { to: USDC_ADDR, value: 0n, data: "0xdeadbeef" },
+    ]);
+    const intent = decodeEvm(evmReq("eip155:1", { to: TO, data }), TO);
+    expect(intent.blind).toBe("token-function");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nCall contract ${OTHER}, function 0xdeadbeef\nAn unrecognised function of token USDC ${USDC_ADDR} can move this token\nCall contract ${USDC_ADDR}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Ethereum\n调用合约 ${OTHER}，函数 0xdeadbeef\n代币 USDC ${USDC_ADDR} 的未知函数，可能转走该代币\n调用合约 ${USDC_ADDR}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+    });
+  });
+
+  it("calldata to the signer's own account is blind, in both locales", () => {
+    const intent = decodeEvm(evmReq("eip155:1", { to: TO, data: "0xdeadbeef" }), TO);
+    expect(intent.blind).toBe("account-code");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nRuns this account's own code with full authority\nCall contract ${TO}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Ethereum\n以本账户的全部权限执行其自身代码\n调用合约 ${TO}，函数 0xdeadbeef\n最高手续费 0.000021 ETH`,
+    });
+  });
+
+  it("a 7702 delegation carrying self-calldata still leads with the account-code reason", () => {
+    const req = evmReq("eip155:1", { to: TO, data: "0xdeadbeef" });
+    const intent = decodeEvm(
+      {
+        ...req,
+        tx: {
+          ...req.tx,
+          type: "eip7702" as const,
+          to: TO,
+          authorization: { address: "0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B" },
+        },
+      },
+      TO,
+    );
+    expect(intent.blind).toBe("account-code");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nDelegate this account to EIP7702StatelessDeleGator v1.3.0; the contract can execute calls on its behalf\nRuns this account's own code with full authority\nCall contract ${TO}, function 0xdeadbeef\nMax fee 0.000021 ETH`,
+    });
+  });
+
+  it("a Solana transaction with an undecodable program is described, not blind", () => {
+    const payer = new Uint8Array(32).fill(0x11);
+    const dest = new Uint8Array(32).fill(0x22);
+    const system = base58.decode("11111111111111111111111111111111");
+    const unknown = new Uint8Array(32).fill(0x44);
+    const transfer = new Uint8Array(12);
+    const dv = new DataView(transfer.buffer);
+    dv.setUint32(0, 2, true);
+    dv.setBigUint64(4, 1_000_000n, true);
+    const message = new Uint8Array([
+      1,
+      0,
+      2,
+      4,
+      ...payer,
+      ...dest,
+      ...system,
+      ...unknown,
+      ...new Uint8Array(32).fill(0x33),
+      2,
+      2,
+      2,
+      0,
+      1,
+      12,
+      ...transfer,
+      3,
+      1,
+      0,
+      1,
+      0xaa,
+    ]);
+    const req = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
+        message,
+      },
+      SOL_PAYER,
+    ) as never;
+    const intent = decodeSolana(req, SOL_PAYER);
+    const program = base58.encode(unknown);
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Network: Solana\nProgram calls the wallet cannot decode: ${program}\nThese programs can move assets from the accounts in this transaction\nSend 0.001 SOL to ${base58.encode(dest)}\nMax fee 0.000005 SOL`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `网络：Solana\n钱包无法解码的程序调用：${program}\n这些程序可以转移本交易涉及账户中的资产\n发送 0.001 SOL 到 ${base58.encode(dest)}\n最高手续费 0.000005 SOL`,
+    });
+  });
+
+  it("a PSBT with external inputs is described with the fee caveat, not blind", () => {
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hexToBytes("07".repeat(32)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: BTC_SCRIPT, amount: 100_000n });
+    const other = new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0x77)]);
+    const prev2 = new Transaction({ version: 2 });
+    prev2.addInput({ txid: hexToBytes("08".repeat(32)), index: 0, sequence: 0xffffffff });
+    prev2.addOutput({ script: other, amount: 50_000n });
+    const tx = new Transaction({ version: 2 });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: BTC_SCRIPT, amount: 100_000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+    });
+    tx.addInput({
+      txid: prev2.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: other, amount: 50_000n },
+      nonWitnessUtxo: prev2.toBytes(true, false),
+    });
+    tx.addOutput({
+      script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xab)]),
+      amount: 140_000n,
+    });
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    expect(intent.blind).toBeUndefined();
+    expect(chainPrompt("en", intent).description).toContain(
+      "Includes inputs from other signers; the fee cannot be verified",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toContain(
+      "包含其他签名者的输入；无法核实手续费",
     );
   });
 });
@@ -985,7 +1189,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm contract call",
-      description: `Network: Ethereum\nThe effects of this call cannot be verified\nCall contract ${TO}\nSend 10 ETH to ${TO}\nMax fee 0.0021 ETH`,
+      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract ${TO}, function 0xdeadbeef\nSend 10 ETH to ${TO}\nMax fee 0.0021 ETH`,
     });
   });
 
@@ -1004,7 +1208,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 
-  it("unrecognised typed data shows its domain and type and says the content is not shown", () => {
+  it("unrecognised typed data shows its domain, type and every field it cannot verify", () => {
     const intent = typed({
       types: {
         EIP712Domain: [
@@ -1020,7 +1224,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     });
     expect(chainPrompt("en", intent)).toStrictEqual({
       title: "Confirm signature",
-      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe content of this request cannot be shown`,
+      description: `App: Some\uFFFDExchange\nNetwork: Ethereum\nVerifying contract ${TO}\nType: Order\nThe wallet cannot verify what this signature authorises\nmaker: ${SIGNER}`,
     });
   });
 
@@ -1324,7 +1528,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 
-  it("a Safe delegatecall to arbitrary code is opaque, not decoded as a call", () => {
+  it("a Safe delegatecall to arbitrary code is blind, not decoded as a call", () => {
     const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
     // ERC-20 transfer calldata — decodeable as a call, but a delegatecall runs it with the
     // Safe's full authority, so its stated effects would be a lie.
@@ -1363,9 +1567,12 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         nonce: "7",
       },
     });
-    expect(chainPrompt("en", intent).description).toBe(
-      `Network: Ethereum\nVerifying contract ${safe}\nType: SafeTx\nSafe ${safe}, transaction 7\nRuns the code of ${TO} with the Safe's full authority (delegatecall)\nThe effects of this call cannot be verified\nCall contract ${TO}`,
-    );
+    expect(intent.blind).toBe("safe-delegatecall");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nVerifying contract ${safe}\nType: SafeTx\nSafe ${safe}, transaction 7\nRuns the code of ${TO} with the Safe's full authority (delegatecall)\nThe wallet cannot verify what this call does\nCall contract ${TO}, function 0xa9059cbb`,
+    });
+    expect(chainPrompt("zh-Hans", intent).title).toBe("确认盲签");
   });
 
   const SAFE_TX_TYPES = [
@@ -1502,7 +1709,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         fee: undefined,
         summary: "contract-call" as const,
         verifiability: "opaque" as const,
-        contract: { address: TO, created: false },
+        contract: { address: TO, created: false, selector: "0x12345678" },
       },
     ],
     refund: { receiver: SIGNER, gasPrice: eth("1"), amount: eth("5000000") },
@@ -1533,8 +1740,8 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "Type: SafeTx",
         `Safe ${SPENDER}, transaction 12`,
         `Runs the code of ${TO} with the Safe's full authority (delegatecall)`,
-        "The effects of this call cannot be verified",
-        `Call contract ${TO}`,
+        "The wallet cannot verify what this call does",
+        `Call contract ${TO}, function 0x12345678`,
         `Send 0.05 ETH to ${TO}`,
         `Pays ${SIGNER} a gas refund of up to 0.000000000005 ETH, plus 0.000000000000000001 ETH per gas of call overhead`,
       ].join("\n"),
@@ -1551,8 +1758,11 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     ).toBe(
       "内容像登录请求，但格式不合规\n消息：\nx wants you to sign in with your Ethereum account:",
     );
-    expect(chainPrompt("zh-Hans", typedIntent({})).description).toBe(
-      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n无法显示此请求的内容`,
+    expect(
+      chainPrompt("zh-Hans", typedIntent({ fields: [{ path: "maker", value: SIGNER }] }))
+        .description,
+    ).toBe(
+      `应用：Seaport\n网络：Ethereum\n验证合约 ${SPENDER}\n类型：OrderComponents\n钱包无法核实此签名授权的内容\nmaker：${SIGNER}`,
     );
     expect(chainPrompt("zh-Hans", typedIntent({ seaport: order })).description).toBe(
       [
@@ -1575,11 +1785,121 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "类型：SafeTx",
         `Safe ${SPENDER} 的第 12 笔交易`,
         `以 Safe 的全部权限执行 ${TO} 的代码（delegatecall）`,
-        "无法核实此调用的效果",
-        `调用合约 ${TO}`,
+        "钱包无法核实此调用会做什么",
+        `调用合约 ${TO}，函数 0x12345678`,
         `发送 0.05 ETH 到 ${TO}`,
         `向 ${SIGNER} 支付 gas 退款：最多 0.000000000005 ETH，另按每单位 gas 0.000000000000000001 ETH 支付调用开销`,
       ].join("\n"),
+    );
+  });
+
+  const MULTISEND = checksumEvmAddress("0x40a2accbd92bca938b02010e17a5b8929b49130d");
+  const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const OTHER = checksumEvmAddress("0x00000000000000000000000000000000000bad00");
+
+  /** Packed MultiSend entry: operation(1) | to(20) | value(32) | dataLength(32) | data. */
+  const packEntry = (to: string, value: bigint, data: string, operation = 0): string =>
+    `${operation.toString(16).padStart(2, "0")}${to.slice(2).toLowerCase()}${value
+      .toString(16)
+      .padStart(64, "0")}${BigInt(data.slice(2).length / 2)
+      .toString(16)
+      .padStart(64, "0")}${data.slice(2).toLowerCase()}`;
+
+  /** `multiSend(bytes)` calldata: the selector plus a length-prefixed, padded bytes argument. */
+  const multiSend = (packed: string): string => {
+    const pad = (64 - (packed.length % 64)) % 64;
+    return `0x8d80ff0a${(32).toString(16).padStart(64, "0")}${BigInt(packed.length / 2)
+      .toString(16)
+      .padStart(64, "0")}${packed}${"0".repeat(pad)}`;
+  };
+
+  it("a Safe MultiSend batch leads with the blind inner call's reason", () => {
+    const packed = packEntry(OTHER, 0n, "0xdeadbeef") + packEntry(USDC_ADDR, 0n, "0xdeadbeef");
+    const intent = typed(safeTxDoc({ to: MULTISEND, operation: 1, data: multiSend(packed) }));
+    expect(intent.blind).toBe("token-function");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52, transaction 7\nRuns the code of ${MULTISEND} with the Safe's full authority (delegatecall)\nThe wallet cannot verify what this call does\nCall contract ${OTHER}, function 0xdeadbeef\nThe wallet cannot verify what this call does\nAn unrecognised function of token USDC ${USDC_ADDR} can move this token\nCall contract ${USDC_ADDR}, function 0xdeadbeef`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52 的第 7 笔交易\n以 Safe 的全部权限执行 ${MULTISEND} 的代码（delegatecall）\n钱包无法核实此调用会做什么\n调用合约 ${OTHER}，函数 0xdeadbeef\n钱包无法核实此调用会做什么\n代币 USDC ${USDC_ADDR} 的未知函数，可能转走该代币\n调用合约 ${USDC_ADDR}，函数 0xdeadbeef`,
+    });
+  });
+
+  it("a Safe transaction with a priced gas refund is blind", () => {
+    const intent = typed(safeTxDoc({ gasPrice: "2000000000", baseGas: "100000" }));
+    expect(intent.blind).toBe("safe-refund-unbounded");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52, transaction 7\nSend 0 ETH to ${TO}\nPays whoever executes it a gas refund of up to 0.0002 ETH, plus 0.000000002 ETH per gas of call overhead`,
+    });
+    expect(chainPrompt("zh-Hans", intent).title).toBe("确认盲签");
+    expect(chainPrompt("zh-Hans", intent).description).toContain(
+      "向 执行者 支付 gas 退款：最多 0.0002 ETH，另按每单位 gas 0.000000002 ETH 支付调用开销",
+    );
+  });
+
+  it("typed data too large to list is blind and says so", () => {
+    const leafFields = Array.from({ length: 17 }, (_, i) => ({
+      name: `f${i}`,
+      type: "uint256",
+    }));
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Big: leafFields,
+      },
+      primaryType: "Big",
+      domain: { chainId: 1, verifyingContract: TO },
+      message: Object.fromEntries(leafFields.map((f) => [f.name, "1"])),
+    });
+    expect(intent.blind).toBe("typed-data-oversize");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Ethereum\nVerifying contract ${TO}\nType: Big\nThis typed data is too large to show in full`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Ethereum\n验证合约 ${TO}\n类型：Big\n此类型数据过大，无法完整显示`,
+    });
+  });
+
+  it("message bytes show up to 64 bytes of hex and only a length beyond that", () => {
+    const personalBytes = (n: number) =>
+      decodeEvm(
+        {
+          kind: "evm.personal-message",
+          network: "eip155:1",
+          account,
+          message: new Uint8Array(n).fill(0xab),
+        },
+        SIGNER,
+      );
+    const hex64 = `0x${"ab".repeat(64)}`;
+    expect(chainPrompt("en", personalBytes(64))).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nData ${hex64}`,
+    });
+    expect(chainPrompt("zh-Hans", personalBytes(64))).toStrictEqual({
+      title: "确认盲签",
+      description: `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 ${hex64}`,
+    });
+    expect(chainPrompt("en", personalBytes(65))).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\n65 bytes`,
+    });
+    expect(chainPrompt("zh-Hans", personalBytes(65)).description).toContain("65 字节");
+  });
+
+  it("typed data that is neither recognised, shown nor blind is an integrity error", () => {
+    const intent = typedIntent({});
+    expect(() => chainPrompt("en", intent)).toThrow(KernelError);
+    expect(() => chainPrompt("en", intent)).toThrow(
+      /unreachable: typed data is neither recognised, shown nor blind/,
     );
   });
 });

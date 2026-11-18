@@ -151,7 +151,7 @@ const walletAccounts = async (
   return account;
 };
 
-/** A blind request is refused before any prompt unless the vault's owner allowed blind signing. */
+/** A request the decoder marked blind is refused before any prompt unless the owner allowed it. */
 const assertSignable = (
   ctx: Parameters<Handler<"chain.sign">>[0],
   dek: Secret,

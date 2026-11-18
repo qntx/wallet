@@ -7,10 +7,11 @@
  * address poisoning relies on. Text chosen by the requester is shown as a bounded, sanitised
  * excerpt.
  */
-import { displayExcerpt } from "@qntx/wallet-chains";
+import { displayExcerpt, messageBlindReason } from "@qntx/wallet-chains";
 import type {
   ApprovalChange,
   AssetAmount,
+  ChainFamily,
   DisplayIntent,
   IntentSummary,
   MessageContent,
@@ -21,6 +22,7 @@ import type {
 } from "@qntx/wallet-chains";
 import { networkMeta } from "@qntx/wallet-chains/networks";
 
+import { KernelError } from "../../errors.ts";
 import type { KeystorePrompt } from "../../platform.ts";
 import { formatUnits, joinLines } from "../../prompts.ts";
 import type { PromptLocale } from "../../prompts.ts";
@@ -38,22 +40,29 @@ export type PromptIntent = Pick<
   | "bridge"
   | "contract"
   | "calls"
+  | "blind"
+  | "programs"
 > & {
   /** Decoders always set it; a message without a chain of its own omits it. */
   readonly network?: string;
+  readonly family?: ChainFamily;
   readonly warnings?: DisplayIntent["warnings"];
   readonly staking?: DisplayIntent["staking"];
 };
 
 /** The prompt intent of an off-chain message: it moves no value and pays no fee. */
-export const messagePromptIntent = (message: MessageContent): PromptIntent => ({
-  summary: "message",
-  outflows: [],
-  approvals: [],
-  fee: undefined,
-  verifiability: "opaque",
-  message,
-});
+export const messagePromptIntent = (message: MessageContent): PromptIntent => {
+  const blind = messageBlindReason(message);
+  return {
+    summary: "message",
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability: "opaque",
+    message,
+    ...(blind === undefined ? {} : { blind }),
+  };
+};
 
 /** How much requester-chosen text one prompt shows. */
 const MESSAGE_LINES = 6;
@@ -64,10 +73,17 @@ const ORDER_ITEMS = 4;
 type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
   readonly blindTitle: string;
-  readonly blindDescription: string;
+  readonly blindBytes: string;
+  readonly bytesData: (hex: string) => string;
+  readonly bytesLength: (bytes: number) => string;
   readonly otherOutflows: string;
   readonly unverifiedEffects: string;
-  readonly callContract: (address: string) => string;
+  readonly externalInputs: string;
+  readonly solanaPrograms: (ids: string) => string;
+  readonly solanaProgramsWarning: string;
+  readonly tokenFunction: (symbol: string, address: string) => string;
+  readonly accountCode: string;
+  readonly callContract: (address: string, selector: string) => string;
   readonly deployContract: (address: string) => string;
   readonly signInTitle: string;
   readonly signInTo: (domain: string) => string;
@@ -79,7 +95,9 @@ type Catalog = {
   readonly typedApp: (name: string) => string;
   readonly typedContract: (address: string) => string;
   readonly typedType: (name: string) => string;
-  readonly typedUnshown: string;
+  readonly typedUnverified: string;
+  readonly typedField: (path: string, value: string) => string;
+  readonly typedOversize: string;
   readonly orderGive: (amount: string) => string;
   readonly orderReceive: (recipient: string, amount: string) => string;
   readonly anyTokenOf: (token: string) => string;
@@ -137,10 +155,17 @@ const zh: Catalog = {
     bridge: "确认跨链",
   },
   blindTitle: "确认盲签",
-  blindDescription: "签署无法显示为文字的数据",
+  blindBytes: "钱包无法显示签署的内容。仅在完全信任该应用时签署。",
+  bytesData: (hex) => `数据 ${hex}`,
+  bytesLength: (bytes) => `${bytes} 字节`,
   otherOutflows: "可能还有其他转出",
-  unverifiedEffects: "无法核实此调用的效果",
-  callContract: (address) => `调用合约 ${address}`,
+  unverifiedEffects: "钱包无法核实此调用会做什么",
+  externalInputs: "包含其他签名者的输入；无法核实手续费",
+  solanaPrograms: (ids) => `钱包无法解码的程序调用：${ids}`,
+  solanaProgramsWarning: "这些程序可以转移本交易涉及账户中的资产",
+  tokenFunction: (symbol, address) => `代币 ${symbol} ${address} 的未知函数，可能转走该代币`,
+  accountCode: "以本账户的全部权限执行其自身代码",
+  callContract: (address, selector) => `调用合约 ${address}，函数 ${selector}`,
   deployContract: (address) => `部署合约 ${address}`,
   signInTitle: "确认登录",
   signInTo: (domain) => `登录 ${domain}`,
@@ -152,7 +177,9 @@ const zh: Catalog = {
   typedApp: (name) => `应用：${name}`,
   typedContract: (address) => `验证合约 ${address}`,
   typedType: (name) => `类型：${name}`,
-  typedUnshown: "无法显示此请求的内容",
+  typedUnverified: "钱包无法核实此签名授权的内容",
+  typedField: (path, value) => `${path}：${value}`,
+  typedOversize: "此类型数据过大，无法完整显示",
   orderGive: (amount) => `付出 ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
   anyTokenOf: (token) => `${token} 中的任意代币`,
@@ -220,10 +247,18 @@ const en: Catalog = {
     bridge: "Confirm bridge",
   },
   blindTitle: "Confirm blind signing",
-  blindDescription: "Sign data that cannot be shown as text",
+  blindBytes: "The wallet cannot show what this signs. Sign only if you fully trust the app.",
+  bytesData: (hex) => `Data ${hex}`,
+  bytesLength: (bytes) => `${bytes} bytes`,
   otherOutflows: "There may be other outflows",
-  unverifiedEffects: "The effects of this call cannot be verified",
-  callContract: (address) => `Call contract ${address}`,
+  unverifiedEffects: "The wallet cannot verify what this call does",
+  externalInputs: "Includes inputs from other signers; the fee cannot be verified",
+  solanaPrograms: (ids) => `Program calls the wallet cannot decode: ${ids}`,
+  solanaProgramsWarning: "These programs can move assets from the accounts in this transaction",
+  tokenFunction: (symbol, address) =>
+    `An unrecognised function of token ${symbol} ${address} can move this token`,
+  accountCode: "Runs this account's own code with full authority",
+  callContract: (address, selector) => `Call contract ${address}, function ${selector}`,
   deployContract: (address) => `Deploy contract ${address}`,
   signInTitle: "Confirm sign-in",
   signInTo: (domain) => `Sign in to ${domain}`,
@@ -235,7 +270,9 @@ const en: Catalog = {
   typedApp: (name) => `App: ${name}`,
   typedContract: (address) => `Verifying contract ${address}`,
   typedType: (name) => `Type: ${name}`,
-  typedUnshown: "The content of this request cannot be shown",
+  typedUnverified: "The wallet cannot verify what this signature authorises",
+  typedField: (path, value) => `${path}: ${value}`,
+  typedOversize: "This typed data is too large to show in full",
   orderGive: (amount) => `Give ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
   anyTokenOf: (token) => `any token of ${token}`,
@@ -382,18 +419,30 @@ function approvalLine(catalog: Catalog, change: ApprovalChange): string {
 /** One requester-chosen value on a single line. */
 const field = (raw: string): string => displayExcerpt(raw, 1, FIELD_CODE_POINTS).lines[0] ?? "";
 
-/** The contracts an unverifiable transaction runs: its own, or each opaque call of a batch. */
+/**
+ * The contracts an unverifiable transaction runs: its own, or each opaque call of a batch. A blind
+ * call leads with why it is blind; the call line itself follows either way.
+ */
 function contractLines(catalog: Catalog, intent: PromptIntent): ReadonlyArray<string> {
   const calls = intent.calls ?? [intent];
-  return calls.flatMap(({ contract, verifiability }) =>
-    contract === undefined || verifiability !== "opaque"
-      ? []
-      : [
-          contract.created
-            ? catalog.deployContract(contract.address)
-            : catalog.callContract(contract.address),
-        ],
-  );
+  const lines: string[] = [];
+  for (const { contract, verifiability, blind } of calls) {
+    if (contract === undefined || verifiability !== "opaque") {
+      continue;
+    }
+    if (blind === "token-function") {
+      lines.push(catalog.tokenFunction(contract.symbol ?? contract.address, contract.address));
+    }
+    if (blind === "account-code") {
+      lines.push(catalog.accountCode);
+    }
+    lines.push(
+      contract.selector === undefined
+        ? catalog.deployContract(contract.address)
+        : catalog.callContract(contract.address, contract.selector),
+    );
+  }
+  return lines;
 }
 
 /** What the decoded content does: contracts run, delegation, outflows, receipts, approvals. */
@@ -444,14 +493,23 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
       ? []
       : [catalog.networkLine(networkLabel(catalog, intent.network))];
   const caveat =
-    intent.verifiability === "opaque"
-      ? [catalog.unverifiedEffects]
-      : intent.verifiability === "partial"
-        ? [catalog.otherOutflows]
-        : [];
+    intent.blind === undefined
+      ? intent.verifiability === "opaque"
+        ? intent.family === "solana"
+          ? [
+              catalog.solanaPrograms((intent.programs ?? []).join(", ")),
+              catalog.solanaProgramsWarning,
+            ]
+          : intent.family === "bitcoin"
+            ? [catalog.externalInputs]
+            : [catalog.unverifiedEffects]
+        : intent.verifiability === "partial"
+          ? [catalog.otherOutflows]
+          : []
+      : [];
   const warnings = intent.warnings ?? [];
   return {
-    title: catalog.titles[intent.summary],
+    title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
     description: joinLines([
       ...network,
       ...caveat,
@@ -559,9 +617,22 @@ function typedContentLines(
   if (message.safe !== undefined) {
     return safeLines(catalog, message.safe);
   }
-  return intent.approvals.length > 0
-    ? [catalog.otherOutflows, ...effectLines(catalog, intent)]
-    : [catalog.typedUnshown];
+  if (intent.approvals.length > 0) {
+    return [catalog.otherOutflows, ...effectLines(catalog, intent)];
+  }
+  if (message.fields !== undefined) {
+    return [
+      catalog.typedUnverified,
+      ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value)),
+    ];
+  }
+  if (intent.blind === "typed-data-oversize") {
+    return [catalog.typedOversize];
+  }
+  throw new KernelError(
+    "integrity",
+    "unreachable: typed data is neither recognised, shown nor blind",
+  );
 }
 
 function typedDataLines(
@@ -586,11 +657,18 @@ function messagePrompt(
   message: MessageContent,
 ): KeystorePrompt {
   if (message.kind === "bytes") {
-    return { title: catalog.blindTitle, description: catalog.blindDescription };
+    const bytes = (message.hex.length - "0x".length) / 2;
+    return {
+      title: catalog.blindTitle,
+      description: joinLines([
+        catalog.blindBytes,
+        bytes <= 64 ? catalog.bytesData(message.hex) : catalog.bytesLength(bytes),
+      ]),
+    };
   }
   if (message.kind === "typed-data") {
     return {
-      title: catalog.titles[intent.summary],
+      title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
       description: joinLines(typedDataLines(catalog, intent, message)),
     };
   }
