@@ -974,11 +974,15 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const es = ctx.options.networks.esplora(old.network);
     const independent = ctx.options.networks.independentEsplora(old.network);
+    // A legacy parent's own outputs sit on the group's bip84 change chain, so the child is a
+    // bip84 transaction — derived, signed and sized under that template.
+    const childTemplate =
+      btc.template === "btc.bip44" || btc.template === "btc.bip49" ? "btc.bip84" : btc.template;
     const account = {
       kind: "hd" as const,
       walletId: old.account,
       groupIndex: btc.groupIndex,
-      template: btc.template,
+      template: childTemplate,
     };
     const built = await accountContext(ctx, account, old.network, []);
     const own = btc.outputs.flatMap((o, vout) => (o.own ? [{ ...o, vout }] : []));
@@ -1015,7 +1019,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     const parentTxid = old.hash;
     const parentRaws =
-      btc.template === "btc.bip86"
+      childTemplate === "btc.bip86"
         ? new Map<string, Uint8Array>()
         : await fetchRawTxes(es, [{ txid: parentTxid }]);
     // The child spends the parent's own unconfirmed outputs — that is what CPFP is for.
@@ -1032,7 +1036,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       built.pathOf,
       built.pubkeyOf,
       built.scriptOf,
-      btc.template,
+      childTemplate,
       (u) => parentRaws.get(u.txid),
     );
     const [changeAddr] = built.changeAddresses;
@@ -1045,7 +1049,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal) }],
       net.params,
-      btc.template,
+      childTemplate,
     );
     const childFee = Math.max(
       Math.ceil(targetRate * (btc.vsize + probe.vsize)) - btc.fee,
@@ -1055,7 +1059,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal - childFee) }],
       net.params,
-      btc.template,
+      childTemplate,
     );
     const record = {
       inputs: own.map((o) => ({
@@ -1068,7 +1072,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       vsize,
       fee: childFee,
       feeRate: Math.ceil(childFee / vsize),
-      template: btc.template,
+      template: childTemplate,
       groupIndex: btc.groupIndex,
       tier: btc.tier,
     };

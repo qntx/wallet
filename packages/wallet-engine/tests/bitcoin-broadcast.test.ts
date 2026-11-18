@@ -40,6 +40,19 @@ const mutableCopy = (v: unknown): Record<string, unknown> => {
   return { ...v };
 };
 
+/** A recorded input list with the first entry's `value` rewritten. */
+const firstInputValued = (
+  v: unknown,
+  value: number,
+): ReadonlyArray<Record<string, unknown>> => {
+  const inputs = Array.isArray(v) ? v.map(mutableCopy) : [];
+  const head = inputs.at(0);
+  if (head === undefined) {
+    throw new Error("expected a recorded input");
+  }
+  return [{ ...head, value }, ...inputs.slice(1)];
+};
+
 /** Mirrors src/transactions/broadcast.ts's UNKNOWN_DROP_MS — how long unseen may last. */
 const UNKNOWN_DROP_MS = 1_800_000;
 
@@ -434,6 +447,30 @@ describe("a Bitcoin replacement after a restart", () => {
       second.ctl.prepareReplacement({ method: "cpfp", txId: txA.id, feeRate: 50 }, "req-c"),
     ).rejects.toThrow(/build record/);
   });
+});
+
+describe("a CPFP child of a legacy parent", () => {
+  it.each(["btc.bip44", "btc.bip49"] as const)(
+    "builds and broadcasts a bip84 child of a %s send",
+    async (template) => {
+      const w = world({ template });
+      w.fund(1, 200_000);
+      const booted = await w.boot();
+      const txA = await w.send(booted, 100_000n, "req-a");
+      expect(txA.state).toBe("submitted");
+
+      const child = await booted.ctl.prepareReplacement(
+        { method: "cpfp", txId: txA.id, feeRate: 50 },
+        "req-c",
+      );
+      const txB = await child.submit(VERIFY, () => undefined);
+      expect(txB.state).toBe("submitted");
+      // The parent's change sits on the group's bip84 chain — the child is a bip84
+      // transaction, derived and signed under that template.
+      expect(btcRecord(txB).template).toBe("btc.bip84");
+      expect(inputTxidsOf(txB)).toStrictEqual([hashOf(txA)]);
+    },
+  );
 });
 
 describe("a Bitcoin replacement pays for its own size", () => {
