@@ -9,8 +9,19 @@ import { Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import { EsploraError } from "../src/chains/bitcoin.ts";
+import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
-import { flush, hashOf, stateOf, VERIFY, world } from "./support/btc-world.ts";
+import { flush, hashOf, inputTxidsOf, stateOf, VERIFY, world } from "./support/btc-world.ts";
+
+const isObjectRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+
+const mutableCopy = (v: unknown): Record<string, unknown> => {
+  if (!isObjectRecord(v)) {
+    throw new Error("expected an object record");
+  }
+  return { ...v };
+};
 
 /** Mirrors src/transactions/broadcast.ts's UNKNOWN_DROP_MS — how long unseen may last. */
 const UNKNOWN_DROP_MS = 1_800_000;
@@ -269,5 +280,133 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     w.clock.t += UNKNOWN_DROP_MS + 1;
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("submitted");
+  });
+});
+
+/** A foreign txid — the conflict spender the wallet did not build. */
+const FOREIGN_TXID = "ef".repeat(32);
+
+describe("a Bitcoin transaction a foreign spend has evicted", () => {
+  it("an input spent by a confirmed foreign tx ends tracking as replaced and frees the lock", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const booted = await w.boot();
+
+    const tx = await w.send(booted, 10_000n, "req-1");
+    expect(tx.state).toBe("submitted");
+
+    w.setStatus(hashOf(tx), "404");
+    w.spendBy(u.txid, u.vout, FOREIGN_TXID, true);
+    await booted.polls(1);
+    expect(stateOf(booted.ctl, tx)).toBe("replaced");
+
+    await flush();
+    const locks = await w.persistedUtxos(booted.backing);
+    expect(locks[`${u.txid}:${u.vout}`]?.status).toBe("confirmed");
+  });
+
+  it("an input spent by an unconfirmed foreign tx is not rebroadcast but still drops", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const booted = await w.boot();
+
+    const tx = await w.send(booted, 10_000n, "req-1");
+    expect(tx.state).toBe("submitted");
+    w.setStatus(hashOf(tx), "404");
+    w.spendBy(u.txid, u.vout, FOREIGN_TXID, false);
+
+    await booted.polls(1);
+    expect(stateOf(booted.ctl, tx)).toBe("submitted");
+    // The bytes conflict with a live mempool tx — rebroadcasting is pointless.
+    expect(w.posts).toHaveLength(1);
+
+    w.clock.t += UNKNOWN_DROP_MS + 1;
+    await booted.polls(1);
+    expect(stateOf(booted.ctl, tx)).toBe("dropped");
+  });
+
+  it("an unreadable outspends answer is a missed check, not a poll failure", async () => {
+    const w = world();
+    const u = w.fund(1, 50_000);
+    const booted = await w.boot();
+
+    const tx = await w.send(booted, 10_000n, "req-1");
+    expect(tx.state).toBe("submitted");
+    w.setStatus(hashOf(tx), "404");
+    w.setOutspends(u.txid, "not-an-array");
+
+    await booted.polls(1);
+    expect(stateOf(booted.ctl, tx)).toBe("submitted");
+    expect(w.posts).toHaveLength(2); // the ordinary rebroadcast still ran
+
+    w.setOutspends(u.txid, new EsploraError("esplora /tx/x/outspends: 503", true));
+    await booted.polls(1);
+    expect(stateOf(booted.ctl, tx)).toBe("submitted");
+  });
+});
+
+describe("a Bitcoin replacement after a restart", () => {
+  it("speed-up, cancel and CPFP rebuild from the persisted record", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    w.fund(2, 30_000);
+    const first = await w.boot();
+    const txA = await w.send(first, 10_000n, "req-a");
+    expect(txA.state).toBe("submitted");
+
+    // A fresh controller over the same store: no in-memory build context survives.
+    const second = await w.boot(first.backing);
+    const speed = await second.ctl.prepareReplacement(
+      { method: "speed-up", txId: txA.id },
+      "req-b",
+    );
+    const txB = await speed.submit(VERIFY, () => undefined);
+    expect(txB.state).toBe("submitted");
+    expect(outpointsOf(txB)).toStrictEqual(outpointsOf(txA));
+    expect(w.broadcasts).toContain(hashOf(txB));
+
+    const third = await w.boot(first.backing);
+    const cancel = await third.ctl.prepareReplacement({ method: "cancel", txId: txB.id }, "req-c");
+    const txC = await cancel.submit(VERIFY, () => undefined);
+    expect(txC.state).toBe("submitted");
+    expect(outpointsOf(txC)).toStrictEqual(outpointsOf(txA));
+
+    const fourth = await w.boot(first.backing);
+    const child = await fourth.ctl.prepareReplacement(
+      { method: "cpfp", txId: txC.id, feeRate: 50 },
+      "req-d",
+    );
+    const txD = await child.submit(VERIFY, () => undefined);
+    expect(txD.state).toBe("submitted");
+    // The child spends the parent's own change output.
+    expect(inputTxidsOf(txD)).toStrictEqual([hashOf(txC)]);
+  });
+
+  it("a persisted record without the build fields refuses replacement cleanly", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const first = await w.boot();
+    const txA = await w.send(first, 10_000n, "req-a");
+    expect(txA.state).toBe("submitted");
+
+    // An older wallet persisted a build record without the rebuild fields.
+    const persisted = await w.persistedTx(first.backing, txA.id);
+    const stripped = mutableCopy(persisted?.["btc"]);
+    delete stripped["template"];
+    delete stripped["groupIndex"];
+    delete stripped["tier"];
+    await createMemoryEngineStore(first.backing)
+      .collection("transactions")
+      .put(txA.id, new TextEncoder().encode(JSON.stringify({ ...persisted, btc: stripped })));
+
+    const second = await w.boot(first.backing);
+    const loaded = second.ctl.getState().txs[txA.id];
+    expect(loaded?.btc).toBeUndefined();
+    await expect(
+      second.ctl.prepareReplacement({ method: "speed-up", txId: txA.id }, "req-b"),
+    ).rejects.toThrow(/build record/);
+    await expect(
+      second.ctl.prepareReplacement({ method: "cpfp", txId: txA.id, feeRate: 50 }, "req-c"),
+    ).rejects.toThrow(/build record/);
   });
 });

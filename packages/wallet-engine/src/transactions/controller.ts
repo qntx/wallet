@@ -7,6 +7,7 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
+import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import { Controller } from "../controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
@@ -109,13 +110,21 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   if (!isObject(v)) {
     return false;
   }
-  const { inputs, outputs, vsize, fee, feeRate } = v;
+  const { inputs, outputs, vsize, fee, feeRate, template, groupIndex, tier } = v;
   return (
     Array.isArray(inputs) &&
     Array.isArray(outputs) &&
     typeof vsize === "number" &&
     typeof fee === "number" &&
     typeof feeRate === "number" &&
+    // A record without the rebuild fields decodes without `btc` — no migration, the
+    // replacement paths refuse it as having no build record.
+    (BITCOIN_TEMPLATES as ReadonlyArray<string>).includes(
+      typeof template === "string" ? template : "",
+    ) &&
+    typeof groupIndex === "number" &&
+    Number.isSafeInteger(groupIndex) &&
+    (tier === "fast" || tier === "normal" || tier === "slow") &&
     inputs.every(
       (i) =>
         isObject(i) &&

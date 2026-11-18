@@ -517,8 +517,9 @@ describe("bitcoin rbf", () => {
     expect(signedPsbt(1).getInput(0).nonWitnessUtxo).toBeDefined();
     hexCalls.length = 0;
     const bumped = await route.prepareReplace(c, original, "speed-up", "req-r");
-    // The stashed inputs already carry their prevouts — nothing is re-fetched here.
-    expect(hexCalls).toStrictEqual([]);
+    // The record persists txid/vout/value/address only — the prevouts are re-fetched for the
+    // rebuild, exactly once per spent input.
+    expect(hexCalls).toStrictEqual([DEFAULT_UTXOS[0]!.txid]);
     await bumped.submit({ kind: "password", password: "pw" }, () => undefined);
     const bumpPsbt = signedPsbt(2);
     for (let i = 0; i < bumpPsbt.inputsLength; i++) {

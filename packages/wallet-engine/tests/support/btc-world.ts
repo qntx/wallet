@@ -137,6 +137,15 @@ export type BtcWorld = {
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
   readonly setIndependentStatus: (txid: string, s: unknown) => void;
+  /** Scripts the `/tx/:prevTxid/outspends` answer — any value, or an Error to make the read fail. */
+  readonly setOutspends: (txid: string, answer: unknown) => void;
+  /** Marks `prevTxid:vout` spent by `spenderTxid` in the outspends index. */
+  readonly spendBy: (
+    prevTxid: string,
+    vout: number,
+    spenderTxid: string,
+    confirmed: boolean,
+  ) => void;
   readonly setPost: (mode: PostMode) => void;
   readonly utxos: Map<string, FakeUtxo[]>;
   readonly statuses: Map<string, unknown>;
@@ -253,6 +262,8 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
   const statuses = new Map<string, unknown>();
   /** A second endpoint's statuses, when `options.independent` asks for one. */
   const independentStatuses = new Map<string, unknown>();
+  /** Txid → scripted `/outspends` answer; unset falls back to "no output spent". */
+  const outspends = new Map<string, unknown>();
   const broadcasts: string[] = [];
   const posts: string[] = [];
   const requests: string[] = [];
@@ -309,6 +320,22 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
     const hm = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
     if (hm !== null) {
       return Buffer.from(raws.get(hm[1] ?? "") ?? new Uint8Array()).toString("hex");
+    }
+    const om = /^\/tx\/([0-9a-f]{64})\/outspends$/.exec(url);
+    if (om !== null) {
+      const answer = outspends.get(om[1] ?? "");
+      if (answer instanceof Error) {
+        throw answer;
+      }
+      if (answer !== undefined) {
+        return answer;
+      }
+      const raw = raws.get(om[1] ?? "");
+      if (raw === undefined) {
+        throw new EsploraError(`esplora ${url}: 404`, false);
+      }
+      const tx = Transaction.fromRaw(raw, { allowUnknownInputs: true });
+      return Array.from({ length: tx.outputsLength }, () => ({ spent: false }));
     }
     const sm = /^\/tx\/([0-9a-f]{64})\/status$/.exec(url);
     if (sm !== null) {
@@ -461,6 +488,23 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
     },
     setIndependentStatus: (txid: string, s: unknown) => {
       independentStatuses.set(txid, s);
+    },
+    setOutspends: (txid: string, answer: unknown) => {
+      outspends.set(txid, answer);
+    },
+    spendBy: (prevTxid: string, vout: number, spenderTxid: string, confirmed: boolean) => {
+      const cur = outspends.get(prevTxid);
+      const list: unknown[] = Array.isArray(cur) ? [...(cur as ReadonlyArray<unknown>)] : [];
+      while (list.length <= vout) {
+        list.push({ spent: false });
+      }
+      list[vout] = {
+        spent: true,
+        txid: spenderTxid,
+        vin: 0,
+        status: { confirmed, ...(confirmed ? { block_height: 100 } : {}) },
+      };
+      outspends.set(prevTxid, list);
     },
     setPost: (mode: PostMode) => {
       postMode = mode;
