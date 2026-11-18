@@ -136,10 +136,13 @@ the wallet app in its association files.
   domain of a message. Android's `BiometricPrompt` shows the title and description. iOS shows the
   description on the Touch ID and device-passcode sheets only — **the Face ID sheet shows no
   custom text**, so there the verification proves presence, not that the user read the content.
-- Blind signing is off on a new vault. A request the kernel cannot show (raw bytes, typed data of
-  no recognised shape, a transaction with unverifiable effects) fails with
-  `blind-signing-disabled` and no prompt until `vault.setBlindSigning(true, { kind: "hardware" })`.
-  This is the one kernel-side control that also holds on a Face ID device.
+- Blind signing is off on a new vault. A request is blind only when the chain decoder marks it
+  so (raw bytes, typed data too large or misformed to show, an unrecognised token function,
+  calldata to the signing account's own code, a Safe delegatecall or unbounded refund) and fails
+  with `blind-signing-disabled` and no prompt until
+  `vault.setBlindSigning(true, { kind: "hardware" })`; described requests the wallet cannot fully
+  verify sign without the setting. This is the one kernel-side control that also holds on a
+  Face ID device.
 - App lock is optional and off by default: `vault.setAppLock(true, { kind: "hardware" })` removes
   the `device` factor and rotates the DEK, so every unlock prompts again; `false` restores it.
   With app lock off, removing the lock screen keeps the vault usable (the dead `hardware` factor

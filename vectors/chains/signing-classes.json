@@ -1,0 +1,852 @@
+{
+  "signer": "0x2222222222222222222222222222222222222222",
+  "cases": [
+    {
+      "name": "WETH9 deposit() (wrap 1 ETH)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0xde0b6b3a7640000",
+          "data": "0xd0e30db0",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2, function 0xd0e30db0\nSend 1 ETH to 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2，函数 0xd0e30db0\n发送 1 ETH 到 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "Aave V3 Pool supply(USDC, 1e6, signer, 0)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x617ba037000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000f424000000000000000000000000022222222222222222222222222222222222222220000000000000000000000000000000000000000000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, function 0x617ba037\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2，函数 0x617ba037\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "Uniswap Universal Router execute() (0.01 ETH)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x2386f26fc10000",
+          "data": "0x3593564c000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000007735940000000000000000000000000000000000000000000000000000000000000000020b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af, function 0x3593564c\nSend 0.01 ETH to 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af，函数 0x3593564c\n发送 0.01 ETH 到 0x66a9893cC07D91D95644AEDD05D03f95e1dBA8Af\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "CoW Protocol GPv2 Order (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Order": [
+              {
+                "name": "sellToken",
+                "type": "address"
+              },
+              {
+                "name": "buyToken",
+                "type": "address"
+              },
+              {
+                "name": "receiver",
+                "type": "address"
+              },
+              {
+                "name": "sellAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "buyAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "validTo",
+                "type": "uint32"
+              },
+              {
+                "name": "appData",
+                "type": "bytes32"
+              },
+              {
+                "name": "feeAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "kind",
+                "type": "string"
+              },
+              {
+                "name": "partiallyFillable",
+                "type": "bool"
+              },
+              {
+                "name": "sellTokenBalance",
+                "type": "string"
+              },
+              {
+                "name": "buyTokenBalance",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Order",
+          "domain": {
+            "name": "Gnosis Protocol",
+            "version": "v2",
+            "chainId": 1,
+            "verifyingContract": "0x9008D19f58AAbD9eD0D60971565AA8510560ab41"
+          },
+          "message": {
+            "sellToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+            "buyToken": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+            "receiver": "0x2222222222222222222222222222222222222222",
+            "sellAmount": "1000000",
+            "buyAmount": "1",
+            "validTo": 2000000000,
+            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "feeAmount": "0",
+            "kind": "sell",
+            "partiallyFillable": false,
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "App: Gnosis Protocol\nNetwork: Ethereum\nVerifying contract 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\nType: Order\nThe wallet cannot verify what this signature authorises\nsellToken: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nbuyToken: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nreceiver: 0x2222222222222222222222222222222222222222\nsellAmount: 1000000\nbuyAmount: 1\nvalidTo: 2000000000\nappData: 0x0000000000000000000000000000000000000000000000000000000000000000\nfeeAmount: 0\nkind: sell\npartiallyFillable: false\nsellTokenBalance: erc20\nbuyTokenBalance: erc20"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "应用：Gnosis Protocol\n网络：Ethereum\n验证合约 0x9008D19f58AAbD9eD0D60971565AA8510560ab41\n类型：Order\n钱包无法核实此签名授权的内容\nsellToken：0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nbuyToken：0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2\nreceiver：0x2222222222222222222222222222222222222222\nsellAmount：1000000\nbuyAmount：1\nvalidTo：2000000000\nappData：0x0000000000000000000000000000000000000000000000000000000000000000\nfeeAmount：0\nkind：sell\npartiallyFillable：false\nsellTokenBalance：erc20\nbuyTokenBalance：erc20"
+        }
+      }
+    },
+    {
+      "name": "Aave V3 Pool withdraw(USDC, max, 0x…0BAD00)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x69328dec000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff00000000000000000000000000000000000000000000000000000000000bad00",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2, function 0x69328dec\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n调用合约 0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2，函数 0x69328dec\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "USDC unrecognised function",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xdeadbeef",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "token-function",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Ethereum\nAn unrecognised function of token USDC 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 can move this token\nCall contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48, function 0xdeadbeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Ethereum\n代币 USDC 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48 的未知函数，可能转走该代币\n调用合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48，函数 0xdeadbeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "USDC transfer (readable)",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xa9059cbb00000000000000000000000000000000000000000000000000000000deadbeef00000000000000000000000000000000000000000000000000000000000f4240",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Network: Ethereum\nSend 1 USDC to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "网络：Ethereum\n发送 1 USDC 到 0x00000000000000000000000000000000DeaDBeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "calldata to the signing account",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0xdeadbeef",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1",
+          "to": "0x2222222222222222222222222222222222222222"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "account-code",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Ethereum\nRuns this account's own code with full authority\nCall contract 0x2222222222222222222222222222222222222222, function 0xdeadbeef\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Ethereum\n以本账户的全部权限执行其自身代码\n调用合约 0x2222222222222222222222222222222222222222，函数 0xdeadbeef\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "contract creation",
+      "request": {
+        "kind": "evm.transaction",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "tx": {
+          "type": "eip1559",
+          "chainId": 1,
+          "nonce": 0,
+          "gas": "0x30000",
+          "value": "0x0",
+          "data": "0x60006000",
+          "accessList": [],
+          "maxFeePerGas": "0x3b9aca00",
+          "maxPriorityFeePerGas": "0x1"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm contract call",
+          "description": "Network: Ethereum\nThe wallet cannot verify what this call does\nDeploy contract 0x659B375D76a8E9a2c68Da8818022D6561aA60845\nMax fee 0.000196608 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认合约调用",
+          "description": "网络：Ethereum\n钱包无法核实此调用会做什么\n部署合约 0x659B375D76a8E9a2c68Da8818022D6561aA60845\n最高手续费 0.000196608 ETH"
+        }
+      }
+    },
+    {
+      "name": "EIP-712 Mail (eth-sig-util example)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Person": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "wallet",
+                "type": "address"
+              }
+            ],
+            "Mail": [
+              {
+                "name": "from",
+                "type": "Person"
+              },
+              {
+                "name": "to",
+                "type": "Person"
+              },
+              {
+                "name": "contents",
+                "type": "string"
+              }
+            ]
+          },
+          "primaryType": "Mail",
+          "domain": {
+            "name": "Ether Mail",
+            "version": "1",
+            "chainId": 1,
+            "verifyingContract": "0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC"
+          },
+          "message": {
+            "from": {
+              "name": "Cow",
+              "wallet": "0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826"
+            },
+            "to": {
+              "name": "Bob",
+              "wallet": "0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB"
+            },
+            "contents": "Hello, Bob!"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "App: Ether Mail\nNetwork: Ethereum\nVerifying contract 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\nType: Mail\nThe wallet cannot verify what this signature authorises\nfrom.name: Cow\nfrom.wallet: 0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name: Bob\nto.wallet: 0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents: Hello, Bob!"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "应用：Ether Mail\n网络：Ethereum\n验证合约 0xCcCCccccCCCCcCCCCCCcCcCccCcCCCcCcccccccC\n类型：Mail\n钱包无法核实此签名授权的内容\nfrom.name：Cow\nfrom.wallet：0xCD2a3d9F938E13CD947Ec05AbC7FE734Df8DD826\nto.name：Bob\nto.wallet：0xbBbBBBBbbBBBbbbBbbBbbbbBBbBbbbbBbBbbBBbB\ncontents：Hello, Bob!"
+        }
+      }
+    },
+    {
+      "name": "EIP-712 sixteen leaves (described)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Big": [
+              {
+                "name": "f0",
+                "type": "uint256"
+              },
+              {
+                "name": "f1",
+                "type": "uint256"
+              },
+              {
+                "name": "f2",
+                "type": "uint256"
+              },
+              {
+                "name": "f3",
+                "type": "uint256"
+              },
+              {
+                "name": "f4",
+                "type": "uint256"
+              },
+              {
+                "name": "f5",
+                "type": "uint256"
+              },
+              {
+                "name": "f6",
+                "type": "uint256"
+              },
+              {
+                "name": "f7",
+                "type": "uint256"
+              },
+              {
+                "name": "f8",
+                "type": "uint256"
+              },
+              {
+                "name": "f9",
+                "type": "uint256"
+              },
+              {
+                "name": "f10",
+                "type": "uint256"
+              },
+              {
+                "name": "f11",
+                "type": "uint256"
+              },
+              {
+                "name": "f12",
+                "type": "uint256"
+              },
+              {
+                "name": "f13",
+                "type": "uint256"
+              },
+              {
+                "name": "f14",
+                "type": "uint256"
+              },
+              {
+                "name": "f15",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "Big",
+          "domain": {
+            "chainId": 1,
+            "verifyingContract": "0x00000000000000000000000000000000DeaDBeef"
+          },
+          "message": {
+            "f0": "1",
+            "f1": "1",
+            "f2": "1",
+            "f3": "1",
+            "f4": "1",
+            "f5": "1",
+            "f6": "1",
+            "f7": "1",
+            "f8": "1",
+            "f9": "1",
+            "f10": "1",
+            "f11": "1",
+            "f12": "1",
+            "f13": "1",
+            "f14": "1",
+            "f15": "1"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "Network: Ethereum\nVerifying contract 0x00000000000000000000000000000000DeaDBeef\nType: Big\nThe wallet cannot verify what this signature authorises\nf0: 1\nf1: 1\nf2: 1\nf3: 1\nf4: 1\nf5: 1\nf6: 1\nf7: 1\nf8: 1\nf9: 1\nf10: 1\nf11: 1\nf12: 1\nf13: 1\nf14: 1\nf15: 1"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "网络：Ethereum\n验证合约 0x00000000000000000000000000000000DeaDBeef\n类型：Big\n钱包无法核实此签名授权的内容\nf0：1\nf1：1\nf2：1\nf3：1\nf4：1\nf5：1\nf6：1\nf7：1\nf8：1\nf9：1\nf10：1\nf11：1\nf12：1\nf13：1\nf14：1\nf15：1"
+        }
+      }
+    },
+    {
+      "name": "EIP-712 seventeen leaves (too large to show)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Big": [
+              {
+                "name": "f0",
+                "type": "uint256"
+              },
+              {
+                "name": "f1",
+                "type": "uint256"
+              },
+              {
+                "name": "f2",
+                "type": "uint256"
+              },
+              {
+                "name": "f3",
+                "type": "uint256"
+              },
+              {
+                "name": "f4",
+                "type": "uint256"
+              },
+              {
+                "name": "f5",
+                "type": "uint256"
+              },
+              {
+                "name": "f6",
+                "type": "uint256"
+              },
+              {
+                "name": "f7",
+                "type": "uint256"
+              },
+              {
+                "name": "f8",
+                "type": "uint256"
+              },
+              {
+                "name": "f9",
+                "type": "uint256"
+              },
+              {
+                "name": "f10",
+                "type": "uint256"
+              },
+              {
+                "name": "f11",
+                "type": "uint256"
+              },
+              {
+                "name": "f12",
+                "type": "uint256"
+              },
+              {
+                "name": "f13",
+                "type": "uint256"
+              },
+              {
+                "name": "f14",
+                "type": "uint256"
+              },
+              {
+                "name": "f15",
+                "type": "uint256"
+              },
+              {
+                "name": "f16",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "Big",
+          "domain": {
+            "chainId": 1,
+            "verifyingContract": "0x00000000000000000000000000000000DeaDBeef"
+          },
+          "message": {
+            "f0": "1",
+            "f1": "1",
+            "f2": "1",
+            "f3": "1",
+            "f4": "1",
+            "f5": "1",
+            "f6": "1",
+            "f7": "1",
+            "f8": "1",
+            "f9": "1",
+            "f10": "1",
+            "f11": "1",
+            "f12": "1",
+            "f13": "1",
+            "f14": "1",
+            "f15": "1",
+            "f16": "1"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-oversize",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Ethereum\nVerifying contract 0x00000000000000000000000000000000DeaDBeef\nType: Big\nThis typed data is too large to show in full"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Ethereum\n验证合约 0x00000000000000000000000000000000DeaDBeef\n类型：Big\n此类型数据过大，无法完整显示"
+        }
+      }
+    },
+    {
+      "name": "personal_sign 32-byte hash",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0xabababababababababababababababababababababababababababababababab"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0xabababababababababababababababababababababababababababababababab"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0xabababababababababababababababababababababababababababababababab"
+        }
+      }
+    },
+    {
+      "name": "personal_sign 100 bytes",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0xcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\n100 bytes"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n100 字节"
+        }
+      }
+    },
+    {
+      "name": "personal_sign text (readable)",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0x68656c6c6f20776f726c64"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm signature",
+          "description": "Message:\nhello world"
+        },
+        "zh-Hans": {
+          "title": "确认签名",
+          "description": "消息：\nhello world"
+        }
+      }
+    }
+  ]
+}

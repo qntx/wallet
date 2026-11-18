@@ -332,9 +332,10 @@ export async function setAppLock(
 }
 
 /**
- * Blind signing: whether `chain.sign` accepts requests whose content the kernel cannot show. Off
- * until the owner turns it on; already in the target state is a prompt-free no-op, otherwise a
- * verification comes first — in both directions, so the setting only ever follows its owner.
+ * Blind signing: whether `chain.sign` accepts a request the decoder marked blind — content it can
+ * neither show nor bound. Off until the owner turns it on; already in the target state is a
+ * prompt-free no-op, otherwise a verification comes first — in both directions, so the setting only
+ * ever follows its owner.
  */
 export async function setBlindSigning(
   ctx: KernelContext,
@@ -351,7 +352,10 @@ export async function setBlindSigning(
     params.verify,
     dek,
     ctx.commit,
-    corePromptFor(ctx.platform.keystore, "blind-signing"),
+    corePromptFor(
+      ctx.platform.keystore,
+      params.enabled ? "enable-blind-signing" : "disable-blind-signing",
+    ),
   );
   const session = ctx.session.require(requestSession);
   await ctx.commit([

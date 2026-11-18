@@ -436,6 +436,16 @@ const decodeTransaction = (
   }
   // The fee is charged to the fee payer only — a sponsored signer pays nothing.
   const fee = parsed.staticAccounts[0] === signer ? feeLamports(parsed, lookups, calls) : 0n;
+  const programs: string[] = [];
+  for (const [index, ix] of parsed.instructions.entries()) {
+    const program =
+      calls[index]?.kind === "other"
+        ? resolveAccountIndex(parsed, ix.programAddressIndex, lookups)
+        : undefined;
+    if (program !== undefined && !programs.includes(program)) {
+      programs.push(program);
+    }
+  }
   const summary = hasJupiter
     ? "swap"
     : otherTransfer
@@ -454,6 +464,7 @@ const decodeTransaction = (
     fee: { max: { asset: SOLANA_NATIVE_ASSET, amount: fee.toString(10) } },
     ...(staking.length === 0 ? {} : { staking }),
     ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
+    ...(programs.length === 0 ? {} : { programs }),
     warnings,
     verifiability,
   };

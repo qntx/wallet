@@ -2,8 +2,15 @@ import * as fc from "fast-check";
 import * as AbiFunction from "ox/AbiFunction";
 import { describe, expect, it } from "vite-plus/test";
 
-import { SAFE_MULTISEND_CALL_ONLY, checksumEvmAddress, decodeEvm } from "../src/evm/index.ts";
+import {
+  SAFE_MULTISEND_CALL_ONLY,
+  checksumEvmAddress,
+  decodeEvm,
+  evmTokenTable,
+  lookupEvmToken,
+} from "../src/evm/index.ts";
 import { isBlindIntent } from "../src/index.ts";
+import type { BlindReason } from "../src/index.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 
@@ -141,7 +148,7 @@ const packedEntries = (d: string) => {
   } catch {
     return undefined;
   }
-  const entries: Array<{ data: string }> = [];
+  const entries: Array<{ to: string; data: string }> = [];
   let offset = 0;
   while (offset < body.length) {
     if (body.length - offset < 170) {
@@ -151,29 +158,40 @@ const packedEntries = (d: string) => {
     if (operation !== 0) {
       return undefined;
     }
+    const to = checksumEvmAddress(`0x${body.slice(offset + 2, offset + 42)}`);
     const length = Number(BigInt(`0x${body.slice(offset + 106, offset + 170)}`));
     offset += 170;
     if (length * 2 > body.length - offset) {
       return undefined;
     }
-    entries.push({ data: `0x${body.slice(offset, offset + length * 2)}` });
+    entries.push({ to, data: `0x${body.slice(offset, offset + length * 2)}` });
     offset += length * 2;
   }
   return entries;
 };
 
-/** Whether the intent for this outer SafeTx should be blind — the property's oracle. */
-const expectedBlind = (operation: number, to: string, data: string): boolean => {
+/** The blind reason of one inner call — `data` "0x" is a plain transfer in this corpus. */
+const innerBlind = (to: string, data: string): BlindReason | undefined =>
+  data === "0x"
+    ? undefined
+    : to.toLowerCase() === SAFE.toLowerCase()
+      ? "account-code"
+      : lookupEvmToken(evmTokenTable, 1, to) !== undefined && data !== transferData
+        ? "token-function"
+        : undefined;
+
+/** The blind reason for this outer SafeTx — the property's oracle (gasPrice stays zero here). */
+const expectedBlind = (operation: number, to: string, data: string): BlindReason | undefined => {
   const entries = packedEntries(data);
-  // A call is blind unless the inner call decodes; a delegatecall is blind unless it unpacks
-  // on a canonical MultiSendCallOnly target with no opaque inner calls.
+  // A call takes its inner call's reason; a delegatecall is blind unless it unpacks on a
+  // canonical MultiSendCallOnly target, and then takes the first blind inner call's reason.
   if (operation === 0) {
-    return data !== "0x" && data !== transferData;
+    return innerBlind(to, data);
   }
-  return (
-    !(SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase()) && entries !== undefined) ||
-    (entries?.some((e) => e.data !== "0x") ?? false)
-  );
+  if (!(SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase()) && entries !== undefined)) {
+    return "safe-delegatecall";
+  }
+  return entries.map((e) => innerBlind(e.to, e.data)).find((b) => b !== undefined);
 };
 
 describe("decodeEvm: Safe transactions", () => {
@@ -313,7 +331,7 @@ describe("decodeEvm: Safe transactions", () => {
           expect(safeOf(d)?.refund).toStrictEqual(
             expectedRefund(gasPrice, baseGas, safeTxGas, gasToken, refundReceiver),
           );
-          expect(isBlindIntent(decode(d))).toBe(true);
+          expect(decode(d).blind).toBe("safe-refund-unbounded");
         },
       ),
     );
@@ -329,17 +347,20 @@ describe("decodeEvm: Safe transactions", () => {
       doc(safeTx({ to: MULTISEND, operation: 1, data: transferData })),
     ];
     const targets = [TO, TOKEN, MULTISEND];
+    const selectors = ["0x", "0xa9059cbb", "0xa9059cbb"];
     for (const [i, d] of cases.entries()) {
       const safe = safeOf(d);
       expect(safe?.calls).toHaveLength(1);
       expect(safe?.calls[0]?.summary).toBe("contract-call");
       expect(safe?.calls[0]?.verifiability).toBe("opaque");
+      expect(safe?.calls[0]?.blind).toBe("safe-delegatecall");
       expect(safe?.calls[0]?.outflows).toHaveLength(0);
       expect(safe?.calls[0]?.contract).toStrictEqual({
         address: targets[i],
         created: false,
+        selector: selectors[i],
       });
-      expect(isBlindIntent(decode(d))).toBe(true);
+      expect(decode(d).blind).toBe("safe-delegatecall");
     }
   });
 
@@ -351,7 +372,7 @@ describe("decodeEvm: Safe transactions", () => {
     const shortData = fc.uint8Array({ minLength: 1, maxLength: 3 }).map((b) => `0x${hexOf(b)}`);
     const entryData = fc.oneof(fc.constant("0x"), shortData);
     const entry = fc.record({
-      to: evmAddress,
+      to: fc.oneof(evmAddress, fc.constantFrom(TOKEN, SAFE)),
       value: fc.bigInt({ min: 0n, max: 10n ** 20n }),
       data: entryData,
       operation: fc.constantFrom(0, 1),
@@ -369,15 +390,62 @@ describe("decodeEvm: Safe transactions", () => {
       fc.property(
         fc.record({
           operation: fc.constantFrom(0, 1),
-          to: fc.oneof(evmAddress, fc.constantFrom(...SAFE_MULTISEND_CALL_ONLY)),
+          to: fc.oneof(evmAddress, fc.constantFrom(...SAFE_MULTISEND_CALL_ONLY, TOKEN, SAFE)),
           data,
         }),
         ({ operation, to, data }) => {
           const intent = decode(doc(safeTx({ to, operation, data })));
-          expect(isBlindIntent(intent)).toBe(expectedBlind(operation, to, data));
+          expect(intent.blind).toBe(expectedBlind(operation, to, data));
+          expect(isBlindIntent(intent)).toBe(intent.blind !== undefined);
         },
       ),
     );
+  });
+
+  it("a call to an unknown non-table contract is described, not blind", () => {
+    const intent = decode(doc(safeTx({ to: TO, data: "0xdeadbeef" })));
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBeUndefined();
+    expect(safeOf(doc(safeTx({ to: TO, data: "0xdeadbeef" })))?.calls[0]?.blind).toBeUndefined();
+  });
+
+  it("a MultiSend inner call to a table token's unknown function blinds as token-function", () => {
+    const packed = packEntry(TOKEN, 0n, "0xdeadbeef");
+    const intent = decode(doc(safeTx({ to: MULTISEND, operation: 1, data: multiSend(packed) })));
+    expect(intent.blind).toBe("token-function");
+    expect(
+      safeOf(doc(safeTx({ to: MULTISEND, operation: 1, data: multiSend(packed) })))?.calls[0]
+        ?.blind,
+    ).toBe("token-function");
+  });
+
+  it("an inner call to the Safe itself blinds as account-code", () => {
+    expect(decode(doc(safeTx({ to: SAFE, data: "0xdeadbeef" }))).blind).toBe("account-code");
+    const packed = packEntry(SAFE, 0n, "0x12345678");
+    expect(
+      decode(doc(safeTx({ to: MULTISEND, operation: 1, data: multiSend(packed) }))).blind,
+    ).toBe("account-code");
+  });
+
+  it("a MultiSend of only described inner calls is not blind", () => {
+    const packed = packEntry(TO, 0n, "0xdeadbeef") + packEntry(TO, 5n, "0x");
+    const intent = decode(doc(safeTx({ to: MULTISEND, operation: 1, data: multiSend(packed) })));
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBeUndefined();
+  });
+
+  it("a gas refund alone blinds as safe-refund-unbounded", () => {
+    const intent = decode(
+      doc(safeTx({ gasPrice: "5000000000", baseGas: "21000", safeTxGas: "100000" })),
+    );
+    expect(intent.blind).toBe("safe-refund-unbounded");
+  });
+
+  it("a foreign delegatecall wins over a refund when both are present", () => {
+    const intent = decode(
+      doc(safeTx({ to: TO, operation: 1, gasPrice: "5000000000", baseGas: "1", safeTxGas: "1" })),
+    );
+    expect(intent.blind).toBe("safe-delegatecall");
   });
 
   it("does not recognize a bad operation, malformed field or missing contract", () => {

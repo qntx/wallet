@@ -106,13 +106,18 @@ React Native the device owner proves presence before anything is erased.
   (the user passed the quiz, imported a phrase, or exported it at least once — `exportMnemonic`
   upgrades the record), `"passkey"` (a synced passkey — still lost with the password-manager
   account, so prompt to export), or `"none"` (a device-bound passkey — lost with the device).
-- Blind signing is a vault setting, off by default. `chains(wallet).sign` fails with
-  `blind-signing-disabled` — before any verification — for a raw-byte message, typed data of no
-  recognised shape, or a transaction whose effects the kernel cannot verify (an unknown contract
-  call, an unknown Solana program, a multi-party PSBT). `vault.setBlindSigning(true, verify)`
-  allows them; `snapshot.blindSigning` reports the setting. Text and sign-in messages, permits,
-  Seaport orders, Safe transactions of decoded calls and every recognised transaction are never
-  blind.
+- Blind signing is a vault setting, off by default. A request is blind only when the chain
+  decoder marks it so: a raw-byte message, typed data too large or misformed to show, a call into
+  an unrecognised function of a listed token, calldata that runs the signing account's own code,
+  or a Safe delegatecall or unbounded refund. `chains(wallet).sign` fails a blind request with
+  `blind-signing-disabled` — before any verification — until `vault.setBlindSigning(true, verify)`;
+  `snapshot.blindSigning` reports the setting. Requests the wallet can describe but not verify —
+  an unknown contract call, unrecognised typed data that fits the display budget, an unknown
+  Solana program, a multi-party PSBT — sign without the setting and their prompt carries a
+  "cannot verify" line. Through the dApp surface the engine still creates the pending request
+  and `requests.approve` throws `BlindSigningDisabledError` while the setting is off — enable it
+  and approve the same request again. Text and sign-in messages, permits, Seaport orders, Safe
+  transactions of decoded calls and every recognised transaction are never blind.
 - Changing the password or removing a factor rotates the vault DEK: sessions in other tabs lock
   with reason `invalidated` and must re-unlock. Adding a passkey factor keeps the current DEK.
 - **The `rpId` scope is the wallet's trust boundary.** WebAuthn binds a credential and its PRF

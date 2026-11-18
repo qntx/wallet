@@ -109,7 +109,8 @@ const multiSendEntries = (data: `0x${string}`): ReadonlyArray<Call> | undefined 
 /**
  * The Safe transaction a typed-data document signs, or `undefined` when its shape is not exactly
  * the recognized one. `decode` decodes one inner call (the transaction rules without a fee); the
- * caller injects it bound to the request's network and token table.
+ * caller injects it bound to the request's network and token table, and receives the Safe address —
+ * a call to it runs the Safe's own code.
  */
 export function recognizeSafe(
   json: TypedDataInput,
@@ -118,7 +119,7 @@ export function recognizeSafe(
     readonly chainId: number;
     readonly table: EvmTokenTable;
   },
-  decode: (call: Call) => DisplayIntent,
+  decode: (call: Call, safe: string) => DisplayIntent,
 ): SafeRecognition | undefined {
   const { types, primaryType, message, domain } = json;
   if (primaryType !== "SafeTx" || !sameFields(types, "SafeTx", SAFE_TX)) {
@@ -171,10 +172,15 @@ export function recognizeSafe(
             fee: undefined,
             warnings: [],
             verifiability: "opaque" as const,
-            contract: { address: to, created: false },
+            blind: "safe-delegatecall" as const,
+            contract: {
+              address: to,
+              created: false,
+              selector: data.slice(0, 10).toLowerCase(),
+            },
           },
         ]
-      : (inner ?? [{ to, value, data }]).map(decode);
+      : (inner ?? [{ to, value, data }]).map((call) => decode(call, safe));
   const refundAsset = (v: bigint): AssetAmount => {
     if (gasToken === ZERO_ADDRESS) {
       return { asset: EVM_NATIVE_ASSET, amount: v.toString(10) };

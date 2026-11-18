@@ -485,23 +485,13 @@ describe("hardware factor: chain.sign", () => {
 });
 
 describe("blind signing policy", () => {
+  /* Opaque bytes the decoder cannot show: blind "message-bytes". */
   const blindRequest = (walletId: string) =>
     normalizeEvm({
-      kind: "evm.transaction",
+      kind: "evm.personal-message",
       network: "eip155:1",
       account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
-      tx: {
-        type: "eip1559",
-        chainId: 1,
-        nonce: 0,
-        gas: "0x5208",
-        value: "0x1",
-        data: "0xdeadbeef",
-        to: "0x00000000000000000000000000000000deadbeef",
-        maxFeePerGas: "0x59682f00",
-        maxPriorityFeePerGas: "0x1",
-        accessList: [],
-      },
+      message: new Uint8Array(32).fill(0xff),
     });
   const textRequest = (walletId: string) =>
     normalizeEvm({
@@ -552,7 +542,9 @@ describe("blind signing policy", () => {
     await expect(blindSigning(h)).resolves.toBe(false);
 
     ok(await h.call("vault.setBlindSigning", { enabled: true, verify: HARDWARE }, session));
-    expect(prompts(fake.calls, "open").at(-1)).toStrictEqual(corePrompt("en", "blind-signing"));
+    expect(prompts(fake.calls, "open").at(-1)).toStrictEqual(
+      corePrompt("en", "enable-blind-signing"),
+    );
     await expect(blindSigning(h)).resolves.toBe(true);
     ok(await sign(h, session));
 
@@ -565,6 +557,9 @@ describe("blind signing policy", () => {
     const again = str(ok(await restarted.call("vault.unlock", { factor: DEVICE })), "session");
     await expect(blindSigning(restarted)).resolves.toBe(true);
     ok(await restarted.call("vault.setBlindSigning", { enabled: false, verify: HARDWARE }, again));
+    expect(prompts(fake.calls, "open").at(-1)).toStrictEqual(
+      corePrompt("en", "disable-blind-signing"),
+    );
     await expect(blindSigning(restarted)).resolves.toBe(false);
     expect(errCode(await sign(restarted, again))).toBe("blind-signing-disabled");
   });
@@ -591,7 +586,7 @@ describe("blind signing policy", () => {
       session,
     );
     expect(errCode(response)).toBe("integrity");
-    expect(prompts(fake.calls, "open").some((p) => p.title === "Confirm contract call")).toBe(
+    expect(prompts(fake.calls, "open").some((p) => p.title === "Confirm blind signing")).toBe(
       false,
     );
   });

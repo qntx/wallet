@@ -1,7 +1,7 @@
 import * as AbiFunction from "ox/AbiFunction";
 import * as ContractAddress from "ox/ContractAddress";
 
-import { ChainError, messageContent } from "../index.ts";
+import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
   AssetFlow,
@@ -27,7 +27,7 @@ import { recognizeSeaport } from "./seaport.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
-import { domainChainId, parseTypedData } from "./typed-data.ts";
+import { domainChainId, parseTypedData, typedDataFields } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 import { decodeZeroX } from "./zerox.ts";
 
@@ -197,6 +197,11 @@ type CallContext = {
   readonly fee: DisplayIntent["fee"];
   readonly table: EvmTokenTable;
   readonly signer: string;
+  /**
+   * The account whose own code a call to it runs: the signer for a transaction and its batch calls,
+   * the Safe for a Safe's inner calls.
+   */
+  readonly self: string;
 };
 
 /** A call into a protocol the decoder models in full, native value included. */
@@ -425,8 +430,37 @@ const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
     };
   }
   const address = call.to ?? call.created;
+  const token =
+    call.to === undefined
+      ? undefined
+      : lookupEvmToken(context.table, networkChainId(context.network), call.to);
   const contract =
-    address === undefined ? {} : { contract: { address, created: call.to === undefined } };
+    address === undefined
+      ? {}
+      : {
+          contract: {
+            address,
+            created: call.to === undefined,
+            ...(call.to === undefined ? {} : { selector: call.data.slice(0, 10).toLowerCase() }),
+            ...(token === undefined ? {} : { symbol: token.symbol }),
+          },
+        };
+  if (call.to !== undefined && call.to.toLowerCase() === context.self.toLowerCase()) {
+    // Calldata to the signing account runs the account's own (possibly delegated) code — even a
+    // selector the standard table would recognise means nothing certain there.
+    return {
+      family: "evm",
+      network: context.network,
+      summary: "contract-call",
+      outflows: call.value > 0n ? nativeOutflow(call.value, call.to) : [],
+      approvals: [],
+      fee: context.fee,
+      warnings: [],
+      verifiability: "opaque",
+      blind: "account-code",
+      ...contract,
+    };
+  }
   const protocol = protocolIntent(call, context);
   if (protocol !== undefined) {
     return { ...protocol, ...contract };
@@ -435,6 +469,9 @@ const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
   return {
     ...standard,
     ...contract,
+    ...(standard.verifiability === "opaque" && token !== undefined
+      ? { blind: "token-function" as const }
+      : {}),
     outflows:
       call.value > 0n && address !== undefined
         ? [...nativeOutflow(call.value, address), ...standard.outflows]
@@ -497,11 +534,12 @@ const decodeTransaction = (
     };
   }
   const calls = isSelf ? decodeBatchExecute(tx.data) : undefined;
-  const context = { network: request.network, table, signer };
+  const context = { network: request.network, table, signer, self: signer };
   if (calls !== undefined && calls.length > 0) {
     const decoded = calls.map((call) => decodeCall(call, { ...context, fee: undefined }));
     const minimumReceived = decoded.flatMap((d) => d.minimumReceived ?? []);
     const staking = decoded.flatMap((d) => d.staking ?? []);
+    const blind = decoded.find((call) => call.blind !== undefined)?.blind;
     return {
       family: "evm",
       network: request.network,
@@ -514,6 +552,7 @@ const decodeTransaction = (
       ...(staking.length === 0 ? {} : { staking }),
       ...(minimumReceived.length === 0 ? {} : { minimumReceived }),
       verifiability: weakest(decoded),
+      ...(blind === undefined ? {} : { blind }),
       ...(delegation === undefined ? {} : { delegation }),
     };
   }
@@ -566,6 +605,8 @@ export const decodeEvm = (
     );
   }
   if (request.kind === "evm.personal-message") {
+    const content = messageContent(request.message, "evm");
+    const blind = messageBlindReason(content);
     return {
       family: "evm",
       network: request.network,
@@ -574,8 +615,9 @@ export const decodeEvm = (
       approvals: [],
       fee: undefined,
       warnings: [],
-      message: messageContent(request.message, "evm"),
+      message: content,
       verifiability: "opaque",
+      ...(blind === undefined ? {} : { blind }),
     };
   }
   if (request.kind !== "evm.typed-data") {
@@ -588,10 +630,27 @@ export const decodeEvm = (
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
-      ? recognizeSafe(json, { network: request.network, chainId, table }, (call) =>
-          decodeCall(call, { network: request.network, fee: undefined, table, signer }),
+      ? recognizeSafe(json, { network: request.network, chainId, table }, (call, safeAddress) =>
+          decodeCall(call, {
+            network: request.network,
+            fee: undefined,
+            table,
+            signer,
+            self: safeAddress,
+          }),
         )
       : undefined;
+  const fields =
+    permit === undefined && seaport === undefined && safe === undefined
+      ? typedDataFields(json)
+      : undefined;
+  const blind =
+    safe === undefined
+      ? permit === undefined && seaport === undefined && fields === undefined
+        ? ("typed-data-oversize" as const)
+        : undefined
+      : (safe.safe.calls.find((call) => call.blind !== undefined)?.blind ??
+        (safe.safe.refund === undefined ? undefined : ("safe-refund-unbounded" as const)));
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,
@@ -599,6 +658,7 @@ export const decodeEvm = (
     data: json.message,
     ...(seaport === undefined ? {} : { seaport }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
+    ...(fields === undefined ? {} : { fields }),
   };
   const summary =
     seaport === undefined
@@ -621,6 +681,7 @@ export const decodeEvm = (
       warnings: permit?.warnings ?? [],
       message,
       verifiability: permit === undefined ? "opaque" : "partial",
+      ...(blind === undefined ? {} : { blind }),
     },
     request.network,
     EVM_NATIVE_ASSET,

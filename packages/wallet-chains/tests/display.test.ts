@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { displayExcerpt, isBlindIntent, isUnsafeCodePoint, messageContent } from "../src/index.ts";
+import {
+  displayExcerpt,
+  isBlindIntent,
+  isUnsafeCodePoint,
+  messageBlindReason,
+  messageContent,
+} from "../src/index.ts";
 import type { DisplayIntent } from "../src/index.ts";
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
@@ -71,52 +77,48 @@ describe("messageContent", () => {
   });
 });
 
-type Blindness = Pick<DisplayIntent, "verifiability" | "message">;
-const typed = { kind: "typed-data", primaryType: "Order", domain: {}, data: {} } as const;
-const order = { offerer: "", zone: "", startTime: 0, endTime: 0, offer: [], consideration: [] };
-const call = (verifiability: DisplayIntent["verifiability"]): DisplayIntent => ({
-  family: "evm",
-  network: "eip155:1",
-  summary: "contract-call",
-  outflows: [],
-  approvals: [],
-  fee: undefined,
-  warnings: [],
-  verifiability,
-});
-const safe = (calls: ReadonlyArray<DisplayIntent>) => ({
-  safe: "",
-  nonce: "0",
-  operation: "call" as const,
-  to: "",
-  value: "0",
-  data: "0x",
-  calls,
-});
-
-const BLINDNESS: ReadonlyArray<readonly [string, Blindness, boolean]> = [
-  ["a full transaction", { verifiability: "full" }, false],
-  ["a partial transaction", { verifiability: "partial" }, false],
-  ["an opaque transaction", { verifiability: "opaque" }, true],
-  ["text", { verifiability: "opaque", message: { kind: "text", text: "hi" } }, false],
-  ["raw bytes", { verifiability: "opaque", message: { kind: "bytes", hex: "0xff" } }, true],
-  ["a permit", { verifiability: "partial", message: typed }, false],
-  ["unrecognised typed data", { verifiability: "opaque", message: typed }, true],
-  ["a Seaport order", { verifiability: "opaque", message: { ...typed, seaport: order } }, false],
-  [
-    "a Safe transaction of decoded calls",
-    { verifiability: "opaque", message: { ...typed, safe: safe([call("partial")]) } },
-    false,
-  ],
-  [
-    "a Safe transaction with an opaque call",
-    { verifiability: "opaque", message: { ...typed, safe: safe([call("full"), call("opaque")]) } },
-    true,
-  ],
-];
-
 describe("isBlindIntent", () => {
-  it.each(BLINDNESS)("%s", (_name, intent, blind) => {
-    expect(isBlindIntent(intent)).toBe(blind);
+  it("is blind iff the decoder set a blind reason", () => {
+    expect(isBlindIntent({})).toBe(false);
+    expect(isBlindIntent({ blind: "message-bytes" })).toBe(true);
+    for (const blind of [
+      "typed-data-oversize",
+      "token-function",
+      "account-code",
+      "safe-delegatecall",
+      "safe-refund-unbounded",
+    ] as const) {
+      expect(isBlindIntent({ blind })).toBe(true);
+    }
+  });
+
+  it("an unverifiable request is not blind unless the decoder says so", () => {
+    const opaque: DisplayIntent = {
+      family: "evm",
+      network: "eip155:1",
+      summary: "contract-call",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      warnings: [],
+      verifiability: "opaque",
+    };
+    expect(isBlindIntent(opaque)).toBe(false);
+    expect(isBlindIntent({ ...opaque, blind: "account-code" })).toBe(true);
+  });
+});
+
+describe("messageBlindReason", () => {
+  it("raw bytes are blind; text and typed data are not", () => {
+    expect(messageBlindReason({ kind: "bytes", hex: "0xff" })).toBe("message-bytes");
+    expect(messageBlindReason({ kind: "text", text: "hi" })).toBeUndefined();
+    expect(
+      messageBlindReason({
+        kind: "typed-data",
+        primaryType: "Order",
+        domain: {},
+        data: {},
+      }),
+    ).toBeUndefined();
   });
 });
