@@ -12,13 +12,24 @@ export class SparkControllerError extends Error {
   readonly category: SparkErrorCategory;
   /** The transfer id under which an "unknown" outcome may have committed. */
   readonly transferId?: string;
+  /** Token transfers: the spent output ids under which an "unknown" outcome may have committed. */
+  readonly inputOutputIds?: ReadonlyArray<string>;
 
-  constructor(category: SparkErrorCategory, message: string, cause?: unknown, transferId?: string) {
+  constructor(
+    category: SparkErrorCategory,
+    message: string,
+    cause?: unknown,
+    transferId?: string,
+    inputOutputIds?: ReadonlyArray<string>,
+  ) {
     super(message, { cause });
     this.name = "SparkControllerError";
     this.category = category;
     if (transferId !== undefined) {
       this.transferId = transferId;
+    }
+    if (inputOutputIds !== undefined) {
+      this.inputOutputIds = inputOutputIds;
     }
   }
 }

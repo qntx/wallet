@@ -4,10 +4,12 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 import {
   bitcoinAddressScript,
   decodeSparkAddress,
+  decodeTokenIdentifier,
   encodeSparkAddress,
   parseSparkInvoice,
   SparkInputError,
   SparkRequestError,
+  SparkTokenBroadcastError,
   uuidv7,
 } from "@qntx/spark";
 import type {
@@ -41,6 +43,12 @@ export type SparkAccountState = {
   readonly errorCategory?: string;
   /** First history page (20 entries, newest first), refreshed alongside the balance. */
   readonly recent?: ReadonlyArray<SparkActivity>;
+  /** Token balances in base units, refreshed alongside `recent`; absent until the first read. */
+  readonly tokens?: ReadonlyArray<{
+    readonly tokenIdentifier: string;
+    readonly amount: string;
+    readonly outputCount: number;
+  }>;
 };
 
 export type SparkControllerState = {
@@ -132,6 +140,7 @@ export class SparkController extends Controller<SparkControllerState> {
   private readonly accounts = new Map<string, SparkAccountRef>();
   private readonly clients = new Map<string, SparkClient>();
   private readonly recentSeq = new Map<string, number>();
+  private readonly tokensSeq = new Map<string, number>();
   private readonly aborts = new Map<string, AbortController>();
 
   constructor(options: SparkControllerOptions) {
@@ -277,6 +286,7 @@ export class SparkController extends Controller<SparkControllerState> {
             }),
           });
           void this.refreshRecent(k, client);
+          void this.refreshTokens(k, client);
           const iterator = client.events(signal)[Symbol.asyncIterator]();
           let open = true;
           while (open) {
@@ -338,6 +348,7 @@ export class SparkController extends Controller<SparkControllerState> {
     }
     this.patch(k, { balanceSats: await client.balance() });
     void this.refreshRecent(k, client);
+    void this.refreshTokens(k, client);
   }
 
   private notesCollection(k: string): EngineCollection | undefined {
@@ -407,6 +418,30 @@ export class SparkController extends Controller<SparkControllerState> {
     }
   }
 
+  /**
+   * Refill `tokens` from the client's balance list. Like `refreshRecent`: a failure warns and keeps
+   * the previous list — it never touches `status`/`errorCategory` — and the sequence + client
+   * identity guard keeps a stale read from overwriting a newer one.
+   */
+  private async refreshTokens(k: string, client: SparkClient): Promise<void> {
+    const seq = (this.tokensSeq.get(k) ?? 0) + 1;
+    this.tokensSeq.set(k, seq);
+    try {
+      const balances = await client.tokens.balances();
+      if (this.tokensSeq.get(k) === seq && this.clients.get(k) === client) {
+        this.patch(k, {
+          tokens: balances.map((b) => ({
+            tokenIdentifier: b.tokenIdentifier,
+            amount: b.amount.toString(),
+            outputCount: b.outputCount,
+          })),
+        });
+      }
+    } catch (error) {
+      this.options.logger.warn(`spark tokens refresh failed for ${k}`, error);
+    }
+  }
+
   private patch(k: string, delta: Partial<SparkAccountState>): void {
     this.update((s) => ({
       ...s,
@@ -434,18 +469,23 @@ export class SparkController extends Controller<SparkControllerState> {
   }
 
   /**
-   * Runs the committing client call: a network failure leaves the outcome unknown, so the same call
-   * retries under the same transfer id — the SO/SSP deduplicates it — up to three times (1 s, 2 s,
-   * 4 s). A definite error propagates; network exhaustion reports "unknown".
+   * Runs a committing client call with up to three idempotent retries (1 s, 2 s, 4 s backoff):
+   * `retryable` decides which error means the outcome is unknown and the same call may repeat,
+   * `call` receives the previous attempt's error so a retry can carry the handle it reported. A
+   * definite error propagates; exhaustion is reported by `exhausted`.
    */
-  private async committed<T>(transferId: string, call: () => Promise<T>): Promise<T> {
+  private async committing<T>(
+    retryable: (error: unknown) => boolean,
+    call: (lastError: unknown) => Promise<T>,
+    exhausted: (lastError: unknown) => SparkControllerError,
+  ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 0; attempt <= 3; attempt += 1) {
       try {
         // oxlint-disable-next-line no-await-in-loop -- idempotent retries stay sequential
-        return await call();
+        return await call(lastError);
       } catch (error) {
-        if (categorize(error) !== "network") {
+        if (!retryable(error)) {
           throw error;
         }
         lastError = error;
@@ -457,7 +497,43 @@ export class SparkController extends Controller<SparkControllerState> {
         }
       }
     }
-    throw new SparkControllerError("unknown", "payment outcome unknown", lastError, transferId);
+    throw exhausted(lastError);
+  }
+
+  /**
+   * A sats payment commits under its transfer id: a network failure leaves the outcome unknown, so
+   * the same call retries under the same id — the SO/SSP deduplicates it.
+   */
+  private async committed<T>(transferId: string, call: () => Promise<T>): Promise<T> {
+    return this.committing(
+      (error) => categorize(error) === "network",
+      async () => call(),
+      (lastError) =>
+        new SparkControllerError("unknown", "payment outcome unknown", lastError, transferId),
+    );
+  }
+
+  /**
+   * A token transfer commits under its spent output ids: only `SparkTokenBroadcastError` means the
+   * broadcast's outcome is uncertain — a plain network error happened before it — so the retry
+   * carries `error.inputOutputIds` and the same terms, per the library's contract.
+   */
+  private async committedToken<T>(
+    call: (inputOutputIds: ReadonlyArray<string> | undefined) => Promise<T>,
+  ): Promise<T> {
+    return this.committing(
+      (error) => error instanceof SparkTokenBroadcastError,
+      async (lastError) =>
+        call(lastError instanceof SparkTokenBroadcastError ? lastError.inputOutputIds : undefined),
+      (lastError) =>
+        new SparkControllerError(
+          "unknown",
+          "token transfer outcome unknown",
+          lastError,
+          undefined,
+          lastError instanceof SparkTokenBroadcastError ? lastError.inputOutputIds : undefined,
+        ),
+    );
   }
 
   /**
@@ -555,6 +631,75 @@ export class SparkController extends Controller<SparkControllerState> {
       );
       void this.refreshRecent(key(ref), client);
       return transfer;
+    });
+  }
+
+  /**
+   * Sends a token amount to a Spark address. The approval intent is the kernel's `token` shape —
+   * the raw 32-byte identifier and the receiver's identity key with a canonical decimal amount —
+   * and the commit retries only on `SparkTokenBroadcastError`, under the spent output ids it
+   * reports; everything else propagates (a plain network failure happened before broadcast).
+   */
+  async sendToken(
+    ref: SparkAccountRef,
+    params: {
+      /** Spark address of the receiver. */
+      receiver: string;
+      /** Bech32m token identifier (`btkn`/`btknrt`). */
+      tokenIdentifier: string;
+      /** Base units, 1…2^128−1. */
+      amount: bigint;
+      verify: VerifyFactor;
+      /** Called immediately before the transfer; a throw there means nothing may be sent. */
+      commit: () => void;
+    },
+  ): Promise<string> {
+    return this.guarded(async () => {
+      const client = this.clientFor(ref);
+      const receiver = decodeSparkAddress(params.receiver);
+      if (receiver.network !== ref.network) {
+        throw new SparkControllerError("rejected", "receiver address is on a different network");
+      }
+      let identifier: Uint8Array;
+      try {
+        const decoded = decodeTokenIdentifier(params.tokenIdentifier);
+        if (decoded.network !== ref.network) {
+          throw new SparkControllerError("rejected", "token identifier is on a different network");
+        }
+        identifier = decoded.tokenIdentifier;
+      } catch (error) {
+        if (error instanceof SparkControllerError) {
+          throw error;
+        }
+        throw new SparkControllerError("rejected", "token identifier is not valid bech32m", error);
+      }
+      const U128_MAX = 340282366920938463463374607431768211455n;
+      if (params.amount <= 0n || params.amount > U128_MAX) {
+        throw new SparkControllerError("rejected", "token amount must be 1…2^128−1 base units");
+      }
+      await this.options.spark.approve({
+        account: ref,
+        intent: {
+          kind: "token",
+          tokenIdentifier: identifier,
+          receivers: [
+            { ownerPublicKey: receiver.identityPublicKey, amount: params.amount.toString() },
+          ],
+        },
+        verify: params.verify,
+      });
+      params.commit();
+      const transactionHash = await this.committedToken(async (inputOutputIds) =>
+        client.tokens.transfer({
+          tokenIdentifier: params.tokenIdentifier,
+          amount: params.amount,
+          receiver: params.receiver,
+          ...(inputOutputIds === undefined ? {} : { inputOutputIds }),
+        }),
+      );
+      void this.refreshTokens(key(ref), client);
+      void this.refreshRecent(key(ref), client);
+      return transactionHash;
     });
   }
 

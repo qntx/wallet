@@ -14,26 +14,41 @@ import { SparkControllerError } from "../spark/errors.ts";
  * What the host shows for a Spark, Lightning or exit request; `family` tells it apart from a chain
  * intent.
  */
-export type SparkDisplay = {
-  readonly family: "spark";
-  readonly network: SparkNetwork;
-  readonly kind: "transfer" | "lightning" | "exit";
-  readonly amountSats: number;
-  readonly maxFeeSats?: number;
-  /** Exits only: the quoted fee; the debit is `amountSats + feeSats`. */
-  readonly feeSats?: number;
-  /** Spark address, Lightning payee public key (hex) or bitcoin address. */
-  readonly receiver: string;
-  /** Invoice description or the LNURL metadata text. */
-  readonly description?: string;
-};
+export type SparkDisplay =
+  | {
+      readonly family: "spark";
+      readonly network: SparkNetwork;
+      readonly kind: "transfer" | "lightning" | "exit";
+      readonly amountSats: number;
+      readonly maxFeeSats?: number;
+      /** Exits only: the quoted fee; the debit is `amountSats + feeSats`. */
+      readonly feeSats?: number;
+      /** Spark address, Lightning payee public key (hex) or bitcoin address. */
+      readonly receiver: string;
+      /** Invoice description or the LNURL metadata text. */
+      readonly description?: string;
+    }
+  | {
+      readonly family: "spark";
+      readonly network: SparkNetwork;
+      readonly kind: "token";
+      /** Bech32m token identifier (`btkn`/`btknrt`). */
+      readonly tokenIdentifier: string;
+      /** Decimal base units. */
+      readonly amount: string;
+      /** Spark address of the receiver. */
+      readonly receiver: string;
+    };
 
 export type SparkResult =
   | { readonly kind: "spark"; readonly transfer: SparkTransfer }
   | { readonly kind: "lightning"; readonly payment: LightningPayment }
   | { readonly kind: "withdraw"; readonly exit: CooperativeExitResult }
+  | { readonly kind: "token"; readonly transactionHash: string }
   /** The commit call's response was lost; the payment may settle under `transferId`. */
-  | { readonly kind: "pending"; readonly transferId: string };
+  | { readonly kind: "pending"; readonly transferId: string }
+  /** A token broadcast's response was lost; it may settle under the spent `inputOutputIds`. */
+  | { readonly kind: "token-pending"; readonly inputOutputIds: ReadonlyArray<string> };
 
 /**
  * A validated, fixed Spark payment: everything that does not need the user's verification has
@@ -69,6 +84,24 @@ export const pendingOnUnknown = async (
   } catch (error) {
     if (error instanceof SparkControllerError && error.category === "unknown") {
       return { kind: "pending", transferId };
+    }
+    throw error;
+  }
+};
+
+/**
+ * The token variant of {@link pendingOnUnknown}: a token transfer commits under the spent output ids
+ * its last `SparkTokenBroadcastError` carried, so an "unknown" outcome reports `token-pending` with
+ * those ids — the request is submitted, never `failed`.
+ */
+export const tokenPendingOnUnknown = async (
+  run: () => Promise<SparkResult>,
+): Promise<SparkResult> => {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof SparkControllerError && error.category === "unknown") {
+      return { kind: "token-pending", inputOutputIds: error.inputOutputIds ?? [] };
     }
     throw error;
   }

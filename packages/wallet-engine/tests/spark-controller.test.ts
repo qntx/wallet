@@ -1,7 +1,14 @@
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
-import { encodeSparkAddress, SparkInputError, SparkRequestError } from "@qntx/spark";
+import {
+  encodeSparkAddress,
+  encodeTokenIdentifier,
+  SparkInputError,
+  SparkRequestError,
+  SparkTokenBroadcastError,
+} from "@qntx/spark";
 import type { SparkClient, SparkEvent, SparkExitChain } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
@@ -51,6 +58,13 @@ type FakeClaimOptions = {
   readonly streams?: ReadonlyArray<() => AsyncGenerator<SparkEvent>>;
   /** `transfers.history` pages returned in order — a rejected promise exercises the warn path. */
   readonly historyPages?: ReadonlyArray<unknown>;
+  /** `tokens.balances` results in order — an Error rejects that read, exercising the warn path. */
+  readonly tokenPages?: ReadonlyArray<unknown>;
+  /** `tokens.transfer` results in order — an Error rejects that attempt, a string returns it. */
+  readonly tokenResults?: ReadonlyArray<unknown>;
+  /** Records each `tokens.transfer` argument. */
+  readonly tokenArgs?: unknown[];
+  readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Fee every speed quotes for an exit amount — exercises quote convergence. */
   readonly quoteFee?: (amountSats: number) => number;
 };
@@ -65,7 +79,10 @@ function fakeClient(
   const claimErrors = [...(opts.claimErrors ?? [])];
   const claimPendingFailures = [...(opts.claimPendingFailures ?? [])];
   const historyPages = [...(opts.historyPages ?? [])];
+  const tokenPages = [...(opts.tokenPages ?? [])];
+  const tokenResults = [...(opts.tokenResults ?? [])];
   let lastPage: unknown;
+  let lastTokenPage: unknown;
   let streamCalls = 0;
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
@@ -112,6 +129,26 @@ function fakeClient(
         return Promise.resolve(o);
       },
     },
+    tokens: {
+      balances: async () => {
+        calls.push("tokenBalances");
+        const page = tokenPages.shift() ?? lastTokenPage ?? [];
+        if (page instanceof Error) {
+          return Promise.reject(page);
+        }
+        lastTokenPage = page;
+        return Promise.resolve(page);
+      },
+      transfer: async (o: unknown) => {
+        calls.push("tokenTransfer");
+        opts.tokenArgs?.push(o);
+        const result = tokenResults.shift() ?? "tok-hash";
+        if (result instanceof Error) {
+          return Promise.reject(result);
+        }
+        return Promise.resolve(result);
+      },
+    },
     withdrawals: {
       quoteCooperativeExit: async (o: unknown) => {
         const quoted = opts.quoteFee?.((o as { amountSats: number }).amountSats);
@@ -156,9 +193,10 @@ function fakeClient(
 
 function controller(calls: string[], approvals: unknown[], opts: FakeClaimOptions = {}) {
   const sendArgs: unknown[] = [];
-  const { client, aborters } = fakeClient(calls, sendArgs, [], opts);
+  const tokenArgs: unknown[] = [];
+  const { client, aborters } = fakeClient(calls, sendArgs, [], { ...opts, tokenArgs });
   const c = new SparkController({
-    setTimer: realTimer,
+    setTimer: opts.setTimer ?? realTimer,
     spark: {
       signer: () => null as never,
       approve: async (p: unknown) => {
@@ -171,7 +209,7 @@ function controller(calls: string[], approvals: unknown[], opts: FakeClaimOption
     logger: LOGGER,
     createClient: () => client,
   });
-  return { c, client, aborters, sendArgs };
+  return { c, client, aborters, sendArgs, tokenArgs };
 }
 
 describe("lightning-address registration errors", () => {
@@ -318,6 +356,214 @@ describe("send network check", () => {
 });
 
 const EXIT_ADDRESS = "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz";
+
+/** Raw 32-byte token identifier and its regtest/mainnet bech32m encodings. */
+const TOKEN_RAW = new Uint8Array(32).fill(9);
+const BTKN = encodeTokenIdentifier(TOKEN_RAW, "regtest");
+const BTKN_MAINNET = encodeTokenIdentifier(TOKEN_RAW, "mainnet");
+const RECEIVER_PK = secp256k1.getPublicKey(new Uint8Array(32).fill(7), true);
+const RECEIVER = encodeSparkAddress({ network: "regtest", identityPublicKey: RECEIVER_PK });
+const RECEIVER_MAINNET = encodeSparkAddress({
+  network: "mainnet",
+  identityPublicKey: RECEIVER_PK,
+});
+
+describe("Spark token balances", () => {
+  it("the resync pass after start fills the token list", async () => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], {
+      tokenPages: [[{ tokenIdentifier: BTKN, amount: 1234n, outputCount: 2 }]],
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    const state = await until(
+      () => c.getState().accounts["w1:0:regtest"],
+      (s) => s?.tokens !== undefined,
+    );
+    expect(state?.tokens).toStrictEqual([
+      { tokenIdentifier: BTKN, amount: "1234", outputCount: 2 },
+    ]);
+    await c.destroy();
+  });
+
+  it("a handled transfer event refreshes the token list", async () => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], {
+      tokenPages: [
+        [{ tokenIdentifier: BTKN, amount: 10n, outputCount: 1 }],
+        [{ tokenIdentifier: BTKN, amount: 25n, outputCount: 3 }],
+      ],
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    const state = await until(
+      () => c.getState().accounts["w1:0:regtest"],
+      (s) => s?.tokens?.[0]?.amount === "25",
+    );
+    expect(state?.tokens).toStrictEqual([{ tokenIdentifier: BTKN, amount: "25", outputCount: 3 }]);
+    await c.destroy();
+  });
+
+  it("a failed balances read keeps the previous list and never touches status", async () => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], {
+      tokenPages: [
+        [{ tokenIdentifier: BTKN, amount: 10n, outputCount: 1 }],
+        new Error("token read down"),
+      ],
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    await until(
+      () => c.getState().accounts["w1:0:regtest"],
+      (s) => s?.tokens !== undefined,
+    );
+    // The default stream's transfer event drives a second (failing) read.
+    await until(
+      () => calls.filter((x) => x === "tokenBalances").length,
+      (n) => n >= 2,
+    );
+    const state = c.getState().accounts["w1:0:regtest"];
+    expect(state?.tokens).toStrictEqual([{ tokenIdentifier: BTKN, amount: "10", outputCount: 1 }]);
+    expect(state?.status).toBe("ready");
+    expect(state?.errorCategory).toBeUndefined();
+    await c.destroy();
+  });
+});
+
+describe("SparkController.sendToken", () => {
+  const boot = async (opts: Parameters<typeof controller>[2] = {}) => {
+    const calls: string[] = [];
+    const approvals: Array<{ intent?: unknown }> = [];
+    const { c, tokenArgs } = controller(calls, approvals, { setTimer: fastTimer, ...opts });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    return { calls, approvals, c, tokenArgs };
+  };
+
+  it("approves the raw identifier and receiver identity, then transfers", async () => {
+    const { approvals, c, tokenArgs } = await boot({ tokenResults: ["tx-hash-1"] });
+    let committed = false;
+    const hash = await c.sendToken(REF, {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 123n,
+      verify: VERIFY,
+      commit: () => {
+        committed = true;
+      },
+    });
+    expect(hash).toBe("tx-hash-1");
+    expect(committed).toBe(true);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.intent).toStrictEqual({
+      kind: "token",
+      tokenIdentifier: TOKEN_RAW,
+      receivers: [{ ownerPublicKey: RECEIVER_PK, amount: "123" }],
+    });
+    expect(tokenArgs).toStrictEqual([{ tokenIdentifier: BTKN, amount: 123n, receiver: RECEIVER }]);
+    await c.destroy();
+  });
+
+  it.each([
+    ["a wrong-network receiver", { receiver: RECEIVER_MAINNET }],
+    ["a wrong-network identifier", { tokenIdentifier: BTKN_MAINNET }],
+    ["a malformed identifier", { tokenIdentifier: "not-a-token-id" }],
+    ["a zero amount", { amount: 0n }],
+    ["an amount above u128", { amount: 340282366920938463463374607431768211456n }],
+  ])("rejects %s before approving", async (_name, override) => {
+    const { approvals, calls, c } = await boot();
+    const params = {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      verify: VERIFY,
+      commit: () => undefined,
+      ...override,
+    };
+    await expect(c.sendToken(REF, params)).rejects.toSatisfy(
+      (e) => (e as { category?: string }).category === "rejected",
+    );
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("tokenTransfer");
+    await c.destroy();
+  });
+
+  it("a lost broadcast retries under its input output ids with one approval", async () => {
+    const broadcastLost = new SparkTokenBroadcastError("lost", {
+      inputOutputIds: ["a:0", "b:1"],
+    });
+    const { approvals, calls, c, tokenArgs } = await boot({
+      tokenResults: [broadcastLost, "tx-hash-2"],
+    });
+    const hash = await c.sendToken(REF, {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
+    expect(hash).toBe("tx-hash-2");
+    expect(approvals).toHaveLength(1);
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(2);
+    expect(tokenArgs[1]).toStrictEqual({
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      receiver: RECEIVER,
+      inputOutputIds: ["a:0", "b:1"],
+    });
+    await c.destroy();
+  });
+
+  it("exhausted broadcast retries report unknown and carry the input output ids", async () => {
+    const broadcastLost = () =>
+      new SparkTokenBroadcastError("lost", { inputOutputIds: ["a:0", "b:1"] });
+    const { calls, c } = await boot({
+      tokenResults: [broadcastLost(), broadcastLost(), broadcastLost(), broadcastLost()],
+    });
+    const failure = await c
+      .sendToken(REF, {
+        receiver: RECEIVER,
+        tokenIdentifier: BTKN,
+        amount: 5n,
+        verify: VERIFY,
+        commit: () => undefined,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    const sparkError = failure as SparkControllerError;
+    expect(sparkError.category).toBe("unknown");
+    expect(sparkError.message).toBe("token transfer outcome unknown");
+    expect(sparkError.inputOutputIds).toStrictEqual(["a:0", "b:1"]);
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(4);
+    await c.destroy();
+  });
+
+  it.each([
+    ["a plain network error", new SparkRequestError("net down")],
+    ["a definite refusal", new SparkInputError("bad input")],
+  ])("does not retry %s — uncertainty is only SparkTokenBroadcastError", async (_name, error) => {
+    const { calls, c } = await boot({ tokenResults: [error] });
+    await expect(
+      c.sendToken(REF, {
+        receiver: RECEIVER,
+        tokenIdentifier: BTKN,
+        amount: 5n,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
+    ).rejects.toBeInstanceOf(SparkControllerError);
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(1);
+    await c.destroy();
+  });
+});
 
 /** A quote that grows once then settles: f(100000) = 500, f(100500) = 600, f(100600) = 600. */
 const growOnce = (amountSats: number): number => (amountSats <= 100_000 ? 500 : 600);

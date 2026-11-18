@@ -70,6 +70,7 @@ function world() {
       return { feeSats: 1, exitSats: p.amountSats + 1 };
     },
     withdraw: async (_r: unknown, p: unknown) => record("withdraw", p),
+    sendToken: async (_r: unknown, p: unknown) => record("sendToken", p),
     createInvoice: async (_r: unknown, p: unknown) => {
       calls.push({ method: "createInvoice", params: p });
       await Promise.resolve();
@@ -211,6 +212,66 @@ describe("Spark requests", () => {
         commit: expect.any(Function),
       },
     });
+  });
+
+  it("a token request displays the token, checks the recipient and logs a token summary", async () => {
+    const w = world();
+    await w.requests.init();
+    const address = encodeSparkAddress({ network: "regtest", identityPublicKey: PAYEE });
+    const request = await w.requests.prepare({
+      method: "pay",
+      account: REF,
+      option: { kind: "spark", address },
+      token: { identifier: "btknrt1token", amount: 123n },
+    });
+    expect(request.display).toStrictEqual({
+      family: "spark",
+      kind: "token",
+      network: "regtest",
+      tokenIdentifier: "btknrt1token",
+      amount: "123",
+      receiver: address,
+    });
+    expect(request.risk).toStrictEqual([{ code: "first-recipient", level: "warning" }]);
+    await w.requests.approve(request.id, "pay", approval(request, VERIFY));
+    expect(w.calls[0]).toStrictEqual({
+      method: "sendToken",
+      params: {
+        receiver: address,
+        tokenIdentifier: "btknrt1token",
+        amount: 123n,
+        verify: VERIFY,
+        commit: expect.any(Function),
+      },
+    });
+    const [entry] = await w.requests.signLog();
+    expect(entry).toMatchObject({
+      outcome: "submitted",
+      summary: "token 123 btknrt1token",
+    });
+  });
+
+  it("a token send whose broadcast response was lost ends submitted as token-pending", async () => {
+    const w = world();
+    await w.requests.init();
+    const request = await w.requests.prepare({
+      method: "pay",
+      account: REF,
+      option: {
+        kind: "spark",
+        address: encodeSparkAddress({ network: "regtest", identityPublicKey: PAYEE }),
+      },
+      token: { identifier: "btknrt1token", amount: 42n },
+    });
+    w.failWith(
+      new SparkControllerError("unknown", "token transfer outcome unknown", undefined, undefined, [
+        "a:0",
+        "b:1",
+      ]),
+    );
+    const result = await w.requests.approve(request.id, "pay", approval(request, VERIFY));
+    expect(result).toStrictEqual({ kind: "token-pending", inputOutputIds: ["a:0", "b:1"] });
+    expect(w.requests.getState().requests[request.id]?.stage).toBe("submitted");
   });
 
   it("an invoice that nears expiry after prepare fails approval without touching spark", async () => {

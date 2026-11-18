@@ -1708,7 +1708,9 @@ export class RequestController extends Controller<RequestControllerState> {
                               display.approvals[0]?.kind === "allowance"
                             ? `permit ${display.approvals[0].amount.symbol ?? display.approvals[0].amount.asset}`
                             : display.summary
-                  : `${display.kind} ${display.amountSats}`;
+                  : "kind" in display && display.kind === "token"
+                    ? `token ${display.amount} ${display.tokenIdentifier}`
+                    : `${display.kind} ${display.amountSats}`;
     const entry: SignLogEntry = {
       id: request.id,
       at: this.options.now(),
@@ -1805,9 +1807,9 @@ export class RequestController extends Controller<RequestControllerState> {
     );
   }
 
-  /** Only a Spark transfer has a recipient to check; Lightning and exits are not assessed. */
+  /** Only sats and token transfers have a recipient to check; Lightning and exits are not assessed. */
   private sparkRisk(display: SparkDisplay): ReadonlyArray<RiskFinding> {
-    if (display.kind !== "transfer") {
+    if (display.kind !== "transfer" && display.kind !== "token") {
       return [];
     }
     const receiver = normalizeAddress("spark", display.receiver) ?? display.receiver;

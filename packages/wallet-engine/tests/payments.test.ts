@@ -421,6 +421,11 @@ describe("payments.pay", () => {
         await Promise.resolve();
         return {};
       },
+      sendToken: async (_ref: unknown, params: unknown) => {
+        calls.push({ method: "sendToken", params });
+        await Promise.resolve();
+        return "tok-hash";
+      },
     } as unknown as SparkController;
     const fetchCalls: string[] = [];
     const fetch = (async (input: string | URL | Request) => {
@@ -468,6 +473,82 @@ describe("payments.pay", () => {
         verify: VERIFY,
         commit: expect.any(Function),
       },
+    });
+  });
+
+  it("a spark token payment prepares the token display and sends it", async () => {
+    const { ctx, calls } = context();
+    const address = encodeSparkAddress({ network: "regtest", identityPublicKey: PUBKEY });
+    const action = await preparePay(ctx, {
+      account: REF,
+      option: { kind: "spark", address },
+      token: { identifier: "btknrt1token", amount: 123n },
+    });
+    expect(action.display).toStrictEqual({
+      family: "spark",
+      network: "regtest",
+      kind: "token",
+      tokenIdentifier: "btknrt1token",
+      amount: "123",
+      receiver: address,
+    });
+    const result = await action.execute(ctx.spark, VERIFY, () => undefined);
+    expect(result).toStrictEqual({ kind: "token", transactionHash: "tok-hash" });
+    expect(calls[0]).toStrictEqual({
+      method: "sendToken",
+      params: {
+        receiver: address,
+        tokenIdentifier: "btknrt1token",
+        amount: 123n,
+        verify: VERIFY,
+        commit: expect.any(Function),
+      },
+    });
+  });
+
+  it("a token send with a lost response ends token-pending with the output ids", async () => {
+    const { ctx } = context();
+    ctx.spark.sendToken = async () =>
+      Promise.reject(
+        new SparkControllerError(
+          "unknown",
+          "token transfer outcome unknown",
+          undefined,
+          undefined,
+          ["a:0", "b:1"],
+        ),
+      );
+    const result = await pay(ctx, {
+      account: REF,
+      option: { kind: "spark", address: "spark1x" },
+      token: { identifier: "btknrt1token", amount: 5n },
+      verify: VERIFY,
+    });
+    expect(result).toStrictEqual({ kind: "token-pending", inputOutputIds: ["a:0", "b:1"] });
+  });
+
+  const tokenCombos: ReadonlyArray<readonly [string, Omit<PayParams, "account">]> = [
+    [
+      "a non-spark option",
+      {
+        option: { kind: "bitcoin", address: REGTEST_P2TR },
+        token: { identifier: "btknrt1t", amount: 5n },
+      },
+    ],
+    [
+      "an amountSats field",
+      {
+        option: { kind: "spark", address: "spark1x" },
+        amountSats: 10,
+        token: { identifier: "btknrt1t", amount: 5n },
+      },
+    ],
+  ];
+
+  it.each(tokenCombos)("a token payment with %s is invalid-input", async (_name, params) => {
+    const { ctx } = context();
+    await expect(pay(ctx, { account: REF, verify: VERIFY, ...params })).rejects.toMatchObject({
+      category: "invalid-input",
     });
   });
 
@@ -711,7 +792,7 @@ describe("payments.pay", () => {
         account: REF,
         option: { kind: "bitcoin", address: REGTEST_P2TR },
         amountSats: 100_000,
-        maxFeeSats: 1_000,
+        maxFeeSats: 1000,
         verify: VERIFY,
       }),
     ).rejects.toMatchObject({ category: "rejected" });

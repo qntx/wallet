@@ -8,7 +8,12 @@ import type { SparkAccountRef } from "@qntx/wallet/protocol";
 import { sparkTransferId } from "../spark/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { SparkControllerError } from "../spark/errors.ts";
-import { INVOICE_EXPIRY_GRACE_MS, feeCheck, pendingOnUnknown } from "./action.ts";
+import {
+  INVOICE_EXPIRY_GRACE_MS,
+  feeCheck,
+  pendingOnUnknown,
+  tokenPendingOnUnknown,
+} from "./action.ts";
 import type { PreparedSparkAction } from "./action.ts";
 import { PaymentError } from "./errors.ts";
 import type { PaymentOption } from "./parse.ts";
@@ -23,6 +28,13 @@ export type PayParams = {
   readonly speed?: "FAST" | "MEDIUM" | "SLOW";
   /** `amountSats` came from the service's minimum (WebLN `lnurl`), not an explicit amount. */
   readonly amountFromServiceMinimum?: boolean;
+  /** Token payment — valid only with the plain `spark` option, and never with `amountSats`. */
+  readonly token?: {
+    /** Bech32m token identifier (`btkn`/`btknrt`). */
+    readonly identifier: string;
+    /** Base units. */
+    readonly amount: bigint;
+  };
 };
 
 export type PayContext = {
@@ -62,15 +74,49 @@ export async function preparePay(
       "lnurl-withdraw receives funds: use payments.withdrawLnurl",
     );
   }
+  if (params.token !== undefined) {
+    if (params.amountSats !== undefined) {
+      throw new PaymentError("invalid-input", "token payment: amountSats must be absent");
+    }
+    if (params.option.kind !== "spark") {
+      throw new PaymentError("invalid-input", "token payment: use the spark payment option");
+    }
+  }
   // Fixed at prepare: every execute pays under the request's idempotent transfer id, so a retry
   // after a lost response resumes the same payment.
   const transferId = sparkTransferId(context.requestId, context.now());
   switch (params.option.kind) {
     case "spark": {
+      const { address } = params.option;
+      if (params.token !== undefined) {
+        const { token } = params;
+        return {
+          display: {
+            family: "spark",
+            network,
+            kind: "token",
+            tokenIdentifier: token.identifier,
+            amount: token.amount.toString(),
+            receiver: address,
+          },
+          checks: [],
+          staleReason: () => undefined,
+          execute: async (spark, verify, commit) =>
+            tokenPendingOnUnknown(async () => ({
+              kind: "token",
+              transactionHash: await spark.sendToken(ref, {
+                receiver: address,
+                tokenIdentifier: token.identifier,
+                amount: token.amount,
+                verify,
+                commit,
+              }),
+            })),
+        };
+      }
       if (params.amountSats === undefined) {
         throw new PaymentError("invalid-input", "spark payment: amountSats is required");
       }
-      const { address } = params.option;
       const { amountSats } = params;
       return {
         display: { family: "spark", network, kind: "transfer", amountSats, receiver: address },
