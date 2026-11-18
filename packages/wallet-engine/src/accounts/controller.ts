@@ -25,7 +25,7 @@ export type AccountGroup = {
   readonly hidden: boolean;
   /** A social identity (64 lowercase hex) bound to this group; one identity binds one group. */
   readonly boundPubkey?: string;
-  /** Last local modification time (ms); reconcile-created entries start at 0. */
+  /** Last local edit time (ms); reconcile- and discovery-created entries start at 0. */
   readonly updatedAt: number;
 };
 
@@ -817,7 +817,6 @@ export class AccountTreeController extends Controller<AccountTreeState> {
       const anyError = results.some(([, v]) => v.error !== undefined);
       this.mutateGroups(walletId, (list) => {
         const have = list.some((g) => g.index === groupIndex);
-        const updatedAt = this.options.now();
         if (!have) {
           return [
             ...list,
@@ -827,12 +826,14 @@ export class AccountTreeController extends Controller<AccountTreeState> {
               hidden: false,
               used: usedMap,
               errors: errorMap,
-              updatedAt,
+              // A scan is not a user edit: appended groups start at 0 like reconcile-created
+              // ones, so a real rename elsewhere always wins the LWW merge.
+              updatedAt: 0,
             },
           ].sort((a, b) => a.index - b.index);
         }
         return list.map((g) =>
-          g.index === groupIndex ? { ...g, used: usedMap, errors: errorMap, updatedAt } : g,
+          g.index === groupIndex ? { ...g, used: usedMap, errors: errorMap } : g,
         );
       });
       if (anyUsed || anyError) {

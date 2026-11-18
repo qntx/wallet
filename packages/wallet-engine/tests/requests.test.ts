@@ -13,13 +13,17 @@ import { encodeAbiParameters, parseAbiParameters } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
-import type { SignRequest } from "@qntx/wallet-chains";
+import type { BlindReason, SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm } from "@qntx/wallet-chains/evm";
 import type { chains } from "@qntx/wallet/chains";
 
 import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
-import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
+import {
+  BlindSigningDisabledError,
+  REQUEST_TTL_MS,
+  RequestController,
+} from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -96,7 +100,13 @@ const latch = (): { readonly promise: Promise<void>; readonly resolve: () => voi
 };
 
 /** A transactions stand-in whose prepared builds expose spies for the pipeline's own rules. */
-function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?: string[] } = {}) {
+function fake(
+  options: {
+    verifiability?: DisplayIntent["verifiability"];
+    checks?: string[];
+    blind?: BlindReason;
+  } = {},
+) {
   const events: string[] = [];
   let submitError: Error | undefined;
   let stale: string | undefined;
@@ -112,7 +122,10 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
         txId: `tx-${requestId}`,
         account: ACCOUNT,
         network: SEPOLIA,
-        intent: intent(options.verifiability ?? "full"),
+        intent: {
+          ...intent(options.verifiability ?? "full"),
+          ...(options.blind === undefined ? {} : { blind: options.blind }),
+        },
         checks: (options.checks ?? []) as PreparedRequest["checks"],
         staleReason: async () => Promise.resolve(stale),
         submit: async (verify: SendParams["verify"], commit: () => void) => {
@@ -173,6 +186,8 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
           amountSats: 100,
           expiresAtMs: 999,
         }),
+      quoteExit: async (_r: unknown, p: { amountSats: number }) =>
+        Promise.resolve({ feeSats: 1, exitSats: p.amountSats + 1 }),
     } as unknown as SparkController,
     nostrSign: async () => {
       nostrSignCalls.push("sign");
@@ -441,6 +456,30 @@ describe("RequestController lifecycle", () => {
   });
 });
 
+describe("blind signing gating", () => {
+  it("a request with no blind-signing finding approves with the setting off", async () => {
+    const f = fake({ verifiability: "opaque" });
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS);
+    expect(request.checks).toContain("decode-partial");
+    expect(request.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).resolves.toMatchObject({ id: `tx-${request.id}` });
+  });
+
+  it("a blind request fails before the acknowledgement check while the setting is off", async () => {
+    const f = fake({ verifiability: "opaque", blind: "account-code" });
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS);
+    expect(request.risk).toContainEqual({ code: "blind-signing", level: "danger" });
+    await expect(f.controller.approve(request.id, "send", {})).rejects.toBeInstanceOf(
+      BlindSigningDisabledError,
+    );
+    expect(f.controller.getState().requests[request.id]?.stage).toBe("awaiting-approval");
+  });
+});
+
 // ---- real EVM pipeline against a fake gateway + host endpoint ----
 
 type Rpc = Record<string, unknown>;
@@ -600,6 +639,8 @@ function evmWorld(options: {
           amountSats: 100,
           expiresAtMs: 999,
         }),
+      quoteExit: async (_r: unknown, p: { amountSats: number }) =>
+        Promise.resolve({ feeSats: 1, exitSats: p.amountSats + 1 }),
     } as unknown as SparkController,
     nostrSign: async () => {
       await Promise.resolve();
@@ -1050,6 +1091,7 @@ describe("webln-invoice and browser-origin pay", () => {
       account: { walletId: "w", groupIndex: 0, network: "mainnet" },
       option: { kind: "bitcoin", address: "bc1qexampleaddress0000" },
       amountSats: 100,
+      maxFeeSats: 10,
     });
     expect(pending.origin).toStrictEqual(origin);
   });

@@ -137,7 +137,17 @@ const sources: ReadonlyArray<readonly [string, Source]> = [
   ],
 ];
 
+/* Opaque bytes the decoder cannot show: blind "message-bytes". */
 const blindRequest = (account: AccountRef) =>
+  normalizeEvm({
+    kind: "evm.personal-message",
+    network: "eip155:1",
+    account,
+    message: new Uint8Array(32).fill(0xff),
+  });
+
+/* An unknown function of an unlisted contract: the wallet describes it but cannot verify it. */
+const describedRequest = (account: AccountRef) =>
   normalizeEvm({
     kind: "evm.transaction",
     network: "eip155:1",
@@ -269,5 +279,22 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
     );
     expect(errCode(response)).toBeUndefined();
     expect("ok" in response).toBe(true);
+  });
+
+  it("a described contract call signs while blind signing is off", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    const { session, walletId } = await setup(h);
+    const account = await source.account(h, session, walletId);
+    const response = await h.call(
+      "chain.sign",
+      { request: describedRequest(account), verify: HARDWARE },
+      session,
+    );
+    expect(errCode(response)).toBeUndefined();
+    expect(opens(fake.calls).at(-1)).toStrictEqual({
+      title: "Confirm contract call",
+      description: `Network: Ethereum\nThe wallet cannot verify what this call does\nCall contract 0x00000000000000000000000000000000DeaDBeef, function 0xdeadbeef\nSend 0.000000000000000001 ETH to 0x00000000000000000000000000000000DeaDBeef\nMax fee 0.0000315 ETH`,
+    });
   });
 });

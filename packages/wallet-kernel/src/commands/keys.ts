@@ -1,6 +1,5 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
-import { base58 } from "@scure/base";
 import { HDKey } from "@scure/bip32";
 import Slip10 from "micro-key-producer/slip10.js";
 
@@ -12,6 +11,7 @@ import { keyIdOf } from "../derive/key-id.ts";
 import type { KeyFamily } from "../derive/key-id.ts";
 import { KernelError } from "../errors.ts";
 import { corePromptFor } from "../prompts.ts";
+import { encodeBase58Ascii, encodeHexAscii } from "../secret/encode.ts";
 import type { Secret } from "../secret/secret.ts";
 import { wipe } from "../secret/secret.ts";
 import { encodeHeader, parseKeyHeader } from "../vault/headers.ts";
@@ -197,7 +197,11 @@ export async function removeKey(
   return null;
 }
 
-/** The secret in the family's canonical encoding — hex `0x` for EVM, base58 for Solana. */
+/**
+ * The secret in the family's canonical encoding — hex `0x` for EVM, base58 for Solana — as wipeable
+ * ASCII bytes. The encoders live in `src/secret/encode.ts` because the library encoders return
+ * strings, and a private key held in a JS string can never be zeroed.
+ */
 export async function exportKey(
   ctx: KernelContext,
   params: { verify: Factor; keyId: string },
@@ -217,12 +221,10 @@ export async function exportKey(
   const secret = openRecord(dek, record);
   try {
     if (header.family === "evm") {
-      return new TextEncoder().encode(
-        `0x${Array.from(secret, (b) => b.toString(16).padStart(2, "0")).join("")}`,
-      );
+      return encodeHexAscii(secret);
     }
     if (header.family === "solana") {
-      return new TextEncoder().encode(base58.encode(secret));
+      return encodeBase58Ascii(secret);
     }
     throw new KernelError("invalid-input", `keys are not supported on ${header.family}`);
   } finally {

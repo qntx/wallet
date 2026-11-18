@@ -14,16 +14,10 @@ kernel-owned text.
 npm install @qntx/wallet-native @qntx/wallet @qntx/nostr-native @qntx/spark-native
 ```
 
-Peer dependencies (exact `@qntx/*` pins are required — the host/kernel protocol and the bundled
-kernel artifacts are built against those releases):
-
-| package                      | range            |
-| ---------------------------- | ---------------- |
-| `@qntx/wallet`               | `0.4.0` (exact)  |
-| `@qntx/nostr-native`         | `0.15.3` (exact) |
-| `@qntx/spark-native`         | `0.5.2` (exact)  |
-| `react-native`               | `~0.88.0`        |
-| `react-native-nitro-modules` | `~0.37.1`        |
+Peer dependencies: `@qntx/wallet`, `@qntx/nostr-native`, `@qntx/spark-native`, `react-native`
+and `react-native-nitro-modules`. The exact ranges are this package's `peerDependencies` — the
+`@qntx/*` pins are exact because the host/kernel protocol and the bundled kernel artifacts are
+built against those releases.
 
 The package registers one Nitro hybrid object, `KernelHost`. Everything else the kernel needs —
 keystore, passkey ceremonies, lifecycle, pbkdf2, the vault directory — is injected as JSI host
@@ -136,10 +130,13 @@ the wallet app in its association files.
   domain of a message. Android's `BiometricPrompt` shows the title and description. iOS shows the
   description on the Touch ID and device-passcode sheets only — **the Face ID sheet shows no
   custom text**, so there the verification proves presence, not that the user read the content.
-- Blind signing is off on a new vault. A request the kernel cannot show (raw bytes, typed data of
-  no recognised shape, a transaction with unverifiable effects) fails with
-  `blind-signing-disabled` and no prompt until `vault.setBlindSigning(true, { kind: "hardware" })`.
-  This is the one kernel-side control that also holds on a Face ID device.
+- Blind signing is off on a new vault. A request is blind only when the chain decoder marks it
+  so (raw bytes, typed data too large or misformed to show, an unrecognised token function,
+  calldata to the signing account's own code, a Safe delegatecall or unbounded refund) and fails
+  with `blind-signing-disabled` and no prompt until
+  `vault.setBlindSigning(true, { kind: "hardware" })`; described requests the wallet cannot fully
+  verify sign without the setting. This is the one kernel-side control that also holds on a
+  Face ID device.
 - App lock is optional and off by default: `vault.setAppLock(true, { kind: "hardware" })` removes
   the `device` factor and rotates the DEK, so every unlock prompts again; `false` restores it.
   With app lock off, removing the lock screen keeps the vault usable (the dead `hardware` factor
@@ -152,18 +149,23 @@ the wallet app in its association files.
   vault without any user action; app lock on restores the previous guarantee. On Android 11–14
   the `device` key stays usable while the device is locked, so do not reopen the vault from
   lock-screen background work.
-- Upgrading from 0.13: the first successful `hardware` unlock moves the vault from format 3 to 4
-  and adds the `device` factor (app lock off); until then `snapshot.appLock` is `true`.
+- This build reads and writes vault format 5 only. A vault written by an older format reports
+  `vault: "unsupported"` and every command fails with `unsupported` — the data is left
+  untouched and `vault.reset` is the recovery path.
 - `vault.addFactor` / `vault.removeFactor` are `unsupported` here.
 - `vault.reset` authenticates the device owner first, then erases the vault and all keystore
   keys. Devices without a lock screen return `verification-unavailable`. A `WalletError.detail`
   string carries the platform diagnostic
   (`"<domain>:<code>"`, e.g. `"LAErrorDomain:-5"` or
   `"android:KeyPermanentlyInvalidatedException"`) when the native layer can produce one.
-- `chain.sign` prompts _before_ any secret derivation: the kernel normalizes and decodes the
-  intent, shows the prompt, and only then touches key material.
+- `chain.sign` makes two passes over the signing secret: it derives the key material once to
+  normalize and decode the request and build the prompt, wipes it before the (possibly long)
+  system verification, re-checks the session, and only then derives it again and signs.
 - The kernel serializes ceremonies — two concurrent signing requests cannot race two system
   prompts.
+- The package provides no secure view: screens that show a mnemonic or exported private key are
+  the host's to protect. On Android set `FLAG_SECURE` on the window; on iOS cover the screen with
+  a privacy overlay when the app resigns active — the app-switcher snapshot is written to disk.
 - `kernel/generated/kernel.manifest.json` inside the package records the kernel bundle's
   SHA-256 and every pinned protocol dependency; `scripts/compile-kernel.mjs` verifies it when
   the host is natively built and fails the build on a mismatch. At kernel start the host

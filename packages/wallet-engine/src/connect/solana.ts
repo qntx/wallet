@@ -5,7 +5,7 @@ import { ChainError } from "@qntx/wallet-chains";
 import { decodeSolanaTransaction } from "@qntx/wallet-chains/solana";
 
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
-import { BlindSigningDisabledError, SignInOriginError } from "../requests/controller.ts";
+import { SignInOriginError } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { BrowserOrigin } from "../requests/types.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
@@ -340,9 +340,6 @@ export class SolanaWalletHandler implements SolanaHandler {
       });
       return await this.options.requests.outcome(pending.id);
     } catch (error) {
-      if (error instanceof BlindSigningDisabledError) {
-        throw new ProviderError(4200, error.message);
-      }
       throw error instanceof SignInOriginError ? invalidParams(error.message) : error;
     }
   }

@@ -1,0 +1,6 @@
+{
+  "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,binancecoin,avalanche-2,polygon-ecosystem-token,hyperliquid&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full",
+  "fetchedAt": "2026-11-18T08:30:48Z",
+  "status": 200,
+  "body": "{\"bitcoin\":{\"usd\":64683.08229625645,\"usd_24h_change\":0.3903554487988691,\"last_updated_at\":1794990640},\"ethereum\":{\"usd\":1810.4413516935772,\"usd_24h_change\":-0.8437029196045477,\"last_updated_at\":1794990640},\"solana\":{\"usd\":74.82947732236562,\"usd_24h_change\":3.1983295437714063,\"last_updated_at\":1794990640},\"binancecoin\":{\"usd\":592.2507574319176,\"usd_24h_change\":0.020262639210063726,\"last_updated_at\":1794990626},\"avalanche-2\":{\"usd\":7.147946567881986,\"usd_24h_change\":-0.28929123267849866,\"last_updated_at\":1794990640},\"polygon-ecosystem-token\":{\"usd\":0.08186801781417427,\"usd_24h_change\":2.298222423241627,\"last_updated_at\":1794990640},\"hyperliquid\":{\"usd\":68.35425438649516,\"usd_24h_change\":-1.4210585344265207,\"last_updated_at\":1794990640}}"
+}

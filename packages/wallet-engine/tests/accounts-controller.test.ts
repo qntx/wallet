@@ -102,7 +102,6 @@ async function rig(opts: { inspects?: Rig["inspects"] } = {}): Promise<Rig> {
       approve: async () => Promise.resolve({}),
     },
     fetch: async () => Promise.reject(new Error("no fetch")),
-    random: (n) => new Uint8Array(n).fill(1),
     now: () => 0,
     logger: LOGGER,
     createClient: ({ ref: r }) => {
@@ -247,7 +246,6 @@ describe("AccountTreeController", () => {
       setTimer: () => () => undefined,
       spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
       fetch: async () => Promise.reject(new Error("no fetch")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => t,
       logger: LOGGER,
       createClient: () => ({ close: () => {} }) as unknown as never,
@@ -597,7 +595,6 @@ describe("AccountTreeController", () => {
       setTimer: () => () => undefined,
       spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
       fetch: async () => Promise.reject(new Error("no fetch")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: LOGGER,
       createClient: () => ({ close: () => {} }) as unknown as never,

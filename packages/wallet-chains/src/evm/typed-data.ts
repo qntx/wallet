@@ -1,6 +1,8 @@
 import * as TypedData from "ox/TypedData";
 
+import { displayExcerpt } from "../display.ts";
 import { ChainError } from "../index.ts";
+import type { TypedDataLeaf } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { isRecord } from "./transaction.ts";
 
@@ -164,6 +166,106 @@ export const parseTypedData = (typedData: string): ParsedTypedData => {
   }
   checkStructure(json.types, json.primaryType, json.message, 0);
   return { json };
+};
+
+/** Most leaves an unrecognised typed-data document may have and still be shown in full. */
+export const TYPED_FIELD_BUDGET = 16;
+
+/** Longest path or value (in code points, after sanitising) one leaf line may show. */
+export const TYPED_FIELD_CODE_POINTS = 96;
+
+const FIXED_BYTES = /^bytes(?:[1-9]|[12][0-9]|3[0-2])$/;
+const INT_TYPE = /^u?int([0-9]*)$/;
+
+/**
+ * The display value of one atomic leaf, or `undefined` when the value is not in a form that is
+ * shown exactly as it is encoded. Only the canonical forms every EIP-712 hasher agrees on are
+ * accepted — anything else aborts the whole expansion.
+ */
+const leafValue = (type: string, value: unknown): string | undefined => {
+  if (type === "address") {
+    return typedDataAddress(value);
+  }
+  if (type === "bool") {
+    return typeof value === "boolean" ? (value ? "true" : "false") : undefined;
+  }
+  if (type === "string") {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const excerpt = displayExcerpt(value, 1, TYPED_FIELD_CODE_POINTS);
+    return excerpt.omitted === 0 ? (excerpt.lines[0] ?? "") : undefined;
+  }
+  if (type === "bytes" || FIXED_BYTES.test(type)) {
+    return typeof value === "string" &&
+      /^0x([0-9a-fA-F]{2})*$/.test(value) &&
+      value.length <= TYPED_FIELD_CODE_POINTS
+      ? value.toLowerCase()
+      : undefined;
+  }
+  const int = INT_TYPE.exec(type);
+  if (int !== null) {
+    const bits = int[1] === "" ? 256 : Number(int[1]);
+    if (bits % 8 !== 0 || bits < 8 || bits > 256) {
+      return undefined;
+    }
+    const signed = !type.startsWith("u");
+    let parsed: bigint;
+    if (typeof value === "number" && Number.isSafeInteger(value)) {
+      parsed = BigInt(value);
+    } else if (
+      typeof value === "string" &&
+      ((signed ? /^-?[0-9]+$/ : /^[0-9]+$/).test(value) || /^0x[0-9a-fA-F]+$/.test(value))
+    ) {
+      parsed = BigInt(value);
+    } else {
+      return undefined;
+    }
+    const min = signed ? -(2n ** BigInt(bits - 1)) : 0n;
+    const max = signed ? 2n ** BigInt(bits - 1) - 1n : 2n ** BigInt(bits) - 1n;
+    return parsed >= min && parsed <= max ? parsed.toString(10) : undefined;
+  }
+  return undefined;
+};
+
+/**
+ * Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
+ * declaration order, arrays element by element), as display lines; `undefined` when there are more
+ * than TYPED_FIELD_BUDGET leaves or any leaf cannot be shown exactly as it is encoded.
+ */
+export const typedDataFields = (json: TypedDataInput): ReadonlyArray<TypedDataLeaf> | undefined => {
+  const leaves: TypedDataLeaf[] = [];
+  const push = (path: string, value: string): boolean => {
+    const excerpt = displayExcerpt(path, 1, TYPED_FIELD_CODE_POINTS);
+    if (excerpt.omitted !== 0) {
+      return false;
+    }
+    leaves.push({ path: excerpt.lines[0] ?? "", value });
+    return leaves.length <= TYPED_FIELD_BUDGET;
+  };
+  const walk = (type: string, value: unknown, path: string): boolean => {
+    const array = /^(.+)\[\d*\]$/.exec(type);
+    if (array !== null) {
+      if (!Array.isArray(value)) {
+        return false;
+      }
+      return value.length === 0
+        ? push(path, "[]")
+        : value.every((item, index) => walk(array[1] ?? "", item, `${path}[${index}]`));
+    }
+    const struct = json.types[type];
+    if (struct !== undefined) {
+      return (
+        isTypedDataMessage(value) &&
+        struct.every((field) =>
+          walk(field.type, value[field.name], path === "" ? field.name : `${path}.${field.name}`),
+        )
+      );
+    }
+    const leaf = leafValue(type, value);
+    return leaf !== undefined && push(path, leaf);
+  };
+  return walk(json.primaryType, json.message, "") ? leaves : undefined;
 };
 
 /**

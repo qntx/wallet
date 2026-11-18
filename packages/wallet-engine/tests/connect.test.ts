@@ -7,6 +7,7 @@ import { verifyEvent } from "@qntx/nostr";
 import { createMessage } from "@qntx/siwx";
 import { evm } from "@qntx/siwx/evm";
 import type { Wallet } from "@qntx/wallet";
+import type { DisplayIntent } from "@qntx/wallet-chains";
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
@@ -27,7 +28,7 @@ import { Nip07Handler } from "../src/connect/nip07.ts";
 import { SOLANA_CHAIN_IDS, SolanaWalletHandler } from "../src/connect/solana.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { PhishingStatus } from "../src/phishing/status.ts";
-import { RequestController } from "../src/requests/controller.ts";
+import { BlindSigningDisabledError, RequestController } from "../src/requests/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -999,36 +1000,37 @@ describe("Eip1193Handler", () => {
     await r.destroy();
   });
 
-  it("refuses a personal_sign whose bytes are not UTF-8 text until the vault allows blind signing", async () => {
+  it("a blind personal_sign waits as a request until the vault allows blind signing", async () => {
     const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
-    await expect(
-      r.handler.handle(SITE, { method: "personal_sign", params: ["0xff", address] }),
-    ).rejects.toMatchObject({ code: 4200, message: expect.stringContaining("blind signing") });
-    expect(Object.values(r.requests.getState().requests)).toHaveLength(0);
-    await expect(r.requests.signLog()).resolves.toHaveLength(0);
-
-    const enabled = await rig({ blindSigning: true });
-    await enabled.connect();
-    const blind = enabled.handler.handle(SITE, {
+    const blind = r.handler.handle(SITE, {
       method: "personal_sign",
       params: ["0xff", address],
     });
     await vi.waitFor(() => {
       expect(
-        Object.values(enabled.requests.getState().requests).some(
-          (q) => q.stage === "awaiting-approval",
-        ),
+        Object.values(r.requests.getState().requests).some((q) => q.stage === "awaiting-approval"),
       ).toBe(true);
     });
-    const [pending] = Object.values(enabled.requests.getState().requests);
+    const [pending] = Object.values(r.requests.getState().requests);
     expect(pending?.display).toMatchObject({ message: { kind: "bytes", hex: "0xff" } });
     expect(pending?.risk).toContainEqual({ code: "blind-signing", level: "danger" });
-    await enabled.approveNext();
-    await expect(blind).resolves.toMatch(/^0x[0-9a-f]+$/);
-    await expect(enabled.requests.signLog()).resolves.toMatchObject([{ summary: "blind message" }]);
-    await enabled.destroy();
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find
+    const id = pending?.id ?? "";
+    await expect(
+      r.requests.approve(id, "evm-sign", approval(pending, VERIFY)),
+    ).rejects.toBeInstanceOf(BlindSigningDisabledError);
+    expect(r.requests.getState().requests[id]?.stage).toBe("awaiting-approval");
+    await expect(r.requests.signLog()).resolves.toHaveLength(0);
+
+    await r.wallet.vault.setBlindSigning(true, VERIFY);
+    await r.requests.approve(id, "evm-sign", approval(pending, VERIFY));
+    const signature = (await blind) as `0x${string}`;
+    await expect(recoverMessageAddress({ message: { raw: "0xff" }, signature })).resolves.toBe(
+      address,
+    );
+    await expect(r.requests.signLog()).resolves.toMatchObject([{ summary: "blind message" }]);
 
     const text = r.handler.handle(SITE, {
       method: "personal_sign",
@@ -1042,14 +1044,41 @@ describe("Eip1193Handler", () => {
     await r.destroy();
   });
 
-  it("eth_signTypedData_v4 recovers to the account", async () => {
-    const r = await rig({ blindSigning: true });
+  it("a rejected blind request fails the dApp call with 4001", async () => {
+    const r = await rig();
+    await r.connect();
+    const blind = r.handler.handle(SITE, {
+      method: "personal_sign",
+      params: ["0xff", await r.addressAt(0)],
+    });
+    await vi.waitFor(() => {
+      expect(
+        Object.values(r.requests.getState().requests).some((q) => q.stage === "awaiting-approval"),
+      ).toBe(true);
+    });
+    const [pending] = Object.values(r.requests.getState().requests);
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing find
+    r.requests.reject(pending?.id ?? "");
+    await expect(codeOf(blind)).resolves.toBe(4001);
+    await r.destroy();
+  });
+
+  it("eth_signTypedData_v4 recovers to the account on a fresh vault", async () => {
+    const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
     const signature = r.handler.handle(SITE, {
       method: "eth_signTypedData_v4",
       params: [address, TYPED],
     });
+    await vi.waitFor(() => {
+      expect(
+        Object.values(r.requests.getState().requests).some((q) => q.stage === "awaiting-approval"),
+      ).toBe(true);
+    });
+    const [pending] = Object.values(r.requests.getState().requests);
+    expect(pending?.checks).toStrictEqual(["decode-partial"]);
+    expect(pending?.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
     await r.approveNext();
     const parsed = JSON.parse(TYPED) as {
       domain: { name: string; chainId: number };
@@ -1063,6 +1092,85 @@ describe("Eip1193Handler", () => {
         types,
         primaryType: "Mail",
         message: parsed.message,
+        signature: (await signature) as `0x${string}`,
+      }),
+    ).resolves.toBe(address);
+    await r.destroy();
+  });
+
+  it("a CoW GPv2 Order is described, signs on a fresh vault and recovers the account", async () => {
+    const r = await rig();
+    await r.connect();
+    const address = await r.addressAt(0);
+    const doc = {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Order: [
+          { name: "sellToken", type: "address" },
+          { name: "buyToken", type: "address" },
+          { name: "receiver", type: "address" },
+          { name: "sellAmount", type: "uint256" },
+          { name: "buyAmount", type: "uint256" },
+          { name: "validTo", type: "uint32" },
+          { name: "appData", type: "bytes32" },
+          { name: "feeAmount", type: "uint256" },
+          { name: "kind", type: "string" },
+          { name: "partiallyFillable", type: "bool" },
+          { name: "sellTokenBalance", type: "string" },
+          { name: "buyTokenBalance", type: "string" },
+        ],
+      },
+      primaryType: "Order",
+      domain: {
+        name: "Gnosis Protocol",
+        version: "v2",
+        chainId: 1,
+        verifyingContract: "0x9008D19f58AAbD9eD0D60971565AA8510560ab41" as `0x${string}`,
+      },
+      message: {
+        sellToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        buyToken: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        receiver: address,
+        sellAmount: "1000000",
+        buyAmount: "1",
+        validTo: 2_000_000_000,
+        appData: `0x${"00".repeat(32)}`,
+        feeAmount: "0",
+        kind: "sell",
+        partiallyFillable: false,
+        sellTokenBalance: "erc20",
+        buyTokenBalance: "erc20",
+      },
+    };
+    const signature = r.handler.handle(SITE, {
+      method: "eth_signTypedData_v4",
+      params: [address, JSON.stringify(doc)],
+    });
+    await vi.waitFor(() => {
+      expect(
+        Object.values(r.requests.getState().requests).some((q) => q.stage === "awaiting-approval"),
+      ).toBe(true);
+    });
+    const [pending] = Object.values(r.requests.getState().requests);
+    expect(pending?.checks).toStrictEqual(["decode-partial"]);
+    expect(pending?.risk).not.toContainEqual({ code: "blind-signing", level: "danger" });
+    const display = pending?.display as DisplayIntent;
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing display variant
+    const fields = display.message?.kind === "typed-data" ? display.message.fields : undefined;
+    expect(fields).toHaveLength(12);
+    await r.approveNext();
+    const { EIP712Domain: _domain, ...types } = doc.types;
+    await expect(
+      recoverTypedDataAddress({
+        domain: doc.domain,
+        types,
+        primaryType: "Order",
+        message: doc.message,
         signature: (await signature) as `0x${string}`,
       }),
     ).resolves.toBe(address);

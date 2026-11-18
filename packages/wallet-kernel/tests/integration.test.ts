@@ -2768,3 +2768,116 @@ describe("rotation and the session", () => {
     ok(await fresh.call("vault.unlock", { factor: oldPassword() }));
   });
 });
+
+describe("create/import failure hygiene", () => {
+  const zeroed = (bytes: Uint8Array): boolean => bytes.every((b) => b === 0);
+
+  /** Platform.random that records the live buffers it hands out, so a wiped DEK is visible. */
+  const trackingRandom = (seed: number) => {
+    const { random } = seededRandom(seed);
+    const buffers: Uint8Array[] = [];
+    return {
+      buffers,
+      random: (length: number): Uint8Array => {
+        const b = random(length);
+        buffers.push(b);
+        return b;
+      },
+    };
+  };
+
+  it("wipes the DEK minted for a fresh vault when the mnemonic is invalid", async () => {
+    const tracked = trackingRandom(300);
+    const h = createHarness({ random: tracked.random });
+    await h.settle();
+    const before = tracked.buffers.length;
+    const mnemonic = utf8ToBytes("not a valid mnemonic at all");
+    expect(
+      errCode(
+        await h.call("wallet.importMnemonic", {
+          mnemonic,
+          factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+        }),
+      ),
+    ).toBe("invalid-input");
+    expect(zeroed(mnemonic)).toBe(true);
+    // The gate's `random(32)` draw is the only 32-byte buffer the failed call produced.
+    const drawn32 = tracked.buffers.slice(before).filter((b) => b.length === 32);
+    expect(drawn32.length).toBeGreaterThanOrEqual(1);
+    for (const buffer of drawn32) {
+      expect(zeroed(buffer)).toBe(true);
+    }
+  });
+
+  it("wipes the mnemonic and passphrase when the gate fails on an initialized vault", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const mnemonic = utf8ToBytes(nip06.vectors[0]!.mnemonic);
+    const passphrase = utf8ToBytes("a passphrase");
+    expect(
+      errCode(
+        await h.call(
+          "wallet.importMnemonic",
+          {
+            mnemonic,
+            passphrase,
+            factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+          },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    expect(zeroed(mnemonic)).toBe(true);
+    expect(zeroed(passphrase)).toBe(true);
+  });
+
+  it("wipes the wire prfWallet when a host createWithPasskey fails the gate", async () => {
+    const h = createHarness();
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const prfWallet = new Uint8Array(PRF_WALLET);
+    expect(
+      errCode(
+        await h.call(
+          "wallet.createWithPasskey",
+          {
+            ceremony: "host",
+            credentialId: CREDENTIAL_ID,
+            prfWallet,
+            synced: true,
+            factor: {
+              kind: "passkey",
+              credentialId: CREDENTIAL_ID,
+              prf: new Uint8Array(PRF_VAULT),
+            },
+          },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    expect(zeroed(prfWallet)).toBe(true);
+  });
+
+  it("keeps the session DEK alive when an import fails on an initialized vault", async () => {
+    const h = createHarness();
+    await h.settle();
+    const mnemonic = utf8ToBytes(nip06.vectors[0]!.mnemonic);
+    const session = strField(
+      ok(
+        await h.call("wallet.importMnemonic", {
+          mnemonic: new Uint8Array(mnemonic),
+          factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+        }),
+      ),
+      "session",
+    );
+    // The same wallet again fails already-exists — after the gate bound the live session DEK.
+    expect(
+      errCode(
+        await h.call("wallet.importMnemonic", { mnemonic: new Uint8Array(mnemonic) }, session),
+      ),
+    ).toBe("already-exists");
+    ok(await h.call("keys.list", null, session));
+  });
+});

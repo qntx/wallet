@@ -20,7 +20,7 @@ import { chains } from "@qntx/wallet/chains";
 
 import { createGateway } from "../../../apps/gateway/src/app.ts";
 import type { RiskStore } from "../../../apps/gateway/src/risk/phishing.ts";
-import type { Limiters } from "../../../apps/gateway/src/types.ts";
+import type { Limiters, PriceCache } from "../../../apps/gateway/src/types.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import type { ZeroExSwapQuote } from "../src/swaps/index.ts";
@@ -88,12 +88,17 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         get: async () => Promise.resolve(undefined),
         put: async () => Promise.resolve(),
       };
+      const priceCache: PriceCache = {
+        get: async () => Promise.resolve(undefined),
+        put: async () => Promise.resolve(),
+      };
       const gateway = createGateway({
         fetch: globalThis.fetch.bind(globalThis),
         networks: [{ id: N1, providers: [{ id: "fork", url: RPC_URL }] }],
         limiters,
         corsOrigins: [],
         risk,
+        prices: { cache: priceCache },
         auth: {},
         zeroEx: { apiKey: KEY ?? "" },
         log: () => undefined,

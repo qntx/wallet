@@ -8,6 +8,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { Address, OutScript } from "@scure/btc-signer";
 import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 
+import { ChainError } from "@qntx/wallet-chains";
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 
@@ -389,5 +390,87 @@ export class BtcUtxoStore {
 
   lockStore(): void {
     this.engineStore = undefined;
+  }
+}
+
+const OUTPOINT = /^[0-9a-f]{64}:\d+$/;
+
+/** A `txid:vout` string — the txid is 64 lowercase hex digits, the vout a safe integer. */
+export const isOutpoint = (v: string): boolean =>
+  OUTPOINT.test(v) && Number.isSafeInteger(Number(v.slice(65)));
+
+/**
+ * The outpoints the user froze, per account key `walletId:groupIndex:network` — one record per key
+ * in the "btc-frozen" collection holding a JSON array. A freeze is intent, not utxo state: the
+ * outpoint need not exist and a frozen coin that disappears simply never matches. Freezing is
+ * separate from the derived inscription protection — unfreezing never unprotects.
+ */
+export class BtcFrozenStore {
+  private engineStore: EngineStore | undefined;
+  private frozen = new Map<string, Set<string>>();
+
+  async unlock(store: EngineStore): Promise<void> {
+    this.engineStore = store;
+    const col = store.collection("btc-frozen");
+    const next = new Map<string, Set<string>>();
+    // A malformed record reads as an empty set — the next write replaces it.
+    const keys = await col.list();
+    const raws = await Promise.all(keys.map(async (key) => [key, await col.get(key)] as const));
+    for (const [key, raw] of raws) {
+      const parsed = raw === undefined ? undefined : readJson(raw);
+      const list = Array.isArray(parsed)
+        ? parsed.filter((v): v is string => typeof v === "string" && isOutpoint(v))
+        : [];
+      next.set(key, new Set(list));
+    }
+    this.frozen = next;
+  }
+
+  private async persist(accountKey: string): Promise<void> {
+    const store = this.engineStore;
+    if (store !== undefined) {
+      await store
+        .collection("btc-frozen")
+        .put(
+          accountKey,
+          new TextEncoder().encode(JSON.stringify([...(this.frozen.get(accountKey) ?? [])])),
+        );
+    }
+  }
+
+  /** The outpoints the account froze. */
+  frozenOf(accountKey: string): ReadonlyArray<string> {
+    return [...(this.frozen.get(accountKey) ?? [])];
+  }
+
+  isFrozen(accountKey: string, outpoint: string): boolean {
+    return this.frozen.get(accountKey)?.has(outpoint) ?? false;
+  }
+
+  async setFrozen(
+    accountKey: string,
+    outpoints: ReadonlyArray<string>,
+    frozen: boolean,
+  ): Promise<void> {
+    for (const outpoint of outpoints) {
+      if (!isOutpoint(outpoint)) {
+        throw new ChainError("invalid-request", `${outpoint} is not a valid outpoint`);
+      }
+    }
+    const set = new Set(this.frozen.get(accountKey));
+    for (const outpoint of outpoints) {
+      if (frozen) {
+        set.add(outpoint);
+      } else {
+        set.delete(outpoint);
+      }
+    }
+    this.frozen.set(accountKey, set);
+    await this.persist(accountKey);
+  }
+
+  lockStore(): void {
+    this.engineStore = undefined;
+    this.frozen = new Map();
   }
 }

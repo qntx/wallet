@@ -2,9 +2,11 @@
 
 Public API surface of the qntx wallet: the `Wallet` interface, the immutable `WalletSnapshot`,
 `WalletError`, the core API groups (vault, wallets, dataKeys), the host/kernel wire protocol, and
-the `@qntx/wallet/nostr` subpath — the first protocol module. This package contains no runtime of
+the `@qntx/wallet/nostr` subpath — the first protocol module (`./spark` and `./chains` are the
+other module subpaths). This package contains no runtime of
 its own — a `Wallet` comes from a host package that spawns the kernel, currently
-[`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node.
+[`@qntx/wallet-worker`](https://www.npmjs.com/package/@qntx/wallet-worker) for Web and Node and
+[`@qntx/wallet-native`](https://www.npmjs.com/package/@qntx/wallet-native) for React Native.
 
 ```bash
 npm install @qntx/wallet @qntx/wallet-worker
@@ -21,6 +23,7 @@ const wallet = await createWebWallet({
     rpName: "Example",
     walletSalt: "example/wallet",
     vaultSalt: "example/vault",
+    backupSalt: "example/backup",
   },
   autoLock: { platform: "web", idleMinutes: 15 },
   // Verifies every event the kernel signs; pass your app's native verifier where one exists.
@@ -106,13 +109,18 @@ React Native the device owner proves presence before anything is erased.
   (the user passed the quiz, imported a phrase, or exported it at least once — `exportMnemonic`
   upgrades the record), `"passkey"` (a synced passkey — still lost with the password-manager
   account, so prompt to export), or `"none"` (a device-bound passkey — lost with the device).
-- Blind signing is a vault setting, off by default. `chains(wallet).sign` fails with
-  `blind-signing-disabled` — before any verification — for a raw-byte message, typed data of no
-  recognised shape, or a transaction whose effects the kernel cannot verify (an unknown contract
-  call, an unknown Solana program, a multi-party PSBT). `vault.setBlindSigning(true, verify)`
-  allows them; `snapshot.blindSigning` reports the setting. Text and sign-in messages, permits,
-  Seaport orders, Safe transactions of decoded calls and every recognised transaction are never
-  blind.
+- Blind signing is a vault setting, off by default. A request is blind only when the chain
+  decoder marks it so: a raw-byte message, typed data too large or misformed to show, a call into
+  an unrecognised function of a listed token, calldata that runs the signing account's own code,
+  or a Safe delegatecall or unbounded refund. `chains(wallet).sign` fails a blind request with
+  `blind-signing-disabled` — before any verification — until `vault.setBlindSigning(true, verify)`;
+  `snapshot.blindSigning` reports the setting. Requests the wallet can describe but not verify —
+  an unknown contract call, unrecognised typed data that fits the display budget, an unknown
+  Solana program, a multi-party PSBT — sign without the setting and their prompt carries a
+  "cannot verify" line. Through the dApp surface the engine still creates the pending request
+  and `requests.approve` throws `BlindSigningDisabledError` while the setting is off — enable it
+  and approve the same request again. Text and sign-in messages, permits, Seaport orders, Safe
+  transactions of decoded calls and every recognised transaction are never blind.
 - Changing the password or removing a factor rotates the vault DEK: sessions in other tabs lock
   with reason `invalidated` and must re-unlock. Adding a passkey factor keeps the current DEK.
 - **The `rpId` scope is the wallet's trust boundary.** WebAuthn binds a credential and its PRF
@@ -122,11 +130,11 @@ React Native the device owner proves presence before anything is erased.
   prompt that looks like a sign-in. Use a domain that serves only the wallet
   (`wallet.example.com`), never a registrable parent shared with other pages, user content or
   third-party scripts, and treat every related origin and associated app as part of the wallet.
-- `passkey.rpId`, `walletSalt` and `vaultSalt` are permanent identifiers — changing any of them
-  makes every existing passkey factor and passkey-derived wallet unrecoverable, and the salts
-  must differ. Moving domains requires WebAuthn related origins (`/.well-known/webauthn`); offer
-  `exportMnemonic` for passkey-derived wallets so they survive an RP migration. `connectKernel`
-  rejects an empty or colliding config before the worker spawns.
+- `passkey.rpId`, `walletSalt`, `vaultSalt` and `backupSalt` are permanent identifiers — changing
+  any of them makes every existing passkey factor and passkey-derived wallet unrecoverable, and
+  the salts must differ. Moving domains requires WebAuthn related origins
+  (`/.well-known/webauthn`); offer `exportMnemonic` for passkey-derived wallets so they survive an
+  RP migration. `connectKernel` rejects an empty or colliding config before the worker spawns.
 - Standalone Nostr keys carry `backedUp`: imports start `true`, generated keys `false`, and a
   successful `nostr.exportKey` marks the record — surface the flag so users actually back up.
   `ncryptsec` always carries NIP-49 key-security byte `0x02` and its scrypt `logN` is capped

@@ -24,7 +24,7 @@ import type {
   BitcoinSigHash,
   PreparedBitcoinPsbt,
 } from "../requests/types.ts";
-import { accountPath, broadcastPsbt, fetchRawTxes } from "../transactions/bitcoin.ts";
+import { accountPath, fetchRawTxes } from "../transactions/bitcoin.ts";
 import type { SignResult } from "../transactions/route.ts";
 import { scanChain, scriptPubKey } from "./bitcoin-scan.ts";
 import type { Esplora } from "./bitcoin.ts";
@@ -82,6 +82,7 @@ export const prepareDappPsbts = async (
   group: BitcoinGroup,
   network: string,
   psbts: ReadonlyArray<BitcoinPsbtInput>,
+  frozen: ReadonlySet<string>,
 ): Promise<ReadonlyArray<PreparedBitcoinPsbt>> => {
   const net = bitcoinNetwork(network);
   const signing = new Set(psbts.flatMap((p) => p.sign.map((s) => s.template)));
@@ -161,6 +162,7 @@ export const prepareDappPsbts = async (
         value: number;
         sigHash: BitcoinSigHash;
         template: BitcoinAccount["template"];
+        frozen: boolean;
       }> = [];
       // Validate every sign entry first; the previous transactions are then fetched in one call.
       const signed = entry.sign.map(({ index, sigHash, template }) => {
@@ -220,7 +222,13 @@ export const prepareDappPsbts = async (
           },
           true,
         );
-        inputs.push({ index, value: Number(prev.amount), sigHash, template });
+        inputs.push({
+          index,
+          value: Number(prev.amount),
+          sigHash,
+          template,
+          frozen: frozen.has(`${txidHex}:${String(vout)}`),
+        });
       }
       // Outputs to the group's own scripts are bound as change: the kernel prompt and the
       // engine display agree they are not outflows.
@@ -261,11 +269,11 @@ export const prepareDappPsbts = async (
  */
 export const signDappPsbts = async (
   apis: Pick<ChainsApi, "sign">,
-  es: Pick<Esplora, "post">,
   prepared: ReadonlyArray<PreparedBitcoinPsbt>,
   send: boolean,
   verify: Parameters<ChainsApi["sign"]>[0]["verify"],
   commit: () => void,
+  broadcast: (prepared: PreparedBitcoinPsbt, result: SignResult) => Promise<string>,
 ): Promise<{ signedPsbts: Uint8Array[]; txids: string[] }> => {
   const results: SignResult[] = [];
   for (const { request } of prepared) {
@@ -293,9 +301,13 @@ export const signDappPsbts = async (
   }
   commit();
   const txids: string[] = [];
-  for (const result of results) {
+  for (const [n, result] of results.entries()) {
+    const entry = prepared[n];
+    if (entry === undefined) {
+      throw new Error("sign result without its prepared PSBT");
+    }
     // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per PSBT.
-    txids.push(await broadcastPsbt(es, result));
+    txids.push(await broadcast(entry, result));
   }
   return { signedPsbts, txids };
 };

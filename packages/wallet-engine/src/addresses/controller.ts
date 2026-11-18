@@ -85,20 +85,26 @@ export class AddressBookController extends Controller<AddressBookState> {
   }
 
   /**
-   * Merges records from another device (last writer wins, tombstones win over older entries).
-   * Returns whether anything local changed and whether the merged set holds something `remote`
-   * lacks, i.e. whether the remote copy needs a newer publish.
+   * Merges records from another device (last writer wins among records with the same identity,
+   * tombstones are terminal, records stamped past the clock bound or rewriting a local identity are
+   * refused). Returns whether anything local changed and whether the merged set holds something
+   * `remote` lacks, i.e. whether the remote copy needs a newer publish.
    */
   async merge(
     remote: ReadonlyArray<AddressBookRecord>,
   ): Promise<{ readonly changed: boolean; readonly localNewer: boolean }> {
     const store = this.requireStore();
     const before = JSON.stringify(this.syncEntries());
-    const { records: merged, droppedLive } = mergeWithReport(
-      this.syncEntries(),
-      remote,
-      this.options.now(),
-    );
+    const {
+      records: merged,
+      droppedLive,
+      refused,
+    } = mergeWithReport(this.syncEntries(), remote, this.options.now());
+    if (refused > 0) {
+      this.options.logger.warn(
+        `address book sync: ${refused} remote records refused (future timestamp or changed address)`,
+      );
+    }
     if (droppedLive > 0) {
       this.options.logger.warn(
         `address book sync: ${droppedLive} contacts dropped, over the ${ADDRESS_BOOK_LIMIT}-record cap`,
@@ -182,7 +188,11 @@ export class AddressBookController extends Controller<AddressBookState> {
     if (cleaned === undefined) {
       throw new AddressBookError("invalid-input", `name must be 1 to ${NAME_MAX} characters`);
     }
-    const entry: AddressBookEntry = { ...existing, name: cleaned, updatedAt: this.options.now() };
+    const entry: AddressBookEntry = {
+      ...existing,
+      name: cleaned,
+      updatedAt: this.editStamp(existing),
+    };
     await this.persist(store, entry);
     return entry;
   }
@@ -196,7 +206,7 @@ export class AddressBookController extends Controller<AddressBookState> {
     const entry: AddressBookEntry = {
       ...rest,
       ...(cleaned === undefined ? {} : { note: cleaned }),
-      updatedAt: this.options.now(),
+      updatedAt: this.editStamp(existing),
     };
     await this.persist(store, entry);
     return entry;
@@ -205,8 +215,13 @@ export class AddressBookController extends Controller<AddressBookState> {
   /** Removes the entry, leaving a tombstone so other devices drop it too. */
   async remove(id: string): Promise<void> {
     const store = this.requireStore();
-    this.requireEntry(id);
-    await this.persist(store, { id, deleted: true, updatedAt: this.options.now() });
+    const existing = this.requireEntry(id);
+    await this.persist(store, { id, deleted: true, updatedAt: this.editStamp(existing) });
+  }
+
+  /** An edit always stamps above the record it replaces, so it outranks a newer remote copy. */
+  private editStamp(existing: AddressBookRecord): number {
+    return Math.max(this.options.now(), existing.updatedAt + 1);
   }
 
   private checkedNote(note: string | undefined): string | undefined {

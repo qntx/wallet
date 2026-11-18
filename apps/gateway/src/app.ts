@@ -11,9 +11,13 @@ import { rateLimit } from "./middleware/rate-limit.ts";
 import type { RateLimitVariables } from "./middleware/rate-limit.ts";
 import { requestLog } from "./middleware/request-log.ts";
 import { createForwarder } from "./providers/forward.ts";
+import { coingeckoSource } from "./providers/prices-coingecko.ts";
+import { defillamaSource } from "./providers/prices-defillama.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { historyRoutes } from "./routes/history.ts";
 import { networksRoutes } from "./routes/networks.ts";
+import { pricesRoutes } from "./routes/prices.ts";
 import { quotesRoutes } from "./routes/quotes.ts";
 import { riskRoutes } from "./routes/risk.ts";
 import { rpcRoutes } from "./routes/rpc.ts";
@@ -47,6 +51,7 @@ export function createGateway(
   app.route("/", healthRoutes);
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
+  app.route("/", historyRoutes({ ...deps, log }));
   app.route("/", esploraRoutes(deps));
   app.route(
     "/",
@@ -58,6 +63,22 @@ export function createGateway(
     }),
   );
   app.route("/", riskRoutes(options.risk));
+  app.route(
+    "/",
+    pricesRoutes({
+      fetch: options.fetch,
+      forwarder,
+      cache: options.prices.cache,
+      sources: [
+        ...(options.prices.coingecko === undefined
+          ? []
+          : [coingeckoSource(options.prices.coingecko.apiKey)]),
+        defillamaSource,
+      ],
+      now: options.now ?? (() => Date.now()),
+      log,
+    }),
+  );
   app.onError(mapError(log));
   app.notFound(notFound);
   return app;

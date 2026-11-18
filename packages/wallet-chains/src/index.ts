@@ -138,6 +138,18 @@ export type EvmTransaction =
 
 export type Verifiability = "full" | "partial" | "opaque";
 
+/** Why a request is blind: the signer can neither show it nor bound what it authorises. */
+export type BlindReason =
+  | "message-bytes" // message bytes that are not UTF-8 text (EVM personal_sign, Solana signMessage)
+  | "typed-data-oversize" // unrecognised EIP-712 that cannot be shown in full
+  | "token-function" // an unrecognised function of a built-in-table token
+  | "account-code" // calldata to the signing account itself (its own, possibly delegated, code)
+  | "safe-delegatecall" // a Safe delegatecall to anything but canonical MultiSendCallOnly entries
+  | "safe-refund-unbounded"; // a SafeTx with gasPrice > 0: the refund total depends on executor gas
+
+/** One leaf of an unrecognised typed-data document, as a display line. */
+export type TypedDataLeaf = { readonly path: string; readonly value: string };
+
 export type IntentSummary =
   | "transfer"
   | "approve"
@@ -314,6 +326,11 @@ export type MessageContent =
       readonly seaport?: SeaportOrder;
       /** A recognized Safe transaction; only the exact `SafeTx` shape populates it. */
       readonly safe?: SafeTransaction;
+      /**
+       * Every leaf of an unrecognised document that fits the display budget; absent for a
+       * recognized shape and for one too large to show in full.
+       */
+      readonly fields?: ReadonlyArray<TypedDataLeaf>;
     };
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
@@ -383,35 +400,34 @@ export type DisplayIntent = {
   /** The decoded inner calls of a recognized ERC-7821 batch execute. */
   readonly calls?: ReadonlyArray<DisplayIntent>;
   /** The contract an EVM call with calldata runs: the callee, or the address a creation deploys. */
-  readonly contract?: { readonly address: string; readonly created: boolean };
+  readonly contract?: {
+    readonly address: string;
+    readonly created: boolean;
+    /** `data`'s first four bytes (all of it when shorter); absent on a creation. */
+    readonly selector?: string;
+    /** The built-in token table's symbol, when the callee is a listed token. */
+    readonly symbol?: string;
+  };
+  /**
+   * Solana only: the program ids of instructions the decoder does not recognise, de-duplicated in
+   * first-appearance order; present iff non-empty (so iff a Solana transaction is `opaque`).
+   */
+  readonly programs?: ReadonlyArray<string>;
+  /** Why the request is blind — the signer can neither show it nor bound what it authorises. */
+  readonly blind?: BlindReason;
 };
 
 /**
- * A request whose content the signer cannot show, or whose outflow cannot be bounded from what is
- * signed: raw bytes, typed data of no recognised shape, a transaction whose effects it cannot
- * verify, or a recognised Safe with an opaque call or a gas refund (its total depends on gas the
- * executor chooses). Text, sign-in messages and fully recognised typed data are shown in full and
- * are never blind.
+ * A request is blind exactly when the decoder set `blind` — the signer can neither show its content
+ * nor bound what it authorises. A request the decoder can describe but not verify (an `opaque`
+ * call, an unrecognised but fully listed typed-data document) is not blind.
  */
-export const isBlindIntent = (
-  intent: Pick<DisplayIntent, "verifiability" | "message">,
-): boolean => {
-  const { message } = intent;
-  if (message === undefined) {
-    return intent.verifiability === "opaque";
-  }
-  if (message.kind !== "typed-data") {
-    return message.kind === "bytes";
-  }
-  if (intent.verifiability !== "opaque" || message.seaport !== undefined) {
-    return false;
-  }
-  return (
-    message.safe === undefined ||
-    message.safe.refund !== undefined ||
-    message.safe.calls.some((call) => call.verifiability === "opaque")
-  );
-};
+export const isBlindIntent = (intent: Pick<DisplayIntent, "blind">): boolean =>
+  intent.blind !== undefined;
+
+/** Raw bytes are the one message content no prompt can show. */
+export const messageBlindReason = (message: MessageContent): BlindReason | undefined =>
+  message.kind === "bytes" ? "message-bytes" : undefined;
 
 export type ChainErrorCode =
   | "unknown-field"

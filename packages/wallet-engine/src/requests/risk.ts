@@ -47,6 +47,7 @@ export type RiskFinding = {
     | "safe-gas-refund"
     | "bitcoin-sighash-single"
     | "bitcoin-inscription-input"
+    | "bitcoin-frozen-input"
     | "stake-authority"
     | "blind-signing";
   readonly level: "warning" | "danger";
@@ -192,11 +193,16 @@ export function assessBitcoinPsbts(
     readonly value: number;
     readonly template: "btc.bip84" | "btc.bip86";
     readonly sigHash: "ALL" | "SINGLE|ANYONECANPAY";
+    readonly frozen: boolean;
   }>,
 ): ReadonlyArray<RiskFinding> {
   const found = new Map<RiskFinding["code"], RiskFinding>();
   if (inputs.some((i) => i.sigHash === "SINGLE|ANYONECANPAY")) {
     found.set("bitcoin-sighash-single", { code: "bitcoin-sighash-single", level: "danger" });
+  }
+  if (inputs.some((i) => i.frozen)) {
+    // The user froze this outpoint — the dApp is asking to spend it anyway.
+    found.set("bitcoin-frozen-input", { code: "bitcoin-frozen-input", level: "danger" });
   }
   const postage = inputs.filter((i) => mayCarryInscription(i.template === "btc.bip86", i.value));
   if (postage.length > 0) {

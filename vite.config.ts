@@ -207,6 +207,19 @@ const nostrModuleBoundary: ImportRestriction = {
   ],
 };
 
+// Fiat prices are display-only: nothing that builds, approves or signs a transaction may read
+// them. Only the engine's composition root (src/*.ts) imports src/prices; every subdirectory —
+// transactions, requests, connect, chains, swaps and the rest — is refused it.
+const pricesDisplayOnly: ImportRestriction = {
+  patterns: [
+    {
+      group: ["../prices", "../prices/**", "../../prices", "../../prices/**"],
+      message:
+        "prices are display-only — only the engine composition root (src/*.ts) may import src/prices",
+    },
+  ],
+};
+
 // The gateway is a deployable app, not a library: its only workspace dependency
 // is the engine's gateway contract, never engine runtime code or any other
 // package.
@@ -315,6 +328,12 @@ const BOUNDARIES: Zone[] = [
         // the protocol layer.
         files: ["packages/wallet-engine/src/**"],
         imports: [kernelPackage, backendPackages, sparkSignerTypes],
+        within: [
+          {
+            files: ["packages/wallet-engine/src/*/**"],
+            imports: [pricesDisplayOnly],
+          },
+        ],
       },
       {
         // @qntx/wallet composes the kernel but never imports it — hosts load

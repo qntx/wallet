@@ -1,14 +1,21 @@
+import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
-import { encodeSparkAddress, SparkInputError, SparkRequestError } from "@qntx/spark";
+import {
+  encodeSparkAddress,
+  encodeTokenIdentifier,
+  SparkInputError,
+  SparkRequestError,
+  SparkTokenBroadcastError,
+} from "@qntx/spark";
 import type { SparkClient, SparkEvent, SparkExitChain } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { createWalletEngine } from "../src/engine.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { PHISHING_REFRESH_MS } from "../src/phishing/controller.ts";
-import { SparkController } from "../src/spark/controller.ts";
+import { SparkController, sparkTransferId } from "../src/spark/controller.ts";
 import { SparkControllerError } from "../src/spark/errors.ts";
 import { decodeExitChain, encodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { encodePaymentNote } from "../src/spark/notes.ts";
@@ -22,6 +29,8 @@ const PK = new Uint8Array(33).fill(2);
 const REF: SparkAccountRef = { walletId: "w1", groupIndex: 0, network: "regtest" };
 const VERIFY = { kind: "password", password: new Uint8Array([1]) } as never;
 const LOGGER: EngineLogger = { warn: () => {} };
+/** A UUIDv7 — the shape a prepared request's `sparkTransferId` takes. */
+const TID = "01936f00-1111-7111-8111-111111111111";
 
 function warnText(m: string, e: unknown): string {
   return `${m} ${e instanceof Error ? e.message : String(e ?? "")}`;
@@ -48,6 +57,15 @@ type FakeClaimOptions = {
   readonly streams?: ReadonlyArray<() => AsyncGenerator<SparkEvent>>;
   /** `transfers.history` pages returned in order — a rejected promise exercises the warn path. */
   readonly historyPages?: ReadonlyArray<unknown>;
+  /** `tokens.balances` results in order — an Error rejects that read, exercising the warn path. */
+  readonly tokenPages?: ReadonlyArray<unknown>;
+  /** `tokens.transfer` results in order — an Error rejects that attempt, a string returns it. */
+  readonly tokenResults?: ReadonlyArray<unknown>;
+  /** Records each `tokens.transfer` argument. */
+  readonly tokenArgs?: unknown[];
+  readonly setTimer?: (ms: number, fn: () => void) => () => void;
+  /** Fee every speed quotes for an exit amount — exercises quote convergence. */
+  readonly quoteFee?: (amountSats: number) => number;
 };
 
 function fakeClient(
@@ -60,7 +78,10 @@ function fakeClient(
   const claimErrors = [...(opts.claimErrors ?? [])];
   const claimPendingFailures = [...(opts.claimPendingFailures ?? [])];
   const historyPages = [...(opts.historyPages ?? [])];
+  const tokenPages = [...(opts.tokenPages ?? [])];
+  const tokenResults = [...(opts.tokenResults ?? [])];
   let lastPage: unknown;
+  let lastTokenPage: unknown;
   let streamCalls = 0;
   const client = {
     identityPublicKey: async () => Promise.resolve(PK),
@@ -107,8 +128,35 @@ function fakeClient(
         return Promise.resolve(o);
       },
     },
+    tokens: {
+      balances: async () => {
+        calls.push("tokenBalances");
+        const page = tokenPages.shift() ?? lastTokenPage ?? [];
+        if (page instanceof Error) {
+          return Promise.reject(page);
+        }
+        lastTokenPage = page;
+        return Promise.resolve(page);
+      },
+      transfer: async (o: unknown) => {
+        calls.push("tokenTransfer");
+        opts.tokenArgs?.push(o);
+        const result = tokenResults.shift() ?? "tok-hash";
+        if (result instanceof Error) {
+          return Promise.reject(result);
+        }
+        return Promise.resolve(result);
+      },
+    },
     withdrawals: {
-      quoteCooperativeExit: async () => Promise.resolve({ fees: { fast: 5, medium: 3, slow: 1 } }),
+      quoteCooperativeExit: async (o: unknown) => {
+        const quoted = opts.quoteFee?.((o as { amountSats: number }).amountSats);
+        return Promise.resolve(
+          quoted === undefined
+            ? { fees: { fast: 5, medium: 3, slow: 1 } }
+            : { fees: { fast: quoted, medium: quoted, slow: quoted } },
+        );
+      },
       cooperativeExit: async (o: unknown) => {
         calls.push("exit");
         return Promise.resolve(o);
@@ -142,11 +190,12 @@ function fakeClient(
   return { client: client as unknown as SparkClient, aborters, sendArgs };
 }
 
-function controller(calls: string[], approvals: unknown[]) {
+function controller(calls: string[], approvals: unknown[], opts: FakeClaimOptions = {}) {
   const sendArgs: unknown[] = [];
-  const { client, aborters } = fakeClient(calls, sendArgs);
+  const tokenArgs: unknown[] = [];
+  const { client, aborters } = fakeClient(calls, sendArgs, [], { ...opts, tokenArgs });
   const c = new SparkController({
-    setTimer: realTimer,
+    setTimer: opts.setTimer ?? realTimer,
     spark: {
       signer: () => null as never,
       approve: async (p: unknown) => {
@@ -155,12 +204,11 @@ function controller(calls: string[], approvals: unknown[]) {
       },
     },
     fetch: async () => Promise.reject(new Error("no fetch")),
-    random: (n) => new Uint8Array(n).fill(1),
     now: () => 0,
     logger: LOGGER,
     createClient: () => client,
   });
-  return { c, client, aborters, sendArgs };
+  return { c, client, aborters, sendArgs, tokenArgs };
 }
 
 describe("lightning-address registration errors", () => {
@@ -182,7 +230,6 @@ describe("lightning-address registration errors", () => {
       setTimer: realTimer,
       spark: { signer: () => SIGNER as never, approve: async () => Promise.resolve({}) },
       fetch: fetch as never,
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: LOGGER,
       createClient: () => client,
@@ -216,7 +263,6 @@ describe("lightning-address registration errors", () => {
         approve: async () => Promise.resolve({}),
       },
       fetch: async () => Promise.reject(new Error("no fetch")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: LOGGER,
       createClient: () => client,
@@ -248,14 +294,18 @@ describe("SparkController", () => {
     c.setStore(store);
     await c.init();
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
+    await c.send(REF, {
+      receiver,
+      amountSats: 10,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
     expect(approvals).toHaveLength(1);
     expect(calls.filter((x) => x === "claimPending").length).toBeGreaterThan(0);
     expect(calls).toContain("send");
-    // transferId is a UUIDv7 minted from the injected random+now.
-    expect((sendArgs[0] as { transferId?: string }).transferId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
-    );
+    // The caller's idempotent transfer id reaches the client untouched.
+    expect((sendArgs[0] as { transferId?: string }).transferId).toBe(TID);
     const state = c.getState().accounts["w1:0:regtest"];
     expect(state?.status).toBe("ready");
     expect(state?.balanceSats).toBe(42);
@@ -291,18 +341,241 @@ describe("send network check", () => {
     // PK on mainnet — ref is regtest.
     const wrongNet = encodeSparkAddress({ network: "mainnet", identityPublicKey: PK });
     await expect(
-      c.send(REF, { receiver: wrongNet, amountSats: 10, verify: VERIFY, commit: () => undefined }),
+      c.send(REF, {
+        receiver: wrongNet,
+        amountSats: 10,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
     expect(approvals).toHaveLength(0);
     await c.destroy();
   });
 });
 
-describe("withdraw approval intent", () => {
+const EXIT_ADDRESS = "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz";
+
+/** Raw 32-byte token identifier and its regtest/mainnet bech32m encodings. */
+const TOKEN_RAW = new Uint8Array(32).fill(9);
+const BTKN = encodeTokenIdentifier(TOKEN_RAW, "regtest");
+const BTKN_MAINNET = encodeTokenIdentifier(TOKEN_RAW, "mainnet");
+const RECEIVER_PK = secp256k1.getPublicKey(new Uint8Array(32).fill(7), true);
+const RECEIVER = encodeSparkAddress({ network: "regtest", identityPublicKey: RECEIVER_PK });
+const RECEIVER_MAINNET = encodeSparkAddress({
+  network: "mainnet",
+  identityPublicKey: RECEIVER_PK,
+});
+
+describe("Spark token balances", () => {
+  it("the resync pass after start fills the token list", async () => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], {
+      tokenPages: [[{ tokenIdentifier: BTKN, amount: 1234n, outputCount: 2 }]],
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    const state = await until(
+      () => c.getState().accounts["w1:0:regtest"],
+      (s) => s?.tokens !== undefined,
+    );
+    expect(state?.tokens).toStrictEqual([
+      { tokenIdentifier: BTKN, amount: "1234", outputCount: 2 },
+    ]);
+    await c.destroy();
+  });
+
+  it("a handled transfer event refreshes the token list", async () => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], {
+      tokenPages: [
+        [{ tokenIdentifier: BTKN, amount: 10n, outputCount: 1 }],
+        [{ tokenIdentifier: BTKN, amount: 25n, outputCount: 3 }],
+      ],
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    const state = await until(
+      () => c.getState().accounts["w1:0:regtest"],
+      (s) => s?.tokens?.[0]?.amount === "25",
+    );
+    expect(state?.tokens).toStrictEqual([{ tokenIdentifier: BTKN, amount: "25", outputCount: 3 }]);
+    await c.destroy();
+  });
+
+  it("a failed balances read keeps the previous list and never touches status", async () => {
+    const calls: string[] = [];
+    const { c } = controller(calls, [], {
+      tokenPages: [
+        [{ tokenIdentifier: BTKN, amount: 10n, outputCount: 1 }],
+        new Error("token read down"),
+      ],
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    await until(
+      () => c.getState().accounts["w1:0:regtest"],
+      (s) => s?.tokens !== undefined,
+    );
+    // The default stream's transfer event drives a second (failing) read.
+    await until(
+      () => calls.filter((x) => x === "tokenBalances").length,
+      (n) => n >= 2,
+    );
+    const state = c.getState().accounts["w1:0:regtest"];
+    expect(state?.tokens).toStrictEqual([{ tokenIdentifier: BTKN, amount: "10", outputCount: 1 }]);
+    expect(state?.status).toBe("ready");
+    expect(state?.errorCategory).toBeUndefined();
+    await c.destroy();
+  });
+});
+
+describe("SparkController.sendToken", () => {
+  const boot = async (opts: Parameters<typeof controller>[2] = {}) => {
+    const calls: string[] = [];
+    const approvals: Array<{ intent?: unknown }> = [];
+    const { c, tokenArgs } = controller(calls, approvals, { setTimer: fastTimer, ...opts });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    await c.init();
+    return { calls, approvals, c, tokenArgs };
+  };
+
+  it("approves the raw identifier and receiver identity, then transfers", async () => {
+    const { approvals, c, tokenArgs } = await boot({ tokenResults: ["tx-hash-1"] });
+    let committed = false;
+    const hash = await c.sendToken(REF, {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 123n,
+      verify: VERIFY,
+      commit: () => {
+        committed = true;
+      },
+    });
+    expect(hash).toBe("tx-hash-1");
+    expect(committed).toBe(true);
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]?.intent).toStrictEqual({
+      kind: "token",
+      tokenIdentifier: TOKEN_RAW,
+      receivers: [{ ownerPublicKey: RECEIVER_PK, amount: "123" }],
+    });
+    expect(tokenArgs).toStrictEqual([{ tokenIdentifier: BTKN, amount: 123n, receiver: RECEIVER }]);
+    await c.destroy();
+  });
+
+  it.each([
+    ["a wrong-network receiver", { receiver: RECEIVER_MAINNET }],
+    ["a wrong-network identifier", { tokenIdentifier: BTKN_MAINNET }],
+    ["a malformed identifier", { tokenIdentifier: "not-a-token-id" }],
+    ["a zero amount", { amount: 0n }],
+    ["an amount above u128", { amount: 340282366920938463463374607431768211456n }],
+  ])("rejects %s before approving", async (_name, override) => {
+    const { approvals, calls, c } = await boot();
+    const params = {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      verify: VERIFY,
+      commit: () => undefined,
+      ...override,
+    };
+    await expect(c.sendToken(REF, params)).rejects.toSatisfy(
+      (e) => (e as { category?: string }).category === "rejected",
+    );
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("tokenTransfer");
+    await c.destroy();
+  });
+
+  it("a lost broadcast retries under its input output ids with one approval", async () => {
+    const broadcastLost = new SparkTokenBroadcastError("lost", {
+      inputOutputIds: ["a:0", "b:1"],
+    });
+    const { approvals, calls, c, tokenArgs } = await boot({
+      tokenResults: [broadcastLost, "tx-hash-2"],
+    });
+    const hash = await c.sendToken(REF, {
+      receiver: RECEIVER,
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
+    expect(hash).toBe("tx-hash-2");
+    expect(approvals).toHaveLength(1);
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(2);
+    expect(tokenArgs[1]).toStrictEqual({
+      tokenIdentifier: BTKN,
+      amount: 5n,
+      receiver: RECEIVER,
+      inputOutputIds: ["a:0", "b:1"],
+    });
+    await c.destroy();
+  });
+
+  it("exhausted broadcast retries report unknown and carry the input output ids", async () => {
+    const broadcastLost = () =>
+      new SparkTokenBroadcastError("lost", { inputOutputIds: ["a:0", "b:1"] });
+    const { calls, c } = await boot({
+      tokenResults: [broadcastLost(), broadcastLost(), broadcastLost(), broadcastLost()],
+    });
+    const failure = await c
+      .sendToken(REF, {
+        receiver: RECEIVER,
+        tokenIdentifier: BTKN,
+        amount: 5n,
+        verify: VERIFY,
+        commit: () => undefined,
+      })
+      .then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    const sparkError = failure as SparkControllerError;
+    expect(sparkError.category).toBe("unknown");
+    expect(sparkError.message).toBe("token transfer outcome unknown");
+    expect(sparkError.inputOutputIds).toStrictEqual(["a:0", "b:1"]);
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(4);
+    await c.destroy();
+  });
+
+  it.each([
+    ["a plain network error", new SparkRequestError("net down")],
+    ["a definite refusal", new SparkInputError("bad input")],
+  ])("does not retry %s — uncertainty is only SparkTokenBroadcastError", async (_name, error) => {
+    const { calls, c } = await boot({ tokenResults: [error] });
+    await expect(
+      c.sendToken(REF, {
+        receiver: RECEIVER,
+        tokenIdentifier: BTKN,
+        amount: 5n,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
+    ).rejects.toBeInstanceOf(SparkControllerError);
+    expect(calls.filter((x) => x === "tokenTransfer")).toHaveLength(1);
+    await c.destroy();
+  });
+});
+
+/** A quote that grows once then settles: f(100000) = 500, f(100500) = 600, f(100600) = 600. */
+const growOnce = (amountSats: number): number => (amountSats <= 100_000 ? 500 : 600);
+
+describe("cooperative exit quoting", () => {
   const approval = (approvals: unknown[]) => approvals[0] as { intent: unknown };
 
-  async function setup(calls: string[], approvals: unknown[]) {
-    const { c, client } = controller(calls, approvals);
+  async function setup(
+    calls: string[],
+    approvals: unknown[],
+    quoteFee?: (amountSats: number) => number,
+  ) {
+    const { c, client } = controller(calls, approvals, quoteFee === undefined ? {} : { quoteFee });
     const store = createMemoryEngineStore();
     c.setAccounts([REF]);
     c.setStore(store);
@@ -310,58 +583,130 @@ describe("withdraw approval intent", () => {
     return { c, client };
   }
 
-  it("explicit amount: payout intent is exit - quoted fee", async () => {
+  it("quotes the converged fee and the gross exit amount", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals, growOnce);
+    // Requotes 100500 then 100600: the fee settles at 600.
+    await expect(
+      c.quoteExit(REF, { address: EXIT_ADDRESS, amountSats: 100_000, speed: "FAST" }),
+    ).resolves.toStrictEqual({ feeSats: 600, exitSats: 100_600 });
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("exit");
+    await c.destroy();
+  });
+
+  it("rejects a quote that never settles", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals, (amount) => amount);
+    await expect(
+      c.quoteExit(REF, { address: EXIT_ADDRESS, amountSats: 1000, speed: "FAST" }),
+    ).rejects.toMatchObject({
+      category: "rejected",
+      message: expect.stringContaining("settle"),
+    });
+    await c.destroy();
+  });
+
+  it("rejects an address on the wrong network before quoting", async () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
-    await c.withdraw(REF, {
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+    await expect(
+      c.quoteExit(REF, {
+        address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        amountSats: 1000,
+        speed: "FAST",
+      }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
+    await c.destroy();
+  });
+
+  it("exits amountSats + the settled fee so amountSats arrives", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    const exit = await c.withdraw(REF, {
+      address: EXIT_ADDRESS,
       amountSats: 1000,
       speed: "FAST",
+      maxFeeSats: 10,
+      transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
     });
-    // fast fee = 5, payout = 995
+    // fast fee 5: the exit debits 1005 of leaves and the receiver gets 1000.
+    expect(exit).toMatchObject({
+      address: EXIT_ADDRESS,
+      speed: "FAST",
+      amountSats: 1005,
+      maxFeeSats: 5,
+      transferId: TID,
+    });
     expect(approval(approvals).intent).toStrictEqual({
       kind: "exit",
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-      amountSats: 995,
+      address: EXIT_ADDRESS,
+      amountSats: 1000,
       maxFeeSats: 5,
     });
-    expect(calls).toContain("exit");
     await c.destroy();
   });
 
-  it("whole-balance: defaults amount to the balance minus fee", async () => {
-    const calls: string[] = [];
-    const approvals: unknown[] = [];
-    const { c } = await setup(calls, approvals);
-    await c.withdraw(REF, {
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-      speed: "SLOW",
-      verify: VERIFY,
-      commit: () => undefined,
-    });
-    // balance 42, slow fee 1, payout 41
-    expect(approval(approvals).intent).toStrictEqual({
-      kind: "exit",
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-      amountSats: 41,
-      maxFeeSats: 1,
-    });
-    await c.destroy();
-  });
-
-  it("rejects a caller cap below the quote without approving", async () => {
+  it("rejects a settled fee above the caller cap before approving", async () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
     await expect(
       c.withdraw(REF, {
-        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+        address: EXIT_ADDRESS,
         amountSats: 1000,
         speed: "FAST",
         maxFeeSats: 2,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
+    ).rejects.toMatchObject({
+      category: "rejected",
+      message: expect.stringContaining("maxFeeSats"),
+    });
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("exit");
+    await c.destroy();
+  });
+
+  it("rejects a fee at or above the amount that arrives", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    await expect(
+      c.withdraw(REF, {
+        address: EXIT_ADDRESS,
+        amountSats: 5,
+        speed: "FAST",
+        maxFeeSats: 10,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
+    expect(approvals).toHaveLength(0);
+    await c.destroy();
+  });
+
+  it("rejects a requote that grows past the cap before approving", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    // The first quote (500) is inside the cap, but the settled 600 exceeds it.
+    const { c } = await setup(calls, approvals, growOnce);
+    await expect(
+      c.withdraw(REF, {
+        address: EXIT_ADDRESS,
+        amountSats: 100_000,
+        speed: "FAST",
+        maxFeeSats: 550,
+        transferId: TID,
         verify: VERIFY,
         commit: () => undefined,
       }),
@@ -370,29 +715,32 @@ describe("withdraw approval intent", () => {
     expect(calls).not.toContain("exit");
     await c.destroy();
   });
-
-  it("rejects a fee at or above the exit amount", async () => {
-    const calls: string[] = [];
-    const approvals: unknown[] = [];
-    const { c } = await setup(calls, approvals);
-    await expect(
-      c.withdraw(REF, {
-        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-        amountSats: 5,
-        speed: "FAST",
-        verify: VERIFY,
-        commit: () => undefined,
-      }),
-    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
-    expect(approvals).toHaveLength(0);
-    await c.destroy();
-  });
 });
 
 async function gateOpenStore(failures: number): Promise<EngineStore> {
   return failures > 0
     ? Promise.reject(new Error("open failed"))
     : Promise.resolve(createMemoryEngineStore());
+}
+
+/** The first store returned rejects every `list` — a transient IDB failure mid-start. */
+function listFailsOnce(): () => Promise<EngineStore> {
+  let dropped = false;
+  return async () => {
+    const inner = createMemoryEngineStore();
+    if (dropped) {
+      return Promise.resolve(inner);
+    }
+    dropped = true;
+    const base = inner.collection.bind(inner);
+    return Promise.resolve({
+      close: inner.close,
+      collection: (name) => {
+        const col = base(name);
+        return { ...col, list: async () => Promise.reject(new Error("idb list failed")) };
+      },
+    });
+  };
 }
 
 function flakyClient(calls: string[], sendArgs: unknown[], aborters: Array<{ aborted: boolean }>) {
@@ -500,7 +848,6 @@ describe("event stream resilience", () => {
         },
       },
       fetch: async () => Promise.reject(new Error("no fetch")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: { warn: (m, e) => warns.push(warnText(m, e)) },
       createClient: () => client,
@@ -539,7 +886,6 @@ describe("event claims", () => {
         approve: async () => Promise.resolve({}),
       },
       fetch: async () => Promise.reject(new Error("no fetch")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: { warn: (m, e) => warns.push(warnText(m, e)) },
       createClient: () => client,
@@ -770,6 +1116,64 @@ describe("lock transition serialization", () => {
     expect(opens).toBeGreaterThan(openedAfterFailure);
     engine.unsubscribe();
   });
+
+  it("a failure mid-start tears down and the next status event retries", async () => {
+    const listeners = new Set<() => void>();
+    const w = {
+      // Unlocked at construction: the constructor's queued transition is the first start, so
+      // the transient store failure below is consumed by it rather than racing a later event.
+      vault: "unlocked",
+      getSnapshot() {
+        return { vault: w.vault, wallets: [], backup: null };
+      },
+      subscribe(l: () => void) {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
+      set(v: string) {
+        w.vault = v;
+        for (const l of listeners) {
+          l();
+        }
+      },
+    };
+    const warnings: string[] = [];
+    const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
+      verifyEvent,
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
+      wallet: w as never,
+      sparkNetwork: "regtest",
+      sparkApis: {
+        signer: () => null as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () => Promise.reject(new Error("nf")),
+      random: (n) => new Uint8Array(n),
+      now: () => 0,
+      logger: { warn: (m) => void warnings.push(m) },
+      showCallsStatus: () => undefined,
+      openStore: listFailsOnce(),
+    });
+    // Torn down exactly like a lock: the store is closed and nothing stays started.
+    await vi.waitFor(
+      () => {
+        expect(warnings).toContain("engine start failed");
+        expect(engine.accounts.getState().status).toBe("locked");
+      },
+      { timeout: 10_000, interval: 10 },
+    );
+    w.set("locked");
+    w.set("unlocked");
+    await vi.waitFor(
+      () => {
+        expect(engine.accounts.getState().status).toBe("ready");
+      },
+      { timeout: 10_000, interval: 10 },
+    );
+    engine.unsubscribe();
+  });
 });
 
 describe("createWalletEngine lifecycle", () => {
@@ -846,7 +1250,6 @@ describe("history and notes", () => {
         },
       },
       fetch: async () => Promise.reject(new Error("no fetch")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: { warn: (m, e) => warns.push(warnText(m, e)) },
       createClient: () => client,
@@ -899,7 +1302,13 @@ describe("history and notes", () => {
     const { c, calls } = await started();
     expect(c.getState().accounts[K]?.recent?.[0]).toMatchObject({ id: "t1" });
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
+    await c.send(REF, {
+      receiver,
+      amountSats: 10,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
     expect(calls).toContain("send");
     // The refresh is fire-and-forget — it runs after send returns.
     await until(
@@ -917,7 +1326,13 @@ describe("history and notes", () => {
     ]);
     expect(c.getState().accounts[K]?.recent).toHaveLength(1);
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
-    await c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: () => undefined });
+    await c.send(REF, {
+      receiver,
+      amountSats: 10,
+      transferId: TID,
+      verify: VERIFY,
+      commit: () => undefined,
+    });
     // The failing refresh lands after send returns — status and the previous page survive.
     await until(
       () => c.getState().accounts[K]?.recent,
@@ -933,6 +1348,7 @@ describe("history and notes", () => {
     const payment = (await c.payInvoice(REF, {
       invoice: "lnbcrt1",
       maxFeeSats: 5,
+      transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
       note: NOTE,
@@ -959,6 +1375,7 @@ describe("history and notes", () => {
     const payment = (await c.payInvoice(REF, {
       invoice: "lnbcrt1",
       maxFeeSats: 5,
+      transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
       note: NOTE,
@@ -1003,7 +1420,6 @@ describe("history and notes", () => {
       setTimer: realTimer,
       spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
       fetch: async () => Promise.reject(new Error("x")),
-      random: (n) => new Uint8Array(n).fill(1),
       now: () => 0,
       logger: LOGGER,
       createClient: () => gated,
@@ -1015,6 +1431,7 @@ describe("history and notes", () => {
     const sendPromise = c.send(REF, {
       receiver,
       amountSats: 10,
+      transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
     });
@@ -1059,6 +1476,7 @@ describe("paySparkInvoice pre-approval checks", () => {
     await expect(
       c.paySparkInvoice(REF, {
         invoice: tokenInvoice,
+        transferId: TID,
         verify: VERIFY,
         commit: () => undefined,
       }),
@@ -1084,6 +1502,7 @@ describe("paySparkInvoice pre-approval checks", () => {
       c.paySparkInvoice(REF, {
         invoice: fixedInvoice,
         amountSats: 999,
+        transferId: TID,
         verify: VERIFY,
         commit: () => undefined,
       }),
@@ -1112,7 +1531,7 @@ describe("commit before the client send", () => {
     const { c } = await setup(calls, approvals);
     const receiver = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
     await expect(
-      c.send(REF, { receiver, amountSats: 10, verify: VERIFY, commit: gone }),
+      c.send(REF, { receiver, amountSats: 10, transferId: TID, verify: VERIFY, commit: gone }),
     ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
     expect(approvals).toHaveLength(1);
     expect(calls).not.toContain("send");
@@ -1127,6 +1546,7 @@ describe("commit before the client send", () => {
       c.payInvoice(REF, {
         invoice: "lnbc1fake",
         maxFeeSats: 5,
+        transferId: TID,
         verify: VERIFY,
         commit: gone,
       }),
@@ -1150,7 +1570,7 @@ describe("commit before the client send", () => {
       },
     });
     await expect(
-      c.paySparkInvoice(REF, { invoice, verify: VERIFY, commit: gone }),
+      c.paySparkInvoice(REF, { invoice, transferId: TID, verify: VERIFY, commit: gone }),
     ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
     expect(approvals).toHaveLength(1);
     expect(calls).not.toContain("invoicePay");
@@ -1166,12 +1586,215 @@ describe("commit before the client send", () => {
         address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
         amountSats: 1000,
         speed: "FAST",
+        maxFeeSats: 10,
+        transferId: TID,
         verify: VERIFY,
         commit: gone,
       }),
     ).rejects.toMatchObject({ cause: expect.objectContaining({ message: "gone" }) });
     expect(approvals).toHaveLength(1);
     expect(calls).not.toContain("exit");
+    await c.destroy();
+  });
+});
+
+describe("sparkTransferId", () => {
+  it("mints a UUIDv7 — deterministic for a request, distinct across requests", () => {
+    const id = sparkTransferId("req-a", 1_800_000_000_000);
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    expect(sparkTransferId("req-a", 1_800_000_000_000)).toBe(id);
+    expect(sparkTransferId("req-b", 1_800_000_000_000)).not.toBe(id);
+  });
+});
+
+describe("idempotent commits", () => {
+  const LOST = new SparkRequestError("response lost", { code: "unavailable" });
+  const P2TR = "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz";
+  const RECEIVER = encodeSparkAddress({ network: "regtest", identityPublicKey: PK });
+  const SATS_INVOICE = encodeSparkAddress({
+    network: "regtest",
+    identityPublicKey: PK,
+    invoice: {
+      version: 1,
+      id: "01936f00-0000-7000-8000-000000000001",
+      payment: { type: "sats", amount: 500 },
+    },
+  });
+
+  type Method = "send" | "pay" | "invoicePay" | "exit";
+
+  /** A client whose committing calls run a per-method script; its event stream parks forever. */
+  function retryRig(script: Partial<Record<Method, ReadonlyArray<Error | "ok">>>) {
+    const calls: Array<{ method: Method; params: unknown }> = [];
+    const waits: number[] = [];
+    const queues: Record<Method, Array<Error | "ok">> = {
+      send: [...(script.send ?? ["ok"])],
+      pay: [...(script.pay ?? ["ok"])],
+      invoicePay: [...(script.invoicePay ?? ["ok"])],
+      exit: [...(script.exit ?? ["ok"])],
+    };
+    const commit = async (method: Method, params: unknown): Promise<unknown> => {
+      calls.push({ method, params });
+      const outcome = queues[method].shift() ?? "ok";
+      return outcome === "ok" ? Promise.resolve(params) : Promise.reject(outcome);
+    };
+    const client = {
+      identityPublicKey: async () => Promise.resolve(PK),
+      balance: async () => Promise.resolve(42),
+      transfers: {
+        claimPending: async () => Promise.resolve({ leaves: [], failures: [] }),
+        claim: async () => Promise.resolve([]),
+        history: async () => Promise.resolve({ payments: [], nextOffset: undefined }),
+        send: async (o: unknown) => commit("send", o),
+      },
+      lightning: {
+        createInvoice: async (o: unknown) => Promise.resolve(o),
+        pay: async (o: unknown) => commit("pay", o),
+      },
+      invoices: {
+        pay: async (_invoice: unknown, o: unknown) => commit("invoicePay", o),
+      },
+      withdrawals: {
+        quoteCooperativeExit: async () =>
+          Promise.resolve({ fees: { fast: 5, medium: 3, slow: 1 } }),
+        cooperativeExit: async (o: unknown) => commit("exit", o),
+      },
+      // The stream never ends — the loop parks inside it and never takes a resubscribe backoff.
+      events: () =>
+        (async function* (): AsyncGenerator<SparkEvent> {
+          await new Promise(() => undefined);
+          yield* [];
+        })(),
+      close: () => undefined,
+    };
+    const approvals: unknown[] = [];
+    const c = new SparkController({
+      // Backoff sleeps resolve on the next microtask — the test never waits on the wall clock.
+      setTimer: (ms, fn) => {
+        waits.push(ms);
+        queueMicrotask(fn);
+        return () => undefined;
+      },
+      spark: {
+        signer: () => null as never,
+        approve: async (p: unknown) => {
+          approvals.push(p);
+          return Promise.resolve({});
+        },
+      },
+      fetch: async () => Promise.reject(new Error("no fetch")),
+      now: () => 0,
+      logger: LOGGER,
+      createClient: () => client as unknown as SparkClient,
+    });
+    c.setAccounts([REF]);
+    c.setStore(createMemoryEngineStore());
+    return { c, calls, waits, approvals };
+  }
+
+  const COMMITS: ReadonlyArray<{
+    readonly name: string;
+    readonly method: Method;
+    readonly run: (c: SparkController) => Promise<unknown>;
+  }> = [
+    {
+      name: "send",
+      method: "send",
+      run: async (c) =>
+        c.send(REF, {
+          receiver: RECEIVER,
+          amountSats: 10,
+          transferId: TID,
+          verify: VERIFY,
+          commit: () => undefined,
+        }),
+    },
+    {
+      name: "payInvoice",
+      method: "pay",
+      run: async (c) =>
+        c.payInvoice(REF, {
+          invoice: "lnbcrt1x",
+          maxFeeSats: 5,
+          transferId: TID,
+          verify: VERIFY,
+          commit: () => undefined,
+        }),
+    },
+    {
+      name: "paySparkInvoice",
+      method: "invoicePay",
+      run: async (c) =>
+        c.paySparkInvoice(REF, {
+          invoice: SATS_INVOICE,
+          transferId: TID,
+          verify: VERIFY,
+          commit: () => undefined,
+        }),
+    },
+    {
+      name: "withdraw",
+      method: "exit",
+      run: async (c) =>
+        c.withdraw(REF, {
+          address: P2TR,
+          amountSats: 1000,
+          speed: "FAST",
+          maxFeeSats: 10,
+          transferId: TID,
+          verify: VERIFY,
+          commit: () => undefined,
+        }),
+    },
+  ];
+
+  it.each(COMMITS)(
+    "$name retries a lost commit response under the same transfer id",
+    async ({ method, run }) => {
+      const { c, calls, waits, approvals } = retryRig({ [method]: [LOST] });
+      await c.init();
+      const result = await run(c);
+      const commits = calls.filter((x) => x.method === method);
+      // One approval, two identical commit attempts — the second resumes the same payment.
+      expect(commits).toHaveLength(2);
+      expect(commits[0]?.params).toMatchObject({ transferId: TID });
+      expect(commits[1]?.params).toStrictEqual(commits[0]?.params);
+      expect(result).toBe(commits[1]?.params);
+      expect(waits).toStrictEqual([1000]);
+      expect(approvals).toHaveLength(1);
+      await c.destroy();
+    },
+  );
+
+  it.each(COMMITS)(
+    "$name reports an unknown outcome after three retries",
+    async ({ method, run }) => {
+      const { c, calls, waits, approvals } = retryRig({ [method]: [LOST, LOST, LOST, LOST] });
+      await c.init();
+      const failure = await run(c).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(SparkControllerError);
+      expect(failure).toMatchObject({ category: "unknown", transferId: TID });
+      expect(calls.filter((x) => x.method === method)).toHaveLength(4);
+      expect(waits).toStrictEqual([1000, 2000, 4000]);
+      expect(approvals).toHaveLength(1);
+      await c.destroy();
+    },
+  );
+
+  it.each(COMMITS)("$name does not retry a definite failure", async ({ method, run }) => {
+    const { c, calls, waits } = retryRig({ [method]: [new SparkInputError("bad input")] });
+    await c.init();
+    const failure = await run(c).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
+    expect(failure).toBeInstanceOf(SparkControllerError);
+    expect(failure).not.toMatchObject({ category: "unknown" });
+    expect(calls.filter((x) => x.method === method)).toHaveLength(1);
+    expect(waits).toStrictEqual([]);
     await c.destroy();
   });
 });

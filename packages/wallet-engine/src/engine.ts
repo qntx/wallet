@@ -37,7 +37,8 @@ import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
-import { gatewaySession } from "./gateway/client.ts";
+import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
+import { HistoryController } from "./history/controller.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
 import { MetaSyncController } from "./meta/controller.ts";
@@ -53,6 +54,10 @@ import { resolvePayment } from "./payments/resolve.ts";
 import { prepareZap } from "./payments/zap.ts";
 import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
 import { PhishingController } from "./phishing/controller.ts";
+import { PricesController } from "./prices/controller.ts";
+import { groupHoldings, heldAssets } from "./prices/holdings.ts";
+import { valueHoldings } from "./prices/valuation.ts";
+import type { Valuation } from "./prices/valuation.ts";
 import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
@@ -130,9 +135,23 @@ export type EngineOptions = {
 export type WalletEngine = {
   readonly networks: NetworkController;
   readonly assets: AssetsController;
+  /** Spot prices of the held assets — display-only; nothing that builds or signs reads them. */
+  readonly prices: PricesController;
+  /**
+   * Fiat valuation of the balances already in state, at the current quotes — exact decimals,
+   * display-only. `group` covers the group's EVM and Solana addresses on every enabled network, its
+   * Bitcoin accounts and its Spark balance; it reads no chain.
+   */
+  readonly portfolio: {
+    readonly group: (group: {
+      readonly walletId: string;
+      readonly groupIndex: number;
+    }) => Promise<Valuation>;
+  };
   readonly transactions: Omit<TransactionController, `prepare${string}`>;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
+  readonly history: HistoryController;
   readonly connections: ConnectionController;
   readonly eip1193: Eip1193Handler;
   readonly nip07: Nip07Handler;
@@ -264,7 +283,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const controller = new SparkController({
     spark: options.sparkApis ?? spark(options.wallet),
     fetch: options.fetch,
-    random: options.random,
     now: options.now,
     logger: options.logger,
     setTimer,
@@ -299,6 +317,25 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
   });
 
+  const prices = new PricesController({
+    gateway,
+    fetch: options.fetch,
+    openStore: options.openStore,
+    setTimer,
+    now: options.now,
+    logger: options.logger,
+    held: () =>
+      heldAssets(assets.getState().balances, controller.getState().accounts, options.sparkNetwork),
+    onHeldChange: (listener) => {
+      const offAssets = assets.store.subscribe(listener);
+      const offSpark = controller.store.subscribe(listener);
+      return () => {
+        offAssets();
+        offSpark();
+      };
+    },
+  });
+
   const transactions = new TransactionController({
     wallet: options.wallet,
     networks,
@@ -312,6 +349,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const addressBook = new AddressBookController({
     openStore: options.openStore,
     random: options.random,
+    now: options.now,
+    logger: options.logger,
+  });
+
+  const history = new HistoryController({
+    networks,
+    // Deferred like every other chains() call here — resolving the api at construction would
+    // validate the wallet before any history read needs it.
+    chains: {
+      account: async (params) => chains(options.wallet).account(params),
+    },
+    spark: controller,
+    sparkNetwork: options.sparkNetwork,
+    transactions,
+    addressBook,
+    gateway:
+      gateway === undefined
+        ? undefined
+        : { url: gateway.url, fetch: gatewayFetch(options.fetch, gateway) },
+    openStore: options.openStore,
+    setTimer,
     now: options.now,
     logger: options.logger,
   });
@@ -451,15 +509,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return { kind: "solana.message" as const, signature: result.signature };
     },
     bitcoinPrepare: async (account, network, psbts) =>
-      prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
-    bitcoinSignPsbts: async (_account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids } = await signDappPsbts(
+      prepareDappPsbts(
         chains(options.wallet),
         networks.esplora(network),
+        account,
+        network,
+        psbts,
+        new Set(
+          transactions.frozenUtxos(
+            { walletId: account.walletId, groupIndex: account.groupIndex },
+            network,
+          ),
+        ),
+      ),
+    bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
+      const { signedPsbts, txids } = await signDappPsbts(
+        chains(options.wallet),
         prepared,
         send,
         verify,
         commit,
+        async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
       );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
@@ -566,6 +636,30 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       network,
     });
     return accountAddress(resolved);
+  };
+  /** The group's address on the family's networks, or none when the group has no such account. */
+  const groupAddresses = async (
+    group: { readonly walletId: string; readonly groupIndex: number },
+    family: "evm" | "solana",
+  ): Promise<ReadonlyArray<{ readonly network: string; readonly address: string }>> => {
+    const enabled = networks.enabled(family);
+    const [first] = enabled;
+    if (first === undefined) {
+      return [];
+    }
+    try {
+      // One derivation serves every network of the family: the address does not depend on it.
+      const account = await chains(options.wallet).account({
+        ...group,
+        template: family === "evm" ? "evm.bip44" : "solana.bip44-change",
+        network: first,
+      });
+      return "address" in account
+        ? enabled.map((network) => ({ network, address: account.address }))
+        : [];
+    } catch {
+      return [];
+    }
   };
   const connections = new ConnectionController({
     phishing,
@@ -694,6 +788,28 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   let store: EngineStore | undefined;
   let started = false;
 
+  const stop = async (): Promise<void> => {
+    started = false;
+    depositClaimer.stop();
+    connections.lock();
+    requests.lock();
+    addressBook.lock();
+    watch.lock();
+    transactions.lock();
+    history.lock();
+    prices.lock();
+    assets.lock();
+    networks.lock();
+    // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
+    await metaSync.lock();
+    await accounts.lock();
+    await controller.lockAll();
+    controller.setStore(undefined);
+    const s = store;
+    store = undefined;
+    await s?.close();
+  };
+
   const transition = async (): Promise<void> => {
     const unlocked = options.wallet.getSnapshot().vault === "unlocked";
     if (unlocked && !started) {
@@ -707,42 +823,35 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         options.logger.warn("engine store failed to open", error);
         return;
       }
-      controller.setStore(store);
-      backup.setStore(store);
-      accounts.setStore(store);
-      watch.setStore(store);
-      backup.trigger(); // reconcile — never awaited on the transition chain
-      // Load + reconcile + drive the selected account through spark.setAccounts.
-      await accounts.init();
-      await watch.init();
-      await controller.init();
-      // Pull → merge → maybe publish for every wallet with a group-0 identity.
-      await addressBook.init();
-      await metaSync.init();
-      await networks.init();
-      await assets.init();
-      await transactions.init();
-      await requests.init();
-      await connections.init();
-      depositClaimer.start();
+      try {
+        controller.setStore(store);
+        backup.setStore(store);
+        accounts.setStore(store);
+        watch.setStore(store);
+        backup.trigger(); // reconcile — never awaited on the transition chain
+        // Load + reconcile + drive the selected account through spark.setAccounts.
+        await accounts.init();
+        await watch.init();
+        await controller.init();
+        // Pull → merge → maybe publish for every wallet with a group-0 identity.
+        await addressBook.init();
+        await metaSync.init();
+        await networks.init();
+        await assets.init();
+        await prices.init();
+        await transactions.init();
+        await history.init();
+        await requests.init();
+        await connections.init();
+        depositClaimer.start();
+      } catch (error) {
+        // A start that fails mid-sequence leaves the same state as a lock: torn down, store
+        // closed, started false — so the next wallet status event retries the whole start.
+        options.logger.warn("engine start failed", error);
+        await stop();
+      }
     } else if (!unlocked && started) {
-      started = false;
-      depositClaimer.stop();
-      connections.lock();
-      requests.lock();
-      addressBook.lock();
-      watch.lock();
-      transactions.lock();
-      assets.lock();
-      networks.lock();
-      // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
-      await metaSync.lock();
-      await accounts.lock();
-      await controller.lockAll();
-      controller.setStore(undefined);
-      const s = store;
-      store = undefined;
-      await s?.close();
+      await stop();
     }
   };
 
@@ -777,8 +886,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   return {
     networks,
     assets,
+    prices,
+    portfolio: {
+      group: async (group) => {
+        const [evm, solana] = await Promise.all([
+          groupAddresses(group, "evm"),
+          groupAddresses(group, "solana"),
+        ]);
+        const holdings = groupHoldings({
+          balances: assets.getState().balances,
+          spark: controller.getState().accounts,
+          sparkNetwork: options.sparkNetwork,
+          group,
+          addresses: [...evm, ...solana],
+          bitcoin: networks.enabled("bitcoin"),
+        });
+        return valueHoldings(holdings, prices.getState(), options.now());
+      },
+    },
     transactions,
     requests,
+    history,
     watch: {
       add: async (input) => watch.add(input),
       rename: async (id, name) => watch.rename(id, name),
@@ -818,7 +946,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       resolve: async (input, network) =>
         resolvePayment(input, { network, now: options.now(), fetch: options.fetch }),
       withdrawLnurl: async (params) =>
-        withdrawLnurl({ spark: controller, fetch: options.fetch, now: options.now }, params),
+        withdrawLnurl({ spark: controller, fetch: options.fetch }, params),
     },
     names: {
       resolve: async (name, network) => resolveEns(networks, name, network),

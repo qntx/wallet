@@ -103,7 +103,10 @@ export type StatusPayload = {
   readonly importedKeys: ReadonlyArray<KeyInfo>;
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
   readonly backup: BackupInfo | null;
-  /** Whether the vault signs requests whose content the kernel cannot show. */
+  /**
+   * Whether the vault signs requests the chain decoder marks blind — content it cannot show or
+   * bound.
+   */
   readonly blindSigning: boolean;
 };
 
@@ -228,7 +231,10 @@ export type WalletSnapshot = {
   /** The retained backup key's public id, or null when cloud backup is off. */
   // oxlint-disable-next-line typescript/no-restricted-types -- wire contract: backup is null when off
   readonly backup: BackupInfo | null;
-  /** Whether the vault signs requests whose content the kernel cannot show. */
+  /**
+   * Whether the vault signs requests the chain decoder marks blind — content it cannot show or
+   * bound.
+   */
   readonly blindSigning: boolean;
 };
 
@@ -265,9 +271,12 @@ export type VaultApi = {
   /** Turns the native app lock on (drops the silent device factor) or off (restores it). */
   readonly setAppLock: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
   /**
-   * Allows or refuses blind signing: raw-byte messages, typed data of no recognised shape and
-   * transactions whose effects cannot be verified. Off on a new vault; while off such a request
-   * fails with `blind-signing-disabled` before any verification prompt.
+   * Allows or refuses blind signing: the requests the chain decoder marks blind — raw-byte
+   * messages, typed data too large or misformed to show, an unrecognised function of a listed
+   * token, calldata that runs the signing account's own code, or a Safe delegatecall or unbounded
+   * refund. Off on a new vault; while off such a request fails with `blind-signing-disabled` before
+   * any verification prompt. Requests the wallet can describe but not verify sign without the
+   * setting.
    */
   readonly setBlindSigning: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
   readonly reset: () => Promise<void>;

@@ -557,7 +557,8 @@ describe("assessBitcoinPsbts", () => {
     value: number,
     sigHash: "ALL" | "SINGLE|ANYONECANPAY",
     template: "btc.bip84" | "btc.bip86" = "btc.bip84",
-  ) => ({ value, template, sigHash });
+    frozen = false,
+  ) => ({ value, template, sigHash, frozen });
 
   it("a SINGLE|ANYONECANPAY input is a danger", () => {
     expect(assessBitcoinPsbts([input(100_000, "SINGLE|ANYONECANPAY")])).toStrictEqual([

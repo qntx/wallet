@@ -7,7 +7,9 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import { decodeEvm, normalizeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
+import { BITCOIN_TEMPLATES } from "../chains/bitcoin-scan.ts";
 import { Controller } from "../controller.ts";
+import type { PreparedBitcoinPsbt } from "../requests/types.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
 import { repeat } from "../timer.ts";
@@ -24,6 +26,7 @@ import type {
   ChainRequestInput,
   RouteContext,
   SendParams,
+  SignResult,
   SparkDepositTag,
   TrackedTransaction,
   TxState,
@@ -109,13 +112,21 @@ const isBtcRecord = (v: unknown): v is BtcRecord => {
   if (!isObject(v)) {
     return false;
   }
-  const { inputs, outputs, vsize, fee, feeRate } = v;
+  const { inputs, outputs, vsize, fee, feeRate, template, groupIndex, tier } = v;
   return (
     Array.isArray(inputs) &&
     Array.isArray(outputs) &&
     typeof vsize === "number" &&
     typeof fee === "number" &&
     typeof feeRate === "number" &&
+    // A record without the rebuild fields decodes without `btc` — no migration, the
+    // replacement paths refuse it as having no build record.
+    (BITCOIN_TEMPLATES as ReadonlyArray<string>).includes(
+      typeof template === "string" ? template : "",
+    ) &&
+    typeof groupIndex === "number" &&
+    Number.isSafeInteger(groupIndex) &&
+    (tier === "fast" || tier === "normal" || tier === "slow") &&
     inputs.every(
       (i) =>
         isObject(i) &&
@@ -392,6 +403,61 @@ export class TransactionController extends Controller<TransactionControllerState
       throw new Error("transactions require an unlocked vault");
     }
     return this.bitcoinRoute.nextReceiveAddress(this.routeCtx(), walletId, groupIndex, network);
+  }
+
+  /**
+   * Freeze or unfreeze bitcoin outpoints (`txid:vout`) for one account on one `network`. Freezing
+   * is intent, not utxo state — the outpoint need not be unspent — and it never lifts the derived
+   * inscription protection.
+   */
+  async setUtxosFrozen(
+    account: { readonly walletId: string; readonly groupIndex: number },
+    network: string,
+    outpoints: ReadonlyArray<string>,
+    frozen: boolean,
+  ): Promise<void> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    await this.bitcoinRoute.setUtxosFrozen(
+      `${account.walletId}:${String(account.groupIndex)}:${network}`,
+      outpoints,
+      frozen,
+    );
+  }
+
+  /** The outpoints the account froze on `network`. */
+  frozenUtxos(
+    account: { readonly walletId: string; readonly groupIndex: number },
+    network: string,
+  ): ReadonlyArray<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return this.bitcoinRoute.frozenUtxos(
+      `${account.walletId}:${String(account.groupIndex)}:${network}`,
+    );
+  }
+
+  /**
+   * Internal entry for the dApp `signTransaction` send path: a dApp-built transaction has no build
+   * record; it joins tracking under its signed bytes like a wallet send.
+   */
+  async submitDappBitcoin(
+    network: string,
+    walletId: string,
+    prepared: PreparedBitcoinPsbt,
+    result: SignResult,
+  ): Promise<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return this.bitcoinRoute.submitDapp(this.routeCtx(), {
+      network,
+      walletId,
+      prepared,
+      result,
+    });
   }
 
   /** Records that a Spark deposit was credited; persisted with the transaction. */

@@ -8,8 +8,9 @@ import type { SparkNetwork } from "@qntx/spark";
 import { encodeLnurl, lightningAddressUrl, requestInvoice, resolveLnurl } from "@qntx/spark/lnurl";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
+import { sparkTransferId } from "../spark/controller.ts";
 import { categorize } from "../spark/errors.ts";
-import { INVOICE_EXPIRY_GRACE_MS, feeCheck } from "./action.ts";
+import { INVOICE_EXPIRY_GRACE_MS, feeCheck, pendingOnUnknown } from "./action.ts";
 import type { PreparedSparkAction } from "./action.ts";
 import { PaymentError } from "./errors.ts";
 
@@ -153,12 +154,18 @@ export async function prepareZap(
 export function prepareZapAction(
   account: SparkAccountRef,
   prepared: PreparedZap,
-  options: { readonly maxFeeSats: number; readonly now: () => number },
+  options: {
+    readonly maxFeeSats: number;
+    readonly now: () => number;
+    /** The request this zap is prepared for — keys its idempotent transfer id. */
+    readonly requestId: string;
+  },
 ): PreparedSparkAction {
   if (prepared.expiresAt <= options.now() + INVOICE_EXPIRY_GRACE_MS) {
     throw new PaymentError("rejected", "zap invoice expired");
   }
   const { maxFeeSats } = options;
+  const transferId = sparkTransferId(options.requestId, options.now());
   const { payee } = lightningInvoiceDetails(prepared.invoice);
   return {
     display: {
@@ -173,22 +180,24 @@ export function prepareZapAction(
     checks: feeCheck(prepared.amountSats, maxFeeSats),
     staleReason: (now) =>
       prepared.expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "zap invoice expired" : undefined,
-    execute: async (spark, verify, commit) => ({
-      kind: "lightning",
-      payment: await spark.payInvoice(account, {
-        invoice: prepared.invoice,
-        maxFeeSats,
-        verify,
-        commit,
-        note: {
-          kind: "zap",
-          recipientPubkey: prepared.recipientPubkey,
-          ...(prepared.eventId === undefined ? {} : { eventId: prepared.eventId }),
-          ...(prepared.comment === undefined ? {} : { comment: prepared.comment }),
-          lightning: prepared.lightning,
-        },
-      }),
-    }),
+    execute: async (spark, verify, commit) =>
+      pendingOnUnknown(transferId, async () => ({
+        kind: "lightning",
+        payment: await spark.payInvoice(account, {
+          invoice: prepared.invoice,
+          maxFeeSats,
+          transferId,
+          verify,
+          commit,
+          note: {
+            kind: "zap",
+            recipientPubkey: prepared.recipientPubkey,
+            ...(prepared.eventId === undefined ? {} : { eventId: prepared.eventId }),
+            ...(prepared.comment === undefined ? {} : { comment: prepared.comment }),
+            lightning: prepared.lightning,
+          },
+        }),
+      })),
   };
 }
 

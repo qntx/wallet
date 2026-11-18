@@ -5,6 +5,7 @@
 import type { SparkNetwork } from "@qntx/spark";
 import type { Wallet } from "@qntx/wallet";
 import { ChainError } from "@qntx/wallet-chains";
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
 import type { decodeEvm } from "@qntx/wallet-chains/evm";
 import { chains } from "@qntx/wallet/chains";
 
@@ -86,6 +87,10 @@ export type TrackedTransaction = {
     readonly vsize: number;
     readonly fee: number;
     readonly feeRate: number;
+    /** The account shape the transaction was built from — needed to rebuild it after a restart. */
+    readonly template: BitcoinAccountTemplate;
+    readonly groupIndex: number;
+    readonly tier: "fast" | "normal" | "slow";
   };
   readonly submittedAt: number;
   readonly error: string | undefined;
@@ -101,8 +106,11 @@ export type SendParams = {
   readonly fee: EvmFeeTier | SolanaFeeTier;
   /** SPL mint decimals — required when `token` is a Solana mint. */
   readonly decimals?: number;
-  /** Bitcoin only — protected outpoints (`txid:vout`) the user chose to spend in this send. */
-  readonly spendProtected?: ReadonlyArray<string>;
+  /**
+   * Bitcoin only — the exact outpoints (`txid:vout`) this send spends; omit for automatic
+   * selection. Naming an inscription-protected output opts into spending it.
+   */
+  readonly inputs?: ReadonlyArray<string>;
   readonly verify: SignParams["verify"];
 };
 

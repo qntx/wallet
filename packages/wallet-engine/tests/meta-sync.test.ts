@@ -10,7 +10,7 @@ import type { WalletSyncSigner } from "@qntx/wallet/nostr";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
 import { AddressBookController } from "../src/addresses/controller.ts";
-import { MetaSyncController } from "../src/meta/controller.ts";
+import { META_SYNC_KIND, MetaSyncController } from "../src/meta/controller.ts";
 import { decodeMetaDocBytes, encodeMetaDoc } from "../src/meta/doc.ts";
 import { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -92,7 +92,6 @@ async function rig(
     setTimer: realTimer,
     spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
     fetch: async () => Promise.reject(new Error("no fetch")),
-    random: (n) => new Uint8Array(n).fill(1),
     now: () => t,
     logger: LOGGER,
     createClient: () => ({ close: () => {} }) as unknown as never,
@@ -561,6 +560,8 @@ describe("MetaSyncController", () => {
 
   describe("address book sync", () => {
     const EVM_A = "0x52908400098527886E0F7030069857D2E4169EE7";
+    const EVM_B = "0x8626f6940E2eb28930eFb4CeF49B2d1F2C9C1199";
+    const TEN_YEARS = 10 * 365 * 24 * 60 * 60 * 1000;
 
     /** Pulls on `device` until `check` holds — publishes are debounced and signed asynchronously. */
     async function syncUntil(device: Rig, check: () => boolean): Promise<void> {
@@ -620,11 +621,15 @@ describe("MetaSyncController", () => {
         await syncUntil(b, () => b.addressBook.getState().entries[added.id] !== undefined);
         expect(b.addressBook.getState().entries[added.id]).toStrictEqual(added);
 
+        // B's clock must stay inside the skew bound of A's stamps; one second of offset keeps
+        // B's republishes from sharing a created_at second with A's docs.
         a.setNow(1_700_200_000_000);
+        b.setNow(1_700_199_999_000);
         await a.addressBook.rename(added.id, "Alice B");
         await syncUntil(b, () => b.addressBook.getState().entries[added.id]?.name === "Alice B");
 
         a.setNow(1_700_300_000_000);
+        b.setNow(1_700_299_999_000);
         await a.addressBook.remove(added.id);
         await syncUntil(b, () => b.addressBook.getState().entries[added.id] === undefined);
         expect(b.addressBook.getState().entries).toStrictEqual({});
@@ -655,6 +660,55 @@ describe("MetaSyncController", () => {
         const nameB = b.addressBook.getState().entries[added.id]?.name;
         expect(nameA).toBe(nameB);
         expect(nameA).toBe("beta");
+        vi.useRealTimers();
+        await stop();
+      },
+    );
+
+    it(
+      "a future-dated doc re-pointing a contact is refused and overwritten",
+      { timeout: 25_000 },
+      async () => {
+        const { relay, a, b, stop } = await twoDevices();
+        vi.useFakeTimers();
+        const alice = await a.addressBook.add({ name: "Alice", family: "evm", address: EVM_A });
+        await syncUntil(b, () => b.addressBook.getState().entries[alice.id] !== undefined);
+        const { walletId } = a.wallet.getSnapshot().wallets[0]!;
+        // An attacker holding the same seed authors a doc that re-points Alice's id to its own
+        // address under a stamp ten years out, and pushes it over the honest doc.
+        const attacker = nostr(b.wallet).syncSigner(walletId);
+        const poisoned = encodeMetaDoc({
+          v: 2,
+          wallet: { updatedAt: 0 },
+          groups: [],
+          contacts: [{ ...alice, address: EVM_B, updatedAt: alice.updatedAt + TEN_YEARS }],
+        })!;
+        const forged = await attacker.signEvent({
+          pubkey: await attacker.getPublicKey(),
+          kind: META_SYNC_KIND,
+          created_at: 1_800_000_000,
+          tags: [["d", TAG]],
+          content: await attacker.encrypt(new TextDecoder().decode(poisoned)),
+        });
+        await relay.publish(forged);
+        await a.metaSync.sync();
+        expect(a.addressBook.getState().entries[alice.id]?.address).toBe(EVM_A);
+        // The refusal counts as local-newer — A republishes the true book over the poisoned doc.
+        await vi.waitFor(
+          () => {
+            expect(relay.published.length).toBeGreaterThanOrEqual(2);
+          },
+          { timeout: 10_000, interval: 100 },
+        );
+        const republished = relay.published.at(-1)!;
+        expect(republished.created_at).toBeGreaterThan(forged.created_at);
+        const signer = nostr(a.wallet).syncSigner(walletId);
+        const plain = await signer.decrypt(republished.content);
+        const doc = decodeMetaDocBytes(new TextEncoder().encode(plain));
+        expect(doc?.contacts.find((r) => r.id === alice.id)).toMatchObject({
+          name: "Alice",
+          address: EVM_A,
+        });
         vi.useRealTimers();
         await stop();
       },

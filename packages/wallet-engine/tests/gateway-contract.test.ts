@@ -478,7 +478,7 @@ describe("esplora allow-list", () => {
       expect(esploraPathAllowed("GET", path)).toBe(true);
     }
     expect(esploraPathAllowed("POST", "/tx")).toBe(true);
-    expect(ESPLORA_ROUTES).toHaveLength(7);
+    expect(ESPLORA_ROUTES).toHaveLength(8);
   });
 
   it("rejects other paths, verbs, traversal and malformed hashes", () => {

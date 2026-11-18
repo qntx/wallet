@@ -4,19 +4,40 @@
 
 - **Bun 1.4** — package scripts, tests, and tooling.
 - **Node >= 20.19** — the Node test host for the kernel.
+- **Playwright Chromium** — `bunx playwright install chromium`; needed by the
+  `@qntx/wallet-worker` web tests and its coverage gate.
+- **macOS + Xcode** — the native host tests build the harness app with
+  `expo prebuild`/`pod install` and run under `xcodebuild` (see
+  `.github/workflows/native.yml`).
 
 ## Repository layout
 
 ```text
+packages/wallet/         @qntx/wallet — self-custodial wallet SDK:
+                         Wallet host entry, protocol and types
+packages/wallet-chains/  @qntx/wallet-chains — SignRequest codecs, display
+                         decoding, verifiability and signing for EVM, Solana
+                         and Bitcoin
+packages/wallet-engine/  @qntx/wallet-engine — controllers, events and
+                         encrypted engine storage
 packages/wallet-kernel/  @qntx/wallet-kernel — private kernel package
                          (secret, seed, derive, vault); only bundled by the
                          host packages, never published
+packages/wallet-native/  @qntx/wallet-native — React Native kernel runtime
+                         host: CBOR transport, KernelHost adapter and
+                         createNativeWallet
+packages/wallet-worker/  @qntx/wallet-worker — Web Worker and
+                         worker_threads hosts for @qntx/wallet
+apps/gateway/            @qntx/gateway — private Cloudflare Worker that
+                         forwards allow-listed JSON-RPC and Esplora reads
+                         with failover, and serves quotes and risk lists
+apps/harness/            @qntx/wallet-harness — Expo app driving the native
+                         host tests
+apps/playground/         @qntx/playground — web app exercising the wallet
+                         and engine
 vectors/                 fixed test vectors (see vectors/README.md)
 scripts/                 repo tooling (check-version, vectors/)
 ```
-
-Packages are created only when they have content: `@qntx/wallet` and
-`@qntx/wallet-worker` appear in later milestones.
 
 ## Local gate
 

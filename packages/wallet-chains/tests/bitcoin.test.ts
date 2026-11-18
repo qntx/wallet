@@ -597,6 +597,7 @@ describe("decode + verifiability", () => {
     );
     expect(intent.verifiability).toBe("opaque");
     expect(intent.fee).toBeUndefined();
+    expect(intent.blind).toBeUndefined();
   });
 
   it("legacy input: fee proven by nonWitnessUtxo alone stays full", () => {

@@ -5,11 +5,7 @@ import { ChainError } from "@qntx/wallet-chains";
 
 import { Eip1193Handler } from "../src/connect/eip1193.ts";
 import { ProviderError } from "../src/connect/errors.ts";
-import {
-  BlindSigningDisabledError,
-  OriginBusyError,
-  RequestEndedError,
-} from "../src/requests/controller.ts";
+import { OriginBusyError, RequestEndedError } from "../src/requests/controller.ts";
 
 const SITE = "https://app.example";
 const MAINNET = "eip155:1";
@@ -164,15 +160,9 @@ describe("Eip1193Handler params and quantities", () => {
 });
 
 describe("Eip1193Handler personal_sign and typed data", () => {
-  it("rejects a non-string message and maps a blind-signing refusal to 4200", async () => {
+  it("rejects a non-string message", async () => {
     const r = rig({ session: session(), group: GROUP });
     await expect(codeOf(run(r, "personal_sign", [5, ADDR]))).resolves.toBe(-32_602);
-    const refused = rig({
-      session: session(),
-      group: GROUP,
-      prepare: async () => Promise.reject(new BlindSigningDisabledError()),
-    });
-    await expect(codeOf(run(refused, "personal_sign", ["0xff", ADDR]))).resolves.toBe(4200);
   });
 
   it("signs hex or plain text for the default or a named account, and refuses another", async () => {

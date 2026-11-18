@@ -108,9 +108,14 @@ describe("prepareDappPsbts", () => {
           { script: scriptOf("btc.bip86"), amount: 30000n },
         ],
       );
-      const [prepared] = await prepareDappPsbts(apis, es, GROUP, MAINNET, [
-        { psbt, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] },
-      ]);
+      const [prepared] = await prepareDappPsbts(
+        apis,
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] }],
+        new Set<string>(),
+      );
       expect(prepared).toBeDefined();
       const tx = Transaction.fromPSBT(prepared!.request.psbt);
       expect(tx.getInput(0).bip32Derivation?.[0]?.[1].path.join(",")).toBe(
@@ -144,13 +149,27 @@ describe("prepareDappPsbts", () => {
         [{ script: PAYEE_SCRIPT, amount: 29000n }],
       );
       await expect(
-        prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip84")] }]),
+        prepareDappPsbts(
+          apis,
+          es,
+          GROUP,
+          MAINNET,
+          [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+          new Set<string>(),
+        ),
       ).rejects.toMatchObject({
         code: "invalid-request",
         message: "input 0 is not this account's",
       });
       await expect(
-        prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip86")] }]),
+        prepareDappPsbts(
+          apis,
+          es,
+          GROUP,
+          MAINNET,
+          [{ psbt, sign: [signEntry(0, "btc.bip86")] }],
+          new Set<string>(),
+        ),
       ).resolves.toBeDefined();
     },
   );
@@ -161,7 +180,14 @@ describe("prepareDappPsbts", () => {
       [{ script: scriptOf("btc.bip84"), amount: 100000n }],
       [{ script: PAYEE_SCRIPT, amount: 90000n }],
     );
-    await prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip84")] }]);
+    await prepareDappPsbts(
+      apis,
+      es,
+      GROUP,
+      MAINNET,
+      [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+      new Set<string>(),
+    );
     const paymentOnly = calls.length;
     // 40 scan calls + the signed input's previous transaction.
     expect(paymentOnly).toBe(41);
@@ -174,9 +200,14 @@ describe("prepareDappPsbts", () => {
       ],
       [{ script: PAYEE_SCRIPT, amount: 120000n }],
     );
-    await prepareDappPsbts(apis, es, GROUP, MAINNET, [
-      { psbt: both, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] },
-    ]);
+    await prepareDappPsbts(
+      apis,
+      es,
+      GROUP,
+      MAINNET,
+      [{ psbt: both, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] }],
+      new Set<string>(),
+    );
     expect(calls).toHaveLength(82);
   });
 
@@ -187,7 +218,14 @@ describe("prepareDappPsbts", () => {
       [{ script: PAYEE_SCRIPT, amount: 90000n }],
     );
     await expect(
-      prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip84")] }]),
+      prepareDappPsbts(
+        apis,
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+        new Set<string>(),
+      ),
     ).rejects.toMatchObject({
       code: "invalid-request",
       message: "input 0 amount or script does not match the chain",
@@ -208,9 +246,14 @@ describe("prepareDappPsbts", () => {
         ],
         [{ script: PAYEE_SCRIPT, amount: 120000n }],
       );
-      const [prepared] = await prepareDappPsbts(apis, es, GROUP, MAINNET, [
-        { psbt, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] },
-      ]);
+      const [prepared] = await prepareDappPsbts(
+        apis,
+        es,
+        GROUP,
+        MAINNET,
+        [{ psbt, sign: [signEntry(0, "btc.bip84"), signEntry(1, "btc.bip86")] }],
+        new Set<string>(),
+      );
       const tx = Transaction.fromPSBT(prepared!.request.psbt);
       expect(tx.getInput(0).nonWitnessUtxo).toBeDefined();
       expect(tx.getInput(0).witnessUtxo?.amount).toBe(100000n);
@@ -230,7 +273,14 @@ describe("prepareDappPsbts", () => {
         [{ script: PAYEE_SCRIPT, amount: 29000n }],
       );
       await expect(
-        prepareDappPsbts(apis, es, GROUP, MAINNET, [{ psbt, sign: [signEntry(0, "btc.bip86")] }]),
+        prepareDappPsbts(
+          apis,
+          es,
+          GROUP,
+          MAINNET,
+          [{ psbt, sign: [signEntry(0, "btc.bip86")] }],
+          new Set<string>(),
+        ),
       ).rejects.toMatchObject({ code: "invalid-request" });
     },
   );
@@ -259,26 +309,28 @@ describe("signDappPsbts", () => {
       [{ script: scriptOf("btc.bip84"), amount: 100000n }],
       [{ script: PAYEE_SCRIPT, amount: 90000n }],
     );
-    const [prepared] = await prepareDappPsbts(apis, es, GROUP, MAINNET, [
-      { psbt, sign: [signEntry(0, "btc.bip84")] },
-    ]);
+    const [prepared] = await prepareDappPsbts(
+      apis,
+      es,
+      GROUP,
+      MAINNET,
+      [{ psbt, sign: [signEntry(0, "btc.bip84")] }],
+      new Set<string>(),
+    );
     const posted: string[] = [];
-    const broadcasting: Pick<Esplora, "post"> = {
-      post: async (_path: string, body: string) => {
-        posted.push(body);
-        return Promise.resolve("");
-      },
-    };
     const signing: Pick<ChainsApi, "sign"> = { sign: signPsbt };
     await expect(
       signDappPsbts(
         signing,
-        broadcasting,
         [prepared!],
         true,
         { kind: "password", password: "pw" },
         () => {
           throw new Error("invalidated");
+        },
+        async () => {
+          posted.push("broadcast");
+          return Promise.resolve("txid");
         },
       ),
     ).rejects.toThrow("invalidated");

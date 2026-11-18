@@ -4,7 +4,10 @@
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["es2022", "dom", "dom.iterable"],
-    "types": []
+    "types": [],
+    // Same reason as the package tsconfig: tests/idb now pulls in controllers whose imports
+    // (the gateway contract) cannot satisfy isolatedDeclarations; declarations come from tsgo.
+    "isolatedDeclarations": false
   },
   "include": ["indexeddb.ts", "public-store.ts", "requests.ts", "../../tests/idb"]
 }
