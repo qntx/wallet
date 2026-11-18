@@ -46,22 +46,31 @@ int validBackgroundSeconds(double value) {
 
 HybridKernelHost::~HybridKernelHost() {
   std::shared_ptr<qntx::KernelRuntime> runtime;
+  qntx::KernelSlot::Claim claim;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     runtime = std::move(runtime_);
+    claim = std::move(slotClaim_);
   }
   if (runtime) {
     runtime->destroy();
   }
+  claim.release(runtime);
 }
 
 void HybridKernelHost::start(double backgroundLockSeconds) {
   const int seconds = validBackgroundSeconds(backgroundLockSeconds);
+  qntx::KernelSlot::Claim claim;
+  std::shared_ptr<qntx::KernelRuntime> predecessor;
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (runtime_ || exited_) {
       return;
     }
+    // One live kernel runtime per process: a second start throws, so two
+    // kernels can never write the same vault file.
+    claim = qntx::KernelSlot::shared().claim();
+    predecessor = claim.predecessor();
   }
   // The platform observer installs once; this host registers its deadline so
   // the dispatcher can stamp or lock it on background/foreground transitions.
@@ -75,7 +84,17 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
   std::weak_ptr<HybridKernelHost> weak =
       std::dynamic_pointer_cast<HybridKernelHost>(shared_from_this());
   qntx::KernelRuntime::Hooks hooks;
-  hooks.onPost = [weak](std::vector<uint8_t> bytes) {
+  hooks.beforeEvaluate = [predecessor = std::move(predecessor)](facebook::jsi::Runtime&) {
+    // The predecessor's runtime may still be tearing down: wait on this kernel
+    // thread — never the JS thread — so the first file read follows its last
+    // write. A predecessor that will not stop fails the runtime as a crash
+    // rather than letting two writers overlap.
+    if (predecessor != nullptr &&
+        !predecessor->waitUntilStopped(std::chrono::seconds(10))) {
+      throw std::runtime_error("the previous kernel runtime did not stop in time");
+    }
+  };
+  hooks.onPost = [weak](qntx::SecretBytes bytes) {
     if (const auto self = weak.lock()) {
       std::function<void(const std::shared_ptr<ArrayBuffer>&)> listener;
       {
@@ -83,6 +102,8 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
         listener = self->messageListener_;
       }
       if (listener) {
+        // The listener's ArrayBuffer is a fresh copy — `bytes` wipes itself on
+        // scope exit whether the listener ran or not.
         listener(ArrayBuffer::copy(bytes.data(), bytes.size()));
       }
     }
@@ -108,12 +129,15 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
     if (exited_) {
-      // An exit (integrity hash check raced a lock) already fired — drop the
-      // fresh runtime instead of resurrecting a dead host.
+      // An exit raced start — drop the fresh runtime instead of resurrecting
+      // a dead host, and release the slot naming it as the still-stopping
+      // predecessor for the next start.
       runtime->destroy();
+      claim.release(runtime);
       return;
     }
     runtime_ = runtime;
+    slotClaim_ = std::move(claim);
   }
 }
 
@@ -129,7 +153,7 @@ void HybridKernelHost::post(const std::shared_ptr<ArrayBuffer>& frame) {
   }
   if (runtime) {
     const auto* data = static_cast<const uint8_t*>(frame->data());
-    runtime->post(std::vector<uint8_t>(data, data + frame->size()));
+    runtime->post(qntx::SecretBytes(data, frame->size()));
   }
 }
 
@@ -161,6 +185,7 @@ void HybridKernelHost::lock() {
 
 void HybridKernelHost::exit(KernelExitReason reason) {
   std::shared_ptr<qntx::KernelRuntime> runtime;
+  qntx::KernelSlot::Claim claim;
   std::function<void(KernelExitReason)> listener;
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -169,11 +194,16 @@ void HybridKernelHost::exit(KernelExitReason reason) {
     }
     exited_ = true;
     runtime = std::move(runtime_);
+    claim = std::move(slotClaim_);
     listener = exitListener_;
   }
   if (runtime) {
     runtime->destroy();
   }
+  // The slot frees for a successor here — the still-stopping runtime becomes
+  // its predecessor, which it waits out on its kernel thread before
+  // evaluating.
+  claim.release(runtime);
   qntx::KernelLifecycleDispatcher::shared().unregister(this);
   if (listener) {
     listener(reason);

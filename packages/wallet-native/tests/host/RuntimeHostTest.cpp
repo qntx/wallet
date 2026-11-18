@@ -5,6 +5,7 @@
 // V1_ARGON2ID_BACKUP / V1_ARGON2ID_SMALL.
 #include "runtime/KernelRuntime.hpp"
 #include "host/KernelFile.hpp"
+#include "host/KernelSlot.hpp"
 #include "host/Lifecycle.hpp"
 #include "HostKeystore.hpp"
 #include "HostPasskey.hpp"
@@ -18,6 +19,7 @@
 #error "generated/probes.hpp missing — run `bun run harness:bundles` first"
 #endif
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -69,10 +71,10 @@ struct Mailbox {
   std::vector<std::string> posts;
   std::vector<std::string> errors;
 
-  void post(std::vector<uint8_t> bytes) {
+  void post(qntx::SecretBytes bytes) {
     {
       std::lock_guard<std::mutex> lock(m);
-      posts.emplace_back(bytes.begin(), bytes.end());
+      posts.emplace_back(bytes.data(), bytes.data() + bytes.size());
     }
     cv.notify_all();
   }
@@ -95,9 +97,21 @@ struct Mailbox {
   }
 };
 
+// Frame bytes must cross the runtime boundary in wipe-on-release storage:
+// onPost hands the hook a SecretBytes that zeroes itself when dropped, and
+// post() takes the same so every queue/teardown path wipes.
+static_assert(
+    std::is_same_v<
+        decltype(KernelRuntime::Hooks::onPost),
+        std::function<void(qntx::SecretBytes)>>,
+    "onPost must deliver frames in SecretBytes");
+static_assert(
+    std::is_same_v<decltype(&KernelRuntime::post), void (KernelRuntime::*)(qntx::SecretBytes)>,
+    "post must take frames in SecretBytes");
+
 KernelRuntime::Hooks hooksFor(Mailbox& box) {
   KernelRuntime::Hooks hooks;
-  hooks.onPost = [&box](std::vector<uint8_t> bytes) { box.post(std::move(bytes)); };
+  hooks.onPost = [&box](qntx::SecretBytes bytes) { box.post(std::move(bytes)); };
   hooks.onError = [&box](std::string message) { box.fail(std::move(message)); };
   return hooks;
 }
@@ -1098,18 +1112,60 @@ int filePrimitive() {
   // Missing file -> null, never an exception.
   CHECK(!qntx::kernelFileRead(dir).has_value(), "file: missing must read null");
 
-  // Zero-length write -> reads back empty (not null).
-  qntx::kernelFileWrite(dir, {});
-  const auto empty = qntx::kernelFileRead(dir);
-  CHECK(empty.has_value() && empty->empty(), "file: zero-length write");
-
-  // Normal write -> atomic replace reads new bytes.
+  // CAS on an absent file: a present expectation writes nothing.
+  const std::vector<uint8_t> empty;
   const std::vector<uint8_t> first = {1, 2, 3};
+  CHECK(
+      !qntx::kernelFileReplace(dir, first.data(), first.size(), first),
+      "file: absent file must not accept an expected image");
+  CHECK(!qntx::kernelFileRead(dir).has_value(), "file: rejected CAS left a file behind");
+  CHECK(
+      qntx::kernelFileReplace(dir, empty.data(), empty.size(), std::nullopt),
+      "file: create with absent expectation");
+  const auto back = qntx::kernelFileRead(dir);
+  CHECK(back.has_value() && back->empty(), "file: zero-length write");
+
+  // Matching expectation swaps; stale expectation writes nothing.
   const std::vector<uint8_t> second = {9, 8, 7, 6, 5};
-  qntx::kernelFileWrite(dir, first);
-  CHECK(qntx::kernelFileRead(dir) == first, "file: first write");
-  qntx::kernelFileWrite(dir, second);
-  CHECK(qntx::kernelFileRead(dir) == second, "file: atomic replace");
+  CHECK(
+      qntx::kernelFileReplace(dir, first.data(), first.size(), empty),
+      "file: first write");
+  CHECK(qntx::kernelFileRead(dir) == first, "file: first write read-back");
+  CHECK(
+      qntx::kernelFileReplace(dir, second.data(), second.size(), first),
+      "file: atomic replace");
+  CHECK(qntx::kernelFileRead(dir) == second, "file: atomic replace read-back");
+  CHECK(
+      !qntx::kernelFileReplace(dir, first.data(), first.size(), first),
+      "file: stale expected must not write");
+  CHECK(qntx::kernelFileRead(dir) == second, "file: lost CAS leaves file untouched");
+  CHECK(
+      !qntx::kernelFileReplace(dir, first.data(), first.size(), std::nullopt),
+      "file: absent expectation on an existing file must not write");
+
+  // Writers racing the same expected image: exactly one wins.
+  std::atomic<int> wins{0};
+  {
+    std::vector<std::thread> racers;
+    racers.reserve(8);
+    for (int i = 0; i < 8; i++) {
+      racers.emplace_back([&wins, &dir, &second, i] {
+        const std::vector<uint8_t> candidate = {static_cast<uint8_t>(100 + i)};
+        if (qntx::kernelFileReplace(dir, candidate.data(), candidate.size(), second)) {
+          wins.fetch_add(1, std::memory_order_relaxed);
+        }
+      });
+    }
+    for (auto& racer : racers) {
+      racer.join();
+    }
+  }
+  CHECK(wins.load(std::memory_order_relaxed) == 1, "file: racing writers must produce one winner");
+  const auto winner = qntx::kernelFileRead(dir);
+  CHECK(
+      winner.has_value() && winner->size() == 1 && winner->front() >= 100 &&
+          winner->front() < 108,
+      "file: the winning writer's bytes were committed");
 
   // Simulated crash mid-write: a stale .tmp never shadows the committed file.
   const std::string tmpPath = dir + "/vault.cbor.tmp";
@@ -1119,16 +1175,94 @@ int filePrimitive() {
     std::fputs("partial-garbage", f);
     std::fclose(f);
   }
-  CHECK(qntx::kernelFileRead(dir) == second, "file: crash mid-write preserves old file");
+  CHECK(qntx::kernelFileRead(dir) == winner, "file: crash mid-write preserves old file");
 
   return g_failures;
 }
 
-// The __qntx.file JS contract, exercised inside the real runtime: null on a
-// missing file (not undefined — the kernel's file store keys on null), writes
-// accept a TypedArray view (a subarray with non-zero byteOffset persists
-// exactly those bytes), non-byte inputs throw, and a second runtime on the
-// same directory reads the persisted bytes back.
+// The process-wide kernel slot: one live runtime at a time. A second claim
+// while the first is live throws; a claim released with a still-stopping
+// runtime hands it to the next claim as its predecessor, and the successor's
+// beforeEvaluate-style wait returns only once that predecessor has stopped.
+int kernelSlot() {
+  qntx::KernelSlot slot;
+  {
+    auto claimA = slot.claim();
+    CHECK(claimA.predecessor() == nullptr, "kernel-slot: fresh claim saw a predecessor");
+    bool threw = false;
+    try {
+      (void)slot.claim();
+    } catch (const std::runtime_error&) {
+      threw = true;
+    }
+    CHECK(threw, "kernel-slot: second admission while live must throw");
+
+    // A busy-loop runtime destroyed mid-run is still tearing down when the
+    // claim releases it: the next claim inherits it as predecessor.
+    Mailbox box1;
+    auto rt1 =
+        qntx::KernelRuntime::start(sourceScript("while (true) {}"), hooksFor(box1), "");
+    rt1->destroy();
+    claimA.release(rt1);
+
+    auto claimB = slot.claim();
+    CHECK(claimB.predecessor() == rt1, "kernel-slot: successor must inherit the predecessor");
+
+    // The gate a successor wires into Hooks.beforeEvaluate: it returns only
+    // after the predecessor stopped — and times out into a crash, never a
+    // silent overlap.
+    Mailbox box2;
+    auto hooks2 = hooksFor(box2);
+    hooks2.beforeEvaluate = [rt1](jsi::Runtime&) {
+      if (!rt1->waitUntilStopped(std::chrono::seconds(10))) {
+        throw std::runtime_error("the previous kernel runtime did not stop in time");
+      }
+    };
+    const std::string js2 = std::string(kSendHelper) + R"JS(
+__send("ready");
+)JS";
+    auto rt2 = qntx::KernelRuntime::start(sourceScript(js2), hooks2, "");
+    CHECK(
+        box2.waitPosts(1, std::chrono::seconds(30)) == 1,
+        "kernel-slot: successor never evaluated");
+    {
+      std::lock_guard<std::mutex> lock(box2.m);
+      CHECK(
+          !box2.posts.empty() && box2.posts[0] == "ready" && box2.errors.empty(),
+          "kernel-slot: successor crashed instead of waiting");
+    }
+    CHECK(
+        rt1->waitUntilStopped(std::chrono::milliseconds(0)),
+        "kernel-slot: predecessor still stopping when the successor evaluated");
+    rt2->destroy();
+    CHECK(
+        rt2->waitUntilStopped(std::chrono::seconds(5)),
+        "kernel-slot: successor runtime still running");
+    claimB.release(rt2);
+  }
+
+  // Admission after release works: the handed-over runtime has stopped, so a
+  // successor's wait returns immediately; a clean release leaves nothing.
+  {
+    auto claimC = slot.claim();
+    CHECK(claimC.predecessor() != nullptr, "kernel-slot: stopping runtime must be handed over");
+    CHECK(
+        claimC.predecessor()->waitUntilStopped(std::chrono::milliseconds(0)),
+        "kernel-slot: stopped predecessor must not block a successor");
+    claimC.release(nullptr);
+    auto claimD = slot.claim();
+    CHECK(claimD.predecessor() == nullptr, "kernel-slot: clean release must leave no predecessor");
+    claimD.release(nullptr);
+  }
+  return g_failures;
+}
+
+// The __qntx.file JS contract, exercised inside the real runtime: undefined on
+// a missing file, replace accepts a TypedArray view (a subarray with non-zero
+// byteOffset persists exactly those bytes) and returns whether the
+// compare-and-swap won, a stale or absent expectation writes nothing, non-byte
+// inputs throw for either argument, and a second runtime on the same
+// directory reads the persisted bytes back.
 int fileContract() {
   const std::string dir = makeTempDir();
   if (dir.empty()) {
@@ -1139,20 +1273,28 @@ int fileContract() {
 var out = [];
 out.push("read:" + (__qntx.file.read() === undefined ? "undefined" : "not-undefined"));
 var view = new Uint8Array([9, 1, 2, 3, 4, 8]).subarray(1, 5);
-__qntx.file.write(view);
+out.push("create:" + __qntx.file.replace(view));
 var back = __qntx.file.read();
 out.push("back:" + (back === undefined ? "undefined" : Array.from(back).join(",")));
+out.push("swap:" + __qntx.file.replace(new Uint8Array([5, 6]), back));
+out.push("stale:" + __qntx.file.replace(new Uint8Array([7]), view));
 try {
-  __qntx.file.write({ length: 4 });
+  __qntx.file.replace({ length: 4 });
   out.push("object:no-throw");
 } catch (e) {
   out.push("object:threw");
 }
 try {
-  __qntx.file.write("bytes");
+  __qntx.file.replace("bytes");
   out.push("string:no-throw");
 } catch (e) {
   out.push("string:threw");
+}
+try {
+  __qntx.file.replace(new Uint8Array(1), "nope");
+  out.push("expected:no-throw");
+} catch (e) {
+  out.push("expected:threw");
 }
 __send(out.join("|"));
 )JS";
@@ -1169,10 +1311,14 @@ __send(out.join("|"));
     }
   }
   CHECK(report.find("read:undefined") != std::string::npos, "file-contract: missing file must read undefined");
+  CHECK(report.find("create:true") != std::string::npos, "file-contract: absent-expected create must win");
   CHECK(report.find("back:1,2,3,4") != std::string::npos,
       "file-contract: subarray bytes must persist exactly");
+  CHECK(report.find("swap:true") != std::string::npos, "file-contract: matching-expected swap must win");
+  CHECK(report.find("stale:false") != std::string::npos, "file-contract: stale expected must lose");
   CHECK(report.find("object:threw") != std::string::npos, "file-contract: plain object must throw");
   CHECK(report.find("string:threw") != std::string::npos, "file-contract: string must throw");
+  CHECK(report.find("expected:threw") != std::string::npos, "file-contract: non-byte expected must throw");
 
   Mailbox box2;
   const std::string js2 = std::string(kSendHelper) + R"JS(
@@ -1186,7 +1332,7 @@ __send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
   }
   {
     std::lock_guard<std::mutex> lock(box2.m);
-    CHECK(!box2.posts.empty() && box2.posts[0] == "r:1,2,3,4",
+    CHECK(!box2.posts.empty() && box2.posts[0] == "r:5,6",
         "file-contract: second runtime must read persisted bytes");
   }
   return g_failures;
@@ -1211,7 +1357,7 @@ int queueCap() {
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
   std::vector<uint8_t> frame(16, 0x61);
   for (int i = 0; i < 70; i++) {
-    rt->post(frame);
+    rt->post(qntx::SecretBytes(frame.data(), frame.size()));
   }
   {
     std::unique_lock<std::mutex> lock(box.m);
@@ -1682,6 +1828,7 @@ int main(int argc, char** argv) {
       {"backends-nostr", [](const char*) { return backendsNostr(); }},
       {"file-primitive", [](const char*) { return filePrimitive(); }},
       {"file-contract", [](const char*) { return fileContract(); }},
+      {"kernel-slot", [](const char*) { return kernelSlot(); }},
       {"queue-cap", [](const char*) { return queueCap(); }},
       {"measure-timers-standard",
        [](const char*) { return measureTimers(KernelProfile::standard); }},

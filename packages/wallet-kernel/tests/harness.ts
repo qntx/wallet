@@ -150,6 +150,8 @@ export function createHarness(opts?: {
   pbkdf2?: Pbkdf2;
   /** The real cost, for the vector tests; every other test stretches at a token cost. */
   argon2id?: Argon2id;
+  /** Refuse a posted message (the native CBOR boundary throws for an unencodable response). */
+  throwOnPost?: (message: ProtocolValue) => boolean;
 }): Harness {
   let now = opts?.start ?? 1_700_000_000_000; // wall clock — persisted timestamps only
   let elapsed = 0; // monotonic clock — session deadlines and timers
@@ -166,6 +168,9 @@ export function createHarness(opts?: {
 
   const port: Port = {
     post: (message) => {
+      if (opts?.throwOnPost?.(message) === true) {
+        throw new Error("port refused the message");
+      }
       posted.push(message);
       if (isResponse(message)) {
         const resolve = pending.get(message.id);

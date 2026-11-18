@@ -1,25 +1,28 @@
-import type {
-  Factor,
-  MethodName,
-  ParamsOf,
-  ResultOf,
-  SignedEvent,
-  VerifyFactor as WireVerifyFactor,
-} from "./protocol/index.ts";
 /**
  * Channel internals shared between the core Wallet and the protocol subpath modules
  * (@qntx/wallet/nostr, later spark/chains). This file is NOT a package subpath — modules look a
  * Wallet up in the WeakMap, so a foreign object has no channel to reach.
  */
+import type { PlainMethod, SecretMethod, SecretWire } from "./factors.ts";
+import type {
+  ParamsOf,
+  ResultOf,
+  SignedEvent,
+  VerifyFactor as WireVerifyFactor,
+} from "./protocol/index.ts";
 import { WalletError } from "./types.ts";
-import type { InitialFactor, UnlockFactor, VerifyFactor, Wallet, WalletSnapshot } from "./types.ts";
+import type { VerifyFactor, Wallet, WalletSnapshot } from "./types.ts";
 
 export type WalletInternals = {
-  /** One validated request on the kernel channel (awaits the live port's first status). */
-  readonly call: <M extends MethodName>(
+  /** One validated request whose params carry no secret bytes. */
+  readonly call: <M extends PlainMethod>(method: M, params: ParamsOf<M>) => Promise<ResultOf<M>>;
+  /**
+   * One validated request whose params carry secret bytes: `build` places them on a fresh wire; the
+   * wire is wiped when build throws and otherwise travels or is wiped inside the channel.
+   */
+  readonly secretCall: <M extends SecretMethod>(
     method: M,
-    params: ParamsOf<M>,
-    transfer?: ArrayBuffer[],
+    build: (wire: SecretWire) => ParamsOf<M> | Promise<ParamsOf<M>>,
   ) => Promise<ResultOf<M>>;
   /** The live kernel port's first-status gate — re-read per call (a respawn replaces it). */
   readonly ready: () => Promise<void>;
@@ -28,20 +31,11 @@ export type WalletInternals = {
   readonly verifyEvent: (event: SignedEvent) => boolean;
   /** Marks a user verification in flight on the snapshot (`verifying`). */
   readonly withVerifying: <T>(fn: () => Promise<T>) => Promise<T>;
-  /** Public UnlockFactor → wire factor material (the passkey ceremony runs here). */
-  readonly resolveFactor: (factor: UnlockFactor, transfer: ArrayBuffer[]) => Promise<Factor>;
   /** Public VerifyFactor → wire factor material; a device factor is invalid-input. */
   readonly resolveVerifyFactor: (
     factor: VerifyFactor,
-    transfer: ArrayBuffer[],
+    wire: SecretWire,
   ) => Promise<WireVerifyFactor>;
-  /** The create/import factor gate: required on an uninitialized vault, forbidden after. */
-  readonly createFactorParam: (
-    factor: InitialFactor | undefined,
-    transfer: ArrayBuffer[],
-  ) => Promise<Factor | undefined>;
-  /** Adopts the session a create/import result opened onto the channel. */
-  readonly sessionOf: (result: { readonly session: string }) => void;
 };
 
 const internals = new WeakMap<Wallet, WalletInternals>();

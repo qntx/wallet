@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -14,11 +16,20 @@ namespace qntx {
 // rejection and never silently treats it as an empty vault.
 std::optional<std::vector<uint8_t>> kernelFileRead(const std::string& directory);
 
-// Atomic replace of vault.cbor in `directory`: write vault.cbor.tmp in the
-// same directory, fsync it, rename it over the target, then fsync the
-// directory so the rename itself is durable. Throws std::runtime_error naming
-// the failing step and errno; a failed write leaves the previous file intact
-// and unlinks the temp file.
-void kernelFileWrite(const std::string& directory, const std::vector<uint8_t>& bytes);
+// Compare-and-swap whole-file replace of vault.cbor in `directory`. An
+// exclusive flock on <directory>/vault.cbor.lock serializes writers across
+// open file descriptions and processes; inside the lock the current file is
+// re-read and byte-compared with `expected` (nullopt = the file must not
+// exist). On a match the file is replaced atomically (vault.cbor.tmp + fsync +
+// rename + directory fsync — the shared temp name is safe because writers are
+// serialized) and true is returned. On a mismatch nothing is written and false
+// is returned; the caller fails closed instead of clobbering a concurrent
+// commit. Throws std::runtime_error naming the failing step and errno; a
+// failed write leaves the previous file intact and unlinks the temp file.
+bool kernelFileReplace(
+    const std::string& directory,
+    const uint8_t* next,
+    size_t size,
+    const std::optional<std::vector<uint8_t>>& expected);
 
 } // namespace qntx

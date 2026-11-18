@@ -317,8 +317,19 @@ export async function main(): Promise<void> {
   const fileBytes = { value: undefined as Uint8Array | undefined };
   const __qntxFile = {
     read: (): Uint8Array | undefined => fileBytes.value,
-    write: (b: Uint8Array): void => {
-      fileBytes.value = b;
+    replace: (next: Uint8Array, expected: Uint8Array | undefined): boolean => {
+      const current = fileBytes.value;
+      const matches =
+        expected === undefined
+          ? current === undefined
+          : current !== undefined &&
+            current.length === expected.length &&
+            current.every((b, i) => b === expected[i]);
+      if (!matches) {
+        return false;
+      }
+      fileBytes.value = next;
+      return true;
     },
   };
   (globalThis as Record<string, unknown>)["__qntx"] = {
@@ -361,10 +372,20 @@ export async function main(): Promise<void> {
       clear: () => undefined,
     },
     passkey: { create: () => undefined, get: () => undefined },
-    // The native kernel entry binds backends.nostr eagerly at platform
-    // construction — the smoke never calls it, so only the ABI pin is real.
+    // The native kernel entry binds backends.nostr and backends.spark eagerly
+    // at platform construction — the smoke never calls either, so only the ABI
+    // pins and call shapes are real.
     backends: {
       nostr: { abiVersion: 2 },
+      spark: {
+        abiVersion: 1,
+        frostCommit: () => new Uint8Array(),
+        frostSign: () => new Uint8Array(),
+        frostAggregate: () => new Uint8Array(),
+        eciesEncrypt: () => new Uint8Array(),
+        eciesDecrypt: () => new Uint8Array(),
+        splitSecretWithProofs: () => new Uint8Array(),
+      },
     },
     frames: {
       post: (frame: ArrayBuffer) => {
@@ -381,7 +402,7 @@ export async function main(): Promise<void> {
 
   // The kernel loads its store lazily, so exercise the file store directly — this is the
   // guard for globals outside the Hermes set (e.g. structuredClone): load commits the clone
-  // path and a real commit exercises encode + write + watch.
+  // path and a real commit exercises encode + compare-and-swap replace + watch.
   const { createFileStore } = await import("../../../wallet-native/kernel/store.ts");
   const fs = createFileStore(__qntxFile);
   const loaded = await fs.load();

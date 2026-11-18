@@ -7,16 +7,19 @@
 #include <mutex>
 
 #include "host/Lifecycle.hpp"
+#include "KernelSlot.hpp"
 
 #include "../runtime/KernelRuntime.hpp"
 
 namespace margelo::nitro::qntxwallet {
 
-// The only Nitro-registered object: drives one kernel runtime. `start`
-// verifies the embedded bytecode's SHA-256 before loading; `post` enforces the
-// 1 MiB frame cap (the inbound queue cap lives inside KernelRuntime::post and
-// reports through the same integrity exit); `lock` destroys the runtime. Exit
-// reasons reach JS through the `onExit` listener, at most once.
+// The only Nitro-registered object: drives one kernel runtime. `start` loads
+// the kernel bytecode compiled into the signed app binary as a constexpr array
+// (the build-time manifest check only catches a stale artifact); `post`
+// enforces the 1 MiB frame cap (the inbound queue cap lives inside
+// KernelRuntime::post and reports through the same integrity exit); `lock`
+// destroys the runtime. Exit reasons reach JS through the `onExit` listener,
+// at most once.
 class HybridKernelHost final : public HybridKernelHostSpec,
                                public qntx::LifecycleLockTarget {
  public:
@@ -43,6 +46,10 @@ class HybridKernelHost final : public HybridKernelHostSpec,
   void exit(KernelExitReason reason);
 
   std::mutex mutex_;
+  // Held while this host owns the process's one live kernel runtime; released
+  // on exit or destruction, naming the still-stopping runtime as the next
+  // start's predecessor.
+  qntx::KernelSlot::Claim slotClaim_;
   std::shared_ptr<qntx::KernelRuntime> runtime_;
   std::function<void(const std::shared_ptr<ArrayBuffer>&)> messageListener_;
   std::function<void(KernelExitReason)> exitListener_;

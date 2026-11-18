@@ -3,10 +3,11 @@
  * — encode/decode happens here and in the kernel entry — so a malformed inbound frame can never
  * reach the message domain: the port exits `crashed` and the host runtime is destroyed.
  */
+import { WalletError } from "@qntx/wallet";
 import type { MainPort, PortExit } from "@qntx/wallet/host";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import { decodeFrame, encodeFrame } from "./cbor.ts";
+import { CborError, decodeFrame, encodeFrame } from "./cbor.ts";
 
 export type KernelExitReason = "locked" | "crashed" | "integrity" | "background";
 
@@ -46,6 +47,10 @@ export function spawnFromHost(host: KernelHostLike, backgroundLockSeconds: numbe
     } catch {
       exit("crashed");
       return;
+    } finally {
+      // The frame's bytes are decode-copied or dead either way — never leave the
+      // encoded form resident past dispatch.
+      new Uint8Array(frame).fill(0);
     }
     dispatch(message);
   });
@@ -67,13 +72,27 @@ export function spawnFromHost(host: KernelHostLike, backgroundLockSeconds: numbe
 
   return {
     post: (message, transfer) => {
-      const frame = encodeFrame(message);
-      host.post(frame);
       // Structured clone would neuter transferred buffers on the web; the main↔kernel
       // contract is the same here — the caller's buffers hold secrets (passwords, PRF
-      // output) and are zeroed once their bytes are inside the frame.
-      for (const buffer of transfer) {
-        new Uint8Array(buffer).fill(0);
+      // output) and are zeroed once their bytes are inside the frame. The frame itself
+      // is wiped on every path after the host took its copy — success or a throwing
+      // host.post alike.
+      let frame: ArrayBuffer | undefined;
+      try {
+        frame = encodeFrame(message);
+        host.post(frame);
+      } catch (error) {
+        if (error instanceof CborError) {
+          throw new WalletError("invalid-input", `request cannot be encoded: ${error.message}`);
+        }
+        throw error;
+      } finally {
+        if (frame !== undefined) {
+          new Uint8Array(frame).fill(0);
+        }
+        for (const buffer of transfer) {
+          new Uint8Array(buffer).fill(0);
+        }
       }
     },
     listen: (handler) => {
