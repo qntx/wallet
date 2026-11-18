@@ -89,7 +89,8 @@ function world() {
         checks: [],
         ...(state.simulation === undefined ? {} : { simulation: state.simulation }),
         staleReason: () => state.stale,
-        submit: async () => {
+        submit: async (_verify, commit) => {
+          commit();
           await state.gate;
           if (state.submitFails !== undefined) {
             throw state.submitFails;
