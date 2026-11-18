@@ -271,6 +271,9 @@ export function createIndexedDbStore(): RecordStore {
               for (const name of STORES) {
                 tx.objectStore(name).clear();
               }
+              // The staged meta is gone with the row: the revision bump must not write it back.
+              metaValue = undefined;
+              metaLoaded = true;
               break;
           }
           if (precondition !== undefined) {

@@ -102,6 +102,21 @@ describe("IndexedDB vault store", () => {
     },
   );
 
+  it("a clear after other changes in the same commit leaves the store empty", async () => {
+    const store = createIndexedDbStore();
+    await store.commit([{ op: "init", meta: META }]);
+    await store.commit([
+      { op: "put-record", record: record("entropy", "w0", 1) },
+      { op: "record-failure", at: 1 },
+      { op: "clear" },
+    ]);
+    await expect(store.load()).resolves.toStrictEqual({
+      meta: undefined,
+      records: [],
+      factors: [],
+    });
+  });
+
   it("a failed precondition writes nothing of its commit", async () => {
     const store = createIndexedDbStore();
     await store.commit([{ op: "init", meta: META }]);
