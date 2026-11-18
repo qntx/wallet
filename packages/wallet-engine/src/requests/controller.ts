@@ -1019,7 +1019,12 @@ export class RequestController extends Controller<RequestControllerState> {
       const action: PreparedSparkAction =
         input.method === "pay"
           ? await preparePay(
-              { fetch: this.options.fetch, now: this.options.now, requestId: id },
+              {
+                fetch: this.options.fetch,
+                now: this.options.now,
+                requestId: id,
+                spark: this.options.spark,
+              },
               input,
             )
           : prepareZapAction(input.account, input.zap, {
@@ -1064,7 +1069,12 @@ export class RequestController extends Controller<RequestControllerState> {
         l1,
       );
       const action = await preparePay(
-        { fetch: this.options.fetch, now: this.options.now, requestId: id },
+        {
+          fetch: this.options.fetch,
+          now: this.options.now,
+          requestId: id,
+          spark: this.options.spark,
+        },
         {
           account: input.account,
           option: { kind: "bitcoin", address },

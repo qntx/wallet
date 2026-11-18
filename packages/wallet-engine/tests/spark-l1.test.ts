@@ -90,10 +90,18 @@ function rig() {
       return Promise.resolve(RECEIVE_ADDRESS);
     },
   } as unknown as TransactionController;
+  const exitQuote = { feeSats: 1 };
   const spark = {
     newDepositAddress: async (ref: SparkAccountRef) => {
       calls.push(`deposit-address ${ref.groupIndex}`);
       return Promise.resolve(DEPOSIT_ADDRESS);
+    },
+    quoteExit: async (_ref: SparkAccountRef, params: { amountSats: number }) => {
+      calls.push(`quote-exit ${params.amountSats}`);
+      return Promise.resolve({
+        feeSats: exitQuote.feeSats,
+        exitSats: params.amountSats + exitQuote.feeSats,
+      });
     },
     withdraw: async (_ref: SparkAccountRef, params: { address: string }) => {
       calls.push(`withdraw ${params.address}`);
@@ -129,7 +137,7 @@ function rig() {
     setTimer: realTimer,
     logger: { warn: () => undefined },
   });
-  return { requests, sends, calls };
+  return { requests, sends, calls, exitQuote };
 }
 
 const deposit = (over: Partial<Extract<RequestInput, { method: "spark-deposit" }>> = {}) =>
@@ -211,6 +219,7 @@ describe("spark exit request", () => {
       family: "spark",
       kind: "exit",
       amountSats: 100_000,
+      feeSats: 1,
       maxFeeSats: 500,
       receiver: RECEIVE_ADDRESS,
     });
@@ -218,6 +227,16 @@ describe("spark exit request", () => {
     expect(request.checks).toStrictEqual([]);
     await r.requests.approve(request.id, "spark-exit", approval(request, VERIFY));
     expect(r.calls).toContain(`withdraw ${RECEIVE_ADDRESS}`);
+  });
+
+  it("refuses a quoted exit fee above the cap before any approval", async () => {
+    const r = rig();
+    r.exitQuote.feeSats = 600;
+    await r.requests.init();
+    await expect(r.requests.prepare(exit())).rejects.toMatchObject({
+      category: "rejected",
+    });
+    expect(r.calls.filter((c) => c.startsWith("withdraw"))).toHaveLength(0);
   });
 
   it("records fee-exceeds-amount when the fee ceiling reaches the amount", async () => {

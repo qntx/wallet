@@ -50,6 +50,8 @@ type FakeClaimOptions = {
   readonly streams?: ReadonlyArray<() => AsyncGenerator<SparkEvent>>;
   /** `transfers.history` pages returned in order — a rejected promise exercises the warn path. */
   readonly historyPages?: ReadonlyArray<unknown>;
+  /** Fee every speed quotes for an exit amount — exercises quote convergence. */
+  readonly quoteFee?: (amountSats: number) => number;
 };
 
 function fakeClient(
@@ -110,7 +112,14 @@ function fakeClient(
       },
     },
     withdrawals: {
-      quoteCooperativeExit: async () => Promise.resolve({ fees: { fast: 5, medium: 3, slow: 1 } }),
+      quoteCooperativeExit: async (o: unknown) => {
+        const quoted = opts.quoteFee?.((o as { amountSats: number }).amountSats);
+        return Promise.resolve(
+          quoted === undefined
+            ? { fees: { fast: 5, medium: 3, slow: 1 } }
+            : { fees: { fast: quoted, medium: quoted, slow: quoted } },
+        );
+      },
       cooperativeExit: async (o: unknown) => {
         calls.push("exit");
         return Promise.resolve(o);
@@ -144,9 +153,9 @@ function fakeClient(
   return { client: client as unknown as SparkClient, aborters, sendArgs };
 }
 
-function controller(calls: string[], approvals: unknown[]) {
+function controller(calls: string[], approvals: unknown[], opts: FakeClaimOptions = {}) {
   const sendArgs: unknown[] = [];
-  const { client, aborters } = fakeClient(calls, sendArgs);
+  const { client, aborters } = fakeClient(calls, sendArgs, [], opts);
   const c = new SparkController({
     setTimer: realTimer,
     spark: {
@@ -307,11 +316,20 @@ describe("send network check", () => {
   });
 });
 
-describe("withdraw approval intent", () => {
+const EXIT_ADDRESS = "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz";
+
+/** A quote that grows once then settles: f(100000) = 500, f(100500) = 600, f(100600) = 600. */
+const growOnce = (amountSats: number): number => (amountSats <= 100_000 ? 500 : 600);
+
+describe("cooperative exit quoting", () => {
   const approval = (approvals: unknown[]) => approvals[0] as { intent: unknown };
 
-  async function setup(calls: string[], approvals: unknown[]) {
-    const { c, client } = controller(calls, approvals);
+  async function setup(
+    calls: string[],
+    approvals: unknown[],
+    quoteFee?: (amountSats: number) => number,
+  ) {
+    const { c, client } = controller(calls, approvals, quoteFee === undefined ? {} : { quoteFee });
     const store = createMemoryEngineStore();
     c.setAccounts([REF]);
     c.setStore(store);
@@ -319,57 +337,83 @@ describe("withdraw approval intent", () => {
     return { c, client };
   }
 
-  it("explicit amount: payout intent is exit - quoted fee", async () => {
+  it("quotes the converged fee and the gross exit amount", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals, growOnce);
+    // Requotes 100500 then 100600: the fee settles at 600.
+    await expect(
+      c.quoteExit(REF, { address: EXIT_ADDRESS, amountSats: 100_000, speed: "FAST" }),
+    ).resolves.toStrictEqual({ feeSats: 600, exitSats: 100_600 });
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("exit");
+    await c.destroy();
+  });
+
+  it("rejects a quote that never settles", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals, (amount) => amount);
+    await expect(
+      c.quoteExit(REF, { address: EXIT_ADDRESS, amountSats: 1000, speed: "FAST" }),
+    ).rejects.toMatchObject({
+      category: "rejected",
+      message: expect.stringContaining("settle"),
+    });
+    await c.destroy();
+  });
+
+  it("rejects an address on the wrong network before quoting", async () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
-    await c.withdraw(REF, {
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+    await expect(
+      c.quoteExit(REF, {
+        address: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        amountSats: 1000,
+        speed: "FAST",
+      }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
+    await c.destroy();
+  });
+
+  it("exits amountSats + the settled fee so amountSats arrives", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    const { c } = await setup(calls, approvals);
+    const exit = await c.withdraw(REF, {
+      address: EXIT_ADDRESS,
       amountSats: 1000,
       speed: "FAST",
+      maxFeeSats: 10,
       transferId: TID,
       verify: VERIFY,
       commit: () => undefined,
     });
-    // fast fee = 5, payout = 995
+    // fast fee 5: the exit debits 1005 of leaves and the receiver gets 1000.
+    expect(exit).toMatchObject({
+      address: EXIT_ADDRESS,
+      speed: "FAST",
+      amountSats: 1005,
+      maxFeeSats: 5,
+      transferId: TID,
+    });
     expect(approval(approvals).intent).toStrictEqual({
       kind: "exit",
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-      amountSats: 995,
+      address: EXIT_ADDRESS,
+      amountSats: 1000,
       maxFeeSats: 5,
     });
-    expect(calls).toContain("exit");
     await c.destroy();
   });
 
-  it("whole-balance: defaults amount to the balance minus fee", async () => {
-    const calls: string[] = [];
-    const approvals: unknown[] = [];
-    const { c } = await setup(calls, approvals);
-    await c.withdraw(REF, {
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-      speed: "SLOW",
-      transferId: TID,
-      verify: VERIFY,
-      commit: () => undefined,
-    });
-    // balance 42, slow fee 1, payout 41
-    expect(approval(approvals).intent).toStrictEqual({
-      kind: "exit",
-      address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
-      amountSats: 41,
-      maxFeeSats: 1,
-    });
-    await c.destroy();
-  });
-
-  it("rejects a caller cap below the quote without approving", async () => {
+  it("rejects a settled fee above the caller cap before approving", async () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
     await expect(
       c.withdraw(REF, {
-        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+        address: EXIT_ADDRESS,
         amountSats: 1000,
         speed: "FAST",
         maxFeeSats: 2,
@@ -377,27 +421,52 @@ describe("withdraw approval intent", () => {
         verify: VERIFY,
         commit: () => undefined,
       }),
-    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
+    ).rejects.toMatchObject({
+      category: "rejected",
+      message: expect.stringContaining("maxFeeSats"),
+    });
     expect(approvals).toHaveLength(0);
     expect(calls).not.toContain("exit");
     await c.destroy();
   });
 
-  it("rejects a fee at or above the exit amount", async () => {
+  it("rejects a fee at or above the amount that arrives", async () => {
     const calls: string[] = [];
     const approvals: unknown[] = [];
     const { c } = await setup(calls, approvals);
     await expect(
       c.withdraw(REF, {
-        address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
+        address: EXIT_ADDRESS,
         amountSats: 5,
         speed: "FAST",
+        maxFeeSats: 10,
         transferId: TID,
         verify: VERIFY,
         commit: () => undefined,
       }),
     ).rejects.toSatisfy((e) => (e as { category?: string }).category === "insufficient-funds");
     expect(approvals).toHaveLength(0);
+    await c.destroy();
+  });
+
+  it("rejects a requote that grows past the cap before approving", async () => {
+    const calls: string[] = [];
+    const approvals: unknown[] = [];
+    // The first quote (500) is inside the cap, but the settled 600 exceeds it.
+    const { c } = await setup(calls, approvals, growOnce);
+    await expect(
+      c.withdraw(REF, {
+        address: EXIT_ADDRESS,
+        amountSats: 100_000,
+        speed: "FAST",
+        maxFeeSats: 550,
+        transferId: TID,
+        verify: VERIFY,
+        commit: () => undefined,
+      }),
+    ).rejects.toSatisfy((e) => (e as { category?: string }).category === "rejected");
+    expect(approvals).toHaveLength(0);
+    expect(calls).not.toContain("exit");
     await c.destroy();
   });
 });
@@ -1193,6 +1262,7 @@ describe("commit before the client send", () => {
         address: "bcrt1p6rxklt0fj70uncxvx57cup4z9apavkw0p8y0jzvrf6qydr62l9nqd94jkz",
         amountSats: 1000,
         speed: "FAST",
+        maxFeeSats: 10,
         transferId: TID,
         verify: VERIFY,
         commit: gone,
@@ -1346,6 +1416,7 @@ describe("idempotent commits", () => {
           address: P2TR,
           amountSats: 1000,
           speed: "FAST",
+          maxFeeSats: 10,
           transferId: TID,
           verify: VERIFY,
           commit: () => undefined,

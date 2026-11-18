@@ -138,7 +138,10 @@ function world(over: { readonly blindSigning?: boolean } = {}) {
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,
-    spark: {} as unknown as SparkController,
+    spark: {
+      quoteExit: async (_r: unknown, p: { amountSats: number }) =>
+        Promise.resolve({ feeSats: 1, exitSats: p.amountSats + 1 }),
+    } as unknown as SparkController,
     nostrSign: async () => Promise.reject(new Error("nostr-sign is not wired in this test")),
     bitcoinSign: async () => Promise.reject(new Error("unused")),
     bitcoinPrepare: async () => Promise.reject(new Error("unused")),
@@ -248,6 +251,7 @@ describe("recipient risk", () => {
       account: SPARK_REF,
       option: { kind: "bitcoin", address: "bcrt1pexample" },
       amountSats: 1000,
+      maxFeeSats: 10,
     });
     expect(exit.risk).toStrictEqual([]);
   });

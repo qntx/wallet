@@ -20,6 +20,8 @@ export type SparkDisplay = {
   readonly kind: "transfer" | "lightning" | "exit";
   readonly amountSats: number;
   readonly maxFeeSats?: number;
+  /** Exits only: the quoted fee; the debit is `amountSats + feeSats`. */
+  readonly feeSats?: number;
   /** Spark address, Lightning payee public key (hex) or bitcoin address. */
   readonly receiver: string;
   /** Invoice description or the LNURL metadata text. */

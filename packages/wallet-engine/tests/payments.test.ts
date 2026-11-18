@@ -388,9 +388,14 @@ const WITHDRAW_REQUEST: LnurlWithdrawRequest = {
 const CTX_ID = "req-test";
 
 describe("payments.pay", () => {
-  function context() {
+  function context(opts: { readonly exitFeeSats?: number } = {}) {
     const calls: Array<{ method: string; params: unknown }> = [];
     const spark = {
+      quoteExit: async (_ref: unknown, params: { amountSats: number }) => {
+        calls.push({ method: "quoteExit", params });
+        const feeSats = opts.exitFeeSats ?? 1;
+        return Promise.resolve({ feeSats, exitSats: params.amountSats + feeSats });
+      },
       send: async (_ref: unknown, params: unknown) => {
         calls.push({ method: "send", params });
         await Promise.resolve();
@@ -666,6 +671,7 @@ describe("payments.pay", () => {
     "a lost $name commit response reports the payment pending, not failed",
     async ({ method, params }) => {
       const spark = {
+        quoteExit: async () => Promise.resolve({ feeSats: 1, exitSats: 11 }),
         [method]: async () => Promise.reject(LOST),
       } as unknown as SparkController;
       const ctx: TestContext = {
@@ -684,6 +690,54 @@ describe("payments.pay", () => {
     },
   );
 
+  it("bitcoin requires a fee cap", async () => {
+    const { ctx } = context();
+    await expect(
+      pay(ctx, {
+        account: REF,
+        option: { kind: "bitcoin", address: REGTEST_P2TR },
+        amountSats: 10,
+        verify: VERIFY,
+      }),
+    ).rejects.toMatchObject({ category: "invalid-input" });
+  });
+
+  it("bitcoin refuses a quoted fee above the cap before any approval", async () => {
+    // The audit scenario: a 99 000-sat quote on a 100 000-sat payment capped at 1 000 — the
+    // prepare-time quote refuses it and no withdrawal is ever approved.
+    const { ctx, calls } = context({ exitFeeSats: 99_000 });
+    await expect(
+      pay(ctx, {
+        account: REF,
+        option: { kind: "bitcoin", address: REGTEST_P2TR },
+        amountSats: 100_000,
+        maxFeeSats: 1_000,
+        verify: VERIFY,
+      }),
+    ).rejects.toMatchObject({ category: "rejected" });
+    expect(calls.map((c) => c.method)).not.toContain("withdraw");
+  });
+
+  it("bitcoin displays the arriving amount, the quoted fee and the cap", async () => {
+    const { ctx } = context();
+    const action = await preparePay(ctx, {
+      account: REF,
+      option: { kind: "bitcoin", address: REGTEST_P2TR },
+      amountSats: 10,
+      maxFeeSats: 2,
+    });
+    expect(action.display).toStrictEqual({
+      family: "spark",
+      network: "regtest",
+      kind: "exit",
+      amountSats: 10,
+      feeSats: 1,
+      maxFeeSats: 2,
+      receiver: REGTEST_P2TR,
+    });
+    expect(action.checks).toStrictEqual([]);
+  });
+
   it("bitcoin delegates to withdraw", async () => {
     const { ctx, calls } = context();
     await pay(ctx, {
@@ -693,7 +747,7 @@ describe("payments.pay", () => {
       maxFeeSats: 1,
       verify: VERIFY,
     });
-    expect(calls[0]).toStrictEqual({
+    expect(calls).toContainEqual({
       method: "withdraw",
       params: {
         address: REGTEST_P2TR,

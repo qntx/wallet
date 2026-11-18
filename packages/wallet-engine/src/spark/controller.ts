@@ -21,7 +21,7 @@ import type {
 } from "@qntx/spark";
 import { registerLightningAddress, unregisterLightningAddress } from "@qntx/spark/lnurl";
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
+import type { SparkAccountRef, SparkApproveIntent, SparkNetwork } from "@qntx/wallet/protocol";
 import type { SparkSigner } from "@qntx/wallet/spark";
 
 import { Controller } from "../controller.ts";
@@ -72,6 +72,15 @@ export type SparkControllerOptions = {
 };
 
 const key = (ref: SparkAccountRef): string => `${ref.walletId}:${ref.groupIndex}:${ref.network}`;
+
+/** An exit may only pay an address on the account's own L1 network. */
+const assertExitAddress = (address: string, network: SparkNetwork): void => {
+  try {
+    bitcoinAddressScript(address, network);
+  } catch {
+    throw new SparkControllerError("rejected", "withdrawal address is not on this network");
+  }
+};
 
 /**
  * A request's idempotent transfer id: a UUIDv7 — the shape the SO expects — whose random bits are
@@ -747,17 +756,40 @@ export class SparkController extends Controller<SparkControllerState> {
   }
 
   /**
-   * Cooperative exit to an L1 address. The client exits `amountSats` of leaves and the payout is
-   * `amountSats - fee`, so the approval intent carries the PAYOUT: `amountSats: exit - fee` and
-   * `maxFeeSats: fee` — the kernel matches the exit output against the intent, not the leaf total.
+   * The SSP's converged cooperative-exit quote for paying `amountSats` to an L1 address: the fee
+   * depends on the gross amount, so the quote is re-taken on `amountSats + fee` until it settles.
+   */
+  async quoteExit(
+    ref: SparkAccountRef,
+    params: {
+      address: string;
+      /** Sats that arrive at the address — the exit debits amountSats + fee. */
+      amountSats: number;
+      speed: "FAST" | "MEDIUM" | "SLOW";
+    },
+  ): Promise<{ readonly feeSats: number; readonly exitSats: number }> {
+    return this.guarded(async () => {
+      const client = this.clientFor(ref);
+      assertExitAddress(params.address, ref.network);
+      return this.settleExitFee(client, params);
+    });
+  }
+
+  /**
+   * Cooperative exit to an L1 address: `amountSats` arrives at the address and the exit debits
+   * `amountSats + fee` of leaves, where `fee` is the SSP's converged quote for the speed —
+   * re-quoted here and bounded by `maxFeeSats` before any approval. The intent carries the payout
+   * (`amountSats`) and the fee (`maxFeeSats: fee`); the kernel matches the exit output against it.
    */
   async withdraw(
     ref: SparkAccountRef,
     params: {
       address: string;
-      amountSats?: number;
+      /** Sats that arrive at the address — the exit debits amountSats + the quoted fee. */
+      amountSats: number;
       speed: "FAST" | "MEDIUM" | "SLOW";
-      maxFeeSats?: number;
+      /** Caller cap on the converged exit fee, in sats. */
+      maxFeeSats: number;
       /** The request's idempotent transfer id — a retry resumes, never double-pays. */
       transferId: string;
       verify: VerifyFactor;
@@ -767,24 +799,12 @@ export class SparkController extends Controller<SparkControllerState> {
   ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
-      try {
-        bitcoinAddressScript(params.address, ref.network);
-      } catch {
-        throw new SparkControllerError("rejected", "withdrawal address is not on this network");
+      assertExitAddress(params.address, ref.network);
+      const { feeSats, exitSats } = await this.settleExitFee(client, params);
+      if (feeSats > params.maxFeeSats) {
+        throw new SparkControllerError("rejected", "quoted exit fee exceeds maxFeeSats");
       }
-      const exitAmount = params.amountSats ?? (await client.balance());
-      const quote = await client.withdrawals.quoteCooperativeExit({
-        address: params.address,
-        amountSats: exitAmount,
-      });
-      const fee =
-        quote.fees[
-          params.speed === "FAST" ? "fast" : params.speed === "MEDIUM" ? "medium" : "slow"
-        ];
-      if (params.maxFeeSats !== undefined && params.maxFeeSats < fee) {
-        throw new SparkControllerError("rejected", "maxFeeSats below the quoted fee");
-      }
-      if (fee >= exitAmount) {
+      if (feeSats >= params.amountSats) {
         throw new SparkControllerError(
           "insufficient-funds",
           "exit fee meets or exceeds the amount",
@@ -795,8 +815,8 @@ export class SparkController extends Controller<SparkControllerState> {
         intent: {
           kind: "exit",
           address: params.address,
-          amountSats: exitAmount - fee,
-          maxFeeSats: fee,
+          amountSats: params.amountSats,
+          maxFeeSats: feeSats,
         },
         verify: params.verify,
       });
@@ -805,13 +825,42 @@ export class SparkController extends Controller<SparkControllerState> {
         client.withdrawals.cooperativeExit({
           address: params.address,
           speed: params.speed,
-          maxFeeSats: fee,
-          amountSats: exitAmount,
+          maxFeeSats: feeSats,
+          amountSats: exitSats,
           transferId: params.transferId,
         }),
       );
       void this.refreshRecent(key(ref), client);
       return exit;
     });
+  }
+
+  /**
+   * Converges the SSP exit fee for a payout: the fee is quoted on the gross amount, so re-quote on
+   * `amountSats + fee` until the fee stops growing (three re-quotes at most).
+   */
+  private async settleExitFee(
+    client: SparkClient,
+    params: { address: string; amountSats: number; speed: "FAST" | "MEDIUM" | "SLOW" },
+  ): Promise<{ readonly feeSats: number; readonly exitSats: number }> {
+    const quote = async (amountSats: number): Promise<number> => {
+      const quoted = await client.withdrawals.quoteCooperativeExit({
+        address: params.address,
+        amountSats,
+      });
+      return quoted.fees[
+        params.speed === "FAST" ? "fast" : params.speed === "MEDIUM" ? "medium" : "slow"
+      ];
+    };
+    let fee = await quote(params.amountSats);
+    for (let round = 0; round < 3; round += 1) {
+      // oxlint-disable-next-line no-await-in-loop -- each requote depends on the previous fee
+      const next = await quote(params.amountSats + fee);
+      if (next <= fee) {
+        return { feeSats: fee, exitSats: params.amountSats + fee };
+      }
+      fee = next;
+    }
+    throw new SparkControllerError("rejected", "exit fee did not settle");
   }
 }

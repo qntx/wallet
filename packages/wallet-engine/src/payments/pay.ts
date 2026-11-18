@@ -30,6 +30,8 @@ export type PayContext = {
   readonly now: () => number;
   /** The request this payment is prepared for — keys its idempotent transfer id. */
   readonly requestId: string;
+  /** Quotes cooperative exits at prepare, so the approval display carries a bound fee. */
+  readonly spark: Pick<SparkController, "quoteExit">;
 };
 
 const lightningDetails = (
@@ -259,16 +261,34 @@ export async function preparePay(
       if (params.amountSats === undefined) {
         throw new PaymentError("invalid-input", "bitcoin payment: amountSats is required");
       }
+      if (params.maxFeeSats === undefined) {
+        throw new PaymentError("invalid-input", "bitcoin payment: maxFeeSats is required");
+      }
       const { address } = params.option;
       const { amountSats, maxFeeSats } = params;
       const speed = params.speed ?? "MEDIUM";
+      // Quote at prepare: `amountSats` arrives at the address, the exit debits it plus the
+      // converged SSP fee — which the caller's cap bounds before any approval.
+      let feeSats: number;
+      try {
+        ({ feeSats } = await context.spark.quoteExit(ref, { address, amountSats, speed }));
+      } catch (error) {
+        if (error instanceof PaymentError || error instanceof SparkControllerError) {
+          throw error;
+        }
+        throw new PaymentError("network", "bitcoin payment: exit quote failed", error);
+      }
+      if (feeSats > maxFeeSats) {
+        throw new PaymentError("rejected", "quoted exit fee exceeds maxFeeSats");
+      }
       return {
         display: {
           family: "spark",
           network,
           kind: "exit",
           amountSats,
-          ...(maxFeeSats === undefined ? {} : { maxFeeSats }),
+          feeSats,
+          maxFeeSats,
           receiver: address,
         },
         checks: feeCheck(amountSats, maxFeeSats),
@@ -281,7 +301,7 @@ export async function preparePay(
               speed,
               verify,
               amountSats,
-              ...(maxFeeSats === undefined ? {} : { maxFeeSats }),
+              maxFeeSats,
               transferId,
               commit,
             }),

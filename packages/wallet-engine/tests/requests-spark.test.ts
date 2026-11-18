@@ -64,6 +64,11 @@ function world() {
     send: async (_r: unknown, p: unknown) => record("send", p),
     payInvoice: async (_r: unknown, p: unknown) => record("payInvoice", p),
     paySparkInvoice: async (_r: unknown, p: unknown) => record("paySparkInvoice", p),
+    quoteExit: async (_r: unknown, p: { amountSats: number }) => {
+      calls.push({ method: "quoteExit", params: p });
+      await Promise.resolve();
+      return { feeSats: 1, exitSats: p.amountSats + 1 };
+    },
     withdraw: async (_r: unknown, p: unknown) => record("withdraw", p),
     createInvoice: async (_r: unknown, p: unknown) => {
       calls.push({ method: "createInvoice", params: p });
