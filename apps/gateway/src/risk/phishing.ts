@@ -5,6 +5,7 @@ import {
   hashCount,
   hashList,
   parseWith,
+  phishingCandidates,
   phishingHash,
   phishingKey,
   phishingListResponse,
@@ -16,6 +17,7 @@ import { readCapped } from "../providers/body.ts";
 
 export const SNAPSHOT_KEY = "phishing:snapshot";
 export const JOURNAL_KEY = "phishing:journal";
+export const SOURCES_KEY = "phishing:sources";
 
 const FETCH_TIMEOUT_MS = 30_000;
 /** 4.4x the largest list measured (MetaMask's 3.6 MB phishing config). */
@@ -23,6 +25,8 @@ const SOURCE_MAX_BYTES = 16 * 1024 * 1024;
 const JOURNAL_MAX_AGE_MS = 7 * 24 * 3_600_000;
 const JOURNAL_MAX_ENTRIES = 168;
 const SHRINK_FLOOR = 0.5;
+/** One hourly build adding more than this many allow keys is far beyond normal churn (87 today). */
+const ALLOW_GROW_MAX = 50;
 
 export type RiskStore = {
   readonly get: (key: string) => Promise<string | undefined>;
@@ -43,13 +47,54 @@ export type PhishingBuildOptions = {
   readonly sources: ReadonlyArray<PhishingSource>;
 };
 
-function* hashedKeys(entries: ReadonlyArray<string>): Generator<Uint8Array> {
-  for (const entry of entries) {
+/**
+ * One source's normalized keys. `deny` is the effective deny: exact-key cancels stay within the
+ * source, so a source can exempt its own entries but never another source's.
+ */
+type SourceKeys = {
+  readonly id: string;
+  readonly deny: ReadonlySet<string>;
+  readonly allow: ReadonlySet<string>;
+};
+
+const sourceKeys = (id: string, entries: PhishingEntries): SourceKeys => {
+  const allow = new Set<string>();
+  for (const entry of entries.allow) {
     const key = phishingKey(entry);
     if (key !== undefined) {
-      yield phishingHash(key);
+      allow.add(key);
     }
   }
+  const deny = new Set<string>();
+  for (const entry of entries.deny) {
+    const key = phishingKey(entry);
+    if (key !== undefined && !allow.has(key)) {
+      deny.add(key);
+    }
+  }
+  return { id, deny, allow };
+};
+
+/**
+ * The publishable allow keys: an allow entry survives only while no OTHER source effectively denies
+ * any of the page candidates it would clear — the deny of another source always wins over this
+ * source's allow.
+ */
+function publishableAllowKeys(sources: ReadonlyArray<SourceKeys>): ReadonlySet<string> {
+  const allow = new Set<string>();
+  for (const [index, source] of sources.entries()) {
+    for (const key of source.allow) {
+      const denied = sources.some(
+        (other, otherIndex) =>
+          otherIndex !== index &&
+          phishingCandidates(`https://${key}`).some((candidate) => other.deny.has(candidate)),
+      );
+      if (!denied) {
+        allow.add(key);
+      }
+    }
+  }
+  return allow;
 }
 
 const delta = (before: HashList, after: HashList) => ({
@@ -125,7 +170,9 @@ const fetchSource = async (
 
 /**
  * Fetches every source and, when the merged list changed, writes a new snapshot and journal entry.
- * Any failing source, or a list that shrank by more than half, leaves the stored version alone.
+ * Allows cancel denies only within their own source; another source's deny always wins. A failing
+ * source, a source whose effective deny halved, or an allow list that grew implausibly leaves the
+ * stored version alone.
  */
 export async function buildPhishingList(options: PhishingBuildOptions): Promise<void> {
   const { store, now, log } = options;
@@ -142,15 +189,29 @@ export async function buildPhishingList(options: PhishingBuildOptions): Promise<
     skip("source-failed", { error: error instanceof Error ? error.message : "unknown" });
     return;
   }
-  const deny = hashList(hashedKeys(fetched.flatMap((entries) => entries.deny)));
-  const allow = hashList(hashedKeys(fetched.flatMap((entries) => entries.allow)));
+  const sources = options.sources.map((source, index) =>
+    sourceKeys(source.id, fetched[index] ?? { deny: [], allow: [] }),
+  );
+  const deny = hashList(sources.flatMap((source) => [...source.deny]).map(phishingHash));
+  const allow = hashList([...publishableAllowKeys(sources)].map(phishingHash));
   const denyB64 = encodeHashList(deny);
   const allowB64 = encodeHashList(allow);
 
   const previous = await readSnapshot(store);
   if (previous !== undefined) {
-    if (hashCount(deny) < hashCount(previous.deny) * SHRINK_FLOOR) {
-      skip("deny-shrank", { previous: hashCount(previous.deny), current: hashCount(deny) });
+    const stored = await readJson(store, SOURCES_KEY);
+    if (typeof stored === "object" && stored !== null) {
+      for (const [id, count] of Object.entries(stored)) {
+        const current = sources.find((source) => source.id === id)?.deny.size ?? 0;
+        if (typeof count === "number" && current < count * SHRINK_FLOOR) {
+          skip("deny-shrank", { source: id, previous: count, current });
+          return;
+        }
+      }
+    }
+    const allowAdded = hashCount(difference(allow, previous.allow));
+    if (allowAdded > ALLOW_GROW_MAX) {
+      skip("allow-grew", { added: allowAdded, allow: hashCount(allow) });
       return;
     }
     if (denyB64 === previous.snapshot.deny && allowB64 === previous.snapshot.allow) {
@@ -180,6 +241,10 @@ export async function buildPhishingList(options: PhishingBuildOptions): Promise<
 
   await store.put(SNAPSHOT_KEY, JSON.stringify(snapshot));
   await store.put(JOURNAL_KEY, JSON.stringify({ version, entries }));
+  await store.put(
+    SOURCES_KEY,
+    JSON.stringify(Object.fromEntries(sources.map((source) => [source.id, source.deny.size]))),
+  );
   log(
     JSON.stringify({
       event: "phishing-build",

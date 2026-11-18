@@ -48,8 +48,15 @@ bounded.
 the entries `phishingKey` accepts, hashes them to 8 bytes, and — only when the merged deny or allow
 set changed — writes `phishing:snapshot` and then `phishing:journal` to the `RISK` KV namespace. The
 journal keeps 7 days and at most 168 entries; a request with `since` inside it gets one folded diff.
-A failing source, or a deny list that shrank by more than half, skips the build and logs one JSON
-line. Both environments run the build hourly (`"0 * * * *"`). KV namespaces:
+
+Allow and deny interact per source, never across sources: a source's allow cancels only its own
+exact deny keys (a same-source subdomain exemption still publishes), while another source's deny of
+any of an allow key's page candidates drops that allow. Two guards bound a compromised source:
+`phishing:sources` in KV records each source's effective deny count at the last published build —
+a source falling below half its own stored count skips the build (`deny-shrank`, logged with the
+source id) — and a published allow gaining more than 50 keys in one build skips it (`allow-grew`).
+A failing source skips the build too; every skip logs one JSON line. Both environments run the
+build hourly (`"0 * * * *"`). KV namespaces:
 `wallet-gateway-staging-risk` (staging), `wallet-gateway-risk` (production).
 
 | Source                                                                                            | License                                                                                                                 | Used                                         |

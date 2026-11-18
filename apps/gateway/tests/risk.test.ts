@@ -128,6 +128,65 @@ describe("phishing list generation", () => {
     expect(logAt(logs, -1)).toMatchObject({ reason: "deny-shrank" });
   });
 
+  it("keeps another source's denies when a source allows them all", async () => {
+    const { store, build } = setup();
+    const denied = ["evil-one.com", "evil-two.com"];
+    await build({ deny: denied, allow: [] }, { deny: [], allow: denied });
+    const snapshot = snapshotOf(store);
+    expect(membership(snapshot.deny, denied)).toStrictEqual(denied);
+    expect(membership(snapshot.allow, denied)).toStrictEqual([]);
+  });
+
+  it("skips a build when a source's own allow mirrors its deny", async () => {
+    const { store, logs, build, advance } = setup();
+    const many = Array.from({ length: 10 }, (_, i) => `host${String(i)}.com`);
+    await build({ deny: many, allow: [] }, { deny: [], allow: [] });
+    const before = store.data.get(SNAPSHOT_KEY);
+    advance(HOUR);
+    await build({ deny: many, allow: many }, { deny: [], allow: [] });
+    expect(store.data.get(SNAPSHOT_KEY)).toBe(before);
+    expect(logAt(logs, -1)).toMatchObject({ reason: "deny-shrank", source: "metamask" });
+  });
+
+  it("skips a build whose published allow gains more than 50 keys", async () => {
+    const { store, logs, build, advance } = setup();
+    await build({ deny: ["a.com"], allow: ["ok.org"] }, { deny: [], allow: [] });
+    const before = store.data.get(SNAPSHOT_KEY);
+    advance(HOUR);
+    const grown = Array.from({ length: 51 }, (_, i) => `new${String(i)}.org`);
+    await build({ deny: ["a.com"], allow: ["ok.org", ...grown] }, { deny: [], allow: [] });
+    expect(store.data.get(SNAPSHOT_KEY)).toBe(before);
+    expect(logAt(logs, -1)).toMatchObject({ reason: "allow-grew" });
+  });
+
+  it("keeps a same-source subdomain exemption", async () => {
+    const { store, build } = setup();
+    await build({ deny: ["example.com"], allow: ["good.example.com"] }, { deny: [], allow: [] });
+    const snapshot = snapshotOf(store);
+    expect(membership(snapshot.deny, ["example.com"])).toStrictEqual(["example.com"]);
+    expect(membership(snapshot.allow, ["good.example.com"])).toStrictEqual(["good.example.com"]);
+  });
+
+  it("drops a source's allow when another source denies its parent", async () => {
+    const { store, build } = setup();
+    await build({ deny: [], allow: ["good.example.com"] }, { deny: ["example.com"], allow: [] });
+    const snapshot = snapshotOf(store);
+    expect(membership(snapshot.deny, ["example.com"])).toStrictEqual(["example.com"]);
+    expect(membership(snapshot.allow, ["good.example.com"])).toStrictEqual([]);
+  });
+
+  it("skips a build when one source empties though the merged deny holds", async () => {
+    const { store, logs, build, advance } = setup();
+    const many = Array.from({ length: 10 }, (_, i) => `host${String(i)}.com`);
+    const other = Array.from({ length: 10 }, (_, i) => `other${String(i)}.net`);
+    await build({ deny: many, allow: [] }, { deny: other, allow: [] });
+    const before = store.data.get(SNAPSHOT_KEY);
+    advance(HOUR);
+    await build({ deny: [], allow: [] }, { deny: other, allow: [] });
+    expect(store.data.get(SNAPSHOT_KEY)).toBe(before);
+    expect(logAt(logs, -1)).toMatchObject({ reason: "deny-shrank", source: "metamask" });
+  });
+
   it("makes no new version when the lists are unchanged", async () => {
     const { store, build, advance } = setup();
     const lists = { deny: ["a.com", "b.com"], allow: ["c.com"] };
