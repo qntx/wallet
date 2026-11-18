@@ -112,3 +112,6 @@ export type {
   PreparedZap,
   ZapRecipient,
 } from "./payments/zap.ts";
+export { HistoryController } from "./history/controller.ts";
+export type { GroupHistory, HistoryControllerOptions, HistoryState } from "./history/controller.ts";
+export type { HistoryChange, HistoryEntry, HistoryFlag, HistoryStatus } from "./history/types.ts";

@@ -2,6 +2,7 @@ import {
   CLIENT_ID_HEADER,
   bridgeQuote,
   esploraGet,
+  history,
   networkById,
   rpc,
   swapQuote,
@@ -20,6 +21,7 @@ export type GatewayConfig = {
 const routePrefix = (template: string): string => template.split("/:")[0] ?? template;
 const RPC_PREFIX = `${routePrefix(rpc.path)}/`;
 const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
+const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
 
 /**
  * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
@@ -36,6 +38,9 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(ESPLORA_PREFIX)) {
     return "bitcoin";
+  }
+  if (pathname.startsWith(HISTORY_PREFIX)) {
+    return networkById(pathname.slice(HISTORY_PREFIX.length))?.family ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";

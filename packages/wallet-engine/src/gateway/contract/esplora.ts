@@ -11,6 +11,7 @@ export const ESPLORA_ROUTES: ReadonlyArray<EsploraRoute> = [
   { method: "GET", pattern: /^\/block-height\/\d{1,10}$/ },
   { method: "GET", pattern: /^\/fee-estimates$/ },
   { method: "GET", pattern: new RegExp(`^/scripthash/${HEX64}/txs$`) },
+  { method: "GET", pattern: new RegExp(`^/scripthash/${HEX64}/txs/chain/${HEX64}$`) },
   { method: "GET", pattern: new RegExp(`^/scripthash/${HEX64}/utxo$`) },
   { method: "GET", pattern: new RegExp(`^/tx/${HEX64}/hex$`) },
   { method: "GET", pattern: new RegExp(`^/tx/${HEX64}/status$`) },
