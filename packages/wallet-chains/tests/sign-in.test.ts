@@ -11,6 +11,7 @@ import { decodeEvm } from "../src/evm/index.ts";
 import { parseSignIn } from "../src/index.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
+const SVC = { domain: "service.org" } as const;
 
 const ADDRESS = "0xe5A12547fe4E872D192E3eCecb76F2Ce1aeA4946";
 const SOLANA_ADDRESS = base58.encode(ed25519.getPublicKey(new Uint8Array(32).fill(7)));
@@ -53,26 +54,67 @@ describe("parseSignIn", () => {
   it("a non-checksummed address is malformed", () => {
     expect(
       parseSignIn(siwe().replace(ADDRESS, ADDRESS.toLowerCase().replace("0xe", "0xE")), "evm"),
-    ).toStrictEqual({ status: "malformed" });
+    ).toStrictEqual({ status: "malformed", claims: [SVC] });
   });
 
   it("CRLF line endings are malformed", () => {
     expect(parseSignIn(siwe().replaceAll("\n", "\r\n"), "evm")).toStrictEqual({
       status: "malformed",
+      claims: [SVC],
     });
   });
 
   it("trailing junk is malformed", () => {
-    expect(parseSignIn(`${siwe()}\nextra`, "evm")).toStrictEqual({ status: "malformed" });
+    expect(parseSignIn(`${siwe()}\nextra`, "evm")).toStrictEqual({
+      status: "malformed",
+      claims: [SVC],
+    });
   });
 
   it("a Solana-labelled message in an EVM request is malformed", () => {
-    expect(parseSignIn(siwsText(), "evm")).toStrictEqual({ status: "malformed" });
+    expect(parseSignIn(siwsText(), "evm")).toStrictEqual({ status: "malformed", claims: [SVC] });
   });
 
   it("plain text is not a sign-in message", () => {
     expect(parseSignIn("hello world", "evm")).toBeUndefined();
     expect(parseSignIn("hello world", "solana")).toBeUndefined();
+  });
+
+  it("claims carry the scheme prefix, a port and the empty domain", () => {
+    const text = [
+      "https://victim.example wants you to sign in with your Ethereum account:",
+      "victim.example:8443 wants you to sign in with your Solana account:",
+      " wants you to sign in with your Ethereum account:",
+    ].join("\n");
+    expect(parseSignIn(text, "evm")).toStrictEqual({
+      status: "malformed",
+      claims: [
+        { scheme: "https", domain: "victim.example" },
+        { domain: "victim.example:8443" },
+        { domain: "" },
+      ],
+    });
+  });
+
+  it("claims come from every preamble line, mid-text included, and tolerate CR", () => {
+    const text = `junk\r\nvictim.example wants you to sign in with your Ethereum account:\r\nmore`;
+    expect(parseSignIn(text, "solana")).toStrictEqual({
+      status: "malformed",
+      claims: [{ domain: "victim.example" }],
+    });
+  });
+
+  it("every conforming message's later preamble lines are claimed too", () => {
+    const text = `${siwe()}\nvictim.example wants you to sign in with your Ethereum account:`;
+    expect(parseSignIn(text, "evm")).toStrictEqual({
+      status: "malformed",
+      claims: [SVC, { domain: "victim.example" }],
+    });
+  });
+
+  it("a preamble for another chain family still claims its domain", () => {
+    const text = "victim.example wants you to sign in with your Arweave account:";
+    expect(parseSignIn(text, "evm")).toStrictEqual({ status: "malformed", claims: [] });
   });
 
   it("recognizes a valid SIWS message", () => {
@@ -81,14 +123,14 @@ describe("parseSignIn", () => {
   });
 
   it("an EVM message in a Solana request is malformed", () => {
-    expect(parseSignIn(siwe(), "solana")).toStrictEqual({ status: "malformed" });
+    expect(parseSignIn(siwe(), "solana")).toStrictEqual({ status: "malformed", claims: [SVC] });
   });
 
   it("a SIWS message with an invalid address is malformed", () => {
     const bad = siws.format(
       createMessage(fields({ address: "11111111111111111111111111111111", chainId: "mainnet" })),
     );
-    expect(parseSignIn(bad, "solana")).toStrictEqual({ status: "malformed" });
+    expect(parseSignIn(bad, "solana")).toStrictEqual({ status: "malformed", claims: [SVC] });
   });
 });
 
@@ -126,7 +168,7 @@ describe("decodeEvm personal-message content", () => {
     const text = `${siwe()}\nextra`;
     expect(decode(new TextEncoder().encode(text)).message).toMatchObject({
       kind: "text",
-      signIn: { status: "malformed" },
+      signIn: { status: "malformed", claims: [SVC] },
     });
   });
 

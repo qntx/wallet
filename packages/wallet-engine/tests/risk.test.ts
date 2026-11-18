@@ -337,10 +337,40 @@ describe("assessSignIn", () => {
     expect(assess(valid({ expirationTime: "2026-07-01T00:00:00.000Z" })).risk).toStrictEqual([]);
   });
 
-  it("a malformed sign-in text is a warning", () => {
-    expect(assess({ status: "malformed" })).toStrictEqual({
+  it("a malformed sign-in text is a warning when it claims this page or nothing", () => {
+    expect(assess({ status: "malformed", claims: [] })).toStrictEqual({
       risk: [{ code: "sign-in-malformed", level: "warning" }],
     });
+    expect(assess({ status: "malformed", claims: [{ domain: "app.example" }] })).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+  });
+
+  it("a malformed sign-in claiming another domain is refused, a danger on a local page", () => {
+    const foreign = { status: "malformed" as const, claims: [{ domain: "victim.example" }] };
+    expect(assess(foreign).reject).toContain("victim.example");
+    expect(assess(foreign, "https://victim.example")).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+    expect(assess(foreign, "http://localhost:5173").risk).toStrictEqual([
+      { code: "sign-in-domain-mismatch", level: "danger" },
+    ]);
+  });
+
+  it("a malformed claim binds its port and scheme too", () => {
+    const ported = { status: "malformed" as const, claims: [{ domain: "app.example:8443" }] };
+    expect(assess(ported).reject).toContain("app.example:8443");
+    expect(assess(ported, "https://app.example:8443")).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+    const schemed = {
+      status: "malformed" as const,
+      claims: [{ scheme: "https", domain: "app.example" }],
+    };
+    expect(assess(schemed)).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+    expect(assess(schemed, "http://app.example").reject).toBeDefined();
   });
 });
 

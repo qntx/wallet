@@ -737,6 +737,62 @@ describe("session binding", () => {
   });
 });
 
+describe("sign-in origin binding", () => {
+  const solanaSignInHandler = (r: Awaited<ReturnType<typeof rig>>) =>
+    new SolanaWalletHandler({
+      connections: r.connections,
+      requests: r.requests,
+      solanaAccount: async (group, _network) => {
+        await Promise.resolve();
+        return {
+          address: `SoLaNaAdd${String(group.groupIndex)}`,
+          publicKey: SOL_PUBKEY,
+        };
+      },
+      solanaNetwork: () => SOL_NET,
+    });
+
+  it("a malformed siwe claiming another domain is refused before a request exists", async () => {
+    const r = await rig();
+    const [first = ""] = await r.connect();
+    const base = siweText("victim.example", first);
+    const variants = [`${base}\nFoo: bar`, base.replace("Version: 1", "Version:  1")];
+    for (const text of variants) {
+      const hex = `0x${Buffer.from(text, "utf8").toString("hex")}`;
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
+      await expect(
+        codeOf(r.handler.handle(SITE, { method: "personal_sign", params: [hex, first] })),
+      ).resolves.toBe(-32602);
+    }
+    expect(Object.keys(r.requests.getState().requests)).toHaveLength(0);
+    await r.destroy();
+  });
+
+  it("solana:signMessage of a malformed siws for another domain is refused", async () => {
+    const r = await rig();
+    const solana = solanaSignInHandler(r);
+    const connected = solana.handle(SITE, { method: "standard:connect" });
+    await vi.waitFor(() => {
+      expect(r.connections.pending()).toHaveLength(1);
+    });
+    await r.connections.approveConnection(pendingId(r.connections), {
+      accounts: [await r.addressAt(0)],
+      network: MAINNET,
+    });
+    await connected;
+    const text =
+      "victim.example wants you to sign in with your Solana account:\nSoLaNaAdd0\nNonce: abc";
+    await expect(
+      solana.handle(SITE, {
+        method: "solana:signMessage",
+        params: { message: new TextEncoder().encode(text) },
+      }),
+    ).rejects.toMatchObject({ code: -32602 });
+    expect(Object.keys(r.requests.getState().requests)).toHaveLength(0);
+    await r.destroy();
+  });
+});
+
 describe("nostr connections", () => {
   const pendingNostrId = (r: Awaited<ReturnType<typeof rig>>, origin = SITE): string =>
     r.connections.pending().find((p) => p.origin.origin === origin)?.id ?? "";

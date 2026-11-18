@@ -208,14 +208,15 @@ export function assessBitcoinPsbts(
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** `scheme`, `host` (IPv6 keeps its brackets) of a `scheme://host[:port]` origin. */
-const originParts = (origin: string): { scheme: string; host: string } => {
+/** `scheme`, `host` (IPv6 keeps its brackets) and `hostPort` of a `scheme://host[:port]` origin. */
+const originParts = (origin: string): { scheme: string; host: string; hostPort: string } => {
   const sep = origin.indexOf("://");
   const rest = origin.slice(sep + 3);
   const end = rest.startsWith("[") ? rest.indexOf("]") + 1 : rest.lastIndexOf(":");
   return {
     scheme: sep === -1 ? "" : origin.slice(0, sep).toLowerCase(),
     host: (end > 0 ? rest.slice(0, end) : rest).toLowerCase(),
+    hostPort: rest.toLowerCase(),
   };
 };
 
@@ -238,12 +239,25 @@ export function assessSignIn(input: {
   readonly now: number;
 }): { readonly reject?: string; readonly risk: ReadonlyArray<RiskFinding> } {
   const { signIn, origin, signer, family, now } = input;
+  const { scheme, host, hostPort } = originParts(origin);
+  const developer = isLocalHost(host);
   if (signIn.status === "malformed") {
+    /* Lenient verifiers accept such a text as a sign-in for every claimed domain, so each claim is
+     * bound to the page like a conforming domain: refuse a foreign one on production, flag it on a
+     * local development page. */
+    for (const claim of signIn.claims) {
+      const matches =
+        claim.domain.toLowerCase() === hostPort &&
+        (claim.scheme === undefined || claim.scheme.toLowerCase() === scheme);
+      if (!matches) {
+        return developer
+          ? { risk: [{ code: "sign-in-domain-mismatch", level: "danger" }] }
+          : { reject: `the sign-in message is for ${claim.domain}, not this page`, risk: [] };
+      }
+    }
     return { risk: [{ code: "sign-in-malformed", level: "warning" }] };
   }
   const { fields } = signIn;
-  const { scheme, host } = originParts(origin);
-  const developer = isLocalHost(host);
   let findings: ReturnType<typeof checkOrigin>;
   try {
     findings = checkOrigin(

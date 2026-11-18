@@ -12,7 +12,7 @@ import type { SignInParse } from "./sign-in.ts";
 export { displayExcerpt, isUnsafeCodePoint } from "./display.ts";
 export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
-export type { SignInParse } from "./sign-in.ts";
+export type { SignInClaim, SignInParse } from "./sign-in.ts";
 
 export type ChainFamily = "evm" | "solana" | "bitcoin";
 
