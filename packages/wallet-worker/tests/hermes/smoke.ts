@@ -16,7 +16,7 @@ import { utf8ToBytes } from "@noble/hashes/utils.js";
 
 import { nobleBackend, verifyEvent } from "@qntx/nostr";
 import type { Event } from "@qntx/nostr";
-import { createMemoryStore, startKernel } from "@qntx/wallet-kernel";
+import { VAULT_FORMAT, createMemoryStore, startKernel } from "@qntx/wallet-kernel";
 import type { Argon2id, KernelPlatform, Pbkdf2, Port, Random } from "@qntx/wallet-kernel";
 import type { ProtocolValue, WalletErrorCode } from "@qntx/wallet/protocol";
 
@@ -411,7 +411,7 @@ export async function main(): Promise<void> {
     {
       op: "init",
       meta: {
-        format: 3,
+        format: VAULT_FORMAT,
         revision: 1,
         keyId: "0123456789abcdef0123456789abcdef",
         failedAttempts: 0,
