@@ -19,7 +19,13 @@ import {
   scriptPubKey,
 } from "../chains/bitcoin-scan.ts";
 import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
-import { BitcoinChainAdapter, EsploraError, feeTiers, selectableUtxos } from "../chains/bitcoin.ts";
+import {
+  BitcoinChainAdapter,
+  EsploraError,
+  estimateVsize,
+  feeTiers,
+  selectableUtxos,
+} from "../chains/bitcoin.ts";
 import type { BtcUtxo, Esplora } from "../chains/bitcoin.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
@@ -293,7 +299,7 @@ const accountContext = async (
   const byAddr = new Map(addresses.map((a) => [a.address, a]));
   const base = accountPath(path);
   // bip49/bip44 are spend-only — a send's change goes on the group's bip84 chain.
-  let changeAddr = change.find((a) => !a.used)?.address;
+  let changeChain = change;
   if (template === "btc.bip49" || template === "btc.bip44") {
     const acct84 = await apis.account({
       walletId: account.walletId,
@@ -305,16 +311,15 @@ const accountContext = async (
     if (xpub84 === undefined) {
       throw new Error("no bip84 account for the legacy-template change chain");
     }
-    const change84 = await scanChain(es, xpub84, "btc.bip84", network, net.params, 1);
-    changeAddr = change84.find((a) => !a.used)?.address;
+    changeChain = await scanChain(es, xpub84, "btc.bip84", network, net.params, 1);
   }
   return {
     template,
     groupIndex: account.groupIndex,
     network,
     fp,
-    changeAddr,
-    changeAddresses: change.filter((a) => !a.used).map((a) => a.address),
+    changeAddr: changeChain.find((a) => !a.used)?.address,
+    changeAddresses: changeChain.filter((a) => !a.used).map((a) => a.address),
     spendable: selectableUtxos(utxos, net.params, spendProtected),
     pathOf: (u) => {
       const a = byAddr.get(u.address);
@@ -446,7 +451,6 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       spendProtected ?? [],
     );
     const net = bitcoinNetwork(network);
-    const tap = template === "btc.bip86";
     const rawTxes =
       template === "btc.bip44"
         ? await fetchRawTxes(es, built.spendable)
@@ -556,9 +560,6 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       sign: Array.from({ length: txP.inputsLength }, (_, i) => ({ index: i, template })),
     };
     const intent = decodeBitcoinPsbt(request, ownScripts);
-    const vsize = Math.ceil(
-      10.5 + txP.inputsLength * (tap ? 57.5 : 68) + txP.outputsLength * (tap ? 43 : 31),
-    );
     const outValues = Array.from({ length: txP.outputsLength }, (_, i) => {
       const o = txP.getOutput(i);
       const scriptHex =
@@ -572,6 +573,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         (o as { own: boolean }).own = true;
       }
     }
+    const vsize = estimateVsize(
+      Array.from({ length: txP.inputsLength }, () => template),
+      outValues.map((o) => o.address),
+      net.params,
+    );
     const inTotal = selectedUtxos.reduce((a, u) => a + u.value, 0);
     const outTotal = outValues.reduce((a, o) => a + o.value, 0);
     const id0 = newId(ctx.options.random);
@@ -813,20 +819,31 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         flags.push("reads-unverified");
       }
     }
-    // The BIP-125 floor (rule 4: pay for the replacement's own relay) applies after the merge, so
-    // a low quote cannot push the replacement under it.
-    const newFee = Math.max(btc.fee + btc.vsize, Math.ceil(btc.vsize * rate));
+    const net = bitcoinNetwork(old.network);
+    // BIP-125 rule 4 prices the replacement's own estimated size — every extra input raises the
+    // floor — applied after the quote merge so a low quote cannot push the replacement under it.
+    const feeFor = (
+      numInputs: number,
+      outs: ReadonlyArray<{ readonly address: string }>,
+    ): number => {
+      const vsize = estimateVsize(
+        Array.from({ length: numInputs }, () => btc.template),
+        outs.map((o) => o.address),
+        net.params,
+      );
+      return Math.max(btc.fee + vsize, Math.ceil(vsize * rate));
+    };
     // The bump's change goes where the original's went, when it had an own output.
     const changeAddr = btc.outputs.find((o) => o.own)?.address ?? built.changeAddresses[0];
     if (changeAddr === undefined) {
       throw new Error("no unused change address");
     }
-    const net = bitcoinNetwork(old.network);
     const inTotal = btc.inputs.reduce((a, i) => a + i.value, 0);
     const dust = 546;
     const payee = btc.outputs
       .filter((o) => !o.own)
       .map((o) => ({ address: o.address, amount: BigInt(o.value) }));
+    const payeeSum = payee.reduce((a, o) => a + Number(o.amount), 0);
     const usedKeys = new Set(btc.inputs.map((i) => `${i.txid}:${i.vout}`));
     // Confirmed extras only: BIP-125 rule 2 forbids a replacement adding new unconfirmed inputs.
     const spare = built.spendable.filter(
@@ -834,25 +851,31 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     );
     const extraInputs: ReturnType<typeof bitcoin.toInputs> = [];
     const extraUtxos: typeof spare = [];
-    const feeNeeded = (o: ReadonlyArray<{ amount: bigint }>): bigint =>
-      BigInt(newFee) -
-      (BigInt(inTotal) +
-        extraUtxos.reduce((a, u) => a + BigInt(u.value), 0n) -
-        o.reduce((a, x) => a + x.amount, 0n));
     let outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>;
+    let newFee: number;
     if (mode === "cancel") {
+      newFee = feeFor(btc.inputs.length, [{ address: changeAddr }]);
       outputs = [{ address: changeAddr, amount: BigInt(inTotal - newFee) }];
     } else {
-      const shrunk = btc.outputs.find((o) => o.own);
-      const changeAfter = shrunk === undefined ? 0 : shrunk.value - (newFee - btc.fee);
-      outputs =
-        changeAfter >= dust
-          ? [...payee, { address: changeAddr, amount: BigInt(changeAfter) }]
-          : payee;
-      while (feeNeeded(outputs) > 0n && spare.length > extraUtxos.length) {
+      for (;;) {
+        const numInputs = btc.inputs.length + extraUtxos.length;
+        const inSum = inTotal + extraUtxos.reduce((a, u) => a + u.value, 0);
+        // Prefer the shape with a change output; a sub-dust remainder folds into the fee.
+        const leftover = inSum - payeeSum - feeFor(numInputs, [...payee, { address: changeAddr }]);
+        if (leftover >= dust) {
+          outputs = [...payee, { address: changeAddr, amount: BigInt(leftover) }];
+          newFee = inSum - payeeSum - leftover;
+          break;
+        }
+        const noChangeFee = feeFor(numInputs, payee);
+        if (inSum - payeeSum - noChangeFee >= 0) {
+          outputs = payee;
+          newFee = inSum - payeeSum;
+          break;
+        }
         const next = spare[extraUtxos.length];
         if (next === undefined) {
-          break;
+          throw new Error("insufficient confirmed utxo to fund the replacement fee");
         }
         const key = `${next.txid}:${next.vout}`;
         extraUtxos.push(next);
@@ -880,17 +903,6 @@ export const createBitcoinRoute = (): BitcoinRoute => {
           throw error;
         }
       }
-      if (feeNeeded(outputs) > 0n) {
-        throw new Error("insufficient confirmed utxo to fund the replacement fee");
-      }
-      const changeValue =
-        inTotal +
-        extraUtxos.reduce((a, u) => a + u.value, 0) -
-        payee.reduce((a, o) => a + Number(o.amount), 0) -
-        newFee;
-      if (changeValue >= dust) {
-        outputs = [...payee, { address: changeAddr, amount: BigInt(changeValue) }];
-      }
     }
     // The replacement spends exactly the original's inputs plus any extras. The scan does not
     // list them — the unconfirmed original spends them already — so they are rebuilt from the
@@ -909,7 +921,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       (u) => prevRaws.get(u.txid),
     );
     const allInputs = [...oldInputs, ...extraInputs];
-    const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params);
+    const { psbt, vsize } = bitcoin.buildExactPsbt(allInputs, outputs, net.params, btc.template);
     const record = {
       inputs: [
         ...btc.inputs,
@@ -1037,6 +1049,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal) }],
       net.params,
+      btc.template,
     );
     const childFee = Math.max(
       Math.ceil(targetRate * (btc.vsize + probe.vsize)) - btc.fee,
@@ -1046,6 +1059,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       childInputs,
       [{ address: changeAddr, amount: BigInt(inTotal - childFee) }],
       net.params,
+      btc.template,
     );
     const record = {
       inputs: own.map((o) => ({

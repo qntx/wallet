@@ -5,10 +5,12 @@ import { hex } from "@scure/base";
  * with backoff until the endpoint (or the independent one) knows it, and only a 4xx refusal fails
  * the send and frees its inputs. Polls run on `manualTimers`.
  */
-import { Transaction } from "@scure/btc-signer";
+import { NETWORK, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
-import { EsploraError } from "../src/chains/bitcoin.ts";
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
+
+import { EsploraError, estimateVsize } from "../src/chains/bitcoin.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import type { TrackedTransaction } from "../src/transactions/route.ts";
 import { flush, hashOf, inputTxidsOf, stateOf, VERIFY, world } from "./support/btc-world.ts";
@@ -36,6 +38,14 @@ const txidOf = (tx: TrackedTransaction): string => {
 
 const outpointsOf = (tx: TrackedTransaction): string[] =>
   (tx.btc?.inputs ?? []).map((i) => `${i.txid}:${i.vout}`);
+
+const btcRecord = (tx: TrackedTransaction): NonNullable<TrackedTransaction["btc"]> => {
+  const { btc } = tx;
+  if (btc === undefined) {
+    throw new Error("tracked transaction carries no build record");
+  }
+  return btc;
+};
 
 describe("a Bitcoin broadcast with an unsettled outcome", () => {
   it("accept-then-502 keeps the send submitted with its inputs locked until confirmation", async () => {
@@ -408,5 +418,81 @@ describe("a Bitcoin replacement after a restart", () => {
     await expect(
       second.ctl.prepareReplacement({ method: "cpfp", txId: txA.id, feeRate: 50 }, "req-c"),
     ).rejects.toThrow(/build record/);
+  });
+});
+
+describe("a Bitcoin replacement pays for its own size", () => {
+  it.each([
+    { template: "btc.bip44" as const, inputVbytes: 148 },
+    { template: "btc.bip49" as const, inputVbytes: 91 },
+  ])(
+    "a $template replacement clears rule 4 on the replacement's own vsize",
+    async ({ template, inputVbytes }) => {
+      const w = world({ template });
+      w.fund(1, 200_000);
+      const first = await w.boot();
+      const txA = await w.send(first, 100_000n, "req-a");
+      expect(txA.state).toBe("submitted");
+
+      const rep = await first.ctl.prepareReplacement({ method: "speed-up", txId: txA.id }, "req-b");
+      const txB = await rep.submit(VERIFY, () => undefined);
+      const record = btcRecord(txB);
+      const vsize = estimateVsize(
+        record.inputs.map(() => template),
+        record.outputs.map((o) => o.address),
+        NETWORK,
+      );
+      // One legacy input, a p2wpkh payee and the bip84 change chain.
+      expect(vsize).toBe(Math.ceil(10.5 + inputVbytes + 31 + 31));
+      expect(record.vsize).toBe(vsize);
+      // Rule 4 is priced on the replacement's vsize — the old code added only the
+      // original's, which a 68 vB/input estimate understated by the whole template gap.
+      expect(record.fee).toBe(Math.max(btcRecord(txA).fee + vsize, Math.ceil(vsize * 5)));
+      expect(record.fee - btcRecord(txA).fee).toBeGreaterThanOrEqual(vsize);
+    },
+  );
+
+  it("an extra input raises the rule-4 floor by its own vbytes", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    w.fund(2, 30_000);
+    const first = await w.boot();
+    const txA = await w.send(first, 49_000n, "req-a");
+    expect(txA.state).toBe("submitted");
+    expect(btcRecord(txA).inputs).toHaveLength(1);
+
+    const rep = await first.ctl.prepareReplacement({ method: "speed-up", txId: txA.id }, "req-b");
+    const txB = await rep.submit(VERIFY, () => undefined);
+    const record = btcRecord(txB);
+    const vsize = estimateVsize(
+      record.inputs.map((): BitcoinAccountTemplate => "btc.bip84"),
+      record.outputs.map((o) => o.address),
+      NETWORK,
+    );
+    expect(record.inputs).toHaveLength(2);
+    expect(vsize).toBe(Math.ceil(10.5 + 2 * 68 + 31 + 31));
+    expect(record.vsize).toBe(vsize);
+    // The floor recomputed with the extra input — the old code priced the original's
+    // one-input size and underpaid by the extra's 68 vbytes.
+    expect(record.fee).toBe(Math.max(btcRecord(txA).fee + vsize, Math.ceil(vsize * 5)));
+    expect(record.fee - btcRecord(txA).fee).toBeGreaterThanOrEqual(vsize);
+  });
+
+  it("a dust-sized spare is never counted toward the replacement fee or locked", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const u546 = w.fund(2, 546);
+    const first = await w.boot();
+    const txA = await w.send(first, 49_400n, "req-a");
+    expect(txA.state).toBe("submitted");
+
+    // The 546-sat coin could cover the bump on paper but ord-postage protection keeps it
+    // out of `spare` — so the bump refuses rather than charge it without spending it.
+    await expect(
+      first.ctl.prepareReplacement({ method: "speed-up", txId: txA.id }, "req-b"),
+    ).rejects.toThrow(/insufficient/);
+    await flush();
+    const saved = await w.persistedUtxos(first.backing);
+    expect(saved[`${u546.txid}:${u546.vout}`]).not.toMatchObject({ status: "locked" });
   });
 });

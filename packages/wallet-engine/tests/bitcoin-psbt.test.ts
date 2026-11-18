@@ -1,10 +1,11 @@
 import { HDKey } from "@scure/bip32";
-import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
+import { NETWORK, p2ms, p2tr, p2wsh, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   BitcoinChainAdapter,
   dustFor,
+  estimateVsize,
   isTaprootAddress,
   mayCarryInscription,
   selectableUtxos,
@@ -119,6 +120,30 @@ describe("taproot inputs", () => {
     const built = Transaction.fromPSBT(psbt).getInput(0);
     expect(built.witnessUtxo?.amount).toBe(150_000n);
     expect(built.tapInternalKey).toStrictEqual(XONLY);
+  });
+});
+
+describe("vsize estimation", () => {
+  const P2PKH_ADDR = "1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2";
+  const P2SH_ADDR = "3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy";
+  const P2WSH_ADDR = p2wsh(p2ms(1, [PUB]), NETWORK).address;
+  const P2TR_ADDR = p2tr(PUB.slice(1), undefined, NETWORK).address;
+
+  it("charges each input by its template and each output by its script type", () => {
+    expect(estimateVsize(["btc.bip44"], [P2PKH_ADDR], NETWORK)).toBe(Math.ceil(10.5 + 148 + 34));
+    expect(estimateVsize(["btc.bip49"], [P2SH_ADDR], NETWORK)).toBe(Math.ceil(10.5 + 91 + 32));
+    expect(estimateVsize(["btc.bip84"], [TO], NETWORK)).toBe(Math.ceil(10.5 + 68 + 31));
+    expect(estimateVsize(["btc.bip84"], [P2WSH_ADDR], NETWORK)).toBe(Math.ceil(10.5 + 68 + 43));
+    expect(estimateVsize(["btc.bip86"], [P2TR_ADDR], NETWORK)).toBe(Math.ceil(10.5 + 57.5 + 43));
+  });
+
+  it("rounds the half-vbyte witness weight up and mixes input templates", () => {
+    expect(estimateVsize(["btc.bip86"], [P2TR_ADDR, TO], NETWORK)).toBe(
+      Math.ceil(10.5 + 57.5 + 43 + 31),
+    );
+    expect(estimateVsize(["btc.bip44", "btc.bip84"], [TO], NETWORK)).toBe(
+      Math.ceil(10.5 + 148 + 68 + 31),
+    );
   });
 });
 

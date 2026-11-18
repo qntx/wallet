@@ -13,6 +13,8 @@ import { p2wpkh } from "@scure/btc-signer/payment.js";
 import type { TransactionInputUpdate } from "@scure/btc-signer/psbt.js";
 import { selectUTXO } from "@scure/btc-signer/utxo.js";
 
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
+
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 
@@ -269,6 +271,44 @@ export const selectableUtxos = <
 
 export type BtcInput = TransactionInputUpdate;
 
+/** Estimated signed size of one input, vbytes — BIP-141 worst case per template. */
+const INPUT_VBYTES: Record<BitcoinAccountTemplate, number> = {
+  "btc.bip44": 148,
+  "btc.bip49": 91,
+  "btc.bip84": 68,
+  "btc.bip86": 57.5,
+};
+
+/** Estimated output size, vbytes, by script type — everything else costs at most a p2wsh. */
+const OUTPUT_VBYTES: Record<string, number> = {
+  pkh: 34,
+  sh: 32,
+  wpkh: 31,
+  wsh: 43,
+  tr: 43,
+};
+
+/** Version, segwit marker/flag, the two vector lengths and locktime, weighted. */
+const TX_VBYTES_OVERHEAD = 10.5;
+
+/**
+ * The one vsize estimate every build path shares — sends, exact replacements and CPFP children
+ * alike — so the fee a transaction reports is the fee its own size demands.
+ */
+export const estimateVsize = (
+  inputs: ReadonlyArray<BitcoinAccountTemplate>,
+  outputs: ReadonlyArray<string>,
+  network: typeof BTC_MAINNET,
+): number =>
+  Math.ceil(
+    TX_VBYTES_OVERHEAD +
+      inputs.reduce((a, t) => a + INPUT_VBYTES[t], 0) +
+      outputs.reduce(
+        (a, address) => a + (OUTPUT_VBYTES[Address(network).decode(address).type] ?? 43),
+        0,
+      ),
+  );
+
 export class BitcoinChainAdapter {
   /** Inputs for selectUTXO — the same TransactionInputUpdate objects added to the PSBT. */
   toInputs(
@@ -360,6 +400,7 @@ export class BitcoinChainAdapter {
     inputs: ReadonlyArray<BtcInput>,
     outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>,
     network: typeof BTC_MAINNET,
+    template: BitcoinAccountTemplate,
   ): { readonly psbt: Uint8Array; readonly vsize: number } {
     const tx = new Transaction();
     for (const input of inputs) {
@@ -368,11 +409,10 @@ export class BitcoinChainAdapter {
     for (const out of outputs) {
       tx.addOutputAddress(out.address, out.amount, network);
     }
-    // Unsigned tx has no witness — vsize is the BIP-141 weight estimate
-    // (10.5 overhead + ~68/input + ~31/output for P2WPKH; taproot ~57.5/43).
-    const tap = inputs.every((i) => i.tapInternalKey !== undefined);
-    const vsize = Math.ceil(
-      10.5 + inputs.length * (tap ? 57.5 : 68) + outputs.length * (tap ? 43 : 31),
+    const vsize = estimateVsize(
+      inputs.map(() => template),
+      outputs.map((o) => o.address),
+      network,
     );
     return { psbt: tx.toPSBT(), vsize };
   }
