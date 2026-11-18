@@ -5,6 +5,7 @@ import type { Wallet } from "@qntx/wallet";
 
 import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { EngineLogger } from "../src/events.ts";
+import type { MetaDocTree } from "../src/meta/doc.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 
 const W = "w";
@@ -141,7 +142,9 @@ describe("account discovery", () => {
     expect(found).toStrictEqual([0]);
   });
 
-  it("returns every used group across families", async () => {
+  // Discovery derives every family's accounts on a real kernel and is CPU-bound — long-running
+  // cases carry an explicit timeout.
+  it("returns every used group across families", { timeout: 30_000 }, async () => {
     const r = rig({ sparkUsed: new Set([1, 3]) });
     await init(r);
     const found = await r.ctl.discoverGroups(W);
@@ -202,5 +205,87 @@ describe("account discovery", () => {
     r.usedEvm.add(1);
     const found = await r.ctl.discoverGroups(W);
     expect(found).toStrictEqual([0, 1]);
+  });
+});
+
+describe("discovery and the per-group sync stamp", () => {
+  const T0 = 1_000_000;
+  const T1 = 2_000_000;
+  const T2 = 3_000_000;
+
+  /** A device whose every family probe reports unused — a pure scan with no chain reads. */
+  const device = (clock: { t: number }): AccountTreeController =>
+    new AccountTreeController({
+      setTimer: () => () => undefined,
+      wallet: walletStub(),
+      spark: {
+        store: { subscribe: () => () => {} },
+        inspect: async () => Promise.resolve({ balanceSats: 0, used: false }),
+        setAccounts: () => {},
+        setStore: () => {},
+      } as unknown as SparkController,
+      sparkNetwork: "regtest",
+      chains: { account: async () => Promise.resolve({}) },
+      logger: LOGGER,
+      now: () => clock.t,
+    });
+
+  const group = (ctl: AccountTreeController, index: number) =>
+    ctl.getState().groups[W]?.find((g) => g.index === index);
+
+  it("a scan-only pass keeps an existing group's stamp, so a real rename wins the merge", async () => {
+    const clock = { t: T0 };
+    const a = device(clock);
+    const b = device(clock);
+    await a.init();
+    await b.init();
+    // Both devices share wallet w with group 1 named "Old" at T0.
+    a.addGroups(W, [1]);
+    a.renameGroup(W, 1, "Old");
+    b.addGroups(W, [1]);
+    b.renameGroup(W, 1, "Old");
+    expect(group(a, 1)).toMatchObject({ name: "Old", updatedAt: T0 });
+    expect(group(b, 1)).toMatchObject({ name: "Old", updatedAt: T0 });
+
+    // Device A renames the group — the only real user edit in the scenario.
+    clock.t = T1;
+    a.renameGroup(W, 1, "New");
+    expect(group(a, 1)).toMatchObject({ name: "New", updatedAt: T1 });
+
+    // B never pulled A's metadata and scans at T2: the scan only refreshes used/errors, so
+    // B's group 1 must keep its T0 stamp — otherwise the next merge reverts A's rename.
+    clock.t = T2;
+    await b.discoverGroups(W);
+    const doc = b.exportMeta(W);
+    expect(doc.groups.find((g) => g.index === 1)).toMatchObject({
+      name: "Old",
+      updatedAt: T0,
+    });
+
+    const res = a.mergeMeta(W, doc);
+    expect(res.changed).toBe(false);
+    expect(res.localNewer).toBe(true);
+    expect(group(a, 1)).toMatchObject({ name: "New", updatedAt: T1 });
+  });
+
+  it("a group appended by a scan starts at stamp 0, so a remote rename wins the merge", async () => {
+    const clock = { t: T0 };
+    const b = device(clock);
+    await b.init();
+    await b.discoverGroups(W);
+    // Probed and unused, group 1 is appended — with stamp 0 like a reconcile-created group.
+    const appended = group(b, 1);
+    expect(appended).toBeDefined();
+    expect(appended?.updatedAt).toBe(0);
+
+    const remote: MetaDocTree = {
+      wallet: { updatedAt: T1 },
+      groups: [
+        { index: 0, hidden: false, updatedAt: T0 },
+        { index: 1, hidden: false, name: "Renamed", updatedAt: T1 },
+      ],
+    };
+    b.mergeMeta(W, remote);
+    expect(group(b, 1)).toMatchObject({ name: "Renamed", updatedAt: T1 });
   });
 });
