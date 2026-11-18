@@ -13,6 +13,7 @@ import { requestLog } from "./middleware/request-log.ts";
 import { createForwarder } from "./providers/forward.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
 import { healthRoutes } from "./routes/health.ts";
+import { historyRoutes } from "./routes/history.ts";
 import { networksRoutes } from "./routes/networks.ts";
 import { quotesRoutes } from "./routes/quotes.ts";
 import { riskRoutes } from "./routes/risk.ts";
@@ -47,6 +48,7 @@ export function createGateway(
   app.route("/", healthRoutes);
   app.route("/", networksRoutes(served));
   app.route("/", rpcRoutes(deps));
+  app.route("/", historyRoutes({ ...deps, log }));
   app.route("/", esploraRoutes(deps));
   app.route(
     "/",

@@ -1,0 +1,33 @@
+{
+  "source": {
+    "url": "https://arb-mainnet.g.alchemy.com/v2/docs-demo",
+    "note": "Alchemy public docs-demo key (Origin: https://www.alchemy.com); recorded verbatim",
+    "recordedAt": "2026-11-18T08:34:46Z"
+  },
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "alchemy_getAssetTransfers",
+    "params": [
+      {
+        "fromBlock": "0x0",
+        "toBlock": "latest",
+        "toAddress": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+        "category": ["external", "internal", "erc20"],
+        "withMetadata": true,
+        "excludeZeroValue": false,
+        "maxCount": "0x1",
+        "order": "desc"
+      }
+    ]
+  },
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": null,
+    "error": {
+      "code": -32602,
+      "message": "The 'internal' category is not supported for this network. Check the Alchemy documentation for supported networks."
+    }
+  }
+}
