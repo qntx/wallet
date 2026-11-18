@@ -5,7 +5,6 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { EngineStoreError } from "../src/errors.ts";
 import { decodeExitChain } from "../src/spark/exit-chain-codec.ts";
 import { sparkStore } from "../src/spark/store.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -34,7 +33,7 @@ const collection = () => {
   return store.collection("spark-exit-chains");
 };
 
-/** `get(key)` throws `error` — an integrity or I/O failure on that one record. */
+/** `get(key)` throws `error` — an I/O failure on that one record. */
 const throwing = (inner: EngineCollection, key: string, error: Error): EngineCollection => ({
   get: async (k) => {
     if (k === key) {
@@ -46,8 +45,6 @@ const throwing = (inner: EngineCollection, key: string, error: Error): EngineCol
   delete: async (k) => inner.delete(k),
   list: async () => inner.list(),
 });
-
-const integrity = () => new EngineStoreError("integrity", "decrypt failed");
 
 describe("sparkStore", () => {
   it("returns [] on an empty collection", async () => {
@@ -99,13 +96,6 @@ describe("sparkStore", () => {
     await expect(store.exitChains()).resolves.toHaveLength(1);
   });
 
-  it("reads an integrity-failing index as empty", async () => {
-    const col = throwing(collection(), "__all__", integrity());
-    const store = sparkStore(col);
-    await expect(store.exitChains()).resolves.toStrictEqual([]);
-    await store.putExitChains([chain("leaf-9")]);
-  });
-
   it("skips one corrupt chain record among good ones", async () => {
     const col = collection();
     const store = sparkStore(col);
@@ -116,20 +106,12 @@ describe("sparkStore", () => {
     expect(got.map((c) => c.leafId)).toStrictEqual(["leaf-1"]);
   });
 
-  it("skips a chain record that fails integrity", async () => {
-    const col = collection();
-    await sparkStore(col).putExitChains([chain("leaf-1"), chain("leaf-2")]);
-    const store = sparkStore(throwing(col, "leaf-1", integrity()));
-    const got = await store.exitChains();
-    expect(got.map((c) => c.leafId)).toStrictEqual(["leaf-2"]);
-  });
-
-  it("propagates a non-integrity index error", async () => {
+  it("propagates a index read error", async () => {
     const col = throwing(collection(), "__all__", new Error("io failure"));
     await expect(sparkStore(col).exitChains()).rejects.toThrow("io failure");
   });
 
-  it("propagates a non-integrity record error", async () => {
+  it("propagates a record read error", async () => {
     const col = collection();
     await sparkStore(col).putExitChains([chain("leaf-1")]);
     const store = sparkStore(throwing(col, "leaf-1", new Error("io failure")));

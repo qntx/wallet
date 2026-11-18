@@ -1,14 +1,10 @@
 import type { SparkExitChain, SparkStore } from "@qntx/spark";
 
-import { EngineStoreError } from "../errors.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineCollection } from "../store/port.ts";
 import { decodeExitChain, encodeExitChain } from "./exit-chain-codec.ts";
 
 const ALL = "__all__";
-
-const isIntegrity = (error: unknown): boolean =>
-  error instanceof EngineStoreError && error.code === "integrity";
 
 /**
  * SparkStore over one EngineCollection: chains keyed by leafId, plus an index record listing them
@@ -17,15 +13,7 @@ const isIntegrity = (error: unknown): boolean =>
  */
 export function sparkStore(col: EngineCollection): SparkStore {
   const readIndex = async (): Promise<string[]> => {
-    let index: Uint8Array | undefined;
-    try {
-      index = await col.get(ALL);
-    } catch (error) {
-      if (isIntegrity(error)) {
-        return [];
-      }
-      throw error;
-    }
+    const index = await col.get(ALL);
     if (index === undefined) {
       return [];
     }
@@ -39,15 +27,7 @@ export function sparkStore(col: EngineCollection): SparkStore {
     await col.put(ALL, new TextEncoder().encode(JSON.stringify(ids)));
   };
   const readChain = async (leafId: string): Promise<SparkExitChain | undefined> => {
-    let record: Uint8Array | undefined;
-    try {
-      record = await col.get(leafId);
-    } catch (error) {
-      if (isIntegrity(error)) {
-        return undefined;
-      }
-      throw error;
-    }
+    const record = await col.get(leafId);
     if (record === undefined) {
       return undefined;
     }

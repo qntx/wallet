@@ -27,7 +27,6 @@ import type { SparkAccountRef, SparkApproveIntent, SparkNetwork } from "@qntx/wa
 import type { SparkSigner } from "@qntx/wallet/spark";
 
 import { Controller } from "../controller.ts";
-import { EngineStoreError } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { EngineStore, EngineCollection } from "../store/port.ts";
 import { categorize, SparkControllerError } from "./errors.ts";
@@ -366,18 +365,7 @@ export class SparkController extends Controller<SparkControllerState> {
     }
     return Promise.all(
       payments.map(async (payment): Promise<SparkActivity> => {
-        let bytes: Uint8Array | undefined;
-        try {
-          bytes = await col.get(payment.id);
-        } catch (error) {
-          if (!(error instanceof EngineStoreError) || error.code !== "integrity") {
-            throw error;
-          }
-          // A corrupt encrypted row — like a malformed note, the payment id and bytes stay out
-          // of the log and the payment is returned without one.
-          this.options.logger.warn("spark note record ignored: unreadable");
-          return payment;
-        }
+        const bytes = await col.get(payment.id);
         if (bytes === undefined) {
           return payment;
         }

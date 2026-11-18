@@ -13,7 +13,6 @@ import type { SparkClient, SparkEvent, SparkExitChain } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
 import { createWalletEngine } from "../src/engine.ts";
-import { EngineStoreError } from "../src/errors.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { PHISHING_REFRESH_MS } from "../src/phishing/controller.ts";
 import { SparkController, sparkTransferId } from "../src/spark/controller.ts";
@@ -1297,25 +1296,6 @@ describe("history and notes", () => {
     expect(warns.some((w) => w.includes("malformed"))).toBe(true);
     // The warn never names the payment or echoes the note bytes — the id could link to a tx.
     expect(warns.every((w) => !w.includes("t1"))).toBe(true);
-  });
-
-  it("an integrity-failing note record is ignored and warned", async () => {
-    const { c, warns } = await started();
-    // Every note read fails integrity, like a corrupt encrypted row.
-    c.setStore({
-      collection: () => ({
-        get: async () => Promise.reject(new EngineStoreError("integrity", "decrypt failed")),
-        put: async () => Promise.resolve(),
-        delete: async () => Promise.resolve(),
-        list: async () => Promise.resolve([]),
-      }),
-      close: async () => Promise.resolve(),
-    });
-    const { items } = await c.history(REF);
-    expect(items[0]).not.toMatchObject({ note: expect.anything() });
-    expect(warns.some((w) => w.includes("unreadable"))).toBe(true);
-    expect(warns.every((w) => !w.includes("t1"))).toBe(true);
-    await c.destroy();
   });
 
   it("refreshes recent after send and refresh failures keep the previous page", async () => {

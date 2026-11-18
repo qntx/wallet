@@ -8,8 +8,5 @@ export * from "./served.ts";
 export * from "./risk.ts";
 export * from "./hash-list.ts";
 export * from "./quotes.ts";
-<<<<<<< HEAD
-export * from "./prices.ts";
-=======
 export * from "./history.ts";
->>>>>>> q/fix/f2-history
+export * from "./prices.ts";
