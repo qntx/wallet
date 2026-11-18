@@ -447,6 +447,27 @@ describe("a Bitcoin replacement after a restart", () => {
       second.ctl.prepareReplacement({ method: "cpfp", txId: txA.id, feeRate: 50 }, "req-c"),
     ).rejects.toThrow(/build record/);
   });
+
+  it("a cancel refuses when the inputs cannot pay the cancel fee", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const first = await w.boot();
+    const txA = await w.send(first, 10_000n, "req-a");
+    expect(txA.state).toBe("submitted");
+
+    // A recorded input worth too little to cover even the fee of sweeping it back.
+    const persisted = await w.persistedTx(first.backing, txA.id);
+    const record = mutableCopy(persisted?.["btc"]);
+    record["inputs"] = firstInputValued(record["inputs"], 600);
+    await createMemoryEngineStore(first.backing)
+      .collection("transactions")
+      .put(txA.id, new TextEncoder().encode(JSON.stringify({ ...persisted, btc: record })));
+
+    const second = await w.boot(first.backing);
+    await expect(
+      second.ctl.prepareReplacement({ method: "cancel", txId: txA.id }, "req-b"),
+    ).rejects.toThrow("the inputs cannot pay the cancel fee");
+  });
 });
 
 describe("a CPFP child of a legacy parent", () => {

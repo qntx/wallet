@@ -851,6 +851,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     let newFee: number;
     if (mode === "cancel") {
       newFee = feeFor(btc.inputs.length, [{ address: changeAddr }]);
+      // A cancel sweeps the inputs back to us; refuse rather than emit a negative or
+      // sub-dust change output.
+      if (inTotal - newFee < dust) {
+        throw new Error("the inputs cannot pay the cancel fee");
+      }
       outputs = [{ address: changeAddr, amount: BigInt(inTotal - newFee) }];
     } else {
       for (;;) {
