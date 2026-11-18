@@ -15,6 +15,7 @@ import { Secret } from "../src/secret/secret.ts";
 import { open as openEnvelope } from "../src/vault/envelope.ts";
 import { backupPasswordKek } from "../src/vault/factors.ts";
 import { encodeHeader, parseEntropyHeader } from "../src/vault/headers.ts";
+import { withManifest } from "../src/vault/manifest.ts";
 import type { StoredRecord } from "../src/vault/store.ts";
 import { openWalletSecret, sealRecord } from "../src/vault/vault.ts";
 import { createHarness, seededRandom } from "./harness.ts";
@@ -414,7 +415,15 @@ describe("record integrity", () => {
       nextHeader,
       nextPlaintext,
     );
-    await h.store.commit([{ op: "put-record", record: sealed }]);
+    // A DEK holder's edit: the manifest is rewritten with it, so only the record layout is tested.
+    await h.store.commit(
+      withManifest(
+        platform,
+        image,
+        [{ op: "put-record", record: sealed }],
+        Secret.take(new Uint8Array(DEK)),
+      ),
+    );
     const h2 = createHarness({ store: h.store });
     await h2.settle();
     return h2;
@@ -594,10 +603,10 @@ describe("cloud backup", { timeout: 120_000 }, () => {
       pv.plainWalletId,
     ]);
     expect(listField(first, "passphraseRequired")).toStrictEqual([pv.walletId]);
-    // The envelope's backup key is adopted while the vault is established.
+    // A password restore never adopts the envelope's backup key.
     const session = strField(first, "session");
     const status = ok(await h.call("status", undefined, session));
-    expect(strField(field(status, "backup"), "id")).toBe(backupVector.id);
+    expect(field(status, "backup")).toBeNull();
 
     const second = ok(
       await restoreInto(h, session, {

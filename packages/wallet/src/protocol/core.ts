@@ -534,7 +534,7 @@ export const CORE_METHODS: {
   },
   "keys.list": {
     session: true,
-    presence: true,
+    presence: false,
     params: nullValue,
     result: arr(keyInfo, 256),
   },

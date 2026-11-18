@@ -12,6 +12,7 @@ import type { FactorInfo, StatusPayload as StatusT } from "@qntx/wallet/types";
 
 import { KernelError } from "../src/errors.ts";
 import { NOSTR_KEY_KIND, encodeNostrKeyHeader } from "../src/modules/nostr/record.ts";
+import type { Pbkdf2 } from "../src/platform.ts";
 import { Secret, wipe } from "../src/secret/secret.ts";
 import { recordContext, seal } from "../src/vault/envelope.ts";
 import {
@@ -1856,15 +1857,21 @@ describe("integrity", () => {
     const words = new TextDecoder().decode(bytesField(created, "words")).split(" ");
 
     // Another tab establishes a vault first.
-    await h.store.commit([{ op: "init", meta: metaOf() }]);
+    const other = createHarness({ store: h.store, seed: 2 });
+    await other.settle();
+    ok(
+      await other.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "password", password: new Uint8Array(PASSWORD) },
+      }),
+    );
+    const established = await h.store.load();
     await h.settle();
 
     const answers = quiz.map((p) => utf8ToBytes(words[p]!));
     const res = await h.call("wallet.confirmMnemonic", { draft, answers });
     expect(errCode(res)).toBe("conflict");
-    const image = await h.store.load();
-    expect(image.records).toHaveLength(0);
-    expect(image.factors).toHaveLength(0);
+    await expect(h.store.load()).resolves.toStrictEqual(established);
   });
 
   it("rejects malformed requests with integrity and keeps serving", async () => {
@@ -1916,13 +1923,13 @@ describe("vault health", () => {
     const h = createHarness();
     await h.settle();
     // A newer build initialized this vault.
-    await h.store.commit([{ op: "init", meta: metaOf({ format: 5 }) }]);
+    await h.store.commit([{ op: "init", meta: metaOf({ format: VAULT_FORMAT + 1 }) }]);
     await h.settle();
     expect(lastStatus(h).vault).toBe("unsupported");
     expect(errCode(await h.call("vault.unlock", { factor: passkeyFactor() }))).toBe("unsupported");
     // Nothing is rewritten and reset still recovers.
     const metaAfter = await storedMeta(h.store);
-    expect(metaAfter.format).toBe(5);
+    expect(metaAfter.format).toBe(VAULT_FORMAT + 1);
     expect(ok(await h.call("vault.reset"))).toBeNull();
     expect(lastStatus(h).vault).toBe("uninitialized");
   });
@@ -2535,6 +2542,46 @@ describe("live-state reconciliation across kernels", () => {
   });
 });
 
+describe("request structure", () => {
+  /**
+   * A depth-64 binary DAG: every level shares one live array as both children, so a validator that
+   * re-walks shared references would take 2^64 steps on a value under 1 KiB on the wire.
+   */
+  const dag = (depth: number): unknown[] => {
+    let node: unknown[] = [];
+    for (let i = 0; i < depth; i++) {
+      node = [node, node];
+    }
+    return node;
+  };
+
+  it("sizes a shared-reference params DAG without expanding it and keeps serving", async () => {
+    const h = createHarness();
+    await h.settle();
+    // Tiny on the wire, 2^64 nodes as a tree: over the size cap, found without walking it all.
+    const res = await h.sendRaw({ v: 3, id: 9, method: "status", params: dag(64) });
+    expect(errCode(res)).toBe("invalid-input");
+    expect("ok" in (await h.call("status"))).toBe(true);
+  });
+
+  it("answers cyclic params with integrity", async () => {
+    const h = createHarness();
+    await h.settle();
+    const params: unknown[] = [];
+    params.push({ inner: [params] });
+    expect(errCode(await h.sendRaw({ v: 3, id: 10, method: "status", params }))).toBe("integrity");
+  });
+
+  it("answers methods named after Object.prototype members with integrity", async () => {
+    const h = createHarness();
+    await h.settle();
+    for (const method of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- raw requests are sequential
+      expect(errCode(await h.sendRaw({ v: 3, id: 1, method, params: null }))).toBe("integrity");
+    }
+  });
+});
+
 describe("request size cap", () => {
   it("answers an over-cap raw request with invalid-input", async () => {
     const h = createHarness();
@@ -2655,5 +2702,69 @@ describe("backend routing (WD-054)", () => {
     await h.call("nostr.unwrapGiftWraps", { publicKey, events: [wrap] }, session);
     expect(counts.verifySerialized).toBeGreaterThan(0);
     wrapSigner.dispose();
+  });
+});
+
+describe("rotation and the session", () => {
+  /**
+   * WebCrypto PBKDF2 that runs `onNth` right after the `nth` 600 000-iteration derivation once
+   * armed — while the command awaiting it is still suspended, exactly where a timer can fire.
+   */
+  function tripwire(onNth: () => void, nth: number): { pbkdf2: Pbkdf2; arm: () => void } {
+    let armed = false;
+    let derived = 0;
+    return {
+      pbkdf2: async (hash, password, salt, iterations, length) => {
+        const out = await subtlePbkdf2(hash, password, salt, iterations, length);
+        if (armed && iterations === 600_000) {
+          derived += 1;
+          if (derived === nth) {
+            onNth();
+          }
+        }
+        return out;
+      },
+      arm: () => {
+        armed = true;
+      },
+    };
+  }
+
+  it("a session that ends during a password change fails it as locked, never corrupted", async () => {
+    const ref: { h?: Harness } = {};
+    // The second derivation after arming is the new password's KEK, inside the rotation.
+    const { pbkdf2, arm } = tripwire(() => ref.h?.advance(5 * 60_000 + 1), 2);
+    const h = createHarness({ idleMs: 5 * 60_000, pbkdf2 });
+    ref.h = h;
+    await h.settle();
+    const oldPassword = () => ({
+      kind: "password" as const,
+      password: utf8ToBytes("old-password-123"),
+    });
+    const session = strField(
+      ok(
+        await h.call("wallet.importMnemonic", {
+          mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+          factor: oldPassword(),
+        }),
+      ),
+      "session",
+    );
+    arm();
+    const changed = await h.call(
+      "vault.addFactor",
+      {
+        verify: oldPassword(),
+        factor: { kind: "password", password: utf8ToBytes("new-password-456") },
+      },
+      session,
+    );
+    expect(errCode(changed)).toBe("locked");
+    expect(lastStatus(h).vault).toBe("locked");
+    // Nothing landed: the old password still opens the vault, in this kernel and a fresh one.
+    ok(await h.call("vault.unlock", { factor: oldPassword() }));
+    const fresh = createHarness({ store: h.store });
+    await fresh.settle();
+    ok(await fresh.call("vault.unlock", { factor: oldPassword() }));
   });
 });

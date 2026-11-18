@@ -30,6 +30,18 @@ function fails(validator: (v: unknown) => unknown, value: unknown): boolean {
   }
 }
 
+/**
+ * A depth-`depth` binary DAG: every level shares one live array as both children, so a full tree
+ * walk would visit 2^depth nodes while the live object count stays linear.
+ */
+function dag(depth: number): ProtocolValue[] {
+  let node: ProtocolValue[] = [];
+  for (let i = 0; i < depth; i++) {
+    node = [node, node];
+  }
+  return node;
+}
+
 describe("primitive validators", () => {
   it("literal accepts only the exact value", () => {
     const v = literal("x");
@@ -149,6 +161,33 @@ describe("isProtocolValue", () => {
     expect(isProtocolValue(Object.create(null))).toBe(false);
     expect(isProtocolValue({ __proto__: { polluted: true } })).toBe(false);
   });
+
+  it("checks a shared-reference DAG once per object, at any depth", () => {
+    expect(isProtocolValue(dag(64))).toBe(true);
+    const shared = { kind: "hardware" };
+    expect(isProtocolValue({ verify: shared, factor: shared, list: [shared] })).toBe(true);
+    const leaf = new Uint8Array(4);
+    expect(isProtocolValue({ a: leaf, list: [leaf, leaf] })).toBe(true);
+  });
+
+  it("still finds an invalid leaf behind a shared reference", () => {
+    const shared = { bad: 1.5 };
+    expect(isProtocolValue([shared, shared])).toBe(false);
+    const deep: ProtocolValue[] = dag(32);
+    expect(isProtocolValue([deep, [deep, { n: Number.MAX_SAFE_INTEGER + 1 }]])).toBe(false);
+  });
+
+  it("rejects objects and arrays that contain themselves", () => {
+    const cyclicObject: Record<string, unknown> = {};
+    cyclicObject["self"] = cyclicObject;
+    expect(isProtocolValue(cyclicObject)).toBe(false);
+    const cyclicArray: unknown[] = [1];
+    cyclicArray.push(cyclicArray);
+    expect(isProtocolValue(cyclicArray)).toBe(false);
+    const outer: Record<string, unknown> = {};
+    outer["list"] = [{ back: outer }];
+    expect(isProtocolValue(outer)).toBe(false);
+  });
 });
 
 describe("requestBytes", () => {
@@ -186,6 +225,11 @@ describe("requestBytes", () => {
     });
     expect(requestBytes(event("x".repeat(400_000)))).toBeGreaterThan(MAX_REQUEST_BYTES);
     expect(requestBytes(event("x".repeat(262_144)))).toBeLessThan(MAX_REQUEST_BYTES);
+  });
+
+  it("stops once the running total passes the cap on a shared-reference DAG", () => {
+    // A full walk of dag(64) would push 2^64 nodes; the early exit returns after a bounded count.
+    expect(requestBytes(dag(64))).toBeGreaterThan(MAX_REQUEST_BYTES);
   });
 });
 

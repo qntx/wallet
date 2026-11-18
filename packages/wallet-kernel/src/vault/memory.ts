@@ -76,10 +76,6 @@ export function applyStoreOps(image: VaultImage, ops: ReadonlyArray<StoreOp>): V
         meta = { ...requireMeta(meta), keyId: op.keyId };
         bump = true;
         break;
-      case "set-format":
-        meta = { ...requireMeta(meta), format: op.format };
-        bump = true;
-        break;
       case "record-failure": {
         const current = requireMeta(meta);
         meta = {

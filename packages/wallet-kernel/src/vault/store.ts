@@ -25,14 +25,14 @@ export type StoredFactor = {
   readonly sealed: Uint8Array; // wrapped DEK
 };
 
-/** The vault format this build writes; format UPGRADABLE_FORMAT upgrades on unlock. */
-export const VAULT_FORMAT = 4;
-
-/** The previous on-disk format: a format-3 image unlocks once, then commits format 4. */
-export const UPGRADABLE_FORMAT = 3;
+/**
+ * The only vault format this build reads and writes: format 5 authenticates the vault's structure
+ * under the DEK (vault/manifest.ts). Any other format is `unsupported` and left untouched.
+ */
+export const VAULT_FORMAT = 5;
 
 export type VaultMeta = {
-  readonly format: number; // this build reads VAULT_FORMAT and UPGRADABLE_FORMAT
+  readonly format: number; // this build reads VAULT_FORMAT only
   readonly revision: number; // incremented once per content commit, inside the transaction
   readonly keyId: string; // 32 lowercase hex; changes on DEK rotation (public change signal)
   readonly failedAttempts: number; // consecutive password failures
@@ -49,7 +49,6 @@ export type StoreOp =
   | { readonly op: "init"; readonly meta: VaultMeta } // precondition: the store is fully empty
   | { readonly op: "expect-revision"; readonly revision: number } // precondition: meta.revision matches
   | { readonly op: "set-key-id"; readonly keyId: string }
-  | { readonly op: "set-format"; readonly format: number }
   | { readonly op: "record-failure"; readonly at: number } // failedAttempts += 1, lastFailureAt = at
   | { readonly op: "reset-failures" } // failedAttempts = 0, lastFailureAt = 0
   | { readonly op: "put-record"; readonly record: StoredRecord }

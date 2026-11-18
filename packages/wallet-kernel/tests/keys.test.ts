@@ -441,3 +441,13 @@ describe("chain.sign (imported)", () => {
     expect(err(res)).toBe("unsupported");
   });
 });
+
+describe("keys.list", () => {
+  it("is a read: it does not keep an idle session alive", async () => {
+    const { h, session } = await setup();
+    h.advance(10 * 60_000);
+    ok(await h.call("keys.list", null, session));
+    h.advance(10 * 60_000);
+    expect(err(await h.call("session.touch", null, session))).toBe("locked");
+  });
+});

@@ -11,9 +11,9 @@
  *
  * Phases: a1 create | a2 silent unlock + guarded calls | a3 app-lock off |
  * auto background auto-lock | b1 no-lock-screen create | b2 enrol verification
- * | b3 dead hardware cleanup | upg format-3 upgrade | silent plain silent
- * unlock (used after upg) | phys snapshot-derived device run (create when
- * uninitialized, else silent unlock + sign).
+ * | b3 dead hardware cleanup | silent plain silent unlock | phys
+ * snapshot-derived device run (create when uninitialized, else silent unlock +
+ * sign).
  */
 import { Linking, Platform } from "react-native";
 
@@ -426,44 +426,6 @@ const runB3 = async (): Promise<void> => {
   );
 };
 
-const runUpg = async (): Promise<void> => {
-  const { wallet, verify } = await open();
-  const snapshot = wallet.getSnapshot();
-  result(
-    "upg-locked-state",
-    snapshot.vault === "locked" && snapshot.appLock,
-    `factors=${kinds(snapshot)} appLock=${snapshot.appLock} verification=${snapshot.verification}`,
-  );
-
-  waiting("upg-unlock");
-  const before = verify();
-  await wallet.vault.unlock();
-  const unlocked = wallet.getSnapshot();
-  result(
-    "upg-unlock",
-    unlocked.vault === "unlocked" && verify() > before,
-    `verify=${verify() - before}`,
-  );
-
-  // The upgrade commit (format bump + device row) lands inside the unlock; the
-  // poll is only a guard against asynchronous snapshot delivery.
-  const deadline = Date.now() + 15_000;
-  let settled = wallet.getSnapshot();
-  while (Date.now() < deadline && !(kindSet(settled) === "device,hardware" && !settled.appLock)) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    settled = wallet.getSnapshot();
-  }
-  const walletId = settled.wallets[0]?.walletId;
-  result(
-    "upg-upgraded",
-    kindSet(settled) === "device,hardware" &&
-      !settled.appLock &&
-      settled.verification === "available",
-    `factors=${kinds(settled)} appLock=${settled.appLock} wallet=${walletId} npub=${settled.nostr.keys[0]?.publicKey}`,
-  );
-  await sign(wallet, "upg", walletId);
-};
-
 const runSilent = async (): Promise<void> => {
   const smoke = await open();
   const { wallet, verify } = smoke;
@@ -532,9 +494,6 @@ export async function sessionSmoke(phase: string): Promise<void> {
         break;
       case "b3":
         await runB3();
-        break;
-      case "upg":
-        await runUpg();
         break;
       case "silent":
         await runSilent();

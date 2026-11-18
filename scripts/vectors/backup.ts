@@ -20,9 +20,10 @@
  *
  * `backup.enable` draws deterministically: BEK, every password salt in factor order, every
  * sealedBek nonce in factor order — no draw follows an await — then the `backup-key` record's seal
- * nonce. `backup.update` draws exactly once: the payload seal nonce. The kernel-side test replays
- * `draws` through the injected random source; the enable-time factors and id plus each update
- * envelope must match byte for byte.
+ * nonce and the vault manifest's seal nonce (every structural commit reseals the manifest).
+ * `backup.update` draws exactly once: the payload seal nonce. The kernel-side test replays `draws`
+ * through the injected random source; the enable-time factors and id plus each update envelope must
+ * match byte for byte.
  *
  * Run from the repo root: bun scripts/vectors/backup.ts
  */
@@ -77,12 +78,14 @@ const DRAWS: ReadonlyArray<readonly [string, string]> = [
   ["04".repeat(32), "nostr data-key DEK"],
   ["05".repeat(24), "entropy record seal nonce"],
   ["06".repeat(16), "nostr record id"],
+  ["0a".repeat(24), "establish: vault manifest seal nonce"],
   ["07".repeat(16), "session id (second)"],
   ["11".repeat(32), "enable: BEK"],
   ["12".repeat(16), "enable: password salt"],
   ["13".repeat(24), "enable: password sealedBek nonce"],
   ["14".repeat(24), "enable: passkey sealedBek nonce"],
   ["15".repeat(24), "enable: backup-key record seal nonce"],
+  ["1a".repeat(24), "enable: vault manifest seal nonce"],
   ["16".repeat(24), "update #1: payload nonce"],
   ["17".repeat(24), "update #2: payload nonce"],
 ];
@@ -122,12 +125,12 @@ function seal(
 const entropy = PRF_WALLET.slice(0, 16);
 const walletId = walletIdOfEntropy(entropy);
 
-const bek = draw(7);
-const passwordSalt = draw(8);
-const passwordNonce = draw(9);
-const passkeyNonce = draw(10);
-const payloadNonce1 = draw(12);
-const payloadNonce2 = draw(13);
+const bek = draw(8);
+const passwordSalt = draw(9);
+const passwordNonce = draw(10);
+const passkeyNonce = draw(11);
+const payloadNonce1 = draw(14);
+const payloadNonce2 = draw(15);
 
 const id = bytesToHex(
   hkdf(sha256, bek, new Uint8Array(0), utf8ToBytes("qntx-wallet/backup/v1/id"), 16),

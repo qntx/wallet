@@ -505,7 +505,11 @@ const authorizeWithCtx = async (
                   await tokenCovered(state, key, outflow, intent)
                 : false;
     if (covered) {
-      live.splice(live.indexOf(approval), 1);
+      // A lightning or exit approval is a budget the send may spend over several signing calls
+      // (spentLeaves) until it expires; every other approval covers exactly one outflow.
+      if (intent.kind !== "lightning" && intent.kind !== "exit") {
+        live.splice(live.indexOf(approval), 1);
+      }
       return;
     }
   }

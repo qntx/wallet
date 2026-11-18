@@ -91,13 +91,17 @@ export const MAX_REQUEST_BYTES = 1_048_576;
 /**
  * Upper-bound byte weight of a protocol value: a string costs `length * 3` (worst-case UTF-8), a
  * Uint8Array its `byteLength`, every scalar and every array element 8, and every object key
- * `key.length * 3 + 8` plus its value. Iterative — a deeply nested value cannot overflow the
- * stack.
+ * `key.length * 3 + 8` plus its value. Iterative — a deeply nested value cannot overflow the stack
+ * — and stops once the running total passes MAX_REQUEST_BYTES, the only comparison callers make, so
+ * oversized values are rejected without walking the whole value.
  */
 export function requestBytes(value: ProtocolValue): number {
   let total = 0;
   const stack: ProtocolValue[] = [value];
   while (stack.length > 0) {
+    if (total > MAX_REQUEST_BYTES) {
+      return total;
+    }
     const item = stack.pop();
     if (item === undefined) {
       continue;
@@ -125,29 +129,62 @@ export function requestBytes(value: ProtocolValue): number {
   return total;
 }
 
-/** Deep check that a structured-cloned value is a strict ProtocolValue (no cycles detected). */
+/**
+ * Deep check that a structured-cloned value is a strict ProtocolValue. Structured clone keeps
+ * shared references, so the value may be a graph: every object and array is checked once however
+ * often it is referenced — a shared reference serializes once and must not expand on every walk —
+ * and one that contains itself (a cycle, which can never be a protocol value) is rejected.
+ * Iterative — a deeply nested value cannot overflow the stack.
+ */
 export function isProtocolValue(value: unknown): value is ProtocolValue {
-  switch (typeof value) {
-    case "boolean":
-    case "string":
-      return true;
-    case "number":
-      return Number.isSafeInteger(value);
-    case "object":
+  const checked = new Set<unknown>();
+  // The containers on the path to the current node: meeting one again is a cycle.
+  const open = new Set<unknown>();
+  const stack: Array<{ readonly value: unknown } | { readonly close: unknown }> = [{ value }];
+  while (stack.length > 0) {
+    const frame = stack.pop();
+    if (frame === undefined) {
       break;
-    default:
+    }
+    if ("close" in frame) {
+      open.delete(frame.close);
+      continue;
+    }
+    const item = frame.value;
+    switch (typeof item) {
+      case "boolean":
+      case "string":
+        continue;
+      case "number":
+        if (!Number.isSafeInteger(item)) {
+          return false;
+        }
+        continue;
+      case "object":
+        break;
+      default:
+        return false;
+    }
+    if (item === null || item instanceof Uint8Array) {
+      continue;
+    }
+    if (open.has(item)) {
       return false;
+    }
+    if (checked.has(item)) {
+      continue;
+    }
+    if (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype) {
+      return false;
+    }
+    checked.add(item);
+    open.add(item);
+    stack.push({ close: item });
+    for (const child of Array.isArray(item) ? item : Object.values(item)) {
+      stack.push({ value: child });
+    }
   }
-  if (value === null || value instanceof Uint8Array) {
-    return true;
-  }
-  if (Array.isArray(value)) {
-    return value.every(isProtocolValue);
-  }
-  if (Object.getPrototypeOf(value) !== Object.prototype) {
-    return false;
-  }
-  return Object.values(value).every(isProtocolValue);
+  return true;
 }
 
 /** The status payload: core sections plus one object section per protocol module. */
