@@ -470,9 +470,12 @@ void installKernelGlobals(
   qntx.setProperty(rt, "frames", jsi::Value(std::move(frames)));
 
   // __qntx.file — one opaque file image: read() -> Uint8Array | undefined,
-  // write(bytes) atomically replaces. The C++ primitive owns durability
-  // (temp + fsync + rename + dir fsync); failures throw so the file store
-  // rejects instead of silently degrading.
+  // replace(next, expected?) atomically swaps the file only when its current
+  // bytes equal `expected` (undefined = the file must not exist), returning
+  // false on a lost race so the file store fails `conflict` instead of
+  // clobbering a concurrent writer. The C++ primitive serializes writers under
+  // a flock and owns durability (temp + fsync + rename + dir fsync); failures
+  // throw so the file store rejects instead of silently degrading.
   auto file = jsi::Object(rt);
   file.setProperty(
       rt,
@@ -487,16 +490,22 @@ void installKernelGlobals(
       }));
   file.setProperty(
       rt,
-      "write",
-      hostFn(rt, "file.write", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+      "replace",
+      hostFn(rt, "file.replace", 2, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
         if (count < 1) {
-          throw jsi::JSError(rt, "__qntx.file.write expects an ArrayBuffer or TypedArray");
+          throw jsi::JSError(rt, "__qntx.file.replace expects (next, expected?)");
         }
-        const auto view =
-            byteViewFromValue(rt, args[0], "__qntx.file.write", *state->intrinsics);
-        kernelFileWrite(
-            state->vaultDirectory, std::vector<uint8_t>(view.data, view.data + view.size));
-        return jsi::Value::undefined();
+        const auto next =
+            byteViewFromValue(rt, args[0], "__qntx.file.replace next", *state->intrinsics);
+        std::optional<std::vector<uint8_t>> expected;
+        if (count >= 2 && !args[1].isUndefined()) {
+          const auto expectedView = byteViewFromValue(
+              rt, args[1], "__qntx.file.replace expected", *state->intrinsics);
+          expected =
+              std::vector<uint8_t>(expectedView.data, expectedView.data + expectedView.size);
+        }
+        return jsi::Value(
+            kernelFileReplace(state->vaultDirectory, next.data, next.size, expected));
       }));
   intrinsics->freeze.call(rt, jsi::Value(rt, file));
   qntx.setProperty(rt, "file", jsi::Value(std::move(file)));

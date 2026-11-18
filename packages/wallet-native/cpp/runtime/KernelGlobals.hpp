@@ -33,7 +33,7 @@ struct KernelIntrinsics;
 struct KernelGlobalsState {
   // Directory the vault image file lives in — resolved by the host once per
   // KernelRuntime::start (platformVaultDirectory on device builds) and passed
-  // to kernelFileRead/kernelFileWrite by the __qntx.file lambdas. Kernel
+  // to kernelFileRead/kernelFileReplace by the __qntx.file lambdas. Kernel
   // thread only after start().
   std::string vaultDirectory;
 

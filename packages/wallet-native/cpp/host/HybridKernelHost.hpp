@@ -7,6 +7,7 @@
 #include <mutex>
 
 #include "host/Lifecycle.hpp"
+#include "KernelSlot.hpp"
 
 #include "../runtime/KernelRuntime.hpp"
 
@@ -43,6 +44,10 @@ class HybridKernelHost final : public HybridKernelHostSpec,
   void exit(KernelExitReason reason);
 
   std::mutex mutex_;
+  // Held while this host owns the process's one live kernel runtime; released
+  // on exit or destruction, naming the still-stopping runtime as the next
+  // start's predecessor.
+  qntx::KernelSlot::Claim slotClaim_;
   std::shared_ptr<qntx::KernelRuntime> runtime_;
   std::function<void(const std::shared_ptr<ArrayBuffer>&)> messageListener_;
   std::function<void(KernelExitReason)> exitListener_;
