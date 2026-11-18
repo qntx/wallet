@@ -94,7 +94,7 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
       throw std::runtime_error("the previous kernel runtime did not stop in time");
     }
   };
-  hooks.onPost = [weak](std::vector<uint8_t> bytes) {
+  hooks.onPost = [weak](qntx::SecretBytes bytes) {
     if (const auto self = weak.lock()) {
       std::function<void(const std::shared_ptr<ArrayBuffer>&)> listener;
       {
@@ -102,6 +102,8 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
         listener = self->messageListener_;
       }
       if (listener) {
+        // The listener's ArrayBuffer is a fresh copy — `bytes` wipes itself on
+        // scope exit whether the listener ran or not.
         listener(ArrayBuffer::copy(bytes.data(), bytes.size()));
       }
     }
@@ -151,7 +153,7 @@ void HybridKernelHost::post(const std::shared_ptr<ArrayBuffer>& frame) {
   }
   if (runtime) {
     const auto* data = static_cast<const uint8_t*>(frame->data());
-    runtime->post(std::vector<uint8_t>(data, data + frame->size()));
+    runtime->post(qntx::SecretBytes(data, frame->size()));
   }
 }
 

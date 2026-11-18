@@ -46,6 +46,10 @@ export function spawnFromHost(host: KernelHostLike, backgroundLockSeconds: numbe
     } catch {
       exit("crashed");
       return;
+    } finally {
+      // The frame's bytes are decode-copied or dead either way — never leave the
+      // encoded form resident past dispatch.
+      new Uint8Array(frame).fill(0);
     }
     dispatch(message);
   });
@@ -67,13 +71,22 @@ export function spawnFromHost(host: KernelHostLike, backgroundLockSeconds: numbe
 
   return {
     post: (message, transfer) => {
-      const frame = encodeFrame(message);
-      host.post(frame);
       // Structured clone would neuter transferred buffers on the web; the main↔kernel
       // contract is the same here — the caller's buffers hold secrets (passwords, PRF
-      // output) and are zeroed once their bytes are inside the frame.
-      for (const buffer of transfer) {
-        new Uint8Array(buffer).fill(0);
+      // output) and are zeroed once their bytes are inside the frame. The frame itself
+      // is wiped on every path after the host took its copy — success or a throwing
+      // host.post alike.
+      let frame: ArrayBuffer | undefined;
+      try {
+        frame = encodeFrame(message);
+        host.post(frame);
+      } finally {
+        if (frame !== undefined) {
+          new Uint8Array(frame).fill(0);
+        }
+        for (const buffer of transfer) {
+          new Uint8Array(buffer).fill(0);
+        }
       }
     },
     listen: (handler) => {

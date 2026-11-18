@@ -2,6 +2,8 @@
 
 #include <jsi/jsi.h>
 
+#include "KernelBuffer.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -38,7 +40,9 @@ struct KernelGlobalsState {
   std::string vaultDirectory;
 
   // Copies the posted bytes out of the runtime and reports them to the host.
-  std::function<void(std::vector<uint8_t>)> postToHost;
+  // The SecretBytes wipes itself on scope exit — the host's copy into the JS
+  // ArrayBuffer is the only one that outlives the call.
+  std::function<void(SecretBytes)> postToHost;
 
   // Records a fatal kernel failure reported by JS (unhandled promise
   // rejection). The runtime tears down after the current task drains.

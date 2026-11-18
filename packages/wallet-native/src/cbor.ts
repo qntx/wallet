@@ -4,8 +4,9 @@
  * tags, non-string map keys, duplicate keys and indefinite-length items are all rejected — the wire
  * format carries exactly one value domain.
  */
-import { decode, encode } from "cborg";
+import { decode, encodeInto } from "cborg";
 import type { DecodeOptions } from "cborg";
+import { encodedLength } from "cborg/length";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
@@ -133,14 +134,30 @@ function classify(error: unknown): CborError {
   return new CborError("malformed", `cbor frame: ${text}`);
 }
 
-/** Encode a `ProtocolValue` to a CBOR frame, enforcing the 1 MiB cap. */
+/**
+ * Encode a `ProtocolValue` to a CBOR frame, enforcing the 1 MiB cap. `encodeInto` writes straight
+ * into an exact-size buffer the caller owns: `encode` reuses a module-level writer whose first
+ * chunk survives across calls, which would keep the last frame's bytes resident in cborg state.
+ */
 export function encodeFrame(value: ProtocolValue): ArrayBuffer {
   validate(value);
-  const bytes = encode(value);
-  if (bytes.byteLength > FRAME_MAX_BYTES) {
-    throw new CborError("oversize", `cbor frame: ${bytes.byteLength} bytes exceeds the 1 MiB cap`);
+  const bytes = new Uint8Array(encodedLength(value));
+  let written: number;
+  try {
+    ({ written } = encodeInto(value, bytes));
+  } catch (error) {
+    bytes.fill(0);
+    throw error;
   }
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  if (written > FRAME_MAX_BYTES) {
+    bytes.fill(0);
+    throw new CborError("oversize", `cbor frame: ${written} bytes exceeds the 1 MiB cap`);
+  }
+  if (written !== bytes.byteLength) {
+    bytes.fill(0);
+    throw new CborError("malformed", "cbor frame: encoded length mismatch");
+  }
+  return bytes.buffer;
 }
 
 /** Decode a CBOR frame back to a `ProtocolValue`, enforcing the 1 MiB cap and strictness. */

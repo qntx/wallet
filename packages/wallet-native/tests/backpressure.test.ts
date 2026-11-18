@@ -64,7 +64,11 @@ class InboundCappedHost implements KernelHostLike {
       this.exitCb?.("integrity");
       return;
     }
-    this.held.push(frame);
+    // The post contract borrows the frame for the call only — the real host copies
+    // the bytes into the runtime's queue inside post, so the fake does the same.
+    const copy = new Uint8Array(frame.byteLength);
+    copy.set(new Uint8Array(frame));
+    this.held.push(copy.buffer);
   }
 
   /** The busy kernel catching up: answers the `count` oldest frames. */

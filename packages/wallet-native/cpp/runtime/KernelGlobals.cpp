@@ -443,7 +443,7 @@ void installKernelGlobals(
         }
         auto buffer = args[0].asObject(rt).getArrayBuffer(rt);
         const auto* data = buffer.data(rt);
-        state->postToHost(std::vector<uint8_t>(data, data + buffer.size(rt)));
+        state->postToHost(qntx::SecretBytes(data, buffer.size(rt)));
         return jsi::Value::undefined();
       }));
   frames.setProperty(

@@ -77,11 +77,8 @@ class SecretBytes {
 // back ArrayBuffers that can hold secrets.
 class OwningBuffer final : public jsi::MutableBuffer {
  public:
-  explicit OwningBuffer(std::vector<uint8_t> storage) : storage_(std::move(storage)) {}
+  explicit OwningBuffer(SecretBytes storage) : storage_(std::move(storage)) {}
   explicit OwningBuffer(size_t size) : storage_(size) {}
-  ~OwningBuffer() override {
-    kernelWipe(storage_);
-  }
   size_t size() const override {
     return storage_.size();
   }
@@ -90,7 +87,7 @@ class OwningBuffer final : public jsi::MutableBuffer {
   }
 
  private:
-  std::vector<uint8_t> storage_;
+  SecretBytes storage_;
 };
 
 } // namespace qntx

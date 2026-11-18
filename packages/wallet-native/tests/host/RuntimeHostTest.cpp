@@ -71,10 +71,10 @@ struct Mailbox {
   std::vector<std::string> posts;
   std::vector<std::string> errors;
 
-  void post(std::vector<uint8_t> bytes) {
+  void post(qntx::SecretBytes bytes) {
     {
       std::lock_guard<std::mutex> lock(m);
-      posts.emplace_back(bytes.begin(), bytes.end());
+      posts.emplace_back(bytes.data(), bytes.data() + bytes.size());
     }
     cv.notify_all();
   }
@@ -97,9 +97,21 @@ struct Mailbox {
   }
 };
 
+// Frame bytes must cross the runtime boundary in wipe-on-release storage:
+// onPost hands the hook a SecretBytes that zeroes itself when dropped, and
+// post() takes the same so every queue/teardown path wipes.
+static_assert(
+    std::is_same_v<
+        decltype(KernelRuntime::Hooks::onPost),
+        std::function<void(qntx::SecretBytes)>>,
+    "onPost must deliver frames in SecretBytes");
+static_assert(
+    std::is_same_v<decltype(&KernelRuntime::post), void (KernelRuntime::*)(qntx::SecretBytes)>,
+    "post must take frames in SecretBytes");
+
 KernelRuntime::Hooks hooksFor(Mailbox& box) {
   KernelRuntime::Hooks hooks;
-  hooks.onPost = [&box](std::vector<uint8_t> bytes) { box.post(std::move(bytes)); };
+  hooks.onPost = [&box](qntx::SecretBytes bytes) { box.post(std::move(bytes)); };
   hooks.onError = [&box](std::string message) { box.fail(std::move(message)); };
   return hooks;
 }
@@ -1345,7 +1357,7 @@ int queueCap() {
   CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "queue-cap: no ready");
   std::vector<uint8_t> frame(16, 0x61);
   for (int i = 0; i < 70; i++) {
-    rt->post(frame);
+    rt->post(qntx::SecretBytes(frame.data(), frame.size()));
   }
   {
     std::unique_lock<std::mutex> lock(box.m);
