@@ -20,6 +20,7 @@ export type { Eip1193Event, Eip1193Request } from "./connect/eip1193.ts";
 export { ProviderError } from "./connect/errors.ts";
 export { AssetsController } from "./assets/controller.ts";
 export type { AccountBalances, TokenBalance } from "./assets/controller.ts";
+export type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./assets/bitcoin.ts";
 export { AddressBookController } from "./addresses/controller.ts";
 export type { AddressBookEntry, AddressBookState, AddressFamily } from "./addresses/controller.ts";
 export { AddressBookError } from "./addresses/errors.ts";

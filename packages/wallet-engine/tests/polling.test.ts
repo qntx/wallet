@@ -4,7 +4,7 @@
  * (bitcoin by `manualTimers`, equivalent semantics by hand). A tx must be polled until a terminal
  * state and balances once per poll interval, with no run overlapping the next.
  */
-import { keccak256 } from "viem";
+import { decodeFunctionData, encodeFunctionResult, keccak256 } from "viem";
 import type { Hex } from "viem";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -13,6 +13,7 @@ import type { SignRequest } from "@qntx/wallet-chains";
 import type { chains } from "@qntx/wallet/chains";
 
 import { AssetsController } from "../src/assets/controller.ts";
+import { MULTICALL3_ABI } from "../src/assets/evm.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -45,6 +46,23 @@ const SEND = {
 };
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
+const ZERO_WORD: Hex = `0x${"00".repeat(32)}`;
+
+/** A node with no token balances: a zero word per call, also inside a Multicall3 batch. */
+const answerCall = (params: unknown): Hex => {
+  const [call] = Array.isArray(params) ? (params as [{ data?: Hex }]) : [{}];
+  try {
+    const { args } = decodeFunctionData({ abi: MULTICALL3_ABI, data: call.data ?? "0x" });
+    return encodeFunctionResult({
+      abi: MULTICALL3_ABI,
+      functionName: "aggregate3",
+      result: args[0].map(() => ({ success: true, returnData: ZERO_WORD })),
+    });
+  } catch {
+    return ZERO_WORD;
+  }
+};
 
 const evmWorld = () => {
   const counts = { getReceipt: 0, getBalance: 0 };
@@ -81,7 +99,7 @@ const evmWorld = () => {
       case "eth_getBlockByNumber":
         return { number: "0x2" };
       case "eth_call":
-        return `0x${"00".repeat(32)}`;
+        return answerCall(params);
       case "eth_simulateV1":
         return simulateV1Result(params);
       case "eth_getBalance":
@@ -470,6 +488,7 @@ describe("asset polling on the one-shot timer", () => {
     const w = evmWorld();
     const assets = new AssetsController({
       networks: w.networks(),
+      chains: { account: async () => Promise.reject(new Error("no bitcoin account in this test")) },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: defaultSetTimer,
       logger: { warn: () => {} },
@@ -505,6 +524,7 @@ describe("asset polling on the one-shot timer", () => {
     const warnings: string[] = [];
     const assets = new AssetsController({
       networks: w.networks(),
+      chains: { account: async () => Promise.reject(new Error("no bitcoin account in this test")) },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: defaultSetTimer,
       logger: {

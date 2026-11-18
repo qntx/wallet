@@ -523,7 +523,11 @@ describe("assessSafe", () => {
 });
 
 describe("assessBitcoinPsbts", () => {
-  const input = (value: number, sigHash: "ALL" | "SINGLE|ANYONECANPAY") => ({ value, sigHash });
+  const input = (
+    value: number,
+    sigHash: "ALL" | "SINGLE|ANYONECANPAY",
+    template: "btc.bip84" | "btc.bip86" = "btc.bip84",
+  ) => ({ value, template, sigHash });
 
   it("a SINGLE|ANYONECANPAY input is a danger", () => {
     expect(assessBitcoinPsbts([input(100_000, "SINGLE|ANYONECANPAY")])).toStrictEqual([
@@ -546,7 +550,21 @@ describe("assessBitcoinPsbts", () => {
     ).toStrictEqual(["bitcoin-sighash-single:danger", "bitcoin-inscription-input:danger"]);
   });
 
+  it("the ord-postage rule: ≤20_000 sat or any taproot input is an inscription carrier", () => {
+    expect(assessBitcoinPsbts([input(10_000, "ALL")])).toStrictEqual([
+      { code: "bitcoin-inscription-input", level: "danger" },
+    ]);
+    expect(assessBitcoinPsbts([input(100_000, "ALL", "btc.bip86")])).toStrictEqual([
+      { code: "bitcoin-inscription-input", level: "danger" },
+    ]);
+    expect(
+      assessBitcoinPsbts([input(1_000_000, "SINGLE|ANYONECANPAY", "btc.bip86")]).map(
+        (f) => `${f.code}:${f.level}`,
+      ),
+    ).toStrictEqual(["bitcoin-sighash-single:danger", "bitcoin-inscription-input:warning"]);
+  });
+
   it("ordinary inputs raise nothing", () => {
-    expect(assessBitcoinPsbts([input(100_000, "ALL"), input(547, "ALL")])).toStrictEqual([]);
+    expect(assessBitcoinPsbts([input(100_000, "ALL"), input(30_000, "ALL")])).toStrictEqual([]);
   });
 });

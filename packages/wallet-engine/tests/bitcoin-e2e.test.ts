@@ -23,7 +23,13 @@ import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraDeps, EsploraResponse } from "../src/chains/bitcoin.ts";
-import { esplora, BitcoinChainAdapter, EsploraError, feeTiers } from "../src/chains/bitcoin.ts";
+import {
+  esplora,
+  BitcoinChainAdapter,
+  EsploraError,
+  feeTiers,
+  selectableUtxos,
+} from "../src/chains/bitcoin.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
@@ -308,11 +314,15 @@ const regtestFlow = async () => {
     const utxos = await scanUtxos(es, all, bitcoinNetwork(NETWORK).params);
     expect(utxos.length).toBeGreaterThan(0);
     const frozen = utxos.filter((u) => u.value === 546);
-    const spendable = utxos.filter((u) => u.value !== 546 && u.value !== 330);
+    const spendable = selectableUtxos(
+      utxos.map((u) => ({ ...u, status: "confirmed" as const })),
+      bitcoinNetwork(NETWORK).params,
+      [],
+    );
 
     const adapter = new BitcoinChainAdapter();
     const inputs = adapter.toInputs(
-      spendable.map((u) => ({ ...u, status: "confirmed" as const })),
+      spendable,
       HD.fingerprint,
       bip84PathOf(all),
       bip84PubOf(all),
@@ -376,10 +386,11 @@ const taprootFlow = async (): Promise<void> => {
     });
     rpc(`${NAME}-tr`, "sendtoaddress", [recv, "0.00050000"]);
     rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
+    let scanned: ReadonlyArray<ScanAddress> = [];
     await waitFor(
       async () => {
         const es = esploraClient(base);
-        const scanned = await scanChain(
+        scanned = await scanChain(
           es,
           xpub,
           "btc.bip86",
@@ -396,6 +407,10 @@ const taprootFlow = async (): Promise<void> => {
       },
     );
 
+    // The taproot funding output is protected under the ord-postage rule — the send names it.
+    const trUtxos = await scanUtxos(esploraClient(base), scanned, bitcoinNetwork(NETWORK).params);
+    const fundingUtxo = trUtxos.find((u) => u.address === recv);
+    expect(fundingUtxo).toBeDefined();
     const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
     const tx = await send(ctl, {
       account: { kind: "hd", walletId, groupIndex: 0, template: "btc.bip86" },
@@ -403,6 +418,7 @@ const taprootFlow = async (): Promise<void> => {
       to: external,
       amount: 10_000n,
       fee: "slow",
+      spendProtected: [`${fundingUtxo?.txid ?? ""}:${String(fundingUtxo?.vout ?? 0)}`],
       verify: BVERIFY,
     });
     expect(tx.state).toBe("submitted");

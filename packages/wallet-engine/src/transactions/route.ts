@@ -101,6 +101,8 @@ export type SendParams = {
   readonly fee: EvmFeeTier | SolanaFeeTier;
   /** SPL mint decimals — required when `token` is a Solana mint. */
   readonly decimals?: number;
+  /** Bitcoin only — protected outpoints (`txid:vout`) the user chose to spend in this send. */
+  readonly spendProtected?: ReadonlyArray<string>;
   readonly verify: SignParams["verify"];
 };
 

@@ -295,13 +295,13 @@ describe("bitcoin rbf", () => {
   });
 
   it("fails before signing when the bump is unfundable", async () => {
-    setUtxos([{ txid: funding(1, 6000).txid, vout: 0, value: 6000 }]);
+    setUtxos([{ txid: funding(1, 21_000).txid, vout: 0, value: 21_000 }]);
     const c = ctx();
     const original = await routeSend(route, c, {
       account: { kind: "hd", walletId: "w", groupIndex: 0, template: "btc.bip84" },
       network: "bip122:000000000019d6689c085ae165831e93",
       to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
-      amount: 5400n,
+      amount: 20_200n,
       fee: "slow",
       verify: { kind: "password", password: "pw" },
     });
