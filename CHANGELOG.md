@@ -89,6 +89,55 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - `@qntx/wallet-chains/solana`: `decodeSolanaTransaction(wire, signer)` reads a serialized Solana transaction for one required signer and returns the message it signs plus the other signers that have not signed yet. `addSolanaSignature(wire, signer, signature)` writes the signer's slot and leaves every other byte unchanged. Both are built on `@solana/transactions` 8.5.0.
 - `@qntx/wallet-chains/solana`: `mayBeTransactionMessage(bytes)`.
 - Fixed vectors for Solana serialized transactions: `vectors/chains/solana-wire.json`.
+- `vectors/chains/signing-classes.json`: fixed requests with their expected class, blind reason and exact kernel prompt text in both locales.
+- `@qntx/wallet-engine`: `engine.history` (`HistoryController`) — one newest-first activity list per
+  account group that includes what the wallet received, not only what it sent. Sources: Bitcoin from
+  Esplora address histories over all four account templates, Solana from `getSignaturesForAddress` +
+  `getTransaction` on the owner and its token accounts, Spark from the operators' transfer history,
+  EVM from the gateway history route. Each entry carries direction, counterparties, per-asset
+  changes, fee, status, time, block and `verified`. `load(group)` / `loadMore(group)`; locally
+  tracked sends fold into the chain entry with the same hash, pending ones show immediately.
+- `@qntx/wallet-engine`: a provider (gateway) EVM entry is `verified` only after its receipt and
+  transaction read over RPC — the host endpoint when the network has one — match every transfer; a
+  contradiction is flagged `chain-mismatch`. Entries are flagged `zero-value-transfer`,
+  `lookalike-counterparty`, `token-impersonation` and `suspicious-token-symbol`; history
+  counterparties never enter the address book or the known-recipient set used by request risk.
+- `@qntx/wallet-engine`: the `history` collection caches the newest 200 entries per group; lock
+  clears the state and discards in-flight loads.
+- `@qntx/wallet-engine/gateway/contract`: `history` endpoint (`POST /v1/history/:caip2`, address in
+  the body) with `historyRequest` / `historyResponse` schemas and `historyPath`; Esplora allow-list
+  gains `/scripthash/:h/txs/chain/:txid` for paging long address histories.
+- `@qntx/gateway`: `POST /v1/history/:caip2` — EVM transfers in and out of an address over Alchemy
+  `alchemy_getAssetTransfers` (existing `ALCHEMY_API_KEY`, own breaker id `alchemy-transfers`),
+  newest first, block-frontier pagination; `503 unavailable` on networks without an Alchemy
+  provider (staging). Tested against recorded real responses; not yet exercised live with the
+  production key.
+- **gateway:** `POST /v1/prices` — spot price and 24 h change for up to 100 CAIP-19 assets in one
+  fiat currency (`usd`, `eur`, `gbp`, `jpy`, `cny`, `krw`, `hkd`, `sgd`, `cad`, `aud`, `chf`).
+  CoinGecko Pro is the primary source (`COINGECKO_API_KEY`, header-only), DefiLlama's keyless
+  coins API the USD fallback and long-tail source; answers are cached per asset and currency in the
+  Cache API for 30 s, provider numbers are turned into decimal strings without float arithmetic and
+  bounded (positive, below 10^12, at most 18 decimals, updated at most a day ago and not in the
+  future). One rate-limit unit per started 25 assets on the default limiter; the asset set travels
+  in the body and the answer is `no-store`. The route is part of `scripts/smoke.ts`.
+- **wallet-engine:** gateway contract `prices` (`priceAssetId`, `nativeAssetId`, `tokenAssetId`,
+  `fiatPrice`, `percentChange`, `FIAT_CURRENCIES`, `pricesRequestCost`).
+- **wallet-engine:** `PricesController` (`engine.prices`) — quotes for every asset the engine holds
+  (EVM and Solana natives, built-in and added tokens, Bitcoin, Spark sats as BTC), fetched when a
+  new asset appears and every 60 s while visible; single-flight, per-asset `unpriced` errors, a
+  request-level `failure`, persisted with the chosen currency in the EngineStore, cleared on lock.
+- **wallet-engine:** `engine.portfolio.group(group)` — exact fiat valuation (bigint fixed-point,
+  no floats) of the balances already in state and the group's total, with per-holding staleness
+  (`PRICE_STALE_MS`, 10 min by the provider's `updatedAt`).
+- **lint:** engine code outside the composition root may not import `src/prices` — prices are
+  display-only; `scripts/check-lint-boundaries.ts` probes the ban.
+- `@qntx/wallet-engine`: Bitcoin coin control — `TransactionController.setUtxosFrozen` /
+  `frozenUtxos` persist per-account user freezes; `PrepareParams.inputs` spends exactly the named
+  outpoints. Automatic selection, RBF extras and CPFP honour freezes, and a dApp PSBT signing a
+  frozen input raises the `bitcoin-frozen-input` danger finding.
+- `@qntx/wallet-engine`: Spark tokens — `SparkAccountState.tokens` balances, `pay` with
+  `token: { identifier, amount }` to a Spark address, results `token` / `token-pending`.
+- `@qntx/wallet-engine`: `SparkController.quoteExit`, the converged cooperative-exit quote.
 
 ### Changed
 
@@ -229,6 +278,39 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - **BREAKING:** `ChainErrorCode` no longer includes `fee-payer-mismatch`.
 - **BREAKING:** Solana transaction versions other than legacy and v0, including v1, are refused with `ChainError("unsupported")`.
 - `solana-sign` `prepare` rejects a transaction it cannot decode, instead of showing an empty request as verified.
+- **BREAKING:** Requests the wallet can describe but not verify now sign without the blind-signing setting. This covers an unknown contract call or creation (the prompt shows the target, function selector, native value and fee cap), unrecognised EIP-712 that fits the display budget (every leaf is shown as `path: value`, up to 16 leaves), a Solana transaction with undecodable instructions (their programs are listed) and a PSBT with other signers' inputs. Each prompt carries a "cannot verify" line. Only requests a decoder marks blind still need `vault.setBlindSigning(true, verify)`, which stays off by default: raw-byte messages, typed data too large or misformed to show, an unrecognised function of a built-in token, calldata to the signing account's own code, a Safe delegatecall outside MultiSendCallOnly, and a Safe gas refund. (@qntx/wallet-chains, @qntx/wallet-kernel, @qntx/wallet-engine)
+- **BREAKING:** `isBlindIntent` takes `Pick<DisplayIntent, "blind">` and returns `intent.blind !== undefined`. `DisplayIntent` gains `blind` (a `BlindReason`), `programs` (Solana) and `contract.selector` / `contract.symbol`. Typed-data `MessageContent` gains `fields`. New exports: `BlindReason`, `TypedDataLeaf`, `messageBlindReason`, and `typedDataFields`, `TYPED_FIELD_BUDGET` and `TYPED_FIELD_CODE_POINTS` from `/evm`. (@qntx/wallet-chains)
+- **BREAKING:** `RequestController.prepare` no longer throws `BlindSigningDisabledError`, and the EIP-1193 and Solana provider handlers no longer answer `4200` for blind requests. A blind request becomes a pending request with the `blind-signing` danger, and `approve` throws `BlindSigningDisabledError` while the setting is off, leaving the request approvable after the owner enables the setting. Described typed data and Solana requests with opaque transactions carry the `decode-partial` check. (@qntx/wallet-engine)
+- The kernel's blind-signing prompts name each reason. The setting's verification prompt now says which way it changes ("Allow blind signing" / "Turn off blind signing"). A raw-byte message prompt shows the bytes (up to 64) or their length. (@qntx/wallet-kernel)
+- `@qntx/wallet-engine`: gateway history requests carry the EVM scope's client id
+  (`gatewayScope`), not the service id.
+- **BREAKING:** `@qntx/wallet-engine/idb`: the engine IndexedDB database moves to format 2. Rows
+  are named by an HMAC of their collection and key (HKDF subkeys of the data key), values live in
+  `records` and the encrypted (collection, key) headers in `index`; no collection name, record key
+  or value is readable on disk. An existing engine database is dropped and rebuilt empty on first
+  open (no migration).
+- **BREAKING:** `EngineCollection.get` resolves `undefined` for a row the store cannot authenticate
+  (it reads like a deleted row), and `EngineErrorCode` no longer has `"integrity"`. A reserved check
+  row proves the data key at open; a database keyed differently (e.g. after a vault reset) is
+  rebuilt empty.
+- Address-book sync: a contact's family, address and creation time are immutable under its id,
+  deletes are terminal, remote records stamped more than one hour ahead are refused, and a local
+  edit always stamps above the record it replaces.
+- **gateway:** **BREAKING:** `GatewayOptions` requires `prices: { cache, coingecko? }`; production
+  requires the `COINGECKO_API_KEY` secret before deploy (staging may set it).
+- **BREAKING:** `@qntx/wallet-engine`: a cooperative exit's `amountSats` (the `pay` Bitcoin option
+  and `spark-exit`) is the amount that arrives at the address; the exit debits `amountSats + fee`.
+  `PayParams.maxFeeSats` is required for Bitcoin options and the exit display carries `feeSats`.
+- **BREAKING:** `@qntx/wallet-engine`: `SendParams.spendProtected` is replaced by
+  `PrepareParams.inputs`; `prepareDappPsbts` takes the group's frozen outpoints and
+  `PreparedBitcoinPsbt` inputs carry `frozen`.
+- **BREAKING:** `@qntx/wallet-engine`: `SparkResult` gains `pending` (and `token`,
+  `token-pending`); `SparkDisplay` is a union with a `token` variant; `SparkErrorCategory` gains
+  `unknown`; `SparkControllerOptions.random` is removed; `send`/`payInvoice`/`paySparkInvoice`/
+  `withdraw` take a required `transferId`.
+- **BREAKING:** `@qntx/wallet-engine`: the persisted Bitcoin build record carries `template`,
+  `groupIndex` and `tier`; transactions recorded before this release cannot be sped up, cancelled
+  or bumped with CPFP (no migration).
 
 ### Fixed
 
@@ -307,6 +389,38 @@ a wallet. App lock is optional and off by default. The Web host is unchanged.
 - Multi-signer and partially signed Solana transactions keep the co-signers' existing signatures. Sponsored transactions, where the dApp pays the fee, can be signed. A sign-and-send that still lacks other signers' signatures is refused before the prompt.
 - A raw `solana.message` that a cluster could accept as a transaction message of any version is never signed. This applies to every versioned prefix except `0xff`, which opens off-chain messages; such a prefix passes only when the whole payload is well-formed UTF-8 text. Previously a transaction-v1 message could be signed as a raw message once blind signing was on.
 - Solana `standard:connect` derives the account public key from its address. Previously it always failed with "no Solana account for the group".
+- WETH `deposit`, Aave `supply`, Uniswap Universal Router `execute`, CoW Protocol orders and other everyday dApp requests are no longer refused before any prompt on a vault with the default policy. Two calls to the same contract with different functions no longer produce identical prompts. (@qntx/wallet-chains, @qntx/wallet-kernel, @qntx/wallet-engine)
+- Calldata sent to the signing account itself, including to a Safe from its own transaction, is now blind instead of being decoded as a token operation or an ordinary call. (@qntx/wallet-chains)
+- A synced metadata document from any wallet could re-point an existing contact to another
+  address, resurrect a deleted contact and revert later renames by stamping its records in the
+  future.
+- One tampered engine-store row, or reopening the engine database under a new data key, aborted
+  the whole unlock initialisation; a start that fails mid-sequence now tears down and retries on
+  the next status event.
+- The engine IndexedDB primary keys exposed dApp origins, sign-log timestamps and wallet/Spark
+  account structure in plaintext.
+- Account discovery restamped every scanned group, so a scan on one device reverted renames made
+  on another.
+- Cloud backup reported a conflict with its own write after a lagging read-back or a write that
+  failed after landing.
+- `keys.export` no longer builds the private key as a JS string, and create/import commands wipe
+  the minted vault DEK, wire mnemonic/passphrase/PRF inputs and entropy on every failure path.
+- `@qntx/wallet-engine`: Spark payments are idempotent per request — the transfer id is derived
+  from the request id, a lost response is retried under the same id, and an unresolved outcome
+  ends the request `submitted` with `{ kind: "pending", transferId }` instead of `failed`.
+- `@qntx/wallet-engine`: paying a Bitcoin address from Spark shows the SSP fee and refuses a quote
+  above the caller's `maxFeeSats` before approval (ED-03).
+- `@qntx/wallet-engine`: a corrupt or integrity-failing Spark exit-chain index, chain record or
+  payment note is skipped instead of failing the client or the history page (ED-08, Spark part).
+- `@qntx/wallet-engine`: coin selection spends only confirmed outputs and the wallet's own
+  unconfirmed change; replacements never add unconfirmed inputs (ED-07).
+- `@qntx/wallet-engine`: a Bitcoin transaction whose input is spent by a confirmed foreign
+  transaction settles `replaced`; speed-up, cancel and CPFP work after a restart (ED-05).
+- `@qntx/wallet-engine`: Bitcoin replacement and CPFP fees use a per-template, per-script vsize
+  estimate and the replacement's own size for the BIP-125 rule-4 floor (ED-12); CPFP of a
+  bip44/bip49 parent builds on the bip84 change chain; a cancel that cannot pay its fee is refused.
+- `@qntx/wallet-engine`: dApp `signAndSendTransaction` broadcasts are persisted, outcome-classified,
+  input-locked and tracked like wallet sends; the dApp receives the local txid.
 
 ### Removed
 
