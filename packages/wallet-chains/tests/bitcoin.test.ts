@@ -11,8 +11,9 @@ import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeBitcoinPsbt, normalizeBitcoin } from "../src/bitcoin/index.ts";
-import { bip322ToSpendTxid, pushData } from "../src/bitcoin/message.ts";
+import { bip322ToSign, bip322ToSpendTxid, pushData } from "../src/bitcoin/message.ts";
 import { signBitcoinMessage, signBitcoinPsbt } from "../src/bitcoin/sign.ts";
+import { verifyBitcoinMessage } from "../src/bitcoin/verify.ts";
 import { ChainError } from "../src/index.ts";
 
 const expectedHash = (message: string): Uint8Array => {
@@ -40,8 +41,19 @@ type BtcVectors = {
   bip322: {
     address: string;
     wif: string;
-    txHashes: ReadonlyArray<{ message: string; messageHash: string; toSpendTxHash: string }>;
-    simple: ReadonlyArray<{ message: string; signatures: ReadonlyArray<string> }>;
+    txHashes: ReadonlyArray<{
+      message: string;
+      messageHash: string;
+      toSpendTxHash: string;
+      toSignTxHash: string;
+    }>;
+    simple: ReadonlyArray<{
+      message: string;
+      signatures: ReadonlyArray<string>;
+      type?: string;
+      wif?: string;
+      address?: string;
+    }>;
   };
   legacyMessage: { wif: string; address: string; message: string; signature: string };
 };
@@ -81,6 +93,7 @@ const readVectors = (): BtcVectors => {
       !isRec(t) ||
       typeof t["message"] !== "string" ||
       typeof t["toSpendTxHash"] !== "string" ||
+      typeof t["toSignTxHash"] !== "string" ||
       typeof t["messageHash"] !== "string"
     ) {
       throw new Error("malformed txHashes");
@@ -89,11 +102,15 @@ const readVectors = (): BtcVectors => {
       message: t["message"],
       messageHash: t["messageHash"],
       toSpendTxHash: t["toSpendTxHash"],
+      toSignTxHash: t["toSignTxHash"],
     };
   });
   const simple = v["simple"] as ReadonlyArray<{
     message: string;
     signatures: ReadonlyArray<string>;
+    type?: string;
+    wif?: string;
+    address?: string;
   }>;
   return {
     mnemonic: raw["mnemonic"],
@@ -153,23 +170,46 @@ describe("derivation", () => {
 });
 
 describe("bip322 + legacy message", () => {
-  const key = wifKey(vectors.bip322.wif);
+  const simpleEntry = (e: (typeof vectors.bip322.simple)[number]) => ({
+    wif: e.wif ?? vectors.bip322.wif,
+    address: e.address ?? vectors.bip322.address,
+  });
 
   it.each(vectors.bip322.txHashes)(
-    "BIP-322 to_spend txid for message $message matches the official vector",
-    ({ message, toSpendTxHash }) => {
+    "BIP-322 to_spend/to_sign txids for message $message match the official vectors",
+    ({ message, toSpendTxHash, toSignTxHash }) => {
       const scriptPubKey = OutScript.encode(Address(NETWORK).decode(vectors.bip322.address));
       expect(Buffer.from(bip322ToSpendTxid(scriptPubKey, message)).toString("hex")).toBe(
         toSpendTxHash,
       );
+      expect(bip322ToSign(scriptPubKey, message).id).toBe(toSignTxHash);
     },
   );
 
-  it.each(vectors.bip322.simple)(
-    "BIP-322 simple signature for message $message has the spec structure",
-    ({ message }) => {
+  it.each(vectors.bip322.simple.filter((e) => e.type === "p2tr"))(
+    "BIP-322 simple p2tr signature for message $message has the spec structure",
+    (entry) => {
+      const { wif, address } = simpleEntry(entry);
       const sig = signBitcoinMessage(
-        { network: MAINNET, address: vectors.bip322.address, message, format: "bip322-simple" },
+        { network: MAINNET, address, message: entry.message, format: "bip322-simple" },
+        wifKey(wif),
+        auxRand,
+      );
+      const witness = Buffer.from(sig.slice(3), "base64");
+      expect(sig.startsWith("smp")).toBe(true);
+      expect(witness[0]).toBe(1);
+      expect(witness[1]).toBe(64);
+      expect(witness).toHaveLength(66);
+    },
+  );
+
+  it.each(vectors.bip322.simple.filter((e) => e.type !== "p2tr"))(
+    "BIP-322 simple p2wpkh signature for message $message has the spec structure",
+    (entry) => {
+      const { wif, address } = simpleEntry(entry);
+      const key = wifKey(wif);
+      const sig = signBitcoinMessage(
+        { network: MAINNET, address, message: entry.message, format: "bip322-simple" },
         key,
         auxRand,
       );
@@ -187,6 +227,47 @@ describe("bip322 + legacy message", () => {
       ).toBe(true);
       const der = witness.subarray(2, 2 + sigLen);
       expect(der[sigLen - 1]).toBe(1);
+    },
+  );
+
+  it.each(vectors.bip322.simple)(
+    "every official BIP-322 simple signature for message $message verifies",
+    (entry) => {
+      const { address } = simpleEntry(entry);
+      for (const sig of entry.signatures) {
+        expect(verifyBitcoinMessage(address, entry.message, sig, MAINNET)).toBe(true);
+      }
+    },
+  );
+
+  it.each(vectors.bip322.simple)(
+    "a one-bit-flipped official signature for message $message fails",
+    (entry) => {
+      const { address } = simpleEntry(entry);
+      for (const sig of entry.signatures) {
+        const raw = Buffer.from(sig.slice(3), "base64");
+        // Byte 3 lands inside the first witness item's signature for both p2wpkh (DER) and
+        // p2tr (64-byte schnorr); adding 0x40 changes it (mod 256), so the witness still
+        // parses but no longer verifies.
+        const b3 = Number(raw.at(3));
+        raw[3] = (b3 + 0x40) % 256;
+        expect(
+          verifyBitcoinMessage(address, entry.message, `smp${raw.toString("base64")}`, MAINNET),
+        ).toBe(false);
+      }
+    },
+  );
+
+  it.each(vectors.bip322.simple.filter((e) => e.type !== "p2tr"))(
+    "our deterministic p2wpkh signature for message $message byte-matches an official one",
+    (entry) => {
+      const { wif, address } = simpleEntry(entry);
+      const sig = signBitcoinMessage(
+        { network: MAINNET, address, message: entry.message, format: "bip322-simple" },
+        wifKey(wif),
+        auxRand,
+      );
+      expect(entry.signatures).toContain(sig);
     },
   );
 

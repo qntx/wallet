@@ -62,8 +62,8 @@ const bip322MessageHash = (message: string): Uint8Array => {
 
 /**
  * Serialized to_spend tx per BIP-322: version 0, one input spending the zero prevout with the
- * message-hash scriptSig, one output paying the message's scriptPubKey. Returns txid (hash256d,
- * big-endian display order).
+ * message-hash scriptSig, one output paying the message's scriptPubKey. `txid` is the raw hash256d
+ * digest — internal byte order, the reverse of the displayed hex.
  */
 const toSpend = (
   scriptPubKey: Uint8Array,
@@ -93,6 +93,23 @@ const toSpend = (
 export const bip322ToSpendTxid = (scriptPubKey: Uint8Array, message: string): Uint8Array =>
   Uint8Array.from([...toSpend(scriptPubKey, bip322MessageHash(message)).txid].reverse());
 
+/**
+ * The unsigned BIP-322 to_sign transaction for `scriptPubKey` and `message`: version 0, locktime 0,
+ * one input spending `to_spend`'s output 0 (sequence 0, zero-value witness UTXO), one zero-value
+ * OP_RETURN output. Signers add signing fields via `updateInput`.
+ */
+export const bip322ToSign = (scriptPubKey: Uint8Array, message: string): Transaction => {
+  const tx = new Transaction({ version: 0, lockTime: 0, allowUnknownOutputs: true });
+  tx.addInput({
+    txid: bip322ToSpendTxid(scriptPubKey, message),
+    index: 0,
+    sequence: 0,
+    witnessUtxo: { script: scriptPubKey, amount: 0n },
+  });
+  tx.addOutput({ script: Uint8Array.of(0x6a), amount: 0n });
+  return tx;
+};
+
 const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 const b64 = (i: number): string => BASE64[i] ?? "";
 const base64 = (bytes: Uint8Array): string => {
@@ -119,19 +136,12 @@ export const signBip322Simple = (
   privateKey: Uint8Array,
   auxRand: (n: number) => Uint8Array,
 ): string => {
-  const hash = bip322MessageHash(message);
-  const { txid } = toSpend(scriptPubKey, hash);
-  const tx = new Transaction({ version: 0, lockTime: 0, allowUnknownOutputs: true });
+  const tx = bip322ToSign(scriptPubKey, message);
   const pub = secp256k1.getPublicKey(privateKey, true);
-  tx.addInput({
-    txid,
-    index: 0,
-    sequence: 0,
-    witnessUtxo: { script: scriptPubKey, amount: 0n },
+  tx.updateInput(0, {
     bip32Derivation: [[pub, { fingerprint: 0, path: [] }]],
     ...(scriptPubKey[0] === 0x51 ? { tapInternalKey: pub.slice(1) } : {}),
   });
-  tx.addOutput({ script: Uint8Array.of(0x6a), amount: 0n });
   const isTaproot = scriptPubKey[0] === 0x51;
   const ok = tx.signIdx(
     privateKey,

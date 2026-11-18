@@ -6,9 +6,12 @@
  */
 import * as AbiFunction from "ox/AbiFunction";
 
-import type { DisplayIntent, SafeTransaction } from "../index.ts";
+import type { AssetAmount, DisplayIntent, SafeTransaction } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT256 } from "./approval.ts";
+import { EVM_NATIVE_ASSET } from "./assets.ts";
+import { lookupEvmToken } from "./tokens.ts";
+import type { EvmTokenTable } from "./tokens.ts";
 import { sameFields, typedDataAddress, typedDataBytes, typedDataUint } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 
@@ -36,6 +39,9 @@ const SAFE_TX = [
 ];
 
 const MULTISEND = AbiFunction.from("function multiSend(bytes transactions)");
+
+/** The zero address: `gasToken` zero pays the refund in the chain's native asset. */
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 type Call = {
   readonly to: string | undefined;
@@ -107,6 +113,11 @@ const multiSendEntries = (data: `0x${string}`): ReadonlyArray<Call> | undefined 
  */
 export function recognizeSafe(
   json: TypedDataInput,
+  context: {
+    readonly network: string;
+    readonly chainId: number;
+    readonly table: EvmTokenTable;
+  },
   decode: (call: Call) => DisplayIntent,
 ): SafeRecognition | undefined {
   const { types, primaryType, message, domain } = json;
@@ -144,7 +155,37 @@ export function recognizeSafe(
     operation === 1n && SAFE_MULTISEND_CALL_ONLY.has(to.toLowerCase())
       ? multiSendEntries(data)
       : undefined;
-  const calls = (inner ?? [{ to, value, data }]).map(decode);
+  // A delegatecall runs the target's code with the Safe's full authority (Executor.sol:
+  // `delegatecall(txGas, to, add(data, 0x20), mload(data), 0, 0)` — no value moves). Only
+  // canonical MultiSendCallOnly calldata can be unpacked into checkable calls; anything else is
+  // opaque — the call decoder would misread it as an ordinary call, claimed value included.
+  const calls =
+    operation === 1n && inner === undefined
+      ? [
+          {
+            family: "evm" as const,
+            network: context.network,
+            summary: "contract-call" as const,
+            outflows: [],
+            approvals: [],
+            fee: undefined,
+            warnings: [],
+            verifiability: "opaque" as const,
+            contract: { address: to, created: false },
+          },
+        ]
+      : (inner ?? [{ to, value, data }]).map(decode);
+  const refundAsset = (v: bigint): AssetAmount => {
+    if (gasToken === ZERO_ADDRESS) {
+      return { asset: EVM_NATIVE_ASSET, amount: v.toString(10) };
+    }
+    const found = lookupEvmToken(context.table, context.chainId, gasToken);
+    return {
+      asset: gasToken,
+      amount: v.toString(10),
+      ...(found === undefined ? {} : { symbol: found.symbol, decimals: found.decimals }),
+    };
+  };
   return {
     safe: {
       safe,
@@ -154,12 +195,15 @@ export function recognizeSafe(
       value: value.toString(10),
       data,
       calls,
+      // payment = (gasUsed + baseGas) × gasPrice; gasUsed covers at most safeTxGas for the call
+      // plus the call's overhead, which the executor can raise — so the bounded amount is
+      // (baseGas + safeTxGas) × gasPrice and the rest is shown per unit of overhead gas.
       ...(gasPrice > 0n
         ? {
             refund: {
-              gasPrice: gasPrice.toString(10),
-              gasToken,
-              refundReceiver,
+              ...(refundReceiver === ZERO_ADDRESS ? {} : { receiver: refundReceiver }),
+              gasPrice: refundAsset(gasPrice),
+              amount: refundAsset((baseGas + safeTxGas) * gasPrice),
             },
           }
         : {}),

@@ -162,6 +162,11 @@ export type AssetFlow = {
   readonly to: string;
   readonly amount: AssetAmount;
   readonly verified: boolean;
+  /**
+   * The output is provably unspendable (a Bitcoin script that starts with OP_RETURN or exceeds the
+   * 10,000-byte script limit): `amount` is destroyed and `to` is the script hex.
+   */
+  readonly burn?: true;
   /** The ENS name the recipient was resolved from; attached by the engine, never decoded. */
   readonly name?: string;
 };
@@ -271,11 +276,18 @@ export type SafeTransaction = {
   readonly data: string;
   /** The inner call(s) decoded with the transaction rules (no fee); one per MultiSend entry. */
   readonly calls: ReadonlyArray<DisplayIntent>;
-  /** The gas-refund terms, present when `gasPrice` is not zero. */
+  /**
+   * The gas refund the Safe pays when `gasPrice` is not zero: `(gasUsed + baseGas) × gasPrice` of
+   * the gas token, where `gasUsed` is at most `safeTxGas` for the call plus the call's own
+   * overhead, which the executor can raise — so the total is not bounded by the signed fields.
+   */
   readonly refund?: {
-    readonly gasPrice: string;
-    readonly gasToken: string;
-    readonly refundReceiver: string;
+    /** `refundReceiver`; absent when it is the zero address, which pays whoever executes. */
+    readonly receiver?: string;
+    /** The price per gas unit, in the gas token (the native asset for the zero address). */
+    readonly gasPrice: AssetAmount;
+    /** `(baseGas + safeTxGas) × gasPrice`: the refund before the call's overhead gas. */
+    readonly amount: AssetAmount;
   };
 };
 
@@ -375,9 +387,11 @@ export type DisplayIntent = {
 };
 
 /**
- * A request whose content the signer cannot show: raw bytes, typed data of no recognised shape, or
- * a transaction whose effects it cannot verify. Text, sign-in messages and recognised typed data
- * are shown in full and are never blind.
+ * A request whose content the signer cannot show, or whose outflow cannot be bounded from what is
+ * signed: raw bytes, typed data of no recognised shape, a transaction whose effects it cannot
+ * verify, or a recognised Safe with an opaque call or a gas refund (its total depends on gas the
+ * executor chooses). Text, sign-in messages and fully recognised typed data are shown in full and
+ * are never blind.
  */
 export const isBlindIntent = (
   intent: Pick<DisplayIntent, "verifiability" | "message">,
@@ -392,7 +406,11 @@ export const isBlindIntent = (
   if (intent.verifiability !== "opaque" || message.seaport !== undefined) {
     return false;
   }
-  return message.safe?.calls.some((call) => call.verifiability === "opaque") ?? true;
+  return (
+    message.safe === undefined ||
+    message.safe.refund !== undefined ||
+    message.safe.calls.some((call) => call.verifiability === "opaque")
+  );
 };
 
 export type ChainErrorCode =

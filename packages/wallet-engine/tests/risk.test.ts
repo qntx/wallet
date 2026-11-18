@@ -486,7 +486,15 @@ describe("assessSafe", () => {
 
   it("warns on a gas refund and surfaces inner-call approvals", () => {
     expect(
-      assessSafe(safeTx({ refund: { gasPrice: "5", gasToken: KNOWN, refundReceiver: OTHER } })),
+      assessSafe(
+        safeTx({
+          refund: {
+            receiver: OTHER,
+            gasPrice: { asset: KNOWN, amount: "5" },
+            amount: { asset: KNOWN, amount: "500" },
+          },
+        }),
+      ),
     ).toStrictEqual([{ code: "safe-gas-refund", level: "warning" }]);
 
     const inner = {

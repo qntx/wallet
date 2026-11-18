@@ -588,7 +588,7 @@ export const decodeEvm = (
   const seaport = permit === undefined ? recognizeSeaport(json, chainId, table) : undefined;
   const safe =
     permit === undefined && seaport === undefined
-      ? recognizeSafe(json, (call) =>
+      ? recognizeSafe(json, { network: request.network, chainId, table }, (call) =>
           decodeCall(call, { network: request.network, fee: undefined, table, signer }),
         )
       : undefined;
@@ -610,15 +610,20 @@ export const decodeEvm = (
           ? "batch"
           : (safe.safe.calls[0]?.summary ?? "contract-call")
       : "swap";
-  return {
-    family: "evm",
-    network: request.network,
-    summary,
-    outflows: [],
-    approvals: permit?.approvals ?? [],
-    fee: undefined,
-    warnings: permit?.warnings ?? [],
-    message,
-    verifiability: permit === undefined ? "opaque" : "partial",
-  };
+  return withNativeAmountMeta(
+    {
+      family: "evm",
+      network: request.network,
+      summary,
+      outflows: [],
+      approvals: permit?.approvals ?? [],
+      fee: undefined,
+      warnings: permit?.warnings ?? [],
+      message,
+      verifiability: permit === undefined ? "opaque" : "partial",
+    },
+    request.network,
+    EVM_NATIVE_ASSET,
+    18,
+  );
 };

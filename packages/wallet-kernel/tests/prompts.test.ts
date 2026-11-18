@@ -5,6 +5,7 @@ import { hexToBytes } from "@noble/hashes/utils.js";
  */
 import { base58 } from "@scure/base";
 import { Transaction } from "@scure/btc-signer/transaction.js";
+import * as fc from "fast-check";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { DisplayIntent } from "@qntx/wallet-chains";
@@ -648,6 +649,35 @@ describe("chain prompts via the real decoders", () => {
     expect(zh).toContain("最高手续费 0.0001 BTC");
   });
 
+  it("value sent to an unspendable output is shown as burned, in both locales", () => {
+    const prev = new Transaction({ version: 2 });
+    prev.addInput({ txid: hexToBytes("07".repeat(32)), index: 0, sequence: 0xffffffff });
+    prev.addOutput({ script: BTC_SCRIPT, amount: 100_000_000n });
+    const tx = new Transaction({ version: 2, allowUnknownOutputs: true });
+    tx.addInput({
+      txid: prev.id,
+      index: 0,
+      sequence: 0xfffffffd,
+      witnessUtxo: { script: BTC_SCRIPT, amount: 100_000_000n },
+      nonWitnessUtxo: prev.toBytes(true, false),
+    });
+    tx.addOutput({
+      script: new Uint8Array([0x00, 0x14, ...new Uint8Array(20).fill(0xab)]),
+      amount: 1_000_000n,
+    });
+    tx.addOutput({
+      script: new Uint8Array([0x6a, 0x04, 0xde, 0xad, 0xbe, 0xef]),
+      amount: 98_000_000n,
+    });
+    const intent = decodeBitcoinPsbt(btcReq(tx.toPSBT(0)), new Set());
+    expect(chainPrompt("en", intent).description).toBe(
+      "Network: Bitcoin\nSend 0.01 BTC to bc1q4w46h2at4w46h2at4w46h2at4w46h2at25y74s\nBurn 0.98 BTC: it goes to an unspendable output and is lost\nMax fee 0.01 BTC",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      "网络：Bitcoin\n发送 0.01 BTC 到 bc1q4w46h2at4w46h2at4w46h2at4w46h2at25y74s\n销毁 0.98 BTC：转入无法花费的输出，永久丢失\n最高手续费 0.01 BTC",
+    );
+  });
+
   it("a SIGHASH_SINGLE listing shows the fee-unknown line and the warning", () => {
     const intent = decodeBitcoinPsbt(btcReq(btcPsbt(0x83)), new Set());
     expect(intent.verifiability).toBe("partial");
@@ -917,11 +947,9 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
       },
       SIGNER,
     );
-  const typed = (doc: unknown) =>
-    decodeEvm(
-      { kind: "evm.typed-data", network: "eip155:1", account, typedData: JSON.stringify(doc) },
-      SIGNER,
-    );
+  const typedOn = (network: string, doc: unknown) =>
+    decodeEvm({ kind: "evm.typed-data", network, account, typedData: JSON.stringify(doc) }, SIGNER);
+  const typed = (doc: unknown) => typedOn("eip155:1", doc);
   const signIn = [
     "app.example.com wants you to sign in with your Ethereum account:",
     SIGNER,
@@ -996,6 +1024,427 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     });
   });
 
+  it("a Polygon Seaport order renders native amounts as POL, never ETH", () => {
+    const item = (wei: string) => ({
+      itemType: 0,
+      token: "0x0000000000000000000000000000000000000000",
+      identifierOrCriteria: "0",
+      startAmount: wei,
+      endAmount: wei,
+    });
+    const itemFields = [
+      { name: "itemType", type: "uint8" },
+      { name: "token", type: "address" },
+      { name: "identifierOrCriteria", type: "uint256" },
+      { name: "startAmount", type: "uint256" },
+      { name: "endAmount", type: "uint256" },
+    ];
+    const intent = typedOn("eip155:137", {
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        OrderComponents: [
+          { name: "offerer", type: "address" },
+          { name: "zone", type: "address" },
+          { name: "offer", type: "OfferItem[]" },
+          { name: "consideration", type: "ConsiderationItem[]" },
+          { name: "orderType", type: "uint8" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "zoneHash", type: "bytes32" },
+          { name: "salt", type: "uint256" },
+          { name: "conduitKey", type: "bytes32" },
+          { name: "counter", type: "uint256" },
+        ],
+        OfferItem: itemFields,
+        ConsiderationItem: [...itemFields, { name: "recipient", type: "address" }],
+      },
+      primaryType: "OrderComponents",
+      domain: {
+        name: "Seaport",
+        version: "1.6",
+        chainId: 137,
+        verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+      },
+      message: {
+        offerer: SIGNER,
+        zone: "0x0000000000000000000000000000000000000000",
+        offer: [item("2000000000000000000")],
+        consideration: [{ ...item("100000000000000000000"), recipient: SIGNER }],
+        orderType: 0,
+        startTime: "1700000000",
+        endTime: "1700001000",
+        zoneHash: `0x${"00".repeat(32)}`,
+        salt: "123",
+        conduitKey: `0x${"00".repeat(32)}`,
+        counter: "0",
+      },
+    });
+    expect(chainPrompt("en", intent).description).toBe(
+      `App: Seaport\nNetwork: Polygon\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 2 POL\n${SIGNER} receives 100 POL`,
+    );
+  });
+
+  const SEAPORT_ITEM_FIELDS = [
+    { name: "itemType", type: "uint8" },
+    { name: "token", type: "address" },
+    { name: "identifierOrCriteria", type: "uint256" },
+    { name: "startAmount", type: "uint256" },
+    { name: "endAmount", type: "uint256" },
+  ];
+  const seaportDoc = (message: Record<string, unknown>, domain: Record<string, unknown> = {}) => ({
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      OrderComponents: [
+        { name: "offerer", type: "address" },
+        { name: "zone", type: "address" },
+        { name: "offer", type: "OfferItem[]" },
+        { name: "consideration", type: "ConsiderationItem[]" },
+        { name: "orderType", type: "uint8" },
+        { name: "startTime", type: "uint256" },
+        { name: "endTime", type: "uint256" },
+        { name: "zoneHash", type: "bytes32" },
+        { name: "salt", type: "uint256" },
+        { name: "conduitKey", type: "bytes32" },
+        { name: "counter", type: "uint256" },
+      ],
+      OfferItem: SEAPORT_ITEM_FIELDS,
+      ConsiderationItem: [...SEAPORT_ITEM_FIELDS, { name: "recipient", type: "address" }],
+    },
+    primaryType: "OrderComponents",
+    domain: {
+      name: "Seaport",
+      version: "1.6",
+      chainId: 1,
+      verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+      ...domain,
+    },
+    message: {
+      offerer: SIGNER,
+      zone: "0x0000000000000000000000000000000000000000",
+      offer: [],
+      consideration: [],
+      orderType: 0,
+      startTime: "1700000000",
+      endTime: "1700001000",
+      zoneHash: `0x${"00".repeat(32)}`,
+      salt: "123",
+      conduitKey: `0x${"00".repeat(32)}`,
+      counter: "0",
+      ...message,
+    },
+  });
+
+  it("a Seaport NFT offer names the token and its id", () => {
+    const intent = typed(
+      seaportDoc({
+        offer: [
+          {
+            itemType: 2,
+            token: "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D",
+            identifierOrCriteria: "7090",
+            startAmount: "1",
+            endAmount: "1",
+          },
+        ],
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D #7090`,
+    );
+  });
+
+  it("Seaport criteria items and a non-zero zone are named", () => {
+    const nft = "0xBC4CA0EdA7647A8aB7C2061c2E118A18a936f13D";
+    // 12345 = 0x3039 as a 32-byte root.
+    const root = `0x${12345n.toString(16).padStart(64, "0")}`;
+    const intent = typed(
+      seaportDoc({
+        zone: TO,
+        offer: [
+          {
+            itemType: 4,
+            token: nft,
+            identifierOrCriteria: "0",
+            startAmount: "1",
+            endAmount: "1",
+          },
+          {
+            itemType: 5,
+            token: nft,
+            identifierOrCriteria: "12345",
+            startAmount: "3",
+            endAmount: "3",
+          },
+        ],
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive any token of ${nft}\nGive a token of ${nft} from the set with Merkle root ${root} ×3\nZone ${TO} can restrict or cancel this order`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 ${nft} 中的任意代币\n付出 ${nft} 中 Merkle 根 ${root} 所列的代币 ×3\n区域合约 ${TO} 可限制或取消此订单`,
+    );
+  });
+
+  const ZERO_EVM_ADDR = "0x0000000000000000000000000000000000000000";
+  const seaportAddress = fc
+    .uint8Array({ minLength: 20, maxLength: 20 })
+    .map((b) => `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`);
+  /** A Seaport offer/consideration item with the asset fields the prompt renders. */
+  const seaportItem = fc
+    .record({
+      kind: fc.constantFrom(
+        "native",
+        "erc20",
+        "erc721",
+        "erc1155",
+        "erc721-criteria",
+        "erc1155-criteria",
+      ),
+      token: seaportAddress,
+      identifier: fc.bigInt({ min: 0n, max: 2n ** 200n }).map((n) => n.toString(10)),
+      count: fc.bigInt({ min: 1n, max: 9n }).map((n) => n.toString(10)),
+    })
+    .map(({ kind, token, identifier, count }) => {
+      const amount = {
+        asset: kind === "native" ? "native" : token,
+        amount: count,
+        ...(kind === "erc721" || kind === "erc1155" ? { tokenId: identifier } : {}),
+      };
+      return { kind, token, identifier, startAmount: amount, endAmount: amount };
+    });
+  type SeaportItem = typeof seaportItem extends fc.Arbitrary<infer T> ? T : never;
+  /** The per-kind "Give" line assertions — kept out of the property to satisfy the suite. */
+  const expectGiveLine = (line: string | undefined, it: SeaportItem): void => {
+    const text = line ?? "";
+    const count = it.startAmount.amount;
+    switch (it.kind) {
+      case "erc721":
+      case "erc1155":
+        expect(text).toContain(`${it.token} #${it.identifier}`);
+        expect(text.includes(`×${count}`)).toBe(count !== "1");
+        break;
+      case "erc721-criteria":
+      case "erc1155-criteria":
+        if (it.identifier === "0") {
+          expect(text).toContain(`any token of ${it.token}`);
+        } else {
+          expect(text).toContain(`0x${BigInt(it.identifier).toString(16).padStart(64, "0")}`);
+        }
+        expect(text.includes(`×${count}`)).toBe(count !== "1");
+        break;
+      case "native":
+        expect(text).toContain("native");
+        break;
+      case "erc20":
+        expect(text).toContain(it.token);
+        break;
+    }
+  };
+
+  it("every Seaport item kind renders its token, id or criteria and the zone", () => {
+    fc.assert(
+      fc.property(
+        fc.array(seaportItem, { minLength: 1, maxLength: 6 }),
+        fc.array(seaportItem, { maxLength: 2 }),
+        fc.oneof(fc.constant(ZERO_EVM_ADDR), seaportAddress),
+        (offer, extra, zone) => {
+          const seaport = {
+            offerer: SIGNER,
+            zone,
+            startTime: 0,
+            endTime: 0,
+            offer,
+            consideration: extra.map((i) => ({ ...i, recipient: TO })),
+          };
+          const { description } = chainPrompt("en", typedIntent({ seaport }));
+          const lines = description.split("\n");
+          const gives = lines.filter((l) => l.startsWith("Give "));
+          expect(gives).toHaveLength(Math.min(offer.length, 4));
+          for (const [i, it] of offer.slice(0, 4).entries()) {
+            expectGiveLine(gives[i], it);
+          }
+          const last = lines.at(-1);
+          expect(last === `Zone ${zone} can restrict or cancel this order`).toBe(
+            zone !== ZERO_EVM_ADDR,
+          );
+        },
+      ),
+    );
+  });
+
+  it("a Safe inner call's native value is formatted in the network's units", () => {
+    const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+    const intent = typedOn("eip155:1", {
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeTx: [
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "data", type: "bytes" },
+          { name: "operation", type: "uint8" },
+          { name: "safeTxGas", type: "uint256" },
+          { name: "baseGas", type: "uint256" },
+          { name: "gasPrice", type: "uint256" },
+          { name: "gasToken", type: "address" },
+          { name: "refundReceiver", type: "address" },
+          { name: "nonce", type: "uint256" },
+        ],
+      },
+      primaryType: "SafeTx",
+      domain: { chainId: 1, verifyingContract: safe },
+      message: {
+        to: TO,
+        value: "1000000000000000000",
+        data: "0x",
+        operation: 0,
+        safeTxGas: "0",
+        baseGas: "0",
+        gasPrice: "0",
+        gasToken: "0x0000000000000000000000000000000000000000",
+        refundReceiver: "0x0000000000000000000000000000000000000000",
+        nonce: "7",
+      },
+    });
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Ethereum\nVerifying contract ${safe}\nType: SafeTx\nSafe ${safe}, transaction 7\nSend 1 ETH to ${TO}`,
+    );
+  });
+
+  it("a Safe delegatecall to arbitrary code is opaque, not decoded as a call", () => {
+    const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+    // ERC-20 transfer calldata — decodeable as a call, but a delegatecall runs it with the
+    // Safe's full authority, so its stated effects would be a lie.
+    const data = `0xa9059cbb${TO.slice(2).toLowerCase().padStart(64, "0")}${(1_000_000).toString(16).padStart(64, "0")}`;
+    const intent = typedOn("eip155:1", {
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeTx: [
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "data", type: "bytes" },
+          { name: "operation", type: "uint8" },
+          { name: "safeTxGas", type: "uint256" },
+          { name: "baseGas", type: "uint256" },
+          { name: "gasPrice", type: "uint256" },
+          { name: "gasToken", type: "address" },
+          { name: "refundReceiver", type: "address" },
+          { name: "nonce", type: "uint256" },
+        ],
+      },
+      primaryType: "SafeTx",
+      domain: { chainId: 1, verifyingContract: safe },
+      message: {
+        to: TO,
+        value: "0",
+        data,
+        operation: 1,
+        safeTxGas: "0",
+        baseGas: "0",
+        gasPrice: "0",
+        gasToken: "0x0000000000000000000000000000000000000000",
+        refundReceiver: "0x0000000000000000000000000000000000000000",
+        nonce: "7",
+      },
+    });
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Ethereum\nVerifying contract ${safe}\nType: SafeTx\nSafe ${safe}, transaction 7\nRuns the code of ${TO} with the Safe's full authority (delegatecall)\nThe effects of this call cannot be verified\nCall contract ${TO}`,
+    );
+  });
+
+  const SAFE_TX_TYPES = [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" },
+    { name: "baseGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" },
+    { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ];
+  const safeTxDoc = (message: Record<string, unknown>, domain: Record<string, unknown> = {}) => {
+    const d = {
+      chainId: 1,
+      verifyingContract: "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52",
+      ...domain,
+    };
+    return {
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeTx: SAFE_TX_TYPES,
+      },
+      primaryType: "SafeTx",
+      domain: d,
+      message: {
+        to: TO,
+        value: "0",
+        data: "0x",
+        operation: 0,
+        safeTxGas: "0",
+        baseGas: "0",
+        gasPrice: "0",
+        gasToken: "0x0000000000000000000000000000000000000000",
+        refundReceiver: "0x0000000000000000000000000000000000000000",
+        nonce: "7",
+        ...message,
+      },
+    };
+  };
+
+  it("a Safe gas refund is priced in the gas token and named for its receiver", () => {
+    const attacker = "0xBAd0000000000000000000000000000000000Bad";
+    // baseGas 1e6 × gasPrice 1e24 = 1e30 base units of USDC = 1e24 USDC.
+    const intent = typed(
+      safeTxDoc({
+        gasPrice: "1000000000000000000000000",
+        baseGas: "1000000",
+        gasToken: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+        refundReceiver: attacker,
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52, transaction 7\nSend 0 ETH to ${TO}\nPays ${attacker} a gas refund of up to 1000000000000000000000000 USDC, plus 1000000000000000000 USDC per gas of call overhead`,
+    );
+  });
+
+  it("a Safe gas refund without a receiver pays whoever executes, in the network's units", () => {
+    const intent = typedOn(
+      "eip155:137",
+      safeTxDoc(
+        {
+          gasPrice: "1000000000000000000",
+          baseGas: "21000",
+          safeTxGas: "0",
+        },
+        { chainId: 137 },
+      ),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Network: Polygon\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeTx\nSafe 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52, transaction 7\nSend 0 POL to ${TO}\nPays whoever executes it a gas refund of up to 21000 POL, plus 1 POL per gas of call overhead`,
+    );
+  });
+
   const nft = { asset: "0x3333333333333333333333333333333333333333", amount: "1", tokenId: "7" };
   const eth = (amount: string) => ({
     asset: "eip155:1/slip44:60",
@@ -1056,7 +1505,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         contract: { address: TO, created: false },
       },
     ],
-    refund: { gasPrice: "1", gasToken: TO, refundReceiver: SIGNER },
+    refund: { receiver: SIGNER, gasPrice: eth("1"), amount: eth("5000000") },
   };
 
   it("a Seaport order lists what is given and who receives what", () => {
@@ -1070,6 +1519,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         `${SIGNER} receives 1 ETH → 0.5 ETH`,
         ...[1, 2, 3].map(() => `${TO} receives 0.000000000000000001 ETH`),
         "… 1 more items not shown",
+        `Zone ${TO} can restrict or cancel this order`,
       ].join("\n"),
     );
   });
@@ -1086,7 +1536,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "The effects of this call cannot be verified",
         `Call contract ${TO}`,
         `Send 0.05 ETH to ${TO}`,
-        `Refunds gas to ${SIGNER}`,
+        `Pays ${SIGNER} a gas refund of up to 0.000000000005 ETH, plus 0.000000000000000001 ETH per gas of call overhead`,
       ].join("\n"),
     );
   });
@@ -1114,6 +1564,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         `${SIGNER} 收到 1 ETH → 0.5 ETH`,
         ...[1, 2, 3].map(() => `${TO} 收到 0.000000000000000001 ETH`),
         "… 还有 1 项未显示",
+        `区域合约 ${TO} 可限制或取消此订单`,
       ].join("\n"),
     );
     expect(chainPrompt("zh-Hans", typedIntent({ primaryType: "SafeTx", safe })).description).toBe(
@@ -1127,7 +1578,7 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
         "无法核实此调用的效果",
         `调用合约 ${TO}`,
         `发送 0.05 ETH 到 ${TO}`,
-        `向 ${SIGNER} 退还 gas 费`,
+        `向 ${SIGNER} 支付 gas 退款：最多 0.000000000005 ETH，另按每单位 gas 0.000000000000000001 ETH 支付调用开销`,
       ].join("\n"),
     );
   });
