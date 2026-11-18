@@ -55,6 +55,8 @@ using qntx::KernelRuntime;
 using qntx::KernelScript;
 using Clock = std::chrono::steady_clock;
 
+// destroy() only requests the stop and the kernel thread is detached, so every case waits for
+// it before returning: its hooks reference the case's stack.
 int g_failures = 0;
 
 #define CHECK(cond, msg)                                                       \
@@ -310,6 +312,7 @@ int timersCancel() {
       hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-cancel: never finished");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   const uint64_t after = physicalFootprint();
   std::fprintf(stderr, "timers-cancel footprint: %llu -> %llu\n",
       (unsigned long long)before, (unsigned long long)after);
@@ -332,6 +335,7 @@ int timersFired() {
       hooksFor(box), "");
   CHECK(box.waitPosts(1, std::chrono::seconds(120)) == 1, "timers-fired: never finished");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   const uint64_t after = physicalFootprint();
   std::fprintf(stderr, "timers-fired footprint: %llu -> %llu\n",
       (unsigned long long)before, (unsigned long long)after);
@@ -386,6 +390,7 @@ __send("pbkdf2-redefined:" + tryCall(function () {
   CHECK(box.posts.size() >= 5 && box.posts[4] == "pbkdf2-done:32",
       "forged: pbkdf2 completion never arrived");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -447,6 +452,7 @@ __send(out.join(","));
         ("numeric: pbkdf2 accepted length " + value).c_str());
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -479,6 +485,7 @@ __send(out.join(","));
             box.posts[0].find("distinct:yes") != std::string::npos,
       "random: unexpected bounds report");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -515,6 +522,7 @@ __send(out.join(","));
             box.posts[0].find("plain:threw") != std::string::npos,
       "grv: unexpected report");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -530,6 +538,7 @@ int crashCase(bool promise, bool bytecode) {
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
   CHECK(box.errors.size() == 1, "crash: expected exactly one onError");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -549,6 +558,7 @@ __send(out.join(","));
             box.posts[0].find("fn:threw") != std::string::npos,
       "eval: eval or Function ran");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -591,6 +601,7 @@ __send(JSON.stringify({
             box.posts[0].find("\"noPrivate\":true") != std::string::npos,
       "descriptors: globals writable/configurable/enumerable or deletable");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -711,6 +722,7 @@ int kernelBytecode() {
   }
   CHECK(box.errors.empty(), "kernel-bytecode: unexpected onError");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -736,6 +748,7 @@ __send(names.join(",") + "|frozen=" + frozen + "|objectsFrozen=" + objectsFrozen
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
     CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "qntx-globals: no report");
     rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
@@ -832,6 +845,7 @@ step(function (cb) { ks.seal(id, kek, "保护钱包", "验证身份", cb); }).th
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
     CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "keystore-binding: no report");
     rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
@@ -996,6 +1010,7 @@ __send(r.join(" "));
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
     CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-spark: no report");
     rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   {
     std::lock_guard<std::mutex> lock(box.m);
@@ -1069,6 +1084,7 @@ __send(r.join(" "));
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), "");
     CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "backends-nostr: no report");
     rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   std::lock_guard<std::mutex> lock(box.m);
   CHECK(box.posts.size() == 1 &&
@@ -1203,6 +1219,7 @@ int kernelSlot() {
     auto rt1 =
         qntx::KernelRuntime::start(sourceScript("while (true) {}"), hooksFor(box1), "");
     rt1->destroy();
+    CHECK(rt1->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
     claimA.release(rt1);
 
     auto claimB = slot.claim();
@@ -1302,6 +1319,7 @@ __send(out.join("|"));
     auto rt = KernelRuntime::start(sourceScript(js), hooksFor(box), dir);
     CHECK(box.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: no report");
     rt->destroy();
+    CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   std::string report;
   {
@@ -1329,6 +1347,7 @@ __send(back === undefined ? "r:undefined" : "r:" + Array.from(back).join(","));
     auto rt2 = KernelRuntime::start(sourceScript(js2), hooksFor(box2), dir);
     CHECK(box2.waitPosts(1, std::chrono::seconds(30)) == 1, "file-contract: reload no report");
     rt2->destroy();
+    CHECK(rt2->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   }
   {
     std::lock_guard<std::mutex> lock(box2.m);
@@ -1365,6 +1384,7 @@ int queueCap() {
     CHECK(integrity, "queue-cap: 65+ frames did not fire integrity");
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -1399,6 +1419,7 @@ int globalInventory(KernelProfile profile) {
     }
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   // __send is declared by the test script itself, not installed by the runtime.
   kernelNames.erase("__send");
   auto bare = facebook::hermes::makeHermesRuntime(bareConfig(profile));
@@ -1512,6 +1533,7 @@ __send(out.join(","));
         "decoder: valid labels or empty decode failed");
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -1562,6 +1584,7 @@ __qntx.pbkdf2("sha512", new Uint8Array([
     }
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -1626,6 +1649,7 @@ __qntx.argon2id(ascii("password"), ascii("somesalt"), 64, 2, 1, 24, done(1));
     }
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   CHECK(box.errors.empty(), "argon2id: unexpected onError");
   return g_failures;
 }
@@ -1664,6 +1688,7 @@ __qntx.pbkdf2("sha256", new Uint8Array(4), new Uint8Array(4), 1, 32, cb);
     CHECK(box.errors.empty(), "kdf-queue: unexpected onError");
   }
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -1692,6 +1717,7 @@ __send("monotonic:" + monotonic + ",fractional:" + fractional + ",subMs:" + subM
             box.posts[0].find("subMs:true") != std::string::npos,
       "elapsed: not monotonic or no sub-ms resolution");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -1716,6 +1742,7 @@ int kernelProbe(bool bytecode, KernelProfile profile) {
   }
   CHECK(box.errors.empty(), "kernel-probe: unexpected onError");
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   return g_failures;
 }
 
@@ -1743,6 +1770,7 @@ Promise.reject(new TypeError("rejection probe"));
       profile);
   box.waitPosts(3, std::chrono::seconds(10));
   rt->destroy();
+  CHECK(rt->waitUntilStopped(std::chrono::seconds(5)), "runtime still running after destroy");
   std::lock_guard<std::mutex> lock(box.m);
   bool thenOk = false;
   bool asyncOk = false;
