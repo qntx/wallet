@@ -7,9 +7,11 @@
 import { utf8ToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { AccountRef } from "@qntx/wallet-chains";
 import { normalizeEvm } from "@qntx/wallet-chains/evm";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
+import type { RecordStore } from "../src/vault/store.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 import { fakeKeystore } from "./keystore.ts";
@@ -53,12 +55,45 @@ const str = (value: ProtocolValue, key: string): string => {
 const opens = (calls: ReadonlyArray<KeystoreCall>) =>
   calls.flatMap((call) => (call.op === "open" && call.prompt !== undefined ? [call.prompt] : []));
 
+/** A store view that holds the `reset-failures` commit until released — the post-verify window. */
+const holdResetFailures = (): {
+  readonly entered: Promise<void>;
+  readonly release: () => void;
+  readonly wrap: (inner: RecordStore) => RecordStore;
+} => {
+  let notify: () => void = () => undefined;
+  let open: () => void = () => undefined;
+  const entered = new Promise<void>((resolve) => {
+    notify = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return {
+    entered,
+    release: () => open(),
+    wrap: (inner) => ({
+      ...inner,
+      commit: async (ops) => {
+        if (ops.some((op) => op.op === "reset-failures")) {
+          notify();
+          await gate;
+        }
+        await inner.commit(ops);
+      },
+    }),
+  };
+};
+
 /** A vault unlocked for the session — the source under test adds its account on top. */
-const setup = async (h: Harness): Promise<{ session: string; walletId: string }> => {
+const setup = async (
+  h: Harness,
+  factor: ProtocolValue = DEVICE,
+): Promise<{ session: string; walletId: string }> => {
   await h.settle();
   const res = ok(
     // Fresh bytes every call — the kernel wipes the mnemonic once consumed.
-    await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor: DEVICE }),
+    await h.call("wallet.importMnemonic", { mnemonic: utf8ToBytes(MNEMONIC), factor }),
   );
   return { session: str(res, "session"), walletId: str(field(res, "wallet"), "walletId") };
 };
@@ -69,7 +104,7 @@ type Source = {
     h: Harness,
     session: string,
     walletId: string,
-  ) => ProtocolValue | Promise<ProtocolValue>;
+  ) => AccountRef | Promise<AccountRef>;
 };
 
 const sources: ReadonlyArray<readonly [string, Source]> = [
@@ -102,11 +137,11 @@ const sources: ReadonlyArray<readonly [string, Source]> = [
   ],
 ];
 
-const blindRequest = (account: ProtocolValue) =>
+const blindRequest = (account: AccountRef) =>
   normalizeEvm({
     kind: "evm.transaction",
     network: "eip155:1",
-    account: account as never,
+    account,
     tx: {
       type: "eip1559",
       chainId: 1,
@@ -121,11 +156,11 @@ const blindRequest = (account: ProtocolValue) =>
     },
   });
 
-const textRequest = (account: ProtocolValue) =>
+const textRequest = (account: AccountRef) =>
   normalizeEvm({
     kind: "evm.personal-message",
     network: "eip155:1",
-    account: account as never,
+    account,
     message: utf8ToBytes("hello"),
   });
 
@@ -178,6 +213,44 @@ describe.each(sources)("chain.sign two-pass flow: %s", (_name, source) => {
     await prompted;
     h.advance(60_001);
     release();
+    const response = await pending;
+    expect(errCode(response)).toBe("locked");
+    expect("ok" in response).toBe(false);
+    expect(field(ok(await h.call("status")), "vault")).toBe("locked");
+  });
+
+  it("a session that ends during the post-verification commit fails locked", async () => {
+    // For a password factor verifyFactor clears a nonzero failure count with a
+    // `reset-failures` commit AFTER its wiped-DEK check: holding that commit leaves a real
+    // await window in which the session can end. Without the post-verification
+    // `session.require`, the sign pass would then open a wiped DEK and fail "integrity".
+    const gate = holdResetFailures();
+    const h = createHarness({ maxSessionMs: 60_000, wrapStore: gate.wrap });
+    const { session, walletId } = await setup(h, {
+      kind: "password",
+      password: utf8ToBytes("correct horse battery staple"),
+    });
+    const account = await source.account(h, session, walletId);
+    const wrong = await h.call(
+      "chain.sign",
+      {
+        request: textRequest(account),
+        verify: { kind: "password", password: utf8ToBytes("a wrong password") },
+      },
+      session,
+    );
+    expect(errCode(wrong)).toBe("wrong-password");
+    const pending = h.call(
+      "chain.sign",
+      {
+        request: textRequest(account),
+        verify: { kind: "password", password: utf8ToBytes("correct horse battery staple") },
+      },
+      session,
+    );
+    await gate.entered;
+    h.advance(60_001);
+    gate.release();
     const response = await pending;
     expect(errCode(response)).toBe("locked");
     expect("ok" in response).toBe(false);
