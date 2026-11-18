@@ -31,7 +31,6 @@ const PAGE = `${SITE}/dapp`;
 const OTHER = "https://other.example.com";
 
 const INFO: ProviderInfo = {
-  uuid: "550e8400-e29b-41d4-a716-446655440000",
   name: "Qntx Wallet",
   icon: `data:image/png;base64,${"A".repeat(16)}`,
   rdns: "xyz.meowl",
@@ -44,12 +43,15 @@ const tick = async (): Promise<void> =>
     setTimeout(resolve);
   });
 
+const DOC_A = "11111111-2222-4333-8444-555555555555";
+const DOC_B = "aaaaaaaa-bbbb-4ccc-9ddd-eeeeeeeeeeee";
+
 const request = (
   id: number,
   method = "eth_chainId",
   provider = "eip1193",
   extra: object = {},
-): string => JSON.stringify({ qntx: 1, id, method, provider, ...extra });
+): string => JSON.stringify({ qntx: 1, doc: DOC_A, id, method, provider, ...extra });
 
 function rig(handle: Handle = async () => Promise.resolve("result")) {
   const injections: string[] = [];
@@ -169,7 +171,7 @@ describe("createBrowserBridge", () => {
     expect(handledNostr).toStrictEqual([
       { origin: SITE, request: { method: "getPublicKey", params: [] } },
     ]);
-    expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 2, result: "nostr-result" });
+    expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 2, result: "nostr-result" });
   });
 
   it("drops the messages of an origin on the phishing list, whichever provider they address", async () => {
@@ -198,14 +200,16 @@ describe("createBrowserBridge", () => {
 
   it.each([
     ["not JSON", "this is not json"],
-    ["missing qntx", JSON.stringify({ id: 1, method: "eth_chainId" })],
-    ["missing id", JSON.stringify({ qntx: 1, method: "eth_chainId" })],
-    ["missing method", JSON.stringify({ qntx: 1, id: 1 })],
-    ["id not a number", JSON.stringify({ qntx: 1, id: "1", method: "eth_chainId" })],
+    ["missing qntx", JSON.stringify({ id: 1, method: "eth_chainId", doc: DOC_A })],
+    ["missing id", JSON.stringify({ qntx: 1, method: "eth_chainId", doc: DOC_A })],
+    ["missing method", JSON.stringify({ qntx: 1, id: 1, doc: DOC_A })],
+    ["id not a number", JSON.stringify({ qntx: 1, id: "1", method: "eth_chainId", doc: DOC_A })],
     ["negative id", request(-1)],
     ["fractional id", request(1.5)],
-    ["missing provider", JSON.stringify({ qntx: 1, id: 1, method: "x" })],
+    ["missing provider", JSON.stringify({ qntx: 1, id: 1, method: "x", doc: DOC_A })],
     ["unknown provider", request(1, "x", "bogus")],
+    ["missing doc", JSON.stringify({ qntx: 1, id: 1, method: "eth_chainId", provider: "eip1193" })],
+    ["doc not a UUIDv4", request(1, "eth_chainId", "eip1193", { doc: "not-a-uuid" })],
     ["over 128 KiB", "x".repeat(128 * 1024 + 1)],
   ])("drops a malformed message (%s) without replying", async (_label, data) => {
     const { bridge, injections, handled } = rig();
@@ -221,7 +225,7 @@ describe("createBrowserBridge", () => {
     bridge.navigated(PAGE);
     bridge.message(PAGE, request(7));
     await tick();
-    expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 7, result: "0x1" });
+    expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 7, result: "0x1" });
   });
 
   it("keeps a provider error's code and message", async () => {
@@ -232,6 +236,7 @@ describe("createBrowserBridge", () => {
     bridge.message(PAGE, request(3));
     await tick();
     expect(payloadOf(injections.at(-1))).toStrictEqual({
+      doc: DOC_A,
       id: 3,
       error: { code: 4001, message: "user rejected" },
     });
@@ -245,6 +250,7 @@ describe("createBrowserBridge", () => {
     bridge.message(PAGE, request(4));
     await tick();
     expect(payloadOf(injections.at(-1))).toStrictEqual({
+      doc: DOC_A,
       id: 4,
       error: { code: -32603, message: "internal error" },
     });
@@ -258,6 +264,7 @@ describe("createBrowserBridge", () => {
     }
     await tick();
     expect(injections.map(payloadOf)).toContainEqual({
+      doc: DOC_A,
       id: 120,
       error: { code: 4900, message: "disconnected" },
     });
@@ -272,7 +279,7 @@ describe("createBrowserBridge", () => {
     advance(60_001);
     bridge.message(PAGE, request(500));
     await tick();
-    expect(injections.map(payloadOf)).toContainEqual({ id: 500, result: "result" });
+    expect(injections.map(payloadOf)).toContainEqual({ doc: DOC_A, id: 500, result: "result" });
   });
 
   it("navigation voids the old origin's pending work and drops its late replies", async () => {
@@ -327,6 +334,61 @@ describe("createBrowserBridge", () => {
     expect(injections).toHaveLength(0);
     expect(invalidated).toStrictEqual([SITE]);
   });
+
+  it("a same-origin reload voids the old document and only the new document's replies are injected", async () => {
+    const resolves: Array<(value: unknown) => void> = [];
+    const { bridge, injections, invalidated } = rig(
+      async () =>
+        new Promise((resolve) => {
+          resolves.push(resolve);
+        }),
+    );
+    bridge.navigated(PAGE);
+    bridge.message(PAGE, request(1, "eth_requestAccounts"));
+    await tick();
+    bridge.message(PAGE, request(1, "eth_chainId", "eip1193", { doc: DOC_B }));
+    await tick();
+    expect(invalidated).toStrictEqual([SITE]);
+    resolves[0]?.("0xold");
+    await tick();
+    expect(injections).toHaveLength(0);
+    resolves[1]?.("0xnew");
+    await tick();
+    expect(injections.map(payloadOf)).toStrictEqual([{ doc: DOC_B, id: 1, result: "0xnew" }]);
+  });
+
+  it("a same-origin navigation keeps the document and delivers its replies", async () => {
+    const { bridge, injections, invalidated, emit } = rig();
+    bridge.navigated(PAGE);
+    bridge.message(PAGE, request(1));
+    await tick();
+    bridge.navigated(`${SITE}/settings`);
+    expect(invalidated).toHaveLength(0);
+    bridge.message(PAGE, request(2));
+    await tick();
+    emit({ name: "accountsChanged", origin: SITE, accounts: ["0x2"] });
+    expect(injections.map(payloadOf)).toStrictEqual([
+      { doc: DOC_A, id: 1, result: "result" },
+      { doc: DOC_A, id: 2, result: "result" },
+      { doc: DOC_A, event: "accountsChanged", data: ["0x2"] },
+    ]);
+  });
+
+  it("the first message of a new origin's document does not invalidate it", async () => {
+    const { bridge, injections, invalidated } = rig();
+    bridge.navigated(PAGE);
+    bridge.message(PAGE, request(1));
+    await tick();
+    bridge.navigated(`${OTHER}/dapp`);
+    expect(invalidated).toStrictEqual([SITE]);
+    bridge.message(`${OTHER}/dapp`, request(1, "eth_chainId", "eip1193", { doc: DOC_B }));
+    await tick();
+    expect(invalidated).toStrictEqual([SITE]);
+    expect(injections.map(payloadOf)).toStrictEqual([
+      { doc: DOC_A, id: 1, result: "result" },
+      { doc: DOC_B, id: 1, result: "result" },
+    ]);
+  });
 });
 
 describe("injectedScript", () => {
@@ -335,8 +397,13 @@ describe("injectedScript", () => {
     expect(script).toBe(`${PROVIDER_SCRIPT}\nqntxProvider.install(${JSON.stringify(INFO)});`);
   });
 
+  it("ProviderInfo carries no uuid — the injected script generates one per document", () => {
+    const script = injectedScript(INFO);
+    expect(script).toContain(`qntxProvider.install(${JSON.stringify(INFO)});`);
+    expect(JSON.stringify(INFO)).not.toContain("uuid");
+  });
+
   it.each([
-    ["bad uuid", { ...INFO, uuid: "not-a-uuid" }],
     ["empty name", { ...INFO, name: "" }],
     ["name over 64", { ...INFO, name: "x".repeat(65) }],
     ["icon not a data URL", { ...INFO, icon: "https://x/icon.png" }],
@@ -361,7 +428,7 @@ it("routes provider: webln to the webln handler", async () => {
   expect(handled).toHaveLength(0);
   expect(handledNostr).toHaveLength(0);
   expect(handledWebln).toStrictEqual([{ origin: SITE, request: { method: "enable", params: [] } }]);
-  expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 3, result: "webln-result" });
+  expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 3, result: "webln-result" });
 });
 
 it("routes provider: solana to the solana handler", async () => {
@@ -375,7 +442,7 @@ it("routes provider: solana to the solana handler", async () => {
   expect(handledSolana).toStrictEqual([
     { origin: SITE, request: { method: "solana:signMessage", params: [] } },
   ]);
-  expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 4, result: "solana-result" });
+  expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 4, result: "solana-result" });
 });
 
 it("routes provider: bitcoin to the bitcoin handler", async () => {
@@ -388,5 +455,5 @@ it("routes provider: bitcoin to the bitcoin handler", async () => {
   expect(handledBitcoin).toStrictEqual([
     { origin: SITE, request: { method: "bitcoin:signMessage", params: [] } },
   ]);
-  expect(payloadOf(injections.at(-1))).toStrictEqual({ id: 5, result: "bitcoin-result" });
+  expect(payloadOf(injections.at(-1))).toStrictEqual({ doc: DOC_A, id: 5, result: "bitcoin-result" });
 });
