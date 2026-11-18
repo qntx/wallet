@@ -6,26 +6,30 @@ expose Zustand stores; every I/O dependency (`fetch`, randomness, clock, storage
 is injected. The engine never holds signing keys — every wallet-owned outflow goes through the
 enclave's per-operation approval.
 
-Peer dependencies: the exact `@qntx/wallet` release, `@qntx/spark` `^0.5.0` and
-`@qntx/nostr` `^0.15.0`.
+Peer dependencies: `@qntx/wallet` (the exact release — engine and wallet must agree on the
+protocol), `@qntx/wallet-chains` (exact), `@qntx/spark` and `@qntx/nostr`. The exact ranges are
+this package's `peerDependencies`.
 
 ```bash
-npm install @qntx/wallet-engine @qntx/wallet @qntx/wallet-worker @qntx/spark @qntx/nostr
+npm install @qntx/wallet-engine @qntx/wallet @qntx/wallet-worker @qntx/wallet-chains @qntx/spark @qntx/nostr
 ```
 
 ```ts
 import { createWalletEngine } from "@qntx/wallet-engine";
 // in-app-browser provider injection and the WebView bridge:
 import { injectedScript, createBrowserBridge } from "@qntx/wallet-engine/connect";
-import { openIndexedDbEngineStore } from "@qntx/wallet-engine/idb";
+import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "@qntx/wallet-engine/idb";
 
 const random = (n: number) => crypto.getRandomValues(new Uint8Array(n));
 const engine = createWalletEngine({
   wallet, // from createWebWallet / createNodeWallet / createNativeWallet
+  verifyEvent, // the host's native verifier, the same one given to the wallet
   sparkNetwork: "mainnet",
   fetch: globalThis.fetch.bind(globalThis),
   random,
   now: () => Date.now(),
+  weblnAlias: "Example",
+  lightningMaxFee: (amountSats) => Math.max(10, Math.floor(amountSats / 100)),
   logger: { warn: (message, error) => console.warn(message, error) },
   openStore: async () =>
     openIndexedDbEngineStore({
@@ -33,6 +37,8 @@ const engine = createWalletEngine({
       dataKey: await wallet.dataKeys.get("wallet-db"),
       random,
     }),
+  showCallsStatus: ({ origin, txIds }) => showCallsSheet(origin, txIds),
+  publicStore: await openIndexedDbPublicStore({ name: "app-public" }),
 });
 ```
 
@@ -42,19 +48,42 @@ in-memory state.
 
 ## Surface
 
+- `engine.networks` — `NetworkController`: configured chain networks and custom RPC endpoints.
+- `engine.assets` — `AssetsController`: token and balance reads per account.
+- `engine.transactions` — `TransactionController` reads; the `prepare*` methods are not exposed.
+- `engine.requests` — `RequestController`: every wallet-owned outflow becomes a request here.
+- `engine.addressBook` — `AddressBookController`: contacts, synced through `metaSync`.
+- `engine.connections` — `ConnectionController`: dApp sessions and trusted origins.
+- `engine.eip1193`, `engine.nip07`, `engine.webln`, `engine.solanaWallet`,
+  `engine.bitcoinWallet` — the injected provider handlers for each wallet standard.
+- `engine.phishing` — `PhishingController`; its lifecycle is independent of the lock state.
+- `engine.spark` — `SparkController` reads and receives; every payment goes through `requests`.
 - `engine.accounts` — `AccountTreeController`: wallets and account groups, selection, names,
   hidden groups, Spark group discovery and social identity bindings.
-- `engine.spark` — `SparkController`: balances, history, sends, Lightning receives and
-  cooperative exits for the selected group.
-- `engine.payments` — `parse` (pure, never throws), `resolve` (LNURL lookups) and `pay`, which
-  routes a parsed option to Spark, Lightning or a Bitcoin withdrawal after validation and before
-  approval. Typed `PayResult` per payment kind.
-- `engine.zaps` — `prepare` signs the NIP-57 request with any `NostrSigner` and fetches the
-  invoice; `pay` pays it from the built-in Spark wallet. External wallets may pay
-  `prepared.invoice` themselves and validate the receipt against `receiptPubkey`.
+- `engine.watch` — watch-only accounts: `add`, `rename`, `remove`, `list` and per-network
+  `assets`.
 - `engine.metaSync` — NIP-78 (kind 30078) metadata documents, NIP-44 encrypted to the wallet's
-  group-0 Nostr identity; pull before publish, per-entry last-writer-wins.
+  group-0 Nostr identity; pull before publish. Merge is not plain per-entry LWW: a record's
+  identity is immutable, deletes are terminal, and remote stamps too far in the future are
+  refused.
 - `engine.backup` — `BackupController` over an injected `CloudStore`.
+- `engine.zaps` — `prepare` only: signs the NIP-57 request with any `NostrSigner` and fetches the
+  invoice; the invoice itself is paid through `requests` like any other outflow.
+- `engine.names` — `resolve` forward-resolves an ENS name for a send on a network.
+- `engine.delegation` — an account's EIP-7702 delegation state on a network.
+- `engine.bridges` — gateway Across bridge `quote`/`status`, display-only.
+- `engine.keys` — imported single private keys held in the vault; passthrough to `wallet.keys`.
+- `engine.swaps` — gateway swap quotes (0x on EVM, Jupiter on Solana), display-only.
+- `engine.lido` — Lido liquid staking on Ethereum mainnet: stETH position and withdrawal
+  requests.
+- `engine.staking` — Solana stake positions and the current validator set.
+- `engine.payments` — `parse` (pure, never throws), `resolve` (LNURL lookups) and
+  `withdrawLnurl`.
+- `engine.unsubscribe` — stops listening to the wallet and the phishing-list refresh.
+
+The engine store from `@qntx/wallet-engine/idb` names rows by a keyed hash of the collection and
+key, authenticates every value it reads back (a row that fails authentication reads as absent),
+and rebuilds a database keyed by another data key empty.
 
 ## React Native hosts
 
