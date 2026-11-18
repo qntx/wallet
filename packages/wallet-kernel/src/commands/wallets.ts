@@ -152,6 +152,33 @@ export function gate(
 }
 
 /**
+ * Runs the body of a create/import command under `gate`. Any failure — `gate` itself or the body —
+ * wipes the wire secret `inputs` (decoders wipe them on consumption, so a second wipe is harmless)
+ * and a DEK the gate minted for a fresh vault; a live session DEK is never wiped.
+ */
+async function gated<T>(
+  ctx: KernelContext,
+  factor: Factor | undefined,
+  requestSession: string | undefined,
+  inputs: ReadonlyArray<Uint8Array | undefined>,
+  body: (gated: { readonly uninitialized: boolean; readonly dek: Secret }) => Promise<T>,
+): Promise<T> {
+  let result: { readonly uninitialized: boolean; readonly dek: Secret } | undefined;
+  try {
+    result = gate(ctx, factor, requestSession);
+    return await body(result);
+  } catch (error) {
+    for (const input of inputs) {
+      input?.fill(0);
+    }
+    if (result !== undefined && result.uninitialized) {
+      result.dek.wipe();
+    }
+    throw error;
+  }
+}
+
+/**
  * Commits a create/import command. On the uninitialized path the vault (meta + factor + records) is
  * established in ONE `init` commit; a racing establish makes the commit fail with `conflict` and
  * nothing is written. On the initialized path only the records are appended under the live session
@@ -356,14 +383,20 @@ async function confirmWithPassphrase(
       const { pendingFactor } = taken;
       if (pendingFactor !== undefined) {
         const dek = Secret.take(ctx.platform.random(32));
-        const record = walletRecord(ctx, dek, material, "mnemonic", createdAt);
-        const session = await establishVault(
-          ctx,
-          dek,
-          async () => storedFactorsForPending(ctx, pendingFactor, dek),
-          [record],
-        );
-        return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
+        try {
+          const record = walletRecord(ctx, dek, material, "mnemonic", createdAt);
+          const session = await establishVault(
+            ctx,
+            dek,
+            async () => storedFactorsForPending(ctx, pendingFactor, dek),
+            [record],
+          );
+          return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
+        } catch (error) {
+          // establishVault wipes the DEK on its own failures; this covers a walletRecord throw.
+          dek.wipe();
+          throw error;
+        }
       }
       const session = ctx.session.current();
       const record = walletRecord(ctx, session.dek, material, "mnemonic", createdAt);
@@ -401,41 +434,42 @@ export async function importMnemonic(
   params: { mnemonic: Uint8Array; passphrase?: Uint8Array; factor?: Factor },
   requestSession: string | undefined,
 ): Promise<{ wallet: WalletInfo; session: string }> {
-  const gated = gate(ctx, params.factor, requestSession);
-  let text: string;
-  try {
-    text = decodeUtf8Secret(params.mnemonic); // wipes `params.mnemonic`
-  } catch (error) {
-    params.passphrase?.fill(0);
-    throw error;
-  }
-  let passphrase: Uint8Array | undefined;
-  let entropy: Uint8Array | undefined;
-  try {
-    passphrase =
-      params.passphrase === undefined ? undefined : normalizePassphrase(params.passphrase);
-    entropy = entropyFromMnemonic(text);
-    const material = await walletMaterial(
-      ctx.platform,
-      entropy,
-      passphrase,
-      "mnemonic",
-      mnemonicWords(entropy),
-    );
-    ensureNewWallet(ctx, material);
-    const createdAt = ctx.platform.now();
-    // An imported mnemonic is already written down somewhere: backup is "mnemonic".
-    const record = walletRecord(ctx, gated.dek, material, "mnemonic", createdAt);
-    const session = await commitRecords(ctx, gated, params.factor, [record]);
-    return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
-  } finally {
-    if (entropy !== undefined) {
-      wipe(entropy);
-    }
-    if (passphrase !== undefined) {
-      wipe(passphrase);
-    }
-  }
+  return gated(
+    ctx,
+    params.factor,
+    requestSession,
+    [params.mnemonic, params.passphrase],
+    async (gated) => {
+      const text = decodeUtf8Secret(params.mnemonic); // wipes `params.mnemonic`
+      let passphrase: Uint8Array | undefined;
+      let entropy: Uint8Array | undefined;
+      try {
+        passphrase =
+          params.passphrase === undefined ? undefined : normalizePassphrase(params.passphrase);
+        entropy = entropyFromMnemonic(text);
+        const material = await walletMaterial(
+          ctx.platform,
+          entropy,
+          passphrase,
+          "mnemonic",
+          mnemonicWords(entropy),
+        );
+        ensureNewWallet(ctx, material);
+        const createdAt = ctx.platform.now();
+        // An imported mnemonic is already written down somewhere: backup is "mnemonic".
+        const record = walletRecord(ctx, gated.dek, material, "mnemonic", createdAt);
+        const session = await commitRecords(ctx, gated, params.factor, [record]);
+        return { wallet: walletInfoOf(material, "mnemonic", createdAt), session };
+      } finally {
+        if (entropy !== undefined) {
+          wipe(entropy);
+        }
+        if (passphrase !== undefined) {
+          wipe(passphrase);
+        }
+      }
+    },
+  );
 }
 
 const PURPOSE_WALLET = 0x01;
@@ -514,29 +548,29 @@ export async function createWithPasskey(
   if ((ctx.platform.passkey !== undefined) !== (params.ceremony === "kernel")) {
     throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
   }
-  const gated = gate(ctx, params.factor, requestSession);
-  let prf: WalletPrf;
-  try {
-    prf = params.ceremony === "kernel" ? await walletCeremony(ctx, params) : params;
-  } catch (error) {
-    if (gated.uninitialized) {
-      gated.dek.wipe();
-    }
-    throw error;
-  }
-  const entropy = entropyFromPrf(prf.prfWallet);
-  const material = await walletMaterial(ctx.platform, entropy, undefined, "passkey", 12);
-  try {
-    ensureNewWallet(ctx, material);
-    const createdAt = ctx.platform.now();
-    // Only a synced passkey backs the wallet up; a device-bound credential dies with the device.
-    const backup = prf.synced ? "passkey" : "none";
-    const record = walletRecord(ctx, gated.dek, material, backup, createdAt);
-    const session = await commitRecords(ctx, gated, params.factor, [record]);
-    return { wallet: walletInfoOf(material, backup, createdAt), session };
-  } finally {
-    wipe(entropy);
-  }
+  return gated(
+    ctx,
+    params.factor,
+    requestSession,
+    params.ceremony === "host" ? [params.prfWallet] : [],
+    async (gated) => {
+      const prf: WalletPrf =
+        params.ceremony === "kernel" ? await walletCeremony(ctx, params) : params;
+      const entropy = entropyFromPrf(prf.prfWallet);
+      try {
+        const material = await walletMaterial(ctx.platform, entropy, undefined, "passkey", 12);
+        ensureNewWallet(ctx, material);
+        const createdAt = ctx.platform.now();
+        // Only a synced passkey backs the wallet up; a device-bound credential dies with the device.
+        const backup = prf.synced ? "passkey" : "none";
+        const record = walletRecord(ctx, gated.dek, material, backup, createdAt);
+        const session = await commitRecords(ctx, gated, params.factor, [record]);
+        return { wallet: walletInfoOf(material, backup, createdAt), session };
+      } finally {
+        wipe(entropy);
+      }
+    },
+  );
 }
 
 export async function deleteWallet(
