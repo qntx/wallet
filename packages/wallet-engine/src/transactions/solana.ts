@@ -33,6 +33,8 @@ import {
   jupiterIx,
   readLookupTable,
 } from "../swaps/jupiter.ts";
+import { submitSigned } from "./broadcast.ts";
+import type { BroadcastVerdict } from "./broadcast.ts";
 import type {
   AccountRef,
   ChainRequestInput,
@@ -44,7 +46,7 @@ import type {
   TrackedTransaction,
   TxState,
 } from "./route.ts";
-import { accountAddressOf, newId, failTx, submitTx } from "./route.ts";
+import { accountAddressOf, errorMessage, newId, failTx } from "./route.ts";
 
 /** The network's base signature fee, lamports per signature. */
 const BASE_FEE_LAMPORTS = 5000n;
@@ -61,8 +63,38 @@ const str = (v: unknown, fallback = "0"): string => {
 
 const solana = new SolanaChainAdapter();
 
-/** Signed wire transactions kept for re-broadcast until the tx confirms or drops. */
-const wires = new Map<string, Uint8Array>();
+/** Agave `TransactionError::AlreadyProcessed`: this exact transaction has already landed. */
+const SOLANA_HELD = /already been processed/i;
+
+/**
+ * Agave `sendTransaction` refusals (rpc/src/rpc.rs): a failed preflight simulation, a bad signature
+ * or precompile, an unsanitizable message. The node forwards none of them.
+ */
+const SOLANA_REFUSED =
+  /^Transaction simulation failed|signature verification failure|precompile verification failure|^invalid transaction/i;
+
+/**
+ * What a failed `sendTransaction` says about the bytes. A preflight "Blockhash not found" is the
+ * node lagging behind the blockhash, not the transaction: it stays unknown until the blockhash
+ * expiry settles it.
+ */
+export const solanaBroadcastVerdict = (error: unknown): BroadcastVerdict => {
+  const message = errorMessage(error);
+  if (SOLANA_HELD.test(message)) {
+    return "held";
+  }
+  return SOLANA_REFUSED.test(message) && !/blockhash not found/i.test(message)
+    ? "refused"
+    : undefined;
+};
+
+/** Whether the cluster has seen `signature` at any commitment. */
+const signatureSeen = async (rpc: SolanaRpc, signature: string): Promise<boolean> => {
+  const result = obj(
+    await rpc.call("getSignatureStatuses", [[signature], { searchTransactionHistory: true }]),
+  );
+  return obj(arr(result?.["value"])?.[0]) !== undefined;
+};
 
 export const prepareSolana = async (
   ctx: RouteContext,
@@ -211,7 +243,10 @@ const finishPrepared = async (
   const id = newId(ctx.options.random);
   const simulation = await solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer);
 
-  const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+  const submit = async (
+    verify: SendParams["verify"],
+    commit: () => void,
+  ): Promise<TrackedTransaction> => {
     let tx: TrackedTransaction = {
       id,
       family: "solana",
@@ -226,20 +261,32 @@ const finishPrepared = async (
       error: undefined,
     };
     tx = await ctx.transition(tx, {});
+    let wire: Uint8Array;
+    let signature: string;
     try {
       const result = await apis.sign({ request, verify });
       tx = await ctx.transition(tx, { state: "signed" });
       if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
         throw new Error("unexpected solana sign result");
       }
-      const wire = solana.finalize(messageBytes, [result.signature]);
-      const hash = await solana.broadcast(rpc, wire);
-      wires.set(id, wire);
-      return await submitTx(ctx, tx, hash);
+      wire = solana.finalize(messageBytes, [result.signature]);
+      signature = base58.encode(result.signature);
+      commit();
     } catch (error) {
       await failTx(ctx, tx, error);
       throw error;
     }
+    // The fee payer's signature is the transaction id; the blockhash expiry bounds how long an
+    // unknown outcome can stay open.
+    return submitSigned(ctx, tx, {
+      id: signature,
+      raw: base64.encode(wire),
+      hold: () => undefined,
+      release: () => undefined,
+      send: async () => solana.broadcast(rpc, wire),
+      verdict: solanaBroadcastVerdict,
+      known: async () => signatureSeen(rpc, signature),
+    });
   };
 
   return {
@@ -648,19 +695,16 @@ export const pollSolana = async (
   const rpc = ctx.options.networks.solanaRpc(tx.network);
   const state = await solana.status(rpc, tx.hash);
   if (state !== "pending") {
-    wires.delete(tx.id);
     return state === "finalized" ? "confirmed" : state;
   }
   if (
     tx.lastValidBlockHeight !== undefined &&
     (await solana.blockHeight(rpc)) > BigInt(tx.lastValidBlockHeight)
   ) {
-    wires.delete(tx.id);
     return "dropped";
   }
-  const wire = wires.get(tx.id);
-  if (wire !== undefined) {
-    await solana.broadcast(rpc, wire).catch(() => "");
+  if (tx.raw !== undefined) {
+    await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
   }
   return undefined;
 };

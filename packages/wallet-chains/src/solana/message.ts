@@ -27,6 +27,39 @@ export type LookupReference = {
 };
 
 const decoder = getCompiledTransactionMessageDecoder();
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+
+/**
+ * Whether a cluster could accept `bytes` as the message of a transaction — signing them as a raw
+ * message would authorise it.
+ */
+export const mayBeTransactionMessage = (bytes: Uint8Array): boolean => {
+  const [first] = bytes;
+  // solana-message 6.0.0 src/versions/mod.rs: a first byte with the high bit set opens a versioned
+  // message (version = byte & 0x7f), and Agave refuses version 127 as a transaction because 0xff
+  // opens off-chain messages.
+  if (first === undefined || first === 0xff) {
+    return false;
+  }
+  if (first >= 0x80) {
+    /* UTF-8 never starts with 0x80–0xc1 or 0xf5–0xfe, so only non-ASCII text (lead bytes
+       0xc2–0xf4, versions 66–116 — none exist) may pass: text is what the prompt shows. */
+    try {
+      utf8.decode(bytes);
+      return false;
+    } catch {
+      return true;
+    }
+  }
+  /* A first byte below 0x80 is a legacy header's numRequiredSignatures; refuse any complete legacy
+     message regardless of size. */
+  try {
+    const [, end] = decoder.read(bytes, 0);
+    return end === bytes.length;
+  } catch {
+    return false;
+  }
+};
 
 /**
  * Decodes a compiled wire message; rejects trailing bytes and the 1232-byte transaction limit. The
@@ -36,8 +69,17 @@ export const parseCompiledMessage = (bytes: Uint8Array): ParsedSolanaMessage => 
   if (bytes.length > SOLANA_TRANSACTION_MAX_BYTES) {
     throw new ChainError("invalid-request", "compiled message exceeds the 1232-byte limit");
   }
-  if (bytes.length === 0) {
+  const [first] = bytes;
+  if (first === undefined) {
     throw new ChainError("invalid-request", "compiled message is empty");
+  }
+  // solana-message 6.0.0 src/versions/mod.rs: a high-bit first byte is a versioned message; only
+  // v0 (0x80) is supported — v1 (0x81) and anything newer get a named refusal, never a blind parse.
+  if (first > 0x80) {
+    throw new ChainError(
+      "unsupported",
+      `Solana transaction version ${first - 0x80} is not supported`,
+    );
   }
   let decoded: unknown;
   let end: number;
@@ -126,7 +168,11 @@ const asCompiledMessage = (value: unknown): CompiledMessage => {
   ) {
     throw new ChainError("invalid-request", "compiled message failed to decode");
   }
-  const version = value["version"] === 0 ? 0 : "legacy";
+  const versionField = value["version"];
+  if (versionField !== "legacy" && versionField !== 0) {
+    throw new ChainError("invalid-request", "compiled message failed to decode");
+  }
+  const version = versionField;
   const ixs = instructions.map((ix) => {
     if (!isIx(ix)) {
       throw new ChainError("invalid-request", "compiled message failed to decode");

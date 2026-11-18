@@ -434,7 +434,8 @@ const decodeTransaction = (
       }
     }
   }
-  const fee = feeLamports(parsed, lookups, calls);
+  // The fee is charged to the fee payer only — a sponsored signer pays nothing.
+  const fee = parsed.staticAccounts[0] === signer ? feeLamports(parsed, lookups, calls) : 0n;
   const summary = hasJupiter
     ? "swap"
     : otherTransfer

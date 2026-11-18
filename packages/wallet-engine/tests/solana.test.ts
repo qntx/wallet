@@ -1,20 +1,107 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
-import { describe, expect, it } from "vite-plus/test";
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  blockhash,
+  compileTransaction,
+  createKeyPairFromBytes,
+  createTransactionMessage,
+  getTransactionEncoder,
+  partiallySignTransaction,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
+import type { Instruction } from "@solana/kit";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { ProviderError, invalidParams } from "../src/connect/errors.ts";
 import { signInMessageText } from "../src/connect/siws.ts";
 import { SolanaWalletHandler, walletStandardChain } from "../src/connect/solana.ts";
+import type { SolanaEvent } from "../src/connect/solana.ts";
+
+const SOL_NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+
+/** A stored session row whose solana scope binds `accounts` to group index 0. */
+const solSession = (accounts: string[] = [SOL_ADDR]): unknown => ({
+  id: "s1",
+  origin: ORIGIN,
+  group: { walletId: "w1", groupIndex: 0 },
+  scopes: { [SOL_NETWORK]: { accounts: accounts.map((a) => `${SOL_NETWORK}:${a}`) } },
+});
 
 const SITE = "https://app.example.com";
 const ORIGIN = { kind: "browser" as const, origin: SITE };
-const SOL_ADDR = "SoLaNaBase58Address1111111111111111111";
-const TX = new Uint8Array([1, 2, 3, 4]);
-const PUBKEY = new Uint8Array(32).fill(2);
+const WALLET_SEED = new Uint8Array(32).fill(7);
+const COSIGNER_SEED = new Uint8Array(32).fill(9);
+const SOL_ADDR = base58.encode(ed25519.getPublicKey(WALLET_SEED));
+const COSIGNER = base58.encode(ed25519.getPublicKey(COSIGNER_SEED));
+const PUBKEY = ed25519.getPublicKey(WALLET_SEED);
+
+const wire = async (options: {
+  feePayer: string;
+  ixs: ReadonlyArray<Instruction>;
+  version?: "legacy" | 0 | 1;
+  presign?: TestKeyPair[];
+}): Promise<Uint8Array> => {
+  let message = setTransactionMessageLifetimeUsingBlockhash(
+    { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+    setTransactionMessageFeePayer(
+      address(options.feePayer),
+      createTransactionMessage({ version: options.version ?? "legacy" }),
+    ),
+  );
+  for (const ix of options.ixs) {
+    message = appendTransactionMessageInstruction(ix, message as never);
+  }
+  const compiled = compileTransaction(message as never);
+  const tx =
+    options.presign === undefined
+      ? compiled
+      : await partiallySignTransaction(options.presign, compiled);
+  return new Uint8Array(getTransactionEncoder().encode(tx));
+};
+
+const transfer = (from: string, lamports: bigint): Instruction => {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, lamports, true);
+  return {
+    programAddress: address("11111111111111111111111111111111"),
+    accounts: [
+      { address: address(from), role: AccountRole.WRITABLE_SIGNER },
+      {
+        address: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+        role: AccountRole.WRITABLE,
+      },
+    ],
+    data,
+  };
+};
+
+type TestKeyPair = Awaited<ReturnType<typeof createKeyPairFromBytes>>;
+
+const keyPair = async (seed: Uint8Array): Promise<TestKeyPair> =>
+  createKeyPairFromBytes(new Uint8Array([...seed, ...ed25519.getPublicKey(seed)]));
+
+const TX = await wire({ feePayer: SOL_ADDR, ixs: [transfer(SOL_ADDR, 1000n)] });
+const V1_TX = await wire({ feePayer: SOL_ADDR, ixs: [transfer(SOL_ADDR, 1000n)], version: 1 });
+const COSIGNER_TX = await wire({ feePayer: SOL_ADDR, ixs: [transfer(COSIGNER, 1000n)] });
+const SIGNED_COSIGNER_TX = await wire({
+  feePayer: SOL_ADDR,
+  ixs: [transfer(COSIGNER, 1000n)],
+  presign: [await keyPair(COSIGNER_SEED)],
+});
+const FOREIGN_TX = await wire({ feePayer: COSIGNER, ixs: [transfer(COSIGNER, 1000n)] });
 
 const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
   let { session } = options;
   const requestsCalls: unknown[] = [];
   const connectRequests: unknown[][] = [];
+  const sessionListeners: Array<(state: { sessions: unknown }) => void> = [];
+  let sessionsState: Record<string, unknown> = {};
   const handler = new SolanaWalletHandler({
     connections: {
       checkOrigin: (_origin) => ORIGIN,
@@ -25,7 +112,10 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
         }
         return session as never;
       },
-      solanaAccount: () => (session === undefined ? undefined : SOL_ADDR),
+      sessionAccounts: () =>
+        session === undefined
+          ? undefined
+          : { group: { walletId: "w1", groupIndex: 0 }, addresses: [SOL_ADDR] },
       request: async (...args: unknown[]) => {
         await Promise.resolve();
         connectRequests.push(args);
@@ -34,8 +124,13 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       },
       touch: async () => Promise.resolve(),
       revoke: async () => Promise.resolve(),
-      getState: () => ({ sessions: {}, pending: {} }),
-      store: { subscribe: () => () => undefined } as never,
+      getState: () => ({ sessions: sessionsState as never, pending: {} }),
+      store: {
+        subscribe: (listener: (state: { sessions: unknown }) => void) => {
+          sessionListeners.push(listener);
+          return () => undefined;
+        },
+      } as never,
     },
     requests: {
       prepare: async (input) => {
@@ -49,10 +144,15 @@ const rig = (options: { session?: unknown; prepareResult?: unknown }) => {
       await Promise.resolve();
       return { address: SOL_ADDR, publicKey: PUBKEY };
     },
-    activeGroup: () => ({ walletId: "w1", groupIndex: 0 }),
     solanaNetwork: () => "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
   });
-  return { handler, requestsCalls, connectRequests };
+  const setSessions = (next: Record<string, unknown>): void => {
+    sessionsState = next;
+    for (const listener of sessionListeners) {
+      listener({ sessions: next });
+    }
+  };
+  return { handler, requestsCalls, connectRequests, setSessions };
 };
 
 describe("SolanaWalletHandler", () => {
@@ -104,8 +204,11 @@ describe("SolanaWalletHandler", () => {
       method: "solana:signTransaction",
       params: { transactions: [TX] },
     });
-    const input = requestsCalls[0] as { request: { kind: string; send: boolean } };
+    const input = requestsCalls[0] as {
+      request: { kind: string; send: boolean; transactions: Uint8Array[] };
+    };
     expect(input.request.send).toBe(false);
+    expect(input.request.transactions).toStrictEqual([TX]);
     expect(result).toMatchObject({ signedTransactions: signed });
   });
 
@@ -121,6 +224,70 @@ describe("SolanaWalletHandler", () => {
     });
     const input = requestsCalls[0] as { request: { send: boolean } };
     expect(input.request.send).toBe(true);
+    expect(result).toStrictEqual({ signatures: [raw] });
+  });
+
+  it("rejects malformed transactions before prepare", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signTransaction",
+        params: { transactions: [new Uint8Array([1, 2, 3, 4])] },
+      }),
+    ).rejects.toMatchObject({ code: -32_602 });
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("rejects a v1 transaction and a transaction the wallet does not sign", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    for (const transactions of [[V1_TX], [FOREIGN_TX]]) {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one at a time keeps failures readable
+      await expect(
+        handler.handle(SITE, {
+          method: "solana:signTransaction",
+          params: { transactions },
+        }),
+      ).rejects.toMatchObject({ code: -32_602 });
+    }
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("signAndSend refuses a transaction whose other signers have not signed", async () => {
+    const { handler, requestsCalls } = rig({ session: {} });
+    await expect(
+      handler.handle(SITE, {
+        method: "solana:signAndSendTransaction",
+        params: { transactions: [COSIGNER_TX], chains: ["solana:mainnet"] },
+      }),
+    ).rejects.toMatchObject({ code: -32_602, message: expect.stringContaining("signatures") });
+    expect(requestsCalls).toHaveLength(0);
+  });
+
+  it("signTransaction still accepts a transaction missing a cosigner signature", async () => {
+    const signed = [new Uint8Array([9])];
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: false, signedTransactions: signed },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signTransaction",
+      params: { transactions: [COSIGNER_TX] },
+    });
+    expect(requestsCalls).toHaveLength(1);
+    expect(result).toMatchObject({ signedTransactions: signed });
+  });
+
+  it("signAndSend accepts a fully cosigned transaction", async () => {
+    const raw = new Uint8Array(64).fill(5);
+    const { handler, requestsCalls } = rig({
+      session: {},
+      prepareResult: { kind: "solana.transactions", send: true, signatures: [base58.encode(raw)] },
+    });
+    const result = await handler.handle(SITE, {
+      method: "solana:signAndSendTransaction",
+      params: { transactions: [SIGNED_COSIGNER_TX], chains: ["solana:mainnet"] },
+    });
+    expect(requestsCalls).toHaveLength(1);
     expect(result).toStrictEqual({ signatures: [raw] });
   });
 
@@ -195,7 +362,10 @@ describe("SolanaWalletHandler", () => {
         checkOrigin: () => ORIGIN,
         session: () => ({}) as never,
         authorize: (_origin: string, network: string) => authorizeOnly(network),
-        solanaAccount: () => SOL_ADDR,
+        sessionAccounts: () => ({
+          group: { walletId: "w1", groupIndex: 0 },
+          addresses: [SOL_ADDR],
+        }),
         request: async () => Promise.resolve({} as never),
         touch: async () => Promise.resolve(),
         revoke: async () => Promise.resolve(),
@@ -207,7 +377,6 @@ describe("SolanaWalletHandler", () => {
         outcome: async () => Promise.reject(new Error("must not be reached")),
       },
       solanaAccount: async () => Promise.resolve({ address: SOL_ADDR, publicKey: PUBKEY }),
-      activeGroup: () => ({ walletId: "w1", groupIndex: 0 }),
       solanaNetwork: () => "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
     });
     await expect(
@@ -229,10 +398,15 @@ describe("SolanaWalletHandler", () => {
     expect(requestsCalls).toHaveLength(0);
   });
 
-  it("solanaAccountsChanged returns the new group's wallet account", async () => {
-    const { handler } = rig({});
-    const accounts = await handler.solanaAccountsChanged(SITE);
-    expect(accounts).toStrictEqual([
+  it("a session's solana account arrives as a change event", async () => {
+    const { handler, setSessions } = rig({});
+    const events: SolanaEvent[] = [];
+    handler.subscribe((event) => events.push(event));
+    setSessions({ s1: solSession() });
+    await vi.waitFor(() => {
+      expect(events).toHaveLength(1);
+    });
+    expect(events[0]?.accounts).toStrictEqual([
       {
         address: SOL_ADDR,
         publicKey: PUBKEY,
@@ -269,13 +443,30 @@ describe("walletStandardChain", () => {
     expect(walletStandardChain("eip155:1")).toBeUndefined();
   });
 
-  it("refuses to advertise an account on a network without a short id", async () => {
-    const { handler } = rig({ session: {} });
+  it("a change on a network without a short id carries an empty list", async () => {
+    const { handler, setSessions } = rig({ session: {} });
+    const events: SolanaEvent[] = [];
     const unknown = new SolanaWalletHandler({
       ...handler.options,
       solanaNetwork: () => "solana:unknownnetwork",
     });
-    await expect(unknown.solanaAccountsChanged(SITE)).rejects.toMatchObject({ code: -32_603 });
+    unknown.subscribe((event) => events.push(event));
+    setSessions({
+      s1: {
+        id: "s1",
+        origin: ORIGIN,
+        group: { walletId: "w1", groupIndex: 0 },
+        scopes: {
+          "solana:unknownnetwork": {
+            accounts: [`solana:unknownnetwork:${SOL_ADDR}`],
+          },
+        },
+      },
+    });
+    await vi.waitFor(() => {
+      expect(events.length).toBeGreaterThan(0);
+    });
+    expect(events.at(-1)?.accounts).toStrictEqual([]);
   });
 });
 

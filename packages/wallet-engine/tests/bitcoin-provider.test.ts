@@ -241,7 +241,7 @@ describe("bitcoin provider over a real kernel", () => {
       const events: BitcoinEvent[] = [];
       r.engine.bitcoinWallet.subscribe((event) => events.push(event));
       const index = r.engine.accounts.addGroup(r.walletId);
-      await r.engine.connections.setActiveGroup(r.walletId, index);
+      r.engine.accounts.select(r.walletId, index);
       await until(() => events.length > 0);
       expect(events[0]?.origin).toBe(SITE);
       const [payment, ordinals] = accountsOf(events[0]);

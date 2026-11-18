@@ -1,18 +1,25 @@
 // Integration coverage for cloud backup (design/backup.mdx): enable retains a sealed BEK as the
 // backup-key record; update rewrites the cloud envelope under it in one nonce draw; restore
 // unwraps with a backup factor and merges — adopting the envelope's BEK only while establishing
-// the vault.
+// the vault, and only after a kernel passkey ceremony proved the owner holds one of its factors.
 
-import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58, base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
-import { createHarness } from "./harness.ts";
+import type { PasskeyAuthenticator } from "../src/platform.ts";
+import { mnemonicBytes } from "../src/seed/mnemonic.ts";
+import { open, seal } from "../src/vault/envelope.ts";
+import { backupPasswordKek } from "../src/vault/factors.ts";
+import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { loadVectors, realArgon2id } from "./helpers.ts";
+import { loadVectors, quickArgon2id, realArgon2id } from "./helpers.ts";
+import { fakeKeystore } from "./keystore.ts";
+import type { KeystoreCall } from "./keystore.ts";
 
 const CREDENTIAL_ID = utf8ToBytes("credential-1");
 const PRF_VAULT = hexToBytes("11".repeat(32));
@@ -182,6 +189,8 @@ async function statusBackup(h: Harness, session?: string): Promise<ProtocolValue
   const status = ok(await h.call("status", undefined, session));
   return field(status, "backup");
 }
+
+const zeroed = (bytes: Uint8Array): boolean => bytes.every((b) => b === 0);
 
 describe("backup.enable", () => {
   it("requires a valid verify factor", async () => {
@@ -554,8 +563,8 @@ describe("backup vector", { timeout: 120_000 }, () => {
     );
     const wallets = arrField(restored, "wallets");
     expect(strField(at(wallets, 0), "walletId")).toBe(vector.walletId);
-    // Restoring into a fresh vault adopts the envelope's backup key.
-    expect(strField(await statusBackup(b), "id")).toBe(vector.id);
+    // The web host's passkey evidence crossed the main thread: backup stays off.
+    await expect(statusBackup(b)).resolves.toBeNull();
   });
 
   it("restores an imported key from the imported-key envelope", async () => {
@@ -783,5 +792,500 @@ describe("backup enable/update/disable", () => {
     ]);
     const status = await h2.call("status", undefined, s2);
     expect(field(ok(status), "vault")).toBe("corrupted");
+  });
+});
+
+const isPresenceOpen = (call: KeystoreCall): boolean =>
+  call.op === "open" && call.protection === "presence";
+
+describe("establishing restore and the envelope's backup key", () => {
+  const RP = { rpId: "wallet-harness.qntx.org", rpName: "Harness" };
+  const BACKUP_SALT = "harness/backup/v1";
+  const OWNER_PRF = new Uint8Array(32).fill(0x5a);
+  const kernelBackupPasskey = { kind: "passkey" as const, ceremony: "kernel" as const, ...RP };
+
+  /** A platform authenticator that always asserts the same credential with the owner's PRF. */
+  const ownerAuthenticator = (): PasskeyAuthenticator => {
+    const answer = async () => {
+      await Promise.resolve();
+      return {
+        credentialId: new Uint8Array([7, 7, 7, 7]),
+        first: new Uint8Array(OWNER_PRF),
+        second: undefined,
+        userHandle: undefined,
+        synced: true,
+        userVerified: true,
+      };
+    };
+    return { create: answer, get: answer };
+  };
+
+  const nativeHarness = (seed: number) => {
+    const keystore = fakeKeystore();
+    const h = createHarness({
+      seed,
+      keystore: keystore.keystore,
+      passkey: ownerAuthenticator(),
+      noIdle: true,
+    });
+    return { h, keystore };
+  };
+
+  const restoreOnDevice = async (h: Harness, envelope: string, backupFactor: unknown) => {
+    await h.settle();
+    return strField(
+      ok(await h.call("backup.restore", { envelope, backupFactor, factor: { kind: "device" } })),
+      "session",
+    );
+  };
+
+  /** A native harness whose authenticator records every PRF buffer it hands to the kernel. */
+  const captureHarness = (seed: number, captured: Uint8Array[]) => {
+    const answer = async () => {
+      await Promise.resolve();
+      const first = new Uint8Array(OWNER_PRF);
+      captured.push(first);
+      return {
+        credentialId: new Uint8Array([7, 7, 7, 7]),
+        first,
+        second: undefined,
+        userHandle: undefined,
+        synced: true,
+        userVerified: true,
+      };
+    };
+    return createHarness({
+      seed,
+      keystore: fakeKeystore().keystore,
+      passkey: { create: answer, get: answer },
+      noIdle: true,
+    });
+  };
+
+  it("adopts it when a kernel passkey ceremony unwrapped the envelope", async () => {
+    const { h: a } = nativeHarness(110);
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "device" },
+      }),
+    );
+    const aSession = strField(created, "session");
+    ok(
+      await a.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }, backupPassword()],
+        },
+        aSession,
+      ),
+    );
+    const id = strField(await statusBackup(a, aSession), "id");
+    const envelope = strField(ok(await a.call("backup.update", null, aSession)), "envelope");
+
+    const { h: b } = nativeHarness(111);
+    const bSession = await restoreOnDevice(b, envelope, {
+      kind: "passkey",
+      ceremony: "kernel",
+      rpId: RP.rpId,
+      backupSalt: BACKUP_SALT,
+    });
+    // The restored device keeps updating the same cloud file, under the same factors.
+    expect(strField(await statusBackup(b, bSession), "id")).toBe(id);
+    const updated = strField(ok(await b.call("backup.update", null, bSession)), "envelope");
+    const c = createHarness({ seed: 112 });
+    await c.settle();
+    const restored = ok(
+      await c.call("backup.restore", {
+        envelope: updated,
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(arrField(restored, "wallets")).toHaveLength(1);
+  });
+
+  it("leaves backup off when a password unwrapped the envelope on React Native", async () => {
+    // The password reached the kernel over the wire: the main runtime could have minted this
+    // empty envelope around a password of its own.
+    const attackerPassword = () => ({
+      kind: "password" as const,
+      password: utf8ToBytes("attacker-backup-pw-123"),
+    });
+    const attacker = createHarness({ seed: 113 });
+    await attacker.settle();
+    const { session: attackerSession, walletId: attackerWallet } =
+      await createPasskeyWallet(attacker);
+    await createBackupEnvelope(attacker, attackerSession, [attackerPassword()]);
+    ok(
+      await attacker.call(
+        "wallet.delete",
+        { verify: verifyPasskey(), walletId: attackerWallet },
+        attackerSession,
+      ),
+    );
+    const forged = strField(
+      ok(await attacker.call("backup.update", null, attackerSession)),
+      "envelope",
+    );
+
+    const { h: victim, keystore } = nativeHarness(114);
+    const session = await restoreOnDevice(victim, forged, attackerPassword());
+    await expect(statusBackup(victim, session)).resolves.toBeNull();
+
+    // Secrets the owner adds afterwards never reach an envelope the attacker can open.
+    ok(
+      await victim.call(
+        "wallet.createWithPasskey",
+        { ceremony: "kernel", ...RP, name: "victim", walletSalt: "harness/wallet/v1" },
+        session,
+      ),
+    );
+    expect(errCode(await victim.call("backup.update", null, session))).toBe("not-found");
+
+    // Turning backup on is the owner's own verified decision, under a fresh key.
+    const mark = keystore.calls.length;
+    ok(
+      await victim.call(
+        "backup.enable",
+        { verify: { kind: "hardware" }, factors: [backupPassword()] },
+        session,
+      ),
+    );
+    expect(keystore.calls.slice(mark).filter(isPresenceOpen)).toHaveLength(1);
+    const envelope = strField(ok(await victim.call("backup.update", null, session)), "envelope");
+    const outsider = createHarness({ seed: 115 });
+    await outsider.settle();
+    expect(
+      errCode(
+        await outsider.call("backup.restore", {
+          envelope,
+          backupFactor: attackerPassword(),
+          factor: vaultPasswordFactor(),
+        }),
+      ),
+    ).toBe("wrong-password");
+    const owner = createHarness({ seed: 116 });
+    await owner.settle();
+    const ownerSession = strField(
+      ok(
+        await owner.call("backup.restore", {
+          envelope,
+          backupFactor: backupPassword(),
+          factor: vaultPasswordFactor(),
+        }),
+      ),
+      "session",
+    );
+    const wallets = arrField(ok(await owner.call("status", undefined, ownerSession)), "wallets");
+    const exported = ok(
+      await owner.call(
+        "wallet.exportMnemonic",
+        { verify: vaultPasswordFactor(), walletId: strField(at(wallets, 0), "walletId") },
+        ownerSession,
+      ),
+    );
+    expect(field(exported, "mnemonic")).toStrictEqual(mnemonicBytes(OWNER_PRF.slice(0, 16)));
+  });
+
+  /** Restores a web envelope (password + host passkey factors) into a fresh web vault. */
+  const restoreOnWeb = async (backupFactor: unknown) => {
+    const a = createHarness({ seed: 117 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, session, [backupPassword(), backupPasskeyF()]);
+    const b = createHarness({ seed: 118 });
+    await b.settle();
+    const restored = ok(
+      await b.call("backup.restore", { envelope, backupFactor, factor: vaultPasswordFactor() }),
+    );
+    expect(arrField(restored, "wallets")).toHaveLength(1);
+    return statusBackup(b, strField(restored, "session"));
+  };
+
+  it("leaves backup off when the web host's passkey evidence unwrapped it", async () => {
+    await expect(restoreOnWeb(backupPasskeyF())).resolves.toBeNull();
+  });
+
+  it("leaves backup off when a password unwrapped it on the web", async () => {
+    await expect(restoreOnWeb(backupPassword())).resolves.toBeNull();
+  });
+
+  it("zeroes the ceremony's PRF output after backup.enable", async () => {
+    const captured: Uint8Array[] = [];
+    const a = captureHarness(140, captured);
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(created, "session");
+    ok(
+      await a.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }],
+        },
+        session,
+      ),
+    );
+    expect(captured).toHaveLength(1);
+    expect(captured.at(0)).toStrictEqual(new Uint8Array(32));
+  });
+
+  it("zeroes the ceremony's PRF output after backup.restore", async () => {
+    const aCaptured: Uint8Array[] = [];
+    const a = captureHarness(141, aCaptured);
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(created, "session");
+    ok(
+      await a.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }],
+        },
+        session,
+      ),
+    );
+    const envelope = strField(ok(await a.call("backup.update", null, session)), "envelope");
+    const bCaptured: Uint8Array[] = [];
+    const b = captureHarness(142, bCaptured);
+    ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: {
+          kind: "passkey",
+          ceremony: "kernel",
+          rpId: RP.rpId,
+          backupSalt: BACKUP_SALT,
+        },
+        factor: { kind: "device" },
+      }),
+    );
+    expect(bCaptured).toHaveLength(1);
+    expect(bCaptured.at(0)).toStrictEqual(new Uint8Array(32));
+    expect(aCaptured.at(0)).toStrictEqual(new Uint8Array(32));
+  });
+});
+
+describe("backup payload parsing", () => {
+  /** An envelope whose payload plaintext gets `tail` appended, re-sealed under the real BEK. */
+  async function withPayloadTail(tail: ReadonlyArray<number>): Promise<string> {
+    const a = createHarness({ seed: 120 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    const envelope = JSON.parse(await createBackupEnvelope(a, session, [backupPassword()])) as {
+      header: string;
+      factors: ReadonlyArray<{ salt: string; sealedBek: string }>;
+      payload: string;
+    };
+    const [entry] = envelope.factors;
+    if (entry === undefined) {
+      throw new Error("no backup factor");
+    }
+    const kek = await backupPasswordKek(
+      new Uint8Array(PASSWORD),
+      base64urlnopad.decode(entry.salt),
+      quickArgon2id,
+    );
+    const bek = open(
+      kek,
+      base64urlnopad.decode(entry.sealedBek),
+      "qntx-wallet/backup/v1/factor/password",
+      "",
+    );
+    const context = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(envelope.header)))}`;
+    const plaintext = open(bek, base64urlnopad.decode(envelope.payload), context, "");
+    const payload = seal(
+      bek,
+      concatBytes(plaintext, Uint8Array.from(tail)),
+      context,
+      "",
+      seededRandom(121).random,
+    );
+    return JSON.stringify({ ...envelope, payload: base64urlnopad.encode(payload) });
+  }
+
+  const restoreCode = async (envelope: string) => {
+    const b = createHarness({ seed: 122 });
+    await b.settle();
+    return errCode(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+  };
+
+  it("rejects a payload ending in a lone entry tag", async () => {
+    await expect(restoreCode(await withPayloadTail([0x01]))).resolves.toBe("integrity");
+    await expect(restoreCode(await withPayloadTail([0x02]))).resolves.toBe("integrity");
+  });
+
+  it("rejects a payload ending in an entry tag with half its header", async () => {
+    await expect(restoreCode(await withPayloadTail([0x01, 0x01]))).resolves.toBe("integrity");
+  });
+});
+
+describe("backup factor secrets", () => {
+  it("zeroes the caller's password and PRF buffers after a successful enable", async () => {
+    const h = createHarness({ seed: 130 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const password = utf8ToBytes("a valid backup password!");
+    const prf = new Uint8Array(32).fill(0x33);
+    ok(
+      await h.call(
+        "backup.enable",
+        {
+          verify: verifyPasskey(),
+          factors: [
+            { kind: "password", password },
+            { kind: "passkey", ceremony: "host", credentialId: CREDENTIAL_ID, prfBackup: prf },
+          ],
+        },
+        session,
+      ),
+    );
+    expect(zeroed(password)).toBe(true);
+    expect(zeroed(prf)).toBe(true);
+  });
+
+  it("zeroes every factor buffer when a factor fails the enable", async () => {
+    const h = createHarness({ seed: 131 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const good = utf8ToBytes("a valid backup password!");
+    const short = utf8ToBytes("short");
+    const prf = new Uint8Array(32).fill(0x44);
+    expect(
+      errCode(
+        await h.call(
+          "backup.enable",
+          {
+            verify: verifyPasskey(),
+            factors: [
+              { kind: "password", password: good },
+              { kind: "password", password: short },
+              { kind: "passkey", ceremony: "host", credentialId: CREDENTIAL_ID, prfBackup: prf },
+            ],
+          },
+          session,
+        ),
+      ),
+    ).toBe("invalid-input");
+    expect(zeroed(good)).toBe(true);
+    expect(zeroed(short)).toBe(true);
+    expect(zeroed(prf)).toBe(true);
+  });
+
+  it("zeroes the caller's password buffer after a successful restore", async () => {
+    const a = createHarness({ seed: 132 });
+    await a.settle();
+    const { session: aSession } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, aSession, [backupPassword()]);
+    const b = createHarness({ seed: 133 });
+    await b.settle();
+    const password = new Uint8Array(PASSWORD);
+    ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: { kind: "password", password },
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(zeroed(password)).toBe(true);
+  });
+
+  it("zeroes the caller's PRF buffer after a successful restore", async () => {
+    const a = createHarness({ seed: 134 });
+    await a.settle();
+    const { session: aSession } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, aSession, [backupPasskeyF()]);
+    const b = createHarness({ seed: 135 });
+    await b.settle();
+    const prf = new Uint8Array(PRF_BACKUP);
+    ok(
+      await b.call("backup.restore", {
+        envelope,
+        backupFactor: {
+          kind: "passkey",
+          ceremony: "host",
+          credentialId: CREDENTIAL_ID,
+          prfBackup: prf,
+        },
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(zeroed(prf)).toBe(true);
+  });
+
+  it("zeroes the password buffer when a wrong password fails the restore", async () => {
+    const a = createHarness({ seed: 136 });
+    await a.settle();
+    const { session: aSession } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, aSession, [backupPassword()]);
+    const b = createHarness({ seed: 137 });
+    await b.settle();
+    const wrong = utf8ToBytes("wrong backup password");
+    expect(
+      errCode(
+        await b.call("backup.restore", {
+          envelope,
+          backupFactor: { kind: "password", password: wrong },
+          factor: vaultPasswordFactor(),
+        }),
+      ),
+    ).toBe("wrong-password");
+    expect(zeroed(wrong)).toBe(true);
+  });
+
+  it("zeroes the factor buffers when the envelope cannot be parsed", async () => {
+    const h = createHarness({ seed: 138 });
+    await h.settle();
+    const { session } = await createPasskeyWallet(h);
+    const password = utf8ToBytes("a valid backup password!");
+    const prf = new Uint8Array(32).fill(0x55);
+    expect(
+      errCode(
+        await h.call(
+          "backup.restore",
+          { envelope: "not json", backupFactor: { kind: "password", password } },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    expect(zeroed(password)).toBe(true);
+    expect(
+      errCode(
+        await h.call(
+          "backup.restore",
+          {
+            envelope: "not json",
+            backupFactor: {
+              kind: "passkey",
+              ceremony: "host",
+              credentialId: CREDENTIAL_ID,
+              prfBackup: prf,
+            },
+          },
+          session,
+        ),
+      ),
+    ).toBe("integrity");
+    expect(zeroed(prf)).toBe(true);
   });
 });

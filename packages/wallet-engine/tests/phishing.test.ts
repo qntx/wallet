@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { gatewayFetch } from "../src/gateway/client.ts";
-import { INSTALL_ID_HEADER } from "../src/gateway/contract/index.ts";
+import { CLIENT_ID_HEADER } from "../src/gateway/contract/index.ts";
 import { PHISHING_REFRESH_MS, PhishingController } from "../src/phishing/controller.ts";
 import { createMemoryPublicStore } from "../src/store/memory.ts";
 import { b64 } from "./phishing-helpers.ts";
 
-const GATEWAY = { url: "https://gateway.test", installId: "0123456789abcdef0123456789abcdef" };
+const GATEWAY = {
+  url: "https://gateway.test",
+  clientIds: {
+    evm: "0123456789abcdef0123456789abcdef",
+    solana: "0123456789abcdef0123456789abcdef",
+    bitcoin: "0123456789abcdef0123456789abcdef",
+    service: "0123456789abcdef0123456789abcdef",
+  },
+};
 const LIST_URL = `${GATEWAY.url}/v1/risk/lists/phishing`;
 const TIMEOUT_MS = 30_000;
 
@@ -46,7 +54,7 @@ function rig(
 ) {
   const gateway = "gateway" in options ? options.gateway : GATEWAY;
   const values = options.values ?? new Map<string, Uint8Array>();
-  const requests: Array<{ url: string; installId: string | null }> = [];
+  const requests: Array<{ url: string; clientId: string | null }> = [];
   const replies: Reply[] = [];
   const warnings: string[] = [];
   const timers: Array<{ ms: number; fn: () => void; cancelled: boolean }> = [];
@@ -56,7 +64,7 @@ function rig(
     gateway,
     fetch: async (input, init) => {
       const url = urlOf(input);
-      requests.push({ url, installId: new Headers(init?.headers).get(INSTALL_ID_HEADER) });
+      requests.push({ url, clientId: new Headers(init?.headers).get(CLIENT_ID_HEADER) });
       const reply = replies.shift();
       if (reply === undefined) {
         throw new TypeError("no scripted reply");
@@ -112,7 +120,7 @@ describe("PhishingController sync", () => {
     const { controller, replies, requests, values } = rig();
     replies.push(snapshot(10, ["evil.com"], ["good.com"]));
     await controller.init();
-    expect(requests).toStrictEqual([{ url: LIST_URL, installId: GATEWAY.installId }]);
+    expect(requests).toStrictEqual([{ url: LIST_URL, clientId: GATEWAY.clientIds.service }]);
     expect(controller.getState()).toMatchObject({ version: 10, updatedAt: 1000 });
     expect(controller.check("https://evil.com/login")).toBe("blocked");
     expect(controller.check("https://fine.com/")).toBe("clear");
@@ -388,28 +396,28 @@ describe("PhishingController trust", () => {
 });
 
 describe("gatewayFetch", () => {
-  it("adds the install id to the gateway origin only", async () => {
-    const seen: Array<{ url: string; installId: string | null }> = [];
+  it("adds the client id to the gateway origin only", async () => {
+    const seen: Array<{ url: string; clientId: string | null }> = [];
     const wrapped = gatewayFetch(async (input, init) => {
       const url = urlOf(input);
-      seen.push({ url, installId: new Headers(init?.headers).get(INSTALL_ID_HEADER) });
+      seen.push({ url, clientId: new Headers(init?.headers).get(CLIENT_ID_HEADER) });
       return Promise.resolve(new Response("{}"));
     }, GATEWAY);
     await wrapped(`${GATEWAY.url}/v1/health`);
     await wrapped("https://other.test/v1/health", { headers: { accept: "text/plain" } });
     expect(seen).toStrictEqual([
-      { url: `${GATEWAY.url}/v1/health`, installId: GATEWAY.installId },
-      { url: "https://other.test/v1/health", installId: null },
+      { url: `${GATEWAY.url}/v1/health`, clientId: GATEWAY.clientIds.service },
+      { url: "https://other.test/v1/health", clientId: null },
     ]);
   });
 
   it("adds nothing without a gateway", async () => {
-    let installId: string | null = "unset";
+    let clientId: string | null = "unset";
     const wrapped = gatewayFetch(async (_input, init) => {
-      installId = new Headers(init?.headers).get(INSTALL_ID_HEADER);
+      clientId = new Headers(init?.headers).get(CLIENT_ID_HEADER);
       return Promise.resolve(new Response("{}"));
     }, undefined);
     await wrapped(`${GATEWAY.url}/v1/health`);
-    expect(installId).toBeNull();
+    expect(clientId).toBeNull();
   });
 });

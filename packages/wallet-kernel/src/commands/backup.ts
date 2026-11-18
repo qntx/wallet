@@ -1,8 +1,9 @@
 // Cloud backup (design/backup.mdx, E1-d-3): a 32-byte BEK is retained in the vault as the
 // `backup-key` record, so `backup.update` rewrites the cloud envelope without a fresh factor
 // ceremony. `backup.enable` still re-verifies and wraps the new BEK under each backup factor;
-// `backup.restore` adopts the envelope's BEK only when the restore establishes the vault — a
-// forged envelope must never hijack an existing vault's future backups. The payload is compact
+// `backup.restore` adopts the envelope's BEK only when the restore establishes the vault and a
+// kernel passkey ceremony unwrapped it — a forged envelope must never hijack the vault's future
+// backups. The payload is compact
 // binary secrets only — per wallet `origin(1) ‖ len(1) ‖ entropy`;
 // `secretKey(32)`, per chain key `family(1) ‖ secretKey(32)` — sealed under the BEK with the
 // vault envelope v1 format; each sealedBek rides the same seal under the factor's KEK.
@@ -189,9 +190,6 @@ function decodePayload(bytes: Uint8Array): {
   while (off < bytes.length) {
     const tag = bytes[off++];
     if (tag === PAYLOAD_WALLET || tag === PAYLOAD_KEY) {
-      if (off + 2 > bytes.length) {
-        break;
-      }
       const ob = bytes[off];
       const len = bytes[off + 1];
       if (ob === undefined || len === undefined || off + 2 + len > bytes.length) {
@@ -215,9 +213,6 @@ function decodePayload(bytes: Uint8Array): {
     } else {
       throw new KernelError("integrity", "backup: unknown payload tag");
     }
-  }
-  if (off !== bytes.length) {
-    throw new KernelError("integrity", "backup: payload length mismatch");
   }
   return { wallets, keys };
 }
@@ -296,10 +291,18 @@ function wipeContents(contents: BackupContents): void {
  * factor-array order, then every sealedBek nonce in factor-array order — no random draw follows an
  * await, so async scheduling (pbkdf2 suspending) can never reorder it.
  */
-/** Backup factor material once any passkey ceremony ran: a password or the PRF evidence. */
+/**
+ * Backup factor material once any passkey ceremony ran: a password or the PRF evidence, tagged with
+ * the runtime whose ceremony produced it.
+ */
 type BackupMaterial =
   | { readonly kind: "password"; readonly password: Uint8Array }
-  | { readonly kind: "passkey"; readonly credentialId: Uint8Array; readonly prfBackup: Uint8Array };
+  | {
+      readonly kind: "passkey";
+      readonly ceremony: "kernel" | "host";
+      readonly credentialId: Uint8Array;
+      readonly prfBackup: Uint8Array;
+    };
 
 const PURPOSE_PROTECTION = 0x02;
 
@@ -313,7 +316,12 @@ function backupMaterialOf(result: PasskeyResult): BackupMaterial {
     result.first?.fill(0);
     throw new KernelError("passkey-prf-unsupported", "the passkey returned no verified PRF output");
   }
-  return { kind: "passkey", credentialId: result.credentialId, prfBackup: result.first };
+  return {
+    kind: "passkey",
+    ceremony: "kernel",
+    credentialId: result.credentialId,
+    prfBackup: result.first,
+  };
 }
 
 /**
@@ -334,7 +342,12 @@ async function backupMaterial(
     throw new KernelError("unsupported", "this platform runs passkey ceremonies elsewhere");
   }
   if (factor.ceremony === "host") {
-    return factor;
+    return {
+      kind: "passkey",
+      ceremony: "host",
+      credentialId: factor.credentialId,
+      prfBackup: factor.prfBackup,
+    };
   }
   const passkey = requirePasskey(ctx.platform);
   const salts = { first: utf8ToBytes(factor.backupSalt) };
@@ -358,6 +371,18 @@ async function backupMaterial(
   return backupMaterialOf(await passkey.get({ rpId: factor.rpId, allowCredentials, salts }));
 }
 
+/**
+ * Zeroes the secret bytes a backup factor carries — the password or a host ceremony's PRF output. A
+ * kernel-ceremony factor has no wire secret; its material's `prfBackup` is still covered.
+ */
+function wipeBackupSecret(factor: BackupMaterial | BackupFactor | BackupUnlockFactor): void {
+  if (factor.kind === "password") {
+    factor.password.fill(0);
+  } else if ("prfBackup" in factor) {
+    factor.prfBackup.fill(0);
+  }
+}
+
 async function sealBackupFactors(
   platform: KernelPlatform,
   bek: Uint8Array,
@@ -366,25 +391,35 @@ async function sealBackupFactors(
   const salts = backupFactors.map((factor) =>
     factor.kind === "password" ? platform.random(16) : undefined,
   );
-  const keks = await Promise.all(
-    backupFactors.map(async (factor, index) => {
+  const keks: Uint8Array[] = [];
+  try {
+    for (const [index, factor] of backupFactors.entries()) {
       if (factor.kind === "passkey") {
-        return hkdf(
-          sha256,
-          factor.prfBackup,
-          factor.credentialId,
-          utf8ToBytes("qntx-wallet/kek/backup/v1"),
-          32,
+        keks.push(
+          hkdf(
+            sha256,
+            factor.prfBackup,
+            factor.credentialId,
+            utf8ToBytes("qntx-wallet/kek/backup/v1"),
+            32,
+          ),
         );
+        continue;
       }
       assertBackupPasswordPolicy(factor.password);
       const salt = salts[index];
       if (salt === undefined) {
         throw new KernelError("integrity", "backup: missing password salt");
       }
-      return backupPasswordKek(factor.password, salt, platform.argon2id);
-    }),
-  );
+      // oxlint-disable-next-line eslint/no-await-in-loop -- one KDF at a time; a failure wipes the KEKs already derived
+      keks.push(await backupPasswordKek(factor.password, salt, platform.argon2id));
+    }
+  } catch (error) {
+    for (const kek of keks) {
+      kek.fill(0);
+    }
+    throw error;
+  }
   return backupFactors.map((factor, index): BackupEnvelopeFactor => {
     const kek = keks[index];
     if (kek === undefined) {
@@ -463,8 +498,8 @@ export async function enableBackup(
   if (bek.length !== 32) {
     throw new KernelError("integrity", "random source returned a wrong-length BEK");
   }
+  const materials: BackupMaterial[] = [];
   try {
-    const materials: BackupMaterial[] = [];
     for (const factor of params.factors) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one system ceremony at a time
       materials.push(await backupMaterial(ctx, factor, []));
@@ -476,6 +511,12 @@ export async function enableBackup(
     return null;
   } finally {
     bek.fill(0);
+    for (const material of materials) {
+      wipeBackupSecret(material);
+    }
+    for (const factor of params.factors) {
+      wipeBackupSecret(factor);
+    }
   }
 }
 
@@ -553,6 +594,17 @@ export async function disableBackup(
   return null;
 }
 
+/**
+ * Whether an establishing restore may keep the envelope's BEK. Adopting it turns backup on, so it
+ * needs what `backup.enable` needs: a user verification the main runtime cannot stand in for, by
+ * the owner of a factor of this very envelope. Only a kernel passkey ceremony is both — a
+ * user-verified assertion whose PRF never leaves the kernel runtime. A password and a host
+ * ceremony's PRF arrive over the wire: the main runtime may have minted the envelope around them,
+ * and adopting its BEK would hand it every secret a later `backup.update` seals.
+ */
+const adoptsBackupKey = (material: BackupMaterial): boolean =>
+  material.kind === "passkey" && material.ceremony === "kernel";
+
 /** Unwraps the BEK under the caller's factor. A failed open maps to the factor's wrong-* code. */
 async function bekFromFactor(
   platform: KernelPlatform,
@@ -627,6 +679,7 @@ export async function restoreBackup(
     for (const entry of params.passphrases ?? []) {
       entry.passphrase.fill(0);
     }
+    wipeBackupSecret(params.backupFactor);
   }
 }
 
@@ -651,152 +704,158 @@ async function restoreWithPassphrases(
   const credentials = envelope.factors.flatMap((f) =>
     f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
   );
-  const bek = await bekFromFactor(
-    ctx.platform,
-    envelope,
-    await backupMaterial(ctx, params.backupFactor, credentials),
-  );
+  const material = await backupMaterial(ctx, params.backupFactor, credentials);
   try {
-    // The payload tag authenticates the raw header text — parse the header only after this open.
-    let plaintext: Uint8Array;
+    const bek = await bekFromFactor(ctx.platform, envelope, material);
     try {
-      plaintext = openEnvelope(bek, b64.dec(envelope.payload), payloadContext(envelope.header), "");
-    } catch {
-      throw new KernelError("integrity", "backup: payload authentication failed");
-    }
-    const header = parseHeader(envelope.header);
-    const decoded = decodePayload(plaintext);
-    if (
-      decoded.wallets.length !== header.wallets.length ||
-      decoded.keys.length !== (header.keys?.length ?? 0)
-    ) {
-      plaintext.fill(0);
-      throw new KernelError("integrity", "backup: payload does not match header");
-    }
-
-    const flagged = new Set(
-      header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId),
-    );
-    for (const walletId of passphrases.keys()) {
-      if (!flagged.has(walletId)) {
-        plaintext.fill(0);
-        throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
-      }
-    }
-
-    const gated = gate(ctx, params.factor, requestSession);
-    const records: StoredRecord[] = [];
-    const restored: WalletInfo[] = [];
-    const passphraseRequired: string[] = [];
-    let committed = false;
-    try {
+      // The payload tag authenticates the raw header text — parse the header only after this open.
+      let plaintext: Uint8Array;
       try {
-        const now = ctx.platform.now();
-        for (const [index, wallet] of decoded.wallets.entries()) {
-          const expected = header.wallets[index];
-          if (expected === undefined) {
-            throw new KernelError("integrity", "backup: wallet count mismatch");
-          }
-          const words = mnemonicWords(wallet.entropy);
-          if (words !== expected.words) {
-            throw new KernelError("integrity", "backup: entropy length does not match header");
-          }
-          const passphrase = passphrases.get(expected.walletId);
-          if (passphrase === undefined && expected.passphrase === true) {
-            if (
-              !ctx.image.records.some((r) => r.kind === "entropy" && r.id === expected.walletId)
-            ) {
-              passphraseRequired.push(expected.walletId);
+        plaintext = openEnvelope(
+          bek,
+          b64.dec(envelope.payload),
+          payloadContext(envelope.header),
+          "",
+        );
+      } catch {
+        throw new KernelError("integrity", "backup: payload authentication failed");
+      }
+      const header = parseHeader(envelope.header);
+      const decoded = decodePayload(plaintext);
+      if (
+        decoded.wallets.length !== header.wallets.length ||
+        decoded.keys.length !== (header.keys?.length ?? 0)
+      ) {
+        plaintext.fill(0);
+        throw new KernelError("integrity", "backup: payload does not match header");
+      }
+
+      const flagged = new Set(
+        header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId),
+      );
+      for (const walletId of passphrases.keys()) {
+        if (!flagged.has(walletId)) {
+          plaintext.fill(0);
+          throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
+        }
+      }
+
+      const gated = gate(ctx, params.factor, requestSession);
+      const records: StoredRecord[] = [];
+      const restored: WalletInfo[] = [];
+      const passphraseRequired: string[] = [];
+      let committed = false;
+      try {
+        try {
+          const now = ctx.platform.now();
+          for (const [index, wallet] of decoded.wallets.entries()) {
+            const expected = header.wallets[index];
+            if (expected === undefined) {
+              throw new KernelError("integrity", "backup: wallet count mismatch");
             }
-            continue;
-          }
-          // oxlint-disable-next-line no-await-in-loop -- wallets re-derive serially; order matches the header
-          const material = await walletMaterial(
-            ctx.platform,
-            wallet.entropy,
-            passphrase,
-            wallet.origin,
-            words,
-          );
-          if (passphrase !== undefined && material.walletId !== expected.walletId) {
-            throw new KernelError(
-              "invalid-input",
-              `passphrase does not match wallet ${expected.walletId}`,
+            const words = mnemonicWords(wallet.entropy);
+            if (words !== expected.words) {
+              throw new KernelError("integrity", "backup: entropy length does not match header");
+            }
+            const passphrase = passphrases.get(expected.walletId);
+            if (passphrase === undefined && expected.passphrase === true) {
+              if (
+                !ctx.image.records.some((r) => r.kind === "entropy" && r.id === expected.walletId)
+              ) {
+                passphraseRequired.push(expected.walletId);
+              }
+              continue;
+            }
+            // oxlint-disable-next-line no-await-in-loop -- wallets re-derive serially; order matches the header
+            const material = await walletMaterial(
+              ctx.platform,
+              wallet.entropy,
+              passphrase,
+              wallet.origin,
+              words,
             );
+            if (passphrase !== undefined && material.walletId !== expected.walletId) {
+              throw new KernelError(
+                "invalid-input",
+                `passphrase does not match wallet ${expected.walletId}`,
+              );
+            }
+            if (material.walletId !== expected.walletId || material.origin !== expected.origin) {
+              throw new KernelError("integrity", "backup: derived walletId does not match header");
+            }
+            if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) {
+              continue; // already in the vault
+            }
+            // `backup` says how the user could recover without the vault: a passkey-origin wallet
+            // still derives from the synced credential; a mnemonic-origin one must be re-marked
+            // `none` because this device never saw the written words — the backup layer's own
+            // state tracks that a cloud copy exists.
+            const backup = material.origin === "passkey" ? "passkey" : "none";
+            const record = walletRecord(ctx, gated.dek, material, backup, now);
+            records.push(record);
+            restored.push(walletInfoOf(material, backup, now));
           }
-          if (material.walletId !== expected.walletId || material.origin !== expected.origin) {
-            throw new KernelError("integrity", "backup: derived walletId does not match header");
-          }
-          if (ctx.image.records.some((r) => r.kind === "entropy" && r.id === material.walletId)) {
-            continue; // already in the vault
-          }
-          // `backup` says how the user could recover without the vault: a passkey-origin wallet
-          // still derives from the synced credential; a mnemonic-origin one must be re-marked
-          // `none` because this device never saw the written words — the backup layer's own
-          // state tracks that a cloud copy exists.
-          const backup = material.origin === "passkey" ? "passkey" : "none";
-          const record = walletRecord(ctx, gated.dek, material, backup, now);
-          records.push(record);
-          restored.push(walletInfoOf(material, backup, now));
-        }
-        for (const [index, key] of decoded.keys.entries()) {
-          const expected = header.keys?.[index];
-          if (expected === undefined) {
-            throw new KernelError("integrity", "backup: key count mismatch");
-          }
-          const material = keyMaterialFor(key.family, key.secret);
-          const keyId = keyIdOf(key.family, material.publicKey);
-          if (keyId !== expected.keyId || key.family !== expected.family) {
-            throw new KernelError("integrity", "backup: derived keyId does not match header");
-          }
-          if (ctx.image.records.some((r) => r.kind === "key" && r.id === keyId)) {
-            continue; // already in the vault
-          }
-          try {
-            records.push(
-              sealRecord(
-                ctx.platform,
-                gated.dek,
-                "key",
-                keyId,
-                encodeHeader({ family: key.family, address: material.address, createdAt: now }),
-                material.secret,
-              ),
-            );
-          } finally {
-            // A keypair input produces a sliced seed copy distinct from `key.secret`.
-            if (material.secret !== key.secret) {
-              wipe(material.secret);
+          for (const [index, key] of decoded.keys.entries()) {
+            const expected = header.keys?.[index];
+            if (expected === undefined) {
+              throw new KernelError("integrity", "backup: key count mismatch");
+            }
+            const material = keyMaterialFor(key.family, key.secret);
+            const keyId = keyIdOf(key.family, material.publicKey);
+            if (keyId !== expected.keyId || key.family !== expected.family) {
+              throw new KernelError("integrity", "backup: derived keyId does not match header");
+            }
+            if (ctx.image.records.some((r) => r.kind === "key" && r.id === keyId)) {
+              continue; // already in the vault
+            }
+            try {
+              records.push(
+                sealRecord(
+                  ctx.platform,
+                  gated.dek,
+                  "key",
+                  keyId,
+                  encodeHeader({ family: key.family, address: material.address, createdAt: now }),
+                  material.secret,
+                ),
+              );
+            } finally {
+              // A keypair input produces a sliced seed copy distinct from `key.secret`.
+              if (material.secret !== key.secret) {
+                wipe(material.secret);
+              }
             }
           }
+          if (gated.uninitialized && adoptsBackupKey(material)) {
+            // Adoption — only while the vault is being established, inside the same atomic
+            // commit: a merge keeps the vault's own backup key (or none). Otherwise backup stays
+            // off until the owner turns it on with `backup.enable`.
+            records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
+          }
+          const session = await commitRecords(ctx, gated, params.factor, records);
+          committed = true;
+          return { wallets: restored, passphraseRequired, session };
+        } catch (error) {
+          // gate() minted a DEK nothing owns yet; commitRecords wipes it only past its own
+          // commit and takes ownership on success — a failure in between leaks it here.
+          if (!committed && gated.uninitialized) {
+            gated.dek.wipe();
+          }
+          throw error;
         }
-        if (gated.uninitialized) {
-          // Adoption — only while the vault is being established, inside the same atomic
-          // commit: a forged envelope merging into an existing vault can never hijack its
-          // future backups.
-          records.push(backupKeyRecord(ctx, gated.dek, bek, envelope.factors));
+      } finally {
+        plaintext.fill(0);
+        for (const wallet of decoded.wallets) {
+          wallet.entropy.fill(0);
         }
-        const session = await commitRecords(ctx, gated, params.factor, records);
-        committed = true;
-        return { wallets: restored, passphraseRequired, session };
-      } catch (error) {
-        // gate() minted a DEK nothing owns yet; commitRecords wipes it only past its own
-        // commit and takes ownership on success — a failure in between leaks it here.
-        if (!committed && gated.uninitialized) {
-          gated.dek.wipe();
+        for (const key of decoded.keys) {
+          key.secret.fill(0);
         }
-        throw error;
       }
     } finally {
-      plaintext.fill(0);
-      for (const wallet of decoded.wallets) {
-        wallet.entropy.fill(0);
-      }
-      for (const key of decoded.keys) {
-        key.secret.fill(0);
-      }
+      bek.fill(0);
     }
   } finally {
-    bek.fill(0);
+    wipeBackupSecret(material);
   }
 }

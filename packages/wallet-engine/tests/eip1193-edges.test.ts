@@ -49,11 +49,15 @@ function rig(
   const transport = vi.fn(async () => Promise.resolve("0x10"));
   const connections = {
     checkOrigin: () => ({ kind: "browser", origin: SITE }),
-    accounts: (origin: string) =>
-      Object.values(state.sessions)
-        .filter((s) => s.origin.origin === origin)
-        .flatMap((s) => s.scopes[s.currentNetwork]?.accounts ?? [])
-        .map((a) => a.slice(a.lastIndexOf(":") + 1)),
+    sessionAccounts: (origin: string, network: string) => {
+      const s = Object.values(state.sessions).find((x) => x.origin.origin === origin);
+      const bound = "group" in options ? options.group : GROUP;
+      const addresses =
+        s?.scopes[network]?.accounts.map((a) => a.slice(a.lastIndexOf(":") + 1)) ?? [];
+      return s === undefined || bound === undefined || addresses.length === 0
+        ? undefined
+        : { group: bound, addresses };
+    },
     session: (origin: string) =>
       Object.values(state.sessions).find((s) => s.origin.origin === origin),
     request: async (_origin: string, request: unknown) => {
@@ -81,7 +85,6 @@ function rig(
       }
       return s;
     },
-    activeGroup: () => options.group,
     getState: () => state,
     store: {
       subscribe: (listener: (s: typeof state) => void) => {
@@ -201,9 +204,9 @@ describe("Eip1193Handler personal_sign and typed data", () => {
     expect(kinds).toStrictEqual(['{"a":1}', '{"b":2}']);
   });
 
-  it("fails without an active group", async () => {
-    const r = rig({ session: session() });
-    await expect(codeOf(run(r, "personal_sign", ["hi", ADDR]))).resolves.toBe(-32_603);
+  it("fails with 4100 when the session binds no group", async () => {
+    const r = rig({ session: session(), group: undefined });
+    await expect(codeOf(run(r, "personal_sign", ["hi", ADDR]))).resolves.toBe(4100);
   });
 });
 

@@ -18,34 +18,41 @@ describe("BtcUtxoStore", () => {
     const b = utxo("bb", 1, 50_000);
     store.replace([a, b]);
     store.lock([a], "tx-1");
-    expect(store.spendable().map((u) => u.txid)).toStrictEqual(["bb"]);
+    expect(store.isLocked(a)).toBe(true);
+    expect(store.isLocked(b)).toBe(false);
     store.endTx("tx-1", "failed");
-    expect(store.spendable().map((u) => u.txid)).toStrictEqual(["aa", "bb"]);
+    expect(store.isLocked(a)).toBe(false);
     store.lock([a], "tx-2");
     store.endTx("tx-2", "rejected");
-    expect(store.spendable()).toHaveLength(2);
+    expect(store.isLocked(a)).toBe(false);
     store.lock([a], "tx-3");
     store.endTx("tx-3", "dropped");
-    expect(store.spendable()).toHaveLength(2);
+    expect(store.isLocked(a)).toBe(false);
+    expect(store.all()).toHaveLength(2);
   });
 
-  it("spends locked utxos on confirmed and keeps frozen out of spendable", () => {
+  it("spends locked utxos on confirmed and keeps the rest", () => {
     const store = new BtcUtxoStore();
-    store.replace([utxo("aa", 0, 100_000), utxo("bb", 0, 546)]);
-    store.lock([utxo("aa", 0, 100_000)], "tx-1");
+    const a = utxo("aa", 0, 100_000);
+    const b = utxo("bb", 0, 546);
+    store.replace([a, b]);
+    store.lock([a], "tx-1");
     store.endTx("tx-1", "confirmed");
-    expect(store.all()).toHaveLength(1);
-    expect(store.spendable().map((u) => u.txid)).toStrictEqual([]);
+    expect(store.all().map((u) => u.txid)).toStrictEqual(["bb"]);
+    expect(store.isLocked(a)).toBe(false);
   });
 
-  it("a rescan replace preserves locked and frozen entries", () => {
+  it("a rescan replace preserves locked entries", () => {
     const store = new BtcUtxoStore();
-    store.replace([utxo("aa", 0, 100_000), utxo("bb", 0, 546)]);
-    store.lock([utxo("aa", 0, 100_000)], "tx-1");
-    store.replace([utxo("cc", 0, 200_000), utxo("bb", 0, 546)]);
+    const a = utxo("aa", 0, 100_000);
+    const b = utxo("bb", 0, 546);
+    store.replace([a, b]);
+    store.lock([a], "tx-1");
+    store.replace([utxo("cc", 0, 200_000), b]);
     const all = store.all().map((u) => `${u.txid}:${u.status}`);
     expect(all).toContain("cc:confirmed");
     expect(all).toContain("aa:locked");
-    expect(store.spendable().map((u) => u.txid)).toStrictEqual(["cc"]);
+    expect(all).toContain("bb:confirmed");
+    expect(store.isLocked(a)).toBe(true);
   });
 });

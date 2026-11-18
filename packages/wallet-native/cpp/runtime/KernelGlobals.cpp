@@ -24,10 +24,12 @@
 
 #if defined(__APPLE__) || defined(__ANDROID__)
 #include <pthread.h>
+#include <time.h>
 #include <unistd.h>
 #elif defined(__linux__)
 #include <cerrno>
 #include <sys/random.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -43,6 +45,7 @@ constexpr size_t kRandomLimit = 65536;
 constexpr double kTimerDelayMax = 2147483647.0;
 constexpr double kPbkdf2IterationsMax = 10000000.0;
 constexpr size_t kPbkdf2LengthMax = 1024;
+
 // Argon2id bounds: generous around the one cost the kernel asks for, tight
 // enough that a script cannot make the worker allocate without limit.
 constexpr double kArgon2MemoryKiBMin = 8.0;
@@ -52,6 +55,27 @@ constexpr double kArgon2LanesMax = 16.0;
 constexpr double kArgon2LengthMin = 4.0;
 constexpr double kArgon2LengthMax = 1024.0;
 constexpr size_t kKdfQueueLimit = 8;
+
+// __qntx.elapsed — the session clock behind the 24 h cap. It must keep running
+// while the device is suspended, like the background lock does
+// (cpp/platform/Lifecycle*): steady_clock on Android/Linux is CLOCK_MONOTONIC,
+// which freezes in suspend (LifecycleAndroid.cpp's own comment), so read the
+// suspend-inclusive clock directly. Apple CLOCK_MONOTONIC counts sleep
+// (LifecycleIos.mm relies on the same). Timers stay on steady_clock — a timer
+// delayed by suspend fires on wake, which is the intended policy.
+double elapsedMillis() {
+#if defined(__APPLE__)
+  return static_cast<double>(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1e6;
+#elif defined(__ANDROID__) || defined(__linux__)
+  timespec ts{};
+  ::clock_gettime(CLOCK_BOOTTIME, &ts);
+  return static_cast<double>(ts.tv_sec) * 1e3 + static_cast<double>(ts.tv_nsec) / 1e6;
+#else
+  return std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+#endif
+}
 
 void fillRandom(uint8_t* out, size_t size) {
 #if defined(__APPLE__) || defined(__ANDROID__)
@@ -402,9 +426,7 @@ void installKernelGlobals(
       rt,
       "elapsed",
       hostFn(rt, "elapsed", 0, [](jsi::Runtime&, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
-        return jsi::Value(std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count());
+        return jsi::Value(elapsedMillis());
       }));
 
   const auto makeSetTimer = [&state](jsi::Runtime& rt) -> jsi::Function {
@@ -431,8 +453,7 @@ void installKernelGlobals(
   installArgon2id(rt, qntx, state);
 
   // __qntx.frames — the W2b injection-table shape over the same plumbing:
-  // post, onMessage, and onIntegrityViolation (the host fires that handler
-  // when it refuses a frame on integrity grounds).
+  // post and onMessage.
   auto frames = jsi::Object(rt);
   frames.setProperty(
       rt,
@@ -443,7 +464,7 @@ void installKernelGlobals(
         }
         auto buffer = args[0].asObject(rt).getArrayBuffer(rt);
         const auto* data = buffer.data(rt);
-        state->postToHost(std::vector<uint8_t>(data, data + buffer.size(rt)));
+        state->postToHost(qntx::SecretBytes(data, buffer.size(rt)));
         return jsi::Value::undefined();
       }));
   frames.setProperty(
@@ -456,23 +477,16 @@ void installKernelGlobals(
         state->messageHandler = args[0].asObject(rt).asFunction(rt);
         return jsi::Value::undefined();
       }));
-  frames.setProperty(
-      rt,
-      "onIntegrityViolation",
-      hostFn(rt, "frames.onIntegrityViolation", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
-        if (count < 1 || !args[0].isObject() || !args[0].asObject(rt).isFunction(rt)) {
-          throw jsi::JSError(rt, "__qntx.frames.onIntegrityViolation expects a function");
-        }
-        state->integrityHandler = args[0].asObject(rt).asFunction(rt);
-        return jsi::Value::undefined();
-      }));
   intrinsics->freeze.call(rt, jsi::Value(rt, frames));
   qntx.setProperty(rt, "frames", jsi::Value(std::move(frames)));
 
   // __qntx.file — one opaque file image: read() -> Uint8Array | undefined,
-  // write(bytes) atomically replaces. The C++ primitive owns durability
-  // (temp + fsync + rename + dir fsync); failures throw so the file store
-  // rejects instead of silently degrading.
+  // replace(next, expected?) atomically swaps the file only when its current
+  // bytes equal `expected` (undefined = the file must not exist), returning
+  // false on a lost race so the file store fails `conflict` instead of
+  // clobbering a concurrent writer. The C++ primitive serializes writers under
+  // a flock and owns durability (temp + fsync + rename + dir fsync); failures
+  // throw so the file store rejects instead of silently degrading.
   auto file = jsi::Object(rt);
   file.setProperty(
       rt,
@@ -487,16 +501,22 @@ void installKernelGlobals(
       }));
   file.setProperty(
       rt,
-      "write",
-      hostFn(rt, "file.write", 1, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
+      "replace",
+      hostFn(rt, "file.replace", 2, [state](jsi::Runtime& rt, const jsi::Value&, const jsi::Value* args, size_t count) -> jsi::Value {
         if (count < 1) {
-          throw jsi::JSError(rt, "__qntx.file.write expects an ArrayBuffer or TypedArray");
+          throw jsi::JSError(rt, "__qntx.file.replace expects (next, expected?)");
         }
-        const auto view =
-            byteViewFromValue(rt, args[0], "__qntx.file.write", *state->intrinsics);
-        kernelFileWrite(
-            state->vaultDirectory, std::vector<uint8_t>(view.data, view.data + view.size));
-        return jsi::Value::undefined();
+        const auto next =
+            byteViewFromValue(rt, args[0], "__qntx.file.replace next", *state->intrinsics);
+        std::optional<std::vector<uint8_t>> expected;
+        if (count >= 2 && !args[1].isUndefined()) {
+          const auto expectedView = byteViewFromValue(
+              rt, args[1], "__qntx.file.replace expected", *state->intrinsics);
+          expected =
+              std::vector<uint8_t>(expectedView.data, expectedView.data + expectedView.size);
+        }
+        return jsi::Value(
+            kernelFileReplace(state->vaultDirectory, next.data, next.size, expected));
       }));
   intrinsics->freeze.call(rt, jsi::Value(rt, file));
   qntx.setProperty(rt, "file", jsi::Value(std::move(file)));

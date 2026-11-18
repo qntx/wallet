@@ -33,7 +33,10 @@ const deps = (body: unknown, calls?: { n: number }) => ({
     }
     return Response.json(body);
   }) as typeof globalThis.fetch,
-  gateway: { url: "https://gw.test", installId: "i" },
+  gateway: {
+    url: "https://gw.test",
+    clientIds: { evm: "i", solana: "i", bitcoin: "i", service: "i" },
+  },
   address: async () => {
     await Promise.resolve();
     return TAKER;

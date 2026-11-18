@@ -147,7 +147,7 @@ export const routeSend = async (
   const { verify, ...rest } = params;
   counter += 1;
   const prepared = await route.prepare(ctx, rest, `req-test-${counter}`);
-  return prepared.submit(verify);
+  return prepared.submit(verify, () => undefined);
 };
 
 let routeCounter = 0;
@@ -162,7 +162,7 @@ export const routeReplace = async (
 ): Promise<TrackedTransaction> => {
   routeCounter += 1;
   const prepared = await route.prepareReplace(ctx, old, mode, `req-replace-${routeCounter}`);
-  return prepared.submit(verify);
+  return prepared.submit(verify, () => undefined);
 };
 
 /** Route-level CPFP for tests that drive a bitcoin route directly. */
@@ -175,7 +175,7 @@ export const routeCpfp = async (
 ): Promise<TrackedTransaction> => {
   routeCounter += 1;
   const prepared = await route.prepareCpfp(ctx, parent, feeRate, `req-cpfp-${routeCounter}`);
-  return prepared.submit(verify);
+  return prepared.submit(verify, () => undefined);
 };
 
 /** `simulateSolana` for rigs that never simulate. */

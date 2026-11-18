@@ -2,10 +2,10 @@ import {
   AccountRole,
   address,
   appendTransactionMessageInstruction,
-  compileTransactionMessage,
+  compileTransaction,
   createTransactionMessage,
   getAddressEncoder,
-  getCompiledTransactionMessageEncoder,
+  getTransactionEncoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
@@ -20,7 +20,6 @@ import type { chains } from "@qntx/wallet/chains";
 import { UNIVERSAL_RESOLVER } from "../src/names/ens.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { REQUEST_TTL_MS, RequestController } from "../src/requests/controller.ts";
-import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
 import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
@@ -40,6 +39,7 @@ import {
   simulateV1Result,
   idleNetworkDeps,
 } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
 
 const SIGNER = "0x1111111111111111111111111111111111111111";
 const ACCOUNT = {
@@ -87,16 +87,27 @@ const intent = (verifiability: DisplayIntent["verifiability"]): DisplayIntent =>
 
 const logger = { warn: () => undefined };
 
+const latch = (): { readonly promise: Promise<void>; readonly resolve: () => void } => {
+  let resolve: () => void = () => undefined;
+  const promise = new Promise<void>((_resolve) => {
+    resolve = _resolve;
+  });
+  return { promise, resolve };
+};
+
 /** A transactions stand-in whose prepared builds expose spies for the pipeline's own rules. */
 function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?: string[] } = {}) {
   const events: string[] = [];
   let submitError: Error | undefined;
   let stale: string | undefined;
+  let buildGate: Promise<unknown> | undefined;
+  let submitHook: ((requestId: string, commit: () => void) => unknown) | undefined;
   const txs: Record<string, TrackedTransaction> = {};
   const transactions = {
     getState: () => ({ txs }),
     prepareSend: async (_p: PrepareParams, requestId: string): Promise<PreparedRequest> => {
       events.push(`prepare ${requestId}`);
+      await buildGate;
       return Promise.resolve({
         txId: `tx-${requestId}`,
         account: ACCOUNT,
@@ -104,11 +115,12 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
         intent: intent(options.verifiability ?? "full"),
         checks: (options.checks ?? []) as PreparedRequest["checks"],
         staleReason: async () => Promise.resolve(stale),
-        submit: async (verify: SendParams["verify"]) => {
+        submit: async (verify: SendParams["verify"], commit: () => void) => {
           events.push(`sign ${verify.kind}`);
           if (submitError !== undefined) {
             throw submitError;
           }
+          await submitHook?.(requestId, commit);
           return Promise.resolve({
             id: `tx-${requestId}`,
             family: "evm",
@@ -139,7 +151,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     created_at: 0,
     tags: [],
   };
-  const timers: Array<{ ms: number; fn: () => unknown; stopped: boolean }> = [];
+  const timers = manualTimers();
   let counter = 0;
   const nextCounter = (): number => {
     counter += 1;
@@ -176,13 +188,7 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     fetch: globalThis.fetch,
     random: (n) => new Uint8Array(n).fill(nextCounter()),
     now: () => now,
-    setTimer: (ms, fn) => {
-      const timer = { ms, fn, stopped: false };
-      timers.push(timer);
-      return () => {
-        timer.stopped = true;
-      };
-    },
+    setTimer: timers.setTimer,
     logger,
   });
   return {
@@ -200,6 +206,12 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
     },
     makeStale: (reason: string | undefined) => {
       stale = reason;
+    },
+    setBuildGate: (gate: Promise<unknown> | undefined) => {
+      buildGate = gate;
+    },
+    setSubmitHook: (hook: ((requestId: string, commit: () => void) => unknown) | undefined) => {
+      submitHook = hook;
     },
   };
 }
@@ -287,9 +299,8 @@ describe("RequestController lifecycle", () => {
     const f = fake();
     await f.controller.init();
     const request = await f.controller.prepare(PARAMS);
-    const [timer] = f.timers;
-    expect(timer?.ms).toBe(REQUEST_TTL_MS);
-    await timer?.fn();
+    expect(f.timers.armed(REQUEST_TTL_MS)).toBe(1);
+    await f.timers.fire(REQUEST_TTL_MS);
     expect(f.controller.getState().requests[request.id]?.stage).toBe("expired");
     expect(f.events).toContain(`release ${request.id}`);
   });
@@ -306,7 +317,7 @@ describe("RequestController lifecycle", () => {
     expect(requests[waiting.id]?.stage).toBe("invalidated");
     expect(requests[done.id]?.stage).toBe("submitted");
     expect(f.events).toContain(`release ${waiting.id}`);
-    expect(f.timers.every((t) => t.stopped)).toBe(true);
+    expect(f.timers.armed()).toBe(0);
     await expect(
       f.controller.approve(waiting.id, "send", approval(waiting, VERIFY)),
     ).rejects.toThrow("invalidated");
@@ -349,8 +360,84 @@ describe("RequestController lifecycle", () => {
     await f.controller.init();
     const pending = f.controller.prepare(PARAMS);
     f.controller.lock();
-    await expect(pending).rejects.toThrow("locked");
+    await expect(pending).rejects.toMatchObject({
+      name: "RequestEndedError",
+      stage: "invalidated",
+    });
     expect(f.events.filter((e) => e.startsWith("release"))).toHaveLength(1);
+  });
+
+  it("a prepare voided while building releases the build and frees the origin claim", async () => {
+    const building = latch();
+    const f = fake();
+    await f.controller.init();
+    const input = {
+      ...PARAMS,
+      origin: { kind: "browser" as const, origin: "https://app.example" },
+    };
+    f.setBuildGate(building.promise);
+    const preparing = f.controller.prepare(input);
+    f.controller.invalidateOrigin("https://app.example");
+    building.resolve();
+    await expect(preparing).rejects.toMatchObject({
+      name: "RequestEndedError",
+      stage: "invalidated",
+    });
+    expect(f.events.filter((e) => e.startsWith("release"))).toHaveLength(1);
+    expect(f.controller.getState().requests).toStrictEqual({});
+    f.setBuildGate(undefined);
+    const next = await f.controller.prepare(input);
+    expect(next.stage).toBe("awaiting-approval");
+  });
+
+  it("invalidateAll voids awaiting, signing and in-flight prepares", async () => {
+    const building = latch();
+    const inside = latch();
+    const continueSign = latch();
+    const f = fake();
+    await f.controller.init();
+    const waiting = await f.controller.prepare(PARAMS);
+    const running = await f.controller.prepare(PARAMS);
+    f.setSubmitHook(async () => {
+      inside.resolve();
+      await continueSign.promise;
+    });
+    const approving = f.controller.approve(running.id, "send", approval(running, VERIFY));
+    await inside.promise;
+    expect(f.controller.getState().requests[running.id]?.stage).toBe("signing");
+    f.setBuildGate(building.promise);
+    const preparing = f.controller.prepare(PARAMS);
+    f.controller.invalidateAll();
+    continueSign.resolve();
+    building.resolve();
+    await expect(approving).rejects.toMatchObject({
+      name: "RequestEndedError",
+      stage: "invalidated",
+    });
+    await expect(preparing).rejects.toMatchObject({
+      name: "RequestEndedError",
+      stage: "invalidated",
+    });
+    const { requests } = f.controller.getState();
+    expect(requests[waiting.id]?.stage).toBe("invalidated");
+    expect(requests[running.id]?.stage).toBe("invalidated");
+  });
+
+  it("a request that commits and then fails ends failed exactly once", async () => {
+    const f = fake();
+    await f.controller.init();
+    const request = await f.controller.prepare(PARAMS);
+    f.setSubmitHook((_requestId, commit) => {
+      commit();
+      throw new Error("broadcast failed");
+    });
+    await expect(
+      f.controller.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toThrow("broadcast failed");
+    expect(f.controller.getState().requests[request.id]?.stage).toBe("failed");
+    const signLog = await f.controller.signLog();
+    const entries = signLog.filter((e) => e.id === request.id);
+    expect(entries.map((e) => e.outcome)).toStrictEqual(["failed"]);
   });
 });
 
@@ -394,7 +481,8 @@ function evmWorld(options: {
   const calls: Array<{ url: string; method: string }> = [];
   const gatewayTable: Rpc = options.gateway ?? {};
   const hostTable: Rpc = options.host ?? {};
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
+  const POLL_MS = 1;
   const signedRequests: unknown[] = [];
   let txCounter = 100;
   const nextTx = (): number => {
@@ -448,7 +536,17 @@ function evmWorld(options: {
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
     gateway:
-      options.gateway === undefined ? undefined : { url: GATEWAY, installId: "a".repeat(32) },
+      options.gateway === undefined
+        ? undefined
+        : {
+            url: GATEWAY,
+            clientIds: {
+              evm: "a".repeat(32),
+              solana: "a".repeat(32),
+              bitcoin: "a".repeat(32),
+              service: "a".repeat(32),
+            },
+          },
   });
   let signed = 0;
   let rejectSign = false;
@@ -472,15 +570,10 @@ function evmWorld(options: {
     networks,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random: (n) => new Uint8Array(n).fill(nextTx()),
-    setTimer: (ms, fn) => {
-      if (ms !== SIMULATION_TIMEOUT_MS) {
-        timers.push(fn);
-      }
-      return () => undefined;
-    },
+    setTimer: timers.setTimer,
     now: () => 0,
     logger: warn,
-    pollMs: 1,
+    pollMs: POLL_MS,
     chains: apis,
   });
   lockTransactions = () => {
@@ -543,6 +636,7 @@ function evmWorld(options: {
     gatewayTable,
     hostTable,
     timers,
+    POLL_MS,
     signedRequests,
     warnings,
     rejectSigning: () => {
@@ -790,7 +884,7 @@ describe("EVM speed-up and cancel through the pipeline", () => {
     const w = evmWorld({});
     const original = await sendAndPrepare(w);
     const r = await w.requests.prepare({ method: "speed-up", txId: original.id });
-    await w.timers[0]?.();
+    await w.timers.fire(w.POLL_MS);
     expect(w.transactions.getState().txs[original.id]?.state).toBe("confirmed");
     const before = w.signCount();
     await expect(w.requests.approve(r.id, "speed-up", approval(r, VERIFY))).rejects.toThrow(
@@ -966,7 +1060,10 @@ const SOL_STAKE = "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf";
 const SOL_OTHER = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
-/** A compiled legacy message with a single Stake `Authorize` to `newAuthority` (role: withdrawer). */
+/**
+ * A serialized legacy transaction with a single Stake `Authorize` to `newAuthority` (role:
+ * withdrawer).
+ */
 const authorizeTx = (newAuthority: string): Uint8Array => {
   const data = new Uint8Array(40);
   const view = new DataView(data.buffer);
@@ -993,12 +1090,10 @@ const authorizeTx = (newAuthority: string): Uint8Array => {
       ),
     ),
   );
-  return new Uint8Array(
-    getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
-  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(message)));
 };
 
-/** A compiled legacy message: SetComputeUnitPrice(`microLamports`) + a 0.001 SOL transfer. */
+/** A serialized legacy transaction: SetComputeUnitPrice(`microLamports`) + a 0.001 SOL transfer. */
 const solTransferTx = (microLamports: bigint): Uint8Array => {
   const data = new Uint8Array(12);
   const view = new DataView(data.buffer);
@@ -1034,9 +1129,7 @@ const solTransferTx = (microLamports: bigint): Uint8Array => {
       ),
     ),
   );
-  return new Uint8Array(
-    getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
-  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(message)));
 };
 
 describe("solana-sign fee checks", () => {

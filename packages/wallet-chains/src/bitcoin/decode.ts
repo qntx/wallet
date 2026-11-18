@@ -10,6 +10,10 @@ import { isTaprootInput } from "./psbt.ts";
 const SATS = "sats";
 const SIGHASH_SINGLE_ANYONECANPAY = 0x83;
 const OP_RETURN = 0x6a;
+/** Bitcoin Core `CScript::IsUnspendable`: OP_RETURN first, or over MAX_SCRIPT_SIZE. */
+const MAX_SCRIPT_SIZE = 10_000;
+const unspendable = (script: Uint8Array): boolean =>
+  script[0] === OP_RETURN || script.length > MAX_SCRIPT_SIZE;
 
 /** Btc-signer's parse failures are foreign exceptions — the request is a malformed PSBT. */
 const parsePsbt = (psbt: Uint8Array): Transaction => {
@@ -26,21 +30,6 @@ const bytesToHex = (bytes: Uint8Array): string => {
     out += b.toString(16).padStart(2, "0");
   }
   return out;
-};
-
-type DecodedOutput = {
-  readonly amount: bigint;
-  readonly script: string;
-  readonly opReturn: boolean;
-};
-
-/** Decodes an output scriptPubKey; OP_RETURN gets an amount-0 display row. */
-const decodeOutput = (script: Uint8Array, amount: bigint): DecodedOutput => {
-  const hex = bytesToHex(script);
-  if (script[0] === OP_RETURN) {
-    return { amount, script: hex, opReturn: true };
-  }
-  return { amount, script: hex, opReturn: false };
 };
 
 export type BitcoinDisplay = {
@@ -63,15 +52,25 @@ export const decodeBitcoinPsbt = (
   let canFee = true;
   let outSum = 0n;
   for (let i = 0; i < tx.outputsLength; i++) {
-    const output = tx.getOutput(i);
-    const { script } = output;
-    const { amount } = output;
+    const { script, amount } = tx.getOutput(i);
     if (script === undefined || amount === undefined) {
+      throw new ChainError("invalid-request", "PSBT output without script or amount");
+    }
+    const scriptHex = bytesToHex(script);
+    outSum += amount;
+    if (ownScripts.has(scriptHex)) {
       continue;
     }
-    const decoded = decodeOutput(script, amount);
-    outSum += amount;
-    if (decoded.opReturn || ownScripts.has(decoded.script)) {
+    if (unspendable(script)) {
+      // Value sent to an unspendable output is destroyed — a burn line, not a send.
+      if (amount > 0n) {
+        outflows.push({
+          to: scriptHex,
+          amount: { asset: SATS, amount: amount.toString(10) },
+          verified: true,
+          burn: true,
+        });
+      }
       continue;
     }
     let addr: string | undefined;
@@ -82,7 +81,7 @@ export const decodeBitcoinPsbt = (
       addr = undefined;
     }
     outflows.push({
-      to: addr ?? decoded.script,
+      to: addr ?? scriptHex,
       amount: { asset: SATS, amount: amount.toString(10) },
       verified: addr !== undefined,
     });
@@ -117,6 +116,11 @@ export const decodeBitcoinPsbt = (
   const listing = request.sign.some(
     (s) => tx.getInput(s.index).sighashType === SIGHASH_SINGLE_ANYONECANPAY,
   );
+  // Outputs that exceed the proven inputs can never settle — the request is malformed. A listing
+  // (SIGHASH_SINGLE|ANYONECANPAY) skips this: its whole point is that a buyer adds more inputs.
+  if (canFee && !listing && inSum < outSum) {
+    throw new ChainError("invalid-request", "PSBT outputs exceed its inputs");
+  }
   const fee =
     canFee && !listing
       ? { max: { asset: SATS, amount: (inSum - outSum).toString(10) } }

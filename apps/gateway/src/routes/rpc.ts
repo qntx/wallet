@@ -4,9 +4,11 @@ import { Hono } from "hono";
 import {
   PROVIDERS_HEADER,
   accepts,
+  containsBroadcast,
   evmRpcRequest,
   rpc,
   rpcRequest,
+  rpcRequestCost,
   rpcResponse,
   solanaRpcRequest,
 } from "@qntx/wallet-engine/gateway/contract";
@@ -15,10 +17,24 @@ import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
+import type { RateLimitVariables } from "../middleware/rate-limit.ts";
+import { ResponseTooLarge, readCapped } from "../providers/body.ts";
 import type { Forwarder } from "../providers/forward.ts";
+import { ProviderFailure } from "../providers/forward.ts";
 
 /** Well above the largest raw transaction a node relays (128 kB of bytes, hex-encoded) in a batch. */
 const MAX_BODY_BYTES = 512 * 1024;
+
+/**
+ * ~10x the largest ordinary response measured (0.84 MB of eth_getBlockReceipts); parsed it peaks
+ * near 30 MB, leaving headroom for concurrent requests under the 128 MB isolate limit.
+ */
+const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
+
+/** Upstream statuses the request provoked: the caller's own 400 answer, never retried. */
+const REQUEST_ERROR_STATUSES: ReadonlySet<number> = new Set([400, 413, 422]);
+/** Upstream statuses where the provider provably refused the call before processing it. */
+const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
 
 type Deps = {
   readonly fetch: typeof globalThis.fetch;
@@ -31,8 +47,8 @@ export function rpcRoutes({
   fetch,
   forwarder,
   served,
-}: Deps): Hono<{ Variables: NetworkVariables }> {
-  const routes = new Hono<{ Variables: NetworkVariables }>();
+}: Deps): Hono<{ Variables: NetworkVariables & RateLimitVariables }> {
+  const routes = new Hono<{ Variables: NetworkVariables & RateLimitVariables }>();
   routes.post(
     rpc.path,
     limitBody(MAX_BODY_BYTES),
@@ -49,12 +65,20 @@ export function rpcRoutes({
       if (!accepts(allowed, body)) {
         throw new GatewayHttpError(400, "invalid-request");
       }
+      // The request paid one unit up front; a batch's calls now pay their real summed cost.
+      await c.get("charge")(rpcRequestCost(body) - 1);
       const payload = JSON.stringify(body);
 
       const { value, providerId } = await forwarder.run(
         network.providers,
         async (provider, signal) => {
-          const headers = (await provider.auth?.()) ?? {};
+          let headers: Readonly<Record<string, string>>;
+          try {
+            headers = (await provider.auth?.()) ?? {};
+          } catch {
+            // The call was never sent: a failed auth lookup cannot poison the request's outcome.
+            throw new ProviderFailure("auth", true);
+          }
           const response = await fetch(provider.url, {
             method: "POST",
             headers: { "content-type": "application/json", ...headers },
@@ -62,16 +86,40 @@ export function rpcRoutes({
             signal,
           });
           if (!response.ok) {
-            throw new Error(`upstream status ${response.status}`);
+            if (REQUEST_ERROR_STATUSES.has(response.status)) {
+              // The upstream rejected the request itself; its body is never forwarded.
+              throw new GatewayHttpError(400, "invalid-request");
+            }
+            throw new ProviderFailure(
+              `status-${response.status}`,
+              REFUSED_STATUSES.has(response.status),
+            );
           }
-          const text = await response.text();
+          let text: string;
+          try {
+            text = await readCapped(response, MAX_RESPONSE_BYTES);
+          } catch (error) {
+            if (error instanceof ResponseTooLarge) {
+              // The caller chose a response too large to relay; the next provider would
+              // return the same, so this is the request's own answer — no failover.
+              throw new GatewayHttpError(400, "invalid-request");
+            }
+            throw error;
+          }
+          let parsed: unknown;
+          try {
+            parsed = JSON.parse(text);
+          } catch {
+            parsed = undefined;
+          }
           // A JSON-RPC error object is a valid answer and is returned as-is; only a malformed
           // body counts as a provider failure.
-          if (!accepts(rpcResponse, JSON.parse(text))) {
-            throw new Error("upstream body is not JSON-RPC");
+          if (!accepts(rpcResponse, parsed)) {
+            throw new ProviderFailure("malformed", false);
           }
           return text;
         },
+        { broadcast: containsBroadcast(body) },
       );
 
       return c.body(value, 200, {

@@ -36,10 +36,12 @@ export type VaultHooks = {
 /** Vault health, recomputed on every load; only ok serves the full method set. */
 export type Health = "ok" | "corrupted" | "unsupported" | "unavailable";
 
-/** Options for a commit that also rotates the DEK (wired by the rotation command). */
+/** Options for a commit sealed under a DEK other than the live session's. */
 export type CommitOptions = {
   /** Swap the live session to a new DEK/keyId after the commit lands; wiped on failure. */
   readonly rotate?: { readonly dek: Secret; readonly keyId: string };
+  /** The DEK of a vault being established — no session holds it yet. Not consumed. */
+  readonly dek?: Secret;
 };
 
 /**
@@ -61,18 +63,20 @@ export type KernelContext = {
   /**
    * Atomically commits `ops`. Unless the commit is the `init`, carries `clear`, or only touches the
    * failure counters, an `expect-revision` guard is prepended — a stale writer fails with
-   * `conflict` (the image is reloaded best-effort before the error propagates). Non-KernelError
-   * failures map to `unavailable`. On success the image reloads and `health` updates.
+   * `conflict` (the image is reloaded best-effort before the error propagates). A commit that
+   * changes the vault's structure also rewrites the manifest, sealed under the rotated DEK, the
+   * establishing DEK or the live session's (`locked` without one). Non-KernelError failures map to
+   * `unavailable`. On success the image reloads and `health` updates.
    */
   readonly commit: (ops: ReadonlyArray<StoreOp>, options?: CommitOptions) => Promise<void>;
   /** Reloads the store into `image` and recomputes `health`; throws the classified error. */
   readonly reload: () => Promise<void>;
   /**
-   * Reconciles live module state from `prev` to the current `image` under the unlocked session:
-   * removed records are forgotten, added or changed rows are opened with the session DEK and
-   * claimed by their module, and changed factor rows are bound-checked. Any authentication failure
-   * latches `corrupted` and locks the session `invalidated`. A keyId mismatch invalidates the
-   * session outright. No-op unless the session is unlocked.
+   * Reconciles live module state from `prev` to the current `image` under the unlocked session: the
+   * image must match its manifest, removed records are forgotten, added or changed rows are opened
+   * with the session DEK and claimed by their module, and changed factor rows are bound-checked.
+   * Any authentication failure latches `corrupted` and locks the session `invalidated`. A keyId
+   * mismatch invalidates the session outright. No-op unless the session is unlocked.
    */
   readonly reconcile: (prev: VaultImage) => void;
 };

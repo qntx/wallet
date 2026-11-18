@@ -4,12 +4,18 @@
  * client, close the store and reset account state. Transitions are serialized on one promise chain,
  * so an unlock→lock flip can never overlap a still-opening store.
  */
+import { base58 } from "@scure/base";
+
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import { normalizeSolana } from "@qntx/wallet-chains/solana";
+import {
+  addSolanaSignature,
+  decodeSolanaTransaction,
+  normalizeSolana,
+} from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
@@ -31,6 +37,7 @@ import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
+import { gatewaySession } from "./gateway/client.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
 import { MetaSyncController } from "./meta/controller.ts";
@@ -103,12 +110,16 @@ export type EngineOptions = {
   readonly rpc?: Readonly<Record<string, ReadonlyArray<string>>>;
   /**
    * The wallet gateway: tried first for the networks it serves (read at each unlock) unless a
-   * network has custom endpoints. The install id is sent only to the gateway's origin.
+   * network has custom endpoints. The engine draws per-session, per-scope client ids — sent only to
+   * the gateway's origin — so requests cannot be joined across families or installs.
    */
-  readonly gateway?: { readonly url: string; readonly installId: string };
+  readonly gateway?: { readonly url: string };
   /** Development builds: also accept `http://localhost` as a dApp origin. */
   readonly allowLocalhostOrigins?: boolean;
-  /** Injected timer for polling and refresh loops; defaults to setTimeout. */
+  /**
+   * Injected one-shot timer with `setTimeout` semantics (each call runs `fn` at most once); polling
+   * loops re-arm it after every run. Defaults to setTimeout.
+   */
   readonly setTimer?: (ms: number, fn: () => void) => () => void;
   /** Kind-30078 wallet-metadata sync; absent → no wallet metadata is synced. */
   readonly metaSync?: MetaSyncConfig;
@@ -119,7 +130,7 @@ export type EngineOptions = {
 export type WalletEngine = {
   readonly networks: NetworkController;
   readonly assets: AssetsController;
-  readonly transactions: TransactionController;
+  readonly transactions: Omit<TransactionController, `prepare${string}`>;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
   readonly connections: ConnectionController;
@@ -224,10 +235,12 @@ const defaultSetTimer = (ms: number, fn: () => void): (() => void) => {
 
 export function createWalletEngine(options: EngineOptions): WalletEngine {
   const setTimer = options.setTimer ?? defaultSetTimer;
+  const gateway =
+    options.gateway === undefined ? undefined : gatewaySession(options.gateway.url, options.random);
 
   const phishing = new PhishingController({
     publicStore: options.publicStore,
-    gateway: options.gateway,
+    gateway,
     fetch: options.fetch,
     now: options.now,
     setTimer,
@@ -269,13 +282,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     rpc: options.rpc ?? {},
     openStore: options.openStore,
     logger: options.logger,
-    gateway: options.gateway,
+    gateway,
     setTimer,
     random: options.random,
   });
 
   const assets = new AssetsController({
     networks,
+    // Deferred like every other chains() call here — resolving the api at construction would
+    // validate the wallet before any balance read needs it.
+    chains: {
+      account: async (params) => chains(options.wallet).account(params),
+    },
     openStore: options.openStore,
     setTimer,
     logger: options.logger,
@@ -368,7 +386,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
-    solanaSign: async (account, network, request, verify) => {
+    solanaSign: async (account, network, request, verify, commit) => {
       const rpc = networks.solanaRpc(network);
       const adapter = new SolanaChainAdapter();
       const hdAccount = {
@@ -378,43 +396,34 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         template: "solana.bip44-change" as const,
       };
       if (request.kind === "transactions") {
-        const signatures: string[] = [];
-        const signedTransactions: Uint8Array[] = [];
-        for (const messageBytes of request.transactions) {
-          // normalizeSolana validates the fee payer; chains.sign then verifies/signs it.
-          normalizeSolana(
-            {
-              kind: "solana.transaction",
-              network,
-              account: hdAccount,
-              message: messageBytes,
-            },
-            account.address,
-          );
+        const wires: Uint8Array[] = [];
+        for (const wire of request.transactions) {
+          const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
           const result = await chains(options.wallet).sign({
             request: {
               kind: "solana.transaction",
               network,
               account: hdAccount,
-              message: messageBytes,
+              message,
             },
             verify,
           });
           if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
             throw new Error("unexpected solana sign result");
           }
-          const wire = adapter.finalize(messageBytes, [result.signature]);
-          if (request.send) {
-            // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
-            signatures.push(await adapter.broadcast(rpc, wire));
-          } else {
-            signedTransactions.push(wire);
-          }
+          wires.push(addSolanaSignature(wire, account.address, result.signature));
         }
-        return request.send
-          ? { kind: "solana.transactions" as const, send: true, signatures }
-          : { kind: "solana.transactions" as const, send: false, signedTransactions };
+        if (!request.send) {
+          return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
+        }
+        commit();
+        const signatures: string[] = [];
+        for (const wire of wires) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
+          signatures.push(await adapter.broadcast(rpc, wire));
+        }
+        return { kind: "solana.transactions" as const, send: true, signatures };
       }
       normalizeSolana(
         {
@@ -443,13 +452,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
-    bitcoinSignPsbts: async (_account, network, prepared, send, verify) => {
+    bitcoinSignPsbts: async (_account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids } = await signDappPsbts(
         chains(options.wallet),
         networks.esplora(network),
         prepared,
         send,
         verify,
+        commit,
       );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
@@ -566,6 +576,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
     allowLocalhost: options.allowLocalhostOrigins ?? false,
     selectedGroup: () => accounts.getState().selected ?? undefined,
+    onSelectedGroup: (listener) =>
+      accounts.store.subscribe((state, previous) => {
+        if (
+          state.selected?.walletId !== previous.selected?.walletId ||
+          state.selected?.groupIndex !== previous.selected?.groupIndex
+        ) {
+          listener();
+        }
+      }),
+    invalidateAll: () => {
+      requests.invalidateAll();
+    },
     evmAddress: async (group, network) => {
       const account = await chains(options.wallet).account({
         ...group,
@@ -627,16 +649,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     spark: controller,
-    sparkAccount: () => {
-      const group = connections.activeGroup();
-      return group === undefined
-        ? undefined
-        : {
-            walletId: group.walletId,
-            groupIndex: group.groupIndex,
-            network: options.sparkNetwork,
-          };
-    },
+    sparkNetwork: options.sparkNetwork,
     now: options.now,
     alias: options.weblnAlias,
     lightningMaxFee: options.lightningMaxFee,
@@ -655,16 +668,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         template: "solana.bip44-change",
         network,
       });
-      if (
-        !("address" in account) ||
-        !("publicKey" in account) ||
-        !(account.publicKey instanceof Uint8Array)
-      ) {
+      if (!("address" in account)) {
         throw new Error("no Solana account for the group");
       }
-      return { address: account.address, publicKey: account.publicKey };
+      // A Solana address is the base58 of the ed25519 public key itself.
+      return { address: account.address, publicKey: base58.decode(account.address) };
     },
-    activeGroup: () => connections.activeGroup(),
     solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",
   });
 
@@ -672,7 +681,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     bitcoinAccount,
-    activeGroup: () => connections.activeGroup(),
     bitcoinNetwork: () => {
       const enabled = networks.enabled("bitcoin");
       const mainnet = BITCOIN_CHAIN_IDS["bitcoin:mainnet"] ?? "";
@@ -822,7 +830,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         fetchBridgeQuote(
           {
             fetch: options.fetch,
-            gateway: options.gateway,
+            gateway,
             address: evmAddressOf,
             now: options.now,
           },
@@ -841,7 +849,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         (params.network.startsWith("solana:") ? fetchJupiterQuote : fetchSwapQuote)(
           {
             fetch: options.fetch,
-            gateway: options.gateway,
+            gateway,
             address: evmAddressOf,
             now: options.now,
           },

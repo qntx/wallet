@@ -199,7 +199,7 @@ async function establishVault(
     await keystore?.clear();
     const established = establishOps(ctx.platform, await factorRowsFor(), records);
     ({ keyId } = established);
-    await ctx.commit(established.ops);
+    await ctx.commit(established.ops, { dek });
   } catch (error) {
     dek.wipe();
     // Best effort; the establish error is the one the caller needs.

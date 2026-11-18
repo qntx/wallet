@@ -173,12 +173,13 @@ export function prepareZapAction(
     checks: feeCheck(prepared.amountSats, maxFeeSats),
     staleReason: (now) =>
       prepared.expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "zap invoice expired" : undefined,
-    execute: async (spark, verify) => ({
+    execute: async (spark, verify, commit) => ({
       kind: "lightning",
       payment: await spark.payInvoice(account, {
         invoice: prepared.invoice,
         maxFeeSats,
         verify,
+        commit,
         note: {
           kind: "zap",
           recipientPubkey: prepared.recipientPubkey,

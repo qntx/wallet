@@ -64,11 +64,12 @@ const amount = (
   kind: SeaportItem["kind"],
   token: string,
   value: bigint,
+  identifier: bigint,
   chainId: number,
   table: EvmTokenTable,
 ): AssetAmount => {
   if (kind === "native") {
-    return { asset: EVM_NATIVE_ASSET, amount: value.toString(10), symbol: "ETH", decimals: 18 };
+    return { asset: EVM_NATIVE_ASSET, amount: value.toString(10) };
   }
   if (kind === "erc20") {
     const found = lookupEvmToken(table, chainId, token);
@@ -78,6 +79,10 @@ const amount = (
       ...(found === undefined ? {} : { symbol: found.symbol, decimals: found.decimals }),
     };
   }
+  if (kind === "erc721" || kind === "erc1155") {
+    return { asset: token, amount: value.toString(10), tokenId: identifier.toString(10) };
+  }
+  // Criteria items are an unspecified token of the collection — the prompt renders them by kind.
   return { asset: token, amount: value.toString(10) };
 };
 
@@ -105,8 +110,8 @@ const item = (
     kind,
     token,
     identifier: identifier.toString(10),
-    startAmount: amount(kind, token, start, chainId, table),
-    endAmount: amount(kind, token, end, chainId, table),
+    startAmount: amount(kind, token, start, identifier, chainId, table),
+    endAmount: amount(kind, token, end, identifier, chainId, table),
   };
 };
 

@@ -32,6 +32,8 @@ import {
   tokensStub,
   idleNetworkDeps,
 } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const NOSTR_PUBKEY = "a".repeat(64);
 const RECIPIENT2 = "0x000000000000000000000000000000000000dead";
@@ -340,7 +342,7 @@ const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
 };
 
 describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
-  const rig = async (url: string, timers: Array<() => unknown>) => {
+  const rig = async (url: string, timers: ManualTimers) => {
     const { wallet, walletId } = await realWallet();
     const acct = {
       kind: "hd" as const,
@@ -368,10 +370,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
       }),
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       random: taggedRandom(),
-      setTimer: (_ms, fn) => {
-        timers.push(fn);
-        return () => {};
-      },
+      setTimer: timers.setTimer,
       now: () => 1000,
       logger: anvilLogger,
       pollMs: 1,
@@ -384,7 +383,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
     const port = 18551;
     const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
     await sleep(1500);
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     try {
       const url = `http://127.0.0.1:${port}`;
       const { ctl, acct } = await rig(url, timers);
@@ -401,11 +400,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
       expect(bumped.state).toBe("submitted");
       expect(bumped.nonce).toBe(original.nonce);
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
-      await Promise.all(
-        timers.map(async (fn) => {
-          await fn();
-        }),
-      );
+      await timers.fire();
       const { txs } = ctl.getState();
       expect(txs[bumped.id]?.state).toBe("confirmed");
       expect(txs[original.id]?.state).toBe("replaced");
@@ -418,7 +413,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
     const port = 18552;
     const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
     await sleep(1500);
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     try {
       const url = `http://127.0.0.1:${port}`;
       const { ctl, acct } = await rig(url, timers);
@@ -433,11 +428,7 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
       const cancelled = await replaceVia(ctl, original.id, "cancel", VERIFY);
       expect(cancelled.state).toBe("submitted");
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
-      await Promise.all(
-        timers.map(async (fn) => {
-          await fn();
-        }),
-      );
+      await timers.fire();
       const { txs } = ctl.getState();
       expect(txs[cancelled.id]?.state).toBe("confirmed");
       expect(txs[original.id]?.state).toBe("replaced");
@@ -454,13 +445,9 @@ describe.runIf(RUN)("anvil e2e: engine.transactions replace", () => {
     const port = 18553;
     const proc = execFile(anvil(), ["--port", String(port), "--chain-id", "1", "--silent"]);
     await sleep(1500);
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const pollAll = async () => {
-      await Promise.all(
-        timers.map(async (fn) => {
-          await fn();
-        }),
-      );
+      await timers.fire();
     };
     try {
       const url = `http://127.0.0.1:${port}`;
@@ -584,16 +571,13 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: anvilLogger,
       });
-      const timers: Array<() => unknown> = [];
+      const timers = manualTimers();
       const transactions = new TransactionController({
         wallet,
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random,
-        setTimer: (_ms, fn) => {
-          timers.push(fn);
-          return () => {};
-        },
+        setTimer: timers.setTimer,
         now: () => 1000,
         logger: anvilLogger,
         pollMs: 1,
@@ -631,6 +615,8 @@ describe.runIf(RUN)("anvil e2e: dApp eth_sendTransaction", () => {
         logger: anvilLogger,
         allowLocalhost: false,
         selectedGroup: () => ({ walletId, groupIndex: 0 }),
+        onSelectedGroup: () => () => undefined,
+        invalidateAll: () => undefined,
         evmAddress: async () => Promise.resolve(from),
         bitcoinAddress: async () => Promise.resolve("bc1qunused"),
         solanaAddress: async () => Promise.resolve(from),
@@ -757,16 +743,13 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: anvilLogger,
       });
-      const timers: Array<() => unknown> = [];
+      const timers = manualTimers();
       const transactions = new TransactionController({
         wallet,
         networks,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random,
-        setTimer: (_ms, fn) => {
-          timers.push(fn);
-          return () => {};
-        },
+        setTimer: timers.setTimer,
         now: () => 1000,
         logger: anvilLogger,
         pollMs: 1,
@@ -801,6 +784,8 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
         logger: anvilLogger,
         allowLocalhost: false,
         selectedGroup: () => ({ walletId, groupIndex: 0 }),
+        onSelectedGroup: () => () => undefined,
+        invalidateAll: () => undefined,
         evmAddress: async () => Promise.resolve(from),
         bitcoinAddress: async () => Promise.resolve("bc1qunused"),
         solanaAddress: async () => Promise.resolve(from),
@@ -879,11 +864,7 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
       })) as { status: number; atomic: boolean; receipts?: unknown[] };
       expect(reply.atomic).toBe(true);
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
-      await Promise.all(
-        timers.map(async (fn) => {
-          await fn();
-        }),
-      );
+      await timers.fire();
       const reply2 = (await handler.handle(site, {
         method: "wallet_getCallsStatus",
         params: [first.id],
@@ -906,11 +887,7 @@ describe.runIf(RUN)("anvil e2e: wallet_sendCalls", () => {
       const parsed2 = await rpcCall(url, "eth_getTransactionByHash", [batchTx2?.hash]);
       expect((parsed2 as { type: string }).type).toBe("0x2");
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
-      await Promise.all(
-        timers.map(async (fn) => {
-          await fn();
-        }),
-      );
+      await timers.fire();
       const reply3 = (await handler.handle(site, {
         method: "wallet_getCallsStatus",
         params: [second.id],

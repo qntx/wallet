@@ -126,7 +126,7 @@ struct KernelRuntime::Impl {
   void loop();
   void fail(std::string message);
   void teardown();
-  void deliver(std::vector<uint8_t> bytes);
+  void deliver(std::shared_ptr<OwningBuffer> frame);
   // Queues a task that runs fn(rt) on the kernel thread. Accepts work even
   // after `stopping`: queued-but-unrun tasks are destroyed by teardown, which
   // runs before the runtime itself is destroyed — so jsi values captured by
@@ -194,8 +194,12 @@ bool KernelRuntime::waitUntilStopped(std::chrono::milliseconds timeout) const {
   return impl.stoppedCv.wait_for(lock, timeout, [&] { return impl.stopped; });
 }
 
-void KernelRuntime::post(std::vector<uint8_t> bytes) {
+void KernelRuntime::post(SecretBytes bytes) {
   auto& impl = *impl_;
+  // Wrap before any early return: the shared owner wipes the bytes whichever
+  // path drops it — stopping, cap refusal, teardown clearing the queue, or the
+  // delivered ArrayBuffer's last release.
+  auto frame = std::make_shared<OwningBuffer>(std::move(bytes));
   std::function<void()> integrity;
   {
     std::lock_guard<std::mutex> lock(impl.mutex);
@@ -207,12 +211,12 @@ void KernelRuntime::post(std::vector<uint8_t> bytes) {
       integrity = impl.hooks.onIntegrity;
     } else {
       impl.pendingPosts += 1;
-      impl.immediate.push_back([&impl, bytes = std::move(bytes)]() mutable {
+      impl.immediate.push_back([&impl, frame = std::move(frame)]() mutable {
         {
           std::lock_guard<std::mutex> inner(impl.mutex);
           impl.pendingPosts -= 1;
         }
-        impl.deliver(std::move(bytes));
+        impl.deliver(std::move(frame));
       });
     }
   }
@@ -394,11 +398,11 @@ void KernelRuntime::Impl::loop() {
   }
 }
 
-void KernelRuntime::Impl::deliver(std::vector<uint8_t> bytes) {
+void KernelRuntime::Impl::deliver(std::shared_ptr<OwningBuffer> frame) {
   if (!globals->messageHandler.has_value()) {
     return;
   }
-  auto buffer = rt->createArrayBuffer(std::make_shared<OwningBuffer>(std::move(bytes)));
+  auto buffer = rt->createArrayBuffer(std::move(frame));
   globals->messageHandler->call(*rt, jsi::Value(std::move(buffer)));
 }
 
@@ -465,7 +469,6 @@ void KernelRuntime::Impl::teardown() {
   // Drop every jsi value before the runtime itself.
   globals->intrinsics.reset();
   globals->messageHandler.reset();
-  globals->integrityHandler.reset();
   for (const auto& call : globals->pending) {
     call->done.reset();
   }

@@ -165,6 +165,48 @@ export const withNativeAmountMeta = (
           },
         }),
     ...(i.calls === undefined ? {} : { calls: i.calls.map(decorate) }),
+    // Recognised typed-data content carries amounts too; the raw `data` JSON is never decorated.
+    ...(i.message === undefined || i.message.kind !== "typed-data"
+      ? {}
+      : {
+          message: {
+            ...i.message,
+            ...(i.message.seaport === undefined
+              ? {}
+              : {
+                  seaport: {
+                    ...i.message.seaport,
+                    offer: i.message.seaport.offer.map((item) => ({
+                      ...item,
+                      startAmount: amount(item.startAmount),
+                      endAmount: amount(item.endAmount),
+                    })),
+                    consideration: i.message.seaport.consideration.map((item) => ({
+                      ...item,
+                      startAmount: amount(item.startAmount),
+                      endAmount: amount(item.endAmount),
+                    })),
+                  },
+                }),
+            ...(i.message.safe === undefined
+              ? {}
+              : {
+                  safe: {
+                    ...i.message.safe,
+                    calls: i.message.safe.calls.map(decorate),
+                    ...(i.message.safe.refund === undefined
+                      ? {}
+                      : {
+                          refund: {
+                            ...i.message.safe.refund,
+                            gasPrice: amount(i.message.safe.refund.gasPrice),
+                            amount: amount(i.message.safe.refund.amount),
+                          },
+                        }),
+                  },
+                }),
+          },
+        }),
   });
   return decorate(intent);
 };

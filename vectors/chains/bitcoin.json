@@ -2,7 +2,7 @@
   "sources": {
     "bip84": "https://github.com/bitcoin/bips/blob/master/bip-0084.mediawiki",
     "bip86": "https://github.com/bitcoin/bips/blob/master/bip-0086.mediawiki",
-    "bip322": "https://github.com/bitcoin/bips/blob/master/bip-0322/basic-test-vectors.json",
+    "bip322": "https://github.com/bitcoin/bips/blob/master/bip-0322/basic-test-vectors.json and generated-test-vectors.json",
     "legacyMessage": "https://github.com/spesmilo/electrum/blob/master/tests/test_bitcoin.py (test_signmessage_legacy_address)",
     "genesis": "https://github.com/bitcoin/bitcoin/blob/master/src/kernel/chainparams.cpp (assert(consensus.hashGenesisBlock))"
   },
@@ -31,12 +31,20 @@
       {
         "message": "",
         "messageHash": "c90c269c4f8fcbe6880f72a721ddfbf1914268a794cbb21cfafee13770ae19f1",
-        "toSpendTxHash": "c5680aa69bb8d860bf82d4e9cd3504b55dde018de765a91bb566283c545a99a7"
+        "toSpendTxHash": "c5680aa69bb8d860bf82d4e9cd3504b55dde018de765a91bb566283c545a99a7",
+        "toSignTxHash": "1e9654e951a5ba44c8604c4de6c67fd78a27e81dcadcfe1edf638ba3aaebaed6"
       },
       {
         "message": "Hello World",
         "messageHash": "f0eb03b1a75ac6d9847f55c624a99169b5dccba2a31f5b23bea77ba270de0a7a",
-        "toSpendTxHash": "b79d196740ad5217771c1098fc4a4b51e0535c32236c71f1ea4d61a2d603352b"
+        "toSpendTxHash": "b79d196740ad5217771c1098fc4a4b51e0535c32236c71f1ea4d61a2d603352b",
+        "toSignTxHash": "88737ae86f2077145f93cc4b153ae9a1cb8d56afa511988c149c5c8c9d93bddf"
+      },
+      {
+        "message": "UTF-8 support: öäüéàè 测试文本 😄",
+        "messageHash": "43936b237ea38c7794eb5d755e0d220b6db92ebfc5c8f482759d22b1286376d7",
+        "toSpendTxHash": "c8f4f525fe8afb1bc09b44175bd2096f079c98425e8a1be676b712add1fb62f0",
+        "toSignTxHash": "8f488e06b89eafd019ec528109eafaf7f1d1811fd617aa1eeb9658f1c1be6586"
       }
     ],
     "simple": [
@@ -52,6 +60,24 @@
         "signatures": [
           "smpAkcwRAIgZRfIY3p7/DoVTty6YZbWS71bc5Vct9p9Fia83eRmw2QCICK/ENGfwLtptFluMGs2KsqoNSk89pO7F29zJLUx9a/sASECx/EgAxlkQpQ9hYjgGu6EBCPMVPwVIVJqO4XCsMvViHI=",
           "smpAkgwRQIhAOzyynlqt93lOKJr+wmmxIens//zPzl9tqIOua93wO6MAiBi5n5EyAcPScOjf1lAqIUIQtr3zKNeavYabHyR8eGhowEhAsfxIAMZZEKUPYWI4BruhAQjzFT8FSFSajuFwrDL1Yhy"
+        ]
+      },
+      {
+        "message": "2V6TUTMSH4VQ3Z7WZWKYD7DFNH",
+        "type": "p2wpkh",
+        "wif": "KySmn2yeCukjHXnSu3M6vX7tNok4weu1FKbNEuVvm2b3ZidKhB4L",
+        "address": "bc1qqthe0hz8klx90e7stf6shclhsvqd5ly96pn53v",
+        "signatures": [
+          "smpAkgwRQIhALC6hdfxNy1n45d7UXSskRBdfZW0Al259E1kDMpipdYkAiAJPfZqb+WurZuf1apU5xeE6Igui9dvt5tihQLDvxlY1AEhAqbnruyo677ktQjio7XOchO3w51Dh9AbRVngha5jtNfT"
+        ]
+      },
+      {
+        "message": "PURVOQ544B6HUATVBJZN5EZJUU",
+        "type": "p2tr",
+        "wif": "L5XqN6ckPPsDiTbRxcsthwiWpDBfWLo4uquUEydsPt8rSMoTpqpc",
+        "address": "bc1pcquvhrqv0q68t4m0hfq6tpn006qrskyc7yrqnp2uyrf2emg3wynsdjyk38",
+        "signatures": [
+          "smpAUB6B2Rbupzua8LTQIF06516wzl+cwKy1be8RgoiW0riyXdKwe6GTz/5Hnb37m67pJwIKCh+D5jDueG6KpvYpmu8"
         ]
       }
     ]

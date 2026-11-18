@@ -15,6 +15,15 @@ import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2pkh, p2sh, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
 import { Transaction } from "@scure/btc-signer/transaction.js";
+import {
+  address,
+  blockhash,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { HDKey as Slip10 } from "micro-key-producer/slip10.js";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -47,6 +56,9 @@ function ok(response: KernelResponse): ProtocolValue {
     throw new Error(`expected ok, got ${JSON.stringify(response.err)}`);
   }
   return response.ok;
+}
+function errCode(response: KernelResponse): string | undefined {
+  return "err" in response ? response.err.code : undefined;
 }
 function field(value: ProtocolValue, key: string): ProtocolValue {
   if (typeof value !== "object" || value === null || Symbol.iterator in value) {
@@ -697,6 +709,61 @@ describe("chain.sign", () => {
     );
     const txRes = ok(await callSign(h, session, txReq));
     expect(verifySolanaSignature(txMsg, bytesField(txRes, "signature"), SOL_ADDRESS)).toBe(true);
+    const msg = utf8ToBytes("hello solana");
+    const msgReq = normalizeSolana(
+      {
+        kind: "solana.message",
+        network: vectors.solana.network,
+        account,
+        message: msg,
+        format: "raw",
+      },
+      SOL_ADDRESS,
+    );
+    const msgRes = ok(await callSign(h, session, msgReq));
+    expect(verifySolanaSignature(msg, bytesField(msgRes, "signature"), SOL_ADDRESS)).toBe(true);
+  });
+
+  it("refuses a v1 transaction message both as a raw message and as a transaction", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "solana.bip44-change");
+    const v1 = new Uint8Array(
+      getCompiledTransactionMessageEncoder().encode(
+        compileTransactionMessage(
+          setTransactionMessageLifetimeUsingBlockhash(
+            {
+              blockhash: blockhash("11111111111111111111111111111111"),
+              lastValidBlockHeight: 1000n,
+            },
+            setTransactionMessageFeePayer(
+              address(SOL_ADDRESS),
+              createTransactionMessage({ version: 1 }),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      errCode(
+        await callSign(h, session, {
+          kind: "solana.message",
+          network: vectors.solana.network,
+          account,
+          message: v1,
+          format: "raw",
+        }),
+      ),
+    ).toBe("invalid-input");
+    expect(
+      errCode(
+        await callSign(h, session, {
+          kind: "solana.transaction",
+          network: vectors.solana.network,
+          account,
+          message: v1,
+        }),
+      ),
+    ).toBe("invalid-input");
     const msg = utf8ToBytes("hello solana");
     const msgReq = normalizeSolana(
       {

@@ -1,3 +1,5 @@
+import { keccak256 } from "viem";
+import type { Hex } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
@@ -8,6 +10,8 @@ import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { fakeSignedEvm, replaceVia, send, idleNetworkDeps } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -62,7 +66,7 @@ const memoryStore = () => createMemoryEngineStore();
 
 const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
   (async (_url: unknown, init: { body?: string } | undefined) => {
-    const body = JSON.parse(init?.body ?? "{}") as { method: string };
+    const body = JSON.parse(init?.body ?? "{}") as { method: string; params?: unknown[] };
     const table: Record<string, unknown> = {
       eth_getTransactionCount: "0x0",
       eth_estimateGas: "0x5208",
@@ -73,11 +77,14 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
           ["0x1", "0x2", "0x3"],
         ],
       },
-      eth_sendRawTransaction: `0x${"ab".repeat(32)}`,
       eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" },
       eth_getBlockByNumber: { number: "0x2" },
       ...overrides,
     };
+    if (body.method === "eth_sendRawTransaction") {
+      const raw = String(body.params?.[0]);
+      return Promise.resolve(Response.json({ result: keccak256(raw as Hex) }));
+    }
     return Promise.resolve(
       body.method in table
         ? Response.json({ result: table[body.method] })
@@ -91,10 +98,9 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
 
 type Sign = ReturnType<typeof chains>["sign"];
 
-/** RPC mock that assigns sequential tx hashes and reports a chosen one as confirmed. */
-const receiptFetch = (confirmed: string | undefined): typeof fetch => {
-  const hashes = [`0x${"aa".repeat(32)}`, `0x${"bb".repeat(32)}`, `0x${"cc".repeat(32)}`];
-  let sent = 0;
+/** RPC mock that returns each raw's real hash and reports the `confirmSent`-th send confirmed. */
+const receiptFetch = (confirmSent: number | undefined): typeof fetch => {
+  const sent: string[] = [];
   return (async (_url: unknown, init: { body?: string } | undefined) => {
     const body = JSON.parse(init?.body ?? "{}") as { method: string; params?: unknown[] };
     const table: Record<string, unknown> = {
@@ -110,10 +116,13 @@ const receiptFetch = (confirmed: string | undefined): typeof fetch => {
       eth_getBlockByNumber: { number: "0x2" },
     };
     if (body.method === "eth_sendRawTransaction") {
-      sent += 1;
-      return Promise.resolve(Response.json({ result: hashes[sent - 1] }));
+      const raw = String(body.params?.[0]);
+      sent.push(raw);
+      return Promise.resolve(Response.json({ result: keccak256(raw as Hex) }));
     }
     if (body.method === "eth_getTransactionReceipt") {
+      const raw = confirmSent === undefined ? undefined : sent[confirmSent - 1];
+      const confirmed = raw === undefined ? undefined : keccak256(raw as Hex);
       const hash = String(body.params?.[0]);
       return Promise.resolve(
         Response.json({
@@ -133,7 +142,7 @@ const receiptFetch = (confirmed: string | undefined): typeof fetch => {
   }) as typeof fetch;
 };
 
-const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: Array<() => unknown>) => {
+const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: ManualTimers) => {
   let tag = 0;
   return new TransactionController({
     wallet: {} as Wallet,
@@ -149,10 +158,7 @@ const ctlWithFetch = (fetchFn: typeof fetch, sign: Sign, timers: Array<() => unk
       tag += 1;
       return new Uint8Array(n).fill(tag);
     },
-    setTimer: (_ms, fn) => {
-      timers.push(fn);
-      return () => {};
-    },
+    setTimer: timers.setTimer,
     now: () => 1000,
     logger,
     pollMs: 1,
@@ -248,40 +254,32 @@ describe("TransactionController.replace", () => {
 
 describe("TransactionController.replace — state resolution", () => {
   it("replacement confirms → the original flips to replaced", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = ctlWithFetch(
-      receiptFetch(`0x${"bb".repeat(32)}`),
+      receiptFetch(2),
       async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
       timers,
     );
     await ctl.init();
     const original = await send(ctl, SEND);
     const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
-    await Promise.all(
-      timers.map(async (fn) => {
-        await fn();
-      }),
-    );
+    await timers.fire();
     const { txs } = ctl.getState();
     expect(txs[bumped.id]?.state).toBe("confirmed");
     expect(txs[original.id]?.state).toBe("replaced");
   });
 
   it("original confirms first → the replacement flips to replaced", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = ctlWithFetch(
-      receiptFetch(`0x${"aa".repeat(32)}`),
+      receiptFetch(1),
       async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
       timers,
     );
     await ctl.init();
     const original = await send(ctl, SEND);
     const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
-    await Promise.all(
-      timers.map(async (fn) => {
-        await fn();
-      }),
-    );
+    await timers.fire();
     const { txs } = ctl.getState();
     expect(txs[original.id]?.state).toBe("confirmed");
     expect(txs[bumped.id]?.state).toBe("replaced");
@@ -301,7 +299,7 @@ describe("TransactionController.replace — state resolution", () => {
   });
 
   it("a new send while a replace is pending gets the next nonce, not the replaced one", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = ctlWithFetch(
       receiptFetch(undefined),
       async ({ request }) => Promise.resolve(fakeSignedEvm(request)),

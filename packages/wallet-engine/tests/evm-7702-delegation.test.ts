@@ -188,7 +188,17 @@ function world(options: {
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
     gateway:
-      options.independent === undefined ? undefined : { url: GATEWAY, installId: "a".repeat(32) },
+      options.independent === undefined
+        ? undefined
+        : {
+            url: GATEWAY,
+            clientIds: {
+              evm: "a".repeat(32),
+              solana: "a".repeat(32),
+              bitcoin: "a".repeat(32),
+              service: "a".repeat(32),
+            },
+          },
   });
   const apis = {
     account: async () => Promise.resolve({ template: "evm.bip44", network: N1, address: ADDR }),

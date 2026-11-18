@@ -5,7 +5,7 @@
 namespace qntx {
 
 // The directory the vault image file lives in — resolved once per
-// KernelRuntime::start and passed explicitly to kernelFileRead/kernelFileWrite:
+// KernelRuntime::start and passed explicitly to kernelFileRead/kernelFileReplace:
 //   iOS     <Application Support>/qntx-wallet
 //   Android <noBackupFilesDir>/qntx-wallet
 // Defined only by a platform translation unit (platform/VaultDirectory.mm on iOS,

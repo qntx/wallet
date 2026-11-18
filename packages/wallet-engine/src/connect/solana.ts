@@ -1,12 +1,15 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 
+import { ChainError } from "@qntx/wallet-chains";
+import { decodeSolanaTransaction } from "@qntx/wallet-chains/solana";
+
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
 import { BlindSigningDisabledError, SignInOriginError } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
 import type { BrowserOrigin } from "../requests/types.ts";
 import type { ConnectionController, ConnectionSession } from "./controller.ts";
-import { SOLANA_METHODS } from "./controller.ts";
+import { SOLANA_METHODS, sessionAccounts } from "./controller.ts";
 import { ProviderError, invalidParams } from "./errors.ts";
 import { checkSignInInput, signInMessageText } from "./siws.ts";
 import type { SignInFields } from "./siws.ts";
@@ -68,7 +71,7 @@ type SolanaConnections = Pick<
   | "checkOrigin"
   | "session"
   | "authorize"
-  | "solanaAccount"
+  | "sessionAccounts"
   | "request"
   | "touch"
   | "revoke"
@@ -86,9 +89,6 @@ type Options = {
     group: { readonly walletId: string; readonly groupIndex: number },
     network: string,
   ) => Promise<{ readonly address: string; readonly publicKey: Uint8Array }>;
-  readonly activeGroup: () =>
-    | { readonly walletId: string; readonly groupIndex: number }
-    | undefined;
   readonly solanaNetwork: () => string;
 };
 
@@ -105,10 +105,10 @@ export class SolanaWalletHandler implements SolanaHandler {
     this.options = options;
     this.events = new SessionEvents(options.connections, async (before, after) =>
       Promise.all(
-        diffSessions(before, after).map(async ({ origin }): Promise<SolanaEvent> => ({
+        diffSessions(before, after).map(async ({ origin, session }): Promise<SolanaEvent> => ({
           name: "solanaAccountsChanged",
           origin,
-          accounts: await this.solanaAccountsChanged(origin),
+          accounts: await this.sessionAccountsChanged(session),
         })),
       ),
     );
@@ -151,7 +151,8 @@ export class SolanaWalletHandler implements SolanaHandler {
       typeof request.params === "object" && request.params !== null ? request.params : {};
     const silent = (params as { silent?: boolean }).silent === true;
     const network = this.options.solanaNetwork();
-    if (this.options.connections.solanaAccount(checked.origin, network) === undefined) {
+    let binding = this.options.connections.sessionAccounts(checked.origin, network);
+    if (binding === undefined) {
       if (silent) {
         throw new ProviderError(4100, "the wallet is not connected");
       }
@@ -159,14 +160,17 @@ export class SolanaWalletHandler implements SolanaHandler {
         kind: "connect",
         namespace: "solana",
       });
+      binding = this.options.connections.sessionAccounts(checked.origin, network);
+      if (binding === undefined) {
+        throw new ProviderError(4100, "the wallet is not connected");
+      }
     } else {
       await this.options.connections.touch(checked.origin);
     }
-    const group = this.options.activeGroup();
-    if (group === undefined) {
-      throw new ProviderError(4100, "no account group is selected");
+    const account = await this.options.solanaAccount(binding.group, network);
+    if (account.address !== binding.addresses[0]) {
+      throw new ProviderError(-32603, "the session's account does not derive for its group");
     }
-    const account = await this.options.solanaAccount(group, network);
     return { accounts: [this.walletAccount(account, network)] };
   }
 
@@ -193,13 +197,26 @@ export class SolanaWalletHandler implements SolanaHandler {
   ): Promise<unknown> {
     const network = this.networkOf(request.params, send);
     this.options.connections.authorize(checked.origin, network, request.method);
-    const address = this.options.connections.solanaAccount(checked.origin, network);
-    if (address === undefined) {
+    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+    const address = binding?.addresses[0];
+    if (binding === undefined || address === undefined) {
       throw new ProviderError(4100, "no solana account for this origin");
     }
     checkAccounts(request.params, address);
     const txs = transactionsOf(request.params);
-    const outcome = await this.signRequest(checked, network, address, {
+    for (const tx of txs) {
+      try {
+        const { unsigned } = decodeSolanaTransaction(tx, address);
+        // A sign-and-send whose other signers have not signed can never land (Solana Pay's
+        // transaction-request spec requires wallets to reject these).
+        if (send && unsigned.length > 0) {
+          throw invalidParams(`the transaction still needs signatures from ${unsigned.join(", ")}`);
+        }
+      } catch (error) {
+        throw error instanceof ChainError ? invalidParams(error.message) : error;
+      }
+    }
+    const outcome = await this.signRequest(checked, network, binding.group, address, {
       kind: "transactions",
       transactions: txs,
       send,
@@ -239,9 +256,9 @@ export class SolanaWalletHandler implements SolanaHandler {
   private async signMessage(checked: BrowserOrigin, request: SolanaRequest): Promise<unknown> {
     const network = this.options.solanaNetwork();
     this.options.connections.authorize(checked.origin, network, "solana:signMessage");
-    const address = this.options.connections.solanaAccount(checked.origin, network);
-    if (address !== undefined) {
-      checkAccounts(request.params, address);
+    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+    if (binding !== undefined && binding.addresses[0] !== undefined) {
+      checkAccounts(request.params, binding.addresses[0]);
     }
     const message = messageOf(request.params);
     const signature = await this.signMessageRequest(checked, network, message);
@@ -285,11 +302,12 @@ export class SolanaWalletHandler implements SolanaHandler {
     message: Uint8Array,
     signIn?: SignInFields,
   ): Promise<Uint8Array> {
-    const address = this.options.connections.solanaAccount(checked.origin, network);
-    if (address === undefined) {
+    const binding = this.options.connections.sessionAccounts(checked.origin, network);
+    const address = binding?.addresses[0];
+    if (binding === undefined || address === undefined) {
       throw new ProviderError(4100, "no solana account for this origin");
     }
-    const outcome = await this.signRequest(checked, network, address, {
+    const outcome = await this.signRequest(checked, network, binding.group, address, {
       kind: "message",
       message,
       ...(signIn === undefined ? {} : { signIn }),
@@ -300,10 +318,11 @@ export class SolanaWalletHandler implements SolanaHandler {
     return outcome.signature;
   }
 
-  /** One `solana-sign` request for the active group, resolved to its outcome. */
+  /** One `solana-sign` request for the session's bound group, resolved to its outcome. */
   private async signRequest(
     checked: BrowserOrigin,
     network: string,
+    group: { readonly walletId: string; readonly groupIndex: number },
     address: string,
     request: Parameters<SolanaRequests["prepare"]>[0] extends infer I
       ? I extends { method: "solana-sign"; request: infer R }
@@ -311,10 +330,6 @@ export class SolanaWalletHandler implements SolanaHandler {
         : never
       : never,
   ): Promise<Awaited<ReturnType<SolanaRequests["outcome"]>>> {
-    const group = this.options.activeGroup();
-    if (group === undefined) {
-      throw new ProviderError(4100, "no account group is selected");
-    }
     try {
       const pending = await this.options.requests.prepare({
         method: "solana-sign",
@@ -332,15 +347,26 @@ export class SolanaWalletHandler implements SolanaHandler {
     }
   }
 
-  /** The `setActiveGroup` re-point: the solana session's new `WalletAccount[]` for `change`. */
-  async solanaAccountsChanged(_origin: string): Promise<SolanaWalletAccount[]> {
+  /**
+   * A `change` event's accounts, derived only from the session after the write: the binding's
+   * account — empty when the session is gone or no Solana account is bound.
+   */
+  private async sessionAccountsChanged(
+    session: ConnectionSession | undefined,
+  ): Promise<SolanaWalletAccount[]> {
     const network = this.options.solanaNetwork();
-    const group = this.options.activeGroup();
-    if (group === undefined) {
+    const binding = sessionAccounts(session, network);
+    const address = binding?.addresses[0];
+    if (binding === undefined || address === undefined) {
       return [];
     }
-    const account = await this.options.solanaAccount(group, network);
-    return [this.walletAccount(account, network)];
+    try {
+      const account = await this.options.solanaAccount(binding.group, network);
+      return account.address === address ? [this.walletAccount(account, network)] : [];
+    } catch {
+      /* A session whose account cannot be derived or advertised changes to an empty list. */
+      return [];
+    }
   }
 }
 
@@ -417,11 +443,15 @@ const solanaAccounts = (session: ConnectionSession): ReadonlyArray<string> =>
     .filter(([network]) => network.startsWith("solana:"))
     .flatMap(([, scope]) => scope.accounts.map((a) => a.slice(a.lastIndexOf(":") + 1)));
 
+/**
+ * The origins whose Solana scope's accounts changed between the two snapshots, each with the
+ * session after the write (`undefined` when the session is gone).
+ */
 function diffSessions(
   before: Readonly<Record<string, ConnectionSession>>,
   after: Readonly<Record<string, ConnectionSession>>,
-): ReadonlyArray<{ origin: string; accounts: ReadonlyArray<string> }> {
-  const events: Array<{ origin: string; accounts: ReadonlyArray<string> }> = [];
+): ReadonlyArray<{ origin: string; session: ConnectionSession | undefined }> {
+  const events: Array<{ origin: string; session: ConnectionSession | undefined }> = [];
   const prev = byOrigin(before);
   const next = byOrigin(after);
   for (const [origin, session] of prev) {
@@ -429,15 +459,12 @@ function diffSessions(
     const was = solanaAccounts(session).join(",");
     const is = now === undefined ? "" : solanaAccounts(now).join(",");
     if (was !== is) {
-      events.push({ origin, accounts: now === undefined ? [] : solanaAccounts(now) });
+      events.push({ origin, session: now });
     }
   }
   for (const [origin, session] of next) {
-    if (!prev.has(origin)) {
-      const accounts = solanaAccounts(session);
-      if (accounts.length > 0) {
-        events.push({ origin, accounts });
-      }
+    if (!prev.has(origin) && solanaAccounts(session).length > 0) {
+      events.push({ origin, session });
     }
   }
   return events;

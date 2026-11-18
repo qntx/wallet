@@ -53,6 +53,11 @@ export type KernelGlobals = {
 
 declare const __qntx: KernelGlobals;
 
+// Bound at kernel start so an ABI mismatch between the embedded entry and the host's native
+// qs_* bridge refuses startup before the kernel serves a single frame — bindNativeSpark checks
+// the version and only wraps the calls.
+const spark = bindNativeSpark(__qntx.backends.spark);
+
 const platform: KernelPlatform = {
   random: (length) => __qntx.random(length),
   now: () => __qntx.now(),
@@ -94,8 +99,8 @@ const platform: KernelPlatform = {
   policy: { maxSessionMs: 24 * 3_600_000, maxScryptLogN: 18 },
   backends: {
     nostr: bindNativeNostr(__qntx.backends.nostr),
-    // oxlint-disable-next-line typescript/require-await -- errors must reject, not throw synchronously
-    spark: async () => bindNativeSpark(__qntx.backends.spark),
+    // oxlint-disable-next-line typescript/require-await -- the loader signature is a promise
+    spark: async () => spark,
   },
 };
 

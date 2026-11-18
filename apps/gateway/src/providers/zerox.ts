@@ -4,6 +4,7 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { ResolvedProvider } from "../types.ts";
+import { readCapped } from "./body.ts";
 import type { Forwarder } from "./forward.ts";
 
 export type ZeroExConfig = {
@@ -41,6 +42,9 @@ export const zeroExConfig = (env: {
 const ZEROX_API_BASE = "https://api.0x.org";
 
 const PROVIDER: ResolvedProvider = { id: "0x", url: ZEROX_API_BASE };
+
+/** 22x the largest quote response measured (a 46 kB Jupiter build). */
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 /** `0x` + 40 hex — an EVM address, the 0x native sentinel `0xEeee…` among them. */
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
@@ -128,7 +132,7 @@ export async function zeroExQuote(
       headers: { "0x-api-key": config.apiKey, "0x-version": "v2" },
       signal,
     });
-    const text = await http.text();
+    const text = await readCapped(http, MAX_RESPONSE_BYTES);
     if (!http.ok) {
       if (CLIENT_ERROR.has(http.status)) {
         return { badRequest: true } as const;

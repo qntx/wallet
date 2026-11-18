@@ -19,7 +19,8 @@ import {
   scriptPubKey,
 } from "../chains/bitcoin-scan.ts";
 import type { ScanAddress, ScanUtxo } from "../chains/bitcoin-scan.ts";
-import { BitcoinChainAdapter, feeTiers } from "../chains/bitcoin.ts";
+import { BitcoinChainAdapter, EsploraError, feeTiers, selectableUtxos } from "../chains/bitcoin.ts";
+import type { Esplora } from "../chains/bitcoin.ts";
 import type { NetworkController } from "../networks/controller.ts";
 import {
   collectChecks,
@@ -29,7 +30,9 @@ import {
 } from "../requests/checks.ts";
 import type { RequestCheckCode } from "../requests/checks.ts";
 import type { EngineStore } from "../store/port.ts";
-import { failTx, newId, replacementStaleReason, submitTx } from "./route.ts";
+import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
+import type { BroadcastVerdict, SignedBroadcast } from "./broadcast.ts";
+import { failTx, newId, replacementStaleReason } from "./route.ts";
 import type {
   PrepareParams,
   PreparedRequest,
@@ -64,17 +67,52 @@ type BtcStash = {
   readonly fp: number;
 };
 
-export const broadcastPsbt = async (
-  es: { post: (path: string, body: string) => Promise<unknown> },
-  result: SignResult,
-): Promise<string> => {
+/** The finalized network transaction of a signed PSBT: its hex and its txid. */
+const extractSigned = (result: SignResult): { readonly raw: string; readonly txid: string } => {
   if (result.kind !== "bitcoin.psbt" || !(result.signedPsbt instanceof Uint8Array)) {
     throw new Error("unexpected bitcoin sign result");
   }
   const signed = Transaction.fromPSBT(result.signedPsbt);
   signed.finalize();
-  const raw = signed.extract();
-  return String(await es.post("/tx", hex.encode(raw)));
+  return { raw: hex.encode(signed.extract()), txid: signed.id };
+};
+
+export const broadcastPsbt = async (
+  es: { post: (path: string, body: string) => Promise<unknown> },
+  result: SignResult,
+): Promise<string> => String(await es.post("/tx", extractSigned(result).raw));
+
+/**
+ * What a failed `POST /tx` says about the bytes: Esplora answers a node rejection
+ * (`sendrawtransaction` error) with a 4xx; a 5xx, timeout or network failure says nothing.
+ */
+export const esploraBroadcastVerdict = (error: unknown): BroadcastVerdict =>
+  error instanceof EsploraError && !error.transient ? "refused" : undefined;
+
+const esploraBroadcast = (
+  es: Esplora,
+  signed: ReturnType<typeof extractSigned>,
+  held: { readonly hold: () => void; readonly release: () => void },
+): SignedBroadcast => ({
+  id: signed.txid,
+  raw: signed.raw,
+  ...held,
+  send: async () => String(await es.post("/tx", signed.raw)),
+  verdict: esploraBroadcastVerdict,
+  known: async () => esploraKnows(es, signed.txid),
+});
+
+/** True when the endpoint knows `txid`; a 4xx is "not known", anything else is rethrown. */
+const esploraKnows = async (es: Esplora, txid: string): Promise<boolean> => {
+  try {
+    await es.get(`/tx/${txid}/status`);
+    return true;
+  } catch (error) {
+    if (error instanceof EsploraError && !error.transient) {
+      return false;
+    }
+    throw error;
+  }
 };
 
 export const fetchRawTxes = async (
@@ -108,19 +146,6 @@ export const accountPath = (accountPath: string): ReadonlyArray<number> =>
       const n = Number(hardened ? p.slice(0, -1) : p);
       return hardened ? n + 0x80000000 : n;
     });
-
-const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxState | undefined> => {
-  if (tx.hash === undefined) {
-    return "failed";
-  }
-  const es = ctx.options.networks.esplora(tx.network);
-  const status: unknown = await es.get(`/tx/${tx.hash}/status`);
-  const confirmed = isObject(status) && status["confirmed"] === true;
-  if (!confirmed) {
-    return undefined;
-  }
-  return "confirmed";
-};
 
 const nextReceiveAddress = async (
   ctx: RouteContext,
@@ -173,6 +198,68 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       }
     }
   };
+  /** Transactions the primary endpoint does not know: since when, and the next rebroadcast. */
+  const unseen = new Map<string, { since: number; attempt: number; next: number }>();
+
+  /**
+   * Esplora `/tx/:txid/status` → `confirmed`, or `undefined` to keep polling. While the endpoint
+   * does not know the transaction (and no live replacement explains why) its persisted bytes are
+   * rebroadcast with backoff; once neither endpoint has known it for {@link UNKNOWN_DROP_MS} it is
+   * `dropped`.
+   */
+  const poll = async (ctx: RouteContext, tx: TrackedTransaction): Promise<TxState | undefined> => {
+    if (tx.hash === undefined) {
+      return "failed";
+    }
+    const { networks } = ctx.options;
+    const es = networks.esplora(tx.network);
+    let status: unknown;
+    try {
+      status = await es.get(`/tx/${tx.hash}/status`);
+    } catch (error) {
+      if (!(error instanceof EsploraError) || error.transient) {
+        throw error;
+      }
+      return pollUnseen(ctx, tx, tx.hash, es);
+    }
+    unseen.delete(tx.id);
+    return isObject(status) && status["confirmed"] === true ? "confirmed" : undefined;
+  };
+
+  const pollUnseen = async (
+    ctx: RouteContext,
+    tx: TrackedTransaction,
+    txid: string,
+    es: Esplora,
+  ): Promise<TxState | undefined> => {
+    // A live replacement evicts the original from the pool: it is expected to be unknown then.
+    const replaced = Object.values(ctx.txs()).some(
+      (t) => t.replaces === tx.id && (t.state === "submitted" || t.state === "pending"),
+    );
+    if (replaced) {
+      unseen.delete(tx.id);
+      return undefined;
+    }
+    const now = ctx.options.now();
+    const watch = unseen.get(tx.id) ?? { since: now, attempt: 0, next: now };
+    unseen.set(tx.id, watch);
+    if (now - watch.since >= UNKNOWN_DROP_MS) {
+      const independent = ctx.options.networks.independentEsplora(tx.network);
+      const elsewhere =
+        independent.kind === "available" &&
+        (await esploraKnows(independent.client, txid).catch(() => true));
+      if (!elsewhere) {
+        unseen.delete(tx.id);
+        return "dropped";
+      }
+    }
+    if (tx.raw !== undefined && now >= watch.next) {
+      await es.post("/tx", tx.raw).catch(() => undefined);
+      watch.next = now + Math.min(RESUBMIT_BASE_MS * 2 ** watch.attempt, RESUBMIT_MAX_MS);
+      watch.attempt += 1;
+    }
+    return undefined;
+  };
 
   const prepare = async (
     ctx: RouteContext,
@@ -180,7 +267,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     requestId: string,
     sparkDeposit?: SparkDepositTag,
   ): Promise<PreparedRequest> => {
-    const { account, network, to, amount, fee } = params;
+    const { account, network, to, amount, fee, spendProtected } = params;
     if (account.kind !== "hd") {
       throw new ChainError("unsupported", "imported keys cannot sign bitcoin transactions");
     }
@@ -224,10 +311,11 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }));
     const byAddr = new Map(addresses.map((a) => [a.address, a]));
     const base = accountPath(path);
+    const spendable = selectableUtxos(utxos, net.params, spendProtected ?? []);
     const rawTxes =
-      template === "btc.bip44" ? await fetchRawTxes(es, utxos) : new Map<string, Uint8Array>();
+      template === "btc.bip44" ? await fetchRawTxes(es, spendable) : new Map<string, Uint8Array>();
     const inputs = bitcoin.toInputs(
-      utxos,
+      spendable,
       fp,
       (u) => {
         const a = byAddr.get(u.address);
@@ -306,7 +394,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const selectedKeys = new Set(
       selected.map((i) => `${String(i.txid ?? "")}:${String(i.index ?? 0)}`),
     );
-    const selectedUtxos = utxos.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
+    const selectedUtxos = spendable.filter((u) => selectedKeys.has(`${u.txid}:${u.vout}`));
     // Reserve before the first post-selection await: a concurrent prepare must not see them.
     for (const key of selectedKeys) {
       reserved.set(key, requestId);
@@ -375,7 +463,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const id0 = newId(ctx.options.random);
     const stash: BtcStash = {
       inputs: selected,
-      allUtxos: utxos,
+      allUtxos: spendable,
       groupIndex: account.groupIndex,
       pathOf: (u) => {
         const a = byAddr.get(u.address);
@@ -416,7 +504,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     }
     flags.push(feeReachesAmount(BigInt(record.fee), amount) ? "fee-exceeds-amount" : undefined);
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       pending.set(id0, stash);
       let tx: TrackedTransaction = {
         id: id0,
@@ -433,17 +524,29 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         error: undefined,
       };
       tx = await ctx.transition(tx, {});
+      let signed: ReturnType<typeof extractSigned>;
       try {
         const result = await apis.sign({ request, verify });
         tx = await ctx.transition(tx, { state: "signed" });
-        const hash = await broadcastPsbt(es, result);
-        bitcoinUtxos.lock(selectedUtxos, tx.id);
-        releaseReservation(requestId);
-        return await submitTx(ctx, tx, hash);
+        signed = extractSigned(result);
+        commit();
       } catch (error) {
         await failTx(ctx, tx, error);
         throw error;
       }
+      return submitSigned(
+        ctx,
+        tx,
+        esploraBroadcast(es, signed, {
+          hold: () => {
+            bitcoinUtxos.lock(selectedUtxos, id0);
+            releaseReservation(requestId);
+          },
+          release: () => {
+            bitcoinUtxos.endTx(id0, "failed");
+          },
+        }),
+      );
     };
 
     return {
@@ -506,7 +609,10 @@ export const createBitcoinRoute = (): BitcoinRoute => {
       reserved.set(key, requestId);
     }
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       let tx: TrackedTransaction = {
         id: txId,
         family: "bitcoin",
@@ -522,23 +628,36 @@ export const createBitcoinRoute = (): BitcoinRoute => {
         ...link,
       };
       tx = await ctx.transition(tx, {});
+      let signed: ReturnType<typeof extractSigned>;
       try {
         const result = await apis.sign({ request, verify });
         tx = await ctx.transition(tx, { state: "signed" });
-        const hash = await broadcastPsbt(es, result);
-        if (link.replaces !== undefined) {
-          bitcoinUtxos.endTx(old.id, "dropped");
-        }
-        bitcoinUtxos.lock(
-          record.inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 0 })),
-          tx.id,
-        );
-        releaseReservation(requestId);
-        return await submitTx(ctx, tx, hash);
+        signed = extractSigned(result);
+        commit();
       } catch (error) {
         await failTx(ctx, tx, error);
         throw error;
       }
+      const asLocked = (inputs: ReadonlyArray<(typeof record.inputs)[number]>) =>
+        inputs.map((i) => ({ ...i, status: "confirmed" as const, height: 0 }));
+      return submitSigned(
+        ctx,
+        tx,
+        esploraBroadcast(es, signed, {
+          // A replacement spends every input of the original, so its lock moves them all over.
+          hold: () => {
+            bitcoinUtxos.lock(asLocked(record.inputs), txId);
+            releaseReservation(requestId);
+          },
+          // Refused: the original still spends its inputs and keeps them.
+          release: () => {
+            bitcoinUtxos.endTx(txId, "failed");
+            if (link.replaces !== undefined && old.btc !== undefined) {
+              bitcoinUtxos.lock(asLocked(old.btc.inputs), old.id);
+            }
+          },
+        }),
+      );
     };
 
     return {
@@ -851,21 +970,13 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     );
   };
 
-  const pollAndRelease = async (
-    ctx: RouteContext,
-    tx: TrackedTransaction,
-  ): Promise<TxState | undefined> => {
-    const state = await poll(ctx, tx);
-    if (state === "confirmed") {
-      bitcoinUtxos.endTx(tx.id, "confirmed");
-    }
-    return state;
-  };
-
   return {
     prepare,
     nextReceiveAddress,
-    poll: pollAndRelease,
+    poll,
+    settle: (id, state) => {
+      bitcoinUtxos.endTx(id, state === "confirmed" ? "confirmed" : "dropped");
+    },
     prepareReplace,
     prepareCpfp,
     unlock: async (store) => bitcoinUtxos.unlock(store),
@@ -891,6 +1002,11 @@ export type BitcoinRoute = {
     network: string,
   ) => Promise<string>;
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxState | undefined>;
+  /**
+   * A transaction that reached a terminal state frees the outputs it locked; a confirmed one's
+   * inputs are spent and leave the lock table.
+   */
+  readonly settle: (id: string, state: TxState) => void;
   readonly prepareReplace: (
     ctx: RouteContext,
     old: TrackedTransaction,

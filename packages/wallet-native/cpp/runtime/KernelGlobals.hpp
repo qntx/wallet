@@ -2,6 +2,8 @@
 
 #include <jsi/jsi.h>
 
+#include "KernelBuffer.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -33,12 +35,14 @@ struct KernelIntrinsics;
 struct KernelGlobalsState {
   // Directory the vault image file lives in — resolved by the host once per
   // KernelRuntime::start (platformVaultDirectory on device builds) and passed
-  // to kernelFileRead/kernelFileWrite by the __qntx.file lambdas. Kernel
+  // to kernelFileRead/kernelFileReplace by the __qntx.file lambdas. Kernel
   // thread only after start().
   std::string vaultDirectory;
 
   // Copies the posted bytes out of the runtime and reports them to the host.
-  std::function<void(std::vector<uint8_t>)> postToHost;
+  // The SecretBytes wipes itself on scope exit — the host's copy into the JS
+  // ArrayBuffer is the only one that outlives the call.
+  std::function<void(SecretBytes)> postToHost;
 
   // Records a fatal kernel failure reported by JS (unhandled promise
   // rejection). The runtime tears down after the current task drains.
@@ -73,11 +77,6 @@ struct KernelGlobalsState {
   // by the script through __qntx.setMessageHandler or __qntx.frames.onMessage.
   // Kernel thread only.
   std::optional<facebook::jsi::Function> messageHandler;
-
-  // Kernel-side handler the host calls when it refuses an inbound frame on
-  // integrity grounds (oversize, queue full); installed through
-  // __qntx.frames.onIntegrityViolation. Kernel thread only.
-  std::optional<facebook::jsi::Function> integrityHandler;
 
   // Dismiss in-flight system prompts (keystore, passkey); each installer adds
   // one and teardown runs them all. Kernel thread only.

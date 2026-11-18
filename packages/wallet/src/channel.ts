@@ -3,6 +3,7 @@
  * request/response correlation and wire validation. Internal to the `./host` subpath — reserved for
  * host packages (wallet-worker, wallet-native); applications must not use it.
  */
+import type { PlainMethod, SecretMethod, SecretWire } from "./factors.ts";
 import {
   isProtocolValue,
   kernelEvent,
@@ -35,6 +36,18 @@ export function integrity(message: string): WalletError {
   return new WalletError("integrity", message);
 }
 
+/**
+ * Detects the port's own "cannot encode" refusal: a WalletError-shaped throw whose code is exactly
+ * "invalid-input". Matched by brand rather than `instanceof` — the port may carry a copy of the
+ * class loaded through a different module resolution; the exact-code check keeps any other refusal
+ * (including a foreign WalletError-shaped one) an integrity failure.
+ */
+const isEncodingRefusal = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.name === "WalletError" &&
+  "code" in error &&
+  error.code === "invalid-input";
+
 /** Schedules `fn` after `delayMs` and returns a cancel function — injected by the host package. */
 export type SetTimer = (delayMs: number, fn: () => void) => () => void;
 
@@ -46,10 +59,24 @@ export type SetTimer = (delayMs: number, fn: () => void) => () => void;
  */
 const CALL_TIMEOUT_MS = 60_000;
 
+/**
+ * Posted-but-unanswered requests. Kept well below the native runtime's inbound cap of 64
+ * (KernelRuntime's kMaxInboundFrames, past which it fails closed) so a busy kernel delays requests
+ * instead of killing the session; Web/Node get the same bound so all hosts behave alike.
+ */
+export const MAX_IN_FLIGHT = 32;
+
 type Pending = {
   readonly method: MethodName;
   readonly resolve: (value: unknown) => void;
   readonly reject: (error: WalletError) => void;
+};
+
+/** A fully validated request waiting for an in-flight slot; only posted entries are in `pending`. */
+type Outbound = Pending & {
+  readonly id: number;
+  readonly message: Record<string, ProtocolValue>;
+  readonly wire: SecretWire | undefined;
 };
 
 /**
@@ -75,6 +102,7 @@ export class Channel {
   private ceremony = false;
 
   private readonly pending = new Map<number, Pending>();
+  private readonly queue: Outbound[] = [];
   /** Times the earliest pending request — the one the kernel is working on. */
   private watchdog: { readonly id: number; readonly cancel: () => void } | undefined;
   private nextId = 1;
@@ -227,6 +255,12 @@ export class Channel {
       pending.reject(error);
     }
     this.pending.clear();
+    // Queued requests never reached the port — their wires are still live buffers to wipe.
+    for (const outbound of this.queue) {
+      outbound.wire?.wipe();
+      outbound.reject(error);
+    }
+    this.queue.length = 0;
   }
 
   /** (Re)arms the watchdog on `pending`'s insertion-ordered head, or clears it when empty. */
@@ -267,6 +301,42 @@ export class Channel {
         this.armWatchdog();
       }
       fn(pending);
+      this.drainQueue();
+    }
+  }
+
+  /**
+   * Posts queued requests in FIFO order while under the in-flight bound. Only posted requests are
+   * in `pending` (and timed by the watchdog) — queued ones are not the kernel's head yet.
+   */
+  private drainQueue(): void {
+    while (this.queue.length > 0 && this.pending.size < MAX_IN_FLIGHT && this.port !== undefined) {
+      const outbound = this.queue.shift();
+      if (outbound === undefined) {
+        return;
+      }
+      this.pending.set(outbound.id, outbound);
+      if (this.watchdog === undefined) {
+        // Pending went empty → non-empty: this request is the head the kernel works on next.
+        this.armWatchdog();
+      }
+      try {
+        this.port.post(outbound.message, outbound.wire?.transfer ?? []);
+      } catch (error) {
+        this.pending.delete(outbound.id);
+        if (this.watchdog?.id === outbound.id) {
+          this.armWatchdog();
+        }
+        outbound.wire?.wipe();
+        // A port that cannot encode the request says so itself ("invalid-input") — re-issued
+        // fresh so the message names the failure regardless of what the refusal carried. Any
+        // other refusal is the port refusing the message: integrity.
+        outbound.reject(
+          isEncodingRefusal(error)
+            ? new WalletError("invalid-input", "the kernel port cannot encode the request")
+            : integrity("the kernel port refused the message"),
+        );
+      }
     }
   }
 
@@ -406,51 +476,61 @@ export class Channel {
   }
 
   /**
-   * Sends one request and resolves with the validated result. The kernel answers with status →
-   * response → locked, so the snapshot is already current when this promise settles.
+   * Sends one request carrying no secret bytes and resolves with the validated result. The kernel
+   * answers with status → response → locked, so the snapshot is already current when this settles.
    */
-  async call<M extends MethodName>(
+  async call<M extends PlainMethod>(method: M, params: ParamsOf<M>): Promise<ResultOf<M>> {
+    return this.send(method, params);
+  }
+
+  /**
+   * Sends one request whose params carry secret bytes. Invariant: every wire handed in is either on
+   * the transfer list of exactly one successful `port.post`, or wiped — on every path that does not
+   * post: ready-gate rejection, broken, destroyed/no port, oversize, `port.post` throwing.
+   */
+  async callWithSecrets<M extends SecretMethod>(
     method: M,
     params: ParamsOf<M>,
-    transfer: ArrayBuffer[] = [],
+    wire: SecretWire,
   ): Promise<ResultOf<M>> {
-    await this.readyPromise;
-    if (this.broken !== undefined) {
-      throw this.broken;
-    }
-    const { port } = this;
-    if (this.destroyed || port === undefined) {
-      throw new WalletError("locked", "wallet is destroyed");
-    }
-    const id = this.nextId++;
-    const message: Record<string, ProtocolValue> = { v: PROTOCOL_VERSION, id, method, params };
-    // Attach the session whenever we hold one: the create/import methods are session:false
-    // in the table because the rule is dynamic (required exactly when the vault is initialized).
-    if (this.session !== undefined) {
-      message["session"] = this.session;
-    }
-    // The whole envelope counts against the cap — an oversized request never reaches the port.
-    if (requestBytes(message) > MAX_REQUEST_BYTES) {
-      throw new WalletError("invalid-input", "request exceeds the size limit");
-    }
-    const result = await new Promise<unknown>((resolve, reject) => {
-      this.pending.set(id, { method, resolve, reject });
-      if (this.watchdog === undefined) {
-        // Pending went empty → non-empty: this request is the head the kernel works on next.
-        this.armWatchdog();
+    return this.send(method, params, wire);
+  }
+
+  private async send<M extends MethodName>(
+    method: M,
+    params: ParamsOf<M>,
+    wire?: SecretWire,
+  ): Promise<ResultOf<M>> {
+    try {
+      await this.readyPromise;
+      if (this.broken !== undefined) {
+        throw this.broken;
       }
-      try {
-        port.post(message, transfer);
-      } catch {
-        this.pending.delete(id);
-        if (this.watchdog?.id === id) {
-          this.armWatchdog();
-        }
-        reject(integrity("the kernel port refused the message"));
+      const { port } = this;
+      if (this.destroyed || port === undefined) {
+        throw new WalletError("locked", "wallet is destroyed");
       }
-    });
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- validated by METHODS[method].result
-    return result as ResultOf<M>;
+      const id = this.nextId++;
+      const message: Record<string, ProtocolValue> = { v: PROTOCOL_VERSION, id, method, params };
+      // Attach the session whenever we hold one: the create/import methods are session:false
+      // in the table because the rule is dynamic (required exactly when the vault is initialized).
+      if (this.session !== undefined) {
+        message["session"] = this.session;
+      }
+      // The whole envelope counts against the cap — an oversized request never reaches the port.
+      if (requestBytes(message) > MAX_REQUEST_BYTES) {
+        throw new WalletError("invalid-input", "request exceeds the size limit");
+      }
+      const result = await new Promise<unknown>((resolve, reject) => {
+        this.queue.push({ id, method, message, wire, resolve, reject });
+        this.drainQueue();
+      });
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- validated by METHODS[method].result
+      return result as ResultOf<M>;
+    } catch (error) {
+      wire?.wipe();
+      throw error;
+    }
   }
 
   /** Fires the deferred unlocked status, if any, once the session is installed. */

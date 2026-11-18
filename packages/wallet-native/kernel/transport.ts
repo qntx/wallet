@@ -11,8 +11,6 @@ import { decodeFrame, encodeFrame } from "../src/cbor.ts";
 export type KernelFramePipe = {
   readonly post: (frame: ArrayBuffer) => void;
   readonly onMessage: (cb: (frame: ArrayBuffer) => void) => void;
-  /** Called when a frame fails decode — the entry maps it to an `integrity` exit. */
-  readonly onIntegrityViolation: (cb: () => void) => void;
 };
 
 /**
@@ -26,12 +24,16 @@ type Port = {
 
 export function createKernelPort(pipe: KernelFramePipe): Port {
   pipe.onMessage((frame) => {
+    // An undecodable frame is a transport violation, not a message: rethrowing out of the
+    // handler crashes the runtime (deliver → task error → onError) instead of silently
+    // dropping it and serving whatever a confused peer sends next.
     let message: ProtocolValue;
     try {
       message = decodeFrame(frame);
-    } catch {
-      // W3's kernel-entry registers onIntegrityViolation; the transport itself only stops dispatch.
-      return;
+    } finally {
+      // The frame's bytes are decode-copied or dead either way — never leave the
+      // encoded form resident past dispatch.
+      new Uint8Array(frame).fill(0);
     }
     for (const handler of handlers) {
       handler(message);
@@ -42,10 +44,19 @@ export function createKernelPort(pipe: KernelFramePipe): Port {
 
   return {
     post: (message, transfer) => {
-      const frame = encodeFrame(message);
-      pipe.post(frame);
-      for (const buffer of transfer) {
-        new Uint8Array(buffer).fill(0);
+      // The frame and the transferred buffers carry secrets — wipe both on every path
+      // once the pipe took its copy, including a throwing pipe.post.
+      let frame: ArrayBuffer | undefined;
+      try {
+        frame = encodeFrame(message);
+        pipe.post(frame);
+      } finally {
+        if (frame !== undefined) {
+          new Uint8Array(frame).fill(0);
+        }
+        for (const buffer of transfer) {
+          new Uint8Array(buffer).fill(0);
+        }
       }
     },
     listen: (handler) => {

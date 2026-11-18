@@ -23,12 +23,20 @@ import { AccountTreeController } from "../src/accounts/controller.ts";
 import type { ScanAddress } from "../src/chains/bitcoin-scan.ts";
 import { scanChain, scanUtxos, scriptPubKey } from "../src/chains/bitcoin-scan.ts";
 import type { Esplora, EsploraDeps, EsploraResponse } from "../src/chains/bitcoin.ts";
-import { esplora, BitcoinChainAdapter, EsploraError, feeTiers } from "../src/chains/bitcoin.ts";
+import {
+  esplora,
+  BitcoinChainAdapter,
+  EsploraError,
+  feeTiers,
+  selectableUtxos,
+} from "../src/chains/bitcoin.ts";
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { cpfpVia, replaceVia, send } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
+import type { ManualTimers } from "./support/timers.ts";
 
 const RUN = process.env["ENGINE_E2E_BITCOIN"] === "1";
 const NAME = `btc-e2e-${Date.now()}`;
@@ -306,11 +314,15 @@ const regtestFlow = async () => {
     const utxos = await scanUtxos(es, all, bitcoinNetwork(NETWORK).params);
     expect(utxos.length).toBeGreaterThan(0);
     const frozen = utxos.filter((u) => u.value === 546);
-    const spendable = utxos.filter((u) => u.value !== 546 && u.value !== 330);
+    const spendable = selectableUtxos(
+      utxos.map((u) => ({ ...u, status: "confirmed" as const })),
+      bitcoinNetwork(NETWORK).params,
+      [],
+    );
 
     const adapter = new BitcoinChainAdapter();
     const inputs = adapter.toInputs(
-      spendable.map((u) => ({ ...u, status: "confirmed" as const })),
+      spendable,
       HD.fingerprint,
       bip84PathOf(all),
       bip84PubOf(all),
@@ -355,7 +367,7 @@ describe.runIf(RUN)("bitcoin e2e: taproot engine send", () => {
 
 const taprootFlow = async (): Promise<void> => {
   const base = startEsplora(`${NAME}-tr`);
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
   try {
     await waitFor(nodeReady(`${NAME}-tr`), 3000, Date.now() + 120_000, () => {
       throw new Error(`bitcoind never warmed up\n${logsOf(`${NAME}-tr`)}`);
@@ -374,10 +386,11 @@ const taprootFlow = async (): Promise<void> => {
     });
     rpc(`${NAME}-tr`, "sendtoaddress", [recv, "0.00050000"]);
     rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
+    let scanned: ReadonlyArray<ScanAddress> = [];
     await waitFor(
       async () => {
         const es = esploraClient(base);
-        const scanned = await scanChain(
+        scanned = await scanChain(
           es,
           xpub,
           "btc.bip86",
@@ -394,6 +407,10 @@ const taprootFlow = async (): Promise<void> => {
       },
     );
 
+    // The taproot funding output is protected under the ord-postage rule — the send names it.
+    const trUtxos = await scanUtxos(esploraClient(base), scanned, bitcoinNetwork(NETWORK).params);
+    const fundingUtxo = trUtxos.find((u) => u.address === recv);
+    expect(fundingUtxo).toBeDefined();
     const external = addrOf("wpkh", HD.derive("m/84'/1'/9'"), 0, 0);
     const tx = await send(ctl, {
       account: { kind: "hd", walletId, groupIndex: 0, template: "btc.bip86" },
@@ -401,13 +418,14 @@ const taprootFlow = async (): Promise<void> => {
       to: external,
       amount: 10_000n,
       fee: "slow",
+      spendProtected: [`${fundingUtxo?.txid ?? ""}:${String(fundingUtxo?.vout ?? 0)}`],
       verify: BVERIFY,
     });
     expect(tx.state).toBe("submitted");
     rpc(`${NAME}-tr`, "generatetoaddress", [1, walletAddr]);
     await waitFor(
       async () => {
-        await Promise.all(timers.map((fn) => fn()));
+        await timers.fire();
         return ctl.getState().txs[tx.id]?.state === "confirmed";
       },
       3000,
@@ -458,7 +476,7 @@ const realWallet = async (): Promise<{ wallet: Wallet; walletId: string }> => {
 
 const ctlRig = async (
   base: string,
-  timers: Array<() => unknown>,
+  timers: ManualTimers,
   template: "btc.bip84" | "btc.bip86" = "btc.bip84",
 ): Promise<{ ctl: TransactionController; walletId: string; xpub: string }> => {
   const { wallet, walletId } = await realWallet();
@@ -480,10 +498,7 @@ const ctlRig = async (
     }),
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     random: taggedRandom(),
-    setTimer: (_ms, fn) => {
-      timers.push(fn);
-      return () => {};
-    },
+    setTimer: timers.setTimer,
     now: () => 1000,
     logger: quiet,
     pollMs: 1,
@@ -494,7 +509,7 @@ const ctlRig = async (
 
 const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
   const base = startEsplora(`${NAME}-rbf`);
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
   try {
     await waitFor(nodeReady(`${NAME}-rbf`), 3000, Date.now() + 120_000, () => {
       throw new Error(`bitcoind never warmed up\n${logsOf(`${NAME}-rbf`)}`);
@@ -550,7 +565,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
       rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
       await waitFor(
         async () => {
-          await Promise.all(timers.map((fn) => fn()));
+          await timers.fire();
           return (
             ctl.getState().txs[child.id]?.state === "confirmed" &&
             ctl.getState().txs[original.id]?.state === "confirmed"
@@ -570,7 +585,7 @@ const rbfFlow = async (mode: "speed-up" | "cancel" | "cpfp"): Promise<void> => {
     rpc(`${NAME}-rbf`, "generatetoaddress", [1, walletAddr]);
     await waitFor(
       async () => {
-        await Promise.all(timers.map((fn) => fn()));
+        await timers.fire();
         const { txs } = ctl.getState();
         return txs[bumped.id]?.state === "confirmed" && txs[original.id]?.state === "replaced";
       },
@@ -615,7 +630,7 @@ const LEGACY = `${NAME}-legacy`;
 
 const legacyFlow = async (): Promise<void> => {
   const base = startEsplora(LEGACY);
-  const timers: Array<() => unknown> = [];
+  const timers = manualTimers();
   try {
     await step("esplora up", async () =>
       waitFor(nodeReady(LEGACY), 3000, Date.now() + 120_000, () => {
@@ -734,10 +749,7 @@ const legacyFlow = async (): Promise<void> => {
       }),
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       random: taggedRandom(),
-      setTimer: (_ms, fn) => {
-        timers.push(fn);
-        return () => {};
-      },
+      setTimer: timers.setTimer,
       now: () => 1000,
       logger: quiet,
       pollMs: 1,
@@ -768,7 +780,7 @@ const legacyFlow = async (): Promise<void> => {
         waitFor(
           async () => {
             try {
-              await Promise.all(timers.map((fn) => fn()));
+              await timers.fire();
               return txCtl.getState().txs[tx.id]?.state === "confirmed";
             } catch (error) {
               if (!(error instanceof EsploraError && error.transient)) {

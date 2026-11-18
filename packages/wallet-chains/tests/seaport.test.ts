@@ -102,8 +102,8 @@ describe("decodeEvm: Seaport orders", () => {
         kind: "erc721",
         token: NFT,
         identifier: "1",
-        startAmount: { asset: NFT, amount: "1" },
-        endAmount: { asset: NFT, amount: "1" },
+        startAmount: { asset: NFT, amount: "1", tokenId: "1" },
+        endAmount: { asset: NFT, amount: "1", tokenId: "1" },
       },
     ]);
     expect(seaport?.consideration).toStrictEqual([
@@ -138,6 +138,41 @@ describe("decodeEvm: Seaport orders", () => {
     const seaport = seaportOf(doc({}, { startTime: big }));
     expect(seaport?.startTime).toBeUndefined();
     expect(seaport?.endTime).toBe(1700001000);
+  });
+
+  it("NFT items carry their token id in the amounts; criteria items carry none", () => {
+    const seaport = seaportOf(
+      doc(
+        {},
+        {
+          offer: [
+            { ...offerItem(2, NFT), identifierOrCriteria: "7090" },
+            { ...offerItem(3, NFT, "5", "5"), identifierOrCriteria: "42" },
+            { ...offerItem(4, NFT), identifierOrCriteria: "0" },
+            { ...offerItem(5, NFT, "2", "2"), identifierOrCriteria: "12345" },
+          ],
+        },
+      ),
+    );
+    expect(seaport?.offer[0]?.startAmount).toStrictEqual({
+      asset: NFT,
+      amount: "1",
+      tokenId: "7090",
+    });
+    expect(seaport?.offer[1]?.startAmount).toStrictEqual({
+      asset: NFT,
+      amount: "5",
+      tokenId: "42",
+    });
+    expect(seaport?.offer[1]?.endAmount).toStrictEqual({
+      asset: NFT,
+      amount: "5",
+      tokenId: "42",
+    });
+    expect(seaport?.offer[2]?.kind).toBe("erc721-criteria");
+    expect(seaport?.offer[2]?.startAmount).toStrictEqual({ asset: NFT, amount: "1" });
+    expect(seaport?.offer[3]?.kind).toBe("erc1155-criteria");
+    expect(seaport?.offer[3]?.startAmount).toStrictEqual({ asset: NFT, amount: "2" });
   });
 
   it("does not recognize a wrong contract, domain name, or BulkOrder", () => {

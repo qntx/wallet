@@ -126,7 +126,15 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     rpc: { [N1]: [HOST] },
     openStore,
     logger,
-    gateway: { url: GATEWAY, installId: "a".repeat(32) },
+    gateway: {
+      url: GATEWAY,
+      clientIds: {
+        evm: "a".repeat(32),
+        solana: "a".repeat(32),
+        bitcoin: "a".repeat(32),
+        service: "a".repeat(32),
+      },
+    },
   });
   const apis = {
     account: async () => Promise.resolve({ template: "evm.bip44", network: N1, address: ADDR }),
@@ -179,6 +187,8 @@ function world(options: { code?: CodeOf; independent?: CodeOf } = {}) {
     logger,
     allowLocalhost: false,
     selectedGroup: () => ({ walletId: "0a".repeat(8), groupIndex: 0 }),
+    onSelectedGroup: () => () => undefined,
+    invalidateAll: () => undefined,
     evmAddress: async () => Promise.resolve(ADDR),
     enabledNetworks: () => [N1],
     bitcoinAddress: async () => Promise.resolve("bc1qunused"),

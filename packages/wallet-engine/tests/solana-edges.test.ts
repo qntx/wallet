@@ -1,3 +1,16 @@
+import { ed25519 } from "@noble/curves/ed25519.js";
+import { base58 } from "@scure/base";
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  blockhash,
+  compileTransaction,
+  createTransactionMessage,
+  getTransactionEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { ProviderError } from "../src/connect/errors.ts";
@@ -7,16 +20,22 @@ import { BlindSigningDisabledError, SignInOriginError } from "../src/requests/co
 
 const SITE = "https://app.example";
 const NETWORK = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
-const ADDR = "SoLaNaBase58Address1111111111111111111";
+const ADDR = base58.encode(ed25519.getPublicKey(new Uint8Array(32).fill(7)));
 const PUBKEY = new Uint8Array(32).fill(2);
 const GROUP = { walletId: "w", groupIndex: 0 };
 
 type SessionLike = {
   origin: { kind: "browser"; origin: string };
+  group?: typeof GROUP;
   scopes: Record<string, { accounts: string[] }>;
 };
-const solSession = (accounts = [ADDR], origin = SITE): SessionLike => ({
+const solSession = (
+  accounts = [ADDR],
+  origin = SITE,
+  group: typeof GROUP | null = GROUP,
+): SessionLike => ({
   origin: { kind: "browser", origin },
+  ...(group === null ? {} : { group }),
   scopes: { [NETWORK]: { accounts: accounts.map((a) => `${NETWORK}:${a}`) } },
 });
 
@@ -45,7 +64,10 @@ function rig(
         }
         return {} as never;
       },
-      solanaAccount: () => (connected ? ADDR : undefined),
+      sessionAccounts: () => {
+        const bound = "group" in options ? options.group : GROUP;
+        return !connected || bound === undefined ? undefined : { group: bound, addresses: [ADDR] };
+      },
       request: async () => {
         await Promise.resolve();
         calls.requested += 1;
@@ -77,7 +99,6 @@ function rig(
       outcome: async () => Promise.resolve(options.outcome as never),
     },
     solanaAccount: async () => Promise.resolve({ address: ADDR, publicKey: PUBKEY }),
-    activeGroup: () => ("group" in options ? options.group : GROUP),
     solanaNetwork: () => NETWORK,
   });
   const set = (sessions: Record<string, SessionLike>): void => {
@@ -129,18 +150,42 @@ describe("SolanaWalletHandler connect and disconnect", () => {
 
 describe("SolanaWalletHandler transaction inputs", () => {
   const signed = { kind: "solana.transactions", send: false, signedTransactions: [] };
+  const tx = (() => {
+    const data = new Uint8Array(12);
+    const view = new DataView(data.buffer);
+    view.setUint32(0, 2, true);
+    view.setBigUint64(4, 1000n, true);
+    const message = appendTransactionMessageInstruction(
+      {
+        programAddress: address("11111111111111111111111111111111"),
+        accounts: [
+          { address: address(ADDR), role: AccountRole.WRITABLE_SIGNER },
+          {
+            address: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+            role: AccountRole.WRITABLE,
+          },
+        ],
+        data,
+      },
+      setTransactionMessageLifetimeUsingBlockhash(
+        { blockhash: blockhash("11111111111111111111111111111111"), lastValidBlockHeight: 1000n },
+        setTransactionMessageFeePayer(
+          address(ADDR),
+          createTransactionMessage({ version: "legacy" }),
+        ),
+      ),
+    );
+    return new Uint8Array(getTransactionEncoder().encode(compileTransaction(message)));
+  })();
 
   it("takes bytes, hex or a bytes envelope and rejects the rest", async () => {
     const r = rig({ outcome: signed });
+    const hex = Buffer.from(tx).toString("hex");
     await call(r, "solana:signTransaction", {
-      transactions: [new Uint8Array([1]), "0a0b", { __bytes: "0c" }],
+      transactions: [tx, hex, { __bytes: hex }],
     });
     const sent = r.calls.prepared[0] as { request: { transactions: Uint8Array[] } };
-    expect(sent.request.transactions).toStrictEqual([
-      new Uint8Array([1]),
-      new Uint8Array([10, 11]),
-      new Uint8Array([12]),
-    ]);
+    expect(sent.request.transactions).toStrictEqual([tx, tx, tx]);
     await expect(codeOf(call(r, "solana:signTransaction", {}))).resolves.toBe(-32_602);
     await expect(codeOf(call(r, "solana:signTransaction", "x"))).resolves.toBe(-32_602);
     await expect(codeOf(call(r, "solana:signTransaction", { transactions: [5] }))).resolves.toBe(
@@ -153,12 +198,12 @@ describe("SolanaWalletHandler transaction inputs", () => {
 
   it("fails on an unexpected outcome and without an active group", async () => {
     const odd = rig({ outcome: { kind: "other" } });
-    await expect(
-      codeOf(call(odd, "solana:signTransaction", { transactions: [new Uint8Array([1])] })),
-    ).resolves.toBe(-32_603);
+    await expect(codeOf(call(odd, "solana:signTransaction", { transactions: [tx] }))).resolves.toBe(
+      -32_603,
+    );
     const noGroup = rig({ group: undefined, outcome: signed });
     await expect(
-      codeOf(call(noGroup, "solana:signTransaction", { transactions: [new Uint8Array([1])] })),
+      codeOf(call(noGroup, "solana:signTransaction", { transactions: [tx] })),
     ).resolves.toBe(4100);
   });
 
@@ -166,7 +211,7 @@ describe("SolanaWalletHandler transaction inputs", () => {
     const r = rig({ outcome: { kind: "solana.transactions", send: true } });
     await expect(
       call(r, "solana:signAndSendTransaction", {
-        transactions: [new Uint8Array([1])],
+        transactions: [tx],
         chains: ["solana:mainnet"],
       }),
     ).resolves.toStrictEqual({ signatures: [] });
@@ -271,8 +316,12 @@ describe("SolanaWalletHandler events", () => {
     second.off();
   });
 
-  it("answers an empty list for a change when no group is selected", async () => {
-    const r = rig({ group: undefined });
-    await expect(r.handler.solanaAccountsChanged(SITE)).resolves.toStrictEqual([]);
+  it("a session without a bound group changes to an empty account list", async () => {
+    const r = rig();
+    const { events, off } = collect(r);
+    r.set({ a: solSession([ADDR], SITE, null) });
+    await settle();
+    expect(events.at(-1)?.accounts).toStrictEqual([]);
+    off();
   });
 });

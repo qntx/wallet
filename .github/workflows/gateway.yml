@@ -1,9 +1,10 @@
 name: Gateway
 
 # Staging follows main: every commit whose CI run passed is deployed. Production is a manual
-# dispatch from main that redeploys a commit CI has passed, behind the environment's reviewer.
-# Nothing runs until the repository variable GATEWAY_DEPLOY is "true": each environment needs its
-# own Cloudflare token first (.github/rulesets/apply.sh).
+# dispatch from main that redeploys a commit CI has passed, behind the environment's reviewers.
+# A failed smoke rolls the deployment back. Nothing runs until the
+# repository variable GATEWAY_DEPLOY is "true": each environment needs its own Cloudflare account
+# and token first (apps/gateway/README.md, .github/rulesets/apply.sh).
 on:
   workflow_run:
     workflows: [CI]
@@ -15,22 +16,86 @@ permissions:
   contents: read
   actions: read
 
-concurrency:
-  group: gateway-${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
-  cancel-in-progress: false
-
 jobs:
-  deploy:
+  staging:
     if: >-
-      vars.GATEWAY_DEPLOY == 'true' && (
-        (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
-        (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')
-      )
-    environment: ${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
+      vars.GATEWAY_DEPLOY == 'true' && github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'
+    environment: staging
+    concurrency:
+      group: gateway-staging
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     env:
-      TARGET: ${{ github.event_name == 'workflow_dispatch' && 'production' || 'staging' }}
-      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      COMMIT: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Require a passed CI run for the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$COMMIT" \
+            --status success --json databaseId --jq length)"
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run for $COMMIT"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.COMMIT }}
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      # Workers Scripts Edit is account-wide: a token that can deploy staging into the production
+      # account can also replace the production Worker, read its secrets and write its KV.
+      - name: Require staging to live outside the production account
+        working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          read -r staging production < <(bun -e '
+            const { env } = Bun.JSONC.parse(await Bun.file("wrangler.jsonc").text());
+            console.log(env.staging.account_id, env.production.account_id);
+          ')
+          if [ -z "$staging" ] || [ "$staging" = "$production" ]; then
+            echo "::error::staging must deploy to its own Cloudflare account, not $production"
+            exit 1
+          fi
+          status="$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$production/workers/scripts")"
+          case "$status" in
+            401 | 403) ;;
+            *)
+              echo "::error::the staging token is not refused by the production account (HTTP $status)"
+              exit 1
+              ;;
+          esac
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run @qntx/wallet-engine#build
+      - id: deploy
+        working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler deploy --env staging
+      - working-directory: apps/gateway
+        run: bun scripts/smoke.ts https://wallet-gateway-staging.qntx.org staging
+      - name: Roll back a deployment whose smoke failed
+        if: failure() && steps.deploy.outcome == 'success'
+        working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler rollback --env staging --message "smoke failed for $COMMIT" --yes
+
+  production:
+    if: >-
+      vars.GATEWAY_DEPLOY == 'true' && github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/heads/main'
+    environment: production
+    concurrency:
+      group: gateway-production
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    env:
+      COMMIT: ${{ github.sha }}
     steps:
       - name: Require a passed CI run for the commit
         env:
@@ -49,14 +114,16 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - run: bun install --frozen-lockfile
       - run: bunx vp run @qntx/wallet-engine#build
-      - working-directory: apps/gateway
+      - id: deploy
+        working-directory: apps/gateway
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: bunx wrangler deploy --env "$TARGET"
+        run: bunx wrangler deploy --env production
       - working-directory: apps/gateway
-        run: |
-          case "$TARGET" in
-            production) url=https://gateway.meowl.xyz ;;
-            *) url=https://wallet-gateway-staging.qntx.org ;;
-          esac
-          bun scripts/smoke.ts "$url" "$TARGET"
+        run: bun scripts/smoke.ts https://gateway.meowl.xyz production
+      - name: Roll back a deployment whose smoke failed
+        if: failure() && steps.deploy.outcome == 'success'
+        working-directory: apps/gateway
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: bunx wrangler rollback --env production --message "smoke failed for $COMMIT" --yes

@@ -141,7 +141,6 @@ type FakeHost = KernelHostLike & {
   readonly locked: () => boolean;
   readonly backgroundLock: () => number | undefined;
   readonly started: () => number[];
-  readonly _integrity: () => void;
   readonly _exit: (reason: KernelExitReason) => void;
 };
 
@@ -149,7 +148,6 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
   let hostCb: ((f: ArrayBuffer) => void) | undefined;
   let kernelCb: ((f: ArrayBuffer) => void) | undefined;
   let exitCb: ((r: KernelExitReason) => void) | undefined;
-  let integCb: (() => void) | undefined;
   let locked = false;
   let backgroundLock: number | undefined;
   const starts: number[] = [];
@@ -161,9 +159,6 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     },
     onMessage: (cb) => {
       kernelCb = cb;
-    },
-    onIntegrityViolation: (cb) => {
-      integCb = cb;
     },
   };
   const host = {
@@ -194,14 +189,12 @@ function makePipe(): { host: FakeHost; pipe: KernelFramePipe } {
     locked: () => locked,
     backgroundLock: () => backgroundLock,
     started: () => [...starts],
-    _integrity: () => integCb?.(),
     _exit: (reason: KernelExitReason) => exitCb?.(reason),
   } as KernelHostLike & {
     inbound: (f: ArrayBuffer) => void;
     locked: () => boolean;
     backgroundLock: () => number | undefined;
     started: () => number[];
-    _integrity: () => void;
     _exit: (reason: KernelExitReason) => void;
   };
   return { host, pipe };
@@ -264,14 +257,25 @@ function platform(
   };
 }
 
-// An in-memory __qntx.file: the byte holder outlives a crashed kernel so persistence across
-// rebuild is exercised end to end — identical to the native file primitive's guarantee. Each
-// test gets its own holder; the crash test shares one across both boots.
+// An in-memory __qntx.file with the native compare-and-swap semantics: the byte holder outlives a
+// crashed kernel so persistence across rebuild is exercised end to end — identical to the native
+// file primitive's guarantee. Each test gets its own holder; the crash test shares one across
+// both boots.
 const fileStore = (bytes: { value: Uint8Array | undefined }) =>
   createFileStore({
     read: () => bytes.value,
-    write: (b) => {
-      bytes.value = b;
+    replace: (next, expected) => {
+      const matches =
+        expected === undefined
+          ? bytes.value === undefined
+          : bytes.value !== undefined &&
+            bytes.value.length === expected.length &&
+            bytes.value.every((v, i) => v === expected[i]);
+      if (!matches) {
+        return false;
+      }
+      bytes.value = next;
+      return true;
     },
   });
 

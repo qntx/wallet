@@ -1,3 +1,13 @@
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { decodeEvm } from "@qntx/wallet-chains/evm";
@@ -377,6 +387,22 @@ describe("approval-time re-simulation", () => {
     expect(f.signed).toHaveLength(0);
   });
 
+  it("an invalidation during re-simulation stays invalidated, not back to awaiting", async () => {
+    const f = rig(succeed("-100"));
+    f.queue.push(succeed("-200"));
+    await f.requests.init();
+    const request = await f.requests.prepare(PARAMS);
+    f.advance(RESIMULATE_AFTER_MS);
+    f.duringResimulate(() => {
+      f.requests.invalidateAll();
+    });
+    await expect(
+      f.requests.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toMatchObject({ name: "RequestEndedError", stage: "invalidated" });
+    expect(f.requests.getState().requests[request.id]?.stage).toBe("invalidated");
+    expect(f.signed).toHaveLength(0);
+  });
+
   it("replacements never re-simulate", async () => {
     const f = rig(succeed("-100"));
     await f.requests.init();
@@ -388,6 +414,44 @@ describe("approval-time re-simulation", () => {
     expect(f.signed).toHaveLength(1);
   });
 });
+
+/** A serialized legacy transaction signed for SOLANA_ACCOUNT: one empty slot, then the message. */
+const solanaTx = (): { tx: Uint8Array; message: Uint8Array } => {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, 1_000_000n, true);
+  const message = new Uint8Array(
+    getCompiledTransactionMessageEncoder().encode(
+      compileTransactionMessage(
+        appendTransactionMessageInstruction(
+          {
+            programAddress: address("11111111111111111111111111111111"),
+            accounts: [
+              { address: address(SOLANA_ACCOUNT.address), role: AccountRole.WRITABLE_SIGNER },
+              {
+                address: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+                role: AccountRole.WRITABLE,
+              },
+            ],
+            data,
+          },
+          setTransactionMessageLifetimeUsingBlockhash(
+            {
+              blockhash: address("11111111111111111111111111111111"),
+              lastValidBlockHeight: 1000n,
+            } as never,
+            setTransactionMessageFeePayer(
+              address(SOLANA_ACCOUNT.address),
+              createTransactionMessage({ version: "legacy" }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  return { tx: new Uint8Array([1, ...new Uint8Array(64), ...message]), message };
+};
 
 describe("solana-sign re-simulation", () => {
   const sign = (transactions: Uint8Array[]) => ({
@@ -405,8 +469,8 @@ describe("solana-sign re-simulation", () => {
     };
     const f = solanaRig([outcome, outcome]);
     await f.requests.init();
-    const message = new Uint8Array([1, 2, 3]);
-    const request = await f.requests.prepare(sign([message]));
+    const { tx, message } = solanaTx();
+    const request = await f.requests.prepare(sign([tx]));
     f.advance(RESIMULATE_AFTER_MS);
     const result = await f.requests.approve(request.id, "solana-sign", approval(request, VERIFY));
     expect(f.simulateCalls).toStrictEqual([message, message]);
@@ -417,7 +481,7 @@ describe("solana-sign re-simulation", () => {
   it("a batch does not re-simulate", async () => {
     const f = solanaRig([]);
     await f.requests.init();
-    const request = await f.requests.prepare(sign([new Uint8Array([1]), new Uint8Array([2])]));
+    const request = await f.requests.prepare(sign([solanaTx().tx, solanaTx().tx]));
     expect(request.simulation).toStrictEqual({ status: "unavailable", error: "batch" });
     f.advance(RESIMULATE_AFTER_MS);
     await f.requests.approve(request.id, "solana-sign", approval(request, VERIFY));

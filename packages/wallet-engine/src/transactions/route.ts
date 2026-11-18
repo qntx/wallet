@@ -62,8 +62,14 @@ export type TrackedTransaction = {
   readonly parentId?: string;
   /** Set on a Spark deposit; `claimed` flips once the deposit is credited on Spark. */
   readonly sparkDeposit?: SparkDepositTag;
-  /** EVM build record persisted at broadcast for rebroadcast, drop detection and replacement. */
-  readonly evm?: { readonly from: string; readonly account: AccountRef; readonly raw: string };
+  /**
+   * The signed transaction exactly as broadcast — EVM and Bitcoin hex, Solana base64 wire —
+   * persisted with `hash` before it leaves, so an unknown outcome is rebroadcast, even after a
+   * restart. Cleared when the node refuses it.
+   */
+  readonly raw?: string | undefined;
+  /** EVM build record persisted with `raw`, for drop detection and replacement. */
+  readonly evm?: { readonly from: string; readonly account: AccountRef };
   /** Bitcoin build record persisted at send for RBF/CPFP rebuilds. */
   readonly btc?: {
     readonly inputs: ReadonlyArray<{
@@ -95,6 +101,8 @@ export type SendParams = {
   readonly fee: EvmFeeTier | SolanaFeeTier;
   /** SPL mint decimals — required when `token` is a Solana mint. */
   readonly decimals?: number;
+  /** Bitcoin only — protected outpoints (`txid:vout`) the user chose to spend in this send. */
+  readonly spendProtected?: ReadonlyArray<string>;
   readonly verify: SignParams["verify"];
 };
 
@@ -260,8 +268,15 @@ export type PreparedRequest = {
   readonly resimulate?: () => Promise<SimulationOutcome>;
   /** Why the build can no longer be signed (nonce taken, blockhash expired), if so. */
   readonly staleReason: () => string | undefined | Promise<string | undefined>;
-  /** Signs, finalizes, broadcasts and hands the transaction to tracking. */
-  readonly submit: (verify: SendParams["verify"]) => Promise<TrackedTransaction>;
+  /**
+   * Signs, finalizes, broadcasts and hands the transaction to tracking. `commit` must run
+   * immediately (no await in between) before the network send; a throw there means nothing may be
+   * sent.
+   */
+  readonly submit: (
+    verify: SendParams["verify"],
+    commit: () => void,
+  ) => Promise<TrackedTransaction>;
   /** Frees what `prepare` reserved; safe to call more than once. */
   readonly release: () => void;
 };

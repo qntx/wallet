@@ -24,14 +24,14 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "ci / ci" },
-          { "context": "smoke / ci" },
-          { "context": "audit" },
-          { "context": "evm-anvil" },
-          { "context": "solana-e2e" },
-          { "context": "bitcoin-e2e" },
-          { "context": "playwright" },
-          { "context": "native-host-test" }
+          { "context": "ci / ci", "integration_id": 15368 },
+          { "context": "smoke / ci", "integration_id": 15368 },
+          { "context": "audit", "integration_id": 15368 },
+          { "context": "evm-anvil", "integration_id": 15368 },
+          { "context": "solana-e2e", "integration_id": 15368 },
+          { "context": "bitcoin-e2e", "integration_id": 15368 },
+          { "context": "playwright", "integration_id": 15368 },
+          { "context": "native-host-test", "integration_id": 15368 }
         ]
       }
     }

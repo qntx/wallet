@@ -18,7 +18,12 @@ const hex = (n: number): string => `0x${n.toString(16)}`;
 const ACCEPTED: ReadonlyArray<readonly [string, unknown]> = [
   ["no range: the latest block", [{ address: TOKEN }]],
   ["one block by hash", [{ blockHash: HASH, topics: [TRANSFER] }]],
-  ["recent-block tags", [{ fromBlock: "finalized", toBlock: "latest" }]],
+  ["latest to pending", [{ fromBlock: "latest", toBlock: "pending" }]],
+  ["pending to latest", [{ fromBlock: "pending", toBlock: "latest" }]],
+  ["one finalized block", [{ fromBlock: "finalized", toBlock: "finalized" }]],
+  ["one safe block", [{ fromBlock: "safe", toBlock: "safe" }]],
+  ["an omitted end: latest to latest", [{ toBlock: "latest" }]],
+  ["an omitted start: latest to latest", [{ fromBlock: "latest" }]],
   ["a single numbered block", [{ fromBlock: "0x10", toBlock: "0x10" }]],
   [
     "the widest numbered range",
@@ -41,6 +46,13 @@ const REFUSED: ReadonlyArray<readonly [string, unknown]> = [
   ["a filter that is not an object", ["latest"]],
   ["an unknown key", [{ limit: 5 }]],
   ["the whole chain", [{ fromBlock: "earliest", toBlock: "latest" }]],
+  [
+    "finalized to latest: every block since finality",
+    [{ fromBlock: "finalized", toBlock: "latest" }],
+  ],
+  ["safe to pending", [{ fromBlock: "safe", toBlock: "pending" }]],
+  ["safe to latest", [{ fromBlock: "safe", toBlock: "latest" }]],
+  ["pending to finalized", [{ fromBlock: "pending", toBlock: "finalized" }]],
   ["a number against a tag", [{ fromBlock: "0x10", toBlock: "latest" }]],
   ["a number with no end", [{ fromBlock: "0x10" }]],
   ["a range one block too wide", [{ fromBlock: hex(0), toBlock: hex(LOGS_BLOCK_RANGE_MAX) }]],

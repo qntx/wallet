@@ -337,10 +337,40 @@ describe("assessSignIn", () => {
     expect(assess(valid({ expirationTime: "2026-07-01T00:00:00.000Z" })).risk).toStrictEqual([]);
   });
 
-  it("a malformed sign-in text is a warning", () => {
-    expect(assess({ status: "malformed" })).toStrictEqual({
+  it("a malformed sign-in text is a warning when it claims this page or nothing", () => {
+    expect(assess({ status: "malformed", claims: [] })).toStrictEqual({
       risk: [{ code: "sign-in-malformed", level: "warning" }],
     });
+    expect(assess({ status: "malformed", claims: [{ domain: "app.example" }] })).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+  });
+
+  it("a malformed sign-in claiming another domain is refused, a danger on a local page", () => {
+    const foreign = { status: "malformed" as const, claims: [{ domain: "victim.example" }] };
+    expect(assess(foreign).reject).toContain("victim.example");
+    expect(assess(foreign, "https://victim.example")).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+    expect(assess(foreign, "http://localhost:5173").risk).toStrictEqual([
+      { code: "sign-in-domain-mismatch", level: "danger" },
+    ]);
+  });
+
+  it("a malformed claim binds its port and scheme too", () => {
+    const ported = { status: "malformed" as const, claims: [{ domain: "app.example:8443" }] };
+    expect(assess(ported).reject).toContain("app.example:8443");
+    expect(assess(ported, "https://app.example:8443")).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+    const schemed = {
+      status: "malformed" as const,
+      claims: [{ scheme: "https", domain: "app.example" }],
+    };
+    expect(assess(schemed)).toStrictEqual({
+      risk: [{ code: "sign-in-malformed", level: "warning" }],
+    });
+    expect(assess(schemed, "http://app.example").reject).toBeDefined();
   });
 });
 
@@ -486,7 +516,15 @@ describe("assessSafe", () => {
 
   it("warns on a gas refund and surfaces inner-call approvals", () => {
     expect(
-      assessSafe(safeTx({ refund: { gasPrice: "5", gasToken: KNOWN, refundReceiver: OTHER } })),
+      assessSafe(
+        safeTx({
+          refund: {
+            receiver: OTHER,
+            gasPrice: { asset: KNOWN, amount: "5" },
+            amount: { asset: KNOWN, amount: "500" },
+          },
+        }),
+      ),
     ).toStrictEqual([{ code: "safe-gas-refund", level: "warning" }]);
 
     const inner = {
@@ -515,7 +553,11 @@ describe("assessSafe", () => {
 });
 
 describe("assessBitcoinPsbts", () => {
-  const input = (value: number, sigHash: "ALL" | "SINGLE|ANYONECANPAY") => ({ value, sigHash });
+  const input = (
+    value: number,
+    sigHash: "ALL" | "SINGLE|ANYONECANPAY",
+    template: "btc.bip84" | "btc.bip86" = "btc.bip84",
+  ) => ({ value, template, sigHash });
 
   it("a SINGLE|ANYONECANPAY input is a danger", () => {
     expect(assessBitcoinPsbts([input(100_000, "SINGLE|ANYONECANPAY")])).toStrictEqual([
@@ -538,7 +580,21 @@ describe("assessBitcoinPsbts", () => {
     ).toStrictEqual(["bitcoin-sighash-single:danger", "bitcoin-inscription-input:danger"]);
   });
 
+  it("the ord-postage rule: ≤20_000 sat or any taproot input is an inscription carrier", () => {
+    expect(assessBitcoinPsbts([input(10_000, "ALL")])).toStrictEqual([
+      { code: "bitcoin-inscription-input", level: "danger" },
+    ]);
+    expect(assessBitcoinPsbts([input(100_000, "ALL", "btc.bip86")])).toStrictEqual([
+      { code: "bitcoin-inscription-input", level: "danger" },
+    ]);
+    expect(
+      assessBitcoinPsbts([input(1_000_000, "SINGLE|ANYONECANPAY", "btc.bip86")]).map(
+        (f) => `${f.code}:${f.level}`,
+      ),
+    ).toStrictEqual(["bitcoin-sighash-single:danger", "bitcoin-inscription-input:warning"]);
+  });
+
   it("ordinary inputs raise nothing", () => {
-    expect(assessBitcoinPsbts([input(100_000, "ALL"), input(547, "ALL")])).toStrictEqual([]);
+    expect(assessBitcoinPsbts([input(100_000, "ALL"), input(30_000, "ALL")])).toStrictEqual([]);
   });
 });

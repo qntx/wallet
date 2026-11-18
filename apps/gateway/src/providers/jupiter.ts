@@ -4,6 +4,7 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteSolanaResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { ResolvedProvider } from "../types.ts";
+import { readCapped } from "./body.ts";
 import type { Forwarder } from "./forward.ts";
 
 /** An optional Jupiter API key — absent, the `/build` API serves keyless at its public rate. */
@@ -12,6 +13,9 @@ export type JupiterConfig = { readonly apiKey?: string };
 const JUP_API_BASE = "https://api.jup.ag";
 
 const PROVIDER: ResolvedProvider = { id: "jupiter", url: JUP_API_BASE };
+
+/** 22x the largest quote response measured (a 46 kB build). */
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 const base58 = z.string().check(z.regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/));
 const decimal = z.string().check(z.regex(/^[0-9]+$/));
@@ -93,7 +97,7 @@ export async function jupiterQuote(
       ...(config?.apiKey === undefined ? {} : { headers: { "x-api-key": config.apiKey } }),
       signal,
     });
-    const text = await http.text();
+    const text = await readCapped(http, MAX_RESPONSE_BYTES);
     if (!http.ok) {
       if (CLIENT_ERROR.has(http.status) && text.includes("No routes found")) {
         return { liquidity: false } satisfies SwapQuoteSolanaResponse;

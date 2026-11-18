@@ -97,7 +97,6 @@ const walletSigner: WalletSigner = {
 };
 
 const INFO: ProviderInfo = {
-  uuid: "550e8400-e29b-41d4-a716-446655440000",
   name: "Qntx Wallet",
   icon: `data:image/png;base64,${"A".repeat(16)}`,
   rdns: "xyz.meowl",
@@ -215,7 +214,14 @@ async function engineRig() {
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(apis, fakeEsplora, account, network, psbts),
     bitcoinSignPsbts: async (_account, _network, prepared, send, verify) => {
-      const { signedPsbts, txids } = await signDappPsbts(apis, fakeEsplora, prepared, send, verify);
+      const { signedPsbts, txids } = await signDappPsbts(
+        apis,
+        fakeEsplora,
+        prepared,
+        send,
+        verify,
+        () => undefined,
+      );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
     bitcoinSign: async (account, network, request, verify) => {
@@ -268,6 +274,10 @@ async function engineRig() {
     logger,
     allowLocalhost: true,
     selectedGroup: () => ({ walletId, groupIndex: 0 }),
+    onSelectedGroup: () => () => undefined,
+    invalidateAll: () => {
+      requests.invalidateAll();
+    },
     evmAddress: async (group: { walletId: string; groupIndex: number }, network: string) =>
       addressAt(group.groupIndex, network),
     enabledNetworks: () => [MAINNET, SOL_NET, BTC_NET],
@@ -327,7 +337,7 @@ async function engineRig() {
         };
       },
     },
-    sparkAccount: () => ({ walletId, groupIndex: 0, network: "regtest" }),
+    sparkNetwork: "regtest",
     alias: "qntx-test",
     lightningMaxFee: () => 10,
     sleep: async () => {
@@ -341,14 +351,12 @@ async function engineRig() {
       await Promise.resolve();
       return { address: SOL_ADDR, publicKey: SOL_PUBKEY };
     },
-    activeGroup: () => ({ walletId, groupIndex: 0 }),
     solanaNetwork: () => SOL_NET,
   });
   const bitcoin = new BitcoinWalletHandler({
     connections,
     requests,
     bitcoinAccount,
-    activeGroup: () => ({ walletId, groupIndex: 0 }),
     bitcoinNetwork: () => BTC_NET,
   });
   await connections.setActiveIdentity(NOSTR_REF);
@@ -381,7 +389,17 @@ async function openConnect(context: BrowserContext) {
 const request = async (page: Page, method: string, params?: unknown): Promise<unknown> =>
   page.evaluate(`window.ethereum.request(${JSON.stringify({ method, params })})`);
 
-test("EIP-6963 announce carries the frozen provider", async ({ context }) => {
+const announcedUuid = async (page: Page): Promise<unknown> =>
+  page.evaluate(`new Promise((resolve) => {
+    window.addEventListener("eip6963:announceProvider", (e) => resolve(e.detail.info.uuid));
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+  })`);
+
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+test("EIP-6963 announce carries the frozen provider and a per-document uuid", async ({
+  context,
+}) => {
   const { page } = await openConnect(context);
   const detail = await page.evaluate(`new Promise((resolve) => {
     window.addEventListener("eip6963:announceProvider", (e) => {
@@ -393,7 +411,37 @@ test("EIP-6963 announce carries the frozen provider", async ({ context }) => {
     });
     window.dispatchEvent(new Event("eip6963:requestProvider"));
   })`);
-  expect(detail).toMatchObject({ info: { uuid: INFO.uuid, rdns: INFO.rdns }, frozen: true });
+  expect(detail).toMatchObject({ info: { rdns: INFO.rdns }, frozen: true });
+  expect(detail).toMatchObject({ info: { uuid: expect.stringMatching(UUID_V4) } });
+});
+
+test("each document announces a different uuid, and a foreign doc's reply settles nothing", async ({
+  context,
+}) => {
+  const first = await openConnect(context);
+  const second = await openConnect(context);
+  const uuidA = await announcedUuid(first.page);
+  const uuidB = await announcedUuid(second.page);
+  expect(uuidA).toMatch(UUID_V4);
+  expect(uuidB).toMatch(UUID_V4);
+  expect(uuidA).not.toBe(uuidB);
+
+  // eth_requestAccounts stays pending until approval, so only the injected replies can settle it.
+  const outcome = await first.page.evaluate(`(async () => {
+    const pending = window.ethereum.request({ method: "eth_requestAccounts" });
+    globalThis.__qntxReceive(JSON.stringify({
+      doc: "00000000-0000-4000-8000-000000000000", id: 1, result: "WRONG",
+    }));
+    const afterForeign = await Promise.race([
+      pending.then(() => "settled"),
+      new Promise((resolve) => setTimeout(() => resolve("pending"), 200)),
+    ]);
+    globalThis.__qntxReceive(JSON.stringify({
+      doc: ${JSON.stringify(String(uuidA))}, id: 1, result: "0x1",
+    }));
+    return [afterForeign, await pending];
+  })()`);
+  expect(outcome).toStrictEqual(["pending", "0x1"]);
 });
 
 test("a cross-origin subframe gets no provider", async ({ context }) => {

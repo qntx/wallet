@@ -16,11 +16,12 @@ function createSparkApi(internals: WalletInternals): SparkApi {
   return {
     signer: (ref) => proxySigner(ref, internals),
     approve: async (params) =>
-      internals.withVerifying(async () => {
-        const transfer: ArrayBuffer[] = [];
-        const verify = await internals.resolveVerifyFactor(params.verify, transfer);
-        return internals.call("spark.approve", { ...params, verify });
-      }),
+      internals.withVerifying(async () =>
+        internals.secretCall("spark.approve", async (wire) => ({
+          ...params,
+          verify: await internals.resolveVerifyFactor(params.verify, wire),
+        })),
+      ),
   };
 }
 

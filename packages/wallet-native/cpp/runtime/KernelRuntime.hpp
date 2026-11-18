@@ -3,6 +3,8 @@
 #include <hermes/hermes.h>
 #include <jsi/jsi.h>
 
+#include "KernelBuffer.hpp"
+
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -44,7 +46,8 @@ struct KernelScript {
 // Host integration:
 //   - Hooks.beforeEvaluate runs on the kernel thread after globals install and
 //     before the script evaluates.
-//   - Hooks.onPost receives bytes the script posts via __qntx.post.
+//   - Hooks.onPost receives bytes the script posts via __qntx.post, in
+//     wipe-on-release storage — the hook's copy is zeroed when it drops.
 //   - Hooks.onError receives a single fatal error (script exception, task
 //     exception, unhandled rejection); the runtime is torn down afterwards.
 //     Errors that only exist because shutdown was requested never reach it.
@@ -52,7 +55,7 @@ class KernelRuntime final : public std::enable_shared_from_this<KernelRuntime> {
  public:
   struct Hooks {
     std::function<void(facebook::jsi::Runtime&)> beforeEvaluate;
-    std::function<void(std::vector<uint8_t>)> onPost;
+    std::function<void(SecretBytes)> onPost;
     std::function<void(std::string)> onError;
     // Fired when post() exceeds the inbound frame queue cap (64) — a transport
     // violation the host maps to an `integrity` exit, not a kernel crash.
@@ -61,7 +64,7 @@ class KernelRuntime final : public std::enable_shared_from_this<KernelRuntime> {
 
   // `vaultDirectory` is the directory the kernel's vault file lives in (the
   // host resolves it via platformVaultDirectory); the __qntx.file capabilities
-  // capture it for kernelFileRead/kernelFileWrite.
+  // capture it for kernelFileRead/kernelFileReplace.
   static std::shared_ptr<KernelRuntime> start(
       KernelScript script,
       Hooks hooks,
@@ -77,7 +80,7 @@ class KernelRuntime final : public std::enable_shared_from_this<KernelRuntime> {
 
   // Delivers bytes to the script's message handler. Safe after destroy():
   // returns immediately if the runtime is stopping or gone.
-  void post(std::vector<uint8_t> bytes);
+  void post(SecretBytes bytes);
 
   void destroy() noexcept;
   bool running() const noexcept;

@@ -14,6 +14,7 @@ const session = { id: "s1" } as never;
 
 function rig(options: {
   authorized?: boolean;
+  bound?: { walletId: string; groupIndex: number } | null;
   balancePolicy?: boolean;
   balance?: number;
   paymentStatus?: () => Promise<LightningSendStatus>;
@@ -23,6 +24,7 @@ function rig(options: {
 }) {
   const sleeps: number[] = [];
   const requestsCalls: string[] = [];
+  const preparedInputs: unknown[] = [];
   const handler = new WeblnHandler({
     connections: {
       checkOrigin: (origin) => ({ kind: "browser", origin }),
@@ -33,6 +35,15 @@ function rig(options: {
         return session;
       },
       session: () => session,
+      sessionAccounts: () => {
+        const bound =
+          "bound" in options
+            ? options.bound
+            : { walletId: REF.walletId, groupIndex: REF.groupIndex };
+        return bound === null || bound === undefined
+          ? undefined
+          : { group: bound, addresses: [`spark:${bound.walletId}:${String(bound.groupIndex)}`] };
+      },
       lightningPolicy: () =>
         options.authorized === false ? undefined : { balance: options.balancePolicy === true },
       request: async () => {
@@ -45,6 +56,7 @@ function rig(options: {
       prepare: async (input) => {
         await Promise.resolve();
         requestsCalls.push(input.method);
+        preparedInputs.push(input);
         return { id: "req-1" } as never;
       },
       outcome: async () => Promise.resolve(options.prepareResult as never),
@@ -56,7 +68,7 @@ function rig(options: {
           ? Promise.resolve({ outcome: "pending" } as LightningSendStatus)
           : options.paymentStatus(),
     },
-    sparkAccount: () => REF,
+    sparkNetwork: REF.network,
     now: options.now ?? (() => 0),
     alias: "qntx",
     lightningMaxFee: () => 10,
@@ -68,7 +80,7 @@ function rig(options: {
       }
     },
   });
-  return { handler, sleeps, requestsCalls };
+  return { handler, sleeps, requestsCalls, preparedInputs };
 }
 
 describe("WeblnHandler", () => {
@@ -121,6 +133,24 @@ describe("WeblnHandler", () => {
     await expect(handler.handle(SITE, { method: "getBalance" })).rejects.toMatchObject({
       code: 4100,
     });
+  });
+
+  it("builds the spark ref from the session's bound group", async () => {
+    const { handler, preparedInputs } = rig({
+      bound: { walletId: "w2", groupIndex: 1 },
+      prepareResult: { kind: "lightning.invoice", paymentRequest: "lnbc1x" },
+    });
+    await handler.handle(SITE, { method: "makeInvoice", params: { amount: "10" } });
+    expect(preparedInputs[0]).toMatchObject({
+      ref: { walletId: "w2", groupIndex: 1, network: "mainnet" },
+    });
+  });
+
+  it("rejects with 4100 when the session binds no lightning account", async () => {
+    const { handler } = rig({ bound: null });
+    await expect(
+      handler.handle(SITE, { method: "sendPayment", params: "lnbc1x" }),
+    ).rejects.toMatchObject({ code: 4100 });
   });
 
   it("getBalance returns the cached balance", async () => {

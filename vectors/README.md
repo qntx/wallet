@@ -15,7 +15,7 @@ it for funds.**
 | `records.json`     | Exact public-header texts (entropy, data-key, nostr derived + sync key, both factors) and the vault meta object | `bun scripts/vectors/records.ts` — `JSON.stringify` in the documented key order, no kernel imports |
 | `protocol.json`    | PROTOCOL_VERSION 3 request envelopes, ok/err responses and events (`{"$bytes": hex}` marks Uint8Array), plus near-miss rejects | `bun scripts/vectors/protocol.ts` — wire shapes spelled out literally, no `@qntx/wallet` imports |
 | `native-vault-image.json` | File RecordStore vault images: empty, initialized, records/factors, malformed rejects | `bun scripts/vectors/native-vault-image.ts` — raw cborg, no kernel imports |
-| `vault-v013.json`  | A spelled-out format-3 vault image exactly as v0.13 wrote it on React Native (one hardware factor, entropy + nostr-key records) for the upgrade path | `bun scripts/vectors/vault-v013.ts` — noble only, no kernel imports |
+| `vault-manifest.json` | A fixed vault image, the structure digest its manifest commits to (format, keyId, every other record and factor row) and the manifest record sealed under a fixed DEK/nonce | `bun scripts/vectors/vault-manifest.ts` — noble only, no kernel imports |
 | `native-frames.json`  | Kernel-channel CBOR frames: accepted values and rejected encodings | `bun scripts/vectors/native-frames.ts` — raw cborg, no package imports |
 | `sync-key.json`      | The test mnemonic's metadata sync key: `m/44'/1237'/2147483647'/0/0` private + x-only public key | `bun scripts/vectors/sync-key.ts` — `@scure/bip32` + noble schnorr, no kernel imports |
 | `spark-accounts.json` | Spark identity public keys for account groups 0/1 on mainnet/regtest under the public test mnemonic | `bun scripts/spark-accounts-vector.ts` from `packages/wallet-worker` — real `createSparkSigner` on the shipped spark.wasm |
@@ -29,6 +29,7 @@ it for funds.**
 | `chains/evm-across.json` | Two real Across SpokePool mainnet transactions (block ~26375k) with their expected `DisplayIntent` — a bytes32 `deposit` (USDC → Base) and a `depositV3` (native ETH → Arbitrum, SDK data suffix) | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
 | `chains/evm-lido.json` | Five real Lido mainnet transactions (block ~26372k) with their expected `DisplayIntent` — two `submit` stakes, `requestWithdrawalsWithPermit`, `requestWithdrawalsWstETHWithPermit` and `claimWithdrawals` — plus three ABI-built request variants (foreign owner, chunked amounts) | `eth_getTransactionByHash` on chain 1, 2026-11-08 |
 | `chains/solana.json` (jupiter) | One real Jupiter Swap API V2 `/build` SOL→USDC exact-in v0 message (Metis, block ~44505k): compute-budget, wSOL ATA create + wrap transfer + SyncNative, `route_v2`, wSOL CloseAccount, one lookup table — with expected `DisplayIntent` | `/build` response, 2026-11-08 |
+| `chains/solana-wire.json` | Serialized dApp transactions (Wallet Standard unit) — legacy/v0 single-signer, cosigner pre-signed, and sponsored — with each compiled message and the kit partially-signed result | `bun packages/wallet-chains/scripts/solana-wire-vectors.ts` — `@solana/kit` 8.5.0 |
 
 ## factor vectors
 

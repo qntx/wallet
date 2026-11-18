@@ -5,10 +5,10 @@ import type { chains } from "@qntx/wallet/chains";
 
 import type { EngineLogger } from "../src/events.ts";
 import { NetworkController } from "../src/networks/controller.ts";
-import { SIMULATION_TIMEOUT_MS } from "../src/requests/simulation.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { send, simulateV1Result, idleNetworkDeps } from "./send-helpers.ts";
+import { manualTimers } from "./support/timers.ts";
 
 const ACCOUNT = {
   kind: "hd" as const,
@@ -17,6 +17,7 @@ const ACCOUNT = {
   template: "evm.bip44" as const,
 };
 const ADDR = "0x9858EfFD232B4033E47d90003D41EC34EcaEda94";
+const POLL_MS = 1;
 
 const memoryStore = () => createMemoryEngineStore();
 
@@ -52,16 +53,6 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
     );
   }) as typeof fetch;
 
-/** Records poll timers; the simulation's own timeout is not one. */
-const pollTimers =
-  (timers: Array<() => unknown>) =>
-  (ms: number, fn: () => unknown): (() => void) => {
-    if (ms !== SIMULATION_TIMEOUT_MS) {
-      timers.push(fn);
-    }
-    return () => {};
-  };
-
 const logger: EngineLogger = { warn: () => {} };
 
 type Sign = ReturnType<typeof chains>["sign"];
@@ -95,16 +86,16 @@ const SEND = {
 
 describe("TransactionController", () => {
   it("send: build → sign → broadcast → confirmed; intent and nonce tracked", async () => {
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = new TransactionController({
       wallet: {} as Wallet,
       networks: nets(rpcFetch()),
       openStore: async () => Promise.resolve(memoryStore()),
       random: (n) => new Uint8Array(n).fill(1),
-      setTimer: pollTimers(timers),
+      setTimer: timers.setTimer,
       now: () => 1000,
       logger,
-      pollMs: 1,
+      pollMs: POLL_MS,
       chains: apis(async () =>
         Promise.resolve({
           kind: "evm.transaction",
@@ -116,8 +107,8 @@ describe("TransactionController", () => {
     const tx = await send(ctl, SEND);
     expect(tx.state).toBe("submitted");
     expect(tx.intent?.summary).toBe("transfer");
-    expect(timers).toHaveLength(1);
-    await timers[0]?.();
+    expect(timers.armed(POLL_MS)).toBe(1);
+    await timers.fire(POLL_MS);
     expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
   });
 
@@ -164,24 +155,24 @@ describe("TransactionController", () => {
         }),
       ),
     );
-    const timers: Array<() => unknown> = [];
+    const timers = manualTimers();
     const ctl = new TransactionController({
       wallet: {} as Wallet,
       networks: nets(rpcFetch()),
       openStore: async () => Promise.resolve(store),
       random: (n) => new Uint8Array(n),
-      setTimer: pollTimers(timers),
+      setTimer: timers.setTimer,
       now: () => 0,
       logger,
-      pollMs: 1,
+      pollMs: POLL_MS,
       chains: apis(async () =>
         Promise.resolve({ kind: "evm.transaction", signedTransaction: new Uint8Array() }),
       ),
     });
     await ctl.init();
     expect(ctl.getState().txs["tx-x"]?.state).toBe("pending");
-    expect(timers).toHaveLength(1);
-    await timers[0]?.();
+    expect(timers.armed(POLL_MS)).toBe(1);
+    await timers.fire(POLL_MS);
     expect(ctl.getState().txs["tx-x"]?.state).toBe("confirmed");
   });
 });

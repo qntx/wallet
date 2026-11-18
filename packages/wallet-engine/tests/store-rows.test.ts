@@ -45,6 +45,7 @@ describe("controller init over a non-JSON row", () => {
     const store = await seeded("assets-custom-tokens", "customTokens");
     const assets = new AssetsController({
       networks: {} as never,
+      chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
       openStore: async () => Promise.resolve(store),
       setTimer: () => () => undefined,
       logger: recorder().logger,
@@ -62,6 +63,8 @@ describe("controller init over a non-JSON row", () => {
       logger,
       allowLocalhost: false,
       selectedGroup: () => undefined,
+      onSelectedGroup: () => () => undefined,
+      invalidateAll: () => undefined,
       evmAddress: async () => Promise.resolve(""),
       solanaAddress: async () => Promise.resolve(""),
       bitcoinAddress: async () => Promise.resolve(""),

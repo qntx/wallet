@@ -2,7 +2,13 @@ import { HDKey } from "@scure/bip32";
 import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
-import { BitcoinChainAdapter, dustFor, isFrozen } from "../src/chains/bitcoin.ts";
+import {
+  BitcoinChainAdapter,
+  dustFor,
+  isTaprootAddress,
+  mayCarryInscription,
+  selectableUtxos,
+} from "../src/chains/bitcoin.ts";
 import type { BtcUtxo } from "../src/chains/bitcoin.ts";
 
 const adapter = new BitcoinChainAdapter();
@@ -25,8 +31,10 @@ const utxo = (txid: string, vout: number, value: number): BtcUtxo => ({
 
 describe("bitcoin psbt construction", () => {
   it("never selects a 546- or 330-sat UTXO even when it would fund the send", () => {
+    const utxos = [utxo(TXID(1), 0, 546), utxo(TXID(2), 0, 330), utxo(TXID(3), 0, 100_000)];
+    const spendable = selectableUtxos(utxos, NETWORK, []);
     const inputs = adapter.toInputs(
-      [utxo(TXID(1), 0, 546), utxo(TXID(2), 0, 330), utxo(TXID(3), 0, 100_000)],
+      spendable,
       0xdeadbeef,
       () => [0],
       () => PUB,
@@ -37,9 +45,13 @@ describe("bitcoin psbt construction", () => {
     expect(inputs[0]!.txid).toBe(TXID(3));
   });
 
-  it("locks a frozen utxo out of selection while a fresh confirmed coin is picked", () => {
-    expect(isFrozen(546)).toBe(true);
-    expect(isFrozen(330)).toBe(true);
+  it("flags every inscription-postage value while a fresh confirmed coin is picked", () => {
+    expect(mayCarryInscription(false, 546)).toBe(true);
+    expect(mayCarryInscription(false, 330)).toBe(true);
+    expect(mayCarryInscription(false, 20_000)).toBe(true);
+    expect(mayCarryInscription(false, 20_001)).toBe(false);
+    expect(mayCarryInscription(true, 1_000_000)).toBe(true);
+    expect(isTaprootAddress(TO, NETWORK)).toBe(false);
     expect(dustFor("p2wpkh")).toBe(294);
   });
 

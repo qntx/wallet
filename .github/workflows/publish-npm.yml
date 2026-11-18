@@ -1,5 +1,6 @@
 # Caller owns on:. Pin at @v2.
-# OIDC. Do not pass NPM_TOKEN. Do not set environment, runs-on, or steps.
+# OIDC. Do not pass NPM_TOKEN. A job that calls the reusable workflow cannot set environment,
+# runs-on or steps, so the release gate is the `verify` job every publish job needs.
 # Required check-runs on a tag: wallet / publish, wallet-worker / publish,
 # wallet-engine / publish, wallet-chains / publish and wallet-native / publish.
 # @qntx/wallet-kernel stays private — it is bundled into the hosts, never published.
@@ -9,12 +10,45 @@ on:
   push:
     tags: ["v*.*.*"]
 
-permissions:
-  contents: read
-  id-token: write
+permissions: {}
 
 jobs:
+  # A tag publishes only a reviewed main commit that passed CI and carries the tag's version,
+  # after a reviewer of the `npm` environment approves (.github/rulesets/apply.sh).
+  verify:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the tagged commit to be on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main"
+            exit 1
+          fi
+      - name: Require a passed CI run on main for the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" \
+            --branch main --event push --status success --json databaseId --jq length)"
+          if [ "$passed" -lt 1 ]; then
+            echo "::error::no successful CI run on main for $GITHUB_SHA"
+            exit 1
+          fi
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - name: Require the tag to be every published package's version
+        run: bun scripts/check-version.ts --release-tag "$GITHUB_REF_NAME"
+
   wallet:
+    needs: verify
     uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read
@@ -24,6 +58,7 @@ jobs:
       working-directory: packages/wallet
 
   wallet-worker:
+    needs: verify
     uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read
@@ -33,6 +68,7 @@ jobs:
       working-directory: packages/wallet-worker
 
   wallet-chains:
+    needs: verify
     uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read
@@ -42,6 +78,7 @@ jobs:
       working-directory: packages/wallet-chains
 
   wallet-engine:
+    needs: verify
     uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read
@@ -51,6 +88,7 @@ jobs:
       working-directory: packages/wallet-engine
 
   wallet-native:
+    needs: verify
     uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
     permissions:
       contents: read

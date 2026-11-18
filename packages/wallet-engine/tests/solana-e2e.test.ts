@@ -605,7 +605,6 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
       const from = solFrom(acct);
       await waitFunded(r, from, Date.now() + 120_000);
 
-      const timers: Array<() => unknown> = [];
       const ctl = new TransactionController({
         wallet,
         networks: new NetworkController({
@@ -617,10 +616,7 @@ describe.runIf(RUN)("solana e2e: token-2022 through engine.transactions", () => 
         }),
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         random: taggedRandom(),
-        setTimer: (_ms, fn) => {
-          timers.push(fn);
-          return () => {};
-        },
+        setTimer: () => () => {},
         now: () => 1000,
         logger: { warn: () => {} },
         pollMs: 1,

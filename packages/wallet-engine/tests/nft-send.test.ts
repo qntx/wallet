@@ -116,7 +116,15 @@ const evmWorld = (o: {
     rpc: { [net]: [HOST] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
-    gateway: { url: GW, installId: "a".repeat(32) },
+    gateway: {
+      url: GW,
+      clientIds: {
+        evm: "a".repeat(32),
+        solana: "a".repeat(32),
+        bitcoin: "a".repeat(32),
+        service: "a".repeat(32),
+      },
+    },
   });
   const apis = {
     account: async () => Promise.resolve({ template: "evm.bip44", network: net, address: ADDR }),
@@ -155,6 +163,7 @@ const evmWorld = (o: {
   });
   return {
     requests,
+    transactions,
     calls,
     start: async () => {
       await networks.init();
@@ -349,7 +358,15 @@ const solanaWorld = (o: {
     rpc: { [SOL_NET]: [HOST] },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
-    gateway: { url: GW, installId: "a".repeat(32) },
+    gateway: {
+      url: GW,
+      clientIds: {
+        evm: "a".repeat(32),
+        solana: "a".repeat(32),
+        bitcoin: "a".repeat(32),
+        service: "a".repeat(32),
+      },
+    },
   });
   const apis = {
     account: async () =>
@@ -389,6 +406,7 @@ const solanaWorld = (o: {
   });
   return {
     requests,
+    transactions,
     calls,
     start: async () => {
       await networks.init();
@@ -468,5 +486,34 @@ describe("solana-core-send", () => {
     const w = solanaWorld({ asset: { owner: MPL_CORE_PROGRAM, data: base64.encode(bad) } });
     await w.start();
     await expect(prepareCore(w)).rejects.toThrow("not an mpl-core asset");
+  });
+});
+
+describe("solana route commit", () => {
+  it("a throwing commit prevents the broadcast", async () => {
+    const w = solanaWorld({});
+    await w.start();
+    const prepared = await w.transactions.prepareSend(
+      {
+        account: {
+          kind: "hd",
+          walletId: "w",
+          groupIndex: 0,
+          template: "solana.bip44-change",
+        },
+        network: SOL_NET,
+        to: NEW_OWNER,
+        amount: 1_000_000n,
+        fee: "normal",
+      },
+      "req-1",
+    );
+    await expect(
+      prepared.submit({ kind: "password", password: "pw" }, () => {
+        throw new Error("invalidated");
+      }),
+    ).rejects.toThrow("invalidated");
+    expect(w.calls).not.toContain("sendTransaction");
+    prepared.release();
   });
 });

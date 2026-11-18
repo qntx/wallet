@@ -67,7 +67,7 @@ const trackedTo = (
   error: undefined,
 });
 
-function world() {
+function world(over: { readonly blindSigning?: boolean } = {}) {
   const txs: Record<string, TrackedTransaction> = {};
   const events: string[] = [];
   const state = {
@@ -89,7 +89,8 @@ function world() {
         checks: [],
         ...(state.simulation === undefined ? {} : { simulation: state.simulation }),
         staleReason: () => state.stale,
-        submit: async () => {
+        submit: async (_verify, commit) => {
+          commit();
           await state.gate;
           if (state.submitFails !== undefined) {
             throw state.submitFails;
@@ -133,7 +134,7 @@ function world() {
   let now = 1000;
   const requests = new RequestController({
     phishing: { check: () => "clear" },
-    blindSigning: () => false,
+    blindSigning: () => over.blindSigning ?? false,
     simulateSolana: simulateSolanaStub,
     tokens: tokensStub,
     transactions,
@@ -593,7 +594,7 @@ describe("seaport and safe typed data", () => {
   });
 
   it("a Safe delegatecall outside MultiSendCallOnly is a danger and logs as `safe tx <nonce>`", async () => {
-    const w = world();
+    const w = world({ blindSigning: true });
     await w.start();
     const request = await w.requests.prepare(
       evmSign({
@@ -604,6 +605,7 @@ describe("seaport and safe typed data", () => {
       }),
     );
     expect(request.risk.map((r) => r.code)).toContain("safe-delegatecall");
+    expect(request.risk.map((r) => r.code)).toContain("blind-signing");
     await w.requests.approve(request.id, "evm-sign", approval(request, VERIFY));
     const [entry] = await w.requests.signLog();
     expect(entry).toMatchObject({ summary: "safe tx 7" });

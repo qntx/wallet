@@ -15,7 +15,6 @@ import { evmAddressFromPublicKey } from "@qntx/wallet-chains/evm";
 import { solanaAddressFromPublicKey, SOLANA_NETWORKS } from "@qntx/wallet-chains/solana";
 import type {
   ChainAccount,
-  ChainSignResult,
   ChainTemplate,
   CHAINS_METHODS,
   MethodName,
@@ -35,7 +34,7 @@ import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
 import { chainPrompt } from "./prompt.ts";
 import type { PromptIntent } from "./prompt.ts";
-import type { ExecuteResult } from "./shared.ts";
+import type { ExecuteResult, SignRequest } from "./shared.ts";
 import { BTC_PURPOSE } from "./shared.ts";
 import { executeSolana } from "./solana.ts";
 
@@ -163,12 +162,18 @@ const assertSignable = (
   }
 };
 
-const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
-  const { dek } = ctx.session.require(session);
-  const { request, verify } = params;
+/** One pass over the request with its signing secret, which exists only for the call. */
+type SignPass = (intentOnly: boolean) => ExecuteResult | Promise<ExecuteResult>;
+
+/** The HD pass: template checks, the wallet's entropy record, and the seed via `withWalletSeed`. */
+const hdPass = (
+  ctx: Parameters<Handler<"chain.sign">>[0],
+  request: SignRequest,
+  dek: Secret,
+): SignPass => {
   const { account } = request;
   if (account.kind === "imported") {
-    return chainSignImported(ctx, params, session, dek);
+    throw new KernelError("integrity", "unreachable: hd path with an imported account");
   }
   if (request.kind === "bitcoin.psbt") {
     if (request.sign.some((s) => BTC_PURPOSE[s.template] === undefined)) {
@@ -212,38 +217,18 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
     }
     return executeSolana(request, source, intentOnly);
   };
-  // Two passes over the seed: `prepare` checks ownership, normalizes and decodes, returning
-  // only the intent; the seed and every key are wiped before the (possibly long) system
-  // verification prompt. `sign` re-derives and signs only after verification passed.
-  const withSeed = async <R>(run: (seed: Uint8Array) => R): Promise<R> =>
-    withWalletSeed(ctx.platform.pbkdf2, dek, record, run);
-  const prepared = await withSeed((seed) => execute(seed, true));
-  if (!("prompt" in prepared)) {
-    throw new KernelError("integrity", "unreachable: prepare pass signed");
-  }
-  assertSignable(ctx, dek, prepared.prompt);
-  await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
-    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
-  );
-  // The session may have ended while the prompt was up.
-  ctx.session.require(session);
-  const signed = await withSeed((seed) => execute(seed, false));
-  if ("prompt" in signed) {
-    throw new KernelError("integrity", "unreachable: sign pass did not sign");
-  }
-  return signed;
+  return async (intentOnly) =>
+    withWalletSeed(ctx.platform.pbkdf2, dek, record, (seed) => execute(seed, intentOnly));
 };
 
-/* `chain.sign` under `{kind:"imported", keyId, family}` — the same two-pass flow, but the
-   secret comes straight from the `key` record instead of an entropy derivation. Bitcoin
-   requests have no imported path: WIF is out of scope. */
-const chainSignImported = async (
+/* The imported pass: the same two-pass shape, but the secret comes straight from the `key`
+   record instead of an entropy derivation. Bitcoin requests have no imported path: WIF is out
+   of scope. */
+const importedPass = (
   ctx: Parameters<Handler<"chain.sign">>[0],
-  params: Parameters<Handler<"chain.sign">>[1],
-  session: Parameters<Handler<"chain.sign">>[2],
+  request: SignRequest,
   dek: Secret,
-): Promise<ChainSignResult> => {
-  const { request, verify } = params;
+): SignPass => {
   const { account } = request;
   if (account.kind !== "imported") {
     throw new KernelError("integrity", "unreachable: imported path with an hd account");
@@ -280,15 +265,28 @@ const chainSignImported = async (
     }
     throw new KernelError("integrity", "unreachable: bitcoin reached the imported executor");
   };
-  const withKey = async <R>(run: (secret: Uint8Array) => R): Promise<R> => {
+  return (intentOnly) => {
     const secret = openRecord(dek, record);
     try {
-      return await run(secret);
+      return execute(secret, intentOnly);
     } finally {
       wipe(secret);
     }
   };
-  const prepared = await withKey((secret) => execute(secret, true));
+};
+
+const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
+  const { dek } = ctx.session.require(session);
+  const { request, verify } = params;
+  const pass =
+    request.account.kind === "imported"
+      ? importedPass(ctx, request, dek)
+      : hdPass(ctx, request, dek);
+  // Two passes over the signing secret: `prepare` checks ownership, normalizes and decodes,
+  // returning only the intent; the secret and every key are wiped before the (possibly long)
+  // system verification prompt. `sign` re-opens the secret and signs only after verification
+  // passed.
+  const prepared = await pass(true);
   if (!("prompt" in prepared)) {
     throw new KernelError("integrity", "unreachable: prepare pass signed");
   }
@@ -296,8 +294,9 @@ const chainSignImported = async (
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
     chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
   );
+  // The session may have ended while the prompt was up.
   ctx.session.require(session);
-  const signed = await withKey((secret) => execute(secret, false));
+  const signed = await pass(false);
   if ("prompt" in signed) {
     throw new KernelError("integrity", "unreachable: sign pass did not sign");
   }

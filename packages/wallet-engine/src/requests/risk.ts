@@ -8,7 +8,7 @@ import type {
 import { SAFE_MULTISEND_CALL_ONLY, evmTokenTable } from "@qntx/wallet-chains/evm";
 import { SOLANA_NATIVE_ASSET } from "@qntx/wallet-chains/solana";
 
-import { isFrozen } from "../chains/bitcoin.ts";
+import { mayCarryInscription } from "../chains/bitcoin.ts";
 import type { PhishingStatus } from "../phishing/status.ts";
 import type { RequestCheckCode } from "./checks.ts";
 import { sameAsset } from "./simulation.ts";
@@ -182,13 +182,15 @@ export function assessSafe(safe: SafeTransaction | undefined): ReadonlyArray<Ris
 /**
  * Findings for the inputs a dApp PSBT asks the wallet to sign. A `SINGLE|ANYONECANPAY` input binds
  * only its same-index output, so anyone can change the rest of the transaction: `danger`. Until
- * inscription data exists the heuristic is the coin-selection freeze rule (546 and 330 sat
- * outputs): such an input is a `warning` when it is signed as a listing (the sighash that fits
- * selling it) and a `danger` otherwise.
+ * inscription data exists the heuristic is ord's postage rule — every taproot (ordinals-account)
+ * input and every input worth at most ord's MAX_POSTAGE of 20_000 sat may carry an inscription:
+ * such an input is a `warning` when it is signed as a listing (the sighash that fits selling it)
+ * and a `danger` otherwise.
  */
 export function assessBitcoinPsbts(
   inputs: ReadonlyArray<{
     readonly value: number;
+    readonly template: "btc.bip84" | "btc.bip86";
     readonly sigHash: "ALL" | "SINGLE|ANYONECANPAY";
   }>,
 ): ReadonlyArray<RiskFinding> {
@@ -196,7 +198,7 @@ export function assessBitcoinPsbts(
   if (inputs.some((i) => i.sigHash === "SINGLE|ANYONECANPAY")) {
     found.set("bitcoin-sighash-single", { code: "bitcoin-sighash-single", level: "danger" });
   }
-  const postage = inputs.filter((i) => isFrozen(i.value));
+  const postage = inputs.filter((i) => mayCarryInscription(i.template === "btc.bip86", i.value));
   if (postage.length > 0) {
     found.set("bitcoin-inscription-input", {
       code: "bitcoin-inscription-input",
@@ -208,14 +210,15 @@ export function assessBitcoinPsbts(
 
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
-/** `scheme`, `host` (IPv6 keeps its brackets) of a `scheme://host[:port]` origin. */
-const originParts = (origin: string): { scheme: string; host: string } => {
+/** `scheme`, `host` (IPv6 keeps its brackets) and `hostPort` of a `scheme://host[:port]` origin. */
+const originParts = (origin: string): { scheme: string; host: string; hostPort: string } => {
   const sep = origin.indexOf("://");
   const rest = origin.slice(sep + 3);
   const end = rest.startsWith("[") ? rest.indexOf("]") + 1 : rest.lastIndexOf(":");
   return {
     scheme: sep === -1 ? "" : origin.slice(0, sep).toLowerCase(),
     host: (end > 0 ? rest.slice(0, end) : rest).toLowerCase(),
+    hostPort: rest.toLowerCase(),
   };
 };
 
@@ -238,12 +241,25 @@ export function assessSignIn(input: {
   readonly now: number;
 }): { readonly reject?: string; readonly risk: ReadonlyArray<RiskFinding> } {
   const { signIn, origin, signer, family, now } = input;
+  const { scheme, host, hostPort } = originParts(origin);
+  const developer = isLocalHost(host);
   if (signIn.status === "malformed") {
+    /* Lenient verifiers accept such a text as a sign-in for every claimed domain, so each claim is
+     * bound to the page like a conforming domain: refuse a foreign one on production, flag it on a
+     * local development page. */
+    for (const claim of signIn.claims) {
+      const matches =
+        claim.domain.toLowerCase() === hostPort &&
+        (claim.scheme === undefined || claim.scheme.toLowerCase() === scheme);
+      if (!matches) {
+        return developer
+          ? { risk: [{ code: "sign-in-domain-mismatch", level: "danger" }] }
+          : { reject: `the sign-in message is for ${claim.domain}, not this page`, risk: [] };
+      }
+    }
     return { risk: [{ code: "sign-in-malformed", level: "warning" }] };
   }
   const { fields } = signIn;
-  const { scheme, host } = originParts(origin);
-  const developer = isLocalHost(host);
   let findings: ReturnType<typeof checkOrigin>;
   try {
     findings = checkOrigin(

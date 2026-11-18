@@ -25,8 +25,10 @@ const stubbedAssets = (): AssetsController => {
   return new AssetsController({
     networks: {
       client: () => c,
-      info: () => ({ family: "evm", chainId: 1 }),
+      // chainId 56 has no built-in token table entries — tokens stays empty here.
+      info: () => ({ family: "evm", chainId: 56 }),
     } as never,
+    chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: () => () => {},
     logger,

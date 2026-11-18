@@ -6,7 +6,7 @@ import { createGateway } from "../src/app.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
 import type { GatewayNetwork, Limiters, RateLimiter } from "../src/types.ts";
 
-export const INSTALL_ID = "0123456789abcdef0123456789abcdef";
+export const CLIENT_ID = "0123456789abcdef0123456789abcdef";
 export const SEPOLIA = "eip155:11155111";
 export const DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
 export const SIGNET = "bip122:00000008819873e925422c1ff0f99f7c";
@@ -76,12 +76,36 @@ const decide = async (success: boolean): Promise<{ success: boolean }> => {
 export const allowAll: RateLimiter = { limit: async () => decide(true) };
 export const denyAll: RateLimiter = { limit: async () => decide(false) };
 
-export function recordingLimiter(): RateLimiter & { readonly keys: string[] } {
+export function recordingLimiter(): RateLimiter & {
+  readonly keys: string[];
+  readonly deltas: number[];
+} {
   const keys: string[] = [];
+  const deltas: number[] = [];
   return {
     keys,
-    limit: async ({ key }) => {
+    deltas,
+    limit: async ({ key, delta }: { key: string; delta?: number }) => {
       keys.push(key);
+      deltas.push(delta ?? 1);
+      return decide(true);
+    },
+  };
+}
+
+/** Faithful binding fake: decides on the count before the call; a refused call adds nothing. */
+export function countBefore(limit: number): RateLimiter & {
+  readonly counts: ReadonlyMap<string, number>;
+} {
+  const counts = new Map<string, number>();
+  return {
+    counts,
+    limit: async ({ key, delta = 1 }: { key: string; delta?: number }) => {
+      const count = counts.get(key) ?? 0;
+      if (count >= limit) {
+        return decide(false);
+      }
+      counts.set(key, count + delta);
       return decide(true);
     },
   };
@@ -104,6 +128,7 @@ export function memoryRiskStore(): RiskStore & { readonly data: Map<string, stri
 
 export function gateway(options: {
   readonly fetch: typeof globalThis.fetch;
+  readonly networks?: ReadonlyArray<GatewayNetwork>;
   readonly risk?: RiskStore;
   readonly limiters?: Limiters;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
@@ -113,7 +138,7 @@ export function gateway(options: {
 }): ReturnType<typeof createGateway> {
   return createGateway({
     fetch: options.fetch,
-    networks: NETWORKS,
+    networks: options.networks ?? NETWORKS,
     limiters: options.limiters ?? { ip: allowAll, rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
@@ -125,7 +150,7 @@ export function gateway(options: {
 }
 
 export const headers = (extra: Record<string, string> = {}): Record<string, string> => ({
-  "x-install-id": INSTALL_ID,
+  "x-client-id": CLIENT_ID,
   ...extra,
 });
 

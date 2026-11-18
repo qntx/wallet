@@ -4,22 +4,43 @@ The wallet gateway: a Cloudflare Worker (Hono) that forwards allow-listed JSON-R
 requests to upstream providers with failover. Private, never published. It holds provider and
 quote API keys — never wallet secrets — and signs — wallet data from it is for display and for reads the engine cross-checks.
 
-| Route                            | Behavior                                                                                                                                                                                    |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /v1/health`                 | `{ "status": "ok" }`; needs no install id                                                                                                                                                   |
-| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                    |
-| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or recent-block tags; at most 20 addresses and 20 alternatives per topic. Anything else is `400 invalid-request` |
-| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                             |
-| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                           |
+| Route                            | Behavior                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/health`                 | `{ "status": "ok" }`; needs no client id                                                                                                                                                     |
+| `POST /v1/rpc/:caip2`            | EVM and Solana JSON-RPC 2.0, single or batch (max 20); read-only methods plus `eth_sendRawTransaction`/`sendTransaction`                                                                     |
+| ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic |
+| `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                              |
+| `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                            |
 
-Every other `/v1` request needs `x-install-id` (32 lowercase hex characters). Responses carry
+Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
 `400 invalid-request`, `404 unknown-network`/`not-found`, `429 rate-limited` and `503 unavailable`
-(both with `Retry-After`), `500 internal`.
+(both with `Retry-After`), `502 outcome-unknown`, `500 internal`.
 
-Providers are tried in the order of `src/config/networks.ts`. A transport error, timeout (10 s), 5xx
-or 429, or a malformed body moves on to the next provider; five consecutive failures open that
-provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is returned as-is.
+Providers are tried in the order of `src/config/networks.ts`. A transport error, timeout (10 s), a
+non-2xx upstream status, or a malformed body moves on to the next provider; five consecutive
+failures open that provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is
+returned as-is. An upstream 400, 413 or 422 was provoked by the request itself: it is answered 400
+`invalid-request` without failover and without counting against the breaker.
+
+A request that relays a signed transaction (`eth_sendRawTransaction`, Solana `sendTransaction`,
+Esplora `POST /tx`) fails over only when the failed attempt provably never reached the provider —
+an open breaker, a 401/403/429 refusal, or a rejected auth lookup. Any other failure (timeout,
+transport error, 5xx, malformed body) is ambiguous: the provider may have relayed the transaction,
+so the request is answered 502 `outcome-unknown` rather than retried on a provider that could
+double-broadcast it.
+
+## Rate limiting
+
+Three Workers limiters count weighted units per 10 s window (values in `wrangler.jsonc`): the
+client IP prefix, then `x-client-id` + prefix on either the RPC limiter (transport routes) or the
+default one. Every request — valid or not — pays one unit up front; an RPC request then pays the
+summed cost of its calls minus the unit already charged. `RPC_COST_WEIGHTS` in the contract prices
+a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_getLogs`,
+`eth_getBlockReceipts`, `getMultipleAccounts`, `getVoteAccounts`, full-transaction blocks,
+programId-filtered `getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a
+batch of 20 `eth_getLogs` costs 200. Esplora requests stay at one unit: every allow-listed path is
+bounded.
 
 ## Phishing list
 
@@ -27,8 +48,15 @@ provider's breaker for 30 s. A JSON-RPC error object is a valid answer and is re
 the entries `phishingKey` accepts, hashes them to 8 bytes, and — only when the merged deny or allow
 set changed — writes `phishing:snapshot` and then `phishing:journal` to the `RISK` KV namespace. The
 journal keeps 7 days and at most 168 entries; a request with `since` inside it gets one folded diff.
-A failing source, or a deny list that shrank by more than half, skips the build and logs one JSON
-line. Both environments run the build hourly (`"0 * * * *"`). KV namespaces:
+
+Allow and deny interact per source, never across sources: a source's allow cancels only its own
+exact deny keys (a same-source subdomain exemption still publishes), while another source's deny of
+any of an allow key's page candidates drops that allow. Two guards bound a compromised source:
+`phishing:sources` in KV records each source's effective deny count at the last published build —
+a source falling below half its own stored count skips the build (`deny-shrank`, logged with the
+source id) — and a published allow gaining more than 50 keys in one build skips it (`allow-grew`).
+A failing source skips the build too; every skip logs one JSON line. Both environments run the
+build hourly (`"0 * * * *"`). KV namespaces:
 `wallet-gateway-staging-risk` (staging), `wallet-gateway-risk` (production).
 
 | Source                                                                                            | License                                                                                                                 | Used                                         |
@@ -39,6 +67,18 @@ line. Both environments run the build hourly (`"0 * * * *"`). KV namespaces:
 The list is derived data: entries are normalized and truncated to 8-byte hashes, and the original
 lists are not redistributed. Attribution: phishing data from MetaMask eth-phishing-detect and
 polkadot-js/phishing.
+
+## Observability
+
+All log lines are JSON. Besides the per-request line, the forwarder logs
+`{"event":"upstream-failure","provider","upstream","reason"}` per failed attempt (reason:
+`status-<n>`, `malformed`, `auth`, `timeout`, `breaker-open`, `rejected`, `transport`),
+`{"event":"breaker","provider","upstream","state"}` on every open/half-open/closed transition, and
+`{"event":"all-providers-failed","providers":[…]}` once when every provider of a route is down —
+the alert condition. `mapError` logs `{"event":"internal-error","name"}` (the error class name
+only) for unexpected 500s. Log lines never carry params, bodies, addresses, client ids, IPs, error
+messages or upstream bodies. Alerting is configured on Workers Logs queries against these events;
+there is no alerting code in the worker.
 
 ## Layering
 
@@ -65,10 +105,10 @@ Smoke against the real public providers while `dev` is running:
 
 ```bash
 ID=0123456789abcdef0123456789abcdef
-curl -s -H "x-install-id: $ID" -H content-type:application/json \
+curl -s -H "x-client-id: $ID" -H content-type:application/json \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' \
   http://127.0.0.1:8787/v1/rpc/eip155:11155111
-curl -s -H "x-install-id: $ID" \
+curl -s -H "x-client-id: $ID" \
   http://127.0.0.1:8787/v1/esplora/bip122:00000008819873e925422c1ff0f99f7c/block-height/0
 ```
 
@@ -81,7 +121,7 @@ Staging serves testnets only (Sepolia, Base Sepolia, Solana devnet, Bitcoin sign
 through keyless public endpoints, at `https://wallet-gateway-staging.qntx.org`.
 
 ```bash
-bunx wrangler login                     # once; the Cloudflare account owning qntx.org
+bunx wrangler login                     # once; the staging account (env.staging.account_id)
 bun run --cwd apps/gateway deploy:staging
 ```
 
@@ -90,7 +130,7 @@ Roll back with `bunx wrangler rollback --env staging`.
 ## Production
 
 Production serves mainnets only at `https://gateway.meowl.xyz` on account
-`9241dfd75bea0009a3870173f7e1acd2`: the eight EVM mainnets plus Solana through Alchemy first and
+`9241dfd75bea0009a3870173f7e1acd2` (`env.production.account_id`): the eight EVM mainnets plus Solana through Alchemy first and
 dRPC second (keys in request headers, never URLs — `Authorization: Bearer` and `Drpc-Key`), and
 Bitcoin mainnet through Blockstream Enterprise's Esplora (client-credentials token, cached per
 isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
@@ -112,13 +152,25 @@ done
 - **staging** follows `main`: each time the CI workflow succeeds on a push to `main`, that commit
   is deployed and `scripts/smoke.ts` runs against it.
 - **production** is **Gateway → Run workflow** on `main`. It deploys the dispatched commit after
-  checking it has a passed CI run, and waits for the `production` environment's reviewer.
+  checking it has a passed CI run, and waits for a `production` reviewer other than the person who
+  dispatched it.
+- A failed smoke rolls the environment back to its previous version (`wrangler rollback`).
 
-Both environments accept deployments from `main` only. `.github/rulesets/apply.sh <reviewer>`
-creates them with those rules. Each needs its own `CLOUDFLARE_API_TOKEN` as an **environment**
-secret — an account token with **Account › Workers Scripts › Edit** on this account and
-**Zone › Workers Routes › Edit** on the environment's zone (`qntx.org` for staging, `meowl.xyz`
-for production; custom domains are created through the zone's Workers Routes permission). The
-workflow stays off until the repository variable `GATEWAY_DEPLOY` is `true`.
+**Staging and production live in different Cloudflare accounts.** Workers Scripts Edit is
+account-wide, so a staging token in the production account could replace the production Worker,
+read its secrets and write its KV. Each environment pins its `account_id` in `wrangler.jsonc`, and
+the staging job refuses to deploy while staging's account equals production's or while the staging
+token is not refused by the production account. Staging still shares production's account today
+and stays blocked until it moves: create a separate account holding the staging zone, create its
+RISK KV namespace, and update `env.staging.account_id` and the KV ids in `wrangler.jsonc`.
 
-Roll back with `bunx wrangler rollback --env production`.
+Both environments accept deployments from `main` only.
+`.github/rulesets/apply.sh <reviewer> <reviewer> [...]` creates them with those rules (two or more
+reviewers, self-review prevented) and fails while a repository or organization secret named
+`CLOUDFLARE_API_TOKEN` exists. Each environment's `CLOUDFLARE_API_TOKEN` is an **environment**
+secret — an account token with **Account › Workers Scripts › Edit** on that environment's account
+and **Zone › Workers Routes › Edit** on its zone (custom domains are created through the zone's
+Workers Routes permission). The workflow stays off until the repository variable `GATEWAY_DEPLOY`
+is `true`.
+
+Roll back by hand with `bunx wrangler rollback --env production`.

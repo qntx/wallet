@@ -10,6 +10,7 @@ import { chains } from "@qntx/wallet/chains";
 import { Controller } from "../controller.ts";
 import { readJson } from "../store/json.ts";
 import type { EngineStore } from "../store/port.ts";
+import { repeat } from "../timer.ts";
 import { createBitcoinRoute } from "./bitcoin.ts";
 import { createEvmRoute } from "./evm.ts";
 import type {
@@ -22,6 +23,7 @@ import type {
   PreparedRequest,
   ChainRequestInput,
   RouteContext,
+  SendParams,
   SparkDepositTag,
   TrackedTransaction,
   TxState,
@@ -99,6 +101,9 @@ const TX_STATES: ReadonlySet<string> = new Set([
 
 const isTxState = (v: unknown): v is TxState => typeof v === "string" && TX_STATES.has(v);
 
+/** States whose signed bytes may be on the network: tracked until they end. */
+const LIVE_STATES: ReadonlySet<TxState> = new Set(["signed", "submitted", "pending"]);
+
 type BtcRecord = NonNullable<TrackedTransaction["btc"]>;
 const isBtcRecord = (v: unknown): v is BtcRecord => {
   if (!isObject(v)) {
@@ -140,11 +145,7 @@ const isEvmAccountRef = (v: unknown): v is EvmRecord["account"] =>
     typeof v["template"] === "string") ||
     (v["kind"] === "imported" && typeof v["keyId"] === "string" && v["family"] === "evm"));
 const isEvmRecord = (v: unknown): v is EvmRecord =>
-  isObject(v) &&
-  typeof v["from"] === "string" &&
-  isEvmAccountRef(v["account"]) &&
-  typeof v["raw"] === "string" &&
-  /^0x(?:[0-9a-fA-F]{2})+$/.test(v["raw"]);
+  isObject(v) && typeof v["from"] === "string" && isEvmAccountRef(v["account"]);
 
 const isSparkDeposit = (v: unknown): v is SparkDepositTag =>
   isObject(v) &&
@@ -176,8 +177,10 @@ const decode = (
     state,
     intent,
     nonce,
+    lastValidBlockHeight,
     replaces,
     parentId,
+    raw: signedRaw,
     evm,
     btc,
     sparkDeposit,
@@ -204,8 +207,12 @@ const decode = (
     state,
     intent: isIntent(intent) ? intent : undefined,
     nonce,
+    ...(typeof lastValidBlockHeight === "number" && Number.isSafeInteger(lastValidBlockHeight)
+      ? { lastValidBlockHeight }
+      : {}),
     ...(typeof replaces === "string" ? { replaces } : {}),
     ...(typeof parentId === "string" ? { parentId } : {}),
+    ...(typeof signedRaw === "string" && signedRaw !== "" ? { raw: signedRaw } : {}),
     ...(isEvmRecord(evm)
       ? { evm }
       : (() => {
@@ -243,15 +250,27 @@ export class TransactionController extends Controller<TransactionControllerState
     const keys = await collection.list();
     const rows = await Promise.all(keys.map(async (key) => collection.get(key)));
     for (const raw of rows) {
-      const tx =
+      const loaded =
         raw === undefined ? undefined : decode(raw, (msg) => this.options.logger.warn(msg));
-      if (tx === undefined) {
+      if (loaded === undefined) {
         continue;
       }
-      this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: tx } }));
-      if ((tx.state === "submitted" || tx.state === "pending") && tx.hash !== undefined) {
-        this.track(tx.id, tx.hash);
+      this.update((s) => ({ ...s, txs: { ...s.txs, [loaded.id]: loaded } }));
+      const { hash } = loaded;
+      if (!LIVE_STATES.has(loaded.state) || hash === undefined) {
+        continue;
       }
+      // Signed bytes persisted but the broadcast never settled (the app stopped mid-send): the
+      // outcome is unknown, so the transaction is tracked like any submitted one.
+      const tx =
+        loaded.state === "signed"
+          ? // oxlint-disable-next-line eslint/no-await-in-loop -- rows load in order
+            await this.transition(loaded, { state: "submitted" })
+          : loaded;
+      if (tx.family === "evm") {
+        this.evmRoute.resume(tx);
+      }
+      this.track(tx.id, hash);
     }
     const batches = this.engineStore.collection("call-batches");
     const batchKeys = await batches.list();
@@ -418,7 +437,7 @@ export class TransactionController extends Controller<TransactionControllerState
       checks: [],
       staleReason: () => undefined,
       release: () => undefined,
-      submit: async (verify) => {
+      submit: async (verify: SendParams["verify"]) => {
         const result = await apis.sign({
           request:
             normalized.kind === "evm.personal-message"
@@ -551,54 +570,69 @@ export class TransactionController extends Controller<TransactionControllerState
     if (this.timers.has(id) || hash === "") {
       return;
     }
-    const poll = this.options.pollMs ?? 4000;
-    const stop = this.options.setTimer(poll, async () => {
-      if (this.locked) {
-        return;
-      }
-      try {
-        const tx = this.getState().txs[id];
-        if (tx === undefined) {
-          return;
-        }
-        const ctx = this.routeCtx();
-        const next =
-          tx.family === "solana"
-            ? await pollSolana(ctx, tx)
-            : tx.family === "bitcoin"
-              ? await this.bitcoinRoute.poll(ctx, tx)
-              : await this.evmRoute.poll(ctx, tx);
-        if (next === undefined) {
-          return;
-        }
-        const updated = await this.transition(tx, { state: next });
-        this.timers.delete(id);
-        stop();
-        if (updated.state !== "confirmed" && updated.state !== "failed") {
-          return;
-        }
-        // When one of a replace pair is mined, the sibling is `replaced`.
-        const siblings = Object.values(this.getState().txs).filter(
-          (t) =>
-            t.id !== updated.id &&
-            t.hash !== undefined &&
-            t.state !== "replaced" &&
-            ((updated.replaces !== undefined && t.id === updated.replaces) ||
-              (t.replaces !== undefined && t.replaces === updated.id)) &&
-            (t.state === "submitted" || t.state === "pending"),
-        );
-        await Promise.all(
-          siblings.map(async (sibling) => {
-            await this.transition(sibling, { state: "replaced" });
-            const siblingStop = this.timers.get(sibling.id);
-            this.timers.delete(sibling.id);
-            siblingStop?.();
-          }),
-        );
-      } catch (error) {
-        this.options.logger.warn("tx status poll failed", error);
-      }
-    });
-    this.timers.set(id, stop);
+    this.timers.set(
+      id,
+      repeat(
+        this.options.setTimer,
+        this.options.pollMs ?? 4000,
+        async () => this.pollOnce(id),
+        (error) => {
+          this.options.logger.warn("tx status poll failed", error);
+        },
+      ),
+    );
+  }
+
+  private untrack(id: string): void {
+    this.timers.get(id)?.();
+    this.timers.delete(id);
+  }
+
+  /** One status poll; a terminal answer stops the transaction's loop and settles a replace pair. */
+  private async pollOnce(id: string): Promise<void> {
+    const tx = this.getState().txs[id];
+    if (tx === undefined) {
+      this.untrack(id);
+      return;
+    }
+    const ctx = this.routeCtx();
+    const next =
+      tx.family === "solana"
+        ? await pollSolana(ctx, tx)
+        : tx.family === "bitcoin"
+          ? await this.bitcoinRoute.poll(ctx, tx)
+          : await this.evmRoute.poll(ctx, tx);
+    if (next === undefined || this.locked) {
+      return;
+    }
+    this.untrack(id);
+    const updated = await this.transition(tx, { state: next });
+    this.settle(updated);
+    if (updated.state !== "confirmed" && updated.state !== "failed") {
+      return;
+    }
+    // When one of a replace pair is mined, the sibling is `replaced`.
+    const siblings = Object.values(this.getState().txs).filter(
+      (t) =>
+        t.id !== updated.id &&
+        t.hash !== undefined &&
+        t.state !== "replaced" &&
+        ((updated.replaces !== undefined && t.id === updated.replaces) ||
+          (t.replaces !== undefined && t.replaces === updated.id)) &&
+        (t.state === "submitted" || t.state === "pending"),
+    );
+    await Promise.all(
+      siblings.map(async (sibling) => {
+        this.untrack(sibling.id);
+        this.settle(await this.transition(sibling, { state: "replaced" }));
+      }),
+    );
+  }
+
+  /** A Bitcoin transaction that ended frees what it locked, whichever way it ended. */
+  private settle(tx: TrackedTransaction): void {
+    if (tx.family === "bitcoin") {
+      this.bitcoinRoute.settle(tx.id, tx.state);
+    }
   }
 }

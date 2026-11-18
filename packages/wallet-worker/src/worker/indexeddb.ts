@@ -233,14 +233,6 @@ export function createIndexedDbStore(): RecordStore {
               }
               break;
             }
-            case "set-format": {
-              const meta = await requireMeta();
-              if (meta !== undefined) {
-                writeMeta({ ...meta, format: op.format });
-                bump = true;
-              }
-              break;
-            }
             case "record-failure": {
               const meta = await requireMeta();
               if (meta !== undefined) {
@@ -279,6 +271,9 @@ export function createIndexedDbStore(): RecordStore {
               for (const name of STORES) {
                 tx.objectStore(name).clear();
               }
+              // The staged meta is gone with the row: the revision bump must not write it back.
+              metaValue = undefined;
+              metaLoaded = true;
               break;
           }
           if (precondition !== undefined) {
