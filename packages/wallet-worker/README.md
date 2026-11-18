@@ -50,7 +50,13 @@ deterministic, no authenticator, anyone holding the seed owns the wallet:
 import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/node";
 
 const wallet = await createNodeWallet({
-  passkey: { rpId: "qntx.test", rpName: "test", walletSalt: "t/wallet", vaultSalt: "t/vault" },
+  passkey: {
+    rpId: "qntx.test",
+    rpName: "test",
+    walletSalt: "t/wallet",
+    vaultSalt: "t/vault",
+    backupSalt: "t/backup",
+  },
   autoLock: { platform: "web", idleMinutes: 15 },
   verifyEvent,
   authenticator: createSoftwarePasskey(seed),
@@ -73,7 +79,7 @@ const wallet = await createNodeWallet({
 - The `rpId` scope is the wallet's trust boundary: any origin that may claim the RP id (its
   subdomains, its related origins) can derive a passkey wallet's seed with one passkey prompt.
   Serve the wallet from a domain of its own and use that domain as the `rpId`.
-- `passkey.rpId` and the two salts are permanent identifiers: changing them makes existing
+- `passkey.rpId` and the three salts are permanent identifiers: changing them makes existing
   passkey factors and passkey-derived wallets unrecoverable. Moving domains needs WebAuthn
   related origins (`/.well-known/webauthn`); offer `exportMnemonic` for passkey-derived wallets.
 - IndexedDB upgrades are never `blocked`: the worker closes its connection on `versionchange`,

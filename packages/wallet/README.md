@@ -100,11 +100,12 @@ React Native the device owner proves presence before anything is erased.
 - Password unlock is rate-limited inside the kernel: five counted misses arm a backoff
   (30 s → 60 s → 300 s), a `rate-limited` error carries `retryAt`, and retrying during backoff
   does not push the deadline. Passkey unlocks are never gated by it.
-- Sessions idle-lock after 5, 15 or 60 minutes (`autoLock.idleMinutes`, worker-enforced) with a
-  fixed 12-hour maximum, measured on a monotonic clock — a wall-clock jump can neither extend
-  nor shorten a session. On the Web only user presence refreshes the idle timer (input events
-  and tab visibility, throttled to one `session.touch` per 30 s); signing and other background
-  traffic cannot hold a session open. On Node every successful request counts.
+- Sessions idle-lock after 5, 15 or 60 minutes (`autoLock.idleMinutes`, worker-enforced) with an
+  absolute maximum of 12 hours on Web and Node and 24 hours on React Native, measured on a
+  monotonic clock — a wall-clock jump can neither extend nor shorten a session. On the Web only
+  user presence refreshes the idle timer (input events and tab visibility, throttled to one
+  `session.touch` per 30 s); signing and other background traffic cannot hold a session open. On
+  Node every successful request counts.
 - `WalletInfo.backup` tells the UI whether the wallet survives losing this device: `"mnemonic"`
   (the user passed the quiz, imported a phrase, or exported it at least once — `exportMnemonic`
   upgrades the record), `"passkey"` (a synced passkey — still lost with the password-manager
@@ -121,6 +122,10 @@ React Native the device owner proves presence before anything is erased.
   and `requests.approve` throws `BlindSigningDisabledError` while the setting is off — enable it
   and approve the same request again. Text and sign-in messages, permits, Seaport orders, Safe
   transactions of decoded calls and every recognised transaction are never blind.
+- `verify` parameters take a `VerifyFactor` — `hardware`, `passkey` or `password`. The silent
+  `device` factor proves no user presence: only `vault.unlock` accepts it (`UnlockFactor`). On
+  React Native `vault.enrolVerification()` registers the verifying factor and `vault.setAppLock`
+  makes every unlock verify — see the `@qntx/wallet-native` README.
 - Changing the password or removing a factor rotates the vault DEK: sessions in other tabs lock
   with reason `invalidated` and must re-unlock. Adding a passkey factor keeps the current DEK.
 - **The `rpId` scope is the wallet's trust boundary.** WebAuthn binds a credential and its PRF
@@ -135,10 +140,14 @@ React Native the device owner proves presence before anything is erased.
   the salts must differ. Moving domains requires WebAuthn related origins
   (`/.well-known/webauthn`); offer `exportMnemonic` for passkey-derived wallets so they survive an
   RP migration. `connectKernel` rejects an empty or colliding config before the worker spawns.
-- Standalone Nostr keys carry `backedUp`: imports start `true`, generated keys `false`, and a
-  successful `nostr.exportKey` marks the record — surface the flag so users actually back up.
-  `ncryptsec` always carries NIP-49 key-security byte `0x02` and its scrypt `logN` is capped
-  (18 on Web, 20 on Node); oversized values fail `unsupported` before scrypt runs.
+- Every Nostr key the vault holds is derived from a wallet — a `NostrKeyRef` is always
+  `{ kind: "derived", walletId, index }`, so keys come back with the wallet's own backup and
+  `nostr(wallet).removeKey` drops one. `nostr.exportKey` re-verifies on every call, and the
+  `ncryptsec` export always carries NIP-49 key-security byte `0x02` at scrypt logN 16.
+- Cloud-backup envelopes leave the device, so the backup password is stretched with Argon2id
+  (64 MiB, 3 passes, 4 lanes) and must be at least 12 characters. `backup.restore` adopts the
+  file's backup key only when the restore establishes the vault through a kernel-run passkey
+  ceremony (React Native); every other restore leaves backup off until it is enabled again.
 - Requests are capped at 1 MiB on both sides of the channel; larger calls fail `invalid-input`
   without reaching the kernel.
 - `dist/kernel.manifest.json` in `@qntx/wallet-worker` records the protocol version, vault
