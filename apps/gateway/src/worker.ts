@@ -53,6 +53,7 @@ export function gatewayFor(env: WorkerEnv): GatewayOptions {
       .map((origin) => origin.trim())
       .filter((origin) => origin !== ""),
     risk: riskStoreOf(env.RISK),
+    tokens: riskStoreOf(env.RISK),
     ...(zeroEx === undefined ? {} : { zeroEx }),
   };
   const cache = priceCacheOf(() => caches.default);

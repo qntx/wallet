@@ -18,6 +18,7 @@ import {
   solanaRpcRequest,
   swapQuote,
   swapQuoteSolana,
+  tokenListPath,
 } from "../src/gateway/contract/index.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { Independent } from "../src/networks/controller.ts";
@@ -409,6 +410,10 @@ describe("gatewayScope", () => {
     ["/v1/rpc/nope:0", "service"],
     [historyPath(SEPOLIA), "evm"],
     ["/v1/history/nope:0", "service"],
+    [tokenListPath(SEPOLIA), "evm"],
+    [tokenListPath(DEVNET), "solana"],
+    [tokenListPath(SIGNET), "bitcoin"],
+    ["/v1/tokens/nope:0", "service"],
     [`${esploraBasePath(SIGNET)}/block-height/0`, "bitcoin"],
     [`${esploraBasePath(SIGNET)}/tx`, "bitcoin"],
     [swapQuoteSolana.path, "solana"],

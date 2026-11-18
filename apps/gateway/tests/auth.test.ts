@@ -45,6 +45,7 @@ describe("upstream auth", () => {
       limiters,
       corsOrigins: [],
       risk,
+      tokens: memoryRiskStore(),
       prices,
       auth: { alchemy: bearer("k1"), blockstream: header("X-Auth", "k2") },
     });
@@ -76,6 +77,7 @@ describe("upstream auth", () => {
       limiters,
       corsOrigins: [],
       risk,
+      tokens: memoryRiskStore(),
       prices,
       auth: {
         alchemy: async () => {
@@ -103,6 +105,7 @@ describe("upstream auth", () => {
         limiters,
         corsOrigins: [],
         risk,
+        tokens: memoryRiskStore(),
         prices,
         auth: {},
       }),

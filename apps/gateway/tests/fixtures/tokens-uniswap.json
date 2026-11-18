@@ -1,0 +1,115 @@
+{
+  "source": "https://tokens.uniswap.org \u2014 Uniswap Labs Default v22.34.0 (Token Lists schema), recorded 2026-11-18; five entries kept of 2176 across chainIds 1/10/56/137/8453/42161/43114 (no 999).",
+  "name": "Uniswap Labs Default",
+  "version": {
+    "major": 22,
+    "minor": 34,
+    "patch": 0
+  },
+  "timestamp": "2026-11-16T20:28:30.811Z",
+  "tokens": [
+    {
+      "chainId": 1,
+      "address": "0x4B948d64dE1F71fCd12fB586f4c776421a35b3eE",
+      "name": "0G",
+      "symbol": "0G",
+      "decimals": 18,
+      "logoURI": "https://coin-images.coingecko.com/coins/images/69096/large/0G_1024x1024_Circular_Outlined.png?1758637574"
+    },
+    {
+      "name": "USDCoin",
+      "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "symbol": "USDC",
+      "decimals": 6,
+      "chainId": 1,
+      "logoURI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
+      "extensions": {
+        "bridgeInfo": {
+          "10": {
+            "tokenAddress": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+          },
+          "56": {
+            "tokenAddress": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d"
+          },
+          "130": {
+            "tokenAddress": "0x078D782b760474a361dDA0AF3839290b0EF57AD6"
+          },
+          "137": {
+            "tokenAddress": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+          },
+          "143": {
+            "tokenAddress": "0x754704Bc059F8C67012fEd69BC8A327a5aafb603"
+          },
+          "1868": {
+            "tokenAddress": "0xbA9986D2381edf1DA03B0B9c1f8b00dc4AacC369"
+          },
+          "8453": {
+            "tokenAddress": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+          },
+          "42161": {
+            "tokenAddress": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831"
+          },
+          "42220": {
+            "tokenAddress": "0xcebA9300f2b948710d2653dD7B07f33A8B32118C"
+          },
+          "43114": {
+            "tokenAddress": "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"
+          }
+        }
+      }
+    },
+    {
+      "chainId": 56,
+      "address": "0x4B948d64dE1F71fCd12fB586f4c776421a35b3eE",
+      "name": "0G",
+      "symbol": "0G",
+      "decimals": 18,
+      "logoURI": "https://coin-images.coingecko.com/coins/images/69096/large/0G_1024x1024_Circular_Outlined.png?1758637574"
+    },
+    {
+      "name": "USD Coin",
+      "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "symbol": "USDC",
+      "decimals": 6,
+      "chainId": 8453,
+      "logoURI": "https://ethereum-optimism.github.io/data/USDC/logo.png",
+      "extensions": {
+        "bridgeInfo": {
+          "1": {
+            "tokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          }
+        }
+      }
+    },
+    {
+      "name": "USDCoin",
+      "address": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "symbol": "USDC",
+      "decimals": 6,
+      "chainId": 42161,
+      "logoURI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48/logo.png",
+      "extensions": {
+        "bridgeInfo": {
+          "1": {
+            "tokenAddress": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          }
+        }
+      }
+    },
+    {
+      "name": "Tether USD",
+      "address": "0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7",
+      "symbol": "USDT",
+      "decimals": 6,
+      "chainId": 43114,
+      "logoURI": "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/assets/0xdAC17F958D2ee523a2206206994597C13D831ec7/logo.png",
+      "extensions": {
+        "bridgeInfo": {
+          "1": {
+            "tokenAddress": "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+          }
+        }
+      }
+    }
+  ]
+}
