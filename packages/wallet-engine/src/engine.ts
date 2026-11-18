@@ -694,6 +694,26 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   let store: EngineStore | undefined;
   let started = false;
 
+  const stop = async (): Promise<void> => {
+    started = false;
+    depositClaimer.stop();
+    connections.lock();
+    requests.lock();
+    addressBook.lock();
+    watch.lock();
+    transactions.lock();
+    assets.lock();
+    networks.lock();
+    // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
+    await metaSync.lock();
+    await accounts.lock();
+    await controller.lockAll();
+    controller.setStore(undefined);
+    const s = store;
+    store = undefined;
+    await s?.close();
+  };
+
   const transition = async (): Promise<void> => {
     const unlocked = options.wallet.getSnapshot().vault === "unlocked";
     if (unlocked && !started) {
@@ -707,42 +727,33 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         options.logger.warn("engine store failed to open", error);
         return;
       }
-      controller.setStore(store);
-      backup.setStore(store);
-      accounts.setStore(store);
-      watch.setStore(store);
-      backup.trigger(); // reconcile — never awaited on the transition chain
-      // Load + reconcile + drive the selected account through spark.setAccounts.
-      await accounts.init();
-      await watch.init();
-      await controller.init();
-      // Pull → merge → maybe publish for every wallet with a group-0 identity.
-      await addressBook.init();
-      await metaSync.init();
-      await networks.init();
-      await assets.init();
-      await transactions.init();
-      await requests.init();
-      await connections.init();
-      depositClaimer.start();
+      try {
+        controller.setStore(store);
+        backup.setStore(store);
+        accounts.setStore(store);
+        watch.setStore(store);
+        backup.trigger(); // reconcile — never awaited on the transition chain
+        // Load + reconcile + drive the selected account through spark.setAccounts.
+        await accounts.init();
+        await watch.init();
+        await controller.init();
+        // Pull → merge → maybe publish for every wallet with a group-0 identity.
+        await addressBook.init();
+        await metaSync.init();
+        await networks.init();
+        await assets.init();
+        await transactions.init();
+        await requests.init();
+        await connections.init();
+        depositClaimer.start();
+      } catch (error) {
+        // A start that fails mid-sequence leaves the same state as a lock: torn down, store
+        // closed, started false — so the next wallet status event retries the whole start.
+        options.logger.warn("engine start failed", error);
+        await stop();
+      }
     } else if (!unlocked && started) {
-      started = false;
-      depositClaimer.stop();
-      connections.lock();
-      requests.lock();
-      addressBook.lock();
-      watch.lock();
-      transactions.lock();
-      assets.lock();
-      networks.lock();
-      // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
-      await metaSync.lock();
-      await accounts.lock();
-      await controller.lockAll();
-      controller.setStore(undefined);
-      const s = store;
-      store = undefined;
-      await s?.close();
+      await stop();
     }
   };
 

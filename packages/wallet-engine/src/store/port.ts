@@ -3,6 +3,10 @@
  * the same collection object backs every call, so guards (closed) live on the store.
  */
 export type EngineCollection = {
+  /**
+   * Resolves `undefined` for a missing record AND for one the store cannot authenticate — an
+   * unauthenticated record reads exactly like a deleted one.
+   */
   readonly get: (key: string) => Promise<Uint8Array | undefined>;
   readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
   readonly delete: (key: string) => Promise<void>;

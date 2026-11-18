@@ -395,6 +395,26 @@ async function gateOpenStore(failures: number): Promise<EngineStore> {
     : Promise.resolve(createMemoryEngineStore());
 }
 
+/** The first store returned rejects every `list` — a transient IDB failure mid-start. */
+function listFailsOnce(): () => Promise<EngineStore> {
+  let dropped = false;
+  return async () => {
+    const inner = createMemoryEngineStore();
+    if (dropped) {
+      return Promise.resolve(inner);
+    }
+    dropped = true;
+    const base = inner.collection.bind(inner);
+    return Promise.resolve({
+      close: inner.close,
+      collection: (name) => {
+        const col = base(name);
+        return { ...col, list: async () => Promise.reject(new Error("idb list failed")) };
+      },
+    });
+  };
+}
+
 function flakyClient(calls: string[], sendArgs: unknown[], aborters: Array<{ aborted: boolean }>) {
   let claimCalls = 0;
   let streamCalls = 0;
@@ -768,6 +788,64 @@ describe("lock transition serialization", () => {
     w.set("unlocked");
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(opens).toBeGreaterThan(openedAfterFailure);
+    engine.unsubscribe();
+  });
+
+  it("a failure mid-start tears down and the next status event retries", async () => {
+    const listeners = new Set<() => void>();
+    const w = {
+      // Unlocked at construction: the constructor's queued transition is the first start, so
+      // the transient store failure below is consumed by it rather than racing a later event.
+      vault: "unlocked",
+      getSnapshot() {
+        return { vault: w.vault, wallets: [], backup: null };
+      },
+      subscribe(l: () => void) {
+        listeners.add(l);
+        return () => listeners.delete(l);
+      },
+      set(v: string) {
+        w.vault = v;
+        for (const l of listeners) {
+          l();
+        }
+      },
+    };
+    const warnings: string[] = [];
+    const engine = createWalletEngine({
+      publicStore: createMemoryPublicStore(),
+      verifyEvent,
+      weblnAlias: "test",
+      lightningMaxFee: () => 0,
+      wallet: w as never,
+      sparkNetwork: "regtest",
+      sparkApis: {
+        signer: () => null as never,
+        approve: async () => Promise.resolve({}),
+      },
+      fetch: async () => Promise.reject(new Error("nf")),
+      random: (n) => new Uint8Array(n),
+      now: () => 0,
+      logger: { warn: (m) => void warnings.push(m) },
+      showCallsStatus: () => undefined,
+      openStore: listFailsOnce(),
+    });
+    // Torn down exactly like a lock: the store is closed and nothing stays started.
+    await vi.waitFor(
+      () => {
+        expect(warnings).toContain("engine start failed");
+        expect(engine.accounts.getState().status).toBe("locked");
+      },
+      { timeout: 10_000, interval: 10 },
+    );
+    w.set("locked");
+    w.set("unlocked");
+    await vi.waitFor(
+      () => {
+        expect(engine.accounts.getState().status).toBe("ready");
+      },
+      { timeout: 10_000, interval: 10 },
+    );
     engine.unsubscribe();
   });
 });

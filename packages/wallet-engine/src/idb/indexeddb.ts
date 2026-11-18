@@ -2,7 +2,9 @@
  * The Web EngineStore: one IndexedDB database, one `records` object store, values encrypted per
  * record with XChaCha20-Poly1305. Key = the injected 32-byte data key; nonce = 24 random bytes
  * stored as nonce‖ciphertext; AAD = UTF-8 `<collection>\0<key>` — moving a record to another key or
- * collection fails the MAC, same as a tampered payload. `close()` drops the connection, wipes the
+ * collection fails the MAC, same as a tampered payload, and a record that fails its MAC reads
+ * exactly like a missing one. A reserved `check` row sealed under a fixed AAD proves the data key
+ * at open: a database keyed differently is rebuilt empty. `close()` drops the connection, wipes the
  * module-held key copy and latches every call to `closed`.
  */
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
@@ -24,28 +26,83 @@ export type IndexedDbEngineStoreOptions = {
 };
 
 const STORE = "records";
+const CHECK_KEY = "check";
+const CHECK_AAD = new TextEncoder().encode("qntx-engine-store-check");
 
 const id = (collection: string, recordKey: string): string => `${collection}\u0000${recordKey}`;
 const aad = (collection: string, recordKey: string): Uint8Array =>
   new TextEncoder().encode(`${collection}\u0000${recordKey}`);
 
+const sealRecord = (
+  key: Uint8Array,
+  random: Random,
+  aadBytes: Uint8Array,
+  bytes: Uint8Array,
+): Uint8Array => {
+  const nonce = random(24);
+  const ciphertext = xchacha20poly1305(key, nonce, aadBytes).encrypt(bytes);
+  const record = new Uint8Array(24 + ciphertext.length);
+  record.set(nonce, 0);
+  record.set(ciphertext, 24);
+  return record;
+};
+
+/** The plaintext, or `undefined` when the record fails authentication — it reads as deleted. */
+const openRecord = (
+  key: Uint8Array,
+  aadBytes: Uint8Array,
+  record: Uint8Array,
+): Uint8Array | undefined => {
+  if (record.length < 24) {
+    return undefined;
+  }
+  try {
+    return xchacha20poly1305(key, record.slice(0, 24), aadBytes).decrypt(record.slice(24));
+  } catch {
+    return undefined;
+  }
+};
+
 export async function openIndexedDbEngineStore(
   options: IndexedDbEngineStoreOptions,
 ): Promise<EngineStore> {
   const key = new Uint8Array(options.dataKey);
-  return new Promise<EngineStore>((resolve, reject) => {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
     const open = indexedDB.open(options.name, 1);
     open.addEventListener("upgradeneeded", () => {
       open.result.createObjectStore(STORE);
     });
     open.addEventListener("success", () => {
-      resolve(makeStore(open.result, key, options.random));
+      resolve(open.result);
     });
     open.addEventListener("error", () => {
       key.fill(0);
       reject(new Error("indexeddb open failed", { cause: open.error }));
     });
   });
+  try {
+    await checkStoreKey(db, key, options.random);
+  } catch (error) {
+    db.close();
+    key.fill(0);
+    throw error;
+  }
+  return makeStore(db, key, options.random);
+}
+
+/** One read-write transaction before the store is handed out: `check` must open under this key. */
+async function checkStoreKey(db: IDBDatabase, key: Uint8Array, random: Random): Promise<void> {
+  const tx = db.transaction(STORE, "readwrite");
+  const records = tx.objectStore(STORE);
+  // oxlint-disable-next-line typescript/no-unsafe-argument -- IDB get() is any-typed by spec
+  const existing = await request<Uint8Array | undefined>(records.get(CHECK_KEY));
+  if (existing === undefined || openRecord(key, CHECK_AAD, existing) === undefined) {
+    // Rows sealed under another data key (a reset or recreated vault) are unreadable by
+    // construction — the store is rebuilt empty rather than served back as dead rows.
+    records.clear();
+    records.put(sealRecord(key, random, CHECK_AAD, new Uint8Array(0)), CHECK_KEY);
+  }
+  await done(tx);
 }
 
 function makeStore(db: IDBDatabase, key: Uint8Array, random: Random): EngineStore {
@@ -58,27 +115,14 @@ function makeStore(db: IDBDatabase, key: Uint8Array, random: Random): EngineStor
     return db;
   };
 
-  const seal = (collection: string, recordKey: string, bytes: Uint8Array): Uint8Array => {
-    const nonce = random(24);
-    const ciphertext = xchacha20poly1305(key, nonce, aad(collection, recordKey)).encrypt(bytes);
-    const record = new Uint8Array(24 + ciphertext.length);
-    record.set(nonce, 0);
-    record.set(ciphertext, 24);
-    return record;
-  };
+  const seal = (collection: string, recordKey: string, bytes: Uint8Array): Uint8Array =>
+    sealRecord(key, random, aad(collection, recordKey), bytes);
 
-  const open = (collection: string, recordKey: string, record: Uint8Array): Uint8Array => {
-    if (record.length < 24) {
-      throw new EngineStoreError("integrity", "engine record too short");
-    }
-    try {
-      return xchacha20poly1305(key, record.slice(0, 24), aad(collection, recordKey)).decrypt(
-        record.slice(24),
-      );
-    } catch {
-      throw new EngineStoreError("integrity", "engine record failed integrity");
-    }
-  };
+  const open = (
+    collection: string,
+    recordKey: string,
+    record: Uint8Array,
+  ): Uint8Array | undefined => openRecord(key, aad(collection, recordKey), record);
 
   const make = (name: string): EngineCollection => ({
     get: async (recordKey) => {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { EngineStoreError } from "../../src/errors.ts";
 import { openIndexedDbEngineStore, openIndexedDbPublicStore } from "../../src/idb/indexeddb.ts";
 import { contract, nulContract } from "../contract.ts";
-import { corruptByte, rawGet, rawPut } from "./raw.ts";
+import { corruptByte, rawDelete, rawGet, rawKeys, rawPut } from "./raw.ts";
 
 const DATA_KEY = new Uint8Array(32).fill(7);
 const random = (n: number) => new Uint8Array(n).fill(3);
@@ -24,46 +24,88 @@ describe("indexeddb EngineStore", () => {
     await contract(open);
   });
 
-  it("rejects a tampered ciphertext", async () => {
+  it("reads a tampered ciphertext as absent", async () => {
     useFakeIdb();
     const s = await open();
     await s.collection("a").put("k", new Uint8Array([1, 2, 3]));
+    await s.collection("a").put("other", new Uint8Array([4]));
     const raw = await rawGet("a\u0000k");
     corruptByte(raw, 30);
     await rawPut("a\u0000k", raw);
-    await expect(s.collection("a").get("k")).rejects.toSatisfy(
-      (e) => (e as EngineStoreError).code === "integrity",
-    );
+    await expect(s.collection("a").get("k")).resolves.toBeUndefined();
+    await expect(s.collection("a").list()).resolves.toContain("k");
+    await expect(s.collection("a").get("other")).resolves.toStrictEqual(new Uint8Array([4]));
     await s.close();
   });
 
-  it("rejects a record moved to another key or collection", async () => {
+  it("reads a record moved to another key or collection as absent", async () => {
     useFakeIdb();
     const s = await open();
     await s.collection("a").put("k", new Uint8Array([1]));
     const raw = await rawGet("a\u0000k");
     await rawPut("a\u0000other", raw);
     await rawPut("b\u0000k", raw);
-    await expect(s.collection("a").get("other")).rejects.toSatisfy(
-      (e) => (e as EngineStoreError).code === "integrity",
-    );
-    await expect(s.collection("b").get("k")).rejects.toSatisfy(
-      (e) => (e as EngineStoreError).code === "integrity",
-    );
+    await expect(s.collection("a").get("other")).resolves.toBeUndefined();
+    await expect(s.collection("b").get("k")).resolves.toBeUndefined();
+    await expect(s.collection("a").get("k")).resolves.toStrictEqual(new Uint8Array([1]));
     await s.close();
   });
 
-  it("rejects with the wrong data key", async () => {
+  it("keeps records when reopened with the same data key", async () => {
     useFakeIdb();
     const s = await open();
     await s.collection("a").put("k", new Uint8Array([5]));
     await s.close();
-    const wrong = new Uint8Array(32).fill(9);
-    const s2 = await open(wrong);
-    await expect(s2.collection("a").get("k")).rejects.toSatisfy(
-      (e) => (e as EngineStoreError).code === "integrity",
-    );
+    const s2 = await open();
+    await expect(s2.collection("a").get("k")).resolves.toStrictEqual(new Uint8Array([5]));
     await s2.close();
+  });
+
+  it("rebuilds empty when reopened with a different data key", async () => {
+    useFakeIdb();
+    const s = await open();
+    await s.collection("a").put("k", new Uint8Array([5]));
+    await s.close();
+    const s2 = await open(new Uint8Array(32).fill(9));
+    await expect(s2.collection("a").get("k")).resolves.toBeUndefined();
+    await expect(s2.collection("a").list()).resolves.toStrictEqual([]);
+    await expect(rawKeys()).resolves.toStrictEqual(["check"]);
+    await s2.close();
+  });
+
+  it("rebuilds empty when the database holds records but no check row", async () => {
+    useFakeIdb();
+    const s = await open();
+    await s.collection("a").put("k", new Uint8Array([5]));
+    await rawDelete("check");
+    await s.close();
+    const s2 = await open();
+    await expect(s2.collection("a").get("k")).resolves.toBeUndefined();
+    await expect(rawKeys()).resolves.toStrictEqual(["check"]);
+    await s2.close();
+  });
+
+  it("rebuilds empty when the check row is tampered", async () => {
+    useFakeIdb();
+    const s = await open();
+    await s.collection("a").put("k", new Uint8Array([5]));
+    const check = await rawGet("check");
+    corruptByte(check, 30);
+    await rawPut("check", check);
+    await s.close();
+    const s2 = await open();
+    await expect(s2.collection("a").get("k")).resolves.toBeUndefined();
+    await expect(rawKeys()).resolves.toStrictEqual(["check"]);
+    await s2.close();
+  });
+
+  it("never lists the check row", async () => {
+    useFakeIdb();
+    const s = await open();
+    await s.collection("a").put("k", new Uint8Array([5]));
+    await expect(s.collection("check").list()).resolves.toStrictEqual([]);
+    await expect(s.collection("a").list()).resolves.toStrictEqual(["k"]);
+    await s.close();
   });
 
   it("rejects NUL in collection names and keys", async () => {

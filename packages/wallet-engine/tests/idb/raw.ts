@@ -42,6 +42,43 @@ export async function rawPut(storeKey: string, value: Uint8Array): Promise<void>
   });
 }
 
+export async function rawKeys(): Promise<ReadonlyArray<string>> {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open("t", 1);
+    r.addEventListener("success", () => {
+      const g = r.result.transaction("records").objectStore("records").getAllKeys();
+      g.addEventListener("success", () => {
+        resolve(g.result.filter((k): k is string => typeof k === "string"));
+      });
+      g.addEventListener("error", () => {
+        reject(new Error("keys failed", { cause: g.error }));
+      });
+    });
+    r.addEventListener("error", () => {
+      reject(new Error("open failed", { cause: r.error }));
+    });
+  });
+}
+
+export async function rawDelete(storeKey: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const r = indexedDB.open("t", 1);
+    r.addEventListener("success", () => {
+      const tx = r.result.transaction("records", "readwrite");
+      const d = tx.objectStore("records").delete(storeKey);
+      d.addEventListener("success", () => {
+        resolve();
+      });
+      d.addEventListener("error", () => {
+        reject(new Error("delete failed", { cause: d.error }));
+      });
+    });
+    r.addEventListener("error", () => {
+      reject(new Error("open failed", { cause: r.error }));
+    });
+  });
+}
+
 export function corruptByte(bytes: Uint8Array, index: number): void {
   bytes[index] = (bytes[index] ?? 0) + 1;
 }
