@@ -1,6 +1,9 @@
 import { hexToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 
+import { ChainError } from "@qntx/wallet-chains";
+import { decodeSolanaTransaction } from "@qntx/wallet-chains/solana";
+
 import { SOLANA_NETWORKS } from "../networks/registry.ts";
 import { BlindSigningDisabledError, SignInOriginError } from "../requests/controller.ts";
 import type { RequestController } from "../requests/controller.ts";
@@ -199,6 +202,18 @@ export class SolanaWalletHandler implements SolanaHandler {
     }
     checkAccounts(request.params, address);
     const txs = transactionsOf(request.params);
+    for (const tx of txs) {
+      try {
+        const { unsigned } = decodeSolanaTransaction(tx, address);
+        // A sign-and-send whose other signers have not signed can never land (Solana Pay's
+        // transaction-request spec requires wallets to reject these).
+        if (send && unsigned.length > 0) {
+          throw invalidParams(`the transaction still needs signatures from ${unsigned.join(", ")}`);
+        }
+      } catch (error) {
+        throw error instanceof ChainError ? invalidParams(error.message) : error;
+      }
+    }
     const outcome = await this.signRequest(checked, network, address, {
       kind: "transactions",
       transactions: txs,

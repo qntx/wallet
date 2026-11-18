@@ -4,12 +4,18 @@
  * client, close the store and reset account state. Transitions are serialized on one promise chain,
  * so an unlock→lock flip can never overlap a still-opening store.
  */
+import { base58 } from "@scure/base";
+
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
 import type { LightningInvoice, SparkNetwork } from "@qntx/spark";
 import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
-import { normalizeSolana } from "@qntx/wallet-chains/solana";
+import {
+  addSolanaSignature,
+  decodeSolanaTransaction,
+  normalizeSolana,
+} from "@qntx/wallet-chains/solana";
 import { chains } from "@qntx/wallet/chains";
 import { nostr } from "@qntx/wallet/nostr";
 import { spark } from "@qntx/wallet/spark";
@@ -383,36 +389,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       if (request.kind === "transactions") {
         const signatures: string[] = [];
         const signedTransactions: Uint8Array[] = [];
-        for (const messageBytes of request.transactions) {
-          // normalizeSolana validates the fee payer; chains.sign then verifies/signs it.
-          normalizeSolana(
-            {
-              kind: "solana.transaction",
-              network,
-              account: hdAccount,
-              message: messageBytes,
-            },
-            account.address,
-          );
+        for (const wire of request.transactions) {
+          const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
           const result = await chains(options.wallet).sign({
             request: {
               kind: "solana.transaction",
               network,
               account: hdAccount,
-              message: messageBytes,
+              message,
             },
             verify,
           });
           if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
             throw new Error("unexpected solana sign result");
           }
-          const wire = adapter.finalize(messageBytes, [result.signature]);
+          const signed = addSolanaSignature(wire, account.address, result.signature);
           if (request.send) {
             // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
-            signatures.push(await adapter.broadcast(rpc, wire));
+            signatures.push(await adapter.broadcast(rpc, signed));
           } else {
-            signedTransactions.push(wire);
+            signedTransactions.push(signed);
           }
         }
         return request.send
@@ -658,14 +655,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         template: "solana.bip44-change",
         network,
       });
-      if (
-        !("address" in account) ||
-        !("publicKey" in account) ||
-        !(account.publicKey instanceof Uint8Array)
-      ) {
+      if (!("address" in account)) {
         throw new Error("no Solana account for the group");
       }
-      return { address: account.address, publicKey: account.publicKey };
+      // A Solana address is the base58 of the ed25519 public key itself.
+      return { address: account.address, publicKey: base58.decode(account.address) };
     },
     activeGroup: () => connections.activeGroup(),
     solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",

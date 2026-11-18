@@ -1,5 +1,15 @@
 import { ed25519 } from "@noble/curves/ed25519.js";
 import { base58 } from "@scure/base";
+import {
+  AccountRole,
+  address,
+  appendTransactionMessageInstruction,
+  compileTransactionMessage,
+  createTransactionMessage,
+  getCompiledTransactionMessageEncoder,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+} from "@solana/kit";
 import { describe, expect, it } from "vite-plus/test";
 
 import { createMessage } from "@qntx/siwx";
@@ -59,6 +69,44 @@ function rig(
   return { requests, calls };
 }
 
+/** A serialized legacy transaction signed for ACCOUNT: one empty slot, then the message. */
+const solanaTx = (): { tx: Uint8Array; message: Uint8Array } => {
+  const data = new Uint8Array(12);
+  const view = new DataView(data.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, 1_000_000n, true);
+  const message = new Uint8Array(
+    getCompiledTransactionMessageEncoder().encode(
+      compileTransactionMessage(
+        appendTransactionMessageInstruction(
+          {
+            programAddress: address("11111111111111111111111111111111"),
+            accounts: [
+              { address: address(ACCOUNT.address), role: AccountRole.WRITABLE_SIGNER },
+              {
+                address: address("8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR"),
+                role: AccountRole.WRITABLE,
+              },
+            ],
+            data,
+          },
+          setTransactionMessageLifetimeUsingBlockhash(
+            {
+              blockhash: address("11111111111111111111111111111111"),
+              lastValidBlockHeight: 1000n,
+            } as never,
+            setTransactionMessageFeePayer(
+              address(ACCOUNT.address),
+              createTransactionMessage({ version: "legacy" }),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+  return { tx: new Uint8Array([1, ...new Uint8Array(64), ...message]), message };
+};
+
 const sign = (transactions: Uint8Array[], send = false) => ({
   method: "solana-sign" as const,
   origin: ORIGIN,
@@ -75,8 +123,8 @@ describe("solana-sign simulation", () => {
     };
     const { requests, calls } = rig(async () => Promise.resolve(outcome));
     await requests.init();
-    const message = new Uint8Array([1, 2, 3]);
-    const request = await requests.prepare(sign([message]));
+    const { tx, message } = solanaTx();
+    const request = await requests.prepare(sign([tx]));
     expect(calls).toStrictEqual([message]);
     expect(request.simulation).toStrictEqual(outcome);
     expect(request.checks).toStrictEqual([]);
@@ -85,7 +133,7 @@ describe("solana-sign simulation", () => {
   it("does not simulate a batch: unavailable with error batch", async () => {
     const { requests, calls } = rig(async () => Promise.reject(new Error("never")));
     await requests.init();
-    const request = await requests.prepare(sign([new Uint8Array([1]), new Uint8Array([2])]));
+    const request = await requests.prepare(sign([solanaTx().tx, solanaTx().tx]));
     expect(calls).toHaveLength(0);
     expect(request.simulation).toStrictEqual({ status: "unavailable", error: "batch" });
     expect(request.checks).toStrictEqual(["simulation-unavailable"]);
@@ -95,7 +143,7 @@ describe("solana-sign simulation", () => {
   it("turns a thrown simulation into unavailable", async () => {
     const { requests } = rig(async () => Promise.reject(new Error("rpc down")));
     await requests.init();
-    const request = await requests.prepare(sign([new Uint8Array([1])]));
+    const request = await requests.prepare(sign([solanaTx().tx]));
     expect(request.simulation).toStrictEqual({ status: "unavailable", error: "rpc down" });
   });
 
@@ -104,8 +152,14 @@ describe("solana-sign simulation", () => {
       Promise.resolve({ status: "reverted" as const, error: "boom" }),
     );
     await requests.init();
-    const request = await requests.prepare(sign([new Uint8Array([1])]));
+    const request = await requests.prepare(sign([solanaTx().tx]));
     expect(request.risk).toContainEqual({ code: "simulation-reverted", level: "danger" });
+  });
+
+  it("rejects an undecodable transaction at prepare", async () => {
+    const { requests } = rig(async () => Promise.reject(new Error("never")));
+    await requests.init();
+    await expect(requests.prepare(sign([new Uint8Array([1])]))).rejects.toThrow(/failed to decode/);
   });
 
   it("does not simulate a message signature", async () => {

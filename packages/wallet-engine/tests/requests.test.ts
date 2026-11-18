@@ -2,10 +2,10 @@ import {
   AccountRole,
   address,
   appendTransactionMessageInstruction,
-  compileTransactionMessage,
+  compileTransaction,
   createTransactionMessage,
   getAddressEncoder,
-  getCompiledTransactionMessageEncoder,
+  getTransactionEncoder,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
@@ -956,7 +956,10 @@ const SOL_STAKE = "YMN9Qj5jPNp7j14VPcML1B6xGgcPWVZUGLFU3Mnyfaf";
 const SOL_OTHER = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 
-/** A compiled legacy message with a single Stake `Authorize` to `newAuthority` (role: withdrawer). */
+/**
+ * A serialized legacy transaction with a single Stake `Authorize` to `newAuthority` (role:
+ * withdrawer).
+ */
 const authorizeTx = (newAuthority: string): Uint8Array => {
   const data = new Uint8Array(40);
   const view = new DataView(data.buffer);
@@ -983,12 +986,10 @@ const authorizeTx = (newAuthority: string): Uint8Array => {
       ),
     ),
   );
-  return new Uint8Array(
-    getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
-  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(message)));
 };
 
-/** A compiled legacy message: SetComputeUnitPrice(`microLamports`) + a 0.001 SOL transfer. */
+/** A serialized legacy transaction: SetComputeUnitPrice(`microLamports`) + a 0.001 SOL transfer. */
 const solTransferTx = (microLamports: bigint): Uint8Array => {
   const data = new Uint8Array(12);
   const view = new DataView(data.buffer);
@@ -1024,9 +1025,7 @@ const solTransferTx = (microLamports: bigint): Uint8Array => {
       ),
     ),
   );
-  return new Uint8Array(
-    getCompiledTransactionMessageEncoder().encode(compileTransactionMessage(message)),
-  );
+  return new Uint8Array(getTransactionEncoder().encode(compileTransaction(message)));
 };
 
 describe("solana-sign fee checks", () => {
