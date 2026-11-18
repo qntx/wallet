@@ -119,7 +119,7 @@ export type EngineOptions = {
 export type WalletEngine = {
   readonly networks: NetworkController;
   readonly assets: AssetsController;
-  readonly transactions: TransactionController;
+  readonly transactions: Omit<TransactionController, `prepare${string}`>;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
   readonly connections: ConnectionController;

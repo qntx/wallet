@@ -379,4 +379,13 @@ describe("engine surface", () => {
     expectTypeOf<WalletEngine["payments"]>().toHaveProperty("withdrawLnurl");
     expectTypeOf<PayInput>().toHaveProperty("method");
   });
+
+  it("engine.transactions exposes no prepare method — every signing request goes through requests", () => {
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareDapp");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSend");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareReplacement");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareEvmInternal");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSolanaSwap");
+    expectTypeOf<WalletEngine["transactions"]>().toHaveProperty("txById");
+  });
 });
