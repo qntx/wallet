@@ -36,6 +36,18 @@ export function integrity(message: string): WalletError {
   return new WalletError("integrity", message);
 }
 
+/**
+ * Detects the port's own "cannot encode" refusal: a WalletError-shaped throw whose code is exactly
+ * "invalid-input". Matched by brand rather than `instanceof` — the port may carry a copy of the
+ * class loaded through a different module resolution; the exact-code check keeps any other refusal
+ * (including a foreign WalletError-shaped one) an integrity failure.
+ */
+const isEncodingRefusal = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.name === "WalletError" &&
+  "code" in error &&
+  error.code === "invalid-input";
+
 /** Schedules `fn` after `delayMs` and returns a cancel function — injected by the host package. */
 export type SetTimer = (delayMs: number, fn: () => void) => () => void;
 
@@ -310,13 +322,20 @@ export class Channel {
       }
       try {
         this.port.post(outbound.message, outbound.wire?.transfer ?? []);
-      } catch {
+      } catch (error) {
         this.pending.delete(outbound.id);
         if (this.watchdog?.id === outbound.id) {
           this.armWatchdog();
         }
         outbound.wire?.wipe();
-        outbound.reject(integrity("the kernel port refused the message"));
+        // A port that cannot encode the request says so itself ("invalid-input") — re-issued
+        // fresh so the message names the failure regardless of what the refusal carried. Any
+        // other refusal is the port refusing the message: integrity.
+        outbound.reject(
+          isEncodingRefusal(error)
+            ? new WalletError("invalid-input", "the kernel port cannot encode the request")
+            : integrity("the kernel port refused the message"),
+        );
       }
     }
   }

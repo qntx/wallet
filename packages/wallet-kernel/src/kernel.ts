@@ -359,7 +359,14 @@ export function startKernel(host: KernelPlatform, port: Port): void {
       postStatus();
     }
     if (response !== undefined) {
-      post(response);
+      try {
+        post(response);
+      } catch {
+        // The response never reached the host (the port threw — e.g. an unencodable field on
+        // the native CBOR boundary). The caller still waits on this id, so answer it with an
+        // integrity error; if that post throws too the port is dead and the error propagates.
+        post({ v: PROTOCOL_VERSION, id: response.id, err: { code: "integrity" } });
+      }
     }
     const lockedReason = pendingLock;
     pendingLock = undefined;

@@ -3,10 +3,11 @@
  * — encode/decode happens here and in the kernel entry — so a malformed inbound frame can never
  * reach the message domain: the port exits `crashed` and the host runtime is destroyed.
  */
+import { WalletError } from "@qntx/wallet";
 import type { MainPort, PortExit } from "@qntx/wallet/host";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
-import { decodeFrame, encodeFrame } from "./cbor.ts";
+import { CborError, decodeFrame, encodeFrame } from "./cbor.ts";
 
 export type KernelExitReason = "locked" | "crashed" | "integrity" | "background";
 
@@ -80,6 +81,11 @@ export function spawnFromHost(host: KernelHostLike, backgroundLockSeconds: numbe
       try {
         frame = encodeFrame(message);
         host.post(frame);
+      } catch (error) {
+        if (error instanceof CborError) {
+          throw new WalletError("invalid-input", `request cannot be encoded: ${error.message}`);
+        }
+        throw error;
       } finally {
         if (frame !== undefined) {
           new Uint8Array(frame).fill(0);
