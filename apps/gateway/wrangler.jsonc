@@ -67,6 +67,7 @@
           "DRPC_API_KEY",
           "BLOCKSTREAM_CLIENT_ID",
           "BLOCKSTREAM_CLIENT_SECRET",
+          "COINGECKO_API_KEY",
         ],
       },
       "kv_namespaces": [{ "binding": "RISK", "id": "983019ff51a54c5abea1a0a8189d299d" }],

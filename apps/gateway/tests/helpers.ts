@@ -4,7 +4,7 @@ import { accepts } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
-import type { GatewayNetwork, Limiters, RateLimiter } from "../src/types.ts";
+import type { GatewayNetwork, Limiters, PriceCache, RateLimiter } from "../src/types.ts";
 
 export const CLIENT_ID = "0123456789abcdef0123456789abcdef";
 export const SEPOLIA = "eip155:11155111";
@@ -126,6 +126,28 @@ export function memoryRiskStore(): RiskStore & { readonly data: Map<string, stri
   };
 }
 
+/** In-memory price cache; records each `put` TTL so a test can assert the cache lifetime. */
+export function memoryPriceCache(): PriceCache & {
+  readonly data: Map<string, string>;
+  readonly ttls: number[];
+} {
+  const data = new Map<string, string>();
+  const ttls: number[] = [];
+  return {
+    data,
+    ttls,
+    get: async (key) => {
+      await Promise.resolve();
+      return data.get(key);
+    },
+    put: async (key, value, ttlSeconds) => {
+      await Promise.resolve();
+      data.set(key, value);
+      ttls.push(ttlSeconds);
+    },
+  };
+}
+
 export function gateway(options: {
   readonly fetch: typeof globalThis.fetch;
   readonly networks?: ReadonlyArray<GatewayNetwork>;
@@ -135,6 +157,8 @@ export function gateway(options: {
   readonly auth?: Parameters<typeof createGateway>[0]["auth"];
   readonly jupiter?: { apiKey: string };
   readonly log?: (line: string) => void;
+  readonly prices?: Parameters<typeof createGateway>[0]["prices"];
+  readonly now?: () => number;
 }): ReturnType<typeof createGateway> {
   return createGateway({
     fetch: options.fetch,
@@ -143,6 +167,8 @@ export function gateway(options: {
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
     auth: options.auth ?? {},
+    prices: options.prices ?? { cache: memoryPriceCache() },
+    ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.zeroEx === undefined ? {} : { zeroEx: options.zeroEx }),
     ...(options.jupiter === undefined ? {} : { jupiter: options.jupiter }),
     log: options.log ?? (() => undefined),

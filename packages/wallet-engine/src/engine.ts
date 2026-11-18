@@ -53,6 +53,10 @@ import { resolvePayment } from "./payments/resolve.ts";
 import { prepareZap } from "./payments/zap.ts";
 import type { PrepareZapParams, PreparedZap } from "./payments/zap.ts";
 import { PhishingController } from "./phishing/controller.ts";
+import { PricesController } from "./prices/controller.ts";
+import { groupHoldings, heldAssets } from "./prices/holdings.ts";
+import { valueHoldings } from "./prices/valuation.ts";
+import type { Valuation } from "./prices/valuation.ts";
 import { RequestController } from "./requests/controller.ts";
 import { SparkController } from "./spark/controller.ts";
 import type { SparkControllerOptions } from "./spark/controller.ts";
@@ -130,6 +134,19 @@ export type EngineOptions = {
 export type WalletEngine = {
   readonly networks: NetworkController;
   readonly assets: AssetsController;
+  /** Spot prices of the held assets — display-only; nothing that builds or signs reads them. */
+  readonly prices: PricesController;
+  /**
+   * Fiat valuation of the balances already in state, at the current quotes — exact decimals,
+   * display-only. `group` covers the group's EVM and Solana addresses on every enabled network, its
+   * Bitcoin accounts and its Spark balance; it reads no chain.
+   */
+  readonly portfolio: {
+    readonly group: (group: {
+      readonly walletId: string;
+      readonly groupIndex: number;
+    }) => Promise<Valuation>;
+  };
   readonly transactions: Omit<TransactionController, `prepare${string}`>;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
@@ -296,6 +313,25 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     setTimer,
     logger: options.logger,
+  });
+
+  const prices = new PricesController({
+    gateway,
+    fetch: options.fetch,
+    openStore: options.openStore,
+    setTimer,
+    now: options.now,
+    logger: options.logger,
+    held: () =>
+      heldAssets(assets.getState().balances, controller.getState().accounts, options.sparkNetwork),
+    onHeldChange: (listener) => {
+      const offAssets = assets.store.subscribe(listener);
+      const offSpark = controller.store.subscribe(listener);
+      return () => {
+        offAssets();
+        offSpark();
+      };
+    },
   });
 
   const transactions = new TransactionController({
@@ -578,6 +614,30 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     });
     return accountAddress(resolved);
   };
+  /** The group's address on the family's networks, or none when the group has no such account. */
+  const groupAddresses = async (
+    group: { readonly walletId: string; readonly groupIndex: number },
+    family: "evm" | "solana",
+  ): Promise<ReadonlyArray<{ readonly network: string; readonly address: string }>> => {
+    const enabled = networks.enabled(family);
+    const [first] = enabled;
+    if (first === undefined) {
+      return [];
+    }
+    try {
+      // One derivation serves every network of the family: the address does not depend on it.
+      const account = await chains(options.wallet).account({
+        ...group,
+        template: family === "evm" ? "evm.bip44" : "solana.bip44-change",
+        network: first,
+      });
+      return "address" in account
+        ? enabled.map((network) => ({ network, address: account.address }))
+        : [];
+    } catch {
+      return [];
+    }
+  };
   const connections = new ConnectionController({
     phishing,
     setTimer,
@@ -713,6 +773,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     addressBook.lock();
     watch.lock();
     transactions.lock();
+    prices.lock();
     assets.lock();
     networks.lock();
     // Lock: cancel sync write-backs, tree → locked, spark.setAccounts([]), totals flush.
@@ -753,6 +814,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await metaSync.init();
         await networks.init();
         await assets.init();
+        await prices.init();
         await transactions.init();
         await requests.init();
         await connections.init();
@@ -799,6 +861,24 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   return {
     networks,
     assets,
+    prices,
+    portfolio: {
+      group: async (group) => {
+        const [evm, solana] = await Promise.all([
+          groupAddresses(group, "evm"),
+          groupAddresses(group, "solana"),
+        ]);
+        const holdings = groupHoldings({
+          balances: assets.getState().balances,
+          spark: controller.getState().accounts,
+          sparkNetwork: options.sparkNetwork,
+          group,
+          addresses: [...evm, ...solana],
+          bitcoin: networks.enabled("bitcoin"),
+        });
+        return valueHoldings(holdings, prices.getState(), options.now());
+      },
+    },
     transactions,
     requests,
     watch: {

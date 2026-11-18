@@ -1,0 +1,6 @@
+{
+  "url": "https://api.coingecko.com/api/v3/simple/token_price/hyperevm?contract_addresses=0xb88339cb7199b77e23db6e890353e22632ba630f&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full",
+  "fetchedAt": "2026-11-18T08:30:50Z",
+  "status": 200,
+  "body": "{\"0xb88339cb7199b77e23db6e890353e22632ba630f\":{\"usd\":0.9995131084178598,\"usd_24h_change\":-0.014984254082025673,\"last_updated_at\":1794990626}}"
+}

@@ -36,6 +36,16 @@ export type GatewayNetwork = {
   readonly providers: ReadonlyArray<UpstreamProvider>;
 };
 
+/**
+ * Per-asset price cache shared by every client: keys never carry client identity. `get` answers
+ * `undefined` on a miss; entries live at most `ttlSeconds` (the reader also checks the embedded
+ * expiry, so a store that keeps entries longer cannot serve them stale).
+ */
+export type PriceCache = {
+  readonly get: (key: string) => Promise<string | undefined>;
+  readonly put: (key: string, value: string, ttlSeconds: number) => Promise<void>;
+};
+
 export type GatewayOptions = {
   readonly fetch: typeof globalThis.fetch;
   readonly networks: ReadonlyArray<GatewayNetwork>;
@@ -57,6 +67,16 @@ export type GatewayOptions = {
   };
   /** A Jupiter API key for `/v1/quotes/swap/solana` — absent, the upstream is called keyless. */
   readonly jupiter?: { readonly apiKey: string };
+  /**
+   * Spot prices: the shared per-asset cache, and the CoinGecko Pro key that enables the primary
+   * source. Without the key only the keyless DefiLlama fallback serves, and it quotes USD only.
+   */
+  readonly prices: {
+    readonly cache: PriceCache;
+    readonly coingecko?: { readonly apiKey: string };
+  };
+  /** The wall clock, Unix ms; defaults to `Date.now`. */
+  readonly now?: () => number;
   /** One JSON line per request; defaults to `console.log`. */
   readonly log?: (line: string) => void;
 };
