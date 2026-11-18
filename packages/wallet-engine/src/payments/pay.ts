@@ -68,9 +68,9 @@ export async function preparePay(
         display: { family: "spark", network, kind: "transfer", amountSats, receiver: address },
         checks: [],
         staleReason: () => undefined,
-        execute: async (spark, verify) => ({
+        execute: async (spark, verify, commit) => ({
           kind: "spark",
-          transfer: await spark.send(ref, { receiver: address, amountSats, verify }),
+          transfer: await spark.send(ref, { receiver: address, amountSats, verify, commit }),
         }),
       };
     }
@@ -115,12 +115,13 @@ export async function preparePay(
         checks: [],
         staleReason: (now) =>
           expiresAt !== undefined && expiresAt <= now ? "spark invoice expired" : undefined,
-        execute: async (spark, verify) => ({
+        execute: async (spark, verify, commit) => ({
           kind: "spark",
           transfer: await spark.paySparkInvoice(ref, {
             invoice: option.invoice,
             ...(openAmount === undefined ? {} : { amountSats: openAmount }),
             verify,
+            commit,
           }),
         }),
       };
@@ -163,13 +164,14 @@ export async function preparePay(
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: (now) =>
           expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "lightning invoice expired" : undefined,
-        execute: async (spark, verify) => ({
+        execute: async (spark, verify, commit) => ({
           kind: "lightning",
           payment: await spark.payInvoice(ref, {
             invoice: option.invoice,
             maxFeeSats,
             ...(openAmount === undefined ? {} : { amountSats: openAmount }),
             verify,
+            commit,
           }),
         }),
       };
@@ -223,9 +225,9 @@ export async function preparePay(
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: (now) =>
           expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "lightning invoice expired" : undefined,
-        execute: async (spark, verify) => ({
+        execute: async (spark, verify, commit) => ({
           kind: "lightning",
-          payment: await spark.payInvoice(ref, { invoice, maxFeeSats, verify }),
+          payment: await spark.payInvoice(ref, { invoice, maxFeeSats, verify, commit }),
         }),
       };
     }
@@ -247,7 +249,7 @@ export async function preparePay(
         },
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: () => undefined,
-        execute: async (spark, verify) => ({
+        execute: async (spark, verify, commit) => ({
           kind: "withdraw",
           exit: await spark.withdraw(ref, {
             address,
@@ -255,6 +257,7 @@ export async function preparePay(
             verify,
             amountSats,
             ...(maxFeeSats === undefined ? {} : { maxFeeSats }),
+            commit,
           }),
         }),
       };

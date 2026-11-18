@@ -4,9 +4,9 @@ import { NETWORK, p2tr, p2wpkh, Transaction } from "@scure/btc-signer";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
-import type { ChainAccount } from "@qntx/wallet/chains";
+import type { ChainAccount, ChainsApi } from "@qntx/wallet/chains";
 
-import { prepareDappPsbts } from "../src/chains/bitcoin-dapp.ts";
+import { prepareDappPsbts, signDappPsbts } from "../src/chains/bitcoin-dapp.ts";
 import type { Esplora } from "../src/chains/bitcoin.ts";
 import type { BitcoinPsbtInput } from "../src/requests/types.ts";
 
@@ -234,4 +234,54 @@ describe("prepareDappPsbts", () => {
       ).rejects.toMatchObject({ code: "invalid-request" });
     },
   );
+});
+
+const signPsbt: ChainsApi["sign"] = async ({ request }) => {
+  if (request.kind !== "bitcoin.psbt") {
+    throw new Error("unexpected kind");
+  }
+  const tx = Transaction.fromPSBT(request.psbt);
+  for (const entry of request.sign) {
+    const path = tx.getInput(entry.index).bip32Derivation?.[0]?.[1].path;
+    if (path === undefined) {
+      throw new Error("missing derivation");
+    }
+    const node = nodeOf(entry.template, path.at(-2) ?? 0, path.at(-1) ?? 0);
+    tx.signIdx(node.privateKey!, entry.index);
+  }
+  return Promise.resolve({ kind: "bitcoin.psbt" as const, signedPsbt: tx.toPSBT(0) });
+};
+
+describe("signDappPsbts", () => {
+  it("a throwing commit prevents the broadcast", { timeout: 20_000 }, async () => {
+    const { es, apis } = rig();
+    const psbt = dappPsbt(
+      [{ script: scriptOf("btc.bip84"), amount: 100000n }],
+      [{ script: PAYEE_SCRIPT, amount: 90000n }],
+    );
+    const [prepared] = await prepareDappPsbts(apis, es, GROUP, MAINNET, [
+      { psbt, sign: [signEntry(0, "btc.bip84")] },
+    ]);
+    const posted: string[] = [];
+    const broadcasting: Pick<Esplora, "post"> = {
+      post: async (_path: string, body: string) => {
+        posted.push(body);
+        return Promise.resolve("");
+      },
+    };
+    const signing: Pick<ChainsApi, "sign"> = { sign: signPsbt };
+    await expect(
+      signDappPsbts(
+        signing,
+        broadcasting,
+        [prepared!],
+        true,
+        { kind: "password", password: "pw" },
+        () => {
+          throw new Error("invalidated");
+        },
+      ),
+    ).rejects.toThrow("invalidated");
+    expect(posted).toHaveLength(0);
+  });
 });

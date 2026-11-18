@@ -31,8 +31,6 @@ export { ProviderError } from "./errors.ts";
 
 /** The EIP-6963 provider identity the host stamps into the injected script. */
 export type ProviderInfo = {
-  /** UUIDv4 — the host generates or fixes one per install. */
-  readonly uuid: string;
   /** 1–64 characters. */
   readonly name: string;
   /** `data:image/(png|svg+xml|webp);base64,…`, ≤ 64 KiB of base64. */
@@ -52,9 +50,6 @@ const bad = (message: string): Error => new Error(`ProviderInfo: ${message}`);
 function checkInfo(info: ProviderInfo): void {
   if (typeof info !== "object" || info === null) {
     throw bad("not an object");
-  }
-  if (!UUID_V4.test(info.uuid)) {
-    throw bad("uuid is not a UUIDv4");
   }
   if (typeof info.name !== "string" || info.name.length === 0 || info.name.length > 64) {
     throw bad("name must be 1–64 characters");
@@ -79,9 +74,9 @@ function checkInfo(info: ProviderInfo): void {
 
 /**
  * The script the host injects into the page: the fixed provider body plus one
- * `qntxProvider.install` call carrying `info`. `info` is strictly validated — an invalid field
- * throws before the script is produced, so a misconfigured host fails before anything reaches the
- * page.
+ * `qntxProvider.install` call carrying `info` — the script itself generates the EIP-6963 uuid per
+ * document. `info` is strictly validated — an invalid field throws before the script is produced,
+ * so a misconfigured host fails before anything reaches the page.
  */
 export function injectedScript(info: ProviderInfo): string {
   checkInfo(info);
@@ -152,6 +147,8 @@ const errorData = (error: unknown): { code: number; message: string } =>
 export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridge {
   const { eip1193, nip07, webln, solana, bitcoin, connections, inject, now } = options;
   let topOrigin: string | undefined;
+  /** The current document's id; a same-origin reload's first message switches it. */
+  let topDocument: string | undefined;
   let disposed = false;
   /** Per-origin request timestamps in the current window, for the 120/min cap. */
   const hits = new Map<string, number[]>();
@@ -185,17 +182,22 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     return false;
   };
 
+  /** Events go to the current document; its id lets a stale page's listener ignore them. */
+  const toPage = (payload: Record<string, unknown>): void => {
+    receive(topDocument === undefined ? payload : { doc: topDocument, ...payload });
+  };
+
   const unsubscribe = eip1193.subscribe((event) => {
     if (disposed || topOrigin === undefined || event.origin !== topOrigin) {
       return;
     }
-    receive({ event: event.name, data: eventData(event) });
+    toPage({ event: event.name, data: eventData(event) });
   });
   const unsubscribeSolana = solana.subscribe((event: SolanaEvent) => {
     if (disposed || topOrigin === undefined || event.origin !== topOrigin) {
       return;
     }
-    receive({
+    toPage({
       event: "standard:events",
       data: { event: "change", params: { accounts: event.accounts } },
     });
@@ -205,7 +207,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     if (disposed || topOrigin === undefined || event.origin !== topOrigin) {
       return;
     }
-    receive({
+    toPage({
       event: "bitcoin:events",
       data: { event: "change", params: { accounts: event.accounts } },
     });
@@ -228,15 +230,25 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
     if (!isObject(parsed)) {
       return;
     }
-    const { id, method, params, qntx, provider } = parsed;
+    const { id, method, params, qntx, provider, doc } = parsed;
     if (
       qntx !== 1 ||
       typeof id !== "number" ||
       !Number.isSafeInteger(id) ||
       id < 0 ||
-      typeof method !== "string"
+      typeof method !== "string" ||
+      typeof doc !== "string" ||
+      !UUID_V4.test(doc)
     ) {
       return;
+    }
+    // A document id the bridge has not seen is a new document of the same origin (a reload): the
+    // previous document is gone, so its pending connection and pipeline requests are void.
+    if (doc !== topDocument) {
+      if (topDocument !== undefined) {
+        connections.invalidateOrigin(origin);
+      }
+      topDocument = doc;
     }
     // `provider` selects the handler; an unknown or missing value is a malformed message.
     const handler =
@@ -255,7 +267,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
       return;
     }
     if (rateLimited(origin)) {
-      receive({ id, error: DISCONNECT });
+      receive({ doc, id, error: DISCONNECT });
       return;
     }
     void (async (): Promise<void> => {
@@ -264,12 +276,12 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
           origin,
           params === undefined ? { method } : { method, params },
         );
-        if (!disposed && origin === topOrigin) {
-          receive({ id, result });
+        if (!disposed && origin === topOrigin && doc === topDocument) {
+          receive({ doc, id, result });
         }
       } catch (error: unknown) {
-        if (!disposed && origin === topOrigin) {
-          receive({ id, error: errorData(error) });
+        if (!disposed && origin === topOrigin && doc === topDocument) {
+          receive({ doc, id, error: errorData(error) });
         }
       }
     })();
@@ -287,6 +299,7 @@ export function createBrowserBridge(options: BrowserBridgeOptions): BrowserBridg
         connections.invalidateOrigin(topOrigin);
       }
       topOrigin = next;
+      topDocument = undefined;
     }
   };
 

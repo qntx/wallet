@@ -217,6 +217,7 @@ const signSubmit = async (
   verify: SignParams["verify"],
   account: { readonly from: string; readonly account: AccountRef },
   wire: EvmWire,
+  commit: () => void,
 ): Promise<TrackedTransaction> => {
   let tracked = tx;
   let raw: string;
@@ -224,6 +225,7 @@ const signSubmit = async (
     const result = await apis.sign({ request, verify });
     tracked = await ctx.transition(tracked, { state: "signed" });
     raw = wire.finalize(result);
+    commit();
   } catch (error) {
     await failTx(ctx, tracked, error);
     throw error;
@@ -967,7 +969,10 @@ export const createEvmRoute = (): EvmRoute => {
       delegatedCode,
     );
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       let tx: TrackedTransaction = {
         id: txId,
         family: "evm",
@@ -989,6 +994,7 @@ export const createEvmRoute = (): EvmRoute => {
         verify,
         { from, account },
         { evm, client, finalize: (signed) => evm.finalize(feed, signed), ownsNonce: true },
+        commit,
       );
     };
 
@@ -1790,7 +1796,10 @@ export const createEvmRoute = (): EvmRoute => {
     const intent = withL1Fee(decodeEvm(request, original.from), l1);
     const txId = newId(ctx.options.random);
 
-    const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+    const submit = async (
+      verify: SendParams["verify"],
+      commit: () => void,
+    ): Promise<TrackedTransaction> => {
       let tx: TrackedTransaction = {
         id: txId,
         family: "evm",
@@ -1813,6 +1822,7 @@ export const createEvmRoute = (): EvmRoute => {
         verify,
         { from: record.from, account: record.account },
         { evm, client, finalize: (signed) => evm.finalize(unsigned, signed), ownsNonce: false },
+        commit,
       );
     };
 

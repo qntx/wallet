@@ -224,7 +224,7 @@ export const send = async (
     { account: ACCOUNT, network: NET, to: RECIP, amount, fee: "slow" },
     requestId,
   );
-  return prepared.submit(VERIFY);
+  return prepared.submit(VERIFY, () => undefined);
 };
 
 export const persistedUtxos = async (

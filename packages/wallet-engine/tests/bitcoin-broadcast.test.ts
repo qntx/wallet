@@ -157,7 +157,7 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
       "req-b",
     );
     w.setPost({ kind: "throw", error: new EsploraError("esplora /tx: 400", false) });
-    await expect(prepared.submit(VERIFY)).rejects.toThrow(/400/);
+    await expect(prepared.submit(VERIFY, () => undefined)).rejects.toThrow(/400/);
     w.setPost({ kind: "ok" });
 
     const bumped = Object.values(booted.ctl.getState().txs).find((t) => t.replaces === original.id);
@@ -231,7 +231,7 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
       { method: "speed-up", txId: original.id },
       "req-b",
     );
-    const bumped = await prepared.submit(VERIFY);
+    const bumped = await prepared.submit(VERIFY, () => undefined);
     expect(bumped.state).toBe("submitted");
     expect(bumped.replaces).toBe(original.id);
 

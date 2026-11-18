@@ -387,6 +387,22 @@ describe("approval-time re-simulation", () => {
     expect(f.signed).toHaveLength(0);
   });
 
+  it("an invalidation during re-simulation stays invalidated, not back to awaiting", async () => {
+    const f = rig(succeed("-100"));
+    f.queue.push(succeed("-200"));
+    await f.requests.init();
+    const request = await f.requests.prepare(PARAMS);
+    f.advance(RESIMULATE_AFTER_MS);
+    f.duringResimulate(() => {
+      f.requests.invalidateAll();
+    });
+    await expect(
+      f.requests.approve(request.id, "send", approval(request, VERIFY)),
+    ).rejects.toMatchObject({ name: "RequestEndedError", stage: "invalidated" });
+    expect(f.requests.getState().requests[request.id]?.stage).toBe("invalidated");
+    expect(f.signed).toHaveLength(0);
+  });
+
   it("replacements never re-simulate", async () => {
     const f = rig(succeed("-100"));
     await f.requests.init();

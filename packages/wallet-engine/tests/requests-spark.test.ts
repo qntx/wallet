@@ -164,7 +164,12 @@ describe("Spark requests", () => {
     expect(w.calls).toStrictEqual([
       {
         method: "payInvoice",
-        params: { invoice: LIGHTNING_INVOICE, maxFeeSats: 5, verify: VERIFY },
+        params: {
+          invoice: LIGHTNING_INVOICE,
+          maxFeeSats: 5,
+          verify: VERIFY,
+          commit: expect.any(Function),
+        },
       },
     ]);
     expect(w.requests.getState().requests[request.id]?.stage).toBe("submitted");
@@ -190,7 +195,7 @@ describe("Spark requests", () => {
     await w.requests.approve(request.id, "pay", approval(request, VERIFY));
     expect(w.calls[0]).toStrictEqual({
       method: "send",
-      params: { receiver: address, amountSats: 42, verify: VERIFY },
+      params: { receiver: address, amountSats: 42, verify: VERIFY, commit: expect.any(Function) },
     });
   });
 
@@ -373,5 +378,14 @@ describe("engine surface", () => {
     expectTypeOf<WalletEngine["zaps"]>().not.toHaveProperty("pay");
     expectTypeOf<WalletEngine["payments"]>().toHaveProperty("withdrawLnurl");
     expectTypeOf<PayInput>().toHaveProperty("method");
+  });
+
+  it("engine.transactions exposes no prepare method — every signing request goes through requests", () => {
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareDapp");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSend");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareReplacement");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareEvmInternal");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSolanaSwap");
+    expectTypeOf<WalletEngine["transactions"]>().toHaveProperty("txById");
   });
 });

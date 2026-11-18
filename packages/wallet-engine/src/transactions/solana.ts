@@ -243,7 +243,10 @@ const finishPrepared = async (
   const id = newId(ctx.options.random);
   const simulation = await solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer);
 
-  const submit = async (verify: SendParams["verify"]): Promise<TrackedTransaction> => {
+  const submit = async (
+    verify: SendParams["verify"],
+    commit: () => void,
+  ): Promise<TrackedTransaction> => {
     let tx: TrackedTransaction = {
       id,
       family: "solana",
@@ -268,6 +271,7 @@ const finishPrepared = async (
       }
       wire = solana.finalize(messageBytes, [result.signature]);
       signature = base58.encode(result.signature);
+      commit();
     } catch (error) {
       await failTx(ctx, tx, error);
       throw error;

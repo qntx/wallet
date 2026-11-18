@@ -70,9 +70,11 @@ const get = (url: string): unknown => {
   }
   return { confirmed: false };
 };
+const posted: string[] = [];
 const esploraStub = {
   get: async (u: string) => Promise.resolve(get(u)),
   post: async (_u: string, body: string) => {
+    posted.push(body);
     const raw = new Uint8Array(Buffer.from(body, "hex"));
     const { id } = Transaction.fromRaw(raw, { allowUnknownInputs: true });
     PREVS.set(id, raw);
@@ -205,7 +207,7 @@ describe("bitcoin rbf", () => {
       "req-deposit",
       tag,
     );
-    const tx = await prepared.submit({ kind: "password", password: "pw" });
+    const tx = await prepared.submit({ kind: "password", password: "pw" }, () => undefined);
     expect(tx.sparkDeposit).toStrictEqual(tag);
     const plain = await send(ctx());
     expect(plain).not.toHaveProperty("sparkDeposit");
@@ -356,7 +358,7 @@ describe("bitcoin rbf", () => {
       const c = ctx();
       await route.unlock(store);
       const prepared = await route.prepare(c, params, "req-1");
-      const tx = await prepared.submit(verify);
+      const tx = await prepared.submit(verify, () => undefined);
       await new Promise((resolve) => {
         setTimeout(resolve);
       });
@@ -403,10 +405,25 @@ describe("bitcoin rbf", () => {
       setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
       const c = ctx();
       const prepared = await route.prepare(c, params, "req-1");
-      const tx = await prepared.submit(verify);
+      const tx = await prepared.submit(verify, () => undefined);
       expect(tx.state).toBe("submitted");
       prepared.release();
       await expect(route.prepare(c, params, "req-2")).rejects.toThrow("insufficient");
+    });
+
+    it("a throwing commit broadcasts nothing and the released outputs are selectable again", async () => {
+      setUtxos([{ txid: funding(1, 50_000).txid, vout: 0, value: 50_000 }]);
+      const c = ctx();
+      const prepared = await route.prepare(c, params, "req-1");
+      const before = posted.length;
+      await expect(
+        prepared.submit(verify, () => {
+          throw new Error("invalidated");
+        }),
+      ).rejects.toThrow("invalidated");
+      expect(posted).toHaveLength(before);
+      prepared.release();
+      await expect(route.prepare(c, params, "req-2")).resolves.toBeDefined();
     });
   });
 
@@ -474,7 +491,7 @@ describe("bitcoin rbf", () => {
       independentMode = { kind: "available", client: independentFees(1) };
       const prepared = await route.prepareReplace(c, original, "speed-up", "req-1");
       expect(prepared.checks).toContain("fee-mismatch");
-      const bumped = await prepared.submit(verify);
+      const bumped = await prepared.submit(verify, () => undefined);
       const old = btcOf(original);
       expect(btcOf(bumped).fee).toBeGreaterThanOrEqual(old.fee + old.vsize);
     });
@@ -494,13 +511,13 @@ describe("bitcoin rbf", () => {
     hexCalls.length = 0;
     const child = await route.prepareCpfp(c, original, 10, "req-c");
     expect(hexCalls).toStrictEqual([original.hash]);
-    await child.submit({ kind: "password", password: "pw" });
+    await child.submit({ kind: "password", password: "pw" }, () => undefined);
     expect(signedPsbt(1).getInput(0).nonWitnessUtxo).toBeDefined();
     hexCalls.length = 0;
     const bumped = await route.prepareReplace(c, original, "speed-up", "req-r");
     // The stashed inputs already carry their prevouts — nothing is re-fetched here.
     expect(hexCalls).toStrictEqual([]);
-    await bumped.submit({ kind: "password", password: "pw" });
+    await bumped.submit({ kind: "password", password: "pw" }, () => undefined);
     const bumpPsbt = signedPsbt(2);
     for (let i = 0; i < bumpPsbt.inputsLength; i++) {
       expect(bumpPsbt.getInput(i).nonWitnessUtxo).toBeDefined();
@@ -519,9 +536,9 @@ describe("bitcoin rbf", () => {
     const originalInputs = signedPsbt(0).inputsLength;
     expect(originalInputs).toBe(1);
     const speedUp = await route.prepareReplace(c, original, "speed-up", "req-speed-up");
-    await speedUp.submit({ kind: "password", password: "pw" });
+    await speedUp.submit({ kind: "password", password: "pw" }, () => undefined);
     const cancel = await route.prepareReplace(c, original, "cancel", "req-cancel");
-    await cancel.submit({ kind: "password", password: "pw" });
+    await cancel.submit({ kind: "password", password: "pw" }, () => undefined);
     for (const n of [1, 2] as const) {
       const tx = signedPsbt(n);
       const txids = new Set(inputTxids(tx));
@@ -545,10 +562,10 @@ describe("bitcoin rbf", () => {
     });
     expect(signGroupIndex(0)).toBe(1);
     const bumped = await route.prepareReplace(c, original, "speed-up", "req-r");
-    await bumped.submit({ kind: "password", password: "pw" });
+    await bumped.submit({ kind: "password", password: "pw" }, () => undefined);
     expect(signGroupIndex(1)).toBe(1);
     const child = await route.prepareCpfp(c, original, 10, "req-c");
-    await child.submit({ kind: "password", password: "pw" });
+    await child.submit({ kind: "password", password: "pw" }, () => undefined);
     expect(signGroupIndex(2)).toBe(1);
   });
 });

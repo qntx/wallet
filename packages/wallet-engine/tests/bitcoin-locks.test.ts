@@ -19,7 +19,7 @@ describe("bitcoin input locks on terminal states", () => {
     expect(txA.state).toBe("submitted");
 
     const repB = await first.ctl.prepareReplacement({ method: "speed-up", txId: txA.id }, "req-b");
-    const txB = await repB.submit(VERIFY);
+    const txB = await repB.submit(VERIFY, () => undefined);
     expect(txB.state).toBe("submitted");
     expect(txB.replaces).toBe(txA.id);
     // B really is the +1-input replacement: A's outpoint plus the spare X.

@@ -130,7 +130,7 @@ export type EngineOptions = {
 export type WalletEngine = {
   readonly networks: NetworkController;
   readonly assets: AssetsController;
-  readonly transactions: TransactionController;
+  readonly transactions: Omit<TransactionController, `prepare${string}`>;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
   readonly connections: ConnectionController;
@@ -386,7 +386,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
-    solanaSign: async (account, network, request, verify) => {
+    solanaSign: async (account, network, request, verify, commit) => {
       const rpc = networks.solanaRpc(network);
       const adapter = new SolanaChainAdapter();
       const hdAccount = {
@@ -396,8 +396,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         template: "solana.bip44-change" as const,
       };
       if (request.kind === "transactions") {
-        const signatures: string[] = [];
-        const signedTransactions: Uint8Array[] = [];
+        const wires: Uint8Array[] = [];
         for (const wire of request.transactions) {
           const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
@@ -413,17 +412,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
           if (result.kind !== "solana.transaction" || !(result.signature instanceof Uint8Array)) {
             throw new Error("unexpected solana sign result");
           }
-          const signed = addSolanaSignature(wire, account.address, result.signature);
-          if (request.send) {
-            // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
-            signatures.push(await adapter.broadcast(rpc, signed));
-          } else {
-            signedTransactions.push(signed);
-          }
+          wires.push(addSolanaSignature(wire, account.address, result.signature));
         }
-        return request.send
-          ? { kind: "solana.transactions" as const, send: true, signatures }
-          : { kind: "solana.transactions" as const, send: false, signedTransactions };
+        if (!request.send) {
+          return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
+        }
+        commit();
+        const signatures: string[] = [];
+        for (const wire of wires) {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
+          signatures.push(await adapter.broadcast(rpc, wire));
+        }
+        return { kind: "solana.transactions" as const, send: true, signatures };
       }
       normalizeSolana(
         {
@@ -452,13 +452,14 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     bitcoinPrepare: async (account, network, psbts) =>
       prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
-    bitcoinSignPsbts: async (_account, network, prepared, send, verify) => {
+    bitcoinSignPsbts: async (_account, network, prepared, send, verify, commit) => {
       const { signedPsbts, txids } = await signDappPsbts(
         chains(options.wallet),
         networks.esplora(network),
         prepared,
         send,
         verify,
+        commit,
       );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
@@ -575,6 +576,18 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     logger: options.logger,
     allowLocalhost: options.allowLocalhostOrigins ?? false,
     selectedGroup: () => accounts.getState().selected ?? undefined,
+    onSelectedGroup: (listener) =>
+      accounts.store.subscribe((state, previous) => {
+        if (
+          state.selected?.walletId !== previous.selected?.walletId ||
+          state.selected?.groupIndex !== previous.selected?.groupIndex
+        ) {
+          listener();
+        }
+      }),
+    invalidateAll: () => {
+      requests.invalidateAll();
+    },
     evmAddress: async (group, network) => {
       const account = await chains(options.wallet).account({
         ...group,
@@ -636,16 +649,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     spark: controller,
-    sparkAccount: () => {
-      const group = connections.activeGroup();
-      return group === undefined
-        ? undefined
-        : {
-            walletId: group.walletId,
-            groupIndex: group.groupIndex,
-            network: options.sparkNetwork,
-          };
-    },
+    sparkNetwork: options.sparkNetwork,
     now: options.now,
     alias: options.weblnAlias,
     lightningMaxFee: options.lightningMaxFee,
@@ -670,7 +674,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       // A Solana address is the base58 of the ed25519 public key itself.
       return { address: account.address, publicKey: base58.decode(account.address) };
     },
-    activeGroup: () => connections.activeGroup(),
     solanaNetwork: () => networks.enabled("solana")[0] ?? SOLANA_CHAIN_IDS["solana:mainnet"] ?? "",
   });
 
@@ -678,7 +681,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     connections,
     requests,
     bitcoinAccount,
-    activeGroup: () => connections.activeGroup(),
     bitcoinNetwork: () => {
       const enabled = networks.enabled("bitcoin");
       const mainnet = BITCOIN_CHAIN_IDS["bitcoin:mainnet"] ?? "";

@@ -3,13 +3,40 @@ import type { Message, MessageFields } from "@qntx/siwx";
 import { evm } from "@qntx/siwx/evm";
 import { siws, validateAddress as validateSolanaAddress } from "@qntx/siwx/svm";
 
+/**
+ * A domain a sign-in line claims: `[scheme://]domain wants you to sign in with your Ethereum|Solana
+ * account:` at the start of a line.
+ */
+export type SignInClaim = { readonly scheme?: string; readonly domain: string };
+
 /** A Sign-In with X message found in signed text (ERC-4361 / SIWS). */
 export type SignInParse =
   | { readonly status: "valid"; readonly fields: MessageFields }
-  /** The text contains the sign-in preamble but is not a conforming message for this chain family. */
-  | { readonly status: "malformed" };
+  /**
+   * Not a conforming message for the family; `claims` are the domains its preamble lines claim —
+   * lenient verifiers (viem `parseSiweMessage`, `@solana/wallet-standard-util`
+   * `parseSignInMessageText`) accept such text, so the wallet binds it to the page like a
+   * conforming one.
+   */
+  | { readonly status: "malformed"; readonly claims: ReadonlyArray<SignInClaim> };
 
 const PREAMBLE = " wants you to sign in with your ";
+
+const CLAIM =
+  /^(?:(?<scheme>[A-Za-z][A-Za-z0-9+.-]*):\/\/)?(?<domain>.*?) wants you to sign in with your (?:Ethereum|Solana) account:$/;
+
+const claims = (text: string): SignInClaim[] =>
+  text.split("\n").flatMap((line) => {
+    const groups = CLAIM.exec(line.endsWith("\r") ? line.slice(0, -1) : line)?.groups;
+    if (groups === undefined) {
+      return [];
+    }
+    const claim: { scheme?: string; domain: string } = { domain: groups["domain"] ?? "" };
+    if (groups["scheme"] !== undefined) {
+      claim.scheme = groups["scheme"];
+    }
+    return [claim];
+  });
 
 const OPTIONAL_KEYS = ["scheme", "statement", "expirationTime", "notBefore", "requestId"] as const;
 
@@ -57,6 +84,6 @@ export function parseSignIn(text: string, family: "evm" | "solana"): SignInParse
   try {
     return { status: "valid", fields: parseValid(text, family) };
   } catch {
-    return text.includes(PREAMBLE) ? { status: "malformed" } : undefined;
+    return text.includes(PREAMBLE) ? { status: "malformed", claims: claims(text) } : undefined;
   }
 }

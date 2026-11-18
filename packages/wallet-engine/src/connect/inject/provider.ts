@@ -2,10 +2,13 @@
  * The EIP-1193/EIP-6963 provider injected into an in-app browser WebView. Self-contained ES2020 —
  * no imports, no wallet state. The build wraps this module in an IIFE bound to `qntxProvider`;
  * `injectedScript(info)` appends one `qntxProvider.install(<JSON>)` call. Page to host:
- * `ReactNativeWebView.postMessage` of `{ qntx: 1, id, method, params? }`. Host to page:
- * `__qntxReceive(<JSON>)` carrying `{ id, result }`, `{ id, error: { code, message } }` or `{
- * event, data }`. `__qntxReceive` is defined as a non-writable, non-configurable property so a
- * hostile page cannot replace the host's reply channel.
+ * `ReactNativeWebView.postMessage` of `{ qntx: 1, doc, id, method, params? }`. Host to page:
+ * `__qntxReceive(<JSON>)` carrying `{ doc, id, result }`, `{ doc, id, error: { code, message } }`
+ * or `{ event, data }`. `doc` is one random UUIDv4 generated per document at install — the EIP-6963
+ * `info.uuid` and the document id in one — so a same-origin reload can never settle a previous
+ * document's pending calls, and it is not a cross-site identifier. `__qntxReceive` is defined as a
+ * non-writable, non-configurable property so a hostile page cannot replace the host's reply
+ * channel.
  */
 import type {
   SolanaSignAndSendTransactionFeature,
@@ -122,7 +125,6 @@ const isWalletIcon = (value: string): value is WalletIcon =>
   /^data:image\/(?:svg\+xml|webp|png|gif);base64,/.test(value);
 
 type ProviderInfo = {
-  readonly uuid: string;
   readonly name: string;
   readonly icon: string;
   readonly rdns: string;
@@ -196,6 +198,16 @@ export function install(info: ProviderInfo): void {
   if (page.top !== page.self) {
     return;
   }
+  // One UUIDv4 per document: the EIP-6963 uuid and the id tagging every page→host message, so the
+  // host can tell a freshly reloaded document from the one it replaced.
+  const docBytes = new Uint8Array(16);
+  crypto.getRandomValues(docBytes);
+  // oxlint-disable-next-line eslint/no-bitwise -- UUIDv4 version bits.
+  docBytes[6] = ((docBytes[6] ?? 0) & 0x0f) | 0x40;
+  // oxlint-disable-next-line eslint/no-bitwise -- UUIDv4 variant bits.
+  docBytes[8] = ((docBytes[8] ?? 0) & 0x3f) | 0x80;
+  const docHex = bytesToHex(docBytes);
+  const doc = `${docHex.slice(0, 8)}-${docHex.slice(8, 12)}-${docHex.slice(12, 16)}-${docHex.slice(16, 20)}-${docHex.slice(20)}`;
   let nextId = 1;
   const pending = new Map<number, Pending>();
   const listeners = new Map<string, Set<Listener>>();
@@ -221,7 +233,7 @@ export function install(info: ProviderInfo): void {
     });
     page.ReactNativeWebView?.postMessage(
       JSON.stringify(
-        { qntx: 1, provider, id, method: args.method, params: args.params },
+        { qntx: 1, doc, provider, id, method: args.method, params: args.params },
         bytesReplacer,
       ),
     );
@@ -335,6 +347,9 @@ export function install(info: ProviderInfo): void {
     }
     if (!isRecord(message)) {
       return;
+    }
+    if (message["doc"] !== undefined && message["doc"] !== doc) {
+      return; // addressed to another document — a stale page from before a same-origin reload
     }
     const { id, event } = message;
     if (typeof id === "number") {
@@ -611,8 +626,12 @@ export function install(info: ProviderInfo): void {
   });
   registerWallet(btcWallet);
 
-  // EIP-6963: announce at install and on every requestProvider, with a frozen { info, provider }.
-  const detail = Object.freeze({ info: Object.freeze({ ...info }), provider });
+  // EIP-6963: announce at install and on every requestProvider, with a frozen { info, provider };
+  // the uuid is this document's id — per install like MetaMask, never a fixed cross-site value.
+  const detail = Object.freeze({
+    info: Object.freeze({ ...info, uuid: doc }),
+    provider,
+  });
   const announce = (): void => {
     globalThis.dispatchEvent(new CustomEvent(EVENT_ANNOUNCE, { detail }));
   };

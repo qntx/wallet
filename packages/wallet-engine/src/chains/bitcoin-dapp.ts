@@ -265,6 +265,7 @@ export const signDappPsbts = async (
   prepared: ReadonlyArray<PreparedBitcoinPsbt>,
   send: boolean,
   verify: Parameters<ChainsApi["sign"]>[0]["verify"],
+  commit: () => void,
 ): Promise<{ signedPsbts: Uint8Array[]; txids: string[] }> => {
   const results: SignResult[] = [];
   for (const { request } of prepared) {
@@ -290,6 +291,7 @@ export const signDappPsbts = async (
       );
     }
   }
+  commit();
   const txids: string[] = [];
   for (const result of results) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per PSBT.
