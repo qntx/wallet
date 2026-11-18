@@ -24,10 +24,12 @@
 
 #if defined(__APPLE__) || defined(__ANDROID__)
 #include <pthread.h>
+#include <time.h>
 #include <unistd.h>
 #elif defined(__linux__)
 #include <cerrno>
 #include <sys/random.h>
+#include <time.h>
 #include <unistd.h>
 #endif
 
@@ -43,6 +45,7 @@ constexpr size_t kRandomLimit = 65536;
 constexpr double kTimerDelayMax = 2147483647.0;
 constexpr double kPbkdf2IterationsMax = 10000000.0;
 constexpr size_t kPbkdf2LengthMax = 1024;
+
 // Argon2id bounds: generous around the one cost the kernel asks for, tight
 // enough that a script cannot make the worker allocate without limit.
 constexpr double kArgon2MemoryKiBMin = 8.0;
@@ -52,6 +55,27 @@ constexpr double kArgon2LanesMax = 16.0;
 constexpr double kArgon2LengthMin = 4.0;
 constexpr double kArgon2LengthMax = 1024.0;
 constexpr size_t kKdfQueueLimit = 8;
+
+// __qntx.elapsed — the session clock behind the 24 h cap. It must keep running
+// while the device is suspended, like the background lock does
+// (cpp/platform/Lifecycle*): steady_clock on Android/Linux is CLOCK_MONOTONIC,
+// which freezes in suspend (LifecycleAndroid.cpp's own comment), so read the
+// suspend-inclusive clock directly. Apple CLOCK_MONOTONIC counts sleep
+// (LifecycleIos.mm relies on the same). Timers stay on steady_clock — a timer
+// delayed by suspend fires on wake, which is the intended policy.
+double elapsedMillis() {
+#if defined(__APPLE__)
+  return static_cast<double>(clock_gettime_nsec_np(CLOCK_MONOTONIC)) / 1e6;
+#elif defined(__ANDROID__) || defined(__linux__)
+  timespec ts{};
+  ::clock_gettime(CLOCK_BOOTTIME, &ts);
+  return static_cast<double>(ts.tv_sec) * 1e3 + static_cast<double>(ts.tv_nsec) / 1e6;
+#else
+  return std::chrono::duration<double, std::milli>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+#endif
+}
 
 void fillRandom(uint8_t* out, size_t size) {
 #if defined(__APPLE__) || defined(__ANDROID__)
@@ -402,9 +426,7 @@ void installKernelGlobals(
       rt,
       "elapsed",
       hostFn(rt, "elapsed", 0, [](jsi::Runtime&, const jsi::Value&, const jsi::Value*, size_t) -> jsi::Value {
-        return jsi::Value(std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now().time_since_epoch())
-            .count());
+        return jsi::Value(elapsedMillis());
       }));
 
   const auto makeSetTimer = [&state](jsi::Runtime& rt) -> jsi::Function {
