@@ -317,7 +317,7 @@ const regtestFlow = async () => {
     const spendable = selectableUtxos(
       utxos.map((u) => ({ ...u, status: "confirmed" as const })),
       bitcoinNetwork(NETWORK).params,
-      [],
+      new Set(),
     );
 
     const adapter = new BitcoinChainAdapter();
@@ -418,7 +418,7 @@ const taprootFlow = async (): Promise<void> => {
       to: external,
       amount: 10_000n,
       fee: "slow",
-      spendProtected: [`${fundingUtxo?.txid ?? ""}:${String(fundingUtxo?.vout ?? 0)}`],
+      inputs: [`${fundingUtxo?.txid ?? ""}:${String(fundingUtxo?.vout ?? 0)}`],
       verify: BVERIFY,
     });
     expect(tx.state).toBe("submitted");

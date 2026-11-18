@@ -5,6 +5,7 @@ import { randomBytes } from "node:crypto";
  * `ordinals` accounts from the account xpubs, a BIP-322 simple signature the repo's verifier
  * accepts, the sign log, and the account re-point on a group switch.
  */
+import { hex } from "@scure/base";
 import { Address, OutScript, Transaction } from "@scure/btc-signer";
 import { NETWORK } from "@scure/btc-signer/utils.js";
 import { describe, expect, it } from "vite-plus/test";
@@ -34,8 +35,16 @@ const MNEMONIC =
 const BIP84_FIRST = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 const BIP86_FIRST = "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr";
 
-const TXID = "ab".repeat(32);
 const broadcasts: string[] = [];
+
+/** The raw transaction hex the endpoint was asked to broadcast. */
+const postedWire = (): string => {
+  const wire = broadcasts.find((body) => /^[0-9a-f]{100,}$/.test(body));
+  if (wire === undefined) {
+    throw new Error("no raw transaction was broadcast");
+  }
+  return wire;
+};
 
 async function rig() {
   const wallet = await createNodeWallet({
@@ -64,14 +73,20 @@ async function rig() {
       if (!url.startsWith("https://esplora.invalid")) {
         return Promise.reject(new Error("offline"));
       }
-      const hex = /^https:\/\/esplora\.invalid\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
-      if (hex !== null) {
+      const hexMatch = /^https:\/\/esplora\.invalid\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
+      if (hexMatch !== null) {
         return Promise.resolve(
-          new Response(Buffer.from(PREVS.get(hex[1] ?? "") ?? []).toString("hex")),
+          new Response(Buffer.from(PREVS.get(hexMatch[1] ?? "") ?? []).toString("hex")),
         );
       }
-      broadcasts.push(init?.method === "POST" ? String(init.body) : "");
-      return Promise.resolve(init?.method === "POST" ? new Response(TXID) : Response.json([]));
+      const body = init?.method === "POST" ? String(init.body) : "";
+      broadcasts.push(body);
+      // The endpoint answers with the txid of the bytes it was given, like a real Esplora.
+      const reply =
+        init?.method === "POST" && body !== ""
+          ? new Response(Transaction.fromRaw(hex.decode(body)).id)
+          : Response.json([]);
+      return Promise.resolve(reply);
     },
     random: (n) => randomBytes(n),
     now: () => Date.now(),
@@ -438,8 +453,11 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
         "bitcoin:signAndSendTransaction",
       );
       await approve();
-      await expect(settled).resolves.toStrictEqual({ value: [{ txId: TXID }] });
-      expect(broadcasts.some((body) => /^[0-9a-f]{100,}$/.test(body))).toBe(true);
+      const done = (await settled) as { value: Array<{ txId: string }> };
+      // The handler returns the locally computed txid of the signed bytes it broadcast.
+      expect(done).toStrictEqual({
+        value: [{ txId: Transaction.fromRaw(hex.decode(postedWire())).id }],
+      });
       await until(() => true);
       expect(request?.method).toBe("bitcoin-sign");
     } finally {

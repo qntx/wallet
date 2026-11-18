@@ -1,10 +1,15 @@
+import { sha256 } from "@noble/hashes/sha2.js";
+import { utf8ToBytes } from "@noble/hashes/utils.js";
+
 import {
   bitcoinAddressScript,
   decodeSparkAddress,
+  decodeTokenIdentifier,
   encodeSparkAddress,
   parseSparkInvoice,
   SparkInputError,
   SparkRequestError,
+  SparkTokenBroadcastError,
   uuidv7,
 } from "@qntx/spark";
 import type {
@@ -18,10 +23,11 @@ import type {
 } from "@qntx/spark";
 import { registerLightningAddress, unregisterLightningAddress } from "@qntx/spark/lnurl";
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkAccountRef, SparkApproveIntent } from "@qntx/wallet/protocol";
+import type { SparkAccountRef, SparkApproveIntent, SparkNetwork } from "@qntx/wallet/protocol";
 import type { SparkSigner } from "@qntx/wallet/spark";
 
 import { Controller } from "../controller.ts";
+import { EngineStoreError } from "../errors.ts";
 import type { EngineLogger } from "../events.ts";
 import type { EngineStore, EngineCollection } from "../store/port.ts";
 import { categorize, SparkControllerError } from "./errors.ts";
@@ -37,6 +43,12 @@ export type SparkAccountState = {
   readonly errorCategory?: string;
   /** First history page (20 entries, newest first), refreshed alongside the balance. */
   readonly recent?: ReadonlyArray<SparkActivity>;
+  /** Token balances in base units, refreshed alongside `recent`; absent until the first read. */
+  readonly tokens?: ReadonlyArray<{
+    readonly tokenIdentifier: string;
+    readonly amount: string;
+    readonly outputCount: number;
+  }>;
 };
 
 export type SparkControllerState = {
@@ -62,7 +74,6 @@ export type SparkClientFactory = (options: {
 export type SparkControllerOptions = {
   readonly spark: SparkApis;
   readonly fetch: typeof globalThis.fetch;
-  readonly random: (length: number) => Uint8Array;
   readonly now: () => number;
   readonly logger: EngineLogger;
   readonly setTimer: (ms: number, fn: () => void) => () => void;
@@ -71,9 +82,25 @@ export type SparkControllerOptions = {
 
 const key = (ref: SparkAccountRef): string => `${ref.walletId}:${ref.groupIndex}:${ref.network}`;
 
-/** TransferId: the client and SO expect a UUIDv7 — mint it from the injected clock+random. */
-const transferId = (random: (n: number) => Uint8Array, now: () => number): string =>
-  uuidv7(random, now);
+/** An exit may only pay an address on the account's own L1 network. */
+const assertExitAddress = (address: string, network: SparkNetwork): void => {
+  try {
+    bitcoinAddressScript(address, network);
+  } catch {
+    throw new SparkControllerError("rejected", "withdrawal address is not on this network");
+  }
+};
+
+/**
+ * A request's idempotent transfer id: a UUIDv7 — the shape the SO expects — whose random bits are
+ * keyed by the request id, so a retry after a lost response resumes the same payment instead of
+ * paying twice.
+ */
+export const sparkTransferId = (requestId: string, createdAt: number): string =>
+  uuidv7(
+    () => sha256(utf8ToBytes(`qntx/spark/transfer-id\0${requestId}`)).subarray(0, 10),
+    () => createdAt,
+  );
 
 /** Catch-up sync for one pass: claim every pending transfer, then read balance and identity. */
 async function resync(
@@ -113,6 +140,7 @@ export class SparkController extends Controller<SparkControllerState> {
   private readonly accounts = new Map<string, SparkAccountRef>();
   private readonly clients = new Map<string, SparkClient>();
   private readonly recentSeq = new Map<string, number>();
+  private readonly tokensSeq = new Map<string, number>();
   private readonly aborts = new Map<string, AbortController>();
 
   constructor(options: SparkControllerOptions) {
@@ -258,6 +286,7 @@ export class SparkController extends Controller<SparkControllerState> {
             }),
           });
           void this.refreshRecent(k, client);
+          void this.refreshTokens(k, client);
           const iterator = client.events(signal)[Symbol.asyncIterator]();
           let open = true;
           while (open) {
@@ -319,6 +348,7 @@ export class SparkController extends Controller<SparkControllerState> {
     }
     this.patch(k, { balanceSats: await client.balance() });
     void this.refreshRecent(k, client);
+    void this.refreshTokens(k, client);
   }
 
   private notesCollection(k: string): EngineCollection | undefined {
@@ -336,7 +366,18 @@ export class SparkController extends Controller<SparkControllerState> {
     }
     return Promise.all(
       payments.map(async (payment): Promise<SparkActivity> => {
-        const bytes = await col.get(payment.id);
+        let bytes: Uint8Array | undefined;
+        try {
+          bytes = await col.get(payment.id);
+        } catch (error) {
+          if (!(error instanceof EngineStoreError) || error.code !== "integrity") {
+            throw error;
+          }
+          // A corrupt encrypted row — like a malformed note, the payment id and bytes stay out
+          // of the log and the payment is returned without one.
+          this.options.logger.warn("spark note record ignored: unreadable");
+          return payment;
+        }
         if (bytes === undefined) {
           return payment;
         }
@@ -377,6 +418,30 @@ export class SparkController extends Controller<SparkControllerState> {
     }
   }
 
+  /**
+   * Refill `tokens` from the client's balance list. Like `refreshRecent`: a failure warns and keeps
+   * the previous list — it never touches `status`/`errorCategory` — and the sequence + client
+   * identity guard keeps a stale read from overwriting a newer one.
+   */
+  private async refreshTokens(k: string, client: SparkClient): Promise<void> {
+    const seq = (this.tokensSeq.get(k) ?? 0) + 1;
+    this.tokensSeq.set(k, seq);
+    try {
+      const balances = await client.tokens.balances();
+      if (this.tokensSeq.get(k) === seq && this.clients.get(k) === client) {
+        this.patch(k, {
+          tokens: balances.map((b) => ({
+            tokenIdentifier: b.tokenIdentifier,
+            amount: b.amount.toString(),
+            outputCount: b.outputCount,
+          })),
+        });
+      }
+    } catch (error) {
+      this.options.logger.warn(`spark tokens refresh failed for ${k}`, error);
+    }
+  }
+
   private patch(k: string, delta: Partial<SparkAccountState>): void {
     this.update((s) => ({
       ...s,
@@ -401,6 +466,74 @@ export class SparkController extends Controller<SparkControllerState> {
       }
       throw new SparkControllerError(categorize(error), "spark action failed", error);
     }
+  }
+
+  /**
+   * Runs a committing client call with up to three idempotent retries (1 s, 2 s, 4 s backoff):
+   * `retryable` decides which error means the outcome is unknown and the same call may repeat,
+   * `call` receives the previous attempt's error so a retry can carry the handle it reported. A
+   * definite error propagates; exhaustion is reported by `exhausted`.
+   */
+  private async committing<T>(
+    retryable: (error: unknown) => boolean,
+    call: (lastError: unknown) => Promise<T>,
+    exhausted: (lastError: unknown) => SparkControllerError,
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= 3; attempt += 1) {
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- idempotent retries stay sequential
+        return await call(lastError);
+      } catch (error) {
+        if (!retryable(error)) {
+          throw error;
+        }
+        lastError = error;
+        if (attempt < 3) {
+          // oxlint-disable-next-line no-await-in-loop -- backoff between idempotent retries
+          await new Promise<void>((resolve) => {
+            this.options.setTimer(2 ** attempt * 1000, resolve);
+          });
+        }
+      }
+    }
+    throw exhausted(lastError);
+  }
+
+  /**
+   * A sats payment commits under its transfer id: a network failure leaves the outcome unknown, so
+   * the same call retries under the same id — the SO/SSP deduplicates it.
+   */
+  private async committed<T>(transferId: string, call: () => Promise<T>): Promise<T> {
+    return this.committing(
+      (error) => categorize(error) === "network",
+      async () => call(),
+      (lastError) =>
+        new SparkControllerError("unknown", "payment outcome unknown", lastError, transferId),
+    );
+  }
+
+  /**
+   * A token transfer commits under its spent output ids: only `SparkTokenBroadcastError` means the
+   * broadcast's outcome is uncertain — a plain network error happened before it — so the retry
+   * carries `error.inputOutputIds` and the same terms, per the library's contract.
+   */
+  private async committedToken<T>(
+    call: (inputOutputIds: ReadonlyArray<string> | undefined) => Promise<T>,
+  ): Promise<T> {
+    return this.committing(
+      (error) => error instanceof SparkTokenBroadcastError,
+      async (lastError) =>
+        call(lastError instanceof SparkTokenBroadcastError ? lastError.inputOutputIds : undefined),
+      (lastError) =>
+        new SparkControllerError(
+          "unknown",
+          "token transfer outcome unknown",
+          lastError,
+          undefined,
+          lastError instanceof SparkTokenBroadcastError ? lastError.inputOutputIds : undefined,
+        ),
+    );
   }
 
   /**
@@ -466,6 +599,8 @@ export class SparkController extends Controller<SparkControllerState> {
     params: {
       receiver: string;
       amountSats: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -487,13 +622,84 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const transfer = await client.transfers.send({
-        receiver: params.receiver,
-        amountSats: params.amountSats,
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const transfer = await this.committed(params.transferId, async () =>
+        client.transfers.send({
+          receiver: params.receiver,
+          amountSats: params.amountSats,
+          transferId: params.transferId,
+        }),
+      );
       void this.refreshRecent(key(ref), client);
       return transfer;
+    });
+  }
+
+  /**
+   * Sends a token amount to a Spark address. The approval intent is the kernel's `token` shape —
+   * the raw 32-byte identifier and the receiver's identity key with a canonical decimal amount —
+   * and the commit retries only on `SparkTokenBroadcastError`, under the spent output ids it
+   * reports; everything else propagates (a plain network failure happened before broadcast).
+   */
+  async sendToken(
+    ref: SparkAccountRef,
+    params: {
+      /** Spark address of the receiver. */
+      receiver: string;
+      /** Bech32m token identifier (`btkn`/`btknrt`). */
+      tokenIdentifier: string;
+      /** Base units, 1…2^128−1. */
+      amount: bigint;
+      verify: VerifyFactor;
+      /** Called immediately before the transfer; a throw there means nothing may be sent. */
+      commit: () => void;
+    },
+  ): Promise<string> {
+    return this.guarded(async () => {
+      const client = this.clientFor(ref);
+      const receiver = decodeSparkAddress(params.receiver);
+      if (receiver.network !== ref.network) {
+        throw new SparkControllerError("rejected", "receiver address is on a different network");
+      }
+      let identifier: Uint8Array;
+      try {
+        const decoded = decodeTokenIdentifier(params.tokenIdentifier);
+        if (decoded.network !== ref.network) {
+          throw new SparkControllerError("rejected", "token identifier is on a different network");
+        }
+        identifier = decoded.tokenIdentifier;
+      } catch (error) {
+        if (error instanceof SparkControllerError) {
+          throw error;
+        }
+        throw new SparkControllerError("rejected", "token identifier is not valid bech32m", error);
+      }
+      const U128_MAX = 340282366920938463463374607431768211455n;
+      if (params.amount <= 0n || params.amount > U128_MAX) {
+        throw new SparkControllerError("rejected", "token amount must be 1…2^128−1 base units");
+      }
+      await this.options.spark.approve({
+        account: ref,
+        intent: {
+          kind: "token",
+          tokenIdentifier: identifier,
+          receivers: [
+            { ownerPublicKey: receiver.identityPublicKey, amount: params.amount.toString() },
+          ],
+        },
+        verify: params.verify,
+      });
+      params.commit();
+      const transactionHash = await this.committedToken(async (inputOutputIds) =>
+        client.tokens.transfer({
+          tokenIdentifier: params.tokenIdentifier,
+          amount: params.amount,
+          receiver: params.receiver,
+          ...(inputOutputIds === undefined ? {} : { inputOutputIds }),
+        }),
+      );
+      void this.refreshTokens(key(ref), client);
+      void this.refreshRecent(key(ref), client);
+      return transactionHash;
     });
   }
 
@@ -543,6 +749,8 @@ export class SparkController extends Controller<SparkControllerState> {
       invoice: string;
       amountSats?: number;
       maxFeeSats: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -563,12 +771,14 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const payment = await client.lightning.pay({
-        invoice: params.invoice,
-        maxFeeSats: params.maxFeeSats,
-        ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const payment = await this.committed(params.transferId, async () =>
+        client.lightning.pay({
+          invoice: params.invoice,
+          maxFeeSats: params.maxFeeSats,
+          ...(params.amountSats === undefined ? {} : { amountSats: params.amountSats }),
+          transferId: params.transferId,
+        }),
+      );
       if (params.note !== undefined) {
         try {
           await this.notesCollection(key(ref))?.put(
@@ -595,6 +805,8 @@ export class SparkController extends Controller<SparkControllerState> {
     params: {
       invoice: string;
       amountSats?: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -643,10 +855,12 @@ export class SparkController extends Controller<SparkControllerState> {
         verify: params.verify,
       });
       params.commit();
-      const result = await client.invoices.pay(params.invoice, {
-        amount: amountSats,
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const result = await this.committed(params.transferId, async () =>
+        client.invoices.pay(params.invoice, {
+          amount: amountSats,
+          transferId: params.transferId,
+        }),
+      );
       void this.refreshRecent(key(ref), client);
       // invoices.pay returns a string for token invoices — unreachable after the pre-approval
       // sats check above, kept as the internal guard.
@@ -699,17 +913,42 @@ export class SparkController extends Controller<SparkControllerState> {
   }
 
   /**
-   * Cooperative exit to an L1 address. The client exits `amountSats` of leaves and the payout is
-   * `amountSats - fee`, so the approval intent carries the PAYOUT: `amountSats: exit - fee` and
-   * `maxFeeSats: fee` — the kernel matches the exit output against the intent, not the leaf total.
+   * The SSP's converged cooperative-exit quote for paying `amountSats` to an L1 address: the fee
+   * depends on the gross amount, so the quote is re-taken on `amountSats + fee` until it settles.
+   */
+  async quoteExit(
+    ref: SparkAccountRef,
+    params: {
+      address: string;
+      /** Sats that arrive at the address — the exit debits amountSats + fee. */
+      amountSats: number;
+      speed: "FAST" | "MEDIUM" | "SLOW";
+    },
+  ): Promise<{ readonly feeSats: number; readonly exitSats: number }> {
+    return this.guarded(async () => {
+      const client = this.clientFor(ref);
+      assertExitAddress(params.address, ref.network);
+      return this.settleExitFee(client, params);
+    });
+  }
+
+  /**
+   * Cooperative exit to an L1 address: `amountSats` arrives at the address and the exit debits
+   * `amountSats + fee` of leaves, where `fee` is the SSP's converged quote for the speed —
+   * re-quoted here and bounded by `maxFeeSats` before any approval. The intent carries the payout
+   * (`amountSats`) and the fee (`maxFeeSats: fee`); the kernel matches the exit output against it.
    */
   async withdraw(
     ref: SparkAccountRef,
     params: {
       address: string;
-      amountSats?: number;
+      /** Sats that arrive at the address — the exit debits amountSats + the quoted fee. */
+      amountSats: number;
       speed: "FAST" | "MEDIUM" | "SLOW";
-      maxFeeSats?: number;
+      /** Caller cap on the converged exit fee, in sats. */
+      maxFeeSats: number;
+      /** The request's idempotent transfer id — a retry resumes, never double-pays. */
+      transferId: string;
       verify: VerifyFactor;
       /** Called immediately before the send; a throw there means nothing may be sent. */
       commit: () => void;
@@ -717,24 +956,12 @@ export class SparkController extends Controller<SparkControllerState> {
   ): Promise<CooperativeExitResult> {
     return this.guarded(async () => {
       const client = this.clientFor(ref);
-      try {
-        bitcoinAddressScript(params.address, ref.network);
-      } catch {
-        throw new SparkControllerError("rejected", "withdrawal address is not on this network");
+      assertExitAddress(params.address, ref.network);
+      const { feeSats, exitSats } = await this.settleExitFee(client, params);
+      if (feeSats > params.maxFeeSats) {
+        throw new SparkControllerError("rejected", "quoted exit fee exceeds maxFeeSats");
       }
-      const exitAmount = params.amountSats ?? (await client.balance());
-      const quote = await client.withdrawals.quoteCooperativeExit({
-        address: params.address,
-        amountSats: exitAmount,
-      });
-      const fee =
-        quote.fees[
-          params.speed === "FAST" ? "fast" : params.speed === "MEDIUM" ? "medium" : "slow"
-        ];
-      if (params.maxFeeSats !== undefined && params.maxFeeSats < fee) {
-        throw new SparkControllerError("rejected", "maxFeeSats below the quoted fee");
-      }
-      if (fee >= exitAmount) {
+      if (feeSats >= params.amountSats) {
         throw new SparkControllerError(
           "insufficient-funds",
           "exit fee meets or exceeds the amount",
@@ -745,21 +972,52 @@ export class SparkController extends Controller<SparkControllerState> {
         intent: {
           kind: "exit",
           address: params.address,
-          amountSats: exitAmount - fee,
-          maxFeeSats: fee,
+          amountSats: params.amountSats,
+          maxFeeSats: feeSats,
         },
         verify: params.verify,
       });
       params.commit();
-      const exit = await client.withdrawals.cooperativeExit({
-        address: params.address,
-        speed: params.speed,
-        maxFeeSats: fee,
-        amountSats: exitAmount,
-        transferId: transferId(this.options.random, this.options.now),
-      });
+      const exit = await this.committed(params.transferId, async () =>
+        client.withdrawals.cooperativeExit({
+          address: params.address,
+          speed: params.speed,
+          maxFeeSats: feeSats,
+          amountSats: exitSats,
+          transferId: params.transferId,
+        }),
+      );
       void this.refreshRecent(key(ref), client);
       return exit;
     });
+  }
+
+  /**
+   * Converges the SSP exit fee for a payout: the fee is quoted on the gross amount, so re-quote on
+   * `amountSats + fee` until the fee stops growing (three re-quotes at most).
+   */
+  private async settleExitFee(
+    client: SparkClient,
+    params: { address: string; amountSats: number; speed: "FAST" | "MEDIUM" | "SLOW" },
+  ): Promise<{ readonly feeSats: number; readonly exitSats: number }> {
+    const quote = async (amountSats: number): Promise<number> => {
+      const quoted = await client.withdrawals.quoteCooperativeExit({
+        address: params.address,
+        amountSats,
+      });
+      return quoted.fees[
+        params.speed === "FAST" ? "fast" : params.speed === "MEDIUM" ? "medium" : "slow"
+      ];
+    };
+    let fee = await quote(params.amountSats);
+    for (let round = 0; round < 3; round += 1) {
+      // oxlint-disable-next-line no-await-in-loop -- each requote depends on the previous fee
+      const next = await quote(params.amountSats + fee);
+      if (next <= fee) {
+        return { feeSats: fee, exitSats: params.amountSats + fee };
+      }
+      fee = next;
+    }
+    throw new SparkControllerError("rejected", "exit fee did not settle");
   }
 }

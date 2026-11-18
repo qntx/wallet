@@ -13,6 +13,8 @@ import { p2wpkh } from "@scure/btc-signer/payment.js";
 import type { TransactionInputUpdate } from "@scure/btc-signer/psbt.js";
 import { selectUTXO } from "@scure/btc-signer/utxo.js";
 
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
+
 import { timeoutSignal } from "../timer.ts";
 import type { SetTimer } from "../timer.ts";
 
@@ -242,32 +244,64 @@ export const isTaprootAddress = (address: string, network: typeof BTC_MAINNET): 
   Address(network).decode(address).type === "tr";
 
 /**
- * The spendable subset of `utxos`: every output that cannot carry an inscription, plus any
- * protected outpoint (`txid:vout`) named in `spendProtected`. Naming an outpoint that is not among
- * `utxos` throws — it is not an unspent output of this account.
+ * The spendable subset of `utxos` an automatic selection may pick: every output except the
+ * user-frozen ones and those that may carry an inscription (taproot or at most 20 000 sats).
+ * Inscription protection is a derived property, separate from freezing — unfreezing never
+ * unprotects; a protected output is spendable only by naming it in `PrepareParams.inputs`.
  */
 export const selectableUtxos = <
   U extends { txid: string; vout: number; value: number; address: string },
 >(
   utxos: ReadonlyArray<U>,
   network: typeof BTC_MAINNET,
-  spendProtected: ReadonlyArray<string>,
+  frozen: ReadonlySet<string>,
 ): U[] => {
-  const chosen = new Set(spendProtected);
-  const held = new Set(utxos.map((u) => `${u.txid}:${String(u.vout)}`));
-  for (const outpoint of chosen) {
-    if (!held.has(outpoint)) {
-      throw new Error(`${outpoint} is not an unspent output of this account`);
-    }
-  }
   return utxos.filter(
     (u) =>
-      chosen.has(`${u.txid}:${String(u.vout)}`) ||
+      !frozen.has(`${u.txid}:${String(u.vout)}`) &&
       !mayCarryInscription(isTaprootAddress(u.address, network), u.value),
   );
 };
 
 export type BtcInput = TransactionInputUpdate;
+
+/** Estimated signed size of one input, vbytes — BIP-141 worst case per template. */
+const INPUT_VBYTES: Record<BitcoinAccountTemplate, number> = {
+  "btc.bip44": 148,
+  "btc.bip49": 91,
+  "btc.bip84": 68,
+  "btc.bip86": 57.5,
+};
+
+/** Estimated output size, vbytes, by script type — everything else costs at most a p2wsh. */
+const OUTPUT_VBYTES: Record<string, number> = {
+  pkh: 34,
+  sh: 32,
+  wpkh: 31,
+  wsh: 43,
+  tr: 43,
+};
+
+/** Version, segwit marker/flag, the two vector lengths and locktime, weighted. */
+const TX_VBYTES_OVERHEAD = 10.5;
+
+/**
+ * The one vsize estimate every build path shares — sends, exact replacements and CPFP children
+ * alike — so the fee a transaction reports is the fee its own size demands.
+ */
+export const estimateVsize = (
+  inputs: ReadonlyArray<BitcoinAccountTemplate>,
+  outputs: ReadonlyArray<string>,
+  network: typeof BTC_MAINNET,
+): number =>
+  Math.ceil(
+    TX_VBYTES_OVERHEAD +
+      inputs.reduce((a, t) => a + INPUT_VBYTES[t], 0) +
+      outputs.reduce(
+        (a, address) => a + (OUTPUT_VBYTES[Address(network).decode(address).type] ?? 43),
+        0,
+      ),
+  );
 
 export class BitcoinChainAdapter {
   /** Inputs for selectUTXO — the same TransactionInputUpdate objects added to the PSBT. */
@@ -280,10 +314,11 @@ export class BitcoinChainAdapter {
     template: string,
     rawTxOf?: (utxo: BtcUtxo) => Uint8Array | undefined,
   ): BtcInput[] {
-    // Inscription protection is the caller's: a send passes selectableUtxos' result, while CPFP
-    // spends the parent's own outputs by name.
+    // Spendability is the caller's — confirmed outputs, its own unconfirmed change, or a CPFP
+    // parent's outputs are all legitimate; inscription protection likewise. Only a locked
+    // outpoint can never become an input.
     return utxos
-      .filter((u) => u.status === "confirmed")
+      .filter((u) => u.status !== "locked")
       .map((u) => {
         const pub = pubkeyOf(u);
         // Taproot carries only witnessUtxo: the BIP-341 sighash commits to every input amount.
@@ -327,8 +362,9 @@ export class BitcoinChainAdapter {
     feePerByte: bigint,
     changeAddress: string,
     network: typeof BTC_MAINNET,
+    strategy: "default" | "all" = "default",
   ): { readonly psbt: Uint8Array; readonly inputs: ReadonlyArray<BtcInput> } {
-    const selection = selectUTXO([...inputs], [{ address: to, amount }], "default", {
+    const selection = selectUTXO([...inputs], [{ address: to, amount }], strategy, {
       feePerByte,
       changeAddress,
       bip69: true,
@@ -359,6 +395,7 @@ export class BitcoinChainAdapter {
     inputs: ReadonlyArray<BtcInput>,
     outputs: ReadonlyArray<{ readonly address: string; readonly amount: bigint }>,
     network: typeof BTC_MAINNET,
+    template: BitcoinAccountTemplate,
   ): { readonly psbt: Uint8Array; readonly vsize: number } {
     const tx = new Transaction();
     for (const input of inputs) {
@@ -367,11 +404,10 @@ export class BitcoinChainAdapter {
     for (const out of outputs) {
       tx.addOutputAddress(out.address, out.amount, network);
     }
-    // Unsigned tx has no witness — vsize is the BIP-141 weight estimate
-    // (10.5 overhead + ~68/input + ~31/output for P2WPKH; taproot ~57.5/43).
-    const tap = inputs.every((i) => i.tapInternalKey !== undefined);
-    const vsize = Math.ceil(
-      10.5 + inputs.length * (tap ? 57.5 : 68) + outputs.length * (tap ? 43 : 31),
+    const vsize = estimateVsize(
+      inputs.map(() => template),
+      outputs.map((o) => o.address),
+      network,
     );
     return { psbt: tx.toPSBT(), vsize };
   }

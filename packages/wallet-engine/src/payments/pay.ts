@@ -5,9 +5,15 @@ import type { LightningInvoice } from "@qntx/spark";
 import { requestInvoice, submitWithdraw } from "@qntx/spark/lnurl";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
+import { sparkTransferId } from "../spark/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import { SparkControllerError } from "../spark/errors.ts";
-import { INVOICE_EXPIRY_GRACE_MS, feeCheck } from "./action.ts";
+import {
+  INVOICE_EXPIRY_GRACE_MS,
+  feeCheck,
+  pendingOnUnknown,
+  tokenPendingOnUnknown,
+} from "./action.ts";
 import type { PreparedSparkAction } from "./action.ts";
 import { PaymentError } from "./errors.ts";
 import type { PaymentOption } from "./parse.ts";
@@ -22,11 +28,22 @@ export type PayParams = {
   readonly speed?: "FAST" | "MEDIUM" | "SLOW";
   /** `amountSats` came from the service's minimum (WebLN `lnurl`), not an explicit amount. */
   readonly amountFromServiceMinimum?: boolean;
+  /** Token payment — valid only with the plain `spark` option, and never with `amountSats`. */
+  readonly token?: {
+    /** Bech32m token identifier (`btkn`/`btknrt`). */
+    readonly identifier: string;
+    /** Base units. */
+    readonly amount: bigint;
+  };
 };
 
 export type PayContext = {
   readonly fetch: typeof globalThis.fetch;
   readonly now: () => number;
+  /** The request this payment is prepared for — keys its idempotent transfer id. */
+  readonly requestId: string;
+  /** Quotes cooperative exits at prepare, so the approval display carries a bound fee. */
+  readonly spark: Pick<SparkController, "quoteExit">;
 };
 
 const lightningDetails = (
@@ -57,21 +74,65 @@ export async function preparePay(
       "lnurl-withdraw receives funds: use payments.withdrawLnurl",
     );
   }
+  if (params.token !== undefined) {
+    if (params.amountSats !== undefined) {
+      throw new PaymentError("invalid-input", "token payment: amountSats must be absent");
+    }
+    if (params.option.kind !== "spark") {
+      throw new PaymentError("invalid-input", "token payment: use the spark payment option");
+    }
+  }
+  // Fixed at prepare: every execute pays under the request's idempotent transfer id, so a retry
+  // after a lost response resumes the same payment.
+  const transferId = sparkTransferId(context.requestId, context.now());
   switch (params.option.kind) {
     case "spark": {
+      const { address } = params.option;
+      if (params.token !== undefined) {
+        const { token } = params;
+        return {
+          display: {
+            family: "spark",
+            network,
+            kind: "token",
+            tokenIdentifier: token.identifier,
+            amount: token.amount.toString(),
+            receiver: address,
+          },
+          checks: [],
+          staleReason: () => undefined,
+          execute: async (spark, verify, commit) =>
+            tokenPendingOnUnknown(async () => ({
+              kind: "token",
+              transactionHash: await spark.sendToken(ref, {
+                receiver: address,
+                tokenIdentifier: token.identifier,
+                amount: token.amount,
+                verify,
+                commit,
+              }),
+            })),
+        };
+      }
       if (params.amountSats === undefined) {
         throw new PaymentError("invalid-input", "spark payment: amountSats is required");
       }
-      const { address } = params.option;
       const { amountSats } = params;
       return {
         display: { family: "spark", network, kind: "transfer", amountSats, receiver: address },
         checks: [],
         staleReason: () => undefined,
-        execute: async (spark, verify, commit) => ({
-          kind: "spark",
-          transfer: await spark.send(ref, { receiver: address, amountSats, verify, commit }),
-        }),
+        execute: async (spark, verify, commit) =>
+          pendingOnUnknown(transferId, async () => ({
+            kind: "spark",
+            transfer: await spark.send(ref, {
+              receiver: address,
+              amountSats,
+              transferId,
+              verify,
+              commit,
+            }),
+          })),
       };
     }
     case "spark-invoice": {
@@ -115,15 +176,17 @@ export async function preparePay(
         checks: [],
         staleReason: (now) =>
           expiresAt !== undefined && expiresAt <= now ? "spark invoice expired" : undefined,
-        execute: async (spark, verify, commit) => ({
-          kind: "spark",
-          transfer: await spark.paySparkInvoice(ref, {
-            invoice: option.invoice,
-            ...(openAmount === undefined ? {} : { amountSats: openAmount }),
-            verify,
-            commit,
-          }),
-        }),
+        execute: async (spark, verify, commit) =>
+          pendingOnUnknown(transferId, async () => ({
+            kind: "spark",
+            transfer: await spark.paySparkInvoice(ref, {
+              invoice: option.invoice,
+              ...(openAmount === undefined ? {} : { amountSats: openAmount }),
+              transferId,
+              verify,
+              commit,
+            }),
+          })),
       };
     }
     case "lightning": {
@@ -164,16 +227,18 @@ export async function preparePay(
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: (now) =>
           expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "lightning invoice expired" : undefined,
-        execute: async (spark, verify, commit) => ({
-          kind: "lightning",
-          payment: await spark.payInvoice(ref, {
-            invoice: option.invoice,
-            maxFeeSats,
-            ...(openAmount === undefined ? {} : { amountSats: openAmount }),
-            verify,
-            commit,
-          }),
-        }),
+        execute: async (spark, verify, commit) =>
+          pendingOnUnknown(transferId, async () => ({
+            kind: "lightning",
+            payment: await spark.payInvoice(ref, {
+              invoice: option.invoice,
+              maxFeeSats,
+              ...(openAmount === undefined ? {} : { amountSats: openAmount }),
+              transferId,
+              verify,
+              commit,
+            }),
+          })),
       };
     }
     case "lnurl-pay": {
@@ -225,41 +290,68 @@ export async function preparePay(
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: (now) =>
           expiresAt <= now + INVOICE_EXPIRY_GRACE_MS ? "lightning invoice expired" : undefined,
-        execute: async (spark, verify, commit) => ({
-          kind: "lightning",
-          payment: await spark.payInvoice(ref, { invoice, maxFeeSats, verify, commit }),
-        }),
+        execute: async (spark, verify, commit) =>
+          pendingOnUnknown(transferId, async () => ({
+            kind: "lightning",
+            payment: await spark.payInvoice(ref, {
+              invoice,
+              maxFeeSats,
+              transferId,
+              verify,
+              commit,
+            }),
+          })),
       };
     }
     default: {
       if (params.amountSats === undefined) {
         throw new PaymentError("invalid-input", "bitcoin payment: amountSats is required");
       }
+      if (params.maxFeeSats === undefined) {
+        throw new PaymentError("invalid-input", "bitcoin payment: maxFeeSats is required");
+      }
       const { address } = params.option;
       const { amountSats, maxFeeSats } = params;
       const speed = params.speed ?? "MEDIUM";
+      // Quote at prepare: `amountSats` arrives at the address, the exit debits it plus the
+      // converged SSP fee — which the caller's cap bounds before any approval.
+      let feeSats: number;
+      try {
+        ({ feeSats } = await context.spark.quoteExit(ref, { address, amountSats, speed }));
+      } catch (error) {
+        if (error instanceof PaymentError || error instanceof SparkControllerError) {
+          throw error;
+        }
+        throw new PaymentError("network", "bitcoin payment: exit quote failed", error);
+      }
+      if (feeSats > maxFeeSats) {
+        throw new PaymentError("rejected", "quoted exit fee exceeds maxFeeSats");
+      }
       return {
         display: {
           family: "spark",
           network,
           kind: "exit",
           amountSats,
-          ...(maxFeeSats === undefined ? {} : { maxFeeSats }),
+          feeSats,
+          maxFeeSats,
           receiver: address,
         },
         checks: feeCheck(amountSats, maxFeeSats),
         staleReason: () => undefined,
-        execute: async (spark, verify, commit) => ({
-          kind: "withdraw",
-          exit: await spark.withdraw(ref, {
-            address,
-            speed,
-            verify,
-            amountSats,
-            ...(maxFeeSats === undefined ? {} : { maxFeeSats }),
-            commit,
-          }),
-        }),
+        execute: async (spark, verify, commit) =>
+          pendingOnUnknown(transferId, async () => ({
+            kind: "withdraw",
+            exit: await spark.withdraw(ref, {
+              address,
+              speed,
+              verify,
+              amountSats,
+              maxFeeSats,
+              transferId,
+              commit,
+            }),
+          })),
       };
     }
   }
@@ -276,7 +368,7 @@ export type WithdrawLnurlParams = {
  * needs no verification factor and does not go through the request pipeline.
  */
 export async function withdrawLnurl(
-  context: PayContext & { readonly spark: SparkController },
+  context: { readonly spark: SparkController; readonly fetch: typeof globalThis.fetch },
   params: WithdrawLnurlParams,
 ): Promise<{ readonly kind: "lnurl-withdraw"; readonly invoice: LightningInvoice }> {
   const { request } = params.option;

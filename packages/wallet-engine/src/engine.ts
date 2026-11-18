@@ -264,7 +264,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const controller = new SparkController({
     spark: options.sparkApis ?? spark(options.wallet),
     fetch: options.fetch,
-    random: options.random,
     now: options.now,
     logger: options.logger,
     setTimer,
@@ -451,15 +450,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       return { kind: "solana.message" as const, signature: result.signature };
     },
     bitcoinPrepare: async (account, network, psbts) =>
-      prepareDappPsbts(chains(options.wallet), networks.esplora(network), account, network, psbts),
-    bitcoinSignPsbts: async (_account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids } = await signDappPsbts(
+      prepareDappPsbts(
         chains(options.wallet),
         networks.esplora(network),
+        account,
+        network,
+        psbts,
+        new Set(
+          transactions.frozenUtxos(
+            { walletId: account.walletId, groupIndex: account.groupIndex },
+            network,
+          ),
+        ),
+      ),
+    bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
+      const { signedPsbts, txids } = await signDappPsbts(
+        chains(options.wallet),
         prepared,
         send,
         verify,
         commit,
+        async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
       );
       return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
     },
@@ -829,7 +840,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       resolve: async (input, network) =>
         resolvePayment(input, { network, now: options.now(), fetch: options.fetch }),
       withdrawLnurl: async (params) =>
-        withdrawLnurl({ spark: controller, fetch: options.fetch, now: options.now }, params),
+        withdrawLnurl({ spark: controller, fetch: options.fetch }, params),
     },
     names: {
       resolve: async (name, network) => resolveEns(networks, name, network),

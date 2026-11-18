@@ -9,10 +9,13 @@ import { HDKey } from "@scure/bip32";
 import { NETWORK, p2wpkh, Transaction } from "@scure/btc-signer";
 
 import type { Wallet } from "@qntx/wallet";
+import type { BitcoinAccountTemplate } from "@qntx/wallet-chains/bitcoin";
+import { bitcoinAddressFromXpub } from "@qntx/wallet-chains/bitcoin";
 import type { chains } from "@qntx/wallet/chains";
 
-import { scripthash } from "../../src/chains/bitcoin-scan.ts";
+import { scripthash, scriptPubKey } from "../../src/chains/bitcoin-scan.ts";
 import { EsploraError } from "../../src/chains/bitcoin.ts";
+import type { Esplora } from "../../src/chains/bitcoin.ts";
 import type { NetworkController } from "../../src/networks/controller.ts";
 import { createMemoryEngineStore } from "../../src/store/memory.ts";
 import { TransactionController } from "../../src/transactions/controller.ts";
@@ -88,7 +91,18 @@ const inputPath = (input: {
   tapBip32Derivation?: unknown;
 }): ReadonlyArray<number> => bip32Path(input) ?? tapPath(input) ?? [0, 0];
 
-export const HD = HDKey.fromMasterSeed(new Uint8Array(64).fill(1)).derive("m/84'/0'/0'");
+const SEED = new Uint8Array(64).fill(1);
+const PURPOSE: Record<string, number> = {
+  "btc.bip44": 44,
+  "btc.bip49": 49,
+  "btc.bip84": 84,
+  "btc.bip86": 86,
+};
+/** The account root for a template — each legacy template gets its honest purpose path. */
+const rootOf = (template: string): HDKey =>
+  HDKey.fromMasterSeed(SEED).derive(`m/${PURPOSE[template] ?? 84}'/0'/0'`);
+
+export const HD = HDKey.fromMasterSeed(SEED).derive("m/84'/0'/0'");
 export const PUB = HD.deriveChild(0).deriveChild(0);
 export const OUR_ADDR = p2wpkh(pubkey(PUB), NETWORK).address;
 export const CHANGE_ADDR = p2wpkh(pubkey(HD.deriveChild(1).deriveChild(0)), NETWORK).address;
@@ -102,8 +116,6 @@ export const ACCOUNT = {
 };
 export const VERIFY = { kind: "password" as const, password: "pw" };
 
-const { script } = p2wpkh(pubkey(PUB), NETWORK);
-const OUR_HASH = scripthash(OUR_ADDR, NETWORK);
 const SEED_TXID = (n: number): string => n.toString(16).padStart(2, "0").repeat(32);
 
 export type FakeUtxo = {
@@ -137,6 +149,15 @@ export type BtcWorld = {
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
   readonly setIndependentStatus: (txid: string, s: unknown) => void;
+  /** Scripts the `/tx/:prevTxid/outspends` answer — any value, or an Error to make the read fail. */
+  readonly setOutspends: (txid: string, answer: unknown) => void;
+  /** Marks `prevTxid:vout` spent by `spenderTxid` in the outspends index. */
+  readonly spendBy: (
+    prevTxid: string,
+    vout: number,
+    spenderTxid: string,
+    confirmed: boolean,
+  ) => void;
   readonly setPost: (mode: PostMode) => void;
   readonly utxos: Map<string, FakeUtxo[]>;
   readonly statuses: Map<string, unknown>;
@@ -149,6 +170,9 @@ export type BtcWorld = {
   /** Every message the engine's logger warned about, in order. */
   readonly warnings: string[];
   readonly clock: { t: number };
+  /** The same chains api and endpoint the controller was wired with — for the dApp paths. */
+  readonly apis: ReturnType<typeof chains>;
+  readonly es: Esplora;
   readonly persistedUtxos: (
     backing: Backing,
   ) => Promise<Record<string, { status?: string; txId?: string }>>;
@@ -242,7 +266,14 @@ export const persistedTx = async (
   return asRecord(readJson(raw));
 };
 
-export const world = (options: { readonly independent?: boolean } = {}): BtcWorld => {
+export const world = (
+  options: { readonly independent?: boolean; readonly template?: BitcoinAccountTemplate } = {},
+): BtcWorld => {
+  /** The world's own account template — bip84 unless the test asks for a legacy one. */
+  const template: BitcoinAccountTemplate = options.template ?? "btc.bip84";
+  const ownAddr = bitcoinAddressFromXpub(rootOf(template).publicExtendedKey, template, NET, 0, 0);
+  const ownScript = scriptPubKey(ownAddr, NETWORK);
+  const ownHash = scripthash(ownAddr, NETWORK);
   /** Txid → raw transaction bytes (funding txs and everything the wallet broadcasts). */
   const raws = new Map<string, Uint8Array>();
   /** Scripthash → currently-unspent outputs (the test moves coins by hand). */
@@ -253,6 +284,8 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
   const statuses = new Map<string, unknown>();
   /** A second endpoint's statuses, when `options.independent` asks for one. */
   const independentStatuses = new Map<string, unknown>();
+  /** Txid → scripted `/outspends` answer; unset falls back to "no output spent". */
+  const outspends = new Map<string, unknown>();
   const broadcasts: string[] = [];
   const posts: string[] = [];
   const requests: string[] = [];
@@ -270,21 +303,21 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
   const fund = (seed: number, value: number, confirmed = true): FakeUtxo => {
     const prev = new Transaction({ version: 2 });
     prev.addInput({ txid: SEED_TXID(seed), index: 0, sequence: 0xffffffff });
-    prev.addOutput({ script, amount: BigInt(value) });
+    prev.addOutput({ script: ownScript, amount: BigInt(value) });
     raws.set(prev.id, prev.toBytes(true, false));
     const utxo: FakeUtxo = { txid: prev.id, vout: 0, value, confirmed };
-    const list = utxos.get(OUR_HASH) ?? [];
+    const list = utxos.get(ownHash) ?? [];
     list.push(utxo);
-    utxos.set(OUR_HASH, list);
-    markUsed(OUR_HASH, prev.id);
+    utxos.set(ownHash, list);
+    markUsed(ownHash, prev.id);
     return utxo;
   };
 
   /** Removes an outpoint from the unspent set — what confirmation of its spender does. */
   const spend = (txid: string, vout: number): void => {
     utxos.set(
-      OUR_HASH,
-      (utxos.get(OUR_HASH) ?? []).filter((u) => !(u.txid === txid && u.vout === vout)),
+      ownHash,
+      (utxos.get(ownHash) ?? []).filter((u) => !(u.txid === txid && u.vout === vout)),
     );
   };
 
@@ -309,6 +342,22 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
     const hm = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
     if (hm !== null) {
       return Buffer.from(raws.get(hm[1] ?? "") ?? new Uint8Array()).toString("hex");
+    }
+    const om = /^\/tx\/([0-9a-f]{64})\/outspends$/.exec(url);
+    if (om !== null) {
+      const answer = outspends.get(om[1] ?? "");
+      if (answer instanceof Error) {
+        throw answer;
+      }
+      if (answer !== undefined) {
+        return answer;
+      }
+      const raw = raws.get(om[1] ?? "");
+      if (raw === undefined) {
+        throw new EsploraError(`esplora ${url}: 404`, false);
+      }
+      const tx = Transaction.fromRaw(raw, { allowUnknownInputs: true });
+      return Array.from({ length: tx.outputsLength }, () => ({ spent: false }));
     }
     const sm = /^\/tx\/([0-9a-f]{64})\/status$/.exec(url);
     if (sm !== null) {
@@ -373,15 +422,17 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
 
   const apis = stub(
     {
-      account: async (p: { groupIndex: number }) => {
+      account: async (p: { groupIndex: number; template?: BitcoinAccountTemplate }) => {
         await Promise.resolve();
+        const t = p.template ?? "btc.bip84";
+        const root = rootOf(t);
         return {
-          template: "btc.bip84",
+          template: t,
           network: NET,
           groupIndex: p.groupIndex,
-          xpub: HD.publicExtendedKey,
+          xpub: root.publicExtendedKey,
           fingerprint: "00000000",
-          path: "m/84'/0'/0'",
+          path: `m/${PURPOSE[t] ?? 84}'/0'/0'`,
         };
       },
       sign: async (p: SignParams) => {
@@ -391,10 +442,11 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
         if (req.kind !== "bitcoin.psbt") {
           throw new Error("wrong kind");
         }
+        const root = rootOf(req.sign[0]?.template ?? template);
         const tx = Transaction.fromPSBT(req.psbt);
         for (let i = 0; i < tx.inputsLength; i += 1) {
           const path = inputPath(tx.getInput(i));
-          const key = HD.deriveChild(path.at(-2) ?? 0).deriveChild(path.at(-1) ?? 0);
+          const key = root.deriveChild(path.at(-2) ?? 0).deriveChild(path.at(-1) ?? 0);
           tx.signIdx(privkey(key), i);
         }
         return { kind: "bitcoin.psbt", signedPsbt: tx.toPSBT() };
@@ -452,7 +504,13 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
 
   return {
     boot,
-    send,
+    send: async (booted, amount, requestId) => {
+      const prepared = await booted.ctl.prepareSend(
+        { account: { ...ACCOUNT, template }, network: NET, to: RECIP, amount, fee: "slow" },
+        requestId,
+      );
+      return prepared.submit(VERIFY, () => undefined);
+    },
     fund,
     spend,
     markUsed,
@@ -461,6 +519,23 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
     },
     setIndependentStatus: (txid: string, s: unknown) => {
       independentStatuses.set(txid, s);
+    },
+    setOutspends: (txid: string, answer: unknown) => {
+      outspends.set(txid, answer);
+    },
+    spendBy: (prevTxid: string, vout: number, spenderTxid: string, confirmed: boolean) => {
+      const cur = outspends.get(prevTxid);
+      const list: unknown[] = Array.isArray(cur) ? [...(cur as ReadonlyArray<unknown>)] : [];
+      while (list.length <= vout) {
+        list.push({ spent: false });
+      }
+      list[vout] = {
+        spent: true,
+        txid: spenderTxid,
+        vin: 0,
+        status: { confirmed, ...(confirmed ? { block_height: 100 } : {}) },
+      };
+      outspends.set(prevTxid, list);
     },
     setPost: (mode: PostMode) => {
       postMode = mode;
@@ -473,8 +548,10 @@ export const world = (options: { readonly independent?: boolean } = {}): BtcWorl
     signedCalls,
     warnings,
     clock,
+    apis,
+    es: esploraStub,
     persistedUtxos,
     persistedTx,
-    OUR_HASH,
+    OUR_HASH: ownHash,
   };
 };

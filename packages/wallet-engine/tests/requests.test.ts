@@ -173,6 +173,8 @@ function fake(options: { verifiability?: DisplayIntent["verifiability"]; checks?
           amountSats: 100,
           expiresAtMs: 999,
         }),
+      quoteExit: async (_r: unknown, p: { amountSats: number }) =>
+        Promise.resolve({ feeSats: 1, exitSats: p.amountSats + 1 }),
     } as unknown as SparkController,
     nostrSign: async () => {
       nostrSignCalls.push("sign");
@@ -600,6 +602,8 @@ function evmWorld(options: {
           amountSats: 100,
           expiresAtMs: 999,
         }),
+      quoteExit: async (_r: unknown, p: { amountSats: number }) =>
+        Promise.resolve({ feeSats: 1, exitSats: p.amountSats + 1 }),
     } as unknown as SparkController,
     nostrSign: async () => {
       await Promise.resolve();
@@ -1050,6 +1054,7 @@ describe("webln-invoice and browser-origin pay", () => {
       account: { walletId: "w", groupIndex: 0, network: "mainnet" },
       option: { kind: "bitcoin", address: "bc1qexampleaddress0000" },
       amountSats: 100,
+      maxFeeSats: 10,
     });
     expect(pending.origin).toStrictEqual(origin);
   });

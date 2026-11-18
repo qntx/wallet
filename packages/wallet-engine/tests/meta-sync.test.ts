@@ -92,7 +92,6 @@ async function rig(
     setTimer: realTimer,
     spark: { signer: () => null as never, approve: async () => Promise.resolve({}) },
     fetch: async () => Promise.reject(new Error("no fetch")),
-    random: (n) => new Uint8Array(n).fill(1),
     now: () => t,
     logger: LOGGER,
     createClient: () => ({ close: () => {} }) as unknown as never,
