@@ -130,39 +130,46 @@ const request = (
 });
 
 describe("decodeBitcoinPsbt conservation", () => {
-  it("Σ proven inputs = Σ outflows + Σ change + fee, and every moving output is one flow", () => {
-    fc.assert(
-      fc.property(generated, ({ inputs, outputs }) => {
-        const inSum = inputs.reduce((a, b) => a + b, 0n);
-        const outSum = outputs.reduce((a, o) => a + o.amount, 0n);
-        // Consensus-invalid cases (outputs exceed the proven inputs) are covered by the
-        // dedicated invalid-request test below.
-        fc.pre(outSum <= inSum);
-        const psbt = psbtOf(inputs, outputs);
-        const own = new Set([hex(ownScript)]);
-        const intent = decodeBitcoinPsbt(request(psbt, inputs.length), own);
-        // Every non-change output is an outflow except a zero-value unspendable one, which moves
-        // nothing; a burn is exactly an unspendable output with value.
-        const moved = outputs.filter(isMoved);
-        expect(intent.outflows).toHaveLength(moved.length);
-        const outflowSum = intent.outflows.reduce(
-          (sum, flow) => sum + BigInt(flow.amount.amount),
-          0n,
-        );
-        const change = outputs
-          .filter((o) => o.kind === "change")
-          .reduce((a, o) => a + o.amount, 0n);
-        expect(inSum - outflowSum - change).toBe(feeOf(intent));
-        for (const [i, spec] of moved.entries()) {
-          const flow = intent.outflows[i];
-          expect(flow?.amount.asset).toBe("sats");
-          expect(flow?.amount.amount).toBe(spec.amount.toString(10));
-          expect(flow?.burn === true).toBe(unspendable(scriptOf(spec)));
-        }
-      }),
-      { numRuns: 300 },
-    );
-  });
+  // 300 generated PSBTs are CPU-bound; coverage instrumentation on CI takes them past 5 s.
+  it(
+    "Σ proven inputs = Σ outflows + Σ change + fee, and every moving output is one flow",
+    {
+      timeout: 60_000,
+    },
+    () => {
+      fc.assert(
+        fc.property(generated, ({ inputs, outputs }) => {
+          const inSum = inputs.reduce((a, b) => a + b, 0n);
+          const outSum = outputs.reduce((a, o) => a + o.amount, 0n);
+          // Consensus-invalid cases (outputs exceed the proven inputs) are covered by the
+          // dedicated invalid-request test below.
+          fc.pre(outSum <= inSum);
+          const psbt = psbtOf(inputs, outputs);
+          const own = new Set([hex(ownScript)]);
+          const intent = decodeBitcoinPsbt(request(psbt, inputs.length), own);
+          // Every non-change output is an outflow except a zero-value unspendable one, which moves
+          // nothing; a burn is exactly an unspendable output with value.
+          const moved = outputs.filter(isMoved);
+          expect(intent.outflows).toHaveLength(moved.length);
+          const outflowSum = intent.outflows.reduce(
+            (sum, flow) => sum + BigInt(flow.amount.amount),
+            0n,
+          );
+          const change = outputs
+            .filter((o) => o.kind === "change")
+            .reduce((a, o) => a + o.amount, 0n);
+          expect(inSum - outflowSum - change).toBe(feeOf(intent));
+          for (const [i, spec] of moved.entries()) {
+            const flow = intent.outflows[i];
+            expect(flow?.amount.asset).toBe("sats");
+            expect(flow?.amount.amount).toBe(spec.amount.toString(10));
+            expect(flow?.burn === true).toBe(unspendable(scriptOf(spec)));
+          }
+        }),
+        { numRuns: 300 },
+      );
+    },
+  );
 
   it("outputs that exceed the proven inputs are an invalid request", () => {
     const intent = () => {
