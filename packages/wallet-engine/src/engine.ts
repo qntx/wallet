@@ -37,7 +37,8 @@ import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
 import type { EngineLogger } from "./events.ts";
-import { gatewaySession } from "./gateway/client.ts";
+import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
+import { HistoryController } from "./history/controller.ts";
 import { lidoPosition } from "./lido/index.ts";
 import type { LidoPosition } from "./lido/index.ts";
 import { MetaSyncController } from "./meta/controller.ts";
@@ -150,6 +151,7 @@ export type WalletEngine = {
   readonly transactions: Omit<TransactionController, `prepare${string}`>;
   readonly requests: RequestController;
   readonly addressBook: AddressBookController;
+  readonly history: HistoryController;
   readonly connections: ConnectionController;
   readonly eip1193: Eip1193Handler;
   readonly nip07: Nip07Handler;
@@ -347,6 +349,27 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const addressBook = new AddressBookController({
     openStore: options.openStore,
     random: options.random,
+    now: options.now,
+    logger: options.logger,
+  });
+
+  const history = new HistoryController({
+    networks,
+    // Deferred like every other chains() call here — resolving the api at construction would
+    // validate the wallet before any history read needs it.
+    chains: {
+      account: async (params) => chains(options.wallet).account(params),
+    },
+    spark: controller,
+    sparkNetwork: options.sparkNetwork,
+    transactions,
+    addressBook,
+    gateway:
+      gateway === undefined
+        ? undefined
+        : { url: gateway.url, fetch: gatewayFetch(options.fetch, gateway) },
+    openStore: options.openStore,
+    setTimer,
     now: options.now,
     logger: options.logger,
   });
@@ -773,6 +796,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     addressBook.lock();
     watch.lock();
     transactions.lock();
+    history.lock();
     prices.lock();
     assets.lock();
     networks.lock();
@@ -816,6 +840,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await assets.init();
         await prices.init();
         await transactions.init();
+        await history.init();
         await requests.init();
         await connections.init();
         depositClaimer.start();
@@ -881,6 +906,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     },
     transactions,
     requests,
+    history,
     watch: {
       add: async (input) => watch.add(input),
       rename: async (id, name) => watch.rename(id, name),

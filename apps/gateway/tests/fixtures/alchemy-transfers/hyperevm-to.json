@@ -1,0 +1,90 @@
+{
+  "source": {
+    "url": "https://hyperliquid-mainnet.g.alchemy.com/v2/docs-demo",
+    "note": "Alchemy public docs-demo key (Origin: https://www.alchemy.com); recorded verbatim",
+    "recordedAt": "2026-11-18T08:34:45Z"
+  },
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "alchemy_getAssetTransfers",
+    "params": [
+      {
+        "fromBlock": "0x0",
+        "toBlock": "latest",
+        "toAddress": "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+        "category": ["external", "erc20", "erc721", "erc1155"],
+        "withMetadata": true,
+        "excludeZeroValue": false,
+        "maxCount": "0x3",
+        "order": "desc"
+      }
+    ]
+  },
+  "response": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+      "transfers": [
+        {
+          "blockNum": "0x2c9511a",
+          "uniqueId": "0x97fbbde0cd1b97148e0c9a4d295ba1e48b699a589c130d956fd5542c2ce5b15d:log:59",
+          "hash": "0x97fbbde0cd1b97148e0c9a4d295ba1e48b699a589c130d956fd5542c2ce5b15d",
+          "from": "0x9845636fd55f620d18a2c7fd3e4e6bd8e4de173d",
+          "to": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+          "value": 0.000108131487889273,
+          "erc721TokenId": null,
+          "erc1155Metadata": [],
+          "tokenId": null,
+          "asset": "HỴPE",
+          "category": "erc20",
+          "rawContract": {
+            "value": "0x625852ecb779",
+            "address": "0xcb75708e3d2cb29c6c1ce174909c5fbf388fd2ea",
+            "decimal": "0x12"
+          },
+          "metadata": null
+        },
+        {
+          "blockNum": "0x2c94a47",
+          "uniqueId": "0x58fa7c5b8c411e92c7844170168d1b6d8ea84e2fc086ee774e35ebd318e314d3:external",
+          "hash": "0x58fa7c5b8c411e92c7844170168d1b6d8ea84e2fc086ee774e35ebd318e314d3",
+          "from": "0x984573e30a7db8575ba4d71c4af59d22933e173d",
+          "to": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+          "value": 0.000108131487889273,
+          "erc721TokenId": null,
+          "erc1155Metadata": null,
+          "tokenId": null,
+          "asset": "ETH",
+          "category": "external",
+          "rawContract": {
+            "value": "0x625852ecb779",
+            "address": null,
+            "decimal": "0x12"
+          },
+          "metadata": null
+        },
+        {
+          "blockNum": "0x2c94a46",
+          "uniqueId": "0xea59c6ff6085e84d49bbe4baa6607832e4388650541c9c097496ae79f18c3cc8:external",
+          "hash": "0xea59c6ff6085e84d49bbe4baa6607832e4388650541c9c097496ae79f18c3cc8",
+          "from": "0x984573e30a7db8575ba4d71c4af59d22933e173d",
+          "to": "0xd8da6bf26964af9d7eed9e03e53415d37aa96045",
+          "value": 0.000108131487889273,
+          "erc721TokenId": null,
+          "erc1155Metadata": null,
+          "tokenId": null,
+          "asset": "ETH",
+          "category": "external",
+          "rawContract": {
+            "value": "0x625852ecb779",
+            "address": null,
+            "decimal": "0x12"
+          },
+          "metadata": null
+        }
+      ],
+      "pageKey": "045d1180-fd38-4413-84b0-8697ba5378cc"
+    }
+  }
+}
