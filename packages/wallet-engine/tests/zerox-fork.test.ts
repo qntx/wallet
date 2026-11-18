@@ -35,7 +35,6 @@ const ANVIL_PORT = 18547;
 const RPC_URL = `http://127.0.0.1:${ANVIL_PORT}`;
 const VERIFY = { kind: "password" as const, password: "correct horse battery staple" };
 const KERNEL_URL: URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
-const INSTALL_ID = "0123456789abcdef0123456789abcdef";
 const USDC = "0xa0B86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const WETH = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
 const SLIPPAGE_BPS = 100;
@@ -172,7 +171,7 @@ describe.skipIf(!RUN)("0x swap on a mainnet fork", () => {
         showCallsStatus: () => undefined,
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         rpc: { [N1]: [RPC_URL] },
-        gateway: { url: `http://127.0.0.1:${gwPort}`, installId: INSTALL_ID },
+        gateway: { url: `http://127.0.0.1:${gwPort}` },
       });
       // The unlock transition drives accounts.init()…requests.init() — wait for the tree.
       for (let i = 0; i < 100; i++) {

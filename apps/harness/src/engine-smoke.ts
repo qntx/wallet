@@ -85,7 +85,6 @@ export async function engineSmoke(): Promise<void> {
   const warnings: string[] = [];
   let engine!: WalletEngine;
   await step("create-engine", async () => {
-    const installId = Array.from(randomBytes(16), (b) => b.toString(16).padStart(2, "0")).join("");
     engine = createWalletEngine({
   verifyEvent,
       wallet,
@@ -104,7 +103,7 @@ export async function engineSmoke(): Promise<void> {
         [SIGNET]: ["https://blockstream.info/signet/api"],
         [DEVNET]: ["https://solana-devnet.gateway.tatum.io"],
       },
-      gateway: { url: GATEWAY_URL, installId },
+      gateway: { url: GATEWAY_URL },
     });
     return "ok";
   });

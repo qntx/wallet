@@ -98,7 +98,19 @@ const world = (options: { gateway?: boolean } = {}) => {
       rpc: { [BASE]: [HOST], [ETHEREUM]: [HOST] },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       logger,
-      ...(options.gateway === true ? { gateway: { url: GATEWAY, installId: "a".repeat(32) } } : {}),
+      ...(options.gateway === true
+        ? {
+            gateway: {
+              url: GATEWAY,
+              clientIds: {
+                evm: "a".repeat(32),
+                solana: "a".repeat(32),
+                bitcoin: "a".repeat(32),
+                service: "a".repeat(32),
+              },
+            },
+          }
+        : {}),
     });
     if (options.gateway === true) {
       await networks.init();

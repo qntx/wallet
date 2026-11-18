@@ -1,19 +1,26 @@
 #!/usr/bin/env bash
-# Applies the repository's protection as code: the rulesets in this directory and the two gateway
-# deployment environments. Idempotent; needs `gh` authenticated as a repository admin.
+# Applies the repository's protection as code: the rulesets in this directory and the deployment
+# environments (staging and production for the gateway, npm for releases). Idempotent; needs `gh`
+# authenticated as a repository admin.
 #
-#   .github/rulesets/apply.sh <production-reviewer-login>
+#   .github/rulesets/apply.sh <reviewer-login> <reviewer-login> [<reviewer-login>...]
 #
-# The Cloudflare API token of each environment is a secret only its owner can create:
+# Production and npm need two or more reviewers because the person who starts a job may not
+# approve it. The Cloudflare API token of each environment is an environment secret only its owner
+# can create, each for its own Cloudflare account (apps/gateway/README.md):
 #   gh secret set CLOUDFLARE_API_TOKEN --env staging
 #   gh secret set CLOUDFLARE_API_TOKEN --env production
 # and deployments start once `gh variable set GATEWAY_DEPLOY --body true` is set.
 set -euo pipefail
 
 repo="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
-reviewer="${1:?usage: apply.sh <production-reviewer-login>}"
-reviewer_id="$(gh api "users/${reviewer}" --jq .id)"
+if [ "$#" -lt 2 ]; then
+  echo "usage: apply.sh <reviewer-login> <reviewer-login> [<reviewer-login>...]" >&2
+  exit 2
+fi
+reviewers="$(for login in "$@"; do gh api "users/${login}" --jq '{type: "User", id: .id}'; done | jq -s -c .)"
 here="$(cd "$(dirname "$0")" && pwd)"
+manual=()
 
 for file in "${here}"/*.json; do
   name="$(jq -r .name "${file}")"
@@ -25,21 +32,43 @@ for file in "${here}"/*.json; do
   fi
 done
 
-# Deployments come from main only; production also waits for a reviewer.
+# environment <name> <reviewers-json> <prevent-self-review> <policy-type> <policy-pattern>
 environment() {
-  local name="$1" reviewers="$2"
-  jq -n --argjson reviewers "${reviewers}" '{
+  local name="$1" env_reviewers="$2" self_review="$3" type="$4" pattern="$5"
+  jq -n --argjson reviewers "${env_reviewers}" --argjson prevent "${self_review}" '{
     reviewers: $reviewers,
+    prevent_self_review: $prevent,
     deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
   }' | gh api --method PUT "repos/${repo}/environments/${name}" --input - --jq '"configured environment \(.name)"'
   if ! gh api "repos/${repo}/environments/${name}/deployment-branch-policies" \
-    --jq '.branch_policies[].name' | grep -qx main; then
+    --jq ".branch_policies[] | select(.type == \"${type}\") | .name" | grep -qxF "${pattern}"; then
     gh api --method POST "repos/${repo}/environments/${name}/deployment-branch-policies" \
-      -f name=main -f type=branch --silent
+      -f name="${pattern}" -f type="${type}" --silent
+  fi
+  # The REST API cannot change "Allow administrators to bypass configured protection rules".
+  if [ "$(gh api "repos/${repo}/environments/${name}" --jq .can_admins_bypass)" != "false" ]; then
+    manual+=("Settings → Environments → ${name}: clear \"Allow administrators to bypass configured protection rules\"")
   fi
 }
-environment staging '[]'
-environment production "[{\"type\":\"User\",\"id\":${reviewer_id}}]"
+environment staging '[]' false branch main
+environment production "${reviewers}" true branch main
+environment npm "${reviewers}" true tag 'v*.*.*'
+
+# Environment secrets are readable only by jobs in their environment; a repository or organization
+# secret of the same name would reach every job, staging's included.
+shared="$({
+  gh api "repos/${repo}/actions/secrets" --paginate --jq '.secrets[].name'
+  gh api "repos/${repo}/actions/organization-secrets" --paginate --jq '.secrets[].name'
+} | grep -x 'CLOUDFLARE_API_TOKEN' || true)"
+if [ -n "${shared}" ]; then
+  manual+=("delete the repository or organization secret CLOUDFLARE_API_TOKEN; it must exist only per environment")
+fi
 
 gh api --method PATCH "repos/${repo}" -F delete_branch_on_merge=true --silent
+
+if [ "${#manual[@]}" -gt 0 ]; then
+  printf 'not done — finish by hand, then rerun:\n' >&2
+  printf '  - %s\n' "${manual[@]}" >&2
+  exit 1
+fi
 echo "done"

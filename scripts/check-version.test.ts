@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { checkExactDeps, checkViteAliases } from "./check-version.ts";
+import { checkExactDeps, checkReleaseTag, checkViteAliases } from "./check-version.ts";
 
 const manifest = (pkg: unknown): { path: string; pkg: unknown } => ({
   path: "package.json",
@@ -96,5 +96,45 @@ describe("checkExactDeps", () => {
     const errors = checkExactDeps([manifest(pkg)]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("must be exact");
+  });
+});
+
+describe("checkReleaseTag", () => {
+  const pkg = (path: string, version: string, extra: Record<string, unknown> = {}) => ({
+    path,
+    pkg: { name: path, version, ...extra },
+  });
+  const kernel = pkg("packages/wallet-kernel/package.json", "0.0.0", { private: true });
+  const packages = [
+    pkg("packages/wallet/package.json", "0.14.0"),
+    pkg("packages/wallet-engine/package.json", "0.14.0"),
+    kernel,
+  ];
+
+  it("accepts a tag naming the version of every published package", () => {
+    expect(checkReleaseTag("v0.14.0", packages)).toStrictEqual([]);
+    expect(
+      checkReleaseTag("v1.0.0-rc.1", [pkg("packages/wallet/package.json", "1.0.0-rc.1")]),
+    ).toStrictEqual([]);
+  });
+
+  it("names every published package whose version disagrees with the tag", () => {
+    const errors = checkReleaseTag("v0.14.1", packages);
+    expect(errors).toHaveLength(2);
+    expect(errors[0]).toContain("packages/wallet/package.json");
+    expect(errors[1]).toContain("packages/wallet-engine/package.json");
+  });
+
+  it.each(["0.14.0", "v0.14", "v0.14.0.1", "release-0.14.0", ""])(
+    "rejects the malformed tag %j",
+    (tag) => {
+      const errors = checkReleaseTag(tag, packages);
+      expect(errors).toHaveLength(1);
+      expect(errors[0]).toContain("is not v<major>.<minor>.<patch>");
+    },
+  );
+
+  it("fails when nothing would be published", () => {
+    expect(checkReleaseTag("v0.0.0", [kernel])).toStrictEqual(["no published package found"]);
   });
 });

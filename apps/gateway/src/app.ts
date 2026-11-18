@@ -1,13 +1,14 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 
-import { INSTALL_ID_HEADER, PROVIDERS_HEADER } from "@qntx/wallet-engine/gateway/contract";
+import { CLIENT_ID_HEADER, PROVIDERS_HEADER } from "@qntx/wallet-engine/gateway/contract";
 
+import { requireClientId } from "./middleware/client-id.ts";
+import type { ClientIdVariables } from "./middleware/client-id.ts";
 import { mapError, notFound } from "./middleware/errors.ts";
-import { requireInstallId } from "./middleware/install-id.ts";
-import type { InstallIdVariables } from "./middleware/install-id.ts";
 import { indexNetworks } from "./middleware/network.ts";
 import { rateLimit } from "./middleware/rate-limit.ts";
+import type { RateLimitVariables } from "./middleware/rate-limit.ts";
 import { requestLog } from "./middleware/request-log.ts";
 import { createForwarder } from "./providers/forward.ts";
 import { esploraRoutes } from "./routes/esplora.ts";
@@ -21,24 +22,27 @@ import type { GatewayOptions } from "./types.ts";
 export type { GatewayOptions } from "./types.ts";
 
 /** Builds the gateway; every upstream call goes through `options.fetch`. */
-export function createGateway(options: GatewayOptions): Hono<{ Variables: InstallIdVariables }> {
+export function createGateway(
+  options: GatewayOptions,
+): Hono<{ Variables: ClientIdVariables & RateLimitVariables }> {
   const served = indexNetworks(options.networks, options.auth);
-  const forwarder = createForwarder();
+  const log = options.log ?? ((line) => console.log(line));
+  const forwarder = createForwarder(log);
   const deps = { fetch: options.fetch, forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);
 
-  const app = new Hono<{ Variables: InstallIdVariables }>();
-  app.use(requestLog(options.log ?? ((line) => console.log(line))));
+  const app = new Hono<{ Variables: ClientIdVariables & RateLimitVariables }>();
+  app.use(requestLog(log));
   app.use(
     cors({
       origin: (origin) => (allowedOrigins.has(origin) ? origin : null),
-      allowHeaders: ["content-type", INSTALL_ID_HEADER],
+      allowHeaders: ["content-type", CLIENT_ID_HEADER],
       allowMethods: ["GET", "POST", "OPTIONS"],
       exposeHeaders: [PROVIDERS_HEADER, "retry-after"],
       maxAge: 600,
     }),
   );
-  app.use("/v1/*", requireInstallId);
+  app.use("/v1/*", requireClientId);
   app.use("/v1/*", rateLimit(options.limiters));
   app.route("/", healthRoutes);
   app.route("/", networksRoutes(served));
@@ -54,7 +58,7 @@ export function createGateway(options: GatewayOptions): Hono<{ Variables: Instal
     }),
   );
   app.route("/", riskRoutes(options.risk));
-  app.onError(mapError);
+  app.onError(mapError(log));
   app.notFound(notFound);
   return app;
 }

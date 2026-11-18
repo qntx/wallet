@@ -1,11 +1,11 @@
 import type { RiskStore } from "./risk/phishing.ts";
 
 export type RateLimiter = {
-  limit: (options: { key: string }) => Promise<{ success: boolean }>;
+  limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;
 };
 
 export type Limiters = {
-  /** Per IP prefix across every install id — the ceiling rotating install ids cannot escape. */
+  /** Per IP prefix across every client id — the ceiling rotating client ids cannot escape. */
   readonly ip: RateLimiter;
   readonly rpc: RateLimiter;
   readonly default: RateLimiter;

@@ -1,10 +1,14 @@
 import * as z from "zod/mini";
 
 import type { UpstreamAuth } from "../types.ts";
+import { readCapped } from "./body.ts";
 import { UPSTREAM_TIMEOUT_MS } from "./forward.ts";
 
 const TOKEN_URL =
   "https://login.blockstream.com/realms/blockstream-public/protocol/openid-connect/token";
+
+/** The token JSON is ~1 kB; 64 KiB leaves generous headroom. */
+const TOKEN_MAX_BYTES = 64 * 1024;
 
 const tokenResponse = z.object({
   access_token: z.string().check(z.minLength(1)),
@@ -61,7 +65,9 @@ export const blockstreamAuth = (options: {
         if (!response.ok) {
           throw new Error(`blockstream token request failed with status ${response.status}`);
         }
-        const parsed = tokenResponse.safeParse(await response.json());
+        const parsed = tokenResponse.safeParse(
+          JSON.parse(await readCapped(response, TOKEN_MAX_BYTES)),
+        );
         if (!parsed.success) {
           throw new Error("blockstream token response is malformed");
         }

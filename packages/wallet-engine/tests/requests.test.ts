@@ -442,7 +442,17 @@ function evmWorld(options: {
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger,
     gateway:
-      options.gateway === undefined ? undefined : { url: GATEWAY, installId: "a".repeat(32) },
+      options.gateway === undefined
+        ? undefined
+        : {
+            url: GATEWAY,
+            clientIds: {
+              evm: "a".repeat(32),
+              solana: "a".repeat(32),
+              bitcoin: "a".repeat(32),
+              service: "a".repeat(32),
+            },
+          },
   });
   let signed = 0;
   let rejectSign = false;

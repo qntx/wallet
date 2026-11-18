@@ -213,7 +213,15 @@ function world(o: LidoWorld = {}) {
     rpc: { [N1]: [HOST], ...Object.fromEntries((o.extraNetworks ?? []).map((n) => [n, [HOST]])) },
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     logger: { warn: () => {} },
-    gateway: { url: GW, installId: "a".repeat(32) },
+    gateway: {
+      url: GW,
+      clientIds: {
+        evm: "a".repeat(32),
+        solana: "a".repeat(32),
+        bitcoin: "a".repeat(32),
+        service: "a".repeat(32),
+      },
+    },
   });
   const apis = {
     account: async () =>

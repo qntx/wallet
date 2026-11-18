@@ -7,6 +7,8 @@ import {
   EVM_RPC_METHODS,
   NETWORKS,
   RPC_BATCH_MAX,
+  RPC_COST_WEIGHTS,
+  RPC_METHOD_COST,
   accepts,
   applyDiff,
   contains,
@@ -25,7 +27,7 @@ import {
   evmRpcRequest,
   gatewayError,
   health,
-  installId,
+  clientId,
   networkById,
   networksPath,
   PHISHING_MAX_PATH_SEGMENTS,
@@ -35,8 +37,10 @@ import {
   phishingList,
   phishingListResponse,
   rpc,
+  rpcCallCost,
   rpcPath,
   rpcRequest,
+  rpcRequestCost,
   rpcResponse,
   servedNetworks,
   swapQuoteRequest,
@@ -58,13 +62,178 @@ const ok = (schema: z.ZodMiniType, value: unknown): boolean => z.safeParse(schem
 
 const HASH = "ab".repeat(32);
 
+const ADDRESS = "0x52908400098527886E0F7030069857D2E4169EE7";
+const BLOCK_HASH = `0x${"ab".repeat(32)}`;
+const STORAGE_KEY = `0x${"01".repeat(32)}`;
+const PUBKEY = "So11111111111111111111111111111111111111112";
+const PUBKEY2 = "11111111111111111111111111111111";
+const SIGNATURE = "5".repeat(88);
+
+/** Every method whose params may be omitted or `[]`. */
+const EVM_NO_ARG: ReadonlySet<string> = new Set([
+  "eth_blobBaseFee",
+  "eth_blockNumber",
+  "eth_chainId",
+  "eth_gasPrice",
+  "eth_maxPriorityFeePerGas",
+  "net_version",
+  "web3_clientVersion",
+]);
+
+const EVM_ACCEPTED: ReadonlyArray<readonly [string, unknown[]]> = [
+  ["eth_getBalance", [ADDRESS]],
+  ["eth_getBalance", [ADDRESS, "latest"]],
+  ["eth_getBalance", [ADDRESS, "0x10"]],
+  ["eth_getBalance", [ADDRESS, { blockHash: BLOCK_HASH }]],
+  ["eth_getBalance", [ADDRESS, { blockHash: BLOCK_HASH, requireCanonical: true }]],
+  ["eth_getBalance", [ADDRESS, { blockNumber: "0x10" }]],
+  ["eth_getCode", [ADDRESS, "pending"]],
+  ["eth_getTransactionCount", [ADDRESS, "safe"]],
+  ["eth_getStorageAt", [ADDRESS, "0x0"]],
+  ["eth_getStorageAt", [ADDRESS, STORAGE_KEY, "finalized"]],
+  ["eth_getProof", [ADDRESS, [STORAGE_KEY], "latest"]],
+  ["eth_getProof", [ADDRESS, ["0x1"], "0x20"]],
+  ["eth_getBlockByHash", [BLOCK_HASH, true]],
+  ["eth_getBlockByNumber", ["latest", false]],
+  ["eth_getBlockByNumber", ["0x10", true]],
+  ["eth_getBlockReceipts", ["0x10"]],
+  ["eth_getBlockReceipts", [BLOCK_HASH]],
+  ["eth_getBlockReceipts", [{ blockHash: BLOCK_HASH }]],
+  ["eth_getBlockTransactionCountByHash", [BLOCK_HASH]],
+  ["eth_getBlockTransactionCountByNumber", ["latest"]],
+  ["eth_getTransactionByHash", [BLOCK_HASH]],
+  ["eth_getTransactionReceipt", [BLOCK_HASH]],
+  ["eth_getTransactionByBlockHashAndIndex", [BLOCK_HASH, "0x0"]],
+  ["eth_getTransactionByBlockNumberAndIndex", ["latest", "0x0"]],
+  ["eth_sendRawTransaction", ["0x02aabb"]],
+  ["eth_sendRawTransaction", ["0x"]],
+  ["eth_feeHistory", ["0x14", "latest", [10, 50, 90]]],
+  ["eth_feeHistory", [4, "latest"]],
+  ["eth_feeHistory", ["0x14", "latest", null]],
+  ["eth_call", [{ to: ADDRESS, data: "0x" }]],
+  ["eth_call", [{ to: ADDRESS }, "latest"]],
+  ["eth_call", [{ to: ADDRESS }, "0x10", { [ADDRESS]: { balance: "0x1" } }]],
+  ["eth_call", [{ to: null, data: "0x6000" }]],
+  ["eth_estimateGas", [{ from: ADDRESS, to: ADDRESS, value: "0x1" }]],
+  ["eth_estimateGas", [{ to: ADDRESS }, "pending"]],
+  ["eth_createAccessList", [{ to: ADDRESS, data: "0x" }, "latest"]],
+  ["eth_simulateV1", [{ blockStateCalls: [] }, "latest"]],
+  ["eth_simulateV1", [{ blockStateCalls: [] }]],
+  ["eth_getLogs", [{ address: ADDRESS }]],
+];
+
+const EVM_REFUSED: ReadonlyArray<readonly [string, unknown[]]> = [
+  ["eth_getBalance", []],
+  ["eth_getBalance", ["0xzz", "latest"]],
+  ["eth_getBalance", [ADDRESS, "noon"]],
+  ["eth_getStorageAt", [ADDRESS]],
+  ["eth_getProof", [ADDRESS, [STORAGE_KEY]]],
+  ["eth_getBlockByNumber", ["latest"]],
+  ["eth_getBlockByNumber", [true, "latest"]],
+  ["eth_getBlockByHash", [BLOCK_HASH]],
+  ["eth_getBlockReceipts", []],
+  ["eth_getTransactionByHash", ["0x1234"]],
+  ["eth_getTransactionByBlockNumberAndIndex", ["latest"]],
+  ["eth_sendRawTransaction", []],
+  ["eth_sendRawTransaction", ["0x0"]],
+  ["eth_sendRawTransaction", ["raw"]],
+  ["eth_feeHistory", ["latest", [10]]],
+  ["eth_feeHistory", [-1, "latest"]],
+  ["eth_call", []],
+  ["eth_call", [{ to: "0xzz" }]],
+  ["eth_call", [{ from: "0xzz" }]],
+  ["eth_call", ["0x1234"]],
+  ["eth_simulateV1", []],
+  ["eth_chainId", ["extra"]],
+  ["eth_blockNumber", [1]],
+];
+
+const SOLANA_ACCEPTED: ReadonlyArray<readonly [string, unknown[]]> = [
+  ["getAccountInfo", [PUBKEY]],
+  ["getAccountInfo", [PUBKEY, { encoding: "base64", commitment: "confirmed" }]],
+  ["getAccountInfo", [PUBKEY, { encoding: "jsonParsed" }]],
+  ["getBalance", [PUBKEY, { commitment: "confirmed" }]],
+  ["getBlockHeight", [{ commitment: "confirmed" }]],
+  ["getBlockTime", [500]],
+  ["getEpochInfo", []],
+  ["getEpochInfo", [{ commitment: "confirmed" }]],
+  ["getFeeForMessage", ["AQID"]],
+  ["getGenesisHash", []],
+  ["getLatestBlockhash", [{ commitment: "confirmed" }]],
+  ["getMinimumBalanceForRentExemption", [250]],
+  ["getMultipleAccounts", [[PUBKEY, PUBKEY2], { encoding: "base64", commitment: "confirmed" }]],
+  ["getMultipleAccounts", [Array.from({ length: 100 }, () => PUBKEY)]],
+  ["getRecentPrioritizationFees", [[PUBKEY, PUBKEY2]]],
+  ["getRecentPrioritizationFees", [Array.from({ length: 128 }, () => PUBKEY)]],
+  ["getSignatureStatuses", [[SIGNATURE], { searchTransactionHistory: true }]],
+  ["getSignatureStatuses", [Array.from({ length: 256 }, () => SIGNATURE)]],
+  ["getSignaturesForAddress", [PUBKEY, { limit: 1 }]],
+  ["getSlot", []],
+  ["getSlot", [{ commitment: "confirmed" }]],
+  ["getStakeMinimumDelegation", [{ commitment: "confirmed" }]],
+  ["getTokenAccountBalance", [PUBKEY]],
+  ["getTokenAccountsByOwner", [PUBKEY, { mint: PUBKEY2 }, { encoding: "jsonParsed" }]],
+  ["getTokenAccountsByOwner", [PUBKEY, { programId: PUBKEY2 }, { encoding: "jsonParsed" }]],
+  ["getTokenSupply", [PUBKEY, { commitment: "confirmed" }]],
+  ["getTransaction", [SIGNATURE]],
+  ["getTransaction", [SIGNATURE, { encoding: "json", maxSupportedTransactionVersion: 0 }]],
+  ["getVersion", []],
+  ["getVoteAccounts", []],
+  ["getVoteAccounts", [{ commitment: "confirmed" }]],
+  ["isBlockhashValid", [PUBKEY, { commitment: "confirmed" }]],
+  [
+    "sendTransaction",
+    [
+      "AQID",
+      { encoding: "base64", skipPreflight: false, maxRetries: 0, preflightCommitment: "confirmed" },
+    ],
+  ],
+  [
+    "simulateTransaction",
+    [
+      "AQID",
+      {
+        encoding: "base64",
+        sigVerify: false,
+        replaceRecentBlockhash: false,
+        commitment: "confirmed",
+      },
+    ],
+  ],
+];
+
+const SOLANA_REFUSED: ReadonlyArray<readonly [string, unknown[]]> = [
+  ["getAccountInfo", []],
+  ["getAccountInfo", ["0x1234"]],
+  ["getAccountInfo", ["not-a-key!"]],
+  ["getBalance", [PUBKEY, "latest"]],
+  ["getBlockHeight", ["latest"]],
+  ["getBlockTime", []],
+  ["getBlockTime", ["500"]],
+  ["getFeeForMessage", []],
+  ["getMinimumBalanceForRentExemption", ["250"]],
+  ["getMultipleAccounts", [[]]],
+  ["getMultipleAccounts", [Array.from({ length: 101 }, () => PUBKEY)]],
+  ["getRecentPrioritizationFees", [Array.from({ length: 129 }, () => PUBKEY)]],
+  ["getSignatureStatuses", [[PUBKEY]]],
+  ["getSignatureStatuses", [Array.from({ length: 257 }, () => SIGNATURE)]],
+  ["getTokenAccountsByOwner", [PUBKEY, { program: PUBKEY2 }]],
+  ["getTokenAccountsByOwner", [PUBKEY, { mint: "0x1234" }]],
+  ["getTransaction", [PUBKEY]],
+  ["getVersion", [{}]],
+  ["getGenesisHash", [1]],
+  ["sendTransaction", []],
+  ["sendTransaction", [""]],
+  ["simulateTransaction", [123]],
+];
+
 describe("primitives", () => {
-  it("installId is 32 lowercase hex characters", () => {
-    expect(ok(installId, "0123456789abcdef0123456789abcdef")).toBe(true);
-    expect(ok(installId, "0123456789ABCDEF0123456789ABCDEF")).toBe(false);
-    expect(ok(installId, "0123456789abcdef")).toBe(false);
-    expect(ok(installId, "g".repeat(32))).toBe(false);
-    expect(ok(installId, undefined)).toBe(false);
+  it("clientId is 32 lowercase hex characters", () => {
+    expect(ok(clientId, "0123456789abcdef0123456789abcdef")).toBe(true);
+    expect(ok(clientId, "0123456789ABCDEF0123456789ABCDEF")).toBe(false);
+    expect(ok(clientId, "0123456789abcdef")).toBe(false);
+    expect(ok(clientId, "g".repeat(32))).toBe(false);
+    expect(ok(clientId, undefined)).toBe(false);
   });
 
   it("caip2 accepts every registry network and rejects malformed ids", () => {
@@ -98,12 +267,25 @@ describe("health", () => {
 describe("rpc requests", () => {
   it("accepts a single call and a batch up to the cap", () => {
     expect(ok(rpcRequest, call("anything"))).toBe(true);
-    expect(ok(rpcRequest, [call("a"), call("b", "x"), call("c", null)])).toBe(true);
+    expect(ok(rpcRequest, [call("a"), call("b", "x"), call("c", 3)])).toBe(true);
     expect(
       ok(
         rpcRequest,
         Array.from({ length: RPC_BATCH_MAX }, () => call("a")),
       ),
+    ).toBe(true);
+  });
+
+  it("accepts int and short-string request ids, rejects the rest", () => {
+    expect(ok(rpcRequest, call("a", 0))).toBe(true);
+    expect(ok(rpcRequest, call("a", "req-42"))).toBe(true);
+    expect(ok(rpcRequest, call("a", "x".repeat(64)))).toBe(true);
+    for (const id of [null, 1.5, "x".repeat(65), true, {}]) {
+      expect(ok(rpcRequest, { jsonrpc: "2.0", id, method: "a", params: [] })).toBe(false);
+    }
+    // Error responses legitimately answer with `id: null` — that id is response-only.
+    expect(
+      ok(rpcResponse, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "x" } }),
     ).toBe(true);
   });
 
@@ -121,13 +303,24 @@ describe("rpc requests", () => {
     expect(ok(rpcRequest, "text")).toBe(false);
   });
 
-  it("evm allow-list: every listed method passes, signing and admin methods fail", () => {
-    // eth_getLogs is the one method with rules on its params (logs-filter.test.ts).
-    for (const m of EVM_RPC_METHODS.filter((method) => method !== "eth_getLogs")) {
+  it("evm allow-list: no-arg methods take omitted or empty params", () => {
+    for (const m of EVM_RPC_METHODS.filter((method) => EVM_NO_ARG.has(method))) {
       expect(ok(evmRpcRequest, call(m))).toBe(true);
+      expect(ok(evmRpcRequest, { jsonrpc: "2.0", id: 1, method: m })).toBe(true);
     }
-    expect(ok(evmRpcRequest, call("eth_getLogs", 1, [{}]))).toBe(true);
-    expect(ok(evmRpcRequest, call("eth_getLogs"))).toBe(false);
+    expect(EVM_RPC_METHODS).toContain("eth_sendRawTransaction");
+    expect(EVM_RPC_METHODS).toContain("eth_simulateV1");
+  });
+
+  it.each(EVM_ACCEPTED)("accepts %s params %j", (method, params) => {
+    expect(ok(evmRpcRequest, call(method, 1, params))).toBe(true);
+  });
+
+  it.each(EVM_REFUSED)("rejects %s params %j", (method, params) => {
+    expect(ok(evmRpcRequest, call(method, 1, params))).toBe(false);
+  });
+
+  it("rejects signing, admin and unknown evm methods whatever the params", () => {
     for (const m of [
       "eth_sign",
       "personal_sign",
@@ -148,14 +341,24 @@ describe("rpc requests", () => {
     ]) {
       expect(ok(evmRpcRequest, call(m))).toBe(false);
     }
-    expect(EVM_RPC_METHODS).toContain("eth_sendRawTransaction");
-    expect(EVM_RPC_METHODS).toContain("eth_simulateV1");
   });
 
-  it("solana allow-list: every listed method passes, others fail", () => {
-    for (const m of SOLANA_RPC_METHODS) {
-      expect(ok(solanaRpcRequest, call(m))).toBe(true);
-    }
+  it("the param matrices cover every allow-listed method", () => {
+    expect(new Set([...EVM_ACCEPTED.map(([m]) => m), ...EVM_NO_ARG])).toStrictEqual(
+      new Set(EVM_RPC_METHODS),
+    );
+    expect(new Set(SOLANA_ACCEPTED.map(([m]) => m))).toStrictEqual(new Set(SOLANA_RPC_METHODS));
+  });
+
+  it.each(SOLANA_ACCEPTED)("accepts %s params %j", (method, params) => {
+    expect(ok(solanaRpcRequest, call(method, 1, params))).toBe(true);
+  });
+
+  it.each(SOLANA_REFUSED)("rejects %s params %j", (method, params) => {
+    expect(ok(solanaRpcRequest, call(method, 1, params))).toBe(false);
+  });
+
+  it("rejects unlisted solana methods whatever the params", () => {
     for (const m of [
       "requestAirdrop",
       "getProgramAccounts",
@@ -207,6 +410,57 @@ describe("rpc responses", () => {
     );
     expect(ok(rpcResponse, { id: 1, result: 1 })).toBe(false);
     expect(ok(rpcResponse, "<html>")).toBe(false);
+  });
+});
+
+describe("rpc call cost", () => {
+  it("classifies every allow-listed method", () => {
+    for (const method of [...EVM_RPC_METHODS, ...SOLANA_RPC_METHODS]) {
+      expect(RPC_COST_WEIGHTS[RPC_METHOD_COST[method]]).toBeTypeOf("number");
+    }
+  });
+
+  it.each([
+    ["eth_chainId", 1],
+    ["eth_getBalance", 1],
+    ["eth_feeHistory", 1],
+    ["eth_call", 3],
+    ["eth_estimateGas", 3],
+    ["eth_getProof", 3],
+    ["eth_sendRawTransaction", 3],
+    ["eth_getLogs", 10],
+    ["eth_getBlockReceipts", 10],
+    ["getAccountInfo", 1],
+    ["getSlot", 1],
+    ["getSignatureStatuses", 1],
+    ["sendTransaction", 3],
+    ["simulateTransaction", 3],
+    ["getTransaction", 3],
+    ["getSignaturesForAddress", 3],
+    ["getMultipleAccounts", 10],
+    ["getVoteAccounts", 10],
+  ])("costs %s at %i units", (method, units) => {
+    expect(rpcCallCost(call(method))).toBe(units);
+  });
+
+  it("charges a full-transaction block as a scan", () => {
+    expect(rpcCallCost(call("eth_getBlockByNumber", 1, ["latest", false]))).toBe(1);
+    expect(rpcCallCost(call("eth_getBlockByNumber", 1, ["latest", true]))).toBe(10);
+    expect(rpcCallCost(call("eth_getBlockByHash", 1, [`0x${HASH}`, false]))).toBe(1);
+    expect(rpcCallCost(call("eth_getBlockByHash", 1, [`0x${HASH}`, true]))).toBe(10);
+  });
+
+  it("charges getTokenAccountsByOwner by its filter", () => {
+    const owner = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+    expect(rpcCallCost(call("getTokenAccountsByOwner", 1, [owner, { mint: owner }]))).toBe(1);
+    expect(rpcCallCost(call("getTokenAccountsByOwner", 1, [owner, { programId: owner }]))).toBe(10);
+  });
+
+  it("sums a batch and charges a single call alone", () => {
+    expect(rpcRequestCost(call("eth_chainId"))).toBe(1);
+    expect(rpcRequestCost([call("eth_chainId"), call("eth_getLogs")])).toBe(11);
+    const batch = Array.from({ length: RPC_BATCH_MAX }, (_v, i) => call("eth_getLogs", i));
+    expect(rpcRequestCost(batch)).toBe(RPC_BATCH_MAX * 10);
   });
 });
 

@@ -4,11 +4,15 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { BridgeQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { ResolvedProvider } from "../types.ts";
+import { readCapped } from "./body.ts";
 import type { Forwarder } from "./forward.ts";
 
 const ACROSS_API = "https://app.across.to";
 
 const PROVIDER: ResolvedProvider = { id: "across", url: ACROSS_API };
+
+/** 22x the largest quote response measured (a 46 kB Jupiter build). */
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
 const decimal = z.string().check(z.regex(/^[0-9]+$/));
@@ -59,7 +63,7 @@ export async function acrossQuote(
   url.searchParams.set("amount", query.amount);
   const { value } = await forwarder.run([PROVIDER], async (_provider, signal) => {
     const http = await fetch(url, { signal });
-    const text = await http.text();
+    const text = await readCapped(http, MAX_RESPONSE_BYTES);
     if (!http.ok) {
       if (CLIENT_ERROR.has(http.status)) {
         return { badRequest: true } as const;

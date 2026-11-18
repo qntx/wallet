@@ -1,16 +1,22 @@
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
+import { gatewayFetch, gatewayScope, gatewaySession } from "../src/gateway/client.ts";
 import {
-  INSTALL_ID_HEADER,
+  CLIENT_ID_HEADER,
   accepts,
+  bridgeQuote,
+  clientId,
   esploraBasePath,
   esploraPathAllowed,
   evmRpcRequest,
-  installId,
+  health,
   networkById,
   networksPath,
+  phishingListPath,
   rpcPath,
   solanaRpcRequest,
+  swapQuote,
+  swapQuoteSolana,
 } from "../src/gateway/contract/index.ts";
 import { NetworkController } from "../src/networks/controller.ts";
 import type { Independent } from "../src/networks/controller.ts";
@@ -19,7 +25,7 @@ import { idleNetworkDeps } from "./send-helpers.ts";
 
 const GATEWAY = "https://gw.test";
 const HOST = "https://host.test";
-const INSTALL_ID = "0123456789abcdef0123456789abcdef";
+const random = (n: number): Uint8Array => crypto.getRandomValues(new Uint8Array(n));
 const SEPOLIA = "eip155:11155111";
 const BASE_SEPOLIA = "eip155:84532";
 const DEVNET = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1";
@@ -58,9 +64,9 @@ function world(behavior: Behavior = {}) {
   const hostCalls: Call[] = [];
 
   const checkGateway = (url: URL, call: Call, body: string): void => {
-    const id = call.headers.get(INSTALL_ID_HEADER);
-    if (id === null || !accepts(installId, id)) {
-      violations.push(`${url.pathname}: missing or malformed ${INSTALL_ID_HEADER}`);
+    const id = call.headers.get(CLIENT_ID_HEADER);
+    if (id === null || !accepts(clientId, id)) {
+      violations.push(`${url.pathname}: missing or malformed ${CLIENT_ID_HEADER}`);
     }
     if (url.pathname === networksPath) {
       if (call.method !== "GET") {
@@ -108,8 +114,8 @@ function world(behavior: Behavior = {}) {
       return behavior.upstream?.(url.pathname) ?? defaultAnswer(url, body);
     }
     hostCalls.push(call);
-    if (call.headers.has(INSTALL_ID_HEADER)) {
-      violations.push(`${url.href}: install id leaked to a non-gateway origin`);
+    if (call.headers.has(CLIENT_ID_HEADER)) {
+      violations.push(`${url.href}: client id leaked to a non-gateway origin`);
     }
     return defaultAnswer(url, body, "host");
   };
@@ -151,13 +157,13 @@ function controller(
     rpc: options.rpc ?? HOST_RPC,
     openStore,
     logger: { warn: (message) => warnings.push(message) },
-    gateway: { url: options.gatewayUrl ?? GATEWAY, installId: INSTALL_ID },
+    gateway: gatewaySession(options.gatewayUrl ?? GATEWAY, random),
   });
   return { n, warnings };
 }
 
 describe("engine reads through the gateway", () => {
-  it("serves a gateway-served EVM network from the gateway first, with the install id", async () => {
+  it("serves a gateway-served EVM network from the gateway first, with the client id", async () => {
     const w = world();
     const { n } = controller(w);
     await n.init();
@@ -206,7 +212,7 @@ describe("engine reads through the gateway", () => {
       "https://custom.test/rpc",
       "https://custom.test/rpc",
     ]);
-    expect(w.hostCalls.every((c) => !c.headers.has(INSTALL_ID_HEADER))).toBe(true);
+    expect(w.hostCalls.every((c) => !c.headers.has(CLIENT_ID_HEADER))).toBe(true);
   });
 
   it.each([
@@ -230,7 +236,7 @@ describe("engine reads through the gateway", () => {
     },
   );
 
-  it("sends Solana and Bitcoin reads through the gateway with the install id", async () => {
+  it("sends a distinct client id per gateway scope, stable within the session", async () => {
     const w = world();
     const { n } = controller(w);
     await n.init();
@@ -240,26 +246,54 @@ describe("engine reads through the gateway", () => {
       `${HOST}/btc`,
     ]);
 
+    // Two calls per scope: each scope keeps one id for the whole session.
+    await expect(n.client(SEPOLIA).getChainId()).resolves.toBe(11155111);
+    await expect(
+      n.client(SEPOLIA).getBalance({ address: `0x${"11".repeat(20)}` }),
+    ).resolves.toBeTypeOf("bigint");
     await expect(n.solanaRpc(DEVNET).call("getSlot", [])).resolves.toBe("from-gateway");
+    await expect(n.solanaRpc(DEVNET).call("getEpochInfo", [])).resolves.toBe("from-gateway");
     await expect(n.esplora(SIGNET).get("/block-height/0")).resolves.toBeDefined();
+    await expect(n.esplora(SIGNET).get("/block-height/1")).resolves.toBeDefined();
 
-    const sol = w.gatewayCalls.find((c) => c.url === `${GATEWAY}${rpcPath(DEVNET)}`);
-    const btc = w.gatewayCalls.find(
-      (c) => c.url === `${GATEWAY}${esploraBasePath(SIGNET)}/block-height/0`,
-    );
-    expect(sol?.headers.get(INSTALL_ID_HEADER)).toBe(INSTALL_ID);
-    expect(btc?.headers.get(INSTALL_ID_HEADER)).toBe(INSTALL_ID);
+    const idsOf = (calls: Call[], match: RegExp): string[] =>
+      [
+        ...new Set(
+          calls
+            .filter((c) => match.test(new URL(c.url).pathname))
+            .map((c) => c.headers.get(CLIENT_ID_HEADER)),
+        ),
+      ].filter((id): id is string => id !== null);
+    const scopes = {
+      service: idsOf(w.gatewayCalls, /^\/v1\/networks$/),
+      evm: idsOf(w.gatewayCalls, /^\/v1\/rpc\/eip155/),
+      solana: idsOf(w.gatewayCalls, /^\/v1\/rpc\/solana/),
+      bitcoin: idsOf(w.gatewayCalls, /^\/v1\/esplora\//),
+    };
+    for (const [scope, ids] of Object.entries(scopes)) {
+      expect(ids, `${scope} must carry exactly one stable client id`).toHaveLength(1);
+    }
+    expect(new Set(Object.values(scopes).flat()).size).toBe(4);
     expect(w.hostCalls).toHaveLength(0);
+
+    // A second session draws fresh ids for every scope.
+    const w2 = world();
+    const again = controller(w2);
+    await again.n.init();
+    await again.n.client(SEPOLIA).getChainId();
+    const evm2 = idsOf(w2.gatewayCalls, /^\/v1\/rpc\/eip155/);
+    expect(evm2).toHaveLength(1);
+    expect(evm2[0]).not.toBe(scopes.evm[0]);
   });
 
-  it("does not send the install id to host endpoints", async () => {
+  it("does not send the client id to host endpoints", async () => {
     const w = world({ upstream: () => new Response("", { status: 503 }) });
     const { n } = controller(w);
     await n.init();
     await n.solanaRpc(DEVNET).call("getSlot", []);
     await n.esplora(SIGNET).get("/block-height/0");
     expect(w.hostCalls).toHaveLength(2);
-    expect(w.hostCalls.every((c) => !c.headers.has(INSTALL_ID_HEADER))).toBe(true);
+    expect(w.hostCalls.every((c) => !c.headers.has(CLIENT_ID_HEADER))).toBe(true);
   });
 
   it("re-reads /v1/networks on every unlock and forgets it on lock", async () => {
@@ -335,7 +369,7 @@ describe("independent clients", () => {
     expect(n.independentEsplora(SIGNET)).toStrictEqual({ kind: "unavailable" });
   });
 
-  it("read only from host endpoints and never send the install id", async () => {
+  it("read only from host endpoints and never send the client id", async () => {
     const w = world();
     const { n } = controller(w);
     await n.init();
@@ -352,7 +386,7 @@ describe("independent clients", () => {
       `${HOST}/sol`,
       `${HOST}/btc/block-height/0`,
     ]);
-    expect(w.hostCalls.every((c) => !c.headers.has(INSTALL_ID_HEADER))).toBe(true);
+    expect(w.hostCalls.every((c) => !c.headers.has(CLIENT_ID_HEADER))).toBe(true);
   });
 
   it("are not needed after lock, when the gateway list is forgotten", async () => {
@@ -361,5 +395,52 @@ describe("independent clients", () => {
     await n.init();
     n.lock();
     expect(n.independentClient(SEPOLIA)).toStrictEqual({ kind: "not-needed" });
+  });
+});
+
+describe("gatewayScope", () => {
+  const scope = (path: string) => gatewayScope(new URL(`${GATEWAY}${path}`));
+
+  it.each<[string, string]>([
+    [rpcPath(SEPOLIA), "evm"],
+    [rpcPath(DEVNET), "solana"],
+    [rpcPath(SIGNET), "bitcoin"],
+    ["/v1/rpc/nope:0", "service"],
+    [`${esploraBasePath(SIGNET)}/block-height/0`, "bitcoin"],
+    [`${esploraBasePath(SIGNET)}/tx`, "bitcoin"],
+    [swapQuoteSolana.path, "solana"],
+    [swapQuote.path, "evm"],
+    [bridgeQuote.path, "evm"],
+    [networksPath, "service"],
+    [phishingListPath, "service"],
+    [health.path, "service"],
+    ["/v1/unknown", "service"],
+  ])("maps %s to %s", (path, expected) => {
+    expect(scope(path)).toBe(expected);
+  });
+
+  it("scopes ids per family under a gateway mounted on a base path", async () => {
+    const gateway = gatewaySession(`${GATEWAY}/base/`, random);
+    const seen = new Map<string, string | null>();
+    const wrapped = gatewayFetch(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      seen.set(path, new Headers(init?.headers).get(CLIENT_ID_HEADER));
+      return Promise.resolve(new Response("{}"));
+    }, gateway);
+    const paths = [
+      `/base${rpcPath(SEPOLIA)}`,
+      `/base${rpcPath(DEVNET)}`,
+      `/base${esploraBasePath(SIGNET)}/block-height/0`,
+      `/base${networksPath}`,
+    ];
+    await Promise.all(paths.map(async (path) => wrapped(`${GATEWAY}${path}`)));
+    const ids = [...seen.values()];
+    expect(new Set(ids).size).toBe(4);
+    expect(seen.get(`/base${rpcPath(SEPOLIA)}`)).toBe(gateway.clientIds.evm);
+    expect(seen.get(`/base${rpcPath(DEVNET)}`)).toBe(gateway.clientIds.solana);
+    expect(seen.get(`/base${esploraBasePath(SIGNET)}/block-height/0`)).toBe(
+      gateway.clientIds.bitcoin,
+    );
+    expect(seen.get(`/base${networksPath}`)).toBe(gateway.clientIds.service);
   });
 });
