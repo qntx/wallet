@@ -2,7 +2,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
-import { gatewayFor, riskStoreOf } from "../src/worker.ts";
+import { gatewayFor, priceCacheOf, riskStoreOf } from "../src/worker.ts";
 import type { WorkerEnv } from "../src/worker.ts";
 import { allowAll } from "./helpers.ts";
 
@@ -38,6 +38,7 @@ const production = (over: Partial<WorkerEnv> = {}): WorkerEnv =>
     DRPC_API_KEY: "d",
     BLOCKSTREAM_CLIENT_ID: "id",
     BLOCKSTREAM_CLIENT_SECRET: "sec",
+    COINGECKO_API_KEY: "cg",
     ...over,
   }) as WorkerEnv;
 
@@ -50,6 +51,7 @@ describe("gatewayFor", () => {
     expect(gatewayFor(production({ CORS_ORIGINS: "" })).corsOrigins).toStrictEqual([]);
     expect(options.jupiter).toStrictEqual({ apiKey: "j" });
     expect(options.zeroEx?.apiKey).toBe("z");
+    expect(options.prices.coingecko).toStrictEqual({ apiKey: "cg" });
     expect(() => createGateway(options)).not.toThrow();
   });
 
@@ -59,6 +61,10 @@ describe("gatewayFor", () => {
     expect(options.auth).toStrictEqual({});
     expect(options.corsOrigins).toStrictEqual(["http://localhost:5173", "http://localhost:8081"]);
     expect(options.jupiter).toBeUndefined();
+    expect(options.prices.coingecko).toBeUndefined();
+    expect(gatewayFor(staging({ COINGECKO_API_KEY: "cg2" })).prices.coingecko).toStrictEqual({
+      apiKey: "cg2",
+    });
     expect(() => createGateway(options)).not.toThrow();
   });
 
@@ -82,5 +88,26 @@ describe("riskStoreOf", () => {
     const store = riskStoreOf(kv());
     await store.put("k", "v");
     await expect(store.get("k")).resolves.toBeUndefined();
+  });
+});
+
+describe("priceCacheOf", () => {
+  it("stores each entry under a synthetic URL with its TTL as max-age", async () => {
+    const stored = new Map<string, Response>();
+    const cache = {
+      match: async (key: string) => Promise.resolve(stored.get(key)?.clone()),
+      put: async (key: string, response: Response) => {
+        stored.set(key, response);
+        return Promise.resolve();
+      },
+    };
+    // The fake implements only the two Cache methods the adapter calls.
+    const prices = priceCacheOf(() => cache as unknown as Cache);
+    await expect(prices.get("usd/x")).resolves.toBeUndefined();
+    await prices.put("usd/eip155:1/slip44:60", '{"v":1}', 30);
+    const [[key, response] = ["", new Response()]] = [...stored];
+    expect(key).toBe("https://prices.cache.invalid/usd/eip155:1/slip44:60");
+    expect(response.headers.get("cache-control")).toBe("max-age=30");
+    await expect(prices.get("usd/eip155:1/slip44:60")).resolves.toBe('{"v":1}');
   });
 });

@@ -1,0 +1,6 @@
+{
+  "url": "https://api.coingecko.com/api/v3/simple/token_price/solana?contract_addresses=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true&precision=full",
+  "fetchedAt": "2026-11-18T08:34:11Z",
+  "status": 200,
+  "body": "{\"EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v\":{\"usd\":0.9995219440160916,\"usd_24h_change\":-0.015874309562979964,\"last_updated_at\":1794990833}}"
+}

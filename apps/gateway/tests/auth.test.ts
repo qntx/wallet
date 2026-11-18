@@ -6,10 +6,20 @@ import { networkById } from "@qntx/wallet-engine/gateway/contract";
 import { createGateway } from "../src/app.ts";
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import { bearer, blockstreamAuth, header } from "../src/providers/auth.ts";
-import { allowAll, call, fakeFetch, headers, memoryRiskStore, post, rpcOk } from "./helpers.ts";
+import {
+  allowAll,
+  call,
+  fakeFetch,
+  headers,
+  memoryPriceCache,
+  memoryRiskStore,
+  post,
+  rpcOk,
+} from "./helpers.ts";
 
 const limiters = { ip: allowAll, rpc: allowAll, default: allowAll };
 const risk = memoryRiskStore();
+const prices = { cache: memoryPriceCache() };
 
 const NET = {
   id: "eip155:11155111",
@@ -35,6 +45,7 @@ describe("upstream auth", () => {
       limiters,
       corsOrigins: [],
       risk,
+      prices,
       auth: { alchemy: bearer("k1"), blockstream: header("X-Auth", "k2") },
     });
     const r = await app.fetch(
@@ -65,6 +76,7 @@ describe("upstream auth", () => {
       limiters,
       corsOrigins: [],
       risk,
+      prices,
       auth: {
         alchemy: async () => {
           await Promise.resolve();
@@ -91,6 +103,7 @@ describe("upstream auth", () => {
         limiters,
         corsOrigins: [],
         risk,
+        prices,
         auth: {},
       }),
     ).toThrow('unconfigured auth "alchemy"');

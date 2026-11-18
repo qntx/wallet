@@ -4,7 +4,13 @@
  * Post-deploy smoke: health, the served network list, one real call per family per network. `bun
  * scripts/smoke.ts <baseUrl> <staging|production>` — exits non-zero listing every failure.
  */
-import { health } from "@qntx/wallet-engine/gateway/contract";
+import {
+  accepts,
+  health,
+  nativeAssetId,
+  prices,
+  pricesResponse,
+} from "@qntx/wallet-engine/gateway/contract";
 
 import { PRODUCTION_NETWORKS, STAGING_NETWORKS } from "../src/config/networks.ts";
 import { healthy, smokePlan } from "./smoke-plan.ts";
@@ -54,6 +60,31 @@ await check("networks", async () => {
     throw new Error(`served ${got.join(",")} != configured ${expected.join(",")}`);
   }
 });
+/* Prices are mainnet-only and independent of the served networks: both environments price the
+   same assets. Each currency proves a different provider path — USD reaches the keyless fallback
+   even without a CoinGecko key, EUR needs CoinGecko itself. */
+const priceAssets = ["bip122:000000000019d6689c085ae165831e93", "eip155:1"].map((network) => {
+  const id = nativeAssetId(network);
+  if (id === undefined) {
+    throw new Error(`${network} has no price asset`);
+  }
+  return id;
+});
+for (const currency of env === "production" ? ["usd", "eur"] : ["usd"]) {
+  await check(`prices ${currency}`, async () => {
+    const r = await post(prices.path, { currency, assets: priceAssets });
+    const body: unknown = await r.json();
+    if (!accepts(pricesResponse, body)) {
+      throw new Error(`status ${r.status}: ${JSON.stringify(body).slice(0, 120)}`);
+    }
+    const { missing } = body as { missing: string[] };
+    if (missing.length > 0) {
+      throw new Error(
+        `unpriced ${missing.join(",")} via ${String(r.headers.get("x-gateway-providers"))}`,
+      );
+    }
+  });
+}
 for (const { caip2, family } of plan) {
   if (family === "evm") {
     await check(`${caip2} eth_chainId`, async () => {

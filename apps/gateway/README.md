@@ -11,6 +11,7 @@ quote API keys — never wallet secrets — and signs — wallet data from it is
 | ↳ `eth_getLogs`                  | Bounded: one block by `blockHash`, a numbered range of at most 500 blocks, or tags that match or both name the head (`latest`/`pending`); at most 20 addresses and 20 alternatives per topic |
 | `GET\|POST /v1/esplora/:caip2/*` | Bitcoin Esplora: the engine's read paths plus `POST /tx`; bodies and content types pass through                                                                                              |
 | `GET /v1/risk/lists/phishing`    | The hashed phishing list: a snapshot, a net diff since `?since=<version>`, or `current`; `503 unavailable` before the first build                                                            |
+| `POST /v1/prices`                | Spot price and 24 h change of up to 100 CAIP-19 assets in one fiat currency; display-only (see "Prices")                                                                                     |
 
 Every other `/v1` request needs `x-client-id` (32 lowercase hex characters). Responses carry
 `x-gateway-providers` with the provider that served them. Errors are `{ "error": <code> }`:
@@ -41,6 +42,27 @@ a point read at 1, a VM run, proof or transaction relay at 3, and a scan (`eth_g
 programId-filtered `getTokenAccountsByOwner`) at 10, so one `eth_chainId` still costs 1 while a
 batch of 20 `eth_getLogs` costs 200. Esplora requests stay at one unit: every allow-listed path is
 bounded.
+
+## Prices
+
+`POST /v1/prices` takes `{ currency, assets }` — up to 100 distinct CAIP-19 ids in their canonical
+spelling (`<caip2>/slip44:<n>`, `eip155:<n>/erc20:<lowercase address>`,
+`solana:<ref>/token:<mint>`) — and answers `{ currency, prices, missing }`: every asset is either
+priced (`price` as a decimal string, `change24h` in percent or `null`, `updatedAt` in Unix ms) or
+`missing`. The asset set describes a portfolio, so it travels in the body and the answer is
+`no-store`. It costs one rate-limit unit per started 25 assets on the default limiter.
+
+Each asset is looked up in a per-asset Cache API entry (30 s, keyed by currency and asset, never by
+client), then asked of CoinGecko's Pro API (`COINGECKO_API_KEY`, sent as `x-cg-pro-api-key`), then
+of DefiLlama's keyless coins API for whatever is still unpriced (USD only; it reaches the long tail
+such as HyperEVM tokens, but prices major coins from CoinGecko itself, so it covers an outage, not a
+wrong answer). Provider numbers are turned into decimal strings from their shortest round-trip
+spelling and checked: positive, below 10^12, truncated to 18 decimals, updated at most 5 minutes
+ahead and at most a day ago; a 24 h change below -100 % or with more than six integer digits becomes
+`null`; DefiLlama quotes below confidence 0.9 are dropped. An asset is cached as `missing` only when
+every provider answered; when no asset could be priced and a provider failed, the route answers 503.
+Without a CoinGecko key (staging by default) only DefiLlama serves, so non-USD requests come back
+`missing`.
 
 ## Phishing list
 
@@ -138,12 +160,12 @@ isolate). The RN app sends no `Origin`, so `CORS_ORIGINS` is empty.
 Required secrets — set them **before** the first deploy, `wrangler deploy` refuses otherwise:
 
 ```bash
-for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY             BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET; do
+for NAME in ZEROX_API_KEY JUPITER_API_KEY ALCHEMY_API_KEY DRPC_API_KEY             BLOCKSTREAM_CLIENT_ID BLOCKSTREAM_CLIENT_SECRET COINGECKO_API_KEY; do
   bunx wrangler secret put "$NAME" --env production
 done
 ```
 
-(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional.)
+(`ZEROX_FEE_RECIPIENT`/`ZEROX_FEE_BPS` stay optional; staging may set `COINGECKO_API_KEY` too.)
 
 ## Deployment pipeline
 
