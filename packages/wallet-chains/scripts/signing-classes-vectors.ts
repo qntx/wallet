@@ -64,6 +64,14 @@ const blindBytes = "The wallet cannot show what this signs. Sign only if you ful
 const blindBytesZh = "钱包无法显示签署的内容。仅在完全信任该应用时签署。";
 const typedCaveat = "The wallet cannot verify what this signature authorises";
 const typedCaveatZh = "钱包无法核实此签名授权的内容";
+const typedCommitment =
+  "It signs only hashes or raw bytes; the wallet cannot see what they commit to";
+const typedCommitmentZh = "只签署哈希或原始字节；钱包无法看到它们所承诺的内容";
+const typedVariant =
+  "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets";
+const typedVariantZh = "钱包认识这类签名，但不认识这种形式；它可能授权转移资产";
+const typedOversize = "This typed data is too large to show in full";
+const typedOversizeZh = "此类型数据过大，无法完整显示";
 
 const p = (title: string, titleZh: string, en: string, zh: string) => ({
   en: { title, description: en },
@@ -93,6 +101,25 @@ const fields16Zh = leaves(16)
 
 const hash32 = `0x${"ab".repeat(32)}`;
 const bytes100 = "cd".repeat(100);
+const SAFE = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
+const GROUND_DIGEST = "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79";
+const hexText = `0x${"ab".repeat(32)}`;
+
+const seaportItemFields = [
+  { name: "itemType", type: "uint8" },
+  { name: "token", type: "address" },
+  { name: "identifierOrCriteria", type: "uint256" },
+  { name: "startAmount", type: "uint256" },
+  { name: "endAmount", type: "uint256" },
+];
+const seaportNativeItem = {
+  itemType: 0,
+  token: "0x0000000000000000000000000000000000000000",
+  identifierOrCriteria: "0",
+  startAmount: "1000000000000000000",
+  endAmount: "1000000000000000000",
+};
 
 const cases = [
   {
@@ -380,6 +407,147 @@ const cases = [
     verifiability: "opaque",
     blind: null,
     prompt: p("Confirm signature", "确认签名", "Message:\nhello world", "消息：\nhello world"),
+  },
+  {
+    name: "EIP-712 SafeMessage(bytes) (commitment)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeMessage: [{ name: "message", type: "bytes" }],
+      },
+      primaryType: "SafeMessage",
+      domain: { chainId: 1, verifyingContract: SAFE },
+      message: { message: hash32 },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-commitment",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${net}\nVerifying contract ${SAFE}\nType: SafeMessage\n${typedCommitment}\n${typedCaveat}\nmessage: ${hash32}`,
+      `${netZh}\n验证合约 ${SAFE}\n类型：SafeMessage\n${typedCommitmentZh}\n${typedCaveatZh}\nmessage：${hash32}`,
+    ),
+  },
+  {
+    name: "USDC TransferWithAuthorization (EIP-3009 near miss)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        TransferWithAuthorization: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "validAfter", type: "uint256" },
+          { name: "validBefore", type: "uint256" },
+          { name: "nonce", type: "bytes32" },
+        ],
+      },
+      primaryType: "TransferWithAuthorization",
+      domain: { name: "USD Coin", version: "2", chainId: 1, verifyingContract: USDC },
+      message: {
+        from: SIGNER,
+        to: OTHER,
+        value: "1000000",
+        validAfter: "0",
+        validBefore: "2000000000",
+        nonce: hash32,
+      },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: USD Coin\n${net}\nVerifying contract ${USDC}\nType: TransferWithAuthorization\n${typedVariant}\n${typedCaveat}\nfrom: ${SIGNER}\nto: ${OTHER}\nvalue: 1000000\nvalidAfter: 0\nvalidBefore: 2000000000\nnonce: ${hash32}`,
+      `应用：USD Coin\n${netZh}\n验证合约 ${USDC}\n类型：TransferWithAuthorization\n${typedVariantZh}\n${typedCaveatZh}\nfrom：${SIGNER}\nto：${OTHER}\nvalue：1000000\nvalidAfter：0\nvalidBefore：2000000000\nnonce：${hash32}`,
+    ),
+  },
+  {
+    name: "Seaport OrderComponents, five offers (over the prompt limit)",
+    request: typedData({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        OrderComponents: [
+          { name: "offerer", type: "address" },
+          { name: "zone", type: "address" },
+          { name: "offer", type: "OfferItem[]" },
+          { name: "consideration", type: "ConsiderationItem[]" },
+          { name: "orderType", type: "uint8" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "zoneHash", type: "bytes32" },
+          { name: "salt", type: "uint256" },
+          { name: "conduitKey", type: "bytes32" },
+          { name: "counter", type: "uint256" },
+        ],
+        OfferItem: seaportItemFields,
+        ConsiderationItem: [...seaportItemFields, { name: "recipient", type: "address" }],
+      },
+      primaryType: "OrderComponents",
+      domain: { name: "Seaport", version: "1.6", chainId: 1, verifyingContract: SEAPORT_16 },
+      message: {
+        offerer: SIGNER,
+        zone: "0x0000000000000000000000000000000000000000",
+        offer: Array.from({ length: 5 }, () => seaportNativeItem),
+        consideration: [
+          { ...seaportNativeItem, startAmount: "0", endAmount: "0", recipient: SIGNER },
+        ],
+        orderType: 0,
+        startTime: "1700000000",
+        endTime: "1700001000",
+        zoneHash: `0x${"00".repeat(32)}`,
+        salt: "1",
+        conduitKey: `0x${"00".repeat(32)}`,
+        counter: "0",
+      },
+    }),
+    verifiability: "opaque",
+    blind: "typed-data-oversize",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Seaport\n${net}\nVerifying contract ${SEAPORT_16}\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n${SIGNER} receives 0 ETH`,
+      `应用：Seaport\n${netZh}\n验证合约 ${SEAPORT_16}\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n${SIGNER} 收到 0 ETH`,
+    ),
+  },
+  {
+    name: "personal_sign 32-byte UTF-8 digest",
+    request: personal(`0x${GROUND_DIGEST}`),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${blindBytes}\nData 0x${GROUND_DIGEST}`,
+      `${blindBytesZh}\n数据 0x${GROUND_DIGEST}`,
+    ),
+  },
+  {
+    name: "personal_sign hex-rendered text",
+    request: personal(
+      `0x${[...utf8(hexText)].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+    ),
+    verifiability: "opaque",
+    blind: "message-bytes",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${blindBytes}\nMessage:\n${hexText}`,
+      `${blindBytesZh}\n消息：\n${hexText}`,
+    ),
   },
 ];
 

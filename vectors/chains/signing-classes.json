@@ -847,6 +847,409 @@
           "description": "消息：\nhello world"
         }
       }
+    },
+    {
+      "name": "EIP-712 SafeMessage(bytes) (commitment)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "SafeMessage": [
+              {
+                "name": "message",
+                "type": "bytes"
+              }
+            ]
+          },
+          "primaryType": "SafeMessage",
+          "domain": {
+            "chainId": 1,
+            "verifyingContract": "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52"
+          },
+          "message": {
+            "message": "0xabababababababababababababababababababababababababababababababab"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-commitment",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "Network: Ethereum\nVerifying contract 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\nType: SafeMessage\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nmessage: 0xabababababababababababababababababababababababababababababababab"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "网络：Ethereum\n验证合约 0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52\n类型：SafeMessage\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nmessage：0xabababababababababababababababababababababababababababababababab"
+        }
+      }
+    },
+    {
+      "name": "USDC TransferWithAuthorization (EIP-3009 near miss)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "TransferWithAuthorization": [
+              {
+                "name": "from",
+                "type": "address"
+              },
+              {
+                "name": "to",
+                "type": "address"
+              },
+              {
+                "name": "value",
+                "type": "uint256"
+              },
+              {
+                "name": "validAfter",
+                "type": "uint256"
+              },
+              {
+                "name": "validBefore",
+                "type": "uint256"
+              },
+              {
+                "name": "nonce",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "TransferWithAuthorization",
+          "domain": {
+            "name": "USD Coin",
+            "version": "2",
+            "chainId": 1,
+            "verifyingContract": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+          },
+          "message": {
+            "from": "0x2222222222222222222222222222222222222222",
+            "to": "0x00000000000000000000000000000000000BAd00",
+            "value": "1000000",
+            "validAfter": "0",
+            "validBefore": "2000000000",
+            "nonce": "0xabababababababababababababababababababababababababababababababab"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: USD Coin\nNetwork: Ethereum\nVerifying contract 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\nType: TransferWithAuthorization\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nfrom: 0x2222222222222222222222222222222222222222\nto: 0x00000000000000000000000000000000000BAd00\nvalue: 1000000\nvalidAfter: 0\nvalidBefore: 2000000000\nnonce: 0xabababababababababababababababababababababababababababababababab"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：USD Coin\n网络：Ethereum\n验证合约 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48\n类型：TransferWithAuthorization\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nfrom：0x2222222222222222222222222222222222222222\nto：0x00000000000000000000000000000000000BAd00\nvalue：1000000\nvalidAfter：0\nvalidBefore：2000000000\nnonce：0xabababababababababababababababababababababababababababababababab"
+        }
+      }
+    },
+    {
+      "name": "Seaport OrderComponents, five offers (over the prompt limit)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "OrderComponents": [
+              {
+                "name": "offerer",
+                "type": "address"
+              },
+              {
+                "name": "zone",
+                "type": "address"
+              },
+              {
+                "name": "offer",
+                "type": "OfferItem[]"
+              },
+              {
+                "name": "consideration",
+                "type": "ConsiderationItem[]"
+              },
+              {
+                "name": "orderType",
+                "type": "uint8"
+              },
+              {
+                "name": "startTime",
+                "type": "uint256"
+              },
+              {
+                "name": "endTime",
+                "type": "uint256"
+              },
+              {
+                "name": "zoneHash",
+                "type": "bytes32"
+              },
+              {
+                "name": "salt",
+                "type": "uint256"
+              },
+              {
+                "name": "conduitKey",
+                "type": "bytes32"
+              },
+              {
+                "name": "counter",
+                "type": "uint256"
+              }
+            ],
+            "OfferItem": [
+              {
+                "name": "itemType",
+                "type": "uint8"
+              },
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "identifierOrCriteria",
+                "type": "uint256"
+              },
+              {
+                "name": "startAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "endAmount",
+                "type": "uint256"
+              }
+            ],
+            "ConsiderationItem": [
+              {
+                "name": "itemType",
+                "type": "uint8"
+              },
+              {
+                "name": "token",
+                "type": "address"
+              },
+              {
+                "name": "identifierOrCriteria",
+                "type": "uint256"
+              },
+              {
+                "name": "startAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "endAmount",
+                "type": "uint256"
+              },
+              {
+                "name": "recipient",
+                "type": "address"
+              }
+            ]
+          },
+          "primaryType": "OrderComponents",
+          "domain": {
+            "name": "Seaport",
+            "version": "1.6",
+            "chainId": 1,
+            "verifyingContract": "0x0000000000000068F116a894984e2DB1123eB395"
+          },
+          "message": {
+            "offerer": "0x2222222222222222222222222222222222222222",
+            "zone": "0x0000000000000000000000000000000000000000",
+            "offer": [
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              },
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "1000000000000000000",
+                "endAmount": "1000000000000000000"
+              }
+            ],
+            "consideration": [
+              {
+                "itemType": 0,
+                "token": "0x0000000000000000000000000000000000000000",
+                "identifierOrCriteria": "0",
+                "startAmount": "0",
+                "endAmount": "0",
+                "recipient": "0x2222222222222222222222222222222222222222"
+              }
+            ],
+            "orderType": 0,
+            "startTime": "1700000000",
+            "endTime": "1700001000",
+            "zoneHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "salt": "1",
+            "conduitKey": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "counter": "0"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-oversize",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Seaport\nNetwork: Ethereum\nVerifying contract 0x0000000000000068F116a894984e2DB1123eB395\nType: OrderComponents\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n… 1 more items not shown\n0x2222222222222222222222222222222222222222 receives 0 ETH"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Seaport\n网络：Ethereum\n验证合约 0x0000000000000068F116a894984e2DB1123eB395\n类型：OrderComponents\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n付出 1 ETH\n… 还有 1 项未显示\n0x2222222222222222222222222222222222222222 收到 0 ETH"
+        }
+      }
+    },
+    {
+      "name": "personal_sign 32-byte UTF-8 digest",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n数据 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"
+        }
+      }
+    },
+    {
+      "name": "personal_sign hex-rendered text",
+      "request": {
+        "kind": "evm.personal-message",
+        "network": "eip155:1",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "message": {
+          "$bytes": "0x307861626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162616261626162"
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "message-bytes",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "The wallet cannot show what this signs. Sign only if you fully trust the app.\nMessage:\n0xabababababababababababababababababababababababababababababababab"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n0xabababababababababababababababababababababababababababababababab"
+        }
+      }
     }
   ]
 }
