@@ -10,16 +10,25 @@ export { ConnectionController } from "./connect/controller.ts";
 export type {
   AccountGroup as ConnectionAccountGroup,
   ConnectionOrigin,
+  ConnectionRequest,
   ConnectionScope,
   ConnectionSession,
   ConnectionState,
+  LightningPolicy,
+  NostrPolicy,
   PendingConnection,
+  SessionAccounts,
 } from "./connect/controller.ts";
+export type { BitcoinWalletHandler } from "./connect/bitcoin.ts";
+export type { Nip07Handler } from "./connect/nip07.ts";
+export type { SolanaWalletHandler } from "./connect/solana.ts";
+export type { WeblnHandler } from "./connect/webln.ts";
 export { Eip1193Handler } from "./connect/eip1193.ts";
 export type { Eip1193Event, Eip1193Request } from "./connect/eip1193.ts";
 export { ProviderError } from "./connect/errors.ts";
 export { AssetsController } from "./assets/controller.ts";
-export type { AccountBalances, TokenBalance } from "./assets/controller.ts";
+export type { AccountBalances, AssetsControllerState, TokenBalance } from "./assets/controller.ts";
+export type { SpamReason } from "./assets/spam.ts";
 export type { BitcoinSourceKey, BitcoinTotals, BitcoinUtxoView } from "./assets/bitcoin.ts";
 export { PRICES_POLL_MS, PricesController } from "./prices/controller.ts";
 export type {
@@ -55,8 +64,17 @@ export {
 } from "./requests/controller.ts";
 export type {
   ApproveOptions,
+  BitcoinAccount,
+  BitcoinDisplay,
+  BitcoinGroup,
+  BitcoinSignInput,
+  BitcoinSignResult,
   BrowserOrigin,
   EvmSignInput,
+  LightningInvoiceDisplay,
+  NostrDisplay,
+  NostrSignInput,
+  NostrSignResult,
   PayInput,
   PendingRequest,
   RequestAcknowledgement,
@@ -65,16 +83,61 @@ export type {
   RequestMethod,
   RequestControllerState,
   RequestOrigin,
+  RequestResult,
   RequestStage,
   RiskFinding,
+  SolanaDisplay,
+  SolanaSignInput,
+  SolanaSignResult,
   SparkDepositInput,
   SparkExitInput,
   SignatureResult,
   SignLogEntry,
   SignLogOutcome,
+  TokenWatchDisplay,
+  TokenWatchResult,
+  WatchAssetInput,
+  WeblnInvoiceInput,
+  WeblnInvoiceResult,
+  ZapInput,
 } from "./requests/controller.ts";
+export type { AssetChange, SimulationOutcome } from "./requests/simulation.ts";
+export type {
+  AccountRef,
+  ChainRequestInput,
+  ChainRequestMethod,
+  PrepareParams,
+  SendParams,
+  TrackedTransaction,
+  TransactionController,
+  TransactionControllerState,
+  TxState,
+} from "./transactions/controller.ts";
+export type { DelegationStatus, DisplayIntent, SparkDepositTag } from "./transactions/route.ts";
+export type { EvmFeeTier } from "./chains/evm.ts";
+export type { SolanaFeeTier } from "./chains/solana.ts";
+export type { BitcoinPsbtInput, BitcoinSigHash, SolanaAccount } from "./requests/types.ts";
+export type { SignInFields } from "./connect/siws.ts";
+export type {
+  NetworkController,
+  NetworkControllerState,
+  SolanaRpc,
+} from "./networks/controller.ts";
+export type { NetworkInfo } from "./networks/registry.ts";
+export type { Esplora } from "./chains/bitcoin.ts";
+export type { EnsResolution } from "./names/ens.ts";
+export type { LidoPosition, LidoWithdrawalRequest } from "./lido/index.ts";
+export type { StakePosition, StakeValidator } from "./staking/index.ts";
+export type {
+  JupiterInstruction,
+  JupiterSwapQuote,
+  SwapQuote,
+  ZeroExSwapQuote,
+} from "./swaps/index.ts";
+export type { AcrossBridgeQuote, AcrossBridgeStatus } from "./swaps/bridge.ts";
+export type { WatchAccount } from "./accounts/watch.ts";
 export { createWalletEngine } from "./engine.ts";
-export type { EngineOptions, WalletEngine } from "./engine.ts";
+export type { EngineOptions, HostController, ReadonlyStore, WalletEngine } from "./engine.ts";
 export { BackupController } from "./backup/controller.ts";
 export type { BackupControllerState } from "./backup/controller.ts";
 export { BackupControllerError } from "./backup/errors.ts";
@@ -89,11 +152,13 @@ export type {
   SparkClientFactory,
   SparkControllerOptions,
   SparkControllerState,
+  SparkTokenBalance,
 } from "./spark/controller.ts";
 export { SparkControllerError } from "./spark/errors.ts";
 export { AccountTreeError } from "./accounts/errors.ts";
 export { AccountTreeController } from "./accounts/controller.ts";
 export type { AccountGroup, AccountTreeState } from "./accounts/controller.ts";
+export type { AccountTreeErrorCategory } from "./accounts/errors.ts";
 export { MetaSyncController } from "./meta/controller.ts";
 export type {
   MetaSyncConfig,
@@ -102,8 +167,10 @@ export type {
   MetaSyncWalletStatus,
 } from "./meta/controller.ts";
 export { MetaSyncError } from "./meta/errors.ts";
+export type { MetaSyncErrorCategory } from "./meta/errors.ts";
 export type { MetaDoc, MetaDocGroup, MetaDocTree, MetaDocWallet } from "./meta/doc.ts";
 export { PaymentError } from "./payments/errors.ts";
+export type { PaymentErrorCategory } from "./payments/errors.ts";
 export { parsePayment, resolvePayment } from "./payments/index.ts";
 export type {
   PayParams,
@@ -112,7 +179,13 @@ export type {
   SparkResult,
   WithdrawLnurlParams,
 } from "./payments/index.ts";
-export type { PaymentOption, PaymentParse, PaymentRequest } from "./payments/parse.ts";
+export type {
+  ParseOptions,
+  PaymentOption,
+  PaymentParse,
+  PaymentRequest,
+} from "./payments/parse.ts";
+export type { ResolveOptions } from "./payments/resolve.ts";
 export type { SparkErrorCategory } from "./spark/errors.ts";
 export { sparkStore } from "./spark/store.ts";
 export type { PaymentNote, SparkActivity } from "./spark/notes.ts";
@@ -126,4 +199,5 @@ export type {
 } from "./payments/zap.ts";
 export { HistoryController } from "./history/controller.ts";
 export type { GroupHistory, HistoryControllerOptions, HistoryState } from "./history/controller.ts";
+export type { HistoryGroup } from "./history/local.ts";
 export type { HistoryChange, HistoryEntry, HistoryFlag, HistoryStatus } from "./history/types.ts";

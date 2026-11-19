@@ -43,11 +43,13 @@ export type SparkAccountState = {
   /** First history page (20 entries, newest first), refreshed alongside the balance. */
   readonly recent?: ReadonlyArray<SparkActivity>;
   /** Token balances in base units, refreshed alongside `recent`; absent until the first read. */
-  readonly tokens?: ReadonlyArray<{
-    readonly tokenIdentifier: string;
-    readonly amount: string;
-    readonly outputCount: number;
-  }>;
+  readonly tokens?: ReadonlyArray<SparkTokenBalance>;
+};
+
+export type SparkTokenBalance = {
+  readonly tokenIdentifier: string;
+  readonly amount: string;
+  readonly outputCount: number;
 };
 
 export type SparkControllerState = {
