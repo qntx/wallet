@@ -52,7 +52,8 @@ const fetchPage = async (es: Esplora, hash: string, after?: string): Promise<Esp
 };
 
 /**
- * The group's view of one Esplora transaction — read from the indexer, so `verified` is true.
+ * The group's view of one Esplora transaction — `verified` only when the read went to a host
+ * indexer (`trusted`); a gateway-routed Esplora feed stays unverified.
  * Netting the wallet's own inputs and outputs decides direction; a send is only "out" when the net
  * outflow exceeds the fee the wallet provably paid (every input its own).
  */
@@ -60,6 +61,7 @@ export const bitcoinEntry = (
   network: string,
   own: ReadonlySet<string>,
   tx: EsploraTx,
+  trusted: boolean,
 ): HistoryEntry => {
   let ownIn = 0n;
   for (const vin of tx.vin) {
@@ -129,12 +131,16 @@ export const bitcoinEntry = (
     status: tx.status.confirmed ? "confirmed" : "pending",
     ...(tx.status.block_time === undefined ? {} : { timestamp: tx.status.block_time * 1000 }),
     ...(tx.status.block_height === undefined ? {} : { block: tx.status.block_height }),
-    verified: true,
+    verified: trusted,
     origin: "chain",
     flags: [],
   };
 };
 
+/**
+ * `trusted` is false when the only reachable indexer is the gateway — scanned entries then stay
+ * unverified.
+ */
 export type BitcoinHistoryDeps = {
   readonly esplora: (network: string) => Esplora;
   readonly account: (params: {
@@ -143,6 +149,7 @@ export type BitcoinHistoryDeps = {
     readonly template: BitcoinAccountTemplate;
     readonly network: string;
   }) => Promise<{ readonly address?: string; readonly xpub?: string }>;
+  readonly trusted: boolean;
 };
 
 export type BitcoinHistoryScan = {
@@ -206,7 +213,7 @@ export const bitcoinHistoryScan = async (
       chainPages += 1;
     }
   }
-  const entries = txs.map((tx) => bitcoinEntry(network, own, tx));
+  const entries = txs.map((tx) => bitcoinEntry(network, own, tx, options.trusted));
   entries.sort(
     (a, b) => (b.timestamp ?? Number.MAX_SAFE_INTEGER) - (a.timestamp ?? Number.MAX_SAFE_INTEGER),
   );

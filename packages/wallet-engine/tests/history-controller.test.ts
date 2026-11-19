@@ -69,6 +69,9 @@ const make = (options: {
   readonly txs?: Record<string, unknown>;
   readonly book?: Record<string, unknown>;
   readonly solana?: boolean;
+  readonly solanaRpc?: { readonly call: (method: string, params: unknown[]) => Promise<unknown> };
+  readonly solanaIndependent?: unknown;
+  readonly evmIndependent?: "available" | "unavailable" | "not-needed";
   readonly store?: EngineStore;
   readonly failAccounts?: boolean;
   /** Gateway requests carrying one of these `address`es hang until `respond()`. */
@@ -108,13 +111,19 @@ const make = (options: {
   );
   const client = {
     transport: {
-      request: async ({ params }: { params: unknown[] }) => {
+      request: async ({ method, params }: { method: string; params: unknown[] }) => {
+        if (method === "eth_getTransactionByHash") {
+          const block = blockOf.get(params[0] as string);
+          return Promise.resolve(
+            block === undefined ? null : { from: OTHER, to: OWNER, value: "0x0" },
+          );
+        }
         const block = blockOf.get(params[0] as string);
         return Promise.resolve(block === undefined ? null : receipt(block));
       },
     },
   };
-  const solanaRpc = {
+  const solanaRpc = options.solanaRpc ?? {
     call: async () => Promise.reject(new Error("solana node down")),
   };
   const controller = new HistoryController({
@@ -126,7 +135,12 @@ const make = (options: {
             ? [SOL_NET]
             : [],
       client: () => client,
-      independentClient: () => ({ kind: "unavailable" }),
+      independentClient: () =>
+        options.evmIndependent === "available"
+          ? { kind: "available", client }
+          : { kind: options.evmIndependent ?? "unavailable" },
+      independentSolanaRpc: () => options.solanaIndependent ?? { kind: "unavailable" },
+      independentEsplora: () => ({ kind: "unavailable" }),
       solanaRpc: () => solanaRpc,
       esplora: () => ({ get: async () => Promise.reject(new Error("unmocked")) }),
     },
@@ -390,6 +404,105 @@ describe("HistoryController", () => {
     expect(group?.entries).toHaveLength(1);
     expect(group?.errors[SOL_NET]).toContain("solana node down");
     controller.lock();
+  });
+
+  it("verifies a fully checkable claim only when the check ran on a host endpoint", async () => {
+    const nativePage = {
+      items: [
+        {
+          hash: hash("ab"),
+          block: "100",
+          timestamp: 1700000000000,
+          transfers: [
+            {
+              kind: "native",
+              from: OTHER,
+              to: OWNER,
+              contract: null,
+              tokenId: null,
+              amount: "0",
+              decimals: null,
+              symbol: null,
+              logIndex: null,
+            },
+          ],
+        },
+      ],
+      cursor: null,
+    };
+    const trusted = make({ page: nativePage, evmIndependent: "available" });
+    await trusted.controller.init();
+    await trusted.controller.load(GROUP);
+    expect(trusted.controller.getState().groups["w:0"]?.entries[0]?.verified).toBe(true);
+    trusted.controller.lock();
+
+    const untrusted = make({ page: nativePage });
+    await untrusted.controller.init();
+    await untrusted.controller.load(GROUP);
+    expect(untrusted.controller.getState().groups["w:0"]?.entries[0]?.verified).toBe(false);
+    untrusted.controller.lock();
+  });
+
+  it("verifies a solana entry only when the read went to a host endpoint", async () => {
+    const solanaRpcOf = () => ({
+      call: (method: string): Promise<unknown> => {
+        if (method === "getTokenAccountsByOwner") {
+          return Promise.resolve({ value: [] });
+        }
+        if (method === "getSignaturesForAddress") {
+          return Promise.resolve([
+            { signature: "solsig", slot: 1, blockTime: 1700000000, err: null },
+          ]);
+        }
+        if (method === "getTransaction") {
+          return Promise.resolve({
+            slot: 1,
+            blockTime: 1700000000,
+            meta: {
+              err: null,
+              fee: 5000,
+              preBalances: [1_000_000, 0],
+              postBalances: [995_000, 100],
+              preTokenBalances: [],
+              postTokenBalances: [],
+              innerInstructions: [],
+            },
+            transaction: {
+              message: {
+                accountKeys: [
+                  { pubkey: "PayerAcct11111111111111111111111111111111" },
+                  { pubkey: "SolOwner111111111111111111111111111111111" },
+                ],
+                instructions: [],
+              },
+            },
+          });
+        }
+        return Promise.reject(new Error(`unmocked ${method}`));
+      },
+    });
+    const untrusted = make({ solana: true, solanaRpc: solanaRpcOf() });
+    await untrusted.controller.init();
+    await untrusted.controller.load(GROUP);
+    const viaGateway = untrusted.controller
+      .getState()
+      .groups["w:0"]?.entries.find((e) => e.family === "solana");
+    expect(viaGateway?.verified).toBe(false);
+    untrusted.controller.lock();
+
+    const rpc = solanaRpcOf();
+    const trusted = make({
+      solana: true,
+      solanaRpc: rpc,
+      solanaIndependent: { kind: "available", client: rpc },
+    });
+    await trusted.controller.init();
+    await trusted.controller.load(GROUP);
+    const viaHost = trusted.controller
+      .getState()
+      .groups["w:0"]?.entries.find((e) => e.family === "solana");
+    expect(viaHost?.verified).toBe(true);
+    trusted.controller.lock();
   });
 
   it("loadMore appends older entries, preserving the first-page prefix", async () => {

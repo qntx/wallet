@@ -44,7 +44,13 @@ export type HistoryState = {
 export type HistoryControllerOptions = {
   readonly networks: Pick<
     NetworkController,
-    "enabled" | "client" | "independentClient" | "solanaRpc" | "esplora"
+    | "enabled"
+    | "client"
+    | "independentClient"
+    | "independentSolanaRpc"
+    | "independentEsplora"
+    | "solanaRpc"
+    | "esplora"
   >;
   readonly chains: {
     readonly account: (params: {
@@ -388,9 +394,18 @@ export class HistoryController extends Controller<HistoryState> {
     }
     if (own.solana !== undefined) {
       for (const network of networks.enabled("solana")) {
+        const independent = networks.independentSolanaRpc(network);
         streams.push(
           solanaHistoryStream(
-            { rpc: networks.solanaRpc(network), network, owner: own.solana },
+            {
+              rpc:
+                independent.kind === "available"
+                  ? independent.client
+                  : networks.solanaRpc(network),
+              network,
+              owner: own.solana,
+              trusted: independent.kind !== "unavailable",
+            },
             (id, error) => {
               runtime.errors[id] = errorMessage(error);
             },
@@ -399,11 +414,16 @@ export class HistoryController extends Controller<HistoryState> {
       }
     }
     for (const network of networks.enabled("bitcoin")) {
+      const independent = networks.independentEsplora(network);
       streams.push(
         bitcoinHistoryStream(
           {
-            esplora: (n) => networks.esplora(n),
+            esplora:
+              independent.kind === "available"
+                ? () => independent.client
+                : (n) => networks.esplora(n),
             account: async (params) => this.options.chains.account(params),
+            trusted: independent.kind !== "unavailable",
           },
           network,
           group,

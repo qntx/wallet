@@ -256,6 +256,10 @@ const transferCheck = (receipt: Receipt, tx: Tx | undefined, t: HistoryTransfer)
     return UNCHECKABLE;
   }
   if (t.kind === "native") {
+    // No tx object means the native leg cannot be proven either way — unverifiable, not a lie.
+    if (tx === undefined) {
+      return UNCHECKABLE;
+    }
     return nativeCheck(tx, t) ? MATCH : MISMATCH;
   }
   if (t.contract === null || t.logIndex === null) {
@@ -293,11 +297,120 @@ const mapPool = async <T, R>(items: ReadonlyArray<T>, n: number, run: (t: T) => 
   return out;
 };
 
+/**
+ * One wallet-touching movement the chain proves: a token leg pinned to its log index (plus the
+ * token id inside an ERC-1155 batch), or the tx's native value leg.
+ */
+type OwnMove =
+  | { readonly kind: "erc20" | "erc721"; readonly logIndex: bigint }
+  | { readonly kind: "erc1155"; readonly logIndex: bigint; readonly tokenId: bigint }
+  | { readonly kind: "native" };
+
+/**
+ * Every movement that touched the wallet in this transaction, decoded from the receipt's logs and
+ * the tx's native value — the completeness oracle the provider's transfer list is checked against.
+ * `provable` is false when the tx object did not arrive or a log carries no pinned index, in which
+ * case a movement could be hiding and the entry must not be called verified.
+ */
+const ownMovements = (
+  receipt: Receipt,
+  tx: Tx | undefined,
+  address: string,
+): { readonly moves: ReadonlyArray<OwnMove>; readonly provable: boolean } => {
+  const moves: OwnMove[] = [];
+  let provable = tx !== undefined;
+  const touches = (from: unknown, to: unknown): boolean =>
+    sameAddress(from, address) !== sameAddress(to, address);
+  for (const log of receipt.logs) {
+    if (log.logIndex === undefined || log.logIndex === null) {
+      provable = false;
+      continue;
+    }
+    const logIndex = BigInt(log.logIndex);
+    if (log.topics.length === 3) {
+      const event = decode(erc20Abi, log);
+      if (event?.eventName === "Transfer" && touches(event.args["from"], event.args["to"])) {
+        moves.push({ kind: "erc20", logIndex });
+      }
+      continue;
+    }
+    if (log.topics.length !== 4) {
+      continue;
+    }
+    const multi = decode(erc1155Abi, log);
+    if (multi?.eventName === "TransferSingle" && touches(multi.args["from"], multi.args["to"])) {
+      const tokenId = multi.args["id"];
+      if (typeof tokenId === "bigint") {
+        moves.push({ kind: "erc1155", logIndex, tokenId });
+      } else {
+        provable = false;
+      }
+      continue;
+    }
+    if (multi?.eventName === "TransferBatch" && touches(multi.args["from"], multi.args["to"])) {
+      const tokenIds = multi.args["ids"];
+      if (Array.isArray(tokenIds) && tokenIds.every((id): id is bigint => typeof id === "bigint")) {
+        for (const tokenId of tokenIds) {
+          moves.push({ kind: "erc1155", logIndex, tokenId });
+        }
+      } else {
+        provable = false;
+      }
+      continue;
+    }
+    const event = decode(erc721Abi, log);
+    if (event?.eventName === "Transfer" && touches(event.args["from"], event.args["to"])) {
+      moves.push({ kind: "erc721", logIndex });
+    }
+  }
+  if (
+    tx !== undefined &&
+    receipt.status !== "0x0" &&
+    BigInt(tx.value) > 0n &&
+    touches(tx.from, tx.to)
+  ) {
+    moves.push({ kind: "native" });
+  }
+  return { moves, provable };
+};
+
+/**
+ * Whether the provider's transfer list accounts for `move`: same kind pinned at the same log index
+ * (plus the same token id inside an ERC-1155 batch), or a native claim matching the tx's legs.
+ */
+const claimedMove = (
+  move: OwnMove,
+  transfers: ReadonlyArray<HistoryTransfer>,
+  tx: Tx | undefined,
+): boolean =>
+  transfers.some((t) => {
+    if (move.kind === "native") {
+      return (
+        t.kind === "native" &&
+        tx !== undefined &&
+        sameAddress(t.from, tx.from) &&
+        sameAddress(t.to, tx.to)
+      );
+    }
+    if (t.kind !== move.kind || t.logIndex === null || BigInt(t.logIndex) !== move.logIndex) {
+      return false;
+    }
+    return move.kind !== "erc1155" || (t.tokenId !== null && BigInt(t.tokenId) === move.tokenId);
+  });
+
+/**
+ * Verifies the provider's claims against the chain: each claimed transfer is matched to its pinned
+ * receipt log or to the tx's native movement, and every wallet-touching movement the chain proves
+ * must in turn be claimed — an omitted leg is `chain-mismatch`. A failed tx fetch, an unpinned
+ * log, or an uncheckable claim (internal legs or missing data) leaves the entry unverified;
+ * `trusted` is the caller's evidence that the reads went to a host endpoint.
+ */
 const verifyEntry = async (
   client: PublicClient,
   address: string,
   entry: HistoryEntry,
   item: HistoryItem,
+  trusted: boolean,
 ): Promise<HistoryEntry> => {
   let parsed: unknown;
   try {
@@ -321,13 +434,12 @@ const verifyEntry = async (
   }
   let uncheckable = false;
   let tx: Tx | undefined;
-  const needsTx = item.transfers.some((t) => t.kind === "native");
-  if (needsTx) {
-    try {
-      tx = parseWith(txSchema, await requestJson(client, "eth_getTransactionByHash", [item.hash]));
-    } catch {
-      tx = undefined;
-    }
+  try {
+    // The tx object is the completeness oracle for native value, so it is fetched whenever the
+    // transaction could have touched the wallet — not only when the provider claims a native leg.
+    tx = parseWith(txSchema, await requestJson(client, "eth_getTransactionByHash", [item.hash]));
+  } catch {
+    tx = undefined;
   }
   for (const t of item.transfers) {
     const check = transferCheck(receipt, tx, t);
@@ -335,6 +447,12 @@ const verifyEntry = async (
       return mismatch();
     }
     uncheckable ||= !check.checkable;
+  }
+  const { moves, provable } = ownMovements(receipt, tx, address);
+  for (const move of moves) {
+    if (!claimedMove(move, item.transfers, tx)) {
+      return mismatch();
+    }
   }
   const fee = sameAddress(receipt.from, address)
     ? (
@@ -345,7 +463,7 @@ const verifyEntry = async (
   return {
     ...entry,
     status: receipt.status === "0x0" ? "failed" : "confirmed",
-    verified: !uncheckable,
+    verified: trusted && !uncheckable && provable,
     ...(fee === undefined ? {} : { fee }),
     flags: [...flags],
   };
@@ -357,7 +475,8 @@ export type EvmHistoryCache = ReadonlyMap<string, HistoryEntry>;
 /**
  * One history stream for a gateway-first EVM network. Each page is checked against the chain itself
  * — the host endpoint when the network has one (independent), the ordered endpoint list otherwise —
- * before `verified` may be true.
+ * and `verified` additionally requires the reads to have gone to that host endpoint; when the only
+ * reachable client is the gateway itself, entries stay unverified.
  */
 export const evmHistoryStream = (
   options: EvmHistoryDeps,
@@ -372,6 +491,7 @@ export const evmHistoryStream = (
   const independent = options.networks.independentClient(network);
   const client =
     independent.kind === "available" ? independent.client : options.networks.client(network);
+  const trusted = independent.kind !== "unavailable";
   const gatewayBase = options.gateway.url.replace(/\/+$/, "");
   let cursor: string | undefined;
   let done = false;
@@ -416,7 +536,7 @@ export const evmHistoryStream = (
           if (hit !== undefined && hit.verified && hit.block === entry.block) {
             return hit;
           }
-          return verifyEntry(client, address, entry, item);
+          return verifyEntry(client, address, entry, item, trusted);
         });
         return { items, done };
       } finally {

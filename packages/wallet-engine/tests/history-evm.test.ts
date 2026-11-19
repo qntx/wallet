@@ -58,7 +58,7 @@ const stream = (options: {
       gateway: { url: "https://gateway.test", fetch },
       networks: {
         client: () => options.client,
-        independentClient: () => options.independent ?? { kind: "unavailable" },
+        independentClient: () => options.independent ?? { kind: "not-needed" },
       },
       setTimer: () => () => {},
     } as never,
@@ -307,6 +307,220 @@ describe("evmHistoryStream verification", () => {
     const e = entryOf(items, hash);
     expect(e?.flags).toContain("token-impersonation");
     expect(e?.flags).toContain("suspicious-token-symbol");
+  });
+});
+
+describe("evm history completeness", () => {
+  const ATTACKER = "0x3333333333333333333333333333333333333333";
+  const ROUTER = "0x4444444444444444444444444444444444444444";
+  const TOKEN_A = "0x1111111111111111111111111111111111111111";
+  const TOKEN_B = "0x2222222222222222222222222222222222222222";
+  const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+  const BATCH_TOPIC = "0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595d983b8c0526c8f7fb";
+
+  const addrTopic = (a: string) => `0x000000000000000000000000${a.slice(2).toLowerCase()}`;
+  const word = (v: bigint) => v.toString(16).padStart(64, "0");
+
+  const erc20Log = (contract: string, from: string, to: string, amount: string, index: number) => ({
+    address: contract,
+    topics: [TRANSFER_TOPIC, addrTopic(from), addrTopic(to)],
+    data: `0x${word(BigInt(amount))}`,
+    logIndex: `0x${index.toString(16)}`,
+  });
+
+  const batchLog = (
+    contract: string,
+    from: string,
+    to: string,
+    ids: ReadonlyArray<bigint>,
+    values: ReadonlyArray<bigint>,
+    index: number,
+  ) => ({
+    address: contract,
+    topics: [BATCH_TOPIC, addrTopic(ROUTER), addrTopic(from), addrTopic(to)],
+    data: `0x${[
+      word(0x40n),
+      word(BigInt(96 + ids.length * 32)),
+      word(BigInt(ids.length)),
+      ...ids.map(word),
+      word(BigInt(values.length)),
+      ...values.map(word),
+    ].join("")}`,
+    logIndex: `0x${index.toString(16)}`,
+  });
+
+  const receiptOf = (from: string, block: number, logs: unknown[]) => ({
+    blockNumber: `0x${block.toString(16)}`,
+    status: "0x1",
+    from,
+    to: ROUTER,
+    gasUsed: "0x5208",
+    effectiveGasPrice: "0x3b9aca00",
+    logs,
+  });
+
+  const txOf = (from: string, to: string, value: bigint) => ({
+    from,
+    to,
+    value: `0x${value.toString(16)}`,
+  });
+
+  const transfer = (
+    over: Partial<HistoryItem["transfers"][number]> & {
+      readonly kind: string;
+      readonly from: string;
+      readonly to: string;
+    },
+  ): HistoryItem["transfers"][number] => ({
+    contract: null,
+    tokenId: null,
+    amount: "0",
+    decimals: null,
+    symbol: null,
+    logIndex: null,
+    ...over,
+  }) as HistoryItem["transfers"][number];
+
+  const erc20In = (contract: string, amount: string, logIndex: number) =>
+    transfer({ kind: "erc20", from: ATTACKER, to: OWNER, contract, amount, logIndex });
+
+  const verify = (hash: string, block: number, transfers: HistoryItem["transfers"], calls: RpcCall[] = []) =>
+    stream({
+      network: "eip155:1",
+      page: page([item(hash, block, transfers)]),
+      client: rpcClient("eip155:1", calls),
+    });
+
+  it("flags chain-mismatch when the receipt proves an outflow the provider omitted", async () => {
+    const hash = `0x${"aa".repeat(32)}`;
+    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
+      receipt: receiptOf(ATTACKER, 0x1937400, [
+        erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
+        erc20Log(TOKEN_B, OWNER, ATTACKER, "500", 1),
+      ]),
+      tx: txOf(ATTACKER, ROUTER, 0n),
+    }};
+    const { stream: s } = verify(hash, 0x1937400, [erc20In(TOKEN_A, "1000", 0)]);
+    const { items } = await s.next();
+    const e = entryOf(items, hash);
+    expect(e?.verified).toBe(false);
+    expect(e?.flags).toContain("chain-mismatch");
+  });
+
+  it("fetches the tx object without a native claim and flags an omitted native outflow", async () => {
+    const calls: RpcCall[] = [];
+    const hash = `0x${"bb".repeat(32)}`;
+    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
+      receipt: receiptOf(OWNER, 0x1937401, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
+      tx: txOf(OWNER, ATTACKER, 0xde0b6b3a7640000n),
+    }};
+    const { stream: s } = verify(hash, 0x1937401, [erc20In(TOKEN_A, "1000", 0)], calls);
+    const { items } = await s.next();
+    const e = entryOf(items, hash);
+    expect(e?.verified).toBe(false);
+    expect(e?.flags).toContain("chain-mismatch");
+    expect(calls.map((c) => c.method)).toContain("eth_getTransactionByHash");
+  });
+
+  it("verifies an entry whose claim covers every wallet-touching movement", async () => {
+    const hash = `0x${"cc".repeat(32)}`;
+    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
+      receipt: receiptOf(ATTACKER, 0x1937402, [
+        erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
+        erc20Log(TOKEN_B, OWNER, ATTACKER, "500", 1),
+      ]),
+      tx: txOf(ATTACKER, ROUTER, 0n),
+    }};
+    const { stream: s } = verify(hash, 0x1937402, [
+      erc20In(TOKEN_A, "1000", 0),
+      transfer({
+        kind: "erc20",
+        from: OWNER,
+        to: ATTACKER,
+        contract: TOKEN_B,
+        amount: "500",
+        logIndex: 1,
+      }),
+    ]);
+    const { items } = await s.next();
+    expect(entryOf(items, hash)?.verified).toBe(true);
+  });
+
+  it("flags an unclaimed id inside an erc1155 batch the provider listed only once", async () => {
+    const hash = `0x${"dd".repeat(32)}`;
+    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
+      receipt: receiptOf(ATTACKER, 0x1937403, [
+        batchLog(TOKEN_A, ATTACKER, OWNER, [7n, 8n], [1n, 1n], 0),
+      ]),
+      tx: txOf(ATTACKER, ROUTER, 0n),
+    }};
+    const { stream: s } = verify(hash, 0x1937403, [
+      transfer({
+        kind: "erc1155",
+        from: ATTACKER,
+        to: OWNER,
+        contract: TOKEN_A,
+        tokenId: "7",
+        amount: "1",
+        logIndex: 0,
+      }),
+    ]);
+    const { items } = await s.next();
+    const e = entryOf(items, hash);
+    expect(e?.verified).toBe(false);
+    expect(e?.flags).toContain("chain-mismatch");
+  });
+
+  it("leaves entries unverified when the verification reads went to the gateway", async () => {
+    const { stream: s } = stream({
+      network: "eip155:1",
+      page: ETH_PAGE,
+      client: rpcClient("eip155:1", []),
+      independent: { kind: "unavailable" },
+    });
+    const { items } = await s.next();
+    const erc20 = entryOf(
+      items,
+      "0x979e19a53feb2c15122009b523c48f66df025de6ff54db5290c567eac324f181",
+    );
+    expect(erc20?.verified).toBe(false);
+    expect(erc20?.flags).not.toContain("chain-mismatch");
+  });
+
+  it("leaves an entry unverified when the tx object does not arrive", async () => {
+    const hash = `0x${"ee".repeat(32)}`;
+    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
+      receipt: receiptOf(ATTACKER, 0x1937404, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
+    }};
+    const { stream: s } = verify(hash, 0x1937404, [erc20In(TOKEN_A, "1000", 0)]);
+    const { items } = await s.next();
+    const e = entryOf(items, hash);
+    expect(e?.verified).toBe(false);
+    expect(e?.flags).not.toContain("chain-mismatch");
+  });
+
+  it("leaves an entry unverified when a receipt log has no pinned index", async () => {
+    const hash = `0x${"f1".repeat(32)}`;
+    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
+      receipt: receiptOf(ATTACKER, 0x1937405, [
+        erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
+        {
+          address: TOKEN_B,
+          topics: [
+            "0x735dd1911323e2b3dc250cd074b96d1bf7c46f12d289fed7c5f885ed8295d8d7",
+            addrTopic(OWNER),
+            addrTopic(ATTACKER),
+          ],
+          data: "0x",
+        },
+      ]),
+      tx: txOf(ATTACKER, ROUTER, 0n),
+    }};
+    const { stream: s } = verify(hash, 0x1937405, [erc20In(TOKEN_A, "1000", 0)]);
+    const { items } = await s.next();
+    const e = entryOf(items, hash);
+    expect(e?.verified).toBe(false);
+    expect(e?.flags).not.toContain("chain-mismatch");
   });
 });
 
