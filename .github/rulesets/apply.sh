@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Applies the repository's protection as code: the rulesets in this directory and the deployment
 # environments (staging and production for the gateway, npm for releases). Idempotent; needs `gh`
-# authenticated as a repository admin.
+# authenticated as a repository admin. The npm side and the settings no API can change are in
+# README.md next to this script.
 #
 #   .github/rulesets/apply.sh <reviewer-login> <reviewer-login> [<reviewer-login>...]
 #
@@ -40,8 +41,24 @@ environment() {
     prevent_self_review: $prevent,
     deployment_branch_policy: { protected_branches: false, custom_branch_policies: true }
   }' | gh api --method PUT "repos/${repo}/environments/${name}" --input - --jq '"configured environment \(.name)"'
-  if ! gh api "repos/${repo}/environments/${name}/deployment-branch-policies" \
-    --jq ".branch_policies[] | select(.type == \"${type}\") | .name" | grep -qxF "${pattern}"; then
+  # Exactly one deployment policy: any other ref an earlier setup allowed is removed. The list is
+  # read whole before it is matched, so no pipe can end early under pipefail.
+  local policies found=false id kind policy
+  policies="$(gh api --paginate "repos/${repo}/environments/${name}/deployment-branch-policies" \
+    --jq '.branch_policies[] | "\(.id) \(.type) \(.name)"')"
+  while read -r id kind policy; do
+    if [ -z "${id}" ]; then
+      continue
+    fi
+    if [ "${kind}" = "${type}" ] && [ "${policy}" = "${pattern}" ]; then
+      found=true
+    else
+      gh api --method DELETE \
+        "repos/${repo}/environments/${name}/deployment-branch-policies/${id}" --silent
+      echo "removed ${kind} policy ${policy} from environment ${name}"
+    fi
+  done <<<"${policies}"
+  if [ "${found}" = false ]; then
     gh api --method POST "repos/${repo}/environments/${name}/deployment-branch-policies" \
       -f name="${pattern}" -f type="${type}" --silent
   fi

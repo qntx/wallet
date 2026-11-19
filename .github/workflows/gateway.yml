@@ -29,14 +29,14 @@ jobs:
     env:
       COMMIT: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Require a passed CI run for the commit
+      - name: Require a passed CI run on main for the commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           passed="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$COMMIT" \
-            --status success --json databaseId --jq length)"
+            --branch main --event push --status success --json databaseId --jq length)"
           if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful CI run for $COMMIT"
+            echo "::error::no successful CI run on main for $COMMIT"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -97,14 +97,14 @@ jobs:
     env:
       COMMIT: ${{ github.sha }}
     steps:
-      - name: Require a passed CI run for the commit
+      - name: Require a passed CI run on main for the commit
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           passed="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$COMMIT" \
-            --status success --json databaseId --jq length)"
+            --branch main --event push --status success --json databaseId --jq length)"
           if [ "$passed" -lt 1 ]; then
-            echo "::error::no successful CI run for $COMMIT"
+            echo "::error::no successful CI run on main for $COMMIT"
             exit 1
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
