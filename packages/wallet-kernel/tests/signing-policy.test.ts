@@ -393,6 +393,94 @@ describe("blind signing policy", () => {
       }),
     ],
     [
+      "typed-data-oversize (Seaport order over the item limit)",
+      (walletId, address) =>
+        typedDoc(walletId, {
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "version", type: "string" },
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            OrderComponents: [
+              { name: "offerer", type: "address" },
+              { name: "zone", type: "address" },
+              { name: "offer", type: "OfferItem[]" },
+              { name: "consideration", type: "ConsiderationItem[]" },
+              { name: "orderType", type: "uint8" },
+              { name: "startTime", type: "uint256" },
+              { name: "endTime", type: "uint256" },
+              { name: "zoneHash", type: "bytes32" },
+              { name: "salt", type: "uint256" },
+              { name: "conduitKey", type: "bytes32" },
+              { name: "counter", type: "uint256" },
+            ],
+            OfferItem: [
+              { name: "itemType", type: "uint8" },
+              { name: "token", type: "address" },
+              { name: "identifierOrCriteria", type: "uint256" },
+              { name: "startAmount", type: "uint256" },
+              { name: "endAmount", type: "uint256" },
+            ],
+            ConsiderationItem: [
+              { name: "itemType", type: "uint8" },
+              { name: "token", type: "address" },
+              { name: "identifierOrCriteria", type: "uint256" },
+              { name: "startAmount", type: "uint256" },
+              { name: "endAmount", type: "uint256" },
+              { name: "recipient", type: "address" },
+            ],
+          },
+          primaryType: "OrderComponents",
+          domain: {
+            name: "Seaport",
+            version: "1.6",
+            chainId: 1,
+            verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+          },
+          message: {
+            offerer: address,
+            zone: "0x0000000000000000000000000000000000000000",
+            offer: Array.from({ length: 5 }, () => ({
+              itemType: 0,
+              token: "0x0000000000000000000000000000000000000000",
+              identifierOrCriteria: "0",
+              startAmount: "1000000000000000000",
+              endAmount: "1000000000000000000",
+            })),
+            consideration: [
+              {
+                itemType: 1,
+                token: USDC,
+                identifierOrCriteria: "0",
+                startAmount: "5000000",
+                endAmount: "5000000",
+                recipient: address,
+              },
+            ],
+            orderType: 0,
+            startTime: "1700000000",
+            endTime: "1700001000",
+            zoneHash: `0x${"00".repeat(32)}`,
+            salt: "123",
+            conduitKey: `0x${"00".repeat(32)}`,
+            counter: "0",
+          },
+        }),
+      (address) => ({
+        title: "Confirm blind signing",
+        description:
+          "App: Seaport\n" +
+          "Network: Ethereum\n" +
+          "Verifying contract 0x0000000000000068F116a894984e2DB1123eB395\n" +
+          "Type: OrderComponents\n" +
+          "Give 1 ETH\nGive 1 ETH\nGive 1 ETH\nGive 1 ETH\n" +
+          "… 1 more items not shown\n" +
+          `${address} receives 5 USDC`,
+      }),
+    ],
+    [
       "typed-data-commitment",
       (walletId) =>
         typedDoc(walletId, {
