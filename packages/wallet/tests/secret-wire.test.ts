@@ -3,7 +3,7 @@
  * handed to the channel is wiped when the request never posts — whatever the failure.
  */
 import { utf8ToBytes } from "@noble/hashes/utils.js";
-import { describe, expect, expectTypeOf, it } from "vite-plus/test";
+import { describe, expect, expectTypeOf, it, vi } from "vite-plus/test";
 
 import { verifyEvent } from "@qntx/nostr";
 
@@ -628,6 +628,122 @@ describe("passkey ceremony ordering and output wiping", () => {
     expect(zeroed(first)).toBe(true);
     expect(zeroed(second)).toBe(true);
     await wallet.destroy();
+  });
+});
+
+describe("a wire that outlives its request", () => {
+  it("bytes(…, true) zeroes the secret original it copied", () => {
+    const wire = new SecretWire();
+    const source = new Uint8Array(32).fill(0xab);
+    const copy = wire.bytes(source, true);
+    expect(zeroed(source)).toBe(true);
+    expect(copy).toStrictEqual(new Uint8Array(32).fill(0xab));
+    expect(wire.transfer).toStrictEqual([copy.buffer]);
+  });
+
+  it("zeroes a copy made after wipe() at once and never records it", () => {
+    const wire = new SecretWire();
+    wire.bytes(new Uint8Array([1]));
+    wire.wipe();
+    const source = new Uint8Array(32).fill(0xab);
+    const late = wire.bytes(source, true);
+    expect(zeroed(source)).toBe(true);
+    expect(zeroed(late)).toBe(true);
+    expect(wire.transfer).toHaveLength(1);
+  });
+});
+
+describe("backup factor ceremonies", () => {
+  const twoPasskeys = (): StatusPayload => ({
+    ...unlockedStatus(),
+    vault: "locked",
+    factors: [
+      { kind: "passkey", id: "f".repeat(32), credentialId: "Y3JlZA", createdAt: 1 },
+      { kind: "passkey", id: "e".repeat(32), credentialId: "Y3JlZA", createdAt: 2 },
+    ],
+  });
+
+  /** A ceremony whose asserts take turns from `answers`, recording how many ran at once. */
+  const scripted = (
+    answers: ReadonlyArray<() => Promise<PrfResult>>,
+  ): PasskeyCeremony & { readonly calls: () => number; readonly overlap: () => number } => {
+    let calls = 0;
+    let running = 0;
+    let overlap = 0;
+    return {
+      calls: () => calls,
+      overlap: () => overlap,
+      create: async () => Promise.reject(new Error("no create in this test")),
+      assert: async () => {
+        const answer = answers[calls];
+        calls += 1;
+        running += 1;
+        overlap = Math.max(overlap, running);
+        try {
+          return await (answer ?? (async () => Promise.reject(new Error("unscripted"))))();
+        } finally {
+          running -= 1;
+        }
+      },
+    };
+  };
+
+  const later = async <T>(value: T): Promise<T> =>
+    new Promise((resolve) => {
+      setTimeout(() => {
+        resolve(value);
+      }, 5);
+    });
+
+  const prf = (fill: number): PrfResult => ({
+    credentialId: new Uint8Array([1]),
+    first: new Uint8Array(32).fill(fill),
+    synced: false,
+  });
+
+  it("a failed factor stops the enable before the next ceremony starts", async () => {
+    const ceremonyImpl = scripted([
+      async () => Promise.reject(new WalletError("cancelled", "the backup ceremony was cancelled")),
+      async () => later(prf(0xab)),
+    ]);
+    const { wallet, port } = await connect(twoPasskeys(), RecordingPort, ceremonyImpl);
+    await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+    const assertsBefore = ceremonyImpl.calls();
+    const spy = vi.spyOn(SecretWire.prototype, "bytes");
+    try {
+      await expect(
+        wallet.backup.enable({
+          verify: VERIFY,
+          factors: [{ kind: "passkey" }, { kind: "passkey" }],
+        }),
+      ).rejects.toThrow(expect.objectContaining({ code: "cancelled" }));
+      await later(undefined);
+      await later(undefined);
+      expect(ceremonyImpl.calls() - assertsBefore).toBe(1);
+      const resident = spy.mock.results
+        .map((result) => result.value as Uint8Array)
+        .filter((copy) => !zeroed(copy));
+      expect(resident).toStrictEqual([]);
+      expect(port.records.some((record) => record.method === "backup.enable")).toBe(false);
+    } finally {
+      spy.mockRestore();
+      await wallet.destroy();
+    }
+  });
+
+  it("runs the factor ceremonies one at a time and wires every output", async () => {
+    const ceremonyImpl = scripted([async () => later(prf(0x11)), async () => later(prf(0x22))]);
+    const { wallet, port } = await connect(twoPasskeys(), RecordingPort, ceremonyImpl);
+    await wallet.vault.unlock({ kind: "password", password: PASSWORD });
+    const call = wallet.backup
+      .enable({ verify: VERIFY, factors: [{ kind: "passkey" }, { kind: "passkey" }] })
+      .catch(() => undefined);
+    // The verify password and both factors' PRF outputs, every one on the transfer list.
+    await expect(secretsOnTransfer(port, "backup.enable")).resolves.toBe(3);
+    expect(ceremonyImpl.calls()).toBeGreaterThanOrEqual(2);
+    expect(ceremonyImpl.overlap()).toBe(1);
+    await wallet.destroy();
+    await call;
   });
 });
 

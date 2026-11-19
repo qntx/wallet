@@ -198,12 +198,21 @@ function passkeyCredentialIds(source: FactorSource): Uint8Array[] {
  */
 export class SecretWire {
   private readonly buffers: ArrayBuffer[] = [];
+  private wiped = false;
 
-  /** A wire copy of `source`; `wipeSource` zeroes a secret original after copying. */
+  /**
+   * A wire copy of `source`; `wipeSource` zeroes a secret original after copying. Once the wire is
+   * wiped its request is over, so a late copy (a ceremony that settled after the build failed) is
+   * zeroed at once instead of staying resident with nothing left to wipe it.
+   */
   bytes(source: Uint8Array, wipeSource = false): Uint8Array {
     const wire = new Uint8Array(source);
     if (wipeSource) {
       source.fill(0);
+    }
+    if (this.wiped) {
+      wire.fill(0);
+      return wire;
     }
     this.buffers.push(wire.buffer);
     return wire;
@@ -226,6 +235,7 @@ export class SecretWire {
 
   /** Zeroes every recorded buffer still attached — already-transferred ones are gone. */
   wipe(): void {
+    this.wiped = true;
     for (const buffer of this.buffers) {
       if (buffer.byteLength > 0) {
         new Uint8Array(buffer).fill(0);
