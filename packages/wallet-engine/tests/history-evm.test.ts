@@ -371,16 +371,15 @@ describe("evm history completeness", () => {
       readonly from: string;
       readonly to: string;
     },
-  ): HistoryItem["transfers"][number] =>
-    ({
-      contract: null,
-      tokenId: null,
-      amount: "0",
-      decimals: null,
-      symbol: null,
-      logIndex: null,
-      ...over,
-    }) as HistoryItem["transfers"][number];
+  ): HistoryItem["transfers"][number] => ({
+    contract: null,
+    tokenId: null,
+    amount: "0",
+    decimals: null,
+    symbol: null,
+    logIndex: null,
+    ...over,
+  });
 
   const erc20In = (contract: string, amount: string, logIndex: number) =>
     transfer({ kind: "erc20", from: ATTACKER, to: OWNER, contract, amount, logIndex });

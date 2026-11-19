@@ -214,9 +214,8 @@ const world = () => {
         return Promise.resolve({
           collection: (name: string) => {
             const col = store.collection(name);
-            return name !== "transactions"
-              ? col
-              : {
+            return name === "transactions"
+              ? {
                   get: col.get,
                   list: col.list,
                   delete: col.delete,
@@ -227,7 +226,8 @@ const world = () => {
                     }
                     await col.put(key, bytes);
                   },
-                };
+                }
+              : col;
           },
           close: store.close,
         });
@@ -557,15 +557,13 @@ describe("EVM nonce ownership", () => {
       send(ctl, { ...SEND, amount: 1n }),
       send(ctl, { ...SEND, amount: 2n }),
     ]);
-    const [sent, rejected] = [a, b].sort((x) => (x.status === "fulfilled" ? -1 : 1));
-    expect(sent?.status).toBe("fulfilled");
-    expect(rejected?.status).toBe("rejected");
-    if (rejected?.status === "rejected") {
-      expect(String(rejected.reason)).toMatch(/already used by another transaction/);
-    }
-    const out = sent?.status === "fulfilled" ? sent.value : undefined;
-    expect(out?.state).toBe("submitted");
-    expect(out?.nonce).toBe(0);
+    const outcomes = [a, b];
+    expect(outcomes.filter((x) => x.status === "fulfilled")).toMatchObject([
+      { value: { state: "submitted", nonce: 0 } },
+    ]);
+    expect(outcomes.filter((x) => x.status === "rejected")).toMatchObject([
+      { reason: { message: expect.stringMatching(/already used by another transaction/) } },
+    ]);
     expect(w.primary.attempts).toHaveLength(1);
     expect(w.primary.sent.map((raw) => parseTransaction(raw as Hex).nonce)).toStrictEqual([0]);
     // The failed reservation left nothing behind: the next send queues behind the live tx.

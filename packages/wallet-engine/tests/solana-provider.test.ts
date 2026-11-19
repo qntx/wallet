@@ -78,11 +78,12 @@ const rpcReply = (method: string, params: unknown[]): unknown => {
     return GENESIS;
   }
   if (method === "getBlockHeight") {
-    const config = params[0];
+    const [config] = params;
     const processed =
-      typeof config === "object" && config !== null && "commitment" in config
-        ? config.commitment === "processed"
-        : false;
+      typeof config === "object" &&
+      config !== null &&
+      "commitment" in config &&
+      config.commitment === "processed";
     return processed && processedHeight !== undefined ? processedHeight : height;
   }
   if (method === "getEpochInfo") {
@@ -491,7 +492,8 @@ describe("solana provider over a real kernel", () => {
       const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
       expect(out.signatures).toStrictEqual([base58.decode(local)]);
       // The wire and its id were persisted before the sendTransaction call reached the node.
-      const persisted = persistedAtSend[0]?.filter((row) => row["hash"] === local) ?? [];
+      const [atSend = []] = persistedAtSend;
+      const persisted = atSend.filter((row) => row["hash"] === local);
       expect(persisted).toHaveLength(1);
       expect(persisted[0]?.["state"]).toBe("signed");
       expect(persisted[0]?.["raw"]).toBe(Buffer.from(sent).toString("base64"));
@@ -542,7 +544,7 @@ describe("solana provider over a real kernel", () => {
         chains: ["solana:mainnet"],
       });
       await expect(approve()).rejects.toThrow("getBlockHeight returned a malformed height");
-      expect(await settled).toHaveProperty("error");
+      await expect(settled).resolves.toHaveProperty("error");
       expect(sentWires).toHaveLength(0);
       expect(r.engine.transactions.getState().txs).toStrictEqual({});
     } finally {
@@ -604,10 +606,10 @@ describe("solana provider over a real kernel", () => {
       );
       expect(sent).toHaveLength(2);
       const [sig0] = sent;
-      expect("error" in outcome).toBe(true);
-      const message = "error" in outcome ? String((outcome.error as Error).message) : "";
-      expect(message).toContain("refused transaction 1");
-      expect(message).toContain(sig0 ?? "");
+      expect(outcome).toMatchObject({
+        error: { message: expect.stringContaining("refused transaction 1") },
+      });
+      expect(outcome).toMatchObject({ error: { message: expect.stringContaining(String(sig0)) } });
       // The refused wire was sent exactly once and is failed; the first is submitted/tracked.
       const txs = Object.values(r.engine.transactions.getState().txs);
       const submitted = txs.filter((tx) => tx.state === "submitted");

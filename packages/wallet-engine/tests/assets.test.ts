@@ -448,10 +448,11 @@ describe("AssetsController lock", () => {
       readPending = resolve;
     });
     const c = client({
-      eth_getBalance: () => {
+      eth_getBalance: async () => {
         balanceReads += 1;
         readPending();
-        return gate.then(() => "0xde0b6b3a7640000");
+        await gate;
+        return "0xde0b6b3a7640000";
       },
       eth_call: () => `0x${"0".repeat(64)}`,
     });

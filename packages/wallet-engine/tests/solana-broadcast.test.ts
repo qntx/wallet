@@ -430,9 +430,8 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     w.calls.length = 0;
     w.env.blockHeight = LVBH + 1;
     await timers.fire(POLL_MS);
-    const reads = w.calls.filter(
-      (call) => call === "getEpochInfo" || call === "getSignatureStatuses",
-    );
+    const tipAndStatus = new Set(["getEpochInfo", "getSignatureStatuses"]);
+    const reads = w.calls.filter((call) => tipAndStatus.has(call));
     expect(reads).toStrictEqual(["getEpochInfo", "getSignatureStatuses"]);
     expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });

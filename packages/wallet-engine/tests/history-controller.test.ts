@@ -267,6 +267,41 @@ const CHAIN_PAGE = {
   cursor: null,
 };
 
+/** A Solana RPC answering one owner's single confirmed transfer. */
+const SOLANA_ANSWERS: Readonly<Record<string, unknown>> = {
+  getTokenAccountsByOwner: { value: [] },
+  getSignaturesForAddress: [{ signature: "solsig", slot: 1, blockTime: 1700000000, err: null }],
+  getTransaction: {
+    slot: 1,
+    blockTime: 1700000000,
+    meta: {
+      err: null,
+      fee: 5000,
+      preBalances: [1_000_000, 0],
+      postBalances: [995_000, 100],
+      preTokenBalances: [],
+      postTokenBalances: [],
+      innerInstructions: [],
+    },
+    transaction: {
+      message: {
+        accountKeys: [
+          { pubkey: "PayerAcct11111111111111111111111111111111" },
+          { pubkey: "SolOwner111111111111111111111111111111111" },
+        ],
+        instructions: [],
+      },
+    },
+  },
+};
+
+const solanaRpcOf = () => ({
+  call: async (method: string): Promise<unknown> =>
+    method in SOLANA_ANSWERS
+      ? Promise.resolve(SOLANA_ANSWERS[method])
+      : Promise.reject(new Error(`unmocked ${method}`)),
+});
+
 describe("HistoryController", () => {
   it("loads the first page, sorted, verified state from the chain", async () => {
     const { controller } = make({ page: CHAIN_PAGE });
@@ -444,43 +479,6 @@ describe("HistoryController", () => {
   });
 
   it("verifies a solana entry only when the read went to a host endpoint", async () => {
-    const solanaRpcOf = () => ({
-      call: (method: string): Promise<unknown> => {
-        if (method === "getTokenAccountsByOwner") {
-          return Promise.resolve({ value: [] });
-        }
-        if (method === "getSignaturesForAddress") {
-          return Promise.resolve([
-            { signature: "solsig", slot: 1, blockTime: 1700000000, err: null },
-          ]);
-        }
-        if (method === "getTransaction") {
-          return Promise.resolve({
-            slot: 1,
-            blockTime: 1700000000,
-            meta: {
-              err: null,
-              fee: 5000,
-              preBalances: [1_000_000, 0],
-              postBalances: [995_000, 100],
-              preTokenBalances: [],
-              postTokenBalances: [],
-              innerInstructions: [],
-            },
-            transaction: {
-              message: {
-                accountKeys: [
-                  { pubkey: "PayerAcct11111111111111111111111111111111" },
-                  { pubkey: "SolOwner111111111111111111111111111111111" },
-                ],
-                instructions: [],
-              },
-            },
-          });
-        }
-        return Promise.reject(new Error(`unmocked ${method}`));
-      },
-    });
     const untrusted = make({ solana: true, solanaRpc: solanaRpcOf() });
     await untrusted.controller.init();
     await untrusted.controller.load(GROUP);

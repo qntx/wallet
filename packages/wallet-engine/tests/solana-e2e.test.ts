@@ -91,7 +91,7 @@ const waitConfirmed = async (
   hash: string,
   deadline: number,
 ): Promise<string> => {
-  const s = (await a.signatureStatus(r, hash)).state;
+  const { state: s } = await a.signatureStatus(r, hash);
   if (s === "confirmed" || s === "finalized") {
     return s;
   }

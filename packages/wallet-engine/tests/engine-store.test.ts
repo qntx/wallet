@@ -56,16 +56,7 @@ describe("WalletEngine session store", () => {
       lightningMaxFee: () => 0,
       wallet,
       sparkNetwork: "regtest",
-      fetch: async (input, init) => {
-        const url =
-          typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        if (url !== "https://solana.invalid" || init?.method !== "POST") {
-          return Promise.reject(new Error("offline"));
-        }
-        return Promise.resolve(
-          Response.json({ jsonrpc: "2.0", id: 1, error: { code: -32_601, message: "unmocked" } }),
-        );
-      },
+      fetch: async () => Promise.reject(new Error("offline")),
       random: (n) => randomBytes(n),
       now: () => Date.now(),
       logger: { warn: () => undefined },
@@ -73,7 +64,7 @@ describe("WalletEngine session store", () => {
       openStore: async () => {
         opens += 1;
         const s = createMemoryEngineStore({ collections: backing });
-        return {
+        return Promise.resolve({
           ...s,
           collection: (name: string) => {
             // The start sequence opens the connections collection last, after every other init.
@@ -87,7 +78,7 @@ describe("WalletEngine session store", () => {
             closes += 1;
             await s.close();
           },
-        };
+        });
       },
       rpc: { [SOL_NET]: ["https://solana.invalid"] },
     });

@@ -311,7 +311,7 @@ describe("WeblnHandler pending payment outcomes", () => {
       () => {
         throw new Error("sendPayment resolved");
       },
-      (e: unknown) => e,
+      (error: unknown) => error,
     );
     expect(err).toMatchObject({ code: PAYMENT_PENDING_CODE });
     expect((err as Error).message).toContain(TRANSFER);

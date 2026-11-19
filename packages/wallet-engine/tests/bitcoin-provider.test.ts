@@ -538,18 +538,18 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       // The page is told which input the network refused and which txid already went out.
       expect(broadcasts).toHaveLength(2);
       const [wire0] = broadcasts;
-      const txid0 = Transaction.fromRaw(hex.decode(wire0 ?? "")).id;
-      expect("error" in outcome).toBe(true);
-      const message = "error" in outcome ? String((outcome.error as Error).message) : "";
-      expect(message).toContain("refused transaction 1");
-      expect(message).toContain(txid0);
+      const txid0 = Transaction.fromRaw(hex.decode(String(wire0))).id;
+      expect(outcome).toMatchObject({
+        error: { message: expect.stringContaining("refused transaction 1") },
+      });
+      expect(outcome).toMatchObject({ error: { message: expect.stringContaining(txid0) } });
       // The refused PSBT was posted exactly once and failed; the first is submitted/tracked.
       const txs = Object.values(r.engine.transactions.getState().txs);
       expect(txs.filter((tx) => tx.state === "submitted").map((tx) => tx.hash)).toStrictEqual([
         txid0,
       ]);
       expect(txs.filter((tx) => tx.state === "failed")).toHaveLength(1);
-      expect(r.engine.requests.getState().requests[request?.id ?? ""]?.stage).toBe("submitted");
+      expect(r.engine.requests.getState().requests[String(request?.id)]?.stage).toBe("submitted");
     } finally {
       resetBroadcastMock();
       r.engine.unsubscribe();

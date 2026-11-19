@@ -219,15 +219,19 @@ describe("submitInOrder", () => {
     expect(submitted).toBe(1);
   });
 
+  /** A submitter that records each index it is asked for and refuses `refusing`. */
+  const refusingAt =
+    (refusing: number, submitted: number[]) =>
+    async (index: number): Promise<string> => {
+      submitted.push(index);
+      return index === refusing
+        ? Promise.reject(new Error("the node refused"))
+        : Promise.resolve(`id-${index}`);
+    };
+
   it("a failure past the first returns the earlier ids and stops — later items never submit", async () => {
     const submitted: number[] = [];
-    const batch = await submitInOrder(4, async (index) => {
-      submitted.push(index);
-      if (index === 1) {
-        return Promise.reject(new Error("the node refused"));
-      }
-      return Promise.resolve(`id-${index}`);
-    });
+    const batch = await submitInOrder(4, refusingAt(1, submitted));
     expect(submitted).toStrictEqual([0, 1]);
     expect(batch).toStrictEqual({
       ids: ["id-0"],
