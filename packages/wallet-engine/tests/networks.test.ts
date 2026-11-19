@@ -72,6 +72,23 @@ describe("NetworkController", () => {
     expect(n.endpoints(DEVNET)).toStrictEqual(["https://custom.example"]);
   });
 
+  it("fails over a non-JSON Solana answer with the HTTP status and endpoint", async () => {
+    const badGateway = (async () =>
+      Promise.resolve(new Response("<html>bad gateway</html>", { status: 502 }))) as typeof fetch;
+    const n = new NetworkController({
+      ...idleNetworkDeps,
+      fetch: badGateway,
+      rpc: { [DEVNET]: ["https://rpc-a.example", "https://rpc-b.example"] },
+      openStore,
+      logger,
+    });
+    await n.init();
+    const rpc = n.solanaRpc(DEVNET);
+    await expect(rpc.call("getBalance", ["owner"])).rejects.toThrow(
+      "getBalance: HTTP 502 from https://rpc-b.example",
+    );
+  });
+
   it("rejects a Solana endpoint that reports another genesis hash", async () => {
     const mainnet = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
     const n = new NetworkController({
