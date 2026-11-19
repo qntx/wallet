@@ -1229,7 +1229,7 @@ describe("Eip1193Handler", () => {
     const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
-    const params = ["0x01", address];
+    const params = ["0x68656c6c6f", address];
     const first = r.handler.handle(SITE, { method: "personal_sign", params });
     await vi.waitFor(() => {
       expect(Object.values(r.requests.getState().requests)).toHaveLength(1);

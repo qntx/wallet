@@ -490,9 +490,14 @@ describe("chain prompts", () => {
       description: "Message:\nhello",
     });
     const hostile = `pay \u202Ebob\n\n\n${"x".repeat(400)}\nhidden`;
-    expect(
-      chainPrompt("zh-Hans", messagePromptIntent({ kind: "text", text: hostile })).description,
-    ).toBe(`消息：\npay \uFFFDbob\n${"x".repeat(312)}\n… 还有 94 个字符未显示`);
+    /* A bidi override makes the message blind: warning first, then the sanitised excerpt. */
+    const hostilePrompt = messagePromptIntent({ kind: "text", text: hostile });
+    expect(hostilePrompt.blind).toBe("message-bytes");
+    expect(chainPrompt("zh-Hans", hostilePrompt).description).toBe(
+      `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\npay \uFFFDbob\n${"x".repeat(
+        312,
+      )}\n… 还有 94 个字符未显示`,
+    );
   });
 });
 
@@ -2144,6 +2149,35 @@ describe("near-miss blind prompts", () => {
         "钱包无法解码的程序调用：TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\n" +
         "这些程序可以转移本交易涉及账户中的资产\n" +
         "最高手续费 0.000005 SOL",
+    });
+  });
+});
+
+describe("blind text prompts", () => {
+  const account = { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "evm" };
+  const SIGNER = "0x52908400098527886E0F7030069857D2E4169EE7";
+  const personal = (text: string) =>
+    decodeEvm(
+      {
+        kind: "evm.personal-message",
+        network: "eip155:1",
+        account,
+        message: new TextEncoder().encode(text),
+      },
+      SIGNER,
+    );
+
+  it("hex-rendered text shows its excerpt under the blind warning, in both locales", () => {
+    const text = `0x${"ab".repeat(32)}`;
+    const intent = personal(text);
+    expect(intent.blind).toBe("message-bytes");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nMessage:\n${text}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n${text}`,
     });
   });
 });

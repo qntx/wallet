@@ -8,7 +8,7 @@ import { recoverTypedSignature, SignTypedDataVersion } from "@metamask/eth-sig-u
 import type { MessageTypes, TypedMessage } from "@metamask/eth-sig-util";
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
-import { bytesToHex, concatBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58 } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -362,6 +362,22 @@ describe("blind signing policy", () => {
         title: "Confirm blind signing",
         description:
           "The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0xff",
+      }),
+    ],
+    [
+      "message-bytes (evm personal_sign, UTF-8 digest)",
+      (walletId) =>
+        normalizeEvm({
+          kind: "evm.personal-message",
+          network: "eip155:1",
+          account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
+          message: hexToBytes(
+            "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79",
+          ),
+        }),
+      () => ({
+        title: "Confirm blind signing",
+        description: `The wallet cannot show what this signs. Sign only if you fully trust the app.\nData 0x5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79`,
       }),
     ],
     [

@@ -45,6 +45,17 @@ export const isHexRendering = (text: string): boolean =>
   /^(?:0x)?(?:[0-9a-fA-F]{2}){32,}$/.test(text.trim());
 
 /**
+ * Whether `text` is readable as shown: TAB, LF and CR are the only unsafe code points a readable
+ * message may contain. Anything else — a control, bidi-control, zero-width, line-separator or tag
+ * character — means what the owner reads is not what was signed.
+ */
+export const isReadableText = (text: string): boolean =>
+  [...text].every((char) => {
+    const cp = char.codePointAt(0) ?? 0;
+    return cp === 0x09 || cp === 0x0a || cp === 0x0d || !isUnsafeCodePoint(cp);
+  });
+
+/**
  * The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines
  * are dropped, so padding cannot push content out of view; the last line may be cut.
  */

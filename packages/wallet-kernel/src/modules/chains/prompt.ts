@@ -691,16 +691,22 @@ function messagePrompt(
       description: joinLines(typedDataLines(catalog, intent, message)),
     };
   }
-  if (message.signIn?.status === "valid") {
+  if (intent.blind === undefined && message.signIn?.status === "valid") {
     return {
       title: catalog.signInTitle,
       description: joinLines(signInLines(catalog, message.signIn)),
     };
   }
   return {
-    title: catalog.titles.message,
+    title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
     description: joinLines([
-      ...(message.signIn === undefined ? [] : signInLines(catalog, message.signIn)),
+      /* Blind text still shows its sanitised excerpt under the warning — never a sign-in
+         rendering, whose chrome would present the request as legitimate. */
+      ...(intent.blind === undefined
+        ? message.signIn === undefined
+          ? []
+          : signInLines(catalog, message.signIn)
+        : [catalog.blindBytes]),
       ...textLines(catalog, message.text),
     ]),
   };

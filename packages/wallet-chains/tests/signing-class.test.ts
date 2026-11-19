@@ -1,5 +1,6 @@
 import { SignTypedDataVersion, TypedDataUtils } from "@metamask/eth-sig-util";
 import type { MessageTypes, TypedMessage } from "@metamask/eth-sig-util";
+import { hexToBytes } from "@noble/hashes/utils.js";
 import * as fc from "fast-check";
 import { encodeFunctionData, parseAbi, toFunctionSelector } from "viem";
 import { describe, expect, it } from "vite-plus/test";
@@ -1227,17 +1228,59 @@ describe("typed-data leaves agree with an independent EIP-712 hasher", () => {
 });
 
 describe("personal messages", () => {
+  const personalText = (text: string) => decodeEvm(personal(new TextEncoder().encode(text)), SIGNER);
+
   it("non-UTF-8 bytes are blind; text is not", () => {
-    const hash32 = new Uint8Array(32).fill(0xab);
+    const hash32 = new Uint8Array(33).fill(0xab);
     const blind = decodeEvm(personal(hash32), SIGNER);
     expect(blind.message).toMatchObject({ kind: "bytes" });
     expect(blind.blind).toBe("message-bytes");
     expect(isBlindIntent(blind)).toBe(true);
 
-    const text = decodeEvm(personal(new TextEncoder().encode("Welcome to Example")), SIGNER);
+    const text = personalText("Welcome to Example");
     expect(text.message).toMatchObject({ kind: "text" });
     expect(text.blind).toBeUndefined();
     expect(isBlindIntent(text)).toBe(false);
+  });
+
+  it("a message of exactly 32 bytes is blind, whatever its content", () => {
+    /* A keccak digest that happens to be valid UTF-8. */
+    const digest = hexToBytes(
+      "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79",
+    );
+    const ground = decodeEvm(personal(digest), SIGNER);
+    expect(ground.message).toMatchObject({ kind: "bytes" });
+    expect(ground.blind).toBe("message-bytes");
+
+    const text32 = personalText("a".repeat(32));
+    expect(text32.message).toMatchObject({ kind: "bytes" });
+    expect(text32.blind).toBe("message-bytes");
+    for (const n of [31, 33]) {
+      const intent = personalText("a".repeat(n));
+      expect(intent.message).toMatchObject({ kind: "text" });
+      expect(intent.blind).toBeUndefined();
+    }
+  });
+
+  it("text with an unsafe code point is blind bytes; permitted whitespace is not", () => {
+    for (const char of ["\u0000", "\u202e", "\u200b"]) {
+      const intent = personalText(`see ${char} this`);
+      expect(intent.message).toMatchObject({ kind: "bytes" });
+      expect(intent.blind).toBe("message-bytes");
+    }
+    const ws = personalText("line one\nline two\r\n\tindented");
+    expect(ws.message).toMatchObject({ kind: "text" });
+    expect(ws.blind).toBeUndefined();
+  });
+
+  it("text that only renders at least 32 bytes of hex is blind", () => {
+    for (const text of [`0x${"ab".repeat(32)}`, "ab".repeat(32), `0x${"AB".repeat(32)}`]) {
+      const intent = personalText(text);
+      expect(intent.message).toMatchObject({ kind: "text" });
+      expect(intent.blind).toBe("message-bytes");
+    }
+    const short = personalText(`0x${"ab".repeat(31)}`);
+    expect(short.blind).toBeUndefined();
   });
 });
 

@@ -1,9 +1,11 @@
+import { hexToBytes } from "@noble/hashes/utils.js";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   displayExcerpt,
   isBlindIntent,
   isHexRendering,
+  isReadableText,
   isUnsafeCodePoint,
   messageBlindReason,
   messageContent,
@@ -11,6 +13,7 @@ import {
 import type { DisplayIntent } from "../src/index.ts";
 
 const utf8 = (text: string): Uint8Array => new TextEncoder().encode(text);
+const utf8s = new TextDecoder("utf-8", { fatal: true });
 
 describe("displayExcerpt", () => {
   it("replaces characters that hide or reorder text", () => {
@@ -138,5 +141,77 @@ describe("isHexRendering", () => {
     expect(isHexRendering(`0x${"gh".repeat(32)}`)).toBe(false);
     expect(isHexRendering("hello")).toBe(false);
     expect(isHexRendering("0x")).toBe(false);
+  });
+});
+
+describe("isReadableText", () => {
+  it("ordinary text and the permitted whitespace pass", () => {
+    expect(isReadableText("hello world")).toBe(true);
+    expect(isReadableText("a\tb\nc\rd\r\ne")).toBe(true);
+    expect(isReadableText("héllo wörld 你好")).toBe(true);
+  });
+
+  it.each([
+    ["NUL", "\u0000"],
+    ["bell", "\u0007"],
+    ["escape", "\u001b"],
+    ["bidi override", "\u202e"],
+    ["zero-width space", "\u200b"],
+    ["line separator", "\u2028"],
+    ["paragraph separator", "\u2029"],
+    ["tag character", "\udb40\udc61"],
+    ["vertical tab", "\u000b"],
+    ["form feed", "\u000c"],
+    ["backspace", "\u0008"],
+    ["delete", "\u007f"],
+  ])("text containing %s is not readable", (_name, char) => {
+    expect(isReadableText(`see ${char} this`)).toBe(false);
+  });
+});
+
+describe("digest-shaped and hostile message content", () => {
+  it("a message of exactly 32 bytes is bytes even when it is valid UTF-8", () => {
+    const text32 = utf8("a".repeat(32));
+    expect(text32.length).toBe(32);
+    expect(messageContent(text32, "evm")).toStrictEqual({
+      kind: "bytes",
+      hex: `0x${"61".repeat(32)}`,
+    });
+    for (const n of [31, 33]) {
+      expect(messageContent(utf8("a".repeat(n)), "evm")).toStrictEqual({
+        kind: "text",
+        text: "a".repeat(n),
+      });
+    }
+    /* The ground digest: a keccak output that happens to be valid UTF-8. */
+    const digest = hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79");
+    expect(() => utf8s.decode(digest)).not.toThrow();
+    expect(messageContent(digest, "evm").kind).toBe("bytes");
+  });
+
+  it("text with an unsafe code point is bytes", () => {
+    for (const char of ["\u0000", "\u202e", "\u200b"]) {
+      expect(messageContent(utf8(`see ${char} this`), "evm").kind).toBe("bytes");
+    }
+  });
+
+  it("the permitted whitespace stays text", () => {
+    const text = "line one\nline two\r\n\tindented";
+    expect(messageContent(utf8(text), "solana")).toStrictEqual({ kind: "text", text });
+  });
+
+  it("hex-rendered text is text but blind; shorter hex is not", () => {
+    for (const text of [`0x${"ab".repeat(32)}`, "ab".repeat(32), `0X${"AB".repeat(32)}`.replace("0X", "0x")]) {
+      const content = messageContent(utf8(text), "evm");
+      expect(content.kind).toBe("text");
+      expect(messageBlindReason(content)).toBe("message-bytes");
+    }
+    expect(messageBlindReason(messageContent(utf8(`0x${"ab".repeat(31)}`), "evm"))).toBeUndefined();
+  });
+
+  it("hand-built text content gets the same verdict", () => {
+    expect(messageBlindReason({ kind: "text", text: "a".repeat(32) })).toBe("message-bytes");
+    expect(messageBlindReason({ kind: "text", text: "see \u0000 this" })).toBe("message-bytes");
+    expect(messageBlindReason({ kind: "text", text: "see \t this" })).toBeUndefined();
   });
 });
