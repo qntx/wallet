@@ -317,4 +317,18 @@ describe("WeblnHandler pending payment outcomes", () => {
     expect((err as { code: number }).code).not.toBe(-32603);
     expect(requestsCalls).toStrictEqual(["pay"]);
   });
+
+  it("a settled lightning payment still resolves the preimage", async () => {
+    const { handler } = rig({
+      prepareResult: {
+        kind: "lightning",
+        payment: { requestId: "r1", paymentHash: new Uint8Array(32), amountSats: 100 },
+      },
+      paymentStatus: async () =>
+        Promise.resolve({ outcome: "succeeded", preimage: new Uint8Array(32).fill(7) } as never),
+      now: () => (TIMESTAMP + 10) * 1000,
+    });
+    const result = await handler.handle(SITE, { method: "sendPayment", params: invoice });
+    expect(result).toStrictEqual({ preimage: "07".repeat(32) });
+  });
 });
