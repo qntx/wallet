@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 import type { WalletErrorCode } from "@qntx/wallet/types";
 
+import type * as envelope from "../src/vault/envelope.ts";
 import { createHarness } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
 
@@ -20,10 +21,9 @@ const PRF_BACKUP = hexToBytes("33".repeat(32));
 const PASSWORD = utf8ToBytes("correct horse battery");
 
 /**
- * Intercept state: `override` replaces the payload plaintext; `opened` records each
- * buffer `open` returned for it together with a snapshot of its content at open time
- * (the buffer itself is wiped by the code under test — the snapshot is what copies
- * are compared against).
+ * Intercept state: `override` replaces the payload plaintext; `opened` records each buffer `open`
+ * returned for it together with a snapshot of its content at open time (the buffer itself is wiped
+ * by the code under test — the snapshot is what copies are compared against).
  */
 const payloadOpen = vi.hoisted(() => ({
   override: undefined as Uint8Array | undefined,
@@ -31,7 +31,7 @@ const payloadOpen = vi.hoisted(() => ({
 }));
 
 vi.mock("../src/vault/envelope.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../src/vault/envelope.ts")>();
+  const original = await importOriginal<typeof envelope>();
   return {
     ...original,
     open: (key: Uint8Array, sealed: Uint8Array, context: string, header: string): Uint8Array => {
@@ -147,13 +147,15 @@ async function createBackupEnvelope(
 async function slicedDuring(run: () => Promise<unknown>): Promise<Uint8Array[]> {
   const sliced: Uint8Array[] = [];
   const original = Uint8Array.prototype.slice;
-  const spy = vi
-    .spyOn(Uint8Array.prototype, "slice")
-    .mockImplementation(function (this: Uint8Array, start?: number, end?: number) {
-      const copy = original.call(this, start, end);
-      sliced.push(copy);
-      return copy;
-    });
+  const spy = vi.spyOn(Uint8Array.prototype, "slice").mockImplementation(function (
+    this: Uint8Array,
+    start?: number,
+    end?: number,
+  ) {
+    const copy = original.call(this, start, end);
+    sliced.push(copy);
+    return copy;
+  });
   try {
     await run();
   } finally {
@@ -307,11 +309,7 @@ describe("backup.restore secret wiping", () => {
     const sliced = await slicedDuring(async () => {
       expect(
         errCode(
-          await b.call(
-            "backup.restore",
-            { envelope, backupFactor: backupPasswordF() },
-            session,
-          ),
+          await b.call("backup.restore", { envelope, backupFactor: backupPasswordF() }, session),
         ),
       ).toBe("integrity");
     });
@@ -326,11 +324,7 @@ describe("backup.restore secret wiping", () => {
     const sliced = await slicedDuring(async () => {
       expect(
         errCode(
-          await b.call(
-            "backup.restore",
-            { envelope, backupFactor: backupPasswordF() },
-            session,
-          ),
+          await b.call("backup.restore", { envelope, backupFactor: backupPasswordF() }, session),
         ),
       ).toBe("integrity");
     });

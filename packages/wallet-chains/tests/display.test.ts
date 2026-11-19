@@ -154,16 +154,16 @@ describe("isReadableText", () => {
   it.each([
     ["NUL", "\u0000"],
     ["bell", "\u0007"],
-    ["escape", "\u001b"],
-    ["bidi override", "\u202e"],
-    ["zero-width space", "\u200b"],
+    ["escape", "\u001B"],
+    ["bidi override", "\u202E"],
+    ["zero-width space", "\u200B"],
     ["line separator", "\u2028"],
     ["paragraph separator", "\u2029"],
-    ["tag character", "\udb40\udc61"],
-    ["vertical tab", "\u000b"],
-    ["form feed", "\u000c"],
+    ["tag character", "\uDB40\uDC61"],
+    ["vertical tab", "\u000B"],
+    ["form feed", "\u000C"],
     ["backspace", "\u0008"],
-    ["delete", "\u007f"],
+    ["delete", "\u007F"],
   ])("text containing %s is not readable", (_name, char) => {
     expect(isReadableText(`see ${char} this`)).toBe(false);
   });
@@ -172,7 +172,7 @@ describe("isReadableText", () => {
 describe("digest-shaped and hostile message content", () => {
   it("a message of exactly 32 bytes is bytes even when it is valid UTF-8", () => {
     const text32 = utf8("a".repeat(32));
-    expect(text32.length).toBe(32);
+    expect(text32).toHaveLength(32);
     expect(messageContent(text32, "evm")).toStrictEqual({
       kind: "bytes",
       hex: `0x${"61".repeat(32)}`,
@@ -190,7 +190,7 @@ describe("digest-shaped and hostile message content", () => {
   });
 
   it("text with an unsafe code point is bytes", () => {
-    for (const char of ["\u0000", "\u202e", "\u200b"]) {
+    for (const char of ["\u0000", "\u202E", "\u200B"]) {
       expect(messageContent(utf8(`see ${char} this`), "evm").kind).toBe("bytes");
     }
   });
@@ -201,7 +201,11 @@ describe("digest-shaped and hostile message content", () => {
   });
 
   it("hex-rendered text is text but blind; shorter hex is not", () => {
-    for (const text of [`0x${"ab".repeat(32)}`, "ab".repeat(32), `0X${"AB".repeat(32)}`.replace("0X", "0x")]) {
+    for (const text of [
+      `0x${"ab".repeat(32)}`,
+      "ab".repeat(32),
+      `0X${"AB".repeat(32)}`.replace("0X", "0x"),
+    ]) {
       const content = messageContent(utf8(text), "evm");
       expect(content.kind).toBe("text");
       expect(messageBlindReason(content)).toBe("message-bytes");

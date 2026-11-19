@@ -55,8 +55,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { createMessage } from "@qntx/siwx";
 import { siws } from "@qntx/siwx/svm";
 
-import { ChainError } from "../src/index.ts";
 import { RECOGNISED_FAMILIES } from "../src/families.ts";
+import { ChainError } from "../src/index.ts";
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import {
   PROGRAM_IDS,
@@ -1164,17 +1164,18 @@ describe("core-program near misses are blind", () => {
   it.each([
     [
       "SPL Token Transfer",
-      ix(PROGRAM_IDS.token, [w0(SRC), w0(DEST), sgn(FEE_PAYER)], cat(new Uint8Array([3]), u64le(5n))),
+      ix(
+        PROGRAM_IDS.token,
+        [w0(SRC), w0(DEST), sgn(FEE_PAYER)],
+        cat(new Uint8Array([3]), u64le(5n)),
+      ),
     ],
     [
       "SPL Token SetAuthority",
       ix(
         PROGRAM_IDS.token,
         [w0(SRC), sgn(FEE_PAYER)],
-        cat(
-          new Uint8Array([6, 0, 1]),
-          Uint8Array.from(getAddressEncoder().encode(OTHER_KEY)),
-        ),
+        cat(new Uint8Array([6, 0, 1]), Uint8Array.from(getAddressEncoder().encode(OTHER_KEY))),
       ),
     ],
     [
@@ -1215,18 +1216,27 @@ describe("core-program near misses are blind", () => {
     expect(intent.blind).toBe("core-instruction");
   });
 
+  /** The program a solana row's claim names; the filter above guarantees the surface. */
+  const rowProgram = (row: (typeof RECOGNISED_FAMILIES)[number]): keyof typeof PROGRAM_IDS => {
+    const { claim } = row;
+    if (claim.surface !== "solana.instruction") {
+      throw new Error("filtered row is not a solana row");
+    }
+    return claim.program;
+  };
+
   it("every solana family row blinds a signer-signed near miss of its program", () => {
     const rows = RECOGNISED_FAMILIES.filter((r) => r.claim.surface === "solana.instruction");
     expect(rows.length).toBeGreaterThanOrEqual(5);
     for (const row of rows) {
-      const { claim } = row;
-      if (claim.surface !== "solana.instruction") {
-        throw new Error("filtered row is not a solana row");
-      }
-      const instruction = ix(PROGRAM_IDS[claim.program], [sgn(FEE_PAYER)], new Uint8Array([0xfe, 0xdc]));
+      const instruction = ix(
+        PROGRAM_IDS[rowProgram(row)],
+        [sgn(FEE_PAYER)],
+        new Uint8Array([0xfe, 0xdc]),
+      );
       const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
-      expect(intent.blind, row.family).toBe("core-instruction");
-      expect(intent.programs, row.family).toStrictEqual([PROGRAM_IDS[claim.program]]);
+      expect(intent.blind).toBe("core-instruction");
+      expect(intent.programs).toStrictEqual([PROGRAM_IDS[rowProgram(row)]]);
     }
   });
 
@@ -1243,7 +1253,11 @@ describe("core-program near misses are blind", () => {
   });
 
   it("an unknown program the signer signs is opaque and named, not blind", () => {
-    const instruction = ix("Vote111111111111111111111111111111111111111", [sgn(FEE_PAYER)], new Uint8Array([1]));
+    const instruction = ix(
+      "Vote111111111111111111111111111111111111111",
+      [sgn(FEE_PAYER)],
+      new Uint8Array([1]),
+    );
     const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
     expect(intent.verifiability).toBe("opaque");
     expect(intent.blind).toBeUndefined();
@@ -1259,10 +1273,7 @@ describe("core-program near misses are blind", () => {
       "SPL Token InitializeAccount",
       ix(PROGRAM_IDS.token, [w0(SRC), ro(MINT), ro(FEE_PAYER), ro(RENT)], new Uint8Array([1])),
     ],
-    [
-      "SPL Token Revoke",
-      ix(PROGRAM_IDS.token, [w0(SRC), sgn(FEE_PAYER)], new Uint8Array([5])),
-    ],
+    ["SPL Token Revoke", ix(PROGRAM_IDS.token, [w0(SRC), sgn(FEE_PAYER)], new Uint8Array([5]))],
   ])("a benign %s stays described", (_name, instruction) => {
     const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
     expect(intent.verifiability).toBe("full");

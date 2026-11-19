@@ -50,7 +50,7 @@ export const isHexRendering = (text: string): boolean =>
  * character — means what the owner reads is not what was signed.
  */
 export const isReadableText = (text: string): boolean =>
-  [...text].every((char) => {
+  Array.from(text).every((char) => {
     const cp = char.codePointAt(0) ?? 0;
     return cp === 0x09 || cp === 0x0a || cp === 0x0d || !isUnsafeCodePoint(cp);
   });

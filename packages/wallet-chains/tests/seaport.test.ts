@@ -221,9 +221,7 @@ describe("decodeEvm: Seaport orders", () => {
 
 describe("decodeEvm: Seaport orders the prompt cannot show in full", () => {
   it("an order with more offer items than the prompt shows is blind", () => {
-    const intent = decode(
-      doc({}, { offer: Array.from({ length: 5 }, () => offerItem(2, NFT)) }),
-    );
+    const intent = decode(doc({}, { offer: Array.from({ length: 5 }, () => offerItem(2, NFT)) }));
     expect(intent.blind).toBe("typed-data-oversize");
     expect(intent.message).toMatchObject({ kind: "typed-data" });
   });

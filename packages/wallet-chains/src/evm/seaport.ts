@@ -19,9 +19,9 @@ import {
 import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
 
 /**
- * The most offer or consideration items the prompt shows of one order before summarising the
- * rest. An order with more is blind (`typed-data-oversize`): the prompt must never truncate away
- * items the signature authorises.
+ * The most offer or consideration items the prompt shows of one order before summarising the rest.
+ * An order with more is blind (`typed-data-oversize`): the prompt must never truncate away items
+ * the signature authorises.
  */
 export const SEAPORT_ORDER_ITEMS = 4;
 

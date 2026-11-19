@@ -231,8 +231,8 @@ export const decodeStakeIx = (
 /**
  * One system-program account creation (CreateAccount or CreateAccountWithSeed), for any new-owner
  * program. A with-seed creation whose `account` does not match sha256(base ‖ seed ‖ owner) is
- * `"other"` — the program itself would reject it. `undefined` when the data is neither
- * instruction; `"other"` when it is one but malformed.
+ * `"other"` — the program itself would reject it. `undefined` when the data is neither instruction;
+ * `"other"` when it is one but malformed.
  */
 export const decodeSystemCreate = (
   parsed: ParsedSolanaMessage,
@@ -282,11 +282,7 @@ export const decodeSystemCreate = (
     const seed = data.subarray(44, 44 + seedLen);
     const derived = solanaAddressFromPublicKey(
       sha256(
-        new Uint8Array([
-          ...addr.encode(address(base)),
-          ...seed,
-          ...addr.encode(address(owner)),
-        ]),
+        new Uint8Array([...addr.encode(address(base)), ...seed, ...addr.encode(address(owner))]),
       ),
     );
     return to === derived

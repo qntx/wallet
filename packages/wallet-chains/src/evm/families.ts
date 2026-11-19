@@ -12,8 +12,8 @@ import { typedDataAddress } from "./typed-data.ts";
 import type { TypedDataInput } from "./typed-data.ts";
 
 /**
- * The claim an undecoded call into `to` makes on `chainId`: a listed token's selector table did
- * not decode it, so it is an unrecognised function of a token the owner holds.
+ * The claim an undecoded call into `to` makes on `chainId`: a listed token's selector table did not
+ * decode it, so it is an unrecognised function of a token the owner holds.
  */
 export const callNearMiss = (
   to: string,
@@ -56,5 +56,6 @@ export const typedDataNearMiss = (
       case "token-table":
         return lookupEvmToken(table, chainId, verifying) !== undefined;
     }
+    return false;
   })?.nearMiss;
 };

@@ -7,14 +7,14 @@
  * sealed(X) = 0x01 ‖ nonce(24) ‖ XChaCha20-Poly1305(key, nonce, aad).encrypt(plaintext) aad = 0x01
  * ‖ u16be(len(UTF-8(context))) ‖ UTF-8(context) ‖ UTF-8(header) payload.context =
  * "qntx-wallet/backup/v1/payload/" + hex(SHA-256(headerText)) + "/" +
- * hex(SHA-256(UTF-8(canonicalFactors))) — canonicalFactors re-serializes each factor with fixed
- * key order (passkey: kind, credentialId, sealedBek; password: kind, kdf, memoryKiB, passes,
- * lanes, salt, sealedBek). factor.context =
- * "qntx-wallet/backup/v1/factor/" + kind password KEK = Argon2id(NFKC(password), salt16, m=65536
- * KiB, t=3, p=4, 32) passkey KEK = HKDF-SHA256(prfBackup, salt=credentialId,
- * info="qntx-wallet/kek/backup/v1") backup-key id = hex(HKDF-SHA256(BEK, salt=empty,
- * info="qntx-wallet/backup/v1/id", 16)) backup-key header text = {"id","factors","createdAt"} in
- * that key order passkey wallet : entropy = prfWallet[0..16), origin byte 0x02
+ * hex(SHA-256(UTF-8(canonicalFactors))) — canonicalFactors re-serializes each factor with fixed key
+ * order (passkey: kind, credentialId, sealedBek; password: kind, kdf, memoryKiB, passes, lanes,
+ * salt, sealedBek). factor.context = "qntx-wallet/backup/v1/factor/" + kind password KEK =
+ * Argon2id(NFKC(password), salt16, m=65536 KiB, t=3, p=4, 32) passkey KEK = HKDF-SHA256(prfBackup,
+ * salt=credentialId, info="qntx-wallet/kek/backup/v1") backup-key id = hex(HKDF-SHA256(BEK,
+ * salt=empty, info="qntx-wallet/backup/v1/id", 16)) backup-key header text =
+ * {"id","factors","createdAt"} in that key order passkey wallet : entropy = prfWallet[0..16),
+ * origin byte 0x02
  *
  * The `passphrase` section is a restore input, not a kernel replay: two mnemonic wallets (origin
  * byte 0x01), the first with a BIP-39 passphrase. The header flags it with `passphrase: true` (key

@@ -69,8 +69,8 @@ export const realArgon2id: Argon2id = async (password, salt, cost, length) =>
   argon2id(password, salt, { m: cost.memoryKiB, t: cost.passes, p: cost.lanes, dkLen: length });
 
 /**
- * The backup payload AEAD context for an envelope's header and factor list — the canonical
- * factor serialization the kernel authenticates, for tests that re-seal or open a payload.
+ * The backup payload AEAD context for an envelope's header and factor list — the canonical factor
+ * serialization the kernel authenticates, for tests that re-seal or open a payload.
  */
 export function backupPayloadContext(
   header: string,

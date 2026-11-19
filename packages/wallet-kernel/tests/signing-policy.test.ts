@@ -295,23 +295,17 @@ describe("blind signing policy", () => {
     ]);
 
   const tokenTransferIx = (): Uint8Array =>
-    solMessage(
-      [SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN],
-      1,
-      [{ program: 3, accounts: [1, 2, 0], data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]) }],
-    );
+    solMessage([SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN], 1, [
+      { program: 3, accounts: [1, 2, 0], data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]) },
+    ]);
   const setAuthorityIx = (): Uint8Array =>
-    solMessage(
-      [SOL_PAYER, SOL_SRC, SOL_TOKEN],
-      1,
-      [
-        {
-          program: 2,
-          accounts: [1, 0],
-          data: new Uint8Array([6, 0, 1, ...new Uint8Array(32).fill(0x55)]),
-        },
-      ],
-    );
+    solMessage([SOL_PAYER, SOL_SRC, SOL_TOKEN], 1, [
+      {
+        program: 2,
+        accounts: [1, 0],
+        data: new Uint8Array([6, 0, 1, ...new Uint8Array(32).fill(0x55)]),
+      },
+    ]);
 
   const solanaCoreIx = (walletId: string, message: Uint8Array) =>
     normalizeSolana(
@@ -371,9 +365,7 @@ describe("blind signing policy", () => {
           kind: "evm.personal-message",
           network: "eip155:1",
           account: { kind: "hd", walletId, groupIndex: 0, template: "evm.bip44" },
-          message: hexToBytes(
-            "5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79",
-          ),
+          message: hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79"),
         }),
       () => ({
         title: "Confirm blind signing",

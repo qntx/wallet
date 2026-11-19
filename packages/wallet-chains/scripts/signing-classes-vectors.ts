@@ -371,8 +371,8 @@ const cases = [
     prompt: p(
       "Confirm blind signing",
       "确认盲签",
-      `${net}\nVerifying contract ${TO}\nType: Big\nThis typed data is too large to show in full`,
-      `${netZh}\n验证合约 ${TO}\n类型：Big\n此类型数据过大，无法完整显示`,
+      `${net}\nVerifying contract ${TO}\nType: Big\n${typedOversize}`,
+      `${netZh}\n验证合约 ${TO}\n类型：Big\n${typedOversizeZh}`,
     ),
   },
   {

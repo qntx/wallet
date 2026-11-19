@@ -588,7 +588,10 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
   };
   const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
     lines.length > SEAPORT_ORDER_ITEMS
-      ? [...lines.slice(0, SEAPORT_ORDER_ITEMS), catalog.moreItems(lines.length - SEAPORT_ORDER_ITEMS)]
+      ? [
+          ...lines.slice(0, SEAPORT_ORDER_ITEMS),
+          catalog.moreItems(lines.length - SEAPORT_ORDER_ITEMS),
+        ]
       : lines;
   return [
     ...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),

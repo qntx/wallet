@@ -475,7 +475,7 @@ describe("backup.restore", () => {
     const envelope = await createBackupEnvelope(a, session, [backupPassword()]);
     const obj = JSON.parse(envelope) as { factors: Array<Record<string, unknown>> };
     obj.factors = obj.factors.map((factor) =>
-      Object.fromEntries(Object.entries(factor).reverse()),
+      Object.fromEntries(Object.entries(factor).toReversed()),
     );
 
     const b = createHarness({ seed: 56 });
@@ -951,7 +951,8 @@ describe("establishing restore and the envelope's backup key", () => {
     // The restored device keeps updating the same cloud file, under the same factors.
     expect(strField(await statusBackup(b, bSession), "id")).toBe(id);
     const updated = strField(ok(await b.call("backup.update", null, bSession)), "envelope");
-    const factorList = (text: string): unknown => (JSON.parse(text) as { factors: unknown }).factors;
+    const factorList = (text: string): unknown =>
+      (JSON.parse(text) as { factors: unknown }).factors;
     expect(factorList(updated)).toStrictEqual(factorList(envelope));
     const c = createHarness({ seed: 112 });
     await c.settle();

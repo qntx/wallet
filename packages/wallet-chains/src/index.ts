@@ -357,8 +357,8 @@ const bytesContent = (bytes: Uint8Array): MessageContent => ({
  * Strict UTF-8 readable text with any sign-in recognition for `family`, else the raw bytes as hex.
  * A message of exactly 32 bytes is bytes, not text: Safe's eth_sign path (`v > 30`) and EIP-191
  * digest verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message
- * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8
- * (≈1 in 7×10⁷ keccak outputs are; grindable in minutes).
+ * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
+ * in 7×10⁷ keccak outputs are; grindable in minutes).
  */
 export const messageContent = (bytes: Uint8Array, family: "evm" | "solana"): MessageContent => {
   let text: string;
@@ -452,11 +452,11 @@ export const isBlindIntent = (intent: Pick<DisplayIntent, "blind">): boolean =>
   intent.blind !== undefined;
 
 /**
- * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when its
- * UTF-8 length is 32 (a digest has the same EIP-191 preimage — see `messageContent`), when it
- * holds an unsafe code point other than TAB/LF/CR, or when it is only the hex rendering of
- * ≥ 32 bytes: the owner sees the rendering, not the bytes it encodes. Checking the content
- * again here gives callers that build `{ kind: "text" }` themselves the same verdict.
+ * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when its UTF-8
+ * length is 32 (a digest has the same EIP-191 preimage — see `messageContent`), when it holds an
+ * unsafe code point other than TAB/LF/CR, or when it is only the hex rendering of ≥ 32 bytes: the
+ * owner sees the rendering, not the bytes it encodes. Checking the content again here gives callers
+ * that build `{ kind: "text" }` themselves the same verdict.
  */
 export const messageBlindReason = (message: MessageContent): BlindReason | undefined =>
   message.kind === "bytes"

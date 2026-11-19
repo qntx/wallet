@@ -89,9 +89,9 @@ const b64 = {
 };
 
 /**
- * The factor list re-serialized with fixed key order — the payload tag authenticates this
- * canonical form, so it does not depend on the wire text's field order. A dropped, added,
- * altered or reordered factor entry changes the digest and fails the payload open.
+ * The factor list re-serialized with fixed key order — the payload tag authenticates this canonical
+ * form, so it does not depend on the wire text's field order. A dropped, added, altered or
+ * reordered factor entry changes the digest and fails the payload open.
  */
 function canonicalFactors(factors: ReadonlyArray<BackupEnvelopeFactor>): string {
   return JSON.stringify(
@@ -112,10 +112,9 @@ function canonicalFactors(factors: ReadonlyArray<BackupEnvelopeFactor>): string 
 }
 
 function payloadContext(header: string, factors: ReadonlyArray<BackupEnvelopeFactor>): string {
-  return (
-    `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}/` +
-    bytesToHex(sha256(utf8ToBytes(canonicalFactors(factors))))
-  );
+  return `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}/${bytesToHex(
+    sha256(utf8ToBytes(canonicalFactors(factors))),
+  )}`;
 }
 
 function factorContextOf(kind: string): string {

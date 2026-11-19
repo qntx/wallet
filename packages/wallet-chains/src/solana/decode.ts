@@ -1,5 +1,6 @@
 import { getU32Decoder, getU64Decoder } from "@solana/codecs";
 
+import { RECOGNISED_FAMILIES } from "../families.ts";
 import type {
   ApprovalChange,
   AssetFlow,
@@ -11,7 +12,6 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { ChainError } from "../index.ts";
-import { RECOGNISED_FAMILIES } from "../families.ts";
 import { withNativeAmountMeta } from "../networks.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { associatedTokenAddress } from "./ata.ts";
