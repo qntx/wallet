@@ -8,7 +8,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { EsploraError } from "../src/chains/bitcoin.ts";
 import { esploraBroadcastVerdict } from "../src/transactions/bitcoin.ts";
-import { broadcastOutcome } from "../src/transactions/broadcast.ts";
+import { broadcastOutcome, submitInOrder } from "../src/transactions/broadcast.ts";
 import type { BroadcastAttempt } from "../src/transactions/broadcast.ts";
 import { evmBroadcastVerdict } from "../src/transactions/evm.ts";
 import { solanaBroadcastVerdict } from "../src/transactions/solana.ts";
@@ -199,5 +199,39 @@ describe("esploraBroadcastVerdict", () => {
     expect(esploraBroadcastVerdict(new EsploraError("esplora /tx: 502", true))).toBeUndefined();
     expect(esploraBroadcastVerdict(new TypeError("fetch failed"))).toBeUndefined();
     expect(esploraBroadcastVerdict(new Error("anything"))).toBeUndefined();
+  });
+});
+
+describe("submitInOrder", () => {
+  it("returns every id when all submissions go out", async () => {
+    const batch = await submitInOrder(3, async (index) => Promise.resolve(`id-${index}`));
+    expect(batch).toStrictEqual({ ids: ["id-0", "id-1", "id-2"] });
+  });
+
+  it("a failure of the first submission is thrown — nothing went out", async () => {
+    let submitted = 0;
+    await expect(
+      submitInOrder(2, async () => {
+        submitted += 1;
+        return Promise.reject(new Error("refused"));
+      }),
+    ).rejects.toThrow("refused");
+    expect(submitted).toBe(1);
+  });
+
+  it("a failure past the first returns the earlier ids and stops — later items never submit", async () => {
+    const submitted: number[] = [];
+    const batch = await submitInOrder(4, async (index) => {
+      submitted.push(index);
+      if (index === 1) {
+        return Promise.reject(new Error("the node refused"));
+      }
+      return Promise.resolve(`id-${index}`);
+    });
+    expect(submitted).toStrictEqual([0, 1]);
+    expect(batch).toStrictEqual({
+      ids: ["id-0"],
+      refused: { index: 1, error: "the node refused" },
+    });
   });
 });

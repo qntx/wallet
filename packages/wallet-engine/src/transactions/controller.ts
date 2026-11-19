@@ -39,6 +39,7 @@ import {
   prepareSolanaCoreSend,
   prepareSolanaStake,
   prepareSolanaSwap,
+  submitDappSolana,
 } from "./solana.ts";
 
 export type {
@@ -457,6 +458,29 @@ export class TransactionController extends Controller<TransactionControllerState
       walletId,
       prepared,
       result,
+    });
+  }
+
+  /**
+   * Internal entry for the dApp `signAndSendTransaction` path: a dApp-built transaction has no
+   * build record; it joins tracking under its signed bytes like a wallet send.
+   */
+  async submitDappSolana(
+    network: string,
+    walletId: string,
+    wire: Uint8Array,
+    lastValidBlockHeight: bigint,
+    intent: DisplayIntent,
+  ): Promise<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return submitDappSolana(this.routeCtx(), {
+      network,
+      walletId,
+      wire,
+      lastValidBlockHeight,
+      intent,
     });
   }
 

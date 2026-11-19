@@ -281,6 +281,8 @@ export type SolanaSignResult =
       readonly send: boolean;
       readonly signatures?: ReadonlyArray<string>;
       readonly signedTransactions?: ReadonlyArray<Uint8Array>;
+      /** The input the node refused after earlier ones went out; `signatures` holds their ids. */
+      readonly refused?: { readonly index: number; readonly error: string };
     }
   | { readonly kind: "solana.message"; readonly signature: Uint8Array };
 
@@ -302,6 +304,8 @@ export type BitcoinSignResult =
       readonly kind: "bitcoin.psbts";
       readonly signedPsbts: ReadonlyArray<Uint8Array>;
       readonly txids: ReadonlyArray<string>;
+      /** The input the node refused after earlier ones went out; `txids` holds their ids. */
+      readonly refused?: { readonly index: number; readonly error: string };
     };
 
 /** `approve` of a `watch-asset` request: the token was added. */

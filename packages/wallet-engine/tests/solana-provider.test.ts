@@ -17,6 +17,7 @@ import {
   createKeyPairFromBytes,
   createTransactionMessage,
   getAddressEncoder,
+  getSignatureFromTransaction,
   getTransactionDecoder,
   getTransactionEncoder,
   partiallySignTransaction,
@@ -45,13 +46,46 @@ const GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 const SITE = "https://app.example.com";
 const RPC_SIG = base58.encode(new Uint8Array(64).fill(0x5a));
 const sentWires: Uint8Array[] = [];
+/** Transaction rows observed inside the node at each sendTransaction call. */
+const persistedAtSend: Array<Array<Record<string, unknown>>> = [];
+/** signature → the status entry getSignatureStatuses reports; absent means unknown. */
+const statuses = new Map<string, unknown>();
+/** The height getBlockHeight reports. */
+let height = 500;
+/** The node's sendTransaction answers HTTP 502 — it got the bytes, the answer is lost. */
+let send502 = false;
+/** Index into sentWires the node refuses with a simulation error; undefined refuses none. */
+let refuseAt: number | undefined;
+
+const resetMock = (): void => {
+  sentWires.length = 0;
+  persistedAtSend.length = 0;
+  statuses.clear();
+  height = 500;
+  send502 = false;
+  refuseAt = undefined;
+};
 
 const rpcReply = (method: string, params: unknown[]): unknown => {
   if (method === "getGenesisHash") {
     return GENESIS;
   }
+  if (method === "getBlockHeight") {
+    return height;
+  }
+  if (method === "getSignatureStatuses") {
+    const sigs = Array.isArray(params[0]) ? params[0] : [];
+    return {
+      context: { slot: 1 },
+      value: sigs.map((s) => statuses.get(String(s)) ?? null),
+    };
+  }
   if (method === "sendTransaction") {
-    sentWires.push(Uint8Array.from(Buffer.from(String(params[0]), "base64")));
+    if (refuseAt === sentWires.length - 1) {
+      throw new Error(
+        "Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1",
+      );
+    }
     return RPC_SIG;
   }
   throw new Error(`no rpc answer for ${method}`);
@@ -89,6 +123,19 @@ async function rig() {
         method: string;
         params: unknown[];
       };
+      if (call.method === "sendTransaction") {
+        // The node got the bytes…
+        sentWires.push(Uint8Array.from(Buffer.from(String(call.params[0]), "base64")));
+        persistedAtSend.push(
+          [...(backing.get("transactions")?.values() ?? [])].map(
+            (raw) => JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>,
+          ),
+        );
+        if (send502) {
+          // …but the answer never made it back.
+          return Promise.resolve(new Response("Bad Gateway", { status: 502 }));
+        }
+      }
       let result: unknown;
       try {
         result = rpcReply(call.method, call.params);
@@ -263,6 +310,21 @@ const signedAt = (outcome: Settled, index: number): Uint8Array => {
   return signed;
 };
 
+/** A cosigned sign-and-send input: the wallet is fee payer, COSIGNER already signed. */
+const signAndSendInput = async (account: SolanaWalletAccount): Promise<Uint8Array> =>
+  wire({
+    feePayer: account.address,
+    ixs: [transfer(COSIGNER, 1000n)],
+    version: 0,
+    presign: [await keyPair(COSIGNER_SEED)],
+  });
+
+/** The stage of the test's one solana-sign request. */
+const requestStage = (r: Rig): string | undefined =>
+  Object.values(r.engine.requests.getState().requests).find(
+    (entry) => entry.method === "solana-sign",
+  )?.stage;
+
 describe("solana provider over a real kernel", () => {
   it("connects with the group's address and its 32-byte public key", async () => {
     const r = await rig();
@@ -358,11 +420,11 @@ describe("solana provider over a real kernel", () => {
     }
   });
 
-  it("signAndSend broadcasts the fully signed transaction and returns the RPC signature", async () => {
+  it("signAndSend broadcasts the fully signed transaction and returns the wallet's own signature", async () => {
     const r = await rig();
     try {
       const account = await connect(r);
-      sentWires.length = 0;
+      resetMock();
       const input = await wire({
         feePayer: account.address,
         ixs: [transfer(COSIGNER, 1000n)],
@@ -375,12 +437,153 @@ describe("solana provider over a real kernel", () => {
       });
       await approve();
       const out = value(await settled) as { signatures: Uint8Array[] };
-      expect(out.signatures).toStrictEqual([base58.decode(RPC_SIG)]);
       const sent = broadcastWire();
       for (const signer of [account.address, COSIGNER]) {
         expect(verifySlot(sent, signer)).toBe(true);
       }
+      // The dApp gets the wallet's own signature out of the broadcast wire — the endpoint
+      // reported RPC_SIG instead, which makes the outcome unknown but changes nothing else.
+      const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
+      expect(local).not.toBe(RPC_SIG);
+      expect(out.signatures).toStrictEqual([base58.decode(local)]);
+      const [tx] = Object.values(r.engine.transactions.getState().txs);
+      expect(tx?.state).toBe("submitted");
+      expect(tx?.hash).toBe(local);
+      expect(tx?.raw).toBe(Buffer.from(sent).toString("base64"));
     } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a 502 after the node received the wire still resolves with the wallet's signature", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      send502 = true;
+      const input = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [input],
+        chains: ["solana:mainnet"],
+      });
+      await approve();
+      const out = value(await settled) as { signatures: Uint8Array[] };
+      expect(sentWires).toHaveLength(1);
+      const sent = broadcastWire();
+      expect(verifySlot(sent, account.address)).toBe(true);
+      const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
+      expect(out.signatures).toStrictEqual([base58.decode(local)]);
+      // The wire and its id were persisted before the sendTransaction call reached the node.
+      const persisted = persistedAtSend[0]?.filter((row) => row["hash"] === local);
+      expect(persisted).toHaveLength(1);
+      expect(persisted[0]?.["state"]).toBe("signed");
+      expect(persisted[0]?.["raw"]).toBe(Buffer.from(sent).toString("base64"));
+      // The lost answer keeps the transaction submitted and tracked, and the request ends
+      // submitted — the dApp is never told the send failed.
+      const [tx] = Object.values(r.engine.transactions.getState().txs);
+      expect(tx?.state).toBe("submitted");
+      expect(tx?.hash).toBe(local);
+      expect(requestStage(r)).toBe("submitted");
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a refused send fails the request and the transaction, nothing is tracked", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      refuseAt = 0;
+      const input = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [input],
+        chains: ["solana:mainnet"],
+      });
+      await approve().then(
+        () => undefined,
+        () => undefined,
+      );
+      const outcome = await settled;
+      expect("error" in outcome).toBe(true);
+      const [tx] = Object.values(r.engine.transactions.getState().txs);
+      expect(tx?.state).toBe("failed");
+      expect(tx?.hash).toBeUndefined();
+      expect(tx?.raw).toBeUndefined();
+      expect(requestStage(r)).toBe("failed");
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a refused second transaction rejects the page but the first stays submitted and tracked", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      refuseAt = 1;
+      const first = await signAndSendInput(account);
+      const second = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [first, second],
+        chains: ["solana:mainnet", "solana:mainnet"],
+      });
+      await approve().then(
+        () => undefined,
+        () => undefined,
+      );
+      const outcome = await settled;
+      // The page is told which input the network refused and which signature already went out.
+      const sent = sentWires.map((w) =>
+        getSignatureFromTransaction(getTransactionDecoder().decode(w)),
+      );
+      expect(sent).toHaveLength(2);
+      const [sig0] = sent;
+      expect("error" in outcome).toBe(true);
+      const message = "error" in outcome ? String((outcome.error as Error).message) : "";
+      expect(message).toContain("refused transaction 1");
+      expect(message).toContain(sig0 ?? "");
+      // The refused wire was sent exactly once and is failed; the first is submitted/tracked.
+      const txs = Object.values(r.engine.transactions.getState().txs);
+      const submitted = txs.filter((tx) => tx.state === "submitted");
+      const failed = txs.filter((tx) => tx.state === "failed");
+      expect(submitted.map((tx) => tx.hash)).toStrictEqual([sig0]);
+      expect(failed).toHaveLength(1);
+      expect(requestStage(r)).toBe("submitted");
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a tracked dApp send settles confirmed when a later poll sees the signature", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      const input = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [input],
+        chains: ["solana:mainnet"],
+      });
+      await approve();
+      const out = value(await settled) as { signatures: Uint8Array[] };
+      const sent = broadcastWire();
+      const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
+      expect(out.signatures).toStrictEqual([base58.decode(local)]);
+      statuses.set(local, { confirmationStatus: "confirmed", err: null, slot: 600 });
+      await until(() => {
+        const [tx] = Object.values(r.engine.transactions.getState().txs);
+        return tx?.state === "confirmed";
+      }, 15_000);
+    } finally {
+      resetMock();
       r.engine.unsubscribe();
       await r.wallet.destroy();
     }

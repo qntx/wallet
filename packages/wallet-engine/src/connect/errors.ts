@@ -30,3 +30,18 @@ export const requestPending = (message: string): ProviderError =>
 export const limitExceeded = (message: string): ProviderError => new ProviderError(-32005, message);
 
 export const internalError = (message: string): ProviderError => new ProviderError(-32603, message);
+
+/**
+ * A batch send that stopped at `refused.index`: the message names the refused input and its
+ * error, and lists the ids already submitted so the page does not resubmit them.
+ */
+export const broadcastRefused = (
+  refused: { readonly index: number; readonly error: string },
+  submitted: ReadonlyArray<string>,
+): ProviderError =>
+  internalError(
+    `the network refused transaction ${String(refused.index)}: ${refused.error}` +
+      (submitted.length === 0
+        ? ""
+        : ` — already submitted, do not resubmit: ${submitted.join(", ")}`),
+  );

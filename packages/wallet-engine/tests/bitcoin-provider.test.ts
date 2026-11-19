@@ -36,6 +36,10 @@ const BIP84_FIRST = "bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu";
 const BIP86_FIRST = "bc1p5cyxnuxmeuwuvkwfem96lqzszd02n6xdcjrs20cac6yqjjwudpxqkedrcr";
 
 const broadcasts: string[] = [];
+/** Txids the endpoint accepted; `/tx/:txid/status` 404s for anything else. */
+const acceptedTxids = new Set<string>();
+/** Index into broadcasts the endpoint refuses with a 400; undefined refuses none. */
+let refusePostAt: number | undefined;
 
 /** The raw transaction hex the endpoint was asked to broadcast. */
 const postedWire = (): string => {
@@ -44,6 +48,12 @@ const postedWire = (): string => {
     throw new Error("no raw transaction was broadcast");
   }
   return wire;
+};
+
+const resetBroadcastMock = (): void => {
+  broadcasts.length = 0;
+  acceptedTxids.clear();
+  refusePostAt = undefined;
 };
 
 async function rig() {
@@ -79,14 +89,29 @@ async function rig() {
           new Response(Buffer.from(PREVS.get(hexMatch[1] ?? "") ?? []).toString("hex")),
         );
       }
+      const statusMatch = /^https:\/\/esplora\.invalid\/tx\/([0-9a-f]{64})\/status$/.exec(url);
+      if (statusMatch !== null) {
+        return Promise.resolve(
+          acceptedTxids.has(statusMatch[1] ?? "")
+            ? Response.json({ confirmed: false })
+            : new Response("Transaction not found", { status: 404 }),
+        );
+      }
       const body = init?.method === "POST" ? String(init.body) : "";
-      broadcasts.push(body);
-      // The endpoint answers with the txid of the bytes it was given, like a real Esplora.
-      const reply =
-        init?.method === "POST" && body !== ""
-          ? new Response(Transaction.fromRaw(hex.decode(body)).id)
-          : Response.json([]);
-      return Promise.resolve(reply);
+      if (init?.method === "POST" && body !== "") {
+        broadcasts.push(body);
+        if (refusePostAt === broadcasts.length - 1) {
+          // A node rejection surfaces as a 4xx, like a real Esplora sendrawtransaction error.
+          return Promise.resolve(
+            new Response("sendrawtransaction RPC error: mempool rejection", { status: 400 }),
+          );
+        }
+        const txid = Transaction.fromRaw(hex.decode(body)).id;
+        acceptedTxids.add(txid);
+        // The endpoint answers with the txid of the bytes it was given, like a real Esplora.
+        return Promise.resolve(new Response(txid));
+      }
+      return Promise.resolve(Response.json([]));
     },
     random: (n) => randomBytes(n),
     now: () => Date.now(),
@@ -305,9 +330,15 @@ const dappPsbt = (opts: {
   value: bigint;
   sighash?: number;
   foreignScript?: Uint8Array;
+  /** Differentiator for the prevout's txid bytes, so batch PSBTs spend distinct outputs. */
+  prevFill?: number;
 }): Uint8Array => {
   const prev = new Transaction({ version: 2 });
-  prev.addInput({ txid: new Uint8Array(32).fill(9), index: 0, sequence: 0xffffffff });
+  prev.addInput({
+    txid: new Uint8Array(32).fill(opts.prevFill ?? 9),
+    index: 0,
+    sequence: 0xffffffff,
+  });
   prev.addOutput({ script: opts.foreignScript ?? scriptOf(opts.from), amount: opts.value });
   PREVS.set(prev.id, prev.toBytes(true, false));
   const tx = new Transaction({ version: 2 });
@@ -461,6 +492,66 @@ describe("bitcoin dApp PSBTs over a real kernel", () => {
       await until(() => true);
       expect(request?.method).toBe("bitcoin-sign");
     } finally {
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a refused second PSBT rejects the page; the first txid went out and stays tracked", async () => {
+    const r = await rig();
+    try {
+      await connect(r, ["payment"]);
+      resetBroadcastMock();
+      refusePostAt = 1;
+      const first = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 100_000n,
+      });
+      const second = dappPsbt({
+        from: BIP84_FIRST,
+        to: "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+        value: 50_000n,
+        prevFill: 8,
+      });
+      const { request, settled, approve } = await signPsbt(
+        r,
+        [
+          {
+            psbt: first,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
+          {
+            psbt: second,
+            chain: "bitcoin:mainnet",
+            inputsToSign: [{ address: BIP84_FIRST, signingIndexes: [0] }],
+          },
+        ],
+        "bitcoin:signAndSendTransaction",
+      );
+      await approve().then(
+        () => undefined,
+        () => undefined,
+      );
+      const outcome = await settled;
+      // The page is told which input the network refused and which txid already went out.
+      expect(broadcasts).toHaveLength(2);
+      const [wire0] = broadcasts;
+      const txid0 = Transaction.fromRaw(hex.decode(wire0 ?? "")).id;
+      expect("error" in outcome).toBe(true);
+      const message = "error" in outcome ? String((outcome.error as Error).message) : "";
+      expect(message).toContain("refused transaction 1");
+      expect(message).toContain(txid0);
+      // The refused PSBT was posted exactly once and failed; the first is submitted/tracked.
+      const txs = Object.values(r.engine.transactions.getState().txs);
+      expect(txs.filter((tx) => tx.state === "submitted").map((tx) => tx.hash)).toStrictEqual([
+        txid0,
+      ]);
+      expect(txs.filter((tx) => tx.state === "failed")).toHaveLength(1);
+      expect(r.engine.requests.getState().requests[request?.id ?? ""]?.stage).toBe("submitted");
+    } finally {
+      resetBroadcastMock();
       r.engine.unsubscribe();
       await r.wallet.destroy();
     }

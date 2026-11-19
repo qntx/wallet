@@ -59,6 +59,38 @@ export const broadcastOutcome = async (attempt: BroadcastAttempt): Promise<Broad
       };
 };
 
+export type SubmittedBatch = {
+  /** Ids of the transactions that went out (accepted or outcome unknown), in input order. */
+  readonly ids: ReadonlyArray<string>;
+  /** The transaction the node refused; nothing after it was sent. */
+  readonly refused?: { readonly index: number; readonly error: string };
+};
+
+/**
+ * Submits `count` signed transactions in order; stops at the first that does not go out — a later
+ * one may depend on it, so it is never sent, and each is persisted by its own `submitSigned` just
+ * before its own send so an unsent later item is never rebroadcast after a restart. Throws that
+ * error when the first one does not go out (nothing was sent).
+ */
+export const submitInOrder = async (
+  count: number,
+  submit: (index: number) => Promise<string>,
+): Promise<SubmittedBatch> => {
+  const ids: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    try {
+      // oxlint-disable-next-line eslint/no-await-in-loop -- submissions are sequential per input.
+      ids.push(await submit(index));
+    } catch (error) {
+      if (index === 0) {
+        throw error;
+      }
+      return { ids, refused: { index, error: errorMessage(error) } };
+    }
+  }
+  return { ids };
+};
+
 export type SignedBroadcast = BroadcastAttempt & {
   /** The signed bytes as persisted for rebroadcast: EVM/Bitcoin hex, Solana base64 wire. */
   readonly raw: string;
@@ -79,11 +111,19 @@ export const submitSigned = async (
   tx: TrackedTransaction,
   signed: SignedBroadcast,
 ): Promise<TrackedTransaction> => {
-  const persisted = await ctx.transition(tx, {
-    ...signed.record,
-    hash: signed.id,
-    raw: signed.raw,
-  });
+  let persisted: TrackedTransaction;
+  try {
+    persisted = await ctx.transition(tx, {
+      ...signed.record,
+      hash: signed.id,
+      raw: signed.raw,
+    });
+  } catch (error) {
+    // Nothing was persisted or sent, but the caller may already hold what the transaction
+    // consumes (an EVM nonce) — free it so later sends are not stuck behind a gap.
+    signed.release();
+    throw error;
+  }
   signed.hold();
   const outcome = await broadcastOutcome(signed);
   if (outcome.kind === "refused") {

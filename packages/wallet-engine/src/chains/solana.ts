@@ -58,6 +58,13 @@ import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 /** Token-2022 program id — the mint's owner for extension mints. */
 export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
+/**
+ * Agave `MAX_PROCESSING_AGE`: `getLatestBlockhash` reports `lastValidBlockHeight` as the current
+ * block height plus 150. A dApp transaction's message carries only the blockhash, so its expiry
+ * is bounded by the height read before broadcast plus this.
+ */
+export const SOLANA_MAX_PROCESSING_AGE = 150n;
+
 const MAX_MESSAGE_BYTES = 1232;
 const ADDRESS_BYTES = 32;
 const TOKEN_ACCOUNT_MIN_BYTES = 72;

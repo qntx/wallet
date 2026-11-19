@@ -13,6 +13,7 @@ import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import {
   addSolanaSignature,
+  decodeSolana,
   decodeSolanaTransaction,
   normalizeSolana,
 } from "@qntx/wallet-chains/solana";
@@ -29,7 +30,7 @@ import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
-import { SolanaChainAdapter } from "./chains/solana.ts";
+import { SOLANA_MAX_PROCESSING_AGE, SolanaChainAdapter } from "./chains/solana.ts";
 import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
@@ -73,9 +74,10 @@ import {
   fetchJupiterQuote,
   fetchSwapQuote,
 } from "./swaps/quote.ts";
+import { submitInOrder } from "./transactions/broadcast.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
-import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
+import type { AccountRef, DelegationStatus, DisplayIntent } from "./transactions/route.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
@@ -458,6 +460,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       };
       if (request.kind === "transactions") {
         const wires: Uint8Array[] = [];
+        const messages: Uint8Array[] = [];
         for (const wire of request.transactions) {
           const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
@@ -474,17 +477,42 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
             throw new Error("unexpected solana sign result");
           }
           wires.push(addSolanaSignature(wire, account.address, result.signature));
+          messages.push(message);
         }
         if (!request.send) {
           return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
         }
+        const intents = messages.map(
+          (message): DisplayIntent =>
+            decodeSolana(
+              { kind: "solana.transaction", network, account: hdAccount, message },
+              account.address,
+            ),
+        );
+        /* The message carries only a blockhash: bound its expiry by the height at request time
+           plus Agave's processing age. Read once, before commit — a failed read sends nothing. */
+        const lastValidBlockHeight = (await adapter.blockHeight(rpc)) + SOLANA_MAX_PROCESSING_AGE;
         commit();
-        const signatures: string[] = [];
-        for (const wire of wires) {
-          // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
-          signatures.push(await adapter.broadcast(rpc, wire));
-        }
-        return { kind: "solana.transactions" as const, send: true, signatures };
+        const batch = await submitInOrder(wires.length, async (index) => {
+          const wire = wires[index];
+          const intent = intents[index];
+          if (wire === undefined || intent === undefined) {
+            throw new Error("signed transaction without its input");
+          }
+          return transactions.submitDappSolana(
+            network,
+            account.walletId,
+            wire,
+            lastValidBlockHeight,
+            intent,
+          );
+        });
+        return {
+          kind: "solana.transactions" as const,
+          send: true,
+          signatures: batch.ids,
+          ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+        };
       }
       normalizeSolana(
         {
@@ -526,7 +554,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         ),
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids } = await signDappPsbts(
+      const { signedPsbts, txids, refused } = await signDappPsbts(
         chains(options.wallet),
         prepared,
         send,
@@ -534,7 +562,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         commit,
         async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
       );
-      return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
+      return {
+        kind: "bitcoin.psbts" as const,
+        signedPsbts,
+        txids,
+        ...(refused === undefined ? {} : { refused }),
+      };
     },
     bitcoinSign: async (account, network, request, verify) => {
       const result = await chains(options.wallet).sign({

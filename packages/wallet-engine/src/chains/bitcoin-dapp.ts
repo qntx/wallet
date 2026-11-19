@@ -25,6 +25,8 @@ import type {
   PreparedBitcoinPsbt,
 } from "../requests/types.ts";
 import { accountPath, fetchRawTxes } from "../transactions/bitcoin.ts";
+import { submitInOrder } from "../transactions/broadcast.ts";
+import type { SubmittedBatch } from "../transactions/broadcast.ts";
 import type { SignResult } from "../transactions/route.ts";
 import { scanChain, scriptPubKey } from "./bitcoin-scan.ts";
 import type { Esplora } from "./bitcoin.ts";
@@ -265,7 +267,8 @@ export const prepareDappPsbts = async (
 /**
  * Signs the prepared PSBTs one after another (each prompts). With `send`, every signed PSBT must
  * finalize — a PSBT with inputs this wallet did not sign cannot be broadcast — before any is
- * broadcast.
+ * broadcast. Broadcasts run in order through `submitInOrder`: a refusal past the first returns it
+ * as `refused` with the txids already out, since a later PSBT may depend on the refused one.
  */
 export const signDappPsbts = async (
   apis: Pick<ChainsApi, "sign">,
@@ -274,7 +277,11 @@ export const signDappPsbts = async (
   verify: Parameters<ChainsApi["sign"]>[0]["verify"],
   commit: () => void,
   broadcast: (prepared: PreparedBitcoinPsbt, result: SignResult) => Promise<string>,
-): Promise<{ signedPsbts: Uint8Array[]; txids: string[] }> => {
+): Promise<{
+  signedPsbts: Uint8Array[];
+  txids: string[];
+  refused?: SubmittedBatch["refused"];
+}> => {
   const results: SignResult[] = [];
   for (const { request } of prepared) {
     // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
@@ -300,14 +307,17 @@ export const signDappPsbts = async (
     }
   }
   commit();
-  const txids: string[] = [];
-  for (const [n, result] of results.entries()) {
+  const batch = await submitInOrder(results.length, async (n) => {
     const entry = prepared[n];
-    if (entry === undefined) {
+    const result = results[n];
+    if (entry === undefined || result === undefined) {
       throw new Error("sign result without its prepared PSBT");
     }
-    // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per PSBT.
-    txids.push(await broadcast(entry, result));
-  }
-  return { signedPsbts, txids };
+    return broadcast(entry, result);
+  });
+  return {
+    signedPsbts,
+    txids: [...batch.ids],
+    ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+  };
 };

@@ -1,5 +1,10 @@
 import { base58, base64 } from "@scure/base";
-import { address, createAddressWithSeed } from "@solana/kit";
+import {
+  address,
+  createAddressWithSeed,
+  getSignatureFromTransaction,
+  getTransactionDecoder,
+} from "@solana/kit";
 
 import type { StakeAction } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
@@ -683,6 +688,51 @@ export const prepareSolanaCoreSend = async (
     },
     flags,
   });
+};
+
+/**
+ * A dApp-signed transaction joins tracking like a wallet send: the signed wire and its locally
+ * computed id — the fee payer's signature — are persisted before anything leaves, so a lost answer
+ * stays `submitted` under that id. `lastValidBlockHeight` is the caller's bound on the blockhash's
+ * expiry (the message carries only the blockhash).
+ */
+export const submitDappSolana = async (
+  ctx: RouteContext,
+  params: {
+    readonly network: string;
+    readonly walletId: string;
+    readonly wire: Uint8Array;
+    readonly lastValidBlockHeight: bigint;
+    readonly intent: DisplayIntent;
+  },
+): Promise<string> => {
+  const { network, walletId, wire, lastValidBlockHeight, intent } = params;
+  const rpc = ctx.options.networks.solanaRpc(network);
+  const signature: string = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
+  let tx: TrackedTransaction = {
+    id: ctx.newId(),
+    family: "solana",
+    network,
+    account: walletId,
+    hash: undefined,
+    state: "signed",
+    intent,
+    nonce: 0,
+    lastValidBlockHeight: Number(lastValidBlockHeight),
+    submittedAt: ctx.options.now(),
+    error: undefined,
+  };
+  tx = await ctx.transition(tx, {});
+  await submitSigned(ctx, tx, {
+    id: signature,
+    raw: base64.encode(wire),
+    hold: () => undefined,
+    release: () => undefined,
+    send: async () => solana.broadcast(rpc, wire),
+    verdict: solanaBroadcastVerdict,
+    known: async () => signatureSeen(rpc, signature),
+  });
+  return signature;
 };
 
 export const pollSolana = async (
