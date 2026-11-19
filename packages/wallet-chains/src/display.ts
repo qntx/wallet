@@ -49,11 +49,15 @@ export const isHexRendering = (text: string): boolean =>
  * message may contain. Anything else — a control, bidi-control, zero-width, line-separator or tag
  * character — means what the owner reads is not what was signed.
  */
-export const isReadableText = (text: string): boolean =>
-  Array.from(text).every((char) => {
+export const isReadableText = (text: string): boolean => {
+  for (const char of text) {
     const cp = char.codePointAt(0) ?? 0;
-    return cp === 0x09 || cp === 0x0a || cp === 0x0d || !isUnsafeCodePoint(cp);
-  });
+    if (cp !== 0x09 && cp !== 0x0a && cp !== 0x0d && isUnsafeCodePoint(cp)) {
+      return false;
+    }
+  }
+  return true;
+};
 
 /**
  * The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines

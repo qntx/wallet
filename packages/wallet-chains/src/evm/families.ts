@@ -48,14 +48,12 @@ export const typedDataNearMiss = (
     if (verifying === undefined) {
       return false;
     }
-    switch (claim.verifyingContract) {
-      case "permit2":
-        return verifying.toLowerCase() === PERMIT2_ADDRESS.toLowerCase();
-      case "seaport":
-        return SEAPORT_CONTRACTS.has(verifying.toLowerCase());
-      case "token-table":
-        return lookupEvmToken(table, chainId, verifying) !== undefined;
-    }
-    return false;
+    const contract = verifying.toLowerCase();
+    return (
+      (claim.verifyingContract === "permit2" && contract === PERMIT2_ADDRESS.toLowerCase()) ||
+      (claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(contract)) ||
+      (claim.verifyingContract === "token-table" &&
+        lookupEvmToken(table, chainId, verifying) !== undefined)
+    );
   })?.nearMiss;
 };

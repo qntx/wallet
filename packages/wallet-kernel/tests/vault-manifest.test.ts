@@ -412,7 +412,8 @@ describe("structural commits", () => {
     const unlocked = createHarness({ keystore: fk.keystore, store: h.store, noIdle: true });
     await unlocked.settle();
     ok(await unlocked.call("vault.unlock", { factor: { kind: "hardware" } }));
-    expect((await h.store.load()).factors.some((f) => f.kind === "device")).toBe(false);
+    const after = await h.store.load();
+    expect(after.factors.some((f) => f.kind === "device")).toBe(false);
 
     const fresh = createHarness({ keystore: fk.keystore, store: h.store });
     await fresh.settle();
