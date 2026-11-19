@@ -1,6 +1,6 @@
 import { encodeFunctionData, encodeFunctionResult } from "viem";
 import type { PublicClient } from "viem";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
 import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 
@@ -429,5 +429,60 @@ describe("AssetsController polling", () => {
     await timers.fire();
     expect(evmReads).toStrictEqual([OWNER, OWNER]);
     expect(solReads).toStrictEqual([SOL_OWNER, SOL_OWNER]);
+  });
+});
+
+describe("AssetsController lock", () => {
+  it("a read in flight across lock() writes nothing — the next session never re-reads it", async () => {
+    let balanceReads = 0;
+    let gated = false;
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    const c = client({
+      eth_getBalance: () => {
+        balanceReads += 1;
+        gated = true;
+        return gate.then(() => "0xde0b6b3a7640000");
+      },
+      eth_call: () => `0x${"0".repeat(64)}`,
+    });
+    const timers = manualTimers();
+    const ctl = new AssetsController({
+      networks: fakeNetworks(c),
+      chains,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      setTimer: timers.setTimer,
+      logger,
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
+    });
+    await ctl.init();
+
+    const p = ctl.refresh(OWNER, "eip155:1");
+    await vi.waitFor(() => {
+      if (!gated) {
+        throw new Error("balance read not pending yet");
+      }
+    });
+
+    ctl.lock();
+    expect(ctl.getState().balances).toStrictEqual({});
+
+    // The read resolves and returns its balances — but writes none back into the locked state.
+    releaseGate();
+    const balances = await p;
+    expect(balances.native).toBe("1000000000000000000");
+    expect(ctl.getState().balances).toStrictEqual({});
+
+    // The late record also dropped its reread: the next session's poll never re-reads it.
+    await ctl.init();
+    ctl.setVisible(true);
+    await timers.fire();
+    expect(balanceReads).toBe(1);
+    ctl.setVisible(false);
+    ctl.lock();
   });
 });
