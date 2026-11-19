@@ -451,7 +451,8 @@ const mintAccounts = new Map(
 const SOL_OWNER = "Owner1111111111111111111111111111111111111";
 
 const tokenAccount = (mint: string, amount: string, program = PROGRAM_IDS.token) => ({
-  pubkey: `${mint.slice(0, 30)}Acct000000000000`,
+  // One account per mint: the pubkey derives from the whole mint so no two fixtures collide.
+  pubkey: `acct-${mint}`,
   account: {
     owner: program,
     data: {

@@ -57,7 +57,6 @@ const collect = (
     ) {
       continue;
     }
-    seen.add(pubkey);
     const parsed = isObject(account["data"]) ? account["data"]["parsed"] : undefined;
     const info = isObject(parsed) ? parsed["info"] : undefined;
     const tokenAmount = isObject(info) ? info["tokenAmount"] : undefined;

@@ -273,6 +273,36 @@ describe("AssetsController solana token holdings", () => {
     expect(tokenBalance(balances, USDC).balance).toBe("1400000");
   });
 
+  it("a malformed entry listed before a valid one under the same pubkey does not hide it", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "not-a-number",
+            pubkey: "Dup1111111111111111111111111111111111111111",
+          }),
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "500000",
+            pubkey: "Dup1111111111111111111111111111111111111111",
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, USDC);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(tokenBalance(balances, USDC).balance).toBe("500000");
+  });
+
   it("an attacker-created empty account listed first does not hide the balance", async () => {
     const calls: Call[] = [];
     const assets = make(
