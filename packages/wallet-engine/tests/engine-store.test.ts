@@ -30,26 +30,11 @@ const until = async (read: () => boolean, ms = 10_000): Promise<void> => {
   }
 };
 
-/** Reads until the value has not changed for `ms`; returns the settled value. */
-const stable = async (read: () => number, ms = 400): Promise<number> => {
-  let last = read();
-  let since = Date.now();
-  while (Date.now() - since < ms) {
-    // oxlint-disable-next-line eslint/no-await-in-loop -- polling
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    const v = read();
-    if (v !== last) {
-      last = v;
-      since = Date.now();
-    }
-  }
-  return last;
-};
-
 describe("WalletEngine session store", () => {
   it("opens and closes exactly one EngineStore per unlock/lock cycle", async () => {
     let opens = 0;
     let closes = 0;
+    let starts = 0;
     const backing = new Map<string, Map<string, Uint8Array>>();
     const wallet = await createNodeWallet({
       verifyEvent,
@@ -90,6 +75,14 @@ describe("WalletEngine session store", () => {
         const s = createMemoryEngineStore({ collections: backing });
         return {
           ...s,
+          collection: (name: string) => {
+            // The start sequence opens the connections collection last, after every other init.
+            // oxlint-disable-next-line vitest/no-conditional-in-test -- start-sequence probe
+            if (name === "connections") {
+              starts += 1;
+            }
+            return s.collection(name);
+          },
           close: async () => {
             closes += 1;
             await s.close();
@@ -103,19 +96,20 @@ describe("WalletEngine session store", () => {
         mnemonic: MNEMONIC,
         factor: { kind: "password", password: PASSWORD },
       });
-      await until(() => engine.accounts.getState().selected !== null);
-      expect(await stable(() => opens)).toBe(1);
-      expect(await stable(() => closes, 200)).toBe(0);
+      await until(() => starts === 1);
+      expect(opens).toBe(1);
+      expect(closes).toBe(0);
 
       await wallet.vault.lock();
       await until(() => closes === 1);
-      expect(await stable(() => opens, 200)).toBe(1);
+      expect(opens).toBe(1);
 
       await wallet.vault.unlock({ kind: "password", password: PASSWORD });
-      await until(() => engine.accounts.getState().selected !== null);
+      await until(() => starts === 2);
+      expect(opens).toBe(2);
       await wallet.vault.lock();
       await until(() => closes === 2);
-      expect(await stable(() => opens, 200)).toBe(2);
+      expect(opens).toBe(2);
     } finally {
       engine.unsubscribe();
       await wallet.destroy();
