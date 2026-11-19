@@ -621,26 +621,52 @@ export class SolanaChainAdapter {
     return result;
   }
 
-  /** Processed → confirmed → finalized; an error on the status means the tx failed on-chain. */
-  async status(
+  /**
+   * `getSignatureStatuses` → the entry's state (processed → confirmed → finalized; an `err`
+   * means the tx failed on-chain), whether the cluster has an entry at any commitment — a
+   * processed-only one can still land — and the slot of the bank the status was read on.
+   */
+  async signatureStatus(
     rpc: SolanaRpc,
     signature: string,
-  ): Promise<"pending" | "confirmed" | "finalized" | "failed"> {
+  ): Promise<{
+    state: "pending" | "confirmed" | "finalized" | "failed";
+    seen: boolean;
+    slot: bigint | undefined;
+  }> {
     const result = obj(
       await this.rpc(rpc, "getSignatureStatuses", [
         [signature],
         { searchTransactionHistory: true },
       ]),
     );
+    const context = obj(result?.["context"]);
+    const slot = context?.["slot"];
     const entry = Array.isArray(result?.["value"]) ? obj(result["value"][0]) : undefined;
-    if (entry === undefined) {
-      return "pending";
-    }
-    if (entry["err"] !== null && entry["err"] !== undefined) {
-      return "failed";
-    }
-    const c = entry["confirmationStatus"];
-    return c === "finalized" ? "finalized" : c === "confirmed" ? "confirmed" : "pending";
+    const state =
+      entry === undefined
+        ? "pending"
+        : entry["err"] !== null && entry["err"] !== undefined
+          ? "failed"
+          : entry["confirmationStatus"] === "finalized"
+            ? "finalized"
+            : entry["confirmationStatus"] === "confirmed"
+              ? "confirmed"
+              : "pending";
+    return {
+      state,
+      seen: entry !== undefined,
+      slot: typeof slot === "number" || typeof slot === "bigint" ? BigInt(slot) : undefined,
+    };
+  }
+
+  /** `getEpochInfo` at confirmed → the cluster's absolute slot and block height, read together. */
+  async tip(rpc: SolanaRpc): Promise<{ slot: bigint; height: bigint }> {
+    const result = obj(await this.rpc(rpc, "getEpochInfo", [{ commitment: "confirmed" }]));
+    return {
+      slot: BigInt(str(result?.["absoluteSlot"], "0")),
+      height: BigInt(str(result?.["blockHeight"], "0")),
+    };
   }
 
   async blockHeight(rpc: SolanaRpc): Promise<bigint> {

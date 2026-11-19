@@ -251,12 +251,17 @@ const solWorld = () => {
       }
       case "getBlockHeight":
         return 1;
+      case "getEpochInfo":
+        return { absoluteSlot: 500, blockHeight: 1 };
       case "sendTransaction":
         return SOL_SIG;
       case "getSignatureStatuses": {
         counts.signatureStatuses += 1;
         const sigs = Array.isArray(params[0]) ? params[0] : [];
-        return { value: sigs.map((s) => statuses.get(String(s)) ?? null) };
+        return {
+          context: { slot: 500 },
+          value: sigs.map((s) => statuses.get(String(s)) ?? null),
+        };
       }
       default:
         throw new Error(`unmocked ${method}`);

@@ -73,6 +73,9 @@ const rpcReply = (method: string, params: unknown[]): unknown => {
   if (method === "getBlockHeight") {
     return height;
   }
+  if (method === "getEpochInfo") {
+    return { absoluteSlot: 700, blockHeight: height };
+  }
   if (method === "getSignatureStatuses") {
     const sigs = Array.isArray(params[0]) ? params[0] : [];
     return {

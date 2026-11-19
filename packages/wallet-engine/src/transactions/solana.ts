@@ -743,15 +743,21 @@ export const pollSolana = async (
     return "failed";
   }
   const rpc = ctx.options.networks.solanaRpc(tx.network);
-  const state = await solana.status(rpc, tx.hash);
-  if (state !== "pending") {
-    return state === "finalized" ? "confirmed" : state;
+  /* With a blockhash bound the tip is read before the status, so a transaction landing between
+     the reads can never be finalised `dropped` by an answer a stale bank produced. */
+  const tip = tx.lastValidBlockHeight === undefined ? undefined : await solana.tip(rpc);
+  const status = await solana.signatureStatus(rpc, tx.hash);
+  if (status.state !== "pending") {
+    return status.state === "finalized" ? "confirmed" : status.state;
   }
-  if (
-    tx.lastValidBlockHeight !== undefined &&
-    (await solana.blockHeight(rpc)) > BigInt(tx.lastValidBlockHeight)
-  ) {
-    return "dropped";
+  if (tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0)) {
+    /* Expired, but `dropped` only when proven: the node has no entry at any commitment and the
+       status answer came from a bank at least as far along as the height proof. Anything else —
+       a stale-bank status, a processed-only entry — stays tracked and is not rebroadcast: the
+       blockhash is dead, resending can only hit "already processed" or nothing. */
+    return status.seen || status.slot === undefined || status.slot < tip.slot
+      ? undefined
+      : "dropped";
   }
   if (tx.raw !== undefined) {
     await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");
