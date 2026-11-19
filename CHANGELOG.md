@@ -146,6 +146,20 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 - Fixed vectors for Solana serialized transactions (`vectors/chains/solana-wire.json`) and for
   signing classes (`vectors/chains/signing-classes.json`: class, blind reason and exact kernel
   prompt text in both locales); provenance recorded for every vector file.
+- `GET /v1/tokens/:caip2` on the gateway: per-network token lists built hourly from the Uniswap Labs
+  Default list (EVM mainnets), CoinGecko Pro token lists (HyperEVM, when `COINGECKO_API_KEY` is set)
+  and Jupiter's verified tokens (Solana), with a strong ETag and `if-none-match` → 304. Lists are
+  bounded (EVM 1500, Solana 5000 entries), versioned monotonically, and never republished when a
+  source fails, shrinks by more than half or exceeds the cap. Contract: `tokenList`,
+  `tokenListResponse`, `tokenListPath`, `TOKEN_LIST_MAX_ENTRIES`, `TOKEN_LIST_SOURCES`.
+- Token discovery in `AssetsController`: listed ERC-20s with a non-zero balance appear automatically
+  (read in the existing Multicall3 batches, re-scanned every 10 minutes), and every SPL mint the
+  account holds appears, with its symbol from Token-2022 metadata or Metaplex. No address is sent
+  to a data provider.
+- `TokenBalance.spam` (spam reasons: `impersonation`, `suspicious-symbol`, `link-in-name`,
+  `permanent-delegate`, `non-transferable`), `TokenBalance.hidden` and `TokenBalance.name`.
+- `AssetsController.setTokenHidden(network, address, hidden)`: persists the user's hide/unhide
+  verdict; spam-flagged tokens are hidden by default.
 
 ### Changed
 
@@ -331,6 +345,13 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   needs a verified tag on `main` with a green CI run; reusable workflows are pinned to a commit;
   staging and production gateway deploys are isolated and roll back on a failed smoke; rulesets
   require two reviewers.
+- **BREAKING:** `AssetsController` takes `gateway`, `fetch` and `now` options, and `TokenBalance`
+  now always carries `spam` and `hidden`.
+- **BREAKING:** `verified` is also true for a token-list entry whose list decimals equal the
+  on-chain decimals (it was true only for the built-in table).
+- Hidden tokens are excluded from price requests and portfolio valuation.
+- EVM token metadata (`decimals`, and `symbol` for custom tokens) is read once per unlock in batched
+  `aggregate3` calls of at most 300, instead of two `eth_call`s per token per refresh.
 
 ### Removed
 
@@ -425,6 +446,9 @@ upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
   the upstream answers 400/413/422; `id: null` or malformed params are rejected before any upstream
   call; a fresh client id per request no longer escapes the per-IP limit; oversized bodies no longer
   reach the paid upstreams; the production smoke no longer crashes on unconfigured auth.
+- Token decimals are never guessed: a custom ERC-20 or SPL mint whose decimals cannot be read is
+  omitted from the refresh instead of being shown at 18 (EVM) or 9 (Solana), and EVM `addToken`
+  rejects such a token.
 
 ## [0.13.0] - 2026-11-09
 
