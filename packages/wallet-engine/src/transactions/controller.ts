@@ -695,6 +695,12 @@ export class TransactionController extends Controller<TransactionControllerState
     if (next === undefined || this.locked) {
       return;
     }
+    // The poll's answer describes the snapshot it started from; a concurrent transition — a
+    // sibling marking this replaced, a reload — means the row moved on. Keep tracking and let
+    // the next poll decide.
+    if (this.getState().txs[id] !== tx) {
+      return;
+    }
     this.untrack(id);
     const updated = await this.transition(tx, { state: next });
     this.settle(updated);
