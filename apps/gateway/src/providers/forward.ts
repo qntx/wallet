@@ -109,11 +109,11 @@ export type ForwardOptions = {
 export type Forwarder = {
   /**
    * Runs `attempt` against each provider in order, skipping any whose breaker is open; `attempt`
-   * reaches its provider only through `send`. A returned value ends the walk. An outage, a timeout
-   * or a {@link ProviderFailure} moves on to the next provider; a `GatewayHttpError` or a
-   * {@link ResponseTooLarge} is the request's own answer (a 400 for the latter) and ends the walk.
-   * When every provider fails the caller gets a 503. Only outages and timeouts count against the
-   * shared breaker.
+   * reaches its provider only through `send`. A returned value ends the walk; a failed attempt
+   * cancels its other in-flight calls. An outage, a timeout or a {@link ProviderFailure} moves on
+   * to the next provider; a `GatewayHttpError` or a {@link ResponseTooLarge} is the request's own
+   * answer (a 400 for the latter) and ends the walk. When every provider fails the caller gets a
+   * 503. Only outages and timeouts count against the shared breaker.
    */
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,
@@ -234,9 +234,21 @@ export function createForwarder(
           throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
         }
         try {
-          const value = await policyFor(provider).execute(async ({ signal }) =>
-            attempt(sendTo(fetch, provider, signal), provider),
-          );
+          const value = await policyFor(provider).execute(async ({ signal }) => {
+            // A failed attempt drops its other in-flight calls (one `send` each), which would
+            // otherwise keep spending the provider's quota; a successful attempt leaves them —
+            // a streamed Esplora body outlives it.
+            const failed = new AbortController();
+            try {
+              return await attempt(
+                sendTo(fetch, provider, AbortSignal.any([signal, failed.signal])),
+                provider,
+              );
+            } catch (error) {
+              failed.abort();
+              throw error;
+            }
+          });
           return { value, providerId: provider.id };
         } catch (error) {
           log(

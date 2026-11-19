@@ -495,6 +495,65 @@ describe("POST /v1/prices failover", () => {
   });
 });
 
+describe("POST /v1/prices attempt cancellation", () => {
+  it("cancels a failed attempt's other in-flight calls", async () => {
+    let solanaSignal: AbortSignal | undefined;
+    let onAbort: ((signal: AbortSignal) => void) | undefined;
+    const cancelled = new Promise<AbortSignal>((resolve) => {
+      onAbort = resolve;
+    });
+    const upstream = fakeFetch(
+      primary({
+        [cgToken("ethereum")]: () => new Response("batch limit", { status: 400 }),
+        [cgToken("solana")]: async (_call, signal) => {
+          solanaSignal = signal;
+          return new Promise<Response>((resolve) => {
+            signal.addEventListener(
+              "abort",
+              () => {
+                resolve(Response.json({}));
+                onAbort?.(signal);
+              },
+              { once: true },
+            );
+          });
+        },
+      }),
+    );
+    const res = await app(upstream).request(prices.path, request([USDC_ETH, USDC_SOL]));
+    // CoinGecko's two platform calls ran together; ethereum's 400 failed the attempt, so the
+    // still-open solana call is cancelled before the answer fails over to DefiLlama.
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("defillama");
+    expect(solanaSignal?.aborted).toBe(true);
+    const signal = await cancelled;
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("does not cancel a successful attempt's calls", async () => {
+    const signals: AbortSignal[] = [];
+    const seen =
+      (handler: Upstream): Upstream =>
+      async (call, signal) => {
+        signals.push(signal);
+        return handler(call, signal);
+      };
+    const upstream = fakeFetch(
+      primary({
+        [cgToken("ethereum")]: seen(replay(cgEthereum)),
+        [cgToken("solana")]: seen(replay(cgSolana)),
+      }),
+    );
+    const res = await app(upstream).request(prices.path, request([USDC_ETH, USDC_SOL]));
+    expect(res.status).toBe(200);
+    expect(res.headers.get(PROVIDERS_HEADER)).toBe("coingecko");
+    expect(signals).toHaveLength(2);
+    for (const signal of signals) {
+      expect(signal.aborted).toBe(false);
+    }
+  });
+});
+
 describe("POST /v1/prices cache", () => {
   it("serves a cached asset for 30 s, then asks the provider again", async () => {
     const cache = memoryPriceCache();
