@@ -1,4 +1,5 @@
 import type { RiskStore } from "./risk/phishing.ts";
+import type { TokenListStore } from "./tokens/build.ts";
 
 export type RateLimiter = {
   limit: (options: { key: string; delta?: number }) => Promise<{ success: boolean }>;
@@ -52,6 +53,8 @@ export type GatewayOptions = {
   readonly limiters: Limiters;
   readonly corsOrigins: ReadonlyArray<string>;
   readonly risk: RiskStore;
+  /** Published token lists the scheduled build writes and `GET /v1/tokens` serves. */
+  readonly tokens: TokenListStore;
   /**
    * Provider accounts by auth name. A configured provider naming an `auth` absent here fails
    * construction — a keyed endpoint is never called unauthenticated.

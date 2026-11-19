@@ -1,0 +1,19 @@
+{
+  // Compiles the MIGRATION.md snippets against the package sources, the way a host imports them.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2023", "dom"],
+    "declaration": false,
+    "isolatedDeclarations": false,
+    "paths": {
+      "@qntx/wallet": ["../../packages/wallet/src/index.ts"],
+      "@qntx/wallet/*": ["../../packages/wallet/src/*/index.ts"],
+      "@qntx/wallet-chains": ["../../packages/wallet-chains/src/index.ts"],
+      "@qntx/wallet-chains/*": ["../../packages/wallet-chains/src/*/index.ts"],
+      "@qntx/wallet-engine": ["../../packages/wallet-engine/src/index.ts"],
+      "@qntx/wallet-engine/connect": ["../../packages/wallet-engine/src/connect/index.ts"],
+      "@qntx/wallet-native": ["../../packages/wallet-native/src/index.ts"]
+    }
+  },
+  "include": ["."]
+}

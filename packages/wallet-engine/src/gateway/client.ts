@@ -7,6 +7,7 @@ import {
   rpc,
   swapQuote,
   swapQuoteSolana,
+  tokenList,
 } from "./contract/index.ts";
 
 /** A gateway traffic class with its own client id: one per chain family plus the service routes. */
@@ -22,6 +23,7 @@ const routePrefix = (template: string): string => template.split("/:")[0] ?? tem
 const RPC_PREFIX = `${routePrefix(rpc.path)}/`;
 const ESPLORA_PREFIX = `${routePrefix(esploraGet.path)}/`;
 const HISTORY_PREFIX = `${routePrefix(history.path)}/`;
+const TOKENS_PREFIX = `${routePrefix(tokenList.path)}/`;
 
 /**
  * The scope a gateway URL belongs to — which client id its requests carry. `basePath` is the
@@ -41,6 +43,9 @@ export function gatewayScope(url: URL, basePath = ""): GatewayScope {
   }
   if (pathname.startsWith(HISTORY_PREFIX)) {
     return networkById(pathname.slice(HISTORY_PREFIX.length))?.family ?? "service";
+  }
+  if (pathname.startsWith(TOKENS_PREFIX)) {
+    return networkById(pathname.slice(TOKENS_PREFIX.length))?.family ?? "service";
   }
   if (pathname === swapQuoteSolana.path) {
     return "solana";

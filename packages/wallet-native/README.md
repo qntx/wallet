@@ -152,7 +152,8 @@ the wallet app in its association files.
 - This build reads and writes vault format 5 only. A vault written by an older format reports
   `vault: "unsupported"` and every command fails with `unsupported` — the data is left
   untouched and `vault.reset` is the recovery path.
-- `vault.addFactor` / `vault.removeFactor` are `unsupported` here.
+- `vault.addFactor` / `vault.removeFactor` are `unsupported` here, and so is the `factor`
+  option on create, import and restore — the host picks the vault's factors itself.
 - `vault.reset` authenticates the device owner first, then erases the vault and all keystore
   keys. Devices without a lock screen return `verification-unavailable`. A `WalletError.detail`
   string carries the platform diagnostic
@@ -163,6 +164,8 @@ the wallet app in its association files.
   system verification, re-checks the session, and only then derives it again and signs.
 - The kernel serializes ceremonies — two concurrent signing requests cannot race two system
   prompts.
+- One kernel runtime runs per process: `createNativeWallet` throws while a previous wallet is
+  still live — `wallet.destroy()` it first.
 - The package provides no secure view: screens that show a mnemonic or exported private key are
   the host's to protect. On Android set `FLAG_SECURE` on the window; on iOS cover the screen with
   a privacy overlay when the app resigns active — the app-switcher snapshot is written to disk.

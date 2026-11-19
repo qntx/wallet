@@ -49,6 +49,9 @@ describe("controller init over a non-JSON row", () => {
       openStore: async () => Promise.resolve(store),
       setTimer: () => () => undefined,
       logger: recorder().logger,
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
     });
     await expect(assets.init()).resolves.toBeUndefined();
   });

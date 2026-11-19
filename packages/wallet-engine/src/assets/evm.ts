@@ -1,7 +1,8 @@
 /**
- * ERC-20 reads against a viem client. `balanceOf` calls go through the network's Multicall3 (one
- * `aggregate3` eth_call) when the registry declares it, otherwise one eth_call per token.
- * `symbol`/`decimals` are read on-chain only for tokens without a built-in-table entry.
+ * ERC-20 reads against a viem client. `balanceOf` and token `symbol`/`decimals` calls go through
+ * the network's Multicall3 (one `aggregate3` eth_call per {@link MULTICALL_BATCH} calls) when the
+ * registry declares it, otherwise one eth_call per token. A call that fails or does not decode is
+ * `undefined` — nothing here ever invents a value.
  */
 import { decodeFunctionResult, encodeFunctionData, isAddress, isHex } from "viem";
 import type { PublicClient } from "viem";
@@ -37,18 +38,22 @@ export const MULTICALL3_ABI = [
   },
 ] as const;
 
-/** A tracked token: `known` is its built-in-table entry — symbol/decimals/verified come from it. */
-export type EvmTokenSpec = {
+/**
+ * `aggregate3` calls are chunked at this size: the batch MetaMask uses, and comfortably inside the
+ * gateway's request-body cap even at the largest token list the contract serves.
+ */
+export const MULTICALL_BATCH = 300;
+
+/** The metadata one token needs from the chain: `decimals` always, `symbol` when asked. */
+export type EvmMetadataWant = {
   readonly address: string;
-  readonly known?: { readonly symbol: string; readonly decimals: number };
+  readonly symbol: boolean;
 };
 
-export type EvmTokenRead = {
-  readonly address: string;
-  readonly symbol: string;
-  readonly decimals: number;
-  readonly balance: string;
-  readonly verified: boolean;
+/** Chain-read token metadata; a field that could not be read is absent. */
+export type EvmTokenMetadata = {
+  readonly decimals?: number;
+  readonly symbol?: string;
 };
 
 const checked = (v: string): `0x${string}` => {
@@ -79,47 +84,6 @@ export const balanceOf = async (
   });
 };
 
-export const balanceOfBatch = async (
-  client: PublicClient,
-  multicall3: string,
-  owner: string,
-  tokens: ReadonlyArray<string>,
-): Promise<ReadonlyArray<bigint | undefined>> => {
-  const data = encodeFunctionData({
-    abi: MULTICALL3_ABI,
-    functionName: "aggregate3",
-    args: [
-      tokens.map((token) => ({
-        target: checked(token),
-        allowFailure: true,
-        callData: encodeFunctionData({
-          abi: ERC20_ABI,
-          functionName: "balanceOf",
-          args: [checked(owner)],
-        }),
-      })),
-    ],
-  });
-  const result = await evmRpcHex(client, "eth_call", [{ to: multicall3, data }, "latest"]);
-  if (!isHex(result)) {
-    throw new TypeError("eth_call returned malformed data");
-  }
-  const decoded = decodeFunctionResult({
-    abi: MULTICALL3_ABI,
-    functionName: "aggregate3",
-    data: result,
-  });
-  return decoded.map((r) =>
-    r.success
-      ? decodeFunctionResult({
-          abi: ERC20_ABI,
-          functionName: "balanceOf",
-          data: r.returnData,
-        })
-      : undefined,
-  );
-};
-
 export async function callToken(
   client: PublicClient,
   token: string,
@@ -147,32 +111,132 @@ export async function callToken(
   }
 }
 
-/** Balances for every tracked token — one `aggregate3` when declared, else one call each. */
-export const readEvmTokens = async (
+const batches = <T>(items: ReadonlyArray<T>): ReadonlyArray<ReadonlyArray<T>> => {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += MULTICALL_BATCH) {
+    out.push(items.slice(i, i + MULTICALL_BATCH));
+  }
+  return out;
+};
+
+/** The multicall path of an `aggregate3`-batched ERC-20 read: one eth_call per batch of 300. */
+const aggregate = async (
+  client: PublicClient,
+  multicall3: string,
+  calls: ReadonlyArray<{ readonly target: `0x${string}`; readonly callData: `0x${string}` }>,
+): Promise<ReadonlyArray<`0x${string}` | undefined>> => {
+  const results = await Promise.all(
+    batches(calls).map(async (part) => {
+      const data = encodeFunctionData({
+        abi: MULTICALL3_ABI,
+        functionName: "aggregate3",
+        args: [part.map((call) => ({ ...call, allowFailure: true }))],
+      });
+      const result = await evmRpcHex(client, "eth_call", [{ to: multicall3, data }, "latest"]);
+      if (!isHex(result)) {
+        throw new TypeError("eth_call returned malformed data");
+      }
+      return decodeFunctionResult({
+        abi: MULTICALL3_ABI,
+        functionName: "aggregate3",
+        data: result,
+      });
+    }),
+  );
+  return results
+    .flat()
+    .map((r) => (r.success ? (isHex(r.returnData) ? r.returnData : undefined) : undefined));
+};
+
+/**
+ * `balanceOf(owner)` for every address, in the given order. One `aggregate3` eth_call per 300
+ * tokens when `multicall3` is declared, else one eth_call per token; a failing batched call is
+ * `undefined`.
+ */
+export const readEvmBalances = async (
   client: PublicClient,
   multicall3: string | undefined,
   owner: string,
-  tokens: ReadonlyArray<EvmTokenSpec>,
-): Promise<ReadonlyArray<EvmTokenRead>> => {
-  if (tokens.length === 0) {
-    return [];
+  addresses: ReadonlyArray<string>,
+): Promise<ReadonlyArray<bigint | undefined>> => {
+  if (multicall3 === undefined) {
+    return Promise.all(addresses.map(async (token) => balanceOf(client, token, owner)));
   }
-  const balances =
-    multicall3 === undefined
-      ? await Promise.all(tokens.map(async (t) => balanceOf(client, t.address, owner)))
-      : await balanceOfBatch(
-          client,
-          multicall3,
-          owner,
-          tokens.map((t) => t.address),
-        );
-  return Promise.all(
-    tokens.map(async (t, i) => ({
-      address: t.address,
-      symbol: t.known?.symbol ?? (await callToken(client, t.address, "symbol")) ?? "?",
-      decimals: t.known?.decimals ?? (await callToken(client, t.address, "decimals")) ?? 18,
-      balance: balances[i]?.toString() ?? "0",
-      verified: t.known !== undefined,
+  const results = await aggregate(
+    client,
+    multicall3,
+    addresses.map((token) => ({
+      target: checked(token),
+      callData: encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [checked(owner)],
+      }),
     })),
   );
+  return results.map((data) => {
+    if (data === undefined) {
+      return undefined;
+    }
+    try {
+      return decodeFunctionResult({ abi: ERC20_ABI, functionName: "balanceOf", data });
+    } catch {
+      return undefined;
+    }
+  });
+};
+
+/**
+ * The requested metadata for every address, in the given order — `decimals` for each and `symbol`
+ * for the ones that asked, all batched into `aggregate3` calls of at most 300 when `multicall3` is
+ * declared. A field that could not be read is absent; nothing is defaulted.
+ */
+export const readEvmMetadata = async (
+  client: PublicClient,
+  multicall3: string | undefined,
+  wants: ReadonlyArray<EvmMetadataWant>,
+): Promise<ReadonlyArray<EvmTokenMetadata>> => {
+  if (multicall3 === undefined) {
+    return Promise.all(
+      wants.map(async (want) => {
+        const decimals = await callToken(client, want.address, "decimals");
+        const symbol = want.symbol ? await callToken(client, want.address, "symbol") : undefined;
+        return {
+          ...(decimals === undefined ? {} : { decimals }),
+          ...(symbol === undefined ? {} : { symbol }),
+        };
+      }),
+    );
+  }
+  const calls = wants.flatMap((want, index) => {
+    const fns: ReadonlyArray<"decimals" | "symbol"> = want.symbol
+      ? ["decimals", "symbol"]
+      : ["decimals"];
+    return fns.map((fn) => ({
+      index,
+      fn,
+      target: checked(want.address),
+      callData: encodeFunctionData({ abi: ERC20_ABI, functionName: fn }),
+    }));
+  });
+  const results = await aggregate(client, multicall3, calls);
+  const metas: EvmTokenMetadata[] = wants.map(() => ({}));
+  for (const [i, data] of results.entries()) {
+    const call = calls[i];
+    if (call === undefined || data === undefined) {
+      continue;
+    }
+    try {
+      const value = decodeFunctionResult({ abi: ERC20_ABI, functionName: call.fn, data });
+      const current = metas[call.index] ?? {};
+      if (call.fn === "decimals" && typeof value === "number") {
+        metas[call.index] = { ...current, decimals: value };
+      } else if (call.fn === "symbol" && typeof value === "string") {
+        metas[call.index] = { ...current, symbol: value };
+      }
+    } catch {
+      // An undecodable answer stays absent — the field is simply unknown.
+    }
+  }
+  return metas;
 };

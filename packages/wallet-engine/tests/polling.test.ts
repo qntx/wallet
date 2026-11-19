@@ -492,6 +492,9 @@ describe("asset polling on the one-shot timer", () => {
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: defaultSetTimer,
       logger: { warn: () => {} },
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
     });
     await assets.init();
     assets.setVisible(true);
@@ -532,6 +535,9 @@ describe("asset polling on the one-shot timer", () => {
           warnings.push(msg);
         },
       },
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
     });
     await assets.init();
     assets.setVisible(true);

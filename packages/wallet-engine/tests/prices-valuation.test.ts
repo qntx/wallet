@@ -87,7 +87,17 @@ describe("balanceHoldings", () => {
       `${MAINNET}:${ADDR}`,
       balances({
         native: "42",
-        tokens: [{ address: USDC, symbol: "USDC", decimals: 6, balance: "7", verified: true }],
+        tokens: [
+          {
+            address: USDC,
+            symbol: "USDC",
+            decimals: 6,
+            balance: "7",
+            verified: true,
+            spam: [],
+            hidden: false,
+          },
+        ],
       }),
     );
     expect(holdings).toStrictEqual([
@@ -131,6 +141,8 @@ describe("balanceHoldings", () => {
             balance: "10",
             frozen: "4",
             verified: true,
+            spam: [],
+            hidden: false,
           },
         ],
       }),
@@ -144,7 +156,17 @@ describe("balanceHoldings", () => {
       `${SEPOLIA}:${ADDR}`,
       balances({
         native: "9",
-        tokens: [{ address: USDC, symbol: "USDC", decimals: 6, balance: "1", verified: true }],
+        tokens: [
+          {
+            address: USDC,
+            symbol: "USDC",
+            decimals: 6,
+            balance: "1",
+            verified: true,
+            spam: [],
+            hidden: false,
+          },
+        ],
       }),
     );
     expect(holdings.map((h) => h.asset)).toStrictEqual([undefined, undefined]);

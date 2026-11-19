@@ -315,6 +315,9 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     openStore: options.openStore,
     setTimer,
     logger: options.logger,
+    gateway,
+    fetch: options.fetch,
+    now: options.now,
   });
 
   const prices = new PricesController({

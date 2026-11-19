@@ -9,425 +9,446 @@ A `vX.Y.Z` tag runs `publish-npm.yml` (publishing `packages/wallet`, `packages/w
 
 ## [Unreleased]
 
-React Native: everyday use without prompts, a fresh verification for everything that guards
-funds or secrets. A new silent `device` factor opens the vault; the user-presence `hardware`
-factor is the only factor that can verify. Devices without a lock screen can now create and use
-a wallet. App lock is optional and off by default. The Web host is unchanged.
+Hardening release: the vault structure is authenticated, the kernel signs what it can describe and
+refuses what it cannot show unless the owner allows blind signing, broadcasts whose outcome is
+unknown are never failed, and the cloud-backup password is stretched with Argon2id. React Native
+gains a silent `device` factor and an optional app lock. The engine adds fiat prices, per-group
+activity history, Bitcoin coin control and Spark tokens.
+
+Upgrading is not data-preserving. Vaults written by 0.13.0 (format 3) are `unsupported` and must
+be reset, 0.13.0 cloud-backup files can no longer be read, and the engine database is rebuilt
+empty. Wallets come back only from their mnemonic, a passkey, or a cloud backup made after the
+upgrade. [MIGRATION.md](MIGRATION.md) lists every change a host has to make.
 
 ### Added
 
-- `FactorInfo` and `UnlockFactor` gain the React Native `device` factor: a device-bound keystore
-  key without user presence (iOS Secure Enclave `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage`;
-  Android Keystore AES-256-GCM, `setUnlockedDeviceRequired` from API 35). It unlocks without UI
-  and is rejected by every verification.
-- `VerifyFactor` (`UnlockFactor` without `device`): the type of every `verify` parameter.
-- `WalletSnapshot.appLock` (no `device` factor: every unlock verifies) and
-  `WalletSnapshot.verification` (`"available" | "unavailable"`: whether guarded operations can
-  run). The Web reports `appLock: true`, `verification: "available"`.
-- `wallet.vault.enrolVerification()`: registers the `hardware` factor once a lock screen exists
-  (Android prompts once); replaces a `hardware` factor the keystore reports dead.
-- `wallet.vault.setAppLock(enabled, verify)`: `true` removes the `device` factor and rotates the
-  DEK (other sessions lock `invalidated`); `false` restores it. Both verify with `hardware`.
-- `@qntx/wallet-native`: `createNativeWallet` returns `NativeWallet` with
-  `setAutoLock({ platform: "native", backgroundSeconds })`, applied to the live kernel at once;
-  `KernelHost.setBackgroundLock(seconds)`.
-- Error code `verification-unavailable`: a guarded call on React Native without a verifying
-  factor, or a reset without a lock screen. No prompt is shown.
-
-- `@qntx/wallet-engine`: `backupPasswordStrength(password)` (zxcvbn, loaded on first use), and
-  `backup.enable` refuses a guessable backup password with category `weak-password` before any
-  kernel call.
-- Blind signing is a vault setting enforced in the kernel. A request whose content the kernel
-  cannot show — a raw-byte message, typed data of no recognised shape, a transaction whose effects
-  it cannot verify — fails with the new error code `blind-signing-disabled` before any
-  verification prompt, until the owner turns it on with `wallet.vault.setBlindSigning(enabled,
-  verify)`. `WalletSnapshot.blindSigning` reports the setting; it is off on a new vault and is not
-  part of a cloud backup. Text, sign-in messages, permits, Seaport orders and Safe transactions of
-  decoded calls are never blind.
-- The verification prompt shows what is signed. A message shows a sanitised excerpt of its text; a
-  Sign-In with Ethereum/Solana message its domain, account, network and URI; typed data its app
-  name, network, verifying contract and primary type, plus the order of a Seaport message or the
-  calls of a Safe transaction. A transaction the kernel cannot verify still lists the contract it
-  calls or deploys, its native value and its fee cap. Bitcoin and Solana messages show their text.
+- `@qntx/wallet`: React Native `device` factor (`FactorInfo` / `UnlockFactor` kind `device`): a
+  device-bound keystore key without user presence (iOS Secure Enclave
+  `WhenUnlockedThisDeviceOnly` + `.privateKeyUsage`; Android Keystore AES-256-GCM,
+  `setUnlockedDeviceRequired` from API 35). It unlocks without UI and no verification accepts it.
+  The keystore contract (`sealDevice`, `openDevice`, `probe`, `remove` alongside the presence
+  `seal` / `open`) is implemented natively on iOS and Android.
+- `@qntx/wallet`: `VerifyFactor` (`UnlockFactor` without `device`), the type of every `verify`
+  parameter, and `NativeAutoLockPolicy`.
+- `@qntx/wallet`: `WalletSnapshot` / `StatusPayload` gain `appLock` (no `device` factor: every
+  unlock verifies), `verification` (`"available" | "unavailable"`: whether a factor that proves
+  user presence exists) and `blindSigning`. The Web reports `appLock: true`.
+- `@qntx/wallet`: `wallet.vault.enrolVerification()` registers the `hardware` factor once the
+  device has a lock screen (Android prompts once) and replaces a `hardware` factor the keystore
+  reports dead. `wallet.vault.setAppLock(enabled, verify)`: `true` removes the device keystore key
+  first (failing `unavailable` and changing nothing when the keystore cannot remove it), then drops
+  the `device` factor and rotates the DEK, so other sessions lock `invalidated`; `false` restores
+  the factor.
+- `@qntx/wallet`: `wallet.vault.setBlindSigning(enabled, verify)` — blind signing is a vault
+  setting enforced in the kernel, off on a new vault and not part of a cloud backup. While it is
+  off, a request the chain decoder marks blind fails with `blind-signing-disabled` before any
+  verification prompt.
+- `@qntx/wallet`: error codes `verification-unavailable` (a guarded call on React Native without a
+  `hardware` factor, or a reset without a lock screen; no prompt is shown) and
+  `blind-signing-disabled`.
+- `@qntx/wallet/host`: `MAX_IN_FLIGHT` (32), the bound on posted-but-unanswered kernel requests.
+  `@qntx/wallet/protocol`: the `verifier` validator.
+- `@qntx/wallet-native`: `createNativeWallet` returns `NativeWallet`, whose
+  `setAutoLock({ platform: "native", backgroundSeconds })` applies to the live kernel at once;
+  `KernelHostLike.setBackgroundLock(seconds)`.
+- The kernel prompt shows what is signed: the network, native amounts and fees in units, token
+  amounts outside the reviewed table as unverified base units, a sanitised excerpt of a message; a
+  Sign-In with Ethereum/Solana message's domain, account, network and URI; typed data's app name,
+  network, verifying contract and primary type, plus a Seaport order (token ids, criteria items,
+  a non-zero zone) or a Safe transaction's calls. A transaction the kernel cannot verify still
+  lists the contract it calls or deploys, its function selector, native value and fee cap, and
+  carries a "cannot verify" line. A Bitcoin fee the kernel cannot prove is shown as "Fee unknown";
+  an outflow to an unspendable output as "Burn X BTC". Blind-signing prompts name their reason.
+- `@qntx/wallet-chains`: new `./networks` entry point — the single built-in network table
+  (`BUILT_IN_NETWORKS`, `NetworkMeta`, `networkMeta`, `withNativeAmountMeta`).
 - `@qntx/wallet-chains`: `displayExcerpt` / `isUnsafeCodePoint` (bounded, sanitised display text),
-  `messageContent`, `isBlindIntent`, and `DisplayIntent.contract`.
-- dApps can read event logs: `eth_getLogs` is passed through by the EIP-1193 provider and the
-  gateway, bounded to one block by hash, a numbered range of at most 500 blocks or recent-block
-  tags, with at most 20 addresses and 20 alternatives per topic. An unbounded filter fails with
-  `-32005` in the provider and `400 invalid-request` at the gateway. Filter and subscription
-  methods stay unsupported; viem and ethers event watchers fall back to polling `eth_getLogs`.
+  `messageContent`, `messageBlindReason`, `isBlindIntent`, `BlindReason`, `TypedDataLeaf`,
+  `DisplayExcerpt`, `SignInClaim`; `DisplayIntent` gains `blind`, `contract` (with `selector`,
+  `symbol`) and `programs` (Solana); typed-data `MessageContent` gains `fields`; `AssetFlow.burn`
+  marks an outflow to a provably unspendable Bitcoin output (a script starting with `OP_RETURN` or
+  over 10,000 bytes).
+- `@qntx/wallet-chains/evm`: `typedDataFields`, `TYPED_FIELD_BUDGET`, `TYPED_FIELD_CODE_POINTS`.
+- `@qntx/wallet-chains/bitcoin`: `bip322ToSign(scriptPubKey, message)`, `samePsbtContent` and
+  `verifyLegacyBitcoinMessage`.
+- `@qntx/wallet-chains/solana`: `decodeSolanaTransaction(wire, signer)` reads a serialized
+  transaction for one required signer and returns the message it signs plus the signers that have
+  not signed yet; `addSolanaSignature(wire, signer, signature)` writes the signer's slot and leaves
+  every other byte unchanged; `mayBeTransactionMessage(bytes)`; `SolanaTransactionForSigner`. Built
+  on `@solana/transactions` 8.5.0.
+- `@qntx/wallet-engine`: `requiredAcknowledgement(request)`, `ApproveOptions`,
+  `RequestAcknowledgement` and the request error classes `AcknowledgementRequiredError`,
+  `SimulationChangedError`, `BlindSigningDisabledError`, `SignInOriginError`, `InvalidTokenError`,
+  `RequestEndedError` and `OriginBusyError`, exported from the package root.
+- `@qntx/wallet-engine`: `backupPasswordStrength(password)` (zxcvbn, loaded on first use);
+  `BackupController.enable` refuses a password below zxcvbn's top score with category
+  `weak-password` before any kernel call.
+- `@qntx/wallet-engine`: `engine.prices` (`PricesController`) — spot quotes from the gateway for
+  every held asset (EVM and Solana natives, built-in and added tokens, Bitcoin, Spark sats as BTC),
+  fetched when a new asset appears and every `PRICES_POLL_MS` (60 s) while `setVisible(true)`;
+  `setCurrency` (`FIAT_CURRENCIES`); single-flight; per-asset `unpriced` errors and a request-level
+  `failure`; persisted with the currency in the engine store and cleared on lock. Display-only: a
+  lint rule keeps `src/prices` out of every build and sign path.
+- `@qntx/wallet-engine`: `engine.portfolio.group(group)` — exact fiat valuation (bigint
+  fixed-point) of the balances already in state and the group's total, with per-holding
+  staleness (`PRICE_STALE_MS`, 10 min by the provider's `updatedAt`).
+- `@qntx/wallet-engine`: `engine.history` (`HistoryController`) — one newest-first activity list
+  per account group, including what the wallet received: Bitcoin from Esplora over all four
+  account templates, Solana from `getSignaturesForAddress` + `getTransaction` over the owner and
+  its token accounts, Spark from the operators' transfer history, EVM from the gateway history
+  route. `load(group)` / `loadMore(group)`; entries carry direction, counterparties, per-asset
+  changes, fee, status, time, block and `verified`; locally tracked sends fold into the chain
+  entry with the same hash. A gateway EVM entry is `verified` only after its receipt and
+  transaction, read over RPC, match every transfer (`chain-mismatch` otherwise); entries are
+  flagged `zero-value-transfer`, `lookalike-counterparty`, `token-impersonation` and
+  `suspicious-token-symbol`. History counterparties never enter the address book or the
+  known-recipient set. The newest 200 entries per group are cached; lock clears the state.
+- `@qntx/wallet-engine`: `AssetsController.refreshBitcoinGroup({ walletId, groupIndex }, network)`
+  — one Bitcoin balance over the group's bip44, bip49, bip84 and bip86 accounts, with per-template
+  totals (`AccountBalances.sources`) and the UTXO list (`AccountBalances.utxos`, each marked
+  `protected`). `TokenBalance.frozen`: Solana amounts in frozen token accounts.
+- `@qntx/wallet-engine`: Bitcoin coin control — `engine.transactions.setUtxosFrozen(account,
+  network, outpoints, frozen)` / `frozenUtxos(account, network)` persist per-account freezes;
+  `inputs` on a `send` request spends exactly the named outpoints (`txid:vout`), and naming a
+  protected outpoint opts into spending it. Automatic selection, speed-up extras and CPFP skip
+  frozen outpoints, and a dApp PSBT signing a frozen input raises the `bitcoin-frozen-input`
+  danger.
+- `@qntx/wallet-engine`: Spark tokens — `SparkAccountState.tokens` balances; `pay` with
+  `token: { identifier, amount }` to a Spark address, results `token` / `token-pending`;
+  `SparkController.sendToken` and `quoteExit` (the converged cooperative-exit quote).
+- `@qntx/wallet-engine/connect`: dApps can read event logs. `eth_getLogs` is passed through,
+  bounded to one block by hash, a numbered range of at most 500 blocks, or two block tags that are
+  equal or both name the head (`latest`, `pending`), with at most 20 addresses and 20
+  alternatives per topic; an unbounded filter fails with `-32005`. Filter and subscription methods
+  stay unsupported (viem and ethers fall back to polling `eth_getLogs`).
   `wallet_addEthereumChain` / `wallet_switchEthereumChain` now say that the network must be
   enabled in the wallet.
-- `AssetsController.refreshBitcoinGroup({ walletId, groupIndex }, network)`: one Bitcoin balance for
-  every account template of a group (bip44, bip49, bip84, bip86), with per-template totals
-  (`AccountBalances.sources`) and the UTXO list (`AccountBalances.utxos`, each marked `protected`).
-- `SendParams.spendProtected`: Bitcoin outpoints (`txid:vout`) the user chooses to spend although
-  they are protected as possible inscription or rune carriers.
-- `TokenBalance.frozen`: Solana amounts held in frozen token accounts, shown apart from the balance.
-- `AssetFlow.burn`: marks an outflow to a provably unspendable Bitcoin output (a script that starts with `OP_RETURN` or exceeds 10,000 bytes). The kernel prompt shows it as "Burn X BTC: it goes to an unspendable output and is lost".
-- `bip322ToSign(scriptPubKey, message)` in `@qntx/wallet-chains/bitcoin`: the one construction of the unsigned BIP-322 to_sign transaction, used by both signing and verification.
-- Gateway contract: `RPC_COST_WEIGHTS` (`point` 1, `heavy` 3, `scan` 10), `RPC_METHOD_COST`,
-  `rpcCallCost` and `rpcRequestCost` price every allow-listed JSON-RPC call; full-transaction
-  block reads and `programId`-filtered `getTokenAccountsByOwner` count as scans.
-- Gateway contract: `RPC_BROADCAST_METHODS`, `containsBroadcast` and the `outcome-unknown` error
-  code.
-- Gateway contract: an explicit params schema for every allow-listed EVM and Solana method
-  (addresses, hashes, quantities, EIP-1898 block params, base58 keys and signatures, bounded
-  arrays); `jsonRpcRequestId` (integer or string of at most 64 characters).
-- Gateway: JSON log lines for every failed upstream attempt (`upstream-failure` with a failure
-  class), breaker transitions (`breaker`), `all-providers-failed`, and `internal-error` (error
-  name only). No params, bodies, addresses, client ids or IPs are logged.
-- `scripts/check-version.ts --release-tag <tag>` (`checkReleaseTag`): every published package's
-  version must equal the tag.
-- Publish workflow: a `verify` job in the `npm` environment that every publish job needs — the
-  tagged commit must be on `main`, have a successful CI push run, and carry the tag's version.
-- `@qntx/wallet/host` exports `MAX_IN_FLIGHT` (32), the bound on posted-but-unanswered kernel
-  requests.
-- `bun run lint` runs `scripts/check-lint-boundaries.ts`, which commits deliberate violations of
-  every lint-enforced architecture boundary to throw-away files and fails unless lint reports
-  each one.
-- `@qntx/wallet-chains/solana`: `decodeSolanaTransaction(wire, signer)` reads a serialized Solana transaction for one required signer and returns the message it signs plus the other signers that have not signed yet. `addSolanaSignature(wire, signer, signature)` writes the signer's slot and leaves every other byte unchanged. Both are built on `@solana/transactions` 8.5.0.
-- `@qntx/wallet-chains/solana`: `mayBeTransactionMessage(bytes)`.
-- Fixed vectors for Solana serialized transactions: `vectors/chains/solana-wire.json`.
-- `vectors/chains/signing-classes.json`: fixed requests with their expected class, blind reason and exact kernel prompt text in both locales.
-- `@qntx/wallet-engine`: `engine.history` (`HistoryController`) — one newest-first activity list per
-  account group that includes what the wallet received, not only what it sent. Sources: Bitcoin from
-  Esplora address histories over all four account templates, Solana from `getSignaturesForAddress` +
-  `getTransaction` on the owner and its token accounts, Spark from the operators' transfer history,
-  EVM from the gateway history route. Each entry carries direction, counterparties, per-asset
-  changes, fee, status, time, block and `verified`. `load(group)` / `loadMore(group)`; locally
-  tracked sends fold into the chain entry with the same hash, pending ones show immediately.
-- `@qntx/wallet-engine`: a provider (gateway) EVM entry is `verified` only after its receipt and
-  transaction read over RPC — the host endpoint when the network has one — match every transfer; a
-  contradiction is flagged `chain-mismatch`. Entries are flagged `zero-value-transfer`,
-  `lookalike-counterparty`, `token-impersonation` and `suspicious-token-symbol`; history
-  counterparties never enter the address book or the known-recipient set used by request risk.
-- `@qntx/wallet-engine`: the `history` collection caches the newest 200 entries per group; lock
-  clears the state and discards in-flight loads.
-- `@qntx/wallet-engine/gateway/contract`: `history` endpoint (`POST /v1/history/:caip2`, address in
-  the body) with `historyRequest` / `historyResponse` schemas and `historyPath`; Esplora allow-list
-  gains `/scripthash/:h/txs/chain/:txid` for paging long address histories.
-- `@qntx/gateway`: `POST /v1/history/:caip2` — EVM transfers in and out of an address over Alchemy
-  `alchemy_getAssetTransfers` (existing `ALCHEMY_API_KEY`, own breaker id `alchemy-transfers`),
-  newest first, block-frontier pagination; `503 unavailable` on networks without an Alchemy
-  provider (staging). Tested against recorded real responses; not yet exercised live with the
-  production key.
-- **gateway:** `POST /v1/prices` — spot price and 24 h change for up to 100 CAIP-19 assets in one
-  fiat currency (`usd`, `eur`, `gbp`, `jpy`, `cny`, `krw`, `hkd`, `sgd`, `cad`, `aud`, `chf`).
-  CoinGecko Pro is the primary source (`COINGECKO_API_KEY`, header-only), DefiLlama's keyless
-  coins API the USD fallback and long-tail source; answers are cached per asset and currency in the
-  Cache API for 30 s, provider numbers are turned into decimal strings without float arithmetic and
-  bounded (positive, below 10^12, at most 18 decimals, updated at most a day ago and not in the
-  future). One rate-limit unit per started 25 assets on the default limiter; the asset set travels
-  in the body and the answer is `no-store`. The route is part of `scripts/smoke.ts`.
-- **wallet-engine:** gateway contract `prices` (`priceAssetId`, `nativeAssetId`, `tokenAssetId`,
-  `fiatPrice`, `percentChange`, `FIAT_CURRENCIES`, `pricesRequestCost`).
-- **wallet-engine:** `PricesController` (`engine.prices`) — quotes for every asset the engine holds
-  (EVM and Solana natives, built-in and added tokens, Bitcoin, Spark sats as BTC), fetched when a
-  new asset appears and every 60 s while visible; single-flight, per-asset `unpriced` errors, a
-  request-level `failure`, persisted with the chosen currency in the EngineStore, cleared on lock.
-- **wallet-engine:** `engine.portfolio.group(group)` — exact fiat valuation (bigint fixed-point,
-  no floats) of the balances already in state and the group's total, with per-holding staleness
-  (`PRICE_STALE_MS`, 10 min by the provider's `updatedAt`).
-- **lint:** engine code outside the composition root may not import `src/prices` — prices are
-  display-only; `scripts/check-lint-boundaries.ts` probes the ban.
-- `@qntx/wallet-engine`: Bitcoin coin control — `TransactionController.setUtxosFrozen` /
-  `frozenUtxos` persist per-account user freezes; `PrepareParams.inputs` spends exactly the named
-  outpoints. Automatic selection, RBF extras and CPFP honour freezes, and a dApp PSBT signing a
-  frozen input raises the `bitcoin-frozen-input` danger finding.
-- `@qntx/wallet-engine`: Spark tokens — `SparkAccountState.tokens` balances, `pay` with
-  `token: { identifier, amount }` to a Spark address, results `token` / `token-pending`.
-- `@qntx/wallet-engine`: `SparkController.quoteExit`, the converged cooperative-exit quote.
+- `@qntx/wallet-engine/gateway/contract`: `prices` (`priceAssetId`, `nativeAssetId`,
+  `tokenAssetId`, `fiatPrice`, `percentChange`, `FIAT_CURRENCIES`, `pricesRequestCost`); `history`
+  (`POST /v1/history/:caip2`, `historyRequest` / `historyResponse`, `historyPath`); per-call RPC
+  pricing (`RPC_COST_WEIGHTS` `point` 1 / `heavy` 3 / `scan` 10, `RPC_METHOD_COST`, `rpcCallCost`,
+  `rpcRequestCost`); `RPC_BROADCAST_METHODS`, `containsBroadcast` and the `outcome-unknown` error;
+  an explicit params schema for every allow-listed EVM and Solana method; `jsonRpcRequestId`; the
+  `eth_getLogs` bounds (`LOGS_*`, `logsFilterViolation`); Esplora `/scripthash/:h/txs/chain/:txid`.
+- `@qntx/gateway`: production environment (eight EVM mainnets and Solana through Alchemy then
+  dRPC, Bitcoin through Blockstream Enterprise), keyed upstream auth in headers, `scripts/smoke.ts`.
+- `@qntx/gateway`: `POST /v1/prices` — spot price and 24 h change for up to 100 CAIP-19 assets in
+  one fiat currency (`usd`, `eur`, `gbp`, `jpy`, `cny`, `krw`, `hkd`, `sgd`, `cad`, `aud`, `chf`);
+  CoinGecko Pro primary (`COINGECKO_API_KEY`), DefiLlama fallback;
+  answers cached per asset and currency for 30 s, converted to bounded decimal strings without
+  float arithmetic, `no-store`.
+- `@qntx/gateway`: `POST /v1/history/:caip2` — EVM transfers of an address over Alchemy
+  `alchemy_getAssetTransfers` (existing `ALCHEMY_API_KEY`, breaker id `alchemy-transfers`),
+  newest first, block-frontier pagination; `503 unavailable` where no Alchemy provider is
+  configured.
+- `@qntx/gateway`: JSON log lines for failed upstream attempts (`upstream-failure`), breaker
+  transitions, `all-providers-failed` and `internal-error`; no params, bodies, addresses, client
+  ids or IPs are logged.
+- Fixed vectors for Solana serialized transactions (`vectors/chains/solana-wire.json`) and for
+  signing classes (`vectors/chains/signing-classes.json`: class, blind reason and exact kernel
+  prompt text in both locales); provenance recorded for every vector file.
+- `GET /v1/tokens/:caip2` on the gateway: per-network token lists built hourly from the Uniswap Labs
+  Default list (EVM mainnets), CoinGecko Pro token lists (HyperEVM, when `COINGECKO_API_KEY` is set)
+  and Jupiter's verified tokens (Solana), with a strong ETag and `if-none-match` → 304. Lists are
+  bounded (EVM 1500, Solana 5000 entries), versioned monotonically, and never republished when a
+  source fails, shrinks by more than half or exceeds the cap. Contract: `tokenList`,
+  `tokenListResponse`, `tokenListPath`, `TOKEN_LIST_MAX_ENTRIES`, `TOKEN_LIST_SOURCES`.
+- Token discovery in `AssetsController`: listed ERC-20s with a non-zero balance appear automatically
+  (read in the existing Multicall3 batches, re-scanned every 10 minutes), and every SPL mint the
+  account holds appears, with its symbol from Token-2022 metadata or Metaplex. No address is sent
+  to a data provider.
+- `TokenBalance.spam` (spam reasons: `impersonation`, `suspicious-symbol`, `link-in-name`,
+  `permanent-delegate`, `non-transferable`), `TokenBalance.hidden` and `TokenBalance.name`.
+- `AssetsController.setTokenHidden(network, address, hidden)`: persists the user's hide/unhide
+  verdict; spam-flagged tokens are hidden by default.
 
 ### Changed
 
-- **BREAKING:** `backup.disable` is a guarded operation like `backup.enable`: it takes a
-  `verify: VerifyFactor` and re-verifies before dropping the retained backup key, so a holder of
-  an unlocked phone can no longer switch cloud backup off.
-- **BREAKING:** React Native vaults are created with the `device` factor plus, when the device
-  has a lock screen, the `hardware` factor; creation no longer requires a lock screen. Hosts must
-  not pass `factor` to create/import/restore on React Native (`unsupported`); `InitialFactor`
-  loses its `hardware` arm.
-- **BREAKING:** `vault.unlock()` without arguments on React Native uses `device` (no prompt)
-  unless `appLock` is on, then `hardware`.
-- **BREAKING:** guarded operations take `verify: VerifyFactor`; `{ kind: "device" }` is rejected
-  as `invalid-input` by the client, the wire validator and the kernel. Without a `hardware` factor
-  they fail with `verification-unavailable` instead of `not-found`.
-- **BREAKING:** removing the lock screen no longer destroys a React Native vault while the
-  `device` factor exists: the dead `hardware` factor is dropped and `verification` becomes
-  `"unavailable"`. With app lock on the previous DEK-loss behaviour applies.
-- **BREAKING:** `vault.addFactor` / `vault.removeFactor` are `unsupported` on React Native.
-- **BREAKING:** protocol version 3; vault format 4. A format-3 vault upgrades on its first
-  successful unlock: React Native adds the `device` factor during that `hardware` unlock, the Web
-  only bumps the format. No other migration code exists.
-- The platform keystore contract (`sealDevice`, `openDevice`, `probe`, `remove` alongside the
-  presence `seal`/`open`) is implemented natively on iOS and Android.
-
-- **BREAKING:** the cloud-backup password is stretched with Argon2id (RFC 9106 second
-  recommended option: 64 MiB, 3 passes, 4 lanes) instead of PBKDF2-SHA256. The envelope leaves
-  the device, so its password is attacked offline with no rate limit. Backup envelope version 2;
-  version 1 envelopes are not read, and a backup with a password factor has to be enabled again.
-  A backup password needs at least 12 characters. The vault password factor is unchanged.
-- **BREAKING:** `KernelPlatform` requires `argon2id`. `@qntx/wallet-native` runs the vendored
-  Argon2 reference implementation on the KDF worker thread (`__qntx.argon2id`); the Web and Node
-  workers run `@noble/hashes`.
-- **BREAKING:** protocol: `vault.setBlindSigning`; the status payload carries `blindSigning`.
+- **BREAKING:** vault format 5 and protocol version 3. A `manifest/default` record, rewritten in
+  every structural commit, commits under the DEK to the format, the keyId and every other record
+  and factor row; a replayed, dropped, added or altered row, or a rewritten format, latches the
+  vault `corrupted`. Vaults of any other format, including every 0.13.0 vault (format 3), are
+  `unsupported` and must be reset; there is no upgrade path. Vault images with duplicate keys are
+  `corrupted`.
+- **BREAKING:** the cloud-backup password is stretched with Argon2id (RFC 9106 second recommended
+  option: 64 MiB, 3 passes, 4 lanes) instead of PBKDF2-SHA256 and must have at least 12
+  characters. Backup envelope version 2; version 1 envelopes — every backup written by 0.13.0 —
+  are not read, so backup has to be enabled again. The vault password factor is unchanged.
+- **BREAKING:** an establishing `backup.restore` adopts the envelope's backup key only when a
+  kernel passkey ceremony (React Native) unwrapped it. A restore unwrapped by a backup password or
+  by a Web passkey ceremony brings the wallets back and leaves backup off until `backup.enable`
+  writes a new key and cloud file. A compromised main runtime can no longer plant its own backup
+  key through a restore of an empty envelope.
+- **BREAKING:** `backup.disable(verify)` re-verifies before dropping the retained backup key.
+- **BREAKING:** every `verify` parameter is `VerifyFactor`; `{ kind: "device" }` is rejected as
+  `invalid-input` by the client, the wire validator and the kernel. On React Native a guarded call
+  without a `hardware` factor fails `verification-unavailable` instead of `not-found`.
+- **BREAKING:** React Native vaults are created with the `device` factor plus, when the device has
+  a lock screen, the `hardware` factor; creation no longer needs a lock screen. `factor` on
+  create / import / restore is `unsupported` on React Native, `InitialFactor` loses its `hardware`
+  arm, and `vault.addFactor` / `vault.removeFactor` are `unsupported` there. `vault.unlock()`
+  without a factor uses `device` (no prompt) unless `appLock` is on, then `hardware`.
+- **BREAKING:** removing the lock screen no longer destroys a React Native vault while the `device`
+  factor exists: the dead `hardware` factor is dropped and `verification` becomes
+  `"unavailable"`. With app lock on, the vault is lost as before.
+- **BREAKING:** `vault.reset()` of an open, healthy vault requires its live session; a locked or
+  unhealthy vault still resets without one.
+- **BREAKING:** `@qntx/wallet-native` admits one live kernel runtime per process: creating a
+  second native wallet while another's kernel is live fails `integrity`. Destroy the first one
+  first.
+- **BREAKING:** signing classes. Requests the wallet can describe but not verify — an unknown
+  contract call or creation, unrecognised EIP-712 that fits the display budget (up to 16 leaves as
+  `path: value`), a Solana transaction with undecodable instructions, a PSBT with other signers'
+  inputs — sign without the blind-signing setting. Only requests a decoder marks blind need it:
+  raw-byte messages, typed data too large or misformed to show, an unrecognised function of a
+  built-in token, calldata to the signing account itself, a Safe `delegatecall` outside a
+  canonical MultiSendCallOnly batch, and a Safe transaction with a gas refund. Text, sign-in
+  messages, permits, Seaport orders, Safe transactions of decoded calls and every recognised
+  transaction are never blind. WETH `deposit`, Aave `supply`, Universal Router `execute`, CoW
+  orders and similar everyday requests are no longer refused under the default policy.
+- **BREAKING:** `@qntx/wallet-engine`: blind requests from dApps are no longer refused at
+  `prepare`, and the EIP-1193 and Solana providers no longer answer `4200` for them. They become
+  pending requests with the `blind-signing` danger; `approve` throws `BlindSigningDisabledError`
+  while the vault setting is off and leaves the request approvable, so the host can enable the
+  setting and approve again. `RequestController`'s `blindSigning` option is `() => boolean`.
+  Described typed data and Solana requests with opaque instructions carry the `decode-partial`
+  check.
 - **BREAKING:** `@qntx/wallet-engine`: `requests.approve(id, method, options)` takes
   `{ verify, acknowledged }` instead of a positional `verify`, and refuses a request with `danger`
-  findings or recorded checks unless `acknowledged` names exactly those codes
-  (`requiredAcknowledgement(request)`); otherwise it throws `AcknowledgementRequiredError` before
-  anything is signed and the request stays approvable. Findings a re-simulation adds at approval
-  are covered by the same rule. The request error classes (`AcknowledgementRequiredError`,
-  `SimulationChangedError`, `BlindSigningDisabledError`, `SignInOriginError`, `InvalidTokenError`,
-  `RequestEndedError`, `OriginBusyError`) are exported from the package root.
-- **BREAKING:** `@qntx/wallet-engine`: `RequestController`'s `blindSigning` option is
-  `() => boolean` (the vault's setting). Every blind request — not only raw-byte messages — is
-  refused with `BlindSigningDisabledError` while it is off and carries the `blind-signing` danger
-  while it is on.
-- **BREAKING:** `AssetsController.refreshBitcoin(xpub, network)` is removed. Use
-  `refreshBitcoinGroup` for account groups; `refresh(address, network)` reads a plain Bitcoin
-  address. `AssetsController` requires a `chains` option.
-- **BREAKING:** Bitcoin UTXOs on taproot addresses (the `ordinals` account) or worth at most
-  20,000 sat (ord's `MAX_POSTAGE`) are protected by default: sends do not select them unless named
-  in `spendProtected`, the balance view counts them in `frozen`, and a dApp PSBT that signs one
-  raises `bitcoin-inscription-input`. `isFrozen` is replaced by `mayCarryInscription` and
-  `selectableUtxos`; `assessBitcoinPsbts` inputs carry their `template`.
-- **BREAKING:** custom tokens persist as `{ address }`; `verified` is computed at read time from the
-  built-in token tables.
-- **BREAKING:** `SafeTransaction.refund` is now `{ receiver?, gasPrice: AssetAmount, amount: AssetAmount }`. `amount` is `(baseGas + safeTxGas) × gasPrice` in the gas token, and `receiver` is absent when the refund goes to whoever executes the transaction.
-- **BREAKING:** A recognised Safe transaction with a gas refund is now blind: its total payout includes call overhead that the executor controls, so it cannot be bounded from the signed fields. The prompt shows the refund token, the bounded amount and the price per gas of overhead.
-- **BREAKING:** A Safe `delegatecall` that is not a valid canonical MultiSendCallOnly batch is now a single opaque call, and so blind. It is no longer decoded with the ordinary call rules.
-- Seaport prompts now show NFT token ids, render criteria items as "any token of X" or "a token of X from the set with Merkle root R", and name a non-zero zone.
-- `chain.sign` now runs one two-pass flow for HD and imported keys, so the blind-signing policy and the post-verification session check cannot drift between the two key sources.
-- **BREAKING:** `@qntx/wallet-engine`: the signed bytes of a tracked transaction moved from
-  `TrackedTransaction.evm.raw` to `TrackedTransaction.raw` for every family (EVM and Bitcoin hex,
-  Solana base64 wire); they are persisted before the broadcast and cleared when the node refuses
-  them.
-- **BREAKING:** `@qntx/wallet-engine`: a send, replacement or CPFP whose broadcast outcome is
-  unknown (transport error, 5xx, timeout) now resolves with a `submitted` transaction tracked by
-  its locally computed id instead of rejecting; only a definitive node refusal rejects and marks
-  it `failed`.
-- `@qntx/wallet-engine`: the injected `setTimer` is documented as one-shot (`setTimeout`
-  semantics); polling loops re-arm it through the new `repeat()` primitive.
-- **BREAKING:** `EngineOptions.gateway` is `{ url }`; `installId` is removed. The engine sends a
-  fresh random `x-client-id` per session and per scope (`evm`, `solana`, `bitcoin`, `service`),
-  so the gateway can no longer join an install's addresses across chain families or sessions by
-  id. Contract `INSTALL_ID_HEADER`/`installId` are replaced by `CLIENT_ID_HEADER`
-  (`x-client-id`)/`clientId`.
-- **BREAKING:** the gateway answers an ambiguous broadcast (`eth_sendRawTransaction`,
-  `sendTransaction`, Esplora `POST /tx` whose provider timed out, failed or answered malformed)
-  with `502 {"error":"outcome-unknown"}` instead of retrying it on the next provider; broadcasts
-  fail over only after an open breaker or a 401/403/429 refusal.
-- **BREAKING:** the Solana RPC allow-list drops `getBlock` and gains `getVoteAccounts` and
-  `getStakeMinimumDelegation` (both already sent by the engine).
-- **BREAKING:** `eth_getLogs` block tags must be equal or both name the head (`latest`,
-  `pending`); `safe`/`finalized` paired with the head are refused.
-- Gateway rate limits are charged per JSON-RPC call by weight (one unit up front per request,
-  the rest of the batch's cost before forwarding); limits stay 100 RPC / 50 default / 300 IP per
-  10 s, now in weighted units. wrangler 4.160.0.
-- Gateway responses are bounded: RPC 8 MiB, Esplora 16 MiB (streamed, 30 s deadline), quotes
-  1 MiB, phishing sources 16 MiB, Blockstream token 64 KiB. Oversized RPC/Esplora answers are
-  `400 invalid-request`.
-- Phishing list build: a source's allow entries cancel only its own denies and never another
-  source's; the build is skipped when one source's effective deny count halves (`deny-shrank`)
-  or the published allow list gains more than 50 keys (`allow-grew`).
-- Gateway deploys: staging and production pin separate `account_id`s; the staging job refuses to
-  run while staging shares production's Cloudflare account or its token reaches it; a failed
-  smoke rolls the deployment back.
-- `.github/rulesets/apply.sh` takes two or more reviewers, sets `prevent_self_review` on
-  `production` and the new `npm` environment (tags `v*.*.*`), and fails while admin bypass is on
-  or a shared `CLOUDFLARE_API_TOKEN` secret exists; required checks are bound to GitHub Actions.
-- Native CI installs with `--frozen-lockfile`; Dependabot covers `apps/harness`.
-- **BREAKING:** `@qntx/wallet-native` admits one live kernel runtime per process. Creating a
-  second native wallet while another one's kernel is live fails closed (`integrity`); destroy the
-  first wallet before creating another.
-- Requests beyond `MAX_IN_FLIGHT` wait in order in the main runtime instead of being posted at
-  once, on every host.
-- The kernel's native file primitive is a compare-and-swap (`__qntx.file.replace`);
-  `__qntx.file.write` and the unused `__qntx.frames.onIntegrityViolation` are removed.
-- The Spark native backend's ABI version is checked when the RN kernel starts.
-- Lint boundaries are composed from one table: the chain-signing ban now covers the engine, all
-  of `@qntx/wallet`, `@qntx/wallet-chains` and the Node host; `@qntx/wallet-kernel` is banned
-  from the main-runtime packages; the kernel may not import `@qntx/*-wasm` or subpaths of
-  backend and worker packages; `node:` subpath imports are covered by the builtin ban.
-- **BREAKING:** Vault format 5. The vault's structure is authenticated under the DEK: a `manifest/default` record commits to the format, the keyId and every other record and factor row byte for byte, is rewritten in the same transaction as every structural commit, and is checked on every reload under a session (and at unlock). A replayed, dropped, added or altered row, or a rewritten format, latches the vault `corrupted`. Format 3 and 4 vaults are `unsupported` and must be reset; the format-3 → 4 upgrade path and the `set-format` store op are removed. (KV-02, KV-03)
-- **BREAKING:** An establishing `backup.restore` adopts the envelope's backup key only when a kernel passkey ceremony (React Native) unwrapped it. A restore unwrapped by a backup password or by a web host passkey ceremony brings the wallets back and leaves backup off until the owner runs `backup.enable` (a new key and cloud file). (KV-01)
-- `keys.list` is no longer presence-marked: polling it does not keep an idle session alive. (KV-11)
-- `vault.setAppLock(true)` removes the device keystore key before the rotation commits and fails with `unavailable`, changing nothing, when the keystore cannot remove it. (KV-10)
-- **BREAKING:** `RequestStage` gains `signed`, the point of no return between `signing` and
-  `submitted`; every stage change goes through one transition function (`requests/stage.ts`).
-  `PreparedRequest.submit`, the request controller's `solanaSign`/`bitcoinSignPsbts` options,
-  `signDappPsbts` and the Spark `send`/`payInvoice`/`paySparkInvoice`/`withdraw` params take a
-  `commit` callback that runs immediately before anything is broadcast or sent.
-- **BREAKING:** dApp sessions record the account group (and Nostr identity) their accounts belong
-  to; providers resolve addresses and signing keys only through `connections.sessionAccounts()` /
-  `nostrIdentity()`. `ConnectionController` follows the app's group selection itself and drops
-  `setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts` and
-  `nostrAccount`; it takes `onSelectedGroup` and `invalidateAll` options. The Solana/Bitcoin
-  handlers drop `activeGroup`; WebLN takes `sparkNetwork` instead of `sparkAccount`. Persisted
-  sessions without a group resolve to no accounts (those origins connect again).
-- **BREAKING:** `ProviderInfo` has no `uuid`: the injected script generates the EIP-6963 uuid per
-  document and tags every bridge message with it (`doc`); messages without one are dropped.
-- **BREAKING:** `WalletEngine.transactions` no longer exposes `prepare*` methods; signing goes
-  through `engine.requests`.
-- **BREAKING:** `SignInParse` `malformed` carries the `claims` (domains) its preamble lines claim.
-- NIP-07: every ephemeral event kind (20000–29999) asks for confirmation whatever the origin's
-  policy.
-- **BREAKING:** `solana-sign` requests carry serialized transactions (as the Wallet Standard passes them), not compiled messages. `signedTransactions` are the dApp's transactions with the wallet's signature in its own slot.
-- **BREAKING:** `normalizeSolana` accepts the wallet as any required signer of a `solana.transaction`, not only the fee payer. When the wallet is not the fee payer, the decoded fee is 0.
-- **BREAKING:** `ChainErrorCode` no longer includes `fee-payer-mismatch`.
-- **BREAKING:** Solana transaction versions other than legacy and v0, including v1, are refused with `ChainError("unsupported")`.
-- `solana-sign` `prepare` rejects a transaction it cannot decode, instead of showing an empty request as verified.
-- **BREAKING:** Requests the wallet can describe but not verify now sign without the blind-signing setting. This covers an unknown contract call or creation (the prompt shows the target, function selector, native value and fee cap), unrecognised EIP-712 that fits the display budget (every leaf is shown as `path: value`, up to 16 leaves), a Solana transaction with undecodable instructions (their programs are listed) and a PSBT with other signers' inputs. Each prompt carries a "cannot verify" line. Only requests a decoder marks blind still need `vault.setBlindSigning(true, verify)`, which stays off by default: raw-byte messages, typed data too large or misformed to show, an unrecognised function of a built-in token, calldata to the signing account's own code, a Safe delegatecall outside MultiSendCallOnly, and a Safe gas refund. (@qntx/wallet-chains, @qntx/wallet-kernel, @qntx/wallet-engine)
-- **BREAKING:** `isBlindIntent` takes `Pick<DisplayIntent, "blind">` and returns `intent.blind !== undefined`. `DisplayIntent` gains `blind` (a `BlindReason`), `programs` (Solana) and `contract.selector` / `contract.symbol`. Typed-data `MessageContent` gains `fields`. New exports: `BlindReason`, `TypedDataLeaf`, `messageBlindReason`, and `typedDataFields`, `TYPED_FIELD_BUDGET` and `TYPED_FIELD_CODE_POINTS` from `/evm`. (@qntx/wallet-chains)
-- **BREAKING:** `RequestController.prepare` no longer throws `BlindSigningDisabledError`, and the EIP-1193 and Solana provider handlers no longer answer `4200` for blind requests. A blind request becomes a pending request with the `blind-signing` danger, and `approve` throws `BlindSigningDisabledError` while the setting is off, leaving the request approvable after the owner enables the setting. Described typed data and Solana requests with opaque transactions carry the `decode-partial` check. (@qntx/wallet-engine)
-- The kernel's blind-signing prompts name each reason. The setting's verification prompt now says which way it changes ("Allow blind signing" / "Turn off blind signing"). A raw-byte message prompt shows the bytes (up to 64) or their length. (@qntx/wallet-kernel)
-- `@qntx/wallet-engine`: gateway history requests carry the EVM scope's client id
-  (`gatewayScope`), not the service id.
-- **BREAKING:** `@qntx/wallet-engine/idb`: the engine IndexedDB database moves to format 2. Rows
-  are named by an HMAC of their collection and key (HKDF subkeys of the data key), values live in
-  `records` and the encrypted (collection, key) headers in `index`; no collection name, record key
-  or value is readable on disk. An existing engine database is dropped and rebuilt empty on first
-  open (no migration).
-- **BREAKING:** `EngineCollection.get` resolves `undefined` for a row the store cannot authenticate
-  (it reads like a deleted row), and `EngineErrorCode` no longer has `"integrity"`. A reserved check
-  row proves the data key at open; a database keyed differently (e.g. after a vault reset) is
-  rebuilt empty.
-- Address-book sync: a contact's family, address and creation time are immutable under its id,
-  deletes are terminal, remote records stamped more than one hour ahead are refused, and a local
-  edit always stamps above the record it replaces.
-- **gateway:** **BREAKING:** `GatewayOptions` requires `prices: { cache, coingecko? }`; production
-  requires the `COINGECKO_API_KEY` secret before deploy (staging may set it).
-- **BREAKING:** `@qntx/wallet-engine`: a cooperative exit's `amountSats` (the `pay` Bitcoin option
-  and `spark-exit`) is the amount that arrives at the address; the exit debits `amountSats + fee`.
-  `PayParams.maxFeeSats` is required for Bitcoin options and the exit display carries `feeSats`.
-- **BREAKING:** `@qntx/wallet-engine`: `SendParams.spendProtected` is replaced by
-  `PrepareParams.inputs`; `prepareDappPsbts` takes the group's frozen outpoints and
-  `PreparedBitcoinPsbt` inputs carry `frozen`.
-- **BREAKING:** `@qntx/wallet-engine`: `SparkResult` gains `pending` (and `token`,
-  `token-pending`); `SparkDisplay` is a union with a `token` variant; `SparkErrorCategory` gains
-  `unknown`; `SparkControllerOptions.random` is removed; `send`/`payInvoice`/`paySparkInvoice`/
-  `withdraw` take a required `transferId`.
+  findings or recorded checks unless `acknowledged` names exactly those codes, including findings
+  a re-simulation adds at approval; otherwise it throws `AcknowledgementRequiredError` (carrying
+  `required`) before anything is signed and the request stays approvable.
+- **BREAKING:** `@qntx/wallet-engine`: a send, speed-up, cancel or CPFP whose broadcast outcome is
+  unknown (transport error, 5xx, timeout) resolves with a `submitted` transaction tracked under its
+  locally computed hash instead of rejecting; only a definitive node refusal rejects and marks it
+  `failed`. The signed bytes move from `TrackedTransaction.evm.raw` to `TrackedTransaction.raw`
+  for every family (EVM and Bitcoin hex, Solana base64 wire), persisted before the broadcast and
+  cleared when the node refuses them. Bitcoin dApp `signAndSendTransaction` broadcasts are
+  persisted, input-locked and tracked the same way, and the dApp receives the local txid.
+- **BREAKING:** `@qntx/wallet-engine`: `RequestStage` gains `signed`, the point of no return
+  between `signing` and `submitted`. `PreparedRequest.submit`, the request controller's
+  `solanaSign` / `bitcoinSignPsbts` options and the Spark `send` / `payInvoice` /
+  `paySparkInvoice` / `withdraw` params take a `commit` callback that runs immediately before
+  anything is sent.
+- **BREAKING:** `@qntx/wallet-engine`: `solana-sign` requests carry serialized transactions, as the
+  Wallet Standard passes them, instead of compiled messages; `signedTransactions` are the dApp's
+  transactions with the wallet's signature in its own slot, so co-signers' signatures and
+  sponsored (dApp-paid) transactions survive. A sign-and-send still missing other signers'
+  signatures is refused before the prompt.
+- **BREAKING:** `@qntx/wallet-engine`: dApp sessions record the account group (and Nostr
+  identity) they were granted, and providers resolve addresses and keys only through
+  `connections.sessionAccounts()` / `nostrIdentity()`. `ConnectionController` follows the app's
+  group selection itself (`onSelectedGroup`, `invalidateAll` options); switching group invalidates
+  every pending request. WebLN takes `sparkNetwork` instead of `sparkAccount`.
+- **BREAKING:** `@qntx/wallet-engine/connect`: the injected script generates the EIP-6963 uuid per
+  document and tags every bridge message with it (`doc`); messages without one are dropped, and
+  replies to a previous document are not delivered after a same-origin reload. The provider
+  installs only in the top-level document, and `BrowserBridge.message` must receive the URL of the
+  frame that sent the message (react-native-webview 13.13.5 or later).
+- **BREAKING:** `@qntx/wallet-engine`: `EngineOptions.gateway` is `{ url }`. The engine sends a
+  fresh random `x-client-id` per session and per scope (`evm`, `solana`, `bitcoin`, `service`)
+  instead of one install id; the gateway contract's `INSTALL_ID_HEADER` / `installId` become
+  `CLIENT_ID_HEADER` (`x-client-id`) / `clientId`. A gateway and an engine from different sides of
+  this change refuse each other (`400 invalid-request`).
+- **BREAKING:** `@qntx/wallet-engine/idb`: engine database format 2. Rows are named by an HMAC of
+  their collection and key under HKDF subkeys of the data key; no collection name, key or value is
+  readable on disk. An existing database, or one keyed by another data key, is rebuilt empty on
+  open. `EngineCollection.get` resolves `undefined` for a row the store cannot authenticate, and
+  `EngineErrorCode` loses `"integrity"`.
+- **BREAKING:** `@qntx/wallet-engine`: Bitcoin UTXOs on taproot addresses or worth at most
+  20,000 sat (ord's `MAX_POSTAGE`) are protected as possible inscription or rune carriers: sends do
+  not select them unless named in `inputs`, the balance counts them in `frozen`, and a dApp PSBT
+  that signs one raises `bitcoin-inscription-input`.
 - **BREAKING:** `@qntx/wallet-engine`: the persisted Bitcoin build record carries `template`,
-  `groupIndex` and `tier`; transactions recorded before this release cannot be sped up, cancelled
-  or bumped with CPFP (no migration).
-
-### Fixed
-
-- `@qntx/wallet-chains/evm`: native value sent along with calldata is always an outflow. An
-  unrecognised payable call, a payable token call and a contract creation used to decode with no
-  outflow, so neither the prompt nor the engine's recipient and fee checks saw the amount (#224).
-- Bitcoin balances for bip44, bip49 and bip86 accounts no longer read 0, and a watched Bitcoin
-  address no longer throws.
-- Solana token balances sum every token account of the owner per mint (Token and Token-2022), so a
-  third party's empty account can no longer hide a balance.
-- Built-in tokens (USDC, USDT) appear in the balance view on every network whose table lists them,
-  without being added; a hand-added built-in token shows once, verified.
-- Coin selection no longer spends ord's default 10,000-sat inscription and rune outputs, and dApp
-  PSBTs spending them are flagged.
-- Bitcoin: value sent to an `OP_RETURN` output is no longer hidden from the prompt or the intent. PSBTs whose outputs exceed their proven inputs, or that have an output without a script or amount, are now rejected as invalid.
-- Native amounts in typed data take the request network's symbol and decimals: Seaport no longer labels POL, BNB, AVAX or HYPE as ETH, and Safe inner calls no longer show raw base units.
-- **BREAKING:** BIP-322 simple signatures now reference to_spend by its txid in the correct byte order. They match the official BIP-322 vectors, and signatures made before this fix no longer verify.
-- `@qntx/wallet-engine`: transaction tracking and balance polling ran only once in production on
-  the one-shot timer; transactions are now polled until terminal and balances refresh every
-  interval, with no overlapping runs and nothing running after lock.
-- `@qntx/wallet-engine`: an ambiguous broadcast no longer leads to a double payment — the
-  transaction id is computed from the signed bytes, the EVM nonce and Bitcoin inputs are held
-  before the network call, and the tracker rebroadcasts the same bytes until the outcome is known
-  (EVM, Solana, Bitcoin, including speed-up/cancel/CPFP). A restart during the unknown window
-  resumes tracking, keeps the nonce held and restores Solana's blockhash expiry.
-- `@qntx/wallet-engine`: a Bitcoin transaction unknown to both Esplora endpoints for 30 minutes is
-  now `dropped` and its inputs are released instead of staying locked forever.
-- `@qntx/wallet-engine`: Bitcoin inputs are released on every terminal state; an extra input pulled
-  in by a speed-up no longer stays locked when the original confirms first.
-- A client could open the gateway's shared provider breakers for every user with requests that
-  make the upstream answer 400/413/422; such answers are now `400 invalid-request` for that
-  caller only, never counted and never failed over, and `id: null` or malformed params are
-  rejected before any upstream call.
-- The production gateway smoke crashed on unconfigured provider auth before running a check.
-- `chains.sign` and `spark.approve` transfer the verify password or PRF output to the worker
-  instead of structured-cloning it; every secret-bearing request is either transferred or wiped,
-  enforced by the types (`SecretWire`).
-- `createWithPasskey`/`restoreWithPasskey` reject locally decidable errors before the WebAuthn
-  ceremony and wipe the PRF outputs on every path.
-- A burst of concurrent requests no longer kills the React Native session when the kernel is
-  busy.
-- Two React Native kernels can no longer overwrite each other's vault file: commits re-read the
-  file and fail `conflict` if it changed.
-- Kernel frames are wiped after use on both sides of the React Native boundary, natively and in
-  JS, and the CBOR encoder no longer leaves frame bytes in its reusable buffer.
-- A kernel response the port cannot encode is answered with `integrity` instead of hanging until
-  the watchdog; an unencodable request on React Native rejects `invalid-input` as on the Web.
-- An undecodable inbound frame crashes the React Native kernel immediately instead of being
-  dropped.
-- The React Native session's 24-hour limit counts time the device spends asleep.
-- A compromised main runtime could plant its own backup key through an establishing `backup.restore` of an empty envelope and read every later `backup.update`. (KV-01)
-- A store writer could roll `meta.format` back to 3 and have the next unlock silently re-add the device factor (turning the app lock off), or put back a deleted blind-signing policy row or a retired/disabled `backup-key` row. (KV-02, KV-03)
-- A session ending during a password change (idle or maximum deadline firing inside the rotation) latched an intact vault `corrupted`; it now fails as `locked`. (KV-04)
-- Backup factor secrets (the backup PRF output, passwords on failure paths, already derived KEKs) are wiped on every path. (KV-05)
-- A request whose params share references (`n = [n, n]` nested deep) no longer freezes the kernel or the host: each object is checked once, cycles are rejected, and the size check stops at the cap. Methods named after `Object.prototype` members are unknown methods. (KV-06)
-- A backup payload ending in a lone entry tag byte restored as if the byte were absent; it is now `integrity`. (KV-09)
-- Spark lightning and cooperative-exit approvals are budgets again: they cover several signing calls until they expire instead of being consumed by the first batch. (QA-02)
-- The IndexedDB vault store no longer writes a stale meta row back when one commit changes the vault and then clears it.
-- A request invalidated while its approval was in flight (connection revoked, navigation, dApp
-  network switch, lock, group switch) is never signed and sent, and its stage is no longer
-  overwritten with `submitted`; terminal stages and sign-log records are written once; an
-  invalidation during `prepare` or re-simulation is no longer lost.
-- Switching account group invalidates every pending request and re-points dApp sessions without
-  any host call.
-- A page can no longer get a signature from an account group it was not authorized for (EVM,
-  Solana, Bitcoin, WebLN), and silent Solana/Bitcoin `connect` no longer reveals another group's
-  addresses; NIP-07 signs and decrypts with the session's identity.
-- Solana and Bitcoin `change` events after a disconnect carry no account.
-- Adding a network to a session keeps the origin's NIP-07 and WebLN policies.
-- A Sign-In with Ethereum/Solana text for another domain is refused even when it does not conform
-  to the strict grammar but lenient verifiers (viem, `@solana/wallet-standard-util`) accept it.
-- After a same-origin reload, replies to the previous document's requests are no longer delivered
-  into the new one; the previous document's pending requests are voided.
-- The EIP-6963 uuid is no longer a fixed cross-site identifier.
-- Solana Wallet Standard `solana:signTransaction` and `solana:signAndSendTransaction` work with real dApp transactions. Before this fix, every serialized transaction failed with "compiled message has trailing bytes".
-- Multi-signer and partially signed Solana transactions keep the co-signers' existing signatures. Sponsored transactions, where the dApp pays the fee, can be signed. A sign-and-send that still lacks other signers' signatures is refused before the prompt.
-- A raw `solana.message` that a cluster could accept as a transaction message of any version is never signed. This applies to every versioned prefix except `0xff`, which opens off-chain messages; such a prefix passes only when the whole payload is well-formed UTF-8 text. Previously a transaction-v1 message could be signed as a raw message once blind signing was on.
-- Solana `standard:connect` derives the account public key from its address. Previously it always failed with "no Solana account for the group".
-- WETH `deposit`, Aave `supply`, Uniswap Universal Router `execute`, CoW Protocol orders and other everyday dApp requests are no longer refused before any prompt on a vault with the default policy. Two calls to the same contract with different functions no longer produce identical prompts. (@qntx/wallet-chains, @qntx/wallet-kernel, @qntx/wallet-engine)
-- Calldata sent to the signing account itself, including to a Safe from its own transaction, is now blind instead of being decoded as a token operation or an ordinary call. (@qntx/wallet-chains)
-- A synced metadata document from any wallet could re-point an existing contact to another
-  address, resurrect a deleted contact and revert later renames by stamping its records in the
-  future.
-- One tampered engine-store row, or reopening the engine database under a new data key, aborted
-  the whole unlock initialisation; a start that fails mid-sequence now tears down and retries on
-  the next status event.
-- The engine IndexedDB primary keys exposed dApp origins, sign-log timestamps and wallet/Spark
-  account structure in plaintext.
-- Account discovery restamped every scanned group, so a scan on one device reverted renames made
-  on another.
-- Cloud backup reported a conflict with its own write after a lagging read-back or a write that
-  failed after landing.
-- `keys.export` no longer builds the private key as a JS string, and create/import commands wipe
-  the minted vault DEK, wire mnemonic/passphrase/PRF inputs and entropy on every failure path.
-- `@qntx/wallet-engine`: Spark payments are idempotent per request — the transfer id is derived
-  from the request id, a lost response is retried under the same id, and an unresolved outcome
-  ends the request `submitted` with `{ kind: "pending", transferId }` instead of `failed`.
-- `@qntx/wallet-engine`: paying a Bitcoin address from Spark shows the SSP fee and refuses a quote
-  above the caller's `maxFeeSats` before approval (ED-03).
-- `@qntx/wallet-engine`: a corrupt or integrity-failing Spark exit-chain index, chain record or
-  payment note is skipped instead of failing the client or the history page (ED-08, Spark part).
-- `@qntx/wallet-engine`: coin selection spends only confirmed outputs and the wallet's own
-  unconfirmed change; replacements never add unconfirmed inputs (ED-07).
-- `@qntx/wallet-engine`: a Bitcoin transaction whose input is spent by a confirmed foreign
-  transaction settles `replaced`; speed-up, cancel and CPFP work after a restart (ED-05).
-- `@qntx/wallet-engine`: Bitcoin replacement and CPFP fees use a per-template, per-script vsize
-  estimate and the replacement's own size for the BIP-125 rule-4 floor (ED-12); CPFP of a
-  bip44/bip49 parent builds on the bip84 change chain; a cancel that cannot pay its fee is refused.
-- `@qntx/wallet-engine`: dApp `signAndSendTransaction` broadcasts are persisted, outcome-classified,
-  input-locked and tracked like wallet sends; the dApp receives the local txid.
+  `groupIndex` and `tier`; speed-up, cancel and CPFP rebuild from it after a restart.
+- **BREAKING:** `@qntx/wallet-engine`: a cooperative exit's `amountSats` (the `pay` Bitcoin option
+  and `spark-exit`) is what arrives at the address; the exit debits `amountSats + feeSats`, the
+  fee is quoted at prepare and refused above `maxFeeSats`, which Bitcoin options require.
+  `SparkDisplay` is a union with a `token` variant and exit displays carry `feeSats`.
+- **BREAKING:** `@qntx/wallet-engine`: Spark payments are idempotent per request. `SparkResult`
+  gains `pending` (a lost response; the payment may settle under `transferId`), `token` and
+  `token-pending`; `SparkErrorCategory` gains `unknown`; `SparkControllerError` carries
+  `transferId` / `inputOutputIds`; `send` / `payInvoice` / `paySparkInvoice` / `withdraw` take a
+  required `transferId`, derived from the request id by the pipeline.
+- **BREAKING:** `@qntx/wallet-engine`: `engine.bridges.quote` requires `maxFeeBps` (0–10000), the
+  relay-fee ceiling; swap and bridge quotes must match the requested tokens, amount, destination
+  and slippage before they leave the engine.
+- **BREAKING:** `@qntx/wallet-engine`: `AssetsController` requires a `chains` option; custom
+  tokens persist as `{ address }` and `verified` is computed at read time from the built-in tables.
+- **BREAKING:** `@qntx/wallet-engine`: `WalletEngine.transactions` no longer exposes `prepare*`
+  methods; every signing path goes through `engine.requests`.
+- **BREAKING:** `@qntx/wallet-chains`: `evm.typed-data` requests must declare
+  `types.EIP712Domain` (`invalid-typed-data` otherwise); typed data nesting is capped at 32;
+  EIP-1559/7702 transactions with `maxPriorityFeePerGas` above `maxFeePerGas` are rejected.
+- **BREAKING:** `@qntx/wallet-chains`: `bitcoin.psbt` inputs signed under `btc.bip44`, `btc.bip49`
+  or `btc.bip84` need `nonWitnessUtxo`; a fee is computed only from proven input amounts (a
+  `witnessUtxo` amount counts only when a signed taproot input commits to all amounts), and PSBTs
+  whose outputs exceed their proven inputs, or with an output lacking a script or amount, are
+  rejected. The engine attaches previous transactions itself and takes dApp prevouts from Esplora.
+- **BREAKING:** `@qntx/wallet-chains`: BIP-322 simple signatures reference to_spend by its txid in
+  the correct byte order and match the official vectors; signatures made by earlier versions no
+  longer verify. Legacy (P2PKH) message signatures are made over the standard digest and verify in
+  Bitcoin Core and Electrum.
+- **BREAKING:** `@qntx/wallet-chains`: `normalizeSolana` accepts the wallet as any required signer
+  of a `solana.transaction`, not only the fee payer (the decoded fee is 0 when it is not);
+  transaction versions other than legacy and v0 are `ChainError("unsupported")`; a compiled
+  message with trailing bytes is rejected; duplicate compute-budget instructions are rejected and
+  every Solana transaction intent carries a maximum fee derived as Agave does.
+- **BREAKING:** `@qntx/wallet-chains`: `isBlindIntent` takes `Pick<DisplayIntent, "blind">`.
+  `SafeTransaction.refund` is `{ receiver?, gasPrice, amount }` with
+  `amount = (baseGas + safeTxGas) × gasPrice` in the gas token. `SignInParse` `malformed` carries
+  the `claims` its preamble lines make.
+- **BREAKING:** `@qntx/gateway`: `GatewayOptions` requires `auth` (construction fails when a
+  provider names an unconfigured account) and `prices: { cache, coingecko? }`; production needs the
+  `COINGECKO_API_KEY` secret.
+- **BREAKING:** `@qntx/gateway`: an ambiguous broadcast (`eth_sendRawTransaction`,
+  `sendTransaction`, Esplora `POST /tx` whose provider timed out, failed or answered malformed)
+  answers `502 {"error":"outcome-unknown"}` instead of being retried on the next provider;
+  broadcasts fail over only after an open breaker or a 401/403/429 refusal.
+- **BREAKING:** `@qntx/gateway`: the Solana RPC allow-list drops `getBlock` and gains
+  `getVoteAccounts` and `getStakeMinimumDelegation`.
+- `@qntx/wallet`: password re-verification (signing, exports, factor and backup management) is
+  rate-limited like unlock. `keys.list` no longer renews the idle timer. The call watchdog is
+  suspended while a system verification prompt is open, so a slow user no longer crashes the
+  React Native session.
+- `@qntx/wallet`: requests beyond `MAX_IN_FLIGHT` wait in order in the main runtime instead of
+  being posted at once.
+- `@qntx/wallet`: `chain.sign` runs one two-pass flow for HD and imported keys; the host checks the
+  signed content against the request (the EVM envelope is rebuilt and compared byte for byte, a
+  PSBT must keep its unsigned transaction and prevouts) as well as the signer.
+- `@qntx/wallet-native`: the Argon2 reference implementation is vendored and runs on the KDF worker
+  thread (`__qntx.argon2id`); the Web and Node workers use `@noble/hashes`. The native file
+  primitive is a compare-and-swap (`__qntx.file.replace`); `__qntx.file.write` and
+  `__qntx.frames.onIntegrityViolation` are removed. The Spark native backend's ABI version is
+  checked when the kernel starts. Kernel crash reasons stay out of public system logs.
+- NIP-07 asks for confirmation of every replaceable (10000–19999), addressable (30000–39999) and
+  ephemeral (20000–29999) event kind and of kinds 0, 3 and 5, whatever the origin's policy.
+- `@qntx/wallet-engine`: the injected `setTimer` is one-shot (`setTimeout` semantics); polling
+  loops re-arm it.
+- `@qntx/wallet-engine`: custom RPC endpoints are probed again at every unlock; one that no longer
+  serves its chain is skipped for the session but stays persisted.
+- `@qntx/wallet-engine`: the Bitcoin address gap scan fails closed after 2000 addresses per chain.
+- `@qntx/wallet-engine`: address-book sync treats a contact's family, address and creation time as
+  immutable under its id, deletes as terminal, and refuses remote records stamped more than one
+  hour ahead.
+- `@qntx/gateway`: rate limits are charged per JSON-RPC call by weight (100 RPC / 50 default per
+  client and 300 per IP prefix per 10 s, in weighted units); request bodies are capped before they
+  are read (RPC 512 KiB, Esplora 1 MB; `413 invalid-request`) and upstream responses are bounded
+  (RPC 8 MiB, Esplora 16 MiB streamed with a 30 s deadline); `eth_getLogs` tags must be equal or
+  both name the head. Upstream 400/413/422 answers are `400 invalid-request` for that caller only
+  and never open a shared breaker. Phishing list builds isolate each source's allow list and stop
+  when a source's deny count halves or the allow list grows by more than 50 keys. wrangler
+  4.160.0, hono 4.13.17.
+- Build and release: `bunfig.toml` enforces a 7-day minimum release age on every install;
+  `scripts/check-links.ts` (in `check:pkg`) fails on `@qntx` packages linked from outside the
+  checkout; `bun run lint` runs `scripts/check-lint-boundaries.ts`, which proves every lint-enforced
+  architecture boundary still fires; `scripts/check-version.ts --release-tag`; the publish workflow
+  needs a verified tag on `main` with a green CI run; reusable workflows are pinned to a commit;
+  staging and production gateway deploys are isolated and roll back on a failed smoke; rulesets
+  require two reviewers.
+- **BREAKING:** `AssetsController` takes `gateway`, `fetch` and `now` options, and `TokenBalance`
+  now always carries `spam` and `hidden`.
+- **BREAKING:** `verified` is also true for a token-list entry whose list decimals equal the
+  on-chain decimals (it was true only for the built-in table).
+- Hidden tokens are excluded from price requests and portfolio valuation.
+- EVM token metadata (`decimals`, and `symbol` for custom tokens) is read once per unlock in batched
+  `aggregate3` calls of at most 300, instead of two `eth_call`s per token per refresh.
 
 ### Removed
 
+- **BREAKING:** `@qntx/wallet`: error code `no-device-credential` (replaced by
+  `verification-unavailable`).
 - **BREAKING:** `@qntx/wallet-engine`: the per-account-group blind-signing flag
-  (`AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`). It lived
-  in the main runtime, where the code it was meant to restrain could switch it on.
-- **BREAKING:** error code `no-device-credential` (replaced by `verification-unavailable`).
+  (`AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`). It
+  lived in the main runtime, where the code it was meant to restrain could switch it on.
+- **BREAKING:** `@qntx/wallet-engine`: `AssetsController.refreshBitcoin(xpub, network)`; use
+  `refreshBitcoinGroup`, or `refresh(address, network)` for a plain Bitcoin address.
+- **BREAKING:** `@qntx/wallet-engine`: `ConnectionController.setActiveGroup`, `activeGroup`,
+  `accounts`, `solanaAccount`, `bitcoinAccounts` and `nostrAccount`;
+  `SolanaWalletHandler.solanaAccountsChanged` and `BitcoinWalletHandler.bitcoinAccountsChanged`;
+  the Solana and Bitcoin handlers' `activeGroup` option.
+- **BREAKING:** `@qntx/wallet-engine`: `EngineOptions.gateway.installId`,
+  `SparkControllerOptions.random`, and `ProviderInfo.uuid` in `/connect`.
+- **BREAKING:** `@qntx/wallet-chains`: `ChainErrorCode` `fee-payer-mismatch`; `SafeTransaction`
+  `gasToken` / `refundReceiver` (now inside `refund`).
+
+### Fixed
+
+- `@qntx/wallet-chains/evm`: native value sent with calldata is always an outflow; an unrecognised
+  payable call, a payable token call and a contract creation decoded with no outflow (#224).
+  Native amounts in typed data take the request network's symbol and decimals (Seaport no longer
+  labels POL, BNB, AVAX or HYPE as ETH; Safe inner calls no longer show base units). Across
+  deposits with unexplained native value and Jupiter routes with slippage above 100% are no longer
+  recognised (they decode as opaque).
+- `@qntx/wallet-chains/bitcoin`: value sent to an `OP_RETURN` output is no longer hidden from the
+  prompt or the intent.
+- `@qntx/wallet-chains/solana`: a raw `solana.message` that a cluster could accept as a
+  transaction message of any version is never signed; a `0xff` off-chain prefix passes only when
+  the whole payload is well-formed UTF-8.
+- Solana Wallet Standard `solana:signTransaction` and `solana:signAndSendTransaction` work with real
+  dApp transactions (every serialized transaction failed with "compiled message has trailing
+  bytes"), and `standard:connect` no longer fails with "no Solana account for the group".
+- Cooperative exits no longer fail with `integrity` in `spark.signFrost`; Spark lightning and exit
+  approvals again cover several signing calls until they expire; a Spark token approval covers
+  outputs summed per receiver.
+- `@qntx/wallet`: a session ending during a password change or a verification prompt fails
+  `locked` instead of latching the vault `corrupted` or answering `integrity`; a request whose
+  params share references (`n = [n, n]` nested deep) no longer freezes the kernel or the host, and
+  methods named after `Object.prototype` members are unknown methods; a backup payload ending in a
+  lone tag byte is `integrity`.
+- `@qntx/wallet`: secrets are wiped on every path — backup factor secrets and derived KEKs,
+  `keys.export` encodings (no longer built as a JS string), the minted DEK and wire inputs of a
+  failed create or import, and the mnemonic during seed derivation (built as bytes, never a
+  string); `chains.sign` and `spark.approve` transfer the verify password or PRF output instead of
+  structured-cloning it; `createWithPasskey` / `restoreWithPasskey` reject locally decidable errors
+  before the WebAuthn ceremony.
+- React Native: a burst of concurrent requests no longer kills the session; two kernels can no
+  longer overwrite each other's vault file (commits fail `conflict` if it changed); kernel frames
+  are wiped on both sides of the boundary; a response the port cannot encode is answered with
+  `integrity` instead of hanging until the watchdog, and an unencodable request rejects
+  `invalid-input` as on the Web; strings with a lone surrogate are refused instead of silently
+  replaced; an undecodable inbound frame crashes the kernel immediately; the 24-hour session limit
+  counts time asleep; the iOS passkey PRF output reaches the kernel as wiped bytes.
+- dApp connections: a page can no longer get a signature from an account group it was not
+  authorised for (EVM, Solana, Bitcoin, WebLN), silent Solana / Bitcoin `connect` no longer
+  reveals another group's addresses, and NIP-07 signs with the session's identity; `change`
+  events after a disconnect carry no account; adding a network keeps the origin's NIP-07 and WebLN
+  policies; a request invalidated while its approval was in flight is never signed or sent; a
+  cross-origin subframe gets no provider; the EIP-6963 uuid is no longer a fixed cross-site
+  identifier; a Sign-In with Ethereum/Solana text for another domain is refused even when only
+  lenient verifiers accept it.
+- `@qntx/wallet-engine` balances: transaction tracking and balance polling ran only once on the
+  one-shot timer, and timed refreshes called `refresh` with the wrong arguments; bip44, bip49 and
+  bip86 balances no longer read 0 and a watched Bitcoin address no longer throws; Solana token
+  balances sum every token account per mint (Token and Token-2022); built-in tokens show on every
+  network that lists them without being added; watch accounts persist across unlocks.
+- `@qntx/wallet-engine` sends: an ambiguous broadcast no longer leads to a double payment — the id
+  comes from the signed bytes, the EVM nonce and Bitcoin inputs are held before the network call,
+  and the tracker rebroadcasts the same bytes until the outcome is known, including after a
+  restart. A Bitcoin transaction unknown to both Esplora endpoints for 30 minutes is `dropped` and
+  releases its inputs; inputs are released on every terminal state; one whose input a confirmed
+  foreign transaction spends settles `replaced`.
+- `@qntx/wallet-engine` Bitcoin fee bumps: replacements spend only the original's inputs and the
+  original account; coin selection spends only confirmed outputs and the wallet's own unconfirmed
+  change, and replacements never add unconfirmed inputs; replacement and CPFP fees use a
+  per-template vsize estimate and the replacement's own size for the BIP-125 rule-4 floor; CPFP of
+  a bip44/bip49 parent builds on the bip84 change chain; a cancel that cannot pay its fee is
+  refused.
+- `@qntx/wallet-engine` Spark: paying a Bitcoin address shows the SSP fee and refuses a quote above
+  `maxFeeSats` before approval; a corrupt exit-chain index, chain record or payment note is
+  skipped instead of failing the client or the history page.
+- `@qntx/wallet-engine` store: one tampered or torn row no longer aborts the unlock — a start that
+  fails mid-sequence tears down and retries on the next status event; the IndexedDB primary keys
+  no longer expose dApp origins, sign-log timestamps or account structure; a synced metadata
+  document can no longer re-point, resurrect or revert contacts; account discovery no longer
+  restamps groups and reverts renames made on another device; cloud backup no longer reports a
+  conflict with its own write; adding a custom Esplora endpoint works.
+- `@qntx/gateway`: a client could open the shared provider breakers for every user with requests
+  the upstream answers 400/413/422; `id: null` or malformed params are rejected before any upstream
+  call; a fresh client id per request no longer escapes the per-IP limit; oversized bodies no longer
+  reach the paid upstreams; the production smoke no longer crashes on unconfigured auth.
+- Token decimals are never guessed: a custom ERC-20 or SPL mint whose decimals cannot be read is
+  omitted from the refresh instead of being shown at 18 (EVM) or 9 (Solana), and EVM `addToken`
+  rejects such a token.
 
 ## [0.13.0] - 2026-11-09
 

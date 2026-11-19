@@ -37,13 +37,31 @@ const T22_MINT = "zZs2Buajob4MLf1UYzVRhNFuimSmiXVY1VRSPc9bysi";
 const FROZEN_A = "CdDgU2F7DNnGrjbqcFUhbEd2VbK6W4unszLD34aDbtnP";
 const FROZEN_B = "vrF9iUxduAGbdA1fHBST3jhJgRQ89PLkgQbfPMLcV8z";
 
-const MINT_DECIMALS: Record<string, number> = {
-  [USDC]: 6,
-  [USDT]: 6,
-  [T22_MINT]: 9,
-  [FROZEN_A]: 6,
-  [FROZEN_B]: 6,
-};
+/** A parsed mint account as `getMultipleAccounts` jsonParsed returns it. */
+const mintAccount = (opts: {
+  readonly decimals: number;
+  readonly supply?: string;
+  readonly program?: string;
+}): unknown => ({
+  lamports: 1_500_000,
+  owner: opts.program ?? PROGRAM_IDS.token,
+  executable: false,
+  rentEpoch: 0,
+  space: 82,
+  data: {
+    parsed: {
+      type: "mint",
+      info: {
+        decimals: opts.decimals,
+        supply: opts.supply ?? "1000000000",
+        isInitialized: true,
+        mintAuthority: null,
+        freezeAuthority: null,
+      },
+    },
+    program: "spl-token",
+  },
+});
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -95,23 +113,20 @@ const tokenAccount = (opts: {
   },
 });
 
-const solRpc = (accounts: Accounts, calls: Call[]): SolanaRpc => ({
+const solRpc = (
+  accounts: Accounts,
+  calls: Call[],
+  mintAccounts?: Record<string, unknown>,
+): SolanaRpc => ({
   call: async (method, params) => {
     calls.push({ method, params });
     if (method === "getBalance") {
       return Promise.resolve({ value: 0 });
     }
-    if (method === "getAccountInfo") {
-      const [mint] = params;
+    if (method === "getMultipleAccounts") {
+      const [keys] = params;
       return Promise.resolve({
-        value: {
-          data: {
-            parsed: {
-              info: { decimals: MINT_DECIMALS[String(mint)] ?? 6 },
-            },
-            program: "spl-token",
-          },
-        },
+        value: (keys as string[]).map((k) => mintAccounts?.[k] ?? null),
       });
     }
     if (method === "getTokenAccountsByOwner") {
@@ -140,17 +155,26 @@ const solRpc = (accounts: Accounts, calls: Call[]): SolanaRpc => ({
 const filterKey = (call: Call): unknown => obj(call.params[1])?.["programId"];
 const mintKey = (call: Call): unknown => obj(call.params[1])?.["mint"];
 
-const make = (accounts: Accounts, calls: Call[]): AssetsController =>
-  new AssetsController({
+const make = (
+  accounts: Accounts,
+  calls: Call[],
+  mintAccounts?: Record<string, unknown>,
+): AssetsController => {
+  const store = createMemoryEngineStore();
+  return new AssetsController({
     networks: {
       info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
-      solanaRpc: () => solRpc(accounts, calls),
+      solanaRpc: () => solRpc(accounts, calls, mintAccounts),
     } as never,
     chains: { account: async () => Promise.reject(new Error("unmocked chains.account")) },
-    openStore: async () => Promise.resolve(createMemoryEngineStore()),
+    openStore: async () => Promise.resolve(store),
     setTimer: () => () => {},
     logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
   });
+};
 
 const tokenBalance = (balances: AccountBalances, mint: string) => {
   const token = balances.tokens.find((t) => t.address === mint);
@@ -166,7 +190,9 @@ const tokenAccountCalls = (calls: Call[]): Call[] =>
 describe("AssetsController solana token holdings", () => {
   it("sums every token account per mint over both programs, two account calls per refresh", async () => {
     const calls: Call[] = [];
-    const assets = make(fixtureAccounts(), calls);
+    const assets = make(fixtureAccounts(), calls, {
+      [T22_MINT]: mintAccount({ decimals: 9, program: PROGRAM_IDS.token2022 }),
+    });
     await assets.init();
     await assets.addToken(SOL_NET, USDC);
     await assets.addToken(SOL_NET, USDT);
@@ -254,7 +280,10 @@ describe("AssetsController solana token holdings", () => {
 
   it("reports frozen token accounts apart from the balance", async () => {
     const calls: Call[] = [];
-    const assets = make(fixtureAccounts(), calls);
+    const assets = make(fixtureAccounts(), calls, {
+      [FROZEN_A]: mintAccount({ decimals: 6, program: PROGRAM_IDS.token2022 }),
+      [FROZEN_B]: mintAccount({ decimals: 6, program: PROGRAM_IDS.token2022 }),
+    });
     await assets.init();
     await assets.addToken(SOL_NET, FROZEN_A);
     await assets.addToken(SOL_NET, FROZEN_B);
@@ -265,5 +294,50 @@ describe("AssetsController solana token holdings", () => {
     expect(a.frozen).toBe("150500000");
     expect(b.balance).toBe("0");
     expect(b.frozen).toBe("225750000");
+  });
+
+  it("a held custom mint takes its decimals from the inspected mint, not the token accounts", async () => {
+    const calls: Call[] = [];
+    const weird = "4uQeVj5tqViQh7yWWGStvkEG1Zmhx6uasJtWCJziofM";
+    const assets = make(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: weird,
+            owner: OWNER,
+            amount: "700",
+            decimals: 6,
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+      { [weird]: mintAccount({ decimals: 2 }) },
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, weird);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    const token = tokenBalance(balances, weird);
+    expect(token.balance).toBe("700");
+    expect(token.decimals).toBe(2);
+  });
+
+  it("a custom mint whose mint account cannot be read is omitted, not shown at 9", async () => {
+    const calls: Call[] = [];
+    const weird = "8opHzTAnfzRpPEx21XtnrVTX28YQuCpAjcn1PczScKh";
+    const mintAccounts: Record<string, unknown> = {
+      [weird]: mintAccount({ decimals: 4 }),
+    };
+    const assets = make({ token: [], token2022: [] }, calls, mintAccounts);
+    await assets.init();
+    await assets.addToken(SOL_NET, weird);
+    // A new unlock re-reads persisted custom mints; the mint read is now dark.
+    assets.lock();
+    await assets.init();
+    mintAccounts[weird] = null;
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(balances.tokens.find((t) => t.address === weird)).toBeUndefined();
+    expect(balances.tokens.every((t) => t.decimals !== 9)).toBe(true);
   });
 });
