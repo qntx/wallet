@@ -52,6 +52,8 @@ const persistedAtSend: Array<Array<Record<string, unknown>>> = [];
 const statuses = new Map<string, unknown>();
 /** The height getBlockHeight reports. */
 let height = 500;
+/** What getBlockHeight answers at processed commitment; undefined answers `height`. */
+let processedHeight: unknown;
 /** The node's sendTransaction answers HTTP 502 — it got the bytes, the answer is lost. */
 let send502 = false;
 /** Index into sentWires the node refuses with a simulation error; undefined refuses none. */
@@ -62,6 +64,7 @@ const resetMock = (): void => {
   persistedAtSend.length = 0;
   statuses.clear();
   height = 500;
+  processedHeight = undefined;
   send502 = false;
   refuseAt = undefined;
 };
@@ -71,7 +74,12 @@ const rpcReply = (method: string, params: unknown[]): unknown => {
     return GENESIS;
   }
   if (method === "getBlockHeight") {
-    return height;
+    const config = params[0];
+    const processed =
+      typeof config === "object" && config !== null && "commitment" in config
+        ? config.commitment === "processed"
+        : false;
+    return processed && processedHeight !== undefined ? processedHeight : height;
   }
   if (method === "getEpochInfo") {
     return { absoluteSlot: 700, blockHeight: height };
@@ -488,6 +496,50 @@ describe("solana provider over a real kernel", () => {
       expect(tx?.state).toBe("submitted");
       expect(tx?.hash).toBe(local);
       expect(requestStage(r)).toBe("submitted");
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("bounds a dApp transaction's expiry by the processed height, never the lagging confirmed one", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      processedHeight = height + 40;
+      const input = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [input],
+        chains: ["solana:mainnet"],
+      });
+      await approve();
+      value(await settled);
+      const [tx] = Object.values(r.engine.transactions.getState().txs);
+      expect(tx?.lastValidBlockHeight).toBe(height + 40 + 150);
+    } finally {
+      resetMock();
+      r.engine.unsubscribe();
+      await r.wallet.destroy();
+    }
+  });
+
+  it("a malformed height answer fails the send before anything goes out", async () => {
+    const r = await rig();
+    try {
+      const account = await connect(r);
+      resetMock();
+      processedHeight = "not-a-height";
+      const input = await signAndSendInput(account);
+      const { settled, approve } = await call(r, "solana:signAndSendTransaction", {
+        transactions: [input],
+        chains: ["solana:mainnet"],
+      });
+      await expect(approve()).rejects.toThrow("getBlockHeight returned a malformed height");
+      expect(await settled).toHaveProperty("error");
+      expect(sentWires).toHaveLength(0);
+      expect(r.engine.transactions.getState().txs).toStrictEqual({});
     } finally {
       resetMock();
       r.engine.unsubscribe();

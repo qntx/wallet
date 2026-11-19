@@ -59,9 +59,9 @@ import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
 /**
- * Agave `MAX_PROCESSING_AGE`: `getLatestBlockhash` reports `lastValidBlockHeight` as the current
- * block height plus 150. A dApp transaction's message carries only the blockhash, so its expiry
- * is bounded by the height read before broadcast plus this.
+ * Agave `MAX_PROCESSING_AGE`: `getLatestBlockhash` reports `lastValidBlockHeight` as the height of
+ * the blockhash's bank plus 150. A dApp transaction's message carries only the blockhash, so its
+ * expiry is bounded by the processed height read before broadcast plus this.
  */
 export const SOLANA_MAX_PROCESSING_AGE = 150n;
 
@@ -669,8 +669,12 @@ export class SolanaChainAdapter {
     };
   }
 
-  async blockHeight(rpc: SolanaRpc): Promise<bigint> {
-    const result = await this.rpc(rpc, "getBlockHeight", [{ commitment: "confirmed" }]);
-    return BigInt(str(result, "0"));
+  /** `getBlockHeight` at `commitment`; a malformed answer throws rather than reading as 0. */
+  async blockHeight(rpc: SolanaRpc, commitment: "processed" | "confirmed"): Promise<bigint> {
+    const result = await this.rpc(rpc, "getBlockHeight", [{ commitment }]);
+    if (typeof result !== "number" || !Number.isSafeInteger(result) || result < 0) {
+      throw new TypeError("getBlockHeight returned a malformed height");
+    }
+    return BigInt(result);
   }
 }

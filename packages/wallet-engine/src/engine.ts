@@ -501,9 +501,13 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
             account.address,
           ),
         );
-        /* The message carries only a blockhash: bound its expiry by the height at request time
-           plus Agave's processing age. Read once, before commit — a failed read sends nothing. */
-        const lastValidBlockHeight = (await adapter.blockHeight(rpc)) + SOLANA_MAX_PROCESSING_AGE;
+        /* The message carries only a blockhash: bound its expiry by the processed height at
+           request time plus Agave's processing age. The dApp fetched the blockhash earlier, at
+           any commitment, so the processed height is the bound that never comes in too low — a
+           low bound would let the poll prove a drop while the bytes can still land. Read once,
+           before commit: a failed read sends nothing. */
+        const lastValidBlockHeight =
+          (await adapter.blockHeight(rpc, "processed")) + SOLANA_MAX_PROCESSING_AGE;
         commit();
         const batch = await submitInOrder(wires.length, async (index) => {
           const wire = wires[index];

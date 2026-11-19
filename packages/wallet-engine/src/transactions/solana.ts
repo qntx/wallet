@@ -303,7 +303,7 @@ const finishPrepared = async (
     simulation,
     resimulate: async () => solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer),
     staleReason: async () =>
-      (await solana.blockHeight(rpc)) > unsigned.lastValidBlockHeight
+      (await solana.blockHeight(rpc, "confirmed")) > unsigned.lastValidBlockHeight
         ? "blockhash expired — start over"
         : undefined,
     submit,
