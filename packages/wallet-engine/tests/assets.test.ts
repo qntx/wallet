@@ -95,12 +95,18 @@ describe("EvmChainAdapter erc20", () => {
   it("encodes transfer calldata, to=token, value=0, gas=estimate×1.1", async () => {
     const a = new EvmChainAdapter();
     const c = client({ eth_getTransactionCount: "0x0", eth_estimateGas: "0x10000" });
-    const tx = await a.build(c, "eip155:1", OWNER, {
-      kind: "erc20",
-      token: TOKEN,
-      to: "0x3333333333333333333333333333333333333333",
-      value: 7n,
-    });
+    const tx = await a.build(
+      c,
+      "eip155:1",
+      OWNER,
+      {
+        kind: "erc20",
+        token: TOKEN,
+        to: "0x3333333333333333333333333333333333333333",
+        value: 7n,
+      },
+      0,
+    );
     expect(tx.to).toBe(TOKEN);
     expect(tx.value).toBe(0n);
     expect(tx.data).toBe(

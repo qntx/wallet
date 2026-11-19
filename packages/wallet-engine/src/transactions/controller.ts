@@ -719,10 +719,13 @@ export class TransactionController extends Controller<TransactionControllerState
     );
   }
 
-  /** A Bitcoin transaction that ended frees what it locked, whichever way it ended. */
+  /** A transaction that ended frees what it locked, whichever way it ended. */
   private settle(tx: TrackedTransaction): void {
     if (tx.family === "bitcoin") {
       this.bitcoinRoute.settle(tx.id, tx.state);
+    }
+    if (tx.family === "evm") {
+      this.evmRoute.settle(tx);
     }
   }
 }

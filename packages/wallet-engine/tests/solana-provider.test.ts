@@ -478,7 +478,7 @@ describe("solana provider over a real kernel", () => {
       const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
       expect(out.signatures).toStrictEqual([base58.decode(local)]);
       // The wire and its id were persisted before the sendTransaction call reached the node.
-      const persisted = persistedAtSend[0]?.filter((row) => row["hash"] === local);
+      const persisted = persistedAtSend[0]?.filter((row) => row["hash"] === local) ?? [];
       expect(persisted).toHaveLength(1);
       expect(persisted[0]?.["state"]).toBe("signed");
       expect(persisted[0]?.["raw"]).toBe(Buffer.from(sent).toString("base64"));

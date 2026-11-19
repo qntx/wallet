@@ -443,6 +443,32 @@ describe("invalidation after signing, before broadcast", () => {
   });
 });
 
+describe("invalidation during the stale check", () => {
+  it("invalidateAll inside the staleReason await ends the request before the kernel signs", async () => {
+    const r = await rig();
+    const request = await r.requests.prepare({
+      method: "send",
+      account: { kind: "hd", walletId: r.walletId, groupIndex: 0, template: "evm.bip44" },
+      network: MAINNET,
+      to: "0x00000000000000000000000000000000deadbeef",
+      amount: 1n,
+      fee: "normal",
+    });
+    // approve suspends on `await staleReason()`; ending the request inside that gap must stop it
+    // at the assertSigning guard — before the signing continuation, not only at commit.
+    const approving = r.requests.approve(request.id, "send", approval(request, VERIFY));
+    r.requests.invalidateAll();
+    await expect(approving).rejects.toMatchObject({
+      name: "RequestEndedError",
+      stage: "invalidated",
+    });
+    expect(r.requests.getState().requests[request.id]?.stage).toBe("invalidated");
+    expect(r.signedNonces).toHaveLength(0);
+    expect(r.rpcCalls).not.toContain("eth_sendRawTransaction");
+    await r.destroy();
+  });
+});
+
 describe("invalidation while prepare is building", () => {
   it("the prepare rejects and the origin can immediately prepare a new request", async () => {
     const r = await rig();

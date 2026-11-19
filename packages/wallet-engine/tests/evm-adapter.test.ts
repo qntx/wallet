@@ -33,30 +33,18 @@ const oracleClient = (calls: Array<{ to: string; data: string }>, operatorCall: 
   });
 
 describe("EvmChainAdapter", () => {
-  it("reserves nothing until a broadcast is committed", async () => {
+  it("builds a transaction at the nonce the caller assigns", async () => {
     const a = new EvmChainAdapter();
-    const c = rpc({ eth_getTransactionCount: "0x5", eth_estimateGas: "0x5208" });
-    const t1 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
-      kind: "native",
+    const c = rpc({ eth_estimateGas: "0x5208" });
+    const intent = {
+      kind: "native" as const,
       to: `0x${"2".repeat(40)}`,
       value: 1n,
-    });
-    const t2 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
-      kind: "native",
-      to: `0x${"2".repeat(40)}`,
-      value: 1n,
-    });
+    };
+    const t1 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, intent, 5);
+    const t2 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, intent, 6);
     expect(t1.nonce).toBe(5);
-    expect(t2.nonce).toBe(5);
-    expect(a.nonceConsumed("eip155:1", `0x${"1".repeat(40)}`, 5)).toBe(false);
-    a.commitNonce("eip155:1", `0x${"1".repeat(40)}`, 5);
-    expect(a.nonceConsumed("eip155:1", `0x${"1".repeat(40)}`, 5)).toBe(true);
-    const t3 = await a.build(c, "eip155:1", `0x${"1".repeat(40)}`, {
-      kind: "native",
-      to: `0x${"2".repeat(40)}`,
-      value: 1n,
-    });
-    expect(t3.nonce).toBe(6);
+    expect(t2.nonce).toBe(6);
     expect(t1.gas).toBe(25200n);
   });
 
@@ -94,10 +82,11 @@ describe("EvmChainAdapter", () => {
   it("produces a normalized eip1559 sign request", async () => {
     const a = new EvmChainAdapter();
     const tx = await a.build(
-      rpc({ eth_getTransactionCount: "0x0", eth_estimateGas: "0x5208" }),
+      rpc({ eth_estimateGas: "0x5208" }),
       "eip155:1",
       "0xA",
       { kind: "native", to: `0x${"b".repeat(40)}`, value: 7n },
+      0,
     );
     const priced = a.applyFee(tx, {
       tier: "normal",

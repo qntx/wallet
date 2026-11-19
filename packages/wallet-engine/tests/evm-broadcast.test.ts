@@ -4,7 +4,7 @@
  * outcome is tracked and rebroadcast by hash, and only a node's own refusal fails it. Polls run on
  * `manualTimers` — faithful one-shot `setTimeout` semantics.
  */
-import { keccak256 } from "viem";
+import { keccak256, parseTransaction } from "viem";
 import type { Hex } from "viem";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -142,6 +142,12 @@ const world = () => {
   // Transaction ids draw on `random` — keep the counter in world scope so a restarted controller
   // never reissues an id a persisted transaction already has.
   let tag = 0;
+  /** Makes the next transaction-store put carrying a hash throw once. */
+  let persistBomb = false;
+  /** Armed per test: makes apis.sign throw instead of returning a signature. */
+  let failSign = false;
+  /** Gate each sign call can wait on — armed per test via signBarrier. */
+  let beforeSign: () => Promise<void> = async () => Promise.resolve();
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -184,6 +190,10 @@ const world = () => {
       Promise.resolve({ template: "evm.bip44", network: "eip155:1", address: ADDR }),
     sign: async ({ request }: { request: SignRequest }) => {
       signed.push(request);
+      await beforeSign();
+      if (failSign) {
+        return Promise.reject(new Error("user rejected the signature"));
+      }
       return Promise.resolve(fakeSignedEvm(request));
     },
   } as unknown as ReturnType<typeof chains>;
@@ -199,7 +209,29 @@ const world = () => {
         openStore: async () => Promise.resolve(createMemoryEngineStore()),
         logger: { warn: () => {} },
       }),
-      openStore: async () => Promise.resolve(createMemoryEngineStore(backing)),
+      openStore: async () => {
+        const store = createMemoryEngineStore(backing);
+        return Promise.resolve({
+          collection: (name: string) => {
+            const col = store.collection(name);
+            return name !== "transactions"
+              ? col
+              : {
+                  get: col.get,
+                  list: col.list,
+                  delete: col.delete,
+                  put: async (key: string, bytes: Uint8Array) => {
+                    if (persistBomb && new TextDecoder().decode(bytes).includes('"hash":"0x')) {
+                      persistBomb = false;
+                      throw new Error("engine store is on fire");
+                    }
+                    await col.put(key, bytes);
+                  },
+                };
+          },
+          close: store.close,
+        });
+      },
       random: (n) => {
         tag += 1;
         return new Uint8Array(n).fill(tag);
@@ -221,7 +253,39 @@ const world = () => {
       : (JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>);
   };
 
-  return { primary, clock, backing, signed, warnings, boot, persistedTx };
+  return {
+    primary,
+    clock,
+    backing,
+    signed,
+    warnings,
+    boot,
+    persistedTx,
+    bombPersist: () => {
+      persistBomb = true;
+    },
+    failSignatures: () => {
+      failSign = true;
+    },
+    allowSignatures: () => {
+      failSign = false;
+    },
+    /** Waits until `n` sign calls are pending before letting any of them resolve. */
+    signBarrier: (n: number) => {
+      let arrived = 0;
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      beforeSign = async () => {
+        arrived += 1;
+        if (arrived >= n) {
+          release();
+        }
+        await gate;
+      };
+    },
+  };
 };
 
 const hashOf = (tx: TrackedTransaction): string => {
@@ -475,6 +539,121 @@ describe("an ambiguous EVM broadcast is tracked, not failed", () => {
     expect(ctl.getState().txs[original.id]?.state).toBe("submitted");
 
     const next = await send(ctl, SEND);
+    expect(next.nonce).toBe(1);
+  });
+});
+
+describe("EVM nonce ownership", () => {
+  it("two overlapping approvals at one nonce: the second fails before its wire is sent", async () => {
+    const w = world();
+    const { ctl } = await w.boot();
+    // Hold both sign calls until both are pending: each approval's stale check ran while neither
+    // side had reserved anything — the reservation itself must be the arbiter.
+    w.signBarrier(2);
+
+    const [a, b] = await Promise.allSettled([
+      send(ctl, { ...SEND, amount: 1n }),
+      send(ctl, { ...SEND, amount: 2n }),
+    ]);
+    const [sent, rejected] = [a, b].sort((x) => (x.status === "fulfilled" ? -1 : 1));
+    expect(sent?.status).toBe("fulfilled");
+    expect(rejected?.status).toBe("rejected");
+    if (rejected?.status === "rejected") {
+      expect(String(rejected.reason)).toMatch(/already used by another transaction/);
+    }
+    const out = sent?.status === "fulfilled" ? sent.value : undefined;
+    expect(out?.state).toBe("submitted");
+    expect(out?.nonce).toBe(0);
+    expect(w.primary.attempts).toHaveLength(1);
+    expect(w.primary.sent.map((raw) => parseTransaction(raw as Hex).nonce)).toStrictEqual([0]);
+    // The failed reservation left nothing behind: the next send queues behind the live tx.
+    const next = await send(ctl, SEND);
+    expect(next.nonce).toBe(1);
+  });
+
+  it("an unknown first send keeps nonce 0; a refused send frees only its own", async () => {
+    const w = world();
+    const { ctl } = await w.boot();
+    const node = w.primary;
+    // The first broadcast dies in transit: unknown outcome, stays submitted holding nonce 0.
+    node.dropSend = true;
+    const first = await send(ctl, SEND);
+    expect(first.state).toBe("submitted");
+    expect(first.nonce).toBe(0);
+    node.dropSend = false;
+
+    node.refuse = { code: -32000, message: "underpriced", record: false };
+    await expect(send(ctl, SEND)).rejects.toThrow(/underpriced/);
+    // The refused send held nonce 1 and freed it; nonce 0 still belongs to the live first tx.
+    const third = await send(ctl, SEND);
+    expect(third.nonce).toBe(1);
+    expect(ctl.getState().txs[first.id]?.state).toBe("submitted");
+  });
+
+  it("a refused signature holds no nonce — the next send reuses it", async () => {
+    const w = world();
+    const { ctl } = await w.boot();
+    w.failSignatures();
+    await expect(send(ctl, SEND)).rejects.toThrow(/user rejected/);
+    expect(w.primary.attempts).toHaveLength(0);
+    w.allowSignatures();
+    const next = await send(ctl, SEND);
+    expect(next.nonce).toBe(0);
+    expect(next.state).toBe("submitted");
+  });
+
+  it("a persist failure after signing frees the reservation", async () => {
+    const w = world();
+    w.bombPersist();
+    const { ctl } = await w.boot();
+    await expect(send(ctl, SEND)).rejects.toThrow(/engine store is on fire/);
+    expect(w.primary.attempts).toHaveLength(0);
+    const next = await send(ctl, SEND);
+    expect(next.nonce).toBe(0);
+    expect(next.state).toBe("submitted");
+  });
+
+  it("a confirmed send keeps its nonce spent while the node's pending count lags", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    const tx = await send(ctl, SEND);
+    expect(tx.nonce).toBe(0);
+    w.primary.receipts.set(hashOf(tx), RECEIPT);
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
+    // The endpoint's pending count still reports nothing spent; the consumed floor holds nonce 0.
+    w.primary.pending = 0;
+    const next = await send(ctl, SEND);
+    expect(next.nonce).toBe(1);
+  });
+
+  it("a confirmed replacement frees the pair and keeps the consumed floor", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    const original = await send(ctl, SEND);
+    const bumped = await replaceVia(ctl, original.id, "speed-up", VERIFY);
+    expect(bumped.nonce).toBe(0);
+    w.primary.receipts.set(hashOf(bumped), RECEIPT);
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[bumped.id]?.state).toBe("confirmed");
+    expect(ctl.getState().txs[original.id]?.state).toBe("replaced");
+    w.primary.pending = 0;
+    const next = await send(ctl, SEND);
+    expect(next.nonce).toBe(1);
+  });
+
+  it("a restart with a live replace pair re-holds both — the next send gets one past", async () => {
+    const w = world();
+    const first = await w.boot();
+    const original = await send(first.ctl, SEND);
+    const bumped = await replaceVia(first.ctl, original.id, "speed-up", VERIFY);
+    expect(bumped.nonce).toBe(0);
+    const second = await w.boot();
+    expect(second.ctl.getState().txs[original.id]?.state).toBe("submitted");
+    expect(second.ctl.getState().txs[bumped.id]?.state).toBe("submitted");
+    // The mock counts accepted submissions; a real endpoint reports the account nonce (1).
+    w.primary.pending = 1;
+    const next = await send(second.ctl, SEND);
     expect(next.nonce).toBe(1);
   });
 });
