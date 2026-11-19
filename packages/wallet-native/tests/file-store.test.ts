@@ -53,6 +53,25 @@ const flakyFile = (state: { fail: boolean }): KernelFile => {
   };
 };
 
+/** `file`, except that its first read runs `between` — another writer — after reading. */
+const interleaved = (
+  file: KernelFile,
+  between: (seen: Uint8Array | undefined) => void,
+): KernelFile => {
+  let pending = true;
+  return {
+    read: () => {
+      const seen = file.read();
+      if (pending) {
+        pending = false;
+        between(seen);
+      }
+      return seen;
+    },
+    replace: (next, expected) => file.replace(next, expected),
+  };
+};
+
 const META = {
   format: 5,
   revision: 1,
@@ -140,6 +159,29 @@ describe("createFileStore", () => {
     // Nothing was written: the file still holds only the init image.
     const image = await createFileStore(file).load();
     expect(image.records).toHaveLength(0);
+  });
+
+  it("a writer that lands between commit's read and its replace makes the commit conflict", async () => {
+    const file = fakeFile();
+    await createFileStore(file).commit([{ op: "init", meta: META }]);
+    // The next read hands out the current bytes, then another kernel commits before the CAS.
+    const racing = interleaved(file, (seen) => {
+      const other = encodeFrame({
+        meta: { ...META, revision: 2 },
+        records: [{ ...RECORD, id: "other" }],
+        factors: [],
+      });
+      file.replace(new Uint8Array(other), seen);
+    });
+    await expect(
+      createFileStore(racing).commit([
+        { op: "expect-revision", revision: 1 },
+        { op: "put-record", record: { ...RECORD } },
+      ]),
+    ).rejects.toThrow(expect.objectContaining({ code: "conflict" }));
+    // The other writer's commit survives; the stale one wrote nothing.
+    const image = await createFileStore(file).load();
+    expect(image.records.map((record) => record.id)).toStrictEqual(["other"]);
   });
 
   it("a failing replace leaves the file at the previous state", async () => {
