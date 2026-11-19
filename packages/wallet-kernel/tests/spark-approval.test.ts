@@ -431,6 +431,23 @@ describe("cooperative-exit approval", () => {
     const job = exitJob("over-budget", 4301, [{ script: APPROVED.script, amount: 4000 }]);
     expect(errCode(await signFrost(t, job))).toBe("approval-required");
   });
+
+  it("cannot cover two exits whose leaves together exceed the budget", async () => {
+    const t = await setup();
+    ok(await approveExit(t));
+    expect(
+      errCode(
+        await signFrost(t, exitJob("exit-a", 4000, [{ script: APPROVED.script, amount: 4000 }])),
+      ),
+    ).toBeUndefined();
+    // The first exit's leaves are spent: the second's 1000 fresh sats plus the 4000 spent
+    // cross the 4300 budget the approval set.
+    expect(
+      errCode(
+        await signFrost(t, exitJob("exit-b", 1000, [{ script: APPROVED.script, amount: 4000 }])),
+      ),
+    ).toBe("approval-required");
+  });
 });
 
 describe("onchain approval", () => {

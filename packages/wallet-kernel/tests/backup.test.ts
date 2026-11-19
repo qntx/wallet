@@ -966,6 +966,60 @@ describe("establishing restore and the envelope's backup key", () => {
     expect(arrField(restored, "wallets")).toHaveLength(1);
   });
 
+  it("a merge restore never adopts the envelope's backup key, even under a kernel ceremony", async () => {
+    const { h: a } = nativeHarness(115);
+    await a.settle();
+    const created = ok(
+      await a.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong"),
+        factor: { kind: "device" },
+      }),
+    );
+    const aSession = strField(created, "session");
+    ok(
+      await a.call(
+        "backup.enable",
+        {
+          verify: { kind: "hardware" },
+          factors: [{ ...kernelBackupPasskey, backupSalt: BACKUP_SALT }],
+        },
+        aSession,
+      ),
+    );
+    const envelope = strField(ok(await a.call("backup.update", null, aSession)), "envelope");
+
+    // The kernel ceremony proves the owner holds an envelope factor — but adoption is
+    // establishing-only: an initialized vault merging it keeps backup off.
+    const { h: b } = nativeHarness(116);
+    await b.settle();
+    const bCreated = ok(
+      await b.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(
+          "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        ),
+        factor: { kind: "device" },
+      }),
+    );
+    const bSession = strField(bCreated, "session");
+    ok(
+      await b.call(
+        "backup.restore",
+        {
+          envelope,
+          backupFactor: {
+            kind: "passkey",
+            ceremony: "kernel",
+            rpId: RP.rpId,
+            backupSalt: BACKUP_SALT,
+          },
+        },
+        bSession,
+      ),
+    );
+    await expect(statusBackup(b, bSession)).resolves.toBeNull();
+    expect(errCode(await b.call("backup.update", null, bSession))).toBe("not-found");
+  });
+
   it("leaves backup off when a password unwrapped the envelope on React Native", async () => {
     // The password reached the kernel over the wire: the main runtime could have minted this
     // empty envelope around a password of its own.

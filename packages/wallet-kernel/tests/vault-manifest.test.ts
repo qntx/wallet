@@ -392,3 +392,31 @@ describe("manifest vector", () => {
     ).toStrictEqual(corrupted);
   });
 });
+
+describe("structural commits", () => {
+  it("a hardware unlock that drops the dead device row keeps the vault healthy", async () => {
+    const fk = fakeKeystore();
+    const h = createHarness({ keystore: fk.keystore, noIdle: true });
+    await h.settle();
+    ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(MNEMONIC),
+        factor: { kind: "device" },
+      }),
+    );
+    const device = factorOf(await h.store.load(), "device");
+    // The device key is gone for good: the next hardware unlock's probe drops its row in a
+    // commit whose only op is the delete.
+    fk.invalidate(device.id);
+
+    const unlocked = createHarness({ keystore: fk.keystore, store: h.store, noIdle: true });
+    await unlocked.settle();
+    ok(await unlocked.call("vault.unlock", { factor: { kind: "hardware" } }));
+    expect((await h.store.load()).factors.some((f) => f.kind === "device")).toBe(false);
+
+    const fresh = createHarness({ keystore: fk.keystore, store: h.store });
+    await fresh.settle();
+    await expect(vaultHealth(fresh)).resolves.toBe("locked");
+    ok(await fresh.call("vault.unlock", { factor: { kind: "hardware" } }));
+  });
+});
