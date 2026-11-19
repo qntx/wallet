@@ -3,6 +3,7 @@ import * as z from "zod/mini";
 
 import {
   BITCOIN_NETWORKS,
+  TOKEN_LIST_MAX_ENTRIES,
   ESPLORA_ROUTES,
   EVM_RPC_METHODS,
   NETWORKS,
@@ -48,6 +49,9 @@ import {
   swapQuoteSolanaResponse,
   servedNetworksResponse,
   solanaRpcRequest,
+  tokenList,
+  tokenListPath,
+  tokenListResponse,
 } from "../src/gateway/contract/index.ts";
 import type { HashList } from "../src/gateway/contract/index.ts";
 import { listOf } from "./phishing-helpers.ts";
@@ -929,5 +933,124 @@ describe("swapQuote", () => {
       accepts(swapQuoteResponse, { ...filled, transaction: { ...filled.transaction, data: "zz" } }),
     ).toBe(false);
     expect(accepts(swapQuoteResponse, { ...filled, allowanceTarget: "nope" })).toBe(false);
+  });
+});
+
+describe("tokenListResponse", () => {
+  const evmToken = (address: string, extra: Record<string, unknown> = {}) => ({
+    address,
+    symbol: "USDC",
+    name: "USD Coin",
+    decimals: 6,
+    ...extra,
+  });
+  const doc = (tokens: unknown[] = [evmToken("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48")]) => ({
+    network: "eip155:1",
+    version: 1,
+    sources: ["uniswap"],
+    tokens,
+  });
+  const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const solAddress = (i: number): string => {
+    let v = i + 1;
+    let out = "";
+    while (v > 0) {
+      out = (BASE58[v % 58] ?? "1") + out;
+      v = Math.floor(v / 58);
+    }
+    return `${"1".repeat(Math.max(0, 44 - out.length))}${out}`;
+  };
+  const solDoc = (tokens: unknown[]) => ({
+    network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+    version: 1,
+    sources: ["jupiter"],
+    tokens,
+  });
+
+  it("accepts a canonical sorted list and builds the route path", () => {
+    expect(accepts(tokenListResponse, doc())).toBe(true);
+    expect(
+      accepts(
+        tokenListResponse,
+        doc([
+          evmToken("0x0000000000000000000000000000000000000001"),
+          evmToken("0x0000000000000000000000000000000000000002"),
+        ]),
+      ),
+    ).toBe(true);
+    expect(tokenList.path).toBe("/v1/tokens/:caip2");
+    expect(tokenListPath("eip155:1")).toBe("/v1/tokens/eip155:1");
+  });
+
+  it("requires the address shape of the network's namespace", () => {
+    expect(
+      accepts(tokenListResponse, doc([evmToken("0xA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48")])),
+    ).toBe(false);
+    expect(
+      accepts(tokenListResponse, doc([evmToken("0xnothex00000000000000000000000000000000ab")])),
+    ).toBe(false);
+    expect(
+      accepts(
+        tokenListResponse,
+        solDoc([{ ...evmToken("So11111111111111111111111111111111111111112") }]),
+      ),
+    ).toBe(true);
+    expect(
+      accepts(tokenListResponse, solDoc([evmToken("0O000000000000000000000000000000000000000")])),
+    ).toBe(false);
+    expect(accepts(tokenListResponse, solDoc([evmToken("tooshort")]))).toBe(false);
+    expect(
+      accepts(tokenListResponse, { ...doc(), network: "bip122:000000000019d6689c085ae165831e93" }),
+    ).toBe(false);
+  });
+
+  it("demands strictly ascending unique addresses", () => {
+    const a = "0x0000000000000000000000000000000000000001";
+    const b = "0x0000000000000000000000000000000000000002";
+    expect(accepts(tokenListResponse, doc([evmToken(b), evmToken(a)]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a), evmToken(a)]))).toBe(false);
+  });
+
+  it("enforces the per-family entry caps", () => {
+    const evmTokens = Array.from({ length: TOKEN_LIST_MAX_ENTRIES.evm + 1 }, (_, i) =>
+      evmToken(`0x${i.toString(16).padStart(40, "0")}`),
+    );
+    expect(accepts(tokenListResponse, doc(evmTokens))).toBe(false);
+    const evmMax = evmTokens.slice(0, TOKEN_LIST_MAX_ENTRIES.evm);
+    expect(accepts(tokenListResponse, doc(evmMax))).toBe(true);
+    const solTokens = Array.from({ length: TOKEN_LIST_MAX_ENTRIES.solana + 1 }, (_, i) =>
+      evmToken(solAddress(i)),
+    );
+    expect(accepts(tokenListResponse, solDoc(solTokens))).toBe(false);
+    expect(
+      accepts(tokenListResponse, solDoc(solTokens.slice(0, TOKEN_LIST_MAX_ENTRIES.solana))),
+    ).toBe(true);
+  });
+
+  it("bounds display text: no control characters, no outer whitespace", () => {
+    const a = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+    expect(accepts(tokenListResponse, doc([evmToken(a, { symbol: "EVIL" })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { symbol: "EVIL​" })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { symbol: " USDC" })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { name: "Coin " })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { symbol: "" })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { symbol: "X".repeat(21) })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { name: "n".repeat(65) })]))).toBe(false);
+    expect(
+      accepts(
+        tokenListResponse,
+        doc([evmToken(a, { symbol: "X".repeat(20), name: "n".repeat(64) })]),
+      ),
+    ).toBe(true);
+  });
+
+  it("bounds decimals to integers 0-255", () => {
+    const a = "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48";
+    expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: -1 })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 256 })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 6.5 })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: "6" })]))).toBe(false);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 0 })]))).toBe(true);
+    expect(accepts(tokenListResponse, doc([evmToken(a, { decimals: 255 })]))).toBe(true);
   });
 });

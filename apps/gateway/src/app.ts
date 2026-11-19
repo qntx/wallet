@@ -21,6 +21,7 @@ import { pricesRoutes } from "./routes/prices.ts";
 import { quotesRoutes } from "./routes/quotes.ts";
 import { riskRoutes } from "./routes/risk.ts";
 import { rpcRoutes } from "./routes/rpc.ts";
+import { tokensRoutes } from "./routes/tokens.ts";
 import type { GatewayOptions } from "./types.ts";
 
 export type { GatewayOptions } from "./types.ts";
@@ -40,9 +41,9 @@ export function createGateway(
   app.use(
     cors({
       origin: (origin) => (allowedOrigins.has(origin) ? origin : null),
-      allowHeaders: ["content-type", CLIENT_ID_HEADER],
+      allowHeaders: ["content-type", "if-none-match", CLIENT_ID_HEADER],
       allowMethods: ["GET", "POST", "OPTIONS"],
-      exposeHeaders: [PROVIDERS_HEADER, "retry-after"],
+      exposeHeaders: [PROVIDERS_HEADER, "etag", "retry-after"],
       maxAge: 600,
     }),
   );
@@ -63,6 +64,7 @@ export function createGateway(
     }),
   );
   app.route("/", riskRoutes(options.risk));
+  app.route("/", tokensRoutes({ served, store: options.tokens }));
   app.route(
     "/",
     pricesRoutes({

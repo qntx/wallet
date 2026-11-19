@@ -32,6 +32,9 @@ const stubbedAssets = (): AssetsController => {
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: () => () => {},
     logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
   });
 };
 

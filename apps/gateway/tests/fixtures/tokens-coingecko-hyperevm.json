@@ -1,0 +1,39 @@
+{
+  "source": "https://tokens.coingecko.com/hyperevm/all.json \u2014 the keyless mirror of the document CoinGecko Pro serves at https://pro-api.coingecko.com/api/v3/token_lists/hyperevm/all.json, recorded 2026-11-18; four entries kept of 929.",
+  "name": "CoinGecko",
+  "timestamp": "2026-11-18T10:00:31.506+00:00",
+  "tokens": [
+    {
+      "chainId": 999,
+      "address": "0x75ad598b0049cff8509007790d1d4ae6c2ad6678",
+      "name": "Uwu Mode",
+      "symbol": "UWU",
+      "decimals": 18,
+      "logoURI": "https://assets.coingecko.com/coins/images/102179393/thumb/uwu.jpg?1791701923"
+    },
+    {
+      "chainId": 999,
+      "address": "0x47bb061c0204af921f43dc73c7d7768d2672ddee",
+      "name": "alright buddy",
+      "symbol": "BUDDY",
+      "decimals": 6,
+      "logoURI": "https://assets.coingecko.com/coins/images/54657/thumb/alright_buddy_pfp.png?1740895394"
+    },
+    {
+      "chainId": 999,
+      "address": "0x360c140e5344a1a0593d44b4ea6fc7c3daf0c473",
+      "name": "Kinetiq Markets HYPE",
+      "symbol": "KMHYPE",
+      "decimals": 18,
+      "logoURI": "https://assets.coingecko.com/coins/images/71042/thumb/kmhype.png?1765388346"
+    },
+    {
+      "chainId": 999,
+      "address": "0xb88339cb7199b77e23db6e890353e22632ba630f",
+      "name": "USDC",
+      "symbol": "USDC",
+      "decimals": 6,
+      "logoURI": "https://assets.coingecko.com/coins/images/6319/thumb/USDC.png?1769615602"
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 import { createGateway } from "./app.ts";
 import { PHISHING_SOURCES } from "./config/phishing.ts";
 import { buildPhishingList } from "./risk/phishing.ts";
+import { buildTokenLists } from "./tokens/build.ts";
+import { tokenListSources } from "./tokens/sources.ts";
 import { gatewayFor, riskStoreOf } from "./worker.ts";
 import type { WorkerEnv } from "./worker.ts";
 
@@ -9,22 +11,37 @@ type Gateway = ReturnType<typeof createGateway>;
 // Bindings are stable for the life of an isolate, so the app (and its breaker state) is built once.
 let gateway: Gateway | undefined;
 
+const log = (line: string): void => {
+  console.log(line);
+};
+
 export default {
   async fetch(request: Request, env: WorkerEnv): Promise<Response> {
     gateway ??= createGateway(gatewayFor(env));
     return gateway.fetch(request);
   },
   scheduled(_controller, env, ctx): void {
+    const store = riskStoreOf(env.RISK);
     ctx.waitUntil(
-      buildPhishingList({
-        fetch: async (input, init) => fetch(input, init),
-        store: riskStoreOf(env.RISK),
-        now: () => Date.now(),
-        log: (line) => {
-          console.log(line);
-        },
-        sources: PHISHING_SOURCES,
-      }),
+      Promise.all([
+        buildPhishingList({
+          fetch: async (input, init) => fetch(input, init),
+          store,
+          now: () => Date.now(),
+          log,
+          sources: PHISHING_SOURCES,
+        }),
+        buildTokenLists({
+          fetch: async (input, init) => fetch(input, init),
+          store,
+          now: () => Date.now(),
+          log,
+          sources: tokenListSources({
+            coingecko: env.COINGECKO_API_KEY,
+            jupiter: env.JUPITER_API_KEY,
+          }),
+        }),
+      ]),
     );
   },
 } satisfies ExportedHandler<WorkerEnv>;

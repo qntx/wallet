@@ -54,6 +54,21 @@ const AGG = (callData: `0x${string}`): string =>
     args: [[USDC, USDT, TOKEN].map((target) => ({ target, allowFailure: true, callData }))],
   });
 
+const SYMBOL_CALL = encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" });
+const DECIMALS_CALL = encodeFunctionData({ abi: ERC20_ABI, functionName: "decimals" });
+
+/** The metadata batch for the added token: decimals and symbol inside one aggregate3. */
+const AGG_META = encodeFunctionData({
+  abi: MULTICALL3_ABI,
+  functionName: "aggregate3",
+  args: [
+    [
+      { target: TOKEN, allowFailure: true, callData: DECIMALS_CALL },
+      { target: TOKEN, allowFailure: true, callData: SYMBOL_CALL },
+    ],
+  ],
+});
+
 const fakeNetworks = (c: PublicClient, multicall3?: string) =>
   ({
     client: () => c,
@@ -71,6 +86,9 @@ const controller = (c: PublicClient, multicall3?: string) =>
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: () => () => {},
     logger,
+    gateway: undefined,
+    fetch: globalThis.fetch,
+    now: () => Date.now(),
   });
 
 describe("EvmChainAdapter erc20", () => {
@@ -113,12 +131,27 @@ describe("AssetsController", () => {
               { success: true, returnData: enc(5n) as `0x${string}` },
             ],
           }),
-          [encodeFunctionData({ abi: ERC20_ABI, functionName: "symbol" })]: encodeFunctionResult({
+          [AGG_META]: encodeFunctionResult({
+            abi: MULTICALL3_ABI,
+            functionName: "aggregate3",
+            result: [
+              { success: true, returnData: enc(6n) as `0x${string}` },
+              {
+                success: true,
+                returnData: encodeFunctionResult({
+                  abi: ERC20_ABI,
+                  functionName: "symbol",
+                  result: "TST",
+                }),
+              },
+            ],
+          }),
+          [SYMBOL_CALL]: encodeFunctionResult({
             abi: ERC20_ABI,
             functionName: "symbol",
             result: "TST",
           }),
-          [encodeFunctionData({ abi: ERC20_ABI, functionName: "decimals" })]: enc(6n),
+          [DECIMALS_CALL]: enc(6n),
         },
         () => {
           calls += 1;
@@ -141,12 +174,20 @@ describe("AssetsController", () => {
     expect(tst?.symbol).toBe("TST");
     expect(tst?.decimals).toBe(6);
     expect(tst?.verified).toBe(false);
-    // one aggregate3 for all balances + one eth_call each for symbol/decimals
-    expect(calls).toBe(3);
+    // one aggregate3 for all balances — the custom's symbol/decimals were read at addToken.
+    expect(calls).toBe(1);
 
     const c2 = client({
       eth_getBalance: "0x0",
-      eth_call: ethCall({ [balOf]: enc(9n) }),
+      eth_call: ethCall({
+        [balOf]: enc(9n),
+        [SYMBOL_CALL]: encodeFunctionResult({
+          abi: ERC20_ABI,
+          functionName: "symbol",
+          result: "TST",
+        }),
+        [DECIMALS_CALL]: enc(6n),
+      }),
     });
     const assets2 = controller(c2);
     await assets2.init();
@@ -160,7 +201,15 @@ describe("AssetsController", () => {
     const store = createMemoryEngineStore();
     const c = client({
       eth_getBalance: "0x0",
-      eth_call: ethCall({ [balOf]: enc(1n) }),
+      eth_call: ethCall({
+        [balOf]: enc(1n),
+        [SYMBOL_CALL]: encodeFunctionResult({
+          abi: ERC20_ABI,
+          functionName: "symbol",
+          result: "TST",
+        }),
+        [DECIMALS_CALL]: enc(6n),
+      }),
     });
     const timers = manualTimers();
     const mk = () =>
@@ -170,6 +219,9 @@ describe("AssetsController", () => {
         openStore: async () => Promise.resolve(store),
         setTimer: timers.setTimer,
         logger,
+        gateway: undefined,
+        fetch: globalThis.fetch,
+        now: () => Date.now(),
       });
     const assets = mk();
     await assets.init();
@@ -197,7 +249,8 @@ const solRpc = (handlers: Record<string, unknown>): SolanaRpc => ({
 
 const SOL_NET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
 const SOL_OWNER = "Owner1111111111111111111111111111111111111";
-const T22_MINT = "Mint2022zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+// PYUSD — a real Token-2022 mint on mainnet.
+const T22_MINT = "2b1kV6DkPAnxd5ixfnxCpjxmKwqjjaYmCZfHsFu24GXo";
 // A token account owned by the Token-2022 program (TokenzQd...) holding 7 raw units.
 const T22_ACCOUNT = {
   pubkey: "Ata2022zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
@@ -219,6 +272,23 @@ const T22_ACCOUNT = {
 };
 
 const solNetInfo = (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm" });
+
+const T22_MINT_ACCOUNT = {
+  owner: "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  data: {
+    parsed: {
+      type: "mint",
+      info: { decimals: 6, supply: "1000000" },
+    },
+    program: "spl-token-2022",
+  },
+};
+
+const t22Multi = (params?: unknown[]) => ({
+  value: ((params?.[0] ?? []) as string[]).map((mint) =>
+    mint === T22_MINT ? T22_MINT_ACCOUNT : null,
+  ),
+});
 
 /** The program-filtered account answer: the wallet's one Token-2022 account, nothing else. */
 const t22Accounts = (params?: unknown[]) => {
@@ -287,11 +357,7 @@ describe("AssetsController solana", () => {
   it("reports a Token-2022 token account in balances (program-filtered query covers it)", async () => {
     const r = solRpc({
       getBalance: { value: 5_000_000 },
-      getAccountInfo: {
-        value: {
-          data: { parsed: { info: { decimals: 6 } }, program: "spl-token-2022" },
-        },
-      },
+      getMultipleAccounts: t22Multi,
       getTokenAccountsByOwner: t22Accounts,
     });
     const ctl = new AssetsController({
@@ -303,6 +369,9 @@ describe("AssetsController solana", () => {
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: () => () => {},
       logger,
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
     });
     await ctl.init();
     await ctl.addToken(SOL_NET, T22_MINT);
@@ -343,6 +412,9 @@ describe("AssetsController polling", () => {
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       setTimer: timers.setTimer,
       logger,
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
     });
     await ctl.init();
     ctl.setVisible(true);

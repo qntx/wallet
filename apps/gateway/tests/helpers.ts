@@ -4,6 +4,7 @@ import { accepts } from "@qntx/wallet-engine/gateway/contract";
 
 import { createGateway } from "../src/app.ts";
 import type { RiskStore } from "../src/risk/phishing.ts";
+import type { TokenListStore } from "../src/tokens/build.ts";
 import type { GatewayNetwork, Limiters, PriceCache, RateLimiter } from "../src/types.ts";
 
 export const CLIENT_ID = "0123456789abcdef0123456789abcdef";
@@ -152,6 +153,7 @@ export function gateway(options: {
   readonly fetch: typeof globalThis.fetch;
   readonly networks?: ReadonlyArray<GatewayNetwork>;
   readonly risk?: RiskStore;
+  readonly tokens?: TokenListStore;
   readonly limiters?: Limiters;
   readonly zeroEx?: { apiKey: string; fee?: { recipient: string; bps: number } };
   readonly auth?: Parameters<typeof createGateway>[0]["auth"];
@@ -166,6 +168,7 @@ export function gateway(options: {
     limiters: options.limiters ?? { ip: allowAll, rpc: allowAll, default: allowAll },
     corsOrigins: [ORIGIN],
     risk: options.risk ?? memoryRiskStore(),
+    tokens: options.tokens ?? memoryRiskStore(),
     auth: options.auth ?? {},
     prices: options.prices ?? { cache: memoryPriceCache() },
     ...(options.now === undefined ? {} : { now: options.now }),

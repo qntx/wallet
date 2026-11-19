@@ -1,5 +1,6 @@
 import { evmTokenTable, lookupEvmToken } from "@qntx/wallet-chains/evm";
 
+import { suspiciousTokenSymbol } from "../assets/spam.ts";
 import { assessRecipients, impersonatesBuiltIn } from "../requests/risk.ts";
 import type { HistoryFlag } from "./types.ts";
 
@@ -21,7 +22,7 @@ export const tokenFlags = (
   if (impersonatesBuiltIn(chainId, contract, symbol)) {
     flags.push("token-impersonation");
   }
-  if (!/^[A-Za-z0-9$+._-]{1,16}$/.test(symbol) || /\.[a-z]{2,}/i.test(symbol)) {
+  if (suspiciousTokenSymbol(symbol)) {
     flags.push("suspicious-token-symbol");
   }
   return flags;
