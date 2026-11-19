@@ -37,6 +37,14 @@ export type DisplayExcerpt = {
 };
 
 /**
+ * Whether `text` is the hex rendering of at least 32 bytes — with or without the `0x` prefix,
+ * uppercase or lower. A wallet owner sees the rendering, not the bytes it encodes, so such text
+ * never counts as a readable description of what the signature authorises.
+ */
+export const isHexRendering = (text: string): boolean =>
+  /^(?:0x)?(?:[0-9a-fA-F]{2}){32,}$/.test(text.trim());
+
+/**
  * The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines
  * are dropped, so padding cannot push content out of view; the last line may be cut.
  */

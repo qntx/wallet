@@ -97,6 +97,7 @@ type Catalog = {
   readonly typedType: (name: string) => string;
   readonly typedUnverified: string;
   readonly typedField: (path: string, value: string) => string;
+  readonly typedCommitment: string;
   readonly typedOversize: string;
   readonly orderGive: (amount: string) => string;
   readonly orderReceive: (recipient: string, amount: string) => string;
@@ -179,6 +180,7 @@ const zh: Catalog = {
   typedType: (name) => `类型：${name}`,
   typedUnverified: "钱包无法核实此签名授权的内容",
   typedField: (path, value) => `${path}：${value}`,
+  typedCommitment: "只签署哈希或原始字节；钱包无法看到它们所承诺的内容",
   typedOversize: "此类型数据过大，无法完整显示",
   orderGive: (amount) => `付出 ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
@@ -272,6 +274,7 @@ const en: Catalog = {
   typedType: (name) => `Type: ${name}`,
   typedUnverified: "The wallet cannot verify what this signature authorises",
   typedField: (path, value) => `${path}: ${value}`,
+  typedCommitment: "It signs only hashes or raw bytes; the wallet cannot see what they commit to",
   typedOversize: "This typed data is too large to show in full",
   orderGive: (amount) => `Give ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
@@ -622,6 +625,7 @@ function typedContentLines(
   }
   if (message.fields !== undefined) {
     return [
+      ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       catalog.typedUnverified,
       ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value)),
     ];

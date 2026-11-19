@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   displayExcerpt,
   isBlindIntent,
+  isHexRendering,
   isUnsafeCodePoint,
   messageBlindReason,
   messageContent,
@@ -120,5 +121,22 @@ describe("messageBlindReason", () => {
         data: {},
       }),
     ).toBeUndefined();
+  });
+});
+
+describe("isHexRendering", () => {
+  it("is true for the hex of at least 32 bytes, with or without the prefix", () => {
+    expect(isHexRendering(`0x${"ab".repeat(32)}`)).toBe(true);
+    expect(isHexRendering("ab".repeat(32))).toBe(true);
+    expect(isHexRendering(`0x${"AB".repeat(33)}`)).toBe(true);
+    expect(isHexRendering(`  0x${"cd".repeat(32)}  `)).toBe(true);
+  });
+
+  it("is false below 32 bytes, on odd lengths and on non-hex text", () => {
+    expect(isHexRendering(`0x${"ab".repeat(31)}`)).toBe(false);
+    expect(isHexRendering(`0x${"ab".repeat(32)}0`)).toBe(false);
+    expect(isHexRendering(`0x${"gh".repeat(32)}`)).toBe(false);
+    expect(isHexRendering("hello")).toBe(false);
+    expect(isHexRendering("0x")).toBe(false);
   });
 });

@@ -1228,6 +1228,37 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     });
   });
 
+  it("typed data that signs only hashes is blind and names it, in both locales", () => {
+    const hash = `0x${"ab".repeat(32)}`;
+    const safe = "0xD5ffE748B45F5253FC9975FDD96FDDec052E6d52";
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        SafeMessage: [{ name: "message", type: "bytes" }],
+      },
+      primaryType: "SafeMessage",
+      domain: { chainId: 1, verifyingContract: safe },
+      message: { message: hash },
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        `Network: Ethereum\nVerifying contract ${safe}\nType: SafeMessage\n` +
+        `It signs only hashes or raw bytes; the wallet cannot see what they commit to\n` +
+        `The wallet cannot verify what this signature authorises\nmessage: ${hash}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description:
+        `网络：Ethereum\n验证合约 ${safe}\n类型：SafeMessage\n` +
+        `只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n` +
+        `钱包无法核实此签名授权的内容\nmessage：${hash}`,
+    });
+  });
+
   it("a Polygon Seaport order renders native amounts as POL, never ETH", () => {
     const item = (wei: string) => ({
       itemType: 0,

@@ -9,7 +9,7 @@
 import { parseSignIn } from "./sign-in.ts";
 import type { SignInParse } from "./sign-in.ts";
 
-export { displayExcerpt, isUnsafeCodePoint } from "./display.ts";
+export { displayExcerpt, isHexRendering, isUnsafeCodePoint } from "./display.ts";
 export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInClaim, SignInParse } from "./sign-in.ts";
@@ -140,12 +140,23 @@ export type Verifiability = "full" | "partial" | "opaque";
 
 /** Why a request is blind: the signer can neither show it nor bound what it authorises. */
 export type BlindReason =
-  | "message-bytes" // message bytes that are not UTF-8 text (EVM personal_sign, Solana signMessage)
-  | "typed-data-oversize" // unrecognised EIP-712 that cannot be shown in full
+  // message content that is not readable text: non-UTF-8 bytes, a message of exactly 32 bytes
+  // (digest length), text with an unsafe code point other than TAB/LF/CR, or text that is the hex
+  // rendering of ≥ 32 bytes
+  | "message-bytes"
+  | "typed-data-commitment" // typed data whose every leaf is a commitment (a hash or opaque bytes)
+  // typed data a recognised family claims, in a shape the decoder does not recognise
+  | "typed-data-variant"
+  // typed data that cannot be shown in full: an unrecognised document over the leaf budget, or a
+  // recognised Seaport order with more offer or consideration items than the prompt shows
+  | "typed-data-oversize"
   | "token-function" // an unrecognised function of a built-in-table token
   | "account-code" // calldata to the signing account itself (its own, possibly delegated, code)
   | "safe-delegatecall" // a Safe delegatecall to anything but canonical MultiSendCallOnly entries
-  | "safe-refund-unbounded"; // a SafeTx with gasPrice > 0: the refund total depends on executor gas
+  | "safe-refund-unbounded" // a SafeTx with gasPrice > 0: the refund total depends on executor gas
+  // an undecoded instruction of a core Solana program (System, Token, Token-2022, Stake, Associated
+  // Token) that the signer takes part in
+  | "core-instruction";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -328,7 +339,8 @@ export type MessageContent =
       readonly safe?: SafeTransaction;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
-       * recognized shape and for one too large to show in full.
+       * recognized shape and for one too large to show in full. Present even when the document is
+       * blind (`typed-data-commitment`), so the prompt can still show the leaves it signs.
        */
       readonly fields?: ReadonlyArray<TypedDataLeaf>;
     };
@@ -418,9 +430,11 @@ export type DisplayIntent = {
 };
 
 /**
- * A request is blind exactly when the decoder set `blind` — the signer can neither show its content
- * nor bound what it authorises. A request the decoder can describe but not verify (an `opaque`
- * call, an unrecognised but fully listed typed-data document) is not blind.
+ * A request is blind exactly when the decoder set `blind` — what the prompt prints does not bound
+ * what the signature authorises. A request the decoder can describe in full but not verify (an
+ * `opaque` call, an unrecognised but fully listed typed-data document whose leaves are readable
+ * values) is not blind; one whose every leaf is a commitment, or which a decoded family claims in
+ * an unrecognised shape, is.
  */
 export const isBlindIntent = (intent: Pick<DisplayIntent, "blind">): boolean =>
   intent.blind !== undefined;

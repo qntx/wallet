@@ -322,6 +322,30 @@ describe("blind signing policy", () => {
       }),
     ],
     [
+      "typed-data-commitment",
+      (walletId) =>
+        typedDoc(walletId, {
+          types: {
+            EIP712Domain: [
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            SafeMessage: [{ name: "message", type: "bytes" }],
+          },
+          primaryType: "SafeMessage",
+          domain: { chainId: 1, verifyingContract: SAFE },
+          message: { message: `0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}` },
+        }),
+      () => ({
+        title: "Confirm blind signing",
+        description:
+          `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeMessage\n` +
+          "It signs only hashes or raw bytes; the wallet cannot see what they commit to\n" +
+          `The wallet cannot verify what this signature authorises\n` +
+          `message: 0x${bytesToHex(keccak_256(utf8ToBytes("permit2 digest")))}`,
+      }),
+    ],
+    [
       "token-function",
       (walletId) => evmTx(walletId, { to: USDC, data: "0xdeadbeef" }),
       () => ({

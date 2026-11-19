@@ -674,6 +674,193 @@ describe("typed data shows its leaves or is blind", () => {
   });
 });
 
+describe("typed data that signs only hashes is blind", () => {
+  const RAW_HASH = `0x${"ab".repeat(32)}`;
+  const SAFE = checksumEvmAddress("0xd5ffe748b45f5253fc9975fdd96fddec052e6d52");
+  type Field = { name: string; type: string };
+  const doc = (
+    primaryType: string,
+    message: Record<string, unknown>,
+    types: Record<string, ReadonlyArray<Field>>,
+    domain: Record<string, unknown> = { chainId: 1 },
+  ) => ({
+    types: { EIP712Domain: [{ name: "chainId", type: "uint256" }], ...types },
+    primaryType,
+    domain,
+    message,
+  });
+
+  it("SafeMessage(bytes message) wrapping a 32-byte hash is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "SafeMessage",
+          { message: RAW_HASH },
+          { SafeMessage: [{ name: "message", type: "bytes" }] },
+          { chainId: 1, verifyingContract: SAFE },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+    expect(isBlindIntent(intent)).toBe(true);
+    expect(fieldsOf(intent)).toStrictEqual([{ path: "message", value: RAW_HASH }]);
+  });
+
+  it("CoinbaseSmartWalletMessage(bytes32 hash) is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "CoinbaseSmartWalletMessage",
+          { hash: RAW_HASH },
+          { CoinbaseSmartWalletMessage: [{ name: "hash", type: "bytes32" }] },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+  });
+
+  it("a nested struct of only bytes32 leaves is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { inner: { a: RAW_HASH, b: RAW_HASH } },
+          {
+            Root: [{ name: "inner", type: "Inner" }],
+            Inner: [
+              { name: "a", type: "bytes32" },
+              { name: "b", type: "bytes32" },
+            ],
+          },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+    expect(fieldsOf(intent)).toStrictEqual([
+      { path: "inner.a", value: RAW_HASH },
+      { path: "inner.b", value: RAW_HASH },
+    ]);
+  });
+
+  it("a bytes32 array is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { hashes: [RAW_HASH, `0x${"cd".repeat(32)}`] },
+          { Root: [{ name: "hashes", type: "bytes32[]" }] },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+  });
+
+  it("a string leaf holding the hex of 32 bytes is a commitment; real text is not", () => {
+    const hex = decodeEvm(
+      typed(
+        doc("Root", { s: RAW_HASH }, { Root: [{ name: "s", type: "string" }] }),
+      ),
+      SIGNER,
+    );
+    expect(hex.blind).toBe("typed-data-commitment");
+    const text = decodeEvm(
+      typed(doc("Root", { s: "hello" }, { Root: [{ name: "s", type: "string" }] })),
+      SIGNER,
+    );
+    expect(text.blind).toBeUndefined();
+    expect(isBlindIntent(text)).toBe(false);
+  });
+
+  it("a commitment leaf beside a readable one stays described", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { hash: RAW_HASH, amount: "7" },
+          {
+            Root: [
+              { name: "hash", type: "bytes32" },
+              { name: "amount", type: "uint256" },
+            ],
+          },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(fieldsOf(intent)).toStrictEqual([
+      { path: "hash", value: RAW_HASH },
+      { path: "amount", value: "7" },
+    ]);
+  });
+
+  const hexOf = (b: Uint8Array): string =>
+    `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+  const leafType = fc.oneof(
+    fc.constant("bytes"),
+    fc.integer({ min: 1, max: 32 }).map((n) => `bytes${n}`),
+  );
+  const leafValue = (type: string): fc.Arbitrary<string> =>
+    type === "bytes"
+      ? fc.uint8Array({ minLength: 0, maxLength: 40 }).map(hexOf)
+      : fc
+          .uint8Array({ minLength: Number(type.slice(5)), maxLength: Number(type.slice(5)) })
+          .map(hexOf);
+  const leaf = (name: string): fc.Arbitrary<Field & { value: unknown }> =>
+    fc.tuple(leafType, fc.boolean()).chain(([type, isArray]) =>
+      (isArray
+        ? fc.array(leafValue(type), { minLength: 1, maxLength: 2 })
+        : leafValue(type)
+      ).map((value) => ({ name, type: isArray ? `${type}[]` : type, value })),
+    );
+  const leafFields = (
+    count: fc.Arbitrary<number>,
+  ): fc.Arbitrary<ReadonlyArray<Field & { value: unknown }>> =>
+    count.chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => leaf(`f${i}`))));
+  /** Random docs whose every leaf is bytes/bytesN: nested structs and non-empty arrays. */
+  const bytesDoc: fc.Arbitrary<Record<string, unknown>> = fc
+    .tuple(
+      leafFields(fc.integer({ min: 1, max: 6 })),
+      leafFields(fc.integer({ min: 0, max: 4 })),
+      fc.integer({ min: 0, max: 2 }),
+    )
+    .map(([root, inner, nested]) => {
+      const types: Record<string, ReadonlyArray<Field>> = {
+        Root: root.map(({ name, type }) => ({ name, type })),
+      };
+      const message: Record<string, unknown> = Object.fromEntries(
+        root.map(({ name, value }) => [name, value]),
+      );
+      if (inner.length > 0 && nested > 0) {
+        types["Inner"] = inner.map(({ name, type }) => ({ name, type }));
+        const value = Object.fromEntries(inner.map(({ name, value }) => [name, value]));
+        types["Root"] = [
+          ...(types["Root"] ?? []),
+          { name: "inner", type: nested === 2 ? "Inner[]" : "Inner" },
+        ];
+        message["inner"] = nested === 2 ? [value, value] : value;
+      }
+      return doc("Root", message, types);
+    });
+
+  it("documents whose leaves are all bytes are blind", () => {
+    fc.assert(
+      fc.property(bytesDoc, (doc) => {
+        const intent = decodeEvm(typed(doc), SIGNER);
+        expect(isBlindIntent(intent)).toBe(true);
+        expect(
+          intent.blind === "typed-data-commitment" || intent.blind === "typed-data-oversize",
+        ).toBe(true);
+      }),
+      { numRuns: 100 },
+    );
+  });
+});
+
 describe("typed-data leaves agree with an independent EIP-712 hasher", () => {
   type Field = { name: string; type: string };
   type Doc = {

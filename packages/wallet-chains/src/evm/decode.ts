@@ -640,14 +640,19 @@ export const decodeEvm = (
           }),
         )
       : undefined;
-  const fields =
+  const shown =
     permit === undefined && seaport === undefined && safe === undefined
       ? typedDataFields(json)
       : undefined;
+  const fields = shown?.fields;
   const blind =
     safe === undefined
-      ? permit === undefined && seaport === undefined && fields === undefined
-        ? ("typed-data-oversize" as const)
+      ? permit === undefined && seaport === undefined
+        ? shown === undefined
+          ? ("typed-data-oversize" as const)
+          : shown.commitment
+            ? ("typed-data-commitment" as const)
+            : undefined
         : undefined
       : (safe.safe.calls.find((call) => call.blind !== undefined)?.blind ??
         (safe.safe.refund === undefined ? undefined : ("safe-refund-unbounded" as const)));
