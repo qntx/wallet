@@ -19,6 +19,7 @@ import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
+import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
 import { recognizePermit } from "./permit.ts";
@@ -466,12 +467,14 @@ const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
     return { ...protocol, ...contract };
   }
   const standard = standardIntent(call, context);
+  const nearMiss =
+    standard.verifiability === "opaque" && call.to !== undefined
+      ? callNearMiss(call.to, networkChainId(context.network), context.table)
+      : undefined;
   return {
     ...standard,
     ...contract,
-    ...(standard.verifiability === "opaque" && token !== undefined
-      ? { blind: "token-function" as const }
-      : {}),
+    ...(nearMiss === undefined ? {} : { blind: nearMiss }),
     outflows:
       call.value > 0n && address !== undefined
         ? [...nativeOutflow(call.value, address), ...standard.outflows]
@@ -640,19 +643,20 @@ export const decodeEvm = (
           }),
         )
       : undefined;
-  const shown =
-    permit === undefined && seaport === undefined && safe === undefined
-      ? typedDataFields(json)
-      : undefined;
+  const unclaimed = permit === undefined && seaport === undefined && safe === undefined;
+  const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
+  const shown = unclaimed ? typedDataFields(json) : undefined;
   const fields = shown?.fields;
   const blind =
     safe === undefined
-      ? permit === undefined && seaport === undefined
-        ? shown === undefined
-          ? ("typed-data-oversize" as const)
-          : shown.commitment
-            ? ("typed-data-commitment" as const)
-            : undefined
+      ? unclaimed
+        ? nearMiss !== undefined
+          ? nearMiss
+          : shown === undefined
+            ? ("typed-data-oversize" as const)
+            : shown.commitment
+              ? ("typed-data-commitment" as const)
+              : undefined
         : undefined
       : (safe.safe.calls.find((call) => call.blind !== undefined)?.blind ??
         (safe.safe.refund === undefined ? undefined : ("safe-refund-unbounded" as const)));

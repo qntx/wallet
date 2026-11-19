@@ -19,7 +19,7 @@ import {
 import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
 
 /** Seaport 1.5 and 1.6 deployments, lowercase for a checksum-insensitive compare. */
-const SEAPORT_CONTRACTS = new Set([
+export const SEAPORT_CONTRACTS: ReadonlySet<string> = new Set([
   "0x0000000000000068f116a894984e2db1123eb395",
   "0x00000000000000adc04c56bf30ac9d3c0aaf14dc",
 ]);

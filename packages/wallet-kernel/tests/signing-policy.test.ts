@@ -261,6 +261,69 @@ const recover1559 = (signed: Uint8Array): string => {
 /* ------------------------------------------------------------------------ */
 
 describe("blind signing policy", () => {
+  const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA";
+  const SOL_PAYER = base58.decode(SOL_ADDRESS);
+  const SOL_SRC = new Uint8Array(32).fill(0x22);
+  const SOL_DST = new Uint8Array(32).fill(0x44);
+  const SOL_TOKEN = base58.decode(TOKEN_PROGRAM);
+
+  /* A legacy Solana message: header, accounts (signer, writable, readonly), blockhash, ixs. */
+  const solMessage = (
+    keys: ReadonlyArray<Uint8Array>,
+    readonlyUnsigned: number,
+    ixs: ReadonlyArray<{
+      program: number;
+      accounts: ReadonlyArray<number>;
+      data: Uint8Array;
+    }>,
+  ): Uint8Array =>
+    new Uint8Array([
+      1,
+      0,
+      readonlyUnsigned,
+      keys.length,
+      ...keys.flatMap((k) => [...k]),
+      ...new Uint8Array(32).fill(0x33),
+      ixs.length,
+      ...ixs.flatMap((ix) => [
+        ix.program,
+        ix.accounts.length,
+        ...ix.accounts,
+        ix.data.length,
+        ...ix.data,
+      ]),
+    ]);
+
+  const tokenTransferIx = (): Uint8Array =>
+    solMessage(
+      [SOL_PAYER, SOL_SRC, SOL_DST, SOL_TOKEN],
+      1,
+      [{ program: 3, accounts: [1, 2, 0], data: new Uint8Array([3, 5, 0, 0, 0, 0, 0, 0, 0]) }],
+    );
+  const setAuthorityIx = (): Uint8Array =>
+    solMessage(
+      [SOL_PAYER, SOL_SRC, SOL_TOKEN],
+      1,
+      [
+        {
+          program: 2,
+          accounts: [1, 0],
+          data: new Uint8Array([6, 0, 1, ...new Uint8Array(32).fill(0x55)]),
+        },
+      ],
+    );
+
+  const solanaCoreIx = (walletId: string, message: Uint8Array) =>
+    normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: SOL_NETWORK,
+        account: { kind: "hd", walletId, groupIndex: 0, template: "solana.bip44-change" },
+        message,
+      },
+      SOL_ADDRESS,
+    );
+
   const cases: ReadonlyArray<
     readonly [
       name: string,
@@ -375,6 +438,91 @@ describe("blind signing policy", () => {
       () => ({
         title: "Confirm blind signing",
         description: `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeTx\nSafe ${SAFE}, transaction 7\nSend 0 ETH to ${TO}\nPays whoever executes it a gas refund of up to 0.0002 ETH, plus 0.000000002 ETH per gas of call overhead`,
+      }),
+    ],
+    [
+      "typed-data-variant (legacy SafeTx)",
+      (walletId) =>
+        typedDoc(walletId, {
+          types: {
+            EIP712Domain: [
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            SafeTx: SAFE_TX_FIELDS.map((f) =>
+              f.name === "baseGas" ? { name: "dataGas", type: f.type } : f,
+            ),
+          },
+          primaryType: "SafeTx",
+          domain: { chainId: 1, verifyingContract: SAFE },
+          message: {
+            to: OTHER,
+            value: "0",
+            data: "0x",
+            operation: 0,
+            safeTxGas: "0",
+            dataGas: "0",
+            gasPrice: "0",
+            gasToken: ZERO,
+            refundReceiver: ZERO,
+            nonce: "7",
+          },
+        }),
+      () => ({
+        title: "Confirm blind signing",
+        description:
+          `Network: Ethereum\nVerifying contract ${SAFE}\nType: SafeTx\n` +
+          "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
+          "The wallet cannot verify what this signature authorises\n" +
+          `to: ${OTHER}\nvalue: 0\ndata: 0x\noperation: 0\nsafeTxGas: 0\ndataGas: 0\ngasPrice: 0\n` +
+          `gasToken: ${ZERO}\nrefundReceiver: ${ZERO}\nnonce: 7`,
+      }),
+    ],
+    [
+      "typed-data-variant (EIP-3009 on a listed token)",
+      (walletId) =>
+        typedDoc(walletId, {
+          types: {
+            EIP712Domain: [
+              { name: "name", type: "string" },
+              { name: "version", type: "string" },
+              { name: "chainId", type: "uint256" },
+              { name: "verifyingContract", type: "address" },
+            ],
+            TransferWithAuthorization: [
+              { name: "from", type: "address" },
+              { name: "to", type: "address" },
+              { name: "value", type: "uint256" },
+            ],
+          },
+          primaryType: "TransferWithAuthorization",
+          domain: { name: "USD Coin", version: "2", chainId: 1, verifyingContract: USDC },
+          message: { from: "0x2222222222222222222222222222222222222222", to: OTHER, value: "1" },
+        }),
+      () => ({
+        title: "Confirm blind signing",
+        description:
+          `App: USD Coin\nNetwork: Ethereum\nVerifying contract ${USDC}\n` +
+          "Type: TransferWithAuthorization\n" +
+          "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
+          "The wallet cannot verify what this signature authorises\n" +
+          `from: 0x2222222222222222222222222222222222222222\nto: ${OTHER}\nvalue: 1`,
+      }),
+    ],
+    [
+      "core-instruction (SPL Token Transfer)",
+      (walletId) => solanaCoreIx(walletId, tokenTransferIx()),
+      () => ({
+        title: "Confirm blind signing",
+        description: `Network: Solana\nProgram calls the wallet cannot decode: ${TOKEN_PROGRAM}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
+      }),
+    ],
+    [
+      "core-instruction (SPL SetAuthority)",
+      (walletId) => solanaCoreIx(walletId, setAuthorityIx()),
+      () => ({
+        title: "Confirm blind signing",
+        description: `Network: Solana\nProgram calls the wallet cannot decode: ${TOKEN_PROGRAM}\nThese programs can move assets from the accounts in this transaction\nMax fee 0.000005 SOL`,
       }),
     ],
   ];

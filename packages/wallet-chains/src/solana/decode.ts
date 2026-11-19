@@ -3,6 +3,7 @@ import { getU32Decoder, getU64Decoder } from "@solana/codecs";
 import type {
   ApprovalChange,
   AssetFlow,
+  BlindReason,
   DisplayIntent,
   IntentWarning,
   SignRequest,
@@ -10,6 +11,7 @@ import type {
   Verifiability,
 } from "../index.ts";
 import { ChainError } from "../index.ts";
+import { RECOGNISED_FAMILIES } from "../families.ts";
 import { withNativeAmountMeta } from "../networks.ts";
 import { SOLANA_NATIVE_ASSET } from "./assets.ts";
 import { associatedTokenAddress } from "./ata.ts";
@@ -19,8 +21,8 @@ import { JUPITER_PROGRAM, WSOL_MINT, decodeJupiterIx } from "./jupiter.ts";
 import type { JupiterSwap } from "./jupiter.ts";
 import { parseCompiledMessage, resolveAccountIndex } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
-import { decodeStakeCreate, decodeStakeIx } from "./stake.ts";
-import type { StakeCreate, StakeIx } from "./stake.ts";
+import { decodeStakeIx, decodeSystemCreate } from "./stake.ts";
+import type { StakeCreate, StakeIx, SystemCreate } from "./stake.ts";
 import { lookupSolanaToken, solanaTokenTable } from "./tokens.ts";
 import type { SolanaTokenTable } from "./tokens.ts";
 
@@ -33,12 +35,16 @@ type IxCall = {
   readonly kind:
     | "system-transfer"
     | "system-create"
+    | "system-create-account"
+    | "system-advance-nonce"
     | "cu-limit"
     | "cu-price"
     | "ata-create"
     | "ata-create-idempotent"
     | "token-transfer-checked"
     | "token-approve"
+    | "token-initialize-account"
+    | "token-revoke"
     | "stake"
     | "token-sync-native"
     | "token-close-account"
@@ -55,6 +61,8 @@ type IxCall = {
   readonly from?: string | undefined;
   /** A recognized staking instruction: a system create-account or a stake-program op. */
   readonly stake?: StakeIx | StakeCreate | undefined;
+  /** A system-program creation of an account owned by a program other than Stake. */
+  readonly create?: SystemCreate | undefined;
   /** A recognised Jupiter swap instruction. */
   readonly jupiter?: JupiterSwap | undefined;
   /** A recognised Metaplex Core transfer: the asset leaves for `newOwner`. */
@@ -82,9 +90,23 @@ const classifyIx = (
         amount: u64le(data, 4),
       };
     }
-    const create = decodeStakeCreate(parsed, ix, lookups);
+    const create = decodeSystemCreate(parsed, ix, lookups);
     if (create !== undefined && create !== "other") {
-      return { kind: "system-create", stake: create };
+      return create.owner === PROGRAM_IDS.stake
+        ? {
+            kind: "system-create",
+            stake: {
+              kind: "create",
+              account: create.account,
+              from: create.from,
+              lamports: create.lamports,
+            },
+          }
+        : { kind: "system-create-account", create };
+    }
+    if (data.length === 4 && u32le(data, 0) === 4 && ix.accountIndices.length === 3) {
+      /* AdvanceNonceAccount [nonce, RecentBlockhashes, authority] — plumbing, nothing moves. */
+      return { kind: "system-advance-nonce" };
     }
     return { kind: "other" };
   }
@@ -133,6 +155,14 @@ const classifyIx = (
       const destination = resolveAccountIndex(parsed, ix.accountIndices[1] ?? 0, lookups);
       return destination === signer ? { kind: "token-close-account" } : { kind: "other" };
     }
+    if (data.length === 1 && data[0] === 1 && ix.accountIndices.length === 4) {
+      /* InitializeAccount [account, mint, owner, rent] — plumbing, nothing moves. */
+      return { kind: "token-initialize-account" };
+    }
+    if (data.length === 1 && data[0] === 5 && ix.accountIndices.length === 2) {
+      /* Revoke [account, owner] — drops a delegate; plumbing, nothing moves. */
+      return { kind: "token-revoke" };
+    }
     return { kind: "other" };
   }
   if (program === JUPITER_PROGRAM) {
@@ -157,6 +187,8 @@ const classifyIx = (
 const FULL_KINDS = new Set([
   "system-transfer",
   "system-create",
+  "system-create-account",
+  "system-advance-nonce",
   "cu-limit",
   "cu-price",
   "ata-create",
@@ -164,6 +196,8 @@ const FULL_KINDS = new Set([
   "stake",
   "token-sync-native",
   "token-close-account",
+  "token-initialize-account",
+  "token-revoke",
 ]);
 
 const classify = (
@@ -274,6 +308,19 @@ const decodeTransaction = (
       outflows.push({
         to: call.to,
         amount: { asset: SOLANA_NATIVE_ASSET, amount: (call.amount ?? 0n).toString(10) },
+        verified: true,
+      });
+    }
+    if (
+      call.kind === "system-create-account" &&
+      call.create !== undefined &&
+      call.create.from === signer
+    ) {
+      /* A CreateAccount funded by the signer sends the new account's lamports to it. */
+      otherTransfer = true;
+      outflows.push({
+        to: call.create.account,
+        amount: { asset: SOLANA_NATIVE_ASSET, amount: call.create.lamports.toString(10) },
         verified: true,
       });
     }
@@ -437,13 +484,35 @@ const decodeTransaction = (
   // The fee is charged to the fee payer only — a sponsored signer pays nothing.
   const fee = parsed.staticAccounts[0] === signer ? feeLamports(parsed, lookups, calls) : 0n;
   const programs: string[] = [];
+  let blind: BlindReason | undefined;
   for (const [index, ix] of parsed.instructions.entries()) {
     const program =
       calls[index]?.kind === "other"
         ? resolveAccountIndex(parsed, ix.programAddressIndex, lookups)
         : undefined;
-    if (program !== undefined && !programs.includes(program)) {
+    if (program === undefined) {
+      continue;
+    }
+    if (!programs.includes(program)) {
       programs.push(program);
+    }
+    /* The core programs act on an account's value only with its owner's signature, so an
+       undecoded instruction the signer does not sign cannot spend the signer's assets and stays
+       opaque. One the signer does sign is blind: nothing shown bounds what it authorises. An
+       unknown program is never blind — the prompt names it like any contract the owner trusts. */
+    const row = RECOGNISED_FAMILIES.find(
+      (family) =>
+        family.claim.surface === "solana.instruction" &&
+        PROGRAM_IDS[family.claim.program] === program,
+    );
+    if (
+      blind === undefined &&
+      row !== undefined &&
+      ix.accountIndices.some(
+        (i) => i < parsed.numRequiredSignatures && parsed.staticAccounts[i] === signer,
+      )
+    ) {
+      blind = row.nearMiss;
     }
   }
   const summary = hasJupiter
@@ -467,6 +536,7 @@ const decodeTransaction = (
     ...(programs.length === 0 ? {} : { programs }),
     warnings,
     verifiability,
+    ...(blind === undefined ? {} : { blind }),
   };
 };
 

@@ -1934,3 +1934,149 @@ describe("message and unverifiable-call prompts via the real decoders", () => {
     );
   });
 });
+
+describe("near-miss blind prompts", () => {
+  const account = { kind: "hd" as const, walletId: "w", groupIndex: 0, template: "evm" };
+  const SIGNER = "0x52908400098527886E0F7030069857D2E4169EE7";
+  const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const SOL_PAYER = base58.encode(new Uint8Array(32).fill(0x11));
+  const typed = (doc: unknown) =>
+    decodeEvm(
+      { kind: "evm.typed-data", network: "eip155:1", account, typedData: JSON.stringify(doc) },
+      SIGNER,
+    );
+  const OTHER = "0x0000000000000000000000000000000000001234";
+
+  it("a typed-data near miss of a listed token is blind, in both locales", () => {
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        TransferWithAuthorization: [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+        ],
+      },
+      primaryType: "TransferWithAuthorization",
+      domain: { name: "USD Coin", version: "2", chainId: 1, verifyingContract: USDC_ADDR },
+      message: { from: SIGNER, to: OTHER, value: "1" },
+    });
+    expect(intent.blind).toBe("typed-data-variant");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "App: USD Coin\n" +
+        "Network: Ethereum\n" +
+        `Verifying contract ${USDC_ADDR}\n` +
+        "Type: TransferWithAuthorization\n" +
+        "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
+        "The wallet cannot verify what this signature authorises\n" +
+        `from: ${SIGNER}\nto: ${OTHER}\nvalue: 1`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description:
+        "应用：USD Coin\n" +
+        "网络：Ethereum\n" +
+        `验证合约 ${USDC_ADDR}\n` +
+        "类型：TransferWithAuthorization\n" +
+        "钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n" +
+        "钱包无法核实此签名授权的内容\n" +
+        `from：${SIGNER}\nto：${OTHER}\nvalue：1`,
+    });
+  });
+
+  it("a typed-data variant without showable fields says both", () => {
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        Permit: Array.from({ length: 17 }, (_, i) => ({ name: `f${i}`, type: "uint256" })),
+      },
+      primaryType: "Permit",
+      domain: {
+        chainId: 1,
+        verifyingContract: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      },
+      message: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`f${i}`, "1"])),
+    });
+    expect(intent.blind).toBe("typed-data-variant");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "Network: Ethereum\n" +
+        "Verifying contract 0x000000000022D473030F116dDEE9F6B43aC78BA3\n" +
+        "Type: Permit\n" +
+        "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets\n" +
+        "This typed data is too large to show in full",
+    });
+  });
+
+  it("a Solana instruction of a core program the signer signs is blind, in both locales", () => {
+    const payer = new Uint8Array(32).fill(0x11);
+    const src = new Uint8Array(32).fill(0x22);
+    const dst = new Uint8Array(32).fill(0x33);
+    const token = base58.decode("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+    const message = new Uint8Array([
+      1,
+      0,
+      1,
+      4,
+      ...payer,
+      ...src,
+      ...dst,
+      ...token,
+      ...new Uint8Array(32).fill(0x44),
+      1,
+      3,
+      3,
+      1,
+      2,
+      0,
+      9,
+      3,
+      5,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+    ]);
+    const req = normalizeSolana(
+      {
+        kind: "solana.transaction",
+        network: "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "solana.bip44-change" },
+        message,
+      },
+      SOL_PAYER,
+    ) as never;
+    const intent = decodeSolana(req, SOL_PAYER);
+    expect(intent.blind).toBe("core-instruction");
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "Network: Solana\n" +
+        "Program calls the wallet cannot decode: TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\n" +
+        "These programs can move assets from the accounts in this transaction\n" +
+        "Max fee 0.000005 SOL",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description:
+        "网络：Solana\n" +
+        "钱包无法解码的程序调用：TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA\n" +
+        "这些程序可以转移本交易涉及账户中的资产\n" +
+        "最高手续费 0.000005 SOL",
+    });
+  });
+});

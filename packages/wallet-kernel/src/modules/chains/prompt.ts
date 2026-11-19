@@ -98,6 +98,7 @@ type Catalog = {
   readonly typedUnverified: string;
   readonly typedField: (path: string, value: string) => string;
   readonly typedCommitment: string;
+  readonly typedVariant: string;
   readonly typedOversize: string;
   readonly orderGive: (amount: string) => string;
   readonly orderReceive: (recipient: string, amount: string) => string;
@@ -181,6 +182,7 @@ const zh: Catalog = {
   typedUnverified: "钱包无法核实此签名授权的内容",
   typedField: (path, value) => `${path}：${value}`,
   typedCommitment: "只签署哈希或原始字节；钱包无法看到它们所承诺的内容",
+  typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
   typedOversize: "此类型数据过大，无法完整显示",
   orderGive: (amount) => `付出 ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
@@ -275,6 +277,8 @@ const en: Catalog = {
   typedUnverified: "The wallet cannot verify what this signature authorises",
   typedField: (path, value) => `${path}: ${value}`,
   typedCommitment: "It signs only hashes or raw bytes; the wallet cannot see what they commit to",
+  typedVariant:
+    "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
   typedOversize: "This typed data is too large to show in full",
   orderGive: (amount) => `Give ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
@@ -509,7 +513,14 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         : intent.verifiability === "partial"
           ? [catalog.otherOutflows]
           : []
-      : [];
+      : /* A blind Solana transaction still names the programs it cannot decode — the blind title
+           carries the refusal reason, the program list is what the signature reaches. */
+        intent.family === "solana" && intent.verifiability === "opaque"
+        ? [
+            catalog.solanaPrograms((intent.programs ?? []).join(", ")),
+            catalog.solanaProgramsWarning,
+          ]
+        : [];
   const warnings = intent.warnings ?? [];
   return {
     title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
@@ -625,10 +636,14 @@ function typedContentLines(
   }
   if (message.fields !== undefined) {
     return [
+      ...(intent.blind === "typed-data-variant" ? [catalog.typedVariant] : []),
       ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       catalog.typedUnverified,
       ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value)),
     ];
+  }
+  if (intent.blind === "typed-data-variant") {
+    return [catalog.typedVariant, catalog.typedOversize];
   }
   if (intent.blind === "typed-data-oversize") {
     return [catalog.typedOversize];
