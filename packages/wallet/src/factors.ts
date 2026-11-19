@@ -281,8 +281,7 @@ export type PlainMethod = Exclude<MethodName, SecretMethod>;
 
 /**
  * Every field name under which T's values hold a `Uint8Array`, reached through objects, arrays,
- * union members and optional fields. A `ReadonlyArray<Uint8Array>` field yields no name — its
- * elements are bytes, not a byte field — so `answers` is covered by {@link SecretField} alone.
+ * union members and optional fields — a `ReadonlyArray<Uint8Array>` field names its field too.
  */
 export type BytesFieldOf<T> = T extends Uint8Array
   ? never
@@ -290,7 +289,7 @@ export type BytesFieldOf<T> = T extends Uint8Array
     ? BytesFieldOf<E>
     : T extends Readonly<Record<PropertyKey, unknown>>
       ? {
-          [K in keyof T]-?: NonNullable<T[K]> extends Uint8Array
+          [K in keyof T]-?: NonNullable<T[K]> extends Uint8Array | ReadonlyArray<Uint8Array>
             ? K
             : BytesFieldOf<NonNullable<T[K]>>;
         }[keyof T]
@@ -305,6 +304,7 @@ type PublicBytesField =
   | "binding"
   | "challenge"
   | "ciphertext"
+  | "ciphertexts"
   | "connectorTx"
   | "credentialId"
   | "exitTx"
