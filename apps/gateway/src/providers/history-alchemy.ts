@@ -8,11 +8,11 @@ import {
 } from "@qntx/wallet-engine/gateway/contract";
 import type { HistoryResponse, HistoryTransfer } from "@qntx/wallet-engine/gateway/contract";
 
+import { GatewayHttpError } from "../middleware/errors.ts";
 import type { ResolvedNetwork } from "../middleware/network.ts";
 import type { ResolvedProvider } from "../types.ts";
-import { readCapped } from "./body.ts";
-import type { Forwarded, Forwarder } from "./forward.ts";
-import { ProviderFailure } from "./forward.ts";
+import type { Forwarded, Forwarder, Send } from "./forward.ts";
+import { ProviderFailure, REFUSED_STATUSES, REQUEST_ERROR_STATUSES } from "./forward.ts";
 
 /**
  * EVM transfer history over Alchemy's `alchemy_getAssetTransfers` on the same endpoint and auth the
@@ -22,10 +22,11 @@ import { ProviderFailure } from "./forward.ts";
 
 /** A drained block re-queries both directions at max page size. */
 const DRAIN_MAX_COUNT = "0x3e8";
-/** Paged bodies stay well under 1 MiB; 4 MiB leaves headroom for a drained page. */
+/**
+ * Paged bodies stay well under 1 MiB; 4 MiB leaves headroom for a drained page. A larger answer is
+ * the address's own (a client can bloat one cheaply), so it is the request's 400, never an outage.
+ */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
-/** Upstream statuses where the provider provably refused the call before processing it. */
-const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
 /** Chains where Alchemy accepts the `internal` transfer category. */
 const INTERNAL_CATEGORY_CHAINS: ReadonlySet<number> = new Set([1, 137, 8453]);
 
@@ -97,37 +98,28 @@ const PRINTABLE = /^[\u0020-\u007E]{1,32}$/;
 
 /** One upstream call: `params` is the single `alchemy_getAssetTransfers` argument. */
 const call = async (
-  fetch: typeof globalThis.fetch,
+  send: Send,
   provider: ResolvedProvider,
-  signal: AbortSignal,
   params: Record<string, unknown>,
 ): Promise<UpstreamPage> => {
-  let authHeaders: Readonly<Record<string, string>>;
-  try {
-    authHeaders = (await provider.auth?.()) ?? {};
-  } catch {
-    throw new ProviderFailure("auth", true);
-  }
-  const response = await fetch(provider.url, {
+  const response = await send({
+    url: provider.url,
     method: "POST",
-    headers: { "content-type": "application/json", ...authHeaders },
+    headers: { "content-type": "application/json" },
     body: JSON.stringify({
       jsonrpc: "2.0",
       id: 1,
       method: "alchemy_getAssetTransfers",
       params: [params],
     }),
-    signal,
   });
   if (!response.ok) {
+    if (REQUEST_ERROR_STATUSES.has(response.status)) {
+      throw new GatewayHttpError(400, "invalid-request");
+    }
     throw new ProviderFailure(`status-${response.status}`, REFUSED_STATUSES.has(response.status));
   }
-  let text: string;
-  try {
-    text = await readCapped(response, MAX_BODY_BYTES);
-  } catch {
-    throw new ProviderFailure("malformed", false);
-  }
+  const text = await response.text(MAX_BODY_BYTES);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -343,12 +335,6 @@ const buildResponse = (
   return { items, cursor };
 };
 
-export type AlchemyHistoryPage = {
-  readonly response: HistoryResponse;
-  /** True when a drain round ran — the route charges for its two extra upstream calls. */
-  readonly drained: boolean;
-};
-
 /**
  * One history page: `toAddress` and `fromAddress` pages in parallel, deduped by Alchemy's
  * `uniqueId` (a self-transfer appears on both sides). Transfers at the frontier block are withheld
@@ -357,7 +343,6 @@ export type AlchemyHistoryPage = {
  */
 export const alchemyHistoryPage = async (
   forwarder: Forwarder,
-  fetch: typeof globalThis.fetch,
   providers: ReadonlyArray<ResolvedProvider>,
   params: {
     readonly chainId: number;
@@ -365,9 +350,11 @@ export const alchemyHistoryPage = async (
     readonly cursor?: string;
     readonly limit: number;
   },
+  /** Pays for the drain round's two extra calls; throws (429) before either is sent. */
+  chargeDrain: () => Promise<void>,
   log: (line: string) => void,
-): Promise<Forwarded<AlchemyHistoryPage>> =>
-  forwarder.run(providers, async (provider, signal) => {
+): Promise<Forwarded<HistoryResponse>> =>
+  forwarder.run(providers, async (send, provider) => {
     const { chainId, address, cursor, limit } = params;
     const bounds = {
       fromBlock: "0x0",
@@ -379,12 +366,7 @@ export const alchemyHistoryPage = async (
     ): Promise<ReadonlyArray<UpstreamPage>> =>
       Promise.all(
         DIRECTIONS.map(async (direction) =>
-          call(
-            fetch,
-            provider,
-            signal,
-            pageParams(direction, address, chainId, roundBounds, maxCount),
-          ),
+          call(send, provider, pageParams(direction, address, chainId, roundBounds, maxCount)),
         ),
       );
 
@@ -394,10 +376,9 @@ export const alchemyHistoryPage = async (
       (t) => frontier === undefined || (hexToBigInt(t.blockNum) ?? 0n) > frontier,
     );
     let nextCursor = frontier === undefined ? null : decimalString(frontier);
-    let drained = false;
 
     if (kept.length === 0 && frontier !== undefined) {
-      drained = true;
+      await chargeDrain();
       const drainPages = await round(
         { fromBlock: toHex(decimalString(frontier)), toBlock: toHex(decimalString(frontier)) },
         DRAIN_MAX_COUNT,
@@ -440,5 +421,5 @@ export const alchemyHistoryPage = async (
     if (!accepts(historyResponse, response)) {
       throw new ProviderFailure("malformed", false);
     }
-    return { response, drained };
+    return response;
   });

@@ -3,6 +3,7 @@ import * as z from "zod/mini";
 import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 
 import { ProviderFailure } from "./forward.ts";
+import type { UpstreamResponse } from "./forward.ts";
 import { providerJson } from "./prices.ts";
 import type { PriceSource, RawQuote } from "./prices.ts";
 
@@ -25,7 +26,7 @@ const percentages = z.object({ coins: z.record(z.string(), z.number()) });
 
 const parsed = async <S extends z.ZodMiniType>(
   schema: S,
-  response: Response,
+  response: UpstreamResponse,
 ): Promise<z.output<S>> => {
   const body = parseWith(schema, await providerJson(response));
   if (body === undefined) {
@@ -43,13 +44,14 @@ const parsed = async <S extends z.ZodMiniType>(
 export const defillamaSource: PriceSource = {
   provider: { id: "defillama", url: DEFILLAMA_API },
   serves: (currency) => currency === "usd",
-  quote: async (fetch, _currency, targets, signal) => {
+  calls: () => 2,
+  quote: async (send, _currency, targets) => {
     const keys = [...new Set([...targets.values()].map((target) => target.defillama))].join(",");
     const [current, change] = await Promise.all([
-      fetch(`${DEFILLAMA_API}/prices/current/${keys}`, { signal }).then(async (response) =>
+      send({ url: `${DEFILLAMA_API}/prices/current/${keys}` }).then(async (response) =>
         parsed(currentPrices, response),
       ),
-      fetch(`${DEFILLAMA_API}/percentage/${keys}?period=24h`, { signal }).then(async (response) =>
+      send({ url: `${DEFILLAMA_API}/percentage/${keys}?period=24h` }).then(async (response) =>
         parsed(percentages, response),
       ),
     ]);

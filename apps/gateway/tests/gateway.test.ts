@@ -489,8 +489,36 @@ describe("rpc forwarding", () => {
     },
   );
 
-  it.each([404, 429, 500, 502])(
-    "upstream %i stays a provider failure: failover, and the shared breaker opens after 5",
+  it.each([401, 403, 404])(
+    "upstream %i fails over but never counts against the shared breaker",
+    async (status) => {
+      const up = fakeFetch({
+        "https://a.test/evm": onlyLogsCalls(() => new Response("x", { status })),
+        "https://b.test/evm": onlyLogsCalls(() => new Response("x", { status })),
+      });
+      const app = gateway({ fetch: up.fetch });
+      const attackerPost = {
+        method: "POST",
+        headers: headers({
+          "content-type": "application/json",
+          "x-client-id": "f".repeat(32),
+        }),
+        body: JSON.stringify(call("eth_getLogs", [{ blockHash: `0x${HASH}` }])),
+      } as const;
+      const refused = await Promise.all(
+        Array.from({ length: 6 }, async () => app.request(`/v1/rpc/${SEPOLIA}`, attackerPost)),
+      );
+      expect(refused.map((res) => res.status)).toStrictEqual([503, 503, 503, 503, 503, 503]);
+      expect(up.callsTo("https://a.test")).toHaveLength(6);
+
+      const victim = await app.request(`/v1/rpc/${SEPOLIA}`, post(call("eth_chainId")));
+      expect(victim.status).toBe(200);
+      expect(victim.headers.get(PROVIDERS_HEADER)).toBe("a");
+    },
+  );
+
+  it.each([429, 500, 502, 503])(
+    "upstream %i is a provider outage: failover, and the shared breaker opens after 5",
     async (status) => {
       const up = fakeFetch({
         "https://a.test/evm": onlyLogsCalls(() => new Response("x", { status })),

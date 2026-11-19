@@ -4,6 +4,7 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { FiatCurrency } from "@qntx/wallet-engine/gateway/contract";
 
 import { ProviderFailure } from "./forward.ts";
+import type { PriceTarget } from "./prices-assets.ts";
 import { providerJson } from "./prices.ts";
 import type { PriceSource, RawQuote } from "./prices.ts";
 
@@ -37,6 +38,27 @@ const push = <K, V>(map: Map<K, V[]>, key: K, value: V): void => {
   map.set(key, [...(map.get(key) ?? []), value]);
 };
 
+/** Assets by CoinGecko key: the native coins for `/simple/price`, token addresses per platform. */
+const groupTargets = (
+  targets: ReadonlyMap<string, PriceTarget>,
+): {
+  readonly coins: ReadonlyMap<string, ReadonlyArray<string>>;
+  readonly platforms: ReadonlyMap<string, ReadonlyMap<string, ReadonlyArray<string>>>;
+} => {
+  const coins = new Map<string, string[]>();
+  const platforms = new Map<string, Map<string, string[]>>();
+  for (const [asset, { coingecko }] of targets) {
+    if (coingecko.kind === "coin") {
+      push(coins, coingecko.id, asset);
+    } else {
+      const byAddress = platforms.get(coingecko.platform) ?? new Map<string, string[]>();
+      push(byAddress, coingecko.address, asset);
+      platforms.set(coingecko.platform, byAddress);
+    }
+  }
+  return { coins, platforms };
+};
+
 /**
  * CoinGecko's Pro API, the primary source: one `/simple/price` call for the native coins and one
  * `/simple/token_price/{platform}` call per token platform (at most 515 addresses each, above the
@@ -46,30 +68,21 @@ export function coingeckoSource(apiKey: string): PriceSource {
   return {
     provider: { id: "coingecko", url: COINGECKO_API },
     serves: () => true,
-    quote: async (fetch, currency, targets, signal) => {
-      const coins = new Map<string, string[]>();
-      const platforms = new Map<string, Map<string, string[]>>();
-      for (const [asset, { coingecko }] of targets) {
-        if (coingecko.kind === "coin") {
-          push(coins, coingecko.id, asset);
-        } else {
-          const byAddress = platforms.get(coingecko.platform) ?? new Map<string, string[]>();
-          push(byAddress, coingecko.address, asset);
-          platforms.set(coingecko.platform, byAddress);
-        }
-      }
+    calls: (targets) => {
+      const { coins, platforms } = groupTargets(targets);
+      return (coins.size === 0 ? 0 : 1) + platforms.size;
+    },
+    quote: async (send, currency, targets) => {
+      const { coins, platforms } = groupTargets(targets);
       const query = `vs_currencies=${currency}&include_24hr_change=true&include_last_updated_at=true&precision=full`;
       const read = async (
         path: string,
         keys: ReadonlyMap<string, ReadonlyArray<string>>,
       ): Promise<ReadonlyArray<readonly [string, RawQuote]>> => {
-        const response = await fetch(
-          `${COINGECKO_API}${path}${[...keys.keys()].join(",")}&${query}`,
-          {
-            headers: { "x-cg-pro-api-key": apiKey },
-            signal,
-          },
-        );
+        const response = await send({
+          url: `${COINGECKO_API}${path}${[...keys.keys()].join(",")}&${query}`,
+          headers: { "x-cg-pro-api-key": apiKey },
+        });
         const body = parseWith(simplePrices, await providerJson(response));
         if (body === undefined) {
           throw new ProviderFailure("malformed", false);

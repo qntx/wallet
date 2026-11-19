@@ -24,9 +24,6 @@ export type FiatCurrency = z.infer<typeof fiatCurrency>;
 /** The most assets one `prices` request may name. */
 export const MAX_PRICE_ASSETS = 100;
 
-/** Assets one rate-limit unit pays for: a full batch costs 4 units, a single asset 1. */
-export const PRICE_ASSETS_PER_UNIT = 25;
-
 /**
  * SLIP-44 coin type of the native asset on every mainnet the price route values. Testnets are
  * absent on purpose: their coins have no price.
@@ -127,7 +124,3 @@ export const prices = endpoint("POST", "/v1/prices", pricesRequest, pricesRespon
 export type PriceQuote = z.infer<typeof priceQuote>;
 export type PricesRequest = z.infer<typeof pricesRequest>;
 export type PricesResponse = z.infer<typeof pricesResponse>;
-
-/** The request's rate-limit units: one per started {@link PRICE_ASSETS_PER_UNIT} assets. */
-export const pricesRequestCost = (request: PricesRequest): number =>
-  Math.ceil(request.assets.length / PRICE_ASSETS_PER_UNIT);

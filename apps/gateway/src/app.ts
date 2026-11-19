@@ -26,14 +26,17 @@ import type { GatewayOptions } from "./types.ts";
 
 export type { GatewayOptions } from "./types.ts";
 
-/** Builds the gateway; every upstream call goes through `options.fetch`. */
+/**
+ * Builds the gateway. `options.fetch` goes to the forwarder alone: every route reaches an upstream
+ * through it, so breaker accounting has one owner.
+ */
 export function createGateway(
   options: GatewayOptions,
 ): Hono<{ Variables: ClientIdVariables & RateLimitVariables }> {
   const served = indexNetworks(options.networks, options.auth);
   const log = options.log ?? ((line) => console.log(line));
-  const forwarder = createForwarder(log);
-  const deps = { fetch: options.fetch, forwarder, served };
+  const forwarder = createForwarder(options.fetch, log);
+  const deps = { forwarder, served };
   const allowedOrigins = new Set(options.corsOrigins);
 
   const app = new Hono<{ Variables: ClientIdVariables & RateLimitVariables }>();
@@ -57,7 +60,6 @@ export function createGateway(
   app.route(
     "/",
     quotesRoutes({
-      fetch: options.fetch,
       forwarder,
       zeroEx: options.zeroEx,
       jupiter: options.jupiter,
@@ -68,7 +70,6 @@ export function createGateway(
   app.route(
     "/",
     pricesRoutes({
-      fetch: options.fetch,
       forwarder,
       cache: options.prices.cache,
       sources: [

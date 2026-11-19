@@ -4,7 +4,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { historyResponse } from "@qntx/wallet-engine/gateway/contract";
 
-import type { GatewayNetwork } from "../src/types.ts";
+import type { GatewayNetwork, RateLimiter } from "../src/types.ts";
 import {
   allowAll,
   expectContract,
@@ -383,6 +383,47 @@ describe("history page", () => {
     };
     expect(body.items).toHaveLength(1);
     expect(body.items[0]?.transfers).toHaveLength(100);
+  });
+
+  it("charges a drain before sending it: a refused charge never reaches the upstream", async () => {
+    // Every one-unit charge passes; the drain's two-unit charge is refused.
+    const small: RateLimiter = {
+      limit: async ({ delta = 1 }) => Promise.resolve({ success: delta <= 1 }),
+    };
+    const keyed = {
+      transfers: page(fixture("eth-to").response).transfers.slice(0, 1),
+      pageKey: "k",
+    };
+    const up = upstream({ to: () => keyed, from: () => ({ transfers: [] }) });
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
+      networks: NETWORKS,
+      limiters: { ip: small, rpc: small, default: small },
+    });
+    const res = await app.request(...request(ETH, { address: OWNER }));
+    expect(res.status).toBe(429);
+    expect(up.seen).toHaveLength(2);
+  });
+
+  it("charges a drained page two units more, before the drain round", async () => {
+    const limiter = recordingLimiter();
+    let round = 0;
+    const up = upstream({
+      to: () => {
+        round += 1;
+        return firstRoundKeyed(round, page(fixture("eth-to").response).transfers.slice(0, 1));
+      },
+      from: () => ({ transfers: [] }),
+    });
+    const app = gateway({
+      fetch: fakeFetch({ [UPSTREAM[ETH]!]: up.handler }).fetch,
+      networks: NETWORKS,
+      limiters: { ip: allowAll, rpc: allowAll, default: limiter },
+    });
+    const res = await app.request(...request(ETH, { address: OWNER }));
+    expect(res.status).toBe(200);
+    expect(up.seen).toHaveLength(4);
+    expect(limiter.deltas).toStrictEqual([1, 1, 2]);
   });
 
   it("charges two units for a plain page", async () => {
