@@ -73,7 +73,12 @@ export type AccountBalances = {
   readonly tokens: ReadonlyArray<TokenBalance>;
   /** Bitcoin only — confirmed + own unconfirmed change; protected (inscription) UTXOs apart. */
   readonly unconfirmed?: string;
-  readonly frozen?: string;
+  /**
+   * Bitcoin only — outputs protected as possible inscription or rune carriers, counted apart from
+   * `native`. User freezes (`transactions.frozenUtxos`) are a separate list: a user-frozen coin
+   * still counts in `native`/`unconfirmed`.
+   */
+  readonly protected?: string;
   /** Bitcoin only — the same totals split by the source they were read from. */
   readonly sources?: Readonly<Partial<Record<BitcoinSourceKey, BitcoinTotals>>>;
   /** Bitcoin only — every UTXO seen, with the source that produced it and its spend protection. */

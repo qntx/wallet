@@ -58,7 +58,7 @@ describe("protected balances (ord postage rule)", () => {
     const read = await readBitcoin(esploraFor(TO84, utxos), NET, [
       { kind: "address", address: TO84 },
     ]);
-    expect(read.totals).toStrictEqual({ native: "20001", unconfirmed: "0", frozen: "30876" });
+    expect(read.totals).toStrictEqual({ native: "20001", unconfirmed: "0", protected: "30876" });
     expect(read.utxos.map((u) => u.protected)).toStrictEqual([true, true, true, true, false]);
   });
 
@@ -66,7 +66,11 @@ describe("protected balances (ord postage rule)", () => {
     const read = await readBitcoin(esploraFor(TO86, [utxoJson(TXID(6), 0, 1_000_000)]), NET, [
       { kind: "address", address: TO86 },
     ]);
-    expect(read.totals).toStrictEqual({ native: "0", unconfirmed: "0", frozen: "1000000" });
+    expect(read.totals).toStrictEqual({
+      native: "0",
+      unconfirmed: "0",
+      protected: "1000000",
+    });
     expect(read.utxos[0]?.protected).toBe(true);
   });
 });
