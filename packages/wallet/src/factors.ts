@@ -279,6 +279,66 @@ export type SecretMethod = {
 /** Methods whose params never carry secret bytes. */
 export type PlainMethod = Exclude<MethodName, SecretMethod>;
 
+/**
+ * Every field name under which T's values hold a `Uint8Array`, reached through objects, arrays,
+ * union members and optional fields. A `ReadonlyArray<Uint8Array>` field yields no name — its
+ * elements are bytes, not a byte field — so `answers` is covered by {@link SecretField} alone.
+ */
+export type BytesFieldOf<T> = T extends Uint8Array
+  ? never
+  : T extends ReadonlyArray<infer E>
+    ? BytesFieldOf<E>
+    : T extends Readonly<Record<PropertyKey, unknown>>
+      ? {
+          [K in keyof T]-?: NonNullable<T[K]> extends Uint8Array
+            ? K
+            : BytesFieldOf<NonNullable<T[K]>>;
+        }[keyof T]
+      : never;
+
+/**
+ * Param byte fields that are public material: credential ids, public keys, ciphertexts, unsigned
+ * payloads, hashes and signature shares.
+ */
+type PublicBytesField =
+  | "adaptorPublicKey"
+  | "binding"
+  | "challenge"
+  | "ciphertext"
+  | "connectorTx"
+  | "credentialId"
+  | "exitTx"
+  | "hashLockPublicKey"
+  | "hiding"
+  | "identityPublicKey"
+  | "invoice"
+  | "message"
+  | "ownerPublicKey"
+  | "package"
+  | "partialTransaction"
+  | "paymentHash"
+  | "psbt"
+  | "publicKey"
+  | "receiverIdentityPublicKey"
+  | "script"
+  | "secretCipher"
+  | "signatureShare"
+  | "sspSignature"
+  | "tokenIdentifier"
+  | "transaction"
+  | "txid"
+  | "verifyingKey";
+
+/**
+ * `never` while every params byte field is classified. A new `Uint8Array` params field lands here,
+ * failing the type test until it joins {@link SecretField} (secret bytes) or
+ * {@link PublicBytesField} (public material).
+ */
+export type UnclassifiedBytesField = Exclude<
+  { [M in MethodName]: BytesFieldOf<ParamsOf<M>> }[MethodName],
+  SecretField | PublicBytesField
+>;
+
 export function requireCeremony(source: FactorSource): PasskeyCeremony {
   if (source.ceremony === undefined) {
     throw new WalletError("unsupported", "no passkey ceremony is configured");

@@ -11,7 +11,13 @@ import { chains } from "../src/chains/index.ts";
 import { Channel } from "../src/channel.ts";
 import type { MainPort, PortExit, SetTimer } from "../src/channel.ts";
 import { SecretWire } from "../src/factors.ts";
-import type { PasskeyCeremony, PrfResult, SecretMethod } from "../src/factors.ts";
+import type {
+  BytesFieldOf,
+  PasskeyCeremony,
+  PrfResult,
+  SecretMethod,
+  UnclassifiedBytesField,
+} from "../src/factors.ts";
 import { internalsOf } from "../src/internal.ts";
 import type { WalletInternals } from "../src/internal.ts";
 import { nostr } from "../src/nostr/index.ts";
@@ -776,7 +782,24 @@ describe("method classification", () => {
     // Type-level assertions live in a never-invoked function: tsc checks the body.
     expect(typeOnlyChecks).toBeTypeOf("function");
   });
+
+  it("classifies every params byte field as secret or public", () => {
+    expectTypeOf<UnclassifiedBytesField>().toBeNever();
+    expect(bytesFieldChecks).toBeTypeOf("function");
+  });
 });
+
+// BytesFieldOf boundary cases: nested in an array, inside a union member, and optional.
+const bytesFieldChecks = (): void => {
+  expectTypeOf<
+    BytesFieldOf<{ a?: ReadonlyArray<{ seed: Uint8Array }> }>
+  >().toEqualTypeOf<"seed">();
+  expectTypeOf<
+    BytesFieldOf<{ x: string } | { key?: Uint8Array }>
+  >().toEqualTypeOf<"key">();
+  expectTypeOf<BytesFieldOf<Uint8Array>>().toBeNever();
+  expectTypeOf<BytesFieldOf<{ answers: ReadonlyArray<Uint8Array> }>>().toBeNever();
+};
 
 const typeOnlyChecks = (channel: Channel, internals: WalletInternals): void => {
   // @ts-expect-error -- secret params may not use the plain call
