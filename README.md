@@ -4,7 +4,7 @@
 
 Self-custodial wallet SDK for TypeScript: an isolated secret enclave (Web Worker, React Native kernel runtime) with HD derivation, a unified vault, and Nostr, Spark and multi-chain signing.
 
-Changes are tracked in [CHANGELOG.md](CHANGELOG.md); contributor invariants and the local gate live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+Changes are tracked in [CHANGELOG.md](CHANGELOG.md); the 0.13.0 upgrade guide lives in [MIGRATION.md](MIGRATION.md); contributor invariants and the local gate live in [AGENTS.md](AGENTS.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
