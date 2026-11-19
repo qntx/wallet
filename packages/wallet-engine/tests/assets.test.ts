@@ -1,6 +1,6 @@
 import { encodeFunctionData, encodeFunctionResult } from "viem";
 import type { PublicClient } from "viem";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import { PROGRAM_IDS } from "@qntx/wallet-chains/solana";
 
@@ -439,15 +439,18 @@ describe("AssetsController polling", () => {
 describe("AssetsController lock", () => {
   it("a read in flight across lock() writes nothing — the next session never re-reads it", async () => {
     let balanceReads = 0;
-    let gated = false;
     let releaseGate!: () => void;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
     });
+    let readPending!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      readPending = resolve;
+    });
     const c = client({
       eth_getBalance: () => {
         balanceReads += 1;
-        gated = true;
+        readPending();
         return gate.then(() => "0xde0b6b3a7640000");
       },
       eth_call: () => `0x${"0".repeat(64)}`,
@@ -467,11 +470,7 @@ describe("AssetsController lock", () => {
     await ctl.init();
 
     const p = ctl.refresh(OWNER, "eip155:1");
-    await vi.waitFor(() => {
-      if (!gated) {
-        throw new Error("balance read not pending yet");
-      }
-    });
+    await pending;
 
     ctl.lock();
     expect(ctl.getState().balances).toStrictEqual({});

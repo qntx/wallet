@@ -1,6 +1,6 @@
 import { keccak256 } from "viem";
 import type { Hex } from "viem";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { chains } from "@qntx/wallet/chains";
@@ -309,10 +309,17 @@ describe("TransactionController.replace — state resolution", () => {
 
     // Both polls run: the bumped's confirm marks the original replaced while the original's own
     // receipt answer is still gated.
-    const fired = timers.fire();
-    await vi.waitFor(() => {
-      expect(ctl.getState().txs[original.id]?.state).toBe("replaced");
+    const marked = new Promise<void>((resolve) => {
+      const unsubscribe = ctl.store.subscribe((state) => {
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- waiting for one state change
+        if (state.txs[original.id]?.state === "replaced") {
+          unsubscribe();
+          resolve();
+        }
+      });
     });
+    const fired = timers.fire();
+    await marked;
     release?.();
     await fired;
 
