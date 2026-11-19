@@ -20,6 +20,7 @@ import type {
   SignInParse,
   StakeAction,
 } from "@qntx/wallet-chains";
+import { SEAPORT_ORDER_ITEMS } from "@qntx/wallet-chains/evm";
 import { networkMeta } from "@qntx/wallet-chains/networks";
 
 import { KernelError } from "../../errors.ts";
@@ -68,7 +69,6 @@ export const messagePromptIntent = (message: MessageContent): PromptIntent => {
 const MESSAGE_LINES = 6;
 const MESSAGE_CODE_POINTS = 320;
 const FIELD_CODE_POINTS = 96;
-const ORDER_ITEMS = 4;
 
 type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
@@ -587,8 +587,8 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
     return start === end ? start : `${start} → ${end}`;
   };
   const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-    lines.length > ORDER_ITEMS
-      ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)]
+    lines.length > SEAPORT_ORDER_ITEMS
+      ? [...lines.slice(0, SEAPORT_ORDER_ITEMS), catalog.moreItems(lines.length - SEAPORT_ORDER_ITEMS)]
       : lines;
   return [
     ...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),

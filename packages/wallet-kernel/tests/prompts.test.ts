@@ -2019,6 +2019,73 @@ describe("near-miss blind prompts", () => {
     });
   });
 
+  it("a Seaport order over the item limit is blind in both locales", () => {
+    const itemFields = [
+      { name: "itemType", type: "uint8" },
+      { name: "token", type: "address" },
+      { name: "identifierOrCriteria", type: "uint256" },
+      { name: "startAmount", type: "uint256" },
+      { name: "endAmount", type: "uint256" },
+    ];
+    const item = {
+      itemType: 0,
+      token: "0x0000000000000000000000000000000000000000",
+      identifierOrCriteria: "0",
+      startAmount: "1000000000000000000",
+      endAmount: "1000000000000000000",
+    };
+    const intent = typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        OrderComponents: [
+          { name: "offerer", type: "address" },
+          { name: "zone", type: "address" },
+          { name: "offer", type: "OfferItem[]" },
+          { name: "consideration", type: "ConsiderationItem[]" },
+          { name: "orderType", type: "uint8" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "zoneHash", type: "bytes32" },
+          { name: "salt", type: "uint256" },
+          { name: "conduitKey", type: "bytes32" },
+          { name: "counter", type: "uint256" },
+        ],
+        OfferItem: itemFields,
+        ConsiderationItem: [...itemFields, { name: "recipient", type: "address" }],
+      },
+      primaryType: "OrderComponents",
+      domain: {
+        name: "Seaport",
+        version: "1.6",
+        chainId: 1,
+        verifyingContract: "0x0000000000000068F116a894984e2DB1123eB395",
+      },
+      message: {
+        offerer: SIGNER,
+        zone: "0x0000000000000000000000000000000000000000",
+        offer: Array.from({ length: 5 }, () => item),
+        consideration: [{ ...item, startAmount: "0", endAmount: "0", recipient: SIGNER }],
+        orderType: 0,
+        startTime: "1700000000",
+        endTime: "1700001000",
+        zoneHash: `0x${"00".repeat(32)}`,
+        salt: "1",
+        conduitKey: `0x${"00".repeat(32)}`,
+        counter: "0",
+      },
+    });
+    expect(intent.blind).toBe("typed-data-oversize");
+    const prompt = chainPrompt("en", intent);
+    expect(prompt.title).toBe("Confirm blind signing");
+    expect(prompt.description).toContain("… 1 more items not shown");
+    expect(chainPrompt("zh-Hans", intent).title).toBe("确认盲签");
+  });
+
   it("a Solana instruction of a core program the signer signs is blind, in both locales", () => {
     const payer = new Uint8Array(32).fill(0x11);
     const src = new Uint8Array(32).fill(0x22);

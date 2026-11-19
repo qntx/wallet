@@ -24,7 +24,7 @@ import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
-import { recognizeSeaport } from "./seaport.ts";
+import { SEAPORT_ORDER_ITEMS, recognizeSeaport } from "./seaport.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
@@ -649,15 +649,22 @@ export const decodeEvm = (
   const fields = shown?.fields;
   const blind =
     safe === undefined
-      ? unclaimed
-        ? nearMiss !== undefined
-          ? nearMiss
-          : shown === undefined
-            ? ("typed-data-oversize" as const)
-            : shown.commitment
-              ? ("typed-data-commitment" as const)
-              : undefined
-        : undefined
+      ? seaport !== undefined
+        ? /* An order with more items than the prompt shows would silently authorise the
+             hidden ones — blind before the prompt can truncate. */
+          seaport.offer.length > SEAPORT_ORDER_ITEMS ||
+          seaport.consideration.length > SEAPORT_ORDER_ITEMS
+          ? ("typed-data-oversize" as const)
+          : undefined
+        : unclaimed
+          ? nearMiss !== undefined
+            ? nearMiss
+            : shown === undefined
+              ? ("typed-data-oversize" as const)
+              : shown.commitment
+                ? ("typed-data-commitment" as const)
+                : undefined
+          : undefined
       : (safe.safe.calls.find((call) => call.blind !== undefined)?.blind ??
         (safe.safe.refund === undefined ? undefined : ("safe-refund-unbounded" as const)));
   const message: MessageContent = {
