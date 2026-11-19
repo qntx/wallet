@@ -35,15 +35,16 @@ export const internalError = (message: string): ProviderError => new ProviderErr
 export const PAYMENT_PENDING_CODE = -32010;
 
 /**
- * The payment may still settle — never an error the page can safely retry: an lnurl dApp that
- * retries on failure would fetch a new invoice and pay twice.
+ * The payment may have been made — it may still settle, or settled without a usable answer — never
+ * an error the page can safely retry: an lnurl dApp that retries on failure would fetch a new
+ * invoice and pay twice.
  */
 export const paymentPending = (message: string): ProviderError =>
   new ProviderError(PAYMENT_PENDING_CODE, message);
 
 /**
- * A batch send that stopped at `refused.index`: the message names the refused input and its
- * error, and lists the ids already submitted so the page does not resubmit them.
+ * A batch send that stopped at `refused.index`: the message names the refused input and its error,
+ * and lists the ids already submitted so the page does not resubmit them.
  */
 export const broadcastRefused = (
   refused: { readonly index: number; readonly error: string },

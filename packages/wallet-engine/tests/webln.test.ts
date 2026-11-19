@@ -276,14 +276,17 @@ describe("WeblnHandler preimage polling", () => {
     ).rejects.toMatchObject({ code: -32603, message: "payment failed" });
   });
 
-  it("success without a preimage rejects -32603", async () => {
+  it("success without a preimage rejects with the payment-pending code, never as failed", async () => {
     const { handler } = rig({
       prepareResult: payment,
       paymentStatus: paymentStatus(["succeeded"]),
     });
     await expect(
       handler.handle(SITE, { method: "sendPayment", params: invoice }),
-    ).rejects.toMatchObject({ code: -32603 });
+    ).rejects.toMatchObject({
+      code: PAYMENT_PENDING_CODE,
+      message: "the payment settled but its preimage is unavailable; do not retry it",
+    });
   });
 });
 
@@ -304,14 +307,12 @@ describe("WeblnHandler pending payment outcomes", () => {
       prepareResult: { kind: "pending", transferId: TRANSFER },
       now: () => (TIMESTAMP + 10) * 1000,
     });
-    const err = await handler
-      .handle(SITE, { method: "sendPayment", params: invoice })
-      .then(
-        () => {
-          throw new Error("sendPayment resolved");
-        },
-        (e: unknown) => e,
-      );
+    const err = await handler.handle(SITE, { method: "sendPayment", params: invoice }).then(
+      () => {
+        throw new Error("sendPayment resolved");
+      },
+      (e: unknown) => e,
+    );
     expect(err).toMatchObject({ code: PAYMENT_PENDING_CODE });
     expect((err as Error).message).toContain(TRANSFER);
     expect((err as { code: number }).code).not.toBe(-32603);
