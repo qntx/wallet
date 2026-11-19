@@ -34,9 +34,13 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import type { SolanaWalletAccount } from "../src/connect/solana.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
+import type { SetTimer } from "../src/timer.ts";
 import { approval } from "./approval.ts";
+import { manualTimers } from "./support/timers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
+/** TransactionController's default status-poll interval. */
+const TX_POLL_MS = 4000;
 const PASSWORD = "correct horse battery staple";
 const PW = { kind: "password" as const, password: PASSWORD };
 const MNEMONIC =
@@ -102,7 +106,7 @@ const rpcReply = (method: string, params: unknown[]): unknown => {
   throw new Error(`no rpc answer for ${method}`);
 };
 
-async function rig() {
+async function rig(setTimer?: SetTimer) {
   const wallet = await createNodeWallet({
     verifyEvent,
     passkey: {
@@ -118,6 +122,7 @@ async function rig() {
   });
   const backing = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
+    ...(setTimer === undefined ? {} : { setTimer }),
     publicStore: createMemoryPublicStore(),
     verifyEvent,
     weblnAlias: "test",
@@ -618,7 +623,8 @@ describe("solana provider over a real kernel", () => {
   });
 
   it("a tracked dApp send settles confirmed when a later poll sees the signature", async () => {
-    const r = await rig();
+    const timers = manualTimers();
+    const r = await rig(timers.setTimer);
     try {
       const account = await connect(r);
       resetMock();
@@ -633,10 +639,9 @@ describe("solana provider over a real kernel", () => {
       const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
       expect(out.signatures).toStrictEqual([base58.decode(local)]);
       statuses.set(local, { confirmationStatus: "confirmed", err: null, slot: 600 });
-      await until(() => {
-        const [tx] = Object.values(r.engine.transactions.getState().txs);
-        return tx?.state === "confirmed";
-      }, 15_000);
+      await timers.fire(TX_POLL_MS);
+      const [tx] = Object.values(r.engine.transactions.getState().txs);
+      expect(tx?.state).toBe("confirmed");
     } finally {
       resetMock();
       r.engine.unsubscribe();
