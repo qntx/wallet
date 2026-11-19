@@ -56,7 +56,7 @@ import { createMessage } from "@qntx/siwx";
 import { siws } from "@qntx/siwx/svm";
 
 import { RECOGNISED_FAMILIES } from "../src/families.ts";
-import { ChainError } from "../src/index.ts";
+import { ChainError, messageBlindReason, messageContent } from "../src/index.ts";
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import {
   PROGRAM_IDS,
@@ -317,6 +317,35 @@ describe("normalize", () => {
   it("rejects a non-raw solana.message format", () => {
     const bad = { ...req(new Uint8Array([1, 2, 3])), kind: "solana.message", format: "offchain" };
     expect(() => normalizeSolana(bad, FEE_PAYER)).toThrow(ChainError);
+  });
+});
+
+describe("raw solana.message blindness", () => {
+  /** The message bytes the kernel signs, after `normalizeSolana`'s checks. */
+  const messageBytes = (bytes: Uint8Array): Uint8Array => {
+    const normalized = normalizeSolana(
+      { ...req(bytes), kind: "solana.message", format: "raw" },
+      FEE_PAYER,
+    );
+    if (normalized.kind !== "solana.message") {
+      throw new Error("unreachable: normalization changed the kind");
+    }
+    return normalized.message;
+  };
+
+  it("a digest or its hex rendering is blind; ordinary text is not", () => {
+    // The ground digest: a keccak output that happens to be valid UTF-8.
+    const digest = hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79");
+    for (const bytes of [
+      digest,
+      new TextEncoder().encode(`0x${Buffer.from(digest).toString("hex")}`),
+    ]) {
+      expect(messageBlindReason(messageContent(messageBytes(bytes), "solana"))).toBe(
+        "message-bytes",
+      );
+    }
+    const text = messageBytes(new TextEncoder().encode("hello world"));
+    expect(messageBlindReason(messageContent(text, "solana"))).toBeUndefined();
   });
 });
 

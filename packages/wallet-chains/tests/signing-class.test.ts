@@ -6,12 +6,16 @@ import { encodeFunctionData, parseAbi, toFunctionSelector } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PERMIT2_ADDRESS,
   checksumEvmAddress,
   decodeBatchExecute,
   decodeEvm,
   encodeBatchExecute,
   evmTokenTable,
+  isEvmAddress,
+  lookupEvmToken,
 } from "../src/evm/index.ts";
+import { SEAPORT_CONTRACTS } from "../src/evm/seaport.ts";
 import { RECOGNISED_FAMILIES } from "../src/families.ts";
 import type { FamilyClaim } from "../src/families.ts";
 import { isBlindIntent } from "../src/index.ts";
@@ -1320,6 +1324,19 @@ describe("typed-data near misses of decoded families are blind", () => {
     { name: "refundReceiver", type: "address" },
     { name: "nonce", type: "uint256" },
   ];
+  /* The 1.3.0 schema — `baseGas` where the legacy form has `dataGas`. */
+  const SAFE_TX = [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" },
+    { name: "baseGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" },
+    { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ];
   const safeTxMessage = {
     to: OTHER,
     value: "0",
@@ -1335,36 +1352,50 @@ describe("typed-data near misses of decoded families are blind", () => {
 
   it("a SafeTx-shaped document in the legacy dataGas form is blind", () => {
     const intent = decodeEvm(
-      simpleDoc("SafeTx", SAFE_TX_LEGACY, { chainId: 1, verifyingContract: WETH }, safeTxMessage),
+      simpleDoc(
+        "SafeTx",
+        SAFE_TX_LEGACY,
+        { chainId: 1, verifyingContract: OTHER },
+        { ...safeTxMessage, operation: 1 },
+      ),
       SIGNER,
     );
     expect(intent.blind).toBe("typed-data-variant");
     expect(fieldsOf(intent)?.length).toBeGreaterThan(0);
   });
 
-  it("a canonical SafeTx is recognised, not variant-blind", () => {
-    const canonical = [
-      { name: "to", type: "address" },
-      { name: "value", type: "uint256" },
-      { name: "data", type: "bytes" },
-      { name: "operation", type: "uint8" },
-      { name: "safeTxGas", type: "uint256" },
-      { name: "baseGas", type: "uint256" },
-      { name: "gasPrice", type: "uint256" },
-      { name: "gasToken", type: "address" },
-      { name: "refundReceiver", type: "address" },
-      { name: "nonce", type: "uint256" },
-    ];
+  it("the same document in the canonical schema decodes to a blind delegatecall", () => {
     const intent = decodeEvm(
       simpleDoc(
         "SafeTx",
-        canonical,
-        { chainId: 1, verifyingContract: WETH },
-        { ...safeTxMessage, baseGas: "0" },
+        SAFE_TX,
+        { chainId: 1, verifyingContract: OTHER },
+        { ...safeTxMessage, baseGas: "0", operation: 1 },
       ),
       SIGNER,
     );
-    expect(intent.blind).not.toBe("typed-data-variant");
+    expect(intent.blind).toBe("safe-delegatecall");
+  });
+
+  it("a SafeTx with an operation beyond delegatecall is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "SafeTx",
+        SAFE_TX,
+        { chainId: 1, verifyingContract: OTHER },
+        { ...safeTxMessage, baseGas: "0", operation: 2 },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("a SafeTx whose domain names no verifying contract is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc("SafeTx", SAFE_TX, { chainId: 1 }, { ...safeTxMessage, baseGas: "0" }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
   });
 
   it.each([["TransferWithAuthorization"], ["ReceiveWithAuthorization"]])(
@@ -1461,6 +1492,24 @@ describe("typed-data near misses of decoded families are blind", () => {
     expect(intent.blind).toBe("typed-data-variant");
   });
 
+  it("an ERC-4494 Permit on a non-table contract is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "Permit",
+        [
+          { name: "spender", type: "address" },
+          { name: "tokenId", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+        { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        { spender: OTHER, tokenId: "1", nonce: "0", deadline: "2000000000" },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
   it("a Permit2-addressed document of an unknown primary type is blind", () => {
     const intent = decodeEvm(
       simpleDoc(
@@ -1482,6 +1531,90 @@ describe("typed-data near misses of decoded families are blind", () => {
         { chainId: 1, verifyingContract: SEAPORT_16 },
         { x: "1" },
       ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  /* Canonical Seaport 1.6 `OrderComponents` — the nested item types recognition requires. */
+  const SEAPORT_ITEM = [
+    { name: "itemType", type: "uint8" },
+    { name: "token", type: "address" },
+    { name: "identifierOrCriteria", type: "uint256" },
+    { name: "startAmount", type: "uint256" },
+    { name: "endAmount", type: "uint256" },
+  ];
+  const seaportDoc = (message: Record<string, unknown>): SignRequest =>
+    typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        OrderComponents: [
+          { name: "offerer", type: "address" },
+          { name: "zone", type: "address" },
+          { name: "offer", type: "OfferItem[]" },
+          { name: "consideration", type: "ConsiderationItem[]" },
+          { name: "orderType", type: "uint8" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "zoneHash", type: "bytes32" },
+          { name: "salt", type: "uint256" },
+          { name: "conduitKey", type: "bytes32" },
+          { name: "counter", type: "uint256" },
+        ],
+        OfferItem: SEAPORT_ITEM,
+        ConsiderationItem: [...SEAPORT_ITEM, { name: "recipient", type: "address" }],
+      },
+      primaryType: "OrderComponents",
+      domain: {
+        name: "Seaport",
+        version: "1.6",
+        chainId: 1,
+        verifyingContract: SEAPORT_16,
+      },
+      message: {
+        offerer: SIGNER,
+        zone: "0x0000000000000000000000000000000000000000",
+        offer: [],
+        consideration: [],
+        orderType: 0,
+        startTime: "1700000000",
+        endTime: "1700001000",
+        zoneHash: `0x${"00".repeat(32)}`,
+        salt: "123",
+        conduitKey: `0x${"00".repeat(32)}`,
+        counter: "0",
+        ...message,
+      },
+    });
+
+  it("a Seaport order item of an unknown itemType is blind", () => {
+    const intent = decodeEvm(
+      seaportDoc({
+        offer: [
+          {
+            itemType: 6,
+            token: OTHER,
+            identifierOrCriteria: "1",
+            startAmount: "1",
+            endAmount: "1",
+          },
+        ],
+        consideration: [
+          {
+            itemType: 1,
+            token: USDC,
+            identifierOrCriteria: "1",
+            startAmount: "5000000",
+            endAmount: "5000000",
+            recipient: SIGNER,
+          },
+        ],
+      }),
       SIGNER,
     );
     expect(intent.blind).toBe("typed-data-variant");
@@ -1530,11 +1663,49 @@ describe("typed-data near misses of decoded families are blind", () => {
     throw new Error(`no near-miss fixture for surface ${claim.surface}`);
   };
 
+  /** The claim check `decodeEvm` runs row by row, evaluated for one request. */
+  const claimsFixture = (request: SignRequest, claim: FamilyClaim): boolean => {
+    if (claim.surface === "evm.call") {
+      return (
+        request.kind === "evm.transaction" &&
+        request.tx.to !== undefined &&
+        lookupEvmToken(evmTokenTable, request.tx.chainId, request.tx.to) !== undefined
+      );
+    }
+    if (claim.surface !== "evm.typed-data" || request.kind !== "evm.typed-data") {
+      return false;
+    }
+    const { primaryType, domain } = JSON.parse(request.typedData) as {
+      primaryType: string;
+      domain: Record<string, unknown>;
+    };
+    if ("primaryType" in claim) {
+      return claim.primaryType.test(primaryType);
+    }
+    const contract = domain["verifyingContract"];
+    if (typeof contract !== "string" || !isEvmAddress(contract)) {
+      return false;
+    }
+    const chainId = Number(request.network.split(":")[1] ?? 1);
+    const lower = contract.toLowerCase();
+    return (
+      (claim.verifyingContract === "permit2" && lower === PERMIT2_ADDRESS.toLowerCase()) ||
+      (claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(lower)) ||
+      (claim.verifyingContract === "token-table" &&
+        lookupEvmToken(evmTokenTable, chainId, checksumEvmAddress(contract)) !== undefined)
+    );
+  };
+
   it("every evm family row blinds a representative near miss", () => {
     const rows = RECOGNISED_FAMILIES.filter((r) => r.claim.surface.startsWith("evm"));
     expect(rows.length).toBeGreaterThanOrEqual(7);
     for (const row of rows) {
-      expect(decodeEvm(nearMissRequest(row.claim), SIGNER).blind).toBe(row.nearMiss);
+      const request = nearMissRequest(row.claim);
+      // A fixture claimed by another row would prove nothing about this one.
+      for (const other of rows.filter((r) => r !== row)) {
+        expect(claimsFixture(request, other.claim)).toBe(false);
+      }
+      expect(decodeEvm(request, SIGNER).blind).toBe(row.nearMiss);
     }
   });
 
