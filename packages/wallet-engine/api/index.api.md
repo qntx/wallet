@@ -430,7 +430,7 @@ export type BitcoinDisplay = {
 };
 
 // @public (undocumented)
-type BitcoinEvent = {
+export type BitcoinEvent = {
     readonly name: "bitcoinAccountsChanged";
     readonly origin: string;
     readonly accounts: ReadonlyArray<BitcoinWalletAccount>;
@@ -462,7 +462,7 @@ export type BitcoinPsbtInput = {
 type BitcoinPurpose = "payment" | "ordinals";
 
 // @public
-type BitcoinRequest = {
+export type BitcoinRequest = {
     readonly method: string;
     readonly params?: unknown;
 };
@@ -527,7 +527,7 @@ export type BitcoinUtxoView = {
 };
 
 // @public
-type BitcoinWalletAccount = {
+export type BitcoinWalletAccount = {
     readonly address: string;
     readonly publicKey: Uint8Array;
     readonly chains: ReadonlyArray<string>;
@@ -1360,7 +1360,7 @@ type Nip07HandlerOptions = {
 };
 
 // @public
-type Nip07Request = {
+export type Nip07Request = {
     readonly method: string;
     readonly params?: unknown;
 };
@@ -2039,7 +2039,7 @@ export type SolanaDisplay = {
 };
 
 // @public (undocumented)
-type SolanaEvent = {
+export type SolanaEvent = {
     readonly name: "solanaAccountsChanged";
     readonly origin: string;
     readonly accounts: ReadonlyArray<SolanaWalletAccount>;
@@ -2055,7 +2055,7 @@ type SolanaHandler = {
 };
 
 // @public
-type SolanaRequest = {
+export type SolanaRequest = {
     readonly method: string;
     readonly params?: unknown;
 };
@@ -2097,7 +2097,7 @@ export type SolanaSignResult = {
 };
 
 // @public
-type SolanaWalletAccount = {
+export type SolanaWalletAccount = {
     readonly address: string;
     readonly publicKey: Uint8Array;
     readonly chains: ReadonlyArray<string>;
@@ -2665,7 +2665,7 @@ export type WeblnInvoiceResult = {
 };
 
 // @public
-type WeblnRequest = {
+export type WeblnRequest = {
     readonly method: string;
     readonly params?: unknown;
 };

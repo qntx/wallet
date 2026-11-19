@@ -1,7 +1,27 @@
 import { describe, expectTypeOf, it } from "vite-plus/test";
 
 import type { WalletEngine } from "../src/engine.ts";
+import type {
+  BitcoinEvent,
+  BitcoinRequest,
+  BitcoinWalletAccount,
+  Eip1193Event,
+  Eip1193Request,
+  Nip07Request,
+  SolanaEvent,
+  SolanaRequest,
+  SolanaWalletAccount,
+  WeblnRequest,
+} from "../src/index.ts";
 import type { PayInput } from "../src/requests/controller.ts";
+
+/** The request a provider handler takes and the event its `subscribe` listener receives. */
+type HandledRequest<H> = H extends { handle: (origin: string, request: infer R) => unknown }
+  ? R
+  : never;
+type ListenedEvent<H> = H extends { subscribe: (listener: (event: infer E) => void) => unknown }
+  ? E
+  : never;
 
 type Member = keyof WalletEngine;
 
@@ -88,5 +108,18 @@ describe("engine surface", () => {
     expectTypeOf<WalletEngine["addressBook"]>().not.toHaveProperty("merge");
     expectTypeOf<WalletEngine["addressBook"]>().not.toHaveProperty("syncEntries");
     expectTypeOf<WalletEngine["metaSync"]>().toHaveProperty("sync");
+  });
+
+  it("names every provider handler's request and event at the package root", () => {
+    expectTypeOf<HandledRequest<WalletEngine["eip1193"]>>().toEqualTypeOf<Eip1193Request>();
+    expectTypeOf<HandledRequest<WalletEngine["nip07"]>>().toEqualTypeOf<Nip07Request>();
+    expectTypeOf<HandledRequest<WalletEngine["webln"]>>().toEqualTypeOf<WeblnRequest>();
+    expectTypeOf<HandledRequest<WalletEngine["solanaWallet"]>>().toEqualTypeOf<SolanaRequest>();
+    expectTypeOf<HandledRequest<WalletEngine["bitcoinWallet"]>>().toEqualTypeOf<BitcoinRequest>();
+    expectTypeOf<ListenedEvent<WalletEngine["eip1193"]>>().toEqualTypeOf<Eip1193Event>();
+    expectTypeOf<ListenedEvent<WalletEngine["solanaWallet"]>>().toEqualTypeOf<SolanaEvent>();
+    expectTypeOf<ListenedEvent<WalletEngine["bitcoinWallet"]>>().toEqualTypeOf<BitcoinEvent>();
+    expectTypeOf<SolanaEvent["accounts"][number]>().toEqualTypeOf<SolanaWalletAccount>();
+    expectTypeOf<BitcoinEvent["accounts"][number]>().toEqualTypeOf<BitcoinWalletAccount>();
   });
 });

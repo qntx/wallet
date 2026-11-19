@@ -19,10 +19,20 @@ export type {
   PendingConnection,
   SessionAccounts,
 } from "./connect/controller.ts";
-export type { BitcoinWalletHandler } from "./connect/bitcoin.ts";
-export type { Nip07Handler } from "./connect/nip07.ts";
-export type { SolanaWalletHandler } from "./connect/solana.ts";
-export type { WeblnHandler } from "./connect/webln.ts";
+export type {
+  BitcoinEvent,
+  BitcoinRequest,
+  BitcoinWalletAccount,
+  BitcoinWalletHandler,
+} from "./connect/bitcoin.ts";
+export type { Nip07Handler, Nip07Request } from "./connect/nip07.ts";
+export type {
+  SolanaEvent,
+  SolanaRequest,
+  SolanaWalletAccount,
+  SolanaWalletHandler,
+} from "./connect/solana.ts";
+export type { WeblnHandler, WeblnRequest } from "./connect/webln.ts";
 export { Eip1193Handler } from "./connect/eip1193.ts";
 export type { Eip1193Event, Eip1193Request } from "./connect/eip1193.ts";
 export { ProviderError } from "./connect/errors.ts";
