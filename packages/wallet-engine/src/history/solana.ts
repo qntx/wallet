@@ -77,8 +77,7 @@ const mapPool = async <T, R>(
       while (index < items.length) {
         const current = index;
         index += 1;
-        // The cursor bounds it: current < items.length.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the cursor bounds it: current < items.length
         const item = items[current] as T;
         // oxlint-disable-next-line eslint/no-await-in-loop -- the shared cursor serializes each worker's steps.
         out[current] = await run(item);
@@ -246,9 +245,9 @@ const lamportFlows = (tx: SolanaParsedTx, owner: string): bigint => {
 
 /**
  * The group's view of one confirmed-or-failed Solana transaction — read from the ledger itself, so
- * `verified` is true when the read went to a host endpoint (`trusted`) and the owner's balances
- * fit `Number` precision; a gateway-first read or a rounded lamport delta stays unverified.
- * Balance deltas (lamports plus per-mint token balances owned by the owner) become the changes;
+ * `verified` is true when the read went to a host endpoint (`trusted`) and the owner's balances fit
+ * `Number` precision; a gateway-first read or a rounded lamport delta stays unverified. Balance
+ * deltas (lamports plus per-mint token balances owned by the owner) become the changes;
  * counterparties come from the parsed transfer instructions, resolved through the token-balance
  * owners so a token account maps back to the wallet behind it.
  */

@@ -183,8 +183,7 @@ const decode = (
     return undefined;
   }
   try {
-    // The filter above guarantees 0x-hex topics; the tuple element type is opaque to `filter`.
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the filter above guarantees 0x-hex topics; the tuple element type is opaque to `filter`
     return decodeEventLog({ abi, data: log.data, topics: topics as [Hex, ...Hex[]] });
   } catch {
     return undefined;
@@ -286,8 +285,7 @@ const mapPool = async <T, R>(items: ReadonlyArray<T>, n: number, run: (t: T) => 
       while (index < items.length) {
         const current = index;
         index += 1;
-        // The cursor bounds it: current < items.length.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the cursor bounds it: current < items.length
         const item = items[current] as T;
         // oxlint-disable-next-line eslint/no-await-in-loop -- the shared cursor serializes each worker's steps.
         out[current] = await run(item);
@@ -401,9 +399,9 @@ const claimedMove = (
 /**
  * Verifies the provider's claims against the chain: each claimed transfer is matched to its pinned
  * receipt log or to the tx's native movement, and every wallet-touching movement the chain proves
- * must in turn be claimed — an omitted leg is `chain-mismatch`. A failed tx fetch, an unpinned
- * log, or an uncheckable claim (internal legs or missing data) leaves the entry unverified;
- * `trusted` is the caller's evidence that the reads went to a host endpoint.
+ * must in turn be claimed — an omitted leg is `chain-mismatch`. A failed tx fetch, an unpinned log,
+ * or an uncheckable claim (internal legs or missing data) leaves the entry unverified; `trusted` is
+ * the caller's evidence that the reads went to a host endpoint.
  */
 const verifyEntry = async (
   client: PublicClient,

@@ -31,8 +31,7 @@ export function createEventBus<E>(logger: EngineLogger): EventBus<E> {
         set = new Set();
         listeners.set(type, set);
       }
-      // The set is keyed by event type, so each listener only ever receives its own payload.
-      // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+      // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the set is keyed by event type, so each listener only ever receives its own payload
       const stored = listener as (payload: unknown) => void;
       set.add(stored);
       return () => {

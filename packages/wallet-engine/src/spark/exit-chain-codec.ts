@@ -41,7 +41,6 @@ export function encodeExitChain(chain: SparkExitChain): Uint8Array {
 
 export function decodeExitChain(bytes: Uint8Array): SparkExitChain {
   const decoded: unknown = decodeValue(JSON.parse(new TextDecoder().decode(bytes)));
-  // The codec round-trips what encodeExitChain wrote — the shape is structural.
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the codec round-trips what encodeExitChain wrote — the shape is structural
   return decoded as SparkExitChain;
 }
