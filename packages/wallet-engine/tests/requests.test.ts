@@ -710,6 +710,8 @@ describe("EVM pipeline", () => {
     const tx = await w.requests.approve(r.id, "send", approval(r, VERIFY));
     expect(tx.state).toBe("submitted");
     expect(w.warnings.some((m) => m.includes("after the vault locked"))).toBe(true);
+    expect(w.warnings.some((m) => m.includes("signed bytes are persisted"))).toBe(true);
+    expect(w.warnings.some((m) => m.includes("tracking resumes at the next unlock"))).toBe(true);
     expect(w.warnings.some((m) => m.includes("not persisted: vault locked"))).toBe(true);
   });
 

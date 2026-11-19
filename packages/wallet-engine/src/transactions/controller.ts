@@ -653,7 +653,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private track(id: string, hash: string): void {
     if (this.locked) {
       this.options.logger.warn(
-        `transaction ${id} was broadcast after the vault locked; it is neither persisted nor tracked`,
+        `transaction ${id} was broadcast after the vault locked; its signed bytes are persisted and tracking resumes at the next unlock`,
       );
       return;
     }
