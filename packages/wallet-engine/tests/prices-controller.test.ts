@@ -261,6 +261,50 @@ describe("prices over the gateway", () => {
     expect(state.failure).toBeNull();
   });
 
+  it("keeps a previous quote that is newer than the fresh answer", async () => {
+    const r = rig({ held: [ETH], answer: answer({ [ETH]: "1" }) });
+    await r.controller.init();
+    await flush();
+    expect(r.controller.getState().quotes[ETH]?.updatedAt).toBe(NOW - 1000);
+
+    r.setAnswer((request) =>
+      Response.json({
+        currency: request.currency,
+        prices: [{ asset: ETH, price: "9", change24h: null, updatedAt: NOW - 5000 }],
+        missing: [],
+      }),
+    );
+    await r.controller.refresh();
+    expect(r.controller.getState().quotes[ETH]).toStrictEqual({
+      price: "1",
+      change24h: null,
+      updatedAt: NOW - 1000,
+    });
+  });
+
+  it("replaces a future-dated stored quote with the fresh answer", async () => {
+    const r = rig({
+      held: [ETH],
+      answer: (request) =>
+        Response.json({
+          currency: request.currency,
+          prices: [{ asset: ETH, price: "1", change24h: null, updatedAt: NOW + 60_000 }],
+          missing: [],
+        }),
+    });
+    await r.controller.init();
+    await flush();
+    expect(r.controller.getState().quotes[ETH]?.updatedAt).toBe(NOW + 60_000);
+
+    r.setAnswer(answer({ [ETH]: "2" }));
+    await r.controller.refresh();
+    expect(r.controller.getState().quotes[ETH]).toStrictEqual({
+      price: "2",
+      change24h: null,
+      updatedAt: NOW - 1000,
+    });
+  });
+
   it.each<[string, Responder, PricesState["failure"]]>([
     ["a 503", () => new Response("", { status: 503 }), "unavailable"],
     ["a 429", () => new Response("", { status: 429 }), "rate-limited"],
