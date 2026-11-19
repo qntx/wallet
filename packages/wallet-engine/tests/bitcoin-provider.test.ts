@@ -23,6 +23,7 @@ import type { BitcoinEvent, BitcoinWalletAccount } from "../src/connect/bitcoin.
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { approval } from "./approval.ts";
+import { manualTimers } from "./support/timers.ts";
 
 const KERNEL_URL = new URL("../../wallet-worker/dist/kernel.node.js", import.meta.url);
 const PASSWORD = "correct horse battery staple";
@@ -56,6 +57,10 @@ const resetBroadcastMock = (): void => {
   refusePostAt = undefined;
 };
 
+/**
+ * A real-kernel engine on hand-driven timers: a tracked send from one test never polls or
+ * rebroadcasts into the next test's captured broadcasts.
+ */
 async function rig() {
   const wallet = await createNodeWallet({
     verifyEvent,
@@ -72,6 +77,7 @@ async function rig() {
   });
   const backing = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
+    setTimer: manualTimers().setTimer,
     publicStore: createMemoryPublicStore(),
     verifyEvent,
     weblnAlias: "test",

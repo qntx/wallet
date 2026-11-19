@@ -34,7 +34,6 @@ import { createNodeWallet, createSoftwarePasskey } from "@qntx/wallet-worker/nod
 import type { SolanaWalletAccount } from "../src/connect/solana.ts";
 import { createWalletEngine } from "../src/engine.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
-import type { SetTimer } from "../src/timer.ts";
 import { approval } from "./approval.ts";
 import { manualTimers } from "./support/timers.ts";
 
@@ -107,7 +106,12 @@ const rpcReply = (method: string, params: unknown[]): unknown => {
   throw new Error(`no rpc answer for ${method}`);
 };
 
-async function rig(setTimer?: SetTimer) {
+/**
+ * A real-kernel engine on hand-driven timers: no poll fires unless a test fires it, so a tracked
+ * send from one test can never rebroadcast into the next test's captured wires.
+ */
+async function rig() {
+  const timers = manualTimers();
   const wallet = await createNodeWallet({
     verifyEvent,
     passkey: {
@@ -123,7 +127,7 @@ async function rig(setTimer?: SetTimer) {
   });
   const backing = new Map<string, Map<string, Uint8Array>>();
   const engine = createWalletEngine({
-    ...(setTimer === undefined ? {} : { setTimer }),
+    setTimer: timers.setTimer,
     publicStore: createMemoryPublicStore(),
     verifyEvent,
     weblnAlias: "test",
@@ -179,7 +183,7 @@ async function rig(setTimer?: SetTimer) {
     factor: { kind: "password", password: PASSWORD },
   });
   await until(() => engine.accounts.getState().selected !== null);
-  return { wallet, engine, walletId: info.walletId };
+  return { wallet, engine, timers, walletId: info.walletId };
 }
 
 async function until(read: () => boolean, ms = 10_000): Promise<void> {
@@ -625,8 +629,7 @@ describe("solana provider over a real kernel", () => {
   });
 
   it("a tracked dApp send settles confirmed when a later poll sees the signature", async () => {
-    const timers = manualTimers();
-    const r = await rig(timers.setTimer);
+    const r = await rig();
     try {
       const account = await connect(r);
       resetMock();
@@ -641,7 +644,7 @@ describe("solana provider over a real kernel", () => {
       const local: string = getSignatureFromTransaction(getTransactionDecoder().decode(sent));
       expect(out.signatures).toStrictEqual([base58.decode(local)]);
       statuses.set(local, { confirmationStatus: "confirmed", err: null, slot: 600 });
-      await timers.fire(TX_POLL_MS);
+      await r.timers.fire(TX_POLL_MS);
       const [tx] = Object.values(r.engine.transactions.getState().txs);
       expect(tx?.state).toBe("confirmed");
     } finally {
