@@ -262,6 +262,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   // The one EngineStore per unlock session, opened by `transition` and closed by `stop`; every
   // controller receives this accessor instead of opening its own.
   let store: EngineStore | undefined;
+  // oxlint-disable-next-line typescript/require-await -- the openStore option requires an async accessor
   const sessionStore = async (): Promise<EngineStore> => {
     if (store === undefined) {
       throw new Error("the engine store is closed");
@@ -492,12 +493,11 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         if (!request.send) {
           return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
         }
-        const intents = messages.map(
-          (message): DisplayIntent =>
-            decodeSolana(
-              { kind: "solana.transaction", network, account: hdAccount, message },
-              account.address,
-            ),
+        const intents = messages.map((message): DisplayIntent =>
+          decodeSolana(
+            { kind: "solana.transaction", network, account: hdAccount, message },
+            account.address,
+          ),
         );
         /* The message carries only a blockhash: bound its expiry by the height at request time
            plus Agave's processing age. Read once, before commit — a failed read sends nothing. */
@@ -883,6 +883,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         // Relay pulls are unbounded: meta sync starts in the background so a slow relay cannot
         // delay transaction recovery or the request pipeline. Its generation drops a pull that
         // a lock overtakes.
+        // oxlint-disable-next-line promise/prefer-await-to-then -- background start, not on the chain
         void metaSync.init().catch((error: unknown) => {
           options.logger.warn("meta sync start failed", error);
         });

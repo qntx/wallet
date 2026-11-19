@@ -1,6 +1,6 @@
 /**
- * Engine start order: meta sync pulls run in the background — a relay fetch that never answers
- * must not delay transaction recovery or the request pipeline after unlock.
+ * Engine start order: meta sync pulls run in the background — a relay fetch that never answers must
+ * not delay transaction recovery or the request pipeline after unlock.
  */
 import { randomBytes } from "node:crypto";
 
@@ -40,6 +40,7 @@ describe("WalletEngine meta sync start", () => {
       factor: { kind: "password", password: PASSWORD },
     });
     const walletId = wallet.getSnapshot().wallets[0]?.walletId;
+    // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing
     if (walletId === undefined) {
       throw new Error("no wallet in snapshot");
     }
@@ -90,11 +91,13 @@ describe("WalletEngine meta sync start", () => {
       const deadline = Date.now() + 15_000;
       for (;;) {
         try {
+          // oxlint-disable-next-line eslint/no-await-in-loop -- polling for pipeline readiness
           const request = await engine.requests.prepare(input);
           expect(request.stage).toBe("awaiting-approval");
           engine.requests.reject(request.id);
           break;
         } catch (error) {
+          // oxlint-disable-next-line vitest/no-conditional-in-test -- deadline guard
           if (Date.now() > deadline || !String(error).includes("unlocked vault")) {
             throw error;
           }
