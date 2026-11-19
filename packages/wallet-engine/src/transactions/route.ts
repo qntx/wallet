@@ -304,6 +304,7 @@ export type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
 export type Options = {
   readonly wallet: Wallet;
   readonly networks: NetworkController;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly random: (n: number) => Uint8Array;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;

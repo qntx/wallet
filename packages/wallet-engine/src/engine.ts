@@ -259,6 +259,16 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const gateway =
     options.gateway === undefined ? undefined : gatewaySession(options.gateway.url, options.random);
 
+  // The one EngineStore per unlock session, opened by `transition` and closed by `stop`; every
+  // controller receives this accessor instead of opening its own.
+  let store: EngineStore | undefined;
+  const sessionStore = async (): Promise<EngineStore> => {
+    if (store === undefined) {
+      throw new Error("the engine store is closed");
+    }
+    return store;
+  };
+
   const phishing = new PhishingController({
     publicStore: options.publicStore,
     gateway,
@@ -300,7 +310,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const networks = new NetworkController({
     fetch: options.fetch,
     rpc: options.rpc ?? {},
-    openStore: options.openStore,
+    openStore: sessionStore,
     logger: options.logger,
     gateway,
     setTimer,
@@ -314,7 +324,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     chains: {
       account: async (params) => chains(options.wallet).account(params),
     },
-    openStore: options.openStore,
+    openStore: sessionStore,
     setTimer,
     logger: options.logger,
     gateway,
@@ -325,7 +335,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const prices = new PricesController({
     gateway,
     fetch: options.fetch,
-    openStore: options.openStore,
+    openStore: sessionStore,
     setTimer,
     now: options.now,
     logger: options.logger,
@@ -344,7 +354,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const transactions = new TransactionController({
     wallet: options.wallet,
     networks,
-    openStore: options.openStore,
+    openStore: sessionStore,
     random: options.random,
     setTimer,
     now: options.now,
@@ -352,7 +362,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   });
 
   const addressBook = new AddressBookController({
-    openStore: options.openStore,
+    openStore: sessionStore,
     random: options.random,
     now: options.now,
     logger: options.logger,
@@ -373,7 +383,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       gateway === undefined
         ? undefined
         : { url: gateway.url, fetch: gatewayFetch(options.fetch, gateway) },
-    openStore: options.openStore,
+    openStore: sessionStore,
     setTimer,
     now: options.now,
     logger: options.logger,
@@ -446,7 +456,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       ),
     transactions,
     addressBook,
-    openStore: options.openStore,
+    openStore: sessionStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
     solanaSign: async (account, network, request, verify, commit) => {
@@ -700,7 +710,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const connections = new ConnectionController({
     phishing,
     setTimer,
-    openStore: options.openStore,
+    openStore: sessionStore,
     random: options.random,
     now: options.now,
     logger: options.logger,
@@ -821,7 +831,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
   let chain: Promise<void> = Promise.resolve();
-  let store: EngineStore | undefined;
   let started = false;
 
   const stop = async (): Promise<void> => {

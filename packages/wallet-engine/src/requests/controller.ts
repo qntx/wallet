@@ -501,6 +501,7 @@ export type RequestControllerOptions = {
   /** The full controller: its payment methods are reachable only through this pipeline. */
   readonly spark: SparkController;
   readonly addressBook: AddressBookController;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly fetch: typeof globalThis.fetch;
   readonly random: (n: number) => Uint8Array;

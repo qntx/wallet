@@ -87,6 +87,7 @@ export type AssetsControllerState = {
 type Options = {
   readonly networks: NetworkController;
   readonly chains: Pick<ChainsApi, "account">;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
   readonly logger: EngineLogger;

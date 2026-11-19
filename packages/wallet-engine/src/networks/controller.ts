@@ -57,6 +57,7 @@ export type NetworkControllerState = {
 type Options = {
   readonly fetch: typeof globalThis.fetch;
   readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly logger: EngineLogger;
   readonly gateway?: GatewayConfig | undefined;

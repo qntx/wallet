@@ -65,6 +65,7 @@ export type HistoryControllerOptions = {
   readonly transactions: Pick<TransactionController, "store">;
   readonly addressBook: Pick<AddressBookController, "store">;
   readonly gateway: { readonly url: string; readonly fetch: typeof globalThis.fetch } | undefined;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: SetTimer;
   readonly now: () => number;

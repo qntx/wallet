@@ -63,6 +63,7 @@ export type PricesState = {
 export type PricesControllerOptions = {
   readonly gateway: GatewayConfig | undefined;
   readonly fetch: typeof globalThis.fetch;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: SetTimer;
   readonly now: () => number;
