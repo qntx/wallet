@@ -44,6 +44,10 @@ describe("WalletEngine meta sync start", () => {
     if (walletId === undefined) {
       throw new Error("no wallet in snapshot");
     }
+    let requestsReady: () => void = () => undefined;
+    const ready = new Promise<void>((resolve) => {
+      requestsReady = resolve;
+    });
     const engine = createWalletEngine({
       publicStore: createMemoryPublicStore(),
       verifyEvent,
@@ -56,7 +60,20 @@ describe("WalletEngine meta sync start", () => {
       now: () => Date.now(),
       logger: { warn: () => undefined },
       showCallsStatus: () => undefined,
-      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      openStore: async () => {
+        const store = createMemoryEngineStore();
+        return Promise.resolve({
+          ...store,
+          collection: (name: string) => {
+            // The start sequence opens the connections collection right after requests.init.
+            // oxlint-disable-next-line vitest/no-conditional-in-test -- start-sequence probe
+            if (name === "connections") {
+              requestsReady();
+            }
+            return store.collection(name);
+          },
+        });
+      },
       metaSync: {
         tag: "qntx-test",
         relays: {
@@ -86,25 +103,11 @@ describe("WalletEngine meta sync start", () => {
         },
       };
 
-      // requests.init is the last step of the start sequence: a prepare that stops failing with
-      // "unlocked vault" proves the sequence completed even though the relay pull still hangs.
-      const deadline = Date.now() + 15_000;
-      for (;;) {
-        try {
-          // oxlint-disable-next-line eslint/no-await-in-loop -- polling for pipeline readiness
-          const request = await engine.requests.prepare(input);
-          expect(request.stage).toBe("awaiting-approval");
-          engine.requests.reject(request.id);
-          break;
-        } catch (error) {
-          // oxlint-disable-next-line vitest/no-conditional-in-test -- deadline guard
-          if (Date.now() > deadline || !String(error).includes("unlocked vault")) {
-            throw error;
-          }
-          // oxlint-disable-next-line eslint/no-await-in-loop -- polling for pipeline readiness
-          await new Promise((resolve) => setTimeout(resolve, 25));
-        }
-      }
+      // The old start order awaited the pull before requests.init, so this never resolved.
+      await ready;
+      const request = await engine.requests.prepare(input);
+      expect(request.stage).toBe("awaiting-approval");
+      engine.requests.reject(request.id);
 
       // The pull that would have blocked the old start order is still unfinished.
       expect(engine.metaSync.getState().wallets[walletId]?.status).toBe("syncing");
