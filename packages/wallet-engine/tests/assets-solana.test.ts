@@ -94,8 +94,12 @@ const tokenAccount = (opts: {
   readonly amount: string;
   readonly decimals?: number;
   readonly state?: string;
+  /** `null` produces an entry with no `pubkey` key at all. */
+  readonly pubkey?: string | null;
 }): unknown => ({
-  pubkey: "InjectedTokenAcct1111111111111111111111111111",
+  ...(opts.pubkey === null
+    ? {}
+    : { pubkey: opts.pubkey ?? "InjectedTokenAcct1111111111111111111111111111" }),
   account: {
     owner: opts.program,
     data: {
@@ -223,6 +227,50 @@ describe("AssetsController solana token holdings", () => {
     await assets.addToken(SOL_NET, USDC);
     const balances = await assets.refresh(OWNER, SOL_NET);
     expect(tokenBalance(balances, USDC).balance).toBe("1110038251");
+  });
+
+  it("counts a token account pubkey once and skips entries without one", async () => {
+    const calls: Call[] = [];
+    const assets = make(
+      {
+        token: [
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "500000",
+            pubkey: "Dup1111111111111111111111111111111111111111",
+          }),
+          // The same account listed again must not double its balance.
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "500000",
+            pubkey: "Dup1111111111111111111111111111111111111111",
+          }),
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "700000",
+            pubkey: null,
+          }),
+          tokenAccount({
+            program: PROGRAM_IDS.token,
+            mint: USDC,
+            owner: OWNER,
+            amount: "900000",
+          }),
+        ],
+        token2022: [],
+      },
+      calls,
+    );
+    await assets.init();
+    await assets.addToken(SOL_NET, USDC);
+    const balances = await assets.refresh(OWNER, SOL_NET);
+    expect(tokenBalance(balances, USDC).balance).toBe("1400000");
   });
 
   it("an attacker-created empty account listed first does not hide the balance", async () => {
