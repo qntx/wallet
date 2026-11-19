@@ -622,9 +622,9 @@ export class SolanaChainAdapter {
   }
 
   /**
-   * `getSignatureStatuses` → the entry's state (processed → confirmed → finalized; an `err`
-   * means the tx failed on-chain), whether the cluster has an entry at any commitment — a
-   * processed-only one can still land — and the slot of the bank the status was read on.
+   * `getSignatureStatuses` → the entry's state (processed → confirmed → finalized; an `err` means
+   * the tx failed on-chain), whether the cluster has an entry at any commitment — a processed-only
+   * one can still land — and the slot of the bank the status was read on.
    */
   async signatureStatus(
     rpc: SolanaRpc,

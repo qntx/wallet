@@ -53,9 +53,9 @@ const fetchPage = async (es: Esplora, hash: string, after?: string): Promise<Esp
 
 /**
  * The group's view of one Esplora transaction — `verified` only when the read went to a host
- * indexer (`trusted`); a gateway-routed Esplora feed stays unverified.
- * Netting the wallet's own inputs and outputs decides direction; a send is only "out" when the net
- * outflow exceeds the fee the wallet provably paid (every input its own).
+ * indexer (`trusted`); a gateway-routed Esplora feed stays unverified. Netting the wallet's own
+ * inputs and outputs decides direction; a send is only "out" when the net outflow exceeds the fee
+ * the wallet provably paid (every input its own).
  */
 export const bitcoinEntry = (
   network: string,

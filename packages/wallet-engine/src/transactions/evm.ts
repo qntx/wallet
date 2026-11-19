@@ -202,8 +202,8 @@ export type EvmRoute = {
   readonly resume: (tx: TrackedTransaction) => void;
   /**
    * A terminal transaction frees its nonces: a receipt (confirmed or failed) also raises the
-   * account's consumed floor; anything else may never have reached the network, so the nonce
-   * is simply reusable.
+   * account's consumed floor; anything else may never have reached the network, so the nonce is
+   * simply reusable.
    */
   readonly settle: (tx: TrackedTransaction) => void;
 };
@@ -339,9 +339,7 @@ const sameNonce = (ctx: RouteContext, tx: TrackedTransaction, from: string): Tra
 
 /** The nonces an unsigned transaction owns: its own, plus the authorization's for a 7702. */
 const heldNonces = (unsigned: EvmUnsignedTransaction): ReadonlyArray<number> =>
-  unsigned.authorization === undefined
-    ? [unsigned.nonce]
-    : [unsigned.nonce, unsigned.nonce + 1];
+  unsigned.authorization === undefined ? [unsigned.nonce] : [unsigned.nonce, unsigned.nonce + 1];
 
 /** The nonces a live transaction holds again at unlock; an unparsed record holds only its nonce. */
 const heldNoncesOf = (tx: TrackedTransaction): ReadonlyArray<number> => {

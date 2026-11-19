@@ -52,7 +52,7 @@ const RPC_SIG = base58.encode(new Uint8Array(64).fill(0x5a));
 const sentWires: Uint8Array[] = [];
 /** Transaction rows observed inside the node at each sendTransaction call. */
 const persistedAtSend: Array<Array<Record<string, unknown>>> = [];
-/** signature → the status entry getSignatureStatuses reports; absent means unknown. */
+/** Signature → the status entry getSignatureStatuses reports; absent means unknown. */
 const statuses = new Map<string, unknown>();
 /** The height getBlockHeight reports. */
 let height = 500;

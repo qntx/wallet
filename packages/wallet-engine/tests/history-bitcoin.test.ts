@@ -160,11 +160,7 @@ const esplora = (funded: ReadonlyMap<string, Pages>, paths: string[]): Esplora =
 });
 
 const scan = async (es: Esplora) =>
-  bitcoinHistoryScan(
-    { esplora: () => es, account: chains.account, trusted: true },
-    BTC_NET,
-    GROUP,
-  );
+  bitcoinHistoryScan({ esplora: () => es, account: chains.account, trusted: true }, BTC_NET, GROUP);
 
 describe("bitcoinHistoryScan", () => {
   it("pages a used address through /txs then /txs/chain/<last-confirmed-txid>", async () => {

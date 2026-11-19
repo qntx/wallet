@@ -400,9 +400,7 @@ export class HistoryController extends Controller<HistoryState> {
           solanaHistoryStream(
             {
               rpc:
-                independent.kind === "available"
-                  ? independent.client
-                  : networks.solanaRpc(network),
+                independent.kind === "available" ? independent.client : networks.solanaRpc(network),
               network,
               owner: own.solana,
               trusted: independent.kind !== "unavailable",

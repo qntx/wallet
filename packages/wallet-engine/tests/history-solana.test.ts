@@ -176,7 +176,9 @@ describe("solanaEntry (synthetic)", () => {
         innerInstructions: [],
       },
     });
-    expect(solanaEntry(SOL_NET, OWNER, sig("failedsig", 1700000000), tx, true).status).toBe("failed");
+    expect(solanaEntry(SOL_NET, OWNER, sig("failedsig", 1700000000), tx, true).status).toBe(
+      "failed",
+    );
   });
 
   it("flags a zero-amount transferChecked touch", () => {

@@ -1,7 +1,7 @@
 /**
- * Nonce ownership per (network, sender). Every live transaction holds its nonces under its own
- * id from the moment its request commits until settlement, so an overlapping send can never sign
- * a nonce another transaction already carries, a refused send frees its nonce for reuse, and a
+ * Nonce ownership per (network, sender). Every live transaction holds its nonces under its own id
+ * from the moment its request commits until settlement, so an overlapping send can never sign a
+ * nonce another transaction already carries, a refused send frees its nonce for reuse, and a
  * consumed nonce stays spent even when an endpoint's pending count lags behind. A replacement
  * shares its nonce with the original it may displace (`shared`); a self-sponsored EIP-7702
  * transaction also holds its authorization's nonce. All state is in memory: a route is dropped at
@@ -11,7 +11,7 @@
 type Account = {
   /** One past the highest nonce known consumed for this account. */
   floor: number;
-  /** nonce → ids of the live transactions holding it; a replace pair shares one entry. */
+  /** Nonce → ids of the live transactions holding it; a replace pair shares one entry. */
   holds: Map<number, Set<string>>;
 };
 

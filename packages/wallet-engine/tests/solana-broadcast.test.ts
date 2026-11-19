@@ -74,7 +74,9 @@ const world = () => {
     const land = env.landAfterFirstRead;
     if (
       land !== undefined &&
-      (method === "getEpochInfo" || method === "getBlockHeight" || method === "getSignatureStatuses")
+      (method === "getEpochInfo" ||
+        method === "getBlockHeight" ||
+        method === "getSignatureStatuses")
     ) {
       env.landAfterFirstRead = undefined;
       land();

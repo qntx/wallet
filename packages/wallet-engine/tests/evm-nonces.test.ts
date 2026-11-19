@@ -58,9 +58,7 @@ describe("EvmNonces", () => {
     expect(nonces.taken(NET, OTHER, 0)).toBe(false);
     nonces.reserve("b", OTHER_NET, FROM, [0], false);
     nonces.reserve("c", NET, OTHER, [0], false);
-    expect(() =>
-      nonces.reserve("d", NET, FROM.toLowerCase(), [0], false),
-    ).toThrow(/already used/);
+    expect(() => nonces.reserve("d", NET, FROM.toLowerCase(), [0], false)).toThrow(/already used/);
   });
 
   it("a reserve that fails partway leaves no partial holds", () => {

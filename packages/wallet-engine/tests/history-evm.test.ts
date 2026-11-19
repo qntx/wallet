@@ -371,20 +371,26 @@ describe("evm history completeness", () => {
       readonly from: string;
       readonly to: string;
     },
-  ): HistoryItem["transfers"][number] => ({
-    contract: null,
-    tokenId: null,
-    amount: "0",
-    decimals: null,
-    symbol: null,
-    logIndex: null,
-    ...over,
-  }) as HistoryItem["transfers"][number];
+  ): HistoryItem["transfers"][number] =>
+    ({
+      contract: null,
+      tokenId: null,
+      amount: "0",
+      decimals: null,
+      symbol: null,
+      logIndex: null,
+      ...over,
+    }) as HistoryItem["transfers"][number];
 
   const erc20In = (contract: string, amount: string, logIndex: number) =>
     transfer({ kind: "erc20", from: ATTACKER, to: OWNER, contract, amount, logIndex });
 
-  const verify = (hash: string, block: number, transfers: HistoryItem["transfers"], calls: RpcCall[] = []) =>
+  const verify = (
+    hash: string,
+    block: number,
+    transfers: HistoryItem["transfers"],
+    calls: RpcCall[] = [],
+  ) =>
     stream({
       network: "eip155:1",
       page: page([item(hash, block, transfers)]),
@@ -393,13 +399,16 @@ describe("evm history completeness", () => {
 
   it("flags chain-mismatch when the receipt proves an outflow the provider omitted", async () => {
     const hash = `0x${"aa".repeat(32)}`;
-    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
-      receipt: receiptOf(ATTACKER, 0x1937400, [
-        erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
-        erc20Log(TOKEN_B, OWNER, ATTACKER, "500", 1),
-      ]),
-      tx: txOf(ATTACKER, ROUTER, 0n),
-    }};
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(ATTACKER, 0x1937400, [
+          erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
+          erc20Log(TOKEN_B, OWNER, ATTACKER, "500", 1),
+        ]),
+        tx: txOf(ATTACKER, ROUTER, 0n),
+      },
+    };
     const { stream: s } = verify(hash, 0x1937400, [erc20In(TOKEN_A, "1000", 0)]);
     const { items } = await s.next();
     const e = entryOf(items, hash);
@@ -410,10 +419,13 @@ describe("evm history completeness", () => {
   it("fetches the tx object without a native claim and flags an omitted native outflow", async () => {
     const calls: RpcCall[] = [];
     const hash = `0x${"bb".repeat(32)}`;
-    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
-      receipt: receiptOf(OWNER, 0x1937401, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
-      tx: txOf(OWNER, ATTACKER, 0xde0b6b3a7640000n),
-    }};
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(OWNER, 0x1937401, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
+        tx: txOf(OWNER, ATTACKER, 0xde0b6b3a7640000n),
+      },
+    };
     const { stream: s } = verify(hash, 0x1937401, [erc20In(TOKEN_A, "1000", 0)], calls);
     const { items } = await s.next();
     const e = entryOf(items, hash);
@@ -424,13 +436,16 @@ describe("evm history completeness", () => {
 
   it("verifies an entry whose claim covers every wallet-touching movement", async () => {
     const hash = `0x${"cc".repeat(32)}`;
-    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
-      receipt: receiptOf(ATTACKER, 0x1937402, [
-        erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
-        erc20Log(TOKEN_B, OWNER, ATTACKER, "500", 1),
-      ]),
-      tx: txOf(ATTACKER, ROUTER, 0n),
-    }};
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(ATTACKER, 0x1937402, [
+          erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
+          erc20Log(TOKEN_B, OWNER, ATTACKER, "500", 1),
+        ]),
+        tx: txOf(ATTACKER, ROUTER, 0n),
+      },
+    };
     const { stream: s } = verify(hash, 0x1937402, [
       erc20In(TOKEN_A, "1000", 0),
       transfer({
@@ -464,12 +479,15 @@ describe("evm history completeness", () => {
 
   it("flags an unclaimed id inside an erc1155 batch the provider listed only once", async () => {
     const hash = `0x${"dd".repeat(32)}`;
-    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
-      receipt: receiptOf(ATTACKER, 0x1937403, [
-        batchLog(TOKEN_A, ATTACKER, OWNER, [7n, 8n], [1n, 1n], 0),
-      ]),
-      tx: txOf(ATTACKER, ROUTER, 0n),
-    }};
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(ATTACKER, 0x1937403, [
+          batchLog(TOKEN_A, ATTACKER, OWNER, [7n, 8n], [1n, 1n], 0),
+        ]),
+        tx: txOf(ATTACKER, ROUTER, 0n),
+      },
+    };
     const { stream: s } = verify(hash, 0x1937403, [
       transfer({
         kind: "erc1155",
@@ -505,9 +523,12 @@ describe("evm history completeness", () => {
 
   it("leaves an entry unverified when the tx object does not arrive", async () => {
     const hash = `0x${"ee".repeat(32)}`;
-    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
-      receipt: receiptOf(ATTACKER, 0x1937404, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
-    }};
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(ATTACKER, 0x1937404, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
+      },
+    };
     const { stream: s } = verify(hash, 0x1937404, [erc20In(TOKEN_A, "1000", 0)]);
     const { items } = await s.next();
     const e = entryOf(items, hash);
@@ -517,21 +538,24 @@ describe("evm history completeness", () => {
 
   it("leaves an entry unverified when a receipt log has no pinned index", async () => {
     const hash = `0x${"f1".repeat(32)}`;
-    fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
-      receipt: receiptOf(ATTACKER, 0x1937405, [
-        erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
-        {
-          address: TOKEN_B,
-          topics: [
-            "0x735dd1911323e2b3dc250cd074b96d1bf7c46f12d289fed7c5f885ed8295d8d7",
-            addrTopic(OWNER),
-            addrTopic(ATTACKER),
-          ],
-          data: "0x",
-        },
-      ]),
-      tx: txOf(ATTACKER, ROUTER, 0n),
-    }};
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(ATTACKER, 0x1937405, [
+          erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0),
+          {
+            address: TOKEN_B,
+            topics: [
+              "0x735dd1911323e2b3dc250cd074b96d1bf7c46f12d289fed7c5f885ed8295d8d7",
+              addrTopic(OWNER),
+              addrTopic(ATTACKER),
+            ],
+            data: "0x",
+          },
+        ]),
+        tx: txOf(ATTACKER, ROUTER, 0n),
+      },
+    };
     const { stream: s } = verify(hash, 0x1937405, [erc20In(TOKEN_A, "1000", 0)]);
     const { items } = await s.next();
     const e = entryOf(items, hash);

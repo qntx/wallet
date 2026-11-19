@@ -5,8 +5,8 @@ import { decodeExitChain, encodeExitChain } from "./exit-chain-codec.ts";
 
 /**
  * SparkStore over one EngineCollection: chains keyed by leafId, enumerated by the port's `list()`.
- * A record that fails to decode — or does not name its own key, like a leftover `__all__` index
- * row from older data — is skipped, not fatal: the next leaves sync rewrites it.
+ * A record that fails to decode — or does not name its own key, like a leftover `__all__` index row
+ * from older data — is skipped, not fatal: the next leaves sync rewrites it.
  */
 export function sparkStore(col: EngineCollection): SparkStore {
   const readChain = async (leafId: string): Promise<SparkExitChain | undefined> => {

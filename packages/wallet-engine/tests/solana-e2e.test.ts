@@ -221,7 +221,9 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
       });
       const solHash = await send(a, r, payer, unsigned);
       await waitConfirmed(a, r, solHash, Date.now() + 60_000);
-      await expect(a.signatureStatus(r, solHash)).resolves.toMatchObject({ state: expect.stringMatching(/confirmed|finalized/) });
+      await expect(a.signatureStatus(r, solHash)).resolves.toMatchObject({
+        state: expect.stringMatching(/confirmed|finalized/),
+      });
       const recipientBal = (await r.call("getBalance", [
         recipient.address,
         { commitment: "confirmed" },
@@ -282,7 +284,9 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
         [mint],
       );
       await waitConfirmed(a, r, mintHash, Date.now() + 60_000);
-      await expect(a.signatureStatus(r, mintHash)).resolves.toMatchObject({ state: expect.stringMatching(/confirmed|finalized/) });
+      await expect(a.signatureStatus(r, mintHash)).resolves.toMatchObject({
+        state: expect.stringMatching(/confirmed|finalized/),
+      });
 
       const splUnsigned = await a.build(r, NETWORK, payer.address, {
         kind: "spl",
@@ -308,7 +312,9 @@ describe.runIf(RUN)("solana e2e: local validator", () => {
       });
       const splHash = await send(a, r, payer, splUnsigned);
       await waitConfirmed(a, r, splHash, Date.now() + 60_000);
-      await expect(a.signatureStatus(r, splHash)).resolves.toMatchObject({ state: expect.stringMatching(/confirmed|finalized/) });
+      await expect(a.signatureStatus(r, splHash)).resolves.toMatchObject({
+        state: expect.stringMatching(/confirmed|finalized/),
+      });
       const [destAta] = await findAssociatedTokenPda({
         mint: mint.address,
         owner: recipient.address,
