@@ -446,6 +446,22 @@ describe("evm history completeness", () => {
     expect(entryOf(items, hash)?.verified).toBe(true);
   });
 
+  it("flags chain-mismatch when the receipt was mined in a different block than claimed", async () => {
+    const hash = `0x${"ce".repeat(32)}`;
+    fixture["eip155:1"] = {
+      ...fixture["eip155:1"],
+      [hash]: {
+        receipt: receiptOf(ATTACKER, 0x1937404, [erc20Log(TOKEN_A, ATTACKER, OWNER, "1000", 0)]),
+        tx: txOf(ATTACKER, ROUTER, 0n),
+      },
+    };
+    // The claim is otherwise complete: only the block number contradicts the chain.
+    const { stream: s } = verify(hash, 0x1937405, [erc20In(TOKEN_A, "1000", 0)]);
+    const { items } = await s.next();
+    expect(entryOf(items, hash)?.verified).toBe(false);
+    expect(entryOf(items, hash)?.flags).toContain("chain-mismatch");
+  });
+
   it("flags an unclaimed id inside an erc1155 batch the provider listed only once", async () => {
     const hash = `0x${"dd".repeat(32)}`;
     fixture["eip155:1"] = { ...fixture["eip155:1"], [hash]: {
