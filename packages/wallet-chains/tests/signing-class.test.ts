@@ -1558,3 +1558,91 @@ describe("typed-data near misses of decoded families are blind", () => {
     expect(intent.blind).toBe("typed-data-variant");
   });
 });
+
+describe("only hashed domain fields reach display and recognition", () => {
+  const PERMIT = [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ];
+  const permitMessage = {
+    owner: SIGNER,
+    spender: OTHER,
+    value: "1",
+    nonce: "0",
+    deadline: "2000000000",
+  };
+
+  it("undeclared domain keys are dropped from the display domain", () => {
+    const intent = decodeEvm(
+      typed({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+          ],
+          Mail: [{ name: "x", type: "uint256" }],
+        },
+        primaryType: "Mail",
+        domain: {
+          name: "dApp",
+          version: "1",
+          chainId: 1,
+          verifyingContract: USDC,
+          salt: `0x${"00".repeat(32)}`,
+          extra: "ignored",
+        },
+        message: { x: "1" },
+      }),
+      SIGNER,
+    );
+    expect(intent.message?.kind === "typed-data" && intent.message.domain).toStrictEqual({
+      name: "dApp",
+      version: "1",
+    });
+  });
+
+  it("a Permit whose verifyingContract is not hashed is not recognised", () => {
+    const intent = decodeEvm(
+      typed({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+          ],
+          Permit: PERMIT,
+        },
+        primaryType: "Permit",
+        domain: { name: "Some Token", version: "1", chainId: 1, verifyingContract: USDC },
+        message: permitMessage,
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("the same Permit is recognised when verifyingContract is declared", () => {
+    const intent = decodeEvm(
+      typed({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          Permit: PERMIT,
+        },
+        primaryType: "Permit",
+        domain: { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        message: permitMessage,
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.approvals.length).toBeGreaterThan(0);
+  });
+});

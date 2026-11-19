@@ -165,7 +165,14 @@ export const parseTypedData = (typedData: string): ParsedTypedData => {
     throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
   }
   checkStructure(json.types, json.primaryType, json.message, 0);
-  return { json };
+  /* Only the domain keys `types.EIP712Domain` declares are hashed — undeclared keys are
+     dropped so nothing downstream (display, recognisers, the chain-id check, signing) can
+     read a field the signature does not commit to. */
+  const declared = new Set((json.types["EIP712Domain"] ?? []).map((field) => field.name));
+  const domain = Object.fromEntries(
+    Object.entries(json.domain).filter(([key]) => declared.has(key)),
+  );
+  return { json: { ...json, domain } };
 };
 
 /** Most leaves an unrecognised typed-data document may have and still be shown in full. */
