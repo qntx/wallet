@@ -110,10 +110,10 @@ export type Forwarder = {
   /**
    * Runs `attempt` against each provider in order, skipping any whose breaker is open; `attempt`
    * reaches its provider only through `send`. A returned value ends the walk; a failed attempt
-   * cancels its other in-flight calls. An outage, a timeout or a {@link ProviderFailure} moves on
-   * to the next provider; a `GatewayHttpError` or a {@link ResponseTooLarge} is the request's own
-   * answer (a 400 for the latter) and ends the walk. When every provider fails the caller gets a
-   * 503. Only outages and timeouts count against the shared breaker.
+   * cancels its other in-flight calls. An outage, a timeout or a {@link ProviderFailure} moves on to
+   * the next provider; a `GatewayHttpError` or a {@link ResponseTooLarge} is the request's own
+   * answer (a 400 for the latter) and ends the walk. When every provider fails the caller gets a 503.
+   * Only outages and timeouts count against the shared breaker.
    */
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,

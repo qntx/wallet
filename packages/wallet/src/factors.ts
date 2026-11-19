@@ -331,8 +331,8 @@ type PublicBytesField =
 
 /**
  * `never` while every params byte field is classified. A new `Uint8Array` params field lands here,
- * failing the type test until it joins {@link SecretField} (secret bytes) or
- * {@link PublicBytesField} (public material).
+ * failing the type test until it joins {@link SecretField} (secret bytes) or {@link PublicBytesField}
+ * (public material).
  */
 export type UnclassifiedBytesField = Exclude<
   { [M in MethodName]: BytesFieldOf<ParamsOf<M>> }[MethodName],

@@ -791,19 +791,11 @@ describe("method classification", () => {
 
 // BytesFieldOf boundary cases: nested in an array, inside a union member, and optional.
 const bytesFieldChecks = (): void => {
-  expectTypeOf<
-    BytesFieldOf<{ a?: ReadonlyArray<{ seed: Uint8Array }> }>
-  >().toEqualTypeOf<"seed">();
-  expectTypeOf<
-    BytesFieldOf<{ x: string } | { key?: Uint8Array }>
-  >().toEqualTypeOf<"key">();
+  expectTypeOf<BytesFieldOf<{ a?: ReadonlyArray<{ seed: Uint8Array }> }>>().toEqualTypeOf<"seed">();
+  expectTypeOf<BytesFieldOf<{ x: string } | { key?: Uint8Array }>>().toEqualTypeOf<"key">();
   expectTypeOf<BytesFieldOf<Uint8Array>>().toBeNever();
-  expectTypeOf<
-    BytesFieldOf<{ answers: ReadonlyArray<Uint8Array> }>
-  >().toEqualTypeOf<"answers">();
-  expectTypeOf<
-    BytesFieldOf<{ k?: ReadonlyArray<Uint8Array> }>
-  >().toEqualTypeOf<"k">();
+  expectTypeOf<BytesFieldOf<{ answers: ReadonlyArray<Uint8Array> }>>().toEqualTypeOf<"answers">();
+  expectTypeOf<BytesFieldOf<{ k?: ReadonlyArray<Uint8Array> }>>().toEqualTypeOf<"k">();
 };
 
 const typeOnlyChecks = (channel: Channel, internals: WalletInternals): void => {
