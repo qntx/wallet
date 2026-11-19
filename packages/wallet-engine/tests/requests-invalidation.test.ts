@@ -73,7 +73,9 @@ const solanaResult = (method: string): unknown =>
     ? { value: { err: null, logs: [], unitsConsumed: 21_000 } }
     : method === "sendTransaction"
       ? `sig${"a".repeat(80)}`
-      : null;
+      : method === "getBlockHeight"
+        ? 1
+        : null;
 
 const payerAddress = (account: unknown): string =>
   typeof account === "object" &&
