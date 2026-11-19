@@ -103,8 +103,9 @@ export type SignedBroadcast = BroadcastAttempt & {
 };
 
 /**
- * Persists the signed bytes and id on `tx`, holds what it consumes, then broadcasts. Accepted or
- * unknown → `submitted` and tracked; refused → `failed`, released, and the node's error thrown.
+ * Persists the signed bytes and id on `tx` — throwing, with nothing sent, when the vault locked
+ * first — holds what it consumes, then broadcasts. Accepted or unknown → `submitted` and tracked;
+ * refused → `failed`, released, and the node's error thrown.
  */
 export const submitSigned = async (
   ctx: RouteContext,
@@ -113,14 +114,19 @@ export const submitSigned = async (
 ): Promise<TrackedTransaction> => {
   let persisted: TrackedTransaction;
   try {
-    persisted = await ctx.transition(tx, {
-      ...signed.record,
-      hash: signed.id,
-      raw: signed.raw,
-    });
+    persisted = await ctx.transition(
+      tx,
+      {
+        ...signed.record,
+        hash: signed.id,
+        raw: signed.raw,
+      },
+      true,
+    );
   } catch (error) {
-    // Nothing was persisted or sent, but the caller may already hold what the transaction
-    // consumes (an EVM nonce) — free it so later sends are not stuck behind a gap.
+    // Nothing was persisted or sent — a vault that locked first refuses the write — but the
+    // caller may already hold what the transaction consumes (an EVM nonce): free it so later
+    // sends are not stuck behind a gap.
     signed.release();
     throw error;
   }

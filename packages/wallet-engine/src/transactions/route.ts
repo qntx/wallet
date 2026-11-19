@@ -317,9 +317,14 @@ export type Options = {
 
 export type RouteContext = {
   readonly options: Options;
+  /**
+   * Applies `next` to `tx` and persists the row. A locked vault skips the write — unless
+   * `durable`, which throws instead: signed bytes must be on disk before they leave.
+   */
   readonly transition: (
     tx: TrackedTransaction,
     next: Partial<TrackedTransaction>,
+    durable?: boolean,
   ) => Promise<TrackedTransaction>;
   readonly track: (id: string, hash: string) => void;
   /** Every tracked transaction, for approval-time checks on a replacement's original. */

@@ -356,7 +356,11 @@ export class TransactionController extends Controller<TransactionControllerState
   private async transition(
     tx: TrackedTransaction,
     next: Partial<TrackedTransaction>,
+    durable = false,
   ): Promise<TrackedTransaction> {
+    if (durable && this.engineStore === undefined) {
+      throw new Error("transactions require an unlocked vault");
+    }
     const updated: TrackedTransaction = { ...tx, ...next };
     this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: updated } }));
     await this.persist(updated);
@@ -366,7 +370,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private routeCtx(): RouteContext {
     return {
       options: this.options,
-      transition: async (tx, next) => this.transition(tx, next),
+      transition: async (tx, next, durable) => this.transition(tx, next, durable),
       track: (id, hash) => this.track(id, hash),
       txs: () => this.getState().txs,
       newId: () => newId(this.options.random),

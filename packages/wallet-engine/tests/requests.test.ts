@@ -501,6 +501,7 @@ const ensResult = (address: string): string =>
 
 function evmWorld(options: {
   lockDuringSign?: boolean;
+  lockDuringBroadcast?: boolean;
   gateway?: Rpc | undefined;
   host?: Rpc | undefined;
   hostEndpoints?: boolean;
@@ -561,6 +562,9 @@ function evmWorld(options: {
       params?: unknown;
     };
     calls.push({ url, method: body.method });
+    if (options.lockDuringBroadcast === true && body.method === "eth_sendRawTransaction") {
+      lockTransactions();
+    }
     const table = url.startsWith(GATEWAY)
       ? { ...base, ...gatewayTable }
       : { ...base, ...hostTable };
@@ -704,7 +708,7 @@ describe("EVM pipeline", () => {
   });
 
   it("a broadcast that completes after the vault locked is logged, not silently lost", async () => {
-    const w = evmWorld({ lockDuringSign: true });
+    const w = evmWorld({ lockDuringBroadcast: true });
     await w.start();
     const r = await w.requests.prepare(PARAMS);
     const tx = await w.requests.approve(r.id, "send", approval(r, VERIFY));
@@ -712,7 +716,22 @@ describe("EVM pipeline", () => {
     expect(w.warnings.some((m) => m.includes("after the vault locked"))).toBe(true);
     expect(w.warnings.some((m) => m.includes("signed bytes are persisted"))).toBe(true);
     expect(w.warnings.some((m) => m.includes("tracking resumes at the next unlock"))).toBe(true);
-    expect(w.warnings.some((m) => m.includes("not persisted: vault locked"))).toBe(true);
+    // Only the post-broadcast `submitted` row missed the store; the signed bytes reached it.
+    expect(w.warnings.some((m) => m.includes("(submitted) not persisted: vault locked"))).toBe(
+      true,
+    );
+    expect(w.warnings.some((m) => m.includes("(signed) not persisted"))).toBe(false);
+  });
+
+  it("a vault that locks before the signed bytes reach the store sends nothing", async () => {
+    const w = evmWorld({ lockDuringSign: true });
+    await w.start();
+    const r = await w.requests.prepare(PARAMS);
+    await expect(w.requests.approve(r.id, "send", approval(r, VERIFY))).rejects.toThrow(
+      "transactions require an unlocked vault",
+    );
+    expect(w.calls.map((c) => c.method)).not.toContain("eth_sendRawTransaction");
+    expect(w.requests.getState().requests[r.id]?.stage).toBe("failed");
   });
 
   it("a cancelled signature is `rejected` and does not consume the nonce", async () => {
