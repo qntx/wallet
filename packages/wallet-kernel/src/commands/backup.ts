@@ -201,13 +201,13 @@ function decodePayload(bytes: Uint8Array): {
         if (family === undefined) {
           throw new KernelError("integrity", "backup: unknown key family byte");
         }
-        keys.push({ family, secret: bytes.slice(off, off + len) });
+        keys.push({ family, secret: bytes.subarray(off, off + len) });
       } else {
         const origin = ORIGIN_NAME[ob];
         if (origin === undefined) {
           throw new KernelError("integrity", "backup: unknown origin byte");
         }
-        wallets.push({ origin, entropy: bytes.slice(off, off + len) });
+        wallets.push({ origin, entropy: bytes.subarray(off, off + len) });
       }
       off += len;
     } else {
@@ -485,21 +485,25 @@ export async function enableBackup(
   },
   requestSession: string | undefined,
 ): Promise<NullValue> {
-  const { dek } = ctx.session.require(requestSession);
-  await verifyFactor(
-    ctx.platform,
-    ctx.image,
-    params.verify,
-    dek,
-    ctx.commit,
-    corePromptFor(ctx.platform.keystore, "backup"),
-  );
-  const bek = ctx.platform.random(32);
-  if (bek.length !== 32) {
-    throw new KernelError("integrity", "random source returned a wrong-length BEK");
-  }
+  // The session check and verification run inside the wiping try: a wrong verify or a
+  // missing session must not leave the caller's backup secrets in memory. Password and
+  // host materials share the same buffers as the wire factors, so one loop covers both.
   const materials: BackupMaterial[] = [];
+  let bek: Uint8Array | undefined;
   try {
+    const { dek } = ctx.session.require(requestSession);
+    await verifyFactor(
+      ctx.platform,
+      ctx.image,
+      params.verify,
+      dek,
+      ctx.commit,
+      corePromptFor(ctx.platform.keystore, "backup"),
+    );
+    bek = ctx.platform.random(32);
+    if (bek.length !== 32) {
+      throw new KernelError("integrity", "random source returned a wrong-length BEK");
+    }
     for (const factor of params.factors) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- one system ceremony at a time
       materials.push(await backupMaterial(ctx, factor, []));
@@ -510,12 +514,9 @@ export async function enableBackup(
     await ctx.commit([{ op: "put-record", record }]);
     return null;
   } finally {
-    bek.fill(0);
-    for (const material of materials) {
-      wipeBackupSecret(material);
-    }
-    for (const factor of params.factors) {
-      wipeBackupSecret(factor);
+    bek?.fill(0);
+    for (const secret of [...materials, ...params.factors]) {
+      wipeBackupSecret(secret);
     }
   }
 }
@@ -701,52 +702,55 @@ async function restoreWithPassphrases(
     passphrases.set(entry.walletId, normalizePassphrase(entry.passphrase));
   }
   const envelope = parseEnvelope(params.envelope);
-  const credentials = envelope.factors.flatMap((f) =>
-    f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
-  );
-  const material = await backupMaterial(ctx, params.backupFactor, credentials);
+  // The gate runs before any decryption: every check that needs no plaintext (the initial
+  // factor on a fresh vault, the live session on an established one) comes first.
+  const gated = gate(ctx, params.factor, requestSession);
+  let committed = false;
   try {
-    const bek = await bekFromFactor(ctx.platform, envelope, material);
+    const credentials = envelope.factors.flatMap((f) =>
+      f.kind === "passkey" ? [b64.dec(f.credentialId)] : [],
+    );
+    const material = await backupMaterial(ctx, params.backupFactor, credentials);
     try {
-      // The payload tag authenticates the raw header text — parse the header only after this open.
-      let plaintext: Uint8Array;
+      const bek = await bekFromFactor(ctx.platform, envelope, material);
       try {
-        plaintext = openEnvelope(
-          bek,
-          b64.dec(envelope.payload),
-          payloadContext(envelope.header),
-          "",
-        );
-      } catch {
-        throw new KernelError("integrity", "backup: payload authentication failed");
-      }
-      const header = parseHeader(envelope.header);
-      const decoded = decodePayload(plaintext);
-      if (
-        decoded.wallets.length !== header.wallets.length ||
-        decoded.keys.length !== (header.keys?.length ?? 0)
-      ) {
-        plaintext.fill(0);
-        throw new KernelError("integrity", "backup: payload does not match header");
-      }
-
-      const flagged = new Set(
-        header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId),
-      );
-      for (const walletId of passphrases.keys()) {
-        if (!flagged.has(walletId)) {
-          plaintext.fill(0);
-          throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
-        }
-      }
-
-      const gated = gate(ctx, params.factor, requestSession);
-      const records: StoredRecord[] = [];
-      const restored: WalletInfo[] = [];
-      const passphraseRequired: string[] = [];
-      let committed = false;
-      try {
+        // The payload tag authenticates the raw header text — parse the header only after this open.
+        let plaintext: Uint8Array;
         try {
+          plaintext = openEnvelope(
+            bek,
+            b64.dec(envelope.payload),
+            payloadContext(envelope.header),
+            "",
+          );
+        } catch {
+          throw new KernelError("integrity", "backup: payload authentication failed");
+        }
+        // One finally owns the plaintext and every decoded secret — the decoder returns
+        // views into `plaintext`, so its wipe covers them and a decode throw leaves no copy.
+        let decoded: ReturnType<typeof decodePayload> = { wallets: [], keys: [] };
+        try {
+          const header = parseHeader(envelope.header);
+          decoded = decodePayload(plaintext);
+          if (
+            decoded.wallets.length !== header.wallets.length ||
+            decoded.keys.length !== (header.keys?.length ?? 0)
+          ) {
+            throw new KernelError("integrity", "backup: payload does not match header");
+          }
+
+          const flagged = new Set(
+            header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId),
+          );
+          for (const walletId of passphrases.keys()) {
+            if (!flagged.has(walletId)) {
+              throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
+            }
+          }
+
+          const records: StoredRecord[] = [];
+          const restored: WalletInfo[] = [];
+          const passphraseRequired: string[] = [];
           const now = ctx.platform.now();
           for (const [index, wallet] of decoded.wallets.entries()) {
             const expected = header.wallets[index];
@@ -835,27 +839,27 @@ async function restoreWithPassphrases(
           const session = await commitRecords(ctx, gated, params.factor, records);
           committed = true;
           return { wallets: restored, passphraseRequired, session };
-        } catch (error) {
-          // gate() minted a DEK nothing owns yet; commitRecords wipes it only past its own
-          // commit and takes ownership on success — a failure in between leaks it here.
-          if (!committed && gated.uninitialized) {
-            gated.dek.wipe();
+        } finally {
+          plaintext.fill(0);
+          for (const wallet of decoded.wallets) {
+            wallet.entropy.fill(0);
           }
-          throw error;
+          for (const key of decoded.keys) {
+            key.secret.fill(0);
+          }
         }
       } finally {
-        plaintext.fill(0);
-        for (const wallet of decoded.wallets) {
-          wallet.entropy.fill(0);
-        }
-        for (const key of decoded.keys) {
-          key.secret.fill(0);
-        }
+        bek.fill(0);
       }
     } finally {
-      bek.fill(0);
+      wipeBackupSecret(material);
     }
-  } finally {
-    wipeBackupSecret(material);
+  } catch (error) {
+    // gate() minted a DEK nothing owns yet; commitRecords wipes it only past its own
+    // commit and takes ownership on success — a failure in between leaks it here.
+    if (!committed && gated.uninitialized) {
+      gated.dek.wipe();
+    }
+    throw error;
   }
 }
