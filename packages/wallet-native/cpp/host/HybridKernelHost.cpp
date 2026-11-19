@@ -72,6 +72,22 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
     claim = qntx::KernelSlot::shared().claim();
     predecessor = claim.predecessor();
   }
+  try {
+    startRuntime(seconds, claim, predecessor);
+  } catch (...) {
+    // Nothing runs: drop the lifecycle registration, and free the slot naming
+    // the predecessor again — it may still be stopping, and the next start must
+    // wait it out exactly as this one would have.
+    qntx::KernelLifecycleDispatcher::shared().unregister(this);
+    claim.release(predecessor);
+    throw;
+  }
+}
+
+void HybridKernelHost::startRuntime(
+    int seconds,
+    qntx::KernelSlot::Claim& claim,
+    const std::shared_ptr<qntx::KernelRuntime>& predecessor) {
   // The platform observer installs once; this host registers its deadline so
   // the dispatcher can stamp or lock it on background/foreground transitions.
   qntx::installLifecycleObserver();
@@ -84,14 +100,16 @@ void HybridKernelHost::start(double backgroundLockSeconds) {
   std::weak_ptr<HybridKernelHost> weak =
       std::dynamic_pointer_cast<HybridKernelHost>(shared_from_this());
   qntx::KernelRuntime::Hooks hooks;
-  hooks.beforeEvaluate = [predecessor = std::move(predecessor)](facebook::jsi::Runtime&) {
+  hooks.beforeEvaluate = [predecessor](facebook::jsi::Runtime&) {
     // The predecessor's runtime may still be tearing down: wait on this kernel
     // thread — never the JS thread — so the first file read follows its last
-    // write. A predecessor that will not stop fails the runtime as a crash
-    // rather than letting two writers overlap.
-    if (predecessor != nullptr &&
-        !predecessor->waitUntilStopped(std::chrono::seconds(10))) {
-      throw std::runtime_error("the previous kernel runtime did not stop in time");
+    // write. The wait has no deadline: a predecessor is itself held here until
+    // its own predecessor stopped, so the wait covers the whole chain of
+    // stopping runtimes, and giving up would either let two writers overlap or
+    // leave the session dead until the app restarts.
+    if (predecessor != nullptr) {
+      while (!predecessor->waitUntilStopped(std::chrono::seconds(1))) {
+      }
     }
   };
   hooks.onPost = [weak](qntx::SecretBytes bytes) {
