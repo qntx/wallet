@@ -517,6 +517,7 @@ describe("engine solana-sign send", () => {
     // while `solanaSign` is still awaiting the signature — before its commit and broadcast.
     const entered = latch();
     const release = latch();
+    const started = latch();
     const authenticator = createSoftwarePasskey(randomBytes(32));
     const gated: PasskeyCeremony = {
       create: async (input) => authenticator.create(input),
@@ -566,11 +567,23 @@ describe("engine solana-sign send", () => {
       logger,
       showCallsStatus: () => undefined,
       publicStore: createMemoryPublicStore(),
-      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      openStore: async () => {
+        const store = createMemoryEngineStore();
+        return Promise.resolve({
+          ...store,
+          collection: (name: string) => {
+            // The start sequence opens the connections collection right after requests.init.
+            // oxlint-disable-next-line vitest/no-conditional-in-test -- start-sequence probe
+            if (name === "connections") {
+              started.resolve();
+            }
+            return store.collection(name);
+          },
+        });
+      },
       rpc: { [SOL_NET]: ["https://sol.example"] },
     });
-    await engine.networks.init();
-    await engine.requests.init();
+    await started.promise;
     const account = await chains(wallet).account({
       walletId,
       groupIndex: 0,
