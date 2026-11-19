@@ -74,6 +74,7 @@ import {
   fetchJupiterQuote,
   fetchSwapQuote,
 } from "./swaps/quote.ts";
+import { ownBitcoinTxids } from "./transactions/bitcoin.ts";
 import { submitInOrder } from "./transactions/broadcast.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
@@ -325,6 +326,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     chains: {
       account: async (params) => chains(options.wallet).account(params),
     },
+    ownBitcoinTxids: () => ownBitcoinTxids(transactions.getState().txs),
     openStore: sessionStore,
     setTimer,
     logger: options.logger,

@@ -81,6 +81,7 @@ const chains = {
 
 const controller = (c: PublicClient, multicall3?: string) =>
   new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: fakeNetworks(c, multicall3),
     chains,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -220,6 +221,7 @@ describe("AssetsController", () => {
     const timers = manualTimers();
     const mk = () =>
       new AssetsController({
+        ownBitcoinTxids: () => new Set(),
         networks: fakeNetworks(c),
         chains,
         openStore: async () => Promise.resolve(store),
@@ -367,6 +369,7 @@ describe("AssetsController solana", () => {
       getTokenAccountsByOwner: t22Accounts,
     });
     const ctl = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: {
         info: solNetInfo,
         solanaRpc: () => r,
@@ -396,6 +399,7 @@ describe("AssetsController polling", () => {
     const solReads: unknown[] = [];
     const timers = manualTimers();
     const ctl = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: {
         info: solNetInfo,
         client: () =>
@@ -450,6 +454,7 @@ describe("AssetsController lock", () => {
     });
     const timers = manualTimers();
     const ctl = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: fakeNetworks(c),
       chains,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),

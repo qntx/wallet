@@ -107,10 +107,12 @@ const make = (
   chainCalls?: AccountParams[],
   timers?: Array<() => unknown>,
   chainsApi?: Pick<ChainsApi, "account">,
+  ownTxids: ReadonlySet<string> = new Set(),
 ): AssetsController =>
   new AssetsController({
     networks: btcNetworks(es),
     chains: chainsApi ?? chains(chainCalls),
+    ownBitcoinTxids: () => ownTxids,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
     setTimer: (_ms, fn) => {
       timers?.push(fn);
@@ -171,7 +173,13 @@ describe("AssetsController bitcoin group", () => {
     fund(funded, addressOf("btc.bip84", 1, 0), [utxo("bb".repeat(32), 50_000, 0)]);
     // An unconfirmed incoming payment on a receive address is not spendable yet.
     fund(funded, addressOf("btc.bip84", 0, 1), [utxo("cc".repeat(32), 60_000, 0)]);
-    const assets = make(esplora(funded, []));
+    const assets = make(
+      esplora(funded, []),
+      undefined,
+      undefined,
+      undefined,
+      new Set(["bb".repeat(32)]),
+    );
     await assets.init();
     const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
     expect(balances.sources?.["btc.bip84"]).toStrictEqual({
@@ -181,6 +189,23 @@ describe("AssetsController bitcoin group", () => {
     });
     expect(balances.native).toBe("70000");
     expect(balances.unconfirmed).toBe("50000");
+  });
+
+  it("a third party's unconfirmed output on a change address is not own change", async () => {
+    const funded: Funded = {};
+    fund(funded, addressOf("btc.bip84", 0, 0), [utxo("aa".repeat(32), 70_000, 800_000)]);
+    // A stranger paid a height-0 output to a used change address — revocable, not own change.
+    fund(funded, addressOf("btc.bip84", 1, 0), [utxo("bb".repeat(32), 50_000, 0)]);
+    const assets = make(esplora(funded, []));
+    await assets.init();
+    const balances = await assets.refreshBitcoinGroup(GROUP, BTC_NET);
+    expect(balances.native).toBe("70000");
+    expect(balances.unconfirmed).toBe("0");
+    expect(balances.sources?.["btc.bip84"]).toStrictEqual({
+      native: "70000",
+      unconfirmed: "0",
+      frozen: "0",
+    });
   });
 
   it("shows a protected UTXO under frozen and marks it protected, out of native", async () => {

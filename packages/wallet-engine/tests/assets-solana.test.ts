@@ -162,6 +162,7 @@ const make = (
 ): AssetsController => {
   const store = createMemoryEngineStore();
   return new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: {
       info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
       solanaRpc: () => solRpc(accounts, calls, mintAccounts),

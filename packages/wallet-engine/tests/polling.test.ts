@@ -492,6 +492,7 @@ describe("asset polling on the one-shot timer", () => {
     vi.useFakeTimers();
     const w = evmWorld();
     const assets = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: w.networks(),
       chains: { account: async () => Promise.reject(new Error("no bitcoin account in this test")) },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -531,6 +532,7 @@ describe("asset polling on the one-shot timer", () => {
     const w = evmWorld();
     const warnings: string[] = [];
     const assets = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: w.networks(),
       chains: { account: async () => Promise.reject(new Error("no bitcoin account in this test")) },
       openStore: async () => Promise.resolve(createMemoryEngineStore()),

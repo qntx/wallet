@@ -23,6 +23,7 @@ const stubbedAssets = (): AssetsController => {
     },
   } as unknown as PublicClient;
   return new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
       // chainId 56 has no built-in token table entries — tokens stays empty here.

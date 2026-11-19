@@ -214,6 +214,7 @@ const makeEvm = (
   } = {},
 ) =>
   new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
       info: () => ({ family: "evm", chainId: 1, multicall3: MULTICALL3 }),
@@ -566,6 +567,7 @@ const makeSolana = (
   },
 ) =>
   new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: {
       info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
       solanaRpc: () => solRpc(accounts, calls, extra, opts?.malformed),
@@ -987,6 +989,7 @@ describe("AssetsController solana lists, reasons and batching", () => {
     ]);
     // Every even key position is a mint, every odd one its PDA — always a generic mint + null.
     const assets = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: {
         info: netInfo,
         solanaRpc: () => solPositionalRpc(accounts, calls, genericMint),
@@ -1213,6 +1216,7 @@ describe("AssetsController visibility and prices", () => {
   it("setTokenHidden rejects malformed addresses and tokenless networks", async () => {
     const calls: Array<{ readonly method: string; readonly params: unknown[] }> = [];
     const assets = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: {
         info: netInfoAll,
         solanaRpc: () => solRpc(new Map(), calls),

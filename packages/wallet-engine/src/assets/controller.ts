@@ -87,6 +87,11 @@ export type AssetsControllerState = {
 type Options = {
   readonly networks: NetworkController;
   readonly chains: Pick<ChainsApi, "account">;
+  /**
+   * The txids of bitcoin transactions this wallet built — whose height-0 outputs count as own
+   * unconfirmed change.
+   */
+  readonly ownBitcoinTxids: () => ReadonlySet<string>;
   /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
@@ -229,8 +234,8 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /**
    * Writes `balances` under `stateKey` and remembers the read that produced it — unless the lock
-   * generation moved since the read started, in which case the result is returned unwritten: a
-   * read landing after `lock()` must not repopulate balances or re-arm its reread.
+   * generation moved since the read started, in which case the result is returned unwritten: a read
+   * landing after `lock()` must not repopulate balances or re-arm its reread.
    */
   private record(
     stateKey: string,
@@ -257,7 +262,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /** Reads the address's balances and returns exactly what it wrote under its state key. */
   async refresh(address: string, network: string): Promise<AccountBalances> {
-    const generation = this.generation;
+    const { generation } = this;
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
       return this.refreshSolana(address, network, generation);
@@ -825,7 +830,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
   ): Promise<AccountBalances> {
     const es = this.options.networks.esplora(network);
     const source: BitcoinSource = { kind: "address", address };
-    const read = await readBitcoin(es, network, [source]);
+    const read = await readBitcoin(es, network, [source], this.options.ownBitcoinTxids());
     return this.record(
       key(network, address),
       bitcoinBalances(read),
@@ -842,7 +847,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     group: { readonly walletId: string; readonly groupIndex: number },
     network: string,
   ): Promise<AccountBalances> {
-    const generation = this.generation;
+    const { generation } = this;
     if (this.options.networks.info(network).family !== "bitcoin") {
       throw new TypeError(`${network} is not a bitcoin network`);
     }
@@ -856,7 +861,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         return { kind: "xpub", template, xpub: account.xpub };
       }),
     );
-    const read = await readBitcoin(es, network, sources);
+    const read = await readBitcoin(es, network, sources, this.options.ownBitcoinTxids());
     return this.record(
       `${network}:${group.walletId}:${group.groupIndex}`,
       bitcoinBalances(read),
