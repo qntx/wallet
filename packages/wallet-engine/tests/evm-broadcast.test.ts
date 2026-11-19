@@ -538,6 +538,8 @@ describe("an ambiguous EVM broadcast is tracked, not failed", () => {
     expect(bumped?.state).toBe("failed");
     expect(ctl.getState().txs[original.id]?.state).toBe("submitted");
 
+    // A lagging pending count leaves the local hold as the only record of the original's nonce.
+    w.primary.pending = 0;
     const next = await send(ctl, SEND);
     expect(next.nonce).toBe(1);
   });
