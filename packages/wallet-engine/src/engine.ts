@@ -880,7 +880,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await controller.init();
         // Pull → merge → maybe publish for every wallet with a group-0 identity.
         await addressBook.init();
-        await metaSync.init();
+        // Relay pulls are unbounded: meta sync starts in the background so a slow relay cannot
+        // delay transaction recovery or the request pipeline. Its generation drops a pull that
+        // a lock overtakes.
+        void metaSync.init().catch((error: unknown) => {
+          options.logger.warn("meta sync start failed", error);
+        });
         await networks.init();
         await assets.init();
         await prices.init();
