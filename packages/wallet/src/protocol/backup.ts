@@ -1,6 +1,6 @@
 /**
  * Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
- * the host-side `parseBackupHeader` share — version 2, bounded fields, `obj` rejects unknown keys.
+ * the host-side `parseBackupHeader` share — version 3, bounded fields, `obj` rejects unknown keys.
  * Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
  * the JSON.
  */
@@ -30,7 +30,7 @@ export type BackupEnvelopeFactor =
     };
 
 export type BackupEnvelopeWire = {
-  readonly version: 2;
+  readonly version: 3;
   readonly createdAt: number;
   /** Raw JSON text — authenticated by the payload tag before it is parsed. */
   readonly header: string;
@@ -57,7 +57,7 @@ export const backupEnvelopeFactor: Validator<BackupEnvelopeFactor> = union(
 );
 
 export const backupEnvelope: Validator<BackupEnvelopeWire> = obj({
-  version: literal(2),
+  version: literal(3),
   createdAt: int(0, Number.MAX_SAFE_INTEGER),
   header: str(MAX_STRING_BYTES),
   factors: arr(backupEnvelopeFactor, 5, 1),

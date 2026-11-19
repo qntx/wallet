@@ -3,8 +3,7 @@
 // unwraps with a backup factor and merges — adopting the envelope's BEK only while establishing
 // the vault, and only after a kernel passkey ceremony proved the owner holds one of its factors.
 
-import { sha256 } from "@noble/hashes/sha2.js";
-import { bytesToHex, concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
+import { concatBytes, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { base58, base64urlnopad } from "@scure/base";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -17,7 +16,7 @@ import { open, seal } from "../src/vault/envelope.ts";
 import { backupPasswordKek } from "../src/vault/factors.ts";
 import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { loadVectors, quickArgon2id, realArgon2id } from "./helpers.ts";
+import { backupPayloadContext, loadVectors, quickArgon2id, realArgon2id } from "./helpers.ts";
 import { fakeKeystore } from "./keystore.ts";
 import type { KeystoreCall } from "./keystore.ts";
 
@@ -120,6 +119,22 @@ const TAMPERS: ReadonlyArray<readonly [string, (e: Record<string, unknown>) => v
     "version",
     (e) => {
       e["version"] = 1; // the PBKDF2 envelope this build no longer reads
+    },
+  ],
+  [
+    "old-version",
+    (e) => {
+      e["version"] = 2; // the pre-v3 envelope this build no longer reads
+    },
+  ],
+  [
+    "added-factor",
+    (e) => {
+      // Well-formed but unauthenticated: the payload tag binds the factor list.
+      const { factors } = e;
+      if (Array.isArray(factors)) {
+        factors.push({ kind: "passkey", credentialId: "AA", sealedBek: "AA" });
+      }
     },
   ],
   [
@@ -432,6 +447,47 @@ describe("backup.restore", () => {
     });
     expect(errCode(res)).toBe("integrity");
     expect(field(ok(await b.call("status")), "vault")).toBe("uninitialized");
+  });
+
+  it("rejects a reordered factor list", async () => {
+    const a = createHarness({ seed: 53 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, session, [backupPassword(), backupPasskeyF()]);
+    const obj = JSON.parse(envelope) as { factors: unknown[] };
+    obj.factors.reverse();
+
+    const b = createHarness({ seed: 54 });
+    await b.settle();
+    const res = await b.call("backup.restore", {
+      envelope: JSON.stringify(obj),
+      backupFactor: backupPassword(),
+      factor: vaultPasswordFactor(),
+    });
+    expect(errCode(res)).toBe("integrity");
+    expect(field(ok(await b.call("status")), "vault")).toBe("uninitialized");
+  });
+
+  it("authenticates factors independent of their wire key order", async () => {
+    const a = createHarness({ seed: 55 });
+    await a.settle();
+    const { session } = await createPasskeyWallet(a);
+    const envelope = await createBackupEnvelope(a, session, [backupPassword()]);
+    const obj = JSON.parse(envelope) as { factors: Array<Record<string, unknown>> };
+    obj.factors = obj.factors.map((factor) =>
+      Object.fromEntries(Object.entries(factor).reverse()),
+    );
+
+    const b = createHarness({ seed: 56 });
+    await b.settle();
+    const res = ok(
+      await b.call("backup.restore", {
+        envelope: JSON.stringify(obj),
+        backupFactor: backupPassword(),
+        factor: vaultPasswordFactor(),
+      }),
+    );
+    expect(arrField(res, "wallets")).toHaveLength(1);
   });
 });
 
@@ -895,6 +951,8 @@ describe("establishing restore and the envelope's backup key", () => {
     // The restored device keeps updating the same cloud file, under the same factors.
     expect(strField(await statusBackup(b, bSession), "id")).toBe(id);
     const updated = strField(ok(await b.call("backup.update", null, bSession)), "envelope");
+    const factorList = (text: string): unknown => (JSON.parse(text) as { factors: unknown }).factors;
+    expect(factorList(updated)).toStrictEqual(factorList(envelope));
     const c = createHarness({ seed: 112 });
     await c.settle();
     const restored = ok(
@@ -1106,7 +1164,7 @@ describe("backup payload parsing", () => {
       "qntx-wallet/backup/v1/factor/password",
       "",
     );
-    const context = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(envelope.header)))}`;
+    const context = backupPayloadContext(envelope.header, envelope.factors);
     const plaintext = open(bek, base64urlnopad.decode(envelope.payload), context, "");
     const payload = seal(
       bek,

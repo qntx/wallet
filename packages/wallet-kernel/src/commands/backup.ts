@@ -88,8 +88,34 @@ const b64 = {
   },
 };
 
-function payloadContext(header: string): string {
-  return `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}`;
+/**
+ * The factor list re-serialized with fixed key order — the payload tag authenticates this
+ * canonical form, so it does not depend on the wire text's field order. A dropped, added,
+ * altered or reordered factor entry changes the digest and fails the payload open.
+ */
+function canonicalFactors(factors: ReadonlyArray<BackupEnvelopeFactor>): string {
+  return JSON.stringify(
+    factors.map((f) =>
+      f.kind === "passkey"
+        ? { kind: f.kind, credentialId: f.credentialId, sealedBek: f.sealedBek }
+        : {
+            kind: f.kind,
+            kdf: f.kdf,
+            memoryKiB: f.memoryKiB,
+            passes: f.passes,
+            lanes: f.lanes,
+            salt: f.salt,
+            sealedBek: f.sealedBek,
+          },
+    ),
+  );
+}
+
+function payloadContext(header: string, factors: ReadonlyArray<BackupEnvelopeFactor>): string {
+  return (
+    `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}/` +
+    bytesToHex(sha256(utf8ToBytes(canonicalFactors(factors))))
+  );
 }
 
 function factorContextOf(kind: string): string {
@@ -547,13 +573,13 @@ export function updateBackup(
     const sealedPayload = seal(
       bek,
       plaintext,
-      payloadContext(contents.header),
+      payloadContext(contents.header, keyHeader.factors),
       "",
       ctx.platform.random,
     );
     try {
       const envelope: BackupEnvelopeWire = {
-        version: 2,
+        version: 3,
         createdAt: ctx.platform.now(),
         header: contents.header,
         factors: keyHeader.factors,
@@ -720,7 +746,7 @@ async function restoreWithPassphrases(
           plaintext = openEnvelope(
             bek,
             b64.dec(envelope.payload),
-            payloadContext(envelope.header),
+            payloadContext(envelope.header, envelope.factors),
             "",
           );
         } catch {

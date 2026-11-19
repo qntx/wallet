@@ -20,7 +20,7 @@ import type { StoredRecord } from "../src/vault/store.ts";
 import { openWalletSecret, sealRecord } from "../src/vault/vault.ts";
 import { createHarness, seededRandom } from "./harness.ts";
 import type { Harness, KernelResponse } from "./harness.ts";
-import { kernelError, loadVectors, realArgon2id } from "./helpers.ts";
+import { backupPayloadContext, kernelError, loadVectors, realArgon2id } from "./helpers.ts";
 
 type PassphraseVector = {
   name: string;
@@ -568,13 +568,10 @@ describe("cloud backup", { timeout: 120_000 }, () => {
       "qntx-wallet/backup/v1/factor/password",
       "",
     );
-    const headerDigest = new Uint8Array(
-      await globalThis.crypto.subtle.digest("SHA-256", utf8ToBytes(envelope.header)),
-    );
     const payload = openEnvelope(
       bek,
       base64urlnopad.decode(envelope.payload),
-      `qntx-wallet/backup/v1/payload/${Buffer.from(headerDigest).toString("hex")}`,
+      backupPayloadContext(envelope.header, envelope.factors),
       "",
     );
     // version(1) ‖ one entry: tag(1) ‖ origin(1) ‖ length(1) ‖ 16 entropy bytes — nothing more.

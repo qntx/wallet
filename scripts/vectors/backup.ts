@@ -6,7 +6,10 @@
  * Payload = version(0x02) ‖ walletEntry…, walletEntry = 0x01 ‖ origin(1) ‖ len(1) ‖ entropy
  * sealed(X) = 0x01 ‖ nonce(24) ‖ XChaCha20-Poly1305(key, nonce, aad).encrypt(plaintext) aad = 0x01
  * ‖ u16be(len(UTF-8(context))) ‖ UTF-8(context) ‖ UTF-8(header) payload.context =
- * "qntx-wallet/backup/v1/payload/" + hex(SHA-256(headerText)) factor.context =
+ * "qntx-wallet/backup/v1/payload/" + hex(SHA-256(headerText)) + "/" +
+ * hex(SHA-256(UTF-8(canonicalFactors))) — canonicalFactors re-serializes each factor with fixed
+ * key order (passkey: kind, credentialId, sealedBek; password: kind, kdf, memoryKiB, passes,
+ * lanes, salt, sealedBek). factor.context =
  * "qntx-wallet/backup/v1/factor/" + kind password KEK = Argon2id(NFKC(password), salt16, m=65536
  * KiB, t=3, p=4, 32) passkey KEK = HKDF-SHA256(prfBackup, salt=credentialId,
  * info="qntx-wallet/kek/backup/v1") backup-key id = hex(HKDF-SHA256(BEK, salt=empty,
@@ -185,17 +188,34 @@ const factors = [
   },
 ];
 
+const canonicalFactors = JSON.stringify(
+  factors.map((f) =>
+    "credentialId" in f
+      ? { kind: f.kind, credentialId: f.credentialId, sealedBek: f.sealedBek }
+      : {
+          kind: f.kind,
+          kdf: f.kdf,
+          memoryKiB: f.memoryKiB,
+          passes: f.passes,
+          lanes: f.lanes,
+          salt: f.salt,
+          sealedBek: f.sealedBek,
+        },
+  ),
+);
+const factorsDigest = bytesToHex(sha256(utf8ToBytes(canonicalFactors)));
+
 const backupKeyHeader = JSON.stringify({ id, factors, createdAt: START });
 
 const header = JSON.stringify({
   wallets: [{ walletId, origin: "passkey", words: 12 }],
 });
 const payload = concatBytes(new Uint8Array([0x02, 0x01, 0x02, 16]), entropy);
-const payloadContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}`;
+const payloadContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(header)))}/${factorsDigest}`;
 
 const envelopeOf = (nonce: Uint8Array): string =>
   JSON.stringify({
-    version: 2,
+    version: 3,
     createdAt: START,
     header,
     factors,
@@ -221,9 +241,9 @@ const passphrasePayload = concatBytes(
   new Uint8Array([0x01, 0x01, 16]),
   plainEntropy,
 );
-const passphraseContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(passphraseHeader)))}`;
+const passphraseContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(passphraseHeader)))}/${factorsDigest}`;
 const passphraseEnvelope = JSON.stringify({
-  version: 2,
+  version: 3,
   createdAt: START,
   header: passphraseHeader,
   factors,
@@ -265,9 +285,9 @@ const keysPayload = concatBytes(
   new Uint8Array([0x02, KEY_FAMILY_BYTE[importedFamily] ?? 0, 32]),
   IMPORTED_SECRET,
 );
-const keysContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(keysHeader)))}`;
+const keysContext = `qntx-wallet/backup/v1/payload/${bytesToHex(sha256(utf8ToBytes(keysHeader)))}/${factorsDigest}`;
 const keysEnvelope = JSON.stringify({
-  version: 2,
+  version: 3,
   createdAt: START,
   header: keysHeader,
   factors,
