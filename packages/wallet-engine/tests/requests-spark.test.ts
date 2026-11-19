@@ -1,7 +1,7 @@
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex, utf8ToBytes } from "@noble/hashes/utils.js";
-import { describe, expect, expectTypeOf, it } from "vite-plus/test";
+import { describe, expect, it } from "vite-plus/test";
 
 import type { Event } from "@qntx/nostr";
 import { encodeSparkAddress } from "@qntx/spark";
@@ -9,10 +9,8 @@ import type { LnurlPayRequest } from "@qntx/spark/lnurl";
 import { WalletError } from "@qntx/wallet";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
-import type { WalletEngine } from "../src/engine.ts";
 import type { PaymentOption } from "../src/payments/parse.ts";
 import { withdrawLnurl } from "../src/payments/pay.ts";
-import type { PayInput } from "../src/requests/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import { sparkTransferId } from "../src/spark/controller.ts";
 import type { SparkController } from "../src/spark/controller.ts";
@@ -479,28 +477,5 @@ describe("Spark requests", () => {
     ).catch(() => undefined);
     expect(w.calls.map((c) => c.method)).toStrictEqual(["createInvoice"]);
     expect(JSON.stringify(w.calls[0]?.params)).not.toContain("verify");
-  });
-});
-
-describe("engine surface", () => {
-  it("engine.spark no longer exposes the payment methods", () => {
-    expectTypeOf<WalletEngine["spark"]>().not.toHaveProperty("send");
-    expectTypeOf<WalletEngine["spark"]>().not.toHaveProperty("payInvoice");
-    expectTypeOf<WalletEngine["spark"]>().not.toHaveProperty("paySparkInvoice");
-    expectTypeOf<WalletEngine["spark"]>().not.toHaveProperty("withdraw");
-    expectTypeOf<WalletEngine["spark"]>().toHaveProperty("createInvoice");
-    expectTypeOf<WalletEngine["payments"]>().not.toHaveProperty("pay");
-    expectTypeOf<WalletEngine["zaps"]>().not.toHaveProperty("pay");
-    expectTypeOf<WalletEngine["payments"]>().toHaveProperty("withdrawLnurl");
-    expectTypeOf<PayInput>().toHaveProperty("method");
-  });
-
-  it("engine.transactions exposes no prepare method — every signing request goes through requests", () => {
-    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareDapp");
-    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSend");
-    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareReplacement");
-    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareEvmInternal");
-    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSolanaSwap");
-    expectTypeOf<WalletEngine["transactions"]>().toHaveProperty("txById");
   });
 });

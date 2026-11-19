@@ -543,8 +543,9 @@ describe("engine solana-sign send", () => {
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
       rpc: { [SOL_NET]: ["https://sol.example"] },
     });
-    await engine.networks.init();
-    await engine.requests.init();
+    // Started here rather than awaited through the unlock transition, which runs concurrently.
+    await (engine.networks as NetworkController).init();
+    await (engine.requests as RequestController).init();
     const account = await chains(wallet).account({
       walletId,
       groupIndex: 0,
@@ -586,7 +587,7 @@ describe("engine solana-sign send", () => {
       approval(request, { kind: "passkey" }),
     );
     await entered.promise;
-    engine.requests.invalidateOrigin(SITE);
+    engine.connections.invalidateOrigin(SITE);
     release.resolve();
     await expect(approving).rejects.toMatchObject({
       name: "RequestEndedError",
