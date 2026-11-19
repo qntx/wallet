@@ -43,10 +43,28 @@ export type BackupHeader = {
     readonly factorKinds: ReadonlyArray<"passkey" | "password">;
 };
 
-// Warning: (ae-forgotten-export) The symbol "BackupHeaderWire" needs to be exported by the entry point index.d.mts
-//
+// @public (undocumented)
+type BackupHeaderKey = {
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+};
+
 // @public (undocumented)
 export type BackupHeaderWallet = BackupHeaderWire["wallets"][number];
+
+// @public (undocumented)
+type BackupHeaderWallet_2 = {
+    readonly walletId: string;
+    readonly origin: "mnemonic" | "passkey";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly passphrase?: true;
+};
+
+// @public (undocumented)
+type BackupHeaderWire = {
+    readonly wallets: ReadonlyArray<BackupHeaderWallet_2>;
+    readonly keys?: ReadonlyArray<BackupHeaderKey>;
+};
 
 // @public
 export type BackupInfo = {
@@ -165,6 +183,17 @@ export type PasskeyConfig = {
     readonly walletSalt: string;
     readonly vaultSalt: string;
     readonly backupSalt: string;
+};
+
+// @public
+type SignedEvent = {
+    readonly id: string;
+    readonly pubkey: string;
+    readonly sig: string;
+    readonly kind: number;
+    readonly created_at: number;
+    readonly tags: ReadonlyArray<ReadonlyArray<string>>;
+    readonly content: string;
 };
 
 // @public
@@ -295,10 +324,6 @@ export type WalletSnapshot = {
     readonly backup: BackupInfo | null;
     readonly blindSigning: boolean;
 };
-
-// Warnings were encountered during analysis:
-//
-// dist/index.d.mts:23:3 - (ae-forgotten-export) The symbol "SignedEvent" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 

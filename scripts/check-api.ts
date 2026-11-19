@@ -51,6 +51,9 @@ const configOf = (entry: Entry): IConfigFile => ({
     reportFolder: join(dir, "api"),
     reportFileName: `${entry.slug}.api.md`,
     reportTempFolder: temp,
+    // A type reachable from an export but not exported itself is still public shape: list its
+    // declaration (unexported) instead of a warning whose dist path and line move on any edit.
+    includeForgottenExports: true,
   },
   docModel: { enabled: false },
   dtsRollup: { enabled: false },
@@ -70,7 +73,6 @@ const configOf = (entry: Entry): IConfigFile => ({
   messages: {
     extractorMessageReporting: {
       default: { logLevel: ExtractorLogLevel.None, addToApiReportFile: false },
-      "ae-forgotten-export": { logLevel: ExtractorLogLevel.None, addToApiReportFile: true },
     },
     tsdocMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },
     compilerMessageReporting: { default: { logLevel: ExtractorLogLevel.None } },

@@ -4,11 +4,49 @@
 
 ```ts
 
+// @public (undocumented)
+type EvmAccessListEntry = {
+    readonly address: string;
+    readonly storageKeys: ReadonlyArray<string>;
+};
+
+// @public
+type EvmTransaction = (EvmTransactionBase & {
+    readonly type: "legacy";
+    readonly gasPrice: string;
+}) | (EvmTransactionBase & {
+    readonly type: "eip2930";
+    readonly gasPrice: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+}) | (EvmTransactionBase & {
+    readonly type: "eip1559";
+    readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+    readonly maxFeePerGas: string;
+    readonly maxPriorityFeePerGas: string;
+}) | (Omit<EvmTransactionBase, "to"> & {
+    readonly type: "eip7702";
+    readonly to: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+    readonly maxFeePerGas: string;
+    readonly maxPriorityFeePerGas: string;
+    readonly authorization: {
+        readonly address: string;
+    };
+});
+
+// @public (undocumented)
+type EvmTransactionBase = {
+    readonly chainId: number;
+    readonly nonce: number;
+    readonly gas: string;
+    readonly value: string;
+    readonly data: string;
+    readonly to?: string;
+};
+
 // @public
 export const signEvmPersonalMessage: (message: Uint8Array, privateKey: Uint8Array) => Uint8Array;
 
-// Warning: (ae-forgotten-export) The symbol "EvmTransaction" needs to be exported by the entry point evm-sign.d.mts
-//
 // @public
 export const signEvmTransaction: (tx: EvmTransaction, privateKey: Uint8Array) => Uint8Array;
 

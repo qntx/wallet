@@ -5,7 +5,22 @@
 ```ts
 
 // @public (undocumented)
+type AccountRef = {
+    readonly kind: "hd";
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly template: ChainTemplate;
+} | {
+    readonly kind: "imported";
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+};
+
+// @public (undocumented)
 export function arr<T>(item: Validator<T>, max: number, min?: number): Validator<ReadonlyArray<T>>;
+
+// @public (undocumented)
+type AssertNever<T extends never> = T;
 
 // @public (undocumented)
 export const backupEnvelope: Validator<BackupEnvelopeWire>;
@@ -40,8 +55,6 @@ export type BackupEnvelopeWire = {
     readonly payload: string;
 };
 
-// Warning: (ae-forgotten-export) The symbol "HostBackupPasskey" needs to be exported by the entry point protocol.d.mts
-//
 // @public
 export type BackupFactor = {
     readonly kind: "password";
@@ -56,6 +69,12 @@ export type BackupFactor = {
 
 // @public (undocumented)
 export const backupHeader: Validator<BackupHeaderWire>;
+
+// @public (undocumented)
+type BackupHeaderKey = {
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+};
 
 // @public (undocumented)
 export type BackupHeaderWallet = {
@@ -80,6 +99,13 @@ export type BackupInfo = {
 
 // @public (undocumented)
 export const backupInfo: Validator<BackupInfo>;
+
+// @public
+type BackupInfo_2 = {
+    readonly id: string;
+    readonly factors: ReadonlyArray<"passkey" | "password">;
+    readonly createdAt: number;
+};
 
 // @public
 export type BackupUnlockFactor = {
@@ -127,6 +153,67 @@ export type ChainAccountsParams = {
 export const CHAINS_METHODS: {
     readonly "wallet.accounts": MethodSpec<ChainAccountsParams, ChainAccount>;
     readonly "chain.sign": MethodSpec<ChainSignParams, ChainSignResult>;
+};
+
+// @public (undocumented)
+type ChainSignParams = {
+    readonly request: ChainSignRequest;
+    readonly verify: VerifyFactor;
+};
+
+// @public
+type ChainSignRequest = {
+    readonly kind: "evm.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly tx: EvmTransactionWire;
+} | {
+    readonly kind: "evm.personal-message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
+} | {
+    readonly kind: "evm.typed-data";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly typedData: string;
+} | {
+    readonly kind: "solana.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
+    readonly lookupTables?: ReadonlyArray<{
+        readonly address: string;
+        readonly addresses: ReadonlyArray<string>;
+    }>;
+} | {
+    readonly kind: "solana.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
+    readonly format: "raw";
+} | {
+    readonly kind: "bitcoin.psbt";
+    readonly network: string;
+    readonly account: {
+        readonly kind: "hd";
+        readonly walletId: string;
+        readonly groupIndex: number;
+    };
+    readonly psbt: Uint8Array;
+    readonly sign: ReadonlyArray<{
+        readonly index: number;
+        readonly template: "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+    }>;
+} | {
+    readonly kind: "bitcoin.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly address: string;
+    readonly message: string;
+    readonly format: "bip322-simple" | "legacy";
+    readonly change: 0 | 1;
+    readonly index: number;
 };
 
 // @public (undocumented)
@@ -283,12 +370,58 @@ export type CreateWithPasskeyParams = {
     readonly factor?: Factor;
 };
 
+// @public
+type DerivedNostrKey = {
+    readonly index: number;
+    readonly publicKey: string;
+};
+
 // @public (undocumented)
 export type ErrorPayload = {
     readonly code: WalletErrorCode;
     readonly retryAt?: number;
     readonly detail?: string;
 };
+
+// @public (undocumented)
+type EvmAccessListEntryWire = {
+    readonly address: string;
+    readonly storageKeys: ReadonlyArray<string>;
+};
+
+// @public (undocumented)
+type EvmTransactionBase = {
+    readonly chainId: number;
+    readonly nonce: number;
+    readonly gas: string;
+    readonly value: string;
+    readonly data: string;
+    readonly to?: string;
+};
+
+// @public (undocumented)
+type EvmTransactionWire = (EvmTransactionBase & {
+    readonly type: "legacy";
+    readonly gasPrice: string;
+}) | (EvmTransactionBase & {
+    readonly type: "eip2930";
+    readonly gasPrice: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntryWire>;
+}) | (EvmTransactionBase & {
+    readonly type: "eip1559";
+    readonly maxFeePerGas: string;
+    readonly maxPriorityFeePerGas: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntryWire>;
+}) | (EvmTransactionBase & {
+    readonly type: "eip7702";
+    readonly to: string;
+    readonly maxFeePerGas: string;
+    readonly maxPriorityFeePerGas: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntryWire>;
+    readonly authorization: {
+        readonly address: string;
+    };
+});
 
 // @public
 export type Factor = {
@@ -303,6 +436,29 @@ export type Factor = {
     readonly credentialId: Uint8Array;
     readonly prf: Uint8Array;
 };
+
+// @public (undocumented)
+type FactorInfo = {
+    readonly kind: "device";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "hardware";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "passkey";
+    readonly id: string;
+    readonly credentialId: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "password";
+    readonly id: string;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type Field = Validator<unknown> | Opt<unknown>;
 
 // @public (undocumented)
 export type FrostAggregateJob = {
@@ -332,6 +488,14 @@ export type FrostSignJob = {
         readonly connectorTx: Uint8Array;
         readonly exitTx: Uint8Array;
     };
+};
+
+// @public
+type HostBackupPasskey = {
+    readonly kind: "passkey";
+    readonly ceremony: "host";
+    readonly credentialId: Uint8Array;
+    readonly prfBackup: Uint8Array;
 };
 
 // @public (undocumented)
@@ -415,8 +579,19 @@ export type KernelEvent = {
 // @public
 export const kernelEvent: Validator<KernelEvent>;
 
+// @public
+type KeyInfo = {
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+    readonly address: string;
+    readonly createdAt: number;
+};
+
 // @public (undocumented)
 export function literal<T extends NullValue | boolean | number | string>(expected: T): Validator<T>;
+
+// @public
+type LockReason = "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated";
 
 // @public
 export const MAX_REQUEST_BYTES = 1048576;
@@ -437,8 +612,6 @@ export type MethodSpec<P, R> = {
     readonly result: Validator<R>;
 };
 
-// Warning: (ae-forgotten-export) The symbol "AssertNever" needs to be exported by the entry point protocol.d.mts
-//
 // @public (undocumented)
 export type MethodTablesDisjoint = [AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>, AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>, AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>];
 
@@ -521,14 +694,25 @@ export type NostrExportFormat = {
 };
 
 // @public (undocumented)
+type NostrKeyInfo = {
+    readonly ref: NostrKeyRef;
+    readonly publicKey: string;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type NostrKeyRef = {
+    readonly kind: "derived";
+    readonly walletId: string;
+    readonly index: number;
+};
+
+// @public (undocumented)
 export type NullValue = null;
 
 // @public (undocumented)
 export const nullValue: Validator<NullValue>;
 
-// Warning: (ae-forgotten-export) The symbol "Shape" needs to be exported by the entry point protocol.d.mts
-// Warning: (ae-forgotten-export) The symbol "ShapeResult" needs to be exported by the entry point protocol.d.mts
-//
 // @public
 export function obj<S extends Shape>(shape: S): Validator<ShapeResult<S>>;
 
@@ -538,10 +722,18 @@ export type OperatorCommitment = {
     readonly commitment: SigningCommitment;
 };
 
-// Warning: (ae-forgotten-export) The symbol "Opt" needs to be exported by the entry point protocol.d.mts
-//
+// @public (undocumented)
+class Opt<T> {
+    constructor(validator: Validator<T>);
+    // (undocumented)
+    readonly validator: Validator<T>;
+}
+
 // @public (undocumented)
 export function opt<T>(validator: Validator<T>): Opt<T>;
+
+// @public (undocumented)
+type OptionalKeys<S extends Shape> = { readonly [K in keyof S as S[K] extends Opt<unknown> ? K : never]?: S[K] extends Opt<infer T> ? T : never; };
 
 // @public (undocumented)
 export type ParamsOf<M extends MethodName> = ReturnType<(typeof METHODS)[M]["params"]>;
@@ -615,6 +807,9 @@ export { Request_2 as Request }
 export function requestBytes(value: ProtocolValue): number;
 
 // @public (undocumented)
+type RequiredKeys<S extends Shape> = { readonly [K in keyof S as S[K] extends Opt<unknown> ? never : K]: S[K] extends Validator<infer T> ? T : never; };
+
+// @public (undocumented)
 type Response_2 = {
     readonly v: typeof PROTOCOL_VERSION;
     readonly id: number;
@@ -659,6 +854,12 @@ export type Rumor = {
     readonly tags: ReadonlyArray<ReadonlyArray<string>>;
     readonly content: string;
 };
+
+// @public (undocumented)
+type Shape = Record<string, Field>;
+
+// @public (undocumented)
+type ShapeResult<S extends Shape> = RequiredKeys<S> & OptionalKeys<S>;
 
 // @public
 export type SignedEvent = {
@@ -754,8 +955,6 @@ export type SparkAccountRef = {
     readonly network: SparkNetwork;
 };
 
-// Warning: (ae-forgotten-export) The symbol "SparkOutflowIntent" needs to be exported by the entry point protocol.d.mts
-//
 // @public
 export type SparkApprovalSummary = {
     readonly kind: "transfer";
@@ -802,6 +1001,25 @@ export type SparkLeafKey = {
 // @public
 export type SparkNetwork = "mainnet" | "regtest";
 
+// @public
+type SparkOutflowIntent = {
+    readonly kind: "exit";
+    readonly address: string;
+    readonly amountSats: number;
+    readonly maxFeeSats: number;
+} | {
+    readonly kind: "onchain";
+    readonly address: string;
+    readonly maxFeeSats: number;
+} | {
+    readonly kind: "token";
+    readonly tokenIdentifier: Uint8Array;
+    readonly receivers: ReadonlyArray<{
+        readonly ownerPublicKey: Uint8Array;
+        readonly amount: string;
+    }>;
+};
+
 // @public (undocumented)
 export type StaticDepositClaimRequest = {
     readonly index: number;
@@ -822,6 +1040,22 @@ export type StaticDepositClaimStatement = {
     readonly vout: number;
     readonly creditAmountSats: number;
     readonly sspSignature: Uint8Array;
+};
+
+// @public
+type StatusPayload = {
+    readonly protocol: 3;
+    readonly vault: VaultState;
+    readonly appLock: boolean;
+    readonly verification: "available" | "unavailable";
+    readonly factors: ReadonlyArray<FactorInfo>;
+    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly nostr: {
+        readonly keys: ReadonlyArray<NostrKeyInfo>;
+    };
+    readonly importedKeys: ReadonlyArray<KeyInfo>;
+    readonly backup: BackupInfo_2 | null;
+    readonly blindSigning: boolean;
 };
 
 // @public (undocumented)
@@ -861,6 +1095,9 @@ export class ValidationError extends Error {
 // @public (undocumented)
 export type Validator<T> = (value: unknown) => T;
 
+// @public
+type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+
 // @public (undocumented)
 export const verifier: Validator<VerifyFactor>;
 
@@ -875,16 +1112,15 @@ export type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "v
 // @public (undocumented)
 export const walletErrorCode: Validator<WalletErrorCode>;
 
-// Warnings were encountered during analysis:
-//
-// dist/chains-tbKc4D1y.d.mts:155:3 - (ae-forgotten-export) The symbol "FactorInfo" needs to be exported by the entry point protocol.d.mts
-// dist/chains-tbKc4D1y.d.mts:210:5 - (ae-forgotten-export) The symbol "WalletInfo" needs to be exported by the entry point protocol.d.mts
-// dist/chains-tbKc4D1y.d.mts:402:3 - (ae-forgotten-export) The symbol "ChainSignParams" needs to be exported by the entry point protocol.d.mts
-// dist/index-BncgSyIK.d.mts:50:5 - (ae-forgotten-export) The symbol "DerivedNostrKey" needs to be exported by the entry point protocol.d.mts
-// dist/index-BncgSyIK.d.mts:52:3 - (ae-forgotten-export) The symbol "NostrKeyInfo" needs to be exported by the entry point protocol.d.mts
-// dist/index-BncgSyIK.d.mts:424:3 - (ae-forgotten-export) The symbol "BackupHeaderKey" needs to be exported by the entry point protocol.d.mts
-// dist/index-BncgSyIK.d.mts:470:3 - (ae-forgotten-export) The symbol "StatusPayload" needs to be exported by the entry point protocol.d.mts
-// dist/index-BncgSyIK.d.mts:474:3 - (ae-forgotten-export) The symbol "LockReason" needs to be exported by the entry point protocol.d.mts
+// @public (undocumented)
+type WalletInfo = {
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
 
 // (No @packageDocumentation comment for this package)
 

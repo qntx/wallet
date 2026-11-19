@@ -137,8 +137,6 @@ export type EvmAccessListEntry = {
     readonly storageKeys: ReadonlyArray<string>;
 };
 
-// Warning: (ae-forgotten-export) The symbol "EvmTransactionBase" needs to be exported by the entry point index.d.mts
-//
 // @public
 export type EvmTransaction = (EvmTransactionBase & {
     readonly type: "legacy";
@@ -162,6 +160,16 @@ export type EvmTransaction = (EvmTransactionBase & {
         readonly address: string;
     };
 });
+
+// @public (undocumented)
+type EvmTransactionBase = {
+    readonly chainId: number;
+    readonly nonce: number;
+    readonly gas: string;
+    readonly value: string;
+    readonly data: string;
+    readonly to?: string;
+};
 
 // @public (undocumented)
 export type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge";

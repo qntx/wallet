@@ -124,8 +124,6 @@ export type Endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType> = {
 // @public
 export function endpoint<Req extends z.ZodMiniType, Res extends z.ZodMiniType>(method: HttpMethod, path: `/v1/${string}`, request: Req, response: Res): Endpoint<Req, Res>;
 
-// Warning: (ae-forgotten-export) The symbol "EsploraRoute" needs to be exported by the entry point gateway-contract.d.mts
-//
 // @public
 export const ESPLORA_ROUTES: ReadonlyArray<EsploraRoute>;
 
@@ -140,6 +138,12 @@ export const esploraPathAllowed: (method: string, path: string) => boolean;
 
 // @public (undocumented)
 export const esploraPost: Endpoint<z.ZodMiniString<string>, z.ZodMiniString<string>>;
+
+// @public (undocumented)
+type EsploraRoute = {
+    readonly method: "GET" | "POST";
+    readonly pattern: RegExp;
+};
 
 // @public
 export const EVM_RPC_METHODS: readonly ["eth_blobBaseFee", "eth_blockNumber", "eth_call", "eth_chainId", "eth_createAccessList", "eth_estimateGas", "eth_feeHistory", "eth_gasPrice", "eth_getBalance", "eth_getBlockByHash", "eth_getBlockByNumber", "eth_getBlockReceipts", "eth_getBlockTransactionCountByHash", "eth_getBlockTransactionCountByNumber", "eth_getCode", "eth_getLogs", "eth_getProof", "eth_getStorageAt", "eth_getTransactionByBlockHashAndIndex", "eth_getTransactionByBlockNumberAndIndex", "eth_getTransactionByHash", "eth_getTransactionCount", "eth_getTransactionReceipt", "eth_maxPriorityFeePerGas", "eth_sendRawTransaction", "eth_simulateV1", "net_version", "web3_clientVersion"];
@@ -203,8 +207,6 @@ export const gatewayError: z.ZodMiniObject<{
 // @public (undocumented)
 export type GatewayErrorCode = (typeof GATEWAY_ERRORS)[number];
 
-// Warning: (ae-forgotten-export) The symbol "size" needs to be exported by the entry point gateway-contract.d.mts
-//
 // @public (undocumented)
 export const hashCount: typeof size;
 
@@ -664,8 +666,12 @@ export const RPC_COST_WEIGHTS: {
 // @public
 export const RPC_METHOD_COST: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, RpcCostClass>>;
 
-// Warning: (ae-forgotten-export) The symbol "RpcCall" needs to be exported by the entry point gateway-contract.d.mts
-//
+// @public (undocumented)
+type RpcCall = {
+    readonly method: string;
+    readonly params?: unknown;
+};
+
 // @public
 export function rpcCallCost(call: RpcCall): number;
 
@@ -730,6 +736,9 @@ export const servedNetworksRequest: z.ZodMiniUndefined;
 export const servedNetworksResponse: z.ZodMiniObject<{
     networks: z.ZodMiniArray<z.ZodMiniString<string>>;
 }, z.core.$strip>;
+
+// @public (undocumented)
+const size: (list: HashList) => number;
 
 // @public
 export const SOLANA_MAINNET = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";

@@ -70,8 +70,6 @@ export type AccountGroup = {
     readonly updatedAt: number;
 };
 
-// Warning: (ae-forgotten-export) The symbol "SignParams" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
 export type AccountRef = Exclude<SignParams["request"], {
     kind: "bitcoin.psbt";
@@ -79,7 +77,6 @@ export type AccountRef = Exclude<SignParams["request"], {
 
 // @public (undocumented)
 export class AccountTreeController extends Controller<AccountTreeState> {
-    // Warning: (ae-forgotten-export) The symbol "AccountTreeControllerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: AccountTreeControllerOptions);
     // (undocumented)
     addGroup(walletId: string): number;
@@ -117,6 +114,28 @@ export class AccountTreeController extends Controller<AccountTreeState> {
     // (undocumented)
     unbind(walletId: string, index: number): void;
 }
+
+// @public (undocumented)
+type AccountTreeControllerOptions = {
+    readonly wallet: Wallet;
+    readonly setTimer: (ms: number, fn: () => void) => () => void;
+    readonly spark: SparkController;
+    readonly sparkNetwork: SparkNetwork;
+    readonly networks?: DiscoveryNetworks;
+    readonly chains?: {
+        readonly account: (params: {
+            readonly walletId: string;
+            readonly groupIndex: number;
+            readonly template: string;
+            readonly network: string;
+        }) => Promise<{
+            readonly address?: string;
+            readonly xpub?: string;
+        }>;
+    };
+    readonly logger: EngineLogger;
+    readonly now: () => number;
+};
 
 // @public (undocumented)
 export class AccountTreeError extends Error {
@@ -176,7 +195,6 @@ export type AcrossBridgeStatus = {
 
 // @public (undocumented)
 export class AddressBookController extends Controller<AddressBookState> {
-    // Warning: (ae-forgotten-export) The symbol "AddressBookOptions" needs to be exported by the entry point index.d.mts
     constructor(options: AddressBookOptions);
     // (undocumented)
     add(params: {
@@ -199,7 +217,6 @@ export class AddressBookController extends Controller<AddressBookState> {
     // (undocumented)
     rename(id: string, name: string): Promise<AddressBookEntry>;
     setNote(id: string, note: string | undefined): Promise<AddressBookEntry>;
-    // Warning: (ae-forgotten-export) The symbol "AddressBookRecord" needs to be exported by the entry point index.d.mts
     syncEntries(): ReadonlyArray<AddressBookRecord>;
 }
 
@@ -225,8 +242,38 @@ export class AddressBookError extends Error {
 export type AddressBookErrorCategory = "invalid-input" | "duplicate" | "not-found" | "locked" | "limit";
 
 // @public (undocumented)
+type AddressBookOptions = {
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (n: number) => Uint8Array;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+};
+
+// @public (undocumented)
+type AddressBookRecord = AddressBookEntry | AddressBookTombstone;
+
+// @public (undocumented)
 export type AddressBookState = {
     readonly entries: Record<string, AddressBookEntry>;
+};
+
+// @public
+type AddressBookSync = {
+    readonly syncEntries: () => ReadonlyArray<AddressBookRecord>;
+    readonly merge: (remote: ReadonlyArray<AddressBookRecord>) => Promise<{
+        readonly changed: boolean;
+        readonly localNewer: boolean;
+    }>;
+    readonly store: {
+        readonly subscribe: (listener: () => void) => () => void;
+    };
+};
+
+// @public (undocumented)
+type AddressBookTombstone = {
+    readonly id: string;
+    readonly deleted: true;
+    readonly updatedAt: number;
 };
 
 // @public (undocumented)
@@ -249,7 +296,6 @@ export type AssetChange = {
 
 // @public (undocumented)
 export class AssetsController extends Controller<AssetsControllerState> {
-    // Warning: (ae-forgotten-export) The symbol "Options" needs to be exported by the entry point index.d.mts
     constructor(options: Options);
     addToken(network: string, address: string): Promise<void>;
     // (undocumented)
@@ -280,7 +326,6 @@ export type AssetsControllerState = {
 
 // @public (undocumented)
 export class BackupController extends Controller<BackupControllerState> {
-    // Warning: (ae-forgotten-export) The symbol "BackupControllerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: BackupControllerOptions);
     // (undocumented)
     destroy(): Promise<void>;
@@ -324,6 +369,14 @@ export class BackupControllerError extends Error {
 }
 
 // @public (undocumented)
+type BackupControllerOptions = {
+    readonly wallet: Wallet;
+    readonly cloud: CloudStore | undefined;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+};
+
+// @public (undocumented)
 export type BackupControllerState = {
     readonly status: "locked" | "unavailable" | "off" | "syncing" | "synced" | "conflict" | "error";
     readonly backup: BackupInfo | null;
@@ -347,12 +400,26 @@ export type BackupPasswordStrength = {
 export function backupPasswordStrength(password: string): Promise<BackupPasswordStrength>;
 
 // @public
+type BatchRecord = {
+    readonly origin: string;
+    readonly id: string;
+    readonly network: string;
+    readonly atomic: boolean;
+    readonly txIds: ReadonlyArray<string>;
+    readonly expected: number;
+    readonly createdAt: number;
+};
+
+// @public
 export type BitcoinAccount = {
     readonly walletId: string;
     readonly groupIndex: number;
     readonly address: string;
     readonly template: "btc.bip84" | "btc.bip86";
 };
+
+// @public (undocumented)
+type BitcoinConnections = Pick<ConnectionController, "checkOrigin" | "session" | "authorize" | "sessionAccounts" | "request" | "touch" | "revoke" | "getState" | "store">;
 
 // @public
 export type BitcoinDisplay = {
@@ -362,10 +429,23 @@ export type BitcoinDisplay = {
     readonly send?: boolean;
 };
 
+// @public (undocumented)
+type BitcoinEvent = {
+    readonly name: "bitcoinAccountsChanged";
+    readonly origin: string;
+    readonly accounts: ReadonlyArray<BitcoinWalletAccount>;
+};
+
 // @public
 export type BitcoinGroup = {
     readonly walletId: string;
     readonly groupIndex: number;
+};
+
+// @public (undocumented)
+type BitcoinHandler = {
+    readonly handle: (origin: string, request: BitcoinRequest) => Promise<unknown>;
+    readonly subscribe: (listener: (event: BitcoinEvent) => void) => () => void;
 };
 
 // @public
@@ -377,6 +457,18 @@ export type BitcoinPsbtInput = {
         readonly template: BitcoinAccount["template"];
     }>;
 };
+
+// @public
+type BitcoinPurpose = "payment" | "ordinals";
+
+// @public
+type BitcoinRequest = {
+    readonly method: string;
+    readonly params?: unknown;
+};
+
+// @public (undocumented)
+type BitcoinRequests = Pick<RequestController, "prepare" | "outcome">;
 
 // @public
 export type BitcoinSigHash = "ALL" | "SINGLE|ANYONECANPAY";
@@ -434,21 +526,21 @@ export type BitcoinUtxoView = {
     readonly protected: boolean;
 };
 
-// Warning: (ae-forgotten-export) The symbol "BitcoinHandler" needs to be exported by the entry point index.d.mts
-//
+// @public
+type BitcoinWalletAccount = {
+    readonly address: string;
+    readonly publicKey: Uint8Array;
+    readonly chains: ReadonlyArray<string>;
+    readonly features: ReadonlyArray<string>;
+};
+
 // @public
 export class BitcoinWalletHandler implements BitcoinHandler {
     constructor(options: Options$1);
-    // Warning: (ae-forgotten-export) The symbol "BitcoinRequest" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     handle(origin: string, request: BitcoinRequest): Promise<unknown>;
-    // Warning: (ae-forgotten-export) The symbol "Options$1" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     readonly options: Options$1;
-    // Warning: (ae-forgotten-export) The symbol "BitcoinEvent" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     subscribe(listener: (event: BitcoinEvent) => void): () => void;
 }
@@ -463,6 +555,9 @@ export type BrowserOrigin = {
     readonly kind: "browser";
     readonly origin: string;
 };
+
+// @public (undocumented)
+type ChainApis = ReturnType<typeof chains>;
 
 // @public
 export type ChainRequestInput = ({
@@ -590,7 +685,6 @@ export type ConnectionAccountGroup = {
 
 // @public (undocumented)
 export class ConnectionController extends Controller<ConnectionState> {
-    // Warning: (ae-forgotten-export) The symbol "ConnectionControllerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: ConnectionControllerOptions);
     activeIdentity(): NostrKeyRef | undefined;
     approveConnection(id: string, grant: {
@@ -633,6 +727,26 @@ export class ConnectionController extends Controller<ConnectionState> {
     // (undocumented)
     touch(origin: string): Promise<void>;
 }
+
+// @public (undocumented)
+type ConnectionControllerOptions = {
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (n: number) => Uint8Array;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+    readonly allowLocalhost: boolean;
+    readonly selectedGroup: () => ConnectionAccountGroup | undefined;
+    readonly evmAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
+    readonly solanaAddress: (group: ConnectionAccountGroup, network: string) => Promise<string>;
+    readonly bitcoinAddress: (group: ConnectionAccountGroup, network: string, purpose: BitcoinPurpose) => Promise<string>;
+    readonly enabledNetworks: () => ReadonlyArray<string>;
+    readonly nostrPubkey: (ref: NostrKeyRef) => Promise<string>;
+    readonly invalidate: (origin: string) => void;
+    readonly onSelectedGroup: (listener: () => void) => () => void;
+    readonly invalidateAll: () => void;
+    readonly phishing: Pick<PhishingController, "check">;
+    readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+};
 
 // @public (undocumented)
 export type ConnectionOrigin = {
@@ -728,6 +842,24 @@ export type DelegationStatus = {
 };
 
 // @public (undocumented)
+type DiscoveryNetworks = {
+    readonly client: (network: string) => {
+        readonly getTransactionCount: (p: {
+            readonly address: `0x${string}`;
+            readonly blockTag: "latest";
+        }) => Promise<number>;
+        readonly getBalance: (p: {
+            readonly address: `0x${string}`;
+        }) => Promise<bigint>;
+    };
+    readonly solanaRpc: (network: string) => {
+        readonly call: (method: string, params: unknown[]) => Promise<unknown>;
+    };
+    readonly esplora: (network: string) => Esplora;
+    readonly enabled: (family: "evm" | "solana" | "bitcoin") => ReadonlyArray<string>;
+};
+
+// @public (undocumented)
 export type DisplayIntent = ReturnType<typeof decodeEvm>;
 
 // @public (undocumented)
@@ -750,12 +882,32 @@ export type Eip1193Event = {
 
 // @public (undocumented)
 export class Eip1193Handler {
-    // Warning: (ae-forgotten-export) The symbol "Eip1193HandlerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: Eip1193HandlerOptions);
     // (undocumented)
     handle(origin: string, request: Eip1193Request): Promise<unknown>;
     subscribe(listener: (event: Eip1193Event) => void): () => void;
 }
+
+// @public (undocumented)
+type Eip1193HandlerOptions = {
+    readonly connections: ConnectionController;
+    readonly requests: RequestController;
+    readonly networks: NetworkController;
+    readonly defaultNetwork: () => string;
+    readonly isTracked: (network: string, address: string) => boolean;
+    readonly delegationState: (account: AccountRef, network: string) => Promise<DelegationStatus>;
+    readonly batches: {
+        readonly record: (record: BatchRecord) => Promise<void>;
+        readonly get: (origin: string, id: string) => BatchRecord | undefined;
+    };
+    readonly txById: (id: string) => TrackedTransaction | undefined;
+    readonly showCallsStatus: (request: {
+        readonly origin: string;
+        readonly txIds: ReadonlyArray<string>;
+    }) => void;
+    readonly now: () => number;
+    readonly random: (length: number) => Uint8Array;
+};
 
 // @public (undocumented)
 export type Eip1193Request = {
@@ -857,10 +1009,32 @@ export type EvmSignInput = {
 // @public
 export const FIAT_CURRENCIES: readonly ["usd", "eur", "gbp", "jpy", "cny", "krw", "hkd", "sgd", "cad", "aud", "chf"];
 
-// Warning: (ae-forgotten-export) The symbol "fiatCurrency" needs to be exported by the entry point index.d.mts
-//
 // @public (undocumented)
 export type FiatCurrency = z.infer<typeof fiatCurrency>;
+
+// @public (undocumented)
+const fiatCurrency: z.ZodMiniEnum<{
+    aud: "aud";
+    cad: "cad";
+    chf: "chf";
+    cny: "cny";
+    eur: "eur";
+    gbp: "gbp";
+    hkd: "hkd";
+    jpy: "jpy";
+    krw: "krw";
+    sgd: "sgd";
+    usd: "usd";
+}>;
+
+// @public (undocumented)
+type GatewayConfig = {
+    readonly url: string;
+    readonly clientIds: Readonly<Record<GatewayScope, string>>;
+};
+
+// @public
+type GatewayScope = "evm" | "solana" | "bitcoin" | "service";
 
 // @public (undocumented)
 export type GroupHistory = {
@@ -977,6 +1151,16 @@ export type HostController<C extends Controller<Record<string, unknown>>, K exte
 };
 
 // @public
+type Independent<T> = {
+    readonly kind: "not-needed";
+} | {
+    readonly kind: "unavailable";
+} | {
+    readonly kind: "available";
+    readonly client: T;
+};
+
+// @public
 export class InvalidTokenError extends Error {
     constructor(message: string);
 }
@@ -1071,7 +1255,6 @@ export type MetaSyncConfig = {
 
 // @public
 export class MetaSyncController extends Controller<MetaSyncState> {
-    // Warning: (ae-forgotten-export) The symbol "MetaSyncControllerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: MetaSyncControllerOptions);
     // (undocumented)
     destroy(): Promise<void>;
@@ -1080,6 +1263,21 @@ export class MetaSyncController extends Controller<MetaSyncState> {
     reconcile(): void;
     sync(): Promise<void>;
 }
+
+// @public (undocumented)
+type MetaSyncControllerOptions = {
+    readonly wallet: Wallet;
+    readonly accounts: AccountTreeController;
+    readonly addressBook: AddressBookSync;
+    readonly nostr: {
+        readonly syncSigner: (walletId: string) => WalletSyncSigner;
+    };
+    readonly metaSync: MetaSyncConfig | undefined;
+    readonly logger: EngineLogger;
+    readonly now: () => number;
+    readonly setTimer: (ms: number, fn: () => void) => () => void;
+    readonly verifyEvent: (event: Event_2) => boolean;
+};
 
 // @public (undocumented)
 export class MetaSyncError extends Error {
@@ -1110,7 +1308,6 @@ export type MetaSyncWalletStatus = {
 
 // @public (undocumented)
 export class NetworkController extends Controller<NetworkControllerState> {
-    // Warning: (ae-forgotten-export) The symbol "Options$3" needs to be exported by the entry point index.d.mts
     constructor(options: Options$3);
     addRpc(network: string, url: string): Promise<void>;
     // (undocumented)
@@ -1121,7 +1318,6 @@ export class NetworkController extends Controller<NetworkControllerState> {
     endpoints(network: string): ReadonlyArray<string>;
     ensClient(network: string): PublicClient;
     esplora(network: string): Esplora;
-    // Warning: (ae-forgotten-export) The symbol "Independent" needs to be exported by the entry point index.d.mts
     independentClient(network: string): Independent<PublicClient>;
     independentEnsClient(network: string): Independent<PublicClient>;
     // (undocumented)
@@ -1151,13 +1347,23 @@ export type NetworkInfo = NetworkMeta & {
 
 // @public (undocumented)
 export class Nip07Handler {
-    // Warning: (ae-forgotten-export) The symbol "Nip07HandlerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: Nip07HandlerOptions);
-    // Warning: (ae-forgotten-export) The symbol "Nip07Request" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     handle(origin: string, request: Nip07Request): Promise<unknown>;
 }
+
+// @public (undocumented)
+type Nip07HandlerOptions = {
+    readonly connections: Pick<ConnectionController, "checkOrigin" | "authorize" | "session" | "nostrIdentity" | "nostrPolicy" | "request" | "touch">;
+    readonly requests: Pick<RequestController, "prepare" | "outcome">;
+    readonly signerFor: (ref: NostrKeyRef) => WalletSigner;
+};
+
+// @public
+type Nip07Request = {
+    readonly method: string;
+    readonly params?: unknown;
+};
 
 // @public
 export type NostrDisplay = {
@@ -1187,6 +1393,70 @@ export type NostrSignInput = {
 export type NostrSignResult = {
     readonly kind: "nostr.event";
     readonly event: Event_2;
+};
+
+// @public (undocumented)
+type Options$1 = {
+    readonly connections: BitcoinConnections;
+    readonly requests: BitcoinRequests;
+    readonly bitcoinAccount: (group: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, network: string, purpose: BitcoinPurpose) => Promise<{
+        readonly address: string;
+        readonly publicKey: Uint8Array;
+    }>;
+    readonly bitcoinNetwork: () => string;
+};
+
+// @public (undocumented)
+type Options$2 = {
+    readonly wallet: Wallet;
+    readonly networks: NetworkController;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly random: (n: number) => Uint8Array;
+    readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+    readonly now: () => number;
+    readonly logger: EngineLogger;
+    readonly pollMs?: number;
+    readonly chains?: ReturnType<typeof chains>;
+};
+
+// @public (undocumented)
+type Options$3 = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly logger: EngineLogger;
+    readonly gateway?: GatewayConfig | undefined;
+    readonly setTimer: SetTimer;
+    readonly random: (length: number) => Uint8Array;
+};
+
+// @public (undocumented)
+type Options = {
+    readonly networks: NetworkController;
+    readonly chains: Pick<ChainsApi, "account">;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+    readonly logger: EngineLogger;
+    readonly gateway: GatewayConfig | undefined;
+    readonly fetch: typeof globalThis.fetch;
+    readonly now: () => number;
+};
+
+// @public (undocumented)
+type Options_2 = {
+    readonly connections: SolanaConnections;
+    readonly requests: SolanaRequests;
+    readonly solanaAccount: (group: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+    }, network: string) => Promise<{
+        readonly address: string;
+        readonly publicKey: Uint8Array;
+    }>;
+    readonly solanaNetwork: () => string;
 };
 
 // @public
@@ -1371,6 +1641,42 @@ export type PhishingState = {
 export type PhishingStatus = "blocked" | "trusted" | "clear" | "unchecked";
 
 // @public
+type PreparedBitcoinPsbt = {
+    readonly request: Extract<SignRequest, {
+        kind: "bitcoin.psbt";
+    }>;
+    readonly ownScripts: ReadonlySet<string>;
+    readonly inputs: ReadonlyArray<{
+        readonly index: number;
+        readonly value: number;
+        readonly sigHash: BitcoinSigHash;
+        readonly template: BitcoinAccount["template"];
+        readonly frozen: boolean;
+    }>;
+};
+
+// @public
+type PreparedMessage = Omit<PreparedRequest, "submit" | "txId"> & {
+    readonly signer: string;
+    readonly submit: (verify: SendParams["verify"]) => Promise<SignatureResult>;
+};
+
+// @public
+type PreparedRequest = {
+    readonly txId: string;
+    readonly account: AccountRef;
+    readonly network: string;
+    readonly target?: string;
+    readonly intent: DisplayIntent;
+    readonly checks: ReadonlyArray<RequestCheckCode>;
+    readonly simulation?: SimulationOutcome;
+    readonly resimulate?: () => Promise<SimulationOutcome>;
+    readonly staleReason: () => string | undefined | Promise<string | undefined>;
+    readonly submit: (verify: SendParams["verify"], commit: () => void) => Promise<TrackedTransaction>;
+    readonly release: () => void;
+};
+
+// @public
 export type PreparedSparkAction = {
     readonly display: SparkDisplay;
     readonly checks: ReadonlyArray<RequestCheckCode>;
@@ -1504,7 +1810,6 @@ export type RequestCheckCode = "decode-partial" | "nonce-mismatch" | "fee-mismat
 
 // @public (undocumented)
 export class RequestController extends Controller<RequestControllerState> {
-    // Warning: (ae-forgotten-export) The symbol "RequestControllerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: RequestControllerOptions);
     approve(id: string, method: ChainRequestMethod | "spark-deposit", options?: ApproveOptions): Promise<TrackedTransaction>;
     // (undocumented)
@@ -1537,6 +1842,41 @@ export class RequestController extends Controller<RequestControllerState> {
     reject(id: string): void;
     signLog(): Promise<ReadonlyArray<SignLogEntry>>;
 }
+
+// @public (undocumented)
+type RequestControllerOptions = {
+    readonly transactions: TransactionController;
+    readonly spark: SparkController;
+    readonly addressBook: AddressBookController;
+    readonly openStore: () => Promise<EngineStore>;
+    readonly fetch: typeof globalThis.fetch;
+    readonly random: (n: number) => Uint8Array;
+    readonly now: () => number;
+    readonly setTimer: (ms: number, fn: () => unknown) => () => void;
+    readonly logger: EngineLogger;
+    readonly nostrSign: (ref: NostrKeyRef, event: UnsignedEvent) => Promise<Event_2>;
+    readonly phishing: Pick<PhishingController, "check">;
+    readonly tokens: {
+        readonly metadata: (network: string, address: string) => Promise<{
+            readonly symbol: string;
+            readonly decimals: number;
+        }>;
+        readonly add: (network: string, address: string) => Promise<void>;
+    };
+    readonly blindSigning: () => boolean;
+    readonly simulateSolana: (account: SolanaAccount, network: string, message: Uint8Array) => Promise<SimulationOutcome>;
+    readonly solanaSign: (account: {
+        readonly walletId: string;
+        readonly groupIndex: number;
+        readonly address: string;
+    }, network: string, request: SolanaSignInput["request"], verify: SendParams["verify"], commit: () => void) => Promise<SolanaSignResult>;
+    readonly bitcoinSign: (account: BitcoinAccount, network: string, request: {
+        readonly kind: "message";
+        readonly message: string;
+    }, verify: SendParams["verify"]) => Promise<BitcoinSignResult>;
+    readonly bitcoinPrepare: (account: BitcoinGroup, network: string, psbts: ReadonlyArray<BitcoinPsbtInput>) => Promise<ReadonlyArray<PreparedBitcoinPsbt>>;
+    readonly bitcoinSignPsbts: (account: BitcoinGroup, network: string, prepared: ReadonlyArray<PreparedBitcoinPsbt>, send: boolean, verify: SendParams["verify"], commit: () => void) => Promise<BitcoinSignResult>;
+};
 
 // @public (undocumented)
 export type RequestControllerState = {
@@ -1606,6 +1946,9 @@ export type SessionAccounts = {
     readonly addresses: ReadonlyArray<string>;
 };
 
+// @public
+type SetTimer = (ms: number, fn: () => unknown) => () => void;
+
 // @public (undocumented)
 export type SignatureResult = {
     readonly kind: "evm.personal-message" | "evm.typed-data";
@@ -1652,6 +1995,12 @@ export type SignLogEntry = {
 // @public (undocumented)
 export type SignLogOutcome = "submitted" | "rejected" | "failed" | "expired" | "invalidated";
 
+// @public (undocumented)
+type SignParams = Parameters<ChainApis["sign"]>[0];
+
+// @public (undocumented)
+type SignResult = Awaited<ReturnType<ChainApis["sign"]>>;
+
 // @public
 export class SimulationChangedError extends Error {
     constructor();
@@ -1676,6 +2025,9 @@ export type SolanaAccount = {
     readonly address: string;
 };
 
+// @public (undocumented)
+type SolanaConnections = Pick<ConnectionController, "checkOrigin" | "session" | "authorize" | "sessionAccounts" | "request" | "touch" | "revoke" | "getState" | "store">;
+
 // @public
 export type SolanaDisplay = {
     readonly kind: "solana.sign";
@@ -1687,7 +2039,29 @@ export type SolanaDisplay = {
 };
 
 // @public (undocumented)
+type SolanaEvent = {
+    readonly name: "solanaAccountsChanged";
+    readonly origin: string;
+    readonly accounts: ReadonlyArray<SolanaWalletAccount>;
+};
+
+// @public (undocumented)
 export type SolanaFeeTier = "slow" | "normal" | "fast";
+
+// @public (undocumented)
+type SolanaHandler = {
+    readonly handle: (origin: string, request: SolanaRequest) => Promise<unknown>;
+    readonly subscribe: (listener: (event: SolanaEvent) => void) => () => void;
+};
+
+// @public
+type SolanaRequest = {
+    readonly method: string;
+    readonly params?: unknown;
+};
+
+// @public (undocumented)
+type SolanaRequests = Pick<RequestController, "prepare" | "outcome">;
 
 // @public (undocumented)
 export type SolanaRpc = {
@@ -1722,20 +2096,23 @@ export type SolanaSignResult = {
     readonly signature: Uint8Array;
 };
 
-// Warning: (ae-forgotten-export) The symbol "SolanaHandler" needs to be exported by the entry point index.d.mts
-//
+// @public
+type SolanaWalletAccount = {
+    readonly address: string;
+    readonly publicKey: Uint8Array;
+    readonly chains: ReadonlyArray<string>;
+    readonly features: ReadonlyArray<string>;
+    readonly icon?: string;
+    readonly label?: string;
+};
+
 // @public
 export class SolanaWalletHandler implements SolanaHandler {
     constructor(options: Options_2);
-    // Warning: (ae-forgotten-export) The symbol "SolanaRequest" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     handle(origin: string, request: SolanaRequest): Promise<unknown>;
-    // Warning: (ae-forgotten-export) The symbol "Options_2" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     readonly options: Options_2;
-    // Warning: (ae-forgotten-export) The symbol "SolanaEvent" needs to be exported by the entry point index.d.mts
     subscribe(listener: (event: SolanaEvent) => void): () => void;
 }
 
@@ -1756,6 +2133,16 @@ export type SparkAccountState = {
 // @public (undocumented)
 export type SparkActivity = SparkPayment & {
     readonly note?: PaymentNote;
+};
+
+// @public (undocumented)
+type SparkApis = {
+    readonly signer: (ref: SparkAccountRef) => SparkSigner;
+    readonly approve: (params: {
+        account: SparkAccountRef;
+        intent: SparkApproveIntent;
+        verify: VerifyFactor;
+    }) => Promise<unknown>;
 };
 
 // @public (undocumented)
@@ -2071,7 +2458,6 @@ export type TrackedTransaction = {
 
 // @public (undocumented)
 export class TransactionController extends Controller<TransactionControllerState> {
-    // Warning: (ae-forgotten-export) The symbol "Options$2" needs to be exported by the entry point index.d.mts
     constructor(options: Options$2);
     batchById(origin: string, id: string): BatchRecord | undefined;
     delegationState(account: AccountRef, network: string): Promise<DelegationStatus>;
@@ -2087,7 +2473,6 @@ export class TransactionController extends Controller<TransactionControllerState
     lock(): void;
     markDepositClaimed(id: string): Promise<void>;
     nextReceiveAddress(walletId: string, groupIndex: number, network: string): Promise<string>;
-    // Warning: (ae-forgotten-export) The symbol "PreparedMessage" needs to be exported by the entry point index.d.mts
     prepareDapp(account: AccountRef, request: SignRequest): Promise<PreparedRequest | PreparedMessage>;
     prepareEvmInternal(input: Extract<ChainRequestInput, {
         method: "evm-delegation" | "evm-batch" | "evm-approve" | "evm-swap" | "evm-bridge" | "evm-nft-send" | "evm-lido";
@@ -2095,7 +2480,6 @@ export class TransactionController extends Controller<TransactionControllerState
     prepareReplacement(input: Extract<ChainRequestInput, {
         method: "speed-up" | "cancel" | "cpfp";
     }>, requestId: string): Promise<PreparedRequest>;
-    // Warning: (ae-forgotten-export) The symbol "PreparedRequest" needs to be exported by the entry point index.d.mts
     prepareSend(params: PrepareParams, requestId: string, sparkDeposit?: SparkDepositTag): Promise<PreparedRequest>;
     // (undocumented)
     prepareSolanaCoreSend(input: Extract<ChainRequestInput, {
@@ -2108,14 +2492,11 @@ export class TransactionController extends Controller<TransactionControllerState
     prepareSolanaSwap(input: Extract<ChainRequestInput, {
         method: "solana-swap";
     }>, _requestId: string): Promise<PreparedRequest>;
-    // Warning: (ae-forgotten-export) The symbol "BatchRecord" needs to be exported by the entry point index.d.mts
     recordBatch(record: BatchRecord): Promise<void>;
     setUtxosFrozen(account: {
         readonly walletId: string;
         readonly groupIndex: number;
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
-    // Warning: (ae-forgotten-export) The symbol "PreparedBitcoinPsbt" needs to be exported by the entry point index.d.mts
-    // Warning: (ae-forgotten-export) The symbol "SignResult" needs to be exported by the entry point index.d.mts
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
     txById(id: string): TrackedTransaction | undefined;
 }
@@ -2251,13 +2632,22 @@ export type WatchAssetInput = {
 
 // @public (undocumented)
 export class WeblnHandler {
-    // Warning: (ae-forgotten-export) The symbol "WeblnHandlerOptions" needs to be exported by the entry point index.d.mts
     constructor(options: WeblnHandlerOptions);
-    // Warning: (ae-forgotten-export) The symbol "WeblnRequest" needs to be exported by the entry point index.d.mts
-    //
     // (undocumented)
     handle(origin: string, request: WeblnRequest): Promise<unknown>;
 }
+
+// @public (undocumented)
+type WeblnHandlerOptions = {
+    readonly connections: Pick<ConnectionController, "checkOrigin" | "authorize" | "session" | "sessionAccounts" | "lightningPolicy" | "request" | "touch">;
+    readonly requests: Pick<RequestController, "prepare" | "outcome">;
+    readonly spark: Pick<SparkController, "accountBalance" | "paymentStatus">;
+    readonly sparkNetwork: SparkNetwork_2;
+    readonly now: () => number;
+    readonly alias: string;
+    readonly lightningMaxFee: (amountSats: number) => number;
+    readonly sleep: (ms: number) => Promise<void>;
+};
 
 // @public
 export type WeblnInvoiceInput = {
@@ -2272,6 +2662,12 @@ export type WeblnInvoiceInput = {
 export type WeblnInvoiceResult = {
     readonly kind: "lightning.invoice";
     readonly paymentRequest: string;
+};
+
+// @public
+type WeblnRequest = {
+    readonly method: string;
+    readonly params?: unknown;
 };
 
 // @public (undocumented)
@@ -2330,12 +2726,6 @@ export type ZeroExSwapQuote = {
     readonly blockNumber: bigint;
     readonly fetchedAt: number;
 };
-
-// Warnings were encountered during analysis:
-//
-// dist/errors-BtWQfZHL.d.mts:339:3 - (ae-forgotten-export) The symbol "SparkApis" needs to be exported by the entry point index.d.mts
-// dist/errors-BtWQfZHL.d.mts:744:3 - (ae-forgotten-export) The symbol "GatewayConfig" needs to be exported by the entry point index.d.mts
-// dist/index.d.mts:669:3 - (ae-forgotten-export) The symbol "SetTimer" needs to be exported by the entry point index.d.mts
 
 // (No @packageDocumentation comment for this package)
 

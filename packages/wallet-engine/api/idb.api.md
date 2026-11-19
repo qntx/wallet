@@ -4,6 +4,20 @@
 
 ```ts
 
+// @public
+type EngineCollection = {
+    readonly get: (key: string) => Promise<Uint8Array | undefined>;
+    readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
+    readonly delete: (key: string) => Promise<void>;
+    readonly list: () => Promise<ReadonlyArray<string>>;
+};
+
+// @public (undocumented)
+type EngineStore = {
+    readonly collection: (name: string) => EngineCollection;
+    readonly close: () => Promise<void>;
+};
+
 // @public (undocumented)
 export type IndexedDbEngineStoreOptions = {
     readonly name: string;
@@ -16,15 +30,17 @@ export type IndexedDbPublicStoreOptions = {
     readonly name: string;
 };
 
-// Warning: (ae-forgotten-export) The symbol "EngineStore" needs to be exported by the entry point idb.d.mts
-//
 // @public (undocumented)
 export function openIndexedDbEngineStore(options: IndexedDbEngineStoreOptions): Promise<EngineStore>;
 
-// Warning: (ae-forgotten-export) The symbol "PublicStore" needs to be exported by the entry point idb.d.mts
-//
 // @public
 export function openIndexedDbPublicStore(options: IndexedDbPublicStoreOptions): Promise<PublicStore>;
+
+// @public
+type PublicStore = {
+    readonly get: (key: string) => Promise<Uint8Array | undefined>;
+    readonly put: (key: string, bytes: Uint8Array) => Promise<void>;
+};
 
 // @public (undocumented)
 export type Random = (length: number) => Uint8Array;

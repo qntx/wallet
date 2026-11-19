@@ -7,13 +7,63 @@
 import { MessageFields } from '@qntx/siwx';
 import { NETWORK } from '@scure/btc-signer/utils.js';
 
-// Warning: (ae-forgotten-export) The symbol "BitcoinNetwork" needs to be exported by the entry point bitcoin.d.mts
-//
+// @public (undocumented)
+type AccountRef = {
+    readonly kind: "hd";
+    readonly walletId: string;
+    readonly groupIndex: number;
+    readonly template: string;
+} | {
+    readonly kind: "imported";
+    readonly keyId: string;
+    readonly family: ChainFamily;
+};
+
+// @public (undocumented)
+type ApprovalChange = {
+    readonly kind: "allowance";
+    readonly spender: string;
+    readonly amount: AssetAmount;
+    readonly change: "set" | "increase" | "decrease" | "transfer";
+    readonly unlimited: boolean;
+    readonly expiration?: number;
+    readonly via?: "permit2" | "allowance-holder";
+    readonly verified: boolean;
+} | {
+    readonly kind: "operator";
+    readonly asset: string;
+    readonly spender: string;
+    readonly approved: boolean;
+    readonly verified: false;
+} | {
+    readonly kind: "stake-authority";
+    readonly account: string;
+    readonly role: "staker" | "withdrawer";
+    readonly authority: string;
+    readonly verified: false;
+};
+
+// @public (undocumented)
+type AssetAmount = {
+    readonly asset: string;
+    readonly amount: string;
+    readonly decimals?: number;
+    readonly symbol?: string;
+    readonly tokenId?: string;
+};
+
+// @public (undocumented)
+type AssetFlow = {
+    readonly to: string;
+    readonly amount: AssetAmount;
+    readonly verified: boolean;
+    readonly burn?: true;
+    readonly name?: string;
+};
+
 // @public (undocumented)
 export const BITCOIN_NETWORKS: Readonly<Record<string, BitcoinNetwork>>;
 
-// Warning: (ae-forgotten-export) The symbol "BitcoinTemplate" needs to be exported by the entry point bitcoin.d.mts
-//
 // @public (undocumented)
 export type BitcoinAccountTemplate = BitcoinTemplate;
 
@@ -21,14 +71,32 @@ export type BitcoinAccountTemplate = BitcoinTemplate;
 export function bitcoinAddressFromXpub(xpub: string, template: BitcoinAccountTemplate, network: string, change: 0 | 1, index: number): string;
 
 // @public (undocumented)
+type BitcoinNetwork = {
+    readonly caip2: string;
+    readonly genesis: string;
+    readonly params: typeof NETWORK;
+    readonly coinType: 0 | 1;
+    readonly bip32: {
+        readonly public: number;
+        readonly private: number;
+    };
+};
+
+// @public (undocumented)
 export const bitcoinNetwork: (caip2: string) => BitcoinNetwork;
 
 // @public
 export function bitcoinPubkeyFromXpub(xpub: string, template: BitcoinAccountTemplate, network: string, change: 0 | 1, index: number): Uint8Array;
 
-// Warning: (ae-forgotten-export) The symbol "SignRequest" needs to be exported by the entry point bitcoin.d.mts
-// Warning: (ae-forgotten-export) The symbol "DisplayIntent" needs to be exported by the entry point bitcoin.d.mts
-//
+// @public
+type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
+
+// @public
+type BlindReason = "message-bytes" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded";
+
+// @public (undocumented)
+type ChainFamily = "evm" | "solana" | "bitcoin";
+
 // @public
 export const decodeBitcoinPsbt: (request: Extract<SignRequest, {
     kind: "bitcoin.psbt";
@@ -38,6 +106,116 @@ export const decodeBitcoinPsbt: (request: Extract<SignRequest, {
 export const decodeMessageTarget: (request: Extract<SignRequest, {
     kind: "bitcoin.message";
 }>) => MessageTarget;
+
+// @public (undocumented)
+type DisplayIntent = {
+    readonly family: ChainFamily;
+    readonly network: string;
+    readonly summary: IntentSummary;
+    readonly outflows: ReadonlyArray<AssetFlow>;
+    readonly approvals: ReadonlyArray<ApprovalChange>;
+    readonly minimumReceived?: ReadonlyArray<{
+        readonly to: string;
+        readonly amount: AssetAmount;
+    }>;
+    readonly fee: {
+        readonly max: AssetAmount;
+        readonly l1Data?: AssetAmount;
+    } | undefined;
+    readonly staking?: ReadonlyArray<StakeAction>;
+    readonly bridge?: {
+        readonly destinationNetwork: string;
+        readonly fillDeadline: number;
+        readonly refundTo: string;
+    };
+    readonly warnings: ReadonlyArray<IntentWarning>;
+    readonly message?: MessageContent;
+    readonly verifiability: Verifiability;
+    readonly delegation?: {
+        readonly kind: "set";
+        readonly delegator: string;
+        readonly name: string;
+        readonly version: string;
+    } | {
+        readonly kind: "revoke";
+    };
+    readonly calls?: ReadonlyArray<DisplayIntent>;
+    readonly contract?: {
+        readonly address: string;
+        readonly created: boolean;
+        readonly selector?: string;
+        readonly symbol?: string;
+    };
+    readonly programs?: ReadonlyArray<string>;
+    readonly blind?: BlindReason;
+};
+
+// @public (undocumented)
+type EvmAccessListEntry = {
+    readonly address: string;
+    readonly storageKeys: ReadonlyArray<string>;
+};
+
+// @public
+type EvmTransaction = (EvmTransactionBase & {
+    readonly type: "legacy";
+    readonly gasPrice: string;
+}) | (EvmTransactionBase & {
+    readonly type: "eip2930";
+    readonly gasPrice: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+}) | (EvmTransactionBase & {
+    readonly type: "eip1559";
+    readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+    readonly maxFeePerGas: string;
+    readonly maxPriorityFeePerGas: string;
+}) | (Omit<EvmTransactionBase, "to"> & {
+    readonly type: "eip7702";
+    readonly to: string;
+    readonly accessList: ReadonlyArray<EvmAccessListEntry>;
+    readonly maxFeePerGas: string;
+    readonly maxPriorityFeePerGas: string;
+    readonly authorization: {
+        readonly address: string;
+    };
+});
+
+// @public (undocumented)
+type EvmTransactionBase = {
+    readonly chainId: number;
+    readonly nonce: number;
+    readonly gas: string;
+    readonly value: string;
+    readonly data: string;
+    readonly to?: string;
+};
+
+// @public (undocumented)
+type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge";
+
+// @public (undocumented)
+type IntentWarning = {
+    readonly kind: string;
+    readonly message: string;
+};
+
+// @public
+type MessageContent = {
+    readonly kind: "text";
+    readonly text: string;
+    readonly signIn?: SignInParse;
+} | {
+    readonly kind: "bytes";
+    readonly hex: string;
+} | {
+    readonly kind: "typed-data";
+    readonly primaryType: string;
+    readonly domain: TypedDataDomain;
+    readonly data: Readonly<Record<string, unknown>>;
+    readonly seaport?: SeaportOrder;
+    readonly safe?: SafeTransaction;
+    readonly fields?: ReadonlyArray<TypedDataLeaf>;
+};
 
 // @public
 export type MessageTarget = {
@@ -51,10 +229,177 @@ export type MessageTarget = {
 export const normalizeBitcoin: (request: unknown) => SignRequest;
 
 // @public
+type SafeTransaction = {
+    readonly safe: string;
+    readonly nonce: string;
+    readonly operation: "call" | "delegatecall";
+    readonly to: string;
+    readonly value: string;
+    readonly data: string;
+    readonly calls: ReadonlyArray<DisplayIntent>;
+    readonly refund?: {
+        readonly receiver?: string;
+        readonly gasPrice: AssetAmount;
+        readonly amount: AssetAmount;
+    };
+};
+
+// @public
 export const samePsbtContent: (requested: Uint8Array, signed: Uint8Array) => boolean;
 
-// Warning: (ae-forgotten-export) The symbol "Verifiability" needs to be exported by the entry point bitcoin.d.mts
-//
+// @public
+type SeaportItem = {
+    readonly kind: "native" | "erc20" | "erc721" | "erc1155" | "erc721-criteria" | "erc1155-criteria";
+    readonly token: string;
+    readonly identifier: string;
+    readonly startAmount: AssetAmount;
+    readonly endAmount: AssetAmount;
+};
+
+// @public
+type SeaportOrder = {
+    readonly offerer: string;
+    readonly zone: string;
+    readonly startTime: number | undefined;
+    readonly endTime: number | undefined;
+    readonly offer: ReadonlyArray<SeaportItem>;
+    readonly consideration: ReadonlyArray<SeaportItem & {
+        readonly recipient: string;
+    }>;
+};
+
+// @public
+type SignInClaim = {
+    readonly scheme?: string;
+    readonly domain: string;
+};
+
+// @public
+type SignInParse = {
+    readonly status: "valid";
+    readonly fields: MessageFields;
+} |
+/**
+* Not a conforming message for the family; `claims` are the domains its preamble lines claim —
+* lenient verifiers (viem `parseSiweMessage`, `@solana/wallet-standard-util`
+* `parseSignInMessageText`) accept such text, so the wallet binds it to the page like a
+* conforming one.
+*/
+    {
+    readonly status: "malformed";
+    readonly claims: ReadonlyArray<SignInClaim>;
+};
+
+// @public (undocumented)
+type SignRequest = {
+    readonly kind: "bitcoin.psbt";
+    readonly network: string;
+    readonly account: {
+        readonly kind: "hd";
+        readonly walletId: string;
+        readonly groupIndex: number;
+    };
+    readonly psbt: Uint8Array;
+    readonly sign: ReadonlyArray<{
+        readonly index: number;
+        readonly template: BitcoinTemplate;
+    }>;
+} | {
+    readonly kind: "bitcoin.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly address: string;
+    readonly message: string;
+    readonly format: "bip322-simple" | "legacy";
+    readonly change: 0 | 1;
+    readonly index: number;
+} | {
+    readonly kind: "solana.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
+    readonly lookupTables?: ReadonlyArray<{
+        readonly address: string;
+        readonly addresses: ReadonlyArray<string>;
+    }>;
+} | {
+    readonly kind: "solana.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
+    readonly format: "raw";
+} | {
+    readonly kind: "evm.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly tx: EvmTransaction;
+} | {
+    readonly kind: "evm.personal-message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
+} | {
+    readonly kind: "evm.typed-data";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly typedData: string;
+};
+
+// @public
+type StakeAction = {
+    readonly kind: "create";
+    readonly account: string;
+    readonly lamports: string;
+} | {
+    readonly kind: "delegate";
+    readonly account: string;
+    readonly validator: string;
+} | {
+    readonly kind: "deactivate";
+    readonly account: string;
+} | {
+    readonly kind: "withdraw";
+    readonly account: string;
+    readonly to: string;
+    readonly lamports: string;
+} |
+/** Lido `submit` on Ethereum mainnet: ETH in, approximately `receive` stETH back. */
+    {
+    readonly kind: "lido-submit";
+    readonly amount: AssetAmount;
+    readonly receive: AssetAmount;
+} |
+/** Lido withdrawal request on Ethereum mainnet; `owner` gets the claim NFT. */
+    {
+    readonly kind: "lido-request";
+    readonly token: string;
+    readonly amount: AssetAmount;
+    readonly owner: string;
+} |
+/** Lido claim of finalised withdrawal requests on Ethereum mainnet (ETH to the caller). */
+    {
+    readonly kind: "lido-claim";
+    readonly requestIds: ReadonlyArray<string>;
+};
+
+// @public
+type TypedDataDomain = {
+    readonly name?: string;
+    readonly version?: string;
+    readonly chainId?: number;
+    readonly verifyingContract?: string;
+    readonly salt?: string;
+};
+
+// @public
+type TypedDataLeaf = {
+    readonly path: string;
+    readonly value: string;
+};
+
+// @public (undocumented)
+type Verifiability = "full" | "partial" | "opaque";
+
 // @public (undocumented)
 export const verifiabilityBitcoin: (request: Extract<SignRequest, {
     kind: "bitcoin.psbt";

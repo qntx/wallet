@@ -6,8 +6,124 @@
 
 import { SparkSigner } from '@qntx/spark/signer';
 
-// Warning: (ae-forgotten-export) The symbol "Wallet" needs to be exported by the entry point spark.d.mts
-//
+// @public
+type BackupApi = {
+    readonly enable: (options: {
+        readonly verify: VerifyFactor;
+        readonly factors: ReadonlyArray<UnlockFactor>;
+    }) => Promise<void>;
+    readonly update: () => Promise<string>;
+    readonly disable: (verify: VerifyFactor) => Promise<void>;
+    readonly restore: (options: {
+        readonly envelope: string;
+        readonly backupFactor: UnlockFactor;
+        readonly passphrases?: ReadonlyArray<{
+            readonly walletId: string;
+            readonly passphrase: string;
+        }>;
+        readonly factor?: InitialFactor;
+    }) => Promise<{
+        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly passphraseRequired: ReadonlyArray<string>;
+    }>;
+};
+
+// @public
+type BackupInfo = {
+    readonly id: string;
+    readonly factors: ReadonlyArray<"passkey" | "password">;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type DataKeyApi = {
+    readonly get: (purpose: string) => Promise<Uint8Array>;
+};
+
+// @public
+type ExportedMnemonic = {
+    readonly mnemonic: ExportedSecret;
+    readonly passphrase?: ExportedSecret;
+};
+
+// @public
+type ExportedSecret = {
+    readonly read: () => Uint8Array;
+    readonly wipe: () => void;
+};
+
+// @public (undocumented)
+type FactorInfo = {
+    readonly kind: "device";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "hardware";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "passkey";
+    readonly id: string;
+    readonly credentialId: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "password";
+    readonly id: string;
+    readonly createdAt: number;
+};
+
+// @public
+type InitialFactor = {
+    readonly kind: "passkey";
+    readonly name: string;
+} | {
+    readonly kind: "password";
+    readonly password: string;
+};
+
+// @public
+type KeyInfo = {
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+    readonly address: string;
+    readonly createdAt: number;
+};
+
+// @public
+type KeysApi = {
+    readonly import: (family: "evm" | "solana" | "bitcoin", secret: string | Uint8Array) => Promise<KeyInfo>;
+    readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
+    readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
+    readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;
+};
+
+// @public
+type LockReason = "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated";
+
+// @public (undocumented)
+type MnemonicDraft = {
+    readonly words: ExportedSecret;
+    readonly quiz: ReadonlyArray<number>;
+    readonly confirm: (answers: ReadonlyArray<string>, options?: {
+        readonly passphrase?: string;
+    }) => Promise<WalletInfo>;
+    readonly discard: () => Promise<void>;
+};
+
+// @public (undocumented)
+type NostrKeyInfo = {
+    readonly ref: NostrKeyRef;
+    readonly publicKey: string;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type NostrKeyRef = {
+    readonly kind: "derived";
+    readonly walletId: string;
+    readonly index: number;
+};
+
 // @public (undocumented)
 export function spark(wallet: Wallet): SparkApi;
 
@@ -28,14 +144,150 @@ export type SparkApi = {
     }) => Promise<SparkApprovalSummary>;
 };
 
+// @public
+type SparkApprovalSummary = {
+    readonly kind: "transfer";
+    readonly receivers: ReadonlyArray<{
+        readonly identityPublicKey: Uint8Array;
+        readonly amountSats: number;
+    }>;
+} | {
+    readonly kind: "lightning";
+    readonly paymentHash: Uint8Array;
+    readonly invoiceAmountSats?: number;
+    readonly maxFeeSats: number;
+} | SparkOutflowIntent;
+
+// @public (undocumented)
+type SparkApproveIntent = {
+    readonly kind: "transfer";
+    readonly receivers: ReadonlyArray<{
+        readonly identityPublicKey: Uint8Array;
+        readonly amountSats: number;
+    }>;
+} | {
+    readonly kind: "lightning";
+    readonly invoice: string;
+    readonly amountSats?: number;
+    readonly maxFeeSats: number;
+} | SparkOutflowIntent;
+
+// @public
+type SparkNetwork = "mainnet" | "regtest";
+
+// @public
+type SparkOutflowIntent = {
+    readonly kind: "exit";
+    readonly address: string;
+    readonly amountSats: number;
+    readonly maxFeeSats: number;
+} | {
+    readonly kind: "onchain";
+    readonly address: string;
+    readonly maxFeeSats: number;
+} | {
+    readonly kind: "token";
+    readonly tokenIdentifier: Uint8Array;
+    readonly receivers: ReadonlyArray<{
+        readonly ownerPublicKey: Uint8Array;
+        readonly amount: string;
+    }>;
+};
+
 export { SparkSigner }
 
-// Warnings were encountered during analysis:
-//
-// dist/index-BncgSyIK.d.mts:118:3 - (ae-forgotten-export) The symbol "SparkNetwork" needs to be exported by the entry point spark.d.mts
-// dist/spark.d.mts:18:3 - (ae-forgotten-export) The symbol "SparkApprovalSummary" needs to be exported by the entry point spark.d.mts
-// dist/spark.d.mts:20:5 - (ae-forgotten-export) The symbol "SparkApproveIntent" needs to be exported by the entry point spark.d.mts
-// dist/spark.d.mts:21:5 - (ae-forgotten-export) The symbol "VerifyFactor" needs to be exported by the entry point spark.d.mts
+// @public
+type UnlockFactor = {
+    readonly kind: "device";
+} | {
+    readonly kind: "hardware";
+} | {
+    readonly kind: "passkey";
+} | {
+    readonly kind: "password";
+    readonly password: string;
+};
+
+// @public (undocumented)
+type VaultApi = {
+    readonly unlock: (factor?: UnlockFactor) => Promise<void>;
+    readonly lock: () => Promise<void>;
+    readonly addFactor: (factor: InitialFactor, verify: VerifyFactor) => Promise<FactorInfo>;
+    readonly removeFactor: (id: string, verify: VerifyFactor) => Promise<void>;
+    readonly enrolVerification: () => Promise<void>;
+    readonly setAppLock: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+    readonly setBlindSigning: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+    readonly reset: () => Promise<void>;
+};
+
+// @public
+type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+
+// @public
+type VerifyFactor = Exclude<UnlockFactor, {
+    readonly kind: "device";
+}>;
+
+// @public (undocumented)
+type Wallet = {
+    readonly getSnapshot: () => WalletSnapshot;
+    readonly subscribe: (listener: () => void) => () => void;
+    readonly vault: VaultApi;
+    readonly wallets: WalletsApi;
+    readonly keys: KeysApi;
+    readonly dataKeys: DataKeyApi;
+    readonly backup: BackupApi;
+    readonly destroy: () => Promise<void>;
+};
+
+// @public (undocumented)
+type WalletInfo = {
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type WalletsApi = {
+    readonly createWithPasskey: (options: {
+        readonly name: string;
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly restoreWithPasskey: (options?: {
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly createMnemonic: (options: {
+        readonly words: 12 | 24;
+        readonly factor?: InitialFactor;
+    }) => Promise<MnemonicDraft>;
+    readonly importMnemonic: (options: {
+        readonly mnemonic: string;
+        readonly passphrase?: string;
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
+    readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
+};
+
+// @public (undocumented)
+type WalletSnapshot = {
+    readonly vault: VaultState;
+    readonly lockReason: LockReason | undefined;
+    readonly verifying: boolean;
+    readonly appLock: boolean;
+    readonly verification: "available" | "unavailable";
+    readonly factors: ReadonlyArray<FactorInfo>;
+    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly nostr: {
+        readonly keys: ReadonlyArray<NostrKeyInfo>;
+    };
+    readonly importedKeys: ReadonlyArray<KeyInfo>;
+    readonly backup: BackupInfo | null;
+    readonly blindSigning: boolean;
+};
 
 // (No @packageDocumentation comment for this package)
 

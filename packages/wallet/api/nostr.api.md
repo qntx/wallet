@@ -10,13 +10,115 @@ import { Rumor } from '@qntx/nostr/nips/nip59';
 import { UnsignedEvent } from '@qntx/nostr';
 
 // @public
+type BackupApi = {
+    readonly enable: (options: {
+        readonly verify: VerifyFactor;
+        readonly factors: ReadonlyArray<UnlockFactor>;
+    }) => Promise<void>;
+    readonly update: () => Promise<string>;
+    readonly disable: (verify: VerifyFactor) => Promise<void>;
+    readonly restore: (options: {
+        readonly envelope: string;
+        readonly backupFactor: UnlockFactor;
+        readonly passphrases?: ReadonlyArray<{
+            readonly walletId: string;
+            readonly passphrase: string;
+        }>;
+        readonly factor?: InitialFactor;
+    }) => Promise<{
+        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly passphraseRequired: ReadonlyArray<string>;
+    }>;
+};
+
+// @public
+type BackupInfo = {
+    readonly id: string;
+    readonly factors: ReadonlyArray<"passkey" | "password">;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type DataKeyApi = {
+    readonly get: (purpose: string) => Promise<Uint8Array>;
+};
+
+// @public
 export type DerivedNostrKey = {
     readonly index: number;
     readonly publicKey: string;
 };
 
-// Warning: (ae-forgotten-export) The symbol "Wallet" needs to be exported by the entry point nostr.d.mts
-//
+// @public
+type ExportedMnemonic = {
+    readonly mnemonic: ExportedSecret;
+    readonly passphrase?: ExportedSecret;
+};
+
+// @public
+type ExportedSecret = {
+    readonly read: () => Uint8Array;
+    readonly wipe: () => void;
+};
+
+// @public (undocumented)
+type FactorInfo = {
+    readonly kind: "device";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "hardware";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "passkey";
+    readonly id: string;
+    readonly credentialId: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "password";
+    readonly id: string;
+    readonly createdAt: number;
+};
+
+// @public
+type InitialFactor = {
+    readonly kind: "passkey";
+    readonly name: string;
+} | {
+    readonly kind: "password";
+    readonly password: string;
+};
+
+// @public
+type KeyInfo = {
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+    readonly address: string;
+    readonly createdAt: number;
+};
+
+// @public
+type KeysApi = {
+    readonly import: (family: "evm" | "solana" | "bitcoin", secret: string | Uint8Array) => Promise<KeyInfo>;
+    readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
+    readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
+    readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;
+};
+
+// @public
+type LockReason = "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated";
+
+// @public (undocumented)
+type MnemonicDraft = {
+    readonly words: ExportedSecret;
+    readonly quiz: ReadonlyArray<number>;
+    readonly confirm: (answers: ReadonlyArray<string>, options?: {
+        readonly passphrase?: string;
+    }) => Promise<WalletInfo>;
+    readonly discard: () => Promise<void>;
+};
+
 // @public (undocumented)
 export function nostr(wallet: Wallet): NostrApi;
 
@@ -60,9 +162,105 @@ export type NostrUnwrapResult = {
 };
 
 // @public
+type UnlockFactor = {
+    readonly kind: "device";
+} | {
+    readonly kind: "hardware";
+} | {
+    readonly kind: "passkey";
+} | {
+    readonly kind: "password";
+    readonly password: string;
+};
+
+// @public (undocumented)
+type VaultApi = {
+    readonly unlock: (factor?: UnlockFactor) => Promise<void>;
+    readonly lock: () => Promise<void>;
+    readonly addFactor: (factor: InitialFactor, verify: VerifyFactor) => Promise<FactorInfo>;
+    readonly removeFactor: (id: string, verify: VerifyFactor) => Promise<void>;
+    readonly enrolVerification: () => Promise<void>;
+    readonly setAppLock: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+    readonly setBlindSigning: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+    readonly reset: () => Promise<void>;
+};
+
+// @public
+type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+
+// @public
+type VerifyFactor = Exclude<UnlockFactor, {
+    readonly kind: "device";
+}>;
+
+// @public (undocumented)
+type Wallet = {
+    readonly getSnapshot: () => WalletSnapshot;
+    readonly subscribe: (listener: () => void) => () => void;
+    readonly vault: VaultApi;
+    readonly wallets: WalletsApi;
+    readonly keys: KeysApi;
+    readonly dataKeys: DataKeyApi;
+    readonly backup: BackupApi;
+    readonly destroy: () => Promise<void>;
+};
+
+// @public (undocumented)
+type WalletErrorCode = "locked" | "cancelled" | "factor-invalidated" | "verification-unavailable" | "passkey-not-configured" | "passkey-prf-unsupported" | "wrong-password" | "wrong-passkey" | "rate-limited" | "invalid-input" | "not-found" | "already-exists" | "conflict" | "unsupported" | "unavailable" | "integrity" | "blind-signing-disabled" | "approval-required" | "crashed";
+
+// @public (undocumented)
+type WalletInfo = {
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type WalletsApi = {
+    readonly createWithPasskey: (options: {
+        readonly name: string;
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly restoreWithPasskey: (options?: {
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly createMnemonic: (options: {
+        readonly words: 12 | 24;
+        readonly factor?: InitialFactor;
+    }) => Promise<MnemonicDraft>;
+    readonly importMnemonic: (options: {
+        readonly mnemonic: string;
+        readonly passphrase?: string;
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
+    readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
+};
+
+// @public
 export type WalletSigner = {
     readonly unwrapGiftWraps: (events: ReadonlyArray<Event_2>) => Promise<ReadonlyArray<Rumor | Error>>;
 } & NostrSigner;
+
+// @public (undocumented)
+type WalletSnapshot = {
+    readonly vault: VaultState;
+    readonly lockReason: LockReason | undefined;
+    readonly verifying: boolean;
+    readonly appLock: boolean;
+    readonly verification: "available" | "unavailable";
+    readonly factors: ReadonlyArray<FactorInfo>;
+    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly nostr: {
+        readonly keys: ReadonlyArray<NostrKeyInfo>;
+    };
+    readonly importedKeys: ReadonlyArray<KeyInfo>;
+    readonly backup: BackupInfo | null;
+    readonly blindSigning: boolean;
+};
 
 // @public
 export type WalletSyncSigner = {
@@ -71,12 +269,6 @@ export type WalletSyncSigner = {
     readonly encrypt: (text: string) => Promise<string>;
     readonly decrypt: (payload: string) => Promise<string>;
 };
-
-// Warnings were encountered during analysis:
-//
-// dist/nostr.d.mts:7:3 - (ae-forgotten-export) The symbol "WalletErrorCode" needs to be exported by the entry point nostr.d.mts
-// dist/nostr.d.mts:40:3 - (ae-forgotten-export) The symbol "VerifyFactor" needs to be exported by the entry point nostr.d.mts
-// dist/nostr.d.mts:40:3 - (ae-forgotten-export) The symbol "ExportedSecret" needs to be exported by the entry point nostr.d.mts
 
 // (No @packageDocumentation comment for this package)
 

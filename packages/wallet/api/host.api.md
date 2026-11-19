@@ -4,8 +4,35 @@
 
 ```ts
 
-// Warning: (ae-forgotten-export) The symbol "Wallet" needs to be exported by the entry point host.d.mts
-//
+// @public
+type BackupApi = {
+    readonly enable: (options: {
+        readonly verify: VerifyFactor;
+        readonly factors: ReadonlyArray<UnlockFactor>;
+    }) => Promise<void>;
+    readonly update: () => Promise<string>;
+    readonly disable: (verify: VerifyFactor) => Promise<void>;
+    readonly restore: (options: {
+        readonly envelope: string;
+        readonly backupFactor: UnlockFactor;
+        readonly passphrases?: ReadonlyArray<{
+            readonly walletId: string;
+            readonly passphrase: string;
+        }>;
+        readonly factor?: InitialFactor;
+    }) => Promise<{
+        readonly wallets: ReadonlyArray<WalletInfo>;
+        readonly passphraseRequired: ReadonlyArray<string>;
+    }>;
+};
+
+// @public
+type BackupInfo = {
+    readonly id: string;
+    readonly factors: ReadonlyArray<"passkey" | "password">;
+    readonly createdAt: number;
+};
+
 // @public
 export function connectKernel(options: ConnectOptions): Promise<Wallet>;
 
@@ -21,8 +48,73 @@ export type ConnectOptions = {
     readonly onDestroy?: () => void;
 };
 
+// @public (undocumented)
+type DataKeyApi = {
+    readonly get: (purpose: string) => Promise<Uint8Array>;
+};
+
+// @public
+type ExportedMnemonic = {
+    readonly mnemonic: ExportedSecret;
+    readonly passphrase?: ExportedSecret;
+};
+
+// @public
+type ExportedSecret = {
+    readonly read: () => Uint8Array;
+    readonly wipe: () => void;
+};
+
+// @public (undocumented)
+type FactorInfo = {
+    readonly kind: "device";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "hardware";
+    readonly id: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "passkey";
+    readonly id: string;
+    readonly credentialId: string;
+    readonly createdAt: number;
+} | {
+    readonly kind: "password";
+    readonly id: string;
+    readonly createdAt: number;
+};
+
 // @public
 export type FactorMode = "hardware" | "software";
+
+// @public
+type InitialFactor = {
+    readonly kind: "passkey";
+    readonly name: string;
+} | {
+    readonly kind: "password";
+    readonly password: string;
+};
+
+// @public
+type KeyInfo = {
+    readonly keyId: string;
+    readonly family: "evm" | "solana" | "bitcoin";
+    readonly address: string;
+    readonly createdAt: number;
+};
+
+// @public
+type KeysApi = {
+    readonly import: (family: "evm" | "solana" | "bitcoin", secret: string | Uint8Array) => Promise<KeyInfo>;
+    readonly list: () => Promise<ReadonlyArray<KeyInfo>>;
+    readonly remove: (keyId: string, verify: VerifyFactor) => Promise<void>;
+    readonly export: (keyId: string, verify: VerifyFactor) => Promise<Uint8Array>;
+};
+
+// @public
+type LockReason = "cold-start" | "user" | "idle" | "background" | "expired" | "crashed" | "invalidated";
 
 // @public
 export type MainPort = {
@@ -34,6 +126,33 @@ export type MainPort = {
 
 // @public
 export const MAX_IN_FLIGHT = 32;
+
+// @public (undocumented)
+type MnemonicDraft = {
+    readonly words: ExportedSecret;
+    readonly quiz: ReadonlyArray<number>;
+    readonly confirm: (answers: ReadonlyArray<string>, options?: {
+        readonly passphrase?: string;
+    }) => Promise<WalletInfo>;
+    readonly discard: () => Promise<void>;
+};
+
+// @public (undocumented)
+type NostrKeyInfo = {
+    readonly ref: NostrKeyRef;
+    readonly publicKey: string;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type NostrKeyRef = {
+    readonly kind: "derived";
+    readonly walletId: string;
+    readonly index: number;
+};
+
+// @public (undocumented)
+type NullValue = null;
 
 // @public (undocumented)
 export const PASSKEY_PURPOSE_VAULT = 2;
@@ -55,6 +174,15 @@ export type PasskeyCeremony = {
 };
 
 // @public
+type PasskeyConfig = {
+    readonly rpId: string;
+    readonly rpName: string;
+    readonly walletSalt: string;
+    readonly vaultSalt: string;
+    readonly backupSalt: string;
+};
+
+// @public
 export type PortExit = "crashed" | "background";
 
 // @public (undocumented)
@@ -72,14 +200,117 @@ export type PrfSalts = {
     readonly second?: Uint8Array;
 };
 
+// @public (undocumented)
+type ProtocolValue = NullValue | boolean | number | string | Uint8Array | ReadonlyArray<ProtocolValue> | {
+    readonly [key: string]: ProtocolValue;
+};
+
 // @public
 export type SetTimer = (delayMs: number, fn: () => void) => () => void;
 
-// Warnings were encountered during analysis:
-//
-// dist/host.d.mts:49:3 - (ae-forgotten-export) The symbol "ProtocolValue" needs to be exported by the entry point host.d.mts
-// dist/host.d.mts:66:3 - (ae-forgotten-export) The symbol "PasskeyConfig" needs to be exported by the entry point host.d.mts
-// dist/host.d.mts:67:3 - (ae-forgotten-export) The symbol "SignedEvent" needs to be exported by the entry point host.d.mts
+// @public
+type SignedEvent = {
+    readonly id: string;
+    readonly pubkey: string;
+    readonly sig: string;
+    readonly kind: number;
+    readonly created_at: number;
+    readonly tags: ReadonlyArray<ReadonlyArray<string>>;
+    readonly content: string;
+};
+
+// @public
+type UnlockFactor = {
+    readonly kind: "device";
+} | {
+    readonly kind: "hardware";
+} | {
+    readonly kind: "passkey";
+} | {
+    readonly kind: "password";
+    readonly password: string;
+};
+
+// @public (undocumented)
+type VaultApi = {
+    readonly unlock: (factor?: UnlockFactor) => Promise<void>;
+    readonly lock: () => Promise<void>;
+    readonly addFactor: (factor: InitialFactor, verify: VerifyFactor) => Promise<FactorInfo>;
+    readonly removeFactor: (id: string, verify: VerifyFactor) => Promise<void>;
+    readonly enrolVerification: () => Promise<void>;
+    readonly setAppLock: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+    readonly setBlindSigning: (enabled: boolean, verify: VerifyFactor) => Promise<void>;
+    readonly reset: () => Promise<void>;
+};
+
+// @public
+type VaultState = "uninitialized" | "locked" | "unlocked" | "corrupted" | "unsupported" | "unavailable";
+
+// @public
+type VerifyFactor = Exclude<UnlockFactor, {
+    readonly kind: "device";
+}>;
+
+// @public (undocumented)
+type Wallet = {
+    readonly getSnapshot: () => WalletSnapshot;
+    readonly subscribe: (listener: () => void) => () => void;
+    readonly vault: VaultApi;
+    readonly wallets: WalletsApi;
+    readonly keys: KeysApi;
+    readonly dataKeys: DataKeyApi;
+    readonly backup: BackupApi;
+    readonly destroy: () => Promise<void>;
+};
+
+// @public (undocumented)
+type WalletInfo = {
+    readonly walletId: string;
+    readonly origin: "passkey" | "mnemonic";
+    readonly words: 12 | 15 | 18 | 21 | 24;
+    readonly backup: "none" | "passkey" | "mnemonic";
+    readonly passphrase: boolean;
+    readonly createdAt: number;
+};
+
+// @public (undocumented)
+type WalletsApi = {
+    readonly createWithPasskey: (options: {
+        readonly name: string;
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly restoreWithPasskey: (options?: {
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly createMnemonic: (options: {
+        readonly words: 12 | 24;
+        readonly factor?: InitialFactor;
+    }) => Promise<MnemonicDraft>;
+    readonly importMnemonic: (options: {
+        readonly mnemonic: string;
+        readonly passphrase?: string;
+        readonly factor?: InitialFactor;
+    }) => Promise<WalletInfo>;
+    readonly exportMnemonic: (walletId: string, verify: VerifyFactor) => Promise<ExportedMnemonic>;
+    readonly delete: (walletId: string, verify: VerifyFactor) => Promise<void>;
+};
+
+// @public (undocumented)
+type WalletSnapshot = {
+    readonly vault: VaultState;
+    readonly lockReason: LockReason | undefined;
+    readonly verifying: boolean;
+    readonly appLock: boolean;
+    readonly verification: "available" | "unavailable";
+    readonly factors: ReadonlyArray<FactorInfo>;
+    readonly wallets: ReadonlyArray<WalletInfo>;
+    readonly nostr: {
+        readonly keys: ReadonlyArray<NostrKeyInfo>;
+    };
+    readonly importedKeys: ReadonlyArray<KeyInfo>;
+    readonly backup: BackupInfo | null;
+    readonly blindSigning: boolean;
+};
 
 // (No @packageDocumentation comment for this package)
 
