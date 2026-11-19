@@ -33,6 +33,16 @@ describe("WalletEngine meta sync start", () => {
       authenticator: createSoftwarePasskey(randomBytes(32)),
       kernelUrl: KERNEL_URL,
     });
+    // Import before the engine exists so its first transition already sees the wallet — a pull
+    // started from a later snapshot event would run off the critical path on its own.
+    await wallet.wallets.importMnemonic({
+      mnemonic: MNEMONIC,
+      factor: { kind: "password", password: PASSWORD },
+    });
+    const walletId = wallet.getSnapshot().wallets[0]?.walletId;
+    if (walletId === undefined) {
+      throw new Error("no wallet in snapshot");
+    }
     const engine = createWalletEngine({
       publicStore: createMemoryPublicStore(),
       verifyEvent,
@@ -56,14 +66,6 @@ describe("WalletEngine meta sync start", () => {
       },
     });
     try {
-      await wallet.wallets.importMnemonic({
-        mnemonic: MNEMONIC,
-        factor: { kind: "password", password: PASSWORD },
-      });
-      const walletId = wallet.getSnapshot().wallets[0]?.walletId;
-      if (walletId === undefined) {
-        throw new Error("no wallet in snapshot");
-      }
       const account = {
         kind: "hd" as const,
         walletId,
