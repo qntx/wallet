@@ -3,7 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import type { LightningSendStatus } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
-import { unauthorized } from "../src/connect/errors.ts";
+import { PAYMENT_PENDING_CODE, unauthorized } from "../src/connect/errors.ts";
 import { WeblnHandler } from "../src/connect/webln.ts";
 import { encodeTestBolt11 } from "./support/bolt11.ts";
 
@@ -246,15 +246,35 @@ describe("WeblnHandler preimage polling", () => {
     ).rejects.toMatchObject({ code: -32603 });
   });
 
-  it("still pending past the budget rejects -32603", async () => {
+  it("still pending past the budget rejects with the payment-pending code", async () => {
     const { handler } = rig({
       prepareResult: payment,
       paymentStatus: paymentStatus(["pending"]),
     });
     await expect(
       handler.handle(SITE, { method: "sendPayment", params: invoice }),
-    ).rejects.toMatchObject({ code: -32603 });
+    ).rejects.toMatchObject({ code: PAYMENT_PENDING_CODE });
   }, 15000);
+
+  it("a paymentStatus read error inside the poll is pending, not failed", async () => {
+    const { handler } = rig({
+      prepareResult: payment,
+      paymentStatus: async () => Promise.reject(new Error("spark is unreachable")),
+    });
+    await expect(
+      handler.handle(SITE, { method: "sendPayment", params: invoice }),
+    ).rejects.toMatchObject({ code: PAYMENT_PENDING_CODE });
+  });
+
+  it("a returned terminal status still rejects -32603 payment failed", async () => {
+    const { handler } = rig({
+      prepareResult: payment,
+      paymentStatus: paymentStatus(["returned"]),
+    });
+    await expect(
+      handler.handle(SITE, { method: "sendPayment", params: invoice }),
+    ).rejects.toMatchObject({ code: -32603, message: "payment failed" });
+  });
 
   it("success without a preimage rejects -32603", async () => {
     const { handler } = rig({
@@ -264,5 +284,37 @@ describe("WeblnHandler preimage polling", () => {
     await expect(
       handler.handle(SITE, { method: "sendPayment", params: invoice }),
     ).rejects.toMatchObject({ code: -32603 });
+  });
+});
+
+describe("WeblnHandler pending payment outcomes", () => {
+  const TIMESTAMP = 1_700_000_000;
+  const invoice = encodeTestBolt11({
+    network: "mainnet",
+    amountMsat: 100_000n,
+    timestamp: TIMESTAMP,
+    expirySeconds: 600,
+    paymentHash: new Uint8Array(32).fill(9),
+    secretKey: new Uint8Array(32).fill(1),
+  });
+  const TRANSFER = "0190f0f0-0000-7000-8000-000000000000";
+
+  it("a pending (lost commit answer) payment rejects with the pending code naming the transfer", async () => {
+    const { handler, requestsCalls } = rig({
+      prepareResult: { kind: "pending", transferId: TRANSFER },
+      now: () => (TIMESTAMP + 10) * 1000,
+    });
+    const err = await handler
+      .handle(SITE, { method: "sendPayment", params: invoice })
+      .then(
+        () => {
+          throw new Error("sendPayment resolved");
+        },
+        (e: unknown) => e,
+      );
+    expect(err).toMatchObject({ code: PAYMENT_PENDING_CODE });
+    expect((err as Error).message).toContain(TRANSFER);
+    expect((err as { code: number }).code).not.toBe(-32603);
+    expect(requestsCalls).toStrictEqual(["pay"]);
   });
 });

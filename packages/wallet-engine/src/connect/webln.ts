@@ -17,7 +17,13 @@ import type { RequestController } from "../requests/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import type { ConnectionController } from "./controller.ts";
 import { LIGHTNING_METHODS } from "./controller.ts";
-import { invalidParams, ProviderError, unauthorized, unsupportedMethod } from "./errors.ts";
+import {
+  invalidParams,
+  paymentPending,
+  ProviderError,
+  unauthorized,
+  unsupportedMethod,
+} from "./errors.ts";
 
 /** A WebLN method call from the page. */
 export type WeblnRequest = {
@@ -164,6 +170,11 @@ export class WeblnHandler {
     });
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {
+      if ("kind" in outcome && outcome.kind === "pending") {
+        throw paymentPending(
+          `the payment outcome is unknown: it may still settle under transfer ${outcome.transferId}; do not retry it`,
+        );
+      }
       throw new ProviderError(-32603, "the lightning payment settled unexpectedly");
     }
     return this.preimage(ref, outcome.payment);
@@ -215,6 +226,11 @@ export class WeblnHandler {
     });
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {
+      if ("kind" in outcome && outcome.kind === "pending") {
+        throw paymentPending(
+          `the payment outcome is unknown: it may still settle under transfer ${outcome.transferId}; do not retry it`,
+        );
+      }
       throw new ProviderError(-32603, "the lnurl payment settled unexpectedly");
     }
     return this.preimage(ref, outcome.payment);
@@ -224,11 +240,21 @@ export class WeblnHandler {
     let delay = PREIMAGE_POLL_START_MS;
     let waited = 0;
     while (true) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- the preimage poll serially polls
-      const status = await this.options.spark.paymentStatus(ref, {
-        requestId: payment.requestId,
-        paymentHash: payment.paymentHash,
-      });
+      // A status read failure or an exhausted budget leaves the outcome unknown: the payment was
+      // already committed, so the page must not treat it as failed and pay again.
+      const unknown = paymentPending(
+        "the payment has not settled yet and may still settle; do not retry it",
+      );
+      let status: Awaited<ReturnType<SparkController["paymentStatus"]>>;
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- the preimage poll serially polls
+        status = await this.options.spark.paymentStatus(ref, {
+          requestId: payment.requestId,
+          paymentHash: payment.paymentHash,
+        });
+      } catch {
+        throw unknown;
+      }
       if (status.outcome === "failed" || status.outcome === "returned") {
         throw new ProviderError(-32603, "payment failed");
       }
@@ -239,7 +265,7 @@ export class WeblnHandler {
         return { preimage: bytesToHex(status.preimage) };
       }
       if (waited >= PREIMAGE_POLL_BUDGET_MS) {
-        throw new ProviderError(-32603, "the lightning payment did not settle in time");
+        throw unknown;
       }
       const step = Math.min(delay, PREIMAGE_POLL_MAX_MS);
       // oxlint-disable-next-line eslint/no-await-in-loop -- the preimage poll serially waits
