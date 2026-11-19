@@ -1,13 +1,17 @@
-// Probes the lint boundaries end to end so they cannot silently rot: writes
-// one throw-away file per expected ban — plus controls that must stay clean —
-// into the real source trees, runs the repo lint on exactly those files, and
-// fails unless every violation produced a no-restricted-* diagnostic and every
-// control produced none. The expectations below are written from AGENTS.md,
-// independently of the zone table in vite.config.ts: that is what makes this an
-// oracle rather than a restatement of the config.
+// Probes the boundaries end to end so they cannot silently rot: writes one
+// throw-away file per expected ban — plus controls that must stay clean — into
+// the real source trees, runs the import checker (check-boundaries.ts) and the
+// repo lint on them, and fails unless every violation produced a boundary
+// finding and every control produced none. Import probes spell the same target
+// every way a specifier can (package name, `./`, `..`, a path into another
+// package). The expectations below are written from AGENTS.md, independently of
+// the rule tables in check-boundaries.ts and vite.config.ts: that is what makes
+// this an oracle rather than a restatement of the config.
 import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { boundaryViolations } from "./check-boundaries.ts";
 
 // The repo does not depend on @types/bun; declare the used surface.
 declare const Bun: {
@@ -29,10 +33,19 @@ type Probe = {
   readonly file: string;
   readonly source: string;
   /**
-   * A no-restricted-* diagnostic must fire at least `min` times, or "clean" for controls that must
-   * produce no no-restricted-* diagnostic at all.
+   * `imports`: the import checker reports at least `min` boundary violations (an unresolvable
+   * import counts only where `unresolved` says so — elsewhere it fails the probe); `globals`: a
+   * no-restricted-globals or no-undef lint diagnostic fires at least `min` times. "clean" for
+   * controls that must produce neither, "ignored" for a helper that only sets up another probe.
    */
-  readonly expect: { readonly rule: "imports" | "globals"; readonly min: number } | "clean";
+  readonly expect:
+    | {
+        readonly rule: "imports" | "globals";
+        readonly min: number;
+        readonly unresolved?: boolean;
+      }
+    | "clean"
+    | "ignored";
 };
 
 // A probe body that stays clean for every rule except the one under test:
@@ -71,9 +84,8 @@ const fires = (min = 1): Probe["expect"] => ({ rule: "imports", min });
 const firesGlobals = (min = 1): Probe["expect"] => ({ rule: "globals", min });
 
 const PROBES: Probe[] = [
-  // Chain signing happens inside the kernel only — the @qntx/wallet-chains/*/sign
-  // ban must reach every library src subtree, not just the ones without their
-  // own import overrides.
+  // Chain signing happens inside the kernel only — whatever the spelling, from every library src
+  // subtree.
   ...[
     "packages/wallet-engine/src",
     "packages/wallet/src",
@@ -86,18 +98,27 @@ const PROBES: Probe[] = [
     "packages/wallet-worker/src/worker",
     "packages/wallet-native/src",
     "packages/wallet-chains/src",
+    "packages/wallet-native/kernel",
   ].map((dir): Probe => ({
     file: `${dir}/__lint_probe_a__.ts`,
     source: importing("@qntx/wallet-chains/evm/sign"),
     expect: fires(),
   })),
   {
+    file: "packages/wallet-engine/src/__lint_probe_a_relative__.ts",
+    source: importing(
+      "../../wallet-chains/src/evm/sign.ts",
+      "./../../wallet-chains/src/solana/sign",
+    ),
+    expect: fires(2),
+  },
+  {
     file: `${KERNEL}/modules/__lint_probe_a_control__.ts`,
     source: importing("@qntx/wallet-chains/evm/sign"),
     expect: "clean",
   },
 
-  // @qntx/wallet-kernel is private — nothing in the main runtime imports it.
+  // @qntx/wallet-kernel is private — nothing in the main runtime imports it, by name or by path.
   ...[
     "packages/wallet/src",
     "packages/wallet/src/chains",
@@ -110,45 +131,74 @@ const PROBES: Probe[] = [
     source: importing("@qntx/wallet-kernel"),
     expect: fires(),
   })),
+  {
+    file: "packages/wallet/src/__lint_probe_b_relative__.ts",
+    source: importing("../../wallet-kernel/src/index.ts", "../../wallet-kernel/src/vault/store.ts"),
+    expect: fires(2),
+  },
+  {
+    file: "packages/wallet-worker/src/worker/__lint_probe_b_control__.ts",
+    source: importing("@qntx/wallet-kernel"),
+    expect: "clean",
+  },
+  {
+    file: "packages/wallet-native/kernel/__lint_probe_b_control__.ts",
+    source: importing("../../wallet-kernel/src/kernel.ts"),
+    expect: "clean",
+  },
 
-  // The kernel never imports backends or host packages — they are injected.
-  // Must hold at the package root and inside every layer.
-  ...[KERNEL, ...KERNEL_LAYERS].map((dir): Probe => ({
+  // The kernel never imports backends or host packages — they are injected. Must hold at the
+  // package root, inside every layer and in the native kernel entry.
+  ...[KERNEL, ...KERNEL_LAYERS, "packages/wallet-native/kernel"].map((dir): Probe => ({
     file: `${dir}/__lint_probe_c__.ts`,
     source: importing("@qntx/spark-wasm", "@qntx/nostr-native", "@qntx/wallet-worker/browser"),
     expect: fires(3),
   })),
 
-  // The kernel sees the wallet's wire protocol only, never the host entry.
+  // The kernel sees the wallet's wire protocol only, never the host entry or the engine.
   {
     file: `${KERNEL}/commands/__lint_probe_d__.ts`,
-    source: importing("@qntx/wallet"),
+    source: importing(
+      "@qntx/wallet",
+      "../../../wallet/src/wallet.ts",
+      "../../../wallet-engine/src/engine.ts",
+    ),
+    expect: fires(3),
+  },
+  {
+    file: `${KERNEL}/__lint_probe_d_relative__.ts`,
+    source: importing("../../wallet/src/wallet.ts"),
     expect: fires(),
   },
   {
     file: `${KERNEL}/commands/__lint_probe_d_control__.ts`,
-    source: importing("@qntx/wallet/protocol"),
+    source: importing("@qntx/wallet/protocol", "@qntx/wallet/types"),
     expect: "clean",
   },
 
-  // Kernel layering is one-directional: secret is the leaf, session may reach
-  // vault.
+  // Kernel layering is one-directional: secret is the leaf, session may reach vault — however the
+  // path is spelled.
   {
     file: `${KERNEL}/secret/__lint_probe_e__.ts`,
-    source: importing("../vault"),
-    expect: fires(),
+    source: importing("../vault/store.ts", "../index.ts", "../kernel.ts"),
+    expect: fires(3),
+  },
+  {
+    file: `${KERNEL}/session/__lint_probe_e_spelled__.ts`,
+    source: importing("../vault/../commands/index.ts", "./../commands/index.ts"),
+    expect: fires(2),
   },
   {
     file: `${KERNEL}/session/__lint_probe_e_control__.ts`,
-    source: importing("../vault"),
+    source: importing("../vault/store.ts", "../platform.ts"),
     expect: "clean",
   },
 
   // The gateway speaks the engine's gateway contract and nothing else.
   {
     file: "apps/gateway/src/__lint_probe_f__.ts",
-    source: importing("@qntx/wallet-engine"),
-    expect: fires(),
+    source: importing("@qntx/wallet-engine", "../../../packages/wallet-engine/src/engine.ts"),
+    expect: fires(2),
   },
   {
     file: "apps/gateway/src/__lint_probe_f_control__.ts",
@@ -156,13 +206,13 @@ const PROBES: Probe[] = [
     expect: "clean",
   },
 
-  // Src stays platform-neutral: no Node builtins or Node/browser ambient
-  // globals outside the host entries, no ambient timers inside the kernel.
+  // Src stays platform-neutral: no Node builtins outside the Node host entries.
   ...[
     "packages/wallet/src",
     "packages/wallet-engine/src",
     `${KERNEL}/vault`,
     "packages/wallet-worker/src/node",
+    "packages/wallet-native/kernel",
   ].map((dir): Probe => ({
     file: `${dir}/__lint_probe_g_nodefs__.ts`,
     source: importing("node:fs"),
@@ -173,26 +223,23 @@ const PROBES: Probe[] = [
     source: importing("node:worker_threads"),
     expect: "clean",
   },
-  // Builtin subpaths are banned too — and allowed where the Node host needs
-  // fs/promises.
+  // Builtin subpaths are banned too — and allowed where the Node host needs fs/promises.
   ...["packages/wallet/src", `${KERNEL}/vault`].map((dir): Probe => ({
     file: `${dir}/__lint_probe_g_fspromises__.ts`,
-    source: importing("node:fs/promises"),
-    expect: fires(),
+    source: importing("node:fs/promises", "fs/promises"),
+    expect: fires(2),
   })),
   {
     file: "packages/wallet-worker/src/node/__lint_probe_g_fspromises__.ts",
     source: importing("node:fs/promises"),
     expect: "clean",
   },
+
+  // Ambient globals: Node/browser names are banned in library src; enclave code may use only the
+  // ES built-ins plus TextEncoder, TextDecoder and crypto — `globalThis.x` included.
   {
     file: "packages/wallet/src/__lint_probe_g_buffer__.ts",
     source: using("Buffer"),
-    expect: firesGlobals(),
-  },
-  {
-    file: `${KERNEL}/seed/__lint_probe_g_timeout__.ts`,
-    source: using("setTimeout"),
     expect: firesGlobals(),
   },
   {
@@ -205,17 +252,48 @@ const PROBES: Probe[] = [
     source: using("window"),
     expect: "clean",
   },
+  ...[
+    `${KERNEL}/seed`,
+    `${KERNEL}/session`,
+    KERNEL,
+    "packages/wallet-native/kernel",
+    "packages/wallet-chains/src",
+    "packages/wallet/src/protocol",
+  ].map((dir): Probe => ({
+    file: `${dir}/__lint_probe_g_enclave__.ts`,
+    source: [
+      "export const t = typeof setTimeout;",
+      "export const f = typeof fetch;",
+      "export const g = globalThis.setTimeout;",
+      'export const h = globalThis["fetch"];',
+      "export const q = typeof queueMicrotask;",
+      "export const i = typeof Intl;",
+      "export const c = typeof console;",
+      "",
+    ].join("\n"),
+    expect: firesGlobals(7),
+  })),
+  {
+    file: `${KERNEL}/session/__lint_probe_g_enclave_control__.ts`,
+    source: [
+      "export const e = new TextEncoder();",
+      "export const d = new TextDecoder();",
+      "export const r = crypto.getRandomValues(new Uint8Array(1));",
+      "export const p = Promise.resolve(BigInt(1));",
+      "",
+    ].join("\n"),
+    expect: "clean",
+  },
 
-  // The signer surface is types-only at the protocol layer — a value import
-  // from it must not compile in the engine.
+  // The signer surface is the kernel's: the engine never loads it.
   {
     file: "packages/wallet-engine/src/__lint_probe_h__.ts",
     source: importing("@qntx/spark/signer"),
     expect: fires(),
   },
 
-  // Fiat prices are display-only: no engine code that builds, approves or
-  // signs reads them — only the composition root at src/ may import prices/.
+  // Fiat prices are display-only: no engine code that builds, approves or signs reads them —
+  // only the composition root at src/ may reach prices/, directly or through a root file.
   ...[
     "transactions",
     "requests",
@@ -238,9 +316,89 @@ const PROBES: Probe[] = [
     expect: fires(),
   },
   {
+    file: "packages/wallet-engine/src/transactions/__lint_probe_i_spelled__.ts",
+    source: importing(
+      "./../prices/controller.ts",
+      "../index.ts",
+      "../engine.ts",
+      "@qntx/wallet-engine",
+    ),
+    expect: fires(4),
+  },
+  {
     file: "packages/wallet-engine/src/__lint_probe_i_control__.ts",
     source: importing("./prices/controller.ts"),
     expect: "clean",
+  },
+
+  // @qntx/nostr stays in the nostr modules, and they never take its transport parts.
+  {
+    file: "packages/wallet/src/__lint_probe_j__.ts",
+    source: importing("@qntx/nostr", "./nostr/index.ts"),
+    expect: fires(2),
+  },
+  {
+    file: "packages/wallet/src/protocol/__lint_probe_j__.ts",
+    source: importing("@qntx/nostr/nips/nip59", "../nostr/index.ts"),
+    expect: fires(2),
+  },
+  {
+    file: "packages/wallet/src/nostr/__lint_probe_j__.ts",
+    source: importing("@qntx/nostr/client"),
+    expect: fires(),
+  },
+  {
+    file: `${KERNEL}/commands/__lint_probe_j__.ts`,
+    source: importing("@qntx/nostr"),
+    expect: fires(),
+  },
+  {
+    file: `${KERNEL}/modules/nostr/__lint_probe_j__.ts`,
+    source: importing("@qntx/nostr/relay"),
+    expect: fires(),
+  },
+  {
+    file: `${KERNEL}/modules/nostr/__lint_probe_j_control__.ts`,
+    source: importing("@qntx/nostr"),
+    expect: "clean",
+  },
+
+  // @qntx/wallet-chains is the leaf; and no package reaches into another's src by path.
+  {
+    file: "packages/wallet-chains/src/__lint_probe_k__.ts",
+    source: importing("@qntx/wallet-engine", "../../wallet/src/protocol/index.ts"),
+    expect: fires(2),
+  },
+  {
+    file: "packages/wallet-engine/src/__lint_probe_k_relative__.ts",
+    source: importing("../../wallet-chains/src/evm/index.ts"),
+    expect: fires(),
+  },
+  {
+    file: "packages/wallet-engine/src/__lint_probe_k_control__.ts",
+    source: importing("@qntx/wallet-chains/evm"),
+    expect: "clean",
+  },
+
+  // An import the checker cannot resolve fails closed.
+  {
+    file: "packages/wallet-engine/src/__lint_probe_l__.ts",
+    source:
+      'const name = "x";\nexport const m = import(name);\nexport { y } from "./__missing__.ts";\n',
+    expect: { rule: "imports", min: 2, unresolved: true },
+  },
+
+  // The kernel bundle's import closure stays inside the enclave globals zone: a file the kernel
+  // pulls in may not pull host code in after it.
+  {
+    file: `${KERNEL}/commands/__lint_probe_m_root__.ts`,
+    source: importing("../../../wallet/src/protocol/__lint_probe_m__.ts"),
+    expect: "ignored",
+  },
+  {
+    file: "packages/wallet/src/protocol/__lint_probe_m__.ts",
+    source: importing("../wallet.ts"),
+    expect: fires(),
   },
 ];
 
@@ -300,33 +458,51 @@ try {
     );
   }
 
-  const counts = new Map<string, { imports: number; globals: number }>();
+  const counts = new Map<string, { imports: number; unresolved: number; globals: number }>();
+  const entry = (file: string) => {
+    const known = counts.get(file) ?? { imports: 0, unresolved: 0, globals: 0 };
+    counts.set(file, known);
+    return known;
+  };
   for (const diagnostic of report.diagnostics) {
     const file = diagnostic.filename.replaceAll("\\", "/");
-    const entry = counts.get(file) ?? { imports: 0, globals: 0 };
-    if (diagnostic.code.includes("no-restricted-imports")) {
-      entry.imports += 1;
-    } else if (diagnostic.code.includes("no-restricted-globals")) {
-      entry.globals += 1;
+    if (diagnostic.code.includes("no-restricted-globals") || diagnostic.code.includes("no-undef")) {
+      entry(file).globals += 1;
     }
-    counts.set(file, entry);
+  }
+  for (const violation of await boundaryViolations(ROOT)) {
+    if (violation.rule === "resolvable") {
+      entry(violation.edge.from).unresolved += 1;
+    } else {
+      entry(violation.edge.from).imports += 1;
+    }
   }
 
   for (const probe of written) {
-    const count = counts.get(probe.file) ?? { imports: 0, globals: 0 };
+    const count = counts.get(probe.file) ?? { imports: 0, unresolved: 0, globals: 0 };
+    if (probe.expect === "ignored") {
+      continue;
+    }
     if (probe.expect === "clean") {
-      const total = count.imports + count.globals;
+      const total = count.imports + count.unresolved + count.globals;
       rows.push({
         file: probe.file,
         ok: total === 0,
-        detail: `no-restricted-* fired ${total}x (control: want 0)`,
+        detail: `boundary findings ${total}x (control: want 0)`,
       });
-    } else {
-      const fired = probe.expect.rule === "imports" ? count.imports : count.globals;
+    } else if (probe.expect.rule === "imports") {
+      const fired = count.imports + (probe.expect.unresolved === true ? count.unresolved : 0);
+      const stray = probe.expect.unresolved === true ? 0 : count.unresolved;
       rows.push({
         file: probe.file,
-        ok: fired >= probe.expect.min,
-        detail: `no-restricted-${probe.expect.rule} fired ${fired}x (want >= ${probe.expect.min})`,
+        ok: fired >= probe.expect.min && stray === 0,
+        detail: `import boundaries fired ${fired}x (want >= ${probe.expect.min}), unresolvable ${stray}x (want 0)`,
+      });
+    } else {
+      rows.push({
+        file: probe.file,
+        ok: count.globals >= probe.expect.min,
+        detail: `global boundaries fired ${count.globals}x (want >= ${probe.expect.min})`,
       });
     }
   }

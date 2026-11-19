@@ -123,8 +123,9 @@ there is no alerting code in the worker.
 ## Layering
 
 `src/` imports exactly one workspace package: `@qntx/wallet-engine/gateway/contract` (schemas, the
-method and path allow-lists, the network registry). A lint rule in the root `vite.config.ts`
-rejects any other `@qntx/*` import, so the gateway never depends on engine runtime code. Contract
+method and path allow-lists, the network registry). `scripts/check-boundaries.ts` (part of
+`bun run lint`) resolves every import and rejects any other `@qntx/*` package or any path into
+another workspace package, so the gateway never depends on engine runtime code. Contract
 changes go in `packages/wallet-engine/src/gateway/contract/` first.
 
 `createGateway({ fetch, networks, limiters, corsOrigins })` in `src/app.ts` builds the Hono app; all
