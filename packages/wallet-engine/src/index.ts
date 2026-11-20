@@ -197,6 +197,7 @@ export type {
 } from "./payments/parse.ts";
 export type { ResolveOptions } from "./payments/resolve.ts";
 export type { SparkErrorCategory } from "./spark/errors.ts";
+export type { SparkPaymentKind, SparkPaymentRecord, SparkPaymentState } from "./spark/payments.ts";
 export { sparkStore } from "./spark/store.ts";
 export type { PaymentNote, SparkActivity } from "./spark/notes.ts";
 export { decodeExitChain, encodeExitChain } from "./spark/exit-chain-codec.ts";

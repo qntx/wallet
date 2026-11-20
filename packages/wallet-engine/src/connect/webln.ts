@@ -179,7 +179,7 @@ export class WeblnHandler {
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {
       if ("kind" in outcome && outcome.kind === "pending") {
-        throw unknownOutcome(outcome.transferId);
+        throw unknownOutcome(outcome.payment.id);
       }
       throw new ProviderError(-32603, "the lightning payment settled unexpectedly");
     }
@@ -233,7 +233,7 @@ export class WeblnHandler {
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {
       if ("kind" in outcome && outcome.kind === "pending") {
-        throw unknownOutcome(outcome.transferId);
+        throw unknownOutcome(outcome.payment.id);
       }
       throw new ProviderError(-32603, "the lnurl payment settled unexpectedly");
     }

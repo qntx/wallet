@@ -500,23 +500,31 @@ describe("payments.pay", () => {
         receiver: address,
         tokenIdentifier: "btknrt1token",
         amount: 123n,
+        transferId: sparkTransferId(CTX_ID, NOW),
         verify: VERIFY,
         commit: expect.any(Function),
       },
     });
   });
 
-  it("a token send with a lost response ends token-pending with the output ids", async () => {
+  it("a token send with a lost response ends pending with its open record", async () => {
     const { ctx } = context();
-    ctx.spark.sendToken = async () =>
+    const record = {
+      id: sparkTransferId(CTX_ID, NOW),
+      kind: "token",
+      state: "unknown",
+      receiver: "spark1x",
+      amount: "5",
+      tokenIdentifier: "btknrt1token",
+      inputOutputIds: ["a:0", "b:1"],
+      submittedAt: NOW,
+    } as const;
+    ctx.spark.sendToken = async (_ref, params) =>
       Promise.reject(
-        new SparkControllerError(
-          "unknown",
-          "token transfer outcome unknown",
-          undefined,
-          undefined,
-          ["a:0", "b:1"],
-        ),
+        new SparkControllerError("unknown", "token transfer outcome unknown", undefined, {
+          ...record,
+          id: params.transferId,
+        }),
       );
     const result = await pay(ctx, {
       account: REF,
@@ -524,7 +532,7 @@ describe("payments.pay", () => {
       token: { identifier: "btknrt1token", amount: 5n },
       verify: VERIFY,
     });
-    expect(result).toStrictEqual({ kind: "token-pending", inputOutputIds: ["a:0", "b:1"] });
+    expect(result).toStrictEqual({ kind: "pending", payment: record });
   });
 
   const tokenCombos: ReadonlyArray<readonly [string, Omit<PayParams, "account">]> = [
@@ -696,7 +704,16 @@ describe("payments.pay", () => {
     expect(calls).toHaveLength(0);
   });
 
-  const LOST = new SparkControllerError("unknown", "payment outcome unknown");
+  /** The controller's unknown outcome: the open record under the transfer id it was given. */
+  const lost = (transferId: string): SparkControllerError =>
+    new SparkControllerError("unknown", "payment outcome unknown", undefined, {
+      id: transferId,
+      kind: "transfer",
+      state: "unknown",
+      receiver: "r",
+      amount: "1",
+      submittedAt: NOW,
+    });
   const SATS_SPARK_INVOICE = encodeSparkAddress({
     network: "regtest",
     identityPublicKey: PUBKEY,
@@ -753,7 +770,8 @@ describe("payments.pay", () => {
     async ({ method, params }) => {
       const spark = {
         quoteExit: async () => Promise.resolve({ feeSats: 1, exitSats: 11 }),
-        [method]: async () => Promise.reject(LOST),
+        [method]: async (_ref: unknown, sent: { transferId: string }) =>
+          Promise.reject(lost(sent.transferId)),
       } as unknown as SparkController;
       const ctx: TestContext = {
         spark,
@@ -766,7 +784,14 @@ describe("payments.pay", () => {
       };
       await expect(pay(ctx, { account: REF, ...params, verify: VERIFY })).resolves.toStrictEqual({
         kind: "pending",
-        transferId: sparkTransferId(CTX_ID, NOW),
+        payment: {
+          id: sparkTransferId(CTX_ID, NOW),
+          kind: "transfer",
+          state: "unknown",
+          receiver: "r",
+          amount: "1",
+          submittedAt: NOW,
+        },
       });
     },
   );

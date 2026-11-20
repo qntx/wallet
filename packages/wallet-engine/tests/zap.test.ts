@@ -301,8 +301,17 @@ describe("prepareZapAction", () => {
   test("a lost commit response reports the zap pending under its transfer id", async () => {
     const now = Date.now();
     const failing = {
-      payInvoice: async () =>
-        Promise.reject(new SparkControllerError("unknown", "payment outcome unknown")),
+      payInvoice: async (_ref: unknown, sent: { transferId: string }) =>
+        Promise.reject(
+          new SparkControllerError("unknown", "payment outcome unknown", undefined, {
+            id: sent.transferId,
+            kind: "lightning",
+            state: "unknown",
+            receiver: "payee",
+            amount: "21",
+            submittedAt: now,
+          }),
+        ),
     } as unknown as SparkController;
     const action = prepareZapAction(account, prepared(), {
       maxFeeSats: 50,
@@ -311,7 +320,14 @@ describe("prepareZapAction", () => {
     });
     await expect(action.execute(failing, verify, () => undefined)).resolves.toStrictEqual({
       kind: "pending",
-      transferId: sparkTransferId("req-zap", now),
+      payment: {
+        id: sparkTransferId("req-zap", now),
+        kind: "lightning",
+        state: "unknown",
+        receiver: "payee",
+        amount: "21",
+        submittedAt: now,
+      },
     });
   });
 });

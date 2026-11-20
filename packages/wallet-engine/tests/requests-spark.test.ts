@@ -238,6 +238,7 @@ describe("Spark requests", () => {
         receiver: address,
         tokenIdentifier: "btknrt1token",
         amount: 123n,
+        transferId: sparkTransferId(request.id, NOW),
         verify: VERIFY,
         commit: expect.any(Function),
       },
@@ -249,7 +250,7 @@ describe("Spark requests", () => {
     });
   });
 
-  it("a token send whose broadcast response was lost ends submitted as token-pending", async () => {
+  it("a token send whose broadcast response was lost ends submitted as pending", async () => {
     const w = world();
     await w.requests.init();
     const request = await w.requests.prepare({
@@ -261,14 +262,21 @@ describe("Spark requests", () => {
       },
       token: { identifier: "btknrt1token", amount: 42n },
     });
+    const record = {
+      id: sparkTransferId(request.id, NOW),
+      kind: "token",
+      state: "unknown",
+      receiver: "r",
+      amount: "42",
+      tokenIdentifier: "btknrt1token",
+      inputOutputIds: ["a:0", "b:1"],
+      submittedAt: NOW,
+    } as const;
     w.failWith(
-      new SparkControllerError("unknown", "token transfer outcome unknown", undefined, undefined, [
-        "a:0",
-        "b:1",
-      ]),
+      new SparkControllerError("unknown", "token transfer outcome unknown", undefined, record),
     );
     const result = await w.requests.approve(request.id, "pay", approval(request, VERIFY));
-    expect(result).toStrictEqual({ kind: "token-pending", inputOutputIds: ["a:0", "b:1"] });
+    expect(result).toStrictEqual({ kind: "pending", payment: record });
     expect(w.requests.getState().requests[request.id]?.stage).toBe("submitted");
   });
 
@@ -412,12 +420,17 @@ describe("Spark requests", () => {
       },
       amountSats: 42,
     });
-    w.failWith(new SparkControllerError("unknown", "payment outcome unknown"));
+    const record = {
+      id: sparkTransferId(request.id, NOW),
+      kind: "transfer",
+      state: "unknown",
+      receiver: "r",
+      amount: "42",
+      submittedAt: NOW,
+    } as const;
+    w.failWith(new SparkControllerError("unknown", "payment outcome unknown", undefined, record));
     const result = await w.requests.approve(request.id, "pay", approval(request, VERIFY));
-    expect(result).toStrictEqual({
-      kind: "pending",
-      transferId: sparkTransferId(request.id, NOW),
-    });
+    expect(result).toStrictEqual({ kind: "pending", payment: record });
     expect(w.requests.getState().requests[request.id]?.stage).toBe("submitted");
   });
 

@@ -1089,7 +1089,7 @@ export type HistoryControllerOptions = {
             readonly xpub?: string;
         }>;
     };
-    readonly spark: Pick<SparkController, "history">;
+    readonly spark: Pick<SparkController, "history" | "store">;
     readonly sparkNetwork: SparkNetwork_2;
     readonly transactions: Pick<TransactionController, "store">;
     readonly addressBook: Pick<AddressBookController, "store">;
@@ -2137,6 +2137,7 @@ export type SparkAccountState = {
     readonly errorCategory?: string;
     readonly recent?: ReadonlyArray<SparkActivity>;
     readonly tokens?: ReadonlyArray<SparkTokenBalance>;
+    readonly payments?: Readonly<Record<string, SparkPaymentRecord>>;
 };
 
 // @public (undocumented)
@@ -2242,6 +2243,7 @@ export class SparkController extends Controller<SparkControllerState> {
         receiver: string;
         tokenIdentifier: string;
         amount: bigint;
+        transferId: string;
         verify: VerifyFactor;
         commit: () => void;
     }): Promise<string>;
@@ -2266,11 +2268,10 @@ export class SparkController extends Controller<SparkControllerState> {
 
 // @public (undocumented)
 export class SparkControllerError extends Error {
-    constructor(category: SparkErrorCategory, message: string, cause?: unknown, transferId?: string, inputOutputIds?: ReadonlyArray<string>);
+    constructor(category: SparkErrorCategory, message: string, cause?: unknown, payment?: SparkPaymentRecord);
     // (undocumented)
     readonly category: SparkErrorCategory;
-    readonly inputOutputIds?: ReadonlyArray<string>;
-    readonly transferId?: string;
+    readonly payment?: SparkPaymentRecord;
 }
 
 // @public (undocumented)
@@ -2326,7 +2327,7 @@ export type SparkDisplay = {
 
 // @public
 export type SparkErrorCategory = "network" | "approval-required" | "insufficient-funds" | "rejected" |
-/** The payment may have committed; it settles under its transfer id. */
+/** The payment may have committed; `payment` is its open record. */
 "unknown" | "internal";
 
 // @public
@@ -2337,6 +2338,26 @@ export type SparkExitInput = {
     readonly maxFeeSats: number;
     readonly speed?: "FAST" | "MEDIUM" | "SLOW";
 };
+
+// @public
+export type SparkPaymentKind = "transfer" | "lightning" | "exit" | "token";
+
+// @public
+export type SparkPaymentRecord = {
+    readonly id: string;
+    readonly kind: SparkPaymentKind;
+    readonly state: SparkPaymentState;
+    readonly receiver: string;
+    readonly amount: string;
+    readonly tokenIdentifier?: string;
+    readonly inputOutputIds?: ReadonlyArray<string>;
+    readonly transactionHash?: string;
+    readonly submittedAt: number;
+    readonly error?: string;
+};
+
+// @public
+export type SparkPaymentState = "submitted" | "unknown" | "settled" | "failed";
 
 // @public (undocumented)
 export type SparkResult = {
@@ -2352,15 +2373,14 @@ export type SparkResult = {
     readonly kind: "token";
     readonly transactionHash: string;
 } |
-/** The commit call's response was lost; the payment may settle under `transferId`. */
+/**
+* The commit response was lost and the payment may have gone out: `payment` is its open record,
+* which `SparkAccountState.payments` and `engine.history` keep following until the Spark operator
+* settles or fails it.
+*/
     {
     readonly kind: "pending";
-    readonly transferId: string;
-} |
-/** A token broadcast's response was lost; it may settle under the spent `inputOutputIds`. */
-    {
-    readonly kind: "token-pending";
-    readonly inputOutputIds: ReadonlyArray<string>;
+    readonly payment: SparkPaymentRecord;
 };
 
 // @public
