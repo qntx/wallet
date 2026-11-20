@@ -358,10 +358,16 @@ export async function approveSend(
 - Fewer requests are blind. A request the wallet can describe but not verify — an unknown contract
   call, unrecognised typed data that fits the display, a Solana transaction with unknown programs,
   a multi-party PSBT — now signs without the setting, with a "cannot verify" line in the kernel
-  prompt and the `decode-partial` check (so it needs an acknowledgement). Blind are: raw-byte
-  messages, typed data too large or misformed to show, an unrecognised function of a built-in
-  token, calldata to the signing account itself, a Safe `delegatecall` outside MultiSendCallOnly,
-  and a Safe transaction with a gas refund.
+  prompt and the `decode-partial` check (so it needs an acknowledgement). A request is described
+  only when what the prompt prints bounds what the signature authorises. Blind are: raw-byte
+  messages, 32-byte messages and text that renders a hash or carries unsafe code points; typed
+  data that signs only hashes or opaque bytes (ERC-1271 wrappers such as `SafeMessage`), that is
+  too large or misformed to show, or that a decoded family (permits, Permit2, Safe, Seaport,
+  built-in tokens) claims in a shape the wallet does not decode, such as EIP-3009 on a built-in
+  token; a Seaport order with more than four offer or consideration items; an unrecognised
+  function of a built-in token; an undecoded System, Token, Token-2022, Stake or Associated Token
+  instruction the signer signs; calldata to the signing account itself; a Safe `delegatecall`
+  outside MultiSendCallOnly; and a Safe transaction with a gas refund.
 - dApp blind requests are no longer refused at `prepare` (providers no longer answer `4200`). They
   become pending requests with the `blind-signing` danger, and `approve` throws
   `BlindSigningDisabledError` while the setting is off. Offer to enable it there, then approve the
@@ -541,7 +547,7 @@ export function signedBytes(tx: TrackedTransaction): string | undefined {
   refuses a guessable one with `BackupControllerError` category `weak-password` before any
   verification; rate drafts with `backupPasswordStrength(password)` (`acceptable` = zxcvbn score
   4). The vault password factor is unchanged.
-- Backup envelope version 2: 0.13.0 backup files are not read. Ask every user with backup on to
+- Backup envelope version 3: 0.13.0 backup files are not read. Ask every user with backup on to
   enable it again after the upgrade.
 - `backup.disable(verify)` re-verifies.
 - A restore unwrapped by the backup password — or by a passkey on the Web — brings the wallets back
