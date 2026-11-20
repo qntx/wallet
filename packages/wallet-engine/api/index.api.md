@@ -324,6 +324,9 @@ export type AssetsControllerState = {
     readonly balances: Record<string, AccountBalances>;
 };
 
+// @public
+export const awaitingFinality: (tx: TrackedTransaction) => boolean;
+
 // @public (undocumented)
 export class BackupController extends Controller<BackupControllerState> {
     constructor(options: BackupControllerOptions);
@@ -1153,6 +1156,9 @@ export type Holding = {
 export type HostController<C extends Controller<Record<string, unknown>>, K extends Exclude<keyof C, "store">> = Pick<C, "getState" | K> & {
     readonly store: ReadonlyStore<ReturnType<C["getState"]>>;
 };
+
+// @public
+export const includedPoll: (tx: TrackedTransaction, state: "confirmed" | "failed", block: TxBlock, final: boolean) => TxPoll | undefined;
 
 // @public
 type Independent<T> = {
@@ -2433,6 +2439,8 @@ export type TrackedTransaction = {
     readonly state: TxState;
     readonly intent: DisplayIntent | undefined;
     readonly nonce: number;
+    readonly block?: TxBlock | undefined;
+    readonly final?: boolean | undefined;
     readonly lastValidBlockHeight?: number;
     readonly replaces?: string;
     readonly parentId?: string;
@@ -2514,6 +2522,25 @@ export class TransactionController extends Controller<TransactionControllerState
 // @public (undocumented)
 export type TransactionControllerState = {
     readonly txs: Record<string, TrackedTransaction>;
+};
+
+// @public
+export type TxBlock = {
+    readonly hash?: string;
+    readonly height: number;
+};
+
+// @public
+export type TxPoll = {
+    readonly kind: "included";
+    readonly state: "confirmed" | "failed";
+    readonly block: TxBlock;
+    readonly final: boolean;
+} | {
+    readonly kind: "reorged";
+} | {
+    readonly kind: "ended";
+    readonly state: "failed" | "dropped" | "replaced";
 };
 
 // @public (undocumented)

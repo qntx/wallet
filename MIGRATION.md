@@ -490,6 +490,12 @@ pending and never offer to send again. Only a definitive refusal rejects (`faile
 bytes moved from `TrackedTransaction.evm.raw` to `TrackedTransaction.raw` for every family.
 Bitcoin dApp `signAndSendTransaction` broadcasts are tracked the same way.
 
+`confirmed` is no longer terminal: a transaction records the block it landed in
+(`TrackedTransaction.block`) and stays tracked at a low frequency until `final` — EVM `finalized`
+tag, six Bitcoin confirmations, Solana `finalized` commitment. A reorg returns it to `submitted`
+(and polling, with rebroadcast of the persisted bytes), so show it pending again until `final`.
+A `final` transaction is never polled again.
+
 Spark payments behave alike: a lost response resolves `{ kind: "pending", transferId }` (or
 `token-pending`) instead of failing — see section 11.
 
@@ -498,19 +504,16 @@ Spark payments behave alike: a lost response resolves `{ kind: "pending", transf
 ```ts
 import type { TrackedTransaction, TxState, WalletEngine } from "@qntx/wallet-engine";
 
-const TERMINAL: ReadonlySet<TxState> = new Set([
-  "confirmed",
-  "failed",
-  "rejected",
-  "dropped",
-  "replaced",
-]);
+const ENDED: ReadonlySet<TxState> = new Set(["failed", "rejected", "dropped", "replaced"]);
 
 /**
  * A broadcast whose outcome is unknown (timeout, 5xx, transport error) no longer rejects: `approve`
  * resolves with a `submitted` transaction tracked under its own hash, and the engine rebroadcasts
  * the same bytes. Never offer "try again" for it — a second send could pay twice. Only a definitive
- * refusal rejects, and the transaction is then `failed`.
+ * refusal rejects, and the transaction is then `failed`. `confirmed` is no longer terminal either:
+ * a transaction in a block (`tx.block` set) stays tracked until `final` — EVM `finalized` tag, six
+ * Bitcoin confirmations, Solana `finalized` commitment — and a reorg puts it back to `submitted`,
+ * so show it pending again until `final`.
  */
 export function watchUntilSettled(
   engine: WalletEngine,
@@ -523,7 +526,7 @@ export function watchUntilSettled(
       return;
     }
     onChange(tx);
-    if (TERMINAL.has(tx.state)) {
+    if (tx.block === undefined ? ENDED.has(tx.state) : tx.final === true) {
       stop();
     }
   });

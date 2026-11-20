@@ -1597,6 +1597,8 @@ type TrackedTransaction = {
     readonly state: TxState;
     readonly intent: DisplayIntent | undefined;
     readonly nonce: number;
+    readonly block?: TxBlock | undefined;
+    readonly final?: boolean | undefined;
     readonly lastValidBlockHeight?: number;
     readonly replaces?: string;
     readonly parentId?: string;
@@ -1678,6 +1680,12 @@ class TransactionController extends Controller<TransactionControllerState> {
 // @public (undocumented)
 type TransactionControllerState = {
     readonly txs: Record<string, TrackedTransaction>;
+};
+
+// @public
+type TxBlock = {
+    readonly hash?: string;
+    readonly height: number;
 };
 
 // @public (undocumented)
