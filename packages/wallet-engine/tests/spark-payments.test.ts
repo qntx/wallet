@@ -12,6 +12,8 @@ import {
 import type { SparkClient, SparkEvent, SparkPayment, SparkTokenOutput } from "@qntx/spark";
 import type { SparkAccountRef } from "@qntx/wallet/protocol";
 
+import { PAYMENT_PENDING_CODE } from "../src/connect/errors.ts";
+import { WeblnHandler } from "../src/connect/webln.ts";
 import { HistoryController } from "../src/history/controller.ts";
 import { RequestController } from "../src/requests/controller.ts";
 import { SparkController, sparkTransferId } from "../src/spark/controller.ts";
@@ -164,7 +166,10 @@ function rig(
       },
       send: async (o: unknown) => commit("send", o, o),
     },
-    lightning: { pay: async (o: unknown) => commit("pay", o, o) },
+    lightning: {
+      pay: async (o: unknown) => commit("pay", o, o),
+      sendStatus: async () => Promise.resolve({ status: "PENDING", outcome: "pending" }),
+    },
     tokens: {
       balances: async () => Promise.resolve([]),
       outputs: async () => (options.outputs ?? (async () => Promise.resolve([])))(),
@@ -225,6 +230,14 @@ const sendToken = async (c: SparkController, transferId = TID): Promise<unknown>
     verify: VERIFY,
     commit: () => {},
   });
+
+const only = <T>(items: ReadonlyArray<T>): T => {
+  const [item] = items;
+  if (item === undefined || items.length !== 1) {
+    throw new Error(`expected exactly one item, got ${String(items.length)}`);
+  }
+  return item;
+};
 
 const failure = async (run: Promise<unknown>): Promise<unknown> =>
   run.then(
@@ -702,6 +715,51 @@ describe("Spark payment outcomes through the request pipeline", () => {
     expect(r.calls).toHaveLength(1);
     expect(r.approvals).toHaveLength(1);
     expect(Object.keys(r.records())).toStrictEqual([sparkTransferId(request.id, NOW)]);
+    await r.c.destroy();
+  });
+});
+
+describe("WebLN payments past the preimage poll budget", () => {
+  const SITE = "https://app.example.com";
+
+  it("answer payment-pending, stay recorded, and settle once the operator lists them", async () => {
+    let listed: ReadonlyArray<SparkPayment> = [];
+    const r = rig({ scan: async () => Promise.resolve({ payments: listed }) });
+    await r.c.init();
+    const requests = pipeline(r.c);
+    await requests.init();
+    const webln = new WeblnHandler({
+      connections: {
+        checkOrigin: (origin) => ({ kind: "browser", origin }),
+        authorize: () => ({ id: "s1" }) as never,
+        session: () => ({ id: "s1" }) as never,
+        sessionAccounts: () => ({ group: { walletId: "w1", groupIndex: 0 }, addresses: [] }),
+        lightningPolicy: () => ({ balance: false }),
+        request: async () => Promise.reject(new Error("unused")),
+        touch: async () => Promise.resolve(),
+      },
+      requests,
+      spark: r.c,
+      sparkNetwork: "regtest",
+      now: () => NOW,
+      alias: "qntx",
+      lightningMaxFee: () => 5,
+      sleep: async () => Promise.resolve(),
+    });
+    const paid = failure(webln.handle(SITE, { method: "sendPayment", params: INVOICE }));
+    const request = only(
+      await until(
+        () => Object.values(requests.getState().requests),
+        (all) => all.length === 1,
+      ),
+    );
+    await requests.approve(request.id, "pay", approval(request, VERIFY));
+    await expect(paid).resolves.toMatchObject({ code: PAYMENT_PENDING_CODE });
+    const id = sparkTransferId(request.id, NOW);
+    expect(r.records()[id]).toMatchObject({ kind: "lightning", state: "submitted", amount: "21" });
+    listed = [{ ...payment(id, "completed"), method: "lightning" }];
+    await r.timers.fire();
+    await until(r.records, (records) => records[id]?.state === "settled");
     await r.c.destroy();
   });
 });
