@@ -30,6 +30,7 @@ import { parseKeyHeader } from "../../vault/headers.ts";
 import { BLIND_SIGNING, policyEnabled } from "../../vault/policy.ts";
 import type { StoredRecord } from "../../vault/store.ts";
 import { openRecord, verifyFactor } from "../../vault/vault.ts";
+import { findAgent, parseAgentHeader } from "../apps/record.ts";
 import { executeBitcoin } from "./bitcoin.ts";
 import { executeEvm } from "./evm.ts";
 import { chainPrompt } from "./prompt.ts";
@@ -275,6 +276,39 @@ const importedPass = (
   };
 };
 
+/**
+ * The approve-agent binding (design.md §ApproveAgent 绑定): when the decoded intent approves a
+ * Hyperliquid agent, look the agent address up among this vault's hl-agent records. A record whose
+ * owner, network, name and validUntil all match the signed action marks the prompt "held"; a record
+ * that exists but disagrees means the approval describes a different agent under the same address
+ * and is refused; no record marks it "not held".
+ */
+const bindAgent = (
+  ctx: Parameters<Handler<"chain.sign">>[0],
+  prompt: PromptIntent,
+  signer: string | undefined,
+): PromptIntent => {
+  const { message } = prompt;
+  if (message?.kind !== "typed-data" || message.hyperliquid?.kind !== "approve-agent") {
+    return prompt;
+  }
+  const action = message.hyperliquid;
+  const record = findAgent(ctx.image, action.agent);
+  if (record === undefined) {
+    return { ...prompt, agentHeld: false };
+  }
+  const header = parseAgentHeader(record.header);
+  if (
+    header.owner !== signer ||
+    header.network !== action.chain ||
+    header.name !== action.name ||
+    header.validUntil !== action.validUntil
+  ) {
+    throw new KernelError("invalid-input", "the approval does not match this wallet's agent");
+  }
+  return { ...prompt, agentHeld: true };
+};
+
 const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   const { dek } = ctx.session.require(session);
   const { request, verify } = params;
@@ -290,9 +324,10 @@ const chainSign: Handler<"chain.sign"> = async (ctx, params, session) => {
   if (!("prompt" in prepared)) {
     throw new KernelError("integrity", "unreachable: prepare pass signed");
   }
-  assertSignable(ctx, dek, prepared.prompt);
+  const prompt = bindAgent(ctx, prepared.prompt, prepared.signer);
+  assertSignable(ctx, dek, prompt);
   await verifyFactor(ctx.platform, ctx.image, verify, dek, ctx.commit, () =>
-    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prepared.prompt),
+    chainPrompt(promptLocale(ctx.platform.keystore?.locale ?? "en"), prompt),
   );
   // The session may have ended while the prompt was up.
   ctx.session.require(session);

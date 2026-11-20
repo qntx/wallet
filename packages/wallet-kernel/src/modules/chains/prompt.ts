@@ -51,6 +51,8 @@ export type PromptIntent = Pick<
   readonly family?: ChainFamily;
   readonly warnings?: DisplayIntent["warnings"];
   readonly staking?: DisplayIntent["staking"];
+  /** Set only by the chain.sign approve-agent binding: whether this vault holds the agent key. */
+  readonly agentHeld?: boolean;
 };
 
 /** The prompt intent of an off-chain message: it moves no value and pays no fee. */
@@ -167,6 +169,8 @@ type Catalog = {
   readonly hlApproveAgent: (agent: string, name: string | undefined) => string;
   readonly hlAgentExpiry: (date: string) => string;
   readonly hlAgentNoExpiry: string;
+  readonly hlAgentHeld: string;
+  readonly hlAgentNotHeld: string;
   readonly hlAgentPowers: string;
   readonly hlBuilderFee: (builder: string, rate: string) => string;
   readonly pmOrderTitle: string;
@@ -290,6 +294,8 @@ const zh: Catalog = {
     name === undefined ? `授权代理 ${agent}（未命名）` : `授权代理 ${agent}，名称“${name}”`,
   hlAgentExpiry: (date) => `有效期至 ${date}（UTC）`,
   hlAgentNoExpiry: "名称中没有有效期：适用 Hyperliquid 的默认期限",
+  hlAgentHeld: "代理密钥由本钱包持有",
+  hlAgentNotHeld: "代理密钥不在本钱包中：持有者可以替此账户交易",
   hlAgentPowers:
     "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。",
   hlBuilderFee: (builder, rate) => `允许 builder ${builder} 对每笔订单收取最多 ${rate} 的费用`,
@@ -437,6 +443,9 @@ const en: Catalog = {
       : `Approve agent ${agent} named "${name}"`,
   hlAgentExpiry: (date) => `Valid until ${date} (UTC)`,
   hlAgentNoExpiry: "No expiry in the name: Hyperliquid's default applies",
+  hlAgentHeld: "The agent key is held by this wallet",
+  hlAgentNotHeld:
+    "The agent key is not held by this wallet: whoever holds it can trade this account",
   hlAgentPowers:
     "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.",
   hlBuilderFee: (builder, rate) =>
@@ -807,7 +816,11 @@ const hype = (wei: string): string => formatUnits(wei, 8);
  * is exhaustive over the action union; a trailing return is unreachable code (TS7027).
  */
 // oxlint-disable-next-line typescript/consistent-return
-function hyperliquidLines(catalog: Catalog, action: HyperliquidAction): ReadonlyArray<string> {
+function hyperliquidLines(
+  catalog: Catalog,
+  action: HyperliquidAction,
+  agentHeld?: boolean,
+): ReadonlyArray<string> {
   switch (action.kind) {
     case "usd-send":
       return [catalog.hlUsdSend(action.amount, action.destination)];
@@ -847,6 +860,9 @@ function hyperliquidLines(catalog: Catalog, action: HyperliquidAction): Readonly
     case "approve-agent":
       return [
         catalog.hlApproveAgent(action.agent, action.name === "" ? undefined : field(action.name)),
+        ...(agentHeld === undefined
+          ? []
+          : [agentHeld ? catalog.hlAgentHeld : catalog.hlAgentNotHeld]),
         action.validUntil === undefined
           ? catalog.hlAgentNoExpiry
           : catalog.hlAgentExpiry(utcDateTime(Math.floor(action.validUntil / 1000))),
@@ -960,7 +976,7 @@ function typedDataLines(
        targets is `hyperliquidChain`, so it replaces the App/Network/Verifying contract lines. */
     return [
       catalog.hlChain[message.hyperliquid.chain],
-      ...hyperliquidLines(catalog, message.hyperliquid),
+      ...hyperliquidLines(catalog, message.hyperliquid, intent.agentHeld),
     ];
   }
   /* A Polymarket document is its own description — before the generic branches, because a

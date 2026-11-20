@@ -294,9 +294,28 @@ const vector = loadVectors("vault-manifest.json") as {
   dek: string;
   nonce: string;
   manifest: VectorRow;
+  withAgent: {
+    image: {
+      meta: {
+        format: number;
+        revision: number;
+        keyId: string;
+        failedAttempts: number;
+        lastFailureAt: number;
+      };
+      records: VectorRow[];
+      factors: VectorRow[];
+    };
+    digest: string;
+    manifest: VectorRow;
+  };
 };
 
 const fromHex = (row: VectorRow) => ({ ...row, sealed: hexToBytes(row.sealed) });
+const renamedAgent = (records: ReadonlyArray<StoredRecord>): StoredRecord[] =>
+  records.map((r) =>
+    r.kind === "hl-agent" ? { ...r, header: r.header.replace('"bot-1"', '"bot-9"') } : r,
+  );
 const vectorImage: VaultImage = {
   meta: vector.image.meta,
   records: vector.image.records.map(fromHex),
@@ -389,6 +408,40 @@ describe("manifest vector", () => {
     // Another DEK cannot vouch for it.
     expect(
       structureFailure(() => assertManifest(Secret.take(new Uint8Array(32)), sealedImage)),
+    ).toStrictEqual(corrupted);
+  });
+
+  it("digests and authenticates an image carrying an hl-agent row", () => {
+    const agentImage: VaultImage = {
+      meta: vector.withAgent.image.meta,
+      records: vector.withAgent.image.records.map(fromHex),
+      factors: vector.withAgent.image.factors.map(fromHex),
+    };
+    expect(manifestDigest(agentImage)).toStrictEqual(hexToBytes(vector.withAgent.digest));
+    const sealed: VaultImage = {
+      ...agentImage,
+      records: [...agentImage.records, fromHex(vector.withAgent.manifest)],
+    };
+    expect(() => {
+      assertManifest(vectorDek(), sealed);
+    }).not.toThrow();
+    const corrupted = { code: "integrity", corrupted: true };
+    // Dropping or rewriting the agent row fails authentication like any other record.
+    expect(
+      structureFailure(() =>
+        assertManifest(vectorDek(), {
+          ...sealed,
+          records: sealed.records.filter((r) => r.kind !== "hl-agent"),
+        }),
+      ),
+    ).toStrictEqual(corrupted);
+    expect(
+      structureFailure(() =>
+        assertManifest(vectorDek(), {
+          ...sealed,
+          records: renamedAgent(sealed.records),
+        }),
+      ),
     ).toStrictEqual(corrupted);
   });
 });

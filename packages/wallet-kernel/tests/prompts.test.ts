@@ -2399,6 +2399,44 @@ describe("hyperliquid prompts", () => {
     );
   });
 
+  it("approve-agent says whether this wallet holds the agent key", () => {
+    const action = {
+      kind: "approve-agent" as const,
+      chain: "Mainnet" as const,
+      agent: HL_AGENT,
+      name: "bot-1",
+      validUntil: 1798765432000,
+    };
+    const held = chainPrompt("en", {
+      ...hlIntent("approve", "partial", action),
+      agentHeld: true,
+    });
+    expect(held.description).toBe(
+      `Hyperliquid Mainnet\nApprove agent ${HL_AGENT} named "bot-1"\nThe agent key is held by this wallet\nValid until 2027-01-01 01:03 (UTC)\n${HL_POWERS}`,
+    );
+    expect(
+      chainPrompt("zh-Hans", { ...hlIntent("approve", "partial", action), agentHeld: true })
+        .description,
+    ).toBe(
+      `Hyperliquid 主网\n授权代理 ${HL_AGENT}，名称“bot-1”\n代理密钥由本钱包持有\n有效期至 2027-01-01 01:03（UTC）\n${HL_POWERS_ZH}`,
+    );
+    const notHeld = chainPrompt("en", {
+      ...hlIntent("approve", "partial", action),
+      agentHeld: false,
+    });
+    expect(notHeld.description).toContain(
+      "The agent key is not held by this wallet: whoever holds it can trade this account",
+    );
+    expect(
+      chainPrompt("zh-Hans", { ...hlIntent("approve", "partial", action), agentHeld: false })
+        .description,
+    ).toContain("代理密钥不在本钱包中：持有者可以替此账户交易");
+    // Without the binding flag the intent is unchanged (old behavior).
+    expect(chainPrompt("en", hlIntent("approve", "partial", action)).description).not.toContain(
+      "held by this wallet",
+    );
+  });
+
   it("approve-builder-fee names the builder and the rate", () => {
     const intent = hlIntent("approve", "partial", {
       kind: "approve-builder-fee",

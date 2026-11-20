@@ -8,6 +8,7 @@
  * validator composes the core sections with each module's status section.
  */
 import type { LockReason, StatusPayload, WalletErrorCode } from "../types.ts";
+import { APPS_METHODS } from "./apps.ts";
 import { backupInfo } from "./backup.ts";
 import { CHAINS_METHODS } from "./chains.ts";
 import {
@@ -216,7 +217,8 @@ export const METHODS: {
 } & typeof CORE_METHODS &
   typeof NOSTR_METHODS &
   typeof CHAINS_METHODS &
-  typeof SPARK_METHODS = {
+  typeof SPARK_METHODS &
+  typeof APPS_METHODS = {
   status: {
     session: false,
     presence: false,
@@ -227,6 +229,7 @@ export const METHODS: {
   ...CHAINS_METHODS,
   ...NOSTR_METHODS,
   ...SPARK_METHODS,
+  ...APPS_METHODS,
 };
 
 // A method name must live in exactly one table: an overlap violates the never constraint.
@@ -235,6 +238,10 @@ export type MethodTablesDisjoint = [
   AssertNever<keyof typeof CORE_METHODS & keyof typeof NOSTR_METHODS>,
   AssertNever<keyof typeof CORE_METHODS & keyof typeof SPARK_METHODS>,
   AssertNever<keyof typeof NOSTR_METHODS & keyof typeof SPARK_METHODS>,
+  AssertNever<keyof typeof APPS_METHODS & keyof typeof CORE_METHODS>,
+  AssertNever<keyof typeof APPS_METHODS & keyof typeof NOSTR_METHODS>,
+  AssertNever<keyof typeof APPS_METHODS & keyof typeof CHAINS_METHODS>,
+  AssertNever<keyof typeof APPS_METHODS & keyof typeof SPARK_METHODS>,
 ];
 
 export type MethodName = keyof typeof METHODS;
@@ -272,6 +279,13 @@ export const responseError: Validator<{
 }> = errorPayload;
 
 export { NOSTR_METHODS, SPARK_METHODS };
+export { APPS_METHODS, hyperliquidL1Action } from "./apps.ts";
+export type {
+  HyperliquidAgentInfo,
+  HyperliquidL1Action,
+  HyperliquidL1Order,
+  HyperliquidNetwork,
+} from "./apps.ts";
 export { CHAINS_METHODS } from "./chains.ts";
 export type {
   ChainAccount,
