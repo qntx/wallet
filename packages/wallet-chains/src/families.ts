@@ -50,6 +50,25 @@ export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
     claim: { surface: "evm.typed-data", domainName: "HyperliquidSignTransaction" },
     nearMiss: "typed-data-variant",
   },
+  /* Polymarket CLOB orders under the shared exchange domain (docs resources/contracts.md). */
+  {
+    family: "Polymarket exchange",
+    claim: { surface: "evm.typed-data", domainName: "Polymarket CTF Exchange" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Polymarket CLOB L1 auth that derives API credentials (clob-client-v2 signing/eip712.ts). */
+  {
+    family: "Polymarket CLOB auth",
+    claim: { surface: "evm.typed-data", domainName: "ClobAuthDomain" },
+    nearMiss: "typed-data-variant",
+  },
+  /* Polymarket deposit-wallet envelopes: ERC-7739 order wrappers and call batches (docs
+     trading/wallets-auth.md). */
+  {
+    family: "Polymarket deposit wallet",
+    claim: { surface: "evm.typed-data", domainName: "DepositWallet" },
+    nearMiss: "typed-data-variant",
+  },
   /* ERC-20/721/1155 transfer, approve and setApprovalForAll selectors to a listed token. */
   {
     family: "built-in token",

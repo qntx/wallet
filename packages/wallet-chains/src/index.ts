@@ -388,6 +388,60 @@ export type HyperliquidAction =
       readonly maxFeeRate: string;
     };
 
+/**
+ * A recognized Polymarket typed-data request: a CLOB order (EOA, proxy, Safe or the ERC-7739
+ * deposit-wallet envelope), the CLOB L1 auth signature, or a deposit-wallet call batch. Every
+ * alternative is produced only by the exact document shapes in `evm/polymarket.ts`.
+ */
+export type PolymarketContent =
+  | {
+      readonly kind: "order";
+      /** The allow-listed exchange the order verifies against. */
+      readonly exchange: {
+        readonly address: string;
+        readonly name: string;
+        readonly version: "2" | "3";
+      };
+      readonly side: "buy" | "sell";
+      /** The outcome token id, decimal string. */
+      readonly tokenId: string;
+      /** The order's funding address and signer, EIP-55. */
+      readonly maker: string;
+      readonly signer: string;
+      /** Whose funds the order commits: the account, its CREATE2 proxy/Safe, or a deposit wallet. */
+      readonly wallet: "account" | "proxy" | "safe" | "deposit-wallet";
+      /**
+       * What the order gives up: BUY pays pUSD `makerAmount`, SELL pays `makerAmount` outcome
+       * shares (asset = the market's outcome-token contract, `tokenId` set).
+       */
+      readonly give: AssetAmount;
+      /** What the order receives at minimum: BUY shares `takerAmount`, SELL pUSD `takerAmount`. */
+      readonly receive: AssetAmount;
+      /** PUSD base units per whole share, rounded down; `exact` false when it does not divide. */
+      readonly price: { readonly amount: string; readonly exact: boolean };
+      /** Signed bytes32 values shown verbatim, only when not zero; lowercase hex. */
+      readonly builder?: string;
+      readonly metadata?: string;
+    }
+  | {
+      readonly kind: "auth";
+      /** The account the credentials are derived for, EIP-55. */
+      readonly address: string;
+      /** Unix seconds. */
+      readonly timestamp: number;
+      readonly nonce: string;
+    }
+  | {
+      readonly kind: "batch";
+      /** The deposit wallet the batch executes on, EIP-55. */
+      readonly wallet: string;
+      readonly nonce: string;
+      /** Unix seconds after which the batch lapses (uint48). */
+      readonly deadline: number;
+      /** The decoded call intents; empty when the batch is blind (oversize). */
+      readonly calls: ReadonlyArray<DisplayIntent>;
+    };
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -413,6 +467,8 @@ export type MessageContent =
       readonly safe?: SafeTransaction;
       /** A recognized Hyperliquid user-signed action under the `HyperliquidSignTransaction` domain. */
       readonly hyperliquid?: HyperliquidAction;
+      /** A recognized Polymarket order, CLOB auth signature or deposit-wallet batch. */
+      readonly polymarket?: PolymarketContent;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is

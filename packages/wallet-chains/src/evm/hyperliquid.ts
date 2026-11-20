@@ -28,27 +28,14 @@
  */
 import { displayExcerpt } from "../display.ts";
 import type {
-  AssetFlow,
-  BlindReason,
   HyperliquidAction,
   HyperliquidChain,
   IntentSummary,
-  IntentWarning,
   Verifiability,
 } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { domainChainId, sameFields, typedDataAddress, typedDataUint } from "./typed-data.ts";
 import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
-
-/** What a recognized app document produces; `blind` stays unset for Hyperliquid. */
-export type HyperliquidRecognition = {
-  readonly content: { readonly hyperliquid: HyperliquidAction };
-  readonly summary: IntentSummary;
-  readonly outflows: ReadonlyArray<AssetFlow>;
-  readonly warnings: ReadonlyArray<IntentWarning>;
-  readonly verifiability: Verifiability;
-  readonly blind?: BlindReason;
-};
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const MAX_UINT64 = 2n ** 64n - 1n;
@@ -335,7 +322,9 @@ const DESCRIBED: ReadonlyArray<Described> = [
  * the type does not declare (the SDKs' `type`, `signatureChainId`) are not signed and are ignored
  * here.
  */
-export function recognizeHyperliquid(json: TypedDataInput): HyperliquidRecognition | undefined {
+export function recognizeHyperliquid(
+  json: TypedDataInput,
+): { action: HyperliquidAction; summary: IntentSummary; verifiability: Verifiability } | undefined {
   const { types, primaryType, domain, message } = json;
   if (
     domain["name"] !== "HyperliquidSignTransaction" ||
@@ -361,11 +350,5 @@ export function recognizeHyperliquid(json: TypedDataInput): HyperliquidRecogniti
   const action = described.build(chain, message);
   return action === undefined
     ? undefined
-    : {
-        content: { hyperliquid: action },
-        summary: described.summary,
-        outflows: [],
-        warnings: [],
-        verifiability: described.verifiability,
-      };
+    : { action, summary: described.summary, verifiability: described.verifiability };
 }

@@ -687,7 +687,15 @@ export const decodeEvm = (
       : undefined;
   const app =
     permit === undefined && seaport === undefined && safe === undefined
-      ? recognizeApp(json)
+      ? recognizeApp(json, { network: request.network, chainId, table, signer }, (call, self) =>
+          decodeCall(call, {
+            network: request.network,
+            fee: undefined,
+            table,
+            signer,
+            self,
+          }),
+        )
       : undefined;
   const unclaimed =
     permit === undefined && seaport === undefined && safe === undefined && app === undefined;
@@ -721,7 +729,7 @@ export const decodeEvm = (
       network: request.network,
       summary,
       outflows: app?.outflows ?? [],
-      approvals: permit?.approvals ?? [],
+      approvals: permit?.approvals ?? app?.approvals ?? [],
       fee: undefined,
       warnings: permit?.warnings ?? app?.warnings ?? [],
       message,

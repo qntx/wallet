@@ -17,6 +17,7 @@ import type {
   IntentSummary,
   MessageContent,
   SafeTransaction,
+  PolymarketContent,
   SeaportOrder,
   SignInParse,
   StakeAction,
@@ -168,6 +169,23 @@ type Catalog = {
   readonly hlAgentNoExpiry: string;
   readonly hlAgentPowers: string;
   readonly hlBuilderFee: (builder: string, rate: string) => string;
+  readonly pmOrderTitle: string;
+  readonly pmExchange: (name: string, address: string) => string;
+  readonly pmProxyFunds: (maker: string) => string;
+  readonly pmSafeFunds: (maker: string) => string;
+  readonly pmDepositFunds: (maker: string) => string;
+  readonly pmBuyShares: (shares: string, tokenId: string) => string;
+  readonly pmPayMax: (pusd: string, price: string) => string;
+  readonly pmSellShares: (shares: string, tokenId: string) => string;
+  readonly pmReceiveMin: (pusd: string, price: string) => string;
+  readonly pmFeeSetAtMatch: string;
+  readonly pmBuilder: (hex: string) => string;
+  readonly pmMetadata: (hex: string) => string;
+  readonly pmAuthFor: (address: string) => string;
+  readonly pmAuthTime: (date: string) => string;
+  readonly pmAuthNonce: (nonce: string) => string;
+  readonly pmAuthScope: string;
+  readonly pmBatchHeader: (wallet: string, nonce: string, deadline: string) => string;
 };
 
 const zh: Catalog = {
@@ -275,6 +293,24 @@ const zh: Catalog = {
   hlAgentPowers:
     "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。",
   hlBuilderFee: (builder, rate) => `允许 builder ${builder} 对每笔订单收取最多 ${rate} 的费用`,
+  pmOrderTitle: "确认订单",
+  pmExchange: (name, address) => `Polymarket ${name} ${address}`,
+  pmProxyFunds: (maker) => `资金来自你的 Polymarket 代理钱包 ${maker}`,
+  pmSafeFunds: (maker) => `资金来自你的 Polymarket Safe ${maker}`,
+  pmDepositFunds: (maker) => `资金来自存款钱包 ${maker}；只有其所有者的签名才能使此订单生效`,
+  pmBuyShares: (shares, tokenId) => `买入至少 ${shares} 份结果代币 ${tokenId}`,
+  pmPayMax: (pusd, price) => `最多支付 ${pusd} pUSD（价格 ${price} pUSD/份）`,
+  pmSellShares: (shares, tokenId) => `卖出 ${shares} 份结果代币 ${tokenId}`,
+  pmReceiveMin: (pusd, price) => `扣费前至少收到 ${pusd} pUSD（价格 ${price} pUSD/份）`,
+  pmFeeSetAtMatch: "交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额",
+  pmBuilder: (hex) => `Builder 代码 ${hex}`,
+  pmMetadata: (hex) => `订单元数据 ${hex}`,
+  pmAuthFor: (address) => `为 ${address} 创建或派生 Polymarket API 凭证`,
+  pmAuthTime: (date) => `时间 ${date}（UTC）`,
+  pmAuthNonce: (nonce) => `凭证序号 ${nonce}`,
+  pmAuthScope: "凭证用于验证撤单等账户请求；每笔订单仍需你的签名",
+  pmBatchHeader: (wallet, nonce, deadline) =>
+    `Polymarket 存款钱包 ${wallet} 的第 ${nonce} 批调用，有效期至 ${deadline}（UTC）`,
   stakeLine: (a, sol) =>
     a.kind === "create"
       ? `创建质押账户 ${a.account}，存入 ${sol(a.lamports)}`
@@ -405,6 +441,28 @@ const en: Catalog = {
     "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.",
   hlBuilderFee: (builder, rate) =>
     `Allow builder ${builder} to charge up to ${rate} of each order's value`,
+  pmOrderTitle: "Confirm order",
+  pmExchange: (name, address) => `Polymarket ${name} ${address}`,
+  pmProxyFunds: (maker) => `Funds from your Polymarket proxy wallet ${maker}`,
+  pmSafeFunds: (maker) => `Funds from your Polymarket Safe ${maker}`,
+  pmDepositFunds: (maker) =>
+    `Funds from deposit wallet ${maker}; only its owner's signature makes this order valid`,
+  pmBuyShares: (shares, tokenId) => `Buy at least ${shares} shares of outcome token ${tokenId}`,
+  pmPayMax: (pusd, price) => `Pay at most ${pusd} pUSD (price ${price} pUSD per share)`,
+  pmSellShares: (shares, tokenId) => `Sell ${shares} shares of outcome token ${tokenId}`,
+  pmReceiveMin: (pusd, price) =>
+    `Receive at least ${pusd} pUSD before fees (price ${price} pUSD per share)`,
+  pmFeeSetAtMatch:
+    "Polymarket sets the trading fee when the order is matched; this signature does not cap it",
+  pmBuilder: (hex) => `Builder code ${hex}`,
+  pmMetadata: (hex) => `Order metadata ${hex}`,
+  pmAuthFor: (address) => `Create or derive Polymarket API credentials for ${address}`,
+  pmAuthTime: (date) => `Time ${date} (UTC)`,
+  pmAuthNonce: (nonce) => `Credential nonce ${nonce}`,
+  pmAuthScope:
+    "The credentials authenticate account requests such as cancelling orders; every order still needs your signature",
+  pmBatchHeader: (wallet, nonce, deadline) =>
+    `Polymarket deposit wallet ${wallet}, batch ${nonce}, valid until ${deadline} (UTC)`,
   stakeLine: (a, sol) =>
     a.kind === "create"
       ? `Create stake account ${a.account} with ${sol(a.lamports)}`
@@ -744,27 +802,26 @@ function typedContentLines(
 /** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
 const hype = (wei: string): string => formatUnits(wei, 8);
 
-/** The lines of a recognized Hyperliquid user-signed action; requester text is sanitised. */
+/**
+ * The lines of a recognized Hyperliquid user-signed action; requester text is sanitised. The switch
+ * is exhaustive over the action union; a trailing return is unreachable code (TS7027).
+ */
+// oxlint-disable-next-line typescript/consistent-return
 function hyperliquidLines(catalog: Catalog, action: HyperliquidAction): ReadonlyArray<string> {
-  let lines: ReadonlyArray<string>;
   switch (action.kind) {
     case "usd-send":
-      lines = [catalog.hlUsdSend(action.amount, action.destination)];
-      break;
+      return [catalog.hlUsdSend(action.amount, action.destination)];
     case "withdraw":
-      lines = [catalog.hlWithdraw(action.amount, action.destination), catalog.hlWithdrawFee];
-      break;
+      return [catalog.hlWithdraw(action.amount, action.destination), catalog.hlWithdrawFee];
     case "spot-send":
-      lines = [
+      return [
         catalog.hlSpotSend(action.amount, field(action.token), action.destination),
         catalog.hlTokenId,
       ];
-      break;
     case "usd-class-transfer":
-      lines = [catalog.hlClassTransfer(action.amount, action.toPerp)];
-      break;
+      return [catalog.hlClassTransfer(action.amount, action.toPerp)];
     case "send-asset":
-      lines = [
+      return [
         catalog.hlSendAsset(
           action.amount,
           field(action.token),
@@ -777,34 +834,119 @@ function hyperliquidLines(catalog: Catalog, action: HyperliquidAction): Readonly
           : [catalog.hlSubAccount(action.fromSubAccount)]),
         catalog.hlTokenId,
       ];
-      break;
     case "staking-deposit":
-      lines = [catalog.hlStakeDeposit(hype(action.wei))];
-      break;
+      return [catalog.hlStakeDeposit(hype(action.wei))];
     case "staking-withdraw":
-      lines = [catalog.hlStakeWithdraw(hype(action.wei))];
-      break;
+      return [catalog.hlStakeWithdraw(hype(action.wei))];
     case "token-delegate":
-      lines = [
+      return [
         action.undelegate
           ? catalog.hlUndelegate(hype(action.wei), action.validator)
           : catalog.hlDelegate(hype(action.wei), action.validator),
       ];
-      break;
     case "approve-agent":
-      lines = [
+      return [
         catalog.hlApproveAgent(action.agent, action.name === "" ? undefined : field(action.name)),
         action.validUntil === undefined
           ? catalog.hlAgentNoExpiry
           : catalog.hlAgentExpiry(utcDateTime(Math.floor(action.validUntil / 1000))),
         catalog.hlAgentPowers,
       ];
-      break;
     case "approve-builder-fee":
-      lines = [catalog.hlBuilderFee(action.builder, action.maxFeeRate)];
-      break;
+      return [catalog.hlBuilderFee(action.builder, action.maxFeeRate)];
   }
-  return lines;
+}
+
+/** Shares and pUSD are both 6-decimal (clob-client-v2 config.ts). */
+const pmUnits = (amount: string): string => formatUnits(amount, 6);
+
+/** PUSD per share; `≈ ` marks a price that does not divide exactly. */
+const pmPrice = (price: { amount: string; exact: boolean }): string =>
+  `${price.exact ? "" : "≈ "}${formatUnits(price.amount, 6)}`;
+
+function polymarketOrderLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  order: Extract<PolymarketContent, { kind: "order" }>,
+): ReadonlyArray<string> {
+  const buy = order.side === "buy";
+  const shares = pmUnits(buy ? order.receive.amount : order.give.amount);
+  const pusd = pmUnits(buy ? order.give.amount : order.receive.amount);
+  const price = pmPrice(order.price);
+  return [
+    catalog.pmExchange(order.exchange.name, order.exchange.address),
+    ...(intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))]),
+    ...(order.wallet === "proxy"
+      ? [catalog.pmProxyFunds(order.maker)]
+      : order.wallet === "safe"
+        ? [catalog.pmSafeFunds(order.maker)]
+        : order.wallet === "deposit-wallet"
+          ? [catalog.pmDepositFunds(order.maker)]
+          : []),
+    buy ? catalog.pmBuyShares(shares, order.tokenId) : catalog.pmSellShares(shares, order.tokenId),
+    buy ? catalog.pmPayMax(pusd, price) : catalog.pmReceiveMin(pusd, price),
+    catalog.pmFeeSetAtMatch,
+    ...(order.builder === undefined ? [] : [catalog.pmBuilder(order.builder)]),
+    ...(order.metadata === undefined ? [] : [catalog.pmMetadata(order.metadata)]),
+  ];
+}
+
+function polymarketAuthLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  auth: Extract<PolymarketContent, { kind: "auth" }>,
+): ReadonlyArray<string> {
+  return [
+    ...(intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))]),
+    catalog.pmAuthFor(auth.address),
+    catalog.pmAuthTime(utcDateTime(auth.timestamp)),
+    catalog.pmAuthNonce(auth.nonce),
+    catalog.pmAuthScope,
+  ];
+}
+
+/** A deposit-wallet batch shows every decoded call, like a Safe's — never truncated. */
+function polymarketBatchLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  batch: Extract<PolymarketContent, { kind: "batch" }>,
+): ReadonlyArray<string> {
+  return [
+    ...(intent.network === undefined
+      ? []
+      : [catalog.networkLine(networkLabel(catalog, intent.network))]),
+    catalog.pmBatchHeader(batch.wallet, batch.nonce, utcDateTime(batch.deadline)),
+    ...(batch.calls.length === 0
+      ? [catalog.typedOversize]
+      : batch.calls.flatMap((call) => [
+          ...(call.verifiability === "opaque" ? [catalog.unverifiedEffects] : []),
+          ...effectLines(catalog, call),
+        ])),
+  ];
+}
+
+/**
+ * The lines of a recognized Polymarket document; replaces the App/Network/Contract/Type lines. The
+ * switch is exhaustive over the content union; a trailing return is unreachable (TS7027).
+ */
+// oxlint-disable-next-line typescript/consistent-return
+function polymarketLines(
+  catalog: Catalog,
+  intent: PromptIntent,
+  content: PolymarketContent,
+): ReadonlyArray<string> {
+  switch (content.kind) {
+    case "order":
+      return polymarketOrderLines(catalog, intent, content);
+    case "auth":
+      return polymarketAuthLines(catalog, intent, content);
+    case "batch":
+      return polymarketBatchLines(catalog, intent, content);
+  }
 }
 
 function typedDataLines(
@@ -820,6 +962,11 @@ function typedDataLines(
       catalog.hlChain[message.hyperliquid.chain],
       ...hyperliquidLines(catalog, message.hyperliquid),
     ];
+  }
+  /* A Polymarket document is its own description — before the generic branches, because a
+     deposit-wallet batch also carries approvals and outflows. */
+  if (message.polymarket !== undefined) {
+    return polymarketLines(catalog, intent, message.polymarket);
   }
   const network = chainId === undefined ? intent.network : `eip155:${chainId}`;
   return [
@@ -847,8 +994,16 @@ function messagePrompt(
     };
   }
   if (message.kind === "typed-data") {
+    const title =
+      intent.blind === undefined
+        ? message.polymarket?.kind === "order"
+          ? catalog.pmOrderTitle
+          : message.polymarket?.kind === "auth"
+            ? catalog.signInTitle
+            : catalog.titles[intent.summary]
+        : catalog.blindTitle;
     return {
-      title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
+      title,
       description: joinLines(typedDataLines(catalog, intent, message)),
     };
   }

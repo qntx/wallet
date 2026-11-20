@@ -81,6 +81,32 @@ const hlTyped = (doc: HlDoc) => ({
   account,
   typedData: doc,
 });
+
+/* Polymarket documents come from vectors/chains/polymarket.json (oracle: clob-client-v2 1.2.1
+   plus on-chain hashOrder); documents bound to the signing account are rewritten to SIGNER —
+   the signature bytes are irrelevant to decoding. */
+type PmDoc = {
+  domain: { chainId: number } & Record<string, unknown>;
+  types: Record<string, unknown>;
+  message: Record<string, unknown>;
+};
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- this generator wrote that JSON
+const pm = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/polymarket.json"), "utf8"),
+) as { cases: Array<{ name: string; typedData: PmDoc }> };
+const pmDoc = (name: string): PmDoc => {
+  const found = pm.cases.find((c) => c.name === name);
+  if (found === undefined) {
+    throw new Error(`polymarket.json has no case named "${name}"`);
+  }
+  return structuredClone(found.typedData);
+};
+const pmTyped = (doc: PmDoc) => ({
+  kind: "evm.typed-data",
+  network: `eip155:${doc.domain.chainId}`,
+  account,
+  typedData: doc,
+});
 const hlUsdSendDoc = hlDoc(hl.userSigned, "usdSend Arbitrum One signing chain");
 const hlExtraTypes = {
   ...hlUsdSendDoc,
@@ -119,6 +145,76 @@ const HL_AGENT_POWERS =
   "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.";
 const HL_AGENT_POWERS_ZH =
   "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。";
+
+/* Polymarket prompt literals: the allow-listed exchanges and the generated order leaves. */
+const PM_CTF_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B";
+const PM_V3 = "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa";
+const PM_PUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+const PM_CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+const PM_WALLET = "0x3000000000000000000000000000000000000003";
+const PM_UNKNOWN = "0x00000000000000000000000000000000c0ffee00";
+const PM_UNKNOWN_CHECKSUM = getAddress(PM_UNKNOWN);
+const PM_TOKEN_ID = "21742633143463906290569050155826241533067272736897614950488156847949938836455";
+const PM_TOKEN_ID_2 =
+  "6048711698446802097821302547443908381638681757684206197981905346932645477957";
+const PM_FEE_AT_MATCH =
+  "Polymarket sets the trading fee when the order is matched; this signature does not cap it";
+const PM_FEE_AT_MATCH_ZH = "交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额";
+const PM_SIGNER = getAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266");
+const PM_ZERO32 = `0x${"0".repeat(64)}`;
+const pmLeaves = (
+  colon: string,
+  salt: string,
+  tokenId: string,
+  makerAmount: string,
+  takerAmount: string,
+  timestamp: string,
+): string =>
+  [
+    `salt${colon}${salt}`,
+    `maker${colon}${PM_SIGNER}`,
+    `signer${colon}${PM_SIGNER}`,
+    `tokenId${colon}${tokenId}`,
+    `makerAmount${colon}${makerAmount}`,
+    `takerAmount${colon}${takerAmount}`,
+    `side${colon}0`,
+    `signatureType${colon}0`,
+    `timestamp${colon}${timestamp}`,
+    `metadata${colon}${PM_ZERO32}`,
+    `builder${colon}${PM_ZERO32}`,
+  ].join("\n");
+const PM_ORDER_LEAVES_1 = pmLeaves(
+  ": ",
+  "746666666340",
+  PM_TOKEN_ID,
+  "50000000",
+  "100000000",
+  "1777777777000",
+);
+const PM_ORDER_LEAVES_1_ZH = pmLeaves(
+  "：",
+  "746666666340",
+  PM_TOKEN_ID,
+  "50000000",
+  "100000000",
+  "1777777777000",
+);
+const PM_ORDER_LEAVES_2 = pmLeaves(
+  ": ",
+  "800000080650",
+  PM_TOKEN_ID_2,
+  "40000000",
+  "80000000",
+  "1777777957000",
+);
+const PM_ORDER_LEAVES_2_ZH = pmLeaves(
+  "：",
+  "800000080650",
+  PM_TOKEN_ID_2,
+  "40000000",
+  "80000000",
+  "1777777957000",
+);
 
 const p = (title: string, titleZh: string, en: string, zh: string) => ({
   en: { title, description: en },
@@ -680,6 +776,149 @@ const cases = [
       "确认盲签",
       `App: Exchange\nNetwork: EVM chain 1337\n${HL_CONTRACT_EN}\nType: Agent\n${typedCommitment}\n${typedCaveat}\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
       `应用：Exchange\n网络：EVM 链 1337\n${HL_CONTRACT_ZH}\n类型：Agent\n${typedCommitmentZh}\n${typedCaveatZh}\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
+    ),
+  },
+  /* Polymarket: documents come from vectors/chains/polymarket.json (oracle: clob-client-v2
+     1.2.1, on-chain hashOrder); the prompts below are literals. Orders and auth bound to the
+     signing account are rewritten to SIGNER — decoding never checks the signature bytes. */
+  {
+    name: "Polymarket CTF Exchange buy (EIP-712)",
+    request: pmTyped(
+      (() => {
+        const d = pmDoc("CTF Exchange buy (EOA)");
+        d.message.signer = SIGNER;
+        d.message.maker = SIGNER;
+        return d;
+      })(),
+    ),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm order",
+      "确认订单",
+      `Polymarket CTF Exchange ${PM_CTF_EXCHANGE}\nNetwork: Polygon\nBuy at least 100 shares of outcome token ${PM_TOKEN_ID}\nPay at most 50 pUSD (price 0.5 pUSD per share)\n${PM_FEE_AT_MATCH}`,
+      `Polymarket CTF Exchange ${PM_CTF_EXCHANGE}\n网络：Polygon\n买入至少 100 份结果代币 ${PM_TOKEN_ID}\n最多支付 50 pUSD（价格 0.5 pUSD/份）\n${PM_FEE_AT_MATCH_ZH}`,
+    ),
+  },
+  {
+    name: "Polymarket deposit-wallet order (EIP-712)",
+    request: pmTyped(pmDoc("deposit-wallet buy (POLY_1271)")),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm order",
+      "确认订单",
+      `Polymarket CTF Exchange ${PM_CTF_EXCHANGE}\nNetwork: Polygon\nFunds from deposit wallet ${PM_WALLET}; only its owner's signature makes this order valid\nBuy at least 50 shares of outcome token ${PM_TOKEN_ID_2}\nPay at most 25 pUSD (price 0.5 pUSD per share)\n${PM_FEE_AT_MATCH}`,
+      `Polymarket CTF Exchange ${PM_CTF_EXCHANGE}\n网络：Polygon\n资金来自存款钱包 ${PM_WALLET}；只有其所有者的签名才能使此订单生效\n买入至少 50 份结果代币 ${PM_TOKEN_ID_2}\n最多支付 25 pUSD（价格 0.5 pUSD/份）\n${PM_FEE_AT_MATCH_ZH}`,
+    ),
+  },
+  {
+    name: "Polymarket CLOB auth (EIP-712)",
+    request: pmTyped(
+      (() => {
+        const d = pmDoc("ClobAuth (Amoy)");
+        d.message.address = SIGNER;
+        return d;
+      })(),
+    ),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm sign-in",
+      "确认登录",
+      `Network: Polygon Amoy\nCreate or derive Polymarket API credentials for ${SIGNER}\nTime 1970-04-26 17:46 (UTC)\nCredential nonce 23\nThe credentials authenticate account requests such as cancelling orders; every order still needs your signature`,
+      `网络：Polygon Amoy\n为 ${SIGNER} 创建或派生 Polymarket API 凭证\n时间 1970-04-26 17:46（UTC）\n凭证序号 23\n凭证用于验证撤单等账户请求；每笔订单仍需你的签名`,
+    ),
+  },
+  {
+    name: "Polymarket deposit-wallet batch approvals (EIP-712)",
+    request: pmTyped(pmDoc("batch: pUSD approve + CTF setApprovalForAll")),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm batch",
+      "确认批量交易",
+      `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\nAllow ${PM_CTF_EXCHANGE} to spend 25000000 base units of unverified token ${PM_PUSD}\nAllow ${PM_CTF_EXCHANGE} to transfer all tokens of ${PM_CTF}`,
+      `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n授权 ${PM_CTF_EXCHANGE} 使用 25000000 个最小单位（未验证代币 ${PM_PUSD}）\n授权 ${PM_CTF_EXCHANGE} 转走 ${PM_CTF} 的全部代币`,
+    ),
+  },
+  {
+    name: "Polymarket order signed for another account (EIP-712)",
+    request: pmTyped(pmDoc("CTF Exchange buy (EOA)")),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract ${PM_CTF_EXCHANGE}\nType: Order\n${typedVariant}\n${typedCaveat}\n${PM_ORDER_LEAVES_1}`,
+      `应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 ${PM_CTF_EXCHANGE}\n类型：Order\n${typedVariantZh}\n${typedCaveatZh}\n${PM_ORDER_LEAVES_1_ZH}`,
+    ),
+  },
+  {
+    name: "Polymarket order on an unknown exchange (EIP-712)",
+    request: pmTyped(
+      (() => {
+        const d = pmDoc("CTF Exchange buy (EOA)");
+        d.domain.verifyingContract = PM_UNKNOWN;
+        return d;
+      })(),
+    ),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract ${PM_UNKNOWN_CHECKSUM}\nType: Order\n${typedVariant}\n${typedCaveat}\n${PM_ORDER_LEAVES_1}`,
+      `应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 ${PM_UNKNOWN_CHECKSUM}\n类型：Order\n${typedVariantZh}\n${typedCaveatZh}\n${PM_ORDER_LEAVES_1_ZH}`,
+    ),
+  },
+  {
+    name: "Polymarket Exchange V3 address at version 2 (EIP-712)",
+    request: pmTyped(
+      (() => {
+        const d = pmDoc("Exchange V3 buy (EOA)");
+        d.domain.version = "2";
+        return d;
+      })(),
+    ),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Polymarket CTF Exchange\nNetwork: Polygon\nVerifying contract ${PM_V3}\nType: Order\n${typedVariant}\n${typedCaveat}\n${PM_ORDER_LEAVES_2}`,
+      `应用：Polymarket CTF Exchange\n网络：Polygon\n验证合约 ${PM_V3}\n类型：Order\n${typedVariantZh}\n${typedCaveatZh}\n${PM_ORDER_LEAVES_2_ZH}`,
+    ),
+  },
+  {
+    name: "Polymarket CLOB auth with a different message (EIP-712)",
+    request: pmTyped(
+      (() => {
+        const d = pmDoc("ClobAuth (Amoy)");
+        d.message.address = SIGNER;
+        d.message.message = "Sign in to Polymarket";
+        return d;
+      })(),
+    ),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: ClobAuthDomain\nNetwork: Polygon Amoy\nType: ClobAuth\n${typedVariant}\n${typedCaveat}\naddress: ${SIGNER}\ntimestamp: 10000000\nnonce: 23\nmessage: Sign in to Polymarket`,
+      `应用：ClobAuthDomain\n网络：Polygon Amoy\n类型：ClobAuth\n${typedVariantZh}\n${typedCaveatZh}\naddress：${SIGNER}\ntimestamp：10000000\nnonce：23\nmessage：Sign in to Polymarket`,
+    ),
+  },
+  {
+    name: "Polymarket batch calling the wallet itself (EIP-712)",
+    request: pmTyped(pmDoc("batch: call to the wallet itself")),
+    verifiability: "opaque",
+    blind: "account-code",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\n${caveat}\nRuns this account's own code with full authority\nCall contract ${PM_WALLET}, function 0x095ea7b3`,
+      `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n${caveatZh}\n以本账户的全部权限执行其自身代码\n调用合约 ${PM_WALLET}，函数 0x095ea7b3`,
     ),
   },
 ];

@@ -2416,3 +2416,225 @@ describe("hyperliquid prompts", () => {
     });
   });
 });
+
+describe("polymarket prompts", () => {
+  const PM_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B";
+  const PM_PUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB";
+  const PM_CTF = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";
+  const PM_WALLET = "0x3000000000000000000000000000000000000003";
+  const PM_PROXY = "0x1000000000000000000000000000000000000001";
+  const PM_SAFE = "0x2000000000000000000000000000000000000002";
+  const PM_ACCOUNT = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+  const PM_TOKEN = "21742633143463906290569050155826241533067272736897614950488156847949938836455";
+  const PM_FEE =
+    "Polymarket sets the trading fee when the order is matched; this signature does not cap it";
+  const PM_FEE_ZH = "交易手续费由 Polymarket 在撮合时设定；此签名不限制其金额";
+  const pusd = (amount: string) => ({ asset: PM_PUSD, decimals: 6, symbol: "pUSD", amount });
+  const shares = (amount: string) => ({
+    asset: PM_CTF,
+    decimals: 6,
+    tokenId: PM_TOKEN,
+    amount,
+  });
+
+  type PmContent = NonNullable<
+    Extract<PromptIntent["message"], { kind: "typed-data" }>["polymarket"]
+  >;
+  const pmIntent = (
+    summary: PromptIntent["summary"],
+    verifiability: PromptIntent["verifiability"],
+    polymarket: PmContent,
+    blind?: PromptIntent["blind"],
+  ): PromptIntent => ({
+    summary,
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability,
+    network: "eip155:137",
+    ...(blind === undefined ? {} : { blind }),
+    message: {
+      kind: "typed-data",
+      primaryType: "Order",
+      domain: { name: "Polymarket CTF Exchange" },
+      data: {},
+      polymarket,
+    },
+  });
+  const pmOrder = (
+    over: Partial<Extract<PmContent, { kind: "order" }>>,
+  ): Extract<PmContent, { kind: "order" }> => ({
+    kind: "order",
+    exchange: { address: PM_EXCHANGE, name: "CTF Exchange", version: "2" },
+    side: "buy",
+    tokenId: PM_TOKEN,
+    maker: PM_ACCOUNT,
+    signer: PM_ACCOUNT,
+    wallet: "account",
+    give: pusd("50000000"),
+    receive: shares("100000000"),
+    price: { amount: "500000", exact: true },
+    ...over,
+  });
+
+  it("an EOA buy shows the exchange, shares and pay cap", () => {
+    const intent = pmIntent("swap", "partial", pmOrder({}));
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm order",
+      description: `Polymarket CTF Exchange ${PM_EXCHANGE}\nNetwork: Polygon\nBuy at least 100 shares of outcome token ${PM_TOKEN}\nPay at most 50 pUSD (price 0.5 pUSD per share)\n${PM_FEE}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认订单",
+      description: `Polymarket CTF Exchange ${PM_EXCHANGE}\n网络：Polygon\n买入至少 100 份结果代币 ${PM_TOKEN}\n最多支付 50 pUSD（价格 0.5 pUSD/份）\n${PM_FEE_ZH}`,
+    });
+  });
+
+  it("an EOA sell shows the shares given and the receive floor", () => {
+    const intent = pmIntent(
+      "swap",
+      "partial",
+      pmOrder({ side: "sell", give: shares("100000000"), receive: pusd("50000000") }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\nNetwork: Polygon\nSell 100 shares of outcome token ${PM_TOKEN}\nReceive at least 50 pUSD before fees (price 0.5 pUSD per share)\n${PM_FEE}`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\n网络：Polygon\n卖出 100 份结果代币 ${PM_TOKEN}\n扣费前至少收到 50 pUSD（价格 0.5 pUSD/份）\n${PM_FEE_ZH}`,
+    );
+  });
+
+  it("each funding wallet gets its own line", () => {
+    const cases = [
+      [
+        "proxy",
+        PM_PROXY,
+        `Funds from your Polymarket proxy wallet ${PM_PROXY}`,
+        `资金来自你的 Polymarket 代理钱包 ${PM_PROXY}`,
+      ],
+      [
+        "safe",
+        PM_SAFE,
+        `Funds from your Polymarket Safe ${PM_SAFE}`,
+        `资金来自你的 Polymarket Safe ${PM_SAFE}`,
+      ],
+      [
+        "deposit-wallet",
+        PM_WALLET,
+        `Funds from deposit wallet ${PM_WALLET}; only its owner's signature makes this order valid`,
+        `资金来自存款钱包 ${PM_WALLET}；只有其所有者的签名才能使此订单生效`,
+      ],
+    ] as const;
+    for (const [wallet, maker, enLine, zhLine] of cases) {
+      const intent = pmIntent("swap", "partial", pmOrder({ wallet, maker, signer: PM_ACCOUNT }));
+      expect(chainPrompt("en", intent).description).toContain(enLine);
+      expect(chainPrompt("zh-Hans", intent).description).toContain(zhLine);
+    }
+  });
+
+  it("a non-exact price is marked approximate and builder fields show verbatim", () => {
+    const intent = pmIntent(
+      "swap",
+      "partial",
+      pmOrder({
+        give: pusd("1000000"),
+        receive: shares("3000001"),
+        price: { amount: "333333", exact: false },
+        builder: `0x${"62".repeat(32)}`,
+        metadata: `0x${"ab".repeat(32)}`,
+      }),
+    );
+    expect(chainPrompt("en", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\nNetwork: Polygon\nBuy at least 3.000001 shares of outcome token ${PM_TOKEN}\nPay at most 1 pUSD (price ≈ 0.333333 pUSD per share)\n${PM_FEE}\nBuilder code 0x${"62".repeat(32)}\nOrder metadata 0x${"ab".repeat(32)}`,
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      `Polymarket CTF Exchange ${PM_EXCHANGE}\n网络：Polygon\n买入至少 3.000001 份结果代币 ${PM_TOKEN}\n最多支付 1 pUSD（价格 ≈ 0.333333 pUSD/份）\n${PM_FEE_ZH}\nBuilder 代码 0x${"62".repeat(32)}\n订单元数据 0x${"ab".repeat(32)}`,
+    );
+  });
+
+  it("CLOB auth prompts as a sign-in", () => {
+    const intent = pmIntent("message", "partial", {
+      kind: "auth",
+      address: PM_ACCOUNT,
+      timestamp: 10000000,
+      nonce: "23",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm sign-in",
+      description: `Network: Polygon\nCreate or derive Polymarket API credentials for ${PM_ACCOUNT}\nTime 1970-04-26 17:46 (UTC)\nCredential nonce 23\nThe credentials authenticate account requests such as cancelling orders; every order still needs your signature`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认登录",
+      description: `网络：Polygon\n为 ${PM_ACCOUNT} 创建或派生 Polymarket API 凭证\n时间 1970-04-26 17:46（UTC）\n凭证序号 23\n凭证用于验证撤单等账户请求；每笔订单仍需你的签名`,
+    });
+  });
+
+  it("a batch lists every decoded call", () => {
+    const call = (over: Partial<DisplayIntent>): DisplayIntent => ({
+      summary: "approve",
+      outflows: [],
+      approvals: [],
+      warnings: [],
+      fee: undefined,
+      verifiability: "partial",
+      family: "evm",
+      network: "eip155:137",
+      ...over,
+    });
+    const intent = pmIntent("batch", "partial", {
+      kind: "batch",
+      wallet: PM_WALLET,
+      nonce: "7",
+      deadline: 1800000000,
+      calls: [
+        call({
+          approvals: [
+            {
+              kind: "allowance",
+              spender: PM_EXCHANGE,
+              amount: { asset: PM_PUSD, amount: "25000000" },
+              change: "set",
+              unlimited: false,
+              verified: false,
+            },
+          ],
+        }),
+        call({
+          approvals: [
+            {
+              kind: "operator",
+              asset: PM_CTF,
+              spender: PM_EXCHANGE,
+              approved: true,
+              verified: false,
+            },
+          ],
+        }),
+      ],
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm batch",
+      description: `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\nAllow ${PM_EXCHANGE} to spend 25000000 base units of unverified token ${PM_PUSD}\nAllow ${PM_EXCHANGE} to transfer all tokens of ${PM_CTF}`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认批量交易",
+      description: `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n授权 ${PM_EXCHANGE} 使用 25000000 个最小单位（未验证代币 ${PM_PUSD}）\n授权 ${PM_EXCHANGE} 转走 ${PM_CTF} 的全部代币`,
+    });
+  });
+
+  it("an oversize batch shows the header and the oversize warning", () => {
+    const intent = pmIntent(
+      "batch",
+      "opaque",
+      { kind: "batch", wallet: PM_WALLET, nonce: "7", deadline: 1800000000, calls: [] },
+      "typed-data-oversize",
+    );
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description: `Network: Polygon\nPolymarket deposit wallet ${PM_WALLET}, batch 7, valid until 2027-01-15 08:00 (UTC)\nThis typed data is too large to show in full`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description: `网络：Polygon\nPolymarket 存款钱包 ${PM_WALLET} 的第 7 批调用，有效期至 2027-01-15 08:00（UTC）\n此类型数据过大，无法完整显示`,
+    });
+  });
+});

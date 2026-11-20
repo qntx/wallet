@@ -40,8 +40,8 @@ const blindOf = (intent: DisplayIntent): string | null => intent.blind ?? null;
 
 describe("signing-classes vectors", () => {
   it("has one case per expected class and blind reason", () => {
-    expect(vectors.cases).toHaveLength(27);
-    expect(new Set(vectors.cases.map((v) => v.name)).size).toBe(27);
+    expect(vectors.cases).toHaveLength(36);
+    expect(new Set(vectors.cases.map((v) => v.name)).size).toBe(36);
   });
 
   it.each(vectors.cases)("$name", (v) => {
