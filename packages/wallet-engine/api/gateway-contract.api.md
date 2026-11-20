@@ -165,7 +165,7 @@ export const evmRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObj
 }, z.core.$strip>[]>>]>;
 
 // @public
-type FeeModel =
+export type FeeModel =
 /** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
     {
     readonly kind: "execution";

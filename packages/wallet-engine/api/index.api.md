@@ -1011,7 +1011,7 @@ export type EvmSignInput = {
 };
 
 // @public
-type FeeModel =
+export type FeeModel =
 /** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
     {
     readonly kind: "execution";
