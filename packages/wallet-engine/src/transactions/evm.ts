@@ -938,8 +938,6 @@ export const createEvmRoute = (): EvmRoute => {
     switch (ctx.options.networks.info(network).feeModel?.kind) {
       case "op-stack":
         return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.opStackFee(c, t));
-      case "scroll":
-        return beyondGasRead(ctx, network, tx, flags, async (c, t) => evm.scrollL1Fee(c, t));
       case "execution":
       case undefined:
         return undefined;

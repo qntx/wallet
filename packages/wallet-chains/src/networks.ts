@@ -1,10 +1,11 @@
 import type { AssetAmount, DisplayIntent } from "./index.ts";
 
 /**
- * Built-in network registry: the 8 mainnets from chains.mdx plus their main testnets, the four
- * Bitcoin networks and the two Solana clusters. Each chain id was checked against the chain's
- * official documentation (source URL per entry). Signing-time identifiers always come from this
- * table, never from an RPC endpoint.
+ * Built-in network registry: the eight original EVM mainnets, the newer EVM mainnets (DefiLlama
+ * chain TVL order), the eight original testnets, the newer testnets in the same order as their
+ * mainnets, then the four Bitcoin networks and the two Solana clusters. Each chain id was checked
+ * against the chain's official documentation (source URL per entry) and a live eth_chainId probe
+ * (2026-11-20). Signing-time identifiers always come from this table, never from an RPC endpoint.
  */
 
 export type NetworkMeta = {
@@ -46,6 +47,29 @@ const EVM_NETWORKS: ReadonlyArray<NetworkMeta> = [
   evm(999, "HyperEVM", "HYPE", false), // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/hyperevm
   // https://build.avax.network — Fuji 43113
   evm(43114, "Avalanche C-Chain", "AVAX", false), // https://build.avax.network/docs/tooling/rpc-providers
+  evm(4663, "Robinhood Chain", "ETH", false), // https://docs.robinhood.com/chain/connecting/
+  evm(143, "Monad", "MON", false), // https://docs.monad.xyz/developer-essentials/network-information
+  evm(5042, "Arc", "USDC", false), // https://docs.arc.network/arc/references/connect-to-arc
+  evm(9745, "Plasma", "XPL", false), // https://www.plasma.org/docs/plasma-chain/network-information/connect-to-plasma
+  evm(196, "X Layer", "OKB", false), // https://web3.okx.com/onchainos/dev-docs/xlayer/developer/build-on-xlayer/network-information
+  evm(1672, "Pharos", "PROS", false), // https://docs.pharos.xyz/getting-started/network/pacific-mainnet
+  evm(5000, "Mantle", "MNT", false), // https://docs.mantle.xyz/network/for-developers/quick-access
+  evm(25, "Cronos", "CRO", false), // https://docs.cronos.com/introduction/introduction
+  evm(100, "Gnosis", "xDAI", false), // https://docs.gnosischain.com/about/networks/
+  evm(988, "Stable", "USDT0", false), // https://docs.stable.xyz/en/reference/mainnet-information
+  evm(747474, "Katana", "ETH", false), // https://docs.katana.network/katana/technical-reference/network-information/
+  evm(80094, "Berachain", "BERA", false), // https://docs.berachain.com/general/introduction/connect-to-berachain
+  evm(480, "World Chain", "ETH", false), // https://docs.world.org/world-chain/quick-start/info
+  evm(130, "Unichain", "ETH", false), // https://docs.unichain.org/docs/technical-information/network-information
+  evm(1329, "Sei", "SEI", false), // https://docs.sei.io/evm/networks
+  evm(59144, "Linea", "ETH", false), // https://docs.linea.build/get-started/build/network-info
+  evm(42220, "Celo", "CELO", false), // https://docs.celo.org/network
+  evm(146, "Sonic", "S", false), // https://docs.soniclabs.com/sonic/build-on-sonic/getting-started
+  evm(324, "ZKsync Era", "ETH", false), // https://docs.zksync.io/zksync-network/zksync-era/network-details
+  evm(1868, "Soneium", "ETH", false), // https://docs.soneium.org/docs/builders/overview
+  evm(4326, "MegaETH", "ETH", false), // https://docs.megaeth.com/user-guide/connect
+  evm(8217, "Kaia", "KAIA", false), // https://docs.kaia.io/references/public-en/
+  evm(33139, "ApeChain", "APE", false), // https://docs.apechain.com/metamask
   evm(11155111, "Sepolia", "ETH", true), // https://ethereum.org/en/developers/docs/networks/
   evm(84532, "Base Sepolia", "ETH", true), // https://docs.base.org/docs/network-information
   evm(421614, "Arbitrum Sepolia", "ETH", true), // https://docs.arbitrum.io/for-devs/dev-tools-and-resources/chain-info
@@ -54,6 +78,20 @@ const EVM_NETWORKS: ReadonlyArray<NetworkMeta> = [
   evm(97, "BNB Smart Chain Testnet", "tBNB", true), // https://docs.bnbchain.org/bnb-smart-chain/developers/json_rpc/
   evm(998, "HyperEVM Testnet", "HYPE", true), // https://hyperliquid.gitbook.io/hyperliquid-docs/for-developers/hyperevm
   evm(43113, "Avalanche Fuji", "AVAX", true), // https://build.avax.network/docs/tooling/rpc-providers
+  evm(46630, "Robinhood Chain Testnet", "ETH", true), // https://docs.robinhood.com/chain/connecting/
+  evm(10143, "Monad Testnet", "MON", true), // https://docs.monad.xyz/developer-essentials/testnet
+  evm(5042002, "Arc Testnet", "USDC", true), // https://docs.arc.network/arc/references/connect-to-arc
+  evm(1952, "X Layer Testnet", "OKB", true), // https://web3.okx.com/onchainos/dev-docs/xlayer/developer/build-on-xlayer/network-information
+  evm(5003, "Mantle Sepolia", "MNT", true), // https://docs.mantle.xyz/network/for-developers/quick-access
+  evm(10200, "Gnosis Chiado", "xDAI", true), // https://docs.gnosischain.com/about/networks/chiado
+  evm(1301, "Unichain Sepolia", "ETH", true), // https://docs.unichain.org/docs/technical-information/network-information
+  evm(1328, "Sei Testnet", "SEI", true), // https://docs.sei.io/evm/networks
+  evm(59141, "Linea Sepolia", "ETH", true), // https://docs.linea.build/get-started/build/network-info
+  evm(11142220, "Celo Sepolia", "CELO", true), // https://docs.celo.org/network
+  evm(14601, "Sonic Testnet", "S", true), // https://docs.soniclabs.com/sonic/build-on-sonic/getting-started
+  evm(300, "ZKsync Sepolia", "ETH", true), // https://docs.zksync.io/zksync-network/zksync-era/network-details
+  evm(1946, "Soneium Minato", "ETH", true), // https://docs.soneium.org/docs/builders/overview
+  evm(33111, "ApeChain Curtis", "APE", true), // https://docs.apechain.com/metamask
 ];
 
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta> = Object.freeze([

@@ -25,7 +25,8 @@ export type FiatCurrency = z.infer<typeof fiatCurrency>;
 export const MAX_PRICE_ASSETS = 100;
 
 /**
- * SLIP-44 coin type of the native asset on every mainnet the price route values. Testnets are
+ * SLIP-44 coin type of the native asset on every mainnet the price route values (SLIP-0044
+ * registry, satoshilabs/slips slip-0044.md @ 02e7b618; ETH-native L2s reuse 60). Testnets are
  * absent on purpose: their coins have no price.
  */
 export const NATIVE_SLIP44: Readonly<Record<string, number>> = {
@@ -37,6 +38,24 @@ export const NATIVE_SLIP44: Readonly<Record<string, number>> = {
   "eip155:56": 714,
   "eip155:999": 2457,
   "eip155:43114": 9000,
+  "eip155:4663": 60,
+  "eip155:143": 268435779,
+  "eip155:5042": 5042,
+  "eip155:1672": 3172,
+  "eip155:25": 394,
+  "eip155:100": 700,
+  "eip155:747474": 60,
+  "eip155:80094": 8008,
+  "eip155:480": 60,
+  "eip155:130": 60,
+  "eip155:1329": 19000118,
+  "eip155:59144": 60,
+  "eip155:42220": 52752,
+  "eip155:146": 10007,
+  "eip155:324": 60,
+  "eip155:1868": 60,
+  "eip155:4326": 60,
+  "eip155:8217": 8217,
   "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp": 501,
   "bip122:000000000019d6689c085ae165831e93": 0,
 };

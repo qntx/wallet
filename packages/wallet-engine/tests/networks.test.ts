@@ -47,7 +47,20 @@ describe("network registry", () => {
       NETWORKS.filter((n) => n.feeModel?.kind === "op-stack")
         .map((n) => n.chainId)
         .toSorted((a, b) => a - b),
-    ).toStrictEqual([10, 8453, 84532, 11155420]);
+    ).toStrictEqual([
+      10, 130, 196, 480, 1301, 1868, 1946, 1952, 4326, 5000, 5003, 8453, 42220, 84532, 747474,
+      11142220, 11155420,
+    ]);
+  });
+
+  it("uses the ZKsync Multicall3 only on the ZKsync chains, canonical elsewhere", () => {
+    const ZKSYNC = "0xF9cda624FBC7e059355ce98a31693d299FACd963";
+    const CANONICAL = "0xcA11bde05977b3631167028862bE2a173976CA11";
+    const evm = NETWORKS.filter((n) => n.family === "evm");
+    const expected: Record<string, string> = Object.fromEntries(evm.map((n) => [n.id, CANONICAL]));
+    expected["eip155:324"] = ZKSYNC;
+    expected["eip155:300"] = ZKSYNC;
+    expect(Object.fromEntries(evm.map((n) => [n.id, n.multicall3]))).toStrictEqual(expected);
   });
 
   it("covers every built-in EVM chain in order, with one facts entry each", () => {
@@ -82,6 +95,17 @@ describe("network registry", () => {
       expect(chainIds.has(Number(key))).toBe(true);
       expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
     }
+  });
+
+  it("lists exactly the chains with a deployed delegator and a mined 7702 transaction", () => {
+    expect(
+      Object.keys(DELEGATOR_CODE_HASHES)
+        .map(Number)
+        .toSorted((a, b) => a - b),
+    ).toStrictEqual([
+      1, 10, 56, 97, 100, 137, 143, 4663, 5000, 8453, 9745, 42161, 42220, 59144, 80002, 84532,
+      421614, 11155111, 11155420,
+    ]);
   });
 
   it("keeps feeModel and multicall3 off the non-EVM entries", () => {

@@ -4,16 +4,8 @@
  * priority); networks that cannot answer feeHistory fall back to eth_gasPrice. gas = estimateGas ×
  * 1.2 (ceil). Finalization uses the `finalized` block tag; receipts with status 0 fail.
  */
-import {
-  encodeFunctionData,
-  isAddress,
-  isHex,
-  keccak256,
-  numberToHex,
-  parseAbi,
-  serializeTransaction,
-} from "viem";
-import type { PublicClient, TransactionSerializable } from "viem";
+import { encodeFunctionData, isAddress, isHex, keccak256, numberToHex, parseAbi } from "viem";
+import type { PublicClient } from "viem";
 import { readContract, simulateCalls } from "viem/actions";
 import { estimateL1Fee } from "viem/op-stack";
 
@@ -26,7 +18,6 @@ import {
   checksumEvmAddress,
   evmTokenTable,
   lookupEvmToken,
-  networkChainId,
 } from "@qntx/wallet-chains/evm";
 
 import { TOKEN_SYMBOL_MAX, safeDecimals, safeDisplayText } from "../display.ts";
@@ -125,62 +116,6 @@ export const OP_GAS_PRICE_ORACLE = "0x420000000000000000000000000000000000000F";
 const OP_GAS_PRICE_ORACLE_ABI = parseAbi([
   "function getOperatorFee(uint256 gasUsed) view returns (uint256)",
 ]);
-
-/** Scroll L1GasPriceOracle predeploy; `getL1Fee` prices the signed transaction's RLP. */
-export const SCROLL_L1_GAS_PRICE_ORACLE = "0x5300000000000000000000000000000000000002";
-const SCROLL_L1_GAS_PRICE_ORACLE_ABI = parseAbi([
-  "function getL1Fee(bytes data) view returns (uint256)",
-]);
-
-/**
- * The largest signature viem can encode, yParity 1 (v = 28). Serializing under it is never shorter
- * than the real signed encoding, so an oracle pricing the signed RLP sees the maximum.
- */
-const MAX_SIGNATURE = {
-  r: `0x${"ff".repeat(32)}`,
-  s: `0x${"ff".repeat(32)}`,
-  v: 28n,
-} as const;
-
-/**
- * `tx` as viem serializes it — the same fields `toSignRequest` would sign: legacy when a `gasPrice`
- * was quoted, eip7702 when it carries a self-sponsored authorization (its authorization is the
- * account's next-but-one nonce, signed under `MAX_SIGNATURE`), else eip1559.
- */
-const serializable = (tx: EvmUnsignedTransaction): TransactionSerializable => {
-  const base = {
-    chainId: networkChainId(tx.network),
-    nonce: tx.nonce,
-    gas: tx.gas,
-    to: checkedAddress(tx.to),
-    value: tx.value,
-    data: checkedHex(tx.data),
-  };
-  if (tx.gasPrice !== undefined) {
-    return { ...base, type: "legacy", gasPrice: tx.gasPrice };
-  }
-  const dynamic = {
-    ...base,
-    accessList: [],
-    maxFeePerGas: tx.maxFeePerGas ?? 0n,
-    maxPriorityFeePerGas: tx.maxPriorityFeePerGas ?? 0n,
-  };
-  if (tx.authorization === undefined) {
-    return { ...dynamic, type: "eip1559" };
-  }
-  return {
-    ...dynamic,
-    type: "eip7702",
-    authorizationList: [
-      {
-        chainId: base.chainId,
-        address: checkedAddress(tx.authorization.address),
-        nonce: tx.nonce + 1,
-        ...MAX_SIGNATURE,
-      },
-    ],
-  };
-};
 
 const checkedAddress = (v: string): `0x${string}` => {
   if (!isAddress(v)) {
@@ -302,19 +237,6 @@ export class EvmChainAdapter {
       }),
     ]);
     return l1 + operator;
-  }
-
-  /**
-   * Scroll's L1 data fee for `tx`: the oracle prices the signed RLP, which pre-signing is the
-   * transaction serialized under `MAX_SIGNATURE` — an upper bound on the real encoding's length.
-   */
-  async scrollL1Fee(client: PublicClient, tx: EvmUnsignedTransaction): Promise<bigint> {
-    return readContract(client, {
-      address: SCROLL_L1_GAS_PRICE_ORACLE,
-      abi: SCROLL_L1_GAS_PRICE_ORACLE_ABI,
-      functionName: "getL1Fee",
-      args: [serializeTransaction(serializable(tx), MAX_SIGNATURE)],
-    });
   }
 
   /** ERC-20 gas is buffered ×1.1 instead of the native ×1.2 (chains.mdx "EVM"). */
