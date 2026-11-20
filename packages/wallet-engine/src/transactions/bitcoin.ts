@@ -388,14 +388,15 @@ const tipFinal = async (es: Esplora, height: number): Promise<boolean> =>
  * reorg, while an equal hash or a height past the endpoint's tip (non-transient error) proves
  * nothing. Transient errors propagate and the poll is retried.
  */
-const recheck = async (tx: TrackedTransaction, es: Esplora): Promise<TxPoll | undefined> => {
-  const { block } = tx;
-  if (block === undefined || tx.hash === undefined) {
-    return undefined;
-  }
+const recheck = async (
+  tx: TrackedTransaction,
+  hash: string,
+  block: TxBlock,
+  es: Esplora,
+): Promise<TxPoll | undefined> => {
   let status: unknown;
   try {
-    status = await es.get(`/tx/${tx.hash}/status`);
+    status = await es.get(`/tx/${hash}/status`);
   } catch (error) {
     if (!(error instanceof EsploraError) || error.transient) {
       throw error;
@@ -461,7 +462,7 @@ export const createBitcoinRoute = (): BitcoinRoute => {
     const { networks } = ctx.options;
     const es = networks.esplora(tx.network);
     if (tx.block !== undefined) {
-      return recheck(tx, es);
+      return recheck(tx, tx.hash, tx.block, es);
     }
     let status: unknown;
     try {
@@ -1348,8 +1349,9 @@ export type BitcoinRoute = {
   readonly poll: (ctx: RouteContext, tx: TrackedTransaction) => Promise<TxPoll | undefined>;
   /**
    * A reorg returned the transaction to the pool: its inputs are locked under it again so a new
-   * send never double-spends them while it retries. A dApp transaction (no spend record) is not
-   * re-locked — a residual documented in {@link poll}.
+   * send never double-spends them while it retries. A dApp transaction carries no `btc` record —
+   * the wallet never learned its inputs — so there is nothing to re-lock; if the node does not
+   * re-admit it, a later send could pick the same UTXOs (residual, accepted).
    */
   readonly reopen: (tx: TrackedTransaction) => void;
   /**

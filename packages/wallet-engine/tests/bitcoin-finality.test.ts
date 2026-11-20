@@ -192,6 +192,99 @@ describe("bitcoin inclusion, finality and reorgs", () => {
     expect(again?.final).toBe(false);
   });
 
+  it("a deeper reorg that re-included the send at another height rewrites the row", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-1");
+    const hash = hashOf(tx);
+
+    w.setTip(101);
+    w.setStatus(hash, included(BLOCK_A, 100));
+    await booted.polls(1);
+    expect(booted.ctl.getState().txs[tx.id]?.block).toStrictEqual({
+      hash: BLOCK_A,
+      height: 100,
+    });
+
+    // Several blocks were replaced and the send landed again at 102: the status answer carries
+    // the new block and the recheck adopts it — the row never passed through submitted.
+    w.setTip(102);
+    w.setStatus(hash, included(BLOCK_C, 102));
+    await booted.timers.fire(FINALITY_MS);
+    const row = booted.ctl.getState().txs[tx.id];
+    expect(row?.state).toBe("confirmed");
+    expect(row?.block).toStrictEqual({ hash: BLOCK_C, height: 102 });
+    expect(row?.final).toBe(false);
+    expect(booted.timers.armed(FINALITY_MS)).toBe(1);
+    expect(booted.timers.armed(POLL_MS)).toBe(0);
+  });
+
+  it("an unconfirmed status and a different hash at the height is the reorg", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-1");
+    const hash = hashOf(tx);
+
+    w.setTip(101);
+    w.setStatus(hash, included(BLOCK_A, 100));
+    await booted.polls(1);
+    expect(stateOf(booted.ctl, tx)).toBe("confirmed");
+
+    // Back in the mempool per the status, and the height answers a different hash — reorg.
+    w.setStatus(hash, { confirmed: false });
+    w.setBlockHash(100, BLOCK_B);
+    await booted.timers.fire(FINALITY_MS);
+    const back = booted.ctl.getState().txs[tx.id];
+    expect(back?.state).toBe("submitted");
+    expect(back?.block).toBeUndefined();
+    expect(back?.final).toBeUndefined();
+    expect(booted.timers.armed(POLL_MS)).toBe(1);
+  });
+
+  it("lock stops reads, a mid-flight recheck writes nothing, unlock resumes the persisted row", async () => {
+    const w = world();
+    w.fund(1, 50_000);
+    const booted = await w.boot();
+    const tx = await w.send(booted, 10_000n, "req-1");
+    const hash = hashOf(tx);
+
+    w.setTip(101);
+    w.setStatus(hash, included(BLOCK_A, 100));
+    await booted.polls(1);
+    expect(booted.ctl.getState().txs[tx.id]?.final).toBe(false);
+
+    // A recheck in flight when the vault locks: its answer — finality reached — settles nothing.
+    w.setTip(106);
+    let release = (): void => undefined;
+    w.gateGet(
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+    );
+    const inflight = booted.timers.fire(FINALITY_MS);
+    await Promise.resolve();
+    booted.ctl.lock();
+    release();
+    await inflight;
+    expect(booted.ctl.getState().txs[tx.id]?.final).toBe(false);
+    const saved = await w.persistedTx(booted.backing, tx.id);
+    expect(saved?.["final"]).toBe(false);
+
+    // Locked: nothing reads at any interval.
+    const reads = w.requests.length;
+    await booted.timers.fire();
+    expect(w.requests).toHaveLength(reads);
+
+    // Unlock resumes the persisted row at the finality interval — the next recheck finalizes.
+    await booted.ctl.init();
+    expect(booted.timers.armed(FINALITY_MS)).toBe(1);
+    await booted.timers.fire(FINALITY_MS);
+    expect(booted.ctl.getState().txs[tx.id]?.final).toBe(true);
+    expect(booted.timers.armed()).toBe(0);
+  });
+
   it("a confirmed pair revives: B reorgs, A returns, A confirms and no input stays locked", async () => {
     const w = world();
     const u50 = w.fund(1, 50_000);

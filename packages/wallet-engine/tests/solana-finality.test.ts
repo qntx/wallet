@@ -66,6 +66,8 @@ const world = () => {
     /** The tip's absoluteSlot; `statusSlot` is the bank the status answer came from. */
     slot: 500,
     statusSlot: 500,
+    /** When set, the next getSignatureStatuses read waits on it — a slow node. */
+    statusGate: undefined as Promise<void> | undefined,
   };
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
 
@@ -112,6 +114,11 @@ const world = () => {
       method: string;
       params?: unknown[];
     };
+    if (body.method === "getSignatureStatuses" && env.statusGate !== undefined) {
+      const gate = env.statusGate;
+      env.statusGate = undefined;
+      await gate;
+    }
     const reply = ((): { result: unknown } | { error: { code: number; message: string } } => {
       try {
         return { result: answer(body.method, body.params ?? []) };
@@ -123,6 +130,8 @@ const world = () => {
     return Promise.resolve(Response.json({ jsonrpc: "2.0", id: 1, ...reply }));
   };
 
+  /** A distinct signature byte per sign call — distinct wires, distinct txids. */
+  let signTag = 6;
   const apis = {
     account: async () =>
       Promise.resolve({ template: "solana.bip44-change", network: NET, address: PAYER }),
@@ -131,7 +140,11 @@ const world = () => {
       if (request.kind !== "solana.transaction") {
         throw new Error("unexpected request kind");
       }
-      return { kind: "solana.transaction" as const, signature: new Uint8Array(64).fill(7) };
+      signTag += 1;
+      return {
+        kind: "solana.transaction" as const,
+        signature: new Uint8Array(64).fill(signTag),
+      };
     },
   } as unknown as ReturnType<typeof chains>;
 
@@ -289,6 +302,73 @@ describe("solana inclusion, finality and reorgs", () => {
     w.statuses.set(hash, { confirmationStatus: "finalized", err: null, slot: 640 });
     await timers.fire(FINALITY_MS);
     expect(ctl.getState().txs[tx.id]?.final).toBe(true);
+  });
+
+  it("a persisted confirmed non-final row is polled at the finality interval after a restart", async () => {
+    const w = world();
+    const first = await w.boot();
+    const pending = await send(first.ctl, SEND);
+    const done = await send(first.ctl, { ...SEND, amount: 2n });
+    const pendingHash = hashOf(pending);
+    const doneHash = hashOf(done);
+
+    w.statuses.set(pendingHash, { confirmationStatus: "confirmed", err: null, slot: 500 });
+    w.statuses.set(doneHash, { confirmationStatus: "finalized", err: null, slot: 480 });
+    await first.timers.fire();
+    expect(first.ctl.getState().txs[pending.id]?.final).toBe(false);
+    expect(first.ctl.getState().txs[done.id]?.final).toBe(true);
+
+    // Restart: the persisted rows reload; only the non-final one is tracked — at the 15× interval.
+    const second = await w.boot();
+    expect(second.timers.armed(FINALITY_MS)).toBe(1);
+    expect(second.timers.armed(POLL_MS)).toBe(0);
+    expect(second.ctl.getState().txs[pending.id]?.block).toStrictEqual({ height: 500 });
+
+    const reads = w.statusReads();
+    await second.timers.fire(POLL_MS);
+    expect(w.statusReads()).toBe(reads);
+
+    w.statuses.set(pendingHash, { confirmationStatus: "finalized", err: null, slot: 500 });
+    await second.timers.fire(FINALITY_MS);
+    expect(second.ctl.getState().txs[pending.id]?.final).toBe(true);
+    // The final row was never polled again — the one read belonged to the non-final one.
+    expect(w.statusReads()).toBe(reads + 1);
+    expect(second.timers.armed()).toBe(0);
+  });
+
+  it("lock stops reads, a mid-flight recheck writes nothing, unlock resumes", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    const tx = await send(ctl, SEND);
+    const hash = hashOf(tx);
+
+    w.statuses.set(hash, { confirmationStatus: "confirmed", err: null, slot: 500 });
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.final).toBe(false);
+
+    // A recheck in flight when the vault locks: its answer — finality reached — settles nothing.
+    w.statuses.set(hash, { confirmationStatus: "finalized", err: null, slot: 500 });
+    let release = (): void => undefined;
+    w.env.statusGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inflight = timers.fire(FINALITY_MS);
+    await Promise.resolve();
+    ctl.lock();
+    release();
+    await inflight;
+    expect(ctl.getState().txs[tx.id]?.final).toBe(false);
+
+    const reads = w.statusReads();
+    await timers.fire();
+    expect(w.statusReads()).toBe(reads);
+
+    // Unlock resumes the persisted row at the finality interval — the next recheck finalizes.
+    await ctl.init();
+    expect(timers.armed(FINALITY_MS)).toBe(1);
+    await timers.fire(FINALITY_MS);
+    expect(ctl.getState().txs[tx.id]?.final).toBe(true);
+    expect(timers.armed()).toBe(0);
   });
 
   it("a processed-only entry at the recorded slot is not a reorg", async () => {

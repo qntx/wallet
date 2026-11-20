@@ -153,6 +153,8 @@ export type BtcWorld = {
   readonly setTip: (height: number) => void;
   /** Scripts an error `/blocks/tip/height` throws — a failing finality read. */
   readonly failTip: (error: Error) => void;
+  /** The next Esplora `get` waits on the promise — a slow endpoint. */
+  readonly gateGet: (p: Promise<void>) => void;
   /** The block hash `/block-height/:height` serves; unset heights answer 404 like electrs. */
   readonly setBlockHash: (height: number, hash: string) => void;
   /** Scripts the `/tx/:prevTxid/outspends` answer — any value, or an Error to make the read fail. */
@@ -299,6 +301,8 @@ export const world = (
   /** Height → the block hash `/block-height/:height` serves; unset heights 404 like electrs. */
   const blockHashes = new Map<number, string>();
   const broadcasts: string[] = [];
+  /** When set, the next Esplora `get` waits on it. */
+  let getGate: Promise<void> | undefined;
   const posts: string[] = [];
   const requests: string[] = [];
   const signedCalls: SignParams[] = [];
@@ -404,6 +408,11 @@ export const world = (
   const esploraStub = {
     get: async (u: string) => {
       await Promise.resolve();
+      const gate = getGate;
+      if (gate !== undefined) {
+        getGate = undefined;
+        await gate;
+      }
       return get(u);
     },
     post: async (_u: string, body: string) => {
@@ -551,6 +560,9 @@ export const world = (
     },
     failTip: (error: Error) => {
       tip.h = error;
+    },
+    gateGet: (p: Promise<void>) => {
+      getGate = p;
     },
     setBlockHash: (height: number, hash: string) => {
       blockHashes.set(height, hash);
