@@ -978,11 +978,11 @@
 	var init_objectSpread2 = __esmMin((() => {
 		init_defineProperty();
 	}));
-	// packages/wallet/dist/protocol-CV-uUCCv.mjs
+	// packages/wallet/dist/protocol-yqMi5qxY.mjs
 	init_objectSpread2();
 	/**
 	* Backup-envelope wire validators (design/backup.mdx): the strict structural shape the kernel and
-	* the host-side `parseBackupHeader` share — version 2, bounded fields, `obj` rejects unknown keys.
+	* the host-side `parseBackupHeader` share — version 3, bounded fields, `obj` rejects unknown keys.
 	* Cryptographic checks (the payload tag, factor unwrap) stay in the kernel; these rules only shape
 	* the JSON.
 	*/
@@ -1004,7 +1004,7 @@
 		sealedBek: str(MAX_FACTOR_CHARS)
 	}));
 	var backupEnvelope = obj({
-		version: literal(2),
+		version: literal(3),
 		createdAt: int(0, Number.MAX_SAFE_INTEGER),
 		header: str(MAX_STRING_BYTES),
 		factors: arr(backupEnvelopeFactor, 5, 1),
@@ -13253,8 +13253,76 @@
 		return parse(text);
 	}
 	new Uint8Array([255, ...utf8Encode("solana offchain")]);
-	// packages/wallet-chains/dist/src-B5Z021Ks.mjs
+	// packages/wallet-chains/dist/src-CMCfd-Ic.mjs
 	init_defineProperty();
+	/**
+	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show: the
+	* characters that hide, reorder or fake content are never passed through.
+	*/
+	var UNSAFE_RANGES = [
+		[0, 31],
+		[127, 159],
+		[173, 173],
+		[1564, 1564],
+		[6158, 6158],
+		[8203, 8207],
+		[8232, 8238],
+		[8288, 8288],
+		[8294, 8297],
+		[65279, 65279],
+		[917504, 917631]
+	];
+	/** Control, bidi-control, zero-width, line-separator and tag characters. */
+	var isUnsafeCodePoint = (codePoint) => UNSAFE_RANGES.some(([low, high]) => codePoint >= low && codePoint <= high);
+	var REPLACEMENT = "�";
+	var LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
+	/** The code points of one line: tabs as spaces, trimmed, every other unsafe character replaced. */
+	var safeLine = (line) => Array.from(line.replaceAll("	", " ").trim(), (char) => {
+		var _char$codePointAt;
+		return isUnsafeCodePoint((_char$codePointAt = char.codePointAt(0)) !== null && _char$codePointAt !== void 0 ? _char$codePointAt : 0) ? REPLACEMENT : char;
+	});
+	/**
+	* Whether `text` is the hex rendering of at least 32 bytes — with or without the `0x` prefix,
+	* uppercase or lower. A wallet owner sees the rendering, not the bytes it encodes, so such text
+	* never counts as a readable description of what the signature authorises.
+	*/
+	var isHexRendering = (text) => /^(?:0x)?(?:[0-9a-fA-F]{2}){32,}$/.test(text.trim());
+	/**
+	* Whether `text` is readable as shown: TAB, LF and CR are the only unsafe code points a readable
+	* message may contain. Anything else — a control, bidi-control, zero-width, line-separator or tag
+	* character — means what the owner reads is not what was signed.
+	*/
+	var isReadableText = (text) => {
+		for (const char of text) {
+			var _char$codePointAt2;
+			const cp = (_char$codePointAt2 = char.codePointAt(0)) !== null && _char$codePointAt2 !== void 0 ? _char$codePointAt2 : 0;
+			if (cp !== 9 && cp !== 10 && cp !== 13 && isUnsafeCodePoint(cp)) return false;
+		}
+		return true;
+	};
+	/**
+	* The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines
+	* are dropped, so padding cannot push content out of view; the last line may be cut.
+	*/
+	function displayExcerpt(raw, maxLines, maxCodePoints) {
+		const lines = [];
+		let used = 0;
+		let omitted = 0;
+		for (const line of raw.split(LINE_BREAK)) {
+			const chars = safeLine(line);
+			const room = lines.length < maxLines ? maxCodePoints - used : 0;
+			const shown = chars.slice(0, room);
+			if (shown.length > 0) {
+				lines.push(shown.join(""));
+				used += shown.length;
+			}
+			omitted += chars.length - shown.length;
+		}
+		return {
+			lines,
+			omitted
+		};
+	}
 	var PREAMBLE = " wants you to sign in with your ";
 	var CLAIM$1 = new RegExp("^(?:(?<scheme>[A-Za-z][A-Za-z0-9+.-]*):\\/\\/)?(?<domain>.*?) wants you to sign in with your (?:Ethereum|Solana) account:$", "");
 	var claims = (text) => text.split("\n").flatMap((line) => {
@@ -13320,55 +13388,6 @@
 		}
 	}
 	/**
-	* Untrusted text (a signed message, an EIP-712 domain name, a token symbol) made safe to show: the
-	* characters that hide, reorder or fake content are never passed through.
-	*/
-	var UNSAFE_RANGES = [
-		[0, 31],
-		[127, 159],
-		[173, 173],
-		[1564, 1564],
-		[6158, 6158],
-		[8203, 8207],
-		[8232, 8238],
-		[8288, 8288],
-		[8294, 8297],
-		[65279, 65279],
-		[917504, 917631]
-	];
-	/** Control, bidi-control, zero-width, line-separator and tag characters. */
-	var isUnsafeCodePoint = (codePoint) => UNSAFE_RANGES.some(([low, high]) => codePoint >= low && codePoint <= high);
-	var REPLACEMENT = "�";
-	var LINE_BREAK = /\r\n|[\n\r\u2028\u2029]/;
-	/** The code points of one line: tabs as spaces, trimmed, every other unsafe character replaced. */
-	var safeLine = (line) => Array.from(line.replaceAll("	", " ").trim(), (char) => {
-		var _char$codePointAt;
-		return isUnsafeCodePoint((_char$codePointAt = char.codePointAt(0)) !== null && _char$codePointAt !== void 0 ? _char$codePointAt : 0) ? REPLACEMENT : char;
-	});
-	/**
-	* The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines
-	* are dropped, so padding cannot push content out of view; the last line may be cut.
-	*/
-	function displayExcerpt(raw, maxLines, maxCodePoints) {
-		const lines = [];
-		let used = 0;
-		let omitted = 0;
-		for (const line of raw.split(LINE_BREAK)) {
-			const chars = safeLine(line);
-			const room = lines.length < maxLines ? maxCodePoints - used : 0;
-			const shown = chars.slice(0, room);
-			if (shown.length > 0) {
-				lines.push(shown.join(""));
-				used += shown.length;
-			}
-			omitted += chars.length - shown.length;
-		}
-		return {
-			lines,
-			omitted
-		};
-	}
-	/**
 	* @qntx/wallet-chains — shared chain semantics for the wallet.
 	* Types here are wire-safe: values crossing the main↔kernel protocol are
 	* Uint8Array, safe integers, strings, booleans, arrays and plain objects.
@@ -13376,17 +13395,25 @@
 	* zero), token amounts are decimal strings of the smallest unit.
 	*/
 	var utf8$2 = new TextDecoder("utf-8", { fatal: true });
-	/** Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex. */
+	var bytesContent = (bytes) => ({
+		kind: "bytes",
+		hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
+	});
+	/**
+	* Strict UTF-8 readable text with any sign-in recognition for `family`, else the raw bytes as hex.
+	* A message of exactly 32 bytes is bytes, not text: Safe's eth_sign path (`v > 30`) and EIP-191
+	* digest verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message
+	* has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
+	* in 7×10⁷ keccak outputs are; grindable in minutes).
+	*/
 	var messageContent = (bytes, family) => {
 		let text;
 		try {
 			text = utf8$2.decode(bytes);
 		} catch (_unused2) {
-			return {
-				kind: "bytes",
-				hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`
-			};
+			return bytesContent(bytes);
 		}
+		if (bytes.length === 32 || !isReadableText(text)) return bytesContent(bytes);
 		const signIn = parseSignIn(text, family);
 		return signIn === void 0 ? {
 			kind: "text",
@@ -13398,13 +13425,21 @@
 		};
 	};
 	/**
-	* A request is blind exactly when the decoder set `blind` — the signer can neither show its content
-	* nor bound what it authorises. A request the decoder can describe but not verify (an `opaque`
-	* call, an unrecognised but fully listed typed-data document) is not blind.
+	* A request is blind exactly when the decoder set `blind` — what the prompt prints does not bound
+	* what the signature authorises. A request the decoder can describe in full but not verify (an
+	* `opaque` call, an unrecognised but fully listed typed-data document whose leaves are readable
+	* values) is not blind; one whose every leaf is a commitment, or which a decoded family claims in
+	* an unrecognised shape, is.
 	*/
 	var isBlindIntent = (intent) => intent.blind !== void 0;
-	/** Raw bytes are the one message content no prompt can show. */
-	var messageBlindReason = (message) => message.kind === "bytes" ? "message-bytes" : void 0;
+	/**
+	* Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when its UTF-8
+	* length is 32 (a digest has the same EIP-191 preimage — see `messageContent`), when it holds an
+	* unsafe code point other than TAB/LF/CR, or when it is only the hex rendering of ≥ 32 bytes: the
+	* owner sees the rendering, not the bytes it encodes. Checking the content again here gives callers
+	* that build `{ kind: "text" }` themselves the same verdict.
+	*/
+	var messageBlindReason = (message) => message.kind === "bytes" ? "message-bytes" : message.kind === "text" && (new TextEncoder().encode(message.text).length === 32 || !isReadableText(message.text) || isHexRendering(message.text)) ? "message-bytes" : void 0;
 	var ChainError = class extends Error {
 		constructor(code, message) {
 			super(message);
@@ -13413,7 +13448,7 @@
 			this.code = code;
 		}
 	};
-	// packages/wallet-chains/dist/account-ref-BVw-UXiH.mjs
+	// packages/wallet-chains/dist/account-ref-H4F53LTG.mjs
 	var isRecord$4 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 	var isAccountRef = (value) => {
 		if (!isRecord$4(value) || typeof value["kind"] !== "string") return false;
@@ -20072,7 +20107,7 @@
 			...signature ? toTuple$1(signature) : []
 		]));
 	}
-	// packages/wallet-chains/dist/envelope-8ISrktWS.mjs
+	// packages/wallet-chains/dist/envelope-DvrOZYeK.mjs
 	init_secp256k1();
 	init_utils$2();
 	init_objectSpread2();
@@ -20361,6 +20396,7 @@
 	* domain, so the same document would sign differently across wallets.
 	*/
 	var parseTypedData = (typedData) => {
+		var _json$types$EIP712Dom;
 		let json;
 		try {
 			json = JSON.parse(typedData);
@@ -20375,7 +20411,9 @@
 			throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
 		}
 		checkStructure(json.types, json.primaryType, json.message, 0);
-		return { json };
+		const declared = new Set(((_json$types$EIP712Dom = json.types["EIP712Domain"]) !== null && _json$types$EIP712Dom !== void 0 ? _json$types$EIP712Dom : []).map((field) => field.name));
+		const domain = Object.fromEntries(Object.entries(json.domain).filter(([key]) => declared.has(key)));
+		return { json: _objectSpread2(_objectSpread2({}, json), {}, { domain }) };
 	};
 	var FIXED_BYTES = /^bytes(?:[1-9]|[12][0-9]|3[0-2])$/;
 	var INT_TYPE = /^u?int([0-9]*)$/;
@@ -20409,13 +20447,21 @@
 		}
 	};
 	/**
+	* Whether the atomic leaf of `type` holding `value` is a commitment: `bytes`/`bytesN` always is —
+	* the signature commits to raw bytes the owner cannot read — as is a `string` that is just the hex
+	* rendering of ≥ 32 bytes. An empty-array leaf ("[]") is not (it carries nothing).
+	*/
+	var isCommitmentLeaf = (type, value) => type === "bytes" || FIXED_BYTES.test(type) || type === "string" && typeof value === "string" && isHexRendering(value);
+	/**
 	* Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
-	* declaration order, arrays element by element), as display lines; `undefined` when there are more
-	* than TYPED_FIELD_BUDGET leaves or any leaf cannot be shown exactly as it is encoded.
+	* declaration order, arrays element by element), as display lines, and whether every leaf is a
+	* commitment; `undefined` when there are more than TYPED_FIELD_BUDGET leaves or any leaf cannot be
+	* shown exactly as it is encoded. A document with no leaves is a vacuous commitment.
 	*/
 	var typedDataFields = (json) => {
 		const leaves = [];
-		const push = (path, value) => {
+		let commitment = true;
+		const push = (path, value, commits) => {
 			var _excerpt$lines$2;
 			const excerpt = displayExcerpt(path, 1, 96);
 			if (excerpt.omitted !== 0) return false;
@@ -20423,13 +20469,14 @@
 				path: (_excerpt$lines$2 = excerpt.lines[0]) !== null && _excerpt$lines$2 !== void 0 ? _excerpt$lines$2 : "",
 				value
 			});
+			commitment = commitment && commits;
 			return leaves.length <= 16;
 		};
 		const walk = (type, value, path) => {
 			const array = /^(.+)\[\d*\]$/.exec(type);
 			if (array !== null) {
 				if (!Array.isArray(value)) return false;
-				return value.length === 0 ? push(path, "[]") : value.every((item, index) => {
+				return value.length === 0 ? push(path, "[]", false) : value.every((item, index) => {
 					var _array$2;
 					return walk((_array$2 = array[1]) !== null && _array$2 !== void 0 ? _array$2 : "", item, `${path}[${index}]`);
 				});
@@ -20437,9 +20484,12 @@
 			const struct = json.types[type];
 			if (struct !== void 0) return isTypedDataMessage(value) && struct.every((field) => walk(field.type, value[field.name], path === "" ? field.name : `${path}.${field.name}`));
 			const leaf = leafValue(type, value);
-			return leaf !== void 0 && push(path, leaf);
+			return leaf !== void 0 && push(path, leaf, isCommitmentLeaf(type, value));
 		};
-		return walk(json.primaryType, json.message, "") ? leaves : void 0;
+		return walk(json.primaryType, json.message, "") ? {
+			fields: leaves,
+			commitment
+		} : void 0;
 	};
 	/**
 	* `domain.chainId` as a number, when present: a safe non-negative integer given as a JSON number, a
@@ -20654,6 +20704,105 @@
 		}) }) }) });
 		return decorate(intent);
 	};
+	// packages/wallet-chains/dist/families-CZ4OHnNB.mjs
+	var RECOGNISED_FAMILIES = [
+		{
+			family: "built-in token",
+			claim: {
+				surface: "evm.call",
+				callee: "token-table"
+			},
+			nearMiss: "token-function"
+		},
+		{
+			family: "permit",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^Permit/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Permit2",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "permit2"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "built-in token signature",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "token-table"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Safe",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^SafeTx$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Seaport",
+			claim: {
+				surface: "evm.typed-data",
+				primaryType: /^(?:OrderComponents|BulkOrder)$/
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "Seaport",
+			claim: {
+				surface: "evm.typed-data",
+				verifyingContract: "seaport"
+			},
+			nearMiss: "typed-data-variant"
+		},
+		{
+			family: "System",
+			claim: {
+				surface: "solana.instruction",
+				program: "system"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Token",
+			claim: {
+				surface: "solana.instruction",
+				program: "token"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Token-2022",
+			claim: {
+				surface: "solana.instruction",
+				program: "token2022"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Stake",
+			claim: {
+				surface: "solana.instruction",
+				program: "stake"
+			},
+			nearMiss: "core-instruction"
+		},
+		{
+			family: "Associated Token",
+			claim: {
+				surface: "solana.instruction",
+				program: "associatedToken"
+			},
+			nearMiss: "core-instruction"
+		}
+	];
 	// node_modules/.bun/ox@1.8.12+ff0372d108591aba/node_modules/ox/dist/core/ContractAddress.js
 	/**
 	* Computes contract address via [CREATE](https://ethereum.stackexchange.com/questions/68943/create-opcode-what-does-it-really-do/68945#68945) opcode.
@@ -23235,6 +23384,139 @@ zoo`.split("\n"));
 			}
 		};
 	};
+	/** Seaport 1.5 and 1.6 deployments, lowercase for a checksum-insensitive compare. */
+	var SEAPORT_CONTRACTS = /* @__PURE__ */ new Set(["0x0000000000000068f116a894984e2db1123eb395", "0x00000000000000adc04c56bf30ac9d3c0aaf14dc"]);
+	/** Seaport `itemType` values 0–5; an item type outside the list is not recognized. */
+	var ITEM_KINDS = [
+		"native",
+		"erc20",
+		"erc721",
+		"erc1155",
+		"erc721-criteria",
+		"erc1155-criteria"
+	];
+	var ITEM_FIELDS = [
+		"uint8 itemType",
+		"address token",
+		"uint256 identifierOrCriteria",
+		"uint256 startAmount",
+		"uint256 endAmount"
+	];
+	var typesMatch = (types) => Object.keys(types).filter((name) => name !== "EIP712Domain").length === 3 && sameFields(types, "OrderComponents", [
+		"address offerer",
+		"address zone",
+		"OfferItem[] offer",
+		"ConsiderationItem[] consideration",
+		"uint8 orderType",
+		"uint256 startTime",
+		"uint256 endTime",
+		"bytes32 zoneHash",
+		"uint256 salt",
+		"bytes32 conduitKey",
+		"uint256 counter"
+	]) && sameFields(types, "OfferItem", ITEM_FIELDS) && sameFields(types, "ConsiderationItem", [...ITEM_FIELDS, "address recipient"]);
+	var amount = (kind, token, value, identifier, chainId, table) => {
+		if (kind === "native") return {
+			asset: EVM_NATIVE_ASSET,
+			amount: value.toString(10)
+		};
+		if (kind === "erc20") {
+			const found = lookupEvmToken(table, chainId, token);
+			return _objectSpread2({
+				asset: token,
+				amount: value.toString(10)
+			}, found === void 0 ? {} : {
+				symbol: found.symbol,
+				decimals: found.decimals
+			});
+		}
+		if (kind === "erc721" || kind === "erc1155") return {
+			asset: token,
+			amount: value.toString(10),
+			tokenId: identifier.toString(10)
+		};
+		return {
+			asset: token,
+			amount: value.toString(10)
+		};
+	};
+	var item = (message, chainId, table) => {
+		const itemType = typedDataUint(message["itemType"], 255n);
+		const token = typedDataAddress(message["token"]);
+		const identifier = typedDataUint(message["identifierOrCriteria"], MAX_UINT256);
+		const start = typedDataUint(message["startAmount"], MAX_UINT256);
+		const end = typedDataUint(message["endAmount"], MAX_UINT256);
+		const kind = itemType === void 0 ? void 0 : ITEM_KINDS[Number(itemType)];
+		if (token === void 0 || identifier === void 0 || start === void 0 || end === void 0 || kind === void 0) return;
+		return {
+			kind,
+			token,
+			identifier: identifier.toString(10),
+			startAmount: amount(kind, token, start, identifier, chainId, table),
+			endAmount: amount(kind, token, end, identifier, chainId, table)
+		};
+	};
+	var all = (list, build) => {
+		const built = list === null || list === void 0 ? void 0 : list.map(build);
+		return built === void 0 || built.some((entry) => entry === void 0) ? void 0 : built.filter((entry) => entry !== void 0);
+	};
+	/**
+	* The Seaport order a typed-data document signs, or `undefined` when its shape is not exactly the
+	* recognized one. `chainId` is the request network's, used for the built-in token table.
+	*/
+	function recognizeSeaport(json, chainId, table) {
+		const { types, primaryType, message, domain } = json;
+		if (primaryType !== "OrderComponents" || !typesMatch(types)) return;
+		const verifying = typedDataAddress(domain["verifyingContract"]);
+		if (domain["name"] !== "Seaport" || verifying === void 0 || !SEAPORT_CONTRACTS.has(verifying.toLowerCase())) return;
+		const offerer = typedDataAddress(message["offerer"]);
+		const zone = typedDataAddress(message["zone"]);
+		const startTime = typedDataUint(message["startTime"], MAX_UINT256);
+		const endTime = typedDataUint(message["endTime"], MAX_UINT256);
+		const offer = all(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
+		const consideration = all(typedDataMessages(message["consideration"]), (entry) => {
+			const base = item(entry, chainId, table);
+			const recipient = typedDataAddress(entry["recipient"]);
+			return base === void 0 || recipient === void 0 ? void 0 : _objectSpread2(_objectSpread2({}, base), {}, { recipient });
+		});
+		if (offerer === void 0 || zone === void 0 || startTime === void 0 || endTime === void 0 || offer === void 0 || consideration === void 0) return;
+		return {
+			offerer,
+			zone,
+			startTime: startTime <= MAX_UINT48 ? Number(startTime) : void 0,
+			endTime: endTime <= MAX_UINT48 ? Number(endTime) : void 0,
+			offer,
+			consideration
+		};
+	}
+	/**
+	* The EVM interpreters of the family-claim table (src/families.ts): a request a decoded family
+	* claims but which the decoder did not decode is blind with the row's reason.
+	*/
+	/**
+	* The claim an undecoded call into `to` makes on `chainId`: a listed token's selector table did not
+	* decode it, so it is an unrecognised function of a token the owner holds.
+	*/
+	var callNearMiss = (to, chainId, table) => {
+		var _RECOGNISED_FAMILIES$;
+		return (_RECOGNISED_FAMILIES$ = RECOGNISED_FAMILIES.find((row) => row.claim.surface === "evm.call" && row.claim.callee === "token-table" && lookupEvmToken(table, chainId, to) !== void 0)) === null || _RECOGNISED_FAMILIES$ === void 0 ? void 0 : _RECOGNISED_FAMILIES$.nearMiss;
+	};
+	/**
+	* The claim an unrecognised typed-data document makes: a family primary type, or a verifying
+	* contract of Permit2, a canonical Seaport deployment or a listed token (case-insensitive).
+	*/
+	var typedDataNearMiss = (json, chainId, table) => {
+		var _RECOGNISED_FAMILIES$2;
+		const verifying = typedDataAddress(json.domain["verifyingContract"]);
+		return (_RECOGNISED_FAMILIES$2 = RECOGNISED_FAMILIES.find((row) => {
+			const { claim } = row;
+			if (claim.surface !== "evm.typed-data") return false;
+			if ("primaryType" in claim) return claim.primaryType.test(json.primaryType);
+			if (verifying === void 0) return false;
+			const contract = verifying.toLowerCase();
+			return claim.verifyingContract === "permit2" && contract === "0x000000000022D473030F116dDEE9F6B43aC78BA3".toLowerCase() || claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(contract) || claim.verifyingContract === "token-table" && lookupEvmToken(table, chainId, verifying) !== void 0;
+		})) === null || _RECOGNISED_FAMILIES$2 === void 0 ? void 0 : _RECOGNISED_FAMILIES$2.nearMiss;
+	};
 	/**
 	* Typed data whose domain targets an execution context over the signer's account turns a signature
 	* into execution rights: a Delegation the DelegationManager redeems, a PackedUserOperation the
@@ -23614,111 +23896,6 @@ zoo`.split("\n"));
 				amount: refundAsset((baseGas + safeTxGas) * gasPrice)
 			}) } : {}),
 			multisend: inner !== void 0
-		};
-	}
-	/** Seaport 1.5 and 1.6 deployments, lowercase for a checksum-insensitive compare. */
-	var SEAPORT_CONTRACTS = /* @__PURE__ */ new Set(["0x0000000000000068f116a894984e2db1123eb395", "0x00000000000000adc04c56bf30ac9d3c0aaf14dc"]);
-	/** Seaport `itemType` values 0–5; an item type outside the list is not recognized. */
-	var ITEM_KINDS = [
-		"native",
-		"erc20",
-		"erc721",
-		"erc1155",
-		"erc721-criteria",
-		"erc1155-criteria"
-	];
-	var ITEM_FIELDS = [
-		"uint8 itemType",
-		"address token",
-		"uint256 identifierOrCriteria",
-		"uint256 startAmount",
-		"uint256 endAmount"
-	];
-	var typesMatch = (types) => Object.keys(types).filter((name) => name !== "EIP712Domain").length === 3 && sameFields(types, "OrderComponents", [
-		"address offerer",
-		"address zone",
-		"OfferItem[] offer",
-		"ConsiderationItem[] consideration",
-		"uint8 orderType",
-		"uint256 startTime",
-		"uint256 endTime",
-		"bytes32 zoneHash",
-		"uint256 salt",
-		"bytes32 conduitKey",
-		"uint256 counter"
-	]) && sameFields(types, "OfferItem", ITEM_FIELDS) && sameFields(types, "ConsiderationItem", [...ITEM_FIELDS, "address recipient"]);
-	var amount = (kind, token, value, identifier, chainId, table) => {
-		if (kind === "native") return {
-			asset: EVM_NATIVE_ASSET,
-			amount: value.toString(10)
-		};
-		if (kind === "erc20") {
-			const found = lookupEvmToken(table, chainId, token);
-			return _objectSpread2({
-				asset: token,
-				amount: value.toString(10)
-			}, found === void 0 ? {} : {
-				symbol: found.symbol,
-				decimals: found.decimals
-			});
-		}
-		if (kind === "erc721" || kind === "erc1155") return {
-			asset: token,
-			amount: value.toString(10),
-			tokenId: identifier.toString(10)
-		};
-		return {
-			asset: token,
-			amount: value.toString(10)
-		};
-	};
-	var item = (message, chainId, table) => {
-		const itemType = typedDataUint(message["itemType"], 255n);
-		const token = typedDataAddress(message["token"]);
-		const identifier = typedDataUint(message["identifierOrCriteria"], MAX_UINT256);
-		const start = typedDataUint(message["startAmount"], MAX_UINT256);
-		const end = typedDataUint(message["endAmount"], MAX_UINT256);
-		const kind = itemType === void 0 ? void 0 : ITEM_KINDS[Number(itemType)];
-		if (token === void 0 || identifier === void 0 || start === void 0 || end === void 0 || kind === void 0) return;
-		return {
-			kind,
-			token,
-			identifier: identifier.toString(10),
-			startAmount: amount(kind, token, start, identifier, chainId, table),
-			endAmount: amount(kind, token, end, identifier, chainId, table)
-		};
-	};
-	var all = (list, build) => {
-		const built = list === null || list === void 0 ? void 0 : list.map(build);
-		return built === void 0 || built.some((entry) => entry === void 0) ? void 0 : built.filter((entry) => entry !== void 0);
-	};
-	/**
-	* The Seaport order a typed-data document signs, or `undefined` when its shape is not exactly the
-	* recognized one. `chainId` is the request network's, used for the built-in token table.
-	*/
-	function recognizeSeaport(json, chainId, table) {
-		const { types, primaryType, message, domain } = json;
-		if (primaryType !== "OrderComponents" || !typesMatch(types)) return;
-		const verifying = typedDataAddress(domain["verifyingContract"]);
-		if (domain["name"] !== "Seaport" || verifying === void 0 || !SEAPORT_CONTRACTS.has(verifying.toLowerCase())) return;
-		const offerer = typedDataAddress(message["offerer"]);
-		const zone = typedDataAddress(message["zone"]);
-		const startTime = typedDataUint(message["startTime"], MAX_UINT256);
-		const endTime = typedDataUint(message["endTime"], MAX_UINT256);
-		const offer = all(typedDataMessages(message["offer"]), (entry) => item(entry, chainId, table));
-		const consideration = all(typedDataMessages(message["consideration"]), (entry) => {
-			const base = item(entry, chainId, table);
-			const recipient = typedDataAddress(entry["recipient"]);
-			return base === void 0 || recipient === void 0 ? void 0 : _objectSpread2(_objectSpread2({}, base), {}, { recipient });
-		});
-		if (offerer === void 0 || zone === void 0 || startTime === void 0 || endTime === void 0 || offer === void 0 || consideration === void 0) return;
-		return {
-			offerer,
-			zone,
-			startTime: startTime <= MAX_UINT48 ? Number(startTime) : void 0,
-			endTime: endTime <= MAX_UINT48 ? Number(endTime) : void 0,
-			offer,
-			consideration
 		};
 	}
 	/** Chains whose AllowanceHolder + Settler deployment this decoder recognises. */
@@ -24152,7 +24329,8 @@ zoo`.split("\n"));
 		const protocol = protocolIntent(call, context);
 		if (protocol !== void 0) return _objectSpread2(_objectSpread2({}, protocol), contract);
 		const standard = standardIntent(call, context);
-		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, standard), contract), standard.verifiability === "opaque" && token !== void 0 ? { blind: "token-function" } : {}), {}, { outflows: call.value > 0n && address !== void 0 ? [...nativeOutflow(call.value, address), ...standard.outflows] : standard.outflows });
+		const nearMiss = standard.verifiability === "opaque" && call.to !== void 0 ? callNearMiss(call.to, networkChainId(context.network), context.table) : void 0;
+		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, standard), contract), nearMiss === void 0 ? {} : { blind: nearMiss }), {}, { outflows: call.value > 0n && address !== void 0 ? [...nativeOutflow(call.value, address), ...standard.outflows] : standard.outflows });
 	};
 	/** The delegation field a request carries, present iff the transaction is eip7702. */
 	var delegationOf = (tx) => {
@@ -24229,11 +24407,24 @@ zoo`.split("\n"));
 		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({}, typeof name === "string" ? { name } : {}), typeof version === "string" ? { version } : {}), chainId === void 0 ? {} : { chainId }), typeof verifyingContract === "string" && /^0x[0-9a-fA-F]{40}$/.test(verifyingContract) ? { verifyingContract: checksumEvmAddress(verifyingContract) } : {}), typeof salt === "string" ? { salt } : {});
 	};
 	/**
+	* The blind reason for a typed-data request, if any. Shown content is never truncated — an order
+	* with more items than the prompt lists, or a document over the leaf budget, would silently
+	* authorise what it hides, so it blinds the request instead.
+	*/
+	var typedDataBlind = (safe, seaport, unclaimed, nearMiss, shown) => {
+		var _safe$safe$calls$find, _safe$safe$calls$find2;
+		if (safe !== void 0) return (_safe$safe$calls$find = (_safe$safe$calls$find2 = safe.safe.calls.find((call) => call.blind !== void 0)) === null || _safe$safe$calls$find2 === void 0 ? void 0 : _safe$safe$calls$find2.blind) !== null && _safe$safe$calls$find !== void 0 ? _safe$safe$calls$find : safe.safe.refund === void 0 ? void 0 : "safe-refund-unbounded";
+		if (seaport !== void 0) return seaport.offer.length > 4 || seaport.consideration.length > 4 ? "typed-data-oversize" : void 0;
+		if (!unclaimed || nearMiss !== void 0) return nearMiss;
+		if (shown === void 0) return "typed-data-oversize";
+		return shown.commitment ? "typed-data-commitment" : void 0;
+	};
+	/**
 	* Decodes a normalized request into a DisplayIntent. `signer` is the address of the signing
 	* account; the token table parameter is for tests.
 	*/
 	var decodeEvm = (request, signer, table = evmTokenTable) => {
-		var _safe$safe$calls$find, _safe$safe$calls$find2, _safe$safe$calls$0$su, _safe$safe$calls$, _permit$approvals, _permit$warnings;
+		var _safe$safe$calls$0$su, _safe$safe$calls$, _permit$approvals, _permit$warnings;
 		if (request.kind === "evm.transaction") return withNativeAmountMeta(decodeTransaction$1(request, signer, table), request.network, EVM_NATIVE_ASSET, 18);
 		if (request.kind === "evm.personal-message") {
 			const content = messageContent(request.message, "evm");
@@ -24267,8 +24458,11 @@ zoo`.split("\n"));
 			signer,
 			self: safeAddress
 		})) : void 0;
-		const fields = permit === void 0 && seaport === void 0 && safe === void 0 ? typedDataFields(json) : void 0;
-		const blind = safe === void 0 ? permit === void 0 && seaport === void 0 && fields === void 0 ? "typed-data-oversize" : void 0 : (_safe$safe$calls$find = (_safe$safe$calls$find2 = safe.safe.calls.find((call) => call.blind !== void 0)) === null || _safe$safe$calls$find2 === void 0 ? void 0 : _safe$safe$calls$find2.blind) !== null && _safe$safe$calls$find !== void 0 ? _safe$safe$calls$find : safe.safe.refund === void 0 ? void 0 : "safe-refund-unbounded";
+		const unclaimed = permit === void 0 && seaport === void 0 && safe === void 0;
+		const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : void 0;
+		const shown = unclaimed ? typedDataFields(json) : void 0;
+		const fields = shown === null || shown === void 0 ? void 0 : shown.fields;
+		const blind = typedDataBlind(safe, seaport, unclaimed, nearMiss, shown);
 		const message = _objectSpread2(_objectSpread2(_objectSpread2({
 			kind: "typed-data",
 			primaryType: json.primaryType,
@@ -26323,11 +26517,12 @@ zoo`.split("\n"));
 		}
 	};
 	/**
-	* A system-program `CreateAccount` (u32 0) or `CreateAccountWithSeed` (u32 3) whose owner is the
-	* Stake program — `undefined` for other owners or any layout deviation. A with-seed creation is
-	* only recognised when `to` is the sha256(base ‖ seed ‖ owner) derived address.
+	* One system-program account creation (CreateAccount or CreateAccountWithSeed), for any new-owner
+	* program. A with-seed creation whose `account` does not match sha256(base ‖ seed ‖ owner) is
+	* `"other"` — the program itself would reject it. `undefined` when the data is neither instruction;
+	* `"other"` when it is one but malformed.
 	*/
-	var decodeStakeCreate = (parsed, ix, lookups) => {
+	var decodeSystemCreate = (parsed, ix, lookups) => {
 		const { data } = ix;
 		const acc = (i) => account(parsed, ix, i, lookups);
 		if (data.length < 4) return "other";
@@ -26336,12 +26531,11 @@ zoo`.split("\n"));
 			const from = acc(0);
 			const to = acc(1);
 			if (from === void 0 || to === void 0) return "other";
-			if (key$1(data, 20) !== PROGRAM_IDS.stake) return "other";
 			return {
-				kind: "create",
 				account: to,
 				from,
-				lamports: u64le$1(data, 4)
+				lamports: u64le$1(data, 4),
+				owner: key$1(data, 20)
 			};
 		}
 		if (u32le$1(data, 0) === 3) {
@@ -26352,19 +26546,19 @@ zoo`.split("\n"));
 			const to = acc(1);
 			if (from === void 0 || to === void 0 || !(ix.accountIndices.length === 2 || ix.accountIndices.length === 3)) return "other";
 			const base = key$1(data, 4);
-			if (key$1(data, end - 32) !== PROGRAM_IDS.stake) return "other";
+			const owner = key$1(data, end - 32);
 			if (ix.accountIndices.length === 3 && acc(2) !== base) return "other";
 			if (ix.accountIndices.length === 2 && base !== from) return "other";
 			const seed = data.subarray(44, 44 + seedLen);
 			return to === solanaAddressFromPublicKey(sha256$1(new Uint8Array([
 				...addr.encode(address(base)),
 				...seed,
-				...addr.encode(address(PROGRAM_IDS.stake))
+				...addr.encode(address(owner))
 			]))) ? {
-				kind: "create",
 				account: to,
 				from,
-				lamports: u64le$1(data, 44 + seedLen)
+				lamports: u64le$1(data, 44 + seedLen),
+				owner
 			} : "other";
 		}
 	};
@@ -26405,11 +26599,20 @@ zoo`.split("\n"));
 				to: resolveAccountIndex(parsed, (_ix$accountIndices$2 = ix.accountIndices[1]) !== null && _ix$accountIndices$2 !== void 0 ? _ix$accountIndices$2 : 0, lookups),
 				amount: u64le$2(data, 4)
 			};
-			const create = decodeStakeCreate(parsed, ix, lookups);
-			if (create !== void 0 && create !== "other") return {
+			const create = decodeSystemCreate(parsed, ix, lookups);
+			if (create !== void 0 && create !== "other") return create.owner === PROGRAM_IDS.stake ? {
 				kind: "system-create",
-				stake: create
+				stake: {
+					kind: "create",
+					account: create.account,
+					from: create.from,
+					lamports: create.lamports
+				}
+			} : {
+				kind: "system-create-account",
+				create
 			};
+			if (data.length === 4 && u32le$2(data, 0) === 4 && ix.accountIndices.length === 3) return { kind: "system-advance-nonce" };
 			return { kind: "other" };
 		}
 		if (program === PROGRAM_IDS.computeBudget) {
@@ -26444,6 +26647,8 @@ zoo`.split("\n"));
 			};
 			if (data.length === 1 && data[0] === 17) return { kind: "token-sync-native" };
 			if (data.length === 1 && data[0] === 9) return resolveAccountIndex(parsed, (_ix$accountIndices$6 = ix.accountIndices[1]) !== null && _ix$accountIndices$6 !== void 0 ? _ix$accountIndices$6 : 0, lookups) === signer ? { kind: "token-close-account" } : { kind: "other" };
+			if (data.length === 1 && data[0] === 1 && ix.accountIndices.length === 4) return { kind: "token-initialize-account" };
+			if (data.length === 1 && data[0] === 5 && ix.accountIndices.length === 2) return { kind: "token-revoke" };
 			return { kind: "other" };
 		}
 		if (program === "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4") {
@@ -26472,13 +26677,17 @@ zoo`.split("\n"));
 	var FULL_KINDS = /* @__PURE__ */ new Set([
 		"system-transfer",
 		"system-create",
+		"system-create-account",
+		"system-advance-nonce",
 		"cu-limit",
 		"cu-price",
 		"ata-create",
 		"ata-create-idempotent",
 		"stake",
 		"token-sync-native",
-		"token-close-account"
+		"token-close-account",
+		"token-initialize-account",
+		"token-revoke"
 	]);
 	var classify$1 = (parsed, calls, network, table) => {
 		let allFull = true;
@@ -26539,6 +26748,17 @@ zoo`.split("\n"));
 					amount: {
 						asset: SOLANA_NATIVE_ASSET,
 						amount: ((_call$amount = call.amount) !== null && _call$amount !== void 0 ? _call$amount : 0n).toString(10)
+					},
+					verified: true
+				});
+			}
+			if (call.kind === "system-create-account" && call.create !== void 0 && call.create.from === signer) {
+				otherTransfer = true;
+				outflows.push({
+					to: call.create.account,
+					amount: {
+						asset: SOLANA_NATIVE_ASSET,
+						amount: call.create.lamports.toString(10)
 					},
 					verified: true
 				});
@@ -26706,10 +26926,14 @@ zoo`.split("\n"));
 		}
 		const fee = parsed.staticAccounts[0] === signer ? feeLamports(parsed, lookups, calls) : 0n;
 		const programs = [];
+		let blind;
 		for (const [index, ix] of parsed.instructions.entries()) {
 			var _calls$index;
 			const program = ((_calls$index = calls[index]) === null || _calls$index === void 0 ? void 0 : _calls$index.kind) === "other" ? resolveAccountIndex(parsed, ix.programAddressIndex, lookups) : void 0;
-			if (program !== void 0 && !programs.includes(program)) programs.push(program);
+			if (program === void 0) continue;
+			if (!programs.includes(program)) programs.push(program);
+			const row = RECOGNISED_FAMILIES.find((family) => family.claim.surface === "solana.instruction" && PROGRAM_IDS[family.claim.program] === program);
+			if (blind === void 0 && row !== void 0 && ix.accountIndices.some((i) => i < parsed.numRequiredSignatures && parsed.staticAccounts[i] === signer)) blind = row.nearMiss;
 		}
 		const summary = hasJupiter ? "swap" : otherTransfer ? "transfer" : staking.length > 0 ? "stake" : outflows.length > 0 ? "transfer" : "contract-call";
 		return _objectSpread2(_objectSpread2(_objectSpread2(_objectSpread2({
@@ -26725,7 +26949,7 @@ zoo`.split("\n"));
 		}, staking.length === 0 ? {} : { staking }), minimumReceived.length === 0 ? {} : { minimumReceived }), programs.length === 0 ? {} : { programs }), {}, {
 			warnings,
 			verifiability
-		});
+		}, blind === void 0 ? {} : { blind });
 	};
 	var decodeSolana = (request, signer, table = solanaTokenTable) => withNativeAmountMeta(decodeTransaction(request, signer, table), request.network, SOLANA_NATIVE_ASSET, 9);
 	getTransactionDecoder();
@@ -27979,8 +28203,28 @@ zoo`.split("\n"));
 			}
 		}
 	};
-	function payloadContext(header) {
-		return `qntx-wallet/backup/v1/payload/${bytesToHex$4(sha256$1(utf8ToBytes$1(header)))}`;
+	/**
+	* The factor list re-serialized with fixed key order — the payload tag authenticates this canonical
+	* form, so it does not depend on the wire text's field order. A dropped, added, altered or
+	* reordered factor entry changes the digest and fails the payload open.
+	*/
+	function canonicalFactors(factors) {
+		return JSON.stringify(factors.map((f) => f.kind === "passkey" ? {
+			kind: f.kind,
+			credentialId: f.credentialId,
+			sealedBek: f.sealedBek
+		} : {
+			kind: f.kind,
+			kdf: f.kdf,
+			memoryKiB: f.memoryKiB,
+			passes: f.passes,
+			lanes: f.lanes,
+			salt: f.salt,
+			sealedBek: f.sealedBek
+		}));
+	}
+	function payloadContext(header, factors) {
+		return `qntx-wallet/backup/v1/payload/${bytesToHex$4(sha256$1(utf8ToBytes$1(header)))}/${bytesToHex$4(sha256$1(utf8ToBytes$1(canonicalFactors(factors))))}`;
 	}
 	function factorContextOf(kind) {
 		return `qntx-wallet/backup/v1/factor/${kind}`;
@@ -28062,14 +28306,14 @@ zoo`.split("\n"));
 					if (family === void 0) throw new KernelError("integrity", "backup: unknown key family byte");
 					keys.push({
 						family,
-						secret: bytes.slice(off, off + len)
+						secret: bytes.subarray(off, off + len)
 					});
 				} else {
 					const origin = ORIGIN_NAME[ob];
 					if (origin === void 0) throw new KernelError("integrity", "backup: unknown origin byte");
 					wallets.push({
 						origin,
-						entropy: bytes.slice(off, off + len)
+						entropy: bytes.subarray(off, off + len)
 					});
 				}
 				off += len;
@@ -28253,23 +28497,24 @@ zoo`.split("\n"));
 	* factors can never unwrap future backups.
 	*/
 	async function enableBackup(ctx, params, requestSession) {
-		const { dek } = ctx.session.require(requestSession);
-		await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "backup"));
-		const bek = ctx.platform.random(32);
-		if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
 		const materials = [];
+		let bek;
 		try {
+			const { dek } = ctx.session.require(requestSession);
+			await verifyFactor(ctx.platform, ctx.image, params.verify, dek, ctx.commit, corePromptFor(ctx.platform.keystore, "backup"));
+			bek = ctx.platform.random(32);
+			if (bek.length !== 32) throw new KernelError("integrity", "random source returned a wrong-length BEK");
 			for (const factor of params.factors) materials.push(await backupMaterial(ctx, factor, []));
-			const record = backupKeyRecord(ctx, dek, bek, await sealBackupFactors(ctx.platform, bek, materials));
+			const factors = await sealBackupFactors(ctx.platform, bek, materials);
+			const record = backupKeyRecord(ctx, dek, bek, factors);
 			await ctx.commit([{
 				op: "put-record",
 				record
 			}]);
 			return null;
 		} finally {
-			bek.fill(0);
-			for (const material of materials) wipeBackupSecret(material);
-			for (const factor of params.factors) wipeBackupSecret(factor);
+			bek === null || bek === void 0 || bek.fill(0);
+			for (const secret of [...materials, ...params.factors]) wipeBackupSecret(secret);
 		}
 	}
 	/**
@@ -28286,10 +28531,10 @@ zoo`.split("\n"));
 		const contents = collectContents(ctx, dek);
 		try {
 			const plaintext = encodePayload(contents.wallets, contents.keys);
-			const sealedPayload = seal(bek, plaintext, payloadContext(contents.header), "", ctx.platform.random);
+			const sealedPayload = seal(bek, plaintext, payloadContext(contents.header, keyHeader.factors), "", ctx.platform.random);
 			try {
 				const envelope = {
-					version: 2,
+					version: 3,
 					createdAt: ctx.platform.now(),
 					header: contents.header,
 					factors: keyHeader.factors,
@@ -28373,36 +28618,34 @@ zoo`.split("\n"));
 			passphrases.set(entry.walletId, normalizePassphrase(entry.passphrase));
 		}
 		const envelope = parseEnvelope(params.envelope);
-		const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$2.dec(f.credentialId)] : []);
-		const material = await backupMaterial(ctx, params.backupFactor, credentials);
+		const gated = gate(ctx, params.factor, requestSession);
+		let committed = false;
 		try {
-			const bek = await bekFromFactor(ctx.platform, envelope, material);
+			const credentials = envelope.factors.flatMap((f) => f.kind === "passkey" ? [b64$2.dec(f.credentialId)] : []);
+			const material = await backupMaterial(ctx, params.backupFactor, credentials);
 			try {
-				var _header$keys$length, _header$keys;
-				let plaintext;
+				const bek = await bekFromFactor(ctx.platform, envelope, material);
 				try {
-					plaintext = open(bek, b64$2.dec(envelope.payload), payloadContext(envelope.header), "");
-				} catch (_unused6) {
-					throw new KernelError("integrity", "backup: payload authentication failed");
-				}
-				const header = parseHeader(envelope.header);
-				const decoded = decodePayload$1(plaintext);
-				if (decoded.wallets.length !== header.wallets.length || decoded.keys.length !== ((_header$keys$length = (_header$keys = header.keys) === null || _header$keys === void 0 ? void 0 : _header$keys.length) !== null && _header$keys$length !== void 0 ? _header$keys$length : 0)) {
-					plaintext.fill(0);
-					throw new KernelError("integrity", "backup: payload does not match header");
-				}
-				const flagged = new Set(header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId));
-				for (const walletId of passphrases.keys()) if (!flagged.has(walletId)) {
-					plaintext.fill(0);
-					throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
-				}
-				const gated = gate(ctx, params.factor, requestSession);
-				const records = [];
-				const restored = [];
-				const passphraseRequired = [];
-				let committed = false;
-				try {
+					let plaintext;
 					try {
+						plaintext = open(bek, b64$2.dec(envelope.payload), payloadContext(envelope.header, envelope.factors), "");
+					} catch (_unused6) {
+						throw new KernelError("integrity", "backup: payload authentication failed");
+					}
+					let decoded = {
+						wallets: [],
+						keys: []
+					};
+					try {
+						var _header$keys$length, _header$keys;
+						const header = parseHeader(envelope.header);
+						decoded = decodePayload$1(plaintext);
+						if (decoded.wallets.length !== header.wallets.length || decoded.keys.length !== ((_header$keys$length = (_header$keys = header.keys) === null || _header$keys === void 0 ? void 0 : _header$keys.length) !== null && _header$keys$length !== void 0 ? _header$keys$length : 0)) throw new KernelError("integrity", "backup: payload does not match header");
+						const flagged = new Set(header.wallets.filter((w) => w.passphrase === true).map((w) => w.walletId));
+						for (const walletId of passphrases.keys()) if (!flagged.has(walletId)) throw new KernelError("invalid-input", `wallet ${walletId} has no passphrase`);
+						const records = [];
+						const restored = [];
+						const passphraseRequired = [];
 						const now = ctx.platform.now();
 						for (const [index, wallet] of decoded.wallets.entries()) {
 							const expected = header.wallets[index];
@@ -28449,20 +28692,20 @@ zoo`.split("\n"));
 							passphraseRequired,
 							session
 						};
-					} catch (error) {
-						if (!committed && gated.uninitialized) gated.dek.wipe();
-						throw error;
+					} finally {
+						plaintext.fill(0);
+						for (const wallet of decoded.wallets) wallet.entropy.fill(0);
+						for (const key of decoded.keys) key.secret.fill(0);
 					}
 				} finally {
-					plaintext.fill(0);
-					for (const wallet of decoded.wallets) wallet.entropy.fill(0);
-					for (const key of decoded.keys) key.secret.fill(0);
+					bek.fill(0);
 				}
 			} finally {
-				bek.fill(0);
+				wipeBackupSecret(material);
 			}
-		} finally {
-			wipeBackupSecret(material);
+		} catch (error) {
+			if (!committed && gated.uninitialized) gated.dek.wipe();
+			throw error;
 		}
 	}
 	// packages/wallet-kernel/src/commands/secrets.ts
@@ -31725,7 +31968,7 @@ zoo`.split("\n"));
 			}
 		};
 	}));
-	// packages/wallet-chains/dist/message-BuXeKD8g.mjs
+	// packages/wallet-chains/dist/message-BvcSxUzn.mjs
 	init_secp256k1();
 	init_sha2();
 	init_utils();
@@ -32234,7 +32477,6 @@ zoo`.split("\n"));
 	var MESSAGE_LINES = 6;
 	var MESSAGE_CODE_POINTS = 320;
 	var FIELD_CODE_POINTS = 96;
-	var ORDER_ITEMS = 4;
 	var zh = {
 		titles: {
 			transfer: "确认转账",
@@ -32272,6 +32514,8 @@ zoo`.split("\n"));
 		typedType: (name) => `类型：${name}`,
 		typedUnverified: "钱包无法核实此签名授权的内容",
 		typedField: (path, value) => `${path}：${value}`,
+		typedCommitment: "只签署哈希或原始字节；钱包无法看到它们所承诺的内容",
+		typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
 		typedOversize: "此类型数据过大，无法完整显示",
 		orderGive: (amount) => `付出 ${amount}`,
 		orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
@@ -32350,6 +32594,8 @@ zoo`.split("\n"));
 		typedType: (name) => `Type: ${name}`,
 		typedUnverified: "The wallet cannot verify what this signature authorises",
 		typedField: (path, value) => `${path}: ${value}`,
+		typedCommitment: "It signs only hashes or raw bytes; the wallet cannot see what they commit to",
+		typedVariant: "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
 		typedOversize: "This typed data is too large to show in full",
 		orderGive: (amount) => `Give ${amount}`,
 		orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
@@ -32488,9 +32734,9 @@ zoo`.split("\n"));
 		];
 	}
 	function transactionPrompt(catalog, intent) {
-		var _intent$programs, _intent$warnings;
+		var _intent$programs, _intent$programs2, _intent$warnings;
 		const network = intent.network === void 0 ? [] : [catalog.networkLine(networkLabel(catalog, intent.network))];
-		const caveat = intent.blind === void 0 ? intent.verifiability === "opaque" ? intent.family === "solana" ? [catalog.solanaPrograms(((_intent$programs = intent.programs) !== null && _intent$programs !== void 0 ? _intent$programs : []).join(", ")), catalog.solanaProgramsWarning] : intent.family === "bitcoin" ? [catalog.externalInputs] : [catalog.unverifiedEffects] : intent.verifiability === "partial" ? [catalog.otherOutflows] : [] : [];
+		const caveat = intent.blind === void 0 ? intent.verifiability === "opaque" ? intent.family === "solana" ? [catalog.solanaPrograms(((_intent$programs = intent.programs) !== null && _intent$programs !== void 0 ? _intent$programs : []).join(", ")), catalog.solanaProgramsWarning] : intent.family === "bitcoin" ? [catalog.externalInputs] : [catalog.unverifiedEffects] : intent.verifiability === "partial" ? [catalog.otherOutflows] : [] : intent.family === "solana" && intent.verifiability === "opaque" ? [catalog.solanaPrograms(((_intent$programs2 = intent.programs) !== null && _intent$programs2 !== void 0 ? _intent$programs2 : []).join(", ")), catalog.solanaProgramsWarning] : [];
 		const warnings = (_intent$warnings = intent.warnings) !== null && _intent$warnings !== void 0 ? _intent$warnings : [];
 		return {
 			title: intent.blind === void 0 ? catalog.titles[intent.summary] : catalog.blindTitle,
@@ -32535,7 +32781,7 @@ zoo`.split("\n"));
 			const end = formatAmount(catalog, item.endAmount);
 			return start === end ? start : `${start} → ${end}`;
 		};
-		const capped = (lines) => lines.length > ORDER_ITEMS ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)] : lines;
+		const capped = (lines) => lines.length > 4 ? [...lines.slice(0, 4), catalog.moreItems(lines.length - 4)] : lines;
 		return [
 			...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),
 			...capped(order.consideration.map((item) => catalog.orderReceive(item.recipient, amount(item)))),
@@ -32555,7 +32801,13 @@ zoo`.split("\n"));
 		if (message.seaport !== void 0) return orderLines(catalog, message.seaport);
 		if (message.safe !== void 0) return safeLines(catalog, message.safe);
 		if (intent.approvals.length > 0) return [catalog.otherOutflows, ...effectLines(catalog, intent)];
-		if (message.fields !== void 0) return [catalog.typedUnverified, ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value))];
+		if (message.fields !== void 0) return [
+			...intent.blind === "typed-data-variant" ? [catalog.typedVariant] : [],
+			...intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : [],
+			catalog.typedUnverified,
+			...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value))
+		];
+		if (intent.blind === "typed-data-variant") return [catalog.typedVariant, catalog.typedOversize];
 		if (intent.blind === "typed-data-oversize") return [catalog.typedOversize];
 		throw new KernelError("integrity", "unreachable: typed data is neither recognised, shown nor blind");
 	}
@@ -32583,13 +32835,13 @@ zoo`.split("\n"));
 			title: intent.blind === void 0 ? catalog.titles[intent.summary] : catalog.blindTitle,
 			description: joinLines(typedDataLines(catalog, intent, message))
 		};
-		if (((_message$signIn = message.signIn) === null || _message$signIn === void 0 ? void 0 : _message$signIn.status) === "valid") return {
+		if (intent.blind === void 0 && ((_message$signIn = message.signIn) === null || _message$signIn === void 0 ? void 0 : _message$signIn.status) === "valid") return {
 			title: catalog.signInTitle,
 			description: joinLines(signInLines(catalog, message.signIn))
 		};
 		return {
-			title: catalog.titles.message,
-			description: joinLines([...message.signIn === void 0 ? [] : signInLines(catalog, message.signIn), ...textLines(catalog, message.text)])
+			title: intent.blind === void 0 ? catalog.titles.message : catalog.blindTitle,
+			description: joinLines([...intent.blind === void 0 ? message.signIn === void 0 ? [] : signInLines(catalog, message.signIn) : [catalog.blindBytes], ...textLines(catalog, message.text)])
 		};
 	}
 	function chainPrompt(locale, intent) {
