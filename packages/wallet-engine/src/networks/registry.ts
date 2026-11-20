@@ -12,7 +12,9 @@ export type FeeModel =
   /** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
   | { readonly kind: "execution" }
   /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
-  | { readonly kind: "op-stack" };
+  | { readonly kind: "op-stack" }
+  /** Scroll: an L1 data fee from the L1GasPriceOracle predeploy, priced on the signed encoding. */
+  | { readonly kind: "scroll" };
 
 export type NetworkInfo = NetworkMeta & {
   readonly multicall3?: string;
@@ -68,26 +70,19 @@ export const EVM_FACTS: Readonly<
   43113: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
 };
 
-const evmEntry = (meta: NetworkMeta): NetworkInfo | undefined => {
-  const facts = EVM_FACTS[meta.chainId];
+export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.flatMap((meta) => {
+  const facts = meta.family === "evm" ? EVM_FACTS[meta.chainId] : undefined;
   if (facts === undefined) {
-    return undefined;
+    return [];
   }
-  return {
-    ...meta,
-    multicall3: facts.multicall3,
-    feeModel: facts.feeModel,
-    ...(DELEGATOR_CODE_HASHES[meta.chainId] === undefined
-      ? {}
-      : { delegatorCodeHash: DELEGATOR_CODE_HASHES[meta.chainId] }),
-  };
-};
-
-export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
-  (n) => n.family === "evm",
-).flatMap((meta) => {
-  const entry = evmEntry(meta);
-  return entry === undefined ? [] : [entry];
+  const delegatorCodeHash = DELEGATOR_CODE_HASHES[meta.chainId];
+  return [
+    {
+      ...meta,
+      ...facts,
+      ...(delegatorCodeHash === undefined ? {} : { delegatorCodeHash }),
+    },
+  ];
 });
 
 export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(

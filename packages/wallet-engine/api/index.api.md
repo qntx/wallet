@@ -1019,6 +1019,10 @@ type FeeModel =
 /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
     {
     readonly kind: "op-stack";
+} |
+/** Scroll: an L1 data fee from the L1GasPriceOracle predeploy, priced on the signed encoding. */
+    {
+    readonly kind: "scroll";
 };
 
 // @public

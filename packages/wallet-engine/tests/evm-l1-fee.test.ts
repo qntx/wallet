@@ -1,11 +1,20 @@
-import { toFunctionSelector, numberToHex } from "viem";
+import {
+  decodeFunctionData,
+  getAddress,
+  numberToHex,
+  parseAbi,
+  parseTransaction,
+  serializeTransaction,
+  toFunctionSelector,
+} from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { Wallet } from "@qntx/wallet";
 import type { chains } from "@qntx/wallet/chains";
 
-import { OP_GAS_PRICE_ORACLE } from "../src/chains/evm.ts";
+import { OP_GAS_PRICE_ORACLE, SCROLL_L1_GAS_PRICE_ORACLE } from "../src/chains/evm.ts";
 import { NetworkController } from "../src/networks/controller.ts";
+import type { NetworkInfo } from "../src/networks/registry.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { TransactionController } from "../src/transactions/controller.ts";
 import { fakeSignedEvm, idleNetworkDeps } from "./send-helpers.ts";
@@ -18,6 +27,8 @@ const ETHEREUM = "eip155:1";
 const VERIFY = { kind: "password" as const, password: "pw" };
 const GET_L1_FEE = toFunctionSelector("getL1Fee(bytes)");
 const GET_OPERATOR_FEE = toFunctionSelector("getOperatorFee(uint256)");
+const GET_L1_FEE_ABI = parseAbi(["function getL1Fee(bytes data) view returns (uint256)"]);
+const MAX_SIG = { r: `0x${"ff".repeat(32)}`, s: `0x${"ff".repeat(32)}`, v: 28n } as const;
 
 type Node = { l1: bigint | "fail"; operator: bigint; calls: Array<{ to: string; data: string }> };
 const newNode = (l1: bigint | "fail" = 0n, operator = 0n): Node => ({ l1, operator, calls: [] });
@@ -57,7 +68,25 @@ const answer = (node: Node, method: string, params: unknown[]): unknown => {
   }
 };
 
-const world = (options: { gateway?: boolean } = {}) => {
+/** Reports `BASE` with the scroll fee model; Scroll joins the built-in registry in a later layer. */
+class ScrollNetworks extends NetworkController {
+  override info(network: string): NetworkInfo {
+    const info = super.info(network);
+    return network === BASE ? { ...info, feeModel: { kind: "scroll" } } : info;
+  }
+}
+
+/** The `bytes` argument of the node's first call to `to` — the getL1Fee read. */
+const pricedBytes = (calls: Node["calls"], to: string): `0x${string}` => {
+  const call = calls.find((c) => c.to.toLowerCase() === to.toLowerCase());
+  const { args } = decodeFunctionData({
+    abi: GET_L1_FEE_ABI,
+    data: (call?.data ?? "0x") as `0x${string}`,
+  });
+  return args[0];
+};
+
+const world = (options: { gateway?: boolean; scroll?: boolean } = {}) => {
   const primary = newNode();
   const independent = newNode();
   const backing = { collections: new Map<string, Map<string, Uint8Array>>() };
@@ -92,7 +121,8 @@ const world = (options: { gateway?: boolean } = {}) => {
   } as unknown as ReturnType<typeof chains>;
 
   const boot = async () => {
-    const networks = new NetworkController({
+    const Networks = options.scroll === true ? ScrollNetworks : NetworkController;
+    const networks = new Networks({
       ...idleNetworkDeps,
       fetch: fetchImpl,
       rpc: { [BASE]: [HOST], [ETHEREUM]: [HOST] },
@@ -177,55 +207,6 @@ describe("OP Stack L1 fee", () => {
     expect(over.checks).toContain("fee-exceeds-amount");
   });
 
-  it("uses the larger independent read and flags a mismatch", async () => {
-    const w = world({ gateway: true });
-    w.primary.l1 = 1000n;
-    w.independent.l1 = 2000n;
-    const ctl = await w.boot();
-    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.checks).toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("2000");
-  });
-
-  it("keeps the larger primary read when the independent one is smaller", async () => {
-    const w = world({ gateway: true });
-    w.primary.l1 = 2000n;
-    w.independent.l1 = 1000n;
-    const ctl = await w.boot();
-    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.checks).toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("2000");
-  });
-
-  it("agreeing reads raise no mismatch", async () => {
-    const w = world({ gateway: true });
-    w.primary.l1 = 1000n;
-    w.independent.l1 = 1100n;
-    const ctl = await w.boot();
-    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.checks).not.toContain("fee-mismatch");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1100");
-  });
-
-  it("a failed read is reads-unverified and leaves the L1 fee out", async () => {
-    const w = world();
-    w.primary.l1 = "fail";
-    const ctl = await w.boot();
-    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.checks).toContain("reads-unverified");
-    expect(prepared.intent.fee?.l1Data).toBeUndefined();
-  });
-
-  it("a failed independent read is reads-unverified but keeps the primary fee", async () => {
-    const w = world({ gateway: true });
-    w.primary.l1 = 1000n;
-    w.independent.l1 = "fail";
-    const ctl = await w.boot();
-    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
-    expect(prepared.checks).toContain("reads-unverified");
-    expect(prepared.intent.fee?.l1Data?.amount).toBe("1000");
-  });
-
   it("does not query the oracle on other networks", async () => {
     const w = world();
     w.primary.l1 = 1000n;
@@ -260,5 +241,147 @@ describe("OP Stack L1 fee", () => {
       asset: "native",
       amount: "1000",
     });
+  });
+});
+
+/** The primary/independent read protocol every fee model's oracle read shares. */
+describe.each([
+  { model: "op-stack", scroll: false },
+  { model: "scroll", scroll: true },
+])("beyond-gas fee reads ($model)", ({ scroll }) => {
+  it("uses the larger independent read and flags a mismatch", async () => {
+    const w = world({ gateway: true, scroll });
+    w.primary.l1 = 1000n;
+    w.independent.l1 = 2000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(prepared.checks).toContain("fee-mismatch");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("2000");
+  });
+
+  it("keeps the larger primary read when the independent one is smaller", async () => {
+    const w = world({ gateway: true, scroll });
+    w.primary.l1 = 2000n;
+    w.independent.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(prepared.checks).toContain("fee-mismatch");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("2000");
+  });
+
+  it("agreeing reads raise no mismatch", async () => {
+    const w = world({ gateway: true, scroll });
+    w.primary.l1 = 1000n;
+    w.independent.l1 = 1100n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(prepared.checks).not.toContain("fee-mismatch");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1100");
+  });
+
+  it("a failed read is reads-unverified and leaves the L1 fee out", async () => {
+    const w = world({ scroll });
+    w.primary.l1 = "fail";
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(prepared.checks).toContain("reads-unverified");
+    expect(prepared.intent.fee?.l1Data).toBeUndefined();
+  });
+
+  it("a failed independent read is reads-unverified but keeps the primary fee", async () => {
+    const w = world({ gateway: true, scroll });
+    w.primary.l1 = 1000n;
+    w.independent.l1 = "fail";
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(prepared.checks).toContain("reads-unverified");
+    expect(prepared.intent.fee?.l1Data?.amount).toBe("1000");
+  });
+});
+
+describe("Scroll L1 fee", () => {
+  it("adds the L1 data fee to the intent", async () => {
+    const w = world({ scroll: true });
+    w.primary.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(prepared.intent.fee?.l1Data).toStrictEqual({ asset: "native", amount: "1000" });
+    expect(prepared.checks).not.toContain("reads-unverified");
+  });
+
+  it("queries the L1GasPriceOracle predeploy for the transaction's signed encoding", async () => {
+    const w = world({ scroll: true });
+    const ctl = await w.boot();
+    await ctl.prepareSend(params(BASE, 1n), "req-1");
+    expect(w.primary.calls.map((c) => c.to.toLowerCase())).toStrictEqual([
+      SCROLL_L1_GAS_PRICE_ORACLE.toLowerCase(),
+    ]);
+    const bytes = pricedBytes(w.primary.calls, SCROLL_L1_GAS_PRICE_ORACLE);
+    expect(bytes).toBe(
+      serializeTransaction(
+        {
+          type: "eip1559",
+          chainId: 8453,
+          nonce: 0,
+          gas: 25_200n,
+          to: getAddress("0x00000000000000000000000000000000deadbeef"),
+          value: 1n,
+          data: "0x",
+          accessList: [],
+          maxFeePerGas: 4n,
+          maxPriorityFeePerGas: 2n,
+        },
+        MAX_SIG,
+      ),
+    );
+    const parsed = parseTransaction(bytes);
+    expect(parsed.type).toBe("eip1559");
+    expect(parsed.chainId).toBe(8453);
+    expect(parsed.nonce).toBe(0);
+    expect(parsed.gas).toBe(25_200n);
+    expect(parsed.to?.toLowerCase()).toBe("0x00000000000000000000000000000000deadbeef");
+    expect(parsed.value).toBe(1n);
+    expect(parsed.maxFeePerGas).toBe(4n);
+    expect(parsed.maxPriorityFeePerGas).toBe(2n);
+    expect(parsed.r).toBe(MAX_SIG.r);
+    expect(parsed.s).toBe(MAX_SIG.s);
+    expect(parsed.yParity).toBe(1);
+  });
+
+  it("flags fee-exceeds-amount only when the L1 fee pushes the fee over the amount", async () => {
+    const amount = 101_000n;
+    const without = world({ scroll: true });
+    const ctlWithout = await without.boot();
+    const none = await ctlWithout.prepareSend(params(BASE, amount), "req-1");
+    expect(none.checks).not.toContain("fee-exceeds-amount");
+
+    const withL1 = world({ scroll: true });
+    withL1.primary.l1 = 1000n;
+    const ctlWith = await withL1.boot();
+    const over = await ctlWith.prepareSend(params(BASE, amount), "req-1");
+    expect(over.checks).toContain("fee-exceeds-amount");
+  });
+
+  it("does not query the oracle on other networks", async () => {
+    const w = world({ scroll: true });
+    w.primary.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(ETHEREUM, 1n), "req-1");
+    expect(w.primary.calls).toHaveLength(0);
+    expect(prepared.intent.fee?.l1Data).toBeUndefined();
+  });
+
+  it("a replacement carries the L1 fee", async () => {
+    const w = world({ scroll: true });
+    w.primary.l1 = 1000n;
+    const ctl = await w.boot();
+    const prepared = await ctl.prepareSend(params(BASE, 1n), "req-1");
+    const original = await prepared.submit(VERIFY, () => undefined);
+    w.primary.l1 = 3000n;
+    const replacement = await ctl.prepareReplacement(
+      { method: "speed-up", txId: original.id },
+      "req-2",
+    );
+    expect(replacement.intent.fee?.l1Data?.amount).toBe("3000");
   });
 });
