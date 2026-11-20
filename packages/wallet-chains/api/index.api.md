@@ -64,7 +64,7 @@ export type AssetFlow = {
 export type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-export type BlindReason = "message-bytes" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded";
+export type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction";
 
 // @public (undocumented)
 export class ChainError extends Error {
@@ -182,6 +182,12 @@ export type IntentWarning = {
 
 // @public
 export const isBlindIntent: (intent: Pick<DisplayIntent, "blind">) => boolean;
+
+// @public
+export const isHexRendering: (text: string) => boolean;
+
+// @public
+export const isReadableText: (text: string) => boolean;
 
 // @public
 export const isUnsafeCodePoint: (codePoint: number) => boolean;

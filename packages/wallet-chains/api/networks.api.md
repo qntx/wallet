@@ -49,7 +49,7 @@ type AssetFlow = {
 };
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction";
 
 // @public (undocumented)
 export const BUILT_IN_NETWORKS: ReadonlyArray<NetworkMeta>;

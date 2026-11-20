@@ -503,6 +503,10 @@ export type BitcoinSignResult = {
     readonly kind: "bitcoin.psbts";
     readonly signedPsbts: ReadonlyArray<Uint8Array>;
     readonly txids: ReadonlyArray<string>;
+    readonly refused?: {
+        readonly index: number;
+        readonly error: string;
+    };
 };
 
 // @public (undocumented)
@@ -1073,7 +1077,7 @@ export class HistoryController extends Controller<HistoryState> {
 
 // @public (undocumented)
 export type HistoryControllerOptions = {
-    readonly networks: Pick<NetworkController, "enabled" | "client" | "independentClient" | "solanaRpc" | "esplora">;
+    readonly networks: Pick<NetworkController, "enabled" | "client" | "independentClient" | "independentSolanaRpc" | "independentEsplora" | "solanaRpc" | "esplora">;
     readonly chains: {
         readonly account: (params: {
             readonly walletId: string;
@@ -1437,6 +1441,7 @@ type Options$3 = {
 type Options = {
     readonly networks: NetworkController;
     readonly chains: Pick<ChainsApi, "account">;
+    readonly ownBitcoinTxids: () => ReadonlySet<string>;
     readonly openStore: () => Promise<EngineStore>;
     readonly setTimer: (ms: number, fn: () => unknown) => () => void;
     readonly logger: EngineLogger;
@@ -2091,6 +2096,10 @@ export type SolanaSignResult = {
     readonly send: boolean;
     readonly signatures?: ReadonlyArray<string>;
     readonly signedTransactions?: ReadonlyArray<Uint8Array>;
+    readonly refused?: {
+        readonly index: number;
+        readonly error: string;
+    };
 } | {
     readonly kind: "solana.message";
     readonly signature: Uint8Array;
@@ -2498,6 +2507,7 @@ export class TransactionController extends Controller<TransactionControllerState
         readonly groupIndex: number;
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
+    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
     txById(id: string): TrackedTransaction | undefined;
 }
 

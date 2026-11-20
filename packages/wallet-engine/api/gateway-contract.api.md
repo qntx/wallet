@@ -262,6 +262,9 @@ const history_2: Endpoint<z.ZodMiniObject<{
 export { history_2 as history }
 
 // @public
+export const HISTORY_CURSOR_MAX: bigint;
+
+// @public
 export const HISTORY_ITEMS_MAX = 500;
 
 // @public
@@ -504,9 +507,6 @@ export const phishingListResponse: z.ZodMiniDiscriminatedUnion<[z.ZodMiniObject<
 }, z.core.$strip>], "kind">;
 
 // @public
-export const PRICE_ASSETS_PER_UNIT = 25;
-
-// @public
 export const priceAssetId: z.ZodMiniString<string>;
 
 // @public (undocumented)
@@ -579,9 +579,6 @@ export const pricesRequest: z.ZodMiniObject<{
     }>;
     assets: z.ZodMiniArray<z.ZodMiniString<string>>;
 }, z.core.$strip>;
-
-// @public
-export const pricesRequestCost: (request: PricesRequest) => number;
 
 // @public (undocumented)
 export type PricesResponse = z.infer<typeof pricesResponse>;
@@ -662,6 +659,9 @@ export const RPC_COST_WEIGHTS: {
     readonly heavy: 3;
     readonly scan: 10;
 };
+
+// @public
+export const RPC_ELEMENTS_PER_UNIT = 10;
 
 // @public
 export const RPC_METHOD_COST: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, RpcCostClass>>;

@@ -48,7 +48,7 @@ export const backupEnvelopeText: Validator<string>;
 
 // @public (undocumented)
 export type BackupEnvelopeWire = {
-    readonly version: 2;
+    readonly version: 3;
     readonly createdAt: number;
     readonly header: string;
     readonly factors: ReadonlyArray<BackupEnvelopeFactor>;

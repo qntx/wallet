@@ -95,7 +95,7 @@ type AssetFlow = {
 type BitcoinTemplate = "btc.bip44" | "btc.bip49" | "btc.bip84" | "btc.bip86";
 
 // @public
-type BlindReason = "message-bytes" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded";
+type BlindReason = "message-bytes" | "typed-data-commitment" | "typed-data-variant" | "typed-data-oversize" | "token-function" | "account-code" | "safe-delegatecall" | "safe-refund-unbounded" | "core-instruction";
 
 // @public (undocumented)
 export const canonicalHex: (value: bigint) => string;
@@ -362,6 +362,9 @@ type SafeTransaction = {
 };
 
 // @public
+export const SEAPORT_ORDER_ITEMS = 4;
+
+// @public
 type SeaportItem = {
     readonly kind: "native" | "erc20" | "erc721" | "erc1155" | "erc721-criteria" | "erc1155-criteria";
     readonly token: string;
@@ -518,7 +521,10 @@ type TypedDataField = {
 };
 
 // @public
-export const typedDataFields: (json: TypedDataInput) => ReadonlyArray<TypedDataLeaf> | undefined;
+export const typedDataFields: (json: TypedDataInput) => {
+    readonly fields: ReadonlyArray<TypedDataLeaf>;
+    readonly commitment: boolean;
+} | undefined;
 
 // @public
 type TypedDataInput = {

@@ -77,6 +77,7 @@ describe("engine surface", () => {
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareEvmInternal");
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("prepareSolanaSwap");
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("submitDappBitcoin");
+    expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("submitDappSolana");
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("recordBatch");
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("markDepositClaimed");
     expectTypeOf<WalletEngine["transactions"]>().not.toHaveProperty("batchById");

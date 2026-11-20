@@ -248,6 +248,10 @@ type BitcoinSignResult = {
     readonly kind: "bitcoin.psbts";
     readonly signedPsbts: ReadonlyArray<Uint8Array>;
     readonly txids: ReadonlyArray<string>;
+    readonly refused?: {
+        readonly index: number;
+        readonly error: string;
+    };
 };
 
 // @public
@@ -1308,6 +1312,10 @@ type SolanaSignResult = {
     readonly send: boolean;
     readonly signatures?: ReadonlyArray<string>;
     readonly signedTransactions?: ReadonlyArray<Uint8Array>;
+    readonly refused?: {
+        readonly index: number;
+        readonly error: string;
+    };
 } | {
     readonly kind: "solana.message";
     readonly signature: Uint8Array;
@@ -1663,6 +1671,7 @@ class TransactionController extends Controller<TransactionControllerState> {
         readonly groupIndex: number;
     }, network: string, outpoints: ReadonlyArray<string>, frozen: boolean): Promise<void>;
     submitDappBitcoin(network: string, walletId: string, prepared: PreparedBitcoinPsbt, result: SignResult): Promise<string>;
+    submitDappSolana(network: string, walletId: string, wire: Uint8Array, lastValidBlockHeight: bigint, intent: DisplayIntent): Promise<string>;
     txById(id: string): TrackedTransaction | undefined;
 }
 
