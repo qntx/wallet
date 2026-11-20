@@ -43,6 +43,7 @@ import {
   recoverEvmSigner,
 } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana, verifySolanaSignature } from "@qntx/wallet-chains/solana";
+import { buildTronRawData, verifyTronTransactionSignature } from "@qntx/wallet-chains/tron";
 import type { ProtocolValue } from "@qntx/wallet/protocol";
 
 import { chainPrompt } from "../src/modules/chains/prompt.ts";
@@ -50,6 +51,8 @@ import type { Pbkdf2 } from "../src/platform.ts";
 import { createHarness } from "./harness.ts";
 import type { KernelResponse } from "./harness.ts";
 import { subtlePbkdf2 } from "./helpers.ts";
+import { fakeKeystore } from "./keystore.ts";
+import type { KeystoreCall } from "./keystore.ts";
 
 function ok(response: KernelResponse): ProtocolValue {
   if ("err" in response) {
@@ -84,6 +87,20 @@ function strField(value: ProtocolValue, key: string): string {
   }
   return v;
 }
+
+const tronVectors = JSON.parse(
+  readFileSync(join(import.meta.dirname, "../../../vectors/chains/tron.json"), "utf8"),
+) as {
+  keys: Array<{ name: string; privateKey: string; address: string }>;
+  transactions: Array<{ name: string; rawDataHex: string; signature: string; input: unknown }>;
+  messages: Array<{
+    name: string;
+    privateKey: string;
+    address: string;
+    messageHex: string;
+    signature: string;
+  }>;
+};
 
 const vectors = JSON.parse(
   readFileSync(join(import.meta.dirname, "../../../vectors/templates/chains.json"), "utf8"),
@@ -1298,5 +1315,371 @@ describe("chain.sign", () => {
       index: 0,
     };
     expect("err" in (await callSign(h, session, legacy))).toBe(true);
+  });
+});
+
+/** The byte offset of the field-11 (contract) tag in a raw_data buffer, or -1. */
+const contractTagAt = (base: Uint8Array): number => base.findIndex((b, i) => b === 0x5a && i > 2);
+
+/** The prompt of the last prompted keystore `open`, if the kernel prompted at all. */
+const lastOpenPrompt = (calls: ReadonlyArray<KeystoreCall>) => {
+  const last = calls.findLast((c) => c.op === "open" && c.prompt !== undefined);
+  return last?.op === "open" ? last.prompt : undefined;
+};
+
+describe("chain.sign tron", () => {
+  const ANVIL = tronVectors.keys.find((k) => k.name === "anvil");
+  if (ANVIL === undefined) {
+    throw new Error("vectors: no anvil key");
+  }
+  const NETWORK = "tron:728126428";
+  const TAKEOVER_KEYS =
+    "TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG, TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC";
+  const PERMISSION_UPDATE = tronVectors.transactions.find(
+    (t) => t.name === "account-permission-update",
+  );
+  if (PERMISSION_UPDATE === undefined) {
+    throw new Error("vectors: no account-permission-update");
+  }
+
+  const setup = async () => {
+    const h = createHarness();
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "passkey", credentialId: CREDENTIAL_ID, prf: new Uint8Array(PRF_VAULT) },
+      }),
+    );
+    const session = strField(res, "session");
+    ok(await h.call("vault.setBlindSigning", { enabled: true, verify: PASSKEY() }, session));
+    return { h, session, walletId: strField(field(res, "wallet"), "walletId") };
+  };
+
+  const callSign = async (
+    h: ReturnType<typeof createHarness>,
+    session: string,
+    request: unknown,
+    verify: unknown = PASSKEY(),
+  ) => h.call("chain.sign", { request, verify }, session);
+
+  const importTronKey = async (
+    h: ReturnType<typeof createHarness>,
+    session: string,
+    privateKey: string,
+  ) => {
+    const res = ok(
+      await h.call("keys.import", { family: "tron", secret: hexToBytes(privateKey) }, session),
+    );
+    return { kind: "imported" as const, keyId: strField(res, "keyId"), family: "tron" as const };
+  };
+
+  it("signs every transactions and messages vector with an imported key", async () => {
+    const { h, session } = await setup();
+    const account = await importTronKey(h, session, ANVIL.privateKey);
+    for (const vector of tronVectors.transactions.filter((v) => v.input !== null)) {
+      const res = ok(
+        // oxlint-disable-next-line no-await-in-loop -- signatures are asserted one vector at a time
+        await callSign(h, session, {
+          kind: "tron.transaction",
+          network: NETWORK,
+          account,
+          rawData: hexToBytes(vector.rawDataHex),
+        }),
+      );
+      expect(Buffer.from(bytesField(res, "signature")).toString("hex")).toBe(
+        vector.signature.toLowerCase(),
+      );
+    }
+    for (const vector of tronVectors.messages.filter((m) => m.privateKey === ANVIL.privateKey)) {
+      const res = ok(
+        // oxlint-disable-next-line no-await-in-loop -- signatures are asserted one vector at a time
+        await callSign(h, session, {
+          kind: "tron.message",
+          network: NETWORK,
+          account,
+          message: hexToBytes(vector.messageHex),
+        }),
+      );
+      expect(Buffer.from(bytesField(res, "signature")).toString("hex")).toBe(vector.signature);
+    }
+  });
+
+  it("HD and imported keys sign identically (BIP-44 group 0)", async () => {
+    const h1 = createHarness();
+    await h1.settle();
+    const imported1 = ok(
+      await h1.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes("test test test test test test test test test test test junk"),
+        factor: {
+          kind: "passkey",
+          credentialId: CREDENTIAL_ID,
+          prf: new Uint8Array(PRF_VAULT),
+        },
+      }),
+    );
+    const session1 = strField(imported1, "session");
+    const walletId1 = strField(field(imported1, "wallet"), "walletId");
+    const accountRes = ok(
+      await h1.call(
+        "wallet.accounts",
+        { walletId: walletId1, groupIndex: 0, template: "tron.bip44", network: NETWORK },
+        session1,
+      ),
+    );
+    const address = strField(accountRes, "address");
+    const rawData = buildTronRawData(
+      {
+        refBlock: { number: 1, id: "a".repeat(64) },
+        expiration: 1_700_000_000_000,
+        timestamp: 1_699_999_000_000,
+      },
+      { type: "TransferContract", owner: address, to: ANVIL.address, amount: 1n },
+    );
+    const hdRes = ok(
+      await callSign(h1, session1, {
+        kind: "tron.transaction",
+        network: NETWORK,
+        account: hd(walletId1, "tron.bip44"),
+        rawData,
+      }),
+    );
+    const h2 = createHarness();
+    await h2.settle();
+    const session2 = strField(
+      ok(
+        await h2.call("wallet.importMnemonic", {
+          mnemonic: utf8ToBytes(vectors.mnemonic),
+          factor: {
+            kind: "passkey",
+            credentialId: CREDENTIAL_ID,
+            prf: new Uint8Array(PRF_VAULT),
+          },
+        }),
+      ),
+      "session",
+    );
+    const account2 = await importTronKey(
+      h2,
+      session2,
+      "15f0bbb1774be40b7a8d7965d637f324bda2f711fc5726a3dcc19585c6950954",
+    );
+    const impRes = ok(
+      await callSign(h2, session2, {
+        kind: "tron.transaction",
+        network: NETWORK,
+        account: account2,
+        rawData,
+      }),
+    );
+    expect(bytesField(impRes, "signature")).toStrictEqual(bytesField(hdRes, "signature"));
+    expect(verifyTronTransactionSignature(rawData, bytesField(impRes, "signature"), address)).toBe(
+      true,
+    );
+  });
+
+  it("refuses a transaction whose owner differs from the account", async () => {
+    const { h, session, walletId } = await setup();
+    const rawData = buildTronRawData(
+      {
+        refBlock: { number: 1, id: "a".repeat(64) },
+        expiration: 1_700_000_000_000,
+        timestamp: 1_699_999_000_000,
+      },
+      { type: "TransferContract", owner: ANVIL.address, to: ANVIL.address, amount: 1n },
+    );
+    const res = await callSign(h, session, {
+      kind: "tron.transaction",
+      network: NETWORK,
+      account: hd(walletId, "tron.bip44"),
+      rawData,
+    });
+    expect(errCode(res)).toBe("invalid-input");
+  });
+
+  it("refuses a bare 32-byte digest and a two-contract transaction", async () => {
+    const { h, session, walletId } = await setup();
+    const account = hd(walletId, "tron.bip44");
+    const digest = await callSign(h, session, {
+      kind: "tron.transaction",
+      network: NETWORK,
+      account,
+      rawData: new Uint8Array(32).fill(1),
+    });
+    expect(errCode(digest)).toBe("invalid-input");
+    const base = hexToBytes(tronVectors.transactions[0]!.rawDataHex);
+    /* Duplicate the field-11 (contract) entry at the end: the decoder rejects either the
+       non-ascending field order or the second contract outright. */
+    const tag = contractTagAt(base);
+    expect(tag).toBeGreaterThan(0);
+    const contractField = base.subarray(tag);
+    const twoContracts = new Uint8Array([...base, ...contractField]);
+    const res = await callSign(h, session, {
+      kind: "tron.transaction",
+      network: NETWORK,
+      account,
+      rawData: twoContracts,
+    });
+    expect(errCode(res)).toBe("invalid-input");
+  });
+
+  it("refuses transaction-shaped bytes as a tron.message", async () => {
+    const { h, session, walletId } = await setup();
+    const res = await callSign(h, session, {
+      kind: "tron.message",
+      network: NETWORK,
+      account: hd(walletId, "tron.bip44"),
+      message: hexToBytes(tronVectors.transactions[0]!.rawDataHex),
+    });
+    expect(errCode(res)).toBe("invalid-input");
+  });
+
+  it("refuses a tron request under an evm.bip44 template", async () => {
+    const { h, session, walletId } = await setup();
+    const res = await callSign(h, session, {
+      kind: "tron.transaction",
+      network: NETWORK,
+      account: hd(walletId, "evm.bip44"),
+      rawData: hexToBytes(tronVectors.transactions[0]!.rawDataHex),
+    });
+    expect(errCode(res)).toBe("invalid-input");
+  });
+
+  it("refuses an evm-family imported key for a tron request", async () => {
+    const { h, session } = await setup();
+    const res = ok(
+      await h.call(
+        "keys.import",
+        { family: "evm", secret: new Uint8Array(32).fill(0x22) },
+        session,
+      ),
+    );
+    const keyId = strField(res, "keyId");
+    const signRes = await callSign(h, session, {
+      kind: "tron.transaction",
+      network: NETWORK,
+      account: { kind: "imported", keyId, family: "tron" },
+      rawData: hexToBytes(tronVectors.transactions[0]!.rawDataHex),
+    });
+    expect(errCode(signRes)).toBe("invalid-input");
+  });
+
+  it("refuses a permission update before any prompt while blind signing is off", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const account = await importTronKey(h, session, ANVIL.privateKey);
+    const opens = fake.calls.filter((c: KeystoreCall) => c.op === "open").length;
+    const response = await callSign(
+      h,
+      session,
+      {
+        kind: "tron.transaction",
+        network: NETWORK,
+        account,
+        rawData: hexToBytes(PERMISSION_UPDATE.rawDataHex),
+      },
+      { kind: "hardware" },
+    );
+    expect(errCode(response)).toBe("blind-signing-disabled");
+    expect(fake.calls.filter((c: KeystoreCall) => c.op === "open")).toHaveLength(opens);
+  });
+
+  it("leads the permission-update prompt with the takeover line naming every new key", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const account = await importTronKey(h, session, ANVIL.privateKey);
+    ok(
+      await h.call(
+        "vault.setBlindSigning",
+        { enabled: true, verify: { kind: "hardware" } },
+        session,
+      ),
+    );
+    await callSign(
+      h,
+      session,
+      {
+        kind: "tron.transaction",
+        network: NETWORK,
+        account,
+        rawData: hexToBytes(PERMISSION_UPDATE.rawDataHex),
+      },
+      { kind: "hardware" },
+    );
+    const prompt = lastOpenPrompt(fake.calls);
+    const takeover = prompt?.description.split("\n")[0];
+    expect(takeover).toBe(
+      `Account takeover: this gives control of this account to ${TAKEOVER_KEYS}. Whoever holds these keys can move all of its assets.`,
+    );
+    /* Every key of the owner permission and of each active permission is named. */
+    const update = (
+      PERMISSION_UPDATE.input as {
+        contract: {
+          ownerPermission: { keys: ReadonlyArray<{ address: string }> };
+          actives: ReadonlyArray<{ keys: ReadonlyArray<{ address: string }> }>;
+        };
+      }
+    ).contract;
+    const expectedKeys = [
+      ...update.ownerPermission.keys.map((k: { address: string }) => k.address),
+      ...update.actives.flatMap((p: { keys: ReadonlyArray<{ address: string }> }) =>
+        p.keys.map((k) => k.address),
+      ),
+    ];
+    expect(expectedKeys).toStrictEqual(TAKEOVER_KEYS.split(", "));
+    for (const address of expectedKeys) {
+      expect(takeover).toContain(address);
+    }
+  });
+
+  it("a session that ends during the prompt fails locked without signing", async () => {
+    const fake = fakeKeystore();
+    const h = createHarness({ keystore: fake.keystore, maxSessionMs: 60_000 });
+    await h.settle();
+    const res = ok(
+      await h.call("wallet.importMnemonic", {
+        mnemonic: utf8ToBytes(vectors.mnemonic),
+        factor: { kind: "device" },
+      }),
+    );
+    const session = strField(res, "session");
+    const account = await importTronKey(h, session, ANVIL.privateKey);
+    const release = fake.hold();
+    const prompted = new Promise<void>((resolve) => {
+      fake.watchOpen(resolve);
+    });
+    const pending = callSign(
+      h,
+      session,
+      {
+        kind: "tron.transaction",
+        network: NETWORK,
+        account,
+        rawData: hexToBytes(tronVectors.transactions[0]!.rawDataHex),
+      },
+      { kind: "hardware" },
+    );
+    await prompted;
+    h.advance(60_001);
+    release();
+    const response = await pending;
+    expect(errCode(response)).toBe("locked");
+    expect("ok" in response).toBe(false);
   });
 });

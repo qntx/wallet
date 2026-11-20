@@ -34,6 +34,12 @@ export { lookupTronToken, tronTokenTable } from "./tokens.ts";
 export type { TronToken, TronTokenTable } from "./tokens.ts";
 export { mayBeTronTransaction, TRON_MESSAGE_PREFIX, tronMessageDigest } from "./message.ts";
 export { decodeTron } from "./decode.ts";
+export {
+  recoverTronMessageSigner,
+  recoverTronTransactionSigner,
+  verifyTronMessageSignature,
+  verifyTronTransactionSignature,
+} from "./verify.ts";
 
 /** The TRON network ids in `BUILT_IN_NETWORKS` — mainnet plus the Shasta and Nile testnets. */
 export const TRON_NETWORKS: ReadonlyArray<string> = Object.freeze(

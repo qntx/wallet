@@ -25,6 +25,13 @@ export const tronVectors = JSON.parse(
 ) as {
   keys: Array<{ name: string; privateKey: string; address: string }>;
   transactions: ReadonlyArray<TronVector>;
+  messages: ReadonlyArray<{
+    name: string;
+    privateKey: string;
+    address: string;
+    messageHex: string;
+    signature: string;
+  }>;
 };
 
 // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the fetched fixture file has a fixed shape

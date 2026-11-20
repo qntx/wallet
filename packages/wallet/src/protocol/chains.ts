@@ -184,6 +184,18 @@ export type ChainSignRequest =
       readonly format: "bip322-simple" | "legacy";
       readonly change: 0 | 1;
       readonly index: number;
+    }
+  | {
+      readonly kind: "tron.transaction";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly rawData: Uint8Array;
+    }
+  | {
+      readonly kind: "tron.message";
+      readonly network: string;
+      readonly account: AccountRef;
+      readonly message: Uint8Array;
     };
 
 export type ChainSignResult =
@@ -191,7 +203,11 @@ export type ChainSignResult =
   | { readonly kind: "evm.personal-message" | "evm.typed-data"; readonly signature: Uint8Array }
   | { readonly kind: "solana.transaction" | "solana.message"; readonly signature: Uint8Array }
   | { readonly kind: "bitcoin.psbt"; readonly signedPsbt: Uint8Array }
-  | { readonly kind: "bitcoin.message"; readonly signature: string };
+  | { readonly kind: "bitcoin.message"; readonly signature: string }
+  | {
+      readonly kind: "tron.transaction" | "tron.message";
+      readonly signature: Uint8Array;
+    };
 
 export type ChainSignParams = { readonly request: ChainSignRequest; readonly verify: VerifyFactor };
 
@@ -288,6 +304,19 @@ const signRequest: Validator<ChainSignRequest> = union(
     change: union(literal(0), literal(1)),
     index: int(0, 2147483647),
   }),
+  obj({
+    kind: literal("tron.transaction"),
+    network: caip2,
+    account: accountRef,
+    // java-tron TRANSACTION_MAX_BYTE_SIZE is 500 KiB.
+    rawData: bytes(1, 512000),
+  }),
+  obj({
+    kind: literal("tron.message"),
+    network: caip2,
+    account: accountRef,
+    message: bytes(1, 65536),
+  }),
 );
 
 const signResult: Validator<ChainSignResult> = union(
@@ -302,6 +331,10 @@ const signResult: Validator<ChainSignResult> = union(
   }),
   obj({ kind: literal("bitcoin.psbt"), signedPsbt: bytes(1, 131072) }),
   obj({ kind: literal("bitcoin.message"), signature: str(512) }),
+  obj({
+    kind: union(literal("tron.transaction"), literal("tron.message")),
+    signature: bytes(65, 65),
+  }),
 );
 
 export const CHAINS_METHODS: {

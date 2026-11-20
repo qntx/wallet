@@ -8,9 +8,9 @@
  *
  * The "transactions" section signs fixed-input transactions offline through tronweb's
  * TransactionBuilder + utils.crypto.signTransaction — each row records our own builder input
- * (header + TronContract JSON: bigint fields as decimal strings, bytes as 0x hex), the
- * canonical raw_data hex, the txID (sha256 of raw_data) and the signature. "input: null" marks a
- * decode-only row of a contract type the wallet does not model.
+ * (header + TronContract JSON: bigint fields as decimal strings, bytes as 0x hex), the canonical
+ * raw_data hex, the txID (sha256 of raw_data) and the signature. "input: null" marks a decode-only
+ * row of a contract type the wallet does not model.
  *
  * Run from the repo root: bun scripts/vectors/tron.ts
  */
@@ -30,6 +30,9 @@ const MNEMONICS = [
   "zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong",
   "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon art",
 ];
+
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
 
 function assert(condition: boolean, what: string): asserts condition {
   if (!condition) {
@@ -123,16 +126,20 @@ const invalid = [
   },
 ];
 
-
 // -- transactions -------------------------------------------------------------
 // Fixed offline inputs: the anvil key signs every case, the block reference and times are
 // constants, and every tronweb builder is driven fully offline (blockHeader supplies all four
 // ref fields so createTransaction never calls a node; txLocal: true on triggerSmartContract).
-const ANVIL_KEY = keys[3]?.privateKey as string;
-const OWNER = keys[3]?.address as string;
-const ALICE = keys[0]?.address as string; // TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC
-const BOB = keys[1]?.address as string; // THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3
-const CAROL = keys[2]?.address as string; // TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6
+const [alice, bob, carol, anvil] = keys;
+assert(
+  anvil !== undefined && alice !== undefined && bob !== undefined && carol !== undefined,
+  "keys section is incomplete",
+);
+const ANVIL_KEY = anvil.privateKey;
+const OWNER = anvil.address;
+const ALICE = alice.address; // TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC
+const BOB = bob.address; // THRF3GuPnvvPzKoaT8pJex5XHmo8NNbCb3
+const CAROL = carol.address; // TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6
 const USDT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 
 const REF = {
@@ -141,6 +148,7 @@ const REF = {
 };
 const HEADER = { refBlock: REF, expiration: 1767225660000, timestamp: 1767225600000 };
 const BLOCK_HEADER = {
+  // oxlint-disable-next-line no-bitwise -- low 16 bits of the block number, per the TRON spec
   ref_block_bytes: (REF.number & 0xffff).toString(16).padStart(4, "0"),
   ref_block_hash: REF.id.slice(16, 32),
   expiration: HEADER.expiration,
@@ -149,14 +157,15 @@ const BLOCK_HEADER = {
 const OPTS = { blockHeader: BLOCK_HEADER };
 
 const hex = (text: string): string => `0x${Buffer.from(text, "utf8").toString("hex")}`;
+const utf8 = (text: string): Uint8Array => Uint8Array.from(Buffer.from(text, "utf8"));
 
 const MEMO_TEXT = "tron fixed-vector memo";
 
-const OPS_HEX = "02" + "00".repeat(2) + "80" + "00".repeat(28); // TransferContract(1), TriggerSmartContract(31)
+const OPS_HEX = `02${"00".repeat(2)}80${"00".repeat(28)}`; // TransferContract(1), TriggerSmartContract(31)
 
 const transactions: Array<{
   name: string;
-  input: Record<string, unknown> | null;
+  input: unknown;
   rawDataHex: string;
   txId: string;
   signature: string;
@@ -164,17 +173,27 @@ const transactions: Array<{
 
 const record = async (
   name: string,
-  input: Record<string, unknown> | null,
+  input: unknown,
   build: () => Promise<Record<string, any>>,
 ): Promise<void> => {
-  const tx = (await build()) as Record<string, any>;
-  const signed = (await tronWeb.trx.sign(tx as never, ANVIL_KEY)) as Record<string, any>;
-  const rawDataHex = signed["raw_data_hex"] as string;
-  const txId = signed["txID"] as string;
-  const signature = (signed["signature"] as string[])[0];
+  const tx = await build();
+  const signed: unknown = await tronWeb.trx.sign(
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- tronweb's sign() wants its own Transaction shape; our record is the same object
+    tx as Parameters<typeof tronWeb.trx.sign>[0],
+    ANVIL_KEY,
+  );
+  assert(isRecord(signed), `${name} signed tx is not an object`);
+  const rawDataHex = signed["raw_data_hex"];
+  const txId = signed["txID"];
+  const signatures = signed["signature"];
+  assert(Array.isArray(signatures), `${name} signature list is missing`);
+  const signature = signatures.find((s): s is string => typeof s === "string");
   assert(typeof rawDataHex === "string" && /^[0-9a-f]+$/.test(rawDataHex), `${name} raw_data_hex`);
   assert(typeof txId === "string" && /^[0-9a-f]{64}$/.test(txId), `${name} txID`);
-  assert(typeof signature === "string" && /^[0-9a-fA-F]{130}$/.test(signature), `${name} signature`);
+  assert(
+    typeof signature === "string" && /^[0-9a-fA-F]{130}$/.test(signature),
+    `${name} signature`,
+  );
   transactions.push({ name, input, rawDataHex, txId, signature });
 };
 
@@ -186,27 +205,40 @@ const triggerData = async (
   parameters: Array<{ type: string; value: unknown }>,
   contract: (data: string) => Record<string, unknown>,
 ): Promise<void> => {
-  let built: Record<string, any> | undefined;
-  await record(
-    name,
-    null,
-    async () => {
-      built = (await tronWeb.transactionBuilder.triggerSmartContract(
-        contractAddress,
-        selector,
-        { txLocal: true, ...options, blockHeader: BLOCK_HEADER },
-        parameters as never,
-        OWNER,
-      )) as Record<string, any>;
-      return built["transaction"] as Record<string, any>;
-    },
-  );
+  let built: unknown;
+  await record(name, null, async () => {
+    built = await tronWeb.transactionBuilder.triggerSmartContract(
+      contractAddress,
+      selector,
+      { txLocal: true, ...options, blockHeader: BLOCK_HEADER },
+      parameters,
+      OWNER,
+    );
+    assert(isRecord(built), `${name} triggerSmartContract result is not an object`);
+    const inner = built["transaction"];
+    assert(isRecord(inner), `${name} transaction is not an object`);
+    return inner;
+  });
   // _triggerSmartContractLocal returns { result, transaction }; its raw value.data is the
   // canonical ABI bytes — record them so our builder input reproduces the same calldata.
-  const value = (built as Record<string, any>)["transaction"]["raw_data"]["contract"][0][
-    "parameter"
-  ]["value"] as Record<string, unknown>;
-  transactions[transactions.length - 1]!.input = contract(`0x${value["data"] as string}`);
+  assert(isRecord(built), `${name} triggerSmartContract result is not an object`);
+  const builtTx = built["transaction"];
+  assert(isRecord(builtTx), `${name} transaction is not an object`);
+  const builtRaw = builtTx["raw_data"];
+  assert(isRecord(builtRaw), `${name} raw_data is not an object`);
+  const builtContracts = builtRaw["contract"];
+  assert(Array.isArray(builtContracts), `${name} contract list is missing`);
+  const firstContract = builtContracts.find(isRecord);
+  assert(isRecord(firstContract), `${name} contract is not an object`);
+  const builtParameter = firstContract["parameter"];
+  assert(isRecord(builtParameter), `${name} parameter is not an object`);
+  const builtValue = builtParameter["value"];
+  assert(isRecord(builtValue), `${name} value is not an object`);
+  const builtData = builtValue["data"];
+  assert(typeof builtData === "string", `${name} calldata is not a string`);
+  const lastRow = transactions.at(-1);
+  assert(lastRow !== undefined, `${name} transaction row is missing`);
+  lastRow.input = contract(`0x${builtData}`);
 };
 
 await record(
@@ -215,7 +247,7 @@ await record(
     header: HEADER,
     contract: { type: "TransferContract", owner: OWNER, to: ALICE, amount: "1000000" },
   },
-  () => tronWeb.transactionBuilder.sendTrx(ALICE, 1_000_000, OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.sendTrx(ALICE, 1_000_000, OWNER, OPTS),
 );
 
 await record(
@@ -226,11 +258,11 @@ await record(
   },
   async () =>
     tronWeb.transactionBuilder.addUpdateData(
-      (await tronWeb.transactionBuilder.sendTrx(BOB, 2_000_000, OWNER, OPTS)) as never,
+      await tronWeb.transactionBuilder.sendTrx(BOB, 2_000_000, OWNER, OPTS),
       MEMO_TEXT,
       "utf8",
       { txLocal: true },
-    ) as never,
+    ),
 );
 
 await record(
@@ -239,11 +271,11 @@ await record(
     header: { ...HEADER, permissionId: 2 },
     contract: { type: "TransferContract", owner: OWNER, to: ALICE, amount: "3000000" },
   },
-  () =>
+  async () =>
     tronWeb.transactionBuilder.sendTrx(ALICE, 3_000_000, OWNER, {
       ...OPTS,
       permissionId: 2,
-    } as never) as never,
+    }),
 );
 
 await triggerData(
@@ -353,7 +385,7 @@ await record(
       amount: "500",
     },
   },
-  () => tronWeb.transactionBuilder.sendToken(ALICE, 500, "1002000", OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.sendToken(ALICE, 500, "1002000", OWNER, OPTS),
 );
 
 await record(
@@ -367,7 +399,7 @@ await record(
       resource: 1,
     },
   },
-  () => tronWeb.transactionBuilder.freezeBalanceV2(2_000_000, "ENERGY", OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.freezeBalanceV2(2_000_000, "ENERGY", OWNER, OPTS),
 );
 
 await record(
@@ -381,7 +413,7 @@ await record(
       resource: 0,
     },
   },
-  () => tronWeb.transactionBuilder.freezeBalanceV2(3_000_000, "BANDWIDTH", OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.freezeBalanceV2(3_000_000, "BANDWIDTH", OWNER, OPTS),
 );
 
 await record(
@@ -395,7 +427,7 @@ await record(
       resource: 1,
     },
   },
-  () => tronWeb.transactionBuilder.unfreezeBalanceV2(1_000_000, "ENERGY", OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.unfreezeBalanceV2(1_000_000, "ENERGY", OWNER, OPTS),
 );
 
 await record(
@@ -412,7 +444,7 @@ await record(
       lockPeriod: "0",
     },
   },
-  () =>
+  async () =>
     tronWeb.transactionBuilder.delegateResource(
       4_000_000,
       ALICE,
@@ -421,7 +453,7 @@ await record(
       false,
       undefined,
       OPTS,
-    ) as never,
+    ),
 );
 
 await record(
@@ -438,7 +470,7 @@ await record(
       lockPeriod: "28800",
     },
   },
-  () =>
+  async () =>
     tronWeb.transactionBuilder.delegateResource(
       5_000_000,
       BOB,
@@ -447,7 +479,7 @@ await record(
       true,
       28800,
       OPTS,
-    ) as never,
+    ),
 );
 
 await record(
@@ -462,8 +494,8 @@ await record(
       receiver: ALICE,
     },
   },
-  () =>
-    tronWeb.transactionBuilder.undelegateResource(2_000_000, ALICE, "ENERGY", OWNER, OPTS) as never,
+  async () =>
+    tronWeb.transactionBuilder.undelegateResource(2_000_000, ALICE, "ENERGY", OWNER, OPTS),
 );
 
 await record(
@@ -472,7 +504,7 @@ await record(
     header: HEADER,
     contract: { type: "WithdrawExpireUnfreezeContract", owner: OWNER },
   },
-  () => tronWeb.transactionBuilder.withdrawExpireUnfreeze(OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.withdrawExpireUnfreeze(OWNER, OPTS),
 );
 
 await record(
@@ -481,7 +513,7 @@ await record(
     header: HEADER,
     contract: { type: "CancelAllUnfreezeV2Contract", owner: OWNER },
   },
-  () => tronWeb.transactionBuilder.cancelUnfreezeBalanceV2(OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.cancelUnfreezeBalanceV2(OWNER, OPTS),
 );
 
 await record(
@@ -498,7 +530,7 @@ await record(
       support: false,
     },
   },
-  () => tronWeb.transactionBuilder.vote({ [ALICE]: 3, [BOB]: 7 }, OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.vote({ [ALICE]: 3, [BOB]: 7 }, OWNER, OPTS),
 );
 
 await record(
@@ -507,7 +539,7 @@ await record(
     header: HEADER,
     contract: { type: "WithdrawBalanceContract", owner: OWNER },
   },
-  () => tronWeb.transactionBuilder.withdrawBlockRewards(OWNER, OPTS) as never,
+  async () => tronWeb.transactionBuilder.withdrawBlockRewards(OWNER, OPTS),
 );
 
 await record(
@@ -542,10 +574,16 @@ await record(
       ],
     },
   },
-  () =>
+  async () =>
     tronWeb.transactionBuilder.updateAccountPermissions(
       OWNER,
-      { type: 0, permission_name: "owner", threshold: 1, id: 2, keys: [{ address: CAROL, weight: 1 }] } as never,
+      {
+        type: 0,
+        permission_name: "owner",
+        threshold: 1,
+        id: 2,
+        keys: [{ address: CAROL, weight: 1 }],
+      },
       null,
       [
         {
@@ -559,9 +597,9 @@ await record(
             { address: ALICE, weight: 1 },
           ],
         },
-      ] as never,
+      ],
       OPTS,
-    ) as never,
+    ),
 );
 
 await triggerData(
@@ -604,9 +642,62 @@ await triggerData(
   }),
 );
 
-await record("unsupported-account-update", null, () =>
-  tronWeb.transactionBuilder.updateAccount("vector-account", OWNER, OPTS) as never,
+await record("unsupported-account-update", null, async () =>
+  tronWeb.transactionBuilder.updateAccount("vector-account", OWNER, OPTS),
 );
+
+const TRUST_MSG_KEY = "75065f100e38d3f3b4c5c4235834ba8216de62272a4f03532c44b31a5734360a";
+const TRUST_MSG_LITERALS: Record<string, string> = {
+  "Hello World":
+    "bc0753c070cc55693097df11bc11e1a7c4bd5e1a40b9dc94c75568e59bcc9d6b50a7873ef25b469e494490a54de37327b4bc7fc825c81a377b555e34fb7261ba1c",
+  "A much longer message to test the signing and verification process":
+    "93aee5f753cf889e0749c74dd0c5996cce889883ae079e09ede462e16d65d06a4f43d1ed2745e9f3c1690695628269bd58f057a4a93953cc50e66b4a05bc0f451b",
+};
+
+const messages: Array<{
+  name: string;
+  privateKey: string;
+  address: string;
+  messageHex: string;
+  signature: string;
+}> = [];
+
+const privateKeyToAddress = (privateKey: string): string => {
+  const address = tronWeb.address.fromPrivateKey(privateKey);
+  assert(address !== false, `address derivation failed for ${nameOfKey(privateKey)}`);
+  return address;
+};
+
+const nameOfKey = (privateKey: string): string =>
+  privateKey === TRUST_MSG_KEY ? "trust" : privateKey === ANVIL_KEY ? "anvil" : "unknown";
+
+const recordMessage = (name: string, privateKey: string, message: Uint8Array): void => {
+  const signed = tronWeb.trx.signMessageV2(message, privateKey);
+  assert(typeof signed === "string", `${name} signMessageV2 failed`);
+  const signature = signed.replace(/^0x/i, "").toLowerCase();
+  assert(/^[0-9a-f]+$/i.test(signature), `${name} signature is not hex`);
+  messages.push({
+    name,
+    privateKey,
+    address: privateKeyToAddress(privateKey),
+    messageHex: Buffer.from(message).toString("hex"),
+    signature: signature.toLowerCase(),
+  });
+};
+
+for (const [text, expected] of Object.entries(TRUST_MSG_LITERALS)) {
+  recordMessage(`trust-${text === "Hello World" ? "hello" : "long"}`, TRUST_MSG_KEY, utf8(text));
+  const got = messages.at(-1)?.signature;
+  assert(got === expected, `${text}: tronweb ${String(got)} != Trust ${expected}`);
+}
+recordMessage("hello-world", ANVIL_KEY, utf8("hello world"));
+recordMessage("utf8-chinese", ANVIL_KEY, utf8("你好，TRON"));
+recordMessage(
+  "digest-32-bytes",
+  ANVIL_KEY,
+  Uint8Array.from({ length: 32 }, (_, i) => i + 1),
+);
+recordMessage("non-utf8-bytes", ANVIL_KEY, Uint8Array.from([0xff, 0xfe, 0x00, 0x01, 0x80]));
 
 writeFileSync(
   "vectors/chains/tron.json",
@@ -621,11 +712,14 @@ writeFileSync(
         "https://github.com/trustwallet/wallet-core/blob/f90a51f1/tests/chains/Tron/AddressTests.cpp — key and invalid-address vectors",
         'https://github.com/TronLink/tronlink-extension/blob/d6a9d840/src/tests/tron_wallet/constants.ts — key + "test…junk" index-0 derivation pair',
         "tronweb 6.5.2 TransactionBuilder (blockHeader / txLocal, fully offline) + trx.sign — transactions section",
+        "https://github.com/trustwallet/wallet-core/blob/f90a51f1/tests/chains/Tron/TronMessageSignerTests.cpp — message-signature literals asserted in this script",
+        "tronweb 6.5.2 TronWeb.Trx.signMessageV2 — messages section",
       ],
       derivation,
       keys,
       invalid,
       transactions,
+      messages,
     },
     null,
     2,
@@ -633,7 +727,7 @@ writeFileSync(
 );
 console.log(
   `vectors/chains/tron.json: ${derivation.length} derivation rows, ${keys.length} keys, ` +
-    `${invalid.length} invalid, ${transactions.length} transactions. abandon…about: ${derivation
+    `${invalid.length} invalid, ${transactions.length} transactions, ${messages.length} messages. abandon…about: ${derivation
       .filter((r) => r.mnemonic.startsWith("abandon ") && r.mnemonic.endsWith("about"))
       .map((r) => r.address)
       .join(", ")}`,

@@ -499,6 +499,68 @@ describe("chain prompts", () => {
       )}\n… 还有 94 个字符未显示`,
     );
   });
+
+  it("a TRON permission update names operations by contract id, not bitmap position", () => {
+    /* Bitmap bits 7, 31 and 46: bit 7 is unassigned, bit 31 is TriggerSmartContract
+       (array position 31 holds id 49, UpdateBrokerageContract — a position lookup
+       would name it wrongly) and bit 46 is AccountPermissionUpdateContract. */
+    const operations = `0x800000800040${"00".repeat(26)}`;
+    const intent: PromptIntent = {
+      family: "tron",
+      network: "tron:728126428",
+      summary: "authorization",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      verifiability: "partial",
+      blind: "tron-permission-update",
+      tron: {
+        contractType: "AccountPermissionUpdateContract",
+        expiration: 1_767_225_660_000,
+        permissionUpdate: {
+          owner: {
+            type: "owner",
+            id: 2,
+            name: "owner",
+            threshold: "1",
+            parentId: 0,
+            keys: [{ address: "TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6", weight: "1" }],
+          },
+          actives: [
+            {
+              type: "active",
+              id: 2,
+              name: "active0",
+              threshold: "1",
+              parentId: 0,
+              operations,
+              keys: [{ address: "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC", weight: "1" }],
+            },
+          ],
+        },
+      },
+    };
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm blind signing",
+      description:
+        "Account takeover: this gives control of this account to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC. Whoever holds these keys can move all of its assets.\n" +
+        "Network: TRON\n" +
+        'Owner permission "owner": threshold 1; keys TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 (weight 1)\n' +
+        'Active permission "active0": threshold 1; keys TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC (weight 1); allows ContractType 7, TriggerSmartContract, AccountPermissionUpdateContract\n' +
+        "Expires 2026-01-01 00:01 (UTC)\n" +
+        "Bandwidth or account-activation fees may be charged",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认盲签",
+      description:
+        "账户接管：此交易把本账户的控制权交给 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6、TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC，持有这些密钥的人可以转走全部资产。\n" +
+        "网络：TRON\n" +
+        "所有者权限「owner」：阈值 1；密钥 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6（权重 1）\n" +
+        "活跃权限「active0」：阈值 1；密钥 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC（权重 1）；允许 ContractType 7、TriggerSmartContract、AccountPermissionUpdateContract\n" +
+        "2026-01-01 00:01（UTC）后失效\n" +
+        "可能扣除带宽费或账户激活费",
+    });
+  });
 });
 
 describe("chain prompts via the real decoders", () => {

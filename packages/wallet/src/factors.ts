@@ -318,6 +318,7 @@ type PublicBytesField =
   | "partialTransaction"
   | "paymentHash"
   | "psbt"
+  | "rawData"
   | "publicKey"
   | "receiverIdentityPublicKey"
   | "script"

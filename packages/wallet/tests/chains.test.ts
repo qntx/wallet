@@ -1,4 +1,4 @@
-import { utf8ToBytes } from "@noble/hashes/utils.js";
+import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { HDKey } from "@scure/bip32";
 import { mnemonicToSeedSync } from "@scure/bip39";
 import { Address, OutScript, p2tr, p2wpkh } from "@scure/btc-signer/payment.js";
@@ -13,9 +13,11 @@ import { verifyEvent } from "@qntx/nostr";
 import { bitcoinAddressFromXpub, bitcoinNetwork } from "@qntx/wallet-chains/bitcoin";
 import { signBitcoinMessage, signBitcoinPsbt } from "@qntx/wallet-chains/bitcoin/sign";
 import { signEvmPersonalMessage, signEvmTransaction } from "@qntx/wallet-chains/evm/sign";
+import { signTronMessage, signTronTransaction } from "@qntx/wallet-chains/tron/sign";
 
 import { chains } from "../src/chains/index.ts";
 import type { ChainSignRequest } from "../src/protocol/chains.ts";
+import type { ProtocolValue } from "../src/protocol/index.ts";
 import { connectKernel } from "../src/wallet.ts";
 import { FakeKernel, unlockedStatus, PASSKEY, ScriptedPort, walletError } from "./host.test.ts";
 
@@ -640,5 +642,104 @@ describe("chains(wallet)", () => {
       }),
     );
     expect(result.kind).toBe("bitcoin.message");
+  });
+
+  describe("tron", () => {
+    const TRON_PRIV = hexToBytes(
+      "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+    );
+    const TRON_ADDR = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
+    const RAW = hexToBytes(
+      "0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335a67080112630a2d747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e5472616e73666572436f6e747261637412320a1541f39fd6e51aad88f6f4ce6ab8827279cfffb922661215415cd0fb0ab3ce40f3051414c604b27756e69e43db18c0843d7080d0eab6b733",
+    );
+    const KEY_ID = "22".repeat(8);
+
+    const tronParams = (kind: "tron.transaction" | "tron.message") => ({
+      request:
+        kind === "tron.transaction"
+          ? {
+              kind: "tron.transaction" as const,
+              network: "tron:728126428",
+              account: {
+                kind: "hd" as const,
+                walletId: "0a".repeat(8),
+                groupIndex: 0,
+                template: "tron.bip44" as const,
+              },
+              rawData: RAW,
+            }
+          : {
+              kind: "tron.message" as const,
+              network: "tron:728126428",
+              account: { kind: "imported" as const, keyId: KEY_ID, family: "tron" as const },
+              message: utf8ToBytes("hello tron"),
+            },
+      verify: { kind: "password" as const, password: "test password" },
+    });
+
+    const tronConnect = async (result: ProtocolValue) => {
+      const kernel = new FakeKernel(unlockedStatus());
+      kernel.handlers.set("chain.sign", () => ({ ok: result }));
+      kernel.handlers.set("wallet.accounts", () => ({
+        ok: { template: "tron.bip44", network: "tron:728126428", address: TRON_ADDR },
+      }));
+      kernel.handlers.set("keys.list", () => ({
+        ok: [{ keyId: KEY_ID, family: "tron", address: TRON_ADDR, createdAt: 1 }],
+      }));
+      const wallet = await connectKernel({
+        verifyEvent,
+        spawn: () => {
+          const port = new ScriptedPort(kernel);
+          kernel.attach(port);
+          return port;
+        },
+        factors: "software",
+        passkey: PASSKEY,
+        ceremony: undefined,
+        setTimer: (ms, fn) => {
+          const id = setTimeout(fn, ms);
+          return () => clearTimeout(id);
+        },
+      });
+      return wallet;
+    };
+
+    it("accepts a transaction signature that verifies for the account", async () => {
+      const wallet = await tronConnect({
+        kind: "tron.transaction",
+        signature: signTronTransaction(RAW, TRON_PRIV),
+      });
+      const result = await chains(wallet).sign(tronParams("tron.transaction"));
+      expect(result.kind).toBe("tron.transaction");
+    });
+
+    it("accepts a message signature that verifies for the imported key", async () => {
+      const wallet = await tronConnect({
+        kind: "tron.message",
+        signature: signTronMessage(utf8ToBytes("hello tron"), TRON_PRIV),
+      });
+      const result = await chains(wallet).sign(tronParams("tron.message"));
+      expect(result.kind).toBe("tron.message");
+    });
+
+    it("rejects a foreign-key signature with integrity", async () => {
+      const wallet = await tronConnect({
+        kind: "tron.transaction",
+        signature: signTronTransaction(RAW, new Uint8Array(32).fill(9)),
+      });
+      await expect(chains(wallet).sign(tronParams("tron.transaction"))).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
+
+    it("rejects a mismatched result kind with integrity", async () => {
+      const wallet = await tronConnect({
+        kind: "tron.message",
+        signature: signTronMessage(utf8ToBytes("hello tron"), TRON_PRIV),
+      });
+      await expect(chains(wallet).sign(tronParams("tron.transaction"))).rejects.toSatisfy(
+        (e) => walletError(e).code === "integrity",
+      );
+    });
   });
 });

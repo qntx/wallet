@@ -4,7 +4,9 @@
     "tronweb 6.5.2 TronWeb.fromMnemonic(path) / address.fromPrivateKey (pkToAddress)",
     "https://github.com/trustwallet/wallet-core/blob/f90a51f1/tests/chains/Tron/AddressTests.cpp — key and invalid-address vectors",
     "https://github.com/TronLink/tronlink-extension/blob/d6a9d840/src/tests/tron_wallet/constants.ts — key + \"test…junk\" index-0 derivation pair",
-    "tronweb 6.5.2 TransactionBuilder (blockHeader / txLocal, fully offline) + trx.sign — transactions section"
+    "tronweb 6.5.2 TransactionBuilder (blockHeader / txLocal, fully offline) + trx.sign — transactions section",
+    "https://github.com/trustwallet/wallet-core/blob/f90a51f1/tests/chains/Tron/TronMessageSignerTests.cpp — message-signature literals asserted in this script",
+    "tronweb 6.5.2 TronWeb.Trx.signMessageV2 — messages section"
   ],
   "derivation": [
     {
@@ -732,6 +734,50 @@
       "rawDataHex": "0a026e5022081a2b3c4d5e6f789040e0a4eeb6b7335a61080a125d0a32747970652e676f6f676c65617069732e636f6d2f70726f746f636f6c2e4163636f756e74557064617465436f6e747261637412270a0e766563746f722d6163636f756e74121541f39fd6e51aad88f6f4ce6ab8827279cfffb922667080d0eab6b733",
       "txId": "a2a5b22c63a92503898a223635fcbba357fbcb930ffb22d18bbb68c2f083a4d8",
       "signature": "188d81a03718117295272fb67b50e3cacbed9720616518f3dfb66e4d4fa563f45e3c997f6c92e40913240e74d4e7e850776a8fa9851768f7b964aa205fbb39791C"
+    }
+  ],
+  "messages": [
+    {
+      "name": "trust-hello",
+      "privateKey": "75065f100e38d3f3b4c5c4235834ba8216de62272a4f03532c44b31a5734360a",
+      "address": "TWWb9EjUWai17YEVB7FR8hreupYJKG9sMR",
+      "messageHex": "48656c6c6f20576f726c64",
+      "signature": "bc0753c070cc55693097df11bc11e1a7c4bd5e1a40b9dc94c75568e59bcc9d6b50a7873ef25b469e494490a54de37327b4bc7fc825c81a377b555e34fb7261ba1c"
+    },
+    {
+      "name": "trust-long",
+      "privateKey": "75065f100e38d3f3b4c5c4235834ba8216de62272a4f03532c44b31a5734360a",
+      "address": "TWWb9EjUWai17YEVB7FR8hreupYJKG9sMR",
+      "messageHex": "41206d756368206c6f6e676572206d65737361676520746f207465737420746865207369676e696e6720616e6420766572696669636174696f6e2070726f63657373",
+      "signature": "93aee5f753cf889e0749c74dd0c5996cce889883ae079e09ede462e16d65d06a4f43d1ed2745e9f3c1690695628269bd58f057a4a93953cc50e66b4a05bc0f451b"
+    },
+    {
+      "name": "hello-world",
+      "privateKey": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      "address": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG",
+      "messageHex": "68656c6c6f20776f726c64",
+      "signature": "89ece090b6e9319ced9ade7329598e86a64852805111ce97871a4cf154b9f048506440d8b6128b37cd0353704ba7ef1748f9ab222cbd51ef46cebd27601697ef1b"
+    },
+    {
+      "name": "utf8-chinese",
+      "privateKey": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      "address": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG",
+      "messageHex": "e4bda0e5a5bdefbc8c54524f4e",
+      "signature": "5776a749d4652158c40640fe4e5e1dd7418c663461400295222fec7bd6175caf672448185509bbf34e71b134bc0544f817398e7685dd603886476421ba6789a81c"
+    },
+    {
+      "name": "digest-32-bytes",
+      "privateKey": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      "address": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG",
+      "messageHex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+      "signature": "a6aa430cea95850fab09d5cbac39bdbc9d94fe64f112bdee110812678ee34ea92ceb416d51b3813edeba3fbac8c539415c3124421ba638659da63180b136b4c01c"
+    },
+    {
+      "name": "non-utf8-bytes",
+      "privateKey": "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
+      "address": "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG",
+      "messageHex": "fffe000180",
+      "signature": "47e3835efaf7d5d15715cc61161d90ddabdcaa98c867d60f4d886a5ce4c359234508414be61d8201fd1348e04d0628ae09e18186a8196c938f53e855b222039c1b"
     }
   ]
 }

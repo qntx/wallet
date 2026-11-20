@@ -46,6 +46,10 @@
       "types": "./dist/bitcoin-sign.d.mts",
       "default": "./dist/bitcoin-sign.mjs"
     },
+    "./tron/sign": {
+      "types": "./dist/tron-sign.d.mts",
+      "default": "./dist/tron-sign.mjs"
+    },
     "./tron": {
       "types": "./dist/tron.d.mts",
       "default": "./dist/tron.mjs"
