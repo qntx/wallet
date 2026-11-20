@@ -218,3 +218,42 @@ describe("decodeEvm: Seaport orders", () => {
     ).toBeUndefined();
   });
 });
+
+describe("decodeEvm: Seaport orders the prompt cannot show in full", () => {
+  it("an order with more offer items than the prompt shows is blind", () => {
+    const intent = decode(doc({}, { offer: Array.from({ length: 5 }, () => offerItem(2, NFT)) }));
+    expect(intent.blind).toBe("typed-data-oversize");
+    expect(intent.message).toMatchObject({ kind: "typed-data" });
+  });
+
+  it("an order with more consideration items than the prompt shows is blind", () => {
+    const intent = decode(
+      doc(
+        {},
+        {
+          consideration: Array.from({ length: 5 }, () => ({
+            ...offerItem(1, TOKEN, "100", "100"),
+            recipient: OFFERER,
+          })),
+        },
+      ),
+    );
+    expect(intent.blind).toBe("typed-data-oversize");
+  });
+
+  it("an order at the item limit stays described", () => {
+    const intent = decode(
+      doc(
+        {},
+        {
+          offer: Array.from({ length: 4 }, () => offerItem(2, NFT)),
+          consideration: Array.from({ length: 4 }, () => ({
+            ...offerItem(1, TOKEN, "100", "100"),
+            recipient: OFFERER,
+          })),
+        },
+      ),
+    );
+    expect(intent.blind).toBeUndefined();
+  });
+});

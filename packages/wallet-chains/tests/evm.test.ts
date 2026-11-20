@@ -201,6 +201,19 @@ describe("sign", () => {
     expect(`0x${Buffer.from(ours).toString("hex")}`).toBe(mm);
     expect(`0x${Buffer.from(ours).toString("hex")}`).toBe(vectors.expected.typedData);
   });
+
+  it("undeclared domain keys do not change the signature", () => {
+    const doc = JSON.parse(vectors.typedData);
+    doc.domain.rogueKey = "0x00000000000000000000000000000000000bad00";
+    doc.domain.another = 42;
+    const ours = signEvmTypedData(JSON.stringify(doc), keyBytes);
+    const mm = ethSignTypedData({
+      data: doc,
+      version: SignTypedDataVersion.V4,
+      privateKey: Buffer.from(keyBytes),
+    });
+    expect(`0x${Buffer.from(ours).toString("hex")}`).toBe(mm);
+  });
 });
 
 describe("normalize", () => {
@@ -531,6 +544,22 @@ describe("verifiability + decode", () => {
     for (const bad of [-1, 1.5, "abc", "", true, null, 2 ** 60]) {
       expect(() => withChain(bad)).toThrow(expect.objectContaining({ code: "invalid-typed-data" }));
     }
+  });
+
+  it("an undeclared domain.chainId is dropped before the chain check", () => {
+    const doc = JSON.parse(vectors.typedData);
+    doc.types["EIP712Domain"] = doc.types["EIP712Domain"].filter(
+      (f: { name: string }) => f.name !== "chainId",
+    );
+    doc.domain.chainId = 5;
+    expect(
+      normalizeEvm({
+        kind: "evm.typed-data",
+        network: "eip155:1",
+        account: ACCOUNT,
+        typedData: JSON.stringify(doc),
+      }).kind,
+    ).toBe("evm.typed-data");
   });
 
   it("rejects typed data without EIP712Domain, too deep or missing a nested struct", () => {

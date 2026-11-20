@@ -1,16 +1,23 @@
 import { SignTypedDataVersion, TypedDataUtils } from "@metamask/eth-sig-util";
 import type { MessageTypes, TypedMessage } from "@metamask/eth-sig-util";
+import { hexToBytes } from "@noble/hashes/utils.js";
 import * as fc from "fast-check";
 import { encodeFunctionData, parseAbi, toFunctionSelector } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  PERMIT2_ADDRESS,
   checksumEvmAddress,
   decodeBatchExecute,
   decodeEvm,
   encodeBatchExecute,
   evmTokenTable,
+  isEvmAddress,
+  lookupEvmToken,
 } from "../src/evm/index.ts";
+import { SEAPORT_CONTRACTS } from "../src/evm/seaport.ts";
+import { RECOGNISED_FAMILIES } from "../src/families.ts";
+import type { FamilyClaim } from "../src/families.ts";
 import { isBlindIntent } from "../src/index.ts";
 import type { EvmTransaction, SignRequest, TypedDataLeaf } from "../src/index.ts";
 
@@ -674,6 +681,190 @@ describe("typed data shows its leaves or is blind", () => {
   });
 });
 
+describe("typed data that signs only hashes is blind", () => {
+  const RAW_HASH = `0x${"ab".repeat(32)}`;
+  const SAFE = checksumEvmAddress("0xd5ffe748b45f5253fc9975fdd96fddec052e6d52");
+  type Field = { name: string; type: string };
+  const doc = (
+    primaryType: string,
+    message: Record<string, unknown>,
+    types: Record<string, ReadonlyArray<Field>>,
+    domain?: Record<string, unknown>,
+  ) => ({
+    types: { EIP712Domain: [{ name: "chainId", type: "uint256" }], ...types },
+    primaryType,
+    domain: domain ?? { chainId: 1 },
+    message,
+  });
+
+  it("SafeMessage(bytes message) wrapping a 32-byte hash is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "SafeMessage",
+          { message: RAW_HASH },
+          { SafeMessage: [{ name: "message", type: "bytes" }] },
+          { chainId: 1, verifyingContract: SAFE },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+    expect(isBlindIntent(intent)).toBe(true);
+    expect(fieldsOf(intent)).toStrictEqual([{ path: "message", value: RAW_HASH }]);
+  });
+
+  it("CoinbaseSmartWalletMessage(bytes32 hash) is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "CoinbaseSmartWalletMessage",
+          { hash: RAW_HASH },
+          { CoinbaseSmartWalletMessage: [{ name: "hash", type: "bytes32" }] },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+  });
+
+  it("a nested struct of only bytes32 leaves is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { inner: { a: RAW_HASH, b: RAW_HASH } },
+          {
+            Root: [{ name: "inner", type: "Inner" }],
+            Inner: [
+              { name: "a", type: "bytes32" },
+              { name: "b", type: "bytes32" },
+            ],
+          },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+    expect(fieldsOf(intent)).toStrictEqual([
+      { path: "inner.a", value: RAW_HASH },
+      { path: "inner.b", value: RAW_HASH },
+    ]);
+  });
+
+  it("a bytes32 array is a commitment", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { hashes: [RAW_HASH, `0x${"cd".repeat(32)}`] },
+          { Root: [{ name: "hashes", type: "bytes32[]" }] },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-commitment");
+  });
+
+  it("a string leaf holding the hex of 32 bytes is a commitment; real text is not", () => {
+    const hex = decodeEvm(
+      typed(doc("Root", { s: RAW_HASH }, { Root: [{ name: "s", type: "string" }] })),
+      SIGNER,
+    );
+    expect(hex.blind).toBe("typed-data-commitment");
+    const text = decodeEvm(
+      typed(doc("Root", { s: "hello" }, { Root: [{ name: "s", type: "string" }] })),
+      SIGNER,
+    );
+    expect(text.blind).toBeUndefined();
+    expect(isBlindIntent(text)).toBe(false);
+  });
+
+  it("a commitment leaf beside a readable one stays described", () => {
+    const intent = decodeEvm(
+      typed(
+        doc(
+          "Root",
+          { hash: RAW_HASH, amount: "7" },
+          {
+            Root: [
+              { name: "hash", type: "bytes32" },
+              { name: "amount", type: "uint256" },
+            ],
+          },
+        ),
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(fieldsOf(intent)).toStrictEqual([
+      { path: "hash", value: RAW_HASH },
+      { path: "amount", value: "7" },
+    ]);
+  });
+
+  const hexOf = (b: Uint8Array): string =>
+    `0x${[...b].map((x) => x.toString(16).padStart(2, "0")).join("")}`;
+  const leafType = fc.oneof(
+    fc.constant("bytes"),
+    fc.integer({ min: 1, max: 32 }).map((n) => `bytes${n}`),
+  );
+  const leafValue = (type: string): fc.Arbitrary<string> =>
+    type === "bytes"
+      ? fc.uint8Array({ minLength: 0, maxLength: 40 }).map(hexOf)
+      : fc
+          .uint8Array({ minLength: Number(type.slice(5)), maxLength: Number(type.slice(5)) })
+          .map(hexOf);
+  const leaf = (name: string): fc.Arbitrary<Field & { value: unknown }> =>
+    fc
+      .tuple(leafType, fc.boolean())
+      .chain(([type, isArray]) =>
+        (isArray ? fc.array(leafValue(type), { minLength: 1, maxLength: 2 }) : leafValue(type)).map(
+          (value) => ({ name, type: isArray ? `${type}[]` : type, value }),
+        ),
+      );
+  const leafFields = (
+    count: fc.Arbitrary<number>,
+  ): fc.Arbitrary<ReadonlyArray<Field & { value: unknown }>> =>
+    count.chain((n) => fc.tuple(...Array.from({ length: n }, (_, i) => leaf(`f${i}`))));
+  /** Random docs whose every leaf is bytes/bytesN: nested structs and non-empty arrays. */
+  const bytesDoc: fc.Arbitrary<Record<string, unknown>> = fc
+    .tuple(
+      leafFields(fc.integer({ min: 1, max: 6 })),
+      leafFields(fc.integer({ min: 0, max: 4 })),
+      fc.integer({ min: 0, max: 2 }),
+    )
+    .map(([root, inner, nested]) => {
+      const types: Record<string, ReadonlyArray<Field>> = {
+        Root: root.map(({ name, type }) => ({ name, type })),
+      };
+      const message: Record<string, unknown> = Object.fromEntries(
+        root.map(({ name, value }) => [name, value]),
+      );
+      if (inner.length > 0 && nested > 0) {
+        types["Inner"] = inner.map(({ name, type }) => ({ name, type }));
+        const value = Object.fromEntries(inner.map(({ name, value }) => [name, value]));
+        types["Root"] = [
+          ...(types["Root"] ?? []),
+          { name: "inner", type: nested === 2 ? "Inner[]" : "Inner" },
+        ];
+        message["inner"] = nested === 2 ? [value, value] : value;
+      }
+      return doc("Root", message, types);
+    });
+
+  it("documents whose leaves are all bytes are blind", () => {
+    fc.assert(
+      fc.property(bytesDoc, (doc) => {
+        const intent = decodeEvm(typed(doc), SIGNER);
+        expect(isBlindIntent(intent)).toBe(true);
+        expect(intent.blind).toMatch(/^typed-data-(commitment|oversize)$/);
+      }),
+      { numRuns: 100 },
+    );
+  });
+});
+
 describe("typed-data leaves agree with an independent EIP-712 hasher", () => {
   type Field = { name: string; type: string };
   type Doc = {
@@ -1039,16 +1230,582 @@ describe("typed-data leaves agree with an independent EIP-712 hasher", () => {
 });
 
 describe("personal messages", () => {
+  const personalText = (text: string) =>
+    decodeEvm(personal(new TextEncoder().encode(text)), SIGNER);
+
   it("non-UTF-8 bytes are blind; text is not", () => {
-    const hash32 = new Uint8Array(32).fill(0xab);
+    const hash32 = new Uint8Array(33).fill(0xab);
     const blind = decodeEvm(personal(hash32), SIGNER);
     expect(blind.message).toMatchObject({ kind: "bytes" });
     expect(blind.blind).toBe("message-bytes");
     expect(isBlindIntent(blind)).toBe(true);
 
-    const text = decodeEvm(personal(new TextEncoder().encode("Welcome to Example")), SIGNER);
+    const text = personalText("Welcome to Example");
     expect(text.message).toMatchObject({ kind: "text" });
     expect(text.blind).toBeUndefined();
     expect(isBlindIntent(text)).toBe(false);
+  });
+
+  it("a message of exactly 32 bytes is blind, whatever its content", () => {
+    /* A keccak digest that happens to be valid UTF-8. */
+    const digest = hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79");
+    const ground = decodeEvm(personal(digest), SIGNER);
+    expect(ground.message).toMatchObject({ kind: "bytes" });
+    expect(ground.blind).toBe("message-bytes");
+
+    const text32 = personalText("a".repeat(32));
+    expect(text32.message).toMatchObject({ kind: "bytes" });
+    expect(text32.blind).toBe("message-bytes");
+    for (const n of [31, 33]) {
+      const intent = personalText("a".repeat(n));
+      expect(intent.message).toMatchObject({ kind: "text" });
+      expect(intent.blind).toBeUndefined();
+    }
+  });
+
+  it("text with an unsafe code point is blind bytes; permitted whitespace is not", () => {
+    for (const char of ["\u0000", "\u202E", "\u200B"]) {
+      const intent = personalText(`see ${char} this`);
+      expect(intent.message).toMatchObject({ kind: "bytes" });
+      expect(intent.blind).toBe("message-bytes");
+    }
+    const ws = personalText("line one\nline two\r\n\tindented");
+    expect(ws.message).toMatchObject({ kind: "text" });
+    expect(ws.blind).toBeUndefined();
+  });
+
+  it("text that only renders at least 32 bytes of hex is blind", () => {
+    for (const text of [`0x${"ab".repeat(32)}`, "ab".repeat(32), `0x${"AB".repeat(32)}`]) {
+      const intent = personalText(text);
+      expect(intent.message).toMatchObject({ kind: "text" });
+      expect(intent.blind).toBe("message-bytes");
+    }
+    const short = personalText(`0x${"ab".repeat(31)}`);
+    expect(short.blind).toBeUndefined();
+  });
+});
+
+describe("typed-data near misses of decoded families are blind", () => {
+  const PERMIT2 = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
+  const SEAPORT_16 = "0x0000000000000068F116a894984e2DB1123eB395";
+
+  /** A doc with exactly the domain keys `domain` declares. */
+  const simpleDoc = (
+    primaryType: string,
+    fields: ReadonlyArray<{ name: string; type: string }>,
+    domain: Record<string, unknown>,
+    message: Record<string, unknown>,
+  ): SignRequest => {
+    const domainKeys = [
+      ["name", "string"],
+      ["version", "string"],
+      ["chainId", "uint256"],
+      ["verifyingContract", "address"],
+    ] as const;
+    const types = {
+      EIP712Domain: domainKeys
+        .filter(([name]) => name in domain)
+        .map(([name, type]) => ({ name, type })),
+      [primaryType]: fields,
+    };
+    return typed({ types, primaryType, domain, message });
+  };
+
+  /* The pre-1.3.0 Safe schema uses `dataGas`/`gasPrice` where 1.3.0 uses `baseGas`/`gasPrice`. */
+  const SAFE_TX_LEGACY = [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" },
+    { name: "dataGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" },
+    { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ];
+  /* The 1.3.0 schema — `baseGas` where the legacy form has `dataGas`. */
+  const SAFE_TX = [
+    { name: "to", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "data", type: "bytes" },
+    { name: "operation", type: "uint8" },
+    { name: "safeTxGas", type: "uint256" },
+    { name: "baseGas", type: "uint256" },
+    { name: "gasPrice", type: "uint256" },
+    { name: "gasToken", type: "address" },
+    { name: "refundReceiver", type: "address" },
+    { name: "nonce", type: "uint256" },
+  ];
+  const safeTxMessage = {
+    to: OTHER,
+    value: "0",
+    data: "0x",
+    operation: 0,
+    safeTxGas: "0",
+    dataGas: "0",
+    gasPrice: "0",
+    gasToken: "0x0000000000000000000000000000000000000000",
+    refundReceiver: "0x0000000000000000000000000000000000000000",
+    nonce: "42",
+  };
+
+  it("a SafeTx-shaped document in the legacy dataGas form is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "SafeTx",
+        SAFE_TX_LEGACY,
+        { chainId: 1, verifyingContract: OTHER },
+        { ...safeTxMessage, operation: 1 },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+    expect(fieldsOf(intent)?.length).toBeGreaterThan(0);
+  });
+
+  it("the same document in the canonical schema decodes to a blind delegatecall", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "SafeTx",
+        SAFE_TX,
+        { chainId: 1, verifyingContract: OTHER },
+        { ...safeTxMessage, baseGas: "0", operation: 1 },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("safe-delegatecall");
+  });
+
+  it("a SafeTx with an operation beyond delegatecall is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "SafeTx",
+        SAFE_TX,
+        { chainId: 1, verifyingContract: OTHER },
+        { ...safeTxMessage, baseGas: "0", operation: 2 },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("a SafeTx whose domain names no verifying contract is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc("SafeTx", SAFE_TX, { chainId: 1 }, { ...safeTxMessage, baseGas: "0" }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it.each([["TransferWithAuthorization"], ["ReceiveWithAuthorization"]])(
+    "an EIP-3009 %s on a table token is blind",
+    (primaryType) => {
+      const intent = decodeEvm(
+        simpleDoc(
+          primaryType,
+          [
+            { name: "from", type: "address" },
+            { name: "to", type: "address" },
+            { name: "value", type: "uint256" },
+            { name: "validAfter", type: "uint256" },
+            { name: "validBefore", type: "uint256" },
+            { name: "nonce", type: "bytes32" },
+          ],
+          { name: "USD Coin", version: "2", chainId: 1, verifyingContract: USDC },
+          {
+            from: SIGNER,
+            to: OTHER,
+            value: "1000000",
+            validAfter: "0",
+            validBefore: "2000000000",
+            nonce: `0x${"42".repeat(32)}`,
+          },
+        ),
+        SIGNER,
+      );
+      expect(intent.blind).toBe("typed-data-variant");
+    },
+  );
+
+  it("the same authorization shape on a non-table token stays described", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "TransferWithAuthorization",
+        [
+          { name: "from", type: "address" },
+          { name: "to", type: "address" },
+          { name: "value", type: "uint256" },
+        ],
+        { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        { from: SIGNER, to: OTHER, value: "1" },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(fieldsOf(intent)?.length).toBeGreaterThan(0);
+  });
+
+  it("a canonical Permit on a non-table token is recognised, not variant-blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "Permit",
+        [
+          { name: "owner", type: "address" },
+          { name: "spender", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+        { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        { owner: SIGNER, spender: OTHER, value: "1", nonce: "0", deadline: "2000000000" },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).not.toBe("typed-data-variant");
+  });
+
+  it("a Permit-family document in a non-canonical form is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "Permit",
+        [
+          { name: "owner", type: "address" },
+          { name: "spender", type: "address" },
+          { name: "value", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+          { name: "witness", type: "bytes32" },
+        ],
+        { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        {
+          owner: SIGNER,
+          spender: OTHER,
+          value: "1",
+          nonce: "0",
+          deadline: "2000000000",
+          witness: `0x${"42".repeat(32)}`,
+        },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("an ERC-4494 Permit on a non-table contract is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "Permit",
+        [
+          { name: "spender", type: "address" },
+          { name: "tokenId", type: "uint256" },
+          { name: "nonce", type: "uint256" },
+          { name: "deadline", type: "uint256" },
+        ],
+        { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        { spender: OTHER, tokenId: "1", nonce: "0", deadline: "2000000000" },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("a Permit2-addressed document of an unknown primary type is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "Foo",
+        [{ name: "x", type: "uint256" }],
+        { chainId: 1, verifyingContract: PERMIT2 },
+        { x: "1" },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("a Seaport-addressed document of another primary type is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc(
+        "Foo",
+        [{ name: "x", type: "uint256" }],
+        { chainId: 1, verifyingContract: SEAPORT_16 },
+        { x: "1" },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  /* Canonical Seaport 1.6 `OrderComponents` — the nested item types recognition requires. */
+  const SEAPORT_ITEM = [
+    { name: "itemType", type: "uint8" },
+    { name: "token", type: "address" },
+    { name: "identifierOrCriteria", type: "uint256" },
+    { name: "startAmount", type: "uint256" },
+    { name: "endAmount", type: "uint256" },
+  ];
+  const seaportDoc = (message: Record<string, unknown>): SignRequest =>
+    typed({
+      types: {
+        EIP712Domain: [
+          { name: "name", type: "string" },
+          { name: "version", type: "string" },
+          { name: "chainId", type: "uint256" },
+          { name: "verifyingContract", type: "address" },
+        ],
+        OrderComponents: [
+          { name: "offerer", type: "address" },
+          { name: "zone", type: "address" },
+          { name: "offer", type: "OfferItem[]" },
+          { name: "consideration", type: "ConsiderationItem[]" },
+          { name: "orderType", type: "uint8" },
+          { name: "startTime", type: "uint256" },
+          { name: "endTime", type: "uint256" },
+          { name: "zoneHash", type: "bytes32" },
+          { name: "salt", type: "uint256" },
+          { name: "conduitKey", type: "bytes32" },
+          { name: "counter", type: "uint256" },
+        ],
+        OfferItem: SEAPORT_ITEM,
+        ConsiderationItem: [...SEAPORT_ITEM, { name: "recipient", type: "address" }],
+      },
+      primaryType: "OrderComponents",
+      domain: {
+        name: "Seaport",
+        version: "1.6",
+        chainId: 1,
+        verifyingContract: SEAPORT_16,
+      },
+      message: {
+        offerer: SIGNER,
+        zone: "0x0000000000000000000000000000000000000000",
+        offer: [],
+        consideration: [],
+        orderType: 0,
+        startTime: "1700000000",
+        endTime: "1700001000",
+        zoneHash: `0x${"00".repeat(32)}`,
+        salt: "123",
+        conduitKey: `0x${"00".repeat(32)}`,
+        counter: "0",
+        ...message,
+      },
+    });
+
+  it("a Seaport order item of an unknown itemType is blind", () => {
+    const intent = decodeEvm(
+      seaportDoc({
+        offer: [
+          {
+            itemType: 6,
+            token: OTHER,
+            identifierOrCriteria: "1",
+            startAmount: "1",
+            endAmount: "1",
+          },
+        ],
+        consideration: [
+          {
+            itemType: 1,
+            token: USDC,
+            identifierOrCriteria: "1",
+            startAmount: "5000000",
+            endAmount: "5000000",
+            recipient: SIGNER,
+          },
+        ],
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("a BulkOrder primary type is blind", () => {
+    const intent = decodeEvm(
+      simpleDoc("BulkOrder", [{ name: "x", type: "uint256" }], { chainId: 1 }, { x: "1" }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  /** A representative near-miss request for an evm row's claim surface. */
+  const nearMissRequest = (claim: FamilyClaim): SignRequest => {
+    if (claim.surface === "evm.call") {
+      return tx(USDC, "0xdeadbeef");
+    }
+    if (claim.surface === "evm.typed-data" && "primaryType" in claim) {
+      const primaryType = (
+        {
+          "^Permit": "PermitXYZ",
+          "^SafeTx$": "SafeTx",
+          "^(?:OrderComponents|BulkOrder)$": "BulkOrder",
+        } as Record<string, string | undefined>
+      )[claim.primaryType.source];
+      if (primaryType === undefined) {
+        throw new Error(`no near-miss fixture for ${claim.primaryType}`);
+      }
+      return simpleDoc(primaryType, [{ name: "x", type: "uint256" }], { chainId: 1 }, { x: "1" });
+    }
+    if (claim.surface === "evm.typed-data") {
+      const verifyingContract =
+        claim.verifyingContract === "permit2"
+          ? PERMIT2
+          : claim.verifyingContract === "seaport"
+            ? SEAPORT_16
+            : USDC;
+      return simpleDoc(
+        "Foo",
+        [{ name: "x", type: "uint256" }],
+        { chainId: 1, verifyingContract },
+        { x: "1" },
+      );
+    }
+    throw new Error(`no near-miss fixture for surface ${claim.surface}`);
+  };
+
+  /** The claim check `decodeEvm` runs row by row, evaluated for one request. */
+  const claimsFixture = (request: SignRequest, claim: FamilyClaim): boolean => {
+    if (claim.surface === "evm.call") {
+      return (
+        request.kind === "evm.transaction" &&
+        request.tx.to !== undefined &&
+        lookupEvmToken(evmTokenTable, request.tx.chainId, request.tx.to) !== undefined
+      );
+    }
+    if (claim.surface !== "evm.typed-data" || request.kind !== "evm.typed-data") {
+      return false;
+    }
+    const { primaryType, domain } = JSON.parse(request.typedData) as {
+      primaryType: string;
+      domain: Record<string, unknown>;
+    };
+    if ("primaryType" in claim) {
+      return claim.primaryType.test(primaryType);
+    }
+    const contract = domain["verifyingContract"];
+    if (typeof contract !== "string" || !isEvmAddress(contract)) {
+      return false;
+    }
+    const chainId = Number(request.network.split(":")[1] ?? 1);
+    const lower = contract.toLowerCase();
+    return (
+      (claim.verifyingContract === "permit2" && lower === PERMIT2_ADDRESS.toLowerCase()) ||
+      (claim.verifyingContract === "seaport" && SEAPORT_CONTRACTS.has(lower)) ||
+      (claim.verifyingContract === "token-table" &&
+        lookupEvmToken(evmTokenTable, chainId, checksumEvmAddress(contract)) !== undefined)
+    );
+  };
+
+  it("every evm family row blinds a representative near miss", () => {
+    const rows = RECOGNISED_FAMILIES.filter((r) => r.claim.surface.startsWith("evm"));
+    expect(rows.length).toBeGreaterThanOrEqual(7);
+    for (const row of rows) {
+      const request = nearMissRequest(row.claim);
+      // A fixture claimed by another row would prove nothing about this one.
+      for (const other of rows.filter((r) => r !== row)) {
+        expect(claimsFixture(request, other.claim)).toBe(false);
+      }
+      expect(decodeEvm(request, SIGNER).blind).toBe(row.nearMiss);
+    }
+  });
+
+  it("a variant without showable fields is still variant-blind", () => {
+    const huge = `0x${"ab".repeat(4000)}`;
+    const intent = decodeEvm(
+      simpleDoc(
+        "Foo",
+        [{ name: "blob", type: "bytes" }],
+        { chainId: 1, verifyingContract: PERMIT2 },
+        { blob: huge },
+      ),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+});
+
+describe("only hashed domain fields reach display and recognition", () => {
+  const PERMIT = [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ];
+  const permitMessage = {
+    owner: SIGNER,
+    spender: OTHER,
+    value: "1",
+    nonce: "0",
+    deadline: "2000000000",
+  };
+
+  it("undeclared domain keys are dropped from the display domain", () => {
+    const intent = decodeEvm(
+      typed({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+          ],
+          Mail: [{ name: "x", type: "uint256" }],
+        },
+        primaryType: "Mail",
+        domain: {
+          name: "dApp",
+          version: "1",
+          chainId: 1,
+          verifyingContract: USDC,
+          salt: `0x${"00".repeat(32)}`,
+          extra: "ignored",
+        },
+        message: { x: "1" },
+      }),
+      SIGNER,
+    );
+    expect(intent.message?.kind).toBe("typed-data");
+    expect(intent.message).toHaveProperty("domain", { name: "dApp", version: "1" });
+  });
+
+  it("a Permit whose verifyingContract is not hashed is not recognised", () => {
+    const intent = decodeEvm(
+      typed({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+          ],
+          Permit: PERMIT,
+        },
+        primaryType: "Permit",
+        domain: { name: "Some Token", version: "1", chainId: 1, verifyingContract: USDC },
+        message: permitMessage,
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBe("typed-data-variant");
+  });
+
+  it("the same Permit is recognised when verifyingContract is declared", () => {
+    const intent = decodeEvm(
+      typed({
+        types: {
+          EIP712Domain: [
+            { name: "name", type: "string" },
+            { name: "version", type: "string" },
+            { name: "chainId", type: "uint256" },
+            { name: "verifyingContract", type: "address" },
+          ],
+          Permit: PERMIT,
+        },
+        primaryType: "Permit",
+        domain: { name: "Some Token", version: "1", chainId: 1, verifyingContract: OTHER },
+        message: permitMessage,
+      }),
+      SIGNER,
+    );
+    expect(intent.blind).toBeUndefined();
+    expect(intent.approvals.length).toBeGreaterThan(0);
   });
 });

@@ -6,10 +6,11 @@
  * zero), token amounts are decimal strings of the smallest unit.
  */
 
+import { isHexRendering, isReadableText } from "./display.ts";
 import { parseSignIn } from "./sign-in.ts";
 import type { SignInParse } from "./sign-in.ts";
 
-export { displayExcerpt, isUnsafeCodePoint } from "./display.ts";
+export { displayExcerpt, isHexRendering, isReadableText, isUnsafeCodePoint } from "./display.ts";
 export type { DisplayExcerpt } from "./display.ts";
 export { parseSignIn } from "./sign-in.ts";
 export type { SignInClaim, SignInParse } from "./sign-in.ts";
@@ -140,12 +141,23 @@ export type Verifiability = "full" | "partial" | "opaque";
 
 /** Why a request is blind: the signer can neither show it nor bound what it authorises. */
 export type BlindReason =
-  | "message-bytes" // message bytes that are not UTF-8 text (EVM personal_sign, Solana signMessage)
-  | "typed-data-oversize" // unrecognised EIP-712 that cannot be shown in full
+  // message content that is not readable text: non-UTF-8 bytes, a message of exactly 32 bytes
+  // (digest length), text with an unsafe code point other than TAB/LF/CR, or text that is the hex
+  // rendering of ≥ 32 bytes
+  | "message-bytes"
+  | "typed-data-commitment" // typed data whose every leaf is a commitment (a hash or opaque bytes)
+  // typed data a recognised family claims, in a shape the decoder does not recognise
+  | "typed-data-variant"
+  // typed data that cannot be shown in full: an unrecognised document over the leaf budget, or a
+  // recognised Seaport order with more offer or consideration items than the prompt shows
+  | "typed-data-oversize"
   | "token-function" // an unrecognised function of a built-in-table token
   | "account-code" // calldata to the signing account itself (its own, possibly delegated, code)
   | "safe-delegatecall" // a Safe delegatecall to anything but canonical MultiSendCallOnly entries
-  | "safe-refund-unbounded"; // a SafeTx with gasPrice > 0: the refund total depends on executor gas
+  | "safe-refund-unbounded" // a SafeTx with gasPrice > 0: the refund total depends on executor gas
+  // an undecoded instruction of a core Solana program (System, Token, Token-2022, Stake, Associated
+  // Token) that the signer takes part in
+  | "core-instruction";
 
 /** One leaf of an unrecognised typed-data document, as a display line. */
 export type TypedDataLeaf = { readonly path: string; readonly value: string };
@@ -328,23 +340,35 @@ export type MessageContent =
       readonly safe?: SafeTransaction;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
-       * recognized shape and for one too large to show in full.
+       * recognized shape and for one too large to show in full. Present even when the document is
+       * blind (`typed-data-commitment`), so the prompt can still show the leaves it signs.
        */
       readonly fields?: ReadonlyArray<TypedDataLeaf>;
     };
 
 const utf8 = new TextDecoder("utf-8", { fatal: true });
 
-/** Strict UTF-8 text with any sign-in recognition for `family`, else the raw bytes as hex. */
+const bytesContent = (bytes: Uint8Array): MessageContent => ({
+  kind: "bytes",
+  hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
+});
+
+/**
+ * Strict UTF-8 readable text with any sign-in recognition for `family`, else the raw bytes as hex.
+ * A message of exactly 32 bytes is bytes, not text: Safe's eth_sign path (`v > 30`) and EIP-191
+ * digest verifiers sign `"\x19Ethereum Signed Message:\n32" ‖ digest`, and only a 32-byte message
+ * has that preimage — no display can tell a 32-byte text from a digest that happens to be UTF-8 (≈1
+ * in 7×10⁷ keccak outputs are; grindable in minutes).
+ */
 export const messageContent = (bytes: Uint8Array, family: "evm" | "solana"): MessageContent => {
   let text: string;
   try {
     text = utf8.decode(bytes);
   } catch {
-    return {
-      kind: "bytes",
-      hex: `0x${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`,
-    };
+    return bytesContent(bytes);
+  }
+  if (bytes.length === 32 || !isReadableText(text)) {
+    return bytesContent(bytes);
   }
   const signIn = parseSignIn(text, family);
   return signIn === undefined ? { kind: "text", text } : { kind: "text", text, signIn };
@@ -418,16 +442,31 @@ export type DisplayIntent = {
 };
 
 /**
- * A request is blind exactly when the decoder set `blind` — the signer can neither show its content
- * nor bound what it authorises. A request the decoder can describe but not verify (an `opaque`
- * call, an unrecognised but fully listed typed-data document) is not blind.
+ * A request is blind exactly when the decoder set `blind` — what the prompt prints does not bound
+ * what the signature authorises. A request the decoder can describe in full but not verify (an
+ * `opaque` call, an unrecognised but fully listed typed-data document whose leaves are readable
+ * values) is not blind; one whose every leaf is a commitment, or which a decoded family claims in
+ * an unrecognised shape, is.
  */
 export const isBlindIntent = (intent: Pick<DisplayIntent, "blind">): boolean =>
   intent.blind !== undefined;
 
-/** Raw bytes are the one message content no prompt can show. */
+/**
+ * Why a message is blind. `bytes` always is — no prompt can show it. `text` is blind when its UTF-8
+ * length is 32 (a digest has the same EIP-191 preimage — see `messageContent`), when it holds an
+ * unsafe code point other than TAB/LF/CR, or when it is only the hex rendering of ≥ 32 bytes: the
+ * owner sees the rendering, not the bytes it encodes. Checking the content again here gives callers
+ * that build `{ kind: "text" }` themselves the same verdict.
+ */
 export const messageBlindReason = (message: MessageContent): BlindReason | undefined =>
-  message.kind === "bytes" ? "message-bytes" : undefined;
+  message.kind === "bytes"
+    ? "message-bytes"
+    : message.kind === "text" &&
+        (new TextEncoder().encode(message.text).length === 32 ||
+          !isReadableText(message.text) ||
+          isHexRendering(message.text))
+      ? "message-bytes"
+      : undefined;
 
 export type ChainErrorCode =
   | "unknown-field"

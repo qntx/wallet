@@ -18,8 +18,15 @@ import {
 } from "./typed-data.ts";
 import type { TypedDataInput, TypedDataMessage } from "./typed-data.ts";
 
+/**
+ * The most offer or consideration items the prompt shows of one order before summarising the rest.
+ * An order with more is blind (`typed-data-oversize`): the prompt must never truncate away items
+ * the signature authorises.
+ */
+export const SEAPORT_ORDER_ITEMS = 4;
+
 /** Seaport 1.5 and 1.6 deployments, lowercase for a checksum-insensitive compare. */
-const SEAPORT_CONTRACTS = new Set([
+export const SEAPORT_CONTRACTS: ReadonlySet<string> = new Set([
   "0x0000000000000068f116a894984e2db1123eb395",
   "0x00000000000000adc04c56bf30ac9d3c0aaf14dc",
 ]);
