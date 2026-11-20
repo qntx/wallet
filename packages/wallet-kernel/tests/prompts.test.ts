@@ -1,4 +1,4 @@
-import { hexToBytes } from "@noble/hashes/utils.js";
+import { hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 /**
  * Kernel-owned verification prompt text: exact strings for every core prompt kind, the chain prompt
  * per verifiability level, and every Spark approval kind, in both catalogs.
@@ -12,6 +12,7 @@ import type { DisplayIntent } from "@qntx/wallet-chains";
 import { decodeBitcoinPsbt } from "@qntx/wallet-chains/bitcoin";
 import { checksumEvmAddress, decodeEvm, encodeBatchExecute } from "@qntx/wallet-chains/evm";
 import { decodeSolana, normalizeSolana } from "@qntx/wallet-chains/solana";
+import { buildTronRawData, decodeTron } from "@qntx/wallet-chains/tron";
 
 import { KernelError } from "../src/errors.ts";
 import { chainPrompt, messagePromptIntent } from "../src/modules/chains/prompt.ts";
@@ -561,6 +562,60 @@ describe("chain prompts", () => {
         "可能扣除带宽费或账户激活费",
     });
   });
+
+  it("an active permission with no set operations allows no transactions", () => {
+    const intent: PromptIntent = {
+      family: "tron",
+      network: "tron:728126428",
+      summary: "authorization",
+      outflows: [],
+      approvals: [],
+      fee: undefined,
+      verifiability: "partial",
+      blind: "tron-permission-update",
+      tron: {
+        contractType: "AccountPermissionUpdateContract",
+        expiration: 1_767_225_660_000,
+        permissionUpdate: {
+          owner: {
+            type: "owner",
+            id: 2,
+            name: "owner",
+            threshold: "1",
+            parentId: 0,
+            keys: [{ address: "TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6", weight: "1" }],
+          },
+          actives: [
+            {
+              type: "active",
+              id: 2,
+              name: "active0",
+              threshold: "1",
+              parentId: 0,
+              operations: `0x${"00".repeat(32)}`,
+              keys: [{ address: "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC", weight: "1" }],
+            },
+          ],
+        },
+      },
+    };
+    expect(chainPrompt("en", intent).description).toBe(
+      "Account takeover: this gives control of this account to TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6, TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC. Whoever holds these keys can move all of its assets.\n" +
+        "Network: TRON\n" +
+        'Owner permission "owner": threshold 1; keys TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6 (weight 1)\n' +
+        'Active permission "active0": threshold 1; keys TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC (weight 1); allows no transactions\n' +
+        "Expires 2026-01-01 00:01 (UTC)\n" +
+        "Bandwidth or account-activation fees may be charged",
+    );
+    expect(chainPrompt("zh-Hans", intent).description).toBe(
+      "账户接管：此交易把本账户的控制权交给 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6、TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC，持有这些密钥的人可以转走全部资产。\n" +
+        "网络：TRON\n" +
+        "所有者权限「owner」：阈值 1；密钥 TWer2Ygk5TEheHp3TPuYeqxmB6SsGZmaL6（权重 1）\n" +
+        "活跃权限「active0」：阈值 1；密钥 TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC（权重 1）；不允许任何交易\n" +
+        "2026-01-01 00:01（UTC）后失效\n" +
+        "可能扣除带宽费或账户激活费",
+    );
+  });
 });
 
 describe("chain prompts via the real decoders", () => {
@@ -980,6 +1035,57 @@ describe("chain prompts via the real decoders", () => {
     );
     expect(chainPrompt("zh-Hans", intent).description).toContain(
       "包含其他签名者的输入；无法核实手续费",
+    );
+  });
+
+  const TRON_OWNER = "TYBNgWfhGuNzdLtjKtxXTfskAhTbMcqbaG";
+  const TRON_TO = "TJRyWwFs9wTFGZg3JbrVriFbNfCug5tDeC";
+  const tronTransfer = (memo: Uint8Array): PromptIntent =>
+    decodeTron(
+      {
+        kind: "tron.transaction",
+        network: "tron:728126428",
+        account: { kind: "hd", walletId: "w", groupIndex: 0, template: "tron.bip44" },
+        rawData: buildTronRawData(
+          {
+            refBlock: {
+              number: 76050000,
+              id: "0000000004886e501a2b3c4d5e6f78901a2b3c4d5e6f78901a2b3c4d5e6f7890",
+            },
+            expiration: 1_767_225_660_000,
+            timestamp: 1_767_225_600_000,
+            memo,
+          },
+          { type: "TransferContract", owner: TRON_OWNER, to: TRON_TO, amount: 1_000_000n },
+        ),
+      },
+      TRON_OWNER,
+    );
+
+  it("a TRON binary memo shows its hex up to 64 bytes, then only its length", () => {
+    const data = new Uint8Array(64).fill(0xff);
+    expect(chainPrompt("en", tronTransfer(data)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo data 0x${"ff".repeat(64)}\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(data)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注数据 0x${"ff".repeat(64)}\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
+    );
+    const long = new Uint8Array(65).fill(0xff);
+    expect(chainPrompt("en", tronTransfer(long)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo of 65 bytes\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(long)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注 65 字节\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
+    );
+  });
+
+  it("a TRON text memo over the excerpt budget is cut with an omitted count", () => {
+    const memo = utf8ToBytes("x".repeat(400));
+    expect(chainPrompt("en", tronTransfer(memo)).description).toBe(
+      `Network: TRON\nSend 1 TRX to ${TRON_TO}\nMemo:\n${"x".repeat(320)}\n… 80 more characters not shown\nExpires 2026-01-01 00:01 (UTC)\nBandwidth or account-activation fees may be charged`,
+    );
+    expect(chainPrompt("zh-Hans", tronTransfer(memo)).description).toBe(
+      `网络：TRON\n发送 1 TRX 到 ${TRON_TO}\n备注：\n${"x".repeat(320)}\n… 还有 80 个字符未显示\n2026-01-01 00:01（UTC）后失效\n可能扣除带宽费或账户激活费`,
     );
   });
 });

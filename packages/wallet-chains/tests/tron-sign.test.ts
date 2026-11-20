@@ -33,7 +33,9 @@ describe("signTronTransaction", () => {
   );
 
   it("refuses a bare 32-byte digest and malformed raw_data", () => {
-    expect(() => signTronTransaction(new Uint8Array(32), KEY)).toThrow(ChainError);
+    expect(() => signTronTransaction(new Uint8Array(32), KEY)).toThrow(
+      /a bare 32-byte digest is not a TRON transaction/,
+    );
     expect(() => signTronTransaction(new Uint8Array(64).fill(0xaa), KEY)).toThrow(ChainError);
   });
 

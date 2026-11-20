@@ -363,6 +363,20 @@ describe("malformed wire input", () => {
     });
   };
 
+  const malformedMatching = (name: string, run: () => unknown, match: RegExp): void => {
+    it(name, () => {
+      try {
+        run();
+      } catch (error) {
+        expect(error).toBeInstanceOf(ChainError);
+        expect((error as ChainError).code).toBe("invalid-request");
+        expect((error as ChainError).message).toMatch(match);
+        return;
+      }
+      throw new Error("expected ChainError");
+    });
+  };
+
   malformed("zero contracts", () =>
     decodeTronRawData(
       encodeMessage([
@@ -374,23 +388,26 @@ describe("malformed wire input", () => {
     ),
   );
 
-  malformed("two contracts", () =>
-    decodeTronRawData(
-      encodeMessage([
-        { field: 1, bytes: requiredBytesField(1, raw.refBlockBytes) },
-        { field: 4, bytes: requiredBytesField(4, raw.refBlockHash) },
-        { field: 8, bytes: varintField(8, raw.expiration) },
-        {
-          field: 11,
-          bytes: requiredBytesField(11, contractSlot(1, "TransferContract", raw.contract.value)),
-        },
-        {
-          field: 11,
-          bytes: requiredBytesField(11, contractSlot(1, "TransferContract", raw.contract.value)),
-        },
-        { field: 14, bytes: varintField(14, TS) },
-      ]),
-    ),
+  malformedMatching(
+    "two contracts",
+    () =>
+      decodeTronRawData(
+        encodeMessage([
+          { field: 1, bytes: requiredBytesField(1, raw.refBlockBytes) },
+          { field: 4, bytes: requiredBytesField(4, raw.refBlockHash) },
+          { field: 8, bytes: varintField(8, raw.expiration) },
+          {
+            field: 11,
+            bytes: requiredBytesField(11, contractSlot(1, "TransferContract", raw.contract.value)),
+          },
+          {
+            field: 11,
+            bytes: requiredBytesField(11, contractSlot(1, "TransferContract", raw.contract.value)),
+          },
+          { field: 14, bytes: varintField(14, TS) },
+        ]),
+      ),
+    /exactly one is supported/,
   );
 
   malformed("non-minimal varint", () => {
@@ -807,7 +824,10 @@ describe("semantic refusals", () => {
       { field: 2, bytes: varintField(2, 1n) },
       { field: 3, bytes: varintField(3, 3n) },
     ]);
-    refuse(() => decodeTron(request(54, "FreezeBalanceV2Contract", value), OWNER), /resource/);
+    refuse(
+      () => decodeTron(request(54, "FreezeBalanceV2Contract", value), OWNER),
+      /resource is not BANDWIDTH, ENERGY or TRON_POWER/,
+    );
   });
 
   it("refuses delegating TRON_POWER", () => {

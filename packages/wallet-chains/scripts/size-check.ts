@@ -25,6 +25,7 @@ const FAMILIES = [
   { name: "evm", budget: 120 * 1024 },
   { name: "solana", budget: 80 * 1024 },
   { name: "bitcoin", budget: 60 * 1024 },
+  { name: "tron", budget: 70 * 1024 },
 ] as const;
 
 type FamilyResult = {

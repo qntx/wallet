@@ -318,7 +318,7 @@ const zh: Catalog = {
   tronField: "交易含有钱包无法显示的字段",
   tronPermissionKind: { owner: "所有者", witness: "见证人", active: "活跃" },
   tronPermission: (kind, name, threshold, keys, operations) =>
-    `${kind}权限「${name}」：阈值 ${threshold}；密钥 ${keys.map((k) => `${k.address}（权重 ${k.weight}）`).join("、")}${operations === undefined ? "" : `；允许 ${operations.join("、")}`}`,
+    `${kind}权限「${name}」：阈值 ${threshold}；密钥 ${keys.map((k) => `${k.address}（权重 ${k.weight}）`).join("、")}${operations === undefined ? "" : operations.length === 0 ? "；不允许任何交易" : `；允许 ${operations.join("、")}`}`,
   tronPermissionId: (id) => `以本账户的权限 ${id} 签署`,
   tronMemoHeading: "备注：",
   tronMemoData: (hex) => `备注数据 ${hex}`,
@@ -486,7 +486,7 @@ const en: Catalog = {
   tronField: "This transaction carries fields the wallet cannot show",
   tronPermissionKind: { owner: "Owner", witness: "Witness", active: "Active" },
   tronPermission: (kind, name, threshold, keys, operations) =>
-    `${kind} permission "${name}": threshold ${threshold}; keys ${keys.map((k) => `${k.address} (weight ${k.weight})`).join(", ")}${operations === undefined ? "" : `; allows ${operations.join(", ")}`}`,
+    `${kind} permission "${name}": threshold ${threshold}; keys ${keys.map((k) => `${k.address} (weight ${k.weight})`).join(", ")}${operations === undefined ? "" : operations.length === 0 ? "; allows no transactions" : `; allows ${operations.join(", ")}`}`,
   tronPermissionId: (id) => `Signs under permission ${id} of this account`,
   tronMemoHeading: "Memo:",
   tronMemoData: (hex) => `Memo data ${hex}`,

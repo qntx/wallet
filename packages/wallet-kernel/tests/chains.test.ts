@@ -1543,6 +1543,32 @@ describe("chain.sign tron", () => {
       rawData: hexToBytes(tronVectors.transactions[0]!.rawDataHex),
     });
     expect(errCode(res)).toBe("invalid-input");
+
+    // Same refusal when the contract owner is the tron.bip44-derived address, so the
+    // template check — not owner binding — is the refusing check.
+    const accountRes = ok(
+      await h.call(
+        "wallet.accounts",
+        { walletId, groupIndex: 0, template: "tron.bip44", network: NETWORK },
+        session,
+      ),
+    );
+    const tronAddress = strField(accountRes, "address");
+    const rawData = buildTronRawData(
+      {
+        refBlock: { number: 1, id: "a".repeat(64) },
+        expiration: 1_700_000_000_000,
+        timestamp: 1_699_999_000_000,
+      },
+      { type: "TransferContract", owner: tronAddress, to: ANVIL.address, amount: 1n },
+    );
+    const res2 = await callSign(h, session, {
+      kind: "tron.transaction",
+      network: NETWORK,
+      account: hd(walletId, "evm.bip44"),
+      rawData,
+    });
+    expect(errCode(res2)).toBe("invalid-input");
   });
 
   it("refuses an evm-family imported key for a tron request", async () => {

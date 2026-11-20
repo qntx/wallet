@@ -218,6 +218,16 @@ type ChainSignRequest = {
     readonly format: "bip322-simple" | "legacy";
     readonly change: 0 | 1;
     readonly index: number;
+} | {
+    readonly kind: "tron.transaction";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly rawData: Uint8Array;
+} | {
+    readonly kind: "tron.message";
+    readonly network: string;
+    readonly account: AccountRef;
+    readonly message: Uint8Array;
 };
 
 // @public (undocumented)
@@ -236,6 +246,9 @@ export type ChainSignResult = {
 } | {
     readonly kind: "bitcoin.message";
     readonly signature: string;
+} | {
+    readonly kind: "tron.transaction" | "tron.message";
+    readonly signature: Uint8Array;
 };
 
 // @public (undocumented)
