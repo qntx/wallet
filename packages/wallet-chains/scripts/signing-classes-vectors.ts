@@ -9,7 +9,7 @@
  *
  * Run from the repo root: bun packages/wallet-chains/scripts/signing-classes-vectors.ts
  */
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { encodeFunctionData, getAddress, getContractAddress, parseAbi } from "viem";
@@ -54,6 +54,43 @@ const personal = (hex: string) => ({
   message: { $bytes: hex },
 });
 
+/* Hyperliquid documents come from the oracle-checked vectors file (vectors/chains/hyperliquid.ts
+   builds it; do not duplicate action literals here). */
+type HlDoc = {
+  domain: { chainId: number };
+  types: Record<string, unknown>;
+  message: Record<string, unknown>;
+};
+// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- this generator wrote that JSON
+const hl = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../../../vectors/chains/hyperliquid.json"), "utf8"),
+) as {
+  userSigned: Array<{ name: string; typedData: HlDoc }>;
+  l1: Array<{ name: string; typedData: HlDoc }>;
+};
+const hlDoc = (list: ReadonlyArray<{ name: string; typedData: HlDoc }>, name: string) => {
+  const found = list.find((c) => c.name === name);
+  if (found === undefined) {
+    throw new Error(`hyperliquid.json has no case named "${name}"`);
+  }
+  return found.typedData;
+};
+const hlTyped = (doc: HlDoc) => ({
+  kind: "evm.typed-data",
+  network: `eip155:${doc.domain.chainId}`,
+  account,
+  typedData: doc,
+});
+const hlUsdSendDoc = hlDoc(hl.userSigned, "usdSend Arbitrum One signing chain");
+const hlExtraTypes = {
+  ...hlUsdSendDoc,
+  types: { ...hlUsdSendDoc.types, Extra: [{ name: "a", type: "uint256" }] },
+};
+const hlBadAmount = {
+  ...hlUsdSendDoc,
+  message: { ...hlUsdSendDoc.message, amount: "1e3" },
+};
+
 const net = "Network: Ethereum";
 const netZh = "网络：Ethereum";
 const caveat = "The wallet cannot verify what this call does";
@@ -72,6 +109,16 @@ const typedVariant =
 const typedVariantZh = "钱包认识这类签名，但不认识这种形式；它可能授权转移资产";
 const typedOversize = "This typed data is too large to show in full";
 const typedOversizeZh = "此类型数据过大，无法完整显示";
+const HL_DEST = getAddress("0x5e9ee1089755c3435139848e47e6635505d5a13a");
+const HL_AGENT = getAddress("0x1234567890abcdef1234567890abcdef12345678");
+const HL_APP_EN = "App: HyperliquidSignTransaction";
+const HL_APP_ZH = "应用：HyperliquidSignTransaction";
+const HL_CONTRACT_EN = "Verifying contract 0x0000000000000000000000000000000000000000";
+const HL_CONTRACT_ZH = "验证合约 0x0000000000000000000000000000000000000000";
+const HL_AGENT_POWERS =
+  "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.";
+const HL_AGENT_POWERS_ZH =
+  "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。";
 
 const p = (title: string, titleZh: string, en: string, zh: string) => ({
   en: { title, description: en },
@@ -547,6 +594,92 @@ const cases = [
       "确认盲签",
       `${blindBytes}\nMessage:\n${hexText}`,
       `${blindBytesZh}\n消息：\n${hexText}`,
+    ),
+  },
+  /* Hyperliquid: documents come from vectors/chains/hyperliquid.json (oracles: nktkas 0.33.3 and
+     hyperliquid-python-sdk); the prompts below are literals. */
+  {
+    name: "Hyperliquid usdSend (EIP-712)",
+    request: hlTyped(hlDoc(hl.userSigned, "usdSend Arbitrum One signing chain")),
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm transfer",
+      "确认转账",
+      `Hyperliquid Mainnet\nSend 2.5 USDC to ${HL_DEST} on Hyperliquid`,
+      `Hyperliquid 主网\n在 Hyperliquid 上发送 2.5 USDC 到 ${HL_DEST}`,
+    ),
+  },
+  {
+    name: "Hyperliquid approveAgent with valid_until (EIP-712)",
+    request: hlTyped(hlDoc(hl.userSigned, "approveAgent with valid_until")),
+    verifiability: "partial",
+    blind: null,
+    prompt: p(
+      "Confirm approval",
+      "确认授权",
+      `Hyperliquid Testnet\nApprove agent ${HL_AGENT} named "bot-2"\nValid until 2027-01-01 01:03 (UTC)\n${HL_AGENT_POWERS}`,
+      `Hyperliquid 测试网\n授权代理 ${HL_AGENT}，名称“bot-2”\n有效期至 2027-01-01 01:03（UTC）\n${HL_AGENT_POWERS_ZH}`,
+    ),
+  },
+  {
+    name: "Hyperliquid cDeposit (EIP-712)",
+    request: hlTyped(hlDoc(hl.userSigned, "cDeposit")),
+    verifiability: "full",
+    blind: null,
+    prompt: p(
+      "Confirm staking",
+      "确认质押",
+      `Hyperliquid Mainnet\nMove 1.5 HYPE from your spot balance into staking`,
+      `Hyperliquid 主网\n将 1.5 HYPE 从现货账户转入质押账户`,
+    ),
+  },
+  {
+    name: "Hyperliquid convertToMultiSigUser (EIP-712)",
+    request: hlTyped(hlDoc(hl.userSigned, "convertToMultiSigUser (blind)")),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${HL_APP_EN}\nNetwork: Arbitrum Sepolia\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Testnet\nsigners: ["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\nnonce: 1700000001600`,
+      `${HL_APP_ZH}\n网络：Arbitrum Sepolia\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Testnet\nsigners：["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]\nnonce：1700000001600`,
+    ),
+  },
+  {
+    name: "Hyperliquid usdSend with an extra type (EIP-712)",
+    request: hlTyped(hlExtraTypes),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000`,
+      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000`,
+    ),
+  },
+  {
+    name: "Hyperliquid usdSend with exponent amount (EIP-712)",
+    request: hlTyped(hlBadAmount),
+    verifiability: "opaque",
+    blind: "typed-data-variant",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `${HL_APP_EN}\nNetwork: Arbitrum One\n${HL_CONTRACT_EN}\nType: HyperliquidTransaction:UsdSend\n${typedVariant}\n${typedCaveat}\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000`,
+      `${HL_APP_ZH}\n网络：Arbitrum One\n${HL_CONTRACT_ZH}\n类型：HyperliquidTransaction:UsdSend\n${typedVariantZh}\n${typedCaveatZh}\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000`,
+    ),
+  },
+  {
+    name: "Hyperliquid L1 phantom agent (EIP-712)",
+    request: hlTyped(hlDoc(hl.l1, "order")),
+    verifiability: "opaque",
+    blind: "typed-data-commitment",
+    prompt: p(
+      "Confirm blind signing",
+      "确认盲签",
+      `App: Exchange\nNetwork: EVM chain 1337\n${HL_CONTRACT_EN}\nType: Agent\n${typedCommitment}\n${typedCaveat}\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
+      `应用：Exchange\n网络：EVM 链 1337\n${HL_CONTRACT_ZH}\n类型：Agent\n${typedCommitmentZh}\n${typedCaveatZh}\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90`,
     ),
   },
 ];

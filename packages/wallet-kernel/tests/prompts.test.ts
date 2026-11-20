@@ -2181,3 +2181,238 @@ describe("blind text prompts", () => {
     });
   });
 });
+
+describe("hyperliquid prompts", () => {
+  const HL_DEST = "0x5E9EE1089755C3435139848e47e6635505D5a13A";
+  const HL_AGENT = "0x1234567890AbcdEF1234567890aBcdef12345678";
+  const HL_SUB = "0x0123456789abcDEF0123456789abCDef01234567";
+  const HL_BUILDER = "0x0000000000000000000000000000000000000Bad";
+  const HL_VALIDATOR = "0x0000000000000000000000000000000000000123";
+  const HL_TOKEN = "SPOT:0x22222222222222222222222222222222";
+  const HL_POWERS =
+    "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.";
+  const HL_POWERS_ZH =
+    "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。";
+
+  const hlIntent = (
+    summary: PromptIntent["summary"],
+    verifiability: PromptIntent["verifiability"],
+    hyperliquid: NonNullable<
+      Extract<PromptIntent["message"], { kind: "typed-data" }>["hyperliquid"]
+    >,
+  ): PromptIntent => ({
+    summary,
+    outflows: [],
+    approvals: [],
+    fee: undefined,
+    verifiability,
+    network: "eip155:42161",
+    message: {
+      kind: "typed-data",
+      primaryType: "HyperliquidTransaction:X",
+      domain: {
+        name: "HyperliquidSignTransaction",
+        version: "1",
+        chainId: 42161,
+        verifyingContract: "0x0000000000000000000000000000000000000000",
+      },
+      data: {},
+      hyperliquid,
+    },
+  });
+
+  it("withdraw names the bridge and its fee", () => {
+    const intent = hlIntent("transfer", "partial", {
+      kind: "withdraw",
+      chain: "Testnet",
+      destination: HL_DEST,
+      amount: "25",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Hyperliquid Testnet\nWithdraw 25 USDC from Hyperliquid to ${HL_DEST} through the Hyperliquid bridge\nHyperliquid charges a withdrawal fee`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `Hyperliquid 测试网\n经 Hyperliquid 跨链桥提现 25 USDC 到 ${HL_DEST}\nHyperliquid 会收取提现手续费`,
+    });
+  });
+
+  it("spot-send warns the token name is unverified", () => {
+    const intent = hlIntent("transfer", "partial", {
+      kind: "spot-send",
+      chain: "Testnet",
+      destination: HL_DEST,
+      token: HL_TOKEN,
+      amount: "10.25",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Hyperliquid Testnet\nSend 10.25 of token ${HL_TOKEN} to ${HL_DEST} on Hyperliquid\nThe wallet cannot verify the token's name; check its id`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `Hyperliquid 测试网\n在 Hyperliquid 上发送 10.25 代币 ${HL_TOKEN} 到 ${HL_DEST}\n钱包无法核实代币名称，请核对其 id`,
+    });
+  });
+
+  it("usd-class-transfer names both directions", () => {
+    const toPerp = hlIntent("transfer", "full", {
+      kind: "usd-class-transfer",
+      chain: "Mainnet",
+      amount: "5",
+      toPerp: true,
+    });
+    expect(chainPrompt("en", toPerp)).toStrictEqual({
+      title: "Confirm transfer",
+      description: "Hyperliquid Mainnet\nMove 5 USDC from your Hyperliquid spot balance to perps",
+    });
+    expect(chainPrompt("zh-Hans", toPerp)).toStrictEqual({
+      title: "确认转账",
+      description: "Hyperliquid 主网\n将 5 USDC 从 Hyperliquid 现货账户转入永续账户",
+    });
+    const toSpot = hlIntent("transfer", "full", {
+      kind: "usd-class-transfer",
+      chain: "Testnet",
+      amount: "0.75",
+      toPerp: false,
+    });
+    expect(chainPrompt("en", toSpot).description).toBe(
+      "Hyperliquid Testnet\nMove 0.75 USDC from your Hyperliquid perps balance to spot",
+    );
+    expect(chainPrompt("zh-Hans", toSpot).description).toBe(
+      "Hyperliquid 测试网\n将 0.75 USDC 从 Hyperliquid 永续账户转入现货账户",
+    );
+  });
+
+  it("send-asset names both DEXes and the sub-account", () => {
+    const intent = hlIntent("transfer", "partial", {
+      kind: "send-asset",
+      chain: "Mainnet",
+      destination: HL_DEST,
+      sourceDex: "",
+      destinationDex: "spot",
+      token: HL_TOKEN,
+      amount: "1.5",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm transfer",
+      description: `Hyperliquid Mainnet\nSend 1.5 of token ${HL_TOKEN} from perps to spot of ${HL_DEST}\nThe wallet cannot verify the token's name; check its id`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认转账",
+      description: `Hyperliquid 主网\n发送 1.5 代币 ${HL_TOKEN}：从永续账户到 ${HL_DEST} 的现货账户\n钱包无法核实代币名称，请核对其 id`,
+    });
+    const sub = hlIntent("transfer", "partial", {
+      kind: "send-asset",
+      chain: "Testnet",
+      destination: HL_DEST,
+      sourceDex: "spot",
+      destinationDex: "builder01",
+      token: HL_TOKEN,
+      amount: "3",
+      fromSubAccount: HL_SUB,
+    });
+    expect(chainPrompt("en", sub).description).toBe(
+      `Hyperliquid Testnet\nSend 3 of token ${HL_TOKEN} from spot to DEX builder01 of ${HL_DEST}\nFrom sub-account ${HL_SUB}\nThe wallet cannot verify the token's name; check its id`,
+    );
+    expect(chainPrompt("zh-Hans", sub).description).toBe(
+      `Hyperliquid 测试网\n发送 3 代币 ${HL_TOKEN}：从现货账户到 ${HL_DEST} 的DEX builder01\n来自子账户 ${HL_SUB}\n钱包无法核实代币名称，请核对其 id`,
+    );
+  });
+
+  it("staking-withdraw warns about the unstaking queue", () => {
+    const intent = hlIntent("stake", "full", {
+      kind: "staking-withdraw",
+      chain: "Testnet",
+      wei: "250000000",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm staking",
+      description:
+        "Hyperliquid Testnet\nMove 2.5 HYPE from staking to your spot balance; it arrives after Hyperliquid's 7-day unstaking queue",
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认质押",
+      description:
+        "Hyperliquid 测试网\n将 2.5 HYPE 从质押账户转回现货账户，经 Hyperliquid 的 7 天解除质押队列后到账",
+    });
+  });
+
+  it("token-delegate covers delegate and undelegate", () => {
+    const delegate = hlIntent("stake", "partial", {
+      kind: "token-delegate",
+      chain: "Mainnet",
+      validator: HL_VALIDATOR,
+      wei: "10000000000",
+      undelegate: false,
+    });
+    expect(chainPrompt("en", delegate)).toStrictEqual({
+      title: "Confirm staking",
+      description: `Hyperliquid Mainnet\nDelegate 100 HYPE to validator ${HL_VALIDATOR}`,
+    });
+    expect(chainPrompt("zh-Hans", delegate)).toStrictEqual({
+      title: "确认质押",
+      description: `Hyperliquid 主网\n将 100 HYPE 委托给验证者 ${HL_VALIDATOR}`,
+    });
+    const undelegate = hlIntent("stake", "partial", {
+      kind: "token-delegate",
+      chain: "Testnet",
+      validator: HL_VALIDATOR,
+      wei: "500000000",
+      undelegate: true,
+    });
+    expect(chainPrompt("en", undelegate).description).toBe(
+      `Hyperliquid Testnet\nUndelegate 5 HYPE from validator ${HL_VALIDATOR}`,
+    );
+    expect(chainPrompt("zh-Hans", undelegate).description).toBe(
+      `Hyperliquid 测试网\n从验证者 ${HL_VALIDATOR} 取消委托 5 HYPE`,
+    );
+  });
+
+  it("approve-agent covers named and unnamed agents without expiry", () => {
+    const named = hlIntent("approve", "partial", {
+      kind: "approve-agent",
+      chain: "Mainnet",
+      agent: HL_AGENT,
+      name: "bot-1",
+    });
+    expect(chainPrompt("en", named)).toStrictEqual({
+      title: "Confirm approval",
+      description: `Hyperliquid Mainnet\nApprove agent ${HL_AGENT} named "bot-1"\nNo expiry in the name: Hyperliquid's default applies\n${HL_POWERS}`,
+    });
+    expect(chainPrompt("zh-Hans", named)).toStrictEqual({
+      title: "确认授权",
+      description: `Hyperliquid 主网\n授权代理 ${HL_AGENT}，名称“bot-1”\n名称中没有有效期：适用 Hyperliquid 的默认期限\n${HL_POWERS_ZH}`,
+    });
+    const unnamed = hlIntent("approve", "partial", {
+      kind: "approve-agent",
+      chain: "Mainnet",
+      agent: HL_AGENT,
+      name: "",
+    });
+    expect(chainPrompt("en", unnamed).description).toBe(
+      `Hyperliquid Mainnet\nApprove agent ${HL_AGENT} (unnamed)\nNo expiry in the name: Hyperliquid's default applies\n${HL_POWERS}`,
+    );
+    expect(chainPrompt("zh-Hans", unnamed).description).toBe(
+      `Hyperliquid 主网\n授权代理 ${HL_AGENT}（未命名）\n名称中没有有效期：适用 Hyperliquid 的默认期限\n${HL_POWERS_ZH}`,
+    );
+  });
+
+  it("approve-builder-fee names the builder and the rate", () => {
+    const intent = hlIntent("approve", "partial", {
+      kind: "approve-builder-fee",
+      chain: "Mainnet",
+      builder: HL_BUILDER,
+      maxFeeRate: "0.1%",
+    });
+    expect(chainPrompt("en", intent)).toStrictEqual({
+      title: "Confirm approval",
+      description: `Hyperliquid Mainnet\nAllow builder ${HL_BUILDER} to charge up to 0.1% of each order's value`,
+    });
+    expect(chainPrompt("zh-Hans", intent)).toStrictEqual({
+      title: "确认授权",
+      description: `Hyperliquid 主网\n允许 builder ${HL_BUILDER} 对每笔订单收取最多 0.1% 的费用`,
+    });
+  });
+});

@@ -1250,6 +1250,550 @@
           "description": "钱包无法显示签署的内容。仅在完全信任该应用时签署。\n消息：\n0xabababababababababababababababababababababababababababababababab"
         }
       }
+    },
+    {
+      "name": "Hyperliquid usdSend (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:UsdSend": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "destination",
+                "type": "string"
+              },
+              {
+                "name": "amount",
+                "type": "string"
+              },
+              {
+                "name": "time",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:UsdSend",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "usdSend",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+            "amount": "2.5",
+            "time": 1700000000000
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm transfer",
+          "description": "Hyperliquid Mainnet\nSend 2.5 USDC to 0x5E9EE1089755C3435139848e47e6635505D5a13A on Hyperliquid"
+        },
+        "zh-Hans": {
+          "title": "确认转账",
+          "description": "Hyperliquid 主网\n在 Hyperliquid 上发送 2.5 USDC 到 0x5E9EE1089755C3435139848e47e6635505D5a13A"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid approveAgent with valid_until (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:421614",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:ApproveAgent": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "agentAddress",
+                "type": "address"
+              },
+              {
+                "name": "agentName",
+                "type": "string"
+              },
+              {
+                "name": "nonce",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:ApproveAgent",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 421614,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "approveAgent",
+            "signatureChainId": "0x66eee",
+            "hyperliquidChain": "Testnet",
+            "agentAddress": "0x1234567890abcdef1234567890abcdef12345678",
+            "agentName": "bot-2 valid_until 1798765432000",
+            "nonce": 1700000001400
+          }
+        }
+      },
+      "verifiability": "partial",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm approval",
+          "description": "Hyperliquid Testnet\nApprove agent 0x1234567890AbcdEF1234567890aBcdef12345678 named \"bot-2\"\nValid until 2027-01-01 01:03 (UTC)\nThe agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts."
+        },
+        "zh-Hans": {
+          "title": "确认授权",
+          "description": "Hyperliquid 测试网\n授权代理 0x1234567890AbcdEF1234567890aBcdef12345678，名称“bot-2”\n有效期至 2027-01-01 01:03（UTC）\n该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid cDeposit (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:CDeposit": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "wei",
+                "type": "uint64"
+              },
+              {
+                "name": "nonce",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:CDeposit",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "cDeposit",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "wei": 150000000,
+            "nonce": 1700000001000
+          }
+        }
+      },
+      "verifiability": "full",
+      "blind": null,
+      "prompt": {
+        "en": {
+          "title": "Confirm staking",
+          "description": "Hyperliquid Mainnet\nMove 1.5 HYPE from your spot balance into staking"
+        },
+        "zh-Hans": {
+          "title": "确认质押",
+          "description": "Hyperliquid 主网\n将 1.5 HYPE 从现货账户转入质押账户"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid convertToMultiSigUser (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:421614",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:ConvertToMultiSigUser": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "signers",
+                "type": "string"
+              },
+              {
+                "name": "nonce",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:ConvertToMultiSigUser",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 421614,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "convertToMultiSigUser",
+            "signatureChainId": "0x66eee",
+            "hyperliquidChain": "Testnet",
+            "signers": "[\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]",
+            "nonce": 1700000001600
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum Sepolia\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:ConvertToMultiSigUser\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Testnet\nsigners: [\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce: 1700000001600"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum Sepolia\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:ConvertToMultiSigUser\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Testnet\nsigners：[\"0x1111111111111111111111111111111111111111\",\"0x2222222222222222222222222222222222222222\"]\nnonce：1700000001600"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid usdSend with an extra type (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:UsdSend": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "destination",
+                "type": "string"
+              },
+              {
+                "name": "amount",
+                "type": "string"
+              },
+              {
+                "name": "time",
+                "type": "uint64"
+              }
+            ],
+            "Extra": [
+              {
+                "name": "a",
+                "type": "uint256"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:UsdSend",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "usdSend",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+            "amount": "2.5",
+            "time": 1700000000000
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 2.5\ntime: 1700000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：2.5\ntime：1700000000000"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid usdSend with exponent amount (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:42161",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "HyperliquidTransaction:UsdSend": [
+              {
+                "name": "hyperliquidChain",
+                "type": "string"
+              },
+              {
+                "name": "destination",
+                "type": "string"
+              },
+              {
+                "name": "amount",
+                "type": "string"
+              },
+              {
+                "name": "time",
+                "type": "uint64"
+              }
+            ]
+          },
+          "primaryType": "HyperliquidTransaction:UsdSend",
+          "domain": {
+            "name": "HyperliquidSignTransaction",
+            "version": "1",
+            "chainId": 42161,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "type": "usdSend",
+            "signatureChainId": "0xa4b1",
+            "hyperliquidChain": "Mainnet",
+            "destination": "0x5e9ee1089755c3435139848e47e6635505d5a13a",
+            "amount": "1e3",
+            "time": 1700000000000
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-variant",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: HyperliquidSignTransaction\nNetwork: Arbitrum One\nVerifying contract 0x0000000000000000000000000000000000000000\nType: HyperliquidTransaction:UsdSend\nThe wallet recognises this kind of signature but not this form of it; it may authorise moving assets\nThe wallet cannot verify what this signature authorises\nhyperliquidChain: Mainnet\ndestination: 0x5e9ee1089755c3435139848e47e6635505d5a13a\namount: 1e3\ntime: 1700000000000"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：HyperliquidSignTransaction\n网络：Arbitrum One\n验证合约 0x0000000000000000000000000000000000000000\n类型：HyperliquidTransaction:UsdSend\n钱包认识这类签名，但不认识这种形式；它可能授权转移资产\n钱包无法核实此签名授权的内容\nhyperliquidChain：Mainnet\ndestination：0x5e9ee1089755c3435139848e47e6635505d5a13a\namount：1e3\ntime：1700000000000"
+        }
+      }
+    },
+    {
+      "name": "Hyperliquid L1 phantom agent (EIP-712)",
+      "request": {
+        "kind": "evm.typed-data",
+        "network": "eip155:1337",
+        "account": {
+          "kind": "hd",
+          "walletId": "w",
+          "groupIndex": 0,
+          "template": "evm.bip44"
+        },
+        "typedData": {
+          "types": {
+            "EIP712Domain": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "version",
+                "type": "string"
+              },
+              {
+                "name": "chainId",
+                "type": "uint256"
+              },
+              {
+                "name": "verifyingContract",
+                "type": "address"
+              }
+            ],
+            "Agent": [
+              {
+                "name": "source",
+                "type": "string"
+              },
+              {
+                "name": "connectionId",
+                "type": "bytes32"
+              }
+            ]
+          },
+          "primaryType": "Agent",
+          "domain": {
+            "name": "Exchange",
+            "version": "1",
+            "chainId": 1337,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+          },
+          "message": {
+            "source": "a",
+            "connectionId": "0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+          }
+        }
+      },
+      "verifiability": "opaque",
+      "blind": "typed-data-commitment",
+      "prompt": {
+        "en": {
+          "title": "Confirm blind signing",
+          "description": "App: Exchange\nNetwork: EVM chain 1337\nVerifying contract 0x0000000000000000000000000000000000000000\nType: Agent\nIt signs only hashes or raw bytes; the wallet cannot see what they commit to\nThe wallet cannot verify what this signature authorises\nsource: a\nconnectionId: 0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+        },
+        "zh-Hans": {
+          "title": "确认盲签",
+          "description": "应用：Exchange\n网络：EVM 链 1337\n验证合约 0x0000000000000000000000000000000000000000\n类型：Agent\n只签署哈希或原始字节；钱包无法看到它们所承诺的内容\n钱包无法核实此签名授权的内容\nsource：a\nconnectionId：0x25367e0dba84351148288c2233cd6130ed6cec5967ded0c0b7334f36f957cc90"
+        }
+      }
     }
   ]
 }

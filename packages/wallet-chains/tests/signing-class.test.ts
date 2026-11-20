@@ -1633,6 +1633,25 @@ describe("typed-data near misses of decoded families are blind", () => {
     if (claim.surface === "evm.call") {
       return tx(USDC, "0xdeadbeef");
     }
+    if (claim.surface === "evm.typed-data" && "domainName" in claim) {
+      const primaryType =
+        claim.primaryType === undefined
+          ? "Foo"
+          : (
+              {
+                "^Agent$": "Agent",
+              } as Record<string, string | undefined>
+            )[claim.primaryType.source];
+      if (primaryType === undefined) {
+        throw new Error(`no near-miss fixture for ${claim.primaryType}`);
+      }
+      return simpleDoc(
+        primaryType,
+        [{ name: "x", type: "uint256" }],
+        { name: claim.domainName, chainId: 1 },
+        { x: "1" },
+      );
+    }
     if (claim.surface === "evm.typed-data" && "primaryType" in claim) {
       const primaryType = (
         {
@@ -1679,6 +1698,12 @@ describe("typed-data near misses of decoded families are blind", () => {
       primaryType: string;
       domain: Record<string, unknown>;
     };
+    if ("domainName" in claim) {
+      return (
+        domain["name"] === claim.domainName &&
+        (claim.primaryType === undefined || claim.primaryType.test(primaryType))
+      );
+    }
     if ("primaryType" in claim) {
       return claim.primaryType.test(primaryType);
     }

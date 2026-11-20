@@ -19,6 +19,11 @@ export type FamilyClaim =
   | { readonly surface: "evm.typed-data"; readonly primaryType: RegExp }
   | {
       readonly surface: "evm.typed-data";
+      readonly domainName: string;
+      readonly primaryType?: RegExp;
+    }
+  | {
+      readonly surface: "evm.typed-data";
       readonly verifyingContract: "token-table" | "permit2" | "seaport";
     }
   | { readonly surface: "solana.instruction"; readonly program: keyof typeof PROGRAM_IDS };
@@ -30,6 +35,21 @@ export type RecognisedFamily = {
 };
 
 export const RECOGNISED_FAMILIES: ReadonlyArray<RecognisedFamily> = [
+  /* The phantom agent's connectionId is a hash of the msgpack action, a commitment no prompt can
+     bound; main and imported accounts never get it described (the kernel's agent key signs L1
+     actions through its own command). First: an `Exchange`/`Agent` document must not fall through
+     to a wider claim. */
+  {
+    family: "Hyperliquid L1",
+    claim: { surface: "evm.typed-data", domainName: "Exchange", primaryType: /^Agent$/ },
+    nearMiss: "typed-data-commitment",
+  },
+  /* Hyperliquid user-signed actions under the HyperliquidSignTransaction domain. */
+  {
+    family: "Hyperliquid",
+    claim: { surface: "evm.typed-data", domainName: "HyperliquidSignTransaction" },
+    nearMiss: "typed-data-variant",
+  },
   /* ERC-20/721/1155 transfer, approve and setApprovalForAll selectors to a listed token. */
   {
     family: "built-in token",

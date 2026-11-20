@@ -13,6 +13,7 @@ import type {
   AssetAmount,
   ChainFamily,
   DisplayIntent,
+  HyperliquidAction,
   IntentSummary,
   MessageContent,
   SafeTransaction,
@@ -142,6 +143,31 @@ type Catalog = {
   ) => string;
   readonly stakeAuthority: (account: string, role: string, authority: string) => string;
   readonly stakeRole: Readonly<Record<"staker" | "withdrawer", string>>;
+  readonly hlChain: Readonly<Record<"Mainnet" | "Testnet", string>>;
+  readonly hlUsdSend: (amount: string, destination: string) => string;
+  readonly hlWithdraw: (amount: string, destination: string) => string;
+  readonly hlWithdrawFee: string;
+  readonly hlSpotSend: (amount: string, token: string, destination: string) => string;
+  readonly hlTokenId: string;
+  readonly hlClassTransfer: (amount: string, toPerp: boolean) => string;
+  readonly hlDex: (dex: string) => string;
+  readonly hlSendAsset: (
+    amount: string,
+    token: string,
+    sourceDex: string,
+    destination: string,
+    destinationDex: string,
+  ) => string;
+  readonly hlSubAccount: (address: string) => string;
+  readonly hlStakeDeposit: (hype: string) => string;
+  readonly hlStakeWithdraw: (hype: string) => string;
+  readonly hlDelegate: (hype: string, validator: string) => string;
+  readonly hlUndelegate: (hype: string, validator: string) => string;
+  readonly hlApproveAgent: (agent: string, name: string | undefined) => string;
+  readonly hlAgentExpiry: (date: string) => string;
+  readonly hlAgentNoExpiry: string;
+  readonly hlAgentPowers: string;
+  readonly hlBuilderFee: (builder: string, rate: string) => string;
 };
 
 const zh: Catalog = {
@@ -222,6 +248,33 @@ const zh: Catalog = {
   stakeRole: { staker: "质押", withdrawer: "提取" },
   stakeAuthority: (account, role, authority) =>
     `将质押账户 ${account} 的${role}权限交给 ${authority}`,
+  hlChain: { Mainnet: "Hyperliquid 主网", Testnet: "Hyperliquid 测试网" },
+  hlUsdSend: (amount, destination) => `在 Hyperliquid 上发送 ${amount} USDC 到 ${destination}`,
+  hlWithdraw: (amount, destination) => `经 Hyperliquid 跨链桥提现 ${amount} USDC 到 ${destination}`,
+  hlWithdrawFee: "Hyperliquid 会收取提现手续费",
+  hlSpotSend: (amount, token, destination) =>
+    `在 Hyperliquid 上发送 ${amount} 代币 ${token} 到 ${destination}`,
+  hlTokenId: "钱包无法核实代币名称，请核对其 id",
+  hlClassTransfer: (amount, toPerp) =>
+    toPerp
+      ? `将 ${amount} USDC 从 Hyperliquid 现货账户转入永续账户`
+      : `将 ${amount} USDC 从 Hyperliquid 永续账户转入现货账户`,
+  hlDex: (dex) => (dex === "" ? "永续账户" : dex === "spot" ? "现货账户" : `DEX ${dex}`),
+  hlSendAsset: (amount, token, sourceDex, destination, destinationDex) =>
+    `发送 ${amount} 代币 ${token}：从${sourceDex}到 ${destination} 的${destinationDex}`,
+  hlSubAccount: (address) => `来自子账户 ${address}`,
+  hlStakeDeposit: (hype) => `将 ${hype} HYPE 从现货账户转入质押账户`,
+  hlStakeWithdraw: (hype) =>
+    `将 ${hype} HYPE 从质押账户转回现货账户，经 Hyperliquid 的 7 天解除质押队列后到账`,
+  hlDelegate: (hype, validator) => `将 ${hype} HYPE 委托给验证者 ${validator}`,
+  hlUndelegate: (hype, validator) => `从验证者 ${validator} 取消委托 ${hype} HYPE`,
+  hlApproveAgent: (agent, name) =>
+    name === undefined ? `授权代理 ${agent}（未命名）` : `授权代理 ${agent}，名称“${name}”`,
+  hlAgentExpiry: (date) => `有效期至 ${date}（UTC）`,
+  hlAgentNoExpiry: "名称中没有有效期：适用 Hyperliquid 的默认期限",
+  hlAgentPowers:
+    "该代理无需你确认即可替此账户及其子账户交易，并在 Hyperliquid 内转移资金（包括存入金库）；它不能提现或向其他账户转账。",
+  hlBuilderFee: (builder, rate) => `允许 builder ${builder} 对每笔订单收取最多 ${rate} 的费用`,
   stakeLine: (a, sol) =>
     a.kind === "create"
       ? `创建质押账户 ${a.account}，存入 ${sol(a.lamports)}`
@@ -321,6 +374,37 @@ const en: Catalog = {
   stakeRole: { staker: "staker", withdrawer: "withdrawer" },
   stakeAuthority: (account, role, authority) =>
     `Give ${authority} the ${role} authority over stake account ${account}`,
+  hlChain: { Mainnet: "Hyperliquid Mainnet", Testnet: "Hyperliquid Testnet" },
+  hlUsdSend: (amount, destination) => `Send ${amount} USDC to ${destination} on Hyperliquid`,
+  hlWithdraw: (amount, destination) =>
+    `Withdraw ${amount} USDC from Hyperliquid to ${destination} through the Hyperliquid bridge`,
+  hlWithdrawFee: "Hyperliquid charges a withdrawal fee",
+  hlSpotSend: (amount, token, destination) =>
+    `Send ${amount} of token ${token} to ${destination} on Hyperliquid`,
+  hlTokenId: "The wallet cannot verify the token's name; check its id",
+  hlClassTransfer: (amount, toPerp) =>
+    toPerp
+      ? `Move ${amount} USDC from your Hyperliquid spot balance to perps`
+      : `Move ${amount} USDC from your Hyperliquid perps balance to spot`,
+  hlDex: (dex) => (dex === "" ? "perps" : dex === "spot" ? "spot" : `DEX ${dex}`),
+  hlSendAsset: (amount, token, sourceDex, destination, destinationDex) =>
+    `Send ${amount} of token ${token} from ${sourceDex} to ${destinationDex} of ${destination}`,
+  hlSubAccount: (address) => `From sub-account ${address}`,
+  hlStakeDeposit: (hype) => `Move ${hype} HYPE from your spot balance into staking`,
+  hlStakeWithdraw: (hype) =>
+    `Move ${hype} HYPE from staking to your spot balance; it arrives after Hyperliquid's 7-day unstaking queue`,
+  hlDelegate: (hype, validator) => `Delegate ${hype} HYPE to validator ${validator}`,
+  hlUndelegate: (hype, validator) => `Undelegate ${hype} HYPE from validator ${validator}`,
+  hlApproveAgent: (agent, name) =>
+    name === undefined
+      ? `Approve agent ${agent} (unnamed)`
+      : `Approve agent ${agent} named "${name}"`,
+  hlAgentExpiry: (date) => `Valid until ${date} (UTC)`,
+  hlAgentNoExpiry: "No expiry in the name: Hyperliquid's default applies",
+  hlAgentPowers:
+    "The agent can trade for this account and its sub-accounts and move funds inside Hyperliquid, including into vaults, without asking you. It cannot withdraw or send funds to other accounts.",
+  hlBuilderFee: (builder, rate) =>
+    `Allow builder ${builder} to charge up to ${rate} of each order's value`,
   stakeLine: (a, sol) =>
     a.kind === "create"
       ? `Create stake account ${a.account} with ${sol(a.lamports)}`
@@ -657,12 +741,86 @@ function typedContentLines(
   );
 }
 
+/** HYPE amounts are 8-decimal wei strings (the exchange's staking fields). */
+const hype = (wei: string): string => formatUnits(wei, 8);
+
+/** The lines of a recognized Hyperliquid user-signed action; requester text is sanitised. */
+function hyperliquidLines(catalog: Catalog, action: HyperliquidAction): ReadonlyArray<string> {
+  let lines: ReadonlyArray<string>;
+  switch (action.kind) {
+    case "usd-send":
+      lines = [catalog.hlUsdSend(action.amount, action.destination)];
+      break;
+    case "withdraw":
+      lines = [catalog.hlWithdraw(action.amount, action.destination), catalog.hlWithdrawFee];
+      break;
+    case "spot-send":
+      lines = [
+        catalog.hlSpotSend(action.amount, field(action.token), action.destination),
+        catalog.hlTokenId,
+      ];
+      break;
+    case "usd-class-transfer":
+      lines = [catalog.hlClassTransfer(action.amount, action.toPerp)];
+      break;
+    case "send-asset":
+      lines = [
+        catalog.hlSendAsset(
+          action.amount,
+          field(action.token),
+          catalog.hlDex(field(action.sourceDex)),
+          action.destination,
+          catalog.hlDex(field(action.destinationDex)),
+        ),
+        ...(action.fromSubAccount === undefined
+          ? []
+          : [catalog.hlSubAccount(action.fromSubAccount)]),
+        catalog.hlTokenId,
+      ];
+      break;
+    case "staking-deposit":
+      lines = [catalog.hlStakeDeposit(hype(action.wei))];
+      break;
+    case "staking-withdraw":
+      lines = [catalog.hlStakeWithdraw(hype(action.wei))];
+      break;
+    case "token-delegate":
+      lines = [
+        action.undelegate
+          ? catalog.hlUndelegate(hype(action.wei), action.validator)
+          : catalog.hlDelegate(hype(action.wei), action.validator),
+      ];
+      break;
+    case "approve-agent":
+      lines = [
+        catalog.hlApproveAgent(action.agent, action.name === "" ? undefined : field(action.name)),
+        action.validUntil === undefined
+          ? catalog.hlAgentNoExpiry
+          : catalog.hlAgentExpiry(utcDateTime(Math.floor(action.validUntil / 1000))),
+        catalog.hlAgentPowers,
+      ];
+      break;
+    case "approve-builder-fee":
+      lines = [catalog.hlBuilderFee(action.builder, action.maxFeeRate)];
+      break;
+  }
+  return lines;
+}
+
 function typedDataLines(
   catalog: Catalog,
   intent: PromptIntent,
   message: Extract<MessageContent, { kind: "typed-data" }>,
 ): ReadonlyArray<string> {
   const { name, chainId, verifyingContract } = message.domain;
+  if (message.hyperliquid !== undefined) {
+    /* The domain's chain id is only the wallet's signing chain; the environment the action
+       targets is `hyperliquidChain`, so it replaces the App/Network/Verifying contract lines. */
+    return [
+      catalog.hlChain[message.hyperliquid.chain],
+      ...hyperliquidLines(catalog, message.hyperliquid),
+    ];
+  }
   const network = chainId === undefined ? intent.network : `eip155:${chainId}`;
   return [
     ...(name === undefined ? [] : [catalog.typedApp(field(name))]),

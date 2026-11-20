@@ -315,6 +315,79 @@ export type SafeTransaction = {
   };
 };
 
+/** The Hyperliquid environment a user-signed action targets (`hyperliquidChain`). */
+export type HyperliquidChain = "Mainnet" | "Testnet";
+
+/**
+ * A recognized Hyperliquid user-signed action (EIP-712 `HyperliquidSignTransaction` domain). The
+ * signable shapes and field lists are nktkas's `…Types` constants (`src/api/exchange/_methods/*.ts`
+ * in @nktkas/hyperliquid); amounts are the exact decimal strings signed, addresses EIP-55
+ * checksummed.
+ */
+export type HyperliquidAction =
+  | {
+      readonly kind: "usd-send" | "withdraw";
+      readonly chain: HyperliquidChain;
+      readonly destination: string;
+      readonly amount: string;
+    }
+  | {
+      readonly kind: "spot-send";
+      readonly chain: HyperliquidChain;
+      readonly destination: string;
+      /** `NAME:0x<tokenId>` — the name is requester text the signature does not verify on-chain. */
+      readonly token: string;
+      readonly amount: string;
+    }
+  | {
+      readonly kind: "usd-class-transfer";
+      readonly chain: HyperliquidChain;
+      readonly amount: string;
+      /** `true` moves spot → perps, `false` perps → spot. */
+      readonly toPerp: boolean;
+    }
+  | {
+      readonly kind: "send-asset";
+      readonly chain: HyperliquidChain;
+      readonly destination: string;
+      /** `""` is perps, `"spot"` spot, otherwise a builder DEX name. */
+      readonly sourceDex: string;
+      readonly destinationDex: string;
+      readonly token: string;
+      readonly amount: string;
+      /** Absent when the signed `fromSubAccount` is the empty string. */
+      readonly fromSubAccount?: string;
+    }
+  | {
+      readonly kind: "staking-deposit" | "staking-withdraw";
+      readonly chain: HyperliquidChain;
+      /** HYPE amount in wei (8 decimals), decimal string. */
+      readonly wei: string;
+    }
+  | {
+      readonly kind: "token-delegate";
+      readonly chain: HyperliquidChain;
+      readonly validator: string;
+      readonly wei: string;
+      readonly undelegate: boolean;
+    }
+  | {
+      readonly kind: "approve-agent";
+      readonly chain: HyperliquidChain;
+      readonly agent: string;
+      /** The agent name with any ` valid_until <ms>` suffix stripped; `""` is an unnamed agent. */
+      readonly name: string;
+      /** Milliseconds since epoch the agent's authority ends, when the name carries one. */
+      readonly validUntil?: number;
+    }
+  | {
+      readonly kind: "approve-builder-fee";
+      readonly chain: HyperliquidChain;
+      readonly builder: string;
+      /** The signed percent string, e.g. `"0.1%"`. */
+      readonly maxFeeRate: string;
+    };
+
 /** The EIP-712 domain fields a wallet shows. */
 export type TypedDataDomain = {
   readonly name?: string;
@@ -338,6 +411,8 @@ export type MessageContent =
       readonly seaport?: SeaportOrder;
       /** A recognized Safe transaction; only the exact `SafeTx` shape populates it. */
       readonly safe?: SafeTransaction;
+      /** A recognized Hyperliquid user-signed action under the `HyperliquidSignTransaction` domain. */
+      readonly hyperliquid?: HyperliquidAction;
       /**
        * Every leaf of an unrecognised document that fits the display budget; absent for a
        * recognized shape and for one too large to show in full. Present even when the document is

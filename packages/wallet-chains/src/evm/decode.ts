@@ -19,6 +19,8 @@ import { withNativeAmountMeta } from "../networks.ts";
 import { decodeAcross } from "./across.ts";
 import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
+import { recognizeApp } from "./apps.ts";
+import type { AppRecognition } from "./apps.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
 import { callNearMiss, typedDataNearMiss } from "./families.ts";
@@ -597,6 +599,7 @@ const displayDomain = (domain: TypedDataInput["domain"]): TypedDataDomain => {
 const typedDataBlind = (
   safe: SafeRecognition | undefined,
   seaport: SeaportOrder | undefined,
+  app: AppRecognition | undefined,
   unclaimed: boolean,
   nearMiss: BlindReason | undefined,
   shown: NonNullable<ReturnType<typeof typedDataFields>> | undefined,
@@ -612,6 +615,9 @@ const typedDataBlind = (
       seaport.consideration.length > SEAPORT_ORDER_ITEMS
       ? "typed-data-oversize"
       : undefined;
+  }
+  if (app !== undefined) {
+    return app.blind;
   }
   if (!unclaimed || nearMiss !== undefined) {
     return nearMiss;
@@ -679,11 +685,16 @@ export const decodeEvm = (
           }),
         )
       : undefined;
-  const unclaimed = permit === undefined && seaport === undefined && safe === undefined;
+  const app =
+    permit === undefined && seaport === undefined && safe === undefined
+      ? recognizeApp(json)
+      : undefined;
+  const unclaimed =
+    permit === undefined && seaport === undefined && safe === undefined && app === undefined;
   const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
   const shown = unclaimed ? typedDataFields(json) : undefined;
   const fields = shown?.fields;
-  const blind = typedDataBlind(safe, seaport, unclaimed, nearMiss, shown);
+  const blind = typedDataBlind(safe, seaport, app, unclaimed, nearMiss, shown);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,
@@ -691,13 +702,14 @@ export const decodeEvm = (
     data: json.message,
     ...(seaport === undefined ? {} : { seaport }),
     ...(safe === undefined ? {} : { safe: safe.safe }),
+    ...(app === undefined ? {} : app.content),
     ...(fields === undefined ? {} : { fields }),
   };
   const summary =
     seaport === undefined
       ? safe === undefined
         ? permit === undefined
-          ? "message"
+          ? (app?.summary ?? "message")
           : "approve"
         : safe.multisend
           ? "batch"
@@ -708,12 +720,12 @@ export const decodeEvm = (
       family: "evm",
       network: request.network,
       summary,
-      outflows: [],
+      outflows: app?.outflows ?? [],
       approvals: permit?.approvals ?? [],
       fee: undefined,
-      warnings: permit?.warnings ?? [],
+      warnings: permit?.warnings ?? app?.warnings ?? [],
       message,
-      verifiability: permit === undefined ? "opaque" : "partial",
+      verifiability: app?.verifiability ?? (permit === undefined ? "opaque" : "partial"),
       ...(blind === undefined ? {} : { blind }),
     },
     request.network,
