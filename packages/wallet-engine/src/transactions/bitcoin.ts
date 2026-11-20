@@ -236,6 +236,24 @@ const nextReceiveAddress = async (
 };
 
 /**
+ * The txids of the bitcoin transactions this wallet built and still tracks — the outputs of those
+ * transactions are the only unconfirmed funds the balance and spend paths may treat as own change.
+ */
+export const ownBitcoinTxids = (
+  txs: Readonly<Record<string, TrackedTransaction>>,
+): ReadonlySet<string> =>
+  new Set(
+    Object.values(txs).flatMap((t) =>
+      t.family === "bitcoin" &&
+      t.btc !== undefined &&
+      t.hash !== undefined &&
+      (t.state === "submitted" || t.state === "pending" || t.state === "confirmed")
+        ? [t.hash]
+        : [],
+    ),
+  );
+
+/**
  * The account context every build shares: derivation data, both chains scanned, a fresh UTXO scan
  * filtered to spendable outpoints, and the change addresses. Called at send, replacement and CPFP
  * prepare alike, so a restart costs a rescan, never a capability.
@@ -271,16 +289,7 @@ const accountContext = async (
   const scannedUtxos: ReadonlyArray<ScanUtxo> = await scanUtxos(es, addresses, net.params);
   // A height-0 output pays through an unconfirmed transaction its sender can still revoke or
   // replace — spendable only when this wallet built that transaction (own unconfirmed change).
-  const ownTxids = new Set(
-    Object.values(ctx.txs()).flatMap((t) =>
-      t.family === "bitcoin" &&
-      t.btc !== undefined &&
-      t.hash !== undefined &&
-      (t.state === "submitted" || t.state === "pending" || t.state === "confirmed")
-        ? [t.hash]
-        : [],
-    ),
-  );
+  const ownTxids = ownBitcoinTxids(ctx.txs());
   const utxos = scannedUtxos.flatMap((u): BtcUtxo[] =>
     u.height > 0 || ownTxids.has(u.txid)
       ? [

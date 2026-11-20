@@ -39,6 +39,7 @@ import {
   prepareSolanaCoreSend,
   prepareSolanaStake,
   prepareSolanaSwap,
+  submitDappSolana,
 } from "./solana.ts";
 
 export type {
@@ -355,7 +356,11 @@ export class TransactionController extends Controller<TransactionControllerState
   private async transition(
     tx: TrackedTransaction,
     next: Partial<TrackedTransaction>,
+    durable = false,
   ): Promise<TrackedTransaction> {
+    if (durable && this.engineStore === undefined) {
+      throw new Error("transactions require an unlocked vault");
+    }
     const updated: TrackedTransaction = { ...tx, ...next };
     this.update((s) => ({ ...s, txs: { ...s.txs, [tx.id]: updated } }));
     await this.persist(updated);
@@ -365,7 +370,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private routeCtx(): RouteContext {
     return {
       options: this.options,
-      transition: async (tx, next) => this.transition(tx, next),
+      transition: async (tx, next, durable) => this.transition(tx, next, durable),
       track: (id, hash) => this.track(id, hash),
       txs: () => this.getState().txs,
       newId: () => newId(this.options.random),
@@ -457,6 +462,29 @@ export class TransactionController extends Controller<TransactionControllerState
       walletId,
       prepared,
       result,
+    });
+  }
+
+  /**
+   * Internal entry for the dApp `signAndSendTransaction` path: a dApp-built transaction has no
+   * build record; it joins tracking under its signed bytes like a wallet send.
+   */
+  async submitDappSolana(
+    network: string,
+    walletId: string,
+    wire: Uint8Array,
+    lastValidBlockHeight: bigint,
+    intent: DisplayIntent,
+  ): Promise<string> {
+    if (this.locked) {
+      throw new Error("transactions require an unlocked vault");
+    }
+    return submitDappSolana(this.routeCtx(), {
+      network,
+      walletId,
+      wire,
+      lastValidBlockHeight,
+      intent,
     });
   }
 
@@ -629,7 +657,7 @@ export class TransactionController extends Controller<TransactionControllerState
   private track(id: string, hash: string): void {
     if (this.locked) {
       this.options.logger.warn(
-        `transaction ${id} was broadcast after the vault locked; it is neither persisted nor tracked`,
+        `transaction ${id} was broadcast after the vault locked; its signed bytes are persisted and tracking resumes at the next unlock`,
       );
       return;
     }
@@ -671,6 +699,12 @@ export class TransactionController extends Controller<TransactionControllerState
     if (next === undefined || this.locked) {
       return;
     }
+    // The poll's answer describes the snapshot it started from; a concurrent transition — a
+    // sibling marking this replaced, a reload — means the row moved on. Keep tracking and let
+    // the next poll decide.
+    if (this.getState().txs[id] !== tx) {
+      return;
+    }
     this.untrack(id);
     const updated = await this.transition(tx, { state: next });
     this.settle(updated);
@@ -695,10 +729,13 @@ export class TransactionController extends Controller<TransactionControllerState
     );
   }
 
-  /** A Bitcoin transaction that ended frees what it locked, whichever way it ended. */
+  /** A transaction that ended frees what it locked, whichever way it ended. */
   private settle(tx: TrackedTransaction): void {
     if (tx.family === "bitcoin") {
       this.bitcoinRoute.settle(tx.id, tx.state);
+    }
+    if (tx.family === "evm") {
+      this.evmRoute.settle(tx);
     }
   }
 }

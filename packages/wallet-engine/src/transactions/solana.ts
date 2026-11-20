@@ -1,5 +1,10 @@
 import { base58, base64 } from "@scure/base";
-import { address, createAddressWithSeed } from "@solana/kit";
+import {
+  address,
+  createAddressWithSeed,
+  getSignatureFromTransaction,
+  getTransactionDecoder,
+} from "@solana/kit";
 
 import type { StakeAction } from "@qntx/wallet-chains";
 import { ChainError } from "@qntx/wallet-chains";
@@ -298,7 +303,7 @@ const finishPrepared = async (
     simulation,
     resimulate: async () => solana.simulate(rpc, network, from, messageBytes, ctx.options.setTimer),
     staleReason: async () =>
-      (await solana.blockHeight(rpc)) > unsigned.lastValidBlockHeight
+      (await solana.blockHeight(rpc, "confirmed")) > unsigned.lastValidBlockHeight
         ? "blockhash expired — start over"
         : undefined,
     submit,
@@ -685,6 +690,51 @@ export const prepareSolanaCoreSend = async (
   });
 };
 
+/**
+ * A dApp-signed transaction joins tracking like a wallet send: the signed wire and its locally
+ * computed id — the fee payer's signature — are persisted before anything leaves, so a lost answer
+ * stays `submitted` under that id. `lastValidBlockHeight` is the caller's bound on the blockhash's
+ * expiry (the message carries only the blockhash).
+ */
+export const submitDappSolana = async (
+  ctx: RouteContext,
+  params: {
+    readonly network: string;
+    readonly walletId: string;
+    readonly wire: Uint8Array;
+    readonly lastValidBlockHeight: bigint;
+    readonly intent: DisplayIntent;
+  },
+): Promise<string> => {
+  const { network, walletId, wire, lastValidBlockHeight, intent } = params;
+  const rpc = ctx.options.networks.solanaRpc(network);
+  const signature: string = getSignatureFromTransaction(getTransactionDecoder().decode(wire));
+  let tx: TrackedTransaction = {
+    id: ctx.newId(),
+    family: "solana",
+    network,
+    account: walletId,
+    hash: undefined,
+    state: "signed",
+    intent,
+    nonce: 0,
+    lastValidBlockHeight: Number(lastValidBlockHeight),
+    submittedAt: ctx.options.now(),
+    error: undefined,
+  };
+  tx = await ctx.transition(tx, {});
+  await submitSigned(ctx, tx, {
+    id: signature,
+    raw: base64.encode(wire),
+    hold: () => undefined,
+    release: () => undefined,
+    send: async () => solana.broadcast(rpc, wire),
+    verdict: solanaBroadcastVerdict,
+    known: async () => signatureSeen(rpc, signature),
+  });
+  return signature;
+};
+
 export const pollSolana = async (
   ctx: RouteContext,
   tx: TrackedTransaction,
@@ -693,15 +743,21 @@ export const pollSolana = async (
     return "failed";
   }
   const rpc = ctx.options.networks.solanaRpc(tx.network);
-  const state = await solana.status(rpc, tx.hash);
-  if (state !== "pending") {
-    return state === "finalized" ? "confirmed" : state;
+  /* With a blockhash bound the tip is read before the status, so a transaction landing between
+     the reads can never be finalised `dropped` by an answer a stale bank produced. */
+  const tip = tx.lastValidBlockHeight === undefined ? undefined : await solana.tip(rpc);
+  const status = await solana.signatureStatus(rpc, tx.hash);
+  if (status.state !== "pending") {
+    return status.state === "finalized" ? "confirmed" : status.state;
   }
-  if (
-    tx.lastValidBlockHeight !== undefined &&
-    (await solana.blockHeight(rpc)) > BigInt(tx.lastValidBlockHeight)
-  ) {
-    return "dropped";
+  if (tip !== undefined && tip.height > BigInt(tx.lastValidBlockHeight ?? 0)) {
+    /* Expired, but `dropped` only when proven: the node has no entry at any commitment and the
+       status answer came from a bank at least as far along as the height proof. Anything else —
+       a stale-bank status, a processed-only entry — stays tracked and is not rebroadcast: the
+       blockhash is dead, resending can only hit "already processed" or nothing. */
+    return status.seen || status.slot === undefined || status.slot < tip.slot
+      ? undefined
+      : "dropped";
   }
   if (tx.raw !== undefined) {
     await solana.broadcast(rpc, base64.decode(tx.raw)).catch(() => "");

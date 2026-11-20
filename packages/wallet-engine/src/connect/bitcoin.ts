@@ -13,7 +13,7 @@ import type {
 } from "../requests/types.ts";
 import type { BitcoinPurpose, ConnectionController, ConnectionSession } from "./controller.ts";
 import { BITCOIN_METHODS, BITCOIN_PURPOSES, sessionAccounts } from "./controller.ts";
-import { ProviderError, invalidParams } from "./errors.ts";
+import { ProviderError, broadcastRefused, invalidParams } from "./errors.ts";
 import { SessionEvents } from "./subscription.ts";
 import { BLIND_SIGNING_MESSAGE, utf8Text } from "./text.ts";
 
@@ -303,6 +303,9 @@ export class BitcoinWalletHandler implements BitcoinHandler {
     }
     if (!("kind" in outcome) || outcome.kind !== "bitcoin.psbts") {
       throw new ProviderError(-32603, "the bitcoin-sign request settled unexpectedly");
+    }
+    if (send && outcome.refused !== undefined) {
+      throw broadcastRefused(outcome.refused, outcome.txids);
     }
     return send
       ? outcome.txids.map((txId) => ({ txId }))

@@ -281,6 +281,8 @@ export type SolanaSignResult =
       readonly send: boolean;
       readonly signatures?: ReadonlyArray<string>;
       readonly signedTransactions?: ReadonlyArray<Uint8Array>;
+      /** The input the node refused after earlier ones went out; `signatures` holds their ids. */
+      readonly refused?: { readonly index: number; readonly error: string };
     }
   | { readonly kind: "solana.message"; readonly signature: Uint8Array };
 
@@ -302,6 +304,8 @@ export type BitcoinSignResult =
       readonly kind: "bitcoin.psbts";
       readonly signedPsbts: ReadonlyArray<Uint8Array>;
       readonly txids: ReadonlyArray<string>;
+      /** The input the node refused after earlier ones went out; `txids` holds their ids. */
+      readonly refused?: { readonly index: number; readonly error: string };
     };
 
 /** `approve` of a `watch-asset` request: the token was added. */
@@ -497,6 +501,7 @@ export type RequestControllerOptions = {
   /** The full controller: its payment methods are reachable only through this pipeline. */
   readonly spark: SparkController;
   readonly addressBook: AddressBookController;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly fetch: typeof globalThis.fetch;
   readonly random: (n: number) => Uint8Array;

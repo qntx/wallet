@@ -73,7 +73,9 @@ const solanaResult = (method: string): unknown =>
     ? { value: { err: null, logs: [], unitsConsumed: 21_000 } }
     : method === "sendTransaction"
       ? `sig${"a".repeat(80)}`
-      : null;
+      : method === "getBlockHeight"
+        ? 1
+        : null;
 
 const payerAddress = (account: unknown): string =>
   typeof account === "object" &&
@@ -443,6 +445,32 @@ describe("invalidation after signing, before broadcast", () => {
   });
 });
 
+describe("invalidation during the stale check", () => {
+  it("invalidateAll inside the staleReason await ends the request before the kernel signs", async () => {
+    const r = await rig();
+    const request = await r.requests.prepare({
+      method: "send",
+      account: { kind: "hd", walletId: r.walletId, groupIndex: 0, template: "evm.bip44" },
+      network: MAINNET,
+      to: "0x00000000000000000000000000000000deadbeef",
+      amount: 1n,
+      fee: "normal",
+    });
+    // approve suspends on `await staleReason()`; ending the request inside that gap must stop it
+    // at the assertSigning guard — before the signing continuation, not only at commit.
+    const approving = r.requests.approve(request.id, "send", approval(request, VERIFY));
+    r.requests.invalidateAll();
+    await expect(approving).rejects.toMatchObject({
+      name: "RequestEndedError",
+      stage: "invalidated",
+    });
+    expect(r.requests.getState().requests[request.id]?.stage).toBe("invalidated");
+    expect(r.signedNonces).toHaveLength(0);
+    expect(r.rpcCalls).not.toContain("eth_sendRawTransaction");
+    await r.destroy();
+  });
+});
+
 describe("invalidation while prepare is building", () => {
   it("the prepare rejects and the origin can immediately prepare a new request", async () => {
     const r = await rig();
@@ -491,6 +519,7 @@ describe("engine solana-sign send", () => {
     // while `solanaSign` is still awaiting the signature — before its commit and broadcast.
     const entered = latch();
     const release = latch();
+    const started = latch();
     const authenticator = createSoftwarePasskey(randomBytes(32));
     const gated: PasskeyCeremony = {
       create: async (input) => authenticator.create(input),
@@ -540,11 +569,23 @@ describe("engine solana-sign send", () => {
       logger,
       showCallsStatus: () => undefined,
       publicStore: createMemoryPublicStore(),
-      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      openStore: async () => {
+        const store = createMemoryEngineStore();
+        return Promise.resolve({
+          ...store,
+          collection: (name: string) => {
+            // The start sequence opens the connections collection right after requests.init.
+            // oxlint-disable-next-line vitest/no-conditional-in-test -- start-sequence probe
+            if (name === "connections") {
+              started.resolve();
+            }
+            return store.collection(name);
+          },
+        });
+      },
       rpc: { [SOL_NET]: ["https://sol.example"] },
     });
-    await engine.networks.init();
-    await engine.requests.init();
+    await started.promise;
     const account = await chains(wallet).account({
       walletId,
       groupIndex: 0,

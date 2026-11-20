@@ -87,6 +87,12 @@ export type AssetsControllerState = {
 type Options = {
   readonly networks: NetworkController;
   readonly chains: Pick<ChainsApi, "account">;
+  /**
+   * The txids of bitcoin transactions this wallet built — whose height-0 outputs count as own
+   * unconfirmed change.
+   */
+  readonly ownBitcoinTxids: () => ReadonlySet<string>;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: (ms: number, fn: () => unknown) => () => void;
   readonly logger: EngineLogger;
@@ -123,6 +129,8 @@ export class AssetsController extends Controller<AssetsControllerState> {
   >();
   /** State key → the read that produced it, so a poll re-runs whichever entry was written. */
   private readonly tracked = new Map<string, () => Promise<AccountBalances>>();
+  /** Bumped on lock: a read that resolved across it records nothing into the next session. */
+  private generation = 0;
 
   constructor(options: Options) {
     super({ name: "assets", defaultState: () => ({ balances: {} }) });
@@ -177,6 +185,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   lock(): void {
+    this.generation += 1;
     this.cancelPoll?.();
     this.cancelPoll = undefined;
     this.customTokens.clear();
@@ -223,12 +232,20 @@ export class AssetsController extends Controller<AssetsControllerState> {
     await Promise.all([...this.tracked.values()].map(async (read) => read()));
   }
 
-  /** Writes `balances` under `stateKey` and remembers the read that produced it. */
+  /**
+   * Writes `balances` under `stateKey` and remembers the read that produced it — unless the lock
+   * generation moved since the read started, in which case the result is returned unwritten: a read
+   * landing after `lock()` must not repopulate balances or re-arm its reread.
+   */
   private record(
     stateKey: string,
     balances: AccountBalances,
     reread: () => Promise<AccountBalances>,
+    generation: number,
   ): AccountBalances {
+    if (generation !== this.generation) {
+      return balances;
+    }
     this.tracked.set(stateKey, reread);
     this.update((s) => ({ balances: { ...s.balances, [stateKey]: balances } }));
     return balances;
@@ -245,20 +262,24 @@ export class AssetsController extends Controller<AssetsControllerState> {
 
   /** Reads the address's balances and returns exactly what it wrote under its state key. */
   async refresh(address: string, network: string): Promise<AccountBalances> {
+    const { generation } = this;
     const info = this.options.networks.info(network);
     if (info.family === "solana") {
-      return this.refreshSolana(address, network);
+      return this.refreshSolana(address, network, generation);
     }
     if (info.family === "bitcoin") {
-      return this.refreshBitcoinAddress(address, network);
+      return this.refreshBitcoinAddress(address, network, generation);
     }
     const client = this.options.networks.client(network);
     const native = BigInt(
       await evmRpcHex(client, "eth_getBalance", [address, "latest"]),
     ).toString();
-    const tokens = await this.evmTokens(client, info.multicall3, address, network);
-    return this.record(key(network, address), { native, tokens }, async () =>
-      this.refresh(address, network),
+    const tokens = await this.evmTokens(client, info.multicall3, address, network, generation);
+    return this.record(
+      key(network, address),
+      { native, tokens },
+      async () => this.refresh(address, network),
+      generation,
     );
   }
 
@@ -305,6 +326,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     multicall3: string | undefined,
     owner: string,
     network: string,
+    generation: number,
   ): Promise<ReadonlyArray<TokenBalance>> {
     const info = this.options.networks.info(network);
     const table = evmTokenTable[String(info.chainId)] ?? {};
@@ -334,7 +356,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
         held.set(address, balance);
       }
     }
-    if (multicall3 !== undefined) {
+    if (multicall3 !== undefined && generation === this.generation) {
       this.discovered.set(stateKey, {
         addresses: new Set(held.keys()),
         at: due ? this.options.now() : (scan?.at ?? this.options.now()),
@@ -453,7 +475,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   /** SOL via getBalance; SPL holdings summed per mint over both token programs. */
-  private async refreshSolana(owner: string, network: string): Promise<AccountBalances> {
+  private async refreshSolana(
+    owner: string,
+    network: string,
+    generation: number,
+  ): Promise<AccountBalances> {
     const rpc = this.options.networks.solanaRpc(network);
     const bal = obj(await rpc.call("getBalance", [owner, { commitment: "confirmed" }]));
     const balValue = bal?.["value"];
@@ -651,8 +677,11 @@ export class AssetsController extends Controller<AssetsControllerState> {
         hidden: this.hiddenFor(network, mint, spam),
       });
     }
-    return this.record(key(network, owner), { native, tokens: rows }, async () =>
-      this.refresh(owner, network),
+    return this.record(
+      key(network, owner),
+      { native, tokens: rows },
+      async () => this.refresh(owner, network),
+      generation,
     );
   }
 
@@ -794,12 +823,19 @@ export class AssetsController extends Controller<AssetsControllerState> {
   }
 
   /** A watched Bitcoin address's balance, keyed `${network}:${address}` like the other families. */
-  private async refreshBitcoinAddress(address: string, network: string): Promise<AccountBalances> {
+  private async refreshBitcoinAddress(
+    address: string,
+    network: string,
+    generation: number,
+  ): Promise<AccountBalances> {
     const es = this.options.networks.esplora(network);
     const source: BitcoinSource = { kind: "address", address };
-    const read = await readBitcoin(es, network, [source]);
-    return this.record(key(network, address), bitcoinBalances(read), async () =>
-      this.refresh(address, network),
+    const read = await readBitcoin(es, network, [source], this.options.ownBitcoinTxids());
+    return this.record(
+      key(network, address),
+      bitcoinBalances(read),
+      async () => this.refresh(address, network),
+      generation,
     );
   }
 
@@ -811,6 +847,7 @@ export class AssetsController extends Controller<AssetsControllerState> {
     group: { readonly walletId: string; readonly groupIndex: number },
     network: string,
   ): Promise<AccountBalances> {
+    const { generation } = this;
     if (this.options.networks.info(network).family !== "bitcoin") {
       throw new TypeError(`${network} is not a bitcoin network`);
     }
@@ -824,11 +861,12 @@ export class AssetsController extends Controller<AssetsControllerState> {
         return { kind: "xpub", template, xpub: account.xpub };
       }),
     );
-    const read = await readBitcoin(es, network, sources);
+    const read = await readBitcoin(es, network, sources, this.options.ownBitcoinTxids());
     return this.record(
       `${network}:${group.walletId}:${group.groupIndex}`,
       bitcoinBalances(read),
       async () => this.refreshBitcoinGroup(group, network),
+      generation,
     );
   }
 }

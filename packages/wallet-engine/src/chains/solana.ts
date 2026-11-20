@@ -58,6 +58,13 @@ import type { AssetChange, SimulationOutcome } from "../requests/simulation.ts";
 /** Token-2022 program id — the mint's owner for extension mints. */
 export const TOKEN_2022_PROGRAM: string = PROGRAM_IDS.token2022;
 
+/**
+ * Agave `MAX_PROCESSING_AGE`: `getLatestBlockhash` reports `lastValidBlockHeight` as the height of
+ * the blockhash's bank plus 150. A dApp transaction's message carries only the blockhash, so its
+ * expiry is bounded by the processed height read before broadcast plus this.
+ */
+export const SOLANA_MAX_PROCESSING_AGE = 150n;
+
 const MAX_MESSAGE_BYTES = 1232;
 const ADDRESS_BYTES = 32;
 const TOKEN_ACCOUNT_MIN_BYTES = 72;
@@ -614,30 +621,60 @@ export class SolanaChainAdapter {
     return result;
   }
 
-  /** Processed → confirmed → finalized; an error on the status means the tx failed on-chain. */
-  async status(
+  /**
+   * `getSignatureStatuses` → the entry's state (processed → confirmed → finalized; an `err` means
+   * the tx failed on-chain), whether the cluster has an entry at any commitment — a processed-only
+   * one can still land — and the slot of the bank the status was read on.
+   */
+  async signatureStatus(
     rpc: SolanaRpc,
     signature: string,
-  ): Promise<"pending" | "confirmed" | "finalized" | "failed"> {
+  ): Promise<{
+    state: "pending" | "confirmed" | "finalized" | "failed";
+    seen: boolean;
+    slot: bigint | undefined;
+  }> {
     const result = obj(
       await this.rpc(rpc, "getSignatureStatuses", [
         [signature],
         { searchTransactionHistory: true },
       ]),
     );
+    const context = obj(result?.["context"]);
+    const slot = context?.["slot"];
     const entry = Array.isArray(result?.["value"]) ? obj(result["value"][0]) : undefined;
-    if (entry === undefined) {
-      return "pending";
-    }
-    if (entry["err"] !== null && entry["err"] !== undefined) {
-      return "failed";
-    }
-    const c = entry["confirmationStatus"];
-    return c === "finalized" ? "finalized" : c === "confirmed" ? "confirmed" : "pending";
+    const state =
+      entry === undefined
+        ? "pending"
+        : entry["err"] !== null && entry["err"] !== undefined
+          ? "failed"
+          : entry["confirmationStatus"] === "finalized"
+            ? "finalized"
+            : entry["confirmationStatus"] === "confirmed"
+              ? "confirmed"
+              : "pending";
+    return {
+      state,
+      seen: entry !== undefined,
+      slot: typeof slot === "number" || typeof slot === "bigint" ? BigInt(slot) : undefined,
+    };
   }
 
-  async blockHeight(rpc: SolanaRpc): Promise<bigint> {
-    const result = await this.rpc(rpc, "getBlockHeight", [{ commitment: "confirmed" }]);
-    return BigInt(str(result, "0"));
+  /** `getEpochInfo` at confirmed → the cluster's absolute slot and block height, read together. */
+  async tip(rpc: SolanaRpc): Promise<{ slot: bigint; height: bigint }> {
+    const result = obj(await this.rpc(rpc, "getEpochInfo", [{ commitment: "confirmed" }]));
+    return {
+      slot: BigInt(str(result?.["absoluteSlot"], "0")),
+      height: BigInt(str(result?.["blockHeight"], "0")),
+    };
+  }
+
+  /** `getBlockHeight` at `commitment`; a malformed answer throws rather than reading as 0. */
+  async blockHeight(rpc: SolanaRpc, commitment: "processed" | "confirmed"): Promise<bigint> {
+    const result = await this.rpc(rpc, "getBlockHeight", [{ commitment }]);
+    if (typeof result !== "number" || !Number.isSafeInteger(result) || result < 0) {
+      throw new TypeError("getBlockHeight returned a malformed height");
+    }
+    return BigInt(result);
   }
 }

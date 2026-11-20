@@ -108,6 +108,7 @@ export type ConnectionState = {
 };
 
 export type ConnectionControllerOptions = {
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly random: (n: number) => Uint8Array;
   readonly now: () => number;

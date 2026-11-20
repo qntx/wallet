@@ -342,6 +342,17 @@ describe("valueHoldings", () => {
     expect(unpriced.stale).toBe(false);
   });
 
+  it("marks a future-dated quote stale too", () => {
+    const now = 1_700_000_000_000;
+    const valuation = valueHoldings(
+      [holding({ amount: 10n ** 18n })],
+      { currency: "usd", quotes: { [ETH]: quote("1", now + PRICE_STALE_MS + 1) } },
+      now,
+    );
+    expect(valuation.holdings[0]?.price?.stale).toBe(true);
+    expect(valuation.stale).toBe(true);
+  });
+
   it("passes the state's currency through", () => {
     const valuation = valueHoldings(
       [holding({ amount: 10n ** 18n })],

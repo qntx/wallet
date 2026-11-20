@@ -44,7 +44,7 @@ const OWN_OUT = "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh";
 
 describe("bitcoinEntry", () => {
   it("reads the fixture tx as incoming when only the receiving address is ours", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_OUT]), TX);
+    const e = bitcoinEntry(BTC_NET, new Set([OWN_OUT]), TX, true);
     expect(e.direction).toBe("in");
     expect(e.counterparties).toStrictEqual([OWN_IN]);
     expect(e.fee).toBeUndefined();
@@ -65,7 +65,7 @@ describe("bitcoinEntry", () => {
   });
 
   it("reads the fixture tx as outgoing when only the input address is ours", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_IN]), TX);
+    const e = bitcoinEntry(BTC_NET, new Set([OWN_IN]), TX, true);
     expect(e.direction).toBe("out");
     expect(e.fee).toBe("1272");
     expect(e.changes[0]?.amount).toBe("120876469");
@@ -74,9 +74,15 @@ describe("bitcoinEntry", () => {
   });
 
   it("nets both own sides when the input and a change output are ours", () => {
-    const e = bitcoinEntry(BTC_NET, new Set([OWN_IN, OWN_OUT]), TX);
+    const e = bitcoinEntry(BTC_NET, new Set([OWN_IN, OWN_OUT]), TX, true);
     expect(e.direction).toBe("out");
     expect(e.changes[0]?.amount).toBe("120870365");
+  });
+
+  it("leaves the entry unverified when the indexer read went to the gateway", () => {
+    const e = bitcoinEntry(BTC_NET, new Set([OWN_OUT]), TX, false);
+    expect(e.direction).toBe("in");
+    expect(e.verified).toBe(false);
   });
 });
 
@@ -154,7 +160,7 @@ const esplora = (funded: ReadonlyMap<string, Pages>, paths: string[]): Esplora =
 });
 
 const scan = async (es: Esplora) =>
-  bitcoinHistoryScan({ esplora: () => es, account: chains.account }, BTC_NET, GROUP);
+  bitcoinHistoryScan({ esplora: () => es, account: chains.account, trusted: true }, BTC_NET, GROUP);
 
 describe("bitcoinHistoryScan", () => {
   it("pages a used address through /txs then /txs/chain/<last-confirmed-txid>", async () => {

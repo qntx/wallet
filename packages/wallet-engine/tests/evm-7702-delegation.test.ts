@@ -665,4 +665,33 @@ describe("eip7702 request pipeline", () => {
       );
     },
   );
+
+  it("a self-sponsored upgrade at nonce 0 holds nonce 1 too — the next send gets 2", async () => {
+    const w = world({ code: none, independent: none });
+    await w.start();
+    const request = await w.requests.prepare({
+      method: "evm-delegation",
+      account: ACCOUNT,
+      network: N1,
+      action: "upgrade",
+      fee: "normal",
+    });
+    const tracked = await w.requests.approve(
+      request.id,
+      "evm-delegation",
+      approval(request, VERIFY),
+    );
+    expect(tracked.nonce).toBe(0);
+    expect(tracked.state).toBe("submitted");
+    const next = await w.requests.prepare({
+      method: "send",
+      account: ACCOUNT,
+      network: N1,
+      to: TARGET,
+      amount: 1n,
+      fee: "normal",
+    });
+    const sendTx = await w.requests.approve(next.id, "send", approval(next, VERIFY));
+    expect(sendTx.nonce).toBe(2);
+  });
 });

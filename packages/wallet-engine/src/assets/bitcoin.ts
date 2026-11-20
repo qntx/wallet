@@ -1,9 +1,10 @@
 /**
  * Bitcoin balance read: one path for every source kind — an account template's xpub (its
  * gap-scanned receive and change chains) or one watched address. Totals are display-only;
- * `unconfirmed` holds the account's own unconfirmed change, `frozen` the protected UTXOs — every
- * taproot output and anything at or below ord's MAX_POSTAGE, which may carry an inscription — and
- * other unconfirmed outputs count nowhere.
+ * `unconfirmed` holds the account's own unconfirmed change — a height-0 output of a transaction
+ * this wallet built and still tracks, the same rule the spend path applies — `frozen` the protected
+ * UTXOs — every taproot output and anything at or below ord's MAX_POSTAGE, which may carry an
+ * inscription — and other unconfirmed outputs count nowhere.
  */
 import type { NETWORK as BTC_NETWORK } from "@scure/btc-signer";
 
@@ -41,9 +42,9 @@ const readSource = async (
   source: BitcoinSource,
   network: string,
   params: typeof BTC_NETWORK,
+  ownTxids: ReadonlySet<string>,
 ): Promise<{ readonly totals: BitcoinTotals; readonly utxos: ReadonlyArray<BitcoinUtxoView> }> => {
   const addresses = await scanSource(es, source, network, params);
-  const byAddress = new Map(addresses.map((a) => [a.address, a]));
   const scanned = await scanUtxos(es, addresses, params);
   const key = sourceKey(source);
   let native = 0n;
@@ -56,7 +57,7 @@ const readSource = async (
       frozen += value;
     } else if (u.height > 0) {
       native += value;
-    } else if (byAddress.get(u.address)?.chain === 1) {
+    } else if (ownTxids.has(u.txid)) {
       unconfirmed += value;
     }
     return {
@@ -89,10 +90,14 @@ export const readBitcoin = async (
   es: Esplora,
   network: string,
   sources: ReadonlyArray<BitcoinSource>,
+  ownTxids: ReadonlySet<string>,
 ): Promise<BitcoinRead> => {
   const { params } = bitcoinNetwork(network);
   const reads = await Promise.all(
-    sources.map(async (source) => ({ source, ...(await readSource(es, source, network, params)) })),
+    sources.map(async (source) => ({
+      source,
+      ...(await readSource(es, source, network, params, ownTxids)),
+    })),
   );
   let native = 0n;
   let unconfirmed = 0n;

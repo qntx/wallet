@@ -122,6 +122,18 @@ describe("mergeRecords", () => {
     expect(refused).toBe(1);
   });
 
+  it("refuses a remote entry that rewrites only the family of a local one", () => {
+    const local = entry("a", 5, { name: "local" });
+    // Same address and createdAt — family alone differs, so no other guard can refuse it.
+    const { records, refused } = mergeWithReport(
+      [local],
+      [entry("a", 9, { family: "bitcoin" })],
+      NOW,
+    );
+    expect(records).toStrictEqual([local]);
+    expect(refused).toBe(1);
+  });
+
   it("refuses a remote record stamped past the clock bound but accepts the boundary", () => {
     const { records, refused } = mergeWithReport(
       [],

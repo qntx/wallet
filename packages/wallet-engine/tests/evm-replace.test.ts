@@ -269,6 +269,66 @@ describe("TransactionController.replace — state resolution", () => {
     expect(txs[original.id]?.state).toBe("replaced");
   });
 
+  it("a poll answered after a sibling marked its tx replaced does not overwrite the mark", async () => {
+    const timers = manualTimers();
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let gatedHash = "";
+    const inner = receiptFetch(undefined);
+    const fetchFn = (async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1],
+    ) => {
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- narrowing the request body
+      const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as {
+        method: string;
+        params?: unknown[];
+      };
+      // oxlint-disable-next-line vitest/no-conditional-in-test -- method dispatch in the mock
+      if (body.method === "eth_getTransactionReceipt") {
+        const hash = String(body.params?.[0]);
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- gating one hash's answer
+        if (hash === gatedHash) {
+          await gate;
+        }
+        return Response.json({ result: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" } });
+      }
+      return inner(input, init);
+    }) as typeof fetch;
+    const ctl = ctlWithFetch(
+      fetchFn,
+      async ({ request }) => Promise.resolve(fakeSignedEvm(request)),
+      timers,
+    );
+    await ctl.init();
+    const original = await send(ctl, SEND);
+    const bumped = await replaceVia(ctl, original.id, "speed-up", SEND.verify);
+    gatedHash = String(original.hash);
+
+    // Both polls run: the bumped's confirm marks the original replaced while the original's own
+    // receipt answer is still gated.
+    const marked = new Promise<void>((resolve) => {
+      const unsubscribe = ctl.store.subscribe((state) => {
+        // oxlint-disable-next-line vitest/no-conditional-in-test -- waiting for one state change
+        if (state.txs[original.id]?.state === "replaced") {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+    const fired = timers.fire();
+    await marked;
+    release?.();
+    await fired;
+
+    const { txs } = ctl.getState();
+    expect(txs[bumped.id]?.state).toBe("confirmed");
+    // The late "confirmed" answer described the pre-replace snapshot — it must not un-mark it.
+    expect(txs[original.id]?.state).toBe("replaced");
+  });
+
   it("original confirms first → the replacement flips to replaced", async () => {
     const timers = manualTimers();
     const ctl = ctlWithFetch(

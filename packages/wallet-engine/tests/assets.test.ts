@@ -81,6 +81,7 @@ const chains = {
 
 const controller = (c: PublicClient, multicall3?: string) =>
   new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: fakeNetworks(c, multicall3),
     chains,
     openStore: async () => Promise.resolve(createMemoryEngineStore()),
@@ -95,12 +96,18 @@ describe("EvmChainAdapter erc20", () => {
   it("encodes transfer calldata, to=token, value=0, gas=estimate×1.1", async () => {
     const a = new EvmChainAdapter();
     const c = client({ eth_getTransactionCount: "0x0", eth_estimateGas: "0x10000" });
-    const tx = await a.build(c, "eip155:1", OWNER, {
-      kind: "erc20",
-      token: TOKEN,
-      to: "0x3333333333333333333333333333333333333333",
-      value: 7n,
-    });
+    const tx = await a.build(
+      c,
+      "eip155:1",
+      OWNER,
+      {
+        kind: "erc20",
+        token: TOKEN,
+        to: "0x3333333333333333333333333333333333333333",
+        value: 7n,
+      },
+      0,
+    );
     expect(tx.to).toBe(TOKEN);
     expect(tx.value).toBe(0n);
     expect(tx.data).toBe(
@@ -214,6 +221,7 @@ describe("AssetsController", () => {
     const timers = manualTimers();
     const mk = () =>
       new AssetsController({
+        ownBitcoinTxids: () => new Set(),
         networks: fakeNetworks(c),
         chains,
         openStore: async () => Promise.resolve(store),
@@ -361,6 +369,7 @@ describe("AssetsController solana", () => {
       getTokenAccountsByOwner: t22Accounts,
     });
     const ctl = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: {
         info: solNetInfo,
         solanaRpc: () => r,
@@ -390,6 +399,7 @@ describe("AssetsController polling", () => {
     const solReads: unknown[] = [];
     const timers = manualTimers();
     const ctl = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
       networks: {
         info: solNetInfo,
         client: () =>
@@ -423,5 +433,61 @@ describe("AssetsController polling", () => {
     await timers.fire();
     expect(evmReads).toStrictEqual([OWNER, OWNER]);
     expect(solReads).toStrictEqual([SOL_OWNER, SOL_OWNER]);
+  });
+});
+
+describe("AssetsController lock", () => {
+  it("a read in flight across lock() writes nothing — the next session never re-reads it", async () => {
+    let balanceReads = 0;
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let readPending!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      readPending = resolve;
+    });
+    const c = client({
+      eth_getBalance: async () => {
+        balanceReads += 1;
+        readPending();
+        await gate;
+        return "0xde0b6b3a7640000";
+      },
+      eth_call: () => `0x${"0".repeat(64)}`,
+    });
+    const timers = manualTimers();
+    const ctl = new AssetsController({
+      ownBitcoinTxids: () => new Set(),
+      networks: fakeNetworks(c),
+      chains,
+      openStore: async () => Promise.resolve(createMemoryEngineStore()),
+      setTimer: timers.setTimer,
+      logger,
+      gateway: undefined,
+      fetch: globalThis.fetch,
+      now: () => Date.now(),
+    });
+    await ctl.init();
+
+    const p = ctl.refresh(OWNER, "eip155:1");
+    await pending;
+
+    ctl.lock();
+    expect(ctl.getState().balances).toStrictEqual({});
+
+    // The read resolves and returns its balances — but writes none back into the locked state.
+    releaseGate();
+    const balances = await p;
+    expect(balances.native).toBe("1000000000000000000");
+    expect(ctl.getState().balances).toStrictEqual({});
+
+    // The late record also dropped its reread: the next session's poll never re-reads it.
+    await ctl.init();
+    ctl.setVisible(true);
+    await timers.fire();
+    expect(balanceReads).toBe(1);
+    ctl.setVisible(false);
+    ctl.lock();
   });
 });
