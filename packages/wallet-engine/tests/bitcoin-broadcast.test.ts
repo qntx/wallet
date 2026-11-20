@@ -93,7 +93,7 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     // The only spendable coin is held — nothing can send until this one ends.
     await expect(w.send(booted, 10_000n, "req-2")).rejects.toThrow(/insufficient/i);
 
-    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100, block_hash: "aa".repeat(32) });
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("confirmed");
 
@@ -145,7 +145,7 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("submitted");
 
-    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100, block_hash: "aa".repeat(32) });
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("confirmed");
   });
@@ -259,7 +259,7 @@ describe("a Bitcoin broadcast with an unsettled outcome", () => {
     expect(w.posts).toHaveLength(postsBefore);
     expect(w.warnings.filter((m) => m === "tx status poll failed")).toHaveLength(2);
 
-    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100, block_hash: "aa".repeat(32) });
     await booted.polls(1);
     expect(stateOf(booted.ctl, tx)).toBe("confirmed");
   });
@@ -663,7 +663,7 @@ describe("a dApp-signed Bitcoin broadcast", () => {
     expect(tx.hash).toBe(txids[0]);
     expect(tx.state).toBe("submitted");
     expect(tx.btc).toBeUndefined();
-    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100, block_hash: "aa".repeat(32) });
     await first.polls();
     expect(stateOf(first.ctl, tx)).toBe("confirmed");
   });
@@ -686,7 +686,7 @@ describe("a dApp-signed Bitcoin broadcast", () => {
     expect(tx.hash).toBe(txids[0]);
     expect(tx.state).toBe("submitted");
     w.setPost({ kind: "ok" });
-    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100, block_hash: "aa".repeat(32) });
     await first.polls();
     expect(stateOf(first.ctl, tx)).toBe("confirmed");
   });

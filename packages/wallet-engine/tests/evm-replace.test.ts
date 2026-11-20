@@ -77,7 +77,7 @@ const rpcFetch = (overrides: Record<string, unknown> = {}): typeof fetch =>
           ["0x1", "0x2", "0x3"],
         ],
       },
-      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" },
+      eth_getTransactionReceipt: { status: "0x1", blockNumber: "0x1", blockHash: `0x${"11".repeat(32)}` },
       eth_getBlockByNumber: { number: "0x2" },
       ...overrides,
     };
@@ -126,7 +126,10 @@ const receiptFetch = (confirmSent: number | undefined): typeof fetch => {
       const hash = String(body.params?.[0]);
       return Promise.resolve(
         Response.json({
-          result: hash === confirmed ? { status: "0x1", blockNumber: "0x1" } : null,
+          result:
+            hash === confirmed
+              ? { status: "0x1", blockNumber: "0x1", blockHash: `0x${"11".repeat(32)}` }
+              : null,
         }),
       );
     }
@@ -293,7 +296,9 @@ describe("TransactionController.replace — state resolution", () => {
         if (hash === gatedHash) {
           await gate;
         }
-        return Response.json({ result: { status: "0x1", blockNumber: "0x1", blockHash: "0x1" } });
+        return Response.json({
+          result: { status: "0x1", blockNumber: "0x1", blockHash: `0x${"11".repeat(32)}` },
+        });
       }
       return inner(input, init);
     }) as typeof fetch;

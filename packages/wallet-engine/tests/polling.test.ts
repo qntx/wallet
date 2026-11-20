@@ -345,7 +345,11 @@ describe("transaction polling on the one-shot timer", () => {
     expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
 
     // The receipt lands: the next poll sees it and confirms the transaction.
-    w.node.receipts.set(hash, { status: "0x1", blockNumber: "0x2" });
+    w.node.receipts.set(hash, {
+      status: "0x1",
+      blockNumber: "0x2",
+      blockHash: `0x${"11".repeat(32)}`,
+    });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(w.counts.getReceipt).toBe(3);
     expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
@@ -372,13 +376,22 @@ describe("transaction polling on the one-shot timer", () => {
     expect(w.counts.signatureStatuses).toBe(2);
     expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
 
-    w.statuses.set(hash, { confirmationStatus: "confirmed", err: null });
+    w.statuses.set(hash, { confirmationStatus: "confirmed", err: null, slot: 500 });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(w.counts.signatureStatuses).toBe(3);
     expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
+    expect(ctl.getState().txs[tx.id]?.final).toBe(false);
+
+    // Confirmed is not terminal: the loop re-arms at the finality interval, not the poll one.
+    await vi.advanceTimersByTimeAsync(POLL_MS);
+    expect(w.counts.signatureStatuses).toBe(3);
+    w.statuses.set(hash, { confirmationStatus: "finalized", err: null, slot: 500 });
+    await vi.advanceTimersByTimeAsync(15 * POLL_MS);
+    expect(w.counts.signatureStatuses).toBe(4);
+    expect(ctl.getState().txs[tx.id]?.final).toBe(true);
 
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-    expect(w.counts.signatureStatuses).toBe(3);
+    expect(w.counts.signatureStatuses).toBe(4);
   });
 
   it("a bitcoin send is polled until /status confirms it, then stops", async () => {
@@ -395,10 +408,15 @@ describe("transaction polling on the one-shot timer", () => {
     expect(statusCalls()).toBe(2);
     expect(stateOf(booted.ctl, tx)).toBe("submitted");
 
-    w.setStatus(hashOf(tx), { confirmed: true, block_height: 100 });
+    w.setStatus(hashOf(tx), {
+      confirmed: true,
+      block_height: 100,
+      block_hash: "aa".repeat(32),
+    });
     await booted.polls(1);
     expect(statusCalls()).toBe(3);
     expect(stateOf(booted.ctl, tx)).toBe("confirmed");
+    expect(booted.ctl.getState().txs[tx.id]?.final).toBe(true);
 
     await booted.polls(5);
     expect(statusCalls()).toBe(3);
@@ -448,7 +466,11 @@ describe("transaction polling on the one-shot timer", () => {
     expect(w.counts.getReceipt).toBe(2);
     expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
 
-    w.node.receipts.set(hash, { status: "0x1", blockNumber: "0x2" });
+    w.node.receipts.set(hash, {
+      status: "0x1",
+      blockNumber: "0x2",
+      blockHash: `0x${"11".repeat(32)}`,
+    });
     await vi.advanceTimersByTimeAsync(POLL_MS);
     expect(w.counts.getReceipt).toBe(3);
     expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
@@ -465,7 +487,11 @@ describe("transaction polling on the one-shot timer", () => {
     const hash = hashOf(tx);
 
     // The node's answer is a mined receipt — but the read hangs until released.
-    w.node.receipts.set(hash, { status: "0x1", blockNumber: "0x2" });
+    w.node.receipts.set(hash, {
+      status: "0x1",
+      blockNumber: "0x2",
+      blockHash: `0x${"11".repeat(32)}`,
+    });
     let release = (): void => undefined;
     w.node.receiptGate = new Promise<void>((resolve) => {
       release = resolve;

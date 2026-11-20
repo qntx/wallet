@@ -28,7 +28,8 @@ describe("bitcoin input locks on terminal states", () => {
 
     // On chain A wins: its spend confirms; B is out of the mempool and X is unspent again.
     w.spend(u50.txid, 0);
-    w.setStatus(hashOf(txA), { confirmed: true, block_height: 500 });
+    w.setTip(600);
+    w.setStatus(hashOf(txA), { confirmed: true, block_height: 500, block_hash: "bb".repeat(32) });
     await first.polls(1);
 
     expect(stateOf(first.ctl, txA)).toBe("confirmed");

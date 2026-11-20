@@ -79,10 +79,18 @@ const waitFor = async (
   client: PublicClient,
   hash: string,
   deadline: number,
-): Promise<string> => {
-  const state = await adapter.status(client, hash);
-  if (state !== "pending" || Date.now() >= deadline) {
-    return state;
+): Promise<"pending" | "confirmed" | "failed" | "finalized"> => {
+  const found = await adapter.receipt(client, hash);
+  if (found !== undefined) {
+    if (found.failed) {
+      return "failed";
+    }
+    return found.block.height <= (await adapter.finalizedHeight(client))
+      ? "finalized"
+      : "confirmed";
+  }
+  if (Date.now() >= deadline) {
+    return "pending";
   }
   await sleep(300);
   return waitFor(adapter, client, hash, deadline);
@@ -314,10 +322,10 @@ describe.runIf(RUN)("anvil e2e: evm replace", () => {
       });
       const bumpHash = await adapter.broadcast(client, bumpedSigned);
       await rpcCall(url, "evm_mine", [{ blocks: 1 }]);
-      const bumpState = await adapter.status(client, bumpHash);
-      const origState = await adapter.status(client, hash);
-      expect(["confirmed", "finalized"]).toContain(bumpState);
-      expect(["failed", "dropped", "pending"]).toContain(origState);
+      const bumpReceipt = await adapter.receipt(client, bumpHash);
+      const orig = await adapter.receipt(client, hash);
+      expect(bumpReceipt?.failed).toBe(false);
+      expect([undefined, true]).toContain(orig?.failed);
     } finally {
       proc.kill();
     }

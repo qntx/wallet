@@ -149,6 +149,12 @@ export type BtcWorld = {
   readonly markUsed: (hash: string, txid: string) => void;
   readonly setStatus: (txid: string, s: unknown) => void;
   readonly setIndependentStatus: (txid: string, s: unknown) => void;
+  /** The chain tip `/blocks/tip/height` serves — 200 puts a height-100 block well past final. */
+  readonly setTip: (height: number) => void;
+  /** Scripts an error `/blocks/tip/height` throws — a failing finality read. */
+  readonly failTip: (error: Error) => void;
+  /** The block hash `/block-height/:height` serves; unset heights answer 404 like electrs. */
+  readonly setBlockHash: (height: number, hash: string) => void;
   /** Scripts the `/tx/:prevTxid/outspends` answer — any value, or an Error to make the read fail. */
   readonly setOutspends: (txid: string, answer: unknown) => void;
   /** Marks `prevTxid:vout` spent by `spenderTxid` in the outspends index. */
@@ -188,6 +194,8 @@ export const stateOf = (ctl: TransactionController, tx: TrackedTransaction): TxS
 
 /** `tx.hash` with the undefined case collapsed — the tracked flows always set it. */
 export const hashOf = (tx: TrackedTransaction): string => tx.hash ?? "";
+
+export const rawOf = (tx: TrackedTransaction): string => tx.raw ?? "";
 
 /** The tracked tx's recorded btc input txids. */
 export const inputTxidsOf = (tx: TrackedTransaction): ReadonlyArray<string> =>
@@ -286,6 +294,10 @@ export const world = (
   const independentStatuses = new Map<string, unknown>();
   /** Txid → scripted `/outspends` answer; unset falls back to "no output spent". */
   const outspends = new Map<string, unknown>();
+  /** The chain tip `/blocks/tip/height` serves — an Error makes the read throw. */
+  const tip: { h: number | Error } = { h: 200 };
+  /** Height → the block hash `/block-height/:height` serves; unset heights 404 like electrs. */
+  const blockHashes = new Map<number, string>();
   const broadcasts: string[] = [];
   const posts: string[] = [];
   const requests: string[] = [];
@@ -338,6 +350,20 @@ export const world = (
     }
     if (url === "/fee-estimates") {
       return { "1": 20, "3": 10, "6": 5, "144": 1 };
+    }
+    if (url === "/blocks/tip/height") {
+      if (tip.h instanceof Error) {
+        throw tip.h;
+      }
+      return tip.h;
+    }
+    const bh = /^\/block-height\/(\d+)$/.exec(url);
+    if (bh !== null) {
+      const h = blockHashes.get(Number(bh[1]));
+      if (h === undefined) {
+        throw new EsploraError(`esplora ${url}: 404`, false);
+      }
+      return h;
     }
     const hm = /^\/tx\/([0-9a-f]{64})\/hex$/.exec(url);
     if (hm !== null) {
@@ -519,6 +545,15 @@ export const world = (
     },
     setIndependentStatus: (txid: string, s: unknown) => {
       independentStatuses.set(txid, s);
+    },
+    setTip: (height: number) => {
+      tip.h = height;
+    },
+    failTip: (error: Error) => {
+      tip.h = error;
+    },
+    setBlockHash: (height: number, hash: string) => {
+      blockHashes.set(height, hash);
     },
     setOutspends: (txid: string, answer: unknown) => {
       outspends.set(txid, answer);

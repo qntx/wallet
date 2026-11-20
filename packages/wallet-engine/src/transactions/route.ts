@@ -37,6 +37,52 @@ export type TxState =
   | "dropped"
   | "replaced";
 
+/** Where an on-chain transaction sits, as its tracker last saw it. */
+export type TxBlock = {
+  /** Block hash; absent on Solana, whose status answer names only the slot. */
+  readonly hash?: string;
+  /** Block number (EVM), height (Bitcoin) or slot (Solana). */
+  readonly height: number;
+};
+
+/**
+ * What one status poll established; a poll returning `undefined` changes nothing. `included` is
+ * a transaction in a block — kept tracked until `final`; `reorged` is its block leaving the
+ * chain; `ended` is a terminal answer the tracker stops on.
+ */
+export type TxPoll =
+  | {
+      readonly kind: "included";
+      readonly state: "confirmed" | "failed";
+      readonly block: TxBlock;
+      readonly final: boolean;
+    }
+  | { readonly kind: "reorged" }
+  | { readonly kind: "ended"; readonly state: "failed" | "dropped" | "replaced" };
+
+/** In a block but not final yet: tracked at the finality interval. */
+export const awaitingFinality = (tx: TrackedTransaction): boolean =>
+  tx.block !== undefined &&
+  tx.final !== true &&
+  (tx.state === "confirmed" || tx.state === "failed");
+
+/**
+ * The recheck answer for a transaction already in `tx.block`: `undefined` when state, block and
+ * finality are unchanged. Hashes compare lowercase.
+ */
+export const includedPoll = (
+  tx: TrackedTransaction,
+  state: "confirmed" | "failed",
+  block: TxBlock,
+  final: boolean,
+): TxPoll | undefined =>
+  tx.state === state &&
+  tx.final === final &&
+  tx.block?.height === block.height &&
+  tx.block.hash?.toLowerCase() === block.hash?.toLowerCase()
+    ? undefined
+    : { kind: "included", state, block, final };
+
 /** A bitcoin transaction that funds the wallet's own Spark account; it is claimed once confirmed. */
 export type SparkDepositTag = {
   readonly walletId: string;
@@ -55,6 +101,16 @@ export type TrackedTransaction = {
   readonly state: TxState;
   readonly intent: DisplayIntent | undefined;
   readonly nonce: number;
+  /**
+   * The block a `confirmed` or on-chain `failed` transaction is in; cleared when a reorg returns
+   * it to `submitted`.
+   */
+  readonly block?: TxBlock | undefined;
+  /**
+   * Past the network's finality rule (EVM `finalized` tag, 6 Bitcoin confirmations, Solana
+   * `finalized`): never changes again, no longer polled.
+   */
+  readonly final?: boolean | undefined;
   /** Solana only — the blockhash expiry that turns an unconfirmed tx `dropped`. */
   readonly lastValidBlockHeight?: number;
   /** EVM replacement — the earlier transaction this one bumps or cancels. */
