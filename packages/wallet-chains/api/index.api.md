@@ -171,6 +171,58 @@ type EvmTransactionBase = {
     readonly to?: string;
 };
 
+// @public
+export type HyperliquidAction = {
+    readonly kind: "usd-send" | "withdraw";
+    readonly chain: HyperliquidChain;
+    readonly destination: string;
+    readonly amount: string;
+} | {
+    readonly kind: "spot-send";
+    readonly chain: HyperliquidChain;
+    readonly destination: string;
+    readonly token: string;
+    readonly amount: string;
+} | {
+    readonly kind: "usd-class-transfer";
+    readonly chain: HyperliquidChain;
+    readonly amount: string;
+    readonly toPerp: boolean;
+} | {
+    readonly kind: "send-asset";
+    readonly chain: HyperliquidChain;
+    readonly destination: string;
+    readonly sourceDex: string;
+    readonly destinationDex: string;
+    readonly token: string;
+    readonly amount: string;
+    readonly fromSubAccount?: string;
+} | {
+    readonly kind: "staking-deposit" | "staking-withdraw";
+    readonly chain: HyperliquidChain;
+    readonly wei: string;
+} | {
+    readonly kind: "token-delegate";
+    readonly chain: HyperliquidChain;
+    readonly validator: string;
+    readonly wei: string;
+    readonly undelegate: boolean;
+} | {
+    readonly kind: "approve-agent";
+    readonly chain: HyperliquidChain;
+    readonly agent: string;
+    readonly name: string;
+    readonly validUntil?: number;
+} | {
+    readonly kind: "approve-builder-fee";
+    readonly chain: HyperliquidChain;
+    readonly builder: string;
+    readonly maxFeeRate: string;
+};
+
+// @public
+export type HyperliquidChain = "Mainnet" | "Testnet";
+
 // @public (undocumented)
 export type IntentSummary = "transfer" | "approve" | "contract-call" | "swap" | "message" | "authorization" | "batch" | "stake" | "bridge";
 
@@ -210,6 +262,8 @@ export type MessageContent = {
     readonly data: Readonly<Record<string, unknown>>;
     readonly seaport?: SeaportOrder;
     readonly safe?: SafeTransaction;
+    readonly hyperliquid?: HyperliquidAction;
+    readonly polymarket?: PolymarketContent;
     readonly fields?: ReadonlyArray<TypedDataLeaf>;
 };
 
@@ -218,6 +272,40 @@ export const messageContent: (bytes: Uint8Array, family: "evm" | "solana") => Me
 
 // @public
 export function parseSignIn(text: string, family: "evm" | "solana"): SignInParse | undefined;
+
+// @public
+export type PolymarketContent = {
+    readonly kind: "order";
+    readonly exchange: {
+        readonly address: string;
+        readonly name: string;
+        readonly version: "2" | "3";
+    };
+    readonly side: "buy" | "sell";
+    readonly tokenId: string;
+    readonly maker: string;
+    readonly signer: string;
+    readonly wallet: "account" | "proxy" | "safe" | "deposit-wallet";
+    readonly give: AssetAmount;
+    readonly receive: AssetAmount;
+    readonly price: {
+        readonly amount: string;
+        readonly exact: boolean;
+    };
+    readonly builder?: string;
+    readonly metadata?: string;
+} | {
+    readonly kind: "auth";
+    readonly address: string;
+    readonly timestamp: number;
+    readonly nonce: string;
+} | {
+    readonly kind: "batch";
+    readonly wallet: string;
+    readonly nonce: string;
+    readonly deadline: number;
+    readonly calls: ReadonlyArray<DisplayIntent>;
+};
 
 // @public
 export type SafeTransaction = {

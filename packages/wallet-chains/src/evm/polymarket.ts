@@ -486,10 +486,10 @@ const batchResult = (
     /* An oversize batch decodes no call: nothing about it can be verified. */
     verifiability:
       decoded.length === 0 || decoded.some((call) => call.verifiability === "opaque")
-      ? ("opaque" as const)
-      : decoded.some((call) => call.verifiability === "partial")
-        ? ("partial" as const)
-        : ("full" as const),
+        ? ("opaque" as const)
+        : decoded.some((call) => call.verifiability === "partial")
+          ? ("partial" as const)
+          : ("full" as const),
     ...(blind === undefined ? {} : { blind }),
   });
   /* More calls than the prompt lists must not be silently truncated — blind instead. */
