@@ -676,12 +676,12 @@ test("window wallet-standard getWallets → solana connect → signMessage verif
   })()`;
   await expect(page.evaluate(subset)).resolves.toBe(true);
 
-  const message = new Uint8Array([1, 2, 3]);
+  const message = new TextEncoder().encode("hello");
   const result = page.evaluate(`(() => {
     const wallet = window.__getWallets().get()[0];
     return wallet.features["solana:signMessage"].signMessage({
       account: wallet.accounts[0],
-      message: new Uint8Array([1, 2, 3]),
+      message: new TextEncoder().encode("hello"),
     });
   })()`);
   await expect
