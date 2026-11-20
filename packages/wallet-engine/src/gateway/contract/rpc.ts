@@ -332,7 +332,7 @@ export const RPC_METHOD_COST: Readonly<Record<EvmRpcMethod | SolanaRpcMethod, Rp
   getGenesisHash: "point",
   getLatestBlockhash: "point",
   getMinimumBalanceForRentExemption: "point",
-  getMultipleAccounts: "scan",
+  getMultipleAccounts: "point",
   getRecentPrioritizationFees: "point",
   getSignatureStatuses: "point",
   getSignaturesForAddress: "heavy",
@@ -353,14 +353,51 @@ const costClass = new Map<string, RpcCostClass>(Object.entries(RPC_METHOD_COST))
 
 type RpcCall = { readonly method: string; readonly params?: unknown };
 
-const secondParam = (call: RpcCall): unknown => {
+const param = (call: RpcCall, index: number): unknown => {
   const params = z.safeParse(z.array(z.unknown()), call.params);
-  return params.success ? params.data[1] : undefined;
+  return params.success ? params.data[index] : undefined;
 };
 
-/** Rate-limit units one validated call costs, including its param-dependent upgrades. */
+/** Array elements one unit of a per-element method pays for (accounts, signatures, proof keys). */
+export const RPC_ELEMENTS_PER_UNIT = 10;
+
+const lengthOf = (value: unknown): number => (Array.isArray(value) ? value.length : 0);
+
+/** Started groups of {@link RPC_ELEMENTS_PER_UNIT} elements, at least one. */
+const elementUnits = (value: unknown): number =>
+  Math.max(1, Math.ceil(lengthOf(value) / RPC_ELEMENTS_PER_UNIT));
+
+const simulatedCalls = z.object({
+  blockStateCalls: z.array(z.looseObject({ calls: z.optional(z.array(z.unknown())) })),
+});
+
+/** The blocks or calls an `eth_simulateV1` runs, whichever is more, at least one. */
+const simulationUnits = (call: RpcCall): number => {
+  const parsed = z.safeParse(simulatedCalls, param(call, 0));
+  if (!parsed.success) {
+    return 1;
+  }
+  const { blockStateCalls } = parsed.data;
+  const calls = blockStateCalls.reduce((sum, block) => sum + (block.calls?.length ?? 0), 0);
+  return Math.max(1, blockStateCalls.length, calls);
+};
+
+/**
+ * Rate-limit units one validated call costs, including its param-dependent upgrades: an array the
+ * caller sizes is paid per {@link RPC_ELEMENTS_PER_UNIT} elements, a simulation per block or call.
+ */
 export function rpcCallCost(call: RpcCall): number {
-  const second = secondParam(call);
+  const second = param(call, 1);
+  const base = RPC_COST_WEIGHTS[costClass.get(call.method) ?? "point"];
+  if (call.method === "getMultipleAccounts" || call.method === "getSignatureStatuses") {
+    return base * elementUnits(param(call, 0));
+  }
+  if (call.method === "eth_getProof") {
+    return base * elementUnits(second);
+  }
+  if (call.method === "eth_simulateV1") {
+    return base * simulationUnits(call);
+  }
   if (call.method === "eth_getBlockByHash" || call.method === "eth_getBlockByNumber") {
     // `params[1] === true` returns full transactions — the answer grows with the block.
     return RPC_COST_WEIGHTS[second === true ? "scan" : "point"];
@@ -371,7 +408,7 @@ export function rpcCallCost(call: RpcCall): number {
       typeof second === "object" && second !== null && "programId" in second ? "scan" : "point"
     ];
   }
-  return RPC_COST_WEIGHTS[costClass.get(call.method) ?? "point"];
+  return base;
 }
 
 /** The units a validated single call or batch costs on each rate limiter. */

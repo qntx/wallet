@@ -48,7 +48,7 @@ export function balanceHoldings(key: string, balances: AccountBalances): Readonl
     amount:
       BigInt(balances.native) +
       BigInt(balances.unconfirmed ?? "0") +
-      BigInt(balances.frozen ?? "0"),
+      BigInt(balances.protected ?? "0"),
   };
   return [
     native,

@@ -55,9 +55,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { createMessage } from "@qntx/siwx";
 import { siws } from "@qntx/siwx/svm";
 
-import { ChainError } from "../src/index.ts";
+import { RECOGNISED_FAMILIES } from "../src/families.ts";
+import { ChainError, messageBlindReason, messageContent } from "../src/index.ts";
 import { solanaAddressFromPublicKey } from "../src/solana/ids.ts";
 import {
+  PROGRAM_IDS,
   SOLANA_NATIVE_ASSET,
   decodeSolana,
   mayBeTransactionMessage,
@@ -315,6 +317,35 @@ describe("normalize", () => {
   it("rejects a non-raw solana.message format", () => {
     const bad = { ...req(new Uint8Array([1, 2, 3])), kind: "solana.message", format: "offchain" };
     expect(() => normalizeSolana(bad, FEE_PAYER)).toThrow(ChainError);
+  });
+});
+
+describe("raw solana.message blindness", () => {
+  /** The message bytes the kernel signs, after `normalizeSolana`'s checks. */
+  const messageBytes = (bytes: Uint8Array): Uint8Array => {
+    const normalized = normalizeSolana(
+      { ...req(bytes), kind: "solana.message", format: "raw" },
+      FEE_PAYER,
+    );
+    if (normalized.kind !== "solana.message") {
+      throw new Error("unreachable: normalization changed the kind");
+    }
+    return normalized.message;
+  };
+
+  it("a digest or its hex rendering is blind; ordinary text is not", () => {
+    // The ground digest: a keccak output that happens to be valid UTF-8.
+    const digest = hexToBytes("5718efa1a01c4e34c7b5481f5450604d1274491d0f310532dcbd7461c9ae3b79");
+    for (const bytes of [
+      digest,
+      new TextEncoder().encode(`0x${Buffer.from(digest).toString("hex")}`),
+    ]) {
+      expect(messageBlindReason(messageContent(messageBytes(bytes), "solana"))).toBe(
+        "message-bytes",
+      );
+    }
+    const text = messageBytes(new TextEncoder().encode("hello world"));
+    expect(messageBlindReason(messageContent(text, "solana"))).toBeUndefined();
   });
 });
 
@@ -635,7 +666,7 @@ describe("verifiability + decode", () => {
     expect(verifiabilitySolana(req(compile([ix])) as never, FEE_PAYER)).toBe("opaque");
   });
 
-  it("System createAccount (non-transfer) → opaque", () => {
+  it("System createAccount for a non-stake owner → full with a lamports outflow", () => {
     const ix = getCreateAccountInstruction({
       payer: feePayerSigner,
       newAccount: createNoopSigner(DEST),
@@ -643,7 +674,15 @@ describe("verifiability + decode", () => {
       space: 100n,
       programAddress: address("11111111111111111111111111111111"),
     });
-    expect(verifiabilitySolana(req(compile([ix])) as never, FEE_PAYER)).toBe("opaque");
+    const intent = decodeSolana(req(compile([ix])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("full");
+    expect(intent.outflows[0]?.to).toBe(DEST);
+    expect(intent.outflows[0]?.amount).toStrictEqual({
+      asset: SOLANA_NATIVE_ASSET,
+      amount: "1000",
+      decimals: 9,
+      symbol: "SOL",
+    });
   });
 });
 
@@ -888,27 +927,32 @@ describe("stake decode", () => {
     });
     const bad = decodeSolana(req(compile([badIx])) as never, FEE_PAYER);
     expect(bad.verifiability).toBe("opaque");
+    expect(bad.blind).toBe("core-instruction");
   });
 
-  it("Split/Merge and truncated data → opaque", () => {
+  it("Split/Merge and truncated data → opaque; the signer-signed ones are blind", () => {
     const merge = getMergeInstruction({
       destinationStake: STAKE_ACCT,
       sourceStake: OTHER_KEY,
       stakeAuthority: feePayerSigner,
     });
-    expect(decodeSolana(req(compile([merge])) as never, FEE_PAYER).verifiability).toBe("opaque");
+    const merged = decodeSolana(req(compile([merge])) as never, FEE_PAYER);
+    expect(merged.verifiability).toBe("opaque");
+    expect(merged.blind).toBe("core-instruction");
     const truncated = stakeIx(
       [{ address: STAKE_ACCT, role: AccountRole.WRITABLE }],
       u32le(0).subarray(0, 3),
     );
-    expect(decodeSolana(req(compile([truncated])) as never, FEE_PAYER).verifiability).toBe(
-      "opaque",
-    );
+    const short = decodeSolana(req(compile([truncated])) as never, FEE_PAYER);
+    expect(short.verifiability).toBe("opaque");
+    expect(short.blind).toBeUndefined();
     const extended = stakeIx(
       [{ address: STAKE_ACCT, role: AccountRole.WRITABLE }, ro(FEE_PAYER), sgn(FEE_PAYER)],
       cat(u32le(5), u64le(0n)),
     );
-    expect(decodeSolana(req(compile([extended])) as never, FEE_PAYER).verifiability).toBe("opaque");
+    const long = decodeSolana(req(compile([extended])) as never, FEE_PAYER);
+    expect(long.verifiability).toBe("opaque");
+    expect(long.blind).toBe("core-instruction");
   });
 
   it("a second signer's transfer is not attributed to the fee payer", () => {
@@ -1069,15 +1113,6 @@ describe("stake decode coverage", () => {
     expect(
       opaque([stakeIx([w0(STAKE_ACCT), ro(VOTE_ACCT), sgn(FEE_PAYER), ro(CLOCK)], u32le(2))]),
     ).toBe("opaque");
-    /* A system create-account owned by a different program. */
-    const otherCreate = getCreateAccountInstruction({
-      payer: feePayerSigner,
-      newAccount: stakeSigner,
-      lamports: 1_000_000_000n,
-      space: 8n,
-      programAddress: OTHER_KEY,
-    });
-    expect(opaque([otherCreate])).toBe("opaque");
     /* Truncated create-account data. */
     expect(
       opaque([
@@ -1141,5 +1176,137 @@ describe("undecodable instructions list their program ids", () => {
 
   it("a fully recognised transaction carries no program list", () => {
     expect(decodeSolana(req(compile([transferIx()])) as never, FEE_PAYER).programs).toBeUndefined();
+  });
+});
+
+describe("core-program near misses are blind", () => {
+  const SRC = address("So11111111111111111111111111111111111111112");
+  const RECENT = "SysvarRecentB1ockHashes11111111111111111111";
+  const RENT = "SysvarRent111111111111111111111111111111111";
+
+  const ix = (program: string, accounts: ReadonlyArray<object>, data: Uint8Array) => ({
+    programAddress: address(program),
+    accounts,
+    data,
+  });
+
+  it.each([
+    [
+      "SPL Token Transfer",
+      ix(
+        PROGRAM_IDS.token,
+        [w0(SRC), w0(DEST), sgn(FEE_PAYER)],
+        cat(new Uint8Array([3]), u64le(5n)),
+      ),
+    ],
+    [
+      "SPL Token SetAuthority",
+      ix(
+        PROGRAM_IDS.token,
+        [w0(SRC), sgn(FEE_PAYER)],
+        cat(new Uint8Array([6, 0, 1]), Uint8Array.from(getAddressEncoder().encode(OTHER_KEY))),
+      ),
+    ],
+    [
+      "SPL Token ApproveChecked",
+      ix(
+        PROGRAM_IDS.token,
+        [w0(SRC), ro(MINT), ro(DEST), sgn(FEE_PAYER)],
+        cat(new Uint8Array([13]), u64le(5n), new Uint8Array([6])),
+      ),
+    ],
+    [
+      "SPL Token CloseAccount to a foreign destination",
+      ix(PROGRAM_IDS.token, [w0(SRC), w0(OTHER_KEY), sgn(FEE_PAYER)], new Uint8Array([9])),
+    ],
+    [
+      "Token-2022 Transfer",
+      ix(
+        PROGRAM_IDS.token2022,
+        [w0(SRC), w0(DEST), sgn(FEE_PAYER)],
+        cat(new Uint8Array([3]), u64le(5n)),
+      ),
+    ],
+    [
+      "System Assign",
+      ix(
+        PROGRAM_IDS.system,
+        [w0(FEE_PAYER)],
+        cat(u32le(1), Uint8Array.from(getAddressEncoder().encode(OTHER_KEY))),
+      ),
+    ],
+    [
+      "Stake Split",
+      ix(PROGRAM_IDS.stake, [w0(STAKE_ACCT), w0(DEST), sgn(FEE_PAYER)], cat(u32le(3), u64le(7n))),
+    ],
+  ])("an undecoded %s the signer signs is blind", (_name, instruction) => {
+    const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBe("core-instruction");
+  });
+
+  /** The program a solana row's claim names; the filter above guarantees the surface. */
+  const rowProgram = (row: (typeof RECOGNISED_FAMILIES)[number]): keyof typeof PROGRAM_IDS => {
+    const { claim } = row;
+    if (claim.surface !== "solana.instruction") {
+      throw new Error("filtered row is not a solana row");
+    }
+    return claim.program;
+  };
+
+  it("every solana family row blinds a signer-signed near miss of its program", () => {
+    const rows = RECOGNISED_FAMILIES.filter((r) => r.claim.surface === "solana.instruction");
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    for (const row of rows) {
+      const instruction = ix(
+        PROGRAM_IDS[rowProgram(row)],
+        [sgn(FEE_PAYER)],
+        new Uint8Array([0xfe, 0xdc]),
+      );
+      const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+      expect(intent.blind).toBe("core-instruction");
+      expect(intent.programs).toStrictEqual([PROGRAM_IDS[rowProgram(row)]]);
+    }
+  });
+
+  it("a Token Transfer a different co-signer authorises is opaque, not blind", () => {
+    const instruction = ix(
+      PROGRAM_IDS.token,
+      [w0(SRC), w0(DEST), sgn(OTHER_KEY)],
+      cat(new Uint8Array([3]), u64le(5n)),
+    );
+    const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBeUndefined();
+    expect(intent.programs).toStrictEqual([PROGRAM_IDS.token]);
+  });
+
+  it("an unknown program the signer signs is opaque and named, not blind", () => {
+    const instruction = ix(
+      "Vote111111111111111111111111111111111111111",
+      [sgn(FEE_PAYER)],
+      new Uint8Array([1]),
+    );
+    const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("opaque");
+    expect(intent.blind).toBeUndefined();
+    expect(intent.programs).toStrictEqual(["Vote111111111111111111111111111111111111111"]);
+  });
+
+  it.each([
+    [
+      "System AdvanceNonceAccount",
+      ix(PROGRAM_IDS.system, [w0(DEST), ro(RECENT), sgn(FEE_PAYER)], u32le(4)),
+    ],
+    [
+      "SPL Token InitializeAccount",
+      ix(PROGRAM_IDS.token, [w0(SRC), ro(MINT), ro(FEE_PAYER), ro(RENT)], new Uint8Array([1])),
+    ],
+    ["SPL Token Revoke", ix(PROGRAM_IDS.token, [w0(SRC), sgn(FEE_PAYER)], new Uint8Array([5]))],
+  ])("a benign %s stays described", (_name, instruction) => {
+    const intent = decodeSolana(req(compile([instruction])) as never, FEE_PAYER);
+    expect(intent.verifiability).toBe("full");
+    expect(intent.blind).toBeUndefined();
+    expect(intent.outflows).toStrictEqual([]);
   });
 });

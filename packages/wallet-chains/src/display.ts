@@ -37,6 +37,29 @@ export type DisplayExcerpt = {
 };
 
 /**
+ * Whether `text` is the hex rendering of at least 32 bytes — with or without the `0x` prefix,
+ * uppercase or lower. A wallet owner sees the rendering, not the bytes it encodes, so such text
+ * never counts as a readable description of what the signature authorises.
+ */
+export const isHexRendering = (text: string): boolean =>
+  /^(?:0x)?(?:[0-9a-fA-F]{2}){32,}$/.test(text.trim());
+
+/**
+ * Whether `text` is readable as shown: TAB, LF and CR are the only unsafe code points a readable
+ * message may contain. Anything else — a control, bidi-control, zero-width, line-separator or tag
+ * character — means what the owner reads is not what was signed.
+ */
+export const isReadableText = (text: string): boolean => {
+  for (const char of text) {
+    const cp = char.codePointAt(0) ?? 0;
+    if (cp !== 0x09 && cp !== 0x0a && cp !== 0x0d && isUnsafeCodePoint(cp)) {
+      return false;
+    }
+  }
+  return true;
+};
+
+/**
  * The leading part of `raw` that fits `maxLines` lines and `maxCodePoints` code points. Empty lines
  * are dropped, so padding cannot push content out of view; the last line may be cut.
  */

@@ -77,8 +77,7 @@ const mapPool = async <T, R>(
       while (index < items.length) {
         const current = index;
         index += 1;
-        // The cursor bounds it: current < items.length.
-        // oxlint-disable-next-line typescript/no-unsafe-type-assertion
+        // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- the cursor bounds it: current < items.length
         const item = items[current] as T;
         // oxlint-disable-next-line eslint/no-await-in-loop -- the shared cursor serializes each worker's steps.
         out[current] = await run(item);
@@ -246,17 +245,18 @@ const lamportFlows = (tx: SolanaParsedTx, owner: string): bigint => {
 
 /**
  * The group's view of one confirmed-or-failed Solana transaction — read from the ledger itself, so
- * `verified` is true unless the owner's balances exceed `Number` precision and the lamport delta
- * had to come from the parsed instructions alone. Balance deltas (lamports plus per-mint token
- * balances owned by the owner) become the changes; counterparties come from the parsed transfer
- * instructions, resolved through the token-balance owners so a token account maps back to the
- * wallet behind it.
+ * `verified` is true when the read went to a host endpoint (`trusted`) and the owner's balances fit
+ * `Number` precision; a gateway-first read or a rounded lamport delta stays unverified. Balance
+ * deltas (lamports plus per-mint token balances owned by the owner) become the changes;
+ * counterparties come from the parsed transfer instructions, resolved through the token-balance
+ * owners so a token account maps back to the wallet behind it.
  */
 export const solanaEntry = (
   network: string,
   owner: string,
   sigInfo: SolanaSignatureInfo,
   tx: SolanaParsedTx,
+  trusted: boolean,
 ): HistoryEntry => {
   const keys = tx.transaction.message.accountKeys.map((k) => k.pubkey);
   const ownerIndex = keys.indexOf(owner);
@@ -278,7 +278,7 @@ export const solanaEntry = (
 
   const changes: HistoryChange[] = [];
   const flags = new Set<HistoryFlag>();
-  let verified = true;
+  let verified = trusted;
   if (meta !== null && ownerIndex !== -1) {
     const pre = meta.preBalances[ownerIndex] ?? 0;
     const post = meta.postBalances[ownerIndex] ?? 0;
@@ -420,13 +420,19 @@ export const solanaEntry = (
 /**
  * One history stream for an enabled Solana network: the owner's signature pages merged with those
  * of its biggest token accounts (an incoming SPL transfer may never name the owner in
- * `accountKeys`), each signature resolved through `getTransaction`.
+ * `accountKeys`), each signature resolved through `getTransaction`. `trusted` is false when the
+ * only reachable endpoint is the gateway — entries then stay unverified.
  */
 export const solanaHistoryStream = (
-  options: { readonly rpc: SolanaRpc; readonly network: string; readonly owner: string },
+  options: {
+    readonly rpc: SolanaRpc;
+    readonly network: string;
+    readonly owner: string;
+    readonly trusted: boolean;
+  },
   onError: (streamId: string, error: unknown) => void,
 ): Stream<HistoryEntry> => {
-  const { rpc, network, owner } = options;
+  const { rpc, network, owner, trusted } = options;
   let merge: OrderedMerge<SolanaSignatureInfo> | undefined;
   const inner = async (): Promise<OrderedMerge<SolanaSignatureInfo>> => {
     if (merge === undefined) {
@@ -463,7 +469,7 @@ export const solanaHistoryStream = (
           ]),
         );
         return result.success && result.data.meta !== null
-          ? solanaEntry(network, owner, sigInfo, result.data)
+          ? solanaEntry(network, owner, sigInfo, result.data, trusted)
           : undefined;
       });
       ({ done } = page);

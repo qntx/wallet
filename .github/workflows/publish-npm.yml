@@ -1,9 +1,17 @@
-# Caller owns on:. Pin at @v2.
-# OIDC. Do not pass NPM_TOKEN. A job that calls the reusable workflow cannot set environment,
-# runs-on or steps, so the release gate is the `verify` job every publish job needs.
-# Required check-runs on a tag: wallet / publish, wallet-worker / publish,
-# wallet-engine / publish, wallet-chains / publish and wallet-native / publish.
-# @qntx/wallet-kernel stays private — it is bundled into the hosts, never published.
+# Publishes the five public packages from a release tag, with npm trusted publishing (OIDC — no
+# NPM_TOKEN). @qntx/wallet-kernel stays private: it is bundled into the hosts, never published.
+#
+# Nothing in this file can stop a writer: the workflow definition comes from the ref that
+# triggered it, so a branch carrying an edited copy of this file runs that copy. What stops a
+# branch run is enforced outside the file (.github/rulesets/README.md): every npm Trusted
+# Publisher names this file AND the environment `npm`, so npm accepts only an OIDC token minted for
+# a job in that environment, and the `npm` environment admits only `v*.*.*` tags and needs two
+# reviewers. The `publish` job is that job, so the environment is on the job that holds
+# `id-token: write`; the tag-only `if`s and `verify` keep a faithful copy of this file from
+# publishing anything but a reviewed main commit.
+#
+# The split follows qntx/workflows' publish-npm: `pack` installs, builds and packs without a token;
+# `publish` only downloads the tarball (digest-checked by download-artifact) and runs npm publish.
 name: Publish
 
 on:
@@ -12,16 +20,25 @@ on:
 
 permissions: {}
 
+concurrency:
+  group: publish-npm-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  # A tag publishes only a reviewed main commit that passed CI and carries the tag's version,
-  # after a reviewer of the `npm` environment approves (.github/rulesets/apply.sh).
+  # A tag publishes only a commit on main that passed CI on main and carries the tag's version.
   verify:
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    environment: npm
     permissions:
       contents: read
       actions: read
     steps:
+      - name: Require a release tag ref
+        run: |
+          if ! [[ "$GITHUB_REF" =~ ^refs/tags/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$GITHUB_REF is not a release tag"
+            exit 1
+          fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -47,52 +64,67 @@ jobs:
       - name: Require the tag to be every published package's version
         run: bun scripts/check-version.ts --release-tag "$GITHUB_REF_NAME"
 
-  wallet:
+  pack:
     needs: verify
-    uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write
-    with:
-      package-manager: bun
-      working-directory: packages/wallet
+    strategy:
+      fail-fast: true
+      matrix:
+        package: [wallet, wallet-worker, wallet-chains, wallet-engine, wallet-native]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile
+      - run: bunx vp run "@qntx/${{ matrix.package }}#build"
+      - name: Check the package contents (publint, attw, dist deps)
+        working-directory: packages/${{ matrix.package }}
+        run: bun run check:pkg
+      # bun pm pack rewrites workspace: ranges to the released versions.
+      - name: Pack
+        working-directory: packages/${{ matrix.package }}
+        run: bun pm pack --destination "$RUNNER_TEMP/pack"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-${{ matrix.package }}
+          path: ${{ runner.temp }}/pack/*.tgz
+          if-no-files-found: error
+          retention-days: 7
 
-  wallet-worker:
-    needs: verify
-    uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
+  publish:
+    needs: [verify, pack]
+    if: github.event_name == 'push' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v')
+    environment: npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       id-token: write
-    with:
-      package-manager: bun
-      working-directory: packages/wallet-worker
-
-  wallet-chains:
-    needs: verify
-    uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      package-manager: bun
-      working-directory: packages/wallet-chains
-
-  wallet-engine:
-    needs: verify
-    uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      package-manager: bun
-      working-directory: packages/wallet-engine
-
-  wallet-native:
-    needs: verify
-    uses: qntx/workflows/.github/workflows/publish-npm.yml@b1a930e790044f34f06bd5e1e0ede9e7dd5fa122 # v2.13.1
-    permissions:
-      contents: read
-      id-token: write
-    with:
-      package-manager: bun
-      working-directory: packages/wallet-native
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [wallet, wallet-worker, wallet-chains, wallet-engine, wallet-native]
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-${{ matrix.package }}
+          path: ${{ runner.temp }}/pack
+      # Trusted publishing needs npm >= 11.5.1, which Node 24 ships.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - name: Publish
+        run: |
+          shopt -s failglob
+          tarballs=("$RUNNER_TEMP"/pack/*.tgz)
+          if [ "${#tarballs[@]}" -ne 1 ]; then
+            echo "::error::expected one tarball, found ${#tarballs[@]}"
+            exit 1
+          fi
+          npm publish "${tarballs[0]}" --provenance --access public --ignore-scripts

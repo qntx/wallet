@@ -1021,7 +1021,7 @@ describe("lock transition serialization", () => {
       showCallsStatus: () => undefined,
       openStore: async () => Promise.resolve(createMemoryEngineStore()),
     });
-    const c = engine.spark;
+    const c = engine.spark as SparkController;
     // Drive transitions straight through the controller's lifecycle — addAccount then unlock.
     c.setAccounts([REF]);
     w.set("unlocked");
@@ -1100,7 +1100,7 @@ describe("lock transition serialization", () => {
         return gateOpenStore(failures);
       },
     });
-    engine.spark.setAccounts([REF]);
+    (engine.spark as SparkController).setAccounts([REF]);
     failures = 1;
     w.set("unlocked");
     await new Promise((resolve) => setTimeout(resolve, 50));

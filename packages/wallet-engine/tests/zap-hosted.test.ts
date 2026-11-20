@@ -33,6 +33,7 @@ import { spark } from "@qntx/wallet/spark";
 
 import { createWalletEngine } from "../src/engine.ts";
 import type { WalletEngine } from "../src/engine.ts";
+import type { SparkController } from "../src/spark/controller.ts";
 import { createMemoryEngineStore, createMemoryPublicStore } from "../src/store/memory.ts";
 import { approval } from "./approval.ts";
 
@@ -296,7 +297,7 @@ describe.skipIf(!HOSTED)("hosted zap e2e", () => {
       await expect(
         poll(() => engine.accounts.getState().status === "ready", Date.now() + 30_000),
       ).resolves.toBe(true);
-      engine.spark.setAccounts([refA, refB]);
+      (engine.spark as SparkController).setAccounts([refA, refB]);
 
       const deadline = Date.now() + DEADLINE_MS;
       const username = `zap${Date.now().toString(36)}`;

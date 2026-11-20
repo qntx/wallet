@@ -45,9 +45,16 @@ const collect = (
   owner: string,
 ): void => {
   const value = isObject(response) ? response["value"] : undefined;
+  const seen = new Set<string>();
   for (const entry of Array.isArray(value) ? value : []) {
+    const pubkey = isObject(entry) ? entry["pubkey"] : undefined;
     const account = isObject(entry) ? entry["account"] : undefined;
-    if (!isObject(account) || account["owner"] !== programId) {
+    if (
+      !isObject(account) ||
+      account["owner"] !== programId ||
+      typeof pubkey !== "string" ||
+      seen.has(pubkey)
+    ) {
       continue;
     }
     const parsed = isObject(account["data"]) ? account["data"]["parsed"] : undefined;
@@ -66,6 +73,7 @@ const collect = (
     ) {
       continue;
     }
+    seen.add(pubkey);
     const { mint } = info;
     const amount = BigInt(tokenAmount["amount"]);
     const held = holdings.get(mint) ?? {

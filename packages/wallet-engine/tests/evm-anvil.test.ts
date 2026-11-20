@@ -94,11 +94,17 @@ const sendOne = async (
   nonce: number,
   amount: bigint,
 ): Promise<void> => {
-  const tx = await adapter.build(client, "eip155:31337", account.address, {
-    kind: "native",
-    to: RECIPIENT,
-    value: amount,
-  });
+  const tx = await adapter.build(
+    client,
+    "eip155:31337",
+    account.address,
+    {
+      kind: "native",
+      to: RECIPIENT,
+      value: amount,
+    },
+    nonce,
+  );
   expect(tx.nonce).toBe(nonce);
   const signed = await account.signTransaction({
     chainId: 31337,
@@ -198,12 +204,18 @@ describe.runIf(RUN)("anvil e2e: erc20 transfer", () => {
       const token = receipt.contractAddress as `0x${string}`;
 
       const amount = 500n * 10n ** 18n;
-      const tx = await adapter.build(client, "eip155:31337", account.address, {
-        kind: "erc20",
-        token,
-        to: RECIPIENT,
-        value: amount,
-      });
+      const tx = await adapter.build(
+        client,
+        "eip155:31337",
+        account.address,
+        {
+          kind: "erc20",
+          token,
+          to: RECIPIENT,
+          value: amount,
+        },
+        await adapter.pendingCount(client, account.address),
+      );
       expect(tx.to).toBe(getAddress(token));
       expect(tx.value).toBe(0n);
       expect(tx.data.startsWith("0xa9059cbb")).toBe(true);
@@ -255,11 +267,17 @@ describe.runIf(RUN)("anvil e2e: evm replace", () => {
       const client = createPublicClient({ transport: http(url) });
       const adapter = new EvmChainAdapter();
       // low-fee original
-      const unsigned = await adapter.build(client, "eip155:31337", account.address, {
-        kind: "native",
-        to: RECIPIENT,
-        value: 10n ** 15n,
-      });
+      const unsigned = await adapter.build(
+        client,
+        "eip155:31337",
+        account.address,
+        {
+          kind: "native",
+          to: RECIPIENT,
+          value: 10n ** 15n,
+        },
+        await adapter.pendingCount(client, account.address),
+      );
       const feed = adapter.applyFee(unsigned, {
         tier: "slow",
         wei: 10n ** 9n,

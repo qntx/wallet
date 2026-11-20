@@ -4,8 +4,8 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { SwapQuoteSolanaResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { ResolvedProvider } from "../types.ts";
-import { readCapped } from "./body.ts";
 import type { Forwarder } from "./forward.ts";
+import { ProviderFailure } from "./forward.ts";
 
 /** An optional Jupiter API key — absent, the `/build` API serves keyless at its public rate. */
 export type JupiterConfig = { readonly apiKey?: string };
@@ -76,7 +76,6 @@ const CLIENT_ERROR: ReadonlySet<number> = new Set([400, 422]);
  */
 export async function jupiterQuote(
   forwarder: Forwarder,
-  fetch: typeof globalThis.fetch,
   config: JupiterConfig | undefined,
   query: {
     readonly inputMint: string;
@@ -92,12 +91,12 @@ export async function jupiterQuote(
   url.searchParams.set("amount", query.amount);
   url.searchParams.set("taker", query.taker);
   url.searchParams.set("slippageBps", String(query.slippageBps));
-  const { value } = await forwarder.run([PROVIDER], async (_provider, signal) => {
-    const http = await fetch(url, {
+  const { value } = await forwarder.run([PROVIDER], async (send) => {
+    const http = await send({
+      url,
       ...(config?.apiKey === undefined ? {} : { headers: { "x-api-key": config.apiKey } }),
-      signal,
     });
-    const text = await readCapped(http, MAX_RESPONSE_BYTES);
+    const text = await http.text(MAX_RESPONSE_BYTES);
     if (!http.ok) {
       if (CLIENT_ERROR.has(http.status) && text.includes("No routes found")) {
         return { liquidity: false } satisfies SwapQuoteSolanaResponse;
@@ -105,17 +104,17 @@ export async function jupiterQuote(
       if (CLIENT_ERROR.has(http.status)) {
         return { badRequest: true } as const;
       }
-      throw new Error(`jupiter returned ${http.status}`);
+      throw new ProviderFailure(`status-${http.status}`, false);
     }
     let body: unknown;
     try {
       body = JSON.parse(text);
     } catch {
-      throw new Error("jupiter returned a non-JSON body");
+      throw new ProviderFailure("malformed", false);
     }
     const res = parseWith(jupiterUpstreamResponse, body);
     if (res === undefined) {
-      throw new Error("jupiter returned an unexpected body");
+      throw new ProviderFailure("malformed", false);
     }
     if (
       res.swapInstruction === undefined ||
@@ -123,7 +122,7 @@ export async function jupiterQuote(
       (res.otherInstructions !== undefined && res.otherInstructions.length > 0) ||
       (res.tipInstruction !== undefined && res.tipInstruction !== null)
     ) {
-      throw new Error("jupiter returned a build the engine cannot verify");
+      throw new ProviderFailure("malformed", false);
     }
     return {
       liquidity: true,

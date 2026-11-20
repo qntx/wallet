@@ -55,6 +55,7 @@ import {
 } from "../swaps/index.ts";
 import { RESUBMIT_BASE_MS, RESUBMIT_MAX_MS, UNKNOWN_DROP_MS, submitSigned } from "./broadcast.ts";
 import type { BroadcastVerdict } from "./broadcast.ts";
+import { EvmNonces } from "./evm-nonces.ts";
 import {
   accountAddressOf,
   EVM_BATCH_LIMIT,
@@ -199,14 +200,24 @@ export type EvmRoute = {
   ) => Promise<PreparedRequest>;
   /** Re-holds the nonce of a live transaction reloaded at unlock. */
   readonly resume: (tx: TrackedTransaction) => void;
+  /**
+   * A terminal transaction frees its nonces: a receipt (confirmed or failed) also raises the
+   * account's consumed floor; anything else may never have reached the network, so the nonce is
+   * simply reusable.
+   */
+  readonly settle: (tx: TrackedTransaction) => void;
 };
 
 type EvmWire = {
   readonly evm: EvmChainAdapter;
   readonly client: PublicClient;
   readonly finalize: (signed: SignResult) => string;
-  /** False for a replacement: its nonce belongs to the original, which stays live if it fails. */
-  readonly ownsNonce: boolean;
+  /** Nonce ownership shared by every transaction this route signs. */
+  readonly nonces: EvmNonces;
+  /** The nonces this transaction holds: its own, plus the authorization's for a 7702. */
+  readonly held: ReadonlyArray<number>;
+  /** A replacement shares its nonce with the live original instead of owning it alone. */
+  readonly shared: boolean;
 };
 
 const signSubmit = async (
@@ -225,7 +236,15 @@ const signSubmit = async (
     const result = await apis.sign({ request, verify });
     tracked = await ctx.transition(tracked, { state: "signed" });
     raw = wire.finalize(result);
-    commit();
+    /* The nonce becomes this transaction's own in the same segment as the request's commit:
+       an overlapping send can never sign it, a refused broadcast frees only this hold. */
+    wire.nonces.reserve(tx.id, tx.network, account.from, wire.held, wire.shared);
+    try {
+      commit();
+    } catch (error) {
+      wire.nonces.release(tx.id);
+      throw error;
+    }
   } catch (error) {
     await failTx(ctx, tracked, error);
     throw error;
@@ -236,13 +255,9 @@ const signSubmit = async (
     id: hash,
     raw,
     record: { evm: account },
-    hold: () => {
-      evm.commitNonce(tx.network, account.from, tx.nonce);
-    },
+    hold: () => undefined,
     release: () => {
-      if (wire.ownsNonce) {
-        evm.releaseNonce(tx.network, account.from, tx.nonce);
-      }
+      wire.nonces.release(tx.id);
     },
     send: async () => {
       const reported = await evm.broadcast(client, raw);
@@ -321,6 +336,25 @@ const sameNonce = (ctx: RouteContext, tx: TrackedTransaction, from: string): Tra
       t.hash !== undefined &&
       t.evm?.from.toLowerCase() === from.toLowerCase(),
   );
+
+/** The nonces an unsigned transaction owns: its own, plus the authorization's for a 7702. */
+const heldNonces = (unsigned: EvmUnsignedTransaction): ReadonlyArray<number> =>
+  unsigned.authorization === undefined ? [unsigned.nonce] : [unsigned.nonce, unsigned.nonce + 1];
+
+/** The nonces a live transaction holds again at unlock; an unparsed record holds only its nonce. */
+const heldNoncesOf = (tx: TrackedTransaction): ReadonlyArray<number> => {
+  if (tx.raw !== undefined && isHex(tx.raw)) {
+    try {
+      const parsed = parseTransaction(tx.raw);
+      if ((parsed.authorizationList?.length ?? 0) > 0) {
+        return [tx.nonce, tx.nonce + 1];
+      }
+    } catch {
+      return [tx.nonce];
+    }
+  }
+  return [tx.nonce];
+};
 
 const evmApis = (ctx: RouteContext): ChainApis => ctx.options.chains ?? chains(ctx.options.wallet);
 
@@ -843,9 +877,10 @@ const nftRead = async <T>(
   return primary;
 };
 
-/** Per-controller route — the adapter's nonce queue and the per-tx poll state are engine state. */
+/** Per-controller route — nonce ownership and the per-tx poll state are engine state. */
 export const createEvmRoute = (): EvmRoute => {
   const evm = new EvmChainAdapter();
+  const nonces = new EvmNonces();
   const watching = new Map<string, Watch>();
 
   type PrepareSpec = {
@@ -902,7 +937,7 @@ export const createEvmRoute = (): EvmRoute => {
       independent.kind === "unavailable" ? "reads-unverified" : undefined,
     ];
 
-    let nonce = await evm.nextNonce(client, network, from);
+    let nonce = Math.max(await evm.pendingCount(client, from), nonces.next(network, from));
     if (independent.kind === "available") {
       try {
         const [primary, other] = await Promise.all([
@@ -993,7 +1028,14 @@ export const createEvmRoute = (): EvmRoute => {
         request,
         verify,
         { from, account },
-        { evm, client, finalize: (signed) => evm.finalize(feed, signed), ownsNonce: true },
+        {
+          evm,
+          client,
+          finalize: (signed) => evm.finalize(feed, signed),
+          nonces,
+          held: heldNonces(feed),
+          shared: false,
+        },
         commit,
       );
     };
@@ -1008,7 +1050,7 @@ export const createEvmRoute = (): EvmRoute => {
       resimulate: async () =>
         evm.simulate(client, info.chainId, from, simulated, ctx.options.setTimer, delegatedCode),
       staleReason: () =>
-        evm.nonceConsumed(network, from, unsigned.nonce)
+        nonces.taken(network, from, unsigned.nonce)
           ? "nonce already used by a newer transaction — start over"
           : undefined,
       submit,
@@ -1821,7 +1863,14 @@ export const createEvmRoute = (): EvmRoute => {
         request,
         verify,
         { from: record.from, account: record.account },
-        { evm, client, finalize: (signed) => evm.finalize(unsigned, signed), ownsNonce: false },
+        {
+          evm,
+          client,
+          finalize: (signed) => evm.finalize(unsigned, signed),
+          nonces,
+          held: heldNonces(unsigned),
+          shared: true,
+        },
         commit,
       );
     };
@@ -1930,7 +1979,6 @@ export const createEvmRoute = (): EvmRoute => {
         independent.kind === "available" &&
         (await evm.known(independent.client, hash).catch(() => true));
       if (!elsewhere) {
-        evm.releaseNonce(tx.network, record.from, tx.nonce);
         watching.delete(tx.id);
         return "dropped";
       }
@@ -1968,8 +2016,17 @@ export const createEvmRoute = (): EvmRoute => {
     poll,
     prepareReplace,
     resume: (tx) => {
-      if (tx.evm !== undefined) {
-        evm.commitNonce(tx.network, tx.evm.from, tx.nonce);
+      const record = tx.evm;
+      if (record === undefined) {
+        return;
+      }
+      nonces.reserve(tx.id, tx.network, record.from, heldNoncesOf(tx), true);
+    },
+    settle: (tx) => {
+      if (tx.state === "confirmed" || tx.state === "failed") {
+        nonces.consume(tx.id);
+      } else {
+        nonces.release(tx.id);
       }
     },
   };

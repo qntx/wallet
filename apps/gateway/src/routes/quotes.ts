@@ -24,7 +24,6 @@ import { zeroExQuote } from "../providers/zerox.ts";
  * option the service has no quote provider and answers `unavailable`.
  */
 export function quotesRoutes(deps: {
-  readonly fetch: typeof globalThis.fetch;
   readonly forwarder: Forwarder;
   readonly zeroEx: ZeroExConfig | undefined;
   readonly jupiter: JupiterConfig | undefined;
@@ -44,7 +43,7 @@ export function quotesRoutes(deps: {
         const { network, sellToken, buyToken, sellAmount, taker, slippageBps } =
           c.req.valid("query");
         const chainId = Number(network.split(":")[1]);
-        const result: ZeroExQuote = await zeroExQuote(deps.forwarder, deps.fetch, deps.zeroEx, {
+        const result: ZeroExQuote = await zeroExQuote(deps.forwarder, deps.zeroEx, {
           chainId,
           sellToken,
           buyToken,
@@ -69,7 +68,7 @@ export function quotesRoutes(deps: {
         /* Jupiter serves keyless — the route is always available; a configured key only sets
            the upstream header. */
         const { inputMint, outputMint, amount, taker, slippageBps } = c.req.valid("query");
-        const result: JupiterQuote = await jupiterQuote(deps.forwarder, deps.fetch, deps.jupiter, {
+        const result: JupiterQuote = await jupiterQuote(deps.forwarder, deps.jupiter, {
           inputMint,
           outputMint,
           amount,
@@ -93,7 +92,7 @@ export function quotesRoutes(deps: {
         /* Across serves keyless — no provider option is needed. */
         const { network, destinationNetwork, inputToken, outputToken, amount } =
           c.req.valid("query");
-        const result: AcrossQuote = await acrossQuote(deps.forwarder, deps.fetch, {
+        const result: AcrossQuote = await acrossQuote(deps.forwarder, {
           inputToken,
           outputToken,
           originChainId: network.slice(7),

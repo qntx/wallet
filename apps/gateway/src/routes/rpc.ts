@@ -18,9 +18,8 @@ import { GatewayHttpError } from "../middleware/errors.ts";
 import { resolveNetwork } from "../middleware/network.ts";
 import type { NetworkVariables, ResolvedNetwork } from "../middleware/network.ts";
 import type { RateLimitVariables } from "../middleware/rate-limit.ts";
-import { ResponseTooLarge, readCapped } from "../providers/body.ts";
 import type { Forwarder } from "../providers/forward.ts";
-import { ProviderFailure } from "../providers/forward.ts";
+import { ProviderFailure, REFUSED_STATUSES, REQUEST_ERROR_STATUSES } from "../providers/forward.ts";
 
 /** Well above the largest raw transaction a node relays (128 kB of bytes, hex-encoded) in a batch. */
 const MAX_BODY_BYTES = 512 * 1024;
@@ -31,20 +30,13 @@ const MAX_BODY_BYTES = 512 * 1024;
  */
 const MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
-/** Upstream statuses the request provoked: the caller's own 400 answer, never retried. */
-const REQUEST_ERROR_STATUSES: ReadonlySet<number> = new Set([400, 413, 422]);
-/** Upstream statuses where the provider provably refused the call before processing it. */
-const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
-
 type Deps = {
-  readonly fetch: typeof globalThis.fetch;
   readonly forwarder: Forwarder;
   readonly served: ReadonlyMap<string, ResolvedNetwork>;
 };
 
 /** `POST /v1/rpc/:caip2` — allow-listed JSON-RPC 2.0 (single or batch) for EVM and Solana. */
 export function rpcRoutes({
-  fetch,
   forwarder,
   served,
 }: Deps): Hono<{ Variables: NetworkVariables & RateLimitVariables }> {
@@ -71,19 +63,12 @@ export function rpcRoutes({
 
       const { value, providerId } = await forwarder.run(
         network.providers,
-        async (provider, signal) => {
-          let headers: Readonly<Record<string, string>>;
-          try {
-            headers = (await provider.auth?.()) ?? {};
-          } catch {
-            // The call was never sent: a failed auth lookup cannot poison the request's outcome.
-            throw new ProviderFailure("auth", true);
-          }
-          const response = await fetch(provider.url, {
+        async (send, provider) => {
+          const response = await send({
+            url: provider.url,
             method: "POST",
-            headers: { "content-type": "application/json", ...headers },
+            headers: { "content-type": "application/json" },
             body: payload,
-            signal,
           });
           if (!response.ok) {
             if (REQUEST_ERROR_STATUSES.has(response.status)) {
@@ -95,17 +80,7 @@ export function rpcRoutes({
               REFUSED_STATUSES.has(response.status),
             );
           }
-          let text: string;
-          try {
-            text = await readCapped(response, MAX_RESPONSE_BYTES);
-          } catch (error) {
-            if (error instanceof ResponseTooLarge) {
-              // The caller chose a response too large to relay; the next provider would
-              // return the same, so this is the request's own answer — no failover.
-              throw new GatewayHttpError(400, "invalid-request");
-            }
-            throw error;
-          }
+          const text = await response.text(MAX_RESPONSE_BYTES);
           let parsed: unknown;
           try {
             parsed = JSON.parse(text);
@@ -113,7 +88,7 @@ export function rpcRoutes({
             parsed = undefined;
           }
           // A JSON-RPC error object is a valid answer and is returned as-is; only a malformed
-          // body counts as a provider failure.
+          // body is a provider failure.
           if (!accepts(rpcResponse, parsed)) {
             throw new ProviderFailure("malformed", false);
           }

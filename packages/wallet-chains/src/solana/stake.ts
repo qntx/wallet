@@ -2,7 +2,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { address, getAddressEncoder } from "@solana/addresses";
 import { getU32Decoder, getU64Decoder, getI64Decoder } from "@solana/codecs";
 
-import { PROGRAM_IDS, solanaAddressFromPublicKey } from "./ids.ts";
+import { solanaAddressFromPublicKey } from "./ids.ts";
 import { resolveAccountIndex } from "./message.ts";
 import type { ParsedSolanaMessage } from "./message.ts";
 
@@ -68,6 +68,14 @@ export type StakeCreate = {
   readonly account: string;
   readonly from: string;
   readonly lamports: bigint;
+};
+
+/** A decoded system-program CreateAccount/CreateAccountWithSeed, any new-owner program. */
+export type SystemCreate = {
+  readonly account: string;
+  readonly from: string;
+  readonly lamports: bigint;
+  readonly owner: string;
 };
 
 const account = (
@@ -221,15 +229,16 @@ export const decodeStakeIx = (
 };
 
 /**
- * A system-program `CreateAccount` (u32 0) or `CreateAccountWithSeed` (u32 3) whose owner is the
- * Stake program — `undefined` for other owners or any layout deviation. A with-seed creation is
- * only recognised when `to` is the sha256(base ‖ seed ‖ owner) derived address.
+ * One system-program account creation (CreateAccount or CreateAccountWithSeed), for any new-owner
+ * program. A with-seed creation whose `account` does not match sha256(base ‖ seed ‖ owner) is
+ * `"other"` — the program itself would reject it. `undefined` when the data is neither instruction;
+ * `"other"` when it is one but malformed.
  */
-export const decodeStakeCreate = (
+export const decodeSystemCreate = (
   parsed: ParsedSolanaMessage,
   ix: { readonly accountIndices: ReadonlyArray<number>; readonly data: Uint8Array },
   lookups: Parameters<typeof resolveAccountIndex>[2],
-): StakeCreate | "other" | undefined => {
+): SystemCreate | "other" | undefined => {
   const { data } = ix;
   const acc = (i: number): string | undefined => account(parsed, ix, i, lookups);
   if (data.length < 4) {
@@ -244,10 +253,7 @@ export const decodeStakeCreate = (
     if (from === undefined || to === undefined) {
       return "other";
     }
-    if (key(data, 20) !== PROGRAM_IDS.stake) {
-      return "other";
-    }
-    return { kind: "create", account: to, from, lamports: u64le(data, 4) };
+    return { account: to, from, lamports: u64le(data, 4), owner: key(data, 20) };
   }
   if (u32le(data, 0) === 3) {
     /* base(32) + seed(len u64 + bytes) + lamports(8) + space(8) + owner(32). */
@@ -267,9 +273,6 @@ export const decodeStakeCreate = (
     }
     const base = key(data, 4);
     const owner = key(data, end - 32);
-    if (owner !== PROGRAM_IDS.stake) {
-      return "other";
-    }
     if (ix.accountIndices.length === 3 && acc(2) !== base) {
       return "other";
     }
@@ -279,15 +282,11 @@ export const decodeStakeCreate = (
     const seed = data.subarray(44, 44 + seedLen);
     const derived = solanaAddressFromPublicKey(
       sha256(
-        new Uint8Array([
-          ...addr.encode(address(base)),
-          ...seed,
-          ...addr.encode(address(PROGRAM_IDS.stake)),
-        ]),
+        new Uint8Array([...addr.encode(address(base)), ...seed, ...addr.encode(address(owner))]),
       ),
     );
     return to === derived
-      ? { kind: "create", account: to, from, lamports: u64le(data, 44 + seedLen) }
+      ? { account: to, from, lamports: u64le(data, 44 + seedLen), owner }
       : "other";
   }
   return undefined;

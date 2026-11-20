@@ -16,9 +16,8 @@ import type {
 
 import { GatewayHttpError } from "../middleware/errors.ts";
 import type { PriceCache, ResolvedProvider } from "../types.ts";
-import { readCapped } from "./body.ts";
-import type { Forwarder } from "./forward.ts";
-import { ProviderFailure, UNAVAILABLE_RETRY_AFTER_SECONDS } from "./forward.ts";
+import type { Forwarder, Send, UpstreamResponse } from "./forward.ts";
+import { ProviderFailure, REFUSED_STATUSES, UNAVAILABLE_RETRY_AFTER_SECONDS } from "./forward.ts";
 import { priceTarget } from "./prices-assets.ts";
 import type { PriceTarget } from "./prices-assets.ts";
 
@@ -31,18 +30,15 @@ export const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
 
 /** ~20x a full batch: recorded answers run ~120 bytes per asset, 100 assets ~12 kB. */
 const MAX_RESPONSE_BYTES = 256 * 1024;
-/** Upstream statuses where the provider provably refused the call before processing it. */
-const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403, 429]);
-
 /**
- * A price provider's JSON body. Every request a source sends is well-formed by construction, so any
- * non-2xx status (a 400 included) is the provider's failure, as is a body that is not JSON.
+ * A price provider's JSON body. Any non-2xx status is a failed answer, as is a body that is not
+ * JSON; neither is an outage — the assets in the request are the client's choice.
  */
-export async function providerJson(response: Response): Promise<unknown> {
+export async function providerJson(response: UpstreamResponse): Promise<unknown> {
   if (!response.ok) {
     throw new ProviderFailure(`status-${response.status}`, REFUSED_STATUSES.has(response.status));
   }
-  const text = await readCapped(response, MAX_RESPONSE_BYTES);
+  const text = await response.text(MAX_RESPONSE_BYTES);
   try {
     return JSON.parse(text) as unknown;
   } catch {
@@ -59,22 +55,21 @@ export type RawQuote = {
 
 /**
  * One price provider. `quote` answers for the assets it knows and omits the others; it throws on
- * any failure (a non-2xx status, a malformed body), which the forwarder counts against the
- * breaker.
+ * any failure (a non-2xx status, a malformed body). `calls` is how many upstream calls `quote`
+ * makes for `targets` — the request pays one rate-limit unit for each before they are sent.
  */
 export type PriceSource = {
   readonly provider: ResolvedProvider;
   readonly serves: (currency: FiatCurrency) => boolean;
+  readonly calls: (targets: ReadonlyMap<string, PriceTarget>) => number;
   readonly quote: (
-    fetch: typeof globalThis.fetch,
+    send: Send,
     currency: FiatCurrency,
     targets: ReadonlyMap<string, PriceTarget>,
-    signal: AbortSignal,
   ) => Promise<ReadonlyMap<string, RawQuote>>;
 };
 
 export type PriceDeps = {
-  readonly fetch: typeof globalThis.fetch;
   readonly forwarder: Forwarder;
   readonly cache: PriceCache;
   /** Tried in order: each one is asked only for the assets every earlier one left unpriced. */
@@ -172,15 +167,17 @@ async function writeCached(deps: PriceDeps, key: string, entry: Entry, now: numb
 }
 
 /**
- * Prices `request.assets`: cache first, then each source in order for whatever is still unpriced.
- * An asset no provider knows is `missing`; it is cached as such only when every source that serves
- * the currency answered — a failed provider might know it. When no asset could be priced and a
- * provider failed, the request fails `503 unavailable` rather than claiming everything is missing.
- * Returns the response and the providers whose data it carries.
+ * Prices `request.assets`: cache first, then each source in order for whatever is still unpriced,
+ * `charge` paying for each source's upstream calls before they are sent (a refusal is a 429). An
+ * asset no provider knows is `missing`; it is cached as such only when every source that serves the
+ * currency answered — a failed provider might know it. When no asset could be priced and a provider
+ * failed, the request fails `503 unavailable` rather than claiming everything is missing. Returns
+ * the response and the providers whose data it carries.
  */
 export async function quotePrices(
   deps: PriceDeps,
   request: PricesRequest,
+  charge: (units: number) => Promise<void>,
 ): Promise<{ readonly response: PricesResponse; readonly providers: ReadonlyArray<string> }> {
   const { currency } = request;
   const now = deps.now();
@@ -210,10 +207,12 @@ export async function quotePrices(
     if (pending.size === 0) {
       break;
     }
+    // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
+    await charge(source.calls(pending));
     try {
       // oxlint-disable-next-line eslint/no-await-in-loop -- each source only sees what the last left
-      const { value } = await deps.forwarder.run([source.provider], async (_provider, signal) =>
-        source.quote(deps.fetch, currency, pending, signal),
+      const { value } = await deps.forwarder.run([source.provider], async (send) =>
+        source.quote(send, currency, pending),
       );
       for (const [asset, raw] of value) {
         const quote = pending.has(asset) ? normalizeQuote(asset, raw, now) : undefined;

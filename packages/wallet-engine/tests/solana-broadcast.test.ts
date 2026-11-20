@@ -51,7 +51,14 @@ const world = () => {
   /** Every sendTransaction fetch, including ones dropped before the node saw them. */
   const attempts: string[] = [];
   const calls: string[] = [];
-  const env = { blockHeight: 1 };
+  const env = {
+    blockHeight: 1,
+    /** The tip's absoluteSlot; `statusSlot` is the bank the status answer came from. */
+    slot: 500,
+    statusSlot: 500,
+    /** Fired after the poll's first read — a transaction landing between the two reads. */
+    landAfterFirstRead: undefined as undefined | (() => void),
+  };
   /** How sendTransaction answers: a real signature, an rpc error, or a dead transport. */
   let sendMode: { kind: "ok" } | { kind: "rpc-error"; message: string } | { kind: "drop" } = {
     kind: "ok",
@@ -63,6 +70,21 @@ const world = () => {
 
   const answer = (method: string, params: unknown[]): unknown => {
     calls.push(method);
+    const result = answerMethod(method, params);
+    const land = env.landAfterFirstRead;
+    if (
+      land !== undefined &&
+      (method === "getEpochInfo" ||
+        method === "getBlockHeight" ||
+        method === "getSignatureStatuses")
+    ) {
+      env.landAfterFirstRead = undefined;
+      land();
+    }
+    return result;
+  };
+
+  const answerMethod = (method: string, params: unknown[]): unknown => {
     switch (method) {
       case "getLatestBlockhash":
         return {
@@ -85,6 +107,8 @@ const world = () => {
       }
       case "getBlockHeight":
         return env.blockHeight;
+      case "getEpochInfo":
+        return { absoluteSlot: env.slot, blockHeight: env.blockHeight };
       case "sendTransaction": {
         const wire = String(params[0]);
         wires.push(wire);
@@ -96,7 +120,10 @@ const world = () => {
       }
       case "getSignatureStatuses": {
         const sigs = Array.isArray(params[0]) ? params[0] : [];
-        return { value: sigs.map((s) => statuses.get(String(s)) ?? null) };
+        return {
+          context: { slot: env.statusSlot },
+          value: sigs.map((s) => statuses.get(String(s)) ?? null),
+        };
       }
       default:
         throw new Error(`unmocked ${method}`);
@@ -325,5 +352,87 @@ describe("a Solana broadcast with an unsettled outcome", () => {
     w.env.blockHeight = LVBH + 1;
     await second.timers.fire(POLL_MS);
     expect(second.ctl.getState().txs[tx.id]?.state).toBe("dropped");
+  });
+
+  it("a transaction landing between the tip and status reads is never dropped", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    w.setSendMode({ kind: "drop" });
+
+    const tx = await send(ctl, SEND);
+    expect(tx.state).toBe("submitted");
+    const hash = hashOf(tx);
+    const before = w.attempts.length;
+
+    // The blockhash is dead and the transaction lands exactly between the poll's two reads.
+    w.env.blockHeight = LVBH + 1;
+    w.env.landAfterFirstRead = () => {
+      w.statuses.set(hash, { confirmationStatus: "processed", err: null, slot: w.env.slot });
+    };
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    // Nothing was rebroadcast either: an expired blockhash cannot carry the bytes anymore.
+    expect(w.attempts).toHaveLength(before);
+
+    w.statuses.set(hash, { confirmationStatus: "confirmed", err: null, slot: w.env.slot });
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("confirmed");
+  });
+
+  it("a status answer from a bank behind the tip cannot prove a drop", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    w.setSendMode({ kind: "drop" });
+
+    const tx = await send(ctl, SEND);
+    expect(tx.state).toBe("submitted");
+    const before = w.attempts.length;
+
+    // Expired — but the status answer came from an older bank than the height proof.
+    w.env.blockHeight = LVBH + 1;
+    w.env.slot = 700;
+    w.env.statusSlot = 600;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    expect(w.attempts).toHaveLength(before);
+
+    // A bank at least as far along as the tip also has no entry: the drop is proven.
+    w.env.statusSlot = 700;
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
+  });
+
+  it("a processed-only entry past the blockhash's validity is not a drop", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    w.setSendMode({ kind: "drop" });
+
+    const tx = await send(ctl, SEND);
+    expect(tx.state).toBe("submitted");
+    const before = w.attempts.length;
+
+    w.env.blockHeight = LVBH + 1;
+    w.statuses.set(hashOf(tx), { confirmationStatus: "processed", err: null, slot: w.env.slot });
+    await timers.fire(POLL_MS);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("submitted");
+    expect(w.attempts).toHaveLength(before);
+  });
+
+  it("the tip is read before the status so the expiry proof is never stale", async () => {
+    const w = world();
+    const { ctl, timers } = await w.boot();
+    w.setSendMode({ kind: "drop" });
+
+    const tx = await send(ctl, SEND);
+    expect(tx.state).toBe("submitted");
+    expect(ctl.getState().txs[tx.id]?.lastValidBlockHeight).toBe(LVBH);
+
+    w.calls.length = 0;
+    w.env.blockHeight = LVBH + 1;
+    await timers.fire(POLL_MS);
+    const tipAndStatus = new Set(["getEpochInfo", "getSignatureStatuses"]);
+    const reads = w.calls.filter((call) => tipAndStatus.has(call));
+    expect(reads).toStrictEqual(["getEpochInfo", "getSignatureStatuses"]);
+    expect(ctl.getState().txs[tx.id]?.state).toBe("dropped");
   });
 });

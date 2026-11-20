@@ -4,8 +4,8 @@ import { parseWith } from "@qntx/wallet-engine/gateway/contract";
 import type { BridgeQuoteResponse } from "@qntx/wallet-engine/gateway/contract";
 
 import type { ResolvedProvider } from "../types.ts";
-import { readCapped } from "./body.ts";
 import type { Forwarder } from "./forward.ts";
+import { ProviderFailure } from "./forward.ts";
 
 const ACROSS_API = "https://app.across.to";
 
@@ -46,7 +46,6 @@ const tokenOf = (t: string | { readonly address: string }): string =>
  */
 export async function acrossQuote(
   forwarder: Forwarder,
-  fetch: typeof globalThis.fetch,
   query: {
     readonly inputToken: string;
     readonly outputToken: string;
@@ -61,24 +60,24 @@ export async function acrossQuote(
   url.searchParams.set("originChainId", query.originChainId);
   url.searchParams.set("destinationChainId", query.destinationChainId);
   url.searchParams.set("amount", query.amount);
-  const { value } = await forwarder.run([PROVIDER], async (_provider, signal) => {
-    const http = await fetch(url, { signal });
-    const text = await readCapped(http, MAX_RESPONSE_BYTES);
+  const { value } = await forwarder.run([PROVIDER], async (send) => {
+    const http = await send({ url });
+    const text = await http.text(MAX_RESPONSE_BYTES);
     if (!http.ok) {
       if (CLIENT_ERROR.has(http.status)) {
         return { badRequest: true } as const;
       }
-      throw new Error(`across returned ${http.status}`);
+      throw new ProviderFailure(`status-${http.status}`, false);
     }
     let body: unknown;
     try {
       body = JSON.parse(text);
     } catch {
-      throw new Error("across returned a non-JSON body");
+      throw new ProviderFailure("malformed", false);
     }
     const res = parseWith(acrossUpstreamResponse, body);
     if (res === undefined) {
-      throw new Error("across returned an unexpected body");
+      throw new ProviderFailure("malformed", false);
     }
     const amount = BigInt(query.amount);
     if (

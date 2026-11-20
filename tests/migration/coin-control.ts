@@ -1,6 +1,4 @@
-import type { WalletEngine } from "@qntx/wallet-engine";
-
-import type { AccountRef } from "./account-ref.ts";
+import type { AccountRef, WalletEngine } from "@qntx/wallet-engine";
 
 type Group = { readonly walletId: string; readonly groupIndex: number };
 
@@ -17,6 +15,20 @@ export async function bitcoinBalance(
   // oxlint-enable typescript/no-unsafe-call
   const balances = await engine.assets.refreshBitcoinGroup(group, network);
   return balances.native;
+}
+
+/** Value protected as possible inscription or rune carriers; 0.13.0 called it `frozen`. */
+export async function protectedBalance(
+  engine: WalletEngine,
+  group: Group,
+  network: string,
+): Promise<string | undefined> {
+  const balances = await engine.assets.refreshBitcoinGroup(group, network);
+  // oxlint-disable typescript/no-unsafe-assignment -- demonstrates the renamed 0.13.0 field
+  // @ts-expect-error -- `frozen` is renamed `protected`
+  const before: string | undefined = balances.frozen;
+  // oxlint-enable typescript/no-unsafe-assignment
+  return balances.protected ?? before;
 }
 
 /**

@@ -21,7 +21,6 @@ import { alchemyHistoryPage, historyProviders } from "../providers/history-alche
 const MAX_BODY_BYTES = 4096;
 
 type Deps = {
-  readonly fetch: typeof globalThis.fetch;
   readonly forwarder: Forwarder;
   readonly served: ReadonlyMap<string, ResolvedNetwork>;
   readonly log: (line: string) => void;
@@ -29,7 +28,6 @@ type Deps = {
 
 /** `POST /v1/history/:caip2` — EVM transfer history, newest first, `cursor` pages backwards. */
 export function historyRoutes({
-  fetch,
   forwarder,
   served,
   log,
@@ -51,11 +49,11 @@ export function historyRoutes({
         throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
       }
       const body = c.req.valid("json");
-      // Two upstream calls per page; the request already paid one unit. A drain round costs two more.
+      // Two upstream calls per page; the request already paid one unit. A drain round pays its two
+      // more before it is sent.
       await c.get("charge")(1);
       const { value, providerId } = await alchemyHistoryPage(
         forwarder,
-        fetch,
         providers,
         {
           chainId: Number(network.id.split(":")[1]),
@@ -63,12 +61,10 @@ export function historyRoutes({
           ...(body.cursor === undefined ? {} : { cursor: body.cursor }),
           limit: body.limit ?? HISTORY_PAGE_MAX,
         },
+        async () => c.get("charge")(2),
         log,
       );
-      if (value.drained) {
-        await c.get("charge")(2);
-      }
-      return c.json(value.response, 200, { [PROVIDERS_HEADER]: providerId });
+      return c.json(value, 200, { [PROVIDERS_HEADER]: providerId });
     },
   );
   return routes;

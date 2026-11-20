@@ -1,6 +1,6 @@
 import * as TypedData from "ox/TypedData";
 
-import { displayExcerpt } from "../display.ts";
+import { displayExcerpt, isHexRendering } from "../display.ts";
 import { ChainError } from "../index.ts";
 import type { TypedDataLeaf } from "../index.ts";
 import { checksumEvmAddress } from "./address.ts";
@@ -165,7 +165,14 @@ export const parseTypedData = (typedData: string): ParsedTypedData => {
     throw new ChainError("invalid-typed-data", "typedData failed EIP-712 validation");
   }
   checkStructure(json.types, json.primaryType, json.message, 0);
-  return { json };
+  /* Only the domain keys `types.EIP712Domain` declares are hashed — undeclared keys are
+     dropped so nothing downstream (display, recognisers, the chain-id check, signing) can
+     read a field the signature does not commit to. */
+  const declared = new Set((json.types["EIP712Domain"] ?? []).map((field) => field.name));
+  const domain = Object.fromEntries(
+    Object.entries(json.domain).filter(([key]) => declared.has(key)),
+  );
+  return { json: { ...json, domain } };
 };
 
 /** Most leaves an unrecognised typed-data document may have and still be shown in full. */
@@ -229,18 +236,33 @@ const leafValue = (type: string, value: unknown): string | undefined => {
 };
 
 /**
- * Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
- * declaration order, arrays element by element), as display lines; `undefined` when there are more
- * than TYPED_FIELD_BUDGET leaves or any leaf cannot be shown exactly as it is encoded.
+ * Whether the atomic leaf of `type` holding `value` is a commitment: `bytes`/`bytesN` always is —
+ * the signature commits to raw bytes the owner cannot read — as is a `string` that is just the hex
+ * rendering of ≥ 32 bytes. An empty-array leaf ("[]") is not (it carries nothing).
  */
-export const typedDataFields = (json: TypedDataInput): ReadonlyArray<TypedDataLeaf> | undefined => {
+const isCommitmentLeaf = (type: string, value: unknown): boolean =>
+  type === "bytes" ||
+  FIXED_BYTES.test(type) ||
+  (type === "string" && typeof value === "string" && isHexRendering(value));
+
+/**
+ * Every leaf of `message` under `primaryType`, in EIP-712 encoding order (each struct's fields in
+ * declaration order, arrays element by element), as display lines, and whether every leaf is a
+ * commitment; `undefined` when there are more than TYPED_FIELD_BUDGET leaves or any leaf cannot be
+ * shown exactly as it is encoded. A document with no leaves is a vacuous commitment.
+ */
+export const typedDataFields = (
+  json: TypedDataInput,
+): { readonly fields: ReadonlyArray<TypedDataLeaf>; readonly commitment: boolean } | undefined => {
   const leaves: TypedDataLeaf[] = [];
-  const push = (path: string, value: string): boolean => {
+  let commitment = true;
+  const push = (path: string, value: string, commits: boolean): boolean => {
     const excerpt = displayExcerpt(path, 1, TYPED_FIELD_CODE_POINTS);
     if (excerpt.omitted !== 0) {
       return false;
     }
     leaves.push({ path: excerpt.lines[0] ?? "", value });
+    commitment = commitment && commits;
     return leaves.length <= TYPED_FIELD_BUDGET;
   };
   const walk = (type: string, value: unknown, path: string): boolean => {
@@ -250,7 +272,7 @@ export const typedDataFields = (json: TypedDataInput): ReadonlyArray<TypedDataLe
         return false;
       }
       return value.length === 0
-        ? push(path, "[]")
+        ? push(path, "[]", false)
         : value.every((item, index) => walk(array[1] ?? "", item, `${path}[${index}]`));
     }
     const struct = json.types[type];
@@ -263,9 +285,9 @@ export const typedDataFields = (json: TypedDataInput): ReadonlyArray<TypedDataLe
       );
     }
     const leaf = leafValue(type, value);
-    return leaf !== undefined && push(path, leaf);
+    return leaf !== undefined && push(path, leaf, isCommitmentLeaf(type, value));
   };
-  return walk(json.primaryType, json.message, "") ? leaves : undefined;
+  return walk(json.primaryType, json.message, "") ? { fields: leaves, commitment } : undefined;
 };
 
 /**

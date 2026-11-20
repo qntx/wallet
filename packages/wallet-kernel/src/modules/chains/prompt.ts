@@ -20,6 +20,7 @@ import type {
   SignInParse,
   StakeAction,
 } from "@qntx/wallet-chains";
+import { SEAPORT_ORDER_ITEMS } from "@qntx/wallet-chains/evm";
 import { networkMeta } from "@qntx/wallet-chains/networks";
 
 import { KernelError } from "../../errors.ts";
@@ -68,7 +69,6 @@ export const messagePromptIntent = (message: MessageContent): PromptIntent => {
 const MESSAGE_LINES = 6;
 const MESSAGE_CODE_POINTS = 320;
 const FIELD_CODE_POINTS = 96;
-const ORDER_ITEMS = 4;
 
 type Catalog = {
   readonly titles: Readonly<Record<IntentSummary, string>>;
@@ -97,6 +97,8 @@ type Catalog = {
   readonly typedType: (name: string) => string;
   readonly typedUnverified: string;
   readonly typedField: (path: string, value: string) => string;
+  readonly typedCommitment: string;
+  readonly typedVariant: string;
   readonly typedOversize: string;
   readonly orderGive: (amount: string) => string;
   readonly orderReceive: (recipient: string, amount: string) => string;
@@ -179,6 +181,8 @@ const zh: Catalog = {
   typedType: (name) => `类型：${name}`,
   typedUnverified: "钱包无法核实此签名授权的内容",
   typedField: (path, value) => `${path}：${value}`,
+  typedCommitment: "只签署哈希或原始字节；钱包无法看到它们所承诺的内容",
+  typedVariant: "钱包认识这类签名，但不认识这种形式；它可能授权转移资产",
   typedOversize: "此类型数据过大，无法完整显示",
   orderGive: (amount) => `付出 ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} 收到 ${amount}`,
@@ -272,6 +276,9 @@ const en: Catalog = {
   typedType: (name) => `Type: ${name}`,
   typedUnverified: "The wallet cannot verify what this signature authorises",
   typedField: (path, value) => `${path}: ${value}`,
+  typedCommitment: "It signs only hashes or raw bytes; the wallet cannot see what they commit to",
+  typedVariant:
+    "The wallet recognises this kind of signature but not this form of it; it may authorise moving assets",
   typedOversize: "This typed data is too large to show in full",
   orderGive: (amount) => `Give ${amount}`,
   orderReceive: (recipient, amount) => `${recipient} receives ${amount}`,
@@ -506,7 +513,14 @@ function transactionPrompt(catalog: Catalog, intent: PromptIntent): KeystoreProm
         : intent.verifiability === "partial"
           ? [catalog.otherOutflows]
           : []
-      : [];
+      : /* A blind Solana transaction still names the programs it cannot decode — the blind title
+           carries the refusal reason, the program list is what the signature reaches. */
+        intent.family === "solana" && intent.verifiability === "opaque"
+        ? [
+            catalog.solanaPrograms((intent.programs ?? []).join(", ")),
+            catalog.solanaProgramsWarning,
+          ]
+        : [];
   const warnings = intent.warnings ?? [];
   return {
     title: intent.blind === undefined ? catalog.titles[intent.summary] : catalog.blindTitle,
@@ -573,8 +587,11 @@ function orderLines(catalog: Catalog, order: SeaportOrder): ReadonlyArray<string
     return start === end ? start : `${start} → ${end}`;
   };
   const capped = (lines: ReadonlyArray<string>): ReadonlyArray<string> =>
-    lines.length > ORDER_ITEMS
-      ? [...lines.slice(0, ORDER_ITEMS), catalog.moreItems(lines.length - ORDER_ITEMS)]
+    lines.length > SEAPORT_ORDER_ITEMS
+      ? [
+          ...lines.slice(0, SEAPORT_ORDER_ITEMS),
+          catalog.moreItems(lines.length - SEAPORT_ORDER_ITEMS),
+        ]
       : lines;
   return [
     ...capped(order.offer.map((item) => catalog.orderGive(amount(item)))),
@@ -622,9 +639,14 @@ function typedContentLines(
   }
   if (message.fields !== undefined) {
     return [
+      ...(intent.blind === "typed-data-variant" ? [catalog.typedVariant] : []),
+      ...(intent.blind === "typed-data-commitment" ? [catalog.typedCommitment] : []),
       catalog.typedUnverified,
       ...message.fields.map((leaf) => catalog.typedField(leaf.path, leaf.value)),
     ];
+  }
+  if (intent.blind === "typed-data-variant") {
+    return [catalog.typedVariant, catalog.typedOversize];
   }
   if (intent.blind === "typed-data-oversize") {
     return [catalog.typedOversize];
@@ -672,16 +694,22 @@ function messagePrompt(
       description: joinLines(typedDataLines(catalog, intent, message)),
     };
   }
-  if (message.signIn?.status === "valid") {
+  if (intent.blind === undefined && message.signIn?.status === "valid") {
     return {
       title: catalog.signInTitle,
       description: joinLines(signInLines(catalog, message.signIn)),
     };
   }
   return {
-    title: catalog.titles.message,
+    title: intent.blind === undefined ? catalog.titles.message : catalog.blindTitle,
     description: joinLines([
-      ...(message.signIn === undefined ? [] : signInLines(catalog, message.signIn)),
+      /* Blind text still shows its sanitised excerpt under the warning — never a sign-in
+         rendering, whose chrome would present the request as legitimate. */
+      ...(intent.blind === undefined
+        ? message.signIn === undefined
+          ? []
+          : signInLines(catalog, message.signIn)
+        : [catalog.blindBytes]),
       ...textLines(catalog, message.text),
     ]),
   };

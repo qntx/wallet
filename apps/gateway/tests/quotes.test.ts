@@ -126,14 +126,20 @@ describe("GET /v1/quotes/swap", () => {
     expect(res.status).toBe(503);
   });
 
-  it("answers 503 when the upstream quote body exceeds the cap", async () => {
+  it("answers 400 when the upstream quote body exceeds the cap, without breaker cost", async () => {
     const upstream = fakeFetch({
       [`${API}/swap/allowance-holder/quote`]: () =>
         Response.json({ ...filled(), zid: "a".repeat(1024 * 1024) }),
     });
     const app = gateway({ fetch: upstream.fetch, zeroEx: { apiKey: "k" } });
-    const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
-    expect(res.status).toBe(503);
+    const statuses = await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        const res = await app.request(`${swapQuote.path}?${QUERY}`, { headers: headers() });
+        return res.status;
+      }),
+    );
+    expect(statuses).toStrictEqual([400, 400, 400, 400, 400, 400]);
+    expect(upstream.calls).toHaveLength(6);
   });
 });
 
@@ -254,7 +260,7 @@ describe("GET /v1/quotes/swap/solana", () => {
     const [call] = upstream.callsTo(`${JAPI}/swap/v2/build`);
     expect(call?.url).toContain(`inputMint=${WSOL}`);
     expect(call?.url).toContain(`taker=${STAKER}`);
-    expect(call?.headers).toBeUndefined();
+    expect(call?.headers).toStrictEqual({});
   });
 
   it("sends x-api-key when a key is configured", async () => {
@@ -390,7 +396,7 @@ describe("GET /v1/quotes/bridge", () => {
     expect(url.searchParams.get("originChainId")).toBe("1");
     expect(url.searchParams.get("destinationChainId")).toBe("10");
     expect(url.searchParams.get("amount")).toBe("300000000");
-    expect(called.headers).toBeUndefined();
+    expect(called.headers).toStrictEqual({});
   });
 
   it("reports no liquidity when the amount is too low", async () => {

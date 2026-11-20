@@ -1,12 +1,7 @@
 import { sValidator } from "@hono/standard-validator";
 import { Hono } from "hono";
 
-import {
-  PROVIDERS_HEADER,
-  prices,
-  pricesRequest,
-  pricesRequestCost,
-} from "@qntx/wallet-engine/gateway/contract";
+import { PROVIDERS_HEADER, prices, pricesRequest } from "@qntx/wallet-engine/gateway/contract";
 
 import { limitBody } from "../middleware/body-limit.ts";
 import { GatewayHttpError } from "../middleware/errors.ts";
@@ -19,8 +14,9 @@ const MAX_BODY_BYTES = 16 * 1024;
 
 /**
  * `POST /v1/prices` — spot prices and 24 h change for a batch of assets in one fiat currency. The
- * request pays one rate-limit unit per started 25 assets. The answer is per-client (it names the
- * client's assets), so it is `no-store`; reuse happens per asset in the gateway's own cache.
+ * request pays one rate-limit unit, plus one per upstream call its cache misses fan out to. The
+ * answer is per-client (it names the client's assets), so it is `no-store`; reuse happens per asset
+ * in the gateway's own cache.
  */
 export function pricesRoutes(deps: PriceDeps): Hono<{ Variables: RateLimitVariables }> {
   return new Hono<{ Variables: RateLimitVariables }>().post(
@@ -33,8 +29,7 @@ export function pricesRoutes(deps: PriceDeps): Hono<{ Variables: RateLimitVariab
     }),
     async (c) => {
       const request = c.req.valid("json");
-      await c.get("charge")(pricesRequestCost(request) - 1);
-      const { response, providers } = await quotePrices(deps, request);
+      const { response, providers } = await quotePrices(deps, request, c.get("charge"));
       return c.json(response, 200, {
         "cache-control": "no-store",
         [PROVIDERS_HEADER]: providers.join(","),

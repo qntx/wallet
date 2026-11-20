@@ -120,10 +120,10 @@ describe("balanceHoldings", () => {
     ]);
   });
 
-  it("sums a bitcoin group's confirmed, unconfirmed and frozen sats", () => {
+  it("sums a bitcoin group's confirmed, unconfirmed and protected sats", () => {
     const [native] = balanceHoldings(
       `${BTC_MAINNET}:w:0`,
-      balances({ native: "100", unconfirmed: "20", frozen: "3" }),
+      balances({ native: "100", unconfirmed: "20", protected: "3" }),
     );
     expect(native).toMatchObject({ asset: BTC, symbol: "BTC", decimals: 8, amount: 123n });
   });
@@ -340,6 +340,17 @@ describe("valueHoldings", () => {
       now,
     );
     expect(unpriced.stale).toBe(false);
+  });
+
+  it("marks a future-dated quote stale too", () => {
+    const now = 1_700_000_000_000;
+    const valuation = valueHoldings(
+      [holding({ amount: 10n ** 18n })],
+      { currency: "usd", quotes: { [ETH]: quote("1", now + PRICE_STALE_MS + 1) } },
+      now,
+    );
+    expect(valuation.holdings[0]?.price?.stale).toBe(true);
+    expect(valuation.stale).toBe(true);
   });
 
   it("passes the state's currency through", () => {

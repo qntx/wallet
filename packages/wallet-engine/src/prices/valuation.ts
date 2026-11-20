@@ -51,7 +51,7 @@ export function valueHoldings(
       return holding;
     }
     const value = assetValue(holding.amount, holding.decimals, parseDecimal(quote.price));
-    const view = { ...quote, stale: now - quote.updatedAt > PRICE_STALE_MS };
+    const view = { ...quote, stale: Math.abs(now - quote.updatedAt) > PRICE_STALE_MS };
     values.push(value);
     stale ||= view.stale;
     return { ...holding, price: view, value: formatDecimal(value) };

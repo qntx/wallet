@@ -344,6 +344,7 @@ const buildPsbt = (opts: {
   extraInput?: boolean;
   extraPrev?: boolean;
   weirdScript?: boolean;
+  scriptLen?: number;
   coinType?: number;
 }): Uint8Array => {
   const coinType = opts.coinType ?? 0x80000000;
@@ -385,7 +386,9 @@ const buildPsbt = (opts: {
       ],
     });
   }
-  if (opts.weirdScript === true) {
+  if (opts.scriptLen !== undefined) {
+    tx.addOutput({ script: new Uint8Array(opts.scriptLen), amount: 5000n });
+  } else if (opts.weirdScript === true) {
     tx.addOutput({ script: Uint8Array.of(0x50, 0x21, ...new Uint8Array(33)), amount: 5000n });
   } else {
     tx.addOutput({ script: OutScript.encode(Address(NETWORK).decode(PAYEE)), amount: 90000n });
@@ -704,6 +707,20 @@ describe("decode + verifiability", () => {
     );
     expect(listing.verifiability).toBe("partial");
     expect(listing.fee).toBeUndefined();
+  });
+
+  it("a script over MAX_SCRIPT_SIZE is a burn; exactly the limit is not", () => {
+    const over = decodeBitcoinPsbt(
+      asPsbt(normalizeBitcoin(req(buildPsbt({ scriptLen: 10_001 })))),
+      new Set(),
+    );
+    expect(over.outflows).toContainEqual(expect.objectContaining({ burn: true, verified: true }));
+
+    const at = decodeBitcoinPsbt(
+      asPsbt(normalizeBitcoin(req(buildPsbt({ scriptLen: 10_000 })))),
+      new Set(),
+    );
+    expect(at.outflows.every((o) => o.burn !== true)).toBe(true);
   });
 
   it("OP_RETURN row keeps full class; undecodable output → partial", () => {

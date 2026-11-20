@@ -44,6 +44,12 @@ class HybridKernelHost final : public HybridKernelHostSpec,
   // Reports `reason` through onExit once, then tears the runtime down unless
   // the exit was itself the lock report (the runtime is already gone).
   void exit(KernelExitReason reason);
+  // Everything start does after claiming the slot; start undoes the
+  // registration and hands the predecessor back to the slot if it throws.
+  void startRuntime(
+      int seconds,
+      qntx::KernelSlot::Claim& claim,
+      const std::shared_ptr<qntx::KernelRuntime>& predecessor);
 
   std::mutex mutex_;
   // Held while this host owns the process's one live kernel runtime; released

@@ -12,6 +12,16 @@ const evmAddress = z.string().check(z.regex(/^0x[0-9a-fA-F]{40}$/));
 /** A decimal string of a non-negative integer (`"0"` allowed for gas nulls). */
 const decimal = z.string().check(z.regex(/^[0-9]+$/));
 
+const UINT256_MAX = 2n ** 256n - 1n;
+const U64_MAX = 2n ** 64n - 1n;
+
+/**
+ * An exact base-unit amount: a positive integer as decimal, at most `max` — the width of the
+ * chain's amount type, so the upstream is never asked for an amount it must reject.
+ */
+const positiveAmount = (max: bigint) =>
+  z.string().check(z.refine((value) => /^[1-9][0-9]*$/.test(value) && BigInt(value) <= max));
+
 /** The `swapQuote` request: which exact-in sell on which chain, for which taker, at what slippage. */
 export const swapQuoteRequest = z.object({
   /** `eip155:<n>` — the only namespace a 0x swap supports. */
@@ -20,8 +30,8 @@ export const swapQuoteRequest = z.object({
   sellToken: evmAddress,
   /** The token bought — an ERC-20 address, or `0xEeeee…` for native. */
   buyToken: evmAddress,
-  /** Exact base-unit sell amount, a positive integer as decimal. */
-  sellAmount: z.string().check(z.regex(/^[1-9][0-9]*$/)),
+  /** Exact base-unit sell amount, a positive uint256 as decimal. */
+  sellAmount: positiveAmount(UINT256_MAX),
   /** The address the settlement contract pays out for. */
   taker: evmAddress,
   /** Worst-case slippage in basis points, 1–5000 (a query string, coerced). */
@@ -83,8 +93,8 @@ export const swapQuoteSolanaRequest = z.object({
   inputMint: base58,
   /** The mint bought — `So111…112` for wrapped SOL. */
   outputMint: base58,
-  /** Exact base-unit sell amount, a positive integer as decimal. */
-  amount: z.string().check(z.regex(/^[1-9][0-9]*$/)),
+  /** Exact base-unit sell amount, a positive u64 (an SPL amount) as decimal. */
+  amount: positiveAmount(U64_MAX),
   /** The account the swap settles for. */
   taker: base58,
   /** Worst-case slippage in basis points, 1–5000 (a query string, coerced). */
@@ -146,8 +156,8 @@ export const bridgeQuoteRequest = z.object({
   inputToken: evmAddress,
   /** The token received on the destination chain. */
   outputToken: evmAddress,
-  /** Exact base-unit input amount, a positive integer as decimal. */
-  amount: z.string().check(z.regex(/^[1-9][0-9]*$/)),
+  /** Exact base-unit input amount, a positive uint256 as decimal. */
+  amount: positiveAmount(UINT256_MAX),
   /** The account the deposit settles for. */
   taker: evmAddress,
 });

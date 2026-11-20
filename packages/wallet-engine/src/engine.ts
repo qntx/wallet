@@ -5,6 +5,7 @@
  * so an unlock→lock flip can never overlap a still-opening store.
  */
 import { base58 } from "@scure/base";
+import type { StoreApi } from "zustand/vanilla";
 
 import type { Event } from "@qntx/nostr";
 import { createSparkClient } from "@qntx/spark";
@@ -13,6 +14,7 @@ import type { KeysApi, Wallet } from "@qntx/wallet";
 import { bitcoinAddressFromXpub, bitcoinPubkeyFromXpub } from "@qntx/wallet-chains/bitcoin";
 import {
   addSolanaSignature,
+  decodeSolana,
   decodeSolanaTransaction,
   normalizeSolana,
 } from "@qntx/wallet-chains/solana";
@@ -29,13 +31,14 @@ import type { AccountBalances } from "./assets/controller.ts";
 import { BackupController } from "./backup/controller.ts";
 import type { CloudStore } from "./backup/port.ts";
 import { prepareDappPsbts, signDappPsbts } from "./chains/bitcoin-dapp.ts";
-import { SolanaChainAdapter } from "./chains/solana.ts";
+import { SOLANA_MAX_PROCESSING_AGE, SolanaChainAdapter } from "./chains/solana.ts";
 import { BITCOIN_CHAIN_IDS, BitcoinWalletHandler } from "./connect/bitcoin.ts";
 import { ConnectionController } from "./connect/controller.ts";
 import { Eip1193Handler } from "./connect/eip1193.ts";
 import { Nip07Handler } from "./connect/nip07.ts";
 import { SolanaWalletHandler, SOLANA_CHAIN_IDS } from "./connect/solana.ts";
 import { WeblnHandler } from "./connect/webln.ts";
+import type { Controller } from "./controller.ts";
 import type { EngineLogger } from "./events.ts";
 import { gatewayFetch, gatewaySession } from "./gateway/client.ts";
 import { HistoryController } from "./history/controller.ts";
@@ -73,9 +76,11 @@ import {
   fetchJupiterQuote,
   fetchSwapQuote,
 } from "./swaps/quote.ts";
+import { ownBitcoinTxids } from "./transactions/bitcoin.ts";
+import { submitInOrder } from "./transactions/broadcast.ts";
 import { TransactionController } from "./transactions/controller.ts";
 import { accountAddress } from "./transactions/route.ts";
-import type { AccountRef, DelegationStatus } from "./transactions/route.ts";
+import type { AccountRef, DelegationStatus, DisplayIntent } from "./transactions/route.ts";
 
 export type EngineOptions = {
   readonly wallet: Wallet;
@@ -132,11 +137,36 @@ export type EngineOptions = {
   readonly sparkApis?: SparkControllerOptions["spark"];
 };
 
+/** A controller's store without `setState`: hosts read and subscribe, only the engine writes. */
+export type ReadonlyStore<S> = Pick<StoreApi<S>, "getState" | "getInitialState" | "subscribe">;
+
+/**
+ * A controller as hosts hold it: its state, read-only, and the methods named in `K`. Lifecycle and
+ * the wiring between controllers stay with the engine, and a method added to a controller is not
+ * host API until it is listed here.
+ */
+export type HostController<
+  C extends Controller<Record<string, unknown>>,
+  K extends Exclude<keyof C, "store">,
+> = Pick<C, "getState" | K> & { readonly store: ReadonlyStore<ReturnType<C["getState"]>> };
+
 export type WalletEngine = {
-  readonly networks: NetworkController;
-  readonly assets: AssetsController;
+  readonly networks: HostController<
+    NetworkController,
+    "endpoints" | "info" | "enabled" | "client" | "solanaRpc" | "esplora" | "addRpc"
+  >;
+  readonly assets: HostController<
+    AssetsController,
+    | "setVisible"
+    | "refresh"
+    | "refreshBitcoinGroup"
+    | "isTracked"
+    | "tokenMetadata"
+    | "addToken"
+    | "setTokenHidden"
+  >;
   /** Spot prices of the held assets — display-only; nothing that builds or signs reads them. */
-  readonly prices: PricesController;
+  readonly prices: HostController<PricesController, "setVisible" | "setCurrency" | "refresh">;
   /**
    * Fiat valuation of the balances already in state, at the current quotes — exact decimals,
    * display-only. `group` covers the group's EVM and Solana addresses on every enabled network, its
@@ -148,21 +178,75 @@ export type WalletEngine = {
       readonly groupIndex: number;
     }) => Promise<Valuation>;
   };
-  readonly transactions: Omit<TransactionController, `prepare${string}`>;
-  readonly requests: RequestController;
-  readonly addressBook: AddressBookController;
-  readonly history: HistoryController;
-  readonly connections: ConnectionController;
-  readonly eip1193: Eip1193Handler;
-  readonly nip07: Nip07Handler;
-  readonly webln: WeblnHandler;
-  readonly solanaWallet: SolanaWalletHandler;
-  readonly bitcoinWallet: BitcoinWalletHandler;
+  /** Tracked transactions and coin control; every send, replacement and dApp signature is a request. */
+  readonly transactions: HostController<
+    TransactionController,
+    "txById" | "nextReceiveAddress" | "setUtxosFrozen" | "frozenUtxos"
+  >;
+  readonly requests: HostController<
+    RequestController,
+    "prepare" | "approve" | "reject" | "outcome" | "signLog" | "clearSignLog"
+  >;
+  readonly addressBook: HostController<
+    AddressBookController,
+    "add" | "rename" | "setNote" | "remove"
+  >;
+  readonly history: HostController<HistoryController, "load" | "loadMore">;
+  /** DApp sessions; `checkOrigin` and `invalidateOrigin` are what `createBrowserBridge` needs. */
+  readonly connections: HostController<
+    ConnectionController,
+    | "checkOrigin"
+    | "invalidateOrigin"
+    | "session"
+    | "pending"
+    | "sessionAccounts"
+    | "nostrIdentity"
+    | "isEnabled"
+    | "approveConnection"
+    | "rejectConnection"
+    | "revoke"
+    | "setCurrentNetwork"
+    | "activeIdentity"
+    | "setActiveIdentity"
+    | "nostrPolicy"
+    | "lightningPolicy"
+  >;
+  readonly eip1193: Pick<Eip1193Handler, "handle" | "subscribe">;
+  readonly nip07: Pick<Nip07Handler, "handle">;
+  readonly webln: Pick<WeblnHandler, "handle">;
+  readonly solanaWallet: Pick<SolanaWalletHandler, "handle" | "subscribe">;
+  readonly bitcoinWallet: Pick<BitcoinWalletHandler, "handle" | "subscribe">;
   /** The phishing list: lifecycle is independent of the lock state. */
-  readonly phishing: PhishingController;
+  readonly phishing: HostController<PhishingController, "check" | "sync" | "trust" | "untrust">;
   /** Read and receive surface; every payment goes through `requests`. */
-  readonly spark: Omit<SparkController, "send" | "payInvoice" | "paySparkInvoice" | "withdraw">;
-  readonly accounts: AccountTreeController;
+  readonly spark: HostController<
+    SparkController,
+    | "history"
+    | "accountBalance"
+    | "receiveAddress"
+    | "createInvoice"
+    | "newDepositAddress"
+    | "paymentStatus"
+    | "quoteExit"
+    | "registerLightningAddress"
+    | "unregisterLightningAddress"
+  >;
+  readonly accounts: HostController<
+    AccountTreeController,
+    | "imported"
+    | "addGroup"
+    | "addGroups"
+    | "renameWallet"
+    | "renameGroup"
+    | "setHidden"
+    | "select"
+    | "bind"
+    | "unbind"
+    | "bindingOf"
+    | "discoverSpark"
+    | "discoverGroups"
+    | "refreshTotals"
+  >;
   readonly watch: {
     readonly add: (input: {
       readonly family: "evm" | "solana" | "bitcoin";
@@ -174,8 +258,11 @@ export type WalletEngine = {
     readonly list: () => ReadonlyArray<WatchAccount>;
     readonly assets: (id: string, network: string) => Promise<AccountBalances>;
   };
-  readonly metaSync: MetaSyncController;
-  readonly backup: BackupController;
+  readonly metaSync: HostController<MetaSyncController, "sync">;
+  readonly backup: HostController<
+    BackupController,
+    "enable" | "disable" | "sync" | "list" | "restore"
+  >;
   readonly zaps: {
     readonly prepare: (params: PrepareZapParams) => Promise<PreparedZap>;
   };
@@ -257,6 +344,17 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const gateway =
     options.gateway === undefined ? undefined : gatewaySession(options.gateway.url, options.random);
 
+  // The one EngineStore per unlock session, opened by `transition` and closed by `stop`; every
+  // controller receives this accessor instead of opening its own.
+  let store: EngineStore | undefined;
+  // oxlint-disable-next-line typescript/require-await -- the openStore option requires an async accessor
+  const sessionStore = async (): Promise<EngineStore> => {
+    if (store === undefined) {
+      throw new Error("the engine store is closed");
+    }
+    return store;
+  };
+
   const phishing = new PhishingController({
     publicStore: options.publicStore,
     gateway,
@@ -298,7 +396,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const networks = new NetworkController({
     fetch: options.fetch,
     rpc: options.rpc ?? {},
-    openStore: options.openStore,
+    openStore: sessionStore,
     logger: options.logger,
     gateway,
     setTimer,
@@ -312,7 +410,8 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
     chains: {
       account: async (params) => chains(options.wallet).account(params),
     },
-    openStore: options.openStore,
+    ownBitcoinTxids: () => ownBitcoinTxids(transactions.getState().txs),
+    openStore: sessionStore,
     setTimer,
     logger: options.logger,
     gateway,
@@ -323,7 +422,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const prices = new PricesController({
     gateway,
     fetch: options.fetch,
-    openStore: options.openStore,
+    openStore: sessionStore,
     setTimer,
     now: options.now,
     logger: options.logger,
@@ -342,7 +441,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const transactions = new TransactionController({
     wallet: options.wallet,
     networks,
-    openStore: options.openStore,
+    openStore: sessionStore,
     random: options.random,
     setTimer,
     now: options.now,
@@ -350,7 +449,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   });
 
   const addressBook = new AddressBookController({
-    openStore: options.openStore,
+    openStore: sessionStore,
     random: options.random,
     now: options.now,
     logger: options.logger,
@@ -371,7 +470,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       gateway === undefined
         ? undefined
         : { url: gateway.url, fetch: gatewayFetch(options.fetch, gateway) },
-    openStore: options.openStore,
+    openStore: sessionStore,
     setTimer,
     now: options.now,
     logger: options.logger,
@@ -444,7 +543,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       ),
     transactions,
     addressBook,
-    openStore: options.openStore,
+    openStore: sessionStore,
     spark: controller,
     nostrSign: async (ref, event) => nostr(options.wallet).signer(ref).signEvent(event),
     solanaSign: async (account, network, request, verify, commit) => {
@@ -458,6 +557,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
       };
       if (request.kind === "transactions") {
         const wires: Uint8Array[] = [];
+        const messages: Uint8Array[] = [];
         for (const wire of request.transactions) {
           const { message } = decodeSolanaTransaction(wire, account.address);
           // oxlint-disable-next-line eslint/no-await-in-loop -- signing is sequential: each prompts.
@@ -474,17 +574,45 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
             throw new Error("unexpected solana sign result");
           }
           wires.push(addSolanaSignature(wire, account.address, result.signature));
+          messages.push(message);
         }
         if (!request.send) {
           return { kind: "solana.transactions" as const, send: false, signedTransactions: wires };
         }
+        const intents = messages.map((message): DisplayIntent =>
+          decodeSolana(
+            { kind: "solana.transaction", network, account: hdAccount, message },
+            account.address,
+          ),
+        );
+        /* The message carries only a blockhash: bound its expiry by the processed height at
+           request time plus Agave's processing age. The dApp fetched the blockhash earlier, at
+           any commitment, so the processed height is the bound that never comes in too low — a
+           low bound would let the poll prove a drop while the bytes can still land. Read once,
+           before commit: a failed read sends nothing. */
+        const lastValidBlockHeight =
+          (await adapter.blockHeight(rpc, "processed")) + SOLANA_MAX_PROCESSING_AGE;
         commit();
-        const signatures: string[] = [];
-        for (const wire of wires) {
-          // oxlint-disable-next-line eslint/no-await-in-loop -- broadcast is sequential per input.
-          signatures.push(await adapter.broadcast(rpc, wire));
-        }
-        return { kind: "solana.transactions" as const, send: true, signatures };
+        const batch = await submitInOrder(wires.length, async (index) => {
+          const wire = wires[index];
+          const intent = intents[index];
+          if (wire === undefined || intent === undefined) {
+            throw new Error("signed transaction without its input");
+          }
+          return transactions.submitDappSolana(
+            network,
+            account.walletId,
+            wire,
+            lastValidBlockHeight,
+            intent,
+          );
+        });
+        return {
+          kind: "solana.transactions" as const,
+          send: true,
+          signatures: batch.ids,
+          ...(batch.refused === undefined ? {} : { refused: batch.refused }),
+        };
       }
       normalizeSolana(
         {
@@ -526,7 +654,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         ),
       ),
     bitcoinSignPsbts: async (account, network, prepared, send, verify, commit) => {
-      const { signedPsbts, txids } = await signDappPsbts(
+      const { signedPsbts, txids, refused } = await signDappPsbts(
         chains(options.wallet),
         prepared,
         send,
@@ -534,7 +662,12 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         commit,
         async (p, r) => transactions.submitDappBitcoin(network, account.walletId, p, r),
       );
-      return { kind: "bitcoin.psbts" as const, signedPsbts, txids };
+      return {
+        kind: "bitcoin.psbts" as const,
+        signedPsbts,
+        txids,
+        ...(refused === undefined ? {} : { refused }),
+      };
     },
     bitcoinSign: async (account, network, request, verify) => {
       const result = await chains(options.wallet).sign({
@@ -667,7 +800,7 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   const connections = new ConnectionController({
     phishing,
     setTimer,
-    openStore: options.openStore,
+    openStore: sessionStore,
     random: options.random,
     now: options.now,
     logger: options.logger,
@@ -788,7 +921,6 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
   // The transition chain: every status change queues behind the previous one, so a late lock
   // always observes the snapshot left by a settled unlock (and vice versa).
   let chain: Promise<void> = Promise.resolve();
-  let store: EngineStore | undefined;
   let started = false;
 
   const stop = async (): Promise<void> => {
@@ -838,7 +970,13 @@ export function createWalletEngine(options: EngineOptions): WalletEngine {
         await controller.init();
         // Pull → merge → maybe publish for every wallet with a group-0 identity.
         await addressBook.init();
-        await metaSync.init();
+        // Relay pulls are unbounded: meta sync starts in the background so a slow relay cannot
+        // delay transaction recovery or the request pipeline. Its generation drops a pull that
+        // a lock overtakes.
+        // oxlint-disable-next-line promise/prefer-await-to-then -- background start, not on the chain
+        void metaSync.init().catch((error: unknown) => {
+          options.logger.warn("meta sync start failed", error);
+        });
         await networks.init();
         await assets.init();
         await prices.init();

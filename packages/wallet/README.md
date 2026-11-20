@@ -111,14 +111,17 @@ React Native the device owner proves presence before anything is erased.
   upgrades the record), `"passkey"` (a synced passkey — still lost with the password-manager
   account, so prompt to export), or `"none"` (a device-bound passkey — lost with the device).
 - Blind signing is a vault setting, off by default. A request is blind only when the chain
-  decoder marks it so: a raw-byte message, typed data too large or misformed to show, a call into
-  an unrecognised function of a listed token, calldata that runs the signing account's own code,
-  or a Safe delegatecall or unbounded refund. `chains(wallet).sign` fails a blind request with
+  decoder marks it so: a raw-byte or digest-shaped message (exactly 32 bytes, unsafe code
+  points, or text that only renders hex), typed data too large or misformed to show or whose
+  every leaf is a commitment hash, typed data a recognised family claims in an unknown shape
+  or a Seaport order over the item limit, a call into an unrecognised function of a listed
+  token, calldata that runs the signing account's own code, an undecoded instruction of a
+  core Solana program the signer signs, or a Safe delegatecall or unbounded refund. `chains(wallet).sign` fails a blind request with
   `blind-signing-disabled` — before any verification — until `vault.setBlindSigning(true, verify)`;
   `snapshot.blindSigning` reports the setting. Requests the wallet can describe but not verify —
-  an unknown contract call, unrecognised typed data that fits the display budget, an unknown
-  Solana program, a multi-party PSBT — sign without the setting and their prompt carries a
-  "cannot verify" line. Through the dApp surface the engine still creates the pending request
+  an unknown contract call, readable unrecognised typed data that fits the display budget,
+  an unknown Solana program or a core instruction the signer does not sign, a multi-party
+  PSBT — sign without the setting and their prompt carries a "cannot verify" line. Through the dApp surface the engine still creates the pending request
   and `requests.approve` throws `BlindSigningDisabledError` while the setting is off — enable it
   and approve the same request again. Text and sign-in messages, permits, Seaport orders, Safe
   transactions of decoded calls and every recognised transaction are never blind.

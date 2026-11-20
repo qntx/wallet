@@ -302,6 +302,11 @@ void KernelRuntime::Impl::initRuntime() {
   if (hooks.beforeEvaluate) {
     hooks.beforeEvaluate(*rt);
   }
+  if (stopping.load(std::memory_order_acquire)) {
+    // destroy() arrived while the hook waited (a predecessor still stopping):
+    // a runtime already told to stop never evaluates the kernel.
+    return;
+  }
 
   evaluate();
   rt->drainMicrotasks();

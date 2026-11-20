@@ -30,7 +30,7 @@ const entryFor = (prefix: string) => {
   if (sig === undefined || tx === undefined) {
     throw new Error(`fixture missing ${prefix}`);
   }
-  return solanaEntry(SOL_NET, OWNER, sig, tx);
+  return solanaEntry(SOL_NET, OWNER, sig, tx, true);
 };
 
 describe("solanaEntry (fixture)", () => {
@@ -176,7 +176,9 @@ describe("solanaEntry (synthetic)", () => {
         innerInstructions: [],
       },
     });
-    expect(solanaEntry(SOL_NET, OWNER, sig("failedsig", 1700000000), tx).status).toBe("failed");
+    expect(solanaEntry(SOL_NET, OWNER, sig("failedsig", 1700000000), tx, true).status).toBe(
+      "failed",
+    );
   });
 
   it("flags a zero-amount transferChecked touch", () => {
@@ -199,7 +201,7 @@ describe("solanaEntry (synthetic)", () => {
         },
       ],
     });
-    const e = solanaEntry(SOL_NET, OWNER, sig("zerosig", 1700000000), tx);
+    const e = solanaEntry(SOL_NET, OWNER, sig("zerosig", 1700000000), tx, true);
     expect(e.flags).toContain("zero-value-transfer");
     expect(e.changes.some((c) => c.amount === "0")).toBe(true);
   });
@@ -229,7 +231,7 @@ describe("solanaEntry (synthetic)", () => {
         },
       ],
     });
-    const e = solanaEntry(SOL_NET, OWNER, sig("safesig", 1700000000), tx);
+    const e = solanaEntry(SOL_NET, OWNER, sig("safesig", 1700000000), tx, true);
     expect(e.verified).toBe(true);
     expect(e.changes).toStrictEqual([
       {
@@ -241,6 +243,25 @@ describe("solanaEntry (synthetic)", () => {
         listed: true,
       },
     ]);
+  });
+
+  it("leaves a precise entry unverified when the read did not go to a host endpoint", () => {
+    const payer = "PayerAcct11111111111111111111111111111111";
+    const tx = parsed({
+      keys: [payer, OWNER],
+      meta: {
+        err: null,
+        fee: 5000,
+        preBalances: [1_000_000, 0],
+        postBalances: [995_000, 100],
+        preTokenBalances: [],
+        postTokenBalances: [],
+        innerInstructions: [],
+      },
+    });
+    const e = solanaEntry(SOL_NET, OWNER, sig("untrustedsig", 1700000000), tx, false);
+    expect(e.changes[0]?.amount).toBe("100");
+    expect(e.verified).toBe(false);
   });
 
   it("derives lamports from the system instructions when balances exceed 2^53", () => {
@@ -267,7 +288,7 @@ describe("solanaEntry (synthetic)", () => {
         },
       ],
     });
-    const e = solanaEntry(SOL_NET, OWNER, sig("unsafesig", 1700000000), tx);
+    const e = solanaEntry(SOL_NET, OWNER, sig("unsafesig", 1700000000), tx, true);
     expect(e.verified).toBe(false);
     expect(e.fee).toBe("5000");
     expect(e.changes).toStrictEqual([
@@ -361,7 +382,10 @@ describe("solanaHistoryStream", () => {
       },
     });
     const rpc = tokenStreamRpc(tokenAccount, mint, incoming);
-    const stream = solanaHistoryStream({ rpc, network: SOL_NET, owner: OWNER }, () => {});
+    const stream = solanaHistoryStream(
+      { rpc, network: SOL_NET, owner: OWNER, trusted: true },
+      () => {},
+    );
     const page = await stream.next();
     expect(page.done).toBe(true);
     const e = page.items.find((x) => x.hash === "toksig");
@@ -390,6 +414,7 @@ describe("solanaHistoryStream", () => {
         ),
         network: SOL_NET,
         owner: OWNER,
+        trusted: true,
       },
       (id, error) => {
         errors.push([id, error]);

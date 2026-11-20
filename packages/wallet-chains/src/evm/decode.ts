@@ -5,10 +5,12 @@ import { ChainError, messageBlindReason, messageContent } from "../index.ts";
 import type {
   ApprovalChange,
   AssetFlow,
+  BlindReason,
   DisplayIntent,
   IntentWarning,
   EvmTransaction,
   MessageContent,
+  SeaportOrder,
   TypedDataDomain,
   SignRequest,
   Verifiability,
@@ -19,11 +21,13 @@ import { checksumEvmAddress } from "./address.ts";
 import { MAX_UINT160, MAX_UINT256, PERMIT2_ADDRESS, allowanceChange } from "./approval.ts";
 import { EVM_NATIVE_ASSET } from "./assets.ts";
 import { EVM_DELEGATOR, decodeBatchExecute } from "./delegation.ts";
+import { callNearMiss, typedDataNearMiss } from "./families.ts";
 import { assertNoExecutionGrant } from "./grants.ts";
 import { decodeLido } from "./lido.ts";
 import { recognizePermit } from "./permit.ts";
 import { recognizeSafe } from "./safe.ts";
-import { recognizeSeaport } from "./seaport.ts";
+import type { SafeRecognition } from "./safe.ts";
+import { SEAPORT_ORDER_ITEMS, recognizeSeaport } from "./seaport.ts";
 import { lookupEvmToken, evmTokenTable } from "./tokens.ts";
 import type { EvmTokenTable } from "./tokens.ts";
 import { quantityBigInt, assertHex, networkChainId } from "./transaction.ts";
@@ -466,12 +470,14 @@ const decodeCall = (call: EvmCall, context: CallContext): DisplayIntent => {
     return { ...protocol, ...contract };
   }
   const standard = standardIntent(call, context);
+  const nearMiss =
+    standard.verifiability === "opaque" && call.to !== undefined
+      ? callNearMiss(call.to, networkChainId(context.network), context.table)
+      : undefined;
   return {
     ...standard,
     ...contract,
-    ...(standard.verifiability === "opaque" && token !== undefined
-      ? { blind: "token-function" as const }
-      : {}),
+    ...(nearMiss === undefined ? {} : { blind: nearMiss }),
     outflows:
       call.value > 0n && address !== undefined
         ? [...nativeOutflow(call.value, address), ...standard.outflows]
@@ -583,6 +589,39 @@ const displayDomain = (domain: TypedDataInput["domain"]): TypedDataDomain => {
   };
 };
 
+/**
+ * The blind reason for a typed-data request, if any. Shown content is never truncated — an order
+ * with more items than the prompt lists, or a document over the leaf budget, would silently
+ * authorise what it hides, so it blinds the request instead.
+ */
+const typedDataBlind = (
+  safe: SafeRecognition | undefined,
+  seaport: SeaportOrder | undefined,
+  unclaimed: boolean,
+  nearMiss: BlindReason | undefined,
+  shown: NonNullable<ReturnType<typeof typedDataFields>> | undefined,
+): BlindReason | undefined => {
+  if (safe !== undefined) {
+    return (
+      safe.safe.calls.find((call) => call.blind !== undefined)?.blind ??
+      (safe.safe.refund === undefined ? undefined : "safe-refund-unbounded")
+    );
+  }
+  if (seaport !== undefined) {
+    return seaport.offer.length > SEAPORT_ORDER_ITEMS ||
+      seaport.consideration.length > SEAPORT_ORDER_ITEMS
+      ? "typed-data-oversize"
+      : undefined;
+  }
+  if (!unclaimed || nearMiss !== undefined) {
+    return nearMiss;
+  }
+  if (shown === undefined) {
+    return "typed-data-oversize";
+  }
+  return shown.commitment ? "typed-data-commitment" : undefined;
+};
+
 /** What the signer can guarantee about this request (WD-065). */
 export const verifiabilityEvm = (request: SignRequest, signer: string): Verifiability =>
   decodeEvm(request, signer).verifiability;
@@ -640,17 +679,11 @@ export const decodeEvm = (
           }),
         )
       : undefined;
-  const fields =
-    permit === undefined && seaport === undefined && safe === undefined
-      ? typedDataFields(json)
-      : undefined;
-  const blind =
-    safe === undefined
-      ? permit === undefined && seaport === undefined && fields === undefined
-        ? ("typed-data-oversize" as const)
-        : undefined
-      : (safe.safe.calls.find((call) => call.blind !== undefined)?.blind ??
-        (safe.safe.refund === undefined ? undefined : ("safe-refund-unbounded" as const)));
+  const unclaimed = permit === undefined && seaport === undefined && safe === undefined;
+  const nearMiss = unclaimed ? typedDataNearMiss(json, chainId, table) : undefined;
+  const shown = unclaimed ? typedDataFields(json) : undefined;
+  const fields = shown?.fields;
+  const blind = typedDataBlind(safe, seaport, unclaimed, nearMiss, shown);
   const message: MessageContent = {
     kind: "typed-data",
     primaryType: json.primaryType,

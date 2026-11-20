@@ -1,7 +1,7 @@
 /**
- * `sparkStore` keeps Spark exit-chain records in one EngineCollection: each chain keyed by leafId
- * plus an index record listing them. Round-trip, index merge on put and filtered delete are the
- * contract Spark relies on.
+ * `sparkStore` keeps Spark exit-chain records in one EngineCollection, each keyed by leafId and
+ * enumerated through the port's `list()`. Round-trip, filtered delete and corrupt-record skipping
+ * are the contract Spark relies on.
  */
 import { describe, expect, it } from "vite-plus/test";
 
@@ -52,7 +52,7 @@ describe("sparkStore", () => {
     await expect(store.exitChains()).resolves.toStrictEqual([]);
   });
 
-  it("round-trips chains and merges the index across puts", async () => {
+  it("round-trips chains across puts", async () => {
     const col = collection();
     const store = sparkStore(col);
     await store.putExitChains([chain("leaf-1"), chain("leaf-2")]);
@@ -61,7 +61,7 @@ describe("sparkStore", () => {
     expect(got.map((c) => c.leafId).toSorted()).toStrictEqual(["leaf-1", "leaf-2", "leaf-3"]);
   });
 
-  it("deleteExitChains removes records and prunes the index", async () => {
+  it("deleteExitChains removes records", async () => {
     const store = sparkStore(collection());
     await store.putExitChains([chain("leaf-1"), chain("leaf-2"), chain("leaf-3")]);
     await store.deleteExitChains(["leaf-1", "leaf-3"]);
@@ -69,30 +69,35 @@ describe("sparkStore", () => {
     expect(got.map((c) => c.leafId)).toStrictEqual(["leaf-2"]);
   });
 
-  it("treats a non-array index as empty", async () => {
-    const col = collection();
-    await col.put("__all__", new TextEncoder().encode(JSON.stringify({ nope: 1 })));
-    const store = sparkStore(col);
-    await expect(store.exitChains()).resolves.toStrictEqual([]);
-    await store.putExitChains([chain("leaf-9")]);
-    await expect(store.exitChains()).resolves.toHaveLength(1);
-  });
-
-  it("skips index entries whose record is gone", async () => {
+  it("keeps every earlier chain when a leftover index row is gone", async () => {
     const col = collection();
     const store = sparkStore(col);
-    await store.putExitChains([chain("leaf-1"), chain("leaf-2")]);
-    await col.delete("leaf-1");
+    await store.putExitChains([chain("leaf-a")]);
+    // A leftover `__all__` row from older data being deleted or unauthenticated must not orphan
+    // the chains whose records are still in the collection.
+    await col.delete("__all__");
+    await store.putExitChains([chain("leaf-b")]);
     const got = await store.exitChains();
-    expect(got.map((c) => c.leafId)).toStrictEqual(["leaf-2"]);
+    expect(got.map((c) => c.leafId).toSorted()).toStrictEqual(["leaf-a", "leaf-b"]);
   });
 
-  it("reads corrupt index bytes as empty and rewrites a valid index on put", async () => {
+  it("keeps every chain under concurrent puts", async () => {
     const col = collection();
-    await col.put("__all__", new TextEncoder().encode("{torn-write"));
+    const store = sparkStore(col);
+    await Promise.all([
+      store.putExitChains([chain("leaf-a")]),
+      store.putExitChains([chain("leaf-b")]),
+    ]);
+    const got = await store.exitChains();
+    expect(got.map((c) => c.leafId).toSorted()).toStrictEqual(["leaf-a", "leaf-b"]);
+  });
+
+  it("skips a leftover __all__ index record", async () => {
+    const col = collection();
+    await col.put("__all__", new TextEncoder().encode(JSON.stringify(["leaf-1"])));
     const store = sparkStore(col);
     await expect(store.exitChains()).resolves.toStrictEqual([]);
-    await store.putExitChains([chain("leaf-9")]);
+    await store.putExitChains([chain("leaf-1")]);
     await expect(store.exitChains()).resolves.toHaveLength(1);
   });
 
@@ -100,14 +105,16 @@ describe("sparkStore", () => {
     const col = collection();
     const store = sparkStore(col);
     await store.putExitChains([chain("leaf-1")]);
-    await col.put("__all__", new TextEncoder().encode(JSON.stringify(["leaf-1", "leaf-2"])));
     await col.put("leaf-2", new Uint8Array([0xff, 0xfe, 0x00]));
     const got = await store.exitChains();
     expect(got.map((c) => c.leafId)).toStrictEqual(["leaf-1"]);
   });
 
-  it("propagates a index read error", async () => {
-    const col = throwing(collection(), "__all__", new Error("io failure"));
+  it("propagates a listing error", async () => {
+    const col: EngineCollection = {
+      ...collection(),
+      list: async () => Promise.reject(new Error("io failure")),
+    };
     await expect(sparkStore(col).exitChains()).rejects.toThrow("io failure");
   });
 

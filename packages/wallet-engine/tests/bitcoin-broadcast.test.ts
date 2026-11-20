@@ -737,16 +737,17 @@ describe("a dApp-signed Bitcoin broadcast", () => {
     const first = await w.boot();
     const p1 = await prepareDapp(w, u1);
     const p2 = await prepareDapp(w, u2);
-    await expect(
-      signDappPsbts(
-        w.apis,
-        [p1, p2],
-        true,
-        VERIFY,
-        () => undefined,
-        broadcastRefusingCall(w, first, 2),
-      ),
-    ).rejects.toThrow(/400|bad-txns/);
+    const outcome = await signDappPsbts(
+      w.apis,
+      [p1, p2],
+      true,
+      VERIFY,
+      () => undefined,
+      broadcastRefusingCall(w, first, 2),
+    );
+    expect(outcome.refused?.index).toBe(1);
+    expect(outcome.refused?.error).toMatch(/400|bad-txns/);
+    expect(outcome.txids).toHaveLength(1);
     const states = Object.values(first.ctl.getState().txs)
       .map((t) => t.state)
       .toSorted();

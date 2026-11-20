@@ -1,8 +1,6 @@
-import type { EngineOptions, WalletEngine } from "@qntx/wallet-engine";
+import type { AccountRef, EngineOptions, WalletEngine } from "@qntx/wallet-engine";
 import type { ProviderInfo } from "@qntx/wallet-engine/connect";
 import { injectedScript } from "@qntx/wallet-engine/connect";
-
-import type { AccountRef } from "./account-ref.ts";
 
 /** The engine draws its own per-session, per-scope client ids; there is no install id. */
 export const gatewayBefore: EngineOptions["gateway"] = {
@@ -33,6 +31,19 @@ export async function prepareSendBefore(
   // oxlint-enable typescript/no-unsafe-call
   const pending = await engine.requests.prepare({ method: "send", ...params });
   return pending.id;
+}
+
+/**
+ * Engine members are host facades: controller lifecycle, internal wiring and `store.setState` stay
+ * with the engine. Read with `getState`, subscribe with `store.subscribe`.
+ */
+export function controllerInternalsBefore(engine: WalletEngine): void {
+  // oxlint-disable typescript/no-unsafe-call -- demonstrates the removed 0.13.0 surface
+  // @ts-expect-error -- SparkController.setAccounts is engine wiring
+  engine.spark.setAccounts([]);
+  // @ts-expect-error -- controller stores are read-only for hosts
+  engine.accounts.store.setState(engine.accounts.getState());
+  // oxlint-enable typescript/no-unsafe-call
 }
 
 /** DApp sessions follow the app's group selection; there is no connection-level active group. */

@@ -1181,8 +1181,12 @@ describe("Eip1193Handler", () => {
     const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
-    const doc = JSON.parse(TYPED) as { domain: Record<string, unknown> };
+    const doc = JSON.parse(TYPED) as {
+      domain: Record<string, unknown>;
+      types: { EIP712Domain: Array<{ name: string; type: string }> };
+    };
     doc.domain["verifyingContract"] = address.toLowerCase();
+    doc.types.EIP712Domain.push({ name: "verifyingContract", type: "address" });
     await expect(
       r.handler.handle(SITE, {
         method: "eth_signTypedData_v4",
@@ -1197,8 +1201,12 @@ describe("Eip1193Handler", () => {
     const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
-    const doc = JSON.parse(TYPED) as { domain: Record<string, unknown> };
+    const doc = JSON.parse(TYPED) as {
+      domain: Record<string, unknown>;
+      types: { EIP712Domain: Array<{ name: string; type: string }> };
+    };
     doc.domain["verifyingContract"] = "0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3";
+    doc.types.EIP712Domain.push({ name: "verifyingContract", type: "address" });
     await expect(
       r.handler.handle(SITE, {
         method: "eth_signTypedData_v4",
@@ -1229,7 +1237,7 @@ describe("Eip1193Handler", () => {
     const r = await rig();
     await r.connect();
     const address = await r.addressAt(0);
-    const params = ["0x01", address];
+    const params = ["0x68656c6c6f", address];
     const first = r.handler.handle(SITE, { method: "personal_sign", params });
     await vi.waitFor(() => {
       expect(Object.values(r.requests.getState().requests)).toHaveLength(1);

@@ -11,16 +11,23 @@ import {
 
 import { GatewayHttpError } from "../middleware/errors.ts";
 import type { ResolvedProvider } from "../types.ts";
+import { ResponseTooLarge, readCapped } from "./body.ts";
 
 export const UPSTREAM_TIMEOUT_MS = 10_000;
 export const BREAKER_FAILURES = 5;
 export const BREAKER_HALF_OPEN_MS = 30_000;
 export const UNAVAILABLE_RETRY_AFTER_SECONDS = 30;
 
+/** Statuses a JSON-RPC upstream answers when the request itself is wrong: the caller's own 400. */
+export const REQUEST_ERROR_STATUSES: ReadonlySet<number> = new Set([400, 413, 422]);
+
+/** Statuses where the provider refused the call before processing it (429 is an outage). */
+export const REFUSED_STATUSES: ReadonlySet<number> = new Set([401, 403]);
+
 /**
- * An upstream failure the breaker should count: a status the provider owns, a malformed body, or a
- * rejected auth call. `refused` marks the attempts the provider provably never processed — an auth
- * failure where nothing was sent, or a 401/403/429 refusal.
+ * A failed attempt the provider answered: a refusal (401/403, `refused`), a malformed body, an
+ * upstream JSON-RPC error, or a status the attempt does not serve. The walk fails over, but the
+ * breaker never counts it — every such answer is one a client can provoke with its own input.
  */
 // oxlint-disable-next-line unicorn/custom-error-definition -- a marker type, not a generic Error
 export class ProviderFailure extends Error {
@@ -35,39 +42,97 @@ export class ProviderFailure extends Error {
   }
 }
 
+/**
+ * A provider-wide failure observed by {@link Send}: transport, 5xx, 429, or a failed auth lookup.
+ * Only `send` constructs it and only it (and the attempt timeout) counts against the breaker, so no
+ * attempt can make a request-specific answer open the breaker every client shares.
+ */
+// oxlint-disable-next-line unicorn/custom-error-definition -- a marker type, not a generic Error
+class ProviderOutage extends Error {
+  readonly reason: string;
+  readonly refused: boolean;
+
+  constructor(reason: string, refused: boolean) {
+    super(reason);
+    this.name = "ProviderOutage";
+    this.reason = reason;
+    this.refused = refused;
+  }
+}
+
+/** One upstream exchange; `send` adds the provider's auth headers and the attempt's signal. */
+export type UpstreamRequest = {
+  readonly url: string | URL;
+  readonly method?: "GET" | "POST";
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly body?: string;
+  /**
+   * A deadline for a body streamed past the attempt (Esplora), which the attempt timeout no longer
+   * bounds once the attempt has returned.
+   */
+  readonly bodyDeadlineMs?: number;
+};
+
+/** A provider's answer to one request, for the attempt to interpret. */
+export type UpstreamResponse = {
+  readonly status: number;
+  readonly ok: boolean;
+  readonly headers: Headers;
+  /**
+   * The body as text: over `maxBytes` throws {@link ResponseTooLarge} (the request's own answer), a
+   * read that breaks mid-body is a transport outage.
+   */
+  readonly text: (maxBytes: number) => Promise<string>;
+  /** The raw body for pass-through; the caller bounds it. */
+  // oxlint-disable-next-line typescript/no-restricted-types -- fetch's own shape: null when bodiless
+  readonly body: ReadableStream<Uint8Array> | null;
+};
+
+/**
+ * Sends one request to the attempt's provider. Every status below 500 except 429 comes back for the
+ * attempt to interpret; transport errors, 5xx and 429 throw the outage the breaker counts.
+ */
+export type Send = (request: UpstreamRequest) => Promise<UpstreamResponse>;
+
 export type Forwarded<T> = { readonly value: T; readonly providerId: string };
 
 export type ForwardOptions = {
   /**
    * The call relays a signed transaction. Retrying it on another provider can broadcast the same
    * transaction twice, so failover is allowed only when the failed attempt provably never reached
-   * the provider: its breaker was open, or it refused the call (`ProviderFailure.refused`). Any
-   * other failure stops the walk with a 502 outcome-unknown.
+   * the provider: its breaker was open, or it refused the call (`refused`). Any other failure stops
+   * the walk with a 502 outcome-unknown.
    */
   readonly broadcast?: boolean;
 };
 
 export type Forwarder = {
   /**
-   * Tries `attempt` against each provider in order, skipping any whose breaker is open. A thrown
-   * error (transport failure, timeout, bad upstream status or body) moves on to the next provider;
-   * a returned value ends the walk. A `GatewayHttpError` thrown by `attempt` is the request's own
-   * answer: it is rethrown as-is, never fails over and never counts against the shared breaker.
-   * When every provider fails the caller gets a 503.
+   * Runs `attempt` against each provider in order, skipping any whose breaker is open; `attempt`
+   * reaches its provider only through `send`. A returned value ends the walk; a failed attempt
+   * cancels its other in-flight calls. An outage, a timeout or a {@link ProviderFailure} moves on to
+   * the next provider; a `GatewayHttpError` or a {@link ResponseTooLarge} is the request's own
+   * answer (a 400 for the latter) and ends the walk. When every provider fails the caller gets a 503.
+   * Only outages and timeouts count against the shared breaker.
    */
   run: <T>(
     providers: ReadonlyArray<ResolvedProvider>,
-    attempt: (provider: ResolvedProvider, signal: AbortSignal) => Promise<T>,
+    attempt: (send: Send, provider: ResolvedProvider) => Promise<T>,
     options?: ForwardOptions,
   ) => Promise<Forwarded<T>>;
 };
 
-/**
- * The failure class of one upstream attempt: a provider-owned reason, a timeout, an open breaker, a
- * request-caused rejection, or a transport error. Logged, never returned to the caller.
- */
+const counted = (error: unknown): boolean =>
+  error instanceof ProviderOutage || error instanceof TaskCancelledError;
+
+/** Whether the provider provably never processed the attempt, so a broadcast may fail over. */
+const refused = (error: unknown): boolean =>
+  error instanceof BrokenCircuitError ||
+  ((error instanceof ProviderOutage || error instanceof ProviderFailure) && error.refused);
+
+/** The failure class of one attempt — logged, never returned to the caller. */
 const failureReason = (error: unknown): string => {
-  if (error instanceof ProviderFailure) {
+  if (error instanceof ProviderOutage || error instanceof ProviderFailure) {
     return error.reason;
   }
   if (error instanceof TaskCancelledError) {
@@ -76,18 +141,69 @@ const failureReason = (error: unknown): string => {
   if (error instanceof BrokenCircuitError) {
     return "breaker-open";
   }
-  if (error instanceof GatewayHttpError) {
-    return "rejected";
+  if (error instanceof ResponseTooLarge) {
+    return "too-large";
   }
-  return "transport";
+  return error instanceof GatewayHttpError ? "rejected" : "error";
 };
 
+const sendTo =
+  (fetch: typeof globalThis.fetch, provider: ResolvedProvider, signal: AbortSignal): Send =>
+  async (request) => {
+    let auth: Readonly<Record<string, string>>;
+    try {
+      auth = (await provider.auth?.()) ?? {};
+    } catch {
+      // Nothing was sent: the provider's account is unusable, not the request.
+      throw new ProviderOutage("auth", true);
+    }
+    let response: Response;
+    try {
+      response = await fetch(request.url, {
+        method: request.method ?? "GET",
+        headers: { ...request.headers, ...auth },
+        ...(request.body === undefined ? {} : { body: request.body }),
+        signal:
+          request.bodyDeadlineMs === undefined
+            ? signal
+            : AbortSignal.any([signal, AbortSignal.timeout(request.bodyDeadlineMs)]),
+      });
+    } catch {
+      throw new ProviderOutage("transport", false);
+    }
+    if (response.status >= 500 || response.status === 429) {
+      await response.body?.cancel().catch(() => undefined);
+      // A 429 is the gateway's own account being throttled: refused before processing.
+      throw new ProviderOutage(`status-${response.status}`, response.status === 429);
+    }
+    return {
+      status: response.status,
+      ok: response.ok,
+      headers: response.headers,
+      text: async (maxBytes) => {
+        try {
+          return await readCapped(response, maxBytes);
+        } catch (error) {
+          if (error instanceof ResponseTooLarge) {
+            throw error;
+          }
+          throw new ProviderOutage("transport", false);
+        }
+      },
+      body: response.body,
+    };
+  };
+
 /**
- * Policies are kept per provider id for the life of the isolate, so breaker state accumulates.
- * `log` receives one JSON line per failed attempt, per breaker transition, and once when every
- * provider of a run fails — observability for attacks, quota exhaustion and upstream outages.
+ * The one path from a route to an upstream. Policies are kept per provider id for the life of the
+ * isolate, so breaker state accumulates. `log` receives one JSON line per failed attempt, per
+ * breaker transition, and once when every provider of a run fails — observability for attacks,
+ * quota exhaustion and upstream outages.
  */
-export function createForwarder(log: (line: string) => void): Forwarder {
+export function createForwarder(
+  fetch: typeof globalThis.fetch,
+  log: (line: string) => void,
+): Forwarder {
   const policies = new Map<string, ReturnType<typeof makePolicy>>();
   const policyFor = (provider: ResolvedProvider): ReturnType<typeof makePolicy> => {
     const key = `${provider.id}|${provider.url}`;
@@ -103,7 +219,7 @@ export function createForwarder(log: (line: string) => void): Forwarder {
   return {
     async run<T>(
       providers: ReadonlyArray<ResolvedProvider>,
-      attempt: (provider: ResolvedProvider, signal: AbortSignal) => Promise<T>,
+      attempt: (send: Send, provider: ResolvedProvider) => Promise<T>,
       options?: ForwardOptions,
     ): Promise<Forwarded<T>> {
       const from = async (index: number): Promise<Forwarded<T>> => {
@@ -118,9 +234,21 @@ export function createForwarder(log: (line: string) => void): Forwarder {
           throw new GatewayHttpError(503, "unavailable", UNAVAILABLE_RETRY_AFTER_SECONDS);
         }
         try {
-          const value = await policyFor(provider).execute(async ({ signal }) =>
-            attempt(provider, signal),
-          );
+          const value = await policyFor(provider).execute(async ({ signal }) => {
+            // A failed attempt drops its other in-flight calls (one `send` each), which would
+            // otherwise keep spending the provider's quota; a successful attempt leaves them —
+            // a streamed Esplora body outlives it.
+            const failed = new AbortController();
+            try {
+              return await attempt(
+                sendTo(fetch, provider, AbortSignal.any([signal, failed.signal])),
+                provider,
+              );
+            } catch (error) {
+              failed.abort();
+              throw error;
+            }
+          });
           return { value, providerId: provider.id };
         } catch (error) {
           log(
@@ -131,14 +259,20 @@ export function createForwarder(log: (line: string) => void): Forwarder {
               reason: failureReason(error),
             }),
           );
-          if (error instanceof GatewayHttpError) {
-            throw error;
+          if (error instanceof ResponseTooLarge) {
+            // The caller chose an answer too large to relay; the next provider would send the same.
+            throw new GatewayHttpError(400, "invalid-request");
           }
           if (
-            options?.broadcast === true &&
-            !(error instanceof BrokenCircuitError) &&
-            !(error instanceof ProviderFailure && error.refused)
+            !(
+              counted(error) ||
+              error instanceof ProviderFailure ||
+              error instanceof BrokenCircuitError
+            )
           ) {
+            throw error;
+          }
+          if (options?.broadcast === true && !refused(error)) {
             // The provider may have relayed the transaction; no other answer is safe to invent.
             throw new GatewayHttpError(502, "outcome-unknown");
           }
@@ -151,13 +285,10 @@ export function createForwarder(log: (line: string) => void): Forwarder {
 }
 
 function makePolicy(log: (line: string) => void, provider: ResolvedProvider) {
-  const breaker = circuitBreaker(
-    handleWhen((error) => !(error instanceof GatewayHttpError)),
-    {
-      halfOpenAfter: BREAKER_HALF_OPEN_MS,
-      breaker: new ConsecutiveBreaker(BREAKER_FAILURES),
-    },
-  );
+  const breaker = circuitBreaker(handleWhen(counted), {
+    halfOpenAfter: BREAKER_HALF_OPEN_MS,
+    breaker: new ConsecutiveBreaker(BREAKER_FAILURES),
+  });
   const transition = (state: string) => () =>
     log(
       JSON.stringify({

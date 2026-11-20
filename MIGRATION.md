@@ -89,6 +89,16 @@ export async function restoreAfterReset(
   the input amount.
 - `engine.transactions` has no `prepare*` methods: every send goes through
   `engine.requests.prepare` / `approve`.
+- Every `WalletEngine` member is a host facade: only the listed host methods plus a read-only
+  `store` (`getState`, `getInitialState`, `subscribe`). Controller lifecycle and wiring (`init`,
+  `lock`, `destroy`, `setStore`, `setAccounts`, `lockAll`, `reconcile`, `trigger`,
+  `invalidateAll`), `store.setState`, metadata merges and the provider handlers' `options` are
+  gone from the engine. A component typed with a controller class (`SparkController`, …) takes
+  `WalletEngine["spark"]` instead.
+- Every type in the engine's host-facing signatures has a name in `@qntx/wallet-engine`:
+  `AccountRef`, `TrackedTransaction`, `TxState`, `PrepareParams`, `ChainRequestInput`,
+  `RequestResult`, the request inputs, displays and results, `SparkTokenBalance`, `HistoryGroup`,
+  `WatchAccount` and the rest — import them instead of deriving them.
 - `engine.connections.setActiveGroup` is gone: dApp sessions follow `engine.accounts.select`, and
   switching group invalidates every pending request.
 - `ProviderInfo.uuid` is gone: the injected script generates the EIP-6963 uuid per document.
@@ -100,11 +110,9 @@ export async function restoreAfterReset(
 [`tests/migration/removed.ts`](tests/migration/removed.ts):
 
 ```ts
-import type { EngineOptions, WalletEngine } from "@qntx/wallet-engine";
+import type { AccountRef, EngineOptions, WalletEngine } from "@qntx/wallet-engine";
 import type { ProviderInfo } from "@qntx/wallet-engine/connect";
 import { injectedScript } from "@qntx/wallet-engine/connect";
-
-import type { AccountRef } from "./account-ref.ts";
 
 /** The engine draws its own per-session, per-scope client ids; there is no install id. */
 export const gatewayBefore: EngineOptions["gateway"] = {
@@ -135,6 +143,19 @@ export async function prepareSendBefore(
   // oxlint-enable typescript/no-unsafe-call
   const pending = await engine.requests.prepare({ method: "send", ...params });
   return pending.id;
+}
+
+/**
+ * Engine members are host facades: controller lifecycle, internal wiring and `store.setState` stay
+ * with the engine. Read with `getState`, subscribe with `store.subscribe`.
+ */
+export function controllerInternalsBefore(engine: WalletEngine): void {
+  // oxlint-disable typescript/no-unsafe-call -- demonstrates the removed 0.13.0 surface
+  // @ts-expect-error -- SparkController.setAccounts is engine wiring
+  engine.spark.setAccounts([]);
+  // @ts-expect-error -- controller stores are read-only for hosts
+  engine.accounts.store.setState(engine.accounts.getState());
+  // oxlint-enable typescript/no-unsafe-call
 }
 
 /** DApp sessions follow the app's group selection; there is no connection-level active group. */
@@ -337,10 +358,16 @@ export async function approveSend(
 - Fewer requests are blind. A request the wallet can describe but not verify — an unknown contract
   call, unrecognised typed data that fits the display, a Solana transaction with unknown programs,
   a multi-party PSBT — now signs without the setting, with a "cannot verify" line in the kernel
-  prompt and the `decode-partial` check (so it needs an acknowledgement). Blind are: raw-byte
-  messages, typed data too large or misformed to show, an unrecognised function of a built-in
-  token, calldata to the signing account itself, a Safe `delegatecall` outside MultiSendCallOnly,
-  and a Safe transaction with a gas refund.
+  prompt and the `decode-partial` check (so it needs an acknowledgement). A request is described
+  only when what the prompt prints bounds what the signature authorises. Blind are: raw-byte
+  messages, 32-byte messages and text that renders a hash or carries unsafe code points; typed
+  data that signs only hashes or opaque bytes (ERC-1271 wrappers such as `SafeMessage`), that is
+  too large or misformed to show, or that a decoded family (permits, Permit2, Safe, Seaport,
+  built-in tokens) claims in a shape the wallet does not decode, such as EIP-3009 on a built-in
+  token; a Seaport order with more than four offer or consideration items; an unrecognised
+  function of a built-in token; an undecoded System, Token, Token-2022, Stake or Associated Token
+  instruction the signer signs; calldata to the signing account itself; a Safe `delegatecall`
+  outside MultiSendCallOnly; and a Safe transaction with a gas refund.
 - dApp blind requests are no longer refused at `prepare` (providers no longer answer `4200`). They
   become pending requests with the `blind-signing` danger, and `approve` throws
   `BlindSigningDisabledError` while the setting is off. Offer to enable it there, then approve the
@@ -352,11 +379,9 @@ export async function approveSend(
 
 ```ts
 import type { VerifyFactor, Wallet } from "@qntx/wallet";
-import type { PendingRequest, WalletEngine } from "@qntx/wallet-engine";
+import type { AccountRef, PendingRequest, WalletEngine } from "@qntx/wallet-engine";
 import { BlindSigningDisabledError, requiredAcknowledgement } from "@qntx/wallet-engine";
 import { chains } from "@qntx/wallet/chains";
-
-import type { AccountRef } from "./account-ref.ts";
 
 /** 0.13.0 kept the flag per account group in the engine; it is a vault setting now. */
 export function enableBlindSigningBefore(engine: WalletEngine, walletId: string): void {
@@ -471,11 +496,9 @@ Spark payments behave alike: a lost response resolves `{ kind: "pending", transf
 [`tests/migration/unknown-outcome.ts`](tests/migration/unknown-outcome.ts):
 
 ```ts
-import type { WalletEngine } from "@qntx/wallet-engine";
+import type { TrackedTransaction, TxState, WalletEngine } from "@qntx/wallet-engine";
 
-type TrackedTransaction = NonNullable<ReturnType<WalletEngine["transactions"]["txById"]>>;
-
-const TERMINAL: ReadonlySet<TrackedTransaction["state"]> = new Set([
+const TERMINAL: ReadonlySet<TxState> = new Set([
   "confirmed",
   "failed",
   "rejected",
@@ -524,7 +547,7 @@ export function signedBytes(tx: TrackedTransaction): string | undefined {
   refuses a guessable one with `BackupControllerError` category `weak-password` before any
   verification; rate drafts with `backupPasswordStrength(password)` (`acceptable` = zxcvbn score
   4). The vault password factor is unchanged.
-- Backup envelope version 2: 0.13.0 backup files are not read. Ask every user with backup on to
+- Backup envelope version 3: 0.13.0 backup files are not read. Ask every user with backup on to
   enable it again after the upgrade.
 - `backup.disable(verify)` re-verifies.
 - A restore unwrapped by the backup password — or by a passkey on the Web — brings the wallets back
@@ -674,19 +697,19 @@ export async function showOlder(
   network)` reads every template of the group, with per-template `sources` and the `utxos` list;
   `refresh(address, network)` reads a plain address.
 - UTXOs on taproot addresses or worth at most 20,000 sat are `protected` as possible inscription or
-  rune carriers: sends do not pick them, the balance counts them in `frozen`, and a dApp PSBT
-  spending one raises `bitcoin-inscription-input`. Naming one in `inputs` opts into spending it.
+  rune carriers: sends do not pick them, the balance counts them in `protected` (0.13.0 named it
+  `frozen`, on `AccountBalances` and per-source totals), and a dApp PSBT spending one raises
+  `bitcoin-inscription-input`. Naming one in `inputs` opts into spending it.
 - User freezes: `engine.transactions.setUtxosFrozen` / `frozenUtxos`, per account and network.
   Automatic selection, speed-up and CPFP skip frozen outpoints; a dApp PSBT spending one raises the
-  `bitcoin-frozen-input` danger.
+  `bitcoin-frozen-input` danger. The balance does not read this list: a user-frozen coin still
+  counts in `native`, so combine `utxos` with `frozenUtxos` to show it apart.
 - `inputs` on a `send` request spends exactly the named outpoints.
 
 [`tests/migration/coin-control.ts`](tests/migration/coin-control.ts):
 
 ```ts
-import type { WalletEngine } from "@qntx/wallet-engine";
-
-import type { AccountRef } from "./account-ref.ts";
+import type { AccountRef, WalletEngine } from "@qntx/wallet-engine";
 
 type Group = { readonly walletId: string; readonly groupIndex: number };
 
@@ -703,6 +726,20 @@ export async function bitcoinBalance(
   // oxlint-enable typescript/no-unsafe-call
   const balances = await engine.assets.refreshBitcoinGroup(group, network);
   return balances.native;
+}
+
+/** Value protected as possible inscription or rune carriers; 0.13.0 called it `frozen`. */
+export async function protectedBalance(
+  engine: WalletEngine,
+  group: Group,
+  network: string,
+): Promise<string | undefined> {
+  const balances = await engine.assets.refreshBitcoinGroup(group, network);
+  // oxlint-disable typescript/no-unsafe-assignment -- demonstrates the renamed 0.13.0 field
+  // @ts-expect-error -- `frozen` is renamed `protected`
+  const before: string | undefined = balances.frozen;
+  // oxlint-enable typescript/no-unsafe-assignment
+  return balances.protected ?? before;
 }
 
 /**
@@ -763,8 +800,9 @@ export async function sendFromCoins(
 
 - `SparkAccountState.tokens` holds token balances in base units.
 - A token payment is a `pay` request with `token: { identifier, amount }` to a plain Spark address
-  and no `amountSats`; it resolves `{ kind: "token", transactionHash }` or, when the response was
-  lost, `{ kind: "token-pending", inputOutputIds }`.
+  and no `amountSats` (`engine.spark` has no send method). It resolves
+  `{ kind: "token", transactionHash }` or, when the response was lost,
+  `{ kind: "token-pending", inputOutputIds }`.
 - Every Spark payment is idempotent per request: a lost response resolves
   `{ kind: "pending", transferId }`. `SparkResult` gains `pending`, `token` and `token-pending`;
   `SparkDisplay` gains a `token` variant.
@@ -776,7 +814,7 @@ export async function sendFromCoins(
 
 ```ts
 import type { VerifyFactor } from "@qntx/wallet";
-import type { SparkAccountState, SparkResult, WalletEngine } from "@qntx/wallet-engine";
+import type { SparkResult, SparkTokenBalance, WalletEngine } from "@qntx/wallet-engine";
 import { requiredAcknowledgement } from "@qntx/wallet-engine";
 import type { SparkAccountRef } from "@qntx/wallet/spark";
 
@@ -784,7 +822,7 @@ import type { SparkAccountRef } from "@qntx/wallet/spark";
 export function tokenBalances(
   engine: WalletEngine,
   ref: SparkAccountRef,
-): NonNullable<SparkAccountState["tokens"]> {
+): ReadonlyArray<SparkTokenBalance> {
   const key = `${ref.walletId}:${String(ref.groupIndex)}:${ref.network}`;
   return engine.spark.getState().accounts[key]?.tokens ?? [];
 }
@@ -843,26 +881,34 @@ export async function prepareExit(
 
 ## 13. Removed APIs
 
-| Removed                                                                                                              | Use instead                                                                          |
-| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `InitialFactor` `{ kind: "hardware" }`, `factor` on React Native create/import/restore                               | nothing — React Native chooses its factors                                           |
-| `UnlockFactor` as a `verify` type                                                                                    | `VerifyFactor`                                                                       |
-| `WalletErrorCode` `no-device-credential`                                                                             | `verification-unavailable`                                                           |
-| `backup.disable()`                                                                                                   | `backup.disable(verify)`                                                             |
-| `requests.approve(id, method, verify)`                                                                               | `requests.approve(id, method, { verify, acknowledged })`                             |
-| `AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`                                | `wallet.vault.setBlindSigning`, `snapshot.blindSigning`                              |
-| `AssetsController.refreshBitcoin(xpub, network)`                                                                     | `refreshBitcoinGroup(group, network)`                                                |
-| `WalletEngine.transactions.prepare*`                                                                                 | `engine.requests.prepare`                                                            |
-| `TrackedTransaction.evm.raw`                                                                                         | `TrackedTransaction.raw`                                                             |
-| `EngineOptions.gateway.installId`                                                                                    | nothing                                                                              |
-| `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts`, `nostrAccount` | `engine.accounts.select`, `connections.sessionAccounts`, `connections.nostrIdentity` |
-| `SolanaWalletHandler.solanaAccountsChanged`, `BitcoinWalletHandler.bitcoinAccountsChanged`                           | the handlers' own `change` events                                                    |
-| `ProviderInfo.uuid`                                                                                                  | nothing                                                                              |
-| `SparkControllerOptions.random`                                                                                      | nothing                                                                              |
-| `EngineErrorCode` `integrity`                                                                                        | an unreadable row reads as absent                                                    |
-| gateway contract `INSTALL_ID_HEADER`, `installId`, `InstallId`                                                       | `CLIENT_ID_HEADER`, `clientId`, `ClientId`                                           |
-| `ChainErrorCode` `fee-payer-mismatch`                                                                                | nothing — any required signer may sign                                               |
-| `SafeTransaction.gasToken`, `refundReceiver`                                                                         | `SafeTransaction.refund` `{ receiver?, gasPrice, amount }`                           |
+| Removed                                                                                                                | Use instead                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `InitialFactor` `{ kind: "hardware" }`, `factor` on React Native create/import/restore                                 | nothing — React Native chooses its factors                                           |
+| `UnlockFactor` as a `verify` type                                                                                      | `VerifyFactor`                                                                       |
+| `WalletErrorCode` `no-device-credential`                                                                               | `verification-unavailable`                                                           |
+| `backup.disable()`                                                                                                     | `backup.disable(verify)`                                                             |
+| `requests.approve(id, method, verify)`                                                                                 | `requests.approve(id, method, { verify, acknowledged })`                             |
+| `AccountTreeController.setBlindSigning` / `blindSigning`, `AccountGroup.blindSigning`                                  | `wallet.vault.setBlindSigning`, `snapshot.blindSigning`                              |
+| `AssetsController.refreshBitcoin(xpub, network)`                                                                       | `refreshBitcoinGroup(group, network)`                                                |
+| `WalletEngine.transactions.prepare*`                                                                                   | `engine.requests.prepare`                                                            |
+| `engine.transactions.batchById`, `delegationState`                                                                     | `engine.transactions.txById` per transaction, `engine.delegation`                    |
+| `engine.spark.setAccounts`, `inspect`, `claimDeposit`, `lockAll`                                                       | `engine.accounts.select` / `discoverSpark`; deposits are claimed by the engine       |
+| controller `init`, `lock`, `destroy`, `setStore`, `reconcile`, `trigger`, `store.setState` on engine members           | nothing — the engine owns controller lifecycle and state                             |
+| `engine.requests.invalidateOrigin`                                                                                     | `engine.connections.invalidateOrigin` (what `createBrowserBridge` calls)             |
+| `engine.connections.request`, `authorize`, `touch`                                                                     | nothing — dApp-side steps run inside the provider handlers                           |
+| `engine.accounts.exportMeta` / `mergeMeta`, `engine.addressBook.merge` / `syncEntries`                                 | `engine.metaSync`                                                                    |
+| `engine.networks.ensClient`, `independentClient`, `independentEnsClient`, `independentSolanaRpc`, `independentEsplora` | `engine.names.resolve`; cross-checks run inside the engine                           |
+| `AccountBalances.frozen`, `BitcoinTotals.frozen` (Bitcoin)                                                             | `protected`                                                                          |
+| `TrackedTransaction.evm.raw`                                                                                           | `TrackedTransaction.raw`                                                             |
+| `EngineOptions.gateway.installId`                                                                                      | nothing                                                                              |
+| `ConnectionController.setActiveGroup`, `activeGroup`, `accounts`, `solanaAccount`, `bitcoinAccounts`, `nostrAccount`   | `engine.accounts.select`, `connections.sessionAccounts`, `connections.nostrIdentity` |
+| `SolanaWalletHandler.solanaAccountsChanged`, `BitcoinWalletHandler.bitcoinAccountsChanged`                             | the handlers' own `change` events                                                    |
+| `ProviderInfo.uuid`                                                                                                    | nothing                                                                              |
+| `SparkControllerOptions.random`                                                                                        | nothing                                                                              |
+| `EngineErrorCode` `integrity`                                                                                          | an unreadable row reads as absent                                                    |
+| gateway contract `INSTALL_ID_HEADER`, `installId`, `InstallId`                                                         | `CLIENT_ID_HEADER`, `clientId`, `ClientId`                                           |
+| `ChainErrorCode` `fee-payer-mismatch`                                                                                  | nothing — any required signer may sign                                               |
+| `SafeTransaction.gasToken`, `refundReceiver`                                                                           | `SafeTransaction.refund` `{ receiver?, gasPrice, amount }`                           |
 
 ## 14. New error codes
 

@@ -8,7 +8,7 @@ const header = JSON.stringify({
 });
 
 const envelope = JSON.stringify({
-  version: 2,
+  version: 3,
   createdAt: 1_700_000_000_000,
   header,
   factors: [

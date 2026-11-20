@@ -257,6 +257,47 @@ int destroyBeforeEvaluate() {
   return g_failures;
 }
 
+// A runtime destroyed while its beforeEvaluate hook still waits (a successor
+// waiting out a stopping predecessor) never evaluates the kernel once the
+// hook returns: it stops instead.
+int destroyDuringBeforeEvaluate() {
+  Mailbox box;
+  std::mutex gateMutex;
+  std::condition_variable gateCv;
+  bool entered = false;
+  bool open = false;
+  auto hooks = hooksFor(box);
+  hooks.beforeEvaluate = [&](jsi::Runtime&) {
+    std::unique_lock<std::mutex> lock(gateMutex);
+    entered = true;
+    gateCv.notify_all();
+    gateCv.wait(lock, [&] { return open; });
+  };
+  auto rt = KernelRuntime::start(
+      sourceScript(std::string(kSendHelper) + "__send(\"evaluated\");"), hooks, "");
+  {
+    std::unique_lock<std::mutex> lock(gateMutex);
+    CHECK(
+        gateCv.wait_for(lock, std::chrono::seconds(15), [&] { return entered; }),
+        "destroy-during-before-evaluate: hook never ran");
+  }
+  rt->destroy();
+  {
+    std::lock_guard<std::mutex> lock(gateMutex);
+    open = true;
+  }
+  gateCv.notify_all();
+  CHECK(
+      rt->waitUntilStopped(std::chrono::seconds(5)),
+      "destroy-during-before-evaluate: runtime did not stop");
+  {
+    std::lock_guard<std::mutex> lock(box.m);
+    CHECK(box.posts.empty(), "destroy-during-before-evaluate: the kernel evaluated after destroy");
+    CHECK(box.errors.empty(), "destroy-during-before-evaluate: unexpected onError");
+  }
+  return g_failures;
+}
+
 int destroyConcurrent() {
   Mailbox box;
   auto rt = KernelRuntime::start(
@@ -1226,13 +1267,11 @@ int kernelSlot() {
     CHECK(claimB.predecessor() == rt1, "kernel-slot: successor must inherit the predecessor");
 
     // The gate a successor wires into Hooks.beforeEvaluate: it returns only
-    // after the predecessor stopped — and times out into a crash, never a
-    // silent overlap.
+    // after the predecessor stopped — it never gives up into an overlap.
     Mailbox box2;
     auto hooks2 = hooksFor(box2);
     hooks2.beforeEvaluate = [rt1](jsi::Runtime&) {
-      if (!rt1->waitUntilStopped(std::chrono::seconds(10))) {
-        throw std::runtime_error("the previous kernel runtime did not stop in time");
+      while (!rt1->waitUntilStopped(std::chrono::seconds(1))) {
       }
     };
     const std::string js2 = std::string(kSendHelper) + R"JS(
@@ -1809,6 +1848,8 @@ int main(int argc, char** argv) {
          return hbc == nullptr ? needHbc(hbc) : destroyBusyloop(hbc);
        }},
       {"destroy-before-evaluate", [](const char*) { return destroyBeforeEvaluate(); }},
+      {"destroy-during-before-evaluate",
+       [](const char*) { return destroyDuringBeforeEvaluate(); }},
       {"destroy-concurrent", [](const char*) { return destroyConcurrent(); }},
       {"destroy-kdf-inflight", [](const char*) { return destroyKdfInflight(); }},
       {"timers-cancel", [](const char*) { return timersCancel(); }},

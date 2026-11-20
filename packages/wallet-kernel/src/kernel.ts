@@ -218,6 +218,7 @@ export function startKernel(host: KernelPlatform, port: Port): void {
           prior === undefined ||
           prior.header !== factor.header ||
           !equalBytes(prior.sealed, factor.sealed);
+        // The authenticated manifest already covers this; the binding tag stays as defence in depth.
         if (changed && !factorBindingOk(dek, factor)) {
           throw new KernelError(
             "integrity",

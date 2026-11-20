@@ -63,6 +63,7 @@ export type PricesState = {
 export type PricesControllerOptions = {
   readonly gateway: GatewayConfig | undefined;
   readonly fetch: typeof globalThis.fetch;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly setTimer: SetTimer;
   readonly now: () => number;
@@ -283,7 +284,17 @@ export class PricesController extends Controller<PricesState> {
       ...s,
       quotes: Object.fromEntries(
         assets.flatMap((asset) => {
-          const quote = fresh.get(asset) ?? s.quotes[asset];
+          const previous = s.quotes[asset];
+          const answered = fresh.get(asset);
+          // An older answer must not rewind a newer stored quote — unless the stored quote is
+          // future-dated, which is never kept over a real answer.
+          const quote =
+            previous !== undefined &&
+            answered !== undefined &&
+            previous.updatedAt > answered.updatedAt &&
+            previous.updatedAt <= fetchedAt
+              ? previous
+              : (answered ?? previous);
           return quote === undefined
             ? []
             : [

@@ -57,6 +57,7 @@ export type NetworkControllerState = {
 type Options = {
   readonly fetch: typeof globalThis.fetch;
   readonly rpc: Readonly<Record<string, ReadonlyArray<string>>>;
+  /** The session EngineStore — the engine opens it once per unlock and closes it on lock. */
   readonly openStore: () => Promise<EngineStore>;
   readonly logger: EngineLogger;
   readonly gateway?: GatewayConfig | undefined;
@@ -179,7 +180,14 @@ const solanaCaller = (
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         });
-        const body: unknown = await res.json();
+        let body: unknown;
+        try {
+          body = await res.json();
+        } catch {
+          // A non-JSON body (a proxy's error page) is an HTTP-level failure: name the status
+          // and endpoint instead of leaking the parser's SyntaxError.
+          return await attempt(next, new Error(`${method}: HTTP ${res.status} from ${url}`));
+        }
         if (!isObject(body)) {
           return await attempt(next, new Error(`malformed response from ${url}`));
         }

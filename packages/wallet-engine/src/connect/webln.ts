@@ -17,7 +17,13 @@ import type { RequestController } from "../requests/controller.ts";
 import type { SparkController } from "../spark/controller.ts";
 import type { ConnectionController } from "./controller.ts";
 import { LIGHTNING_METHODS } from "./controller.ts";
-import { invalidParams, ProviderError, unauthorized, unsupportedMethod } from "./errors.ts";
+import {
+  invalidParams,
+  paymentPending,
+  ProviderError,
+  unauthorized,
+  unsupportedMethod,
+} from "./errors.ts";
 
 /** A WebLN method call from the page. */
 export type WeblnRequest = {
@@ -53,6 +59,14 @@ const MAX_MEMO_LENGTH = 640;
 const PREIMAGE_POLL_START_MS = 1000;
 const PREIMAGE_POLL_MAX_MS = 8000;
 const PREIMAGE_POLL_BUDGET_MS = 60000;
+
+const NOT_SETTLED = "the payment has not settled yet and may still settle; do not retry it";
+
+/** A committed payment whose answer was lost: it may still settle under its transfer id. */
+const unknownOutcome = (transferId: string): ProviderError =>
+  paymentPending(
+    `the payment outcome is unknown: it may still settle under transfer ${transferId}; do not retry it`,
+  );
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
 
@@ -164,6 +178,9 @@ export class WeblnHandler {
     });
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {
+      if ("kind" in outcome && outcome.kind === "pending") {
+        throw unknownOutcome(outcome.transferId);
+      }
       throw new ProviderError(-32603, "the lightning payment settled unexpectedly");
     }
     return this.preimage(ref, outcome.payment);
@@ -215,6 +232,9 @@ export class WeblnHandler {
     });
     const outcome = await this.options.requests.outcome(pending.id);
     if (!("kind" in outcome) || outcome.kind !== "lightning") {
+      if ("kind" in outcome && outcome.kind === "pending") {
+        throw unknownOutcome(outcome.transferId);
+      }
       throw new ProviderError(-32603, "the lnurl payment settled unexpectedly");
     }
     return this.preimage(ref, outcome.payment);
@@ -223,23 +243,32 @@ export class WeblnHandler {
   private async preimage(ref: SparkAccountRef, payment: LightningPayment): Promise<unknown> {
     let delay = PREIMAGE_POLL_START_MS;
     let waited = 0;
+    // The payment is already committed: a status read failure, an exhausted budget or a settled
+    // payment without a preimage must never read as failed, or the page pays again.
     while (true) {
-      // oxlint-disable-next-line eslint/no-await-in-loop -- the preimage poll serially polls
-      const status = await this.options.spark.paymentStatus(ref, {
-        requestId: payment.requestId,
-        paymentHash: payment.paymentHash,
-      });
+      let status: Awaited<ReturnType<SparkController["paymentStatus"]>>;
+      try {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- the preimage poll serially polls
+        status = await this.options.spark.paymentStatus(ref, {
+          requestId: payment.requestId,
+          paymentHash: payment.paymentHash,
+        });
+      } catch {
+        throw paymentPending(NOT_SETTLED);
+      }
       if (status.outcome === "failed" || status.outcome === "returned") {
         throw new ProviderError(-32603, "payment failed");
       }
       if (status.outcome === "succeeded") {
         if (status.preimage === undefined) {
-          throw new ProviderError(-32603, "the lightning payment settled without a preimage");
+          throw paymentPending(
+            "the payment settled but its preimage is unavailable; do not retry it",
+          );
         }
         return { preimage: bytesToHex(status.preimage) };
       }
       if (waited >= PREIMAGE_POLL_BUDGET_MS) {
-        throw new ProviderError(-32603, "the lightning payment did not settle in time");
+        throw paymentPending(NOT_SETTLED);
       }
       const step = Math.min(delay, PREIMAGE_POLL_MAX_MS);
       // oxlint-disable-next-line eslint/no-await-in-loop -- the preimage poll serially waits

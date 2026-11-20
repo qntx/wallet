@@ -124,13 +124,19 @@ describe.runIf(RUN)("anvil e2e: eip7702 delegation", () => {
         kind: "none",
       });
       await expect(adapter.delegatorVerified(client, CODE_HASH)).resolves.toBe(true);
-      const upgrade = await adapter.build(client, "eip155:31337", account.address, {
-        kind: "call",
-        to: account.address,
-        value: 0n,
-        data: "0x",
-        authorization: { address: DELEGATOR },
-      });
+      const upgrade = await adapter.build(
+        client,
+        "eip155:31337",
+        account.address,
+        {
+          kind: "call",
+          to: account.address,
+          value: 0n,
+          data: "0x",
+          authorization: { address: DELEGATOR },
+        },
+        await adapter.pendingCount(client, account.address),
+      );
       const upHash = await adapter.broadcast(client, await sign7702(upgrade, DELEGATOR));
       await waitMined(client, upHash);
       await expect(getCode(client, account.address)).resolves.toBe(
@@ -141,15 +147,21 @@ describe.runIf(RUN)("anvil e2e: eip7702 delegation", () => {
       });
 
       // (b) a two-transfer batch on the delegated account, plain eip1559 self-call
-      const batch = await adapter.build(client, "eip155:31337", account.address, {
-        kind: "call",
-        to: account.address,
-        value: 0n,
-        data: encodeBatchExecute([
-          { to: RECIPIENT, value: 10n ** 15n, data: "0x" },
-          { to: RECIPIENT2, value: 10n ** 15n, data: "0x" },
-        ]),
-      });
+      const batch = await adapter.build(
+        client,
+        "eip155:31337",
+        account.address,
+        {
+          kind: "call",
+          to: account.address,
+          value: 0n,
+          data: encodeBatchExecute([
+            { to: RECIPIENT, value: 10n ** 15n, data: "0x" },
+            { to: RECIPIENT2, value: 10n ** 15n, data: "0x" },
+          ]),
+        },
+        await adapter.pendingCount(client, account.address),
+      );
       const batchHash = await adapter.broadcast(client, await sign7702(batch, undefined));
       await waitMined(client, batchHash);
       const [bal1, bal2] = await Promise.all(
@@ -161,13 +173,19 @@ describe.runIf(RUN)("anvil e2e: eip7702 delegation", () => {
       expect(bal2).toBe(10n ** 15n);
 
       // (c) revoke: zero-address authorization clears the designator
-      const revoke = await adapter.build(client, "eip155:31337", account.address, {
-        kind: "call",
-        to: account.address,
-        value: 0n,
-        data: "0x",
-        authorization: { address: "0x0000000000000000000000000000000000000000" },
-      });
+      const revoke = await adapter.build(
+        client,
+        "eip155:31337",
+        account.address,
+        {
+          kind: "call",
+          to: account.address,
+          value: 0n,
+          data: "0x",
+          authorization: { address: "0x0000000000000000000000000000000000000000" },
+        },
+        await adapter.pendingCount(client, account.address),
+      );
       const rvHash = await adapter.broadcast(
         client,
         await sign7702(revoke, "0x0000000000000000000000000000000000000000"),
@@ -188,13 +206,19 @@ describe.runIf(RUN)("anvil e2e: eip7702 delegation", () => {
         { to: RECIPIENT, value: 10n ** 15n, data: "0x" },
         { to: RECIPIENT2, value: 10n ** 15n, data: "0x" },
       ]);
-      const batch = await adapter.build(client, "eip155:31337", account.address, {
-        kind: "call",
-        to: account.address,
-        value: 0n,
-        data,
-        authorization: { address: DELEGATOR },
-      });
+      const batch = await adapter.build(
+        client,
+        "eip155:31337",
+        account.address,
+        {
+          kind: "call",
+          to: account.address,
+          value: 0n,
+          data,
+          authorization: { address: DELEGATOR },
+        },
+        await adapter.pendingCount(client, account.address),
+      );
       const hash = await adapter.broadcast(client, await sign7702(batch, DELEGATOR));
       await waitMined(client, hash);
       await expect(getCode(client, account.address)).resolves.toBe(

@@ -153,6 +153,7 @@ const make = (
   store: EngineStore = createMemoryEngineStore(),
 ) =>
   new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: {
       client: () => c,
       info: () => ({ family: "evm", chainId: net.chainId, multicall3: net.multicall3 }),
@@ -217,6 +218,7 @@ const decodedAggregate = (calls: Call[], index = 0) =>
 
 const makeSolana = (calls: Array<{ readonly method: string; readonly params: unknown[] }>) =>
   new AssetsController({
+    ownBitcoinTxids: () => new Set(),
     networks: {
       info: (n: string) => (n === SOL_NET ? { family: "solana" } : { family: "evm", chainId: 1 }),
       solanaRpc: () => solRpc(calls),
