@@ -1,0 +1,8 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`P5 EIP-712 domain filtering agrees with independent hashers on odd domains > a declared domain field with no value is rejected by the wallet 1`] = `
+{
+  "metamask": "throws Error",
+  "outcome": "throws TypeError",
+}
+`;
