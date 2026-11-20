@@ -926,6 +926,23 @@ export const createEvmRoute = (): EvmRoute => {
     return fee;
   };
 
+  /** What the network's fee model charges beyond `gasUsed × effectiveGasPrice`, if anything. */
+  // eslint-disable-next-line typescript/consistent-return -- the switch is exhaustive; a new fee model kind fails typecheck
+  const beyondGasFee = async (
+    ctx: RouteContext,
+    network: string,
+    tx: EvmUnsignedTransaction,
+    flags: Array<RequestCheckCode | undefined>,
+  ): Promise<bigint | undefined> => {
+    switch (ctx.options.networks.info(network).feeModel?.kind) {
+      case "op-stack":
+        return opStackFee(ctx, network, tx, flags);
+      case "execution":
+      case undefined:
+        return undefined;
+    }
+  };
+
   const prepareSpec = async (ctx: RouteContext, spec: PrepareSpec): Promise<PreparedRequest> => {
     const { account, network, fee, from } = spec;
     const { networks } = ctx.options;
@@ -977,7 +994,7 @@ export const createEvmRoute = (): EvmRoute => {
       }
     }
     const feed = evm.applyFee(unsigned, quote);
-    const l1 = info.opStack === true ? await opStackFee(ctx, network, feed, flags) : undefined;
+    const l1 = await beyondGasFee(ctx, network, feed, flags);
     if (
       spec.nativeValue !== undefined &&
       feeReachesAmount(
@@ -1831,10 +1848,7 @@ export const createEvmRoute = (): EvmRoute => {
           }
         : { ...original, ...feeFields };
     const request = evm.toSignRequest(unsigned, account, chainId);
-    const l1 =
-      networks.info(old.network).opStack === true
-        ? await opStackFee(ctx, old.network, unsigned, flags)
-        : undefined;
+    const l1 = await beyondGasFee(ctx, old.network, unsigned, flags);
     const intent = withL1Fee(decodeEvm(request, original.from), l1);
     const txId = newId(ctx.options.random);
 

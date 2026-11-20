@@ -1,16 +1,23 @@
 /**
  * Built-in EVM network registry: the chain table lives in @qntx/wallet-chains/networks; this module
- * layers the engine-only fields the signing paths need on top of it (Multicall3, OP Stack L1 data
- * fee, EIP-7702 delegator code hash). Signing-time chainId always comes from the table, never from
- * an RPC endpoint.
+ * layers the engine-only fields the signing paths need on top of it (Multicall3, fee model,
+ * EIP-7702 delegator code hash). Signing-time chainId always comes from the table, never from an
+ * RPC endpoint.
  */
 import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
 import type { NetworkMeta } from "@qntx/wallet-chains/networks";
 
+/** What a transaction is charged beyond `gasUsed × effectiveGasPrice`. */
+export type FeeModel =
+  /** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+  | { readonly kind: "execution" }
+  /** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
+  | { readonly kind: "op-stack" };
+
 export type NetworkInfo = NetworkMeta & {
   readonly multicall3?: string;
-  /** OP Stack chain: transactions also pay an L1 data fee and an operator fee. */
-  readonly opStack?: true;
+  /** How the chain prices costs beyond execution gas; every EVM entry sets it. */
+  readonly feeModel?: FeeModel;
   /** Keccak256 of the delegator's runtime code on this chain; absent = EIP-7702 unsupported. */
   readonly delegatorCodeHash?: string;
 };
@@ -21,7 +28,7 @@ export type NetworkInfo = NetworkMeta & {
  * separator as immutables. HyperEVM (999/998) has no deployment; Avalanche C-Chain (43114/43113)
  * has not activated 7702.
  */
-const DELEGATOR_CODE_HASHES: Readonly<Record<number, string>> = {
+export const DELEGATOR_CODE_HASHES: Readonly<Record<number, string>> = {
   1: "0x0b77e469f5603ed1e9ff0e7ee56238b61a8cf7cb3185b33e53e2eeaad50109ab",
   8453: "0x6af675ac126c441bec5d5013da3331a52e7465fc0d5a662a8708a9f33ce497ba",
   42161: "0xa6603bc6f9f203be551ce8fcfe13b7802e3b6574828780b4c4fe05d1768d17de",
@@ -36,23 +43,52 @@ const DELEGATOR_CODE_HASHES: Readonly<Record<number, string>> = {
   97: "0x27d0d3e53805ac152f306986e91511b7c6c6804cba0dbe0e1420d19905e682e6",
 };
 
-const OP_STACK_CHAINS = new Set([8453, 10, 84532, 11155420]);
-
 // Canonical Multicall3 — https://github.com/mds1/multicall3 deployments (all entries below).
 const MULTICALL3 = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-const evmEntry = (meta: NetworkMeta): NetworkInfo => ({
-  ...meta,
-  multicall3: MULTICALL3,
-  ...(OP_STACK_CHAINS.has(meta.chainId) ? { opStack: true as const } : {}),
-  ...(DELEGATOR_CODE_HASHES[meta.chainId] === undefined
-    ? {}
-    : { delegatorCodeHash: DELEGATOR_CODE_HASHES[meta.chainId] }),
-});
+/** Engine facts per built-in EVM chain, keyed by chainId: Multicall3 address and fee model. */
+export const EVM_FACTS: Readonly<
+  Record<number, { readonly multicall3: string; readonly feeModel: FeeModel }>
+> = {
+  1: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  8453: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  42161: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  10: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  137: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  56: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  999: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  43114: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  11155111: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  84532: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  421614: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  11155420: { multicall3: MULTICALL3, feeModel: { kind: "op-stack" } },
+  80002: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  97: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  998: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+  43113: { multicall3: MULTICALL3, feeModel: { kind: "execution" } },
+};
+
+const evmEntry = (meta: NetworkMeta): NetworkInfo | undefined => {
+  const facts = EVM_FACTS[meta.chainId];
+  if (facts === undefined) {
+    return undefined;
+  }
+  return {
+    ...meta,
+    multicall3: facts.multicall3,
+    feeModel: facts.feeModel,
+    ...(DELEGATOR_CODE_HASHES[meta.chainId] === undefined
+      ? {}
+      : { delegatorCodeHash: DELEGATOR_CODE_HASHES[meta.chainId] }),
+  };
+};
 
 export const NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
   (n) => n.family === "evm",
-).map(evmEntry);
+).flatMap((meta) => {
+  const entry = evmEntry(meta);
+  return entry === undefined ? [] : [entry];
+});
 
 export const BITCOIN_NETWORKS: ReadonlyArray<NetworkInfo> = BUILT_IN_NETWORKS.filter(
   (n) => n.family === "bitcoin",

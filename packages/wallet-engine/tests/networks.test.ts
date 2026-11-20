@@ -1,8 +1,17 @@
 import { base58 } from "@scure/base";
+import { getAddress } from "viem";
 import { describe, expect, it } from "vite-plus/test";
 
+import { BUILT_IN_NETWORKS } from "@qntx/wallet-chains/networks";
+
 import { NetworkController } from "../src/networks/controller.ts";
-import { BITCOIN_NETWORKS, NETWORKS, SOLANA_NETWORKS } from "../src/networks/registry.ts";
+import {
+  BITCOIN_NETWORKS,
+  DELEGATOR_CODE_HASHES,
+  EVM_FACTS,
+  NETWORKS,
+  SOLANA_NETWORKS,
+} from "../src/networks/registry.ts";
 import { createMemoryEngineStore } from "../src/store/memory.ts";
 import { idleNetworkDeps } from "./send-helpers.ts";
 
@@ -33,12 +42,53 @@ const genesisFetch = (hash: string) =>
     Promise.resolve(Response.json({ jsonrpc: "2.0", id: 1, result: hash }))) as typeof fetch;
 
 describe("network registry", () => {
-  it("marks exactly the OP Stack chains", () => {
+  it("marks exactly the OP Stack chains with the op-stack fee model", () => {
     expect(
-      NETWORKS.filter((n) => n.opStack === true)
+      NETWORKS.filter((n) => n.feeModel?.kind === "op-stack")
         .map((n) => n.chainId)
         .toSorted((a, b) => a - b),
     ).toStrictEqual([10, 8453, 84532, 11155420]);
+  });
+
+  it("covers every built-in EVM chain in order, with one facts entry each", () => {
+    const evm = BUILT_IN_NETWORKS.filter((n) => n.family === "evm");
+    expect(NETWORKS.map((n) => n.id)).toStrictEqual(evm.map((n) => n.id));
+    expect(
+      Object.keys(EVM_FACTS)
+        .map(Number)
+        .toSorted((a, b) => a - b),
+    ).toStrictEqual(evm.map((n) => n.chainId).toSorted((a, b) => a - b));
+  });
+
+  it("has unique built-in ids and unique EVM chainIds matching the eip155 id", () => {
+    const ids = BUILT_IN_NETWORKS.map((n) => n.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const chainIds = NETWORKS.map((n) => n.chainId);
+    expect(new Set(chainIds).size).toBe(chainIds.length);
+    for (const network of NETWORKS) {
+      expect(network.id).toBe(`eip155:${network.chainId}`);
+    }
+  });
+
+  it.each(NETWORKS)("$id has a fee model and a checksummed Multicall3 address", (network) => {
+    expect(network.feeModel).toBeDefined();
+    expect(network.multicall3).toBeDefined();
+    expect(getAddress(String(network.multicall3))).toBe(network.multicall3);
+  });
+
+  it("keys DELEGATOR_CODE_HASHES by a registry chain with 32-byte hashes", () => {
+    const chainIds = new Set(NETWORKS.map((n) => n.chainId));
+    for (const [key, hash] of Object.entries(DELEGATOR_CODE_HASHES)) {
+      expect(chainIds.has(Number(key))).toBe(true);
+      expect(hash).toMatch(/^0x[0-9a-f]{64}$/);
+    }
+  });
+
+  it("keeps feeModel and multicall3 off the non-EVM entries", () => {
+    for (const network of [...SOLANA_NETWORKS, ...BITCOIN_NETWORKS]) {
+      expect(network.feeModel).toBeUndefined();
+      expect(network.multicall3).toBeUndefined();
+    }
   });
 
   it.each([...SOLANA_NETWORKS, ...BITCOIN_NETWORKS])(

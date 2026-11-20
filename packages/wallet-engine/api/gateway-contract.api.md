@@ -165,6 +165,17 @@ export const evmRpcRequest: z.ZodMiniUnion<readonly [z.ZodMiniUnion<z.ZodMiniObj
 }, z.core.$strip>[]>>]>;
 
 // @public
+type FeeModel =
+/** Nothing: the chain folds any L1 cost into gas (L1s, Arbitrum Orbit, zk rollups). */
+    {
+    readonly kind: "execution";
+} |
+/** OP Stack: an L1 data fee and an operator fee, read from the GasPriceOracle predeploy. */
+    {
+    readonly kind: "op-stack";
+};
+
+// @public
 export const FIAT_CURRENCIES: readonly ["usd", "eur", "gbp", "jpy", "cny", "krw", "hkd", "sgd", "cad", "aud", "chf"];
 
 // @public (undocumented)
@@ -416,7 +427,7 @@ export const networkById: (id: string) => NetworkInfo | undefined;
 // @public (undocumented)
 export type NetworkInfo = NetworkMeta & {
     readonly multicall3?: string;
-    readonly opStack?: true;
+    readonly feeModel?: FeeModel;
     readonly delegatorCodeHash?: string;
 };
 
